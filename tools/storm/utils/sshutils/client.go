@@ -90,7 +90,14 @@ func CreateSshClientWithRedial(ctx context.Context, backoff time.Duration, confi
 		short_ctx, cancel := context.WithTimeout(ctx, time.Duration(5)*time.Second)
 		defer cancel()
 
-		return CreateSshClient(short_ctx, config)
+		client, err := CreateSshClient(short_ctx, config)
+		if err != nil {
+			logrus.Warnf("Failed to create SSH client to '%s' on attempt %d: %s", config.FullHost(), attempt, err)
+			return nil, err
+		}
+
+		logrus.Infof("Successfully created SSH client to '%s' on attempt %d", config.FullHost(), attempt)
+		return client, nil
 	})
 }
 

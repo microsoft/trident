@@ -14,14 +14,19 @@ import (
 )
 
 func (s *TridentE2EScenario) installOs(tc storm.TestCase) error {
+	// Bump the version for this installation
+	s.version += 1
+
+	// Get netlaunch connection config
 	connConfig := s.testHost.NetlaunchConnectionConfig()
 
 	// Prepare host config
-	hostConfigFile, err := s.renderHostConfiguration()
+	hostConfigFile, err := s.config.ToYaml()
 	if err != nil {
 		return err
 	}
 
+	// Prepare temporary host config file to be used by netlaunch
 	tempHostConfigFilePath, err := prepareHostConfig(hostConfigFile)
 	if err != nil {
 		return err
@@ -98,7 +103,7 @@ func (s *TridentE2EScenario) installOs(tc storm.TestCase) error {
 	return nil
 }
 
-func prepareHostConfig(hostConfigYaml string) (string, error) {
+func prepareHostConfig(hostConfigYaml []byte) (string, error) {
 	tempHostConfigFile, err := os.CreateTemp("", "hc-tmp-")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temporary host config file: %w", err)
@@ -114,7 +119,7 @@ func prepareHostConfig(hostConfigYaml string) (string, error) {
 		tempHostConfigFile.Close()
 	}()
 
-	_, err = tempHostConfigFile.WriteString(hostConfigYaml)
+	_, err = tempHostConfigFile.Write(hostConfigYaml)
 	if err != nil {
 		return "", fmt.Errorf("failed to write to temporary host config file: %w", err)
 	}

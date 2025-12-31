@@ -3,6 +3,7 @@ package e2e
 import (
 	"embed"
 	"fmt"
+	"tridenttools/pkg/hostconfig"
 	"tridenttools/storm/e2e/scenario"
 	"tridenttools/storm/e2e/testrings"
 	"tridenttools/storm/utils/trident"
@@ -47,8 +48,7 @@ func DiscoverTridentScenarios(log *logrus.Logger) ([]scenario.TridentE2EScenario
 			log.Fatalf("Failed to read configuration file: %v", err)
 		}
 
-		var hostConfig map[string]any
-		err = yaml.Unmarshal(configYaml, &hostConfig)
+		hostConfig, err := hostconfig.NewHostConfigFromYaml(configYaml)
 		if err != nil {
 			return nil, fmt.Errorf("failed to unmarshal configuration file for '%s': %v", name, err)
 		}
@@ -71,7 +71,7 @@ func getConfigPath(scenarioName string) string {
 }
 
 // Produces all scenarios from a given configuration.
-func produceScenariosFromConfig(name string, conf scenarioConfig, hostConfig map[string]interface{}) ([]scenario.TridentE2EScenario, error) {
+func produceScenariosFromConfig(name string, conf scenarioConfig, hostConfig hostconfig.HostConfig) ([]scenario.TridentE2EScenario, error) {
 	var scenarios []scenario.TridentE2EScenario
 
 	// Iterate over all hardware types
@@ -122,7 +122,7 @@ func produceScenariosFromConfig(name string, conf scenarioConfig, hostConfig map
 // in any ring.
 func produceScenario(
 	name string,
-	config map[string]interface{},
+	config hostconfig.HostConfig,
 	configParams scenario.TridentE2EHostConfigParams,
 	hardware scenario.HardwareType,
 	runtime trident.RuntimeType,
@@ -152,7 +152,7 @@ func produceScenario(
 		tags = append(tags, string(ring))
 	}
 
-	return scenario.NewTridentE2EScenario(
+	newScenario, err := scenario.NewTridentE2EScenario(
 		fmt.Sprintf("%s_%s-%s", name, hardware, runtime),
 		tags,
 		config,
@@ -160,7 +160,12 @@ func produceScenario(
 		hardware,
 		runtime,
 		rings,
-	), nil
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return newScenario, nil
 }
 
 // Top level types for unmarshaling the configurations.yaml file.

@@ -4,14 +4,14 @@ import (
 	"context"
 	"fmt"
 	"time"
+	"tridenttools/pkg/hostconfig"
 	"tridenttools/storm/e2e/testrings"
 	"tridenttools/storm/utils/sshutils"
 	"tridenttools/storm/utils/trident"
 
-	"github.com/Jeffail/gabs/v2"
 	"github.com/microsoft/storm"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
-	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -46,8 +46,9 @@ type TridentE2EScenario struct {
 	runtime trident.RuntimeType
 	// Test rings that this scenario should be run in
 	testRings testrings.TestRingSet
-	// Host configuration for this scenario
-	config *gabs.Container
+	// Original Host Configuration for this scenario, must NOT be modified
+	// directly. Use `config` instead.
+	originalConfig hostconfig.HostConfig
 	// Parameters specific to this host configuration
 	configParams TridentE2EHostConfigParams
 
@@ -77,26 +78,36 @@ type TridentE2EScenario struct {
 
 	// Version of the image, used for AB update tests
 	version uint
+
+	// Working copy of the host configuration, modified during test execution to
+	// reflect changes such as AB updates.
+	config hostconfig.HostConfig
 }
 
 func NewTridentE2EScenario(
 	name string,
 	tags []string,
-	config map[string]interface{},
+	config hostconfig.HostConfig,
 	configParams TridentE2EHostConfigParams,
 	hardware HardwareType,
 	runtime trident.RuntimeType,
 	testRings testrings.TestRingSet,
-) *TridentE2EScenario {
-	return &TridentE2EScenario{
-		name:         name,
-		tags:         tags,
-		config:       gabs.Wrap(config),
-		configParams: configParams,
-		hardware:     hardware,
-		runtime:      runtime,
-		testRings:    testRings,
+) (*TridentE2EScenario, error) {
+	configClone, err := config.Clone()
+	if err != nil {
+		return nil, fmt.Errorf("failed to clone Host Configuration: %w", err)
 	}
+
+	return &TridentE2EScenario{
+		name:           name,
+		tags:           tags,
+		originalConfig: config,
+		configParams:   configParams,
+		hardware:       hardware,
+		runtime:        runtime,
+		testRings:      testRings,
+		config:         configClone,
+	}, nil
 }
 
 func (s *TridentE2EScenario) Args() any {
@@ -139,10 +150,6 @@ func (s *TridentE2EScenario) RuntimeType() trident.RuntimeType {
 	return s.runtime
 }
 
-func (s *TridentE2EScenario) HasABUpdate() bool {
-	return s.config.Exists("storage", "abUpdate")
-}
-
 func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 	if s.hardware.IsVM() {
 		r.RegisterTestCase("install-vm-deps", s.installVmDependencies)
@@ -153,19 +160,10 @@ func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 	r.RegisterTestCase("install-os", s.installOs)
 	r.RegisterTestCase("check-trident-ssh", s.checkTridentViaSsh)
 
-	if s.HasABUpdate() {
+	if s.originalConfig.HasABUpdate() {
 		s.AddAbUpdateTests(r, "ab-update-1")
 	}
 	return nil
-}
-
-func (s *TridentE2EScenario) renderHostConfiguration() (string, error) {
-	out, err := yaml.Marshal(s.config.Data())
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal host configuration to YAML: %w", err)
-	}
-
-	return string(out), nil
 }
 
 // populateSshClient ensures that `s.sshClient` is populated with a valid SSH client
@@ -173,15 +171,18 @@ func (s *TridentE2EScenario) renderHostConfiguration() (string, error) {
 // it's still valid; if not, it opens a new client.
 func (s *TridentE2EScenario) populateSshClient(ctx context.Context) error {
 	if s.sshClient != nil {
+		logrus.Debug("SSH client already exists, checking validity")
 		// There is already an open client, check if it's still valid.
 		session, err := s.sshClient.NewSession()
 		if err == nil {
 			session.Close()
+			logrus.Debug("SSH client is still valid")
 			// Still valid
 			return nil
 		}
 
 		// Not valid anymore, close it.
+		logrus.Debug("SSH client is no longer valid, reopening")
 		s.sshClient.Close()
 		s.sshClient = nil
 	}
@@ -196,6 +197,7 @@ func (s *TridentE2EScenario) populateSshClient(ctx context.Context) error {
 		Timeout:    time.Duration(3) * time.Minute,
 	}
 
+	logrus.Infof("Creating SSH client to test host at %s", config.FullHost())
 	client, err := sshutils.CreateSshClientWithRedial(ctx, time.Second, config)
 	if err != nil {
 		return fmt.Errorf("failed to create SSH client to test host: %w", err)

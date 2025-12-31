@@ -38,7 +38,11 @@ func (s *TridentE2EScenario) prepareHostConfig(tc storm.TestCase) error {
 	// Add the public key to the testing user
 	found := false
 	for _, user := range s.config.S("os", "users").Children() {
-		if user.S("name").Data().(string) == testingUsername {
+		name, ok := user.S("name").Data().(string)
+		if !ok {
+			continue
+		}
+		if name == testingUsername {
 			user.ArrayAppend(string(public), "sshPublicKeys")
 			found = true
 		}
