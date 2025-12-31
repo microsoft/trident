@@ -37,7 +37,9 @@ import (
 // The monitor will run until the context is cancelled or the login prompt is
 // detected.
 func (s *TridentE2EScenario) spawnVMSerialMonitor(ctx context.Context, output io.WriteCloser) (<-chan bool, error) {
-	doneChannel := make(chan bool)
+	// Channel to signal when the monitor is done. Buffered with size 1 to avoid
+	// deadlocks when we exit early and send a message to it immediately.
+	doneChannel := make(chan bool, 1)
 	var wg sync.WaitGroup
 
 	// Only spawn the VM serial logger if the hardware type is VM. Otherwise, do
@@ -52,6 +54,7 @@ func (s *TridentE2EScenario) spawnVMSerialMonitor(ctx context.Context, output io
 	// Get VM info
 	vmInfo := s.testHost.VmInfo()
 	if ref.IsNilInterface(vmInfo) {
+		close(doneChannel)
 		return doneChannel, fmt.Errorf("vm host info not set")
 	}
 
@@ -150,16 +153,48 @@ func waitForVmSerialLogLoginLibvirt(ctx context.Context, lv *libvirt.Libvirt, do
 	// still be running because it doesn't take in a context, and only seems to
 	// register the channel closing when it tries to write, so we need to force
 	// the VM to write something to the console to induce the error from the
-	// pipe being closed. We do this by sending a quick tap of the ENTER key.
-	// Value `28` is KEY_ENTER, 1 ms duration. Source:
-	// https://github.com/torvalds/linux/blob/master/include/uapi/linux/input-event-codes.h
-	tapErr := lv.DomainSendKey(dom, uint32(libvirt.KeycodeSetLinux), 1, []uint32{28}, 0)
-	if tapErr != nil {
-		logrus.Warnf("failed to send ENTER key to VM to unblock serial monitor: %v", tapErr)
-	}
+	// pipe being closed. We do this by sending a series of key presses to the
+	// VM to trigger the login prompt to reprint itself.
+	keypressCtx, keypressCancel := context.WithCancel(ctx)
+	defer keypressCancel()
+	var tapWg sync.WaitGroup
+	tapWg.Add(1)
+	go func() {
+		defer tapWg.Done()
+		for {
+			select {
+			case <-keypressCtx.Done():
+				return
+			default:
+				// Send a letter 'E' and then ENTER to the VM every second until
+				// the context is cancelled. Codes from:
+				// https://github.com/torvalds/linux/blob/master/include/uapi/linux/input-event-codes.h
+				tapErr := lv.DomainSendKey(dom, uint32(libvirt.KeycodeSetLinux), 10, []uint32{18}, 0)
+				if tapErr != nil {
+					logrus.Warnf("failed to send key to VM to unblock serial monitor: %v", tapErr)
+				}
+
+				tapErr = lv.DomainSendKey(dom, uint32(libvirt.KeycodeSetLinux), 10, []uint32{28}, 0)
+				if tapErr != nil {
+					logrus.Warnf("failed to send ENTER key to VM to unblock serial monitor: %v", tapErr)
+				}
+
+				select {
+				case <-keypressCtx.Done():
+					return
+				case <-time.After(time.Second):
+					// Continue looping
+				}
+			}
+		}
+	}()
 
 	// Wait for DomainOpenConsole goroutine to exit
 	wg.Wait()
+
+	// Cancel the keypress goroutine
+	keypressCancel()
+	tapWg.Wait()
 
 	return err
 }
