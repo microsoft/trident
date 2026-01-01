@@ -1,11 +1,13 @@
 package scenario
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"path"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/microsoft/storm"
 	"github.com/sirupsen/logrus"
@@ -14,6 +16,7 @@ import (
 	"tridenttools/pkg/hostconfig"
 	"tridenttools/pkg/netlaunch"
 	"tridenttools/pkg/netlisten"
+	"tridenttools/storm/e2e/testrings"
 	"tridenttools/storm/utils/ssh/sftp"
 	"tridenttools/storm/utils/sshutils"
 	"tridenttools/storm/utils/trident"
@@ -23,11 +26,41 @@ const (
 	hostConfigRemotePath = "/var/lib/trident/config.yaml"
 )
 
-func (s *TridentE2EScenario) AddAbUpdateTests(r storm.TestRegistrar, prefix string) {
+// addAbUpdateTests adds the A/B update test cases to the provided test registrar
+func (s *TridentE2EScenario) addAbUpdateTests(r storm.TestRegistrar, prefix string) {
 	r.RegisterTestCase(prefix+"-sync-hc", s.syncHostConfig)
 	r.RegisterTestCase(prefix+"-update-hc", s.updateHostConfig)
 	r.RegisterTestCase(prefix+"-upload-new-hc", s.uploadNewConfig)
-	r.RegisterTestCase(prefix+"-ab-update", s.abUpdateOs)
+	r.RegisterTestCase(prefix+"-ab-update", func(tc storm.TestCase) error {
+		return s.abUpdateOs(tc, false)
+	})
+}
+
+// addSplitABUpdateTests adds the split A/B update test cases to the provided test registrar
+func (s *TridentE2EScenario) addSplitABUpdateTests(r storm.TestRegistrar, prefix string) {
+	skipIfNotSplitTest := func(s *TridentE2EScenario, tc storm.TestCase, testFn func(storm.TestCase) error) error {
+		// The lowest ring for which we do split testing is 'prerelease'.
+		if s.args.TestRing < testrings.TestRingPre {
+			tc.Skip(fmt.Sprintf("Skipping split AB update test on ring '%s'", s.args.TestRing.ToString()))
+		}
+
+		return testFn(tc)
+	}
+
+	r.RegisterTestCase(prefix+"-sync-hc", func(tc storm.TestCase) error {
+		return skipIfNotSplitTest(s, tc, s.syncHostConfig)
+	})
+	r.RegisterTestCase(prefix+"-update-hc", func(tc storm.TestCase) error {
+		return skipIfNotSplitTest(s, tc, s.updateHostConfig)
+	})
+	r.RegisterTestCase(prefix+"-upload-new-hc", func(tc storm.TestCase) error {
+		return skipIfNotSplitTest(s, tc, s.uploadNewConfig)
+	})
+	r.RegisterTestCase(prefix+"-ab-update", func(tc storm.TestCase) error {
+		return skipIfNotSplitTest(s, tc, func(tc storm.TestCase) error {
+			return s.abUpdateOs(tc, true)
+		})
+	})
 }
 
 func (s *TridentE2EScenario) syncHostConfig(tc storm.TestCase) error {
@@ -170,7 +203,7 @@ func (s *TridentE2EScenario) uploadNewConfig(tc storm.TestCase) error {
 	return nil
 }
 
-func (s *TridentE2EScenario) abUpdateOs(tc storm.TestCase) error {
+func (s *TridentE2EScenario) abUpdateOs(tc storm.TestCase, split bool) error {
 	args := fmt.Sprintf(
 		"update -v trace %s",
 		path.Join(s.runtime.HostPath(), hostConfigRemotePath),
@@ -194,10 +227,88 @@ func (s *TridentE2EScenario) abUpdateOs(tc storm.TestCase) error {
 		},
 	})
 
+	monitorCtx, cancel := context.WithCancel(tc.Context())
+	defer cancel()
+
+	// Start VM serial monitor (only runs if hardware is VM)
+	monWaitChan, monErr := s.spawnVMSerialMonitor(monitorCtx, tc.ArtifactBroker().StreamArtifactData(tc.Name()+"/serial.log"))
+	if monErr != nil {
+		return fmt.Errorf("failed to start VM serial monitor: %w", monErr)
+	}
+
+	// On exit, give the monitor up to 1 minute to reach the login prompt and exit.
+	defer func() {
+		select {
+		case <-time.After(time.Minute):
+			logrus.Infof("Waited 1 minute for serial monitor to reach login prompt, cancelling monitor.")
+			cancel()
+		case <-monWaitChan:
+			// Monitor exited on its own
+		}
+	}()
+
+	if !split {
+		// regular case
+		logrus.Infof("Running Trident A/B update...")
+		err = runTridentUpdate(tc, s.runtime, s.sshClient, args)
+		if err != nil {
+			return fmt.Errorf("failed to run Trident A/B update: %w", err)
+		}
+	} else {
+		// split stage and finalize
+		logrus.Infof("Running split Trident A/B update (stage)...")
+		err = runTridentUpdate(tc, s.runtime, s.sshClient, args+" --allowed-operations stage")
+		if err != nil {
+			return fmt.Errorf("failed to run Trident A/B update: %w", err)
+		}
+
+		logrus.Infof("Running split Trident A/B update (finalize)...")
+		err = runTridentUpdate(tc, s.runtime, s.sshClient, args+" --allowed-operations finalize")
+		if err != nil {
+			return fmt.Errorf("failed to run Trident A/B update: %w", err)
+		}
+	}
+
+	// Wait for SSH client to disconnect, meaning the host is rebooting, before
+	// trying to reconnect again.
+	logrus.Info("Waiting for SSH client to disconnect after Trident A/B update...")
+	disconnectCtx, cancel := context.WithTimeout(tc.Context(), time.Minute*2)
+	defer cancel()
+	err = s.waitForSshToDisconnect(disconnectCtx)
+	if err != nil {
+		// At this point we expect the host to be rebooting, so failure to detect
+		// disconnection is a test failure.
+		tc.FailFromError(fmt.Errorf("failed to detect SSH disconnection after Trident A/B update: %w", err))
+	}
+
+	logrus.Info("SSH client disconnected, host is rebooting. Will attempt to reconnect...")
+
+	// Then, try to reconnect via SSH and check that Trident is running.
+	// Longer timeout since the host will be rebooting while we wait.
+	conn_ctx, cancel := context.WithTimeout(tc.Context(), time.Minute*5)
+	defer cancel()
+	err = s.populateSshClient(conn_ctx)
+	if err != nil {
+		tc.FailFromError(err)
+		return nil
+	}
+
+	logrus.Info("Reacquired SSH connection to host after reboot.")
+
+	// Give it some extra time to ensure Trident is up after reboot.
+	err = trident.CheckTridentService(s.sshClient, s.runtime, time.Minute*2, true)
+	if err != nil {
+		tc.FailFromError(err)
+	}
+
+	return nil
+}
+
+func runTridentUpdate(tc storm.TestCase, runtime trident.RuntimeType, client *ssh.Client, args string) error {
 	for i := 1; ; i++ {
 		logrus.Infof("Invoking Trident attempt #%d with args: %s", i, args)
 
-		out, err := trident.InvokeTrident(s.runtime, s.sshClient, nil, args)
+		out, err := trident.InvokeTrident(runtime, client, nil, args)
 		if err != nil {
 			if err, ok := err.(*ssh.ExitMissingError); ok && strings.Contains(out.Stderr, "Rebooting system") {
 				// The connection closed without an exit code, and the output contains "Rebooting system".
@@ -225,10 +336,6 @@ func (s *TridentE2EScenario) abUpdateOs(tc storm.TestCase) error {
 
 		tc.Fail(fmt.Sprintf("Trident update failed with status %d", out.Status))
 	}
-
-	// On success close the client because the host will reboot into the new OS.
-	s.sshClient.Close()
-	s.sshClient = nil
 
 	return nil
 }

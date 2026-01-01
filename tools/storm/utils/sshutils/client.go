@@ -90,6 +90,7 @@ func CreateSshClientWithRedial(ctx context.Context, backoff time.Duration, confi
 		short_ctx, cancel := context.WithTimeout(ctx, time.Duration(5)*time.Second)
 		defer cancel()
 
+		logrus.Debug()
 		client, err := CreateSshClient(short_ctx, config)
 		if err != nil {
 			logrus.Warnf("Failed to create SSH client to '%s' on attempt %d: %s", config.FullHost(), attempt, err)
@@ -173,4 +174,43 @@ func CommandOutput(client *ssh.Client, command string) (string, error) {
 	}
 
 	return output.Stdout, nil
+}
+
+// Waits for the SSH client to disconnect. Returns an error if the client
+// does not disconnect before the context is cancelled.
+func WaitForDisconnect(ctx context.Context, client *ssh.Client) error {
+	if client == nil {
+		return fmt.Errorf("SSH client is nil")
+	}
+
+	// Expect at least this many consecutive errors before considering the
+	// connection to be closed.
+	expectedErrors := 3
+	errors := 0
+	for {
+		// Try to create a new session to check if the connection is still alive.
+		session, err := client.NewSession()
+		if err != nil {
+			errors += 1
+			if errors >= expectedErrors {
+				logrus.Infof("SSH client appears to be disconnected after %d errors: %v", errors, err)
+				return nil
+			}
+
+			logrus.Warnf("Failed to create SSH session, assuming connection is still alive (%d/3): %v", errors, err)
+		} else {
+			// Session was created successfully, so the connection is still alive.
+			// Close the session and reset error count.
+			session.Close()
+			errors = 0
+		}
+
+		// Wait for a short period before checking again.
+		select {
+		case <-time.After(time.Second):
+			// Continue checking
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 }

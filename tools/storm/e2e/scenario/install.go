@@ -8,6 +8,7 @@ import (
 	"time"
 	"tridenttools/pkg/netlaunch"
 	"tridenttools/pkg/phonehome"
+	"tridenttools/storm/utils/trident"
 
 	"github.com/microsoft/storm"
 	log "github.com/sirupsen/logrus"
@@ -130,4 +131,22 @@ func prepareHostConfig(hostConfigYaml []byte) (string, error) {
 	}
 
 	return tempHostConfigFile.Name(), nil
+}
+
+func (s *TridentE2EScenario) checkTridentViaSshAfterInstall(tc storm.TestCase) error {
+	// Short timeout since we're expecting the host to already be up.
+	conn_ctx, cancel := context.WithTimeout(tc.Context(), time.Minute)
+	defer cancel()
+	err := s.populateSshClient(conn_ctx)
+	if err != nil {
+		tc.FailFromError(err)
+		return nil
+	}
+
+	err = trident.CheckTridentService(s.sshClient, s.runtime, time.Minute*2, true)
+	if err != nil {
+		tc.FailFromError(err)
+	}
+
+	return nil
 }

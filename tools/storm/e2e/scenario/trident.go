@@ -114,6 +114,20 @@ func (s *TridentE2EScenario) Args() any {
 	return &s.args
 }
 
+func (s *TridentE2EScenario) Setup(storm.SetupCleanupContext) error {
+	if s.args.TestRing == testrings.TestRingEmpty {
+		// Default to lowest ring
+		lowestRing, err := s.testRings.Lowest()
+		if err != nil {
+			return fmt.Errorf("failed to determine lowest test ring: %w", err)
+		}
+
+		s.args.TestRing = lowestRing
+	}
+
+	return nil
+}
+
 func (s *TridentE2EScenario) Cleanup(storm.SetupCleanupContext) error {
 	if s.sshClient != nil {
 		s.sshClient.Close()
@@ -158,10 +172,11 @@ func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 	r.RegisterTestCase("prepare-hc", s.prepareHostConfig)
 	r.RegisterTestCase("setup-test-host", s.setupTestHost)
 	r.RegisterTestCase("install-os", s.installOs)
-	r.RegisterTestCase("check-trident-ssh", s.checkTridentViaSsh)
+	r.RegisterTestCase("check-trident-ssh", s.checkTridentViaSshAfterInstall)
 
 	if s.originalConfig.HasABUpdate() {
-		s.AddAbUpdateTests(r, "ab-update-1")
+		s.addAbUpdateTests(r, "ab-update-1")
+		s.addSplitABUpdateTests(r, "ab-update-split")
 	}
 	return nil
 }

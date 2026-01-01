@@ -108,7 +108,7 @@ func waitForVmSerialLogLoginLibvirt(ctx context.Context, lv *libvirt.Libvirt, do
 			// Try to open the console. This is a blocking call that only
 			// returns when the console is closed or an error occurs. It writes
 			// to the provided writer in the background.
-			err := lv.DomainOpenConsole(dom, nil, wN, 0)
+			err := lv.DomainOpenConsole(dom, nil, wN, uint32(libvirt.DomainConsoleForce))
 			if err == nil && wN.Active() {
 				// DomainOpenConsole returned without error and data was
 				// written, this is an expected outcome when the console closed
