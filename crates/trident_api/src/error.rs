@@ -660,6 +660,9 @@ pub enum ServicingError {
     #[error("Failed to write an additional file '{file_name}'")]
     WriteAdditionalFile { file_name: String },
 
+    #[error("Failed to write drop-in for systemd-cryptsetup at path '{path}'")]
+    WriteDropInForSystemdCryptsetup { path: String },
+
     #[error("Failed to write Netplan config")]
     WriteNetplanConfig,
 }
@@ -985,7 +988,7 @@ impl From<&TridentError> for HarpoonTridentError {
         HarpoonTridentError {
             kind: HarpoonTridentErrorKind::from(e.kind()) as i32,
             subkind: e.subkind().unwrap_or("unknown").to_string(),
-            message: format!("{:?}", e),
+            message: format!("{e:?}"),
             location: Some(FileLocation {
                 path: e.0.location.file().to_string(),
                 line: e.0.location.line(),
