@@ -19,6 +19,7 @@ duct = { workspace = true }
 enumflags2 = { workspace = true }
 env_logger = { workspace = true }
 glob = { workspace = true }
+humantime = { workspace = true }
 lazy_static = { workspace = true }
 libc = { workspace = true }
 log = { workspace = true }
