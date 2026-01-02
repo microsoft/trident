@@ -988,7 +988,7 @@ impl From<&TridentError> for HarpoonTridentError {
         HarpoonTridentError {
             kind: HarpoonTridentErrorKind::from(e.kind()) as i32,
             subkind: e.subkind().unwrap_or("unknown").to_string(),
-            message: format!("{e:?}"),
+            message: format!("{:?}", e),
             location: Some(FileLocation {
                 path: e.0.location.file().to_string(),
                 line: e.0.location.line(),
