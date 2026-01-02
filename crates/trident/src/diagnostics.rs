@@ -386,7 +386,7 @@ fn collect_historical_logs(report: &mut DiagnosticsReport) -> Option<Vec<FileToC
             &mut report.collection_failures,
             "historical logs",
             &anyhow!(
-                "unexpected datastore path when collecting historical logs {})",
+                "unexpected datastore path when collecting historical logs {}",
                 host_status.spec.trident.datastore_path.display()
             ),
         );
