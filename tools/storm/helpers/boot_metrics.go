@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	stormenv "tridenttools/storm/utils/env"
 	stormretry "tridenttools/storm/utils/retry"
 	stormsshclient "tridenttools/storm/utils/ssh/client"
 	stormsshconfig "tridenttools/storm/utils/ssh/config"
+	"tridenttools/storm/utils/trident"
 
 	"github.com/microsoft/storm"
 	"github.com/sirupsen/logrus"
@@ -22,7 +22,7 @@ import (
 type BootMetricsHelper struct {
 	args struct {
 		stormsshconfig.SshCliSettings `embed:""`
-		stormenv.EnvCliSettings       `embed:""`
+		trident.RuntimeCliSettings    `embed:""`
 		MetricsFile                   string `required:"" help:"Metrics file." type:"path"`
 		MetricsOperation              string `required:"" help:"Metrics operation."`
 	}
@@ -59,7 +59,7 @@ func (h *BootMetricsHelper) RegisterTestCases(r storm.TestRegistrar) error {
 }
 
 func (h *BootMetricsHelper) collectBootMetrics(tc storm.TestCase) error {
-	if h.args.Env == stormenv.TridentEnvironmentNone {
+	if h.args.TridentRuntimeType == trident.RuntimeTypeNone {
 		tc.Skip("No Trident environment specified")
 	}
 	logrus.Infof("Waiting for the host to reboot and come back online...")

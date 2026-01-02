@@ -75,8 +75,12 @@ const (
 	PhoneHomeResultError PhoneHomeResultState = "error"
 )
 
-func SetupPhoneHomeServer(result chan<- PhoneHomeResult, remoteAddressFile string) {
-	http.HandleFunc("/phonehome", func(w http.ResponseWriter, r *http.Request) {
+func SetupPhoneHomeServer(mux *http.ServeMux, result chan<- PhoneHomeResult, remoteAddressFile string) {
+	if mux == nil {
+		mux = http.DefaultServeMux
+	}
+
+	mux.HandleFunc("/phonehome", func(w http.ResponseWriter, r *http.Request) {
 		// log.WithField("remote-address", r.RemoteAddr).Info("Phone Home")
 		w.WriteHeader(201)
 		w.Write([]byte("OK"))
