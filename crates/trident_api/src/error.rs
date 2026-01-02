@@ -663,6 +663,9 @@ pub enum ServicingError {
     #[error("Failed to write an additional file '{file_name}'")]
     WriteAdditionalFile { file_name: String },
 
+    #[error("Failed to write drop-in for systemd-cryptsetup at path '{path}'")]
+    WriteDropInForSystemdCryptsetup { path: String },
+
     #[error("Failed to write Netplan config")]
     WriteNetplanConfig,
 }

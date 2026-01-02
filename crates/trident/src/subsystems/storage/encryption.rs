@@ -1,5 +1,6 @@
 use std::{
     fs,
+    io::Write,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
 };
@@ -213,6 +214,51 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                     destination: pcrlock_json_copy.display().to_string(),
                 },
             )?;
+        }
+
+        // TODO: REMOVE BEFORE MERGING
+        // Create drop in systemd files under /etc/systemd to check if that will ensure that /var/lib/trident
+        // is mounted before systemd-cryptsetup@.services are run
+        if matches!(ctx.servicing_type, ServicingType::CleanInstall) {
+            const DROPIN_CONTENTS: &str = "[Unit]\nRequiresMountsFor=/var/lib/trident\n";
+
+            // Helper: create one drop-in file for a given unit instance name
+            let create_dropin = |unit: &str| -> Result<(), TridentError> {
+                // unit is e.g. "systemd-cryptsetup@web\\x2da.service"
+                let dropin_dir = mount_path
+                    .join("etc/systemd/system")
+                    .join(format!("{unit}.d"));
+
+                fs::create_dir_all(&dropin_dir).structured(
+                    ServicingError::WriteDropInForSystemdCryptsetup {
+                        path: dropin_dir.display().to_string(),
+                    },
+                )?;
+
+                let dropin_path = dropin_dir.join("10-trident-requires-trident.mount.conf");
+                let mut f = fs::File::create(&dropin_path).structured(
+                    ServicingError::WriteDropInForSystemdCryptsetup {
+                        path: dropin_path.display().to_string(),
+                    },
+                )?;
+
+                f.write_all(DROPIN_CONTENTS.as_bytes()).structured(
+                    ServicingError::WriteDropInForSystemdCryptsetup {
+                        path: dropin_path.display().to_string(),
+                    },
+                )?;
+
+                debug!(
+                    "Wrote systemd drop-in '{}' with RequiresMountsFor=/var/lib/trident",
+                    dropin_path.display()
+                );
+                Ok(())
+            };
+
+            // web-a instance: systemd-cryptsetup@web\x2da.service
+            create_dropin("systemd-cryptsetup@web\\x2da.service")?;
+            // web-b instance: systemd-cryptsetup@web\x2db.service
+            create_dropin("systemd-cryptsetup@web\\x2db.service")?;
         }
     }
 
