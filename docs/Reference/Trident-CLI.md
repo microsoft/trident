@@ -404,7 +404,7 @@ Argument summary:
 Options:
   -o, --output <OUTPUT>
           Path where the support bundle will be saved
-      --full
+      --journal
           Include full system journal and dmesg output
       --selinux
           Include SELinux audit log
