@@ -306,5 +306,5 @@ fn trident_error_to_status(err: TridentError) -> Status {
         ErrorKind::UnsupportedConfiguration(_) => Code::FailedPrecondition,
     };
 
-    Status::new(code, err.kind().to_string())
+    Status::new(code, format!("{err:?}"))
 }
