@@ -69,13 +69,20 @@ impl ActivityTracker {
         self.notify_event(EventType::Inactivity);
     }
 
-    pub(crate) fn on_servicing_started(&self) {
+    /// Creates a guard that signals the start and end of a servicing operation.
+    /// When the guard is created, it marks servicing as active, and when
+    /// dropped, it marks servicing as ended.
+    pub(crate) fn servicing_guard(&self) -> ServicingActivityGuard {
+        ServicingActivityGuard::new(self.clone())
+    }
+
+    fn on_servicing_started(&self) {
         trace!("Servicing started.");
         self.active_servicing.store(true, Ordering::SeqCst);
         self.notify_event(EventType::NewActivity);
     }
 
-    pub(crate) fn on_servicing_ended(&self) {
+    fn on_servicing_ended(&self) {
         trace!("Servicing ended.");
         self.active_servicing.store(false, Ordering::SeqCst);
         self.notify_event(EventType::Inactivity);
@@ -155,6 +162,25 @@ impl ActivityTracker {
                 }
             }
         });
+    }
+}
+
+/// Guard that signals the start and end of a servicing operation
+/// to the associated ActivityTracker.
+pub(crate) struct ServicingActivityGuard {
+    tracker: ActivityTracker,
+}
+
+impl ServicingActivityGuard {
+    fn new(tracker: ActivityTracker) -> Self {
+        tracker.on_servicing_started();
+        Self { tracker }
+    }
+}
+
+impl Drop for ServicingActivityGuard {
+    fn drop(&mut self) {
+        self.tracker.on_servicing_ended();
     }
 }
 
@@ -275,6 +301,28 @@ mod tests {
         for _ in 0..2 {
             tracker.on_connection_end();
         }
+
+        // Now wait for the shutdown signal after the timeout
+        time::timeout(Duration::from_secs(1), shutdown_rx.recv())
+            .await
+            .expect("Timeout waiting for shutdown signal");
+    }
+
+    #[tokio::test]
+    async fn test_activity_tracker_servicing_guard() {
+        let (tracker, mut shutdown_rx, _token) = ActivityTracker::new(Duration::from_millis(100));
+
+        {
+            let _guard = tracker.servicing_guard();
+            // Ensure no shutdown signal is received within the timeout duration
+            time::timeout(Duration::from_millis(200), shutdown_rx.recv())
+                .await
+                .expect_err("Unexpected shutdown signal received");
+
+            assert!(tracker.is_servicing_active());
+        } // Guard is dropped here
+
+        assert!(!tracker.is_servicing_active());
 
         // Now wait for the shutdown signal after the timeout
         time::timeout(Duration::from_secs(1), shutdown_rx.recv())
