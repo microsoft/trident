@@ -172,7 +172,7 @@ pub(crate) struct ServicingActivityGuard {
 }
 
 impl ServicingActivityGuard {
-    pub(crate) fn new(tracker: ActivityTracker) -> Self {
+    fn new(tracker: ActivityTracker) -> Self {
         tracker.on_servicing_started();
         Self { tracker }
     }
