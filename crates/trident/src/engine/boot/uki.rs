@@ -151,6 +151,41 @@ pub fn update_uki_boot_order(
     Ok(())
 }
 
+pub fn find_previous_uki(esp_dir_path: &Path) -> Result<PathBuf, TridentError> {
+    let esp_uki_directory = esp_dir_path.join(UKI_DIRECTORY);
+    let existing_ukis =
+        enumerate_existing_ukis(&esp_uki_directory).structured(ServicingError::EnumerateUkis)?;
+
+    let mut uki_entries: Vec<_> = existing_ukis
+        .into_iter()
+        .filter(|(_, suffix, _)| suffix.ends_with(".efi"))
+        .collect();
+    uki_entries.sort_by_key(|(index, _, _)| *index);
+
+    if uki_entries.len() < 2 {
+        return Err(TridentError::new(ServicingError::ManualRollback {
+            message: "Failed to find more than 1 UKI entries",
+        }));
+    }
+
+    let (_, _, previous_uki_entry_path) = &uki_entries[uki_entries.len() - 2];
+    Ok(previous_uki_entry_path.clone())
+}
+
+pub fn use_previous_uki_as_default(esp_dir_path: &Path) -> Result<(), TridentError> {
+    let previous_uki_entry_path = find_previous_uki(esp_dir_path)?;
+    let entry_name = previous_uki_entry_path
+        .file_name()
+        .structured(InternalError::Internal("Failed to get file stem"))?
+        .to_str()
+        .structured(InternalError::Internal("Boot entry name isn't valid UTF-8"))?;
+
+    debug!("Setting default boot entry to previous UKI '{entry_name}'");
+    efivar::set_default(entry_name)?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -284,5 +319,30 @@ mod tests {
 
         let entries = enumerate_existing_ukis(dir.path()).unwrap();
         assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn test_find_previous_uki() {
+        let dir = tempdir().unwrap();
+        let efi_dir = dir.path().join("EFI/Linux");
+        fs::create_dir_all(&efi_dir).unwrap();
+
+        // No UKI files in directory, should error
+        assert!(find_previous_uki(dir.path()).is_err());
+
+        let uki_path1 = efi_dir.join("vmlinuz-100-azla1.efi");
+        File::create(&uki_path1).unwrap();
+        // 1 UKI file in directory, should error
+        assert!(find_previous_uki(dir.path()).is_err());
+
+        let uki_path2 = efi_dir.join("vmlinuz-101-azlb2.efi");
+        File::create(&uki_path2).unwrap();
+        // 2 UKI file in directory, should return uki_path1
+        assert_eq!(find_previous_uki(dir.path()).unwrap(), uki_path1);
+
+        let uki_path3 = efi_dir.join("vmlinuz-102-azla2.efi");
+        File::create(&uki_path3).unwrap();
+        // 3 UKI file in directory, should return uki_path2
+        assert_eq!(find_previous_uki(dir.path()).unwrap(), uki_path2);
     }
 }
