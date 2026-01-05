@@ -18,7 +18,7 @@ use crate::{
     container,
     datastore::DataStore,
     engine::{self, bootentries, runtime_update, EngineContext, SUBSYSTEMS},
-    manual_rollback_utils::{self, ManualRollbackContext, RollbackDetail},
+    manual_rollback_utils::ManualRollbackContext,
     subsystems::esp,
     ExitKind,
 };
@@ -82,17 +82,8 @@ pub fn check_rollback(
     // Create ManualRollback context from HostStatus entries.
     let rollback_context = ManualRollbackContext::new(&host_statuses)
         .message("Failed to create manual rollback context")?;
-    let available_rollbacks =
-        rollback_context
-            .get_rollback_chain()
-            .structured(ServicingError::ManualRollback {
-                message: "Failed to get available rollbacks",
-            })?;
-    let (_rollback_index, check_string) = manual_rollback_utils::get_requested_rollback_info(
-        &available_rollbacks,
-        invoke_if_next_is_runtime,
-        invoke_available_ab,
-    )?;
+    let check_string = rollback_context
+        .check_requested_rollback(invoke_if_next_is_runtime, invoke_available_ab)?;
     println!("{check_string}");
     Ok(())
 }
@@ -114,21 +105,11 @@ pub fn execute_rollback(
     let rollback_context = ManualRollbackContext::new(&host_statuses)
         .message("Failed to create manual rollback context")?;
 
-    let available_rollbacks =
-        rollback_context
-            .get_rollback_chain()
-            .structured(ServicingError::ManualRollback {
-                message: "Failed to get available rollbacks",
-            })?;
+    let requested_rollback =
+        rollback_context.get_requested_rollback(invoke_if_next_is_runtime, invoke_available_ab)?;
 
-    let (rollback_index, _) = manual_rollback_utils::get_requested_rollback_info(
-        &available_rollbacks,
-        invoke_if_next_is_runtime,
-        invoke_available_ab,
-    )?;
-
-    let rollback_index = match rollback_index {
-        Some(index) => index,
+    let requested_rollback = match requested_rollback {
+        Some(rollback_item) => rollback_item,
         None => {
             info!("No available rollbacks to perform");
             return Ok(ExitKind::Done);
@@ -138,7 +119,7 @@ pub fn execute_rollback(
     let mut skip_finalize_state_check = false;
 
     let engine_context = EngineContext {
-        spec: available_rollbacks[rollback_index].host_status.spec.clone(),
+        spec: requested_rollback.host_status.spec.clone(),
         spec_old: datastore.host_status().spec.clone(),
         servicing_type: ServicingType::ManualRollback,
         partition_paths: datastore.host_status().partition_paths.clone(),
@@ -171,8 +152,7 @@ pub fn execute_rollback(
         stage_rollback(
             datastore,
             &engine_context,
-            &available_rollbacks,
-            rollback_index,
+            requested_rollback.requires_reboot,
         )
         .message("Failed to stage manual rollback")?;
 
@@ -205,7 +185,7 @@ pub fn execute_rollback(
         let finalize_result = finalize_rollback(
             datastore,
             &engine_context,
-            available_rollbacks[rollback_index].requires_reboot,
+            requested_rollback.requires_reboot,
         )
         .message("Failed to stage manual rollback");
         // Persist the Trident background log and metrics file. Otherwise, the
@@ -225,10 +205,9 @@ pub fn execute_rollback(
 fn stage_rollback(
     datastore: &mut DataStore,
     engine_context: &EngineContext,
-    available_rollbacks: &[RollbackDetail],
-    rollback_index: usize,
+    rollback_requires_reboot: bool,
 ) -> Result<(), TridentError> {
-    if available_rollbacks[rollback_index].requires_reboot {
+    if rollback_requires_reboot {
         info!("Staging rollback that requires reboot");
 
         // If we have encrypted volumes and this is a UKI image, then we need to re-generate pcrlock
@@ -282,9 +261,9 @@ fn stage_rollback(
 fn finalize_rollback(
     datastore: &mut DataStore,
     engine_context: &EngineContext,
-    ab_rollback: bool,
+    rollback_requires_reboot: bool,
 ) -> Result<ExitKind, TridentError> {
-    if !ab_rollback {
+    if !rollback_requires_reboot {
         trace!("Manual rollback does not require reboot");
 
         let mut subsystems = SUBSYSTEMS.lock().unwrap();
