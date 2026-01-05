@@ -17,7 +17,7 @@ use crate::{
     cli::GetKind,
     container,
     datastore::DataStore,
-    engine::{self, bootentries, runtime_update, EngineContext, SUBSYSTEMS},
+    engine::{self, boot::uki, bootentries, runtime_update, EngineContext, SUBSYSTEMS},
     manual_rollback_utils::ManualRollbackContext,
     subsystems::esp,
     ExitKind,
@@ -290,9 +290,9 @@ fn finalize_rollback(
     };
     let esp_path = Path::join(&root_path, ESP_RELATIVE_MOUNT_POINT_PATH);
 
-    // In UKI, use the LoaderEntries variable to get the previous boot entry and set it as current
+    // In UKI, find the previous UKI and set it as default boot entry
     if engine_context.is_uki()? {
-        efivar::set_default_to_previous()
+        uki::use_previous_uki_as_default(&esp_path)
             .message("Failed to set default boot entry to previous")?;
     }
     // Reconfigure UEFI boot-order to point at inactive volume
