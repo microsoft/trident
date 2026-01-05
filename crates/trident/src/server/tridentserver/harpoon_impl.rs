@@ -1,5 +1,6 @@
 //! Implements the gRPC TridentService for the TridentHarpoonServer struct.
 
+use log::info;
 use tonic::{async_trait, Request, Response, Status};
 
 use harpoon::{
@@ -8,11 +9,15 @@ use harpoon::{
     GetLastErrorRequest, GetLastErrorResponse, GetRequiredServicingTypeRequest,
     GetRequiredServicingTypeResponse, GetServicingStateRequest, GetServicingStateResponse,
     RebuildRaidRequest, ServicingRequest, StageRequest, StreamImageRequest,
-    ValidateHostConfigurationRequest, ValidateHostConfigurationResponse,
+    TridentError as HarpoonTridentError, ValidateHostConfigurationRequest,
+    ValidateHostConfigurationResponse,
 };
 use trident_api::error::{InternalError, TridentError};
 
-use crate::server::{tridentserver::ServicingResponseStream, TridentHarpoonServer};
+use crate::{
+    server::{tridentserver::ServicingResponseStream, TridentHarpoonServer},
+    validation,
+};
 
 /// Implements the gRPC TridentService for the TridentHarpoonServer struct.
 #[async_trait]
@@ -169,14 +174,19 @@ impl TridentService for TridentHarpoonServer {
 
     async fn validate_host_configuration(
         &self,
-        _request: Request<ValidateHostConfigurationRequest>,
+        request: Request<ValidateHostConfigurationRequest>,
     ) -> Result<Response<ValidateHostConfigurationResponse>, Status> {
-        self.reading_request("validate_host_configuration", || {
-            Err(TridentError::new(InternalError::Internal(
-                "Not implemented: validate_host_configuration",
-            )))
-        })
-        .await
+        // Validate is different because it only acts upon the input and does
+        // not read or modify state in any way, so we are free to run this
+        // whenever without doing any lock checks.
+        info!("Received Host Configuration validation request");
+        let error = validation::validate_host_config_string(&request.into_inner().config)
+            .err()
+            .map(HarpoonTridentError::from);
+        Ok(Response::new(ValidateHostConfigurationResponse {
+            ok: error.is_none(),
+            error,
+        }))
     }
 
     async fn get_required_servicing_type(

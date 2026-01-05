@@ -244,6 +244,9 @@ pub enum InvalidInputError {
     #[error("Old style configuration not supported, 'hostConfiguration:' tag must be removed")]
     OldStyleConfiguration,
 
+    #[error("Failed to parse Host Configuration YAML")]
+    ParseHostConfiguration,
+
     #[error("Failed to parse Host Configuration file from '{path}'")]
     ParseHostConfigurationFile { path: String },
 
@@ -969,12 +972,19 @@ fn stringify_iterable(iterable: impl Iterator<Item = impl AsRef<str>>) -> String
         .join(", ")
 }
 
+impl From<TridentError> for HarpoonTridentError {
+    fn from(e: TridentError) -> Self {
+        HarpoonTridentError::from(&e)
+    }
+}
+
 impl From<&TridentError> for HarpoonTridentError {
     fn from(e: &TridentError) -> Self {
         HarpoonTridentError {
             kind: HarpoonTridentErrorKind::from(e.kind()) as i32,
             subkind: e.subkind().unwrap_or("unknown").to_string(),
-            message: format!("{:?}", e),
+            message: e.0.kind.to_string(),
+            full_body: format!("{:?}", e),
             location: Some(FileLocation {
                 path: e.0.location.file().to_string(),
                 line: e.0.location.line(),

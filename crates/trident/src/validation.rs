@@ -7,14 +7,18 @@ use trident_api::{
     error::{InternalError, InvalidInputError, ReportError, TridentError, TridentResultExt},
 };
 
+/// Parse the Host Configuration from a string. Accepts an optional path for
+/// better error reporting when reading from a file.
 pub(crate) fn parse_host_config(
     contents: &str,
-    path: impl AsRef<Path>,
+    path: Option<impl AsRef<Path>>,
 ) -> Result<HostConfiguration, TridentError> {
-    let parsed =
-        serde_yaml::from_str(contents).structured(InvalidInputError::ParseHostConfigurationFile {
+    let parsed = serde_yaml::from_str(contents).structured(match path {
+        Some(path) => InvalidInputError::ParseHostConfigurationFile {
             path: path.as_ref().display().to_string(),
-        });
+        },
+        None => InvalidInputError::ParseHostConfiguration,
+    });
 
     if parsed.is_err() {
         match serde_yaml::from_str::<serde_yaml::Value>(contents) {
@@ -34,6 +38,7 @@ pub(crate) fn parse_host_config(
     parsed
 }
 
+/// Validate a Host Configuration file at the given path.
 pub fn validate_host_config_file(path: impl AsRef<Path>) -> Result<(), TridentError> {
     info!(
         "Validating Host Configuration file: {}",
@@ -45,12 +50,20 @@ pub fn validate_host_config_file(path: impl AsRef<Path>) -> Result<(), TridentEr
             path: path.as_ref().display().to_string(),
         })?;
 
-    let parsed = parse_host_config(&contents, path.as_ref())
-        .message("Failed to parse Host Configuration")?;
-
-    validate_host_config(parsed)
+    validate_host_config(
+        parse_host_config(&contents, Some(path.as_ref()))
+            .message("Failed to parse Host Configuration")?,
+    )
 }
 
+/// Validate a Host Configuration from the given string contents.
+pub fn validate_host_config_string(contents: &str) -> Result<(), TridentError> {
+    validate_host_config(
+        parse_host_config(contents, None::<&Path>).message("Failed to parse Host Configuration")?,
+    )
+}
+
+/// Validate a Host Configuration.
 fn validate_host_config(hc: HostConfiguration) -> Result<(), TridentError> {
     hc.validate()
         .map_err(|e| TridentError::new(InvalidInputError::from(e)))

@@ -215,7 +215,7 @@ impl Trident {
                     },
                 )?;
 
-                validation::parse_host_config(&contents, path)?
+                validation::parse_host_config(&contents, Some(path))?
             }
 
             // Use the embedded Host Configuration.
