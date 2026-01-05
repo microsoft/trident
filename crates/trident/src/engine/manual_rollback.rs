@@ -3,12 +3,14 @@ use std::{
     time::Instant,
 };
 
-use log::{debug, info, trace};
+use log::{debug, info, trace, warn};
 
 use osutils::efivar;
 use trident_api::{
     config::Operations,
-    constants::{ESP_RELATIVE_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
+    constants::{
+        internal_params::NO_TRANSITION, ESP_RELATIVE_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH,
+    },
     error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{ServicingState, ServicingType},
 };
@@ -310,5 +312,18 @@ fn finalize_rollback(
         host_status.servicing_state = ServicingState::ManualRollbackFinalized;
     })?;
 
-    Ok(ExitKind::NeedsReboot)
+    if !datastore
+        .host_status()
+        .spec
+        .internal_params
+        .get_flag(NO_TRANSITION)
+    {
+        Ok(ExitKind::NeedsReboot)
+    } else {
+        warn!(
+            "Skipping reboot as requested by internal parameter '{}'",
+            NO_TRANSITION
+        );
+        Ok(ExitKind::Done)
+    }
 }
