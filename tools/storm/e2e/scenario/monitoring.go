@@ -71,7 +71,10 @@ func (s *TridentE2EScenario) spawnVMSerialMonitor(ctx context.Context, output io
 			logrus.Error(errStr)
 
 			// Best effort write to output
-			output.Write([]byte(fmt.Sprintf("ERROR: %s", errStr)))
+			_, writeErr := output.Write([]byte(fmt.Sprintf("ERROR: %s", errStr)))
+			if writeErr != nil {
+				logrus.Errorf("failed to write error to VM serial log output: %v", writeErr)
+			}
 		} else {
 			logrus.Infof("VM serial log monitor ended successfully")
 		}
@@ -193,7 +196,11 @@ func readerLoop(ctx context.Context, in io.Reader, errCh <-chan error, out io.Wr
 			// Continue reading
 		}
 
-		// Check if the current line contains the login prompt, and return if it does
+		// Check if the current line contains the login prompt, and return if it
+		// does. The log-in prompt is expected to contain the string "login:"
+		// but we need to block the false positive caused by the installer OS
+		// login prompt. The installer OS hostname includes the string "mos" so
+		// we can use that to filter out installer login prompts.
 		if strings.Contains(lineBuffBuilder.String(), "login:") &&
 			!strings.Contains(lineBuffBuilder.String(), "mos") {
 			logrus.Infof("Login prompt found in VM serial log")

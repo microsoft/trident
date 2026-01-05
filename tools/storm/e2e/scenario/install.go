@@ -54,7 +54,7 @@ func (s *TridentE2EScenario) installOs(tc storm.TestCase) error {
 		MaxPhonehomeFailures: s.configParams.MaxExpectedFailures,
 	}
 
-	timeoutCtx, cancel := context.WithTimeout(tc.Context(), time.Duration(10)*time.Minute)
+	timeoutCtx, cancel := context.WithTimeout(tc.Context(), time.Duration(s.args.VmWaitForLoginTimeout)*time.Second)
 	defer cancel()
 
 	// Start VM serial monitor (only runs if hardware is VM)
