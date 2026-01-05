@@ -155,10 +155,6 @@ func waitForVmSerialLogLoginLibvirt(ctx context.Context, lv *libvirt.Libvirt, do
 	// Wait for DomainOpenConsole goroutine to exit
 	wg.Wait()
 
-	// Cancel the keypress goroutine
-	// keypressCancel()
-	// tapWg.Wait()
-
 	return err
 }
 
