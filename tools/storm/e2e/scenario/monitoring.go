@@ -40,7 +40,6 @@ func (s *TridentE2EScenario) spawnVMSerialMonitor(ctx context.Context, output io
 	// Channel to signal when the monitor is done. Buffered with size 1 to avoid
 	// deadlocks when we exit early and send a message to it immediately.
 	doneChannel := make(chan bool, 1)
-	var wg sync.WaitGroup
 
 	// Only spawn the VM serial logger if the hardware type is VM. Otherwise, do
 	// nothing.
@@ -58,20 +57,14 @@ func (s *TridentE2EScenario) spawnVMSerialMonitor(ctx context.Context, output io
 		return doneChannel, fmt.Errorf("vm host info not set")
 	}
 
-	// On exit, start a goroutine to wait for the waitgroup to finish and then
-	// send a value on the done channel and close it.
-	defer func() {
-		go func() {
-			wg.Wait()
+	go func() {
+		defer func() {
+			// On exit signal that we're done and close the channel.
 			doneChannel <- true
 			close(doneChannel)
 		}()
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
 		defer output.Close()
+
 		err := waitForVmSerialLogLoginLibvirt(ctx, vmInfo.Lv(), vmInfo.LvDomain(), output)
 		if err != nil {
 			errStr := fmt.Sprintf("VM serial log monitor ended with error: %v", err)
