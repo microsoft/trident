@@ -368,10 +368,10 @@ fn get_uki_paths(
     if staging_rollback {
         debug!("Constructing UKI binary path for rollback OS during rollback staging");
         // Fetch previous boot entry
-        let uki_filename =
-            efivar::read_previous_var().unstructured("Failed to read previous boot entry")?;
-        let uki_rollback = esp_uki_directory.join(uki_filename);
-        uki_binaries.push(Path::new(&uki_rollback).to_path_buf());
+        let uki_rollback = uki::find_previous_uki(&esp_uki_directory).unstructured(
+            "Failed to find previous UKI boot entry during staging of manual rollback",
+        )?;
+        uki_binaries.push(uki_rollback);
     }
 
     debug!("Paths of UKI binaries required for pcrlock encryption:");
