@@ -30,7 +30,7 @@ mod engine;
 mod health;
 mod io_utils;
 mod logging;
-mod manual_rollback_utils;
+pub mod manual_rollback_utils;
 mod monitor_metrics;
 pub mod offline_init;
 mod orchestrate;
