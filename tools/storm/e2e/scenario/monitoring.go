@@ -135,7 +135,7 @@ func waitForVmSerialLogLoginLibvirt(ctx context.Context, lv *libvirt.Libvirt, do
 	}()
 
 	// Call inner loop
-	err := readerLoop(ctx, pr, errCh, out, 30)
+	loopErr := readerLoop(ctx, pr, errCh, out, 30)
 	// Regardless of whether readerLoop returned an error, cancel the console
 	// context and close the pipe to stop the DomainOpenConsole goroutine.
 	consoleCancel()
@@ -147,7 +147,7 @@ func waitForVmSerialLogLoginLibvirt(ctx context.Context, lv *libvirt.Libvirt, do
 	// close by opening a new console with the DomainConsoleForce flag, and a
 	// nil stream, which will signal the existing DomainOpenConsole to exit, and
 	// make this new one exit immediately.
-	err = lv.DomainOpenConsole(dom, nil, nil, uint32(libvirt.DomainConsoleForce))
+	err := lv.DomainOpenConsole(dom, nil, nil, uint32(libvirt.DomainConsoleForce))
 	if err != nil {
 		logrus.Warnf("failed to force close DomainOpenConsole: %v", err)
 	}
@@ -155,7 +155,7 @@ func waitForVmSerialLogLoginLibvirt(ctx context.Context, lv *libvirt.Libvirt, do
 	// Wait for DomainOpenConsole goroutine to exit
 	wg.Wait()
 
-	return err
+	return loopErr
 }
 
 func readerLoop(ctx context.Context, in io.Reader, errCh <-chan error, out io.Writer, ringSize int) error {
