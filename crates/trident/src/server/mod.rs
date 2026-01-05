@@ -1,3 +1,5 @@
+//! Trident gRPC server module.
+
 use std::{
     os::{fd::AsRawFd, unix::net::UnixListener as StdUnixListener},
     path::Path,
