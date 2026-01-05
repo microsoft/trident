@@ -223,9 +223,9 @@ pub fn find_previous_uki(esp_dir_path: &Path) -> Result<PathBuf, TridentError> {
         Ok(previous_uki_entry_path.clone())
     } else {
         // Otherwise, there are not enough UKI entries found to perform a rollback
-        return Err(TridentError::new(ServicingError::ManualRollback {
+        Err(TridentError::new(ServicingError::ManualRollback {
             message: "Failed to find more than 1 UKI entries",
-        }));
+        }))
     }
 }
 
