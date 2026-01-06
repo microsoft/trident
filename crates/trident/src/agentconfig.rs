@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use log::debug;
+
 use trident_api::{
     constants::{AGENT_CONFIG_PATH, TRIDENT_DATASTORE_PATH_DEFAULT},
     error::TridentError,
@@ -25,7 +27,7 @@ impl AgentConfig {
         } else {
             // If the config file does not exist, we proceed with defaults.
             // Only log this at debug level to avoid alarming users unnecessarily.
-            log::info!(
+            debug!(
                 "Agent configuration file not found at {}, using defaults",
                 AGENT_CONFIG_PATH
             );
