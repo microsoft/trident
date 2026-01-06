@@ -61,9 +61,6 @@ pub fn server_main(
     logstream: Logstream,
     tracestream: TraceStream,
 ) -> ExitCode {
-    // Log Trident version on startup.
-    info!("Trident version: {}", TRIDENT_VERSION);
-
     // Start the Tokio runtime
     let Ok(runtime) = Builder::new_multi_thread().enable_all().build() else {
         error!("Failed to create Tokio runtime");

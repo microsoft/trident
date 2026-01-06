@@ -321,11 +321,13 @@ fn main() -> ExitCode {
                 .into_logger() as Box<dyn Log>]
             .into_iter(),
         );
-        info!("Trident version: {}", trident::TRIDENT_VERSION);
         if let Err(e) = logstream {
             error!("Failed to initialize logging: {e:?}");
             return ExitCode::from(1);
         }
+
+        // Log version on startup
+        info!("Trident version: {}", trident::TRIDENT_VERSION);
 
         trident::server_main(
             log_forwarder,
