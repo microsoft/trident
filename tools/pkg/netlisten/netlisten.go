@@ -20,26 +20,27 @@ func RunNetlisten(ctx context.Context, config *netlaunch.NetListenConfig) error 
 
 	// Set up listening
 	result := make(chan phonehome.PhoneHomeResult)
-	server := &http.Server{}
+	mux := http.NewServeMux()
+	server := &http.Server{Handler: mux}
 
 	// Set up listening for phonehome
-	phonehome.SetupPhoneHomeServer(result, "")
+	phonehome.SetupPhoneHomeServer(mux, result, "")
 	// Set up listening for logstream
-	logstreamFull, err := phonehome.SetupLogstream(config.LogstreamFile)
+	logstreamFull, err := phonehome.SetupLogstream(mux, config.LogstreamFile)
 	if err != nil {
 		return fmt.Errorf("failed to set up logstream: %w", err)
 	}
 	defer logstreamFull.Close()
 
 	// Set up listening for tracestream
-	traceFile, err := phonehome.SetupTraceStream(config.TracestreamFile)
+	traceFile, err := phonehome.SetupTraceStream(mux, config.TracestreamFile)
 	if err != nil {
 		return fmt.Errorf("failed to set up trace stream: %w", err)
 	}
 	defer traceFile.Close()
 
 	if len(config.ServeDirectory) != 0 {
-		http.Handle("/files/", http.StripPrefix("/files/", http.FileServer(http.Dir(config.ServeDirectory))))
+		mux.Handle("/files/", http.StripPrefix("/files/", http.FileServer(http.Dir(config.ServeDirectory))))
 	}
 
 	// If serial over SSH is configured, listen for serial output.
