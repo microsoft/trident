@@ -61,7 +61,7 @@ service TridentService {
   // GetActiveVolume returns the currently active volume (A or B).
   rpc GetActiveVolume(GetActiveVolumeRequest) returns (GetActiveVolumeResponse);
 
-  // GetVersion returns the Trident version.
+  // Version returns the Trident version.
   rpc Version(VersionRequest) returns (VersionResponse);
 }
 
