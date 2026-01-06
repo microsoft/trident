@@ -60,6 +60,9 @@ service TridentService {
 
   // GetActiveVolume returns the currently active volume (A or B).
   rpc GetActiveVolume(GetActiveVolumeRequest) returns (GetActiveVolumeResponse);
+
+  // GetVersion returns the Trident version.
+  rpc Version(VersionRequest) returns (VersionResponse);
 }
 
 message StageRequest {
@@ -268,4 +271,11 @@ message FileLocation {
   string path = 1;
   // Line number in the file.
   uint32 line = 2;
+}
+
+message VersionRequest {}
+
+message VersionResponse {
+  // Trident version string.
+  string version = 1;
 }
