@@ -13,7 +13,7 @@ func IsNilInterface(v any) bool {
 	rv := reflect.ValueOf(v)
 	switch rv.Kind() {
 	case reflect.Ptr, reflect.Map, reflect.Slice, reflect.Func,
-		reflect.Interface, reflect.Chan:
+		reflect.Interface, reflect.Chan, reflect.UnsafePointer:
 		return rv.IsNil()
 	default:
 		return false

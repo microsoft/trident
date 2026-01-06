@@ -40,7 +40,6 @@ func (s *TridentE2EScenario) spawnVMSerialMonitor(ctx context.Context, output io
 	// Channel to signal when the monitor is done. Buffered with size 1 to avoid
 	// deadlocks when we exit early and send a message to it immediately.
 	doneChannel := make(chan bool, 1)
-	var wg sync.WaitGroup
 
 	// Only spawn the VM serial logger if the hardware type is VM. Otherwise, do
 	// nothing.
@@ -58,27 +57,24 @@ func (s *TridentE2EScenario) spawnVMSerialMonitor(ctx context.Context, output io
 		return doneChannel, fmt.Errorf("vm host info not set")
 	}
 
-	// On exit, start a goroutine to wait for the waitgroup to finish and then
-	// send a value on the done channel and close it.
-	defer func() {
-		go func() {
-			wg.Wait()
+	go func() {
+		defer func() {
+			// On exit signal that we're done and close the channel.
 			doneChannel <- true
 			close(doneChannel)
 		}()
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
 		defer output.Close()
+
 		err := waitForVmSerialLogLoginLibvirt(ctx, vmInfo.Lv(), vmInfo.LvDomain(), output)
 		if err != nil {
 			errStr := fmt.Sprintf("VM serial log monitor ended with error: %v", err)
 			logrus.Error(errStr)
 
 			// Best effort write to output
-			output.Write([]byte(fmt.Sprintf("ERROR: %s", errStr)))
+			_, writeErr := output.Write([]byte(fmt.Sprintf("ERROR: %s", errStr)))
+			if writeErr != nil {
+				logrus.Errorf("failed to write error to VM serial log output: %v", writeErr)
+			}
 		} else {
 			logrus.Infof("VM serial log monitor ended successfully")
 		}
@@ -142,7 +138,7 @@ func waitForVmSerialLogLoginLibvirt(ctx context.Context, lv *libvirt.Libvirt, do
 	}()
 
 	// Call inner loop
-	err := readerLoop(ctx, pr, errCh, out, 30)
+	loopErr := readerLoop(ctx, pr, errCh, out, 30)
 	// Regardless of whether readerLoop returned an error, cancel the console
 	// context and close the pipe to stop the DomainOpenConsole goroutine.
 	consoleCancel()
@@ -154,7 +150,7 @@ func waitForVmSerialLogLoginLibvirt(ctx context.Context, lv *libvirt.Libvirt, do
 	// close by opening a new console with the DomainConsoleForce flag, and a
 	// nil stream, which will signal the existing DomainOpenConsole to exit, and
 	// make this new one exit immediately.
-	err = lv.DomainOpenConsole(dom, nil, nil, uint32(libvirt.DomainConsoleForce))
+	err := lv.DomainOpenConsole(dom, nil, nil, uint32(libvirt.DomainConsoleForce))
 	if err != nil {
 		logrus.Warnf("failed to force close DomainOpenConsole: %v", err)
 	}
@@ -162,11 +158,7 @@ func waitForVmSerialLogLoginLibvirt(ctx context.Context, lv *libvirt.Libvirt, do
 	// Wait for DomainOpenConsole goroutine to exit
 	wg.Wait()
 
-	// Cancel the keypress goroutine
-	// keypressCancel()
-	// tapWg.Wait()
-
-	return err
+	return loopErr
 }
 
 func readerLoop(ctx context.Context, in io.Reader, errCh <-chan error, out io.Writer, ringSize int) error {
@@ -204,7 +196,11 @@ func readerLoop(ctx context.Context, in io.Reader, errCh <-chan error, out io.Wr
 			// Continue reading
 		}
 
-		// Check if the current line contains the login prompt, and return if it does
+		// Check if the current line contains the login prompt, and return if it
+		// does. The log-in prompt is expected to contain the string "login:"
+		// but we need to block the false positive caused by the installer OS
+		// login prompt. The installer OS hostname includes the string "mos" so
+		// we can use that to filter out installer login prompts.
 		if strings.Contains(lineBuffBuilder.String(), "login:") &&
 			!strings.Contains(lineBuffBuilder.String(), "mos") {
 			logrus.Infof("Login prompt found in VM serial log")
@@ -222,8 +218,7 @@ func readerLoop(ctx context.Context, in io.Reader, errCh <-chan error, out io.Wr
 			return fmt.Errorf("failed to read from serial log file: %w", err)
 		}
 
-		runeStr := string(readRune)
-		if runeStr == "\n" {
+		if readRune == '\n' {
 			// Store the line in the ring buffer
 			ring.Value = lineBuffBuilder.String()
 			ring = ring.Next()
