@@ -12,6 +12,12 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+const (
+	// Expect at least this many consecutive errors before considering the ssh
+	// connection to be closed/dead.
+	expectedErrors = 3
+)
+
 type SshClientConfig struct {
 	// Username for SSH connection.
 	User string
@@ -87,11 +93,10 @@ func CreateSshClient(ctx context.Context, config SshClientConfig) (*ssh.Client, 
 func CreateSshClientWithRedial(ctx context.Context, backoff time.Duration, config SshClientConfig) (*ssh.Client, error) {
 	return retry.RetryContext(ctx, backoff, func(ctx context.Context, attempt int) (*ssh.Client, error) {
 		// Create a short timeout context for each individual connection attempt.
-		short_ctx, cancel := context.WithTimeout(ctx, time.Duration(5)*time.Second)
+		shortCtx, cancel := context.WithTimeout(ctx, time.Duration(5)*time.Second)
 		defer cancel()
 
-		logrus.Debug()
-		client, err := CreateSshClient(short_ctx, config)
+		client, err := CreateSshClient(shortCtx, config)
 		if err != nil {
 			logrus.Warnf("Failed to create SSH client to '%s' on attempt %d: %s", config.FullHost(), attempt, err)
 			return nil, err
@@ -183,9 +188,6 @@ func WaitForDisconnect(ctx context.Context, client *ssh.Client) error {
 		return fmt.Errorf("SSH client is nil")
 	}
 
-	// Expect at least this many consecutive errors before considering the
-	// connection to be closed.
-	expectedErrors := 3
 	errors := 0
 	for {
 		// Try to create a new session to check if the connection is still alive.
@@ -197,7 +199,7 @@ func WaitForDisconnect(ctx context.Context, client *ssh.Client) error {
 				return nil
 			}
 
-			logrus.Warnf("Failed to create SSH session, assuming connection is still alive (%d/3): %v", errors, err)
+			logrus.Warnf("Failed to create SSH session, assuming connection is still alive (%d/%d): %v", errors, expectedErrors, err)
 		} else {
 			// Session was created successfully, so the connection is still alive.
 			// Close the session and reset error count.

@@ -23,7 +23,7 @@ func (tenv *RuntimeType) UnmarshalText(text []byte) error {
 	case RuntimeTypeHost, RuntimeTypeContainer, RuntimeTypeNone:
 		return nil
 	default:
-		return fmt.Errorf("invalid Trident environment: %s", text)
+		return fmt.Errorf("invalid Trident runtime type: %s", text)
 	}
 }
 

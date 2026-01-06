@@ -30,9 +30,9 @@ var pipelineRingsOrder = TestRingSet{
 
 // Return the order index of the test ring. Lower index means lower ring. The
 // number does not mean anything outside of comparison between rings.
-func (tr *TestRing) Order() uint {
+func (tr TestRing) Order() uint {
 	for i, ring := range pipelineRingsOrder {
-		if ring == *tr {
+		if ring == tr {
 			return uint(i)
 		}
 	}

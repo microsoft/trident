@@ -13,10 +13,7 @@ import (
 )
 
 func OpenSshClient(settings stormsshconfig.SshCliSettings) (*ssh.Client, error) {
-	var privateKey []byte
-	var err error
-
-	privateKey, err = os.ReadFile(settings.PrivateKeyPath)
+	privateKey, err := os.ReadFile(settings.PrivateKeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read SSH key file '%s': %w", settings.PrivateKeyPath, err)
 	}
