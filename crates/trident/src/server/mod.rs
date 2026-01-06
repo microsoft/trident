@@ -25,7 +25,7 @@ use crate::{
     agentconfig::AgentConfig,
     logging::logfwd::LogForwarder,
     server::{activitytracker::ActivityTracker, fds::UnixSocketCleanup, support::fds},
-    Logstream, TraceStream, TRIDENT_VERSION,
+    Logstream, TraceStream,
 };
 
 mod activitytracker;
