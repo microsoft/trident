@@ -218,8 +218,7 @@ func readerLoop(ctx context.Context, in io.Reader, errCh <-chan error, out io.Wr
 			return fmt.Errorf("failed to read from serial log file: %w", err)
 		}
 
-		runeStr := string(readRune)
-		if runeStr == "\n" {
+		if readRune == '\n' {
 			// Store the line in the ring buffer
 			ring.Value = lineBuffBuilder.String()
 			ring = ring.Next()
