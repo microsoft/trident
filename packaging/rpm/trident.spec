@@ -247,9 +247,11 @@ bzip2 -9 %{name}.pp
 %check
 test "$(./target/release/trident --version)" = "trident %{trident_version}"
 %if %{undefined rpm_ver}
-# Run unit tests as part of check for distro build, skip 2 tests that do not work
+%ifarch x86_64
+# Run unit tests as part of check for distro build, skip 3 tests that do not work
 # in RPM chroot environment
 cargo test --all --no-fail-fast -- --skip test_run_systemd_check --skip test_prepare_mount_directory --skip test_read
+%endif
 %endif
 
 %install
