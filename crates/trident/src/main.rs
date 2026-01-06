@@ -1,39 +1,19 @@
-use std::{fs, iter, panic, path::PathBuf, process::ExitCode};
+use std::{fs, iter, panic, process::ExitCode};
 
 use anyhow::{Context, Error};
 use clap::Parser;
 use log::{error, info, LevelFilter, Log};
 
 use trident::{
+    agentconfig::AgentConfig,
     cli::{self, Cli, Commands, GetKind},
     offline_init, validation, BackgroundLog, DataStore, ExitKind, LogFilter, LogForwarder,
     Logstream, MultiLogger, TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
 };
 use trident_api::{
     config::HostConfigurationSource,
-    constants::{AGENT_CONFIG_PATH, TRIDENT_DATASTORE_PATH_DEFAULT},
     error::{InternalError, InvalidInputError, TridentError, TridentResultExt},
 };
-
-struct AgentConfig {
-    datastore: PathBuf,
-}
-
-fn load_agent_config() -> Result<AgentConfig, TridentError> {
-    let mut config = AgentConfig {
-        datastore: TRIDENT_DATASTORE_PATH_DEFAULT.into(),
-    };
-
-    if let Ok(contents) = std::fs::read_to_string(AGENT_CONFIG_PATH) {
-        for line in contents.lines() {
-            if let Some(path) = line.strip_prefix("DatastorePath=") {
-                config.datastore = path.trim().into();
-            }
-        }
-    }
-
-    Ok(config)
-}
 
 fn run_trident(
     mut logstream: Logstream,
@@ -71,7 +51,7 @@ fn run_trident(
         }
 
         Commands::Get { kind, outfile } => {
-            return Trident::get(&load_agent_config()?.datastore, outfile, *kind)
+            return Trident::get(AgentConfig::load()?.datastore_path(), outfile, *kind)
                 .message("Failed to retrieve Host Status")
                 .map(|()| ExitKind::Done);
         }
@@ -156,10 +136,10 @@ fn run_trident(
                     }
                 }
 
-                let agent_config = load_agent_config()?;
+                let agent_config = AgentConfig::load()?;
                 // For non-install commands, we expect the datastore to exist
                 if !matches!(args.command, Commands::Install { .. })
-                    && !agent_config.datastore.exists()
+                    && !agent_config.datastore_path().exists()
                 {
                     return Err(TridentError::new(InvalidInputError::HostNotProvisioned))
                         .message("Datastore file does not exist");
@@ -167,7 +147,7 @@ fn run_trident(
 
                 let mut trident = Trident::new(
                     config_path.map(HostConfigurationSource::File),
-                    &agent_config.datastore,
+                    agent_config.datastore_path(),
                     logstream,
                     tracestream,
                 )
@@ -177,7 +157,7 @@ fn run_trident(
                 // measuring Trident reboot times
                 tracing::info!(metric_name = "trident_start");
 
-                let mut datastore = DataStore::open_or_create(&agent_config.datastore)
+                let mut datastore = DataStore::open_or_create(agent_config.datastore_path())
                     .message("Failed to open datastore")?;
 
                 // Execute the command
@@ -204,8 +184,9 @@ fn run_trident(
 
                 // Return Host Status if requested
                 if status.is_some() {
-                    if let Err(e) = Trident::get(&agent_config.datastore, status, GetKind::Status)
-                        .message("Failed to retrieve Host Status")
+                    if let Err(e) =
+                        Trident::get(agent_config.datastore_path(), status, GetKind::Status)
+                            .message("Failed to retrieve Host Status")
                     {
                         error!("{e:?}");
                     }
@@ -340,12 +321,19 @@ fn main() -> ExitCode {
                 .into_logger() as Box<dyn Log>]
             .into_iter(),
         );
+        info!("Trident version: {}", trident::TRIDENT_VERSION);
         if let Err(e) = logstream {
             error!("Failed to initialize logging: {e:?}");
             return ExitCode::from(1);
         }
 
-        trident::server_main(log_forwarder, *inactivity_timeout, socket_path)
+        trident::server_main(
+            log_forwarder,
+            *inactivity_timeout,
+            socket_path,
+            logstream.unwrap(),
+            tracestream.unwrap(),
+        )
     } else {
         // Initialize the loggers
         let logstream = setup_logging(&args, iter::empty());

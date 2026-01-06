@@ -22,8 +22,10 @@ use tonic_middleware::MiddlewareFor;
 use harpoon::trident_service_server::TridentServiceServer;
 
 use crate::{
+    agentconfig::AgentConfig,
     logging::logfwd::LogForwarder,
     server::{activitytracker::ActivityTracker, fds::UnixSocketCleanup, support::fds},
+    Logstream, TraceStream, TRIDENT_VERSION,
 };
 
 mod activitytracker;
@@ -56,7 +58,12 @@ pub fn server_main(
     log_fwd: LogForwarder,
     shutdown_timeout: Duration,
     default_socket_path: impl AsRef<Path>,
+    logstream: Logstream,
+    tracestream: TraceStream,
 ) -> ExitCode {
+    // Log Trident version on startup.
+    info!("Trident version: {}", TRIDENT_VERSION);
+
     // Start the Tokio runtime
     let Ok(runtime) = Builder::new_multi_thread().enable_all().build() else {
         error!("Failed to create Tokio runtime");
@@ -71,9 +78,25 @@ pub fn server_main(
         }
     };
 
-    if let Err(e) =
-        runtime.block_on(async { server_main_inner(listener, log_fwd, shutdown_timeout).await })
-    {
+    let agent_config = match AgentConfig::load() {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            error!("Failed to load agent configuration: {e:?}");
+            return ExitCode::from(3);
+        }
+    };
+
+    if let Err(e) = runtime.block_on(async {
+        server_main_inner(
+            listener,
+            log_fwd,
+            shutdown_timeout,
+            agent_config,
+            logstream,
+            tracestream,
+        )
+        .await
+    }) {
         error!("Daemon failed: {e:?}");
         return ExitCode::from(2);
     }
@@ -85,6 +108,9 @@ async fn server_main_inner(
     listener: StdUnixListener,
     log_fwd: LogForwarder,
     shutdown_timeout: Duration,
+    agent_config: AgentConfig,
+    logstream: Logstream,
+    tracestream: TraceStream,
 ) -> AnyhowRes<()> {
     // Ensure the listener is in non-blocking state as required by Tokio
     listener
@@ -108,7 +134,13 @@ async fn server_main_inner(
     );
     Server::builder()
         .add_service(MiddlewareFor::new(
-            TridentServiceServer::new(TridentHarpoonServer::new(log_fwd, activity_tracker.clone())),
+            TridentServiceServer::new(TridentHarpoonServer::new(
+                log_fwd,
+                activity_tracker.clone(),
+                agent_config,
+                logstream,
+                tracestream,
+            )),
             activity_tracker.middleware(),
         ))
         .serve_with_incoming_shutdown(UnixListenerStream::new(listener), async {
