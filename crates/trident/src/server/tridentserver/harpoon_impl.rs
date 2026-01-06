@@ -26,36 +26,6 @@ use crate::{
 /// Implements the gRPC TridentService for the TridentHarpoonServer struct.
 #[async_trait]
 impl TridentService for TridentHarpoonServer {
-    // /// Sample data read method
-    // ///
-    // /// TODO: Remove once real methods are implemented.
-    // async fn read_data(
-    //     &self,
-    //     _request: Request<ReadRequest>,
-    // ) -> Result<Response<ReadResponse>, Status> {
-    //     self.reading_request("read_data", || {
-    //         let value = servicing::some_reading_operation("hello from server")?;
-    //         Ok(ReadResponse { output: value })
-    //     })
-    // }
-
-    // /// Sample servicing method
-    // ///
-    // /// TODO: Remove once real methods are implemented.
-    // type DoProcessStream = ServicingResponseStream;
-    // async fn do_process(
-    //     &self,
-    //     request: Request<DoProcessRequest>,
-    // ) -> Result<Response<Self::DoProcessStream>, Status> {
-    //     let process_req = request.into_inner();
-    //     self.servicing_request("do_process", move || {
-    //         servicing::some_servicing_operation(
-    //             process_req.count,
-    //             Duration::from_millis(process_req.interval_ms.into()),
-    //         )
-    //     })
-    // }
-
     type InstallStream = ServicingResponseStream;
     async fn install(
         &self,
@@ -134,7 +104,7 @@ impl TridentService for TridentHarpoonServer {
             let mut datastore =
                 DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
 
-            trident.install(&mut datastore, Operation::Stage.into(), false)
+            trident.install(&mut datastore, Operation::Finalize.into(), false)
         })
     }
 
@@ -194,7 +164,7 @@ impl TridentService for TridentHarpoonServer {
             let mut datastore =
                 DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
 
-            trident.install(&mut datastore, Operation::Stage.into(), false)
+            trident.update(&mut datastore, Operation::Stage.into())
         })
     }
 
@@ -216,7 +186,7 @@ impl TridentService for TridentHarpoonServer {
             let mut datastore =
                 DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
 
-            trident.install(&mut datastore, Operation::Stage.into(), false)
+            trident.update(&mut datastore, Operation::Finalize.into())
         })
     }
 

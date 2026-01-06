@@ -236,7 +236,7 @@ message TridentError {
   string subkind = 2;
   // Specific error message.
   string message = 3;
-  // Full body of the error, including debug information.
+  // Full formatted body of the error, including context and source.
   string full_body = 4;
   // Location in the file where the error occurred.
   FileLocation location = 5;

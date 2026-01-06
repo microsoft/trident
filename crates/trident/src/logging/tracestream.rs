@@ -120,7 +120,7 @@ impl TraceStream {
         let mut val = self
             .target
             .write()
-            .map_err(|_| anyhow!("Failed to lock logstream"))?;
+            .map_err(|_| anyhow!("Failed to lock tracestream"))?;
         val.take();
         Ok(())
     }
