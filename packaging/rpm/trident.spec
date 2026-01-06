@@ -1,8 +1,14 @@
+# This spec file is used for both the Trident repo builds and as the
+# basis for the azurelinux build. For the Trident repo builds, `rpm_ver`
+# is defined, dictating the build version. If `rpm_ver` is undefined,
+# the spec defines the azurelinux distro build (using source and vendor
+# tarballs, etc)
+
 %global selinuxtype targeted
 
 Summary:        Declarative, security-first OS lifecycle agent designed primarily for Azure Linux
 Name:           trident
-%if !0%{?azl}
+%if %{undefined rpm_ver}
 Version:        0.20.0
 Release:        1%{?dist}
 %else
@@ -14,7 +20,7 @@ Vendor:         Microsoft Corporation
 Group:          Applications/System
 Distribution:   Azure Linux
 
-%if !0%{?azl}
+%if %{undefined rpm_ver}
 URL:            https://github.com/microsoft/trident/
 Source0:        https://github.com/microsoft/trident/archive/refs/tags/v%{version}.tar.gz#/%{name}-%{version}.tar.gz
 # Below is a manually created tarball, no download link.
@@ -26,12 +32,13 @@ Source0:        https://github.com/microsoft/trident/archive/refs/tags/v%{versio
 #   tar -czf %%{name}-%%{version}-cargo.tar.gz vendor/
 #
 Source1:        %{name}-%{version}-cargo.tar.gz
-Requires:       azurelinux-image-tools-osmodifier
-%else
-Source1:        osmodifier
-%endif
 
 BuildRequires:  cargo >= 1.85.0
+Requires:       azurelinux-image-tools-osmodifier
+%else
+Source2:        osmodifier
+%endif
+
 BuildRequires:  rust >= 1.85.0
 BuildRequires:  openssl-devel
 BuildRequires:  systemd-units
@@ -63,7 +70,8 @@ Suggests:       ntfsprogs
 
 
 %description
-Agent for bare metal platform
+Trident. This package provides the Trident tool
+and its dependencies for managing the lifecycle of Azure Linux hosts.
 
 %files
 %{_bindir}/%{name}
@@ -196,6 +204,25 @@ be removed once the fix is merged in AZL 4.0.
 
 # ------------------------------------------------------------------------------
 
+%if %{undefined rpm_ver}
+%prep
+%autosetup -n %{name}-%{version} -p1
+
+# Do vendor expansion here manually by
+# calling `tar x` and setting up
+# .cargo/config to use it.
+tar fx %{SOURCE1}
+mkdir -p .cargo
+
+cat >.cargo/config << EOF
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "vendor"
+EOF
+%endif
+
 %build
 export TRIDENT_VERSION="%{trident_version}"
 cargo build --release
@@ -212,8 +239,11 @@ bzip2 -9 %{name}.pp
 test "$(./target/release/trident --version)" = "trident %{trident_version}"
 
 %install
-install -D -m 755 %{SOURCE1} %{buildroot}%{_bindir}/osmodifier
-
+%if %{undefined rpm_ver}
+install -D -m 755 osmodifier %{buildroot}%{_bindir}/osmodifier
+%else
+install -D -m 755 %{SOURCE2} %{buildroot}%{_bindir}/osmodifier
+%endif
 install -D -m 755 target/release/%{name} %{buildroot}/%{_bindir}/%{name}
 
 # Copy Trident SELinux policy module to /usr/share/selinux/packages
