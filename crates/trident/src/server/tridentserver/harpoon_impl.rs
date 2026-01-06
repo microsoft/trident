@@ -10,7 +10,6 @@ use harpoon::{
     GetRequiredServicingTypeResponse, GetServicingStateRequest, GetServicingStateResponse,
     RebuildRaidRequest, ServicingRequest, StageRequest, StreamImageRequest,
     TridentError as HarpoonTridentError, ValidateHostConfigurationRequest,
-    ValidateHostConfigurationRequest, ValidateHostConfigurationResponse,
     ValidateHostConfigurationResponse, VersionRequest, VersionResponse,
 };
 use trident_api::error::{InternalError, TridentError};
