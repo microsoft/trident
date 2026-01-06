@@ -10,7 +10,7 @@ use harpoon::{
     GetRequiredServicingTypeResponse, GetServicingStateRequest, GetServicingStateResponse,
     RebuildRaidRequest, ServicingRequest, StageRequest, StreamImageRequest,
     TridentError as HarpoonTridentError, ValidateHostConfigurationRequest,
-    ValidateHostConfigurationResponse,
+    ValidateHostConfigurationResponse, VersionRequest, VersionResponse,
 };
 use trident_api::{
     config::{HostConfigurationSource, Operation, Operations},
@@ -20,12 +20,21 @@ use url::Url;
 
 use crate::{
     server::{tridentserver::ServicingResponseStream, TridentHarpoonServer},
-    stream, validation, DataStore, Trident,
+    stream, validation, DataStore, Trident, TRIDENT_VERSION,
 };
 
 /// Implements the gRPC TridentService for the TridentHarpoonServer struct.
 #[async_trait]
 impl TridentService for TridentHarpoonServer {
+    async fn version(
+        &self,
+        _request: Request<VersionRequest>,
+    ) -> Result<Response<VersionResponse>, Status> {
+        Ok(Response::new(VersionResponse {
+            version: TRIDENT_VERSION.to_string(),
+        }))
+    }
+
     type InstallStream = ServicingResponseStream;
     async fn install(
         &self,
