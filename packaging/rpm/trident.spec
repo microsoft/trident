@@ -1,17 +1,39 @@
 %global selinuxtype targeted
 
-Summary:        Agent for bare metal platform
+Summary:        Declarative, security-first OS lifecycle agent designed primarily for Azure Linux
 Name:           trident
+%if !0%{?azl}
+Version:        0.20.0
+Release:        1%{?dist}
+%else
 Version:        %{rpm_ver}
 Release:        %{rpm_rel}%{?dist}
+%endif
+License:        MIT
 Vendor:         Microsoft Corporation
-License:        Proprietary
+Group:          Applications/System
+Distribution:   Azure Linux
+
+%if !0%{?azl}
+URL:            https://github.com/microsoft/trident/
+Source0:        https://github.com/microsoft/trident/archive/refs/tags/v%{version}.tar.gz#/%{name}-%{version}.tar.gz
+# Below is a manually created tarball, no download link.
+# Note: the %%{name}-%%{version}-cargo.tar.gz file contains a cache created by capturing the contents downloaded into $CARGO_HOME.
+# To update the cache and config.toml run:
+#   tar -xf %%{name}-%%{version}.tar.gz
+#   cd %%{name}-%%{version}
+#   cargo vendor > config.toml
+#   tar -czf %%{name}-%%{version}-cargo.tar.gz vendor/
+#
+Source1:        %{name}-%{version}-cargo.tar.gz
+Requires:       azurelinux-image-tools-osmodifier
+%else
 Source1:        osmodifier
-Source2:        trident.fc
-Source3:        trident.if
-Source4:        trident.te
+%endif
+
+BuildRequires:  cargo >= 1.85.0
+BuildRequires:  rust >= 1.85.0
 BuildRequires:  openssl-devel
-BuildRequires:  rust
 BuildRequires:  systemd-units
 
 Requires:       e2fsprogs
@@ -138,7 +160,7 @@ BuildRequires:       selinux-policy-devel
 Custom SELinux policy module
 
 %files selinux
-%{_datadir}/selinux/packages/%{selinuxtype}/%{name}.pp.*
+%{_datadir}/selinux/packages/%{selinuxtype}/%{name}.pp.bz2
 %{_datadir}/selinux/devel/include/distributed/%{name}.if
 %ghost %verify(not md5 size mode mtime) %{_sharedstatedir}/selinux/%{selinuxtype}/active/modules/200/%{name}
 
@@ -179,9 +201,9 @@ export TRIDENT_VERSION="%{trident_version}"
 cargo build --release
 
 mkdir selinux
-cp -p %{SOURCE2} selinux/
-cp -p %{SOURCE3} selinux/
-cp -p %{SOURCE4} selinux/
+cp -p packaging/selinux-policy-trident/trident.fc selinux/
+cp -p packaging/selinux-policy-trident/trident.if selinux/
+cp -p packaging/selinux-policy-trident/trident.te selinux/
 
 make -f %{_datadir}/selinux/devel/Makefile %{name}.pp
 bzip2 -9 %{name}.pp
@@ -215,7 +237,7 @@ mkdir -p %{buildroot}/etc/%{name}
 pcrlockroot="%{buildroot}%{_sharedstatedir}/pcrlock.d"
 mkdir -p "$pcrlockroot"
 (
-  cd %{_sourcedir}/static-pcrlock-files
+  cd packaging/static-pcrlock-files
   find . -type f -print0 | while IFS= read -r -d '' f; do
       mkdir -p "$pcrlockroot/$(dirname "$f")"
       install -m 644 "$f" "$pcrlockroot/$f"
