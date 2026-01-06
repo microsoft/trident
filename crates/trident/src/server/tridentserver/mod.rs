@@ -7,7 +7,7 @@
 
 use std::{panic, sync::Arc, time::SystemTime};
 
-use log::{error, info, warn};
+use log::{error, info, warn, Level};
 use prost_types::Timestamp;
 use tokio::{
     sync::{
@@ -20,7 +20,8 @@ use tokio_util::sync::CancellationToken;
 use tonic::{Code, Response, Status};
 
 use harpoon::{
-    servicing_response::Response as ResponseType, FileLocation, Log, ServicingResponse, Start,
+    servicing_response::Response as ResponseType, FileLocation, Log, LogLevel, ServicingResponse,
+    Start,
 };
 use trident_api::error::{ErrorKind, TridentError};
 
@@ -125,11 +126,19 @@ impl TridentHarpoonServer {
                             break;
                         };
 
+                        let level = match log_record.level {
+                            Level::Error => LogLevel::Error,
+                            Level::Warn => LogLevel::Warn,
+                            Level::Info => LogLevel::Info,
+                            Level::Debug => LogLevel::Debug,
+                            Level::Trace => LogLevel::Trace,
+                        };
+
                         if let Err(err) = grpc_log_tx.send(Ok(ServicingResponse {
                             timestamp: Some(Timestamp::from(SystemTime::now())),
                             response: Some(ResponseType::Log(Log {
                                 message: log_record.message,
-                                level: log_record.level as i32,
+                                level: level as i32,
                                 target: log_record.target,
                                 module: log_record.module,
                                 location: Some(FileLocation {
