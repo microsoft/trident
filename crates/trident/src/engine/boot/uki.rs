@@ -156,10 +156,10 @@ pub fn update_uki_boot_order(
 
 /// Enumerates preexisting UKIs unmanaged by Trident (defined by naming convention: vmlinuz-6.6.117.1-1.azl3.efi)
 /// in the given directory, returning their versions and paths.
-fn enumerate_nontrident_managed_ukis(
+fn enumerate_non_trident_managed_ukis(
     esp_uki_directory: &Path,
 ) -> Result<Vec<(Version, PathBuf)>, Error> {
-    let mut preexisting_uki_entries = Vec::new();
+    let mut non_trident_managed_ukis = Vec::new();
 
     for entry in fs::read_dir(esp_uki_directory).context(format!(
         "Failed to read directory '{}'",
@@ -175,7 +175,7 @@ fn enumerate_nontrident_managed_ukis(
             .and_then(|filename| filename.strip_suffix(".efi"))
         {
             match version.parse() {
-                Ok(v) => preexisting_uki_entries.push((v, entry.path())),
+                Ok(v) => non_trident_managed_ukis.push((v, entry.path())),
                 _ => {
                     debug!(
                         "Ignoring preexisting UKI file '{}' with unparseable version '{}'",
@@ -192,7 +192,7 @@ fn enumerate_nontrident_managed_ukis(
         }
     }
 
-    Ok(preexisting_uki_entries)
+    Ok(non_trident_managed_ukis)
 }
 
 /// Get list of UKI files (both Trident-managed and pre-existing) and find the previous UKI to use for rollback.
@@ -201,33 +201,39 @@ pub fn find_previous_uki(esp_dir_path: &Path) -> Result<PathBuf, TridentError> {
     let trident_managed_ukis = enumerate_trident_managed_ukis(&esp_uki_directory)
         .structured(ServicingError::EnumerateUkis)
         .message("Failed to enumerate Trident-managed UKIs")?;
-    let mut uki_entries: Vec<_> = trident_managed_ukis
+    let mut trident_managed_uki_entries: Vec<_> = trident_managed_ukis
         .into_iter()
         .filter(|(_, suffix, _)| suffix.ends_with(".efi"))
         .collect();
-    uki_entries.sort_by_key(|(index, _, _)| *index);
-    println!("Found Trident-managed UKI entries: [{:?}]", uki_entries);
-
-    let preexising_ukis = enumerate_nontrident_managed_ukis(&esp_uki_directory)
-        .structured(ServicingError::EnumerateUkis)
-        .message("Failed to enumerate preexisting UKIs")?;
-    let mut preexisting_uki_entries: Vec<_> = preexising_ukis.into_iter().collect();
-    preexisting_uki_entries.sort_by_key(|(version, _)| *version);
-    println!(
-        "Found preexisting UKI entries: [{:?}]",
-        preexisting_uki_entries
+    trident_managed_uki_entries.sort_by_key(|(index, _, _)| *index);
+    debug!(
+        "Found Trident-managed UKI entries: [{:?}]",
+        trident_managed_uki_entries
     );
 
-    if uki_entries.len() >= 2 {
+    let non_trident_managed_ukis = enumerate_non_trident_managed_ukis(&esp_uki_directory)
+        .structured(ServicingError::EnumerateUkis)
+        .message("Failed to enumerate preexisting UKIs")?;
+    let mut non_trident_managed_uki_entries: Vec<_> =
+        non_trident_managed_ukis.into_iter().collect();
+    non_trident_managed_uki_entries.sort_by_key(|(version, _)| *version);
+    println!(
+        "Found preexisting UKI entries: [{:?}]",
+        non_trident_managed_uki_entries
+    );
+
+    if trident_managed_uki_entries.len() >= 2 {
         // If Trident has managed more than 2 versions, return the second most recent
-        let (_, _, previous_uki_entry_path) = &uki_entries[uki_entries.len() - 2];
+        let (_, _, previous_uki_entry_path) =
+            &trident_managed_uki_entries[trident_managed_uki_entries.len() - 2];
         Ok(previous_uki_entry_path.clone())
-    } else if uki_entries.len() == 1 && !preexisting_uki_entries.is_empty() {
+    } else if trident_managed_uki_entries.len() == 1 && !non_trident_managed_uki_entries.is_empty()
+    {
         // If Trident has managed 1 version and there is at least 1 preexisting UKI
         // (this is commonly the VM or offline-init case), return the most recent
         // pre-existing UKI.
         let (_, previous_uki_entry_path) =
-            &preexisting_uki_entries[preexisting_uki_entries.len() - 1];
+            &non_trident_managed_uki_entries[non_trident_managed_uki_entries.len() - 1];
         Ok(previous_uki_entry_path.clone())
     } else {
         // Otherwise, there are not enough UKI entries found to perform a rollback
@@ -427,7 +433,7 @@ mod tests {
 
         let uki_path1 = efi_dir.join("vmlinuz-100-azla1.efi");
         File::create(&uki_path1).unwrap();
-        // 1 trident-managed UKI file and 1 pre-exsiting file in directory,
+        // 1 trident-managed UKI file and 1 pre-existing file in directory,
         // should return preexisting_uki_path
         assert_eq!(find_previous_uki(dir.path()).unwrap(), preexisting_uki_path);
 

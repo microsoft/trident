@@ -48,7 +48,7 @@ parameters:
     type: string
     default: "false"
 
-  - name: SkipNetplanRuntimeTesting
+  - name: skipNetplanRuntimeTesting
     displayName: "Skip netplan runtime testing"
     type: string
     default: "false"
@@ -140,7 +140,7 @@ jobs:
             # Allow testing for non-extension scenarios
             STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --skip-extension-testing"
           fi
-          if [ "${{ parameters.SkipNetplanRuntimeTesting }}" == "true" ]; then
+          if [ "${{ parameters.skipNetplanRuntimeTesting }}" == "true" ]; then
             # skip netplan runtime testing
             STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --skip-netplan-runtime-testing"
           fi

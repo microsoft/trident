@@ -131,7 +131,7 @@ stages:
               #   * without extensions and netplan, runtime updates will service nothing
               skipExtensionTesting: true
               skipRuntimeUpdateTesting: true
-              SkipNetplanRuntimeTesting: true
+              skipNetplanRuntimeTesting: true
       - ${{ if eq(parameters.includeUKI, true) }}:
           - template: testing-template.yml
             parameters:
