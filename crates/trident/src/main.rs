@@ -59,15 +59,16 @@ fn run_trident(
 
         // Handle manual rollback check here so root is not required for --check
         Commands::Rollback {
-            check, ab, runtime, ..
+            check: true,
+            ab,
+            runtime,
+            ..
         } => {
-            if *check {
-                let datastore = DataStore::open_or_create(&load_agent_config()?.datastore)
-                    .message("Failed to open datastore")?;
-                return check_rollback(&datastore, *ab, *runtime)
-                    .message("Failed to check manual rollback availability")
-                    .map(|()| ExitKind::Done);
-            }
+            let datastore = DataStore::open_or_create(&load_agent_config()?.datastore)
+                .message("Failed to open datastore")?;
+            return check_rollback(&datastore, *ab, *runtime)
+                .message("Failed to check manual rollback availability")
+                .map(|()| ExitKind::Done);
         }
 
         Commands::StartNetwork { config } => {
