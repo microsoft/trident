@@ -189,7 +189,7 @@ pub fn execute_rollback(
             &engine_context,
             requested_rollback.requires_reboot,
         )
-        .message("Failed to stage manual rollback");
+        .message("Failed to finalize manual rollback");
         // Persist the Trident background log and metrics file. Otherwise, the
         // staging logs would be lost.
         engine::persist_background_log_and_metrics(

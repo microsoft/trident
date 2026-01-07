@@ -241,7 +241,7 @@ impl ManualRollbackContext {
         trident_version: TridentVersion,
     ) -> Result<bool, TridentError> {
         let trident_is_compatible = match trident_version {
-            // If version is not set or is not semver, consider it imcompatible
+            // If version is not set or is not semver, consider it incompatible
             TridentVersion::Other(_) | TridentVersion::None => false,
             TridentVersion::SemVer(version) => version >= *MINIMUM_ROLLBACK_TRIDENT_VERSION,
         };
