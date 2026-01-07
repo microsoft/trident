@@ -1,18 +1,54 @@
+# This spec file is used for both the Trident repo builds and as the
+# basis for the azurelinux build. For the Trident repo builds, `rpm_ver`
+# is defined, dictating the build version. If `rpm_ver` is undefined,
+# the spec defines the azurelinux distro build (using source and vendor
+# tarballs, etc)
+
 %global selinuxtype targeted
 
-Summary:        Agent for bare metal platform
+Summary:        Declarative, security-first OS lifecycle agent designed primarily for Azure Linux
 Name:           trident
+%if %{undefined rpm_ver}
+# Use hard-coded versions for distro build
+Version:        0.20.0
+Release:        1%{?dist}
+%else
 Version:        %{rpm_ver}
 Release:        %{rpm_rel}%{?dist}
+%endif
+License:        MIT
 Vendor:         Microsoft Corporation
-License:        Proprietary
+Group:          Applications/System
+Distribution:   Azure Linux
+
+%if %{undefined rpm_ver}
+# For distro build, use Source0 for source tarball and Source1 for vendor tarball
+URL:            https://github.com/microsoft/trident/
+Source0:        https://github.com/microsoft/trident/archive/refs/tags/v%{version}.tar.gz#/%{name}-%{version}.tar.gz
+# Below is a manually created tarball, no download link.
+# Note: the %%{name}-%%{version}-cargo.tar.gz file contains a cache created by capturing the contents downloaded into $CARGO_HOME.
+# To update the cache and config.toml run:
+#   tar -xf %%{name}-%%{version}.tar.gz
+#   cd %%{name}-%%{version}
+#   cargo vendor > config.toml
+#   tar -czf %%{name}-%%{version}-cargo.tar.gz vendor/
+#
+Source1:        %{name}-%{version}-cargo.tar.gz
+%else
+# For Trident repo build, use osmodifier is passed in as Source1
 Source1:        osmodifier
-Source2:        trident.fc
-Source3:        trident.if
-Source4:        trident.te
+%endif
+
 BuildRequires:  openssl-devel
-BuildRequires:  rust
 BuildRequires:  systemd-units
+BuildRequires:  rust
+
+%if %{undefined rpm_ver}
+# For distro build, require cargo to build trident
+BuildRequires:  cargo
+# For distro build, require osmodifier RPM at runtime
+Requires:       azurelinux-image-tools-osmodifier
+%endif
 
 Requires:       e2fsprogs
 Requires:       util-linux
@@ -41,12 +77,17 @@ Suggests:       ntfsprogs
 
 
 %description
-Agent for bare metal platform
+Trident. This package provides the Trident tool
+and its dependencies for managing the lifecycle of Azure Linux hosts.
 
 %files
 %{_bindir}/%{name}
 %dir /etc/%{name}
+%if %{defined rpm_ver}
+# For Trident repo build, install osmodifier (distro build will require
+# azurelinux-image-tools-osmodifier RPM at runtimme)
 %{_bindir}/osmodifier
+%endif
 
 # ------------------------------------------------------------------------------
 
@@ -153,7 +194,7 @@ BuildRequires:       selinux-policy-devel
 Custom SELinux policy module
 
 %files selinux
-%{_datadir}/selinux/packages/%{selinuxtype}/%{name}.pp.*
+%{_datadir}/selinux/packages/%{selinuxtype}/%{name}.pp.bz2
 %{_datadir}/selinux/devel/include/distributed/%{name}.if
 %ghost %verify(not md5 size mode mtime) %{_sharedstatedir}/selinux/%{selinuxtype}/active/modules/200/%{name}
 
@@ -189,23 +230,52 @@ be removed once the fix is merged in AZL 4.0.
 
 # ------------------------------------------------------------------------------
 
+%if %{undefined rpm_ver}
+# For distro build, unpack source and vendor tarballs for building trident
+%prep
+%autosetup -n %{name}-%{version} -p1
+tar -xf %{SOURCE1}
+
+mkdir -p .cargo
+cat >.cargo/config << EOF
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "vendor"
+EOF
+%endif
+
 %build
 export TRIDENT_VERSION="%{trident_version}"
 cargo build --release
 
 mkdir selinux
-cp -p %{SOURCE2} selinux/
-cp -p %{SOURCE3} selinux/
-cp -p %{SOURCE4} selinux/
+cp -p packaging/selinux-policy-trident/trident.fc selinux/
+cp -p packaging/selinux-policy-trident/trident.if selinux/
+cp -p packaging/selinux-policy-trident/trident.te selinux/
 
 make -f %{_datadir}/selinux/devel/Makefile %{name}.pp
 bzip2 -9 %{name}.pp
 
 %check
 test "$(./target/release/trident --version)" = "trident %{trident_version}"
+%if %{undefined rpm_ver}
+# For distro builds, allow trident unit tests to execute as part of check
+%ifarch x86_64
+# Run unit tests only for x86_g4.
+# Skip 3 tests that do not work in RPM chroot environment
+cargo test --all --no-fail-fast -- --skip test_run_systemd_check --skip test_prepare_mount_directory --skip test_read
+%endif
+%endif
 
 %install
+%if %{defined rpm_ver}
+# For Trident repo build, install osmodifier included via `Source1` (for
+# distro build, osmodifier will be provided via azurelinux-image-tools-osmodifier
+# runtime Requires)
 install -D -m 755 %{SOURCE1} %{buildroot}%{_bindir}/osmodifier
+%endif
 
 install -D -m 755 target/release/%{name} %{buildroot}/%{_bindir}/%{name}
 
@@ -214,11 +284,11 @@ install -D -m 0644 %{name}.pp.bz2 %{buildroot}%{_datadir}/selinux/packages/%{sel
 install -D -p -m 0644 selinux/%{name}.if %{buildroot}%{_datadir}/selinux/devel/include/distributed/%{name}.if
 
 mkdir -p %{buildroot}%{_unitdir}
-install -D -m 644 systemd/%{name}.service %{buildroot}%{_unitdir}/%{name}.service
-install -D -m 644 systemd/%{name}-install.service %{buildroot}%{_unitdir}/%{name}-install.service
-install -D -m 644 systemd/%{name}-update.service %{buildroot}%{_unitdir}/%{name}-update.service
-install -D -m 644 systemd/%{name}-network.service %{buildroot}%{_unitdir}/%{name}-network.service
-install -D -m 644 systemd/%{name}-update.timer %{buildroot}%{_unitdir}/%{name}-update.timer
+install -D -m 644 packaging/systemd/%{name}.service %{buildroot}%{_unitdir}/%{name}.service
+install -D -m 644 packaging/systemd/%{name}-install.service %{buildroot}%{_unitdir}/%{name}-install.service
+install -D -m 644 packaging/systemd/%{name}-update.service %{buildroot}%{_unitdir}/%{name}-update.service
+install -D -m 644 packaging/systemd/%{name}-network.service %{buildroot}%{_unitdir}/%{name}-network.service
+install -D -m 644 packaging/systemd/%{name}-update.timer %{buildroot}%{_unitdir}/%{name}-update.timer
 
 mkdir -p %{buildroot}/etc/%{name}
 
@@ -226,7 +296,7 @@ mkdir -p %{buildroot}/etc/%{name}
 pcrlockroot="%{buildroot}%{_sharedstatedir}/pcrlock.d"
 mkdir -p "$pcrlockroot"
 (
-  cd %{_sourcedir}/static-pcrlock-files
+  cd packaging/static-pcrlock-files
   find . -type f -print0 | while IFS= read -r -d '' f; do
       mkdir -p "$pcrlockroot/$(dirname "$f")"
       install -m 644 "$f" "$pcrlockroot/$f"
