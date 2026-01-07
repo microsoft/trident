@@ -113,7 +113,7 @@ impl TraceStream {
         Ok(())
     }
 
-    /// Clear the logstream server URL
+    /// Clear the tracestream server URL
     ///
     /// This will stop logs from being sent to the server.
     pub fn clear_server(&self) -> Result<(), Error> {
