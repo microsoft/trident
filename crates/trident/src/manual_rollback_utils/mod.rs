@@ -1,28 +1,38 @@
 use anyhow::{Context, Error};
+use lazy_static::lazy_static;
 use log::{info, trace};
+use semver::Version;
 use serde::{Deserialize, Serialize};
 
 use trident_api::{
     error::{InvalidInputError, ReportError, ServicingError, TridentError},
-    status::{AbVolumeSelection, HostStatus, ServicingState},
+    status::{AbVolumeSelection, HostStatus, ServicingState, TridentVersion},
 };
 
-const MINIMUM_ROLLBACK_TRIDENT_VERSION: &str = "0.21.0";
+/// Minimum Trident version that supports manual rollback.
+const MINIMUM_ROLLBACK_TRIDENT_VERSION_STR: &str = "0.21.0";
+lazy_static! {
+    /// SemVer instance for minimum rollback Trident version.
+    static ref MINIMUM_ROLLBACK_TRIDENT_VERSION: Version =
+        Version::parse(MINIMUM_ROLLBACK_TRIDENT_VERSION_STR)
+            .expect("Failed to parse minimum rollback Trident version");
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ManualRollbackChainItem {
+pub(crate) struct ManualRollbackChainItem {
     pub requires_reboot: bool,
     pub host_status: HostStatus,
     #[serde(skip)]
     host_status_index: i32,
 }
-pub struct ManualRollbackContext {
+pub(crate) struct ManualRollbackContext {
     volume_a_available_rollbacks: Vec<ManualRollbackChainItem>,
     volume_b_available_rollbacks: Vec<ManualRollbackChainItem>,
     active_volume: Option<AbVolumeSelection>,
 }
 impl ManualRollbackContext {
+    /// Creates a new ManualRollbackContext from a list of HostStatus entries.
     pub fn new(host_statuses: &[HostStatus]) -> Result<Self, TridentError> {
         // Initialize context from HostStatus entries.
         let mut instance = ManualRollbackContext {
@@ -104,7 +114,7 @@ impl ManualRollbackContext {
                         }
                     } else {
                         let trident_is_compatible =
-                            Self::is_trident_version_compatible(&hs.trident_version)?;
+                            Self::is_trident_version_compatible(hs.trident_version.clone())?;
                         let last_error_exists = hs.last_error.is_some();
                         let encryption_configured = hs.spec.storage.encryption.is_some();
                         let active_volume_changed = hs.ab_active_volume != instance.active_volume;
@@ -178,6 +188,7 @@ impl ManualRollbackContext {
         Ok(instance)
     }
 
+    /// Get the full rollback chain
     pub fn get_rollback_chain(&self) -> Result<Vec<ManualRollbackChainItem>, Error> {
         let mut contexts = self
             .volume_a_available_rollbacks
@@ -190,6 +201,7 @@ impl ManualRollbackContext {
         Ok(contexts)
     }
 
+    /// Get the full rollback chain as YAML string
     pub fn get_rollback_chain_yaml(&self) -> Result<String, Error> {
         let contexts = self.get_rollback_chain()?;
         let full_yaml =
@@ -198,6 +210,7 @@ impl ManualRollbackContext {
         Ok(full_yaml)
     }
 
+    /// Clear available rollbacks for a given active/inactive volume.
     fn clear_available_rollbacks(&mut self, volume: AbVolumeSelection, inactive: bool) {
         match (inactive, volume) {
             (false, AbVolumeSelection::VolumeA) => self.volume_a_available_rollbacks.clear(),
@@ -207,6 +220,7 @@ impl ManualRollbackContext {
         }
     }
 
+    /// Remove the first available rollback for a given volume.
     fn remove_available_rollback(&mut self, volume: AbVolumeSelection) {
         match volume {
             AbVolumeSelection::VolumeA => {
@@ -222,35 +236,29 @@ impl ManualRollbackContext {
         }
     }
 
-    fn is_trident_version_compatible(trident_version: &str) -> Result<bool, TridentError> {
-        let minimum_rollback_trident_semver =
-            semver::Version::parse(MINIMUM_ROLLBACK_TRIDENT_VERSION).map_err(|e| {
-                TridentError::new(InvalidInputError::InvalidRollbackExpectation {
-                    reason: format!(
-                        "Failed to parse minimum rollback Trident version '{MINIMUM_ROLLBACK_TRIDENT_VERSION}': {e}",
-                    ),
-                })
-            })?;
+    /// Check if the given Trident version is compatible with manual rollback.
+    fn is_trident_version_compatible(
+        trident_version: TridentVersion,
+    ) -> Result<bool, TridentError> {
         let trident_is_compatible = match trident_version {
-            "" => false,
-            v => match semver::Version::parse(v) {
-                Ok(ver) => ver >= minimum_rollback_trident_semver,
-                Err(e) => {
-                    return Err(TridentError::new(
-                        InvalidInputError::InvalidRollbackExpectation {
-                            reason: format!(
-                                "Failed to parse host status Trident version '{}': {:?}",
-                                &trident_version, e
-                            ),
-                        },
-                    ));
-                }
-            },
+            // If version is not set or is not semver, consider it imcompatible
+            TridentVersion::Other(_) | TridentVersion::None => false,
+            TridentVersion::SemVer(version) => version >= *MINIMUM_ROLLBACK_TRIDENT_VERSION,
         };
         Ok(trident_is_compatible)
     }
 
-    pub fn get_requested_detail(
+    /// Get detail for requested rollback.
+    /// * If there are no rollbacks available, return None.
+    /// * If no request specifications are made, return the next available rollback.
+    /// * If ab is requested and
+    ///     + available in the chain, return it.
+    ///     - no ab updates are available in the chain, return error.
+    /// * If runtime is requested and
+    ///     + the next available is runtime, return it.
+    ///     - the next available is ab, return error.
+    /// * If both ab and runtime are requested, return error.
+    pub fn get_requested_rollback(
         &self,
         invoke_if_next_is_runtime: bool,
         invoke_available_ab: bool,
@@ -311,13 +319,17 @@ impl ManualRollbackContext {
         }
     }
 
-    /// Check requested rollback
+    /// Check requested rollback, returning
+    ///   * none: if there are no rollbacks available
+    ///   * runtime: if runtime is the next available rollback and ab was not requested
+    ///   * ab: if ab is the next available and runtime was not requested or if ab was requested and available in the chain
     pub fn check_requested_rollback(
         &self,
         invoke_if_next_is_runtime: bool,
         invoke_available_ab: bool,
     ) -> Result<String, TridentError> {
-        let rollback = self.get_requested_detail(invoke_if_next_is_runtime, invoke_available_ab)?;
+        let rollback =
+            self.get_requested_rollback(invoke_if_next_is_runtime, invoke_available_ab)?;
         match rollback {
             None => Ok("none".to_string()),
             Some(item) => Ok(if item.requires_reboot {
@@ -326,15 +338,6 @@ impl ManualRollbackContext {
                 "runtime".to_string()
             }),
         }
-    }
-
-    /// Get requested rollback detail
-    pub fn get_requested_rollback(
-        &self,
-        invoke_if_next_is_runtime: bool,
-        invoke_available_ab: bool,
-    ) -> Result<Option<ManualRollbackChainItem>, TridentError> {
-        self.get_requested_detail(invoke_if_next_is_runtime, invoke_available_ab)
     }
 }
 
@@ -385,11 +388,15 @@ mod tests {
             },
             ..Default::default()
         };
+        let trident_version = match old_version {
+            "" => TridentVersion::None,
+            v => TridentVersion::SemVer(Version::parse(v).unwrap()),
+        };
         HostStatus {
             spec: host_config,
             ab_active_volume: active_volume,
             servicing_state,
-            trident_version: old_version.to_string(),
+            trident_version,
             last_error,
             ..Default::default()
         }
@@ -536,7 +543,7 @@ mod tests {
     const VOL_B: Option<AbVolumeSelection> = Some(AbVolumeSelection::VolumeB);
     const NONE: &str = "";
     const OLD: &str = "0.19.0";
-    const MIN: &str = MINIMUM_ROLLBACK_TRIDENT_VERSION;
+    const MIN: &str = MINIMUM_ROLLBACK_TRIDENT_VERSION_STR;
     const NEW: &str = TRIDENT_VERSION;
     const CI_FINAL: ServicingState = ServicingState::CleanInstallFinalized;
     const RU_STAGE: ServicingState = ServicingState::RuntimeUpdateStaged;

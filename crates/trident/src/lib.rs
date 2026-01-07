@@ -8,6 +8,7 @@ use cli::GetKind;
 use engine::{bootentries, EngineContext};
 use log::{debug, error, info, warn};
 use nix::unistd::Uid;
+use semver::Version;
 
 use osutils::{block_devices, container, dependencies::Dependency};
 use trident_api::{
@@ -61,6 +62,11 @@ pub const TRIDENT_VERSION: &str = match option_env!("TRIDENT_VERSION") {
     Some(v) => v,
     None => env!("CARGO_PKG_VERSION"),
 };
+lazy_static::lazy_static! {
+    /// Trident version parsed as a semver::Version
+    pub static ref TRIDENT_SEMVER_VERSION: Version = Version::parse(TRIDENT_VERSION)
+        .expect("Failed to parse TRIDENT_VERSION as semver::Version");
+}
 
 /// Trident binary path.
 const TRIDENT_BINARY_PATH: &str = "/usr/bin/trident";

@@ -4,13 +4,13 @@ This storm scenario can be run locally by following the instructions below.
 
 The test will do the following:
 
-* Update the standard QCOW2 to include sysext extesion v1
+* Update the standard QCOW2 to include sysext extension v1
 * Start a VM with the updated QCOW2
 * Verify extension is correct, active volume is A, and rollback info is as expected
 * Run an A/B update that includes sysext extension v2 and new netplan
 * Verify extension is v2, netplan is correct, active volume is B, and rollback info is as expected
 * Run a runtime update that includes sysext extension v3 and new netplan
-* Verify extension is v3, netpaln is correct, active volume is B, and rollback info is as expected
+* Verify extension is v3, netplan is correct, active volume is B, and rollback info is as expected
 * Run a runtime update that excludes sysext extension and netplan
 * Verify extension and netplan do not exist, active volume is B, and rollback info is as expected
 * Run manual rollback (of 2nd runtime update)

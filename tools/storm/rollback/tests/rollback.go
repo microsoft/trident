@@ -79,22 +79,6 @@ func RollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 	hostConfig := make(map[string]interface{})
 	// Ensure OS section exists
 	hostConfig["os"] = map[string]interface{}{}
-	if testConfig.DebugPassword != "" {
-		logrus.Tracef("Adding debug password to Host Configuration")
-		hostConfig["scripts"] = map[string]interface{}{
-			"postProvision": []map[string]interface{}{
-				{
-					"name":  "set-password-script",
-					"runOn": []string{"ab-update"},
-					"content": fmt.Sprintf(
-						"echo '%s:%s' | sudo chpasswd",
-						vmConfig.VMConfig.User,
-						testConfig.DebugPassword,
-					),
-				},
-			},
-		}
-	}
 
 	// Update Host Configuration for A/B update using extension version 2
 	hostConfig["image"] = map[string]interface{}{
@@ -465,7 +449,7 @@ func validateRollbacksAvailable(
 
 		availableRollbacksOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo trident get rollback-chain")
 		if err != nil {
-			return fmt.Errorf("'get rollback-chain' failed to from VM: %v", err)
+			return fmt.Errorf("'get rollback-chain' failed on VM: %v", err)
 		}
 		logrus.Tracef("Reported 'get rollback-chain':\n%s", availableRollbacksOutput)
 
@@ -493,7 +477,7 @@ func validateRollbacksAvailable(
 
 		rollbackShowValidationOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "trident rollback --check")
 		if err != nil {
-			return fmt.Errorf("'rollback --check' failed to from VM: %v", err)
+			return fmt.Errorf("'rollback --check' failed VM: %v", err)
 		}
 		logrus.Tracef("Reported 'rollback --check':\n%s", rollbackShowValidationOutput)
 		if expectedAvailableRollbacks > 0 {
@@ -514,7 +498,7 @@ func validateRollbacksAvailable(
 
 		rollbackShowTargetOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo trident get rollback-target")
 		if err != nil {
-			return fmt.Errorf("'get rollback-target' failed to from VM: %v", err)
+			return fmt.Errorf("'get rollback-target' failed on VM: %v", err)
 		}
 		logrus.Tracef("Reported 'get rollback-target':\n%s", rollbackShowTargetOutput)
 		if expectedAvailableRollbacks > 0 {
