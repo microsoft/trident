@@ -1,6 +1,7 @@
 use std::{
-    fs::{self, Permissions},
-    os::unix::fs::PermissionsExt,
+    fs::{self, OpenOptions},
+    io::Write,
+    os::unix::fs::OpenOptionsExt,
     path::Path,
 };
 
@@ -23,10 +24,17 @@ pub const NETPLAN_BACKUP_FILE: &str = formatcp!("{NETPLAN_BACKUP_DIR}{TRIDENT_NE
 /// Writes the given network configuration to Trident's netplan config file.
 pub fn write(value: &NetworkConfig) -> Result<(), Error> {
     debug!("Writing netplan config to {}", TRIDENT_NETPLAN_FILE);
-    fs::write(TRIDENT_NETPLAN_FILE, render_netplan_yaml(value)?)
-        .with_context(|| format!("Failed to write netplan config to {TRIDENT_NETPLAN_FILE}"))?;
-    fs::set_permissions(TRIDENT_NETPLAN_FILE, Permissions::from_mode(0o600))
-        .with_context(|| format!("Failed to set permissions on {TRIDENT_NETPLAN_FILE}"))
+    OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(TRIDENT_NETPLAN_FILE)
+        .with_context(|| {
+            format!("Failed to open netplan configuration file {TRIDENT_NETPLAN_FILE}")
+        })?
+        .write_all(render_netplan_yaml(value)?.as_bytes())
+        .with_context(|| format!("Failed to write netplan config to {TRIDENT_NETPLAN_FILE}"))
 }
 
 /// Executes `netplan generate`.

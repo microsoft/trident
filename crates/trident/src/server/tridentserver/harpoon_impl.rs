@@ -9,9 +9,9 @@ use harpoon::{
     GetActiveVolumeResponse, GetConfigRequest, GetConfigResponse, GetLastErrorRequest,
     GetLastErrorResponse, GetRequiredServicingTypeRequest, GetRequiredServicingTypeResponse,
     GetRollbackChainRequest, GetRollbackTargetRequest, GetServicingStateRequest,
-    GetServicingStateResponse, RebuildRaidRequest, RollbackFinalizeRequest,
-    RollbackServicingRequest, RollbackStageRequest, ServicingRequest, StageRequest,
-    StreamImageRequest, TridentError as HarpoonTridentError, ValidateHostConfigurationRequest,
+    GetServicingStateResponse, RebuildRaidRequest, RollbackFinalizeRequest, RollbackRequest,
+    RollbackStageRequest, ServicingRequest, StageRequest, StreamImageRequest,
+    TridentError as HarpoonTridentError, ValidateHostConfigurationRequest,
     ValidateHostConfigurationResponse, VersionRequest, VersionResponse,
 };
 use trident_api::error::{InternalError, TridentError};
@@ -287,7 +287,7 @@ impl TridentService for TridentHarpoonServer {
     type RollbackStream = ServicingResponseStream;
     async fn rollback(
         &self,
-        _request: Request<RollbackServicingRequest>,
+        _request: Request<RollbackRequest>,
     ) -> Result<Response<Self::RollbackStream>, Status> {
         self.servicing_request("rollback", || {
             Err(TridentError::new(InternalError::Internal(

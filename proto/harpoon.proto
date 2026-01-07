@@ -28,7 +28,7 @@ service TridentService {
   rpc CheckRollback(CheckRollbackRequest) returns (CheckRollbackResponse);
 
   // Rollback performs a rollback.
-  rpc Rollback(RollbackServicingRequest) returns (stream ServicingResponse);
+  rpc Rollback(RollbackRequest) returns (stream ServicingResponse);
 
   // RollbackStage performs the stage operation of a rollback.
   rpc RollbackStage(RollbackStageRequest) returns (stream ServicingResponse);
@@ -234,57 +234,59 @@ message GetRequiredServicingTypeResponse {
   ServicingType servicing_type = 1;
 }
 
-enum RollbackType {
-  Any = 0;
-  AB  = 1;
-  Runtime  = 2;
+enum RollbackKind {
+  AnyRollbackRequested      = 0;
+  AbRollbackRequested       = 1;
+  RuntimeRollbackRequested  = 2;
 }
 
 message CheckRollbackRequest {
-  // The rollback type parameter for the servicing operation.
-  RollbackType    type = 1;
+  // The rollback kind parameter for the servicing operation.
+  RollbackKind    kind = 1;
+}
+
+enum CheckRollbackKind {
+  NoRollbackAvailable      = 0;
+  AbRollbackExpected       = 1;
+  RuntimeRollbackExpected  = 2;
 }
 
 message CheckRollbackResponse {
-  // The rollback type as a string.
-  optional string rollback_type = 1;
+  // The rollback kind as a string.
+  CheckRollbackKind kind = 1;
 }
 
-message RollbackServicingRequest {
-  // The staging parameters for the servicing operation.
-  StageRequest    stage    = 1;
+message RollbackRequest {
   // The finalize parameters for the servicing operation.
   FinalizeRequest finalize = 2;
-  // The rollback type parameter for the servicing operation.
-  RollbackType    type = 3;
+  // The rollback kind parameter for the servicing operation.
+  RollbackKind    type = 3;
 }
 
 message RollbackStageRequest {
-  // The staging parameters for the servicing operation.
-  StageRequest    stage    = 1;
-  // The rollback type parameter for the servicing operation.
-  RollbackType    type = 3;
+  // The rollback kind parameter for the servicing operation.
+  RollbackKind    type = 3;
 }
 
 message RollbackFinalizeRequest {
   // The finalize parameters for the servicing operation.
   FinalizeRequest finalize = 2;
   // The rollback type parameter for the servicing operation.
-  RollbackType    type = 3;
+  RollbackKind    kind = 3;
 }
 
 message GetRollbackChainRequest {}
 
 message GetRollbackChainResponse {
   // The rollback list content as a string.
-  optional string rollback_chain = 1;
+  string rollback_chain = 1;
 }
 
 message GetRollbackTargetRequest {}
 
 message GetRollbackTargetResponse {
   // The rollback target Host Configuration content as a string.
-  optional string rollback_target = 1;
+  string rollback_target = 1;
 }
 
 message CheckRootRequest {}

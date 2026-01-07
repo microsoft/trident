@@ -6,6 +6,7 @@ use std::{
 
 use anyhow::{bail, Context};
 use log::{debug, info};
+use semver::Version;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 use strum_macros::EnumIter;
@@ -61,7 +62,7 @@ pub struct HostStatus {
 
     /// Version of Trident that last updated this HostStatus.
     #[serde(default, skip_serializing_if = "is_default")]
-    pub trident_version: String,
+    pub trident_version: TridentVersion,
 }
 
 /// Servicing type is the type of servicing that the Trident agent is executing on the host.
@@ -112,8 +113,6 @@ pub enum ServicingState {
     Provisioned,
     /// A/B update has been completed, the host booted into the target OS but the health checks failed.
     AbUpdateHealthCheckFailed,
-    // /// Manual rollback has skipped a runtime rollback to execute an earlier A/B rollback.
-    // ManualRollbackSkippedRuntimeRollback,
 }
 
 /// A/B volume selection. Determines which set of volumes are currently
@@ -132,6 +131,16 @@ impl Display for AbVolumeSelection {
             AbVolumeSelection::VolumeB => write!(f, "Volume B"),
         }
     }
+}
+
+/// Trident version
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum TridentVersion {
+    SemVer(Version),
+    Other(String),
+    #[default]
+    None,
 }
 
 fn fix_host_config(yaml: &mut Value) -> Result<(), anyhow::Error> {

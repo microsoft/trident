@@ -1,16 +1,16 @@
 use std::{fs, path::Path};
 
 use log::debug;
-
 use sqlite::State;
+
 use trident_api::{
     error::{
         DatastoreError, InternalError, ReportError, ServicingError, TridentError, TridentResultExt,
     },
-    status::{decode_host_status, HostStatus},
+    status::{decode_host_status, HostStatus, TridentVersion},
 };
 
-use crate::TRIDENT_VERSION;
+use crate::TRIDENT_SEMVER_VERSION;
 
 pub struct DataStore {
     db: Option<sqlite::Connection>,
@@ -78,7 +78,7 @@ impl DataStore {
         })
     }
 
-    /// Retrieve all HostStatus entries from the datastore.
+    /// Retrieve all HostStatus entries from the datastore, sorted from oldest to newest.
     pub(crate) fn get_host_statuses(&self) -> Result<Vec<HostStatus>, TridentError> {
         let mut all_rows_data: Vec<HostStatus> = Vec::new();
 
@@ -87,7 +87,7 @@ impl DataStore {
         let mut query_statement = self
             .db
             .as_ref()
-            .unwrap()
+            .structured(ServicingError::from(DatastoreError::OpenDatastore))?
             .prepare("SELECT contents FROM hoststatus ORDER BY id DESC")
             .structured(ServicingError::Datastore {
                 inner: DatastoreError::InitializeDatastore,
@@ -136,7 +136,8 @@ impl DataStore {
         if self.temporary {
             let persistent_db = Self::make_datastore(path)?;
             self.host_status.is_management_os = false;
-            self.host_status.trident_version = TRIDENT_VERSION.to_string();
+            self.host_status.trident_version =
+                TridentVersion::SemVer(TRIDENT_SEMVER_VERSION.clone());
             Self::write_host_status(&persistent_db, self.host_status())?;
 
             self.db = Some(persistent_db);
@@ -152,7 +153,8 @@ impl DataStore {
     ) -> Result<(), TridentError> {
         // Create a mutable copy of the Host Status to add Trident version before writing.
         let mut host_status_with_trident_version = host_status.clone();
-        host_status_with_trident_version.trident_version = TRIDENT_VERSION.to_string();
+        host_status_with_trident_version.trident_version =
+            TridentVersion::SemVer(TRIDENT_SEMVER_VERSION.clone());
         let mut statement = db
             .prepare("INSERT INTO hoststatus (contents) VALUES (?)")
             .structured(ServicingError::from(DatastoreError::WriteToDatastore))?;

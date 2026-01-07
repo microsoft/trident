@@ -77,8 +77,9 @@ pub fn prepare_esp_for_uki(root_mount_point: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-/// Enumerates existing UKIs in the given directory, returning their indices and suffixes.
-fn enumerate_existing_ukis(
+/// Enumerates existing UKIs managed by Trident (defined by naming convention: vmlinuz-<index>-azl<a|b><number>.efi)
+/// in the given directory, returning their indices, suffixes, and paths.
+fn enumerate_trident_managed_ukis(
     esp_uki_directory: &Path,
 ) -> Result<Vec<(usize, String, PathBuf)>, Error> {
     let mut uki_entries = Vec::new();
@@ -94,6 +95,7 @@ fn enumerate_existing_ukis(
             .to_str()
             .and_then(|filename| filename.strip_prefix("vmlinuz-"))
             .and_then(|f| f.split_once('-'))
+            .filter(|(_, suffix)| suffix.contains("azla") || suffix.contains("azlb"))
             .and_then(|(index, suffix)| Some((index.parse::<usize>().ok()?, suffix.to_string())))
         {
             uki_entries.push((index, suffix, entry.path()));
@@ -115,8 +117,8 @@ pub fn update_uki_boot_order(
     oneshot: bool,
 ) -> Result<(), TridentError> {
     let esp_uki_directory = esp_dir_path.join(UKI_DIRECTORY);
-    let existing_ukis =
-        enumerate_existing_ukis(&esp_uki_directory).structured(ServicingError::EnumerateUkis)?;
+    let existing_ukis = enumerate_trident_managed_ukis(&esp_uki_directory)
+        .structured(ServicingError::EnumerateUkis)?;
     let uki_suffix = uki_suffix(ctx);
 
     let mut max_index = 99;
@@ -152,7 +154,11 @@ pub fn update_uki_boot_order(
     Ok(())
 }
 
-fn enumerate_preexisting_ukis(esp_uki_directory: &Path) -> Result<Vec<(Version, PathBuf)>, Error> {
+/// Enumerates preexisting UKIs unmanaged by Trident (defined by naming convention: vmlinuz-6.6.117.1-1.azl3.efi)
+/// in the given directory, returning their versions and paths.
+fn enumerate_nontrident_managed_ukis(
+    esp_uki_directory: &Path,
+) -> Result<Vec<(Version, PathBuf)>, Error> {
     let mut preexisting_uki_entries = Vec::new();
 
     for entry in fs::read_dir(esp_uki_directory).context(format!(
@@ -165,7 +171,8 @@ fn enumerate_preexisting_ukis(esp_uki_directory: &Path) -> Result<Vec<(Version, 
         if let Some(version) = filename
             .to_str()
             .and_then(|filename| filename.strip_prefix("vmlinuz-"))
-            .and_then(|f| f.strip_suffix(".azl3.efi"))
+            .filter(|f| !f.contains("azla") && !f.contains("azlb"))
+            .and_then(|filename| filename.strip_suffix(".efi"))
         {
             match version.parse() {
                 Ok(v) => preexisting_uki_entries.push((v, entry.path())),
@@ -188,9 +195,10 @@ fn enumerate_preexisting_ukis(esp_uki_directory: &Path) -> Result<Vec<(Version, 
     Ok(preexisting_uki_entries)
 }
 
+/// Get list of UKI files (both Trident-managed and pre-existing) and find the previous UKI to use for rollback.
 pub fn find_previous_uki(esp_dir_path: &Path) -> Result<PathBuf, TridentError> {
     let esp_uki_directory = esp_dir_path.join(UKI_DIRECTORY);
-    let trident_managed_ukis = enumerate_existing_ukis(&esp_uki_directory)
+    let trident_managed_ukis = enumerate_trident_managed_ukis(&esp_uki_directory)
         .structured(ServicingError::EnumerateUkis)
         .message("Failed to enumerate Trident-managed UKIs")?;
     let mut uki_entries: Vec<_> = trident_managed_ukis
@@ -200,7 +208,7 @@ pub fn find_previous_uki(esp_dir_path: &Path) -> Result<PathBuf, TridentError> {
     uki_entries.sort_by_key(|(index, _, _)| *index);
     println!("Found Trident-managed UKI entries: [{:?}]", uki_entries);
 
-    let preexising_ukis = enumerate_preexisting_ukis(&esp_uki_directory)
+    let preexising_ukis = enumerate_nontrident_managed_ukis(&esp_uki_directory)
         .structured(ServicingError::EnumerateUkis)
         .message("Failed to enumerate preexisting UKIs")?;
     let mut preexisting_uki_entries: Vec<_> = preexising_ukis.into_iter().collect();
@@ -320,32 +328,32 @@ mod tests {
     }
 
     #[test]
-    fn test_enumerate_existing_ukis_empty_directory() {
+    fn test_enumerate_trident_managed_ukis_empty_directory() {
         let dir = tempdir().unwrap();
-        let entries = enumerate_existing_ukis(dir.path()).unwrap();
+        let entries = enumerate_trident_managed_ukis(dir.path()).unwrap();
         assert!(entries.is_empty());
     }
 
     #[test]
-    fn test_enumerate_existing_ukis_single_valid_entry() {
+    fn test_enumerate_trident_managed_ukis_single_valid_entry() {
         let dir = tempdir().unwrap();
         let uki_path = dir.path().join("vmlinuz-1-azla1.efi");
         File::create(&uki_path).unwrap();
 
-        let entries = enumerate_existing_ukis(dir.path()).unwrap();
+        let entries = enumerate_trident_managed_ukis(dir.path()).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0], (1, "azla1.efi".to_string(), uki_path));
     }
 
     #[test]
-    fn test_enumerate_existing_ukis_multiple_valid_entries() {
+    fn test_enumerate_trident_managed_ukis_multiple_valid_entries() {
         let dir = tempdir().unwrap();
         let uki_path1 = dir.path().join("vmlinuz-1-azla1.efi");
         let uki_path2 = dir.path().join("vmlinuz-2-azlb2.efi");
         File::create(&uki_path1).unwrap();
         File::create(&uki_path2).unwrap();
 
-        let mut entries = enumerate_existing_ukis(dir.path()).unwrap();
+        let mut entries = enumerate_trident_managed_ukis(dir.path()).unwrap();
         entries.sort_by_key(|e| e.0);
 
         assert_eq!(entries.len(), 2);
@@ -354,7 +362,7 @@ mod tests {
     }
 
     #[test]
-    fn test_enumerate_existing_ukis_ignores_invalid_entries() {
+    fn test_enumerate_trident_managed_ukis_ignores_invalid_entries() {
         let dir = tempdir().unwrap();
         let valid_uki = dir.path().join("vmlinuz-3-azla3.efi");
         let invalid_uki1 = dir.path().join("invalid-file.efi");
@@ -363,18 +371,18 @@ mod tests {
         File::create(&invalid_uki1).unwrap();
         File::create(&invalid_uki2).unwrap();
 
-        let entries = enumerate_existing_ukis(dir.path()).unwrap();
+        let entries = enumerate_trident_managed_ukis(dir.path()).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0], (3, "azla3.efi".to_string(), valid_uki));
     }
 
     #[test]
-    fn test_enumerate_existing_ukis_non_numeric_index() {
+    fn test_enumerate_trident_managed_ukis_non_numeric_index() {
         let dir = tempdir().unwrap();
         let invalid_uki = dir.path().join("vmlinuz-abc-azla.efi");
         File::create(&invalid_uki).unwrap();
 
-        let entries = enumerate_existing_ukis(dir.path()).unwrap();
+        let entries = enumerate_trident_managed_ukis(dir.path()).unwrap();
         assert!(entries.is_empty());
     }
 
