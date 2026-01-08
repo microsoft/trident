@@ -217,8 +217,8 @@ pub fn find_previous_uki(esp_dir_path: &Path) -> Result<PathBuf, TridentError> {
     let mut non_trident_managed_uki_entries: Vec<_> =
         non_trident_managed_ukis.into_iter().collect();
     non_trident_managed_uki_entries.sort_by_key(|(version, _)| *version);
-    println!(
-        "Found preexisting UKI entries: [{:?}]",
+    debug!(
+        "Found non-Trident managed UKI entries: [{:?}]",
         non_trident_managed_uki_entries
     );
 
