@@ -238,7 +238,7 @@ mod tests {
         let hash1 = Sha384Hash::from("a".repeat(96));
         let hash2 = Sha384Hash::from("b".repeat(96));
 
-        let internal_exts = vec![
+        let internal_exts = [
             ExtensionData {
                 id: "ext1".to_string(),
                 name: "ext1".to_string(),
