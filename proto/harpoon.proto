@@ -81,7 +81,7 @@ message FinalizeRequest {
 
 message ServicingRequest {
   // The staging parameters for the servicing operation.
-  StageRequest    stage    = 1;
+  StageRequest stage = 1;
   // The finalize parameters for the servicing operation.
   FinalizeRequest finalize = 2;
 }
@@ -97,13 +97,13 @@ enum LogLevel {
 
 message Log {
   // Level of the log message.
-  LogLevel     level    = 1;
+  LogLevel level = 1;
   // Body of the log message.
-  string       message  = 2;
+  string message = 2;
   // Target of the log message.
-  string       target   = 3;
+  string target = 3;
   // Module where the log message originated.
-  string       module   = 4;
+  string module = 4;
   // Location where the log message was generated.
   FileLocation location = 5;
 }
@@ -116,26 +116,26 @@ enum StatusCode {
 
 message FinalStatus {
   // Final status of the servicing operation.
-  StatusCode            status          = 1;
+  StatusCode status = 1;
   // Message associated with the final status.
-  optional TridentError error           = 2;
+  optional TridentError error = 2;
   // Whether a reboot is required to complete the servicing operation.
-  bool                  reboot_required = 3;
+  bool reboot_required = 3;
 }
 
 message Start {}
 
 message ServicingResponse {
   // Timestamp of the response message.
-  google.protobuf.Timestamp timestamp    = 1;
+  google.protobuf.Timestamp timestamp = 1;
   // Body of the response message.
   oneof response {
     // A start message indicating the beginning of the servicing operation.
-    Start                     start        = 2;
+    Start start = 2;
     // A log message from the servicing operation.
-    Log                       log          = 3;
+    Log log = 3;
     // A final status message from the servicing operation.
-    FinalStatus               final_status = 4;
+    FinalStatus final_status = 4;
   }
 }
 
@@ -189,21 +189,21 @@ message ValidateHostConfigurationRequest {
 }
 
 message ValidateHostConfigurationResponse {
-  // Indicates if the configuration is valid.
-  bool            valid   = 1;
-  // Message providing details about validation errors.
-  optional string message = 2;
+  // Whether the configuration is valid.
+  bool ok = 1;
+  // Validation error, if any. Nil if the configuration is valid.
+  optional TridentError error = 2;
 }
 
 enum ServicingType {
   // No servicing is currently in progress or not required.
   NO_ACTIVE_SERVICING = 0;
   // Update that can be applied without necessitating a reboot.
-  RUNTIME_UPDATE      = 1;
+  RUNTIME_UPDATE = 1;
   // Update that requires switching to a different root partition and rebooting.
-  AB_UPDATE           = 2;
+  AB_UPDATE = 2;
   // Clean install of the target OS.
-  CLEAN_INSTALL       = 3;
+  CLEAN_INSTALL = 3;
 }
 
 message GetRequiredServicingTypeRequest {
@@ -234,13 +234,15 @@ message StreamImageRequest {
 
 message TridentError {
   // Error kind.
-  TridentErrorKind kind     = 1;
+  TridentErrorKind kind = 1;
   // Error subkind.
-  string           subkind  = 2;
-  // Error message.
-  string           message  = 3;
+  string subkind = 2;
+  // Specific error message.
+  string message = 3;
+  // Full body of the error, including debug information.
+  string full_body = 4;
   // Location in the file where the error occurred.
-  FileLocation     location = 4;
+  FileLocation location = 5;
 }
 
 // Major kinds of Trident errors.
@@ -249,21 +251,21 @@ enum TridentErrorKind {
   // misconfigured.
   EXECUTION_ENVIRONMENT_MISCONFIGURATION = 0;
   // Identifies errors that are related to health checks.
-  HEALTH_CHECKS                          = 1;
+  HEALTH_CHECKS = 1;
   // Identifies errors that occur when Trident fails to initialize.
-  INITIALIZATION                         = 2;
+  INITIALIZATION = 2;
   // Identifies errors that occur due to an internal bug or failure in Trident.
-  INTERNAL                               = 3;
+  INTERNAL = 3;
   // Identifies errors that occur when the user provides invalid input.
-  INVALID_INPUT                          = 4;
+  INVALID_INPUT = 4;
   // Identifies errors that occur during servicing and require further user
   // investigation, to determine whether the error occurred due to an internal
   // failure in Trident, a failure in one of its dependencies, or a system
   // misconfiguration.
-  SERVICING                              = 5;
+  SERVICING = 5;
   // Identifies errors that occur when clean install or update fail due to the
   // current configuration of the host.
-  UNSUPPORTED_CONFIGURATION              = 6;
+  UNSUPPORTED_CONFIGURATION = 6;
 }
 
 message FileLocation {
