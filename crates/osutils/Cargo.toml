@@ -13,7 +13,6 @@ configparser = { workspace = true }
 const_format = { workspace = true }
 duct = { workspace = true }
 enumflags2 = { workspace = true }
-goblin = { workspace = true }
 hex = { workspace = true }
 hostname = { workspace = true }
 indoc = { workspace = true }
