@@ -8,7 +8,7 @@ use log::{debug, info, trace, warn};
 
 use osutils::{e2fsck, lsblk, resize2fs};
 use trident_api::{
-    constants::internal_params::RAW_COSI_STORAGE,
+    constants::{internal_params::RAW_COSI_STORAGE, ESP_MOUNT_POINT_PATH},
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::ServicingType,
     BlockDeviceId,
@@ -41,19 +41,23 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
         "No OS image available for deployment",
     ))?;
 
-    let mut images = os_img
-        .filesystems()
-        .map(|fs| (fs.mount_point.to_owned(), fs))
-        .collect::<HashMap<_, _>>();
+    let images = {
+        let mut tmp = os_img
+            .filesystems()
+            .map(|fs| (fs.mount_point.to_owned(), fs))
+            .collect::<HashMap<_, _>>();
 
-    if ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
-        images.insert(
-            "/boot/efi".into(),
-            os_img
-                .esp_filesystem()
-                .structured(InternalError::Internal("COSI doesn't have ESP"))?,
-        );
-    }
+        if ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
+            tmp.insert(
+                ESP_MOUNT_POINT_PATH.into(),
+                os_img
+                    .esp_filesystem()
+                    .structured(InternalError::Internal("COSI doesn't have ESP"))?,
+            );
+        }
+
+        tmp
+    };
 
     // Now, deploy the filesystems sourced from the OS image
     for (id, mpp, fs) in fs_from_img {
