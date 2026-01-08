@@ -10,6 +10,8 @@ from assertpy.assertpy import AssertionBuilder, assert_that  # type: ignore
 
 # CodeQL [SM04242] Paramiko is used exclusively in testing, not in production. We can suppress this warning as Trident releases are not affected.
 from paramiko import SSHClient
+
+# CodeQL [SM04242] Paramiko is used exclusively in testing, not in production. We can suppress this warning as Trident releases are not affected.
 from paramiko.channel import ChannelFile, ChannelStderrFile
 
 
