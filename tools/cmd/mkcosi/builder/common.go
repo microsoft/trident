@@ -31,6 +31,7 @@ type CommonOpts struct {
 	Source          string `arg:"" help:"Source directory to build COSI from." required:"" type:"path"`
 	Output          string `arg:"" help:"Output file to write COSI to." required:"" type:"path"`
 	SourceExtension string `name:"extension" short:"e" help:"Source file extension." default:"rawzst"`
+	Arch            string `short:"a" help:"Architecture to build for" default:"aarch64" enum:"aarch64,x86_64"`
 }
 
 func (opts CommonOpts) Validate() error {
@@ -84,7 +85,7 @@ func buildCosiFile(variant ImageVariant) error {
 
 	cosiMetadata := metadata.MetadataJson{
 		Version: "1.0",
-		OsArch:  "aarch64",
+		OsArch:  commonOpts.Arch,
 		Id:      uuid.New().String(),
 		Images:  make([]metadata.Image, len(expectedImages)),
 	}
