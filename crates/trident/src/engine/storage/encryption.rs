@@ -73,11 +73,8 @@ enum EncryptionType {
 
 /// Sets up and opens encrypted devices.
 #[tracing::instrument(name = "encrypted_devices_creation", fields(total_partition_size_bytes = tracing::field::Empty), skip_all)]
-pub(super) fn create_encrypted_devices(
-    ctx: &EngineContext,
-    host_config: &HostConfiguration,
-) -> Result<(), TridentError> {
-    if let Some(encryption) = &host_config.storage.encryption {
+pub(super) fn create_encrypted_devices(ctx: &EngineContext) -> Result<(), TridentError> {
+    if let Some(encryption) = &ctx.spec.storage.encryption {
         let key_file_tmp: NamedTempFile;
         let key_file_path: PathBuf;
         if let Some(recovery_key_url) = &encryption.recovery_key_url {
@@ -143,7 +140,8 @@ pub(super) fn create_encrypted_devices(
 
         // Check if `REENCRYPT_ON_CLEAN_INSTALL` internal param is set to true; if so, re-encrypt
         // the device in-place. Otherwise, initialize a new LUKS2 volume.
-        let encryption_type = if host_config
+        let encryption_type = if ctx
+            .spec
             .internal_params
             .get_flag(REENCRYPT_ON_CLEAN_INSTALL)
         {
