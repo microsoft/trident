@@ -1,0 +1,139 @@
+parameters:
+  - name: testingRun
+    displayName: "Download prebuilt test artifacts"
+    type: boolean
+    default: false
+
+  - name: baseimgAzlVersion
+    displayName: Base Image AZL version
+    type: string
+    default: "3.0"
+
+  - name: updateCheckTimeoutInMinutes
+    displayName: "Timeout for checking target OS deployment in minutes"
+    type: number
+    default: 30
+
+  - name: verboseLogging
+    displayName: "Enable verbose logging"
+    type: boolean
+    default: false
+
+  - name: includeQemuGrub
+    displayName: "Include qemu grub testing"
+    type: boolean
+    # Expect GRUB w/o verity to succeed and it works locally, but
+    # fails in pipeline to reconnect to VM after first A/B update,
+    # so default to false for now
+    default: false
+
+  - name: includeQemu
+    displayName: "Include qemu testing"
+    type: boolean
+    default: false
+
+  - name: includeUKI
+    displayName: "Include UKI testing"
+    type: boolean
+    default: false
+
+  - name: micBuildType
+    displayName: MIC Build Type
+    type: string
+    values:
+      - dev
+      - preview
+      - release
+    default: release
+
+  - name: micVersion
+    displayName: MIC Version
+    type: string
+    default: "*.*.*"
+
+  - name: dependsOnStage
+    type: string
+    default: ""
+
+stages:
+  - ${{ if eq(parameters.testingRun, false) }}:
+      - ${{ if eq(parameters.includeQemuGrub, true) }}:
+          - stage: BuildImagesQemuGrub
+            displayName: Build Base and Update Images for QEMU GRUB
+            dependsOn:
+              - PrepareSSHKeys
+              - GetTridentBinaries_rpms_amd64
+              - ${{ if ne(parameters.dependsOnStage, '') }}:
+                  - ${{ parameters.dependsOnStage }}
+
+            jobs:
+              - template: ../testing_servicing/build-image.yml
+                parameters:
+                  label: "qemu-grub-base"
+                  makeTarget: "artifacts/trident-vm-grub-testimage.qcow2"
+                  baseimgType: qemu_guest
+                  baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+                  micBuildType: ${{ parameters.micBuildType }}
+                  micVersion: ${{ parameters.micVersion }}
+                  useStagedSshKeys: true
+
+              - template: ../testing_servicing/build-image.yml
+                parameters:
+                  label: "qemu-grub-update-a"
+                  makeTarget: "artifacts/trident-vm-grub-testimage.cosi"
+                  baseimgType: qemu_guest
+                  baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+                  micBuildType: ${{ parameters.micBuildType }}
+                  micVersion: ${{ parameters.micVersion }}
+                  useStagedSshKeys: true
+
+  - stage: RuntimeUpdateAndRollbackTesting
+    displayName: Runtime Update and Rollback Testing
+    dependsOn:
+      - ${{ if eq(parameters.testingRun, true) }}:
+          - DownloadTestingElements
+      - ${{ else }}:
+          - BuildingTools
+          - ${{ if eq(parameters.includeQemuGrub, true) }}:
+              - BuildImagesQemuGrub
+          - ${{ if eq(parameters.includeQemu, true) }}:
+              - BuildImagesQemu
+          - ${{ if eq(parameters.includeUKI, true) }}:
+              - BuildImagesUKI
+
+    variables:
+      - group: servicing_testing_params
+      - name: SSH_PRIVATE_KEY_PATH
+        value: "$HOME/.ssh/id_rsa"
+      - name: SSH_PUBLIC_KEY_PATH
+        value: "$(SSH_PRIVATE_KEY_PATH).pub"
+      - name: IMAGE_DEFINITION
+        value: "trident-vm-grub-verity-testimage-$(System.DefinitionId)"
+
+    jobs:
+      - ${{ if eq(parameters.includeQemuGrub, true) }}:
+          - template: testing-template.yml
+            parameters:
+              updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
+              verboseLogging: ${{ parameters.verboseLogging }}
+              platform: qemu
+              flavor: qemu-grub
+              skipExtensionTesting: false
+      - ${{ if eq(parameters.includeQemu, true) }}:
+          - template: testing-template.yml
+            parameters:
+              updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
+              verboseLogging: ${{ parameters.verboseLogging }}
+              platform: qemu
+              flavor: qemu
+              # qemu image is grub + root verity. in this setup, Image Customizer cannot add
+              # an extension to the servicing qcow2
+              skipExtensionTesting: true
+      - ${{ if eq(parameters.includeUKI, true) }}:
+          - template: testing-template.yml
+            parameters:
+              updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
+              verboseLogging: ${{ parameters.verboseLogging }}
+              platform: qemu
+              flavor: uki
+              skipExtensionTesting: false

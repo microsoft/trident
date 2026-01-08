@@ -1,0 +1,165 @@
+parameters:
+  - name: updateCheckTimeoutInMinutes
+    displayName: "Timeout for checking target OS deployment in minutes"
+    type: number
+    default: 25
+
+  - name: verboseLogging
+    displayName: "Enable verbose logging"
+    type: boolean
+    default: false
+
+  - name: imageOverride
+    displayName: "Image override prefix"
+    type: string
+    default: ""
+
+  - name: platform
+    displayName: Test platform
+    type: string
+    values:
+      - qemu
+
+  - name: flavor
+    displayName: Image flavor
+    type: string
+    values:
+      - qemu-grub
+      - qemu
+      - uki
+
+  - name: pool
+    displayName: Agent pool
+    type: string
+    default: "trident-ubuntu-1es-pool-eastus2"
+  
+  - name: skipExtensionTesting
+    displayName: "Skip extension testing"
+    type: string
+    default: "false"
+
+  - name: skipManualRollbackTesting
+    displayName: "Skip manual rollback testing"
+    type: string
+    default: "true"
+
+  - name: skipRuntimeUpdateTesting
+    displayName: "Skip runtime update testing"
+    type: string
+    default: "true"
+
+jobs:
+  - job: RollbackTesting_${{ replace(parameters.flavor, '-', '_') }}
+    displayName: Rollback Testing - ${{ parameters.flavor }}
+    timeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
+    pool:
+      type: linux
+      name: ${{ parameters.pool }}
+      hostArchitecture: amd64
+
+    variables:
+      tridentSourceDirectory: $(Build.SourcesDirectory)
+      ob_outputDirectory: $(tridentSourceDirectory)/deployment_logs_${{ parameters.flavor }}
+      ob_artifactBaseName: "rollback-testing-${{ parameters.flavor }}"
+      TEST_RESOURCE_GROUP: trident-vm-servicing-validation-$(Build.BuildId)
+
+    steps:
+      - task: DownloadPipelineArtifact@2
+        inputs:
+          buildType: current
+          artifactName: image-${{ parameters.flavor }}-base
+          targetPath: "$(Build.ArtifactStagingDirectory)/"
+        displayName: Download Base Image
+
+      - task: DownloadPipelineArtifact@2
+        inputs:
+          buildType: current
+          artifactName: image-${{ parameters.flavor }}-update-a
+          targetPath: "$(Build.ArtifactStagingDirectory)"
+        displayName: Download Update Image
+
+      - task: DownloadPipelineArtifact@2
+        inputs:
+          buildType: current
+          artifactName: ssh-keys
+          targetPath: "$(Build.ArtifactStagingDirectory)/ssh"
+        displayName: Download SSH Keys
+
+      - task: DownloadPipelineArtifact@2
+        displayName: "Download go-tools"
+        inputs:
+          buildType: current
+          artifactName: "go-tools"
+          patterns: |
+            netlisten
+            storm-trident
+          targetPath: "$(tridentSourceDirectory)/bin"
+
+      - bash: |
+          set -eux
+          chmod +x $(tridentSourceDirectory)/bin/netlisten
+          chmod +x $(tridentSourceDirectory)/bin/storm-trident
+          cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* ~/.ssh/
+          chmod -R 700 ~/.ssh/
+          mkdir -p $(ob_outputDirectory)
+          ls -l ~/.ssh/
+        displayName: Set up SSH Keys and setup output directory
+
+      - bash: |
+          set -eux
+          ./bin/storm-trident script build-extension-images --build-sysexts --num-clones 3
+          mv ./test-sysext-*.raw $(Build.ArtifactStagingDirectory)/
+
+          find $(Build.ArtifactStagingDirectory)
+        displayName: "Create extensions for test"
+
+      - bash: |
+          set -eux
+          
+          STORM_DYNAMIC_FLAGS=""
+          if [ "${{ parameters.verboseLogging }}" == "True" ]; then
+            STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --verbose"
+          fi
+          if [ "${{ parameters.flavor }}" != "uki" ]; then
+            STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --secure-boot"
+          fi
+          if [ "${{ parameters.skipManualRollbackTesting }}" == "true" ]; then
+            # skip manual rollback testing
+            STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --skip-manual-rollbacks"
+          fi
+          if [ "${{ parameters.skipRuntimeUpdateTesting }}" == "true" ]; then
+            # skip runtime update testing
+            STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --skip-runtime-updates"
+          fi
+          if [ "${{ parameters.skipExtensionTesting }}" == "true" ]; then
+            # Allow testing for non-extension scenarios
+            STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --skip-extension-testing"
+          fi
+
+          sudo ./bin/storm-trident run rollback -a $STORM_DYNAMIC_FLAGS \
+            --artifacts-dir $(Build.ArtifactStagingDirectory) \
+            --output-path $(ob_outputDirectory) \
+            --platform ${{ parameters.platform }} \
+            --ssh-private-key-path $(SSH_PRIVATE_KEY_PATH) \
+            --ssh-public-key-path $(SSH_PUBLIC_KEY_PATH) \
+            --force-cleanup
+        displayName: "Rollback test (${{ parameters.platform }})"
+        timeoutInMinutes: 5
+
+      - bash: |
+          set -eux
+
+          sudo zstd -T0 $(Build.ArtifactStagingDirectory)/booted.qcow2
+          sudo mv $(Build.ArtifactStagingDirectory)/booted.qcow2.zst $(ob_outputDirectory)/
+        workingDirectory: $(tridentSourceDirectory)
+        condition: failed()
+        displayName: "Publish logs and OS disk on failure"
+        timeoutInMinutes: 5
+
+      - bash: |
+          set -eux
+          sudo chmod -R 777 $(ob_outputDirectory)/
+          sudo chown -R $USER:$USER $(ob_outputDirectory)/
+          ls -lR $(ob_outputDirectory)/
+        condition: always()
+        displayName: "Ensure output directory permissions"
