@@ -88,7 +88,7 @@ impl DataStore {
             .db
             .as_ref()
             .structured(ServicingError::from(DatastoreError::OpenDatastore))?
-            .prepare("SELECT contents FROM hoststatus ORDER BY id DESC")
+            .prepare("SELECT contents FROM hoststatus ORDER BY id ASC")
             .structured(ServicingError::Datastore {
                 inner: DatastoreError::InitializeDatastore,
             })?;
@@ -104,7 +104,7 @@ impl DataStore {
                 serde_yaml::from_str(&host_status_yaml).structured(ServicingError::Datastore {
                     inner: DatastoreError::InitializeDatastore,
                 })?;
-            all_rows_data.insert(0, host_status);
+            all_rows_data.push(host_status);
         }
 
         Ok(all_rows_data)

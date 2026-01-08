@@ -150,90 +150,89 @@ func SkipToAbRollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig st
 	//   1. abupdate
 	//   2. runtime update
 	//   3. rollback --ab
-	if !testConfig.SkipRuntimeUpdates && !testConfig.SkipManualRollbacks {
-		// Create context to ensure goroutines exit cleanly
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
 
-		// Find COSI file
-		cosiFile, err := stormfile.FindFile(testConfig.ArtifactsDir, ".*\\.cosi$")
-		if err != nil {
-			return fmt.Errorf("failed to find COSI file: %w", err)
-		}
-		logrus.Tracef("Found COSI file: %s", cosiFile)
-		cosiFileName := filepath.Base(cosiFile)
+	// Create context to ensure goroutines exit cleanly
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-		// Find VM IP address
-		logrus.Tracef("Get VM IP after startup")
-		vmIP, err := stormvm.GetVmIP(vmConfig)
-		if err != nil {
-			return fmt.Errorf("failed to get VM IP after startup: %w", err)
-		}
-		logrus.Infof("VM IP remains the same after startup: %s", vmIP)
+	// Find COSI file
+	cosiFile, err := stormfile.FindFile(testConfig.ArtifactsDir, ".*\\.cosi$")
+	if err != nil {
+		return fmt.Errorf("failed to find COSI file: %w", err)
+	}
+	logrus.Tracef("Found COSI file: %s", cosiFile)
+	cosiFileName := filepath.Base(cosiFile)
 
-		// Create test states
-		testStates := createTestStates(testConfig, vmConfig, vmIP, cosiFileName, testConfig.ExpectedVolume)
+	// Find VM IP address
+	logrus.Tracef("Get VM IP after startup")
+	vmIP, err := stormvm.GetVmIP(vmConfig)
+	if err != nil {
+		return fmt.Errorf("failed to get VM IP after startup: %w", err)
+	}
+	logrus.Infof("VM IP remains the same after startup: %s", vmIP)
 
-		// Validate OS state
-		err = testStates.InitialState.validateOs()
-		if err != nil {
-			return fmt.Errorf("failed to validate OS state after update: %w", err)
-		}
+	// Create test states
+	testStates := createTestStates(testConfig, vmConfig, vmIP, cosiFileName, testConfig.ExpectedVolume)
 
-		logrus.Tracef("Start file server (netlisten) on test runner")
-		fileServerStartedChannel := make(chan bool)
-		go stormnetlisten.StartNetListenAndWait(ctx, testConfig.FileServerPort, testConfig.ArtifactsDir, "logstream-full-rollback.log", fileServerStartedChannel)
-		logrus.Tracef("Waiting for file server (netlisten) to start")
-		<-fileServerStartedChannel
-		logrus.Tracef("File server (netlisten) started")
+	// Validate OS state
+	err = testStates.InitialState.validateOs()
+	if err != nil {
+		return fmt.Errorf("failed to validate OS state after update: %w", err)
+	}
 
-		// Set up SSH proxy for file server on VM
-		{
-			logrus.Tracef("Setting up SSH proxy ports for file server on VM")
-			proxyStartedChannel := make(chan bool)
-			go stormssh.StartSshProxyPortAndWait(ctx, testConfig.FileServerPort, vmIP, vmConfig.VMConfig.User, vmConfig.VMConfig.SshPrivateKeyPath, proxyStartedChannel)
-			logrus.Tracef("Waiting for SSH proxy on VM to start")
-			<-proxyStartedChannel
-			logrus.Tracef("SSH proxy ports for file server on VM started")
-		}
+	logrus.Tracef("Start file server (netlisten) on test runner")
+	fileServerStartedChannel := make(chan bool)
+	go stormnetlisten.StartNetListenAndWait(ctx, testConfig.FileServerPort, testConfig.ArtifactsDir, "logstream-full-rollback.log", fileServerStartedChannel)
+	logrus.Tracef("Waiting for file server (netlisten) to start")
+	<-fileServerStartedChannel
+	logrus.Tracef("File server (netlisten) started")
 
-		// Perform A/B update
-		err = testStates.AbUpdate.doUpdateTest()
-		if err != nil {
-			return fmt.Errorf("failed to perform A/B update for rollback-ab test: %w", err)
-		}
-		err = saveSerialAndTruncate(testConfig, vmConfig.VMConfig.Name, "serial-rollbackab-ab-update.log")
-		if err != nil {
-			return fmt.Errorf("failed to save rollback-ab A/B update boot serial log: %w", err)
-		}
+	// Set up SSH proxy for file server on VM
+	{
+		logrus.Tracef("Setting up SSH proxy ports for file server on VM")
+		proxyStartedChannel := make(chan bool)
+		go stormssh.StartSshProxyPortAndWait(ctx, testConfig.FileServerPort, vmIP, vmConfig.VMConfig.User, vmConfig.VMConfig.SshPrivateKeyPath, proxyStartedChannel)
+		logrus.Tracef("Waiting for SSH proxy on VM to start")
+		<-proxyStartedChannel
+		logrus.Tracef("SSH proxy ports for file server on VM started")
+	}
 
-		// Set up SSH proxy (again) for file server on VM after A/B update reboot
-		{
-			logrus.Tracef("Setting up SSH proxy ports for file server on VM")
-			proxyStartedChannel := make(chan bool)
-			go stormssh.StartSshProxyPortAndWait(ctx, testConfig.FileServerPort, vmIP, vmConfig.VMConfig.User, vmConfig.VMConfig.SshPrivateKeyPath, proxyStartedChannel)
-			<-proxyStartedChannel
-		}
+	// Perform A/B update
+	err = testStates.AbUpdate.doUpdateTest()
+	if err != nil {
+		return fmt.Errorf("failed to perform A/B update for rollback-ab test: %w", err)
+	}
+	err = saveSerialAndTruncate(testConfig, vmConfig.VMConfig.Name, "serial-rollbackab-ab-update.log")
+	if err != nil {
+		return fmt.Errorf("failed to save rollback-ab A/B update boot serial log: %w", err)
+	}
 
-		// Perform runtime update
-		err = testStates.RuntimeUpdate1.doUpdateTest()
-		if err != nil {
-			return fmt.Errorf("failed to perform first runtime update for rollback-ab test: %w", err)
-		}
-		err = saveSerialAndTruncate(testConfig, vmConfig.VMConfig.Name, "serial-rollbackab-runtime-update.log")
-		if err != nil {
-			return fmt.Errorf("failed to save first runtime update serial log for rollback-ab test: %w", err)
-		}
+	// Set up SSH proxy (again) for file server on VM after A/B update reboot
+	{
+		logrus.Tracef("Setting up SSH proxy ports for file server on VM")
+		proxyStartedChannel := make(chan bool)
+		go stormssh.StartSshProxyPortAndWait(ctx, testConfig.FileServerPort, vmIP, vmConfig.VMConfig.User, vmConfig.VMConfig.SshPrivateKeyPath, proxyStartedChannel)
+		<-proxyStartedChannel
+	}
 
-		// Invoke `rollback --ab` of ab update into initial state
-		err = testStates.InitialState.doRollbackTest("--ab", "", testStates.AbUpdate.ExpectReboot, true)
-		if err != nil {
-			return fmt.Errorf("failed to perform `rollback --ab` for rollback-ab test: %w", err)
-		}
-		err = saveSerialAndTruncate(testConfig, vmConfig.VMConfig.Name, "serial-rollbackab-rollback.log")
-		if err != nil {
-			return fmt.Errorf("failed to save `rollback --ab` serial log for rollback-ab test: %w", err)
-		}
+	// Perform runtime update
+	err = testStates.RuntimeUpdate1.doUpdateTest()
+	if err != nil {
+		return fmt.Errorf("failed to perform first runtime update for rollback-ab test: %w", err)
+	}
+	err = saveSerialAndTruncate(testConfig, vmConfig.VMConfig.Name, "serial-rollbackab-runtime-update.log")
+	if err != nil {
+		return fmt.Errorf("failed to save first runtime update serial log for rollback-ab test: %w", err)
+	}
+
+	// Invoke `rollback --ab` of ab update into initial state
+	err = testStates.InitialState.doRollbackTest("--ab", "", testStates.AbUpdate.ExpectReboot, true)
+	if err != nil {
+		return fmt.Errorf("failed to perform `rollback --ab` for rollback-ab test: %w", err)
+	}
+	err = saveSerialAndTruncate(testConfig, vmConfig.VMConfig.Name, "serial-rollbackab-rollback.log")
+	if err != nil {
+		return fmt.Errorf("failed to save `rollback --ab` serial log for rollback-ab test: %w", err)
 	}
 
 	return nil
@@ -247,92 +246,91 @@ func SplitRollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig storm
 	//   4. (for runtime udpate) rollback --allowed-operations finalize
 	//   5. (for ab udpate) rollback --allowed-operations stage
 	//   6. (for ab udpate) rollback --allowed-operations finalize
-	if !testConfig.SkipManualRollbacks {
-		// Create context to ensure goroutines exit cleanly
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
 
-		// Find COSI file
-		cosiFile, err := stormfile.FindFile(testConfig.ArtifactsDir, ".*\\.cosi$")
-		if err != nil {
-			return fmt.Errorf("failed to find COSI file: %w", err)
-		}
-		logrus.Tracef("Found COSI file: %s", cosiFile)
-		cosiFileName := filepath.Base(cosiFile)
+	// Create context to ensure goroutines exit cleanly
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-		// Find VM IP address
-		logrus.Tracef("Get VM IP after startup")
-		vmIP, err := stormvm.GetVmIP(vmConfig)
-		if err != nil {
-			return fmt.Errorf("failed to get VM IP after startup: %w", err)
-		}
-		logrus.Infof("VM IP remains the same after startup: %s", vmIP)
+	// Find COSI file
+	cosiFile, err := stormfile.FindFile(testConfig.ArtifactsDir, ".*\\.cosi$")
+	if err != nil {
+		return fmt.Errorf("failed to find COSI file: %w", err)
+	}
+	logrus.Tracef("Found COSI file: %s", cosiFile)
+	cosiFileName := filepath.Base(cosiFile)
 
-		// Create test states
-		testStates := createTestStates(testConfig, vmConfig, vmIP, cosiFileName, testConfig.ExpectedVolume)
+	// Find VM IP address
+	logrus.Tracef("Get VM IP after startup")
+	vmIP, err := stormvm.GetVmIP(vmConfig)
+	if err != nil {
+		return fmt.Errorf("failed to get VM IP after startup: %w", err)
+	}
+	logrus.Infof("VM IP remains the same after startup: %s", vmIP)
 
-		// Validate OS state
-		err = testStates.InitialState.validateOs()
-		if err != nil {
-			return fmt.Errorf("failed to validate OS state after update: %w", err)
-		}
+	// Create test states
+	testStates := createTestStates(testConfig, vmConfig, vmIP, cosiFileName, testConfig.ExpectedVolume)
 
-		logrus.Tracef("Start file server (netlisten) on test runner")
-		fileServerStartedChannel := make(chan bool)
-		go stormnetlisten.StartNetListenAndWait(ctx, testConfig.FileServerPort, testConfig.ArtifactsDir, "logstream-full-rollback.log", fileServerStartedChannel)
-		logrus.Tracef("Waiting for file server (netlisten) to start")
-		<-fileServerStartedChannel
-		logrus.Tracef("File server (netlisten) started")
+	// Validate OS state
+	err = testStates.InitialState.validateOs()
+	if err != nil {
+		return fmt.Errorf("failed to validate OS state after update: %w", err)
+	}
 
-		// Set up SSH proxy for file server on VM
-		{
-			logrus.Tracef("Setting up SSH proxy ports for file server on VM")
-			proxyStartedChannel := make(chan bool)
-			go stormssh.StartSshProxyPortAndWait(ctx, testConfig.FileServerPort, vmIP, vmConfig.VMConfig.User, vmConfig.VMConfig.SshPrivateKeyPath, proxyStartedChannel)
-			logrus.Tracef("Waiting for SSH proxy on VM to start")
-			<-proxyStartedChannel
-			logrus.Tracef("SSH proxy ports for file server on VM started")
-		}
+	logrus.Tracef("Start file server (netlisten) on test runner")
+	fileServerStartedChannel := make(chan bool)
+	go stormnetlisten.StartNetListenAndWait(ctx, testConfig.FileServerPort, testConfig.ArtifactsDir, "logstream-full-rollback.log", fileServerStartedChannel)
+	logrus.Tracef("Waiting for file server (netlisten) to start")
+	<-fileServerStartedChannel
+	logrus.Tracef("File server (netlisten) started")
 
-		// Perform A/B update
-		err = testStates.AbUpdate.doUpdateTest()
-		if err != nil {
-			return fmt.Errorf("failed to perform split test A/B update: %w", err)
-		}
-		err = saveSerialAndTruncate(testConfig, vmConfig.VMConfig.Name, "serial-split-ab-update-1.log")
-		if err != nil {
-			return fmt.Errorf("failed to save split test A/B update boot serial log: %w", err)
-		}
+	// Set up SSH proxy for file server on VM
+	{
+		logrus.Tracef("Setting up SSH proxy ports for file server on VM")
+		proxyStartedChannel := make(chan bool)
+		go stormssh.StartSshProxyPortAndWait(ctx, testConfig.FileServerPort, vmIP, vmConfig.VMConfig.User, vmConfig.VMConfig.SshPrivateKeyPath, proxyStartedChannel)
+		logrus.Tracef("Waiting for SSH proxy on VM to start")
+		<-proxyStartedChannel
+		logrus.Tracef("SSH proxy ports for file server on VM started")
+	}
 
-		// Set up SSH proxy (again) for file server on VM after A/B update reboot
-		{
-			logrus.Tracef("Setting up SSH proxy ports for file server on VM")
-			proxyStartedChannel := make(chan bool)
-			go stormssh.StartSshProxyPortAndWait(ctx, testConfig.FileServerPort, vmIP, vmConfig.VMConfig.User, vmConfig.VMConfig.SshPrivateKeyPath, proxyStartedChannel)
-			<-proxyStartedChannel
-		}
+	// Perform A/B update
+	err = testStates.AbUpdate.doUpdateTest()
+	if err != nil {
+		return fmt.Errorf("failed to perform split test A/B update: %w", err)
+	}
+	err = saveSerialAndTruncate(testConfig, vmConfig.VMConfig.Name, "serial-split-ab-update-1.log")
+	if err != nil {
+		return fmt.Errorf("failed to save split test A/B update boot serial log: %w", err)
+	}
 
-		// Perform runtime update
-		err = testStates.RuntimeUpdate1.doUpdateTest()
-		if err != nil {
-			return fmt.Errorf("failed to perform split test runtime update test: %w", err)
-		}
+	// Set up SSH proxy (again) for file server on VM after A/B update reboot
+	{
+		logrus.Tracef("Setting up SSH proxy ports for file server on VM")
+		proxyStartedChannel := make(chan bool)
+		go stormssh.StartSshProxyPortAndWait(ctx, testConfig.FileServerPort, vmIP, vmConfig.VMConfig.User, vmConfig.VMConfig.SshPrivateKeyPath, proxyStartedChannel)
+		<-proxyStartedChannel
+	}
 
-		// Invoke `rollback` using allowed-operations of runtime update into ab update state
-		err = testStates.AbUpdate.doSplitRollbackTest(testStates.RuntimeUpdate1.ExpectReboot, true)
-		if err != nil {
-			return fmt.Errorf("failed to perform `rollback` split test: %w", err)
-		}
+	// Perform runtime update
+	err = testStates.RuntimeUpdate1.doUpdateTest()
+	if err != nil {
+		return fmt.Errorf("failed to perform split test runtime update test: %w", err)
+	}
 
-		// Invoke `rollback` using allowed-operations of ab update into initial state
-		err = testStates.InitialState.doSplitRollbackTest(testStates.AbUpdate.ExpectReboot, true)
-		if err != nil {
-			return fmt.Errorf("failed to perform `rollback` split test: %w", err)
-		}
-		err = saveSerialAndTruncate(testConfig, vmConfig.VMConfig.Name, "serial-split-rollback-ab.log")
-		if err != nil {
-			return fmt.Errorf("failed to save `rollback` split serial log: %w", err)
-		}
+	// Invoke `rollback` using allowed-operations of runtime update into ab update state
+	err = testStates.AbUpdate.doSplitRollbackTest(testStates.RuntimeUpdate1.ExpectReboot, true)
+	if err != nil {
+		return fmt.Errorf("failed to perform `rollback` split test: %w", err)
+	}
+
+	// Invoke `rollback` using allowed-operations of ab update into initial state
+	err = testStates.InitialState.doSplitRollbackTest(testStates.AbUpdate.ExpectReboot, true)
+	if err != nil {
+		return fmt.Errorf("failed to perform `rollback` split test: %w", err)
+	}
+	err = saveSerialAndTruncate(testConfig, vmConfig.VMConfig.Name, "serial-split-rollback-ab.log")
+	if err != nil {
+		return fmt.Errorf("failed to save `rollback` split serial log: %w", err)
 	}
 
 	return nil

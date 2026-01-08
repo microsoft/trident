@@ -350,13 +350,14 @@ func (u *UpdateTest) validateRollbacksAvailable() error {
 
 		if u.ExpectedAvailableRollbacks > 0 {
 			firstRollback := availableRollbacks[0]
-			needsReboot, ok := firstRollback["requiresReboot"].(bool)
+			rollbackKind, ok := firstRollback["kind"].(string)
 			if !ok {
-				return fmt.Errorf("failed to parse requiresReboot from available rollback")
+				return fmt.Errorf("failed to parse kind from available rollback")
 			}
-			if needsReboot != u.ExpectReboot {
-				return fmt.Errorf("first available rollback requiresReboot mismatch: expected %v, got %v", u.ExpectReboot, needsReboot)
+			if (rollbackKind == "ab") != u.ExpectReboot {
+				return fmt.Errorf("first available rollback kind mismatch: reboot expected: %v, got kind: %v", u.ExpectReboot, rollbackKind)
 			}
+			logrus.Tracef("First available rollback confirmed, found: [%s]", firstRollback)
 		}
 
 		rollbackShowValidationOutput, err := stormssh.SshCommand(u.VMConfig.VMConfig, u.VMIP, "trident rollback --check")
@@ -379,6 +380,7 @@ func (u *UpdateTest) validateRollbacksAvailable() error {
 				return fmt.Errorf("expected 'none' from 'rollback --check', got: %s", rollbackShowValidationOutput)
 			}
 		}
+		logrus.Tracef("'rollback --check' output confirmed")
 
 		rollbackShowTargetOutput, err := stormssh.SshCommand(u.VMConfig.VMConfig, u.VMIP, "sudo trident get rollback-target")
 		if err != nil {
@@ -396,6 +398,7 @@ func (u *UpdateTest) validateRollbacksAvailable() error {
 				return fmt.Errorf("expected '{}' from 'get rollback-target', got: %s", rollbackShowTargetOutput)
 			}
 		}
+		logrus.Tracef("'get rollback-target' output confirmed")
 	}
 	return nil
 }
