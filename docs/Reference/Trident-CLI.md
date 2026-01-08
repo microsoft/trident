@@ -51,6 +51,7 @@ Options:
 - [validate](#validate)
 - [offline-initialize](#offline-initialize)
 - [rollback](#rollback)
+- [daemon](#daemon)
 - [help](#help)
 
 
@@ -532,9 +533,13 @@ Options:
           [default: DEBUG]
       --runtime
           Invoke rollback only if next available rollback is runtime
-          rollback
+          rollback. If allowed-operations is specified, this argument
+          is only applicable for stage operation and will be ignored
+          for finalize
       --ab
-          Invoke available A/B rollback
+          Invoke available A/B rollback If allowed-operations is
+          specified, this argument is only applicable for stage
+          operation and will be ignored for finalize
       --allowed-operations [<ALLOWED_OPERATIONS>...]
           Comma-separated list of operations that Trident will be
           allowed to perform [default: stage,finalize] [possible
@@ -555,7 +560,7 @@ Check operation that would be performed
 
 #### <span>--runtime &lt;RUNTIME&gt;</span>
 
-Invoke rollback only if next available rollback is runtime rollback
+Invoke rollback only if next available rollback is runtime rollback. If allowed-operations is specified, this argument is only applicable for stage operation and will be ignored for finalize
 
 Conflicts with:
 
@@ -564,7 +569,7 @@ Conflicts with:
 
 #### <span>--ab &lt;AB&gt;</span>
 
-Invoke available A/B rollback
+Invoke available A/B rollback If allowed-operations is specified, this argument is only applicable for stage operation and will be ignored for finalize
 
 Conflicts with:
 
@@ -591,6 +596,56 @@ Path to save the resulting Host Status
 #### <span>--error &lt;ERROR&gt;</span>
 
 Path to save an eventual fatal error
+
+
+#### <span>--verbosity &lt;VERBOSITY&gt;</span>
+
+Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
+
+Default: `DEBUG`
+
+
+## daemon
+
+Usage:
+
+```
+trident daemon [OPTIONS]
+```
+
+Argument summary:
+
+```
+Options:
+      --inactivity-timeout <INACTIVITY_TIMEOUT>
+          Inactivity timeout. The server will shut down automatically
+          after being inactive for this duration. Supports
+          human-readable durations, e.g., "5m", "1h30m", "300s"
+          [default: 300s]
+  -v, --verbosity <VERBOSITY>
+          Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
+          [default: DEBUG]
+      --socket-path <SOCKET_PATH>
+          Path to the UNIX socket to listen on when not running in
+          systemd socket-activated mode [default:
+          /var/run/trident.sock]
+```
+
+
+### Argument Details
+
+#### <span>--inactivity_timeout &lt;INACTIVITY_TIMEOUT&gt;</span>
+
+Inactivity timeout. The server will shut down automatically after being inactive for this duration. Supports human-readable durations, e.g., "5m", "1h30m", "300s"
+
+Default: `300s`
+
+
+#### <span>--socket_path &lt;SOCKET_PATH&gt;</span>
+
+Path to the UNIX socket to listen on when not running in systemd socket-activated mode
+
+Default: `/var/run/trident.sock`
 
 
 #### <span>--verbosity &lt;VERBOSITY&gt;</span>

@@ -184,11 +184,15 @@ pub enum Commands {
         #[arg(long)]
         check: bool,
 
-        /// Invoke rollback only if next available rollback is runtime rollback
+        /// Invoke rollback only if next available rollback is runtime rollback.
+        /// If allowed-operations is specified, this argument is only applicable for
+        /// stage operation and will be ignored for finalize.
         #[arg(long, conflicts_with = "ab")]
         runtime: bool,
 
         /// Invoke available A/B rollback
+        /// If allowed-operations is specified, this argument is only applicable for
+        /// stage operation and will be ignored for finalize.
         #[arg(long, conflicts_with = "runtime")]
         ab: bool,
 

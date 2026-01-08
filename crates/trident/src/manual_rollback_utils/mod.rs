@@ -172,7 +172,8 @@ impl ManualRollbackContext {
                 manual_rollback = manual_rollback
                     || matches!(
                         hs.servicing_state,
-                        ServicingState::ManualRollbackStaged
+                        ServicingState::ManualRollbackAbStaged
+                            | ServicingState::ManualRollbackRuntimeStaged
                             | ServicingState::ManualRollbackFinalized
                     );
                 needs_reboot =
@@ -550,7 +551,8 @@ mod tests {
     const AB_STAGE: ServicingState = ServicingState::AbUpdateStaged;
     const AB_FINAL: ServicingState = ServicingState::AbUpdateFinalized;
     const AB_HC_FAIL: ServicingState = ServicingState::AbUpdateHealthCheckFailed;
-    const MR_STAGE: ServicingState = ServicingState::ManualRollbackStaged;
+    const MR_AB_STAGE: ServicingState = ServicingState::ManualRollbackAbStaged;
+    const MR_RU_STAGE: ServicingState = ServicingState::ManualRollbackRuntimeStaged;
     const MR_FINAL: ServicingState = ServicingState::ManualRollbackFinalized;
 
     #[test]
@@ -569,7 +571,7 @@ mod tests {
             inter(VOL_B, AB_STAGE, MIN),
             inter(VOL_B, AB_FINAL, MIN),
             prov(VOL_A, true, vec![9], MIN),
-            inter(VOL_A, MR_STAGE, MIN),
+            inter(VOL_A, MR_AB_STAGE, MIN),
             inter(VOL_A, MR_FINAL, MIN),
             prov(VOL_B, false, vec![], MIN),
         ];
@@ -596,7 +598,7 @@ mod tests {
             prov(VOL_A, false, vec![4, 2], MIN),
             inter(VOL_A, RU_STAGE, MIN),
             prov(VOL_A, false, vec![6, 4, 2], MIN),
-            inter(VOL_A, MR_STAGE, MIN),
+            inter(VOL_A, MR_RU_STAGE, MIN),
             inter(VOL_A, MR_FINAL, MIN),
         ];
         rollback_context_testing(
@@ -620,7 +622,7 @@ mod tests {
             inter(VOL_A, AB_STAGE, MIN),
             inter(VOL_A, AB_FINAL, MIN),
             prov(VOL_B, true, vec![8], MIN),
-            inter(VOL_A, MR_STAGE, MIN),
+            inter(VOL_A, MR_AB_STAGE, MIN),
             inter(VOL_A, MR_FINAL, MIN),
         ];
         rollback_context_testing(
@@ -737,7 +739,7 @@ mod tests {
             prov(VOL_B, false, vec![7, 5, 2], MIN),
             // Manual Rollback of the available a/b update skips
             // 2 runtime updates
-            inter(VOL_B, MR_STAGE, MIN),
+            inter(VOL_B, MR_RU_STAGE, MIN),
             inter(VOL_B, MR_FINAL, MIN),
             prov(VOL_A, false, vec![], MIN),
         ];
