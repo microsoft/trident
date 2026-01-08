@@ -20,10 +20,12 @@ use crate::{
     container,
     datastore::DataStore,
     engine::{self, boot::uki, bootentries, runtime_update, EngineContext, SUBSYSTEMS},
-    manual_rollback_utils::{ManualRollbackContext, ManualRollbackKind},
     subsystems::esp,
     ExitKind,
 };
+
+// Manual Rollback util
+mod utils;
 
 /// Print rollback info for 'trident get'.
 pub fn get_rollback_info(datastore: &DataStore, kind: GetKind) -> Result<String, TridentError> {
@@ -32,7 +34,7 @@ pub fn get_rollback_info(datastore: &DataStore, kind: GetKind) -> Result<String,
         .get_host_statuses()
         .message("Failed to get datastore HostStatus entries")?;
     // Create ManualRollback context from HostStatus entries.
-    let context = ManualRollbackContext::new(&host_statuses)
+    let context = utils::ManualRollbackContext::new(&host_statuses)
         .message("Failed to create manual rollback context")?;
     let rollback_chain =
         context
@@ -81,7 +83,7 @@ pub fn check_rollback(
         .get_host_statuses()
         .message("Failed to get datastore HostStatus entries")?;
     // Create ManualRollback context from HostStatus entries.
-    let rollback_context = ManualRollbackContext::new(&host_statuses)
+    let rollback_context = utils::ManualRollbackContext::new(&host_statuses)
         .message("Failed to create manual rollback context")?;
     let check_string = rollback_context
         .check_requested_rollback(invoke_if_next_is_runtime, invoke_available_ab)?;
@@ -121,7 +123,7 @@ pub fn execute_rollback(
             .get_host_statuses()
             .message("Failed to get datastore HostStatus entries")?;
         // Create ManualRollback context from HostStatus entries.
-        let rollback_context = ManualRollbackContext::new(&host_statuses)
+        let rollback_context = utils::ManualRollbackContext::new(&host_statuses)
             .message("Failed to create manual rollback context")?;
 
         let requested_rollback = rollback_context
@@ -150,8 +152,8 @@ pub fn execute_rollback(
         };
 
         let staging_state = match requested_rollback.kind {
-            ManualRollbackKind::Ab => ServicingState::ManualRollbackAbStaged,
-            ManualRollbackKind::Runtime => ServicingState::ManualRollbackRuntimeStaged,
+            utils::ManualRollbackKind::Ab => ServicingState::ManualRollbackAbStaged,
+            utils::ManualRollbackKind::Runtime => ServicingState::ManualRollbackRuntimeStaged,
         };
 
         stage_rollback(datastore, &engine_context, staging_state)
