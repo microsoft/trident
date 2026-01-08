@@ -17,7 +17,9 @@ use osutils::{
 use trident_api::{
     config::{HostConfiguration, Operations},
     constants::{
-        internal_params::{DISABLE_MEDIA_EJECTION, ENABLE_UKI_SUPPORT, NO_TRANSITION},
+        internal_params::{
+            DISABLE_MEDIA_EJECTION, ENABLE_UKI_SUPPORT, NO_TRANSITION, RAW_COSI_STORAGE,
+        },
         ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_PATH,
     },
     error::{
@@ -333,7 +335,7 @@ pub(crate) fn finalize_clean_install(
     // On clean install, need to verify that AZLA entry exists in /mnt/newroot/boot/efi
     let esp_path = join_relative(new_root.path(), ESP_MOUNT_POINT_PATH);
 
-    if !ctx.spec.storage.raw_cosi {
+    if !ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
         bootentries::create_and_update_boot_variables(&ctx, &esp_path)?;
         // Analogous to how UEFI variables are configured, finalize must start configuring
         // UEFI fallback, and a successful commit will finish it.
@@ -352,7 +354,7 @@ pub(crate) fn finalize_clean_install(
     grpc::send_host_status_state(sender, state)?;
 
     // Persist the datastore to the new root
-    if !ctx.spec.storage.raw_cosi {
+    if !ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
         state.persist(&join_relative(
             new_root.path(),
             &state.host_status().spec.trident.datastore_path,

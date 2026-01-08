@@ -8,6 +8,7 @@ use log::{debug, info, trace, warn};
 
 use osutils::{e2fsck, lsblk, resize2fs};
 use trident_api::{
+    constants::internal_params::RAW_COSI_STORAGE,
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::ServicingType,
     BlockDeviceId,
@@ -45,7 +46,7 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
         .map(|fs| (fs.mount_point.to_owned(), fs))
         .collect::<HashMap<_, _>>();
 
-    if ctx.spec.storage.raw_cosi {
+    if ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
         images.insert(
             "/boot/efi".into(),
             os_img
@@ -145,7 +146,7 @@ fn filesystems_from_image(
             continue;
         };
 
-        if img_fs.is_esp() && !ctx.spec.storage.raw_cosi {
+        if img_fs.is_esp() && !ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
             debug!(
                 "Skipping deployment of filesystem [{}] sourced from OS Image, as it is the ESP.",
                 filesystem.description()

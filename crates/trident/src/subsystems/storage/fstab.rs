@@ -10,7 +10,7 @@ use osutils::{
     filesystems::TabFileSystemType,
     tabfile::{TabFile, TabFileEntry},
 };
-use trident_api::{config::Swap, BlockDeviceId};
+use trident_api::{config::Swap, constants::internal_params::RAW_COSI_STORAGE, BlockDeviceId};
 
 use crate::engine::{filesystem::FileSystemData, EngineContext};
 
@@ -73,7 +73,7 @@ pub(super) fn generate_fstab(ctx: &EngineContext, output_path: &Path) -> Result<
 
     let fstab = TabFile { entries };
 
-    if ctx.spec.storage.raw_cosi {
+    if ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
         fstab
             .merge_and_write(output_path)
             .context(format!("Failed to update {}", output_path.display()))?;

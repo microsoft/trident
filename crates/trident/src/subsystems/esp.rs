@@ -18,9 +18,9 @@ use osutils::{
 use trident_api::{
     config::UefiFallbackMode,
     constants::{
-        internal_params::DISABLE_GRUB_NOPREFIX_CHECK, EFI_DEFAULT_BIN_DIRECTORY,
-        EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY, ESP_RELATIVE_MOUNT_POINT_PATH,
-        GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
+        internal_params::{DISABLE_GRUB_NOPREFIX_CHECK, RAW_COSI_STORAGE},
+        EFI_DEFAULT_BIN_DIRECTORY, EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY,
+        ESP_RELATIVE_MOUNT_POINT_PATH, GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
     },
     error::{ReportError, ServicingError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, ServicingState, ServicingType},
@@ -49,7 +49,7 @@ impl Subsystem for EspSubsystem {
         // Perform file-based deployment of ESP images, if needed, after filesystems have been
         // mounted and initialized.
 
-        if !ctx.spec.storage.raw_cosi {
+        if !ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
             deploy_esp(ctx, mount_path).structured(ServicingError::DeployESPImages)?;
         }
 
@@ -1197,7 +1197,7 @@ mod tests {
             // Create full path of destination_path
             let mut destination_path = esp_dir.path().join(file_name.clone());
 
-            if file_name == PathBuf::from(GRUB_NOPREFIX_EFI) {
+            if file_name == Path::new(GRUB_NOPREFIX_EFI) {
                 destination_path = esp_dir.path().join(GRUB_EFI);
             }
 

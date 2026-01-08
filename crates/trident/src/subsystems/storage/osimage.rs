@@ -10,7 +10,9 @@ use osutils::lsblk;
 use trident_api::{
     config::FileSystemSource,
     constants::{
-        internal_params::{ALLOW_UNUSED_FILESYSTEMS_IN_COSI, DISABLE_FS_BLOCK_DEVICE_SIZE_CHECK},
+        internal_params::{
+            ALLOW_UNUSED_FILESYSTEMS_IN_COSI, DISABLE_FS_BLOCK_DEVICE_SIZE_CHECK, RAW_COSI_STORAGE,
+        },
         BOOT_MOUNT_POINT_PATH,
     },
     error::{
@@ -43,7 +45,8 @@ pub fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentError> {
         return Ok(());
     };
 
-    if ctx.spec.storage.raw_cosi {
+    if ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
+        debug!("Skipping COSI and Host Configuration cross-validation because raw COSI is in use");
         return Ok(());
     }
 

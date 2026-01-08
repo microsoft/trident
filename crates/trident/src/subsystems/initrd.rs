@@ -1,7 +1,10 @@
 use log::{debug, info};
 
 use osutils::mkinitrd;
-use trident_api::{constants::internal_params::DRACUT_DEBUG, error::TridentError};
+use trident_api::{
+    constants::internal_params::{DRACUT_DEBUG, RAW_COSI_STORAGE},
+    error::TridentError,
+};
 
 use crate::engine::{EngineContext, Subsystem};
 
@@ -22,7 +25,7 @@ impl Subsystem for InitrdSubsystem {
             debug!("Skipping initrd regeneration because UKI is in use");
             return Ok(());
         }
-        if ctx.spec.storage.raw_cosi {
+        if ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
             debug!("Skipping initrd regeneration because raw COSI is in use");
             return Ok(());
         }
