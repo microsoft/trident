@@ -315,7 +315,7 @@ fn find_uefi_fallback_source_dir_name(
             )),
             _ => None,
         },
-        ServicingState::ManualRollbackStaged => match ctx.spec.os.uefi_fallback {
+        ServicingState::ManualRollbackAbStaged => match ctx.spec.os.uefi_fallback {
             UefiFallbackMode::Conservative | UefiFallbackMode::Optimistic => {
                 Some(boot::make_esp_dir_name(
                     ctx.install_index,
@@ -984,28 +984,28 @@ mod tests {
                 "Validate AbUpdateFinalized + Disabled + active volume A ==> None",
             ),
             (
-                ServicingState::ManualRollbackStaged,
+                ServicingState::ManualRollbackAbStaged,
                 UefiFallbackMode::Conservative,
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::ManualRollback,
-                Some("AZLB".to_string()), // in ManualRollbackStaged, with 'conservative', copy from inactive volume
-                "Validate ManualRollbackStaged + Conservative + active volume A ==> AZLB",
+                Some("AZLB".to_string()), // in ManualRollbackAbStaged, with 'conservative', copy from inactive volume
+                "Validate ManualRollbackAbStaged + Conservative + active volume A ==> AZLB",
             ),
             (
-                ServicingState::ManualRollbackStaged,
+                ServicingState::ManualRollbackAbStaged,
                 UefiFallbackMode::Optimistic,
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::ManualRollback,
-                Some("AZLB".to_string()), // in ManualRollback staged, with 'optimistic', copy from inactive volume
-                "Validate ManualRollbackStaged + Optimistic + active volume A ==> AZLB",
+                Some("AZLB".to_string()), // in ManualRollbackAbStaged, with 'optimistic', copy from inactive volume
+                "Validate ManualRollbackAbStaged + Optimistic + active volume A ==> AZLB",
             ),
             (
-                ServicingState::ManualRollbackStaged,
+                ServicingState::ManualRollbackAbStaged,
                 UefiFallbackMode::Disabled,
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::ManualRollback,
                 None::<String>, // with Disabled, we do not copy anything
-                "Validate ManualRollbackStaged + Disabled + active volume A ==> None",
+                "Validate ManualRollbackAbStaged + Disabled + active volume A ==> None",
             ),
         ];
         for test_case in test_cases {

@@ -97,49 +97,15 @@ pub fn execute_rollback(
     invoke_available_ab: bool,
     allowed_operations: &Operations,
 ) -> Result<ExitKind, TridentError> {
-    let current_servicing_state = datastore.host_status().servicing_state;
-
-    // Get all HostStatus entries from the datastore.
-    let host_statuses = datastore
-        .get_host_statuses()
-        .message("Failed to get datastore HostStatus entries")?;
-    // Create ManualRollback context from HostStatus entries.
-    let rollback_context = ManualRollbackContext::new(&host_statuses)
-        .message("Failed to create manual rollback context")?;
-
-    let requested_rollback =
-        rollback_context.get_requested_rollback(invoke_if_next_is_runtime, invoke_available_ab)?;
-
-    let requested_rollback = match requested_rollback {
-        Some(rollback_item) => rollback_item,
-        None => {
-            info!("No available rollbacks to perform");
-            return Ok(ExitKind::Done);
-        }
-    };
-
-    let mut skip_finalize_state_check = false;
-
-    let engine_context = EngineContext {
-        spec: requested_rollback.host_status.spec.clone(),
-        spec_old: datastore.host_status().spec.clone(),
-        servicing_type: ServicingType::ManualRollback,
-        partition_paths: datastore.host_status().partition_paths.clone(),
-        ab_active_volume: datastore.host_status().ab_active_volume,
-        disk_uuids: datastore.host_status().disk_uuids.clone(),
-        install_index: datastore.host_status().install_index,
-        is_uki: Some(efivar::current_var_is_uki()),
-        image: None,
-        storage_graph: engine::build_storage_graph(&datastore.host_status().spec.storage)?, // Build storage graph
-        filesystems: Vec::new(), // Will be populated after dynamic validation
-    };
     // Perform staging if operation is allowed
     if allowed_operations.has_stage() {
-        match current_servicing_state {
-            ServicingState::ManualRollbackStaged | ServicingState::Provisioned => {
+        match datastore.host_status().servicing_state {
+            ServicingState::ManualRollbackAbStaged
+            | ServicingState::ManualRollbackRuntimeStaged
+            | ServicingState::Provisioned => {
                 if datastore.host_status().last_error.is_some() {
                     return Err(TridentError::new(InvalidInputError::InvalidRollbackState {
-                        reason: "in Provisioned state but has a last error set".to_string(),
+                        reason: "in required state but has a last error set".to_string(),
                     }));
                 }
                 // OK to proceed
@@ -151,12 +117,47 @@ pub fn execute_rollback(
             }
         }
 
-        stage_rollback(
-            datastore,
-            &engine_context,
-            requested_rollback.requires_reboot,
-        )
-        .message("Failed to stage manual rollback")?;
+        // Get all HostStatus entries from the datastore.
+        let host_statuses = datastore
+            .get_host_statuses()
+            .message("Failed to get datastore HostStatus entries")?;
+        // Create ManualRollback context from HostStatus entries.
+        let rollback_context = ManualRollbackContext::new(&host_statuses)
+            .message("Failed to create manual rollback context")?;
+
+        let requested_rollback = rollback_context
+            .get_requested_rollback(invoke_if_next_is_runtime, invoke_available_ab)?;
+
+        let requested_rollback = match requested_rollback {
+            Some(rollback_item) => rollback_item,
+            None => {
+                info!("No available rollbacks to perform");
+                return Ok(ExitKind::Done);
+            }
+        };
+
+        let engine_context = EngineContext {
+            spec: requested_rollback.host_status.spec.clone(),
+            spec_old: datastore.host_status().spec.clone(),
+            servicing_type: ServicingType::ManualRollback,
+            partition_paths: datastore.host_status().partition_paths.clone(),
+            ab_active_volume: datastore.host_status().ab_active_volume,
+            disk_uuids: datastore.host_status().disk_uuids.clone(),
+            install_index: datastore.host_status().install_index,
+            is_uki: Some(efivar::current_var_is_uki()),
+            image: None,
+            storage_graph: engine::build_storage_graph(&datastore.host_status().spec.storage)?, // Build storage graph
+            filesystems: Vec::new(), // Will be populated after dynamic validation
+        };
+
+        let staging_state = if requested_rollback.requires_reboot {
+            ServicingState::ManualRollbackAbStaged
+        } else {
+            ServicingState::ManualRollbackRuntimeStaged
+        };
+
+        stage_rollback(datastore, &engine_context, staging_state)
+            .message("Failed to stage manual rollback")?;
 
         if !allowed_operations.has_finalize() {
             // Persist the Trident background log and metrics file. Otherwise, the
@@ -167,27 +168,39 @@ pub fn execute_rollback(
                 datastore.host_status().servicing_state,
             );
         }
-        // If only staging, skip finalize state check
-        skip_finalize_state_check = true;
     }
+
     // Perform finalize if operation is allowed
     if allowed_operations.has_finalize() {
-        if !skip_finalize_state_check {
-            match current_servicing_state {
-                ServicingState::ManualRollbackStaged | ServicingState::ManualRollbackFinalized => {
-                    // OK to proceed
-                }
-                state => {
-                    return Err(TridentError::new(InvalidInputError::InvalidRollbackState {
-                        reason: format!("in unexpected state: {state:?}"),
-                    }));
-                }
+        match datastore.host_status().servicing_state {
+            ServicingState::ManualRollbackAbStaged
+            | ServicingState::ManualRollbackRuntimeStaged
+            | ServicingState::ManualRollbackFinalized => {
+                // OK to proceed
+            }
+            state => {
+                return Err(TridentError::new(InvalidInputError::InvalidRollbackState {
+                    reason: format!("in unexpected state: {state:?}"),
+                }));
             }
         }
+        let engine_context = EngineContext {
+            spec: datastore.host_status().spec.clone(),
+            spec_old: datastore.host_status().spec_old.clone(),
+            servicing_type: ServicingType::ManualRollback,
+            partition_paths: datastore.host_status().partition_paths.clone(),
+            ab_active_volume: datastore.host_status().ab_active_volume,
+            disk_uuids: datastore.host_status().disk_uuids.clone(),
+            install_index: datastore.host_status().install_index,
+            is_uki: Some(efivar::current_var_is_uki()),
+            image: None,
+            storage_graph: engine::build_storage_graph(&datastore.host_status().spec.storage)?, // Build storage graph
+            filesystems: Vec::new(), // Will be populated after dynamic validation
+        };
         let finalize_result = finalize_rollback(
             datastore,
             &engine_context,
-            requested_rollback.requires_reboot,
+            datastore.host_status().servicing_state,
         )
         .message("Failed to finalize manual rollback");
         // Persist the Trident background log and metrics file. Otherwise, the
@@ -207,9 +220,9 @@ pub fn execute_rollback(
 fn stage_rollback(
     datastore: &mut DataStore,
     engine_context: &EngineContext,
-    rollback_requires_reboot: bool,
+    staging_state: ServicingState,
 ) -> Result<(), TridentError> {
-    if rollback_requires_reboot {
+    if matches!(staging_state, ServicingState::ManualRollbackAbStaged) {
         info!("Staging rollback that requires reboot");
 
         // If we have encrypted volumes and this is a UKI image, then we need to re-generate pcrlock
@@ -250,11 +263,11 @@ fn stage_rollback(
         // noop
     }
 
-    // Mark the HostStatus as ManualRollbackStaged
+    // Mark the HostStatus as `staging_state`
     datastore.with_host_status(|host_status| {
         host_status.spec = engine_context.spec.clone();
         host_status.spec_old = engine_context.spec_old.clone();
-        host_status.servicing_state = ServicingState::ManualRollbackStaged;
+        host_status.servicing_state = staging_state;
     })?;
     Ok(())
 }
@@ -263,9 +276,9 @@ fn stage_rollback(
 fn finalize_rollback(
     datastore: &mut DataStore,
     engine_context: &EngineContext,
-    rollback_requires_reboot: bool,
+    staging_state: ServicingState,
 ) -> Result<ExitKind, TridentError> {
-    if !rollback_requires_reboot {
+    if matches!(staging_state, ServicingState::ManualRollbackRuntimeStaged) {
         trace!("Manual rollback does not require reboot");
 
         let mut subsystems = SUBSYSTEMS.lock().unwrap();
@@ -302,7 +315,7 @@ fn finalize_rollback(
     // Analogous to how UEFI variables are configured.
     esp::set_uefi_fallback_contents(
         engine_context,
-        ServicingState::ManualRollbackStaged,
+        ServicingState::ManualRollbackAbStaged,
         &root_path,
     )
     .structured(ServicingError::SetUpUefiFallback)?;

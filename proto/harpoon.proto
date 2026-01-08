@@ -265,14 +265,12 @@ message RollbackRequest {
 
 message RollbackStageRequest {
   // The rollback kind parameter for the servicing operation.
-  RollbackKind    type = 3;
+  RollbackKind    kind = 3;
 }
 
 message RollbackFinalizeRequest {
   // The finalize parameters for the servicing operation.
   FinalizeRequest finalize = 2;
-  // The rollback type parameter for the servicing operation.
-  RollbackKind    kind = 3;
 }
 
 message GetRollbackChainRequest {}

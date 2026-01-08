@@ -694,15 +694,19 @@ impl Trident {
         invoke_available_ab: bool,
         allowed_operations: Operations,
     ) -> Result<ExitKind, TridentError> {
-        // If host's servicing state is *Finalized or *HealthCheckFailed, need to
-        // re-evaluate the current state of the host.
+        // If host's servicing state is not in Provisioned or ManualRollback*, cannot
+        // execute a rollback.
         if !matches!(
             datastore.host_status().servicing_state,
             ServicingState::Provisioned
-                | ServicingState::ManualRollbackStaged
+                | ServicingState::ManualRollbackAbStaged
+                | ServicingState::ManualRollbackRuntimeStaged
                 | ServicingState::ManualRollbackFinalized
         ) {
-            info!("Not in Provisioned or ManualRollbackStaged state, cannot rollback");
+            info!(
+                "Not in required state ({:?}), cannot rollback",
+                datastore.host_status().servicing_state
+            );
             return Ok(ExitKind::Done);
         }
 

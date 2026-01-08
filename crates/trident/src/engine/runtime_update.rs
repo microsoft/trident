@@ -119,7 +119,7 @@ pub(crate) fn rollback(
                 update_start_time,
             )
         }
-        ServicingState::ManualRollbackStaged => {
+        ServicingState::ManualRollbackRuntimeStaged => {
             info!("Starting manual rollback of runtime update");
             finalize_or_rollback_runtime_update(
                 subsystems,
@@ -153,7 +153,7 @@ fn finalize_or_rollback_runtime_update(
 
     if !matches!(
         state.host_status().servicing_state,
-        ServicingState::RuntimeUpdateStaged | ServicingState::ManualRollbackStaged,
+        ServicingState::RuntimeUpdateStaged | ServicingState::ManualRollbackRuntimeStaged,
     ) {
         return Err(TridentError::internal(
             "Runtime update must be staged before calling finalize",
