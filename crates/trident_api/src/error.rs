@@ -312,6 +312,9 @@ pub enum ServicingError {
     #[error("Failed to apply Netplan config")]
     ApplyNetplanConfig,
 
+    #[error("Failed to back up Netplan config")]
+    BackupNetplanConfig,
+
     #[error("Failed to bind encryption to pcrlock policy")]
     BindEncryptionToPcrlockPolicy,
 
@@ -338,6 +341,9 @@ pub enum ServicingError {
         root_device_path: String,
         expected_device_path: String,
     },
+
+    #[error("Failed to clean up backup Netplan config")]
+    CleanupNetplanBackup,
 
     #[error("Failed to clean up pre-existing LUKS2-encrypted volumes")]
     CleanupEncryption,
