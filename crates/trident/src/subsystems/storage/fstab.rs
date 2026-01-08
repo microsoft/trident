@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{Context, Error};
+use anyhow::{bail, Context, Error};
 use log::trace;
 
 use osutils::{
