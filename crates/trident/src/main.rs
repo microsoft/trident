@@ -1,13 +1,13 @@
-use std::{fs, panic, path::PathBuf, process::ExitCode};
+use std::{fs, iter, panic, path::PathBuf, process::ExitCode};
 
 use anyhow::{Context, Error};
 use clap::Parser;
-use log::{error, info, LevelFilter};
+use log::{error, info, LevelFilter, Log};
 
 use trident::{
     cli::{self, Cli, Commands, GetKind},
-    offline_init, validation, BackgroundLog, DataStore, ExitKind, Logstream, MultiLogger,
-    TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
+    offline_init, validation, BackgroundLog, DataStore, ExitKind, LogFilter, LogForwarder,
+    Logstream, MultiLogger, TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
 };
 use trident_api::{
     config::HostConfigurationSource,
@@ -234,7 +234,10 @@ fn run_trident(
     }
 }
 
-fn setup_logging(args: &Cli) -> Result<Logstream, Error> {
+fn setup_logging(
+    args: &Cli,
+    additional_loggers: impl Iterator<Item = Box<dyn Log>>,
+) -> Result<Logstream, Error> {
     let logstream = Logstream::create();
 
     // Set up the multilogger
@@ -242,7 +245,10 @@ fn setup_logging(args: &Cli) -> Result<Logstream, Error> {
         // Add logstream to send logs to the log server
         .with_logger(logstream.make_logger_with_level(LevelFilter::Trace))
         // Set the global filter for reqwest to debug
-        .with_global_filter("reqwest", LevelFilter::Debug);
+        .with_global_filter("reqwest", LevelFilter::Debug)
+        // Filter out debug logs from h2, some of which have target "tracing::span"
+        .with_global_filter("tracing::span", LevelFilter::Error)
+        .with_global_filter("h2", LevelFilter::Error);
 
     // Attempt to use the systemd journal if stderr is directly connected to it, and otherwise fall
     // back to env_logger.
@@ -270,6 +276,10 @@ fn setup_logging(args: &Cli) -> Result<Logstream, Error> {
             | Commands::RebuildRaid { .. }
     ) {
         multilogger.add_logger(BackgroundLog::new(TRIDENT_BACKGROUND_LOG_PATH).into_logger());
+    }
+
+    for logger in additional_loggers {
+        multilogger.add_logger(logger);
     }
 
     multilogger.init().context("Logger already registered")?;
@@ -307,13 +317,6 @@ fn main() -> ExitCode {
     // Parse args
     let args = Cli::parse();
 
-    // Initialize the loggers
-    let logstream = setup_logging(&args);
-    if let Err(e) = logstream {
-        error!("Failed to initialize logging: {e:?}");
-        return ExitCode::from(1);
-    }
-
     // Initialize the telemetry flow
     let tracestream = setup_tracing(&args);
     if let Err(e) = tracestream {
@@ -321,19 +324,50 @@ fn main() -> ExitCode {
         return ExitCode::from(1);
     }
 
-    // Invoke Trident
-    match run_trident(logstream.unwrap(), tracestream.unwrap(), &args) {
-        Ok(ExitKind::Done) => {}
-        Err(e) => {
-            error!("{e:?}");
-            return ExitCode::from(2);
+    if let Commands::Daemon {
+        inactivity_timeout,
+        socket_path,
+    } = &args.command
+    {
+        let log_forwarder = LogForwarder::default();
+        // Initialize the loggers
+        let logstream = setup_logging(
+            &args,
+            [LogFilter::new(log_forwarder.new_logger())
+                .with_global_filter("trident::server", LevelFilter::Off)
+                .with_global_filter("tonic", LevelFilter::Error)
+                .with_global_filter("h2", LevelFilter::Error)
+                .into_logger() as Box<dyn Log>]
+            .into_iter(),
+        );
+        if let Err(e) = logstream {
+            error!("Failed to initialize logging: {e:?}");
+            return ExitCode::from(1);
         }
-        Ok(ExitKind::NeedsReboot) => {
-            if let Err(e) = trident::reboot() {
-                error!("Failed to reboot: {e:?}");
-                return ExitCode::from(3);
+
+        trident::server_main(log_forwarder, *inactivity_timeout, socket_path)
+    } else {
+        // Initialize the loggers
+        let logstream = setup_logging(&args, iter::empty());
+        if let Err(e) = logstream {
+            error!("Failed to initialize logging: {e:?}");
+            return ExitCode::from(1);
+        }
+
+        // Invoke Trident
+        match run_trident(logstream.unwrap(), tracestream.unwrap(), &args) {
+            Ok(ExitKind::Done) => {}
+            Err(e) => {
+                error!("{e:?}");
+                return ExitCode::from(2);
+            }
+            Ok(ExitKind::NeedsReboot) => {
+                if let Err(e) = trident::reboot() {
+                    error!("Failed to reboot: {e:?}");
+                    return ExitCode::from(3);
+                }
             }
         }
+        ExitCode::SUCCESS
     }
-    ExitCode::SUCCESS
 }

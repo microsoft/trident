@@ -33,27 +33,24 @@ mod monitor_metrics;
 pub mod offline_init;
 mod orchestrate;
 pub mod osimage;
+mod server;
 pub mod stream;
 mod subsystems;
 pub mod validation;
 
-// TODO: Fully enable as part of #399.
-#[cfg(test)]
-#[allow(dead_code, unused)]
-mod server;
-
-use engine::{rollback, storage::rebuild};
-
-pub use datastore::DataStore;
-pub use engine::{provisioning_network, reboot};
-pub use logging::{
-    background_log::BackgroundLog, logstream::Logstream, multilog::MultiLogger,
-    tracestream::TraceStream,
+pub use crate::{
+    datastore::DataStore,
+    engine::{provisioning_network, reboot},
+    logging::{
+        background_log::BackgroundLog, filter::LogFilter, logfwd::LogForwarder,
+        logstream::Logstream, multilog::MultiLogger, tracestream::TraceStream,
+    },
+    orchestrate::OrchestratorConnection,
+    server::server_main,
 };
-pub use orchestrate::OrchestratorConnection;
 
 use crate::{
-    engine::{ab_update, runtime_update, SUBSYSTEMS},
+    engine::{ab_update, rollback, runtime_update, storage::rebuild, SUBSYSTEMS},
     osimage::OsImage,
 };
 
