@@ -5,8 +5,6 @@ use std::{
 };
 
 use log::{debug, error, info, warn};
-#[cfg(feature = "grpc-dangerous")]
-use tokio::sync::mpsc;
 
 use osutils::{
     chroot, container,
@@ -38,8 +36,6 @@ use crate::{
     subsystems::hooks::HooksSubsystem,
     ExitKind, SAFETY_OVERRIDE_CHECK_PATH,
 };
-#[cfg(feature = "grpc-dangerous")]
-use crate::{grpc, GrpcSender};
 
 use super::{NewrootMount, Subsystem};
 
@@ -50,7 +46,6 @@ pub(crate) fn clean_install(
     allowed_operations: &Operations,
     multiboot: bool,
     image: OsImage,
-    #[cfg(feature = "grpc-dangerous")] sender: &mut Option<GrpcSender>,
 ) -> Result<ExitKind, TridentError> {
     info!("Starting clean install");
     tracing::info!(metric_name = "clean_install_start", value = true);
@@ -78,14 +73,7 @@ pub(crate) fn clean_install(
     let mut subsystems = SUBSYSTEMS.lock().unwrap();
 
     // Stage clean install
-    let root_mount = stage_clean_install(
-        &mut subsystems,
-        state,
-        host_config,
-        image,
-        #[cfg(feature = "grpc-dangerous")]
-        sender,
-    )?;
+    let root_mount = stage_clean_install(&mut subsystems, state, host_config, image)?;
 
     if !allowed_operations.has_finalize() {
         info!("Finalizing of clean install not requested, skipping finalizing and reboot");
@@ -103,13 +91,7 @@ pub(crate) fn clean_install(
         root_mount.unmount_all()?;
         Ok(ExitKind::Done)
     } else {
-        finalize_clean_install(
-            state,
-            Some(root_mount),
-            Some(clean_install_start_time),
-            #[cfg(feature = "grpc-dangerous")]
-            sender,
-        )
+        finalize_clean_install(state, Some(root_mount), Some(clean_install_start_time))
     }
 }
 
@@ -172,7 +154,6 @@ fn clean_install_safety_check(
 /// - subsystems: A mutable reference to the list of subsystems.
 /// - state: A mutable reference to the DataStore.
 /// - host_config: A reference to the HostConfiguration.
-/// - sender: Optional mutable reference to the gRPC sender.
 ///
 /// On success, returns a NewrootMount.
 #[tracing::instrument(skip_all)]
@@ -181,9 +162,6 @@ fn stage_clean_install(
     state: &mut DataStore,
     host_config: &HostConfiguration,
     image: OsImage,
-    #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
-        mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
-    >,
 ) -> Result<NewrootMount, TridentError> {
     // Best effort to measure memory, CPU, and network usage during execution
     let monitor = match monitor_metrics::MonitorMetrics::new("stage_clean_install".to_string()) {
@@ -224,8 +202,6 @@ fn stage_clean_install(
         host_status.spec = Default::default();
         host_status.servicing_state = ServicingState::NotProvisioned;
     })?;
-    #[cfg(feature = "grpc-dangerous")]
-    grpc::send_host_status_state(sender, state)?;
 
     engine::prepare(subsystems, &ctx)?;
 
@@ -285,8 +261,6 @@ fn stage_clean_install(
             is_management_os: true,
         }
     })?;
-    #[cfg(feature = "grpc-dangerous")]
-    grpc::send_host_status_state(sender, state)?;
 
     info!("Staging of clean install succeeded");
     Ok(newroot_mount)
@@ -296,13 +270,11 @@ fn stage_clean_install(
 /// - state: A mutable reference to the DataStore.
 /// - new_root_path: New root device path. If None, a new root is created and mounted.
 /// - clean_install_start_time: Optional instant when clean install started.
-/// - sender: Optional mutable reference to the gRPC sender.
 #[tracing::instrument(skip_all)]
 pub(crate) fn finalize_clean_install(
     state: &mut DataStore,
     new_root: Option<NewrootMount>,
     clean_install_start_time: Option<Instant>,
-    #[cfg(feature = "grpc-dangerous")] sender: &mut Option<GrpcSender>,
 ) -> Result<ExitKind, TridentError> {
     info!("Finalizing clean install");
 
@@ -350,8 +322,6 @@ pub(crate) fn finalize_clean_install(
     state.with_host_status(|status| {
         status.servicing_state = ServicingState::CleanInstallFinalized
     })?;
-    #[cfg(feature = "grpc-dangerous")]
-    grpc::send_host_status_state(sender, state)?;
 
     // Persist the datastore to the new root
     if !ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
