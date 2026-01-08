@@ -311,16 +311,18 @@ func SplitRollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig storm
 		<-proxyStartedChannel
 	}
 
-	// Perform runtime update
-	err = testStates.RuntimeUpdate1.doUpdateTest()
-	if err != nil {
-		return fmt.Errorf("failed to perform split test runtime update test: %w", err)
-	}
+	if !testConfig.SkipRuntimeUpdates {
+		// Perform runtime update
+		err = testStates.RuntimeUpdate1.doUpdateTest()
+		if err != nil {
+			return fmt.Errorf("failed to perform split test runtime update test: %w", err)
+		}
 
-	// Invoke `rollback` using allowed-operations of runtime update into ab update state
-	err = testStates.AbUpdate.doSplitRollbackTest(testStates.RuntimeUpdate1.ExpectReboot, true)
-	if err != nil {
-		return fmt.Errorf("failed to perform `rollback` split test: %w", err)
+		// Invoke `rollback` using allowed-operations of runtime update into ab update state
+		err = testStates.AbUpdate.doSplitRollbackTest(testStates.RuntimeUpdate1.ExpectReboot, true)
+		if err != nil {
+			return fmt.Errorf("failed to perform `rollback` split test: %w", err)
+		}
 	}
 
 	// Invoke `rollback` using allowed-operations of ab update into initial state
