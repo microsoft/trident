@@ -61,7 +61,7 @@ pub struct HostStatus {
     pub is_management_os: bool,
 
     /// Version of Trident that last updated this HostStatus.
-    #[serde(default, skip_serializing_if = "is_default")]
+    #[serde(default, skip_serializing_if = "TridentVersion::is_none")]
     pub trident_version: TridentVersion,
 }
 
@@ -137,12 +137,18 @@ impl Display for AbVolumeSelection {
 
 /// Trident version
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(untagged)]
 pub enum TridentVersion {
     SemVer(Version),
     Other(String),
     #[default]
     None,
+}
+
+impl TridentVersion {
+    fn is_none(&self) -> bool {
+        matches!(self, Self::None)
+    }
 }
 
 fn fix_host_config(yaml: &mut Value) -> Result<(), anyhow::Error> {
@@ -297,5 +303,44 @@ mod tests {
 
         let hs = decode_host_status(yaml).unwrap();
         hs.spec.validate().unwrap();
+    }
+
+    #[test]
+    fn check_triedent_version_serde() {
+        // Check missing TridentVersion
+        let hs = HostStatus {
+            ..Default::default()
+        };
+        let yaml = serde_yaml::to_string(&hs).unwrap();
+        assert!(!yaml.contains("tridentVersion"));
+        let hs_dserialized: HostStatus = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(hs, hs_dserialized);
+        assert!(hs_dserialized.trident_version.is_none());
+
+        // Check semver TridentVersion
+        let semver_version = TridentVersion::SemVer(Version::parse("1.2.3").unwrap());
+        let hs = HostStatus {
+            trident_version: semver_version.clone(),
+            ..Default::default()
+        };
+        let yaml = serde_yaml::to_string(&hs).unwrap();
+        assert!(!yaml.contains("!sem-ver"));
+        assert!(yaml.contains("tridentVersion: 1.2.3"));
+        let hs_dserialized: HostStatus = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(hs, hs_dserialized);
+        assert_eq!(hs_dserialized.trident_version, semver_version);
+
+        // Check other TridentVersion
+        let other_version = TridentVersion::Other("foo".to_string());
+        let hs = HostStatus {
+            trident_version: other_version.clone(),
+            ..Default::default()
+        };
+        let yaml = serde_yaml::to_string(&hs).unwrap();
+        assert!(!yaml.contains("!other"));
+        assert!(yaml.contains("tridentVersion: foo"));
+        let hs_dserialized: HostStatus = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(hs, hs_dserialized);
+        assert_eq!(hs_dserialized.trident_version, other_version);
     }
 }

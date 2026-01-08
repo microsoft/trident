@@ -20,7 +20,7 @@ use crate::{
     container,
     datastore::DataStore,
     engine::{self, boot::uki, bootentries, runtime_update, EngineContext, SUBSYSTEMS},
-    manual_rollback_utils::ManualRollbackContext,
+    manual_rollback_utils::{ManualRollbackContext, ManualRollbackKind},
     subsystems::esp,
     ExitKind,
 };
@@ -44,11 +44,10 @@ pub fn get_rollback_info(datastore: &DataStore, kind: GetKind) -> Result<String,
     match kind {
         GetKind::RollbackTarget => {
             if let Some(first_rollback_host_status) = rollback_chain.first() {
-                let target_output =
-                    serde_yaml::to_string(&first_rollback_host_status.host_status.spec)
-                        .structured(ServicingError::ManualRollback {
-                            message: "Failed to serialize first rollback HostStatus spec",
-                        })?;
+                let target_output = serde_yaml::to_string(&first_rollback_host_status.spec)
+                    .structured(ServicingError::ManualRollback {
+                        message: "Failed to serialize first rollback HostStatus spec",
+                    })?;
                 Ok(target_output)
             } else {
                 info!("No available rollbacks to show target for");
@@ -137,7 +136,7 @@ pub fn execute_rollback(
         };
 
         let engine_context = EngineContext {
-            spec: requested_rollback.host_status.spec.clone(),
+            spec: requested_rollback.spec.clone(),
             spec_old: datastore.host_status().spec.clone(),
             servicing_type: ServicingType::ManualRollback,
             partition_paths: datastore.host_status().partition_paths.clone(),
@@ -150,10 +149,9 @@ pub fn execute_rollback(
             filesystems: Vec::new(), // Will be populated after dynamic validation
         };
 
-        let staging_state = if requested_rollback.requires_reboot {
-            ServicingState::ManualRollbackAbStaged
-        } else {
-            ServicingState::ManualRollbackRuntimeStaged
+        let staging_state = match requested_rollback.kind {
+            ManualRollbackKind::Ab => ServicingState::ManualRollbackAbStaged,
+            ManualRollbackKind::Runtime => ServicingState::ManualRollbackRuntimeStaged,
         };
 
         stage_rollback(datastore, &engine_context, staging_state)

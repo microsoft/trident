@@ -126,10 +126,19 @@ func (s *TridentRollbackScenario) multiRollback(tc storm.TestCase) error {
 }
 
 func (s *TridentRollbackScenario) skipToAbRollback(tc storm.TestCase) error {
+	if s.args.SkipRuntimeUpdates {
+		tc.Skip("Skipping skip-to-ab rollback test due to SkipRuntimeUpdates being true")
+	}
+	if s.args.SkipManualRollbacks {
+		tc.Skip("Skipping skip-to-ab rollback test due to SkipManualRollbacks being true")
+	}
 	return s.runTestCase(tc, stormrollbacktests.SkipToAbRollbackTest)
 }
 
 func (s *TridentRollbackScenario) splitRollback(tc storm.TestCase) error {
+	if s.args.SkipManualRollbacks {
+		tc.Skip("Skipping split rollback test due to SkipManualRollbacks being true")
+	}
 	return s.runTestCase(tc, stormrollbacktests.SplitRollbackTest)
 }
 

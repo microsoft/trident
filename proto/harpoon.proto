@@ -234,7 +234,7 @@ message GetRequiredServicingTypeResponse {
   ServicingType servicing_type = 1;
 }
 
-enum RollbackKind {
+enum ManualRollbackKind {
   AnyRollbackRequested      = 0;
   AbRollbackRequested       = 1;
   RuntimeRollbackRequested  = 2;
@@ -242,7 +242,7 @@ enum RollbackKind {
 
 message CheckRollbackRequest {
   // The rollback kind parameter for the servicing operation.
-  RollbackKind    kind = 1;
+  ManualRollbackKind    kind = 1;
 }
 
 enum CheckRollbackKind {
@@ -260,12 +260,12 @@ message RollbackRequest {
   // The finalize parameters for the servicing operation.
   FinalizeRequest finalize = 2;
   // The rollback kind parameter for the servicing operation.
-  RollbackKind    type = 3;
+  ManualRollbackKind    type = 3;
 }
 
 message RollbackStageRequest {
   // The rollback kind parameter for the servicing operation.
-  RollbackKind    kind = 3;
+  ManualRollbackKind    kind = 3;
 }
 
 message RollbackFinalizeRequest {
@@ -276,15 +276,15 @@ message RollbackFinalizeRequest {
 message GetRollbackChainRequest {}
 
 message GetRollbackChainResponse {
-  // The rollback list content as a string.
-  string rollback_chain = 1;
+  // The rollback list content as a list of strings.
+  repeated string rollback_chain = 1;
 }
 
 message GetRollbackTargetRequest {}
 
 message GetRollbackTargetResponse {
   // The rollback target Host Configuration content as a string.
-  string rollback_target = 1;
+  optional string rollback_target = 1;
 }
 
 message CheckRootRequest {}

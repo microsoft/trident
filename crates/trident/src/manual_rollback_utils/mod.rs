@@ -5,6 +5,7 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 
 use trident_api::{
+    config::HostConfiguration,
     error::{InvalidInputError, ReportError, ServicingError, TridentError},
     status::{AbVolumeSelection, HostStatus, ServicingState, TridentVersion},
 };
@@ -18,11 +19,20 @@ lazy_static! {
             .expect("Failed to parse minimum rollback Trident version");
 }
 
+#[derive(clap::ValueEnum, Copy, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum ManualRollbackKind {
+    Ab,
+    Runtime,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ManualRollbackChainItem {
-    pub requires_reboot: bool,
-    pub host_status: HostStatus,
+    pub kind: ManualRollbackKind,
+    pub spec: HostConfiguration,
+    pub ab_active_volume: Option<AbVolumeSelection>,
+    pub install_index: usize,
     #[serde(skip)]
     host_status_index: i32,
 }
@@ -83,9 +93,15 @@ impl ManualRollbackContext {
                 // was a rollback or not
                 if !last_provisioned && active_index != -1 {
                     let host_status_context = ManualRollbackChainItem {
-                        host_status: host_statuses[active_index as usize].clone(),
+                        spec: host_statuses[active_index as usize].spec.clone(),
+                        ab_active_volume: host_statuses[active_index as usize].ab_active_volume,
+                        install_index: host_statuses[active_index as usize].install_index,
+                        kind: if needs_reboot {
+                            ManualRollbackKind::Ab
+                        } else {
+                            ManualRollbackKind::Runtime
+                        },
                         host_status_index: active_index,
-                        requires_reboot: needs_reboot,
                     };
                     if auto_rollback {
                         trace!(
@@ -281,7 +297,7 @@ impl ManualRollbackContext {
             }
             (true, false) => {
                 // Expecting runtime rollback as first
-                if available_rollbacks[0].requires_reboot {
+                if matches!(available_rollbacks[0].kind, ManualRollbackKind::Ab) {
                     return Err(TridentError::new(
                         InvalidInputError::InvalidRollbackExpectation {
                             reason:
@@ -297,7 +313,7 @@ impl ManualRollbackContext {
                 let Some((index, _)) = available_rollbacks
                     .iter()
                     .enumerate()
-                    .find(|(_, r)| r.requires_reboot)
+                    .find(|(_, r)| matches!(r.kind, ManualRollbackKind::Ab))
                 else {
                     return Err(TridentError::new(
                         InvalidInputError::InvalidRollbackExpectation {
@@ -333,10 +349,9 @@ impl ManualRollbackContext {
             self.get_requested_rollback(invoke_if_next_is_runtime, invoke_available_ab)?;
         match rollback {
             None => Ok("none".to_string()),
-            Some(item) => Ok(if item.requires_reboot {
-                "ab".to_string()
-            } else {
-                "runtime".to_string()
+            Some(item) => Ok(match item.kind {
+                ManualRollbackKind::Ab => "ab".to_string(),
+                ManualRollbackKind::Runtime => "runtime".to_string(),
             }),
         }
     }
@@ -531,7 +546,10 @@ mod tests {
         assert_eq!(rollback_chain.len(), expected_available_rollbacks.len());
         if !expected_available_rollbacks.is_empty() {
             let next_rollback = rollback_chain.first().unwrap();
-            assert_eq!(next_rollback.requires_reboot, expected_requires_reboot);
+            assert_eq!(
+                matches!(next_rollback.kind, ManualRollbackKind::Ab),
+                expected_requires_reboot
+            );
         }
         let serialized_output = serde_yaml::from_str::<Vec<serde_yaml::Value>>(
             &context.get_rollback_chain_yaml().unwrap(),
