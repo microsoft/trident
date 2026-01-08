@@ -5,7 +5,9 @@ use log::{debug, info, trace};
 use rayon::prelude::*;
 
 use osutils::{filesystems::MkfsFileSystemType, mkfs};
-use trident_api::{status::ServicingType, BlockDeviceId};
+use trident_api::{
+    constants::internal_params::RAW_COSI_STORAGE, status::ServicingType, BlockDeviceId,
+};
 
 use crate::engine::{context::filesystem::FileSystemData, EngineContext};
 
@@ -51,10 +53,12 @@ fn block_devices_needing_fs_creation(
             // - The filesystem source is `Image`
             // - AND servicing type is CleanInstall
             // - AND the mount point is the ESP location.
+            // - AND raw COSI storage is NOT in use
             // - AND ESP is NOT on an adopted partition.
             FileSystemData::Image(ifs)
                 if ctx.servicing_type == ServicingType::CleanInstall
                     && fs.is_esp()
+                    && !ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE)
                     && !ctx
                         .storage_graph
                         .is_adopted(&ifs.device_id)

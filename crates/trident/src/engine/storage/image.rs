@@ -8,6 +8,7 @@ use log::{debug, info, trace, warn};
 
 use osutils::{e2fsck, lsblk, resize2fs};
 use trident_api::{
+    constants::{internal_params::RAW_COSI_STORAGE, ESP_MOUNT_POINT_PATH},
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::ServicingType,
     BlockDeviceId,
@@ -40,10 +41,23 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
         "No OS image available for deployment",
     ))?;
 
-    let images = os_img
-        .filesystems()
-        .map(|fs| (fs.mount_point.to_owned(), fs))
-        .collect::<HashMap<_, _>>();
+    let images = {
+        let mut tmp = os_img
+            .filesystems()
+            .map(|fs| (fs.mount_point.to_owned(), fs))
+            .collect::<HashMap<_, _>>();
+
+        if ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
+            tmp.insert(
+                ESP_MOUNT_POINT_PATH.into(),
+                os_img
+                    .esp_filesystem()
+                    .structured(InternalError::Internal("COSI doesn't have ESP"))?,
+            );
+        }
+
+        tmp
+    };
 
     // Now, deploy the filesystems sourced from the OS image
     for (id, mpp, fs) in fs_from_img {
@@ -136,7 +150,7 @@ fn filesystems_from_image(
             continue;
         };
 
-        if img_fs.is_esp() {
+        if img_fs.is_esp() && !ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
             debug!(
                 "Skipping deployment of filesystem [{}] sourced from OS Image, as it is the ESP.",
                 filesystem.description()

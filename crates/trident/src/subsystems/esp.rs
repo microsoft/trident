@@ -18,9 +18,9 @@ use osutils::{
 use trident_api::{
     config::UefiFallbackMode,
     constants::{
-        internal_params::DISABLE_GRUB_NOPREFIX_CHECK, EFI_DEFAULT_BIN_DIRECTORY,
-        EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY, ESP_RELATIVE_MOUNT_POINT_PATH,
-        GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
+        internal_params::{DISABLE_GRUB_NOPREFIX_CHECK, RAW_COSI_STORAGE},
+        EFI_DEFAULT_BIN_DIRECTORY, EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY,
+        ESP_RELATIVE_MOUNT_POINT_PATH, GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
     },
     error::{ReportError, ServicingError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, ServicingState, ServicingType},
@@ -49,8 +49,9 @@ impl Subsystem for EspSubsystem {
         // Perform file-based deployment of ESP images, if needed, after filesystems have been
         // mounted and initialized.
 
-        // Deploy ESP image
-        deploy_esp(ctx, mount_path).structured(ServicingError::DeployESPImages)?;
+        if !ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
+            deploy_esp(ctx, mount_path).structured(ServicingError::DeployESPImages)?;
+        }
 
         Ok(())
     }
