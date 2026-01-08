@@ -7,23 +7,22 @@ sidebar_position: 3
 ## A/B Update
 
 A [servicing type](#servicing-type) where the host follows the A/B partition
-scheme: volumes are present as identical copies, A and B, and while the
-active partition is running workloads, the OS image on the inactive one is
-updated. The host will then reboot into the updated partition, while the other
-one becomes inactive.
+scheme: volumes are present as identical copies, A and B, and while the active
+partition is running workloads, the OS image on the inactive one is updated. The
+host will then reboot into the updated partition, while the other one becomes
+inactive.
 
-To be eligible for A/B updates, a volume must be present as two identical
-block device copies on the disk: A and B. These device copies form a
-logical [A/B Volume Pair](#ab-volume-pair). Other volumes might be present as a
-single copy shared between the A and B partitions, but they are then ineligible
-for A/B updates.
+To be eligible for A/B updates, a volume must be present as two identical block
+device copies on the disk: A and B. These device copies form a logical [A/B
+Volume Pair](#ab-volume-pair). Other volumes might be present as a single copy
+shared between the A and B partitions, but they are then ineligible for A/B
+updates.
 
 ## A/B Volume Pair
 
 A pair of [block devices](#block-device) that are used for an [A/B
-update](#ab-update). One volume is the A volume, and the other is the B
-volume. At any point in time, only one volume is active, and the other is
-inactive.
+update](#ab-update). One volume is the A volume, and the other is the B volume.
+At any point in time, only one volume is active, and the other is inactive.
 
 An [A/B Update](#ab-update) is performed by updating the inactive volume, and
 then rebooting the device into the updated volume. When this happens, the active
@@ -40,8 +39,8 @@ Kernel abstraction generally used for non-volatile storage devices, such as hard
 drives, SSDs, and USB drives.
 
 > A file that refers to a device. A block special file is normally distinguished
-> from a character special file by providing access to the device in a manner such
-> that the hardware characteristics of the device are not visible.
+> from a character special file by providing access to the device in a manner
+> such that the hardware characteristics of the device are not visible.
 >
 > ([Block Special
 > File](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_79))
@@ -84,7 +83,8 @@ _Note: This definition does not consider other OSes or distros._
 
 ## minimal-os
 
-`minimal-os` is an Azure Linux vhdx maintained by Microsoft, comprised of the minimal components to be bootable.
+`minimal-os` is an Azure Linux vhdx maintained by Microsoft, comprised of the
+minimal components to be bootable.
 
 ## Multiboot
 
@@ -105,10 +105,23 @@ Operations are the top level actions performed during [servicing](#servicing).
 Trident installations and updates perform the [stage](#stage-operation) and
 [finalize](#finalize-operation) operations.
 
+## Runtime Update
+
+A [servicing type](#servicing-type) where configuration changes are applied
+directly to the running OS without requiring a full OS image update or reboot.
+
+Currently, only
+[sysexts](../Reference/Host-Configuration/API-Reference/Os.md#sysexts-optional),
+[confexts](../Reference/Host-Configuration/API-Reference/Os.md#confexts-optional),
+and
+[netplan](../Reference/Host-Configuration/API-Reference/Os.md#netplan-optional)
+configurations may be updated with a runtime update. Runtime updates may be
+performed on an OS with or without A/B partitions present.
+
 ## Servicing
 
-The general process of performing an action on an [install](#install).
-There are several [types of servicing](#servicing-type).
+The general process of performing an action on an [install](#install). There are
+several [types of servicing](#servicing-type).
 
 ## Servicing OS
 
