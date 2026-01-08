@@ -4,13 +4,10 @@ use log::{debug, info, warn};
 #[cfg(feature = "grpc-dangerous")]
 use tokio::sync::mpsc;
 
-use osutils::{chroot, container, path::join_relative};
+use osutils::{chroot, container};
 use trident_api::{
     constants::{internal_params::NO_TRANSITION, ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
-    error::{
-        InternalError, InvalidInputError, ReportError, ServicingError, TridentError,
-        TridentResultExt,
-    },
+    error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{HostStatus, ServicingState, ServicingType},
 };
 
@@ -46,25 +43,15 @@ pub(super) fn stage_update(
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
 ) -> Result<(), TridentError> {
-    match ctx.servicing_type {
-        ServicingType::CleanInstall => {
-            return Err(TridentError::new(
-                InvalidInputError::CleanInstallOnProvisionedHost,
-            ));
-        }
-        ServicingType::NoActiveServicing => {
-            return Err(TridentError::internal("No active servicing type"))
-        }
-        _ => {
-            info!(
-                "Staging update of servicing type '{:?}'",
-                ctx.servicing_type
-            )
-        }
+    if ctx.servicing_type != ServicingType::AbUpdate {
+        return Err(TridentError::internal(
+            "A/B update staging called for unsupported servicing type",
+        ));
     }
+    info!("Staging A/B update");
 
     // Best effort to measure memory, CPU, and network usage during execution
-    let monitor = match monitor_metrics::MonitorMetrics::new("stage_update".to_string()) {
+    let monitor = match monitor_metrics::MonitorMetrics::new("stage_ab_update".to_string()) {
         Ok(monitor) => Some(monitor),
         Err(e) => {
             warn!("Failed to create metrics monitor: {e:?}");
@@ -74,41 +61,36 @@ pub(super) fn stage_update(
 
     engine::prepare(subsystems, &ctx)?;
 
-    if let ServicingType::AbUpdate = ctx.servicing_type {
-        debug!("Preparing storage to mount new root");
+    debug!("Preparing storage to mount new root");
 
-        // Close any pre-existing verity devices
-        verity::stop_trident_servicing_devices(&ctx.spec)
-            .structured(ServicingError::CleanupVerity)?;
+    // Close any pre-existing verity devices
+    verity::stop_trident_servicing_devices(&ctx.spec).structured(ServicingError::CleanupVerity)?;
 
-        storage::initialize_block_devices(&ctx)?;
-        let newroot_mount = NewrootMount::create_and_mount(
-            &ctx.spec,
-            &ctx.partition_paths,
-            ctx.get_ab_update_volume()
-                .structured(InternalError::Internal(
-                    "No update volume despite there being an A/B update in progress",
-                ))?,
-        )?;
+    storage::initialize_block_devices(&ctx)?;
+    let newroot_mount = NewrootMount::create_and_mount(
+        &ctx.spec,
+        &ctx.partition_paths,
+        ctx.get_ab_update_volume()
+            .structured(InternalError::Internal(
+                "No update volume despite there being an A/B update in progress",
+            ))?,
+    )?;
 
-        engine::provision(subsystems, &ctx, newroot_mount.path())?;
+    engine::provision(subsystems, &ctx, newroot_mount.path())?;
 
-        debug!("Entering '{}' chroot", newroot_mount.path().display());
-        let result = chroot::enter_update_chroot(newroot_mount.path())
-            .message("Failed to enter chroot")?
-            .execute_and_exit(|| engine::configure(subsystems, &ctx));
+    debug!("Entering '{}' chroot", newroot_mount.path().display());
+    let result = chroot::enter_update_chroot(newroot_mount.path())
+        .message("Failed to enter chroot")?
+        .execute_and_exit(|| engine::configure(subsystems, &ctx));
 
-        if let Err(original_error) = result {
-            if let Err(e) = newroot_mount.unmount_all() {
-                warn!("While handling an earlier error: {e:?}");
-            }
-            return Err(original_error).message("Failed to execute in chroot");
+    if let Err(original_error) = result {
+        if let Err(e) = newroot_mount.unmount_all() {
+            warn!("While handling an earlier error: {e:?}");
         }
+        return Err(original_error).message("Failed to execute in chroot");
+    }
 
-        newroot_mount.unmount_all()?;
-    } else {
-        engine::configure(subsystems, &ctx)?;
-    };
+    newroot_mount.unmount_all()?;
 
     // Update the Host Configuration with information produced and stored in the
     // subsystems. Currently, this step is used only to update the final paths
@@ -147,35 +129,35 @@ pub(super) fn stage_update(
         }
     }
 
-    info!("Staging of update '{:?}' succeeded", ctx.servicing_type);
+    info!("Staging of A/B update succeeded");
 
     Ok(())
 }
 
-/// Finalizes an update. Takes in 2 arguments:
+/// Finalizes an update. Takes in 2-3 arguments:
 /// - state: A mutable reference to the DataStore.
+/// - update_start_time: The time at which the update began staging.
 /// - sender: Optional mutable reference to the gRPC sender.
-#[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", servicing_type)))]
+#[tracing::instrument(skip_all, fields(servicing_type = format!("{:?}", ServicingType::AbUpdate)))]
 pub(crate) fn finalize_update(
     state: &mut DataStore,
-    servicing_type: ServicingType,
     update_start_time: Option<Instant>,
     #[cfg(feature = "grpc-dangerous")] sender: &mut Option<
         mpsc::UnboundedSender<Result<grpc::HostStatusState, tonic::Status>>,
     >,
 ) -> Result<ExitKind, TridentError> {
-    info!("Finalizing update");
+    info!("Finalizing A/B update");
 
-    if servicing_type != ServicingType::AbUpdate {
+    if state.host_status().servicing_state != ServicingState::AbUpdateStaged {
         return Err(TridentError::internal(
-            "Unimplemented servicing type for finalize",
+            "A/B update must be staged before calling finalize",
         ));
     }
 
     let ctx = EngineContext {
         spec: state.host_status().spec.clone(),
         spec_old: state.host_status().spec_old.clone(),
-        servicing_type,
+        servicing_type: ServicingType::AbUpdate,
         ab_active_volume: state.host_status().ab_active_volume,
         partition_paths: state.host_status().partition_paths.clone(),
         disk_uuids: state.host_status().disk_uuids.clone(),
@@ -186,18 +168,8 @@ pub(crate) fn finalize_update(
         is_uki: None,
     };
 
-    let (root_path, esp_path) = if container::is_running_in_container()
-        .message("Failed to check if Trident is running in a container")?
-    {
-        let host_root = container::get_host_root_path().message("Failed to get host root path")?;
-        let esp_root = join_relative(&host_root, ESP_MOUNT_POINT_PATH);
-        (host_root, esp_root)
-    } else {
-        (
-            PathBuf::from(ROOT_MOUNT_POINT_PATH),
-            PathBuf::from(ESP_MOUNT_POINT_PATH),
-        )
-    };
+    let root_path = container::get_host_relative_path(PathBuf::from(ROOT_MOUNT_POINT_PATH))?;
+    let esp_path = container::get_host_relative_path(PathBuf::from(ESP_MOUNT_POINT_PATH))?;
     bootentries::create_and_update_boot_variables(&ctx, &esp_path)?;
     // Analogous to how UEFI variables are configured, finalize must start configuring
     // UEFI fallback, and a successful commit will finish it.
@@ -218,7 +190,7 @@ pub(crate) fn finalize_update(
         tracing::info!(
             metric_name = "update_time_secs",
             value = start_time.elapsed().as_secs_f64(),
-            servicing_type = format!("{:?}", servicing_type)
+            servicing_type = format!("{:?}", ServicingType::AbUpdate)
         );
     }
 
