@@ -130,6 +130,421 @@ impl FileReader {
     }
 }
 
+/// A FILE-like object that is obtained through an HTTP request using range
+/// headers instead of a local file.
+///
+/// It implements the `Read` and `Seek` traits to allow reading and seeking
+/// through the file.
+///
+/// It is best used to scan through a file, like scanning tar headers, as each
+/// call to `read` will result in a new HTTP request.
+#[derive(Debug, Clone)]
+pub struct HttpFile {
+    url: Url,
+    position: u64,
+    size: u64,
+    client: Client,
+    timeout: Duration,
+    token: Option<String>,
+}
+
+impl HttpFile {
+    /// Creates a new HTTP file reader from a standard HTTP URL.
+    pub fn new(url: &Url, timeout: Duration) -> IoResult<Self> {
+        Self::new_inner(url, None, false, timeout)
+    }
+
+    /// Creates a new HTTP file reader from an OCI URL.
+    pub fn new_from_oci(url: &Url, timeout: Duration) -> Result<Self, Error> {
+        let img_ref =
+            Reference::try_from(url.to_string().strip_prefix("oci://").with_context(|| {
+                format!("URL has incorrect scheme: expected to start with 'oci://', got '{url}'")
+            })?)
+            .with_context(|| format!("Failed to parse URL '{url}'"))?;
+
+        let oci_client = OciClient::default();
+        let rt = Runtime::new().context("Failed to create Tokio runtime")?;
+        let token = Self::retrieve_access_token(&img_ref, &rt, &oci_client)?;
+        let digest = Self::retrieve_artifact_digest(&img_ref, &rt, &oci_client)?;
+        trace!("Retrieved artifact digest: {digest}");
+
+        // Create HTTP URL
+        let registry = img_ref.registry();
+        let repository = img_ref.repository();
+        let http_url = Url::parse(&format!(
+            "https://{registry}/v2/{repository}/blobs/{digest}"
+        ))?;
+
+        Self::new_inner(&http_url, Some(token), true, timeout)
+            .context("Failed to create HTTP file reader")
+    }
+
+    fn new_inner(
+        url: &Url,
+        token: Option<String>,
+        ignore_ranges_header_absence: bool,
+        timeout: Duration,
+    ) -> IoResult<Self> {
+        debug!("Opening HTTP file '{}'", url);
+
+        // Create a new client for this file.
+        let client = Client::new();
+        let request_sender = || {
+            let mut request = client.head(url.as_str());
+            if let Some(token) = &token {
+                request = request.header("Authorization", format!("Bearer {token}"));
+            }
+            request.send()
+        };
+        let response = Self::retriable_request_sender(request_sender, timeout)?;
+        trace!("HTTP file '{}' has status: {}", url, response.status());
+
+        // Get the file size from the response headers
+        let size = response
+            .headers()
+            .get("Content-Length")
+            .ok_or(IoError::other(
+                "Failed to get 'Content-Length' in the response header",
+            ))?
+            .to_str()
+            .map_err(|e| {
+                IoError::new(
+                    IoErrorKind::InvalidData,
+                    format!("Could not parse 'Content-Length': {e}"),
+                )
+            })?
+            .parse()
+            .map_err(|e| {
+                IoError::new(
+                    IoErrorKind::InvalidData,
+                    format!("Could not parse 'Content-Length' as an integer: {e}"),
+                )
+            })?;
+
+        trace!("HTTP file '{}' has size: {}", url, size);
+
+        // Ensure the server supports range requests, this implementation
+        // requires that feature!
+        let accept_ranges_header = response.headers().get("Accept-Ranges");
+        if accept_ranges_header.is_none() && ignore_ranges_header_absence {
+            warn!("OCI server does not provide 'Accept-Ranges' header, continuing anyway");
+        } else if accept_ranges_header
+            .ok_or(IoError::other(
+                "Server does not support range requests: 'Accept-Ranges' header was not provided",
+            ))?
+            .to_str()
+            .map_err(|e| {
+                IoError::new(
+                    IoErrorKind::InvalidData,
+                    format!("Could not parse 'Accept-Ranges': {e}"),
+                )
+            })?
+            .to_lowercase()
+            .eq("none")
+        {
+            return Err(IoError::other(
+                "Server does not support range requests: 'Accept-Ranges: none'",
+            ));
+        }
+
+        debug!("Successfully queried HTTP file '{}' of size: {}", url, size);
+        Ok(Self {
+            url: url.clone(),
+            position: 0,
+            size,
+            client,
+            timeout,
+            token,
+        })
+    }
+
+    /// Retrieve bearer token to access container registry. Even registries allowing anonymous
+    /// access may require a token.
+    fn retrieve_access_token(
+        img_ref: &Reference,
+        runtime: &Runtime,
+        client: &OciClient,
+    ) -> Result<String, Error> {
+        trace!(
+            "Retrieving access token for OCI registry '{}'",
+            img_ref.registry()
+        );
+        let auth = Self::get_auth(img_ref);
+        runtime
+            .block_on(client.auth(img_ref, &auth, oci_client::RegistryOperation::Pull))
+            .with_context(|| {
+                format!(
+                    "Registry '{}' is not accessible or does not exist",
+                    img_ref.registry()
+                )
+            })?
+            .context("Failed to retrieve authorization token")
+    }
+
+    /// Get authentication credentials for accessing registry. Unless "dangerous-options" flag is
+    /// enabled, will default to anonymous access.
+    fn get_auth(_img_ref: &Reference) -> RegistryAuth {
+        #[cfg(feature = "dangerous-options")]
+        if let Ok(docker_config) = File::open(
+            env::home_dir()
+                .unwrap_or_default()
+                .join(DOCKER_CONFIG_FILE_PATH),
+        ) {
+            let registry = _img_ref
+                .resolve_registry()
+                .strip_suffix('/')
+                .unwrap_or_else(|| _img_ref.resolve_registry());
+            match docker_credential::get_credential_from_reader(
+                BufReader::new(docker_config),
+                registry,
+            ) {
+                Ok(DockerCredential::UsernamePassword(username, password)) => {
+                    debug!("Found username and password docker credential");
+                    return RegistryAuth::Basic(username, password);
+                }
+                Ok(DockerCredential::IdentityToken(_)) => {
+                    debug!("Found identity token docker credential")
+                }
+                Err(_) => debug!("Failed to find docker credentials"),
+            }
+        };
+
+        debug!("Proceeding with anonymous access");
+        RegistryAuth::Anonymous
+    }
+
+    /// Retrieve artifact digest, which is necessary to send HTTP request to container registry.
+    fn retrieve_artifact_digest(
+        img_ref: &Reference,
+        runtime: &Runtime,
+        client: &OciClient,
+    ) -> Result<String, Error> {
+        trace!("Retrieving artifact digest");
+        Ok(match img_ref.digest() {
+            Some(digest) => digest.to_string(),
+            None => {
+                let tag = img_ref.tag().with_context(|| {
+                    format!("Failed to retrieve tag from OCI URL '{}'", img_ref.whole())
+                })?;
+                // Attempt to retrieve digest from manifest
+                let manifest = client.pull_image_manifest(img_ref, &RegistryAuth::Anonymous);
+                let (oci_image_manifest, _) = runtime.block_on(manifest).with_context(||
+                    format!(
+                        "Repository '{}' does not exist in registry '{}' or tag '{tag}' not found in repository",
+                        img_ref.repository(),
+                        img_ref.registry()
+                    ))?;
+                // Expect the artifact to have one layer, which is the image
+                ensure!(
+                    oci_image_manifest.layers.len() == 1,
+                    format!(
+                        "Expected OCI artifact to contain 1 layer, found {}",
+                        oci_image_manifest.layers.len()
+                    )
+                );
+                oci_image_manifest.layers[0].digest.clone()
+            }
+        })
+    }
+
+    /// Converts an HTTP error into an IO error.
+    fn http_to_io_err(e: reqwest::Error) -> IoError {
+        let formatted = format!("HTTP File error: {e}");
+        if let Some(status) = e.status() {
+            match status.as_u16() {
+                400 => IoError::new(IoErrorKind::InvalidInput, formatted),
+                401 | 403 => IoError::new(IoErrorKind::PermissionDenied, formatted),
+                404 => IoError::new(IoErrorKind::NotFound, formatted),
+                408 => IoError::new(IoErrorKind::TimedOut, formatted),
+                500..=599 => IoError::new(IoErrorKind::ConnectionAborted, formatted),
+                _ => IoError::other(formatted),
+            }
+        } else if e.is_timeout() {
+            IoError::new(IoErrorKind::TimedOut, formatted)
+        } else if e.is_connect() {
+            IoError::new(IoErrorKind::ConnectionRefused, formatted)
+        } else if e.is_request() {
+            IoError::new(IoErrorKind::InvalidData, formatted)
+        } else {
+            IoError::other(formatted)
+        }
+    }
+
+    /// Performs a request with optional range headers to get the file content.
+    /// Returns the HTTP response.
+    fn reader(&self, start: Option<u64>, end: Option<u64>) -> IoResult<Response> {
+        let request_sender = || {
+            let mut request = self.client.get(self.url.as_str());
+
+            if let Some(token) = self.token.clone() {
+                request = request.header("Authorization", format!("Bearer {token}"));
+            }
+
+            // Generate the range header when appropriate
+            let range_header = match (start, end) {
+                (Some(start), Some(end)) => Some(format!("bytes={start}-{end}")),
+                (Some(start), None) => Some(format!("bytes={start}-")),
+                (None, Some(end)) => Some(format!("bytes=0-{end}")),
+                (None, None) => None,
+            };
+
+            // Add the range header to the request
+            if let Some(range) = range_header {
+                request = request.header("Range", range);
+            }
+
+            request.send()
+        };
+
+        Self::retriable_request_sender(request_sender, self.timeout)
+    }
+
+    /// Performs an HTTP request and retries it for up to `timeout` if
+    /// it fails. The HTTP request is created and invoked by `request_sender`, a
+    /// closure that that returns a `reqwest::Result<Response>`. If the request is
+    /// successful, it returns the response. If the request fails after all retries,
+    /// it returns an IO error.
+    fn retriable_request_sender<F>(request_sender: F, timeout: Duration) -> IoResult<Response>
+    where
+        F: Fn() -> reqwest::Result<Response>,
+    {
+        let mut retry = 0;
+        let now = Instant::now();
+        let timeout_time = now + timeout;
+        let mut sleep_duration = Duration::from_millis(10);
+        loop {
+            if retry != 0 {
+                trace!("Retrying HTTP request (attempt {})", retry + 1);
+            }
+            match request_sender() {
+                Ok(response) => {
+                    if response.status().is_success() {
+                        return Ok(response);
+                    } else if std::time::Instant::now() > timeout_time {
+                        return response.error_for_status().map_err(Self::http_to_io_err);
+                    } else {
+                        warn!("HTTP request failed with status: {}", response.status());
+                    }
+                }
+                Err(e) => {
+                    if Instant::now() > timeout_time {
+                        return Err(Self::http_to_io_err(e));
+                    }
+                    warn!("HTTP request failed: {}", e);
+                }
+            };
+            // Sleep for a short duration before retrying
+            if Instant::now() + sleep_duration > timeout_time {
+                return Err(IoError::new(
+                    IoErrorKind::TimedOut,
+                    "HTTP request timed out",
+                ));
+            }
+            thread::sleep(sleep_duration);
+            sleep_duration *= 2;
+            retry += 1;
+        }
+    }
+
+    /// Performs a request of a specific section of the file. Returns the HTTP
+    /// response.
+    fn section_reader(&self, section_offset: u64, size: u64) -> IoResult<Response> {
+        let end = section_offset + size - 1;
+        trace!(
+            "Reading HTTP file '{}' from {} to {} (inclusive) [{} bytes]",
+            self.url,
+            section_offset,
+            end,
+            size
+        );
+
+        let response = self.reader(Some(section_offset), Some(end))?;
+
+        if let Some(data) = response.headers().get("Content-Range") {
+            trace!(
+                "Returned content range: {:?}",
+                String::from_utf8_lossy(data.as_bytes())
+            );
+        }
+
+        Ok(response)
+    }
+}
+
+impl Seek for HttpFile {
+    /// Implements seeking for the HTTP file reader.
+    ///
+    /// This implementation strictly forbids seeking after the end of the file.
+    fn seek(&mut self, pos: std::io::SeekFrom) -> IoResult<u64> {
+        let add_relative = |base: u64, delta: i64| -> IoResult<u64> {
+            Ok(if delta < 0 {
+                let neg_delta = -delta as u64;
+                if base < neg_delta {
+                    return Err(IoError::new(
+                        IoErrorKind::InvalidInput,
+                        "Cannot seek before the beginning of the file",
+                    ));
+                }
+                base - neg_delta
+            } else if let Some(new_base) = base.checked_add(delta as u64) {
+                new_base
+            } else {
+                return Err(IoError::new(
+                    IoErrorKind::InvalidInput,
+                    "New file position is too large",
+                ));
+            })
+        };
+
+        let new_pos = match pos {
+            std::io::SeekFrom::Start(pos) => pos,
+            std::io::SeekFrom::End(pos) => add_relative(self.size, pos)?,
+            std::io::SeekFrom::Current(pos) => add_relative(self.position, pos)?,
+        };
+
+        if new_pos >= self.size {
+            return Err(IoError::new(
+                IoErrorKind::InvalidInput,
+                "New file position is beyond the end of the file",
+            ));
+        }
+
+        trace!(
+            "Seeking HTTP file '{}' to position {} after seek: {:?}",
+            self.url,
+            new_pos,
+            pos
+        );
+
+        self.position = new_pos;
+
+        Ok(self.position)
+    }
+}
+
+impl Read for HttpFile {
+    fn read(&mut self, buf: &mut [u8]) -> IoResult<usize> {
+        let mut response = self.section_reader(self.position, buf.len() as u64)?;
+        let res = response.read(buf)?;
+        self.position += res as u64;
+        Ok(res)
+    }
+
+    fn read_exact(&mut self, buf: &mut [u8]) -> IoResult<()> {
+        let mut response = self.section_reader(self.position, buf.len() as u64)?;
+        response.read_exact(buf)?;
+        self.position += buf.len() as u64;
+        Ok(())
+    }
+
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> IoResult<usize> {
+        let mut response = self.reader(Some(self.position), None)?;
+        let res = response.read_to_end(buf)?;
+        self.position += res as u64;
+        Ok(res)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
