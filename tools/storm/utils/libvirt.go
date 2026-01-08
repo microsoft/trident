@@ -27,7 +27,7 @@ func InitializeVm(vmUuid uuid.UUID) (*LibvirtVm, error) {
 	uri, _ := url.Parse(string(libvirt.QEMUSession))
 	l, err := libvirt.ConnectToURI(uri)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect: %v", err)
+		return nil, fmt.Errorf("failed to connect: %w", err)
 	}
 
 	var uuidSlice [16]byte

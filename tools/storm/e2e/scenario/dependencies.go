@@ -1,0 +1,190 @@
+package scenario
+
+import (
+	"fmt"
+	"os"
+	"os/user"
+	"path/filepath"
+	"slices"
+	"tridenttools/storm/utils/cmd"
+	"tridenttools/storm/utils/env"
+
+	"github.com/microsoft/storm"
+	log "github.com/sirupsen/logrus"
+)
+
+func (s *TridentE2EScenario) installVmDependencies(tc storm.TestCase) error {
+	if !s.args.PipelineRun {
+		tc.Skip("local run")
+	}
+
+	if s.hardware != HardwareTypeVM {
+		tc.Skip("not a VM scenario")
+	}
+
+	log.Info("Installing VM dependencies...")
+
+	osRelease, err := env.ParseOsRelease()
+	if err != nil {
+		return fmt.Errorf("failed to parse os-release: %w", err)
+	}
+
+	err = nil
+	switch osRelease.Id {
+	case "ubuntu":
+		err = installUbuntuDependencies(osRelease)
+	default:
+		return fmt.Errorf("unsupported OS for dependency installation: %s", osRelease.Id)
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to install dependencies: %w", err)
+	}
+
+	err = configureLibvirtAccess()
+	if err != nil {
+		return fmt.Errorf("failed to configure libvirt access: %w", err)
+	}
+
+	log.Info("Dependencies installed successfully")
+
+	return nil
+}
+
+func installUbuntuDependencies(osRelease *env.OsReleaseInfo) error {
+	err := prepareSwtpmUbuntu(osRelease)
+	if err != nil {
+		return fmt.Errorf("failed to install swtpm: %w", err)
+	}
+
+	err = cmd.Run("sudo", "NEEDRESTART_MODE=a",
+		"apt-get", "-y", "install",
+		"swtpm",
+		"swtpm-tools",
+		"bridge-utils",
+		"virt-manager",
+		"qemu-efi",
+		"qemu-kvm",
+		"libtpms0",
+		"libvirt-daemon-system",
+		"libvirt-clients",
+		"python3-libvirt",
+		"ovmf",
+		"openssl",
+		"python3-netifaces",
+		"python3-docker",
+		"python3-bcrypt",
+		"python3-jinja2",
+		"zstd",
+		"imagemagick",
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to install ubuntu dependencies: %w", err)
+	}
+
+	// install virt-firmware
+	switch osRelease.VersionCodename {
+	case "focal":
+		fallthrough
+	case "jammy":
+		err = cmd.Run("sudo", "pip3", "install", "virt-firmware")
+	case "noble":
+		err = cmd.Run("sudo", "apt-get", "-y", "install", "python3-virt-firmware")
+	default:
+		return fmt.Errorf("unsupported Ubuntu version for virt-firmware installation: %s", osRelease.VersionCodename)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to install virt-firmware: %w", err)
+	}
+
+	return nil
+}
+
+func prepareSwtpmUbuntu(osRelease *env.OsReleaseInfo) error {
+	swtpmTargetUbuntuCodenames := []string{"focal", "jammy"}
+	if !slices.Contains(swtpmTargetUbuntuCodenames, osRelease.VersionCodename) {
+		// Skip swtpm installation on unsupported Ubuntu versions
+		log.Debugf("swtpm installation skipped on Ubuntu '%s'", osRelease.VersionCodename)
+		return nil
+	}
+
+	var err error
+	err = cmd.Run("sudo", "add-apt-repository", "-y", "ppa:stefanberger/swtpm-"+osRelease.VersionCodename)
+	if err != nil {
+		return fmt.Errorf("failed to add swtpm ppa: %w", err)
+	}
+	err = cmd.Run("sudo", "apt-get", "-y", "update")
+	if err != nil {
+		return fmt.Errorf("failed to update apt-get: %w", err)
+	}
+
+	// This prevents conflict on later install.
+	// It fails silently if the packages aren't installed.
+	err = cmd.Run("sudo", "apt-get", "purge", "-y", "swtpm", "swtpm-tools", "libtpms0")
+	if err != nil {
+		return fmt.Errorf("failed to purge swtpm packages: %w", err)
+	}
+
+	return nil
+}
+
+func configureLibvirtAccess() error {
+	currentUser, err := user.Current()
+	if err != nil {
+		return fmt.Errorf("failed to get current user: %w", err)
+	}
+
+	err = cmd.Run("sudo", "usermod", "-aG", "libvirt", currentUser.Username)
+	if err != nil {
+		return fmt.Errorf("failed to add user to libvirt group: %w", err)
+	}
+
+	// Get user's home directory
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get user's home directory: %w", err)
+	}
+
+	// Create ~/.config/libvirt directory if it doesn't exist
+	libVirtConfigDir := filepath.Join(homeDir, ".config", "libvirt")
+	err = os.MkdirAll(libVirtConfigDir, 0755)
+	if err != nil {
+		return fmt.Errorf("failed to create libvirt config directory: %w", err)
+	}
+
+	// Create empty libvirt.conf file if it doesn't exist
+	libVirtConfFile := filepath.Join(libVirtConfigDir, "libvirt.conf")
+	err = os.WriteFile(libVirtConfFile, []byte("uri_default = \"qemu:///system\""), 0644)
+	if err != nil {
+		return fmt.Errorf("failed to create libvirt.conf file: %w", err)
+	}
+
+	tmpFileName := filepath.Join(os.TempDir(), "libvirt-socket-override.conf")
+	contents := "[Socket]\nSocketMode=0666\n"
+	err = os.WriteFile(tmpFileName, []byte(contents), 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write to temporary file: %w", err)
+	}
+	defer os.Remove(tmpFileName)
+	log.Debugf("Wrote socket override to '%s':\n%s", tmpFileName, contents)
+
+	err = cmd.RunGroup(
+		cmd.Cmd("sudo", "mkdir", "-p", "/etc/systemd/system/libvirtd.socket.d"),
+		cmd.Cmd("sudo", "cp", tmpFileName, "/etc/systemd/system/libvirtd.socket.d/mode.conf"),
+		cmd.Cmd("sudo", "systemctl", "daemon-reload"),
+		cmd.Cmd("sudo", "systemctl", "stop", "libvirtd.service"),
+		cmd.Cmd("sudo", "systemctl", "restart", "libvirtd.socket"),
+		cmd.Cmd("sudo", "systemctl", "start", "libvirtd.service"),
+	)
+	if err != nil {
+		out, journalErr := cmd.Output("sudo", "journalctl", "-xe")
+		if journalErr == nil {
+			log.Errorf("Journalctl output:\n%s", out)
+		}
+
+		return fmt.Errorf("failed to configure libvirt socket: %w", err)
+	}
+
+	return nil
+}
