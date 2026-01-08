@@ -1,19 +1,31 @@
+//! Contains the servicing manager for Trident server.
+
 use std::{fmt::Debug, sync::Arc};
 
+use anyhow::anyhow;
 use log::error;
-use tokio::{
-    sync::{OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock},
-    task::JoinError,
-};
+use tokio::sync::{OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock};
 
 use harpoon::{FinalStatus, StatusCode, TridentError as HarpoonTridentError};
-use trident_api::error::TridentError;
+use trident_api::error::{InternalError, TridentError};
 
 use crate::{server::activitytracker::ActivityTracker, ExitKind};
 
+/// Type alias for the servicing(write) lock guard. This guard is to be held by
+/// tasks that are running an active servicing action such as install or update.
+/// It is implemented as the write lock of a RwLock, so that it is exclusive and
+/// prevents any other servicing actions or reading operations from occurring
+/// simultaneously.
 type ServicingLockGuard = OwnedRwLockWriteGuard<()>;
+
+/// Type alias for the servicing(read) lock guard. This guard is to be held by
+/// tasks that are performing read-only operations that should not occur
+/// simultaneously with servicing actions. It is implemented as the read lock of
+/// a RwLock, so that multiple read operations can occur simultaneously, but
+/// they will block if a servicing action is in progress.
 type ServicingReadGuard = OwnedRwLockReadGuard<()>;
 
+/// Helper to manage concurrency for servicing operations.
 #[derive(Clone)]
 pub(crate) struct ServicingManager {
     servicing_lock: Arc<RwLock<()>>,
@@ -26,21 +38,32 @@ impl Debug for ServicingManager {
 }
 
 impl ServicingManager {
+    /// Creates a new ServicingManager instance.
     pub(crate) fn new() -> Self {
         Self {
             servicing_lock: Arc::new(RwLock::new(())),
         }
     }
 
-    pub(crate) fn try_lock_servicing(&self) -> Option<ServicingLockGuard> {
+    /// Attempts to acquire the servicing (write) lock. Returns
+    /// `Some(ServicingLockGuard)` if the lock was successfully acquired, or
+    /// `None` if it is already held.
+    pub(super) fn try_lock_servicing(&self) -> Option<ServicingLockGuard> {
         self.servicing_lock.clone().try_write_owned().ok()
     }
 
-    pub(crate) fn try_lock_reading(&self) -> Option<ServicingReadGuard> {
+    /// Attempts to acquire the reading (read) lock. Returns
+    /// `Some(ServicingReadGuard)` if the lock was successfully acquired, or
+    /// `None` if a servicing lock is held.
+    pub(super) fn try_lock_reading(&self) -> Option<ServicingReadGuard> {
         self.servicing_lock.clone().try_read_owned().ok()
     }
 
-    pub(crate) async fn spawn_servicing_task<F>(
+    /// Spawns a servicing task that runs the provided function `f` in a
+    /// blocking task. The `ServicingLockGuard` must be provided to ensure that
+    /// only one servicing operation is running at a time. The `ActivityTracker`
+    /// is used to notify the start and end of servicing activity.
+    pub(super) async fn spawn_servicing_task<F>(
         _guard: ServicingLockGuard,
         tracker: ActivityTracker,
         f: F,
@@ -48,7 +71,15 @@ impl ServicingManager {
     where
         F: FnOnce() -> Result<ExitKind, TridentError> + Send + 'static,
     {
-        match Self::spawn_servicing_blocking_task(tracker, f).await {
+        // Spawn the servicing operation in a blocking task, notifying the activity
+        // tracker of start and end of servicing through the guard.
+        let result = tokio::task::spawn_blocking(move || {
+            let _activity_guard = tracker.servicing_guard();
+            f()
+        })
+        .await;
+
+        match result {
             Ok(r) => match r {
                 Ok(exit_kind) => FinalStatus {
                     status: StatusCode::Success.into(),
@@ -68,29 +99,33 @@ impl ServicingManager {
                 error!("Servicing task join error: {:?}", e);
                 FinalStatus {
                     status: StatusCode::Failure.into(),
-                    // TODO: create an internal trident error and convert to harpoon error
-                    error: None,
+                    error: Some(HarpoonTridentError::from(&TridentError::with_source(
+                        InternalError::Internal("Servicing task panicked or was cancelled"),
+                        anyhow!(e),
+                    ))),
                     reboot_required: false,
                 }
             }
         }
     }
 
-    async fn spawn_servicing_blocking_task<F, R>(
-        tracker: ActivityTracker,
+    /// Spawns a reading task that runs the provided function `f` in a
+    /// blocking task. The `ServicingReadGuard` must be provided to ensure that
+    /// no servicing operation is running concurrently.
+    pub(super) async fn spawn_reading_task<F, T>(
+        _guard: ServicingReadGuard,
         f: F,
-    ) -> Result<R, JoinError>
+    ) -> Result<T, TridentError>
     where
-        F: FnOnce() -> R + Send + 'static,
-        R: Send + 'static,
+        F: FnOnce() -> Result<T, TridentError> + Send + 'static,
+        T: Send + 'static,
     {
-        tokio::task::spawn_blocking(move || {
-            tracker.on_servicing_started();
-            let out = f();
-            tracker.on_servicing_ended();
-            out
-        })
-        .await
+        tokio::task::spawn_blocking(f).await.map_err(|e| {
+            TridentError::with_source(
+                InternalError::Internal("Reading task panicked or was cancelled"),
+                anyhow!(e),
+            )
+        })?
     }
 }
 
