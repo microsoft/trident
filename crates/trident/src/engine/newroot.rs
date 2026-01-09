@@ -12,7 +12,6 @@ use sys_mount::{MountBuilder, MountFlags};
 
 use osutils::{files, filesystems::MountFileSystemType, findmnt::FindMnt, lsblk, mount, path};
 use sysdefs::filesystems::{KernelFilesystemType, RealFilesystemType};
-use tracing_subscriber::field::debug;
 use trident_api::{
     config::{FileSystem, HostConfiguration},
     constants::{
@@ -285,15 +284,15 @@ impl NewrootMount {
                 "Creating missing directory for tmpfs mount point '{}'",
                 target_path_full.display()
             );
-            fs::create_dir(&target_path_full)
+            fs::create_dir_all(&target_path_full)
                 .context("Failed to create missing directory for mount point")
                 .structured(ServicingError::MountNewrootSpecialDir {
-                    dir: target_path_full.clone().to_string_lossy().to_string(),
+                    dir: target_path_full.to_string_lossy().to_string(),
                 })?;
         } else if !target_path_full.is_dir() {
             // Tmpfs mount points must be directories
             return Err(TridentError::new(ServicingError::MountNewrootSpecialDir {
-                dir: target_path_full.clone().to_string_lossy().to_string(),
+                dir: target_path_full.to_string_lossy().to_string(),
             }))
             .message("Path exists but it is not a directory");
         }
@@ -561,8 +560,9 @@ mod tests {
 
     use tempfile::TempDir;
 
-    use trident_api::config::{
-        FileSystemSource, HostConfiguration, MountOptions, MountPoint, Storage,
+    use trident_api::{
+        config::{FileSystemSource, HostConfiguration, MountOptions, MountPoint, Storage},
+        error::ErrorKind,
     };
 
     #[test]
@@ -705,6 +705,35 @@ mod tests {
                 temp_in_ro.display(),
                 temp_mount_dir.path().display()
             )
+        );
+    }
+
+    #[test]
+    fn test_mount_tmpfs_non_dir() {
+        // Temp dir
+        let temp_mount_dir = TempDir::new().unwrap();
+        // Name of a file to create inside the temp dir, relative to the temp dir.
+        let temp_mount_file_relative = Path::new("temp_file");
+
+        // Full path to the file inside the temp dir according to host
+        let temp_mount_file_absolute_host = temp_mount_dir.path().join(temp_mount_file_relative);
+        // Full path to the file inside the temp dir inside newroot
+        let temp_mount_file_absolute_newroot =
+            Path::new(ROOT_MOUNT_POINT_PATH).join(temp_mount_file_relative);
+
+        // Create the file inside the temp dir
+        File::create(&temp_mount_file_absolute_host).unwrap();
+
+        let mut newroot_mount = NewrootMount::new(temp_mount_dir.path().to_owned());
+
+        assert_eq!(
+            *newroot_mount
+                .mount_tmpfs(&temp_mount_file_absolute_newroot)
+                .unwrap_err()
+                .kind(),
+            ErrorKind::from(ServicingError::MountNewrootSpecialDir {
+                dir: temp_mount_file_absolute_host.to_string_lossy().to_string(),
+            }),
         );
     }
 }
@@ -1304,6 +1333,32 @@ mod functional_test {
 
         // Mount tmpfs for /tmp
         newroot_mount.mount_tmpfs("/tmp").unwrap();
+
+        assert_eq!(newroot_mount.mounts.len(), 1);
+        assert_eq!(newroot_mount.mounts[0], temp_mount_path);
+
+        let root_mount = FindMnt::run().unwrap().root().unwrap();
+        assert!(root_mount.contains_mountpoint(&temp_mount_path));
+
+        // Unmount the tmpfs
+        newroot_mount.unmount_all().unwrap();
+
+        let root_mount = FindMnt::run().unwrap().root().unwrap();
+        assert!(!root_mount.contains_mountpoint(&temp_mount_path));
+    }
+
+    #[functional_test(feature = "engine")]
+    fn test_mount_newroot_tmpfs_nonexistent() {
+        let temp_mount_dir = TempDir::new().unwrap();
+
+        // Create a new NewrootMount object
+        let mut newroot_mount = NewrootMount::new(temp_mount_dir.path().to_owned());
+
+        // Full path to where we expect the tmpfs to be mounted
+        let temp_mount_path = temp_mount_dir.path().join("doesnotexist").join("tmp");
+
+        // Mount tmpfs for /doesnotexist/tmp, the directory should be created
+        newroot_mount.mount_tmpfs("/doesnotexist/tmp").unwrap();
 
         assert_eq!(newroot_mount.mounts.len(), 1);
         assert_eq!(newroot_mount.mounts[0], temp_mount_path);
