@@ -22,6 +22,10 @@ parameters:
       - host
       - container
 
+  - name: tridentRepoName
+    type: string
+    default: self
+
 stages:
   - stage: DefineTests_VM_${{ parameters.runtimeEnv }}
     displayName: Test List for VM:${{ parameters.runtimeEnv }}
@@ -70,7 +74,7 @@ stages:
             value: $(configuration)
 
           - name: tridentSourceDirectory
-            value: $(Build.SourcesDirectory)
+            value: $(Pipeline.Workspace)/s/trident
 
           - name: tridentConfigPath
             value: $(tridentSourceDirectory)/tests/e2e_tests/trident_configurations/$(tridentConfigurationName)
@@ -110,6 +114,10 @@ stages:
           - group: trident_e2e_params
 
         steps:
+          - checkout: ${{ parameters.tridentRepoName }}
+            fetchDepth: 1
+            path: s/trident
+
           - bash: |
               if [ ${{ variables['tridentConfigurationName'] }} == 'split' ]; then
                 splitInstallerIsoName="trident-split-installer"
