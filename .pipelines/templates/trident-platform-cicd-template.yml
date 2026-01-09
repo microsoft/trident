@@ -26,10 +26,6 @@ parameters:
       - forceBuild
       - prebuilt
 
-  - name: tridentRepoName
-    type: string
-    default: self
-
 stages:
   - ${{ if eq( parameters.targetArchitecture, 'amd64') }}:
     - template: e2e-template.yml
@@ -38,7 +34,6 @@ stages:
         baremetalTestsEnabled: ${{ parameters.baremetalTestsEnabled }}
         baseImageArtifactStage: ${{ parameters.baseImageArtifactStage }}
         tridentBuildOptions: ${{ parameters.tridentBuildOptions }}
-        tridentRepoName: ${{ parameters.tridentRepoName }}
 
   - ${{ if eq( parameters.targetArchitecture, 'arm64') }}:
     - template: e2e-arm64-template.yml

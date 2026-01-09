@@ -37,10 +37,6 @@ parameters:
     type: boolean
     default: false
 
-  - name: tridentRepoName
-    type: string
-    default: self
-
 jobs:
   - job: PrepareImage_${{ replace(parameters.label, '-', '_') }}
     displayName: Prepare Image ${{ parameters.label }}
@@ -53,9 +49,14 @@ jobs:
       ob_artifactBaseName: "image-${{ parameters.label }}"
 
     steps:
-      - checkout: ${{ parameters.tridentRepoName }}
-        fetchDepth: 1
-        path: s/trident
+      - ${{ if eq(variables['Build.Repository.Name'], 'trident')}}:
+          - checkout: self
+            fetchDepth: 1
+            path: s/trident
+      - ${{ else }}:
+          - checkout: trident
+            fetchDepth: 1
+            path: s/trident
 
       - template: ../common_tasks/avoid-pypi-usage.yml
 

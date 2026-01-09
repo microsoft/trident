@@ -22,10 +22,6 @@ parameters:
       - host
       - container
 
-  - name: tridentRepoName
-    type: string
-    default: self
-
 stages:
   - stage: DefineTests_VM_${{ parameters.runtimeEnv }}
     displayName: Test List for VM:${{ parameters.runtimeEnv }}
@@ -35,7 +31,6 @@ stages:
           buildPurpose: ${{ parameters.buildPurpose }}
           deploymentEnvironment: virtualMachine
           runtimeEnv: ${{ parameters.runtimeEnv }}
-          tridentRepoName: ${{ parameters.tridentRepoName }}
 
   - stage: DeploymentTesting_${{ parameters.runtimeEnv }}
     displayName: Deployment VM ${{ parameters.runtimeEnv }} Testing
@@ -115,9 +110,14 @@ stages:
           - group: trident_e2e_params
 
         steps:
-          - checkout: ${{ parameters.tridentRepoName }}
-            fetchDepth: 1
-            path: s/trident
+          - ${{ if eq(variables['Build.Repository.Name'], 'trident')}}:
+              - checkout: self
+                fetchDepth: 1
+                path: s/trident
+          - ${{ else }}:
+              - checkout: trident
+                fetchDepth: 1
+                path: s/trident
 
           - bash: |
               if [ ${{ variables['tridentConfigurationName'] }} == 'split' ]; then
