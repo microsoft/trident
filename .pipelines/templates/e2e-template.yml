@@ -34,6 +34,10 @@ parameters:
     type: boolean
     default: false
 
+  - name: tridentBinariesArtifactPrecreated
+    type: boolean
+    default: false
+
   - name: includeAzure
     displayName: "Include Azure testing"
     type: boolean
@@ -76,15 +80,16 @@ parameters:
 
 stages:
   # Trident Build/Download
-  - template: stages/trident_rpms/trident-stage.yml
-    parameters:
-      stageType: ${{ parameters.stageType }}
-      tridentArtifactName: trident-binaries
-      codeCoverage: false
-      forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
-      osModifierBranch: ${{ parameters.osModifierBranch }}
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-      targetArchitecture: amd64
+  - ${{ if ne( parameters.tridentBinariesArtifactPrecreated, true ) }}:
+    - template: stages/trident_rpms/trident-stage.yml
+      parameters:
+        stageType: ${{ parameters.stageType }}
+        tridentArtifactName: trident-binaries
+        codeCoverage: false
+        forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
+        osModifierBranch: ${{ parameters.osModifierBranch }}
+        dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+        targetArchitecture: amd64
 
   # Build tools (Go stuff)
   - template: stages/building_tools/building-tools.yml

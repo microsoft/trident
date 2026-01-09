@@ -17,6 +17,10 @@ parameters:
       - amd64
       - arm64
 
+  - name: tridentBinariesArtifactPrecreated
+    type: boolean
+    default: false
+
 stages:
   - ${{ if eq( parameters.targetArchitecture, 'amd64') }}:
     - template: e2e-template.yml
@@ -27,6 +31,7 @@ stages:
         forceFunctionalTestImageRebuild: true
         baremetalTestsEnabled: ${{ parameters.baremetalTestsEnabled }}
         baseImageArtifactStage: ${{ parameters.baseImageArtifactStage }}
+        tridentBinariesArtifactPrecreated: ${{ parameters.tridentBinariesArtifactPrecreated }}
 
   - ${{ if eq( parameters.targetArchitecture, 'arm64') }}:
     - template: e2e-arm64-template.yml
