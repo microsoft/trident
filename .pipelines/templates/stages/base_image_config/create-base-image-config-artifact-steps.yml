@@ -16,6 +16,7 @@ parameters:
     
 steps:
   - bash: |
+      set -eux
       ./create-base-image-config.sh \
           "${{ parameters.baseimgBuildType }}" \
           "${{ parameters.baseImagePipelineBuildId }}" \
