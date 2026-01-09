@@ -23,6 +23,10 @@ parameters:
       - host
       - container
 
+  - name: tridentRepoName
+    type: string
+    default: self
+
 jobs:
   - job: DefineTests
     displayName: Get List of tests to run
@@ -35,7 +39,7 @@ jobs:
       ob_artifactBaseName: select_tests_${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_$(System.JobAttempt)
 
     steps:
-      - checkout: trident
+      - checkout: ${{ parameters.tridentRepoName }}
         fetchDepth: 1
         path: s/trident
       - template: ../common_tasks/avoid-pypi-usage.yml
