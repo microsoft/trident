@@ -131,7 +131,10 @@ impl TabFile {
             add_line();
         }
 
-        merged.push_str("\n# Entries below were created by Trident:\n");
+        if !merged.is_empty() {
+            merged.push('\n');
+        }
+        merged.push_str("# Entries below were created by Trident:\n");
         merged.push_str(&self.render());
         merged
     }
