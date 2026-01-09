@@ -114,8 +114,8 @@ func handleClientConnection(ctx context.Context, clientConn net.Conn, serverAddr
 
 	// Both connections are established, start proxying data between them
 
-	// Channel to signal when copying is done
-	doneChan := make(chan string)
+	// Channel to signal when copying is done. Buffered to allow both goroutines to send without blocking.
+	doneChan := make(chan string, 2)
 
 	// Start the proxying
 	go func() {
