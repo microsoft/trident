@@ -63,7 +63,7 @@ extends:
               type: linux
             variables:
               - name: ob_outputDirectory
-                value: "$(Build.SourcesDirectory)/base-image-config"
+                value: "$(Pipeline.Workspace)/s/trident/base-image-config"
               - name: ob_artifactBaseName
                 value: "base-image-config"
             steps:
@@ -112,7 +112,7 @@ extends:
               pool:
                 type: linux
               variables:
-                ob_outputDirectory: "$(Build.SourcesDirectory)/out"
+                ob_outputDirectory: "$(Pipeline.Workspace)/s/trident/out"
               steps:
                 - script: |
                     set -eux
@@ -135,7 +135,7 @@ extends:
               pool:
                 type: linux
               variables:
-                ob_outputDirectory: "$(Build.SourcesDirectory)/out"
+                ob_outputDirectory: "$(Pipeline.Workspace)/s/trident/out"
               steps:
                 - script: |
                     set -eux

@@ -27,7 +27,7 @@ stages:
           type: linux
         variables:
           - name: ob_outputDirectory
-            value: "$(Build.SourcesDirectory)/base-image-config"
+            value: "$(Pipeline.Workspace)/s/trident/base-image-config"
           - name: ob_artifactBaseName
             value: "base-image-config"
         steps:
