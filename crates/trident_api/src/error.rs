@@ -693,6 +693,9 @@ pub enum DatastoreError {
     #[error("Failed to open new datastore")]
     OpenDatastore,
 
+    #[error("Failed to read from datastore")]
+    ReadDatastore,
+
     #[error("Failed to write to datastore as it is closed")]
     WriteToClosedDatastore,
 
