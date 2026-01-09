@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
-use log::error;
+use log::warn;
 use serde_json::Value;
 
 use sysdefs::filesystems::NodevFilesystemType;
@@ -112,8 +112,8 @@ impl TabFile {
             // Otherwise, parse the mount point (second token) from the line.
             let Some(mount_point) = trimmed.split_whitespace().nth(1) else {
                 // If we can't parse the mount point, just keep the line, and produce an error.
-                error!(
-                    "Failed to parse mount point from existing fstab line, keeping value as-is: '{line}'",
+                warn!(
+                    "Failed to parse mount point from existing tab file, keeping value as-is: '{line}'",
                 );
                 add_line();
                 continue;
