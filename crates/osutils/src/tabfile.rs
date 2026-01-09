@@ -1,9 +1,10 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
 };
 
 use anyhow::{bail, Context, Error};
+use log::warn;
 use serde_json::Value;
 
 use sysdefs::filesystems::NodevFilesystemType;
@@ -57,6 +58,85 @@ impl TabFile {
     /// Render this tab file as a string.
     pub fn render(&self) -> String {
         self.entries.iter().map(|entry| entry.render()).collect()
+    }
+
+    /// Wrapper over `merge_with_existing` that reads the existing tab file from
+    /// disk, merges it with this tab file, and writes the result back to disk.
+    pub fn merge_and_write(&self, tab_file_path: impl AsRef<Path>) -> Result<(), Error> {
+        let existing_contents = std::fs::read_to_string(tab_file_path.as_ref())
+            .context("Failed to read existing fstab file")?;
+
+        let merged_contents = self.merge_with_existing(&existing_contents);
+        std::fs::write(tab_file_path.as_ref(), merged_contents.as_bytes()).with_context(|| {
+            format!(
+                "Failed to write merged {}",
+                tab_file_path.as_ref().display()
+            )
+        })
+    }
+
+    /// Merge this tab file with existing contents, preserving existing entries
+    /// that do not conflict with the new entries. If an entry in `self` has the
+    /// same mount point as an existing entry, the existing entry is commented
+    /// out with a reason, and the new entry is added.
+    pub fn merge_with_existing(&self, existing: &str) -> String {
+        // String to contain the merged contents.
+        let mut merged = String::new();
+
+        // Iterate over all mount points in the new entries and create a hash
+        // set of them.
+        let mount_points = self
+            .entries
+            .iter()
+            .filter_map(|e| match e.mount_point {
+                TabMountPoint::Path(ref p) => Some(&**p),
+                TabMountPoint::None => None,
+            })
+            .collect::<HashSet<_>>();
+
+        // Now iterate over all lines in the existing contents.
+        for line in existing.lines() {
+            let mut add_line = || {
+                merged.push_str(line);
+                merged.push('\n');
+            };
+
+            let trimmed = line.trim();
+
+            // If the line is empty or a comment, just keep it and move to the next line.
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                add_line();
+                continue;
+            }
+
+            // Otherwise, parse the mount point (second token) from the line.
+            let Some(mount_point) = trimmed.split_whitespace().nth(1) else {
+                // If we can't parse the mount point, just keep the line, and produce an error.
+                warn!(
+                    "Failed to parse mount point from existing tab file, keeping value as-is: '{line}'",
+                );
+                add_line();
+                continue;
+            };
+
+            // If the mount point is in the new entries, skip this line.
+            if mount_points.contains(Path::new(mount_point)) {
+                merged.push_str("# ");
+                merged.push_str(line);
+                merged.push_str(" # Entry replaced by Trident\n");
+                continue;
+            }
+
+            // Otherwise, keep the line.
+            add_line();
+        }
+
+        if !merged.is_empty() {
+            merged.push('\n');
+        }
+        merged.push_str("# Entries below were created by Trident:\n");
+        merged.push_str(&self.render());
+        merged
     }
 }
 
@@ -389,5 +469,165 @@ mod tests {
         // one entry is malformed
         let input = r#"{"filesystems": [{"source":"foo","target":"bar"},{"sourcssse":"foo2","target":"bar"},{"source":"foo2","target":"bar"}]}"#;
         assert!(super::parse_findmnt_output(input).is_err());
+    }
+
+    #[test]
+    fn test_merge_with_existing_replaces_conflicting_mount_points() {
+        let tab_file = TabFile {
+            entries: vec![
+                TabFileEntry::new_path("/dev/new", "/data", TabFileSystemType::Auto),
+                TabFileEntry::new_path("/dev/new2", "/other", TabFileSystemType::Auto),
+                TabFileEntry::new_tmpfs("/tmpfs"),
+                TabFileEntry::new_swap("/dev/sda"),
+            ],
+        };
+
+        let existing = indoc::indoc! {r#"
+            # Header comment
+            /dev/old /data auto defaults 0 2
+            /dev/keep /keep auto defaults 0 2
+            /dev/some /tmpfs tmpfs defaults 0 0
+        "#};
+
+        let merged = tab_file.merge_with_existing(existing);
+
+        let expected = indoc::indoc! {r#"
+            # Header comment
+            # /dev/old /data auto defaults 0 2 # Entry replaced by Trident
+            /dev/keep /keep auto defaults 0 2
+            # /dev/some /tmpfs tmpfs defaults 0 0 # Entry replaced by Trident
+            
+            # Entries below were created by Trident:
+            /dev/new /data auto defaults 0 2
+            /dev/new2 /other auto defaults 0 2
+            tmpfs /tmpfs tmpfs defaults 0 2
+            /dev/sda none swap defaults 0 0
+        "#};
+
+        assert_eq!(merged, expected);
+    }
+
+    #[test]
+    fn test_merge_with_existing_empty_existing_file() {
+        let tab_file = TabFile {
+            entries: vec![TabFileEntry::new_path(
+                "/dev/new",
+                "/data",
+                TabFileSystemType::Auto,
+            )],
+        };
+
+        let merged = tab_file.merge_with_existing("");
+
+        let expected = indoc::indoc! {r#"
+            # Entries below were created by Trident:
+            /dev/new /data auto defaults 0 2
+        "#};
+
+        assert_eq!(merged, expected);
+    }
+
+    #[test]
+    fn test_merge_with_existing_only_comments_and_blank_lines() {
+        let tab_file = TabFile {
+            entries: vec![TabFileEntry::new_path(
+                "/dev/new",
+                "/data",
+                TabFileSystemType::Auto,
+            )],
+        };
+
+        let existing = indoc::indoc! {r#"
+            # Header comment
+
+            # Another comment
+        "#};
+
+        let merged = tab_file.merge_with_existing(existing);
+
+        let expected = indoc::indoc! {r#"
+            # Header comment
+
+            # Another comment
+
+            # Entries below were created by Trident:
+            /dev/new /data auto defaults 0 2
+        "#};
+
+        assert_eq!(merged, expected);
+    }
+
+    #[test]
+    fn test_merge_with_existing_logs_warning_for_malformed_line() {
+        let tab_file = TabFile {
+            entries: vec![TabFileEntry::new_path(
+                "/dev/new",
+                "/data",
+                TabFileSystemType::Auto,
+            )],
+        };
+
+        let existing = indoc::indoc! {r#"
+            malformed
+            /dev/keep /keep auto defaults 0 2
+        "#};
+
+        let merged = tab_file.merge_with_existing(existing);
+
+        let expected = indoc::indoc! {r#"
+            malformed
+            /dev/keep /keep auto defaults 0 2
+
+            # Entries below were created by Trident:
+            /dev/new /data auto defaults 0 2
+        "#};
+
+        assert_eq!(merged, expected);
+    }
+
+    #[test]
+    fn test_merge_and_write_writes_merged_contents_to_disk() {
+        let tab_file = TabFile {
+            entries: vec![TabFileEntry::new_path(
+                "/dev/new",
+                "/data",
+                TabFileSystemType::Auto,
+            )],
+        };
+
+        let existing = indoc::indoc! {r#"
+            /dev/old /data auto defaults 0 2
+            /dev/keep /keep auto defaults 0 2
+        "#};
+
+        let mut tmpfile = NamedTempFile::new().unwrap();
+        tmpfile.write_all(existing.as_bytes()).unwrap();
+        tmpfile.flush().unwrap();
+
+        tab_file.merge_and_write(tmpfile.path()).unwrap();
+
+        let written = std::fs::read_to_string(tmpfile.path()).unwrap();
+        let expected = tab_file.merge_with_existing(existing);
+        assert_eq!(written, expected);
+    }
+
+    #[test]
+    fn test_merge_and_write_errors_if_input_file_missing() {
+        let tab_file = TabFile {
+            entries: vec![TabFileEntry::new_path(
+                "/dev/new",
+                "/data",
+                TabFileSystemType::Auto,
+            )],
+        };
+
+        let err = tab_file
+            .merge_and_write("/path/does/not/exist")
+            .err()
+            .unwrap();
+
+        assert!(err
+            .to_string()
+            .contains("Failed to read existing fstab file"));
     }
 }

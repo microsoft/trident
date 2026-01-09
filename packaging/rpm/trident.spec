@@ -193,6 +193,8 @@ test "$(./target/release/trident --version)" = "trident %{trident_version}"
 install -D -m 755 %{SOURCE1} %{buildroot}%{_bindir}/osmodifier
 
 install -D -m 755 target/release/%{name} %{buildroot}/%{_bindir}/%{name}
+install -D -m 755 target/release/harpoon2-server %{buildroot}/%{_bindir}/harpoon2-server
+install -D -m 644 target/release/trident-grpc.service %{buildroot}/%{_unitdir}/trident-grpc.service
 
 # Copy Trident SELinux policy module to /usr/share/selinux/packages
 install -D -m 0644 %{name}.pp.bz2 %{buildroot}%{_datadir}/selinux/packages/%{selinuxtype}/%{name}.pp.bz2

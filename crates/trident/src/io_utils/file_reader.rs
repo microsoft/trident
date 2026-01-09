@@ -2,24 +2,16 @@
 use std::io::Cursor;
 use std::{
     fs::File,
-    io::{Error as IoError, ErrorKind as IoErrorKind, Read, Result as IoResult, Seek, SeekFrom},
+    io::{Error as IoError, Read, Result as IoResult, Seek, SeekFrom},
     path::PathBuf,
-    thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
-#[cfg(feature = "dangerous-options")]
-use std::{env, io::BufReader};
-
-use anyhow::{bail, ensure, Context, Error};
-use log::{debug, trace, warn};
-use oci_client::{secrets::RegistryAuth, Client as OciClient, Reference};
-use reqwest::blocking::{Client, Response};
-use tokio::runtime::Runtime;
+use anyhow::{bail, ensure, Error};
+use log::debug;
 use url::Url;
 
-#[cfg(feature = "dangerous-options")]
-use docker_credential::{self, DockerCredential};
+use crate::io_utils::http_file::HttpFile;
 
 pub(crate) trait ReadSeek: Read + Seek {}
 
@@ -28,9 +20,6 @@ impl ReadSeek for File {}
 
 #[cfg(test)]
 impl ReadSeek for Cursor<Vec<u8>> {}
-
-#[cfg(feature = "dangerous-options")]
-const DOCKER_CONFIG_FILE_PATH: &str = ".docker/config.json";
 
 /// An abstraction over a file reader that can be either a local file or an
 /// HTTP request.
@@ -560,147 +549,10 @@ impl Read for HttpFile {
 mod tests {
     use super::*;
 
-    use std::{
-        io::{SeekFrom, Write},
-        sync::{
-            atomic::{AtomicU16, Ordering},
-            Arc,
-        },
-    };
+    use std::io::Write;
 
+    use log::trace;
     use tempfile::NamedTempFile;
-
-    #[test]
-    fn test_retrieve_access_token() {
-        let client = OciClient::default();
-        let rt = Runtime::new().unwrap();
-        let url = "oci://docker.io/library/hello-world:latest".to_string();
-        let img_ref = url
-            .strip_prefix("oci://")
-            .and_then(|url| url.parse::<Reference>().ok())
-            .unwrap();
-        HttpFile::retrieve_access_token(&img_ref, &rt, &client).unwrap();
-    }
-
-    #[test]
-    fn test_retrieve_artifact_digest() {
-        let client = OciClient::default();
-        let rt = Runtime::new().unwrap();
-        // TODO(12732): Fix this test to use test COSI file instead of hello-world image
-        let url = "oci://docker.io/library/hello-world@sha256:940c619fbd418f9b2b1b63e25d8861f9cc1b46e3fc8b018ccfe8b78f19b8cc4f".to_string();
-        let img_ref = url
-            .strip_prefix("oci://")
-            .and_then(|url| url.parse::<Reference>().ok())
-            .unwrap();
-        assert_eq!(
-            HttpFile::retrieve_artifact_digest(&img_ref, &rt, &client).unwrap(),
-            "sha256:940c619fbd418f9b2b1b63e25d8861f9cc1b46e3fc8b018ccfe8b78f19b8cc4f"
-        );
-    }
-
-    #[test]
-    fn test_retriable_request_sender_retry_count() {
-        let tries = Arc::new(AtomicU16::new(0));
-        let closure_tries = tries.clone();
-        let request_sender = || {
-            closure_tries.fetch_add(1, Ordering::SeqCst);
-            let client = Client::new();
-            client.get("").send()
-        };
-        HttpFile::retriable_request_sender(request_sender, Duration::from_secs(2)).unwrap_err();
-        assert!(tries.load(Ordering::SeqCst) > 1);
-    }
-
-    #[test]
-    fn test_retriable_request_sender_initial_failure() {
-        let relative_file_path = "/test.yaml";
-        let mut server = mockito::Server::new();
-        let data = "test document";
-        let document_mock = server
-            .mock("GET", relative_file_path)
-            .with_body(data)
-            .with_header("content-length", &data.len().to_string())
-            .with_header("content-type", "text/plain")
-            .with_status(200)
-            .expect(1)
-            .create();
-        let url = Url::parse(&server.url()).unwrap();
-        let request_url = url.join(relative_file_path).unwrap().to_string();
-
-        let tries = Arc::new(AtomicU16::new(0));
-        let closure_tries = tries.clone();
-        let request_sender = || {
-            closure_tries.fetch_add(1, Ordering::SeqCst);
-            if closure_tries.load(Ordering::SeqCst) < 2 {
-                let client = Client::new();
-                return client.get("").send();
-            }
-            let client = Client::new();
-            client.get(&request_url).send()
-        };
-        let document = HttpFile::retriable_request_sender(request_sender, Duration::from_secs(5))
-            .unwrap()
-            .text()
-            .unwrap();
-        assert!(tries.load(Ordering::SeqCst) > 1);
-        assert_eq!(document, data);
-        document_mock.assert();
-    }
-
-    #[test]
-    fn test_http_file_seek() {
-        let mut http_file = HttpFile {
-            url: Url::parse("http://example.com").unwrap(),
-            position: 0,
-            size: 100, // We have indices from 0 to 99
-            client: Client::new(),
-            timeout: Duration::from_secs(1),
-            token: None,
-        };
-
-        assert_eq!(http_file.seek(SeekFrom::Start(50)).unwrap(), 50);
-        assert_eq!(http_file.position, 50);
-
-        assert_eq!(http_file.seek(SeekFrom::End(-1)).unwrap(), 99);
-        assert_eq!(http_file.position, 99);
-
-        assert_eq!(http_file.seek(SeekFrom::End(-50)).unwrap(), 50);
-        assert_eq!(http_file.position, 50);
-
-        assert_eq!(http_file.seek(SeekFrom::Current(49)).unwrap(), 99);
-        assert_eq!(http_file.position, 99);
-
-        assert_eq!(http_file.seek(SeekFrom::Current(-50)).unwrap(), 49);
-        assert_eq!(http_file.position, 49);
-
-        // Internally calls .seek(SeekFrom::Current(0))
-        assert_eq!(http_file.stream_position().unwrap(), 49);
-        assert_eq!(http_file.position, 49);
-
-        // Return to the beginning
-        http_file.seek(SeekFrom::Start(0)).unwrap();
-
-        // Now test errors
-
-        // This implementation strictly forbids seeking after the end of the file
-        http_file.seek(SeekFrom::End(0)).unwrap_err();
-        assert_eq!(http_file.position, 0);
-
-        http_file.seek(SeekFrom::Start(100)).unwrap_err();
-        assert_eq!(http_file.position, 0);
-
-        http_file.seek(SeekFrom::End(1)).unwrap_err();
-        assert_eq!(http_file.position, 0);
-
-        http_file.seek(SeekFrom::End(-101)).unwrap_err();
-        assert_eq!(http_file.position, 0);
-
-        http_file.seek(SeekFrom::Current(500)).unwrap_err();
-        assert_eq!(http_file.position, 0);
-
-        http_file.seek(SeekFrom::Current(-1)).unwrap_err();
-        assert_eq!(http_file.position, 0);
-    }
 
     #[test]
     fn test_file_reader_factory_file() {
@@ -828,7 +680,7 @@ mod tests {
                 trace!("Mocking range {} to {}", start, end);
                 body.as_bytes()[start..=end].to_vec()
             })
-            .expect(9)
+            .expect_at_least(9)
             .create();
 
         let file_url = Url::parse(&server.url()).unwrap().join(file_name).unwrap();

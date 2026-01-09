@@ -71,12 +71,14 @@ version-vars:
 
 .PHONY: build
 build: .cargo/config version-vars
-	@OPENSSL_STATIC=1 \
-		OPENSSL_LIB_DIR=$(shell dirname `whereis libssl.a | cut -d" " -f2`) \
-		OPENSSL_INCLUDE_DIR=/usr/include/openssl \
-		TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
-		cargo build --release --features dangerous-options
+	@TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
+	cargo build --release --features dangerous-options
 	@mkdir -p bin
+
+.PHONY: build-aarch64
+build-aarch64: .cargo/config version-vars
+	@TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
+	cargo build --release --target aarch64-unknown-linux-gnu --features dangerous-options
 
 .PHONY: format
 format:
@@ -146,9 +148,22 @@ artifacts/osmodifier: packaging/docker/Dockerfile-osmodifier.azl3
 	    docker cp -q $$id:/work/azure-linux-image-tools/toolkit/out/tools/osmodifier $@ || \
 	    docker rm -v $$id
 
+artifacts/osmodifier-aarch64: packaging/docker/Dockerfile-osmodifier.azl3
+	@docker build --platform linux/arm64 -t trident/osmodifier-build:latest \
+		-f packaging/docker/Dockerfile-osmodifier.azl3 \
+		.
+	@mkdir -p "$(ARTIFACTS_DIR)"
+	@id=$$(docker create trident/osmodifier-build:latest) && \
+	    docker cp -q $$id:/work/azure-linux-image-tools/toolkit/out/tools/osmodifier $@ || \
+	    docker rm -v $$id
+
 bin/trident: build
 	@mkdir -p bin
 	@cp -u target/release/trident bin/
+
+bin/trident-aarch64: build-aarch64
+	@mkdir -p bin
+	@cp -u target/aarch64-unknown-linux-gnu/release/trident bin/trident-aarch64
 
 # This will do a proper build on azl3, exactly as the pipelines would, with the custom registry and all.
 bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full packaging/systemd/*.service packaging/rpm/trident.spec artifacts/osmodifier packaging/selinux-policy-trident/* version-vars
@@ -170,6 +185,26 @@ bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full packaging/systemd
 	@rm -rf bin/RPMS/
 	@tar xf $@ -C bin/
 
+# This will do a proper build on azl3, exactly as the pipelines would, with the custom registry and all.
+bin/trident-rpms-azl3-aarch64.tar.gz: packaging/docker/Dockerfile-aarch64.full packaging/systemd/*.service packaging/rpm/trident.spec artifacts/osmodifier-aarch64 packaging/selinux-policy-trident/* version-vars
+	$(eval CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN := $(shell az account get-access-token --query "join(' ', ['Bearer', accessToken])" --output tsv))
+	
+	@export CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN="$(CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN)" &&\
+		docker build -t trident/trident-build:latest \
+			--secret id=registry_token,env=CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN \
+			--build-arg CARGO_REGISTRIES_FROM_ENV="true" \
+			--build-arg TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
+			--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)" \
+			--build-arg RPM_REL="dev.$(GIT_COMMIT)" \
+			-f packaging/docker/Dockerfile-aarch64.full \
+			.
+	@mkdir -p bin/
+	@id=$$(docker create trident/trident-build:latest) && \
+	    docker cp -q $$id:/work/trident-rpms.tar.gz $@ || \
+	    docker rm -v $$id
+	@rm -rf bin/RPMS/
+	@tar xf $@ -C bin/
+
 # This one does a fast trick-build where we build locally and inject the binary into the container to add it to the RPM.
 bin/trident-rpms.tar.gz: packaging/docker/Dockerfile.azl3 packaging/systemd/*.service packaging/rpm/trident.spec artifacts/osmodifier bin/trident packaging/selinux-policy-trident/*
 	@docker build -t trident/trident-build:latest \
@@ -183,6 +218,22 @@ bin/trident-rpms.tar.gz: packaging/docker/Dockerfile.azl3 packaging/systemd/*.se
 	    docker cp -q $$id:/work/trident-rpms.tar.gz $@ || \
 	    docker rm -v $$id
 	@rm -rf bin/RPMS/
+	@tar xf $@ -C bin/
+
+# This one does a fast trick-build where we build locally and inject the binary into the container to add it to the RPM.
+bin/trident-rpms-aarch64.tar.gz: packaging/docker/Dockerfile-aarch64.azl3 packaging/systemd/*.service packaging/rpm/trident.spec artifacts/osmodifier-aarch64 bin/trident-aarch64 packaging/selinux-policy-trident/*
+	@docker build -t trident/trident-build:latest \
+		--build-arg TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
+		--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)" \
+		--build-arg RPM_REL="dev.$(GIT_COMMIT)" \
+		--platform linux/arm64 \
+		-f packaging/docker/Dockerfile-aarch64.azl3 \
+		.
+	@mkdir -p bin/
+	@id=$$(docker create trident/trident-build:latest) && \
+	    docker cp -q $$id:/work/trident-rpms.tar.gz $@ || \
+	    docker rm -v $$id
+	@rm -rf bin/RPMS-aarch64/
 	@tar xf $@ -C bin/
 
 STEAMBOAT_RPMS_DIR ?= ../steamboat/build/uki/out/RPMS
@@ -486,9 +537,11 @@ $(ARTIFACTS_TEST_IMAGE_DIR)/azl-installer.iso: \
 
 .PHONY: validate
 validate: $(TRIDENT_CONFIG) bin/trident
-	@bin/trident validate $(TRIDENT_CONFIG)
+	bin/trident validate $(TRIDENT_CONFIG)
 
 NETLAUNCH_ISO ?= bin/trident-mos.iso
+
+tools/vm-netlaunch.yaml: virtdeploy-create
 
 input/netlaunch.yaml: tools/vm-netlaunch.yaml
 	@mkdir -p input
@@ -535,6 +588,10 @@ run-netlaunch-container-images: \
 watch-virtdeploy:
 	@while true; do virsh console virtdeploy-vm-0; sleep 1; done
 
+.PHONY: virtdeploy-create
+virtdeploy-create:
+	tools/virt-deploy create -d 70
+
 # This target leverages the samples that are automatically generated as part of
 # the build-api-docs target. The HC sample is selected by setting the
 # HOST_CONFIG variable to the filename of the autogenerated sample (from
@@ -551,7 +608,7 @@ watch-virtdeploy:
 .PHONY: run-netlaunch-sample
 run-netlaunch-sample: build-api-docs
 	$(eval TMP := $(shell mktemp))
-	yq '.os.users += [{"name": "$(shell whoami)", "sshPublicKeys": ["$(shell cat ~/.ssh/id_rsa.pub)"], "sshMode": "key-only", "secondaryGroups": ["wheel"]}] | (.. | select(tag == "!!str")) |= sub("file:///trident_cdrom/data", "http://NETLAUNCH_HOST_ADDRESS/files") | del(.storage.encryption.recoveryKeyUrl) | (.storage.filesystems[] | select(has("source")) | .source).sha256 = "ignored" | .storage.verityFilesystems[].dataImage.sha256 = "ignored" | .storage.verityFilesystems[].hashImage.sha256 = "ignored"' docs/Reference/Host-Configuration/Samples/$(HOST_CONFIG) > $(TMP)
+	yq '.os.users += [{"name": "$(shell whoami)", "sshPublicKeys": ["$(shell cat ~/.ssh/id_rsa.pub)"], "sshMode": "key-only", "secondaryGroups": ["wheel"]}] | (.. | select(tag == "!!str")) |= sub("file:///trident_cdrom/data", "http://NETLAUNCH_HOST_ADDRESS/files") | del(.storage.encryption.recoveryKeyUrl) | (.storage.filesystems[] | select(has("source")) | .source).sha256 = "ignored"' docs/Reference/Host-Configuration/Samples/$(HOST_CONFIG) > $(TMP)
 	TRIDENT_CONFIG=$(TMP) make run-netlaunch
 
 # Downloads regular, verity, and container COSI images from the latest successful
