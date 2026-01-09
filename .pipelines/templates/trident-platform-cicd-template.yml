@@ -30,9 +30,7 @@ stages:
   - ${{ if eq( parameters.targetArchitecture, 'amd64') }}:
     - template: e2e-template.yml
       parameters:
-        stageType: pre
-        blockPublishing: true
-        forceFunctionalTestImageRebuild: true
+        stageType: azl-validation
         baremetalTestsEnabled: ${{ parameters.baremetalTestsEnabled }}
         baseImageArtifactStage: ${{ parameters.baseImageArtifactStage }}
         tridentBuildOptions: ${{ parameters.tridentBuildOptions }}
@@ -40,6 +38,6 @@ stages:
   - ${{ if eq( parameters.targetArchitecture, 'arm64') }}:
     - template: e2e-arm64-template.yml
       parameters:
-        stageType: pre
+        stageType: azl-validation
         tridentBuildOptions: ${{ parameters.tridentBuildOptions }}
         baseImageArtifactStage: ${{ parameters.baseImageArtifactStage }}

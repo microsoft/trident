@@ -1,3 +1,8 @@
+parameters:
+  - name: tridentRepoName
+    type: string
+    default: self
+
 stages:
   - stage: BuildTridentContainerImage
     displayName: Build Docker Image
@@ -11,10 +16,14 @@ stages:
           type: linux
 
         variables:
-          ob_outputDirectory: "$(Build.SourcesDirectory)/trident/out"
+          ob_outputDirectory: "$(Pipeline.Workspace)/s/trident/out"
           ob_artifactBaseName: "trident-docker-image"
 
         steps:
+          - checkout: ${{ parameters.tridentRepoName }}
+            fetchDepth: 1
+            path: s/trident
+
           - template: ../common_tasks/avoid-pypi-usage.yml
 
           - script: |
@@ -29,12 +38,12 @@ stages:
               buildType: current
               artifactName: "trident-binaries"
               patterns: "**/*.rpm"
-              targetPath: "$(Build.SourcesDirectory)/bin/RPMS/x86_64"
+              targetPath: "$(Pipeline.Workspace)/s/trident/bin/RPMS/x86_64"
 
           - template: ../common_tasks/preview-container.yml
             parameters:
-              dockerfilePath: $(Build.SourcesDirectory)/packaging/docker/Dockerfile.runtime
-              dockerBuildContext: $(Build.SourcesDirectory)
+              dockerfilePath: $(Pipeline.Workspace)/s/trident/packaging/docker/Dockerfile.runtime
+              dockerBuildContext: $(Pipeline.Workspace)/s/trident
 
           - script: |
               set -euxo pipefail
@@ -42,5 +51,5 @@ stages:
               mkdir -p $(ob_outputDirectory)
               DOCKER_BUILDKIT=1 docker build -f packaging/docker/Dockerfile.runtime --progress plain -t trident/trident:latest .
               docker save trident/trident:latest | gzip > $(ob_outputDirectory)/trident-container.tar.gz
-            workingDirectory: $(Build.SourcesDirectory)
+            workingDirectory: $(Pipeline.Workspace)/s/trident
             displayName: Build Docker image

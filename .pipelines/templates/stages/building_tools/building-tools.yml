@@ -23,6 +23,10 @@ parameters:
     type: boolean
     default: true
 
+  - name: tridentRepoName
+    type: string
+    default: self
+
 stages:
   - stage: BuildingTools
     displayName: Building Tools
@@ -41,7 +45,7 @@ stages:
           ob_artifactBaseName: go-tools
 
         steps:
-          - checkout: trident
+          - checkout: ${{ parameters.tridentRepoName }}
             fetchDepth: 1
             path: s/trident
 

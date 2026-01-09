@@ -23,6 +23,7 @@ parameters:
       - pre
       - rel
       - full-validation
+      - azl-validation
 
   - name: blockPublishing
     displayName: "Block publishing to artifact feed"
@@ -78,17 +79,23 @@ parameters:
     type: string
     default: ""
 
+  - name: tridentRepoName
+    type: string
+    default: self
+
 stages:
-  # Trident Build/Download
-  - template: stages/trident_rpms/trident-stage.yml
-    parameters:
-      stageType: ${{ parameters.stageType }}
-      tridentArtifactName: trident-binaries
-      codeCoverage: false
-      tridentBuildOptions: ${{ parameters.tridentBuildOptions }}
-      osModifierBranch: ${{ parameters.osModifierBranch }}
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-      targetArchitecture: amd64
+  
+  - ${{ if ne( parameters.stageType, 'azl-validation') }}:
+    # Trident Build/Download, azl-validation will use trident RPMs from AZL build
+    - template: stages/trident_rpms/trident-stage.yml
+      parameters:
+        stageType: ${{ parameters.stageType }}
+        tridentArtifactName: trident-binaries
+        codeCoverage: false
+        tridentBuildOptions: ${{ parameters.tridentBuildOptions }}
+        osModifierBranch: ${{ parameters.osModifierBranch }}
+        dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+        targetArchitecture: amd64
 
   # Build tools (Go stuff)
   - template: stages/building_tools/building-tools.yml
@@ -115,9 +122,12 @@ stages:
           micVersion: ${{ parameters.micVersion }}
           clones: 1
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+          tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # Build Trident container image (depends on GetTridentBinaries_rpms_amd64)
   - template: stages/build_docker_image/trident-container.yml
+    parameters:
+      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # Build Trident installer ISO (host)
   - template: stages/build_image/build-image.yml
@@ -127,6 +137,7 @@ stages:
       micVersion: ${{ parameters.micVersion }}
       clones: 1
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # Build Trident split (stage and finalize separated) installer ISO (host)
   - template: stages/build_image/build-image.yml
@@ -136,6 +147,7 @@ stages:
       micVersion: ${{ parameters.micVersion }}
       clones: 1
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # Build Trident installer ISO (container)
   - template: stages/build_image/build-image.yml
@@ -146,6 +158,7 @@ stages:
       micVersion: ${{ parameters.micVersion }}
       clones: 1
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # Build Trident test image (regular)
   - template: stages/build_image/build-image.yml
@@ -154,6 +167,7 @@ stages:
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # Build Trident test image (container)
   - template: stages/build_image/build-image.yml
@@ -163,6 +177,7 @@ stages:
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # Build Trident test image for root-verity (host)
   - template: stages/build_image/build-image.yml
@@ -171,6 +186,7 @@ stages:
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # Build Trident test image for root-verity (container)
   - template: stages/build_image/build-image.yml
@@ -180,6 +196,7 @@ stages:
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # Build Trident test image for usr-verity (host)
   - template: stages/build_image/build-image.yml
@@ -188,6 +205,7 @@ stages:
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # Build Trident test image for usr-verity (container)
   - template: stages/build_image/build-image.yml
@@ -197,14 +215,16 @@ stages:
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # Build AzL installer ISO (attended and unattended)
-  - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
+  - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure'), eq(parameters.stageType, 'azl-validation')) }}:
       - template: stages/azl_installer/azl-installer.yml
         parameters:
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+          tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # dom0 is failing for not known reasons ... comment out for now to unblock, longterm this may
   # be removed from Trident pipelines alltogether in favor of being only test-images
@@ -350,6 +370,35 @@ stages:
         parameters:
           buildPurpose: "pullrequest"
           runtimeEnv: "container"
+
+  # TESTING stages for AZL-VALIDATION
+  - ${{ if eq(parameters.stageType, 'azl-validation') }}:
+      # VM Testing (host, post_merge)
+      - template: stages/testing_vm/netlaunch-testing.yml
+        parameters:
+          buildPurpose: "post_merge"
+          runtimeEnv: "host"
+
+      # VM Testing (container, post_merge)
+      - template: stages/testing_vm/netlaunch-testing.yml
+        parameters:
+          buildPurpose: "post_merge"
+          runtimeEnv: "container"
+
+      - ${{ if parameters.baremetalTestsEnabled }}:
+          # BM Testing (host, weekly)
+          - template: stages/testing_baremetal/baremetal-testing.yml
+            parameters:
+              buildPurpose: "weekly"
+              runtimeEnv: "host"
+
+          # BM Testing (container, weekly)
+          - template: stages/testing_baremetal/baremetal-testing.yml
+            parameters:
+              buildPurpose: "weekly"
+              runtimeEnv: "container"
+              extraDependsOn: "BaremetalDeploymentTesting_host"
+
 
   # PUBLISHING
   #

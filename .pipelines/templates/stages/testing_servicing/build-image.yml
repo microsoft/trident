@@ -37,6 +37,10 @@ parameters:
     type: boolean
     default: false
 
+  - name: tridentRepoName
+    type: string
+    default: self
+
 jobs:
   - job: PrepareImage_${{ replace(parameters.label, '-', '_') }}
     displayName: Prepare Image ${{ parameters.label }}
@@ -49,7 +53,7 @@ jobs:
       ob_artifactBaseName: "image-${{ parameters.label }}"
 
     steps:
-      - checkout: trident
+      - checkout: ${{ parameters.tridentRepoName }}
         fetchDepth: 1
         path: s/trident
 
