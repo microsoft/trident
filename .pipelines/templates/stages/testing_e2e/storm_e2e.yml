@@ -3,6 +3,10 @@ parameters:
     displayName: "Pipeline configuration type"
     type: string
 
+  - name: tridentRepoName
+    type: string
+    default: self
+
 stages:
   - stage: DefineTests_E2E
     displayName: Define all E2E test matrices

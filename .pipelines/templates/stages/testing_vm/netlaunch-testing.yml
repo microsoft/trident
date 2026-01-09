@@ -35,6 +35,7 @@ stages:
           buildPurpose: ${{ parameters.buildPurpose }}
           deploymentEnvironment: virtualMachine
           runtimeEnv: ${{ parameters.runtimeEnv }}
+          tridentRepoName: ${{ parameters.tridentRepoName }}
 
   - stage: DeploymentTesting_${{ parameters.runtimeEnv }}
     displayName: Deployment VM ${{ parameters.runtimeEnv }} Testing
