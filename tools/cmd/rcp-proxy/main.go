@@ -17,7 +17,7 @@ import (
 )
 
 var cli struct {
-	ClientAddress string `arg:"" help:"Address of the rpc-client to connect to"`
+	ClientAddress string `arg:"" help:"Address of the rcp-client to connect to"`
 	ServerAddress string `short:"s" long:"server-address" help:"Address of the server to connect to" default:"${defaultServerAddress}"`
 }
 
