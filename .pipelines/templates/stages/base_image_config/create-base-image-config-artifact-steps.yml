@@ -17,6 +17,12 @@ parameters:
 steps:
   - bash: |
       set -eux
+      echo "Creating Base Image Config artifact..."
+      echo "  Base Image Build Type: ${{ parameters.baseimgBuildType }}"
+      echo "  Base Image Pipeline Build ID: ${{ parameters.baseImagePipelineBuildId }}"
+      echo "  Base Image ARM64 Pipeline Build ID: ${{ parameters.baseImageArm64PipelineBuildId }}"
+      echo "  Output Directory: ${{ parameters.outputDirectory }}"
+      
       ./create-base-image-config.sh \
           "${{ parameters.baseimgBuildType }}" \
           "${{ parameters.baseImagePipelineBuildId }}" \
