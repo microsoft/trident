@@ -22,13 +22,6 @@ parameters:
       - host
       - container
 
-  - name: "acrServiceConnection"
-    type: string
-    default: maritimus-dev-acr-write-umi
-    values:
-      - trident-dev-acr-write-umi-ECF
-      - maritimus-dev-acr-write-umi
-
 stages:
   - stage: DefineTests_VM_${{ parameters.runtimeEnv }}
     displayName: Test List for VM:${{ parameters.runtimeEnv }}
@@ -142,7 +135,6 @@ stages:
               config: ${{ variables.tridentConfigurationName }}
               deploymentEnvironment: "virtualMachine"
               runtimeEnvironment: ${{ parameters.runtimeEnv }}
-              acrServiceConnection: ${{ parameters.acrServiceConnection }}
 
           - template: netlaunch-prep.yml
 

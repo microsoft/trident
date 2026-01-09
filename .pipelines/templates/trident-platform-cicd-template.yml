@@ -21,13 +21,6 @@ parameters:
     type: boolean
     default: false
 
-  - name: acrServiceConnection
-    type: string
-    default: maritimus-dev-acr-write-umi
-    values:
-      - trident-dev-acr-write-umi-ECF
-      - maritimus-dev-acr-write-umi
-
 stages:
   - ${{ if eq( parameters.targetArchitecture, 'amd64') }}:
     - template: e2e-template.yml
@@ -39,7 +32,6 @@ stages:
         baremetalTestsEnabled: ${{ parameters.baremetalTestsEnabled }}
         baseImageArtifactStage: ${{ parameters.baseImageArtifactStage }}
         tridentBinariesArtifactPrecreated: ${{ parameters.tridentBinariesArtifactPrecreated }}
-        acrServiceConnection: ${{ parameters.acrServiceConnection }}
 
   - ${{ if eq( parameters.targetArchitecture, 'arm64') }}:
     - template: e2e-arm64-template.yml

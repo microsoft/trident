@@ -28,13 +28,6 @@ parameters:
     type: string
     default: ""
 
-  - name: "acrServiceConnection"
-    type: string
-    default: maritimus-dev-acr-write-umi
-    values:
-      - trident-dev-acr-write-umi-ECF
-      - maritimus-dev-acr-write-umi
-
 stages:
   - stage: BaremetalDeploymentTesting_${{ parameters.runtimeEnv }}
     displayName: Baremetal Deployment Testing ${{ parameters.runtimeEnv }}
@@ -181,7 +174,6 @@ stages:
               config: $(TRIDENT_CONFIGURATION_NAME)
               deploymentEnvironment: "bareMetal"
               runtimeEnvironment: ${{ parameters.runtimeEnv }}
-              acrServiceConnection: ${{ parameters.acrServiceConnection }}
 
           #   Run trident prep
           - template: ../testing_common/trident-prep.yml
