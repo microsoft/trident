@@ -508,6 +508,84 @@ mod tests {
     }
 
     #[test]
+    fn test_merge_with_existing_empty_existing_file() {
+        let tab_file = TabFile {
+            entries: vec![TabFileEntry::new_path(
+                "/dev/new",
+                "/data",
+                TabFileSystemType::Auto,
+            )],
+        };
+
+        let merged = tab_file.merge_with_existing("");
+
+        let expected = indoc::indoc! {r#"
+            # Entries below were created by Trident:
+            /dev/new /data auto defaults 0 2
+        "#};
+
+        assert_eq!(merged, expected);
+    }
+
+    #[test]
+    fn test_merge_with_existing_only_comments_and_blank_lines() {
+        let tab_file = TabFile {
+            entries: vec![TabFileEntry::new_path(
+                "/dev/new",
+                "/data",
+                TabFileSystemType::Auto,
+            )],
+        };
+
+        let existing = indoc::indoc! {r#"
+            # Header comment
+
+            # Another comment
+        "#};
+
+        let merged = tab_file.merge_with_existing(existing);
+
+        let expected = indoc::indoc! {r#"
+            # Header comment
+
+            # Another comment
+
+            # Entries below were created by Trident:
+            /dev/new /data auto defaults 0 2
+        "#};
+
+        assert_eq!(merged, expected);
+    }
+
+    #[test]
+    fn test_merge_with_existing_logs_warning_for_malformed_line() {
+        let tab_file = TabFile {
+            entries: vec![TabFileEntry::new_path(
+                "/dev/new",
+                "/data",
+                TabFileSystemType::Auto,
+            )],
+        };
+
+        let existing = indoc::indoc! {r#"
+            malformed
+            /dev/keep /keep auto defaults 0 2
+        "#};
+
+        let merged = tab_file.merge_with_existing(existing);
+
+        let expected = indoc::indoc! {r#"
+            malformed
+            /dev/keep /keep auto defaults 0 2
+
+            # Entries below were created by Trident:
+            /dev/new /data auto defaults 0 2
+        "#};
+
+        assert_eq!(merged, expected);
+    }
+
+    #[test]
     fn test_merge_and_write_writes_merged_contents_to_disk() {
         let tab_file = TabFile {
             entries: vec![TabFileEntry::new_path(
