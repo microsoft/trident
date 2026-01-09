@@ -23,7 +23,7 @@ parameters:
 
 stages:
   # Build installer tools
-  - template: build-installer-tools.
+  - template: build-installer-tools.yml
     parameters:
       tridentRepoName: ${{ parameters.tridentRepoName }}
 
