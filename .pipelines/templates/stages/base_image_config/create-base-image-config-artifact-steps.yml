@@ -27,10 +27,10 @@ steps:
       echo "  Base Image ARM64 Pipeline Build ID: ${{ parameters.baseImageArm64PipelineBuildId }}"
       echo "  Output Directory: ${{ parameters.outputDirectory }}"
       
-      ./create-base-image-config.sh \
+      ./.pipelines/templates/stages/base_image_config/create-base-image-config.sh \
           "${{ parameters.baseimgBuildType }}" \
           "${{ parameters.baseImagePipelineBuildId }}" \
           "${{ parameters.baseImageArm64PipelineBuildId }}" \
           "${{ parameters.outputDirectory }}"
-    workingDirectory: ${{ parameters.tridentSourceDirectory }}/.pipelines/templates/stages/base_image_config
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Create Base Image Config artifact"
