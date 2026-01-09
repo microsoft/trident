@@ -50,8 +50,8 @@ variables:
   - name: system.debug
     value: ${{ parameters.debug }}
   # ENABLE_PRS_DELAYSIGN: 0
-  # ROOT: $(Build.SourcesDirectory)
-  # REPOROOT: $(Build.SourcesDirectory)
+  # ROOT: $(Pipeline.Workspace)/s/trident
+  # REPOROOT: $(Pipeline.Workspace)/s/trident
   # OUTPUTROOT: $(REPOROOT)\out
   - name: DEBIAN_FRONTEND
     value: noninteractive

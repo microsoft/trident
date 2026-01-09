@@ -41,7 +41,7 @@ parameters:
 
   - name: sshKeyPath
     type: string
-    default: $(Build.SourcesDirectory)/tests/e2e_tests/helpers/key
+    default: $(Pipeline.Workspace)/s/trident/tests/e2e_tests/helpers/key
 
   - name: userName
     type: string
@@ -78,7 +78,7 @@ steps:
         # success. This is expected.
         EXPECT_FAILURE_ARG="--expect-failed-commit"
       fi
-      $(Build.SourcesDirectory)/bin/storm-trident helper check-ssh \
+      $(Pipeline.Workspace)/s/trident/bin/storm-trident helper check-ssh \
           "${{ parameters.sshKeyPath }}" \
           "${{ parameters.hostIp }}" \
           "${{ parameters.userName }}" \
@@ -101,7 +101,7 @@ steps:
           --configuration ${{ parameters.tridentConfigPath }} \
           $EXPECTED_HOST_STATUS_STATE_ARG
     timeoutInMinutes: 5
-    workingDirectory: $(Build.SourcesDirectory)/tests/e2e_tests
+    workingDirectory: $(Pipeline.Workspace)/s/trident/tests/e2e_tests
     displayName: "🔬 Run Trident E2E tests after clean install of target OS"
 
   - template: ../junit/handle-junit-test-results.yml
@@ -126,7 +126,7 @@ steps:
         echo "##vso[task.setvariable variable=abActiveVolume]null"
         echo "##vso[task.setvariable variable=skipJunitHandling]true"
       fi
-    workingDirectory: $(Build.SourcesDirectory)/tests/e2e_tests
+    workingDirectory: $(Pipeline.Workspace)/s/trident/tests/e2e_tests
     displayName: "Check if Trident config requires A/B update testing"
 
   # If current config requires A/B update testing, execute script to ssh into the host, update
@@ -140,7 +140,7 @@ steps:
       fi
 
       ./bin/netlisten --force-color $NETLISTEN_CONFIG_ARGS \
-        -m $(Build.SourcesDirectory)/trident-ab-update-metrics-target-os-B.jsonl \
+        -m $(Pipeline.Workspace)/s/trident/trident-ab-update-metrics-target-os-B.jsonl \
         --full-logstream ./logstream-full.log \
         -s "${{ parameters.artifactsDirectory }}" \
         -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-target-os-B.log 2>&1 &
@@ -169,7 +169,7 @@ steps:
       echo "##vso[task.setvariable variable=version]$new_version"
       echo "##vso[task.setvariable variable=abActiveVolume]volume-b"
     timeoutInMinutes: 15
-    workingDirectory: $(Build.SourcesDirectory)
+    workingDirectory: $(Pipeline.Workspace)/s/trident
     displayName: "🅱️🔄 Stage and finalize A/B update into target OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
@@ -188,8 +188,8 @@ steps:
       sudo ./bin/storm-trident helper display-logs -a \
           --netlisten-config "${{ parameters.netlistenConfigFile }}" \
           --serial-log-artifact-file-name "stage-finalize-ab-update-target-os-B-serial.log" \
-          --trident-log-file "$(Build.SourcesDirectory)/stage-finalize-ab-update-target-os-B.log" \
-          --trident-trace-log-file "$(Build.SourcesDirectory)/logstream-full.log" \
+          --trident-log-file "$(Pipeline.Workspace)/s/trident/stage-finalize-ab-update-target-os-B.log" \
+          --trident-trace-log-file "$(Pipeline.Workspace)/s/trident/logstream-full.log" \
           --artifacts-folder "$(ob_outputDirectory)"
     displayName: "📄 A/B update deployment logs for target OS B"
     condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
@@ -201,19 +201,19 @@ steps:
           "${{ parameters.hostIp }}" \
           "${{ parameters.userName }}" \
           "${{ parameters.runtimeEnv }}" \
-          --metrics-file $(Build.SourcesDirectory)/trident-ab-update-metrics-target-os-B.jsonl \
+          --metrics-file $(Pipeline.Workspace)/s/trident/trident-ab-update-metrics-target-os-B.jsonl \
           --metrics-operation update1
     displayName: "Create boot metrics for booting into target OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - template: ../testing_common/trident-metrics.yml
     parameters:
-      tridentSourceDirectory: $(Build.SourcesDirectory)
+      tridentSourceDirectory: $(Pipeline.Workspace)/s/trident
       tridentConfigPath: ${{ parameters.tridentConfigPath }}
       deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
       runtimeEnvironment: ${{ parameters.runtimeEnv }}
       tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
-      metricsFile: $(Build.SourcesDirectory)/trident-ab-update-metrics-target-os-B.jsonl
+      metricsFile: $(Pipeline.Workspace)/s/trident/trident-ab-update-metrics-target-os-B.jsonl
       tridentOperation: ab-update
       ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
         kustoTableName: main
@@ -232,7 +232,7 @@ steps:
           --configuration ${{ parameters.tridentConfigPath }} \
           --ab-active-volume $(abActiveVolume)
     timeoutInMinutes: 5
-    workingDirectory: $(Build.SourcesDirectory)/tests/e2e_tests
+    workingDirectory: $(Pipeline.Workspace)/s/trident/tests/e2e_tests
     displayName: "🔬 Run Trident E2E tests after A/B update into target OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
@@ -290,7 +290,7 @@ steps:
       fi
 
       ./bin/netlisten --force-color $NETLISTEN_CONFIG_ARGS \
-          -m $(Build.SourcesDirectory)/trident-ab-update-metrics-target-os-A.jsonl \
+          -m $(Pipeline.Workspace)/s/trident/trident-ab-update-metrics-target-os-A.jsonl \
           --full-logstream ./logstream-full.log \
           -s "${{ parameters.artifactsDirectory }}" \
           -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-target-os-A.log 2>&1 &
@@ -319,7 +319,7 @@ steps:
       echo "##vso[task.setvariable variable=version]$new_version"
       echo "##vso[task.setvariable variable=abActiveVolume]volume-a"
     timeoutInMinutes: 15
-    workingDirectory: $(Build.SourcesDirectory)
+    workingDirectory: $(Pipeline.Workspace)/s/trident
     displayName: "🅰️🔄 Stage and finalize A/B update into target OS A"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
@@ -338,8 +338,8 @@ steps:
       sudo ./bin/storm-trident helper display-logs -a \
           --netlisten-config "${{ parameters.netlistenConfigFile }}" \
           --serial-log-artifact-file-name "stage-finalize-ab-update-target-os-A-serial.log" \
-          --trident-log-file "$(Build.SourcesDirectory)/stage-finalize-ab-update-target-os-A.log" \
-          --trident-trace-log-file "$(Build.SourcesDirectory)/logstream-full.log" \
+          --trident-log-file "$(Pipeline.Workspace)/s/trident/stage-finalize-ab-update-target-os-A.log" \
+          --trident-trace-log-file "$(Pipeline.Workspace)/s/trident/logstream-full.log" \
           --artifacts-folder "$(ob_outputDirectory)"
     displayName: "📄 A/B update deployment logs for target OS A"
     condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
@@ -351,19 +351,19 @@ steps:
           "${{ parameters.hostIp }}" \
           "${{ parameters.userName }}" \
           "${{ parameters.runtimeEnv }}" \
-          --metrics-file $(Build.SourcesDirectory)/trident-ab-update-metrics-target-os-A.jsonl \
+          --metrics-file $(Pipeline.Workspace)/s/trident/trident-ab-update-metrics-target-os-A.jsonl \
           --metrics-operation update2
     displayName: "Create boot metrics for booting into target OS A"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - template: ../testing_common/trident-metrics.yml
     parameters:
-      tridentSourceDirectory: $(Build.SourcesDirectory)
+      tridentSourceDirectory: $(Pipeline.Workspace)/s/trident
       tridentConfigPath: ${{ parameters.tridentConfigPath }}
       deploymentEnvironment: ${{ parameters.deploymentEnvironment }}
       runtimeEnvironment: ${{ parameters.runtimeEnv }}
       tridentConfigurationName: ${{ parameters.tridentConfigurationName }}
-      metricsFile: $(Build.SourcesDirectory)/trident-ab-update-metrics-target-os-A.jsonl
+      metricsFile: $(Pipeline.Workspace)/s/trident/trident-ab-update-metrics-target-os-A.jsonl
       tridentOperation: ab-update
       ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
         kustoTableName: main
@@ -381,7 +381,7 @@ steps:
           --configuration ${{ parameters.tridentConfigPath }} \
           --ab-active-volume $(abActiveVolume)
     timeoutInMinutes: 5
-    workingDirectory: $(Build.SourcesDirectory)/tests/e2e_tests
+    workingDirectory: $(Pipeline.Workspace)/s/trident/tests/e2e_tests
     displayName: "🔬 Run Trident E2E tests after A/B update into target OS A"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
@@ -418,7 +418,7 @@ steps:
   - bash: |
       set -eux
       # To allow storm to access VM serial logs, need sudo.
-      sudo $(Build.SourcesDirectory)/bin/storm-trident helper rebuild-raid -a \
+      sudo $(Pipeline.Workspace)/s/trident/bin/storm-trident helper rebuild-raid -a \
           --log-dir "$(ob_outputDirectory)" \
           "${{ parameters.sshKeyPath }}" \
           "${{ parameters.hostIp }}" \

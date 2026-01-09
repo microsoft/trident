@@ -37,7 +37,7 @@ stages:
           hostArchitecture: amd64
 
         variables:
-          ob_outputDirectory: $(Build.SourcesDirectory)/go-tools
+          ob_outputDirectory: $(Pipeline.Workspace)/s/trident/go-tools
           ob_artifactBaseName: go-tools
 
         steps:

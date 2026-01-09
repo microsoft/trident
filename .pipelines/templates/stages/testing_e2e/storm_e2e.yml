@@ -16,7 +16,7 @@ stages:
           type: linux
 
         variables:
-          ob_outputDirectory: $(Build.SourcesDirectory)/build
+          ob_outputDirectory: $(Pipeline.Workspace)/s/trident/build
           ob_artifactBaseName: storm-e2e-select-tests
 
         steps:
@@ -27,7 +27,7 @@ stages:
               artifactName: "go-tools"
               patterns: |
                 storm-trident
-              targetPath: "$(Build.SourcesDirectory)/bin"
+              targetPath: "$(Pipeline.Workspace)/s/trident/bin"
           - bash: |
               chmod +x ./bin/storm-trident
               ./bin/storm-trident script e2e-matrix "${{ parameters.stageType }}"

@@ -27,13 +27,13 @@ steps:
   - script: |
       set -eux
       sudo systemctl start docker
-    workingDirectory: $(Build.SourcesDirectory)
+    workingDirectory: $(Pipeline.Workspace)/s/trident
     displayName: Start Docker
 
   - template: ../common_tasks/preview-container.yml
     parameters:
-      dockerfilePath: $(Build.SourcesDirectory)/packaging/docker/Dockerfile.full
-      dockerBuildContext: $(Build.SourcesDirectory)
+      dockerfilePath: $(Pipeline.Workspace)/s/trident/packaging/docker/Dockerfile.full
+      dockerBuildContext: $(Pipeline.Workspace)/s/trident
       targetArchitecture: ${{ parameters.targetArchitecture }}
 
   - script: |
@@ -60,7 +60,7 @@ steps:
 
       mkdir -p $(ob_outputDirectory)
       tar -xzf trident-rpms.tar.gz -C $(ob_outputDirectory) --strip-components=3
-    workingDirectory: $(Build.SourcesDirectory)
+    workingDirectory: $(Pipeline.Workspace)/s/trident
     displayName: Build RPMs
 
   - script: ./scripts/extract-binary.sh $(ob_outputDirectory) $(ob_outputDirectory)

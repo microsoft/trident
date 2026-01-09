@@ -40,9 +40,9 @@
       tags: "3.0-preview"
       artifactName: "drop_build_rpms_build"
       patterns: "**/build-config/version-full.config"
-      targetPath: "$(Build.SourcesDirectory)/output"
+      targetPath: "$(Pipeline.Workspace)/s/trident/output"
   - script: |
-      versionFullConfigPath=$(find $(Build.SourcesDirectory) -name version-full.config)
+      versionFullConfigPath=$(find $(Pipeline.Workspace)/s/trident -name version-full.config)
       BASEIMG_VERSION=$(cat $versionFullConfigPath)
       echo "##vso[task.setvariable variable=BASEIMG_VERSION]$BASEIMG_VERSION"
       echo "BASEIMG_VERSION: $BASEIMG_VERSION"

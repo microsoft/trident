@@ -41,15 +41,15 @@ parameters:
 
   - name: targetDirectory
     type: string
-    default: "$(Build.SourcesDirectory)/artifacts/test-image"
+    default: "$(Pipeline.Workspace)/s/trident/artifacts/test-image"
 
   - name: isoDirectory
     type: string
-    default: "$(Build.SourcesDirectory)/artifacts/iso"
+    default: "$(Pipeline.Workspace)/s/trident/artifacts/iso"
 
   - name: toolsDirectory
     type: string
-    default: "$(Build.SourcesDirectory)/bin"
+    default: "$(Pipeline.Workspace)/s/trident/bin"
 
   - name: testImageDir
     type: string
