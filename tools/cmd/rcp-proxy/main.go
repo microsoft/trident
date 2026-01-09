@@ -17,8 +17,8 @@ import (
 )
 
 var cli struct {
-	ClientAddress string `arg:"" help:"Address of the superproxy to connect to"`
-	ServerAddress string `short:"s" long:"server-address" help:"Address of the server server to connect to" default:"${defaultServerAddress}"`
+	ClientAddress string `arg:"" help:"Address of the rpc-client to connect to"`
+	ServerAddress string `short:"s" long:"server-address" help:"Address of the server to connect to" default:"${defaultServerAddress}"`
 }
 
 func main() {
