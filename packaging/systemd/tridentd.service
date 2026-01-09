@@ -1,0 +1,5 @@
+[Unit]
+Description=Trident Daemon
+
+[Service]
+ExecStart=trident daemon
