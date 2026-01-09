@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
-use log::error;
+use log::warn;
 use serde_json::Value;
 
 use sysdefs::filesystems::NodevFilesystemType;
@@ -112,8 +112,8 @@ impl TabFile {
             // Otherwise, parse the mount point (second token) from the line.
             let Some(mount_point) = trimmed.split_whitespace().nth(1) else {
                 // If we can't parse the mount point, just keep the line, and produce an error.
-                error!(
-                    "Failed to parse mount point from existing fstab line, keeping value as-is: '{line}'",
+                warn!(
+                    "Failed to parse mount point from existing tab file, keeping value as-is: '{line}'",
                 );
                 add_line();
                 continue;
@@ -131,7 +131,10 @@ impl TabFile {
             add_line();
         }
 
-        merged.push_str("\n# Entries below were created by Trident:\n");
+        if !merged.is_empty() {
+            merged.push('\n');
+        }
+        merged.push_str("# Entries below were created by Trident:\n");
         merged.push_str(&self.render());
         merged
     }
@@ -499,6 +502,84 @@ mod tests {
             /dev/new2 /other auto defaults 0 2
             tmpfs /tmpfs tmpfs defaults 0 2
             /dev/sda none swap defaults 0 0
+        "#};
+
+        assert_eq!(merged, expected);
+    }
+
+    #[test]
+    fn test_merge_with_existing_empty_existing_file() {
+        let tab_file = TabFile {
+            entries: vec![TabFileEntry::new_path(
+                "/dev/new",
+                "/data",
+                TabFileSystemType::Auto,
+            )],
+        };
+
+        let merged = tab_file.merge_with_existing("");
+
+        let expected = indoc::indoc! {r#"
+            # Entries below were created by Trident:
+            /dev/new /data auto defaults 0 2
+        "#};
+
+        assert_eq!(merged, expected);
+    }
+
+    #[test]
+    fn test_merge_with_existing_only_comments_and_blank_lines() {
+        let tab_file = TabFile {
+            entries: vec![TabFileEntry::new_path(
+                "/dev/new",
+                "/data",
+                TabFileSystemType::Auto,
+            )],
+        };
+
+        let existing = indoc::indoc! {r#"
+            # Header comment
+
+            # Another comment
+        "#};
+
+        let merged = tab_file.merge_with_existing(existing);
+
+        let expected = indoc::indoc! {r#"
+            # Header comment
+
+            # Another comment
+
+            # Entries below were created by Trident:
+            /dev/new /data auto defaults 0 2
+        "#};
+
+        assert_eq!(merged, expected);
+    }
+
+    #[test]
+    fn test_merge_with_existing_logs_warning_for_malformed_line() {
+        let tab_file = TabFile {
+            entries: vec![TabFileEntry::new_path(
+                "/dev/new",
+                "/data",
+                TabFileSystemType::Auto,
+            )],
+        };
+
+        let existing = indoc::indoc! {r#"
+            malformed
+            /dev/keep /keep auto defaults 0 2
+        "#};
+
+        let merged = tab_file.merge_with_existing(existing);
+
+        let expected = indoc::indoc! {r#"
+            malformed
+            /dev/keep /keep auto defaults 0 2
+
+            # Entries below were created by Trident:
+            /dev/new /data auto defaults 0 2
         "#};
 
         assert_eq!(merged, expected);
