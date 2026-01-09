@@ -48,4 +48,4 @@ jobs:
               --matrix-name matrixConfigurations
         name: setConfigurations
         displayName: Matrix of Trident configurations for E2E Tests
-        workingDirectory: $(Build.SourcesDirectory)/trident
+        workingDirectory: $(Pipeline.Workspace)/s/trident
