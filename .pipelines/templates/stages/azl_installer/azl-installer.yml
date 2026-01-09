@@ -23,7 +23,9 @@ parameters:
 
 stages:
   # Build installer tools
-  - template: build-installer-tools.yml
+  - template: build-installer-tools.
+    parameters:
+      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   - stage: AzureLinux_Installer_ISO
     displayName: Build azl-installer-iso
