@@ -93,20 +93,26 @@ impl DataStore {
                 inner: DatastoreError::InitializeDatastore,
             })?;
 
-        while let Ok(State::Row) = query_statement.next() {
-            let host_status_yaml =
-                query_statement
-                    .read::<String, _>(0)
-                    .structured(ServicingError::Datastore {
-                        inner: DatastoreError::InitializeDatastore,
-                    })?;
-            let host_status =
-                serde_yaml::from_str(&host_status_yaml).structured(ServicingError::Datastore {
-                    inner: DatastoreError::InitializeDatastore,
-                })?;
+        while let State::Row = query_statement
+            .next()
+            .structured(ServicingError::Datastore {
+                inner: DatastoreError::ReadDatastore,
+            })
+            .message("Failed to get next datastore row")?
+        {
+            let host_status_yaml = query_statement
+                .read::<String, _>(0)
+                .structured(ServicingError::Datastore {
+                    inner: DatastoreError::ReadDatastore,
+                })
+                .message("Failed to read datastore row")?;
+            let host_status = serde_yaml::from_str(&host_status_yaml)
+                .structured(ServicingError::Datastore {
+                    inner: DatastoreError::ReadDatastore,
+                })
+                .message("Failed to parse Host Status as YAML")?;
             all_rows_data.push(host_status);
         }
-
         Ok(all_rows_data)
     }
 
