@@ -41,6 +41,10 @@ stages:
           ob_artifactBaseName: go-tools
 
         steps:
+          - checkout: trident
+            fetchDepth: 1
+            path: s/trident
+
           - template: ../common_tasks/avoid-pypi-usage.yml
 
           - ${{ if eq(parameters.buildNetlaunch, true) }}:
@@ -49,7 +53,7 @@ stages:
                   make bin/netlaunch
                   mkdir -p $(ob_outputDirectory)
                   mv bin/netlaunch $(ob_outputDirectory)
-                workingDirectory: $(Build.SourcesDirectory)
+                workingDirectory: $(Build.SourcesDirectory)/trident
                 displayName: "Building netlaunch"
 
           - ${{ if eq(parameters.buildNetlaunch, true) }}:
@@ -58,7 +62,7 @@ stages:
                   make bin/netlisten
                   mkdir -p $(ob_outputDirectory)
                   mv bin/netlisten $(ob_outputDirectory)
-                workingDirectory: $(Build.SourcesDirectory)
+                workingDirectory: $(Build.SourcesDirectory)/trident
                 displayName: "Building netlisten"
 
           - ${{ if eq(parameters.buildMiniproxy, true) }}:
@@ -67,7 +71,7 @@ stages:
                   make bin/miniproxy
                   mkdir -p $(ob_outputDirectory)
                   mv bin/miniproxy $(ob_outputDirectory)
-                workingDirectory: $(Build.SourcesDirectory)
+                workingDirectory: $(Build.SourcesDirectory)/trident
                 displayName: "Building miniproxy"
 
           - ${{ if eq(parameters.buildMkcosi, true) }}:
@@ -76,7 +80,7 @@ stages:
                   make bin/mkcosi
                   mkdir -p $(ob_outputDirectory)
                   mv bin/mkcosi $(ob_outputDirectory)
-                workingDirectory: $(Build.SourcesDirectory)
+                workingDirectory: $(Build.SourcesDirectory)/trident
                 displayName: "Building mkcosi"
 
           - ${{ if eq(parameters.buildStormTrident, true) }}:
@@ -85,7 +89,7 @@ stages:
                   make bin/storm-trident
                   mkdir -p $(ob_outputDirectory)
                   mv bin/storm-trident $(ob_outputDirectory)
-                workingDirectory: $(Build.SourcesDirectory)
+                workingDirectory: $(Build.SourcesDirectory)/trident
                 displayName: "Building storm-trident"
 
           - ${{ if eq(parameters.buildVirtdeploy, true) }}:
@@ -94,4 +98,4 @@ stages:
                   make bin/virtdeploy
                   mkdir -p $(ob_outputDirectory)
                   mv bin/virtdeploy $(ob_outputDirectory)
-                workingDirectory: $(Build.SourcesDirectory)
+                workingDirectory: $(Build.SourcesDirectory)/trident
