@@ -37,6 +37,10 @@ parameters:
     type: string
     default: ''
 
+  - name: tridentRepoName
+    type: string
+    default: self
+
 stages:
   - stage: TridentTestImg_${{ replace(parameters.imageName, '-', '_') }}
     displayName: Build ${{ parameters.imageName }}
@@ -62,7 +66,7 @@ stages:
           BASEIMG_AZURE_LINUX_VERSION: "3.0"
 
         steps:
-          - checkout: trident
+          - checkout: ${{ parameters.tridentRepoName }}
             fetchDepth: 1
             path: s/trident
 

@@ -17,6 +17,10 @@ parameters:
     type: string
     default: ''
 
+  - name: tridentRepoName
+    type: string
+    default: self
+
 stages:
   # Build installer tools
   - template: build-installer-tools.yml
@@ -43,7 +47,7 @@ stages:
           BASEIMG_AZURE_LINUX_VERSION: "3.0"
 
         steps:
-          - checkout: trident
+          - checkout: ${{ parameters.tridentRepoName }}
             fetchDepth: 1
             path: s/trident
 
@@ -131,7 +135,7 @@ stages:
           ob_artifactBaseName: azl-installer-test-unattended-$(System.JobAttempt)
 
         steps:
-          - checkout: trident
+          - checkout: ${{ parameters.tridentRepoName }}
             fetchDepth: 1
             path: s/trident
 
