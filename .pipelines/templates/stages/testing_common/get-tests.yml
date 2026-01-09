@@ -35,6 +35,9 @@ jobs:
       ob_artifactBaseName: select_tests_${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_$(System.JobAttempt)
 
     steps:
+      - checkout: trident
+        fetchDepth: 1
+        path: s/trident
       - template: ../common_tasks/avoid-pypi-usage.yml
       - bash: |
           python3 ./tests/e2e_tests/helpers/read_target_configurations.py \
@@ -45,3 +48,4 @@ jobs:
               --matrix-name matrixConfigurations
         name: setConfigurations
         displayName: Matrix of Trident configurations for E2E Tests
+        workingDirectory: $(Build.SourcesDirectory)/trident
