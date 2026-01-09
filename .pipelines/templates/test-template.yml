@@ -44,6 +44,13 @@ parameters:
     default: false
     displayName: Servicing VM testing
 
+  - name: acrServiceConnection
+    type: string
+    default: trident-dev-acr-write-umi-ECF
+    values:
+      - trident-dev-acr-write-umi-ECF
+      - maritimus-dev-acr-write-umi
+
 stages:
   - ${{ if or(parameters.runDeploymentVMHost, parameters.runDeploymentVMContainer, parameters.runDeploymentBMHost, parameters.runDeploymentBMContainer, parameters.runServicingTests) }}:
       - template: stages/download_artifacts/get-artifacts.yml
@@ -73,6 +80,7 @@ stages:
           buildPurpose: "validation"
           runtimeEnv: "host"
           testingRun: true
+          acrServiceConnection: ${{ parameters.acrServiceConnection }}
 
   - ${{ if parameters.runDeploymentVMContainer }}:
       - template: stages/testing_vm/netlaunch-testing.yml
@@ -80,6 +88,7 @@ stages:
           buildPurpose: "validation"
           runtimeEnv: "container"
           testingRun: true
+          acrServiceConnection: ${{ parameters.acrServiceConnection }}
 
   - ${{ if parameters.runDeploymentBMHost }}:
       - template: stages/testing_baremetal/baremetal-testing.yml
@@ -87,6 +96,7 @@ stages:
           buildPurpose: "validation"
           runtimeEnv: "host"
           testingRun: true
+          acrServiceConnection: ${{ parameters.acrServiceConnection }}
 
   - ${{ if parameters.runDeploymentBMContainer }}:
       - template: stages/testing_baremetal/baremetal-testing.yml
@@ -96,6 +106,7 @@ stages:
           testingRun: true
           ${{ if parameters.runDeploymentBMHost }}:
             extraDependsOn: "BaremetalDeploymentTesting_host"
+          acrServiceConnection: ${{ parameters.acrServiceConnection }}
 
           
   - ${{ if parameters.runServicingTests }}:

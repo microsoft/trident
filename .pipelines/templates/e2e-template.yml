@@ -78,6 +78,13 @@ parameters:
     type: string
     default: ""
 
+  - name: acrServiceConnection
+    type: string
+    default: trident-dev-acr-write-umi-ECF
+    values:
+      - trident-dev-acr-write-umi-ECF
+      - maritimus-dev-acr-write-umi
+
 stages:
   # Trident Build/Download
   - ${{ if ne( parameters.tridentBinariesArtifactPrecreated, true ) }}:
@@ -253,6 +260,7 @@ stages:
         parameters:
           buildPurpose: "daily"
           runtimeEnv: "host"
+          acrServiceConnection: ${{ parameters.acrServiceConnection }}
 
       - ${{ if parameters.baremetalTestsEnabled }}:
           # BM Testing (host, daily)
@@ -260,6 +268,7 @@ stages:
             parameters:
               buildPurpose: "daily"
               runtimeEnv: "host"
+              acrServiceConnection: ${{ parameters.acrServiceConnection }}
 
           # BM Testing (container, daily)
           - template: stages/testing_baremetal/baremetal-testing.yml
@@ -267,12 +276,14 @@ stages:
               buildPurpose: "daily"
               runtimeEnv: "container"
               extraDependsOn: "BaremetalDeploymentTesting_host"
+              acrServiceConnection: ${{ parameters.acrServiceConnection }}
 
       # VM Testing (container, daily)
       - template: stages/testing_vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "daily"
           runtimeEnv: "container"
+          acrServiceConnection: ${{ parameters.acrServiceConnection }}
 
   # TESTING stages for full validation matrix host/container and bm/bm
   - ${{ if eq(parameters.stageType, 'full-validation') }}:
@@ -288,12 +299,14 @@ stages:
         parameters:
           buildPurpose: "weekly"
           runtimeEnv: "host"
+          acrServiceConnection: ${{ parameters.acrServiceConnection }}
 
       # VM Testing (container, weekly)
       - template: stages/testing_vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "weekly"
           runtimeEnv: "container"
+          acrServiceConnection: ${{ parameters.acrServiceConnection }}
 
       - ${{ if parameters.baremetalTestsEnabled }}:
           # BM Testing (host, weekly)
@@ -301,6 +314,7 @@ stages:
             parameters:
               buildPurpose: "weekly"
               runtimeEnv: "host"
+              acrServiceConnection: ${{ parameters.acrServiceConnection }}
 
           # BM Testing (container, weekly)
           - template: stages/testing_baremetal/baremetal-testing.yml
@@ -308,6 +322,7 @@ stages:
               buildPurpose: "weekly"
               runtimeEnv: "container"
               extraDependsOn: "BaremetalDeploymentTesting_host"
+              acrServiceConnection: ${{ parameters.acrServiceConnection }}
 
   # TESTING stages for CI
   - ${{ if eq(parameters.stageType, 'ci') }}:
@@ -323,12 +338,14 @@ stages:
         parameters:
           buildPurpose: "post_merge"
           runtimeEnv: "host"
+          acrServiceConnection: ${{ parameters.acrServiceConnection }}
 
       # VM Testing (container, post_merge)
       - template: stages/testing_vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "post_merge"
           runtimeEnv: "container"
+          acrServiceConnection: ${{ parameters.acrServiceConnection }}
 
   # TESTING stages for PR-E2E
   - ${{ if eq(parameters.stageType, 'pr-e2e') }}:
@@ -345,12 +362,14 @@ stages:
         parameters:
           buildPurpose: "pullrequest"
           runtimeEnv: "host"
+          acrServiceConnection: ${{ parameters.acrServiceConnection }}
 
       # VM Testing (container, pullrequest)
       - template: stages/testing_vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "pullrequest"
           runtimeEnv: "container"
+          acrServiceConnection: ${{ parameters.acrServiceConnection }}
 
   # PUBLISHING
   #
