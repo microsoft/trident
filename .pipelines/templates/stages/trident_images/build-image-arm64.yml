@@ -49,6 +49,10 @@ jobs:
       ob_artifactBaseName: "image-${{ parameters.label }}"
 
     steps:
+      - checkout: trident
+        fetchDepth: 1
+        path: s/trident
+
       - template: ../common_tasks/avoid-pypi-usage.yml
 
       - task: DownloadPipelineArtifact@2

@@ -62,6 +62,10 @@ stages:
           BASEIMG_AZURE_LINUX_VERSION: "3.0"
 
         steps:
+          - checkout: trident
+            fetchDepth: 1
+            path: s/trident
+
           - template: ../common_tasks/avoid-pypi-usage.yml
 
           - task: DownloadPipelineArtifact@2

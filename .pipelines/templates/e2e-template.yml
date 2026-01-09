@@ -29,14 +29,14 @@ parameters:
     type: boolean
     default: false
 
-  - name: forceTridentRebuild
-    displayName: "Force trident rebuild rather than downloading previously built."
-    type: boolean
-    default: false
-
-  - name: tridentBinariesArtifactPrecreated
-    type: boolean
-    default: false
+  - name: tridentBuildOptions
+    displayName: "Trident Build Options"
+    type: string
+    default: default
+    values:
+      - default
+      - forceBuild
+      - prebuilt
 
   - name: includeAzure
     displayName: "Include Azure testing"
@@ -80,16 +80,15 @@ parameters:
 
 stages:
   # Trident Build/Download
-  - ${{ if ne( parameters.tridentBinariesArtifactPrecreated, true ) }}:
-    - template: stages/trident_rpms/trident-stage.yml
-      parameters:
-        stageType: ${{ parameters.stageType }}
-        tridentArtifactName: trident-binaries
-        codeCoverage: false
-        forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
-        osModifierBranch: ${{ parameters.osModifierBranch }}
-        dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-        targetArchitecture: amd64
+  - template: stages/trident_rpms/trident-stage.yml
+    parameters:
+      stageType: ${{ parameters.stageType }}
+      tridentArtifactName: trident-binaries
+      codeCoverage: false
+      tridentBuildOptions: ${{ parameters.tridentBuildOptions }}
+      osModifierBranch: ${{ parameters.osModifierBranch }}
+      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      targetArchitecture: amd64
 
   # Build tools (Go stuff)
   - template: stages/building_tools/building-tools.yml

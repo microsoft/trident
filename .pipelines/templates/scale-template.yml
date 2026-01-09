@@ -83,7 +83,10 @@ stages:
       stageType: ${{ parameters.stageType }}
       tridentArtifactName: trident-binaries
       codeCoverage: false
-      forceTridentRebuild: ${{ or(eq(parameters.forceTridentRebuild, true), eq(parameters.baseimgBuildType, 'preview')) }}
+      ${{ if or(eq(parameters.forceTridentRebuild, true), eq(parameters.baseimgBuildType, 'preview')) }}:
+        tridentBuildOptions: forceBuild
+      ${{ else }}:
+        tridentBuildOptions: default
       dependsOnStage: CreateBaseImageConfig
       targetArchitecture: amd64
 
