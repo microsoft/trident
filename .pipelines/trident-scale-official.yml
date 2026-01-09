@@ -73,8 +73,8 @@ variables:
   - name: system.debug
     value: ${{ parameters.debug }}
   # ENABLE_PRS_DELAYSIGN: 0
-  # ROOT: $(Build.SourcesDirectory)
-  # REPOROOT: $(Build.SourcesDirectory)
+  # ROOT: $(Pipeline.Workspace)/s/trident
+  # REPOROOT: $(Pipeline.Workspace)/s/trident
   # OUTPUTROOT: $(REPOROOT)\out
   - name: DEBIAN_FRONTEND
     value: noninteractive
@@ -128,11 +128,11 @@ extends:
         # Break build on SDL failures instead of filing bugs.
         enabled: false # onebranch publish all sdl results to TSA. If TSA is disabled all SDL tools will forced into 'break' build mode.
       # credscan:
-      #   suppressionsFile: $(Build.SourcesDirectory)\.config\CredScanSuppressions.json
+      #   suppressionsFile: $(Pipeline.Workspace)/s/trident\.config\CredScanSuppressions.json
       policheck:
         break: true # always break the build on policheck issues. You can disable it by setting to 'false'
       # suppression:
-      #   suppressionFile: $(Build.SourcesDirectory)\.gdn\global.gdnsuppress
+      #   suppressionFile: $(Pipeline.Workspace)/s/trident\.gdn\global.gdnsuppress
       disableLegacyManifest: true
       cg:
         alertWarningLevel: Medium

@@ -16,7 +16,7 @@ parameters:
     
   - name: tridentSourceDirectory
     type: string
-    default: $(Build.SourcesDirectory)
+    default: $(Pipeline.Workspace)/s/trident
 
 steps:
   - bash: |

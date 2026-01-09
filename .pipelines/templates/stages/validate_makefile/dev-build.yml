@@ -23,7 +23,7 @@ stages:
           hostArchitecture: amd64
 
         variables:
-          ob_outputDirectory: $(Build.SourcesDirectory)/build
+          ob_outputDirectory: $(Pipeline.Workspace)/s/trident/build
 
         steps:
           - template: ../common_tasks/avoid-pypi-usage.yml
@@ -68,7 +68,7 @@ stages:
 
               make check-sh
             displayName: "Validate sh files in repo"
-            workingDirectory: $(Build.SourcesDirectory)
+            workingDirectory: $(Pipeline.Workspace)/s/trident
             env:
               OVERRIDE_RUST_FEED: false
 
@@ -77,7 +77,7 @@ stages:
 
               make check-pipelines BRANCH=$(Build.SourceBranch)
             displayName: "Validating pipeline templates work"
-            workingDirectory: $(Build.SourcesDirectory)
+            workingDirectory: $(Pipeline.Workspace)/s/trident
             env:
               AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
               OVERRIDE_RUST_FEED: false

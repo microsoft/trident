@@ -35,7 +35,7 @@ stages:
         variables:
           - template: ../../feed-staging-vars.yml
           - name: ob_outputDirectory
-            value: $(Build.SourcesDirectory)/build
+            value: $(Pipeline.Workspace)/s/trident/build
           - name: "artifactSuffix"
             ${{ if eq(parameters.stageType, 'ci') }}:
               value: "${{ variables.stage_ci_suffix }}"
@@ -69,7 +69,7 @@ stages:
               set +x
               echo "##vso[task.setvariable variable=isVersionInFeed;]$alreadyPublished"
             displayName: "Check if package version has already been published in the feed."
-            workingDirectory: $(Build.SourcesDirectory)
+            workingDirectory: $(Pipeline.Workspace)/s/trident
             env:
               AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
 

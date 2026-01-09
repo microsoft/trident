@@ -48,7 +48,7 @@ stages:
           type: linux
 
         variables:
-          ob_outputDirectory: $(Build.SourcesDirectory)/build
+          ob_outputDirectory: $(Pipeline.Workspace)/s/trident/build
           ob_artifactBaseName: "go-tools"
 
         steps:
@@ -79,7 +79,7 @@ stages:
               type: linux
 
             variables:
-              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_outputDirectory: $(Pipeline.Workspace)/s/trident/build
               ob_artifactBaseName: "ssh-keys"
 
             steps:
@@ -103,7 +103,7 @@ stages:
               type: linux
 
             variables:
-              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_outputDirectory: $(Pipeline.Workspace)/s/trident/build
               ob_artifactBaseName: "image-qemu-base"
 
             steps:
@@ -127,7 +127,7 @@ stages:
               type: linux
 
             variables:
-              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_outputDirectory: $(Pipeline.Workspace)/s/trident/build
               ob_artifactBaseName: "image-qemu-update-a"
 
             steps:
@@ -151,7 +151,7 @@ stages:
               type: linux
 
             variables:
-              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_outputDirectory: $(Pipeline.Workspace)/s/trident/build
               ob_artifactBaseName: "image-qemu-update-b"
 
             steps:
@@ -202,7 +202,7 @@ stages:
               type: linux
 
             variables:
-              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_outputDirectory: $(Pipeline.Workspace)/s/trident/build
               ob_artifactBaseName: "trident-container-installer"
 
             steps:
@@ -226,7 +226,7 @@ stages:
               type: linux
 
             variables:
-              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_outputDirectory: $(Pipeline.Workspace)/s/trident/build
               ob_artifactBaseName: "trident-container-testimage"
 
             steps:
@@ -249,7 +249,7 @@ stages:
               type: linux
 
             variables:
-              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_outputDirectory: $(Pipeline.Workspace)/s/trident/build
               ob_artifactBaseName: "trident-container-verity-testimage"
 
             steps:
@@ -272,7 +272,7 @@ stages:
               type: linux
 
             variables:
-              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_outputDirectory: $(Pipeline.Workspace)/s/trident/build
               ob_artifactBaseName: "trident-container-usrverity-testimage"
 
             steps:
@@ -297,7 +297,7 @@ stages:
               type: linux
 
             variables:
-              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_outputDirectory: $(Pipeline.Workspace)/s/trident/build
               ob_artifactBaseName: "trident-installer"
 
             steps:
@@ -321,7 +321,7 @@ stages:
               type: linux
 
             variables:
-              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_outputDirectory: $(Pipeline.Workspace)/s/trident/build
               ob_artifactBaseName: "trident-split-installer"
 
             steps:
@@ -345,7 +345,7 @@ stages:
               type: linux
 
             variables:
-              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_outputDirectory: $(Pipeline.Workspace)/s/trident/build
               ob_artifactBaseName: "trident-testimage"
 
             steps:
@@ -368,7 +368,7 @@ stages:
               type: linux
 
             variables:
-              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_outputDirectory: $(Pipeline.Workspace)/s/trident/build
               ob_artifactBaseName: "trident-verity-testimage"
 
             steps:
@@ -391,7 +391,7 @@ stages:
               type: linux
 
             variables:
-              ob_outputDirectory: $(Build.SourcesDirectory)/build
+              ob_outputDirectory: $(Pipeline.Workspace)/s/trident/build
               ob_artifactBaseName: "trident-usrverity-testimage"
 
             steps:

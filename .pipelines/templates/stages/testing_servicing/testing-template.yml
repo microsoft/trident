@@ -56,8 +56,8 @@ jobs:
           name: ${{ parameters.pool }}
           hostArchitecture: amd64
         variables:
-          ob_outputDirectory: $(Build.SourcesDirectory)/logs
-          tridentSourceDirectory: $(Build.SourcesDirectory)
+          ob_outputDirectory: $(Pipeline.Workspace)/s/trident/logs
+          tridentSourceDirectory: $(Pipeline.Workspace)/s/trident
         steps:
           - task: DownloadPipelineArtifact@2
             displayName: "Download go-tools: storm"
@@ -116,7 +116,7 @@ jobs:
           - PublishAzureImage
 
     variables:
-      tridentSourceDirectory: $(Build.SourcesDirectory)
+      tridentSourceDirectory: $(Pipeline.Workspace)/s/trident
       ob_outputDirectory: $(tridentSourceDirectory)/deployment_logs_${{ parameters.flavor }}
       ob_artifactBaseName: "update-testing-${{ parameters.flavor }}-$(System.JobPositionInPhase)"
       TEST_RESOURCE_GROUP: trident-vm-servicing-validation-$(Build.BuildId)-$(System.JobPositionInPhase)
