@@ -104,7 +104,6 @@ func StartReverseConnectProxy(ctx context.Context, clientAddress string, serverA
 // This function blocks until the connection is closed or an error occurs.
 func handleClientConnection(ctx context.Context, clientConn net.Conn, serverAddress string) error {
 	defer clientConn.Close()
-	logrus.Infof("Client connected from '%s'", clientConn.RemoteAddr().String())
 
 	logrus.Infof("Connecting to server at '%s'", serverAddress)
 	serverConn, err := net.Dial("unix", serverAddress)
