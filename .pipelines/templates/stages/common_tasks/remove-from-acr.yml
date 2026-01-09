@@ -16,10 +16,17 @@ parameters:
       - virtualMachine
       - bareMetal
 
+  - name: "acrServiceConnection"
+    type: string
+    default: trident-dev-acr-write-umi-ECF
+    values:
+      - trident-dev-acr-write-umi-ECF
+      - maritimus-dev-acr-write-umi
+
 steps:
   - task: AzureCLI@2
     inputs:
-      azureSubscription: trident-dev-acr-write-umi-ECF
+      azureSubscription: ${{ parameters.acrServiceConnection }}
       scriptType: bash
       scriptLocation: inlineScript
       inlineScript: |

@@ -22,6 +22,13 @@ parameters:
       - container
       - host
 
+  - name: "acrServiceConnection"
+    type: string
+    default: trident-dev-acr-write-umi-ECF
+    values:
+      - trident-dev-acr-write-umi-ECF
+      - maritimus-dev-acr-write-umi
+
 steps:
   - bash: |
       set -eux
@@ -55,7 +62,7 @@ steps:
 
   - task: AzureCLI@2
     inputs:
-      azureSubscription: trident-dev-acr-write-umi-ECF
+      azureSubscription: ${{ parameters.acrServiceConnection }}
       scriptType: bash
       scriptLocation: inlineScript
       inlineScript: |
