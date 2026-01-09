@@ -68,18 +68,18 @@ func StartReverseConnectProxy(ctx context.Context, clientAddress string, serverA
 						multipleRefused = true
 						logrus.Warnf("Client connection refused, will retry silently.")
 					}
-
-					// Wait before retrying
-					select {
-					case <-time.After(retryInterval):
-					case <-ctx.Done():
-						// Context cancelled, exit loop
-						return ctx.Err()
-					}
 				}
 			} else {
 				// Some other error occurred
 				logrus.Errorf("Failed to establish client connection: %v", err)
+			}
+
+			// Wait before retrying
+			select {
+			case <-time.After(retryInterval):
+			case <-ctx.Done():
+				// Context cancelled, exit loop
+				return ctx.Err()
 			}
 
 			continue
