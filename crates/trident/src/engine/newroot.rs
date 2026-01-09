@@ -12,6 +12,7 @@ use sys_mount::{MountBuilder, MountFlags};
 
 use osutils::{files, filesystems::MountFileSystemType, findmnt::FindMnt, lsblk, mount, path};
 use sysdefs::filesystems::{KernelFilesystemType, RealFilesystemType};
+use tracing_subscriber::field::debug;
 use trident_api::{
     config::{FileSystem, HostConfiguration},
     constants::{
@@ -280,11 +281,21 @@ impl NewrootMount {
         debug!("Mounting tmpfs to '{}'", target_path_full.display());
 
         if !target_path_full.exists() {
-            fs::create_dir(&target_path_full).structured(
-                ServicingError::MountNewrootSpecialDir {
+            debug!(
+                "Creating missing directory for tmpfs mount point '{}'",
+                target_path_full.display()
+            );
+            fs::create_dir(&target_path_full)
+                .context("Failed to create missing directory for mount point")
+                .structured(ServicingError::MountNewrootSpecialDir {
                     dir: target_path_full.clone().to_string_lossy().to_string(),
-                },
-            )?;
+                })?;
+        } else if !target_path_full.is_dir() {
+            // Tmpfs mount points must be directories
+            return Err(TridentError::new(ServicingError::MountNewrootSpecialDir {
+                dir: target_path_full.clone().to_string_lossy().to_string(),
+            }))
+            .message("Path exists but it is not a directory");
         }
 
         // Do the actual tmpfs mount

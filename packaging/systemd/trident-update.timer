@@ -1,9 +1,0 @@
-[Unit]
-Description=Run Trident to poll for updates
-
-[Timer]
-OnCalendar=*-*-* *:*:00
-Persistent=true
-
-[Install]
-WantedBy=timers.target
