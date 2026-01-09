@@ -431,6 +431,22 @@ bin/virtdeploy: tools/cmd/virtdeploy/* tools/go.sum tools/pkg/* tools/pkg/virtde
 	@mkdir -p bin
 	cd tools && go build -o ../bin/virtdeploy ./cmd/virtdeploy
 
+bin/rcp-proxy: FORCE
+	@mkdir -p bin
+	cd tools && go generate pkg/rcp/tlscerts/certs.go
+	cd tools && go build -tags tls_client -o ../bin/rcp-proxy ./cmd/rcp-proxy/main.go
+
+# Clean generated RCP TLS certificates
+.PHONY: clean-rcp-certs
+clean-rcp-certs:
+	cd tools/pkg/rcp/tlscerts && go run generate.go clean
+
+# An empty target to force rebuilds of anything that depends on it. Useful for
+# tools that are smarter than Make and only rebuild when source files change.
+# (eg. go build)
+.PHONY: FORCE
+FORCE:
+
 # Installer tools
 
 INSTALLER_OUT_DIR := bin
