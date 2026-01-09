@@ -11,10 +11,6 @@ parameters:
     type: boolean
     default: true
 
-  - name: tridentRepoName
-    type: string
-    default: self
-
 stages:
   - stage: BuildInstallerTools
     displayName: Build Installer Tools
@@ -33,9 +29,14 @@ stages:
           ob_artifactBaseName: installer-tools
 
         steps:
-          - checkout: ${{ parameters.tridentRepoName }}
-            fetchDepth: 1
-            path: s/trident
+          - ${{ if eq(variables['Build.Repository.Name'], 'trident')}}:
+              - checkout: self
+                fetchDepth: 1
+                path: s/trident
+          - ${{ else }}:
+              - checkout: trident
+                fetchDepth: 1
+                path: s/trident
 
           - template: ../common_tasks/avoid-pypi-usage.yml
 

@@ -17,15 +17,9 @@ parameters:
     type: string
     default: ''
 
-  - name: tridentRepoName
-    type: string
-    default: self
-
 stages:
   # Build installer tools
   - template: build-installer-tools.yml
-    parameters:
-      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   - stage: AzureLinux_Installer_ISO
     displayName: Build azl-installer-iso
@@ -49,9 +43,14 @@ stages:
           BASEIMG_AZURE_LINUX_VERSION: "3.0"
 
         steps:
-          - checkout: ${{ parameters.tridentRepoName }}
-            fetchDepth: 1
-            path: s/trident
+          - ${{ if eq(variables['Build.Repository.Name'], 'trident')}}:
+              - checkout: self
+                fetchDepth: 1
+                path: s/trident
+          - ${{ else }}:
+              - checkout: trident
+                fetchDepth: 1
+                path: s/trident
 
           - template: ../common_tasks/avoid-pypi-usage.yml
 
@@ -137,9 +136,14 @@ stages:
           ob_artifactBaseName: azl-installer-test-unattended-$(System.JobAttempt)
 
         steps:
-          - checkout: ${{ parameters.tridentRepoName }}
-            fetchDepth: 1
-            path: s/trident
+          - ${{ if eq(variables['Build.Repository.Name'], 'trident')}}:
+              - checkout: self
+                fetchDepth: 1
+                path: s/trident
+          - ${{ else }}:
+              - checkout: trident
+                fetchDepth: 1
+                path: s/trident
 
           - template: ./validate-azl-installer-iso.yml
             parameters:

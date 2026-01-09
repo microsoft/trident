@@ -70,9 +70,14 @@ stages:
           ob_artifactBaseName: $(artifactName)
 
         steps:
-          - checkout: ${{ parameters.tridentRepoName }}
-            fetchDepth: 1
-            path: s/trident
+          - ${{ if eq(variables['Build.Repository.Name'], 'trident')}}:
+              - checkout: self
+                fetchDepth: 1
+                path: s/trident
+          - ${{ else }}:
+              - checkout: trident
+                fetchDepth: 1
+                path: s/trident
 
           - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../common_tasks/update-protoc.yml
