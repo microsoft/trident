@@ -18,7 +18,7 @@ parameters:
 
   - name: "acrServiceConnection"
     type: string
-    default: trident-dev-acr-write-umi-ECF
+    default: maritimus-dev-acr-write-umi
     values:
       - trident-dev-acr-write-umi-ECF
       - maritimus-dev-acr-write-umi
