@@ -18,9 +18,13 @@ parameters:
   - name: tridentArtifactName
     type: string
 
-  - name: forceTridentRebuild
-    type: boolean
-    default: false
+  - name: tridentBuildOptions
+    type: string
+    default: default
+    values:
+      - default
+      - forceBuild
+      - prebuilt
 
   - name: osModifierBranch
     type: string
@@ -37,7 +41,7 @@ parameters:
       - arm64
 
 stages:
-  - ${{ if or(parameters.forceTridentRebuild, eq(parameters.stageType, 'pr'), eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
+  - ${{ if or(eq(parameters.tridentBuildOptions, 'forceBuild'), eq(parameters.stageType, 'pr'), eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
       - template: build-source.yml
         parameters:
           tridentArtifactName: ${{ parameters.tridentArtifactName }}
@@ -51,7 +55,7 @@ stages:
           ${{ else }}:
             osModifierBuildType: preview
 
-  - ${{ elseif eq(parameters.targetArchitecture, 'amd64') }}:
+  - ${{ elseif and(ne(parameters.tridentBuildOptions, 'prebuilt'), eq(parameters.targetArchitecture, 'amd64')) }}:
       - template: ../download_staged/download-staged.yml
         parameters:
           artifactName: ${{ parameters.tridentArtifactName }}

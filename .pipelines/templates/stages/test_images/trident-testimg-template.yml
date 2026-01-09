@@ -1,7 +1,7 @@
 parameters:
   - name: outputDirectory
     type: string
-    default: "$(Build.SourcesDirectory)/output"
+    default: "$(Pipeline.Workspace)/s/trident/output"
 
   - name: target
     type: string
@@ -112,15 +112,15 @@ steps:
       - bash: |
           set -eux
 
-          mkdir -p $(Build.SourcesDirectory)/artifacts
-          ssh-keygen -t rsa -b 2048 -f $(Build.SourcesDirectory)/artifacts/id_rsa -q -N ""
+          mkdir -p $(Pipeline.Workspace)/s/trident/artifacts
+          ssh-keygen -t rsa -b 2048 -f $(Pipeline.Workspace)/s/trident/artifacts/id_rsa -q -N ""
         displayName: Set up SSH Keys
   - ${{ if eq(parameters.useStagedSshKeys, true) }}:
       - bash: |
           set -eux
 
-          mkdir -p $(Build.SourcesDirectory)/artifacts
-          cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* $(Build.SourcesDirectory)/artifacts/
+          mkdir -p $(Pipeline.Workspace)/s/trident/artifacts
+          cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* $(Pipeline.Workspace)/s/trident/artifacts/
         displayName: Copy SSH Keys
 
   - script: |
@@ -167,7 +167,7 @@ steps:
   - bash: |
       set -ex
 
-      base_dir='$(Build.SourcesDirectory)/artifacts'
+      base_dir='$(Pipeline.Workspace)/s/trident/artifacts'
 
       mkdir -p $base_dir
       # Check if there are any .vhdx files in the images directory and move them
@@ -188,13 +188,13 @@ steps:
 
       find $(Build.ArtifactStagingDirectory)
       if [ -d "$(Build.ArtifactStagingDirectory)/trident" ]; then
-        rpm_dir='$(Build.SourcesDirectory)/bin/RPMS'
+        rpm_dir='$(Pipeline.Workspace)/s/trident/bin/RPMS'
         mkdir -p $rpm_dir
         cp -r $(Build.ArtifactStagingDirectory)/trident/* $rpm_dir/ || echo 'no rpms to copy'
         rm -rf $(Build.ArtifactStagingDirectory)/trident
       fi
 
-    workingDirectory: $(Build.SourcesDirectory)
+    workingDirectory: $(Pipeline.Workspace)/s/trident
     displayName: "Prepare and move requirements"
 
   - script: |
@@ -212,7 +212,7 @@ steps:
 
       # Compress the full image & delete the uncompressed image
       make ${{ parameters.target }}
-    workingDirectory: $(Build.SourcesDirectory)
+    workingDirectory: $(Pipeline.Workspace)/s/trident
     displayName: "Build Test Image"
 
   - script: |
@@ -226,5 +226,5 @@ steps:
         # Everything else is a file
         sudo mv -v "${{ parameters.target }}" "${{ parameters.outputDirectory }}/"
       fi
-    workingDirectory: $(Build.SourcesDirectory)
+    workingDirectory: $(Pipeline.Workspace)/s/trident
     displayName: "Copy artifacts to output directory"

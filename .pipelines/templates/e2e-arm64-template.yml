@@ -24,10 +24,14 @@ parameters:
       - rel
       - full-validation
 
-  - name: forceTridentRebuild
-    displayName: "Force trident rebuild rather than downloading previously built."
-    type: boolean
-    default: false
+  - name: tridentBuildOptions
+    displayName: "Trident Build Options"
+    type: string
+    default: default
+    values:
+      - default
+      - forceBuild
+      - prebuilt
 
   - name: osModifierBranch
     type: string
@@ -44,7 +48,7 @@ stages:
       stageType: ${{ parameters.stageType }}
       tridentArtifactName: trident-binaries
       codeCoverage: false
-      forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
+      tridentBuildOptions: ${{ parameters.tridentBuildOptions }}
       osModifierBranch: ${{ parameters.osModifierBranch }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
       targetArchitecture: arm64
