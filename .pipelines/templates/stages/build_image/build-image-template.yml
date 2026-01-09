@@ -75,7 +75,7 @@ steps:
   - bash: |
       ./tests/images/testimages.py show-image ${{ parameters.imageName }} base-image --devops-var baseImageType
     displayName: "Get Image Info"
-    workingDirectory: $(Build.SourcesDirectory)
+    workingDirectory: $(Pipeline.Workspace)/s/trident
 
   - bash: |
       echo "Image type: $(baseImageType)"
@@ -136,7 +136,7 @@ steps:
         rm -rf "$(Build.ArtifactStagingDirectory)/trident"
       fi
     displayName: "Prepare and move requirements"
-    workingDirectory: $(Build.SourcesDirectory)
+    workingDirectory: $(Pipeline.Workspace)/s/trident
 
   - bash: |
       set -ex
@@ -153,4 +153,4 @@ steps:
           --no-download \
           --clones ${{ parameters.clones }}
     displayName: "Build ${{ parameters.imageName }}"
-    workingDirectory: $(Build.SourcesDirectory)
+    workingDirectory: $(Pipeline.Workspace)/s/trident
