@@ -86,9 +86,9 @@ pub(crate) fn update(
             )));
         }
         ServicingType::CleanInstall => {
-            return Err(TridentError::new(
-                InvalidInputError::CleanInstallOnProvisionedHost,
-            ));
+            return Err(TridentError::new(InternalError::Internal(
+                "Subsystem reported clean install servicing type",
+            )));
         }
     }
 
