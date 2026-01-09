@@ -291,6 +291,7 @@ impl NewrootMount {
                     dir: target_path_full.clone().to_string_lossy().to_string(),
                 })?;
         } else if !target_path_full.is_dir() {
+            // Tmpfs mount points must be directories
             return Err(TridentError::new(ServicingError::MountNewrootSpecialDir {
                 dir: target_path_full.clone().to_string_lossy().to_string(),
             }))
