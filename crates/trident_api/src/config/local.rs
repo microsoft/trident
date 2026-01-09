@@ -12,6 +12,7 @@ use super::host::HostConfiguration;
 #[derive(Debug)]
 pub enum HostConfigurationSource {
     File(PathBuf),
+    RawString(String),
     Embedded(Box<HostConfiguration>),
 }
 
@@ -19,6 +20,7 @@ impl std::fmt::Display for HostConfigurationSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             HostConfigurationSource::File(path) => write!(f, "file: {}", path.display()),
+            HostConfigurationSource::RawString(_) => write!(f, "raw-string"),
             HostConfigurationSource::Embedded(_) => write!(f, "embedded"),
         }
     }
@@ -63,4 +65,12 @@ impl Operations {
 pub enum Operation {
     Stage,
     Finalize,
+}
+
+impl From<Operation> for Operations {
+    fn from(op: Operation) -> Self {
+        let mut set = HashSet::new();
+        set.insert(op);
+        Operations(set)
+    }
 }

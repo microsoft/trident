@@ -1,6 +1,6 @@
 //! Contains the servicing manager for Trident server.
 
-use std::{fmt::Debug, sync::Arc};
+use std::{fmt::Debug, panic, sync::Arc};
 
 use anyhow::anyhow;
 use log::error;
@@ -69,13 +69,16 @@ impl ServicingManager {
         f: F,
     ) -> FinalStatus
     where
-        F: FnOnce() -> Result<ExitKind, TridentError> + Send + 'static,
+        F: FnOnce() -> Result<ExitKind, TridentError> + Send + panic::UnwindSafe + 'static,
     {
         // Spawn the servicing operation in a blocking task, notifying the activity
         // tracker of start and end of servicing through the guard.
         let result = tokio::task::spawn_blocking(move || {
             let _activity_guard = tracker.servicing_guard();
-            f()
+            match panic::catch_unwind(f) {
+                Ok(res) => res,
+                Err(e) => Err(TridentError::new(InternalError::Panic(format!("{e:?}")))),
+            }
         })
         .await;
 

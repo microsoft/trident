@@ -23,6 +23,7 @@ use trident_api::{
     status::{ServicingState, ServicingType},
 };
 
+pub mod agentconfig;
 pub mod cli;
 mod datastore;
 mod engine;
@@ -216,6 +217,13 @@ impl Trident {
                 )?;
 
                 validation::parse_host_config(&contents, Some(path))?
+            }
+
+            // Load the Host Configuration from a raw string.
+            HostConfigurationSource::RawString(contents) => {
+                info!("Loading Host Configuration from raw string");
+
+                validation::parse_host_config(contents, None::<&Path>)?
             }
 
             // Use the embedded Host Configuration.
