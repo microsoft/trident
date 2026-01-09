@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/alecthomas/kong"
 	"github.com/sirupsen/logrus"
@@ -43,7 +44,8 @@ func main() {
 		cancel()
 	}()
 
-	if err := proxy.StartReverseConnectProxy(ctx, cli.ClientAddress, cli.ServerAddress); err != nil {
+	logrus.Infof("Starting reverse-connect proxy with client address: '%s' and server address: '%s'", cli.ClientAddress, cli.ServerAddress)
+	if err := proxy.StartReverseConnectProxy(ctx, cli.ClientAddress, cli.ServerAddress, time.Second); err != nil {
 		logrus.Fatalf("Superproxy error: %v", err)
 	}
 	logrus.Info("Shutdown complete")
