@@ -13,7 +13,7 @@ parameters:
     
   - name: dockerBuildContext
     type: string
-    default: $(Build.SourcesDirectory)
+    default: $(Pipeline.Workspace)/s/trident
     displayName: Path in which the Dockerfile will be run, the base for the container image will be saved there.
 
 steps:
@@ -72,7 +72,7 @@ steps:
 
       mkdir -p ${{ parameters.dockerBuildContext }}/artifacts/container_base/
       tar -xzvf $(Pipeline.Workspace)/build-artifacts/container_base/core-*.tar.gz -C \
-        artifacts/container_base/ > /dev/null 2>&1
+        ${{ parameters.dockerBuildContext }}/artifacts/container_base/ > /dev/null 2>&1
       
       sed -i \
         's|^FROM .*|FROM scratch\nCOPY artifacts/container_base/ / \nCMD ["/bin/bash"]|g' \
