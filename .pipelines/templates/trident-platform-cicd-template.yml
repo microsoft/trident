@@ -17,9 +17,14 @@ parameters:
       - amd64
       - arm64
 
-  - name: tridentBinariesArtifactPrecreated
-    type: boolean
-    default: false
+  - name: tridentBuildOptions
+    displayName: "Trident Build Options"
+    type: string
+    default: prebuilt
+    values:
+      - default
+      - forceBuild
+      - prebuilt
 
 stages:
   - ${{ if eq( parameters.targetArchitecture, 'amd64') }}:
@@ -27,15 +32,14 @@ stages:
       parameters:
         stageType: pre
         blockPublishing: true
-        forceTridentRebuild: true
         forceFunctionalTestImageRebuild: true
         baremetalTestsEnabled: ${{ parameters.baremetalTestsEnabled }}
         baseImageArtifactStage: ${{ parameters.baseImageArtifactStage }}
-        tridentBinariesArtifactPrecreated: ${{ parameters.tridentBinariesArtifactPrecreated }}
+        tridentBuildOptions: ${{ parameters.tridentBuildOptions }}
 
   - ${{ if eq( parameters.targetArchitecture, 'arm64') }}:
     - template: e2e-arm64-template.yml
       parameters:
         stageType: pre
-        forceTridentRebuild: true
+        tridentBuildOptions: ${{ parameters.tridentBuildOptions }}
         baseImageArtifactStage: ${{ parameters.baseImageArtifactStage }}
