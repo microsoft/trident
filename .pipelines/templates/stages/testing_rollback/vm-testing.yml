@@ -118,8 +118,6 @@ stages:
               verboseLogging: ${{ parameters.verboseLogging }}
               platform: qemu
               flavor: qemu-grub
-              skipExtensionTesting: false
-              skipRuntimeUpdateTesting: false
       - ${{ if eq(parameters.includeQemu, true) }}:
           - template: testing-template.yml
             parameters:
@@ -127,10 +125,13 @@ stages:
               verboseLogging: ${{ parameters.verboseLogging }}
               platform: qemu
               flavor: qemu
-              # qemu image is grub + root verity. in this setup, Image Customizer cannot add
-              # an extension to the servicing qcow2
+              # For qemu w/ root-verity, only test rollback of A/B update because:
+              #   * extensions cannot be added to qcow2; IC cannot modify verity volume
+              #   * netplan runtime changes cannot be made to config file on verity rootfs
+              #   * without extensions and netplan, runtime updates will service nothing
               skipExtensionTesting: true
-              skipRuntimeUpdateTesting: false
+              skipRuntimeUpdateTesting: true
+              skipNetplanRuntimeTesting: true
       - ${{ if eq(parameters.includeUKI, true) }}:
           - template: testing-template.yml
             parameters:
@@ -138,5 +139,3 @@ stages:
               verboseLogging: ${{ parameters.verboseLogging }}
               platform: qemu
               flavor: uki
-              skipExtensionTesting: false
-              skipRuntimeUpdateTesting: false

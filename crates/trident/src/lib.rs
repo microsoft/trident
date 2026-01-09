@@ -8,6 +8,7 @@ use cli::GetKind;
 use engine::{bootentries, EngineContext};
 use log::{debug, error, info, warn};
 use nix::unistd::Uid;
+use semver::Version;
 
 use osutils::{block_devices, container, dependencies::Dependency};
 use trident_api::{
@@ -40,7 +41,7 @@ pub mod validation;
 
 pub use crate::{
     datastore::DataStore,
-    engine::{provisioning_network, reboot},
+    engine::{manual_rollback, provisioning_network, reboot},
     logging::{
         background_log::BackgroundLog, filter::LogFilter, logfwd::LogForwarder,
         logstream::Logstream, multilog::MultiLogger, tracestream::TraceStream,
@@ -59,6 +60,11 @@ pub const TRIDENT_VERSION: &str = match option_env!("TRIDENT_VERSION") {
     Some(v) => v,
     None => env!("CARGO_PKG_VERSION"),
 };
+lazy_static::lazy_static! {
+    /// Trident version parsed as a semver::Version
+    pub static ref TRIDENT_SEMVER_VERSION: Version = Version::parse(TRIDENT_VERSION)
+        .expect("Failed to parse TRIDENT_VERSION as semver::Version");
+}
 
 /// Trident binary path.
 const TRIDENT_BINARY_PATH: &str = "/usr/bin/trident";
@@ -598,8 +604,12 @@ impl Trident {
             ServicingState::CleanInstallFinalized
                 | ServicingState::AbUpdateFinalized
                 | ServicingState::AbUpdateHealthCheckFailed
+                | ServicingState::ManualRollbackFinalized
         ) {
-            info!("No servicing in progress, skipping commit");
+            info!(
+                "No servicing in progress ({:?}), skipping commit",
+                datastore.host_status().servicing_state
+            );
             return Ok(ExitKind::Done);
         }
 
@@ -636,10 +646,8 @@ impl Trident {
         output_path: &Option<PathBuf>,
         kind: GetKind,
     ) -> Result<(), TridentError> {
-        let host_status = DataStore::open(datastore_path)
-            .message("Failed to open datastore")?
-            .host_status()
-            .clone();
+        let datastore = DataStore::open(datastore_path).message("Failed to open datastore")?;
+        let host_status = datastore.host_status().clone();
 
         let yaml = match kind {
             GetKind::Configuration => serde_yaml::to_string(&host_status.spec)
@@ -648,6 +656,9 @@ impl Trident {
                 .structured(InternalError::SerializeHostStatus)?,
             GetKind::LastError => serde_yaml::to_string(&host_status.last_error)
                 .structured(InternalError::SerializeError)?,
+            GetKind::RollbackTarget | GetKind::RollbackChain => {
+                manual_rollback::get_rollback_info(&datastore, kind)?
+            }
         };
 
         match output_path {
@@ -663,5 +674,52 @@ impl Trident {
         }
 
         Ok(())
+    }
+
+    /// Handle a manual rollback request. Either print information about
+    /// available rollbacks, or execute a rollback.
+    pub fn rollback(
+        &mut self,
+        datastore: &mut DataStore,
+        invoke_if_next_is_runtime: bool,
+        invoke_available_ab: bool,
+        allowed_operations: Operations,
+    ) -> Result<ExitKind, TridentError> {
+        // If host's servicing state is not in Provisioned or ManualRollback*, cannot
+        // execute a rollback.
+        if !matches!(
+            datastore.host_status().servicing_state,
+            ServicingState::Provisioned
+                | ServicingState::ManualRollbackAbStaged
+                | ServicingState::ManualRollbackRuntimeStaged
+                | ServicingState::ManualRollbackFinalized
+        ) {
+            info!(
+                "Not in required state ({:?}), cannot rollback",
+                datastore.host_status().servicing_state
+            );
+            return Ok(ExitKind::Done);
+        }
+
+        let rollback_result = self.execute_and_record_error(datastore, |datastore| {
+            manual_rollback::execute_rollback(
+                datastore,
+                invoke_if_next_is_runtime,
+                invoke_available_ab,
+                &allowed_operations,
+            )
+            .message("Failed to rollback")
+        });
+
+        if rollback_result.is_ok() {
+            if let Some(ref orchestrator) = self.orchestrator {
+                orchestrator.report_success(Some(
+                    serde_yaml::to_string(&datastore.host_status())
+                        .unwrap_or("Failed to serialize Host Status".into()),
+                ))
+            }
+        }
+
+        rollback_result
     }
 }
