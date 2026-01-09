@@ -23,10 +23,6 @@ parameters:
       - host
       - container
 
-  - name: tridentRepoName
-    type: string
-    default: self
-
 jobs:
   - job: DefineTests
     displayName: Get List of tests to run
@@ -39,9 +35,15 @@ jobs:
       ob_artifactBaseName: select_tests_${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_$(System.JobAttempt)
 
     steps:
-      - checkout: ${{ parameters.tridentRepoName }}
-        fetchDepth: 1
-        path: s/trident
+      - ${{ if eq(variables['Build.Repository.Name'], 'trident')}}:
+          - checkout: self
+            fetchDepth: 1
+            path: s/trident
+      - ${{ else }}:
+          - checkout: trident
+            fetchDepth: 1
+            path: s/trident
+
       - template: ../common_tasks/avoid-pypi-usage.yml
       - bash: |
           python3 ./tests/e2e_tests/helpers/read_target_configurations.py \

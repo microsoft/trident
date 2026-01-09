@@ -28,10 +28,6 @@ parameters:
     type: string
     default: ""
 
-  - name: tridentRepoName
-    type: string
-    default: self
-
 stages:
   - stage: BaremetalDeploymentTesting_${{ parameters.runtimeEnv }}
     displayName: Baremetal Deployment Testing ${{ parameters.runtimeEnv }}
@@ -60,7 +56,6 @@ stages:
           buildPurpose: ${{ parameters.buildPurpose }}
           deploymentEnvironment: bareMetal
           runtimeEnv: ${{ parameters.runtimeEnv }}
-          tridentRepoName: ${{ parameters.tridentRepoName }}
 
       - job: ${{ parameters.jobName }}
         displayName: Run E2E Test
@@ -131,9 +126,14 @@ stages:
           - group: trident_e2e_params
 
         steps:
-          - checkout: ${{ parameters.tridentRepoName }}
-            fetchDepth: 1
-            path: s/trident
+          - ${{ if eq(variables['Build.Repository.Name'], 'trident')}}:
+              - checkout: self
+                fetchDepth: 1
+                path: s/trident
+          - ${{ else }}:
+              - checkout: trident
+                fetchDepth: 1
+                path: s/trident
 
           - bash: |
               set -xe
