@@ -60,6 +60,7 @@ stages:
           buildPurpose: ${{ parameters.buildPurpose }}
           deploymentEnvironment: bareMetal
           runtimeEnv: ${{ parameters.runtimeEnv }}
+          tridentRepoName: ${{ parameters.tridentRepoName }}
 
       - job: ${{ parameters.jobName }}
         displayName: Run E2E Test

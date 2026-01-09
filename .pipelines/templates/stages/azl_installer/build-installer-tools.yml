@@ -11,6 +11,10 @@ parameters:
     type: boolean
     default: true
 
+  - name: tridentRepoName
+    type: string
+    default: self
+
 stages:
   - stage: BuildInstallerTools
     displayName: Build Installer Tools
@@ -25,10 +29,14 @@ stages:
           hostArchitecture: amd64
 
         variables:
-          ob_outputDirectory: $(Build.SourcesDirectory)/installer-tools
+          ob_outputDirectory: $(Pipeline.Workspace)/s/trident/installer-tools
           ob_artifactBaseName: installer-tools
 
         steps:
+          - checkout: ${{ parameters.tridentRepoName }}
+            fetchDepth: 1
+            path: s/trident
+
           - template: ../common_tasks/avoid-pypi-usage.yml
 
           - ${{ if eq(parameters.buildLiveInstaller, true) }}:
@@ -37,7 +45,7 @@ stages:
                   make bin/liveinstaller
                   mkdir -p $(ob_outputDirectory)
                   mv bin/liveinstaller $(ob_outputDirectory)
-                workingDirectory: $(Build.SourcesDirectory)
+                workingDirectory: $(Pipeline.Workspace)/s/trident
                 displayName: "Building liveinstaller"
 
           - ${{ if eq(parameters.buildAttendedInstallerSimulator, true) }}:
@@ -46,7 +54,7 @@ stages:
                   make bin/attendedinstaller-simulator
                   mkdir -p $(ob_outputDirectory)
                   mv bin/attendedinstaller-simulator $(ob_outputDirectory)
-                workingDirectory: $(Build.SourcesDirectory)
+                workingDirectory: $(Pipeline.Workspace)/s/trident
                 displayName: "Building attendedinstaller-simulator"
 
           - ${{ if eq(parameters.buildIsopatch, true) }}:
@@ -55,5 +63,5 @@ stages:
                   make bin/isopatch
                   mkdir -p $(ob_outputDirectory)
                   mv bin/isopatch $(ob_outputDirectory)
-                workingDirectory: $(Build.SourcesDirectory)
+                workingDirectory: $(Pipeline.Workspace)/s/trident
                 displayName: "Building isopatch"

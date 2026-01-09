@@ -99,11 +99,14 @@ stages:
 
   # Build tools (Go stuff)
   - template: stages/building_tools/building-tools.yml
+    parameters:
+      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # E2E Test Matrix Definition
   - template: stages/testing_e2e/storm_e2e.yml
     parameters:
       stageType: ${{ parameters.stageType }}
+      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # Makefile validation, only for CI
   - ${{ if eq(parameters.stageType, 'ci') }}:
