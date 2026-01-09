@@ -14,12 +14,9 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type RcpConn struct {
-	listener net.Listener
-}
-
 // ListenAndAccept starts a TLS listener on the specified port and waits
-// (blocking) for an incoming connection. It returns the accepted connection.
+// (blocking) for a single incoming connection. It returns the accepted
+// connection and closes the listener.
 //
 // If the context is cancelled before a connection is accepted, it returns the
 // context's error.

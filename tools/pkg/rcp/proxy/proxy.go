@@ -113,15 +113,9 @@ func handleClientConnection(ctx context.Context, clientConn net.Conn, serverAddr
 	}
 	defer serverConn.Close()
 
-	// Proxy data between client and server
-	return proxyConnections(ctx, clientConn, serverConn)
-}
+	// Both connections are established, start proxying data between them
 
-// proxyConnections proxies data between the clientConn and serverConn until
-// either connection is closed or the context is cancelled.
-//
-// This function blocks until the connection is closed or an error occurs.
-func proxyConnections(ctx context.Context, clientConn net.Conn, serverConn net.Conn) error {
+	// Channel to signal when copying is done
 	doneChan := make(chan string)
 
 	// Start the proxying
@@ -142,8 +136,8 @@ func proxyConnections(ctx context.Context, clientConn net.Conn, serverConn net.C
 
 	// Wait for either copy to finish or context cancellation
 	select {
-	case closer := <-doneChan:
-		logrus.Infof("Connection closed by '%s'", closer)
+	case direction := <-doneChan:
+		logrus.Infof("Connection closed by '%s'", direction)
 	case <-ctx.Done():
 		logrus.Info("Context cancelled")
 	}

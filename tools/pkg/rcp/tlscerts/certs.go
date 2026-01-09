@@ -1,3 +1,6 @@
+// This module contains self-signed TLS certificates for use by the RCP
+// client and proxy for mutual TLS authentication during testing.
+
 package tlscerts
 
 import (
