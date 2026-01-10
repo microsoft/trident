@@ -69,13 +69,13 @@ steps:
       sudo qemu-img create -f qcow2 /tmp/$VM_NAME-volume.qcow2 16G
 
       if ! sudo virsh net-info $VM_NAME-net; then
-        sudo virsh net-create $(TRIDENT_SOURCE_DIR)/trident/.pipelines/templates/stages/azl_installer/azl-installer-net-template.xml
+        sudo virsh net-create $(TRIDENT_SOURCE_DIR)/.pipelines/templates/stages/azl_installer/azl-installer-net-template.xml
       fi
       if ! sudo virsh list --all | grep $VM_NAME; then
-        sudo virsh define $(TRIDENT_SOURCE_DIR)/trident/.pipelines/templates/stages/azl_installer/azl-installer-vm-template.xml
+        sudo virsh define $(TRIDENT_SOURCE_DIR)/.pipelines/templates/stages/azl_installer/azl-installer-vm-template.xml
       fi
 
-      if sudo python3 $(TRIDENT_SOURCE_DIR)/trident/.pipelines/templates/stages/azl_installer/test-azl-installer-iso.py; then
+      if sudo python3 $(TRIDENT_SOURCE_DIR)/.pipelines/templates/stages/azl_installer/test-azl-installer-iso.py; then
         echo "AZL installer ISO validation passed."
       else
         EXIT_CODE=$?
