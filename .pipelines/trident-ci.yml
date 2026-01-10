@@ -65,11 +65,11 @@ extends:
         # Break build on SDL failures instead of filing bugs.
         enabled: false # onebranch publish all sdl results to TSA. If TSA is disabled all SDL tools will forced into 'break' build mode.
       credscan:
-        suppressionsFile: $(Pipeline.Workspace)/s/trident\.config\CredScanSuppressions.json
+        suppressionsFile: $(Build.SourcesDirectory)\.config\CredScanSuppressions.json
       policheck:
         break: true # always break the build on policheck issues. You can disable it by setting to 'false'
       # suppression:
-      #   suppressionFile: $(Pipeline.Workspace)/s/trident\.gdn\global.gdnsuppress
+      #   suppressionFile: $(Build.SourcesDirectory)\.gdn\global.gdnsuppress
       cg:
         alertWarningLevel: Medium
     featureFlags:

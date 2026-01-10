@@ -26,13 +26,14 @@ stages:
           ob_outputDirectory: $(Pipeline.Workspace)/s/trident/build
 
         steps:
+          - template: ../common_tasks/checkout_trident.yml
           - template: ../common_tasks/avoid-pypi-usage.yml
-
           - bash: |
               set -eux
               make artifacts/osmodifier
               rm -rf artifacts/osmodifier
             displayName: Invoke make artifacts/osmodifier
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
 
           - template: ../common_tasks/download-osmodifier.yml
             parameters:
@@ -60,6 +61,7 @@ stages:
               make bin/trident-rpms.tar.gz
               make docker-build
             displayName: Invoke make
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
             env:
               OVERRIDE_RUST_FEED: false
 
@@ -68,7 +70,7 @@ stages:
 
               make check-sh
             displayName: "Validate sh files in repo"
-            workingDirectory: $(Pipeline.Workspace)/s/trident
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
             env:
               OVERRIDE_RUST_FEED: false
 
@@ -77,7 +79,7 @@ stages:
 
               make check-pipelines BRANCH=$(Build.SourceBranch)
             displayName: "Validating pipeline templates work"
-            workingDirectory: $(Pipeline.Workspace)/s/trident
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
             env:
               AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
               OVERRIDE_RUST_FEED: false

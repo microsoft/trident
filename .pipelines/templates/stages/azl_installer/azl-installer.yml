@@ -43,15 +43,7 @@ stages:
           BASEIMG_AZURE_LINUX_VERSION: "3.0"
 
         steps:
-          - ${{ if eq(variables['Build.Repository.Name'], 'trident')}}:
-              - checkout: self
-                fetchDepth: 1
-                path: s/trident
-          - ${{ else }}:
-              - checkout: trident
-                fetchDepth: 1
-                path: s/trident
-
+          - template: ../common_tasks/checkout_trident.yml
           - template: ../common_tasks/avoid-pypi-usage.yml
 
           - task: DownloadPipelineArtifact@2
@@ -88,7 +80,7 @@ stages:
               # Move .cosi file to the ISO directory. When there are clones (multiple .cosi files), we pick the first one.
               mv $(ls $(Build.ArtifactStagingDirectory)/testimage/*.cosi | head -n 1) tests/images/azl-installer/iso/images/trident-testimage.cosi
             displayName: "Prepare installer dependencies"
-            workingDirectory: $(Pipeline.Workspace)/s/trident
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
 
           - template: ../common_tasks/find-base-image-version.yml
           
@@ -115,7 +107,7 @@ stages:
                 --output $(ob_outputDirectory)/azl-installer-unattended.iso \
                 --patch tests/azl-installer/host-configuration.yaml:/installer/trident-config.yaml.tmpl
             displayName: "Create Unattended ISO"
-            workingDirectory: $(Pipeline.Workspace)/s/trident
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
 
   - stage: Test_AzureLinux_Installer_ISO_Unattended
     displayName: Test azl-installer-iso (unattended)
@@ -136,15 +128,7 @@ stages:
           ob_artifactBaseName: azl-installer-test-unattended-$(System.JobAttempt)
 
         steps:
-          - ${{ if eq(variables['Build.Repository.Name'], 'trident')}}:
-              - checkout: self
-                fetchDepth: 1
-                path: s/trident
-          - ${{ else }}:
-              - checkout: trident
-                fetchDepth: 1
-                path: s/trident
-
+          - template: ../common_tasks/checkout_trident.yml
           - template: ./validate-azl-installer-iso.yml
             parameters:
               isoName: azl-installer-unattended

@@ -20,6 +20,7 @@ stages:
           ob_artifactBaseName: storm-e2e-select-tests
 
         steps:
+          - template: ../common_tasks/checkout_trident.yml
           - task: DownloadPipelineArtifact@2
             displayName: "Download go-tools"
             inputs:
@@ -27,11 +28,12 @@ stages:
               artifactName: "go-tools"
               patterns: |
                 storm-trident
-              targetPath: "$(Pipeline.Workspace)/s/trident/bin"
+              targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
           - bash: |
               chmod +x ./bin/storm-trident
               ./bin/storm-trident script e2e-matrix "${{ parameters.stageType }}"
             name: matrices
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: Matrix of Trident configurations for E2E Tests
 
   # TODO: enable once storm tests are ready
