@@ -241,6 +241,7 @@ jobs:
                 set +x
                 echo "##vso[task.setvariable variable=STORM_SCENARIO_FINISHED;]true"
             displayName: "Servicing test (${{ parameters.platform }})"
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
             env:
               AZCOPY_AUTO_LOGIN_TYPE: "AZCLI"
           - task: AzureCLI@2
@@ -270,6 +271,7 @@ jobs:
             retryCountOnTaskFailure: 3
             timeoutInMinutes: 20
             condition: always()
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
 
       - ${{ else }}:
           - bash: |
@@ -287,6 +289,7 @@ jobs:
               set +x
               echo "##vso[task.setvariable variable=STORM_SCENARIO_FINISHED;]true"
             displayName: "Servicing test (${{ parameters.platform }})"
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
 
       - bash: |
           set -eux
