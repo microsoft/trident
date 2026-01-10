@@ -92,5 +92,5 @@ steps:
         fi
 
     displayName: "Push to ACR"
-    retryCountOnTaskFailure: 3
     workingDirectory: $(TRIDENT_SOURCE_DIR)
+    retryCountOnTaskFailure: 3

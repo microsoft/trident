@@ -50,6 +50,6 @@ steps:
         fi
 
     displayName: "Log into ACR and delete images by tag"
+    workingDirectory: $(TRIDENT_SOURCE_DIR)
     retryCountOnTaskFailure: 3
     condition: always()
-    workingDirectory: $(TRIDENT_SOURCE_DIR)
