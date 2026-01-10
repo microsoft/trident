@@ -20,4 +20,5 @@
     },
     "protobuf.externalLinter.enabled": true,
     "protobuf.externalLinter.linter": "buf",
+    "go.buildTags": "tls_server,tls_client",
 }
