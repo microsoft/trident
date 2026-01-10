@@ -61,6 +61,7 @@ steps:
       inlineScript: |
         set -eux
 
+        cd $(TRIDENT_SOURCE_DIR)
         if [ "${{ parameters.config }}" == 'misc' ]; then
           ./bin/storm-trident script acr-push \
             --config ${{ parameters.config }} \
@@ -92,5 +93,4 @@ steps:
         fi
 
     displayName: "Push to ACR"
-    workingDirectory: $(TRIDENT_SOURCE_DIR)
     retryCountOnTaskFailure: 3
