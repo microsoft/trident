@@ -27,13 +27,13 @@ steps:
   - script: |
       set -eux
       sudo systemctl start docker
-    workingDirectory: $(Pipeline.Workspace)/s/trident
+    workingDirectory: $(TRIDENT_SOURCE_DIR)
     displayName: Start Docker
 
   - template: ../common_tasks/preview-container.yml
     parameters:
-      dockerfilePath: $(Pipeline.Workspace)/s/trident/packaging/docker/Dockerfile.full
-      dockerBuildContext: $(Pipeline.Workspace)/s/trident
+      dockerfilePath: $(TRIDENT_SOURCE_DIR)/packaging/docker/Dockerfile.full
+      dockerBuildContext: $(TRIDENT_SOURCE_DIR)
       targetArchitecture: ${{ parameters.targetArchitecture }}
 
   - script: |
@@ -47,7 +47,7 @@ steps:
 
       # Run docker build to create the RPMs
       # CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN is populated by the CargoAuthenticate task
-      docker build -f packaging/docker/Dockerfile.full -t trident/trident-build:latest \
+      docker build -f $(TRIDENT_SOURCE_DIR)/packaging/docker/Dockerfile.full -t trident/trident-build:latest \
         --secret id=registry_token,env=CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN \
         --build-arg TRIDENT_VERSION="$full_version" \
         --build-arg RPM_VER="$version"\
@@ -60,8 +60,9 @@ steps:
 
       mkdir -p $(ob_outputDirectory)
       tar -xzf trident-rpms.tar.gz -C $(ob_outputDirectory) --strip-components=3
-    workingDirectory: $(Pipeline.Workspace)/s/trident
+    workingDirectory: $(TRIDENT_SOURCE_DIR)
     displayName: Build RPMs
 
   - script: ./scripts/extract-binary.sh $(ob_outputDirectory) $(ob_outputDirectory)
+    workingDirectory: $(TRIDENT_SOURCE_DIR)
     displayName: Extract Trident binary

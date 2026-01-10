@@ -34,7 +34,7 @@ steps:
       fi
 
     displayName: "Build test sysext and confext images"
-    workingDirectory: $(Pipeline.Workspace)/s/trident
+    workingDirectory: $(TRIDENT_SOURCE_DIR)
     retryCountOnTaskFailure: 3
 
   - bash: |
@@ -68,10 +68,10 @@ steps:
             --acr-name $(ACR_NAME) \
             --repo-name ${{ parameters.imageName }} \
             --build-id $(Build.BuildId) \
-            --file-paths $(Pipeline.Workspace)/s/trident/artifacts/test-image/regular.cosi \
-            --file-paths $(Pipeline.Workspace)/s/trident/artifacts/test-image/regular_v2.cosi \
-            --file-paths $(Pipeline.Workspace)/s/trident/artifacts/test-image/regular_v3.cosi \
-            --file-paths $(Pipeline.Workspace)/s/trident/artifacts/test-image/regular_v4.cosi \
+            --file-paths $(TRIDENT_SOURCE_DIR)/artifacts/test-image/regular.cosi \
+            --file-paths $(TRIDENT_SOURCE_DIR)/artifacts/test-image/regular_v2.cosi \
+            --file-paths $(TRIDENT_SOURCE_DIR)/artifacts/test-image/regular_v3.cosi \
+            --file-paths $(TRIDENT_SOURCE_DIR)/artifacts/test-image/regular_v4.cosi \
             --tag-var-name TAG_BASE
 
         elif [ "${{ parameters.config }}" == 'extensions' ]; then
@@ -81,8 +81,8 @@ steps:
             --acr-name $(ACR_NAME) \
             --repo-name sysext-${{ parameters.runtimeEnvironment }} \
             --build-id $(Build.BuildId) \
-            --file-paths $(Pipeline.Workspace)/s/trident/test-sysext-1.raw \
-            --file-paths $(Pipeline.Workspace)/s/trident/test-sysext-2.raw \
+            --file-paths $(TRIDENT_SOURCE_DIR)/test-sysext-1.raw \
+            --file-paths $(TRIDENT_SOURCE_DIR)/test-sysext-2.raw \
             --tag-var-name TAG_BASE \
             --repo-var-name SYSEXT_REPO
 

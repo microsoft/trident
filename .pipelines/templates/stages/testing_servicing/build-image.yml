@@ -49,15 +49,7 @@ jobs:
       ob_artifactBaseName: "image-${{ parameters.label }}"
 
     steps:
-      - ${{ if eq(variables['Build.Repository.Name'], 'trident')}}:
-          - checkout: self
-            fetchDepth: 1
-            path: s/trident
-      - ${{ else }}:
-          - checkout: trident
-            fetchDepth: 1
-            path: s/trident
-
+      - template: ../common_tasks/checkout_trident.yml
       - template: ../common_tasks/avoid-pypi-usage.yml
 
       - task: DownloadPipelineArtifact@2

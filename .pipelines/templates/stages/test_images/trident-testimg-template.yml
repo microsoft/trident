@@ -112,15 +112,15 @@ steps:
       - bash: |
           set -eux
 
-          mkdir -p $(Pipeline.Workspace)/s/trident/artifacts
-          ssh-keygen -t rsa -b 2048 -f $(Pipeline.Workspace)/s/trident/artifacts/id_rsa -q -N ""
+          mkdir -p $(TRIDENT_SOURCE_DIR)/artifacts
+          ssh-keygen -t rsa -b 2048 -f $(TRIDENT_SOURCE_DIR)/artifacts/id_rsa -q -N ""
         displayName: Set up SSH Keys
   - ${{ if eq(parameters.useStagedSshKeys, true) }}:
       - bash: |
           set -eux
 
-          mkdir -p $(Pipeline.Workspace)/s/trident/artifacts
-          cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* $(Pipeline.Workspace)/s/trident/artifacts/
+          mkdir -p $(TRIDENT_SOURCE_DIR)/artifacts
+          cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* $(TRIDENT_SOURCE_DIR)/artifacts/
         displayName: Copy SSH Keys
 
   - script: |
@@ -169,7 +169,7 @@ steps:
   - bash: |
       set -ex
 
-      base_dir='$(Pipeline.Workspace)/s/trident/artifacts'
+      base_dir='$(TRIDENT_SOURCE_DIR)/artifacts'
 
       mkdir -p $base_dir
       # Check if there are any .vhdx files in the images directory and move them
@@ -190,13 +190,13 @@ steps:
 
       find $(Build.ArtifactStagingDirectory)
       if [ -d "$(Build.ArtifactStagingDirectory)/trident" ]; then
-        rpm_dir='$(Pipeline.Workspace)/s/trident/bin/RPMS'
+        rpm_dir='$(TRIDENT_SOURCE_DIR)/bin/RPMS'
         mkdir -p $rpm_dir
         cp -r $(Build.ArtifactStagingDirectory)/trident/* $rpm_dir/ || echo 'no rpms to copy'
         rm -rf $(Build.ArtifactStagingDirectory)/trident
       fi
 
-    workingDirectory: $(Pipeline.Workspace)/s/trident
+    workingDirectory: $(TRIDENT_SOURCE_DIR)
     displayName: "Prepare and move requirements"
 
   - script: |
@@ -214,7 +214,7 @@ steps:
 
       # Compress the full image & delete the uncompressed image
       make ${{ parameters.target }}
-    workingDirectory: $(Pipeline.Workspace)/s/trident
+    workingDirectory: $(TRIDENT_SOURCE_DIR)
     displayName: "Build Test Image"
 
   - script: |
@@ -228,5 +228,5 @@ steps:
         # Everything else is a file
         sudo mv -v "${{ parameters.target }}" "${{ parameters.outputDirectory }}/"
       fi
-    workingDirectory: $(Pipeline.Workspace)/s/trident
+    workingDirectory: $(TRIDENT_SOURCE_DIR)
     displayName: "Copy artifacts to output directory"

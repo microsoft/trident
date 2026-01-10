@@ -87,6 +87,7 @@ stages:
                 value: false
 
         steps:
+          - template: ../common_tasks/checkout_trident.yml
           - bash: |
               if [ ${{ variables['tridentConfigurationName'] }} == 'split' ]; then
                 splitInstallerIsoName="trident-split-installer"
@@ -112,3 +113,4 @@ stages:
                   --pipeline-run \
                   --iso "./artifacts/iso/$(installerISOName).iso"
             displayName: "🧪 Run E2E Test"
+            workingDirectory: $(TRIDENT_SOURCE_DIR)

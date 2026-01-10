@@ -126,14 +126,7 @@ stages:
           - group: trident_e2e_params
 
         steps:
-          - ${{ if eq(variables['Build.Repository.Name'], 'trident')}}:
-              - checkout: self
-                fetchDepth: 1
-                path: s/trident
-          - ${{ else }}:
-              - checkout: trident
-                fetchDepth: 1
-                path: s/trident
+          - template: ../common_tasks/checkout_trident.yml
 
           - bash: |
               set -xe
@@ -211,6 +204,7 @@ stages:
               cat $(TRIDENT_CONFIG_FILE)
             env:
               SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: "Update Trident Config to inject static IP for OAM interface"
 
           - bash: |
@@ -245,7 +239,7 @@ stages:
                     --verbosity TRACE"
               fi
 
-              cat << EOF > $(TRIDENT_SOURCE_DIR)/baremetal-netlaunch.yaml
+              cat << EOF > ./baremetal-netlaunch.yaml
               netlaunch:
                 bmc:
                   ip: "$(baremetal_controller.bmc_ip)"
@@ -262,9 +256,9 @@ stages:
                   $SERVICE_OVERRIDE
               EOF
 
-              cat $(TRIDENT_SOURCE_DIR)/baremetal-netlaunch.yaml | grep -v password
+              cat ./baremetal-netlaunch.yaml | grep -v password
 
-              cat << EOF > $(TRIDENT_SOURCE_DIR)/baremetal-netlisten.yaml
+              cat << EOF > ./baremetal-netlisten.yaml
               netlisten:
                 bmc:
                   ip: "$(baremetal_controller.bmc_ip)"
@@ -276,8 +270,9 @@ stages:
                     output:  "baremetal-serial.log"
               EOF
 
-              cat $(TRIDENT_SOURCE_DIR)/baremetal-netlisten.yaml | grep -v password
+              cat ./baremetal-netlisten.yaml | grep -v password
 
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: "Write Netlaunch and netlisten configuration"
 
           - bash: |
@@ -309,41 +304,44 @@ stages:
                   --wait-for-provisioned-state \
                   --port ${{ variables.NETLAUNCH_PORT }} 2>&1 | tee ./clean-install-deployment.log
             timeoutInMinutes: 35
-            workingDirectory: ${{ variables.TRIDENT_SOURCE_DIR }}
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: "Run netlaunch for testing"
 
           - bash: |
               set -eux
               sudo ./bin/storm-trident helper display-logs -a \
-                  --serial-log-path "${{ variables.TRIDENT_SOURCE_DIR }}/baremetal-serial.log" \
+                  --serial-log-path "$(TRIDENT_SOURCE_DIR)/baremetal-serial.log" \
                   --serial-log-artifact-file-name "clean-install-target-os-A-serial.log" \
-                  --trident-trace-log-file "${{ variables.TRIDENT_SOURCE_DIR }}/logstream-full.log" \
+                  --trident-trace-log-file "$(TRIDENT_SOURCE_DIR)/logstream-full.log" \
                   --artifacts-folder "$(ob_outputDirectory)"
             displayName: "Display clean install logs"
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
             condition: succeededOrFailed()
 
           - bash: |
               set -eux
               ./bin/storm-trident helper check-selinux \
-                  "$(Pipeline.Workspace)/s/trident/tests/e2e_tests/helpers/key" \
+                  "$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/helpers/key" \
                   "$(baremetal_controller.oam_ip)" \
                   "testing-user" \
                   "${{ parameters.runtimeEnv }}" \
                   --audit-file $(ob_outputDirectory)/audit.log \
             timeoutInMinutes: 5
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
             condition: eq('${{ parameters.runtimeEnv }}', 'host')
             displayName: "📄 Check for SELinux failures"
 
           - bash: |
               set -eux
               ./bin/storm-trident helper boot-metrics \
-                  "$(Pipeline.Workspace)/s/trident/tests/e2e_tests/helpers/key" \
+                  "$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/helpers/key" \
                   "$(baremetal_controller.oam_ip)" \
                   "testing-user" \
                   "${{ parameters.runtimeEnv }}" \
                   --metrics-file $(TRIDENT_SOURCE_DIR)/trident-clean-install-metrics.jsonl \
                   --metrics-operation install
             displayName: "Create boot metrics for booting into target OS"
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
 
           - template: ../testing_common/trident-metrics.yml
             parameters:

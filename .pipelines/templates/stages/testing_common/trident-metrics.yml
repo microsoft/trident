@@ -107,8 +107,8 @@ steps:
     condition: eq(variables['UploadMetrics'], 'True')
 
   - bash: |
-      chmod +x "$(Pipeline.Workspace)/s/trident/.pipelines/templates/stages/testing_common/scripts/upload_metrics.sh"
-      "$(Pipeline.Workspace)/s/trident/.pipelines/templates/stages/testing_common/scripts/upload_metrics.sh" \
+      chmod +x "${{ parameters.tridentSourceDirectory }}/.pipelines/templates/stages/testing_common/scripts/upload_metrics.sh"
+      "${{ parameters.tridentSourceDirectory }}/.pipelines/templates/stages/testing_common/scripts/upload_metrics.sh" \
         "${{ parameters.metricsFile }}" \
         "${{ parameters.kustoDatabaseName }}" \
         "${{ parameters.kustoTableName }}" \

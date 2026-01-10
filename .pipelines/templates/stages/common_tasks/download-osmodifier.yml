@@ -28,7 +28,7 @@ steps:
         mkdir -p artifacts
         make artifacts/osmodifier
       displayName: "Build OSModifier from ${{ parameters.osModifierBranch }}"
-      workingDirectory: $(Pipeline.Workspace)/s/trident
+      workingDirectory: $(TRIDENT_SOURCE_DIR)
       retryCountOnTaskFailure: 3
 
   - ${{ if eq(parameters.osModifierBuildType, 'preview') }}:
@@ -42,4 +42,4 @@ steps:
         ${{ if eq(parameters.targetArchitecture, 'arm64') }}:
           vstsFeedPackage: osmodifier_arm64_preview
         vstsPackageVersion: "1.1.0-preview.939023"
-        downloadDirectory: "$(Pipeline.Workspace)/s/trident/artifacts"
+        downloadDirectory: "$(TRIDENT_SOURCE_DIR)/artifacts"

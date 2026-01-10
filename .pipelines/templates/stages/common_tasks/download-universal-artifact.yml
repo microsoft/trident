@@ -43,7 +43,7 @@ steps:
           set -x
           mkdir -p ${{ parameters.downloadLocation }}
         displayName: "Getting latest version of ${{ parameters.packageName }} from Trident feed"
-        workingDirectory: $(Pipeline.Workspace)/s/trident
+        workingDirectory: $(TRIDENT_SOURCE_DIR)
         env:
           AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
 

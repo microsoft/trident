@@ -43,7 +43,7 @@ stages:
 
             variables:
               - name: ob_outputDirectory
-                value: "$(Pipeline.Workspace)/s/trident/trident/out"
+                value: "$(Pipeline.Workspace)/s/trident/out"
 
             steps:
               - template: ../common_tasks/avoid-pypi-usage.yml
@@ -56,9 +56,10 @@ stages:
 
             variables:
               - name: ob_outputDirectory
-                value: "$(Pipeline.Workspace)/s/trident/trident/out"
+                value: "$(Pipeline.Workspace)/s/trident/out"
 
             steps:
+              - template: ../common_tasks/checkout_trident.yml
               - template: ../common_tasks/avoid-pypi-usage.yml
               # need newer rust for cargo-nextest, use rustup.yml to install
               - template: ../common_tasks/rustup.yml
@@ -83,6 +84,7 @@ stages:
                   buildType: auto
 
             steps:
+              - template: ../common_tasks/checkout_trident.yml
               - template: ../common_tasks/os-info.yml
               - template: ../common_tasks/avoid-pypi-usage.yml
               - template: ../common_tasks/cargo-auth.yml
@@ -113,12 +115,12 @@ stages:
                   buildType: auto
 
             steps:
+              - template: ../common_tasks/checkout_trident.yml
               - template: ../common_tasks/avoid-pypi-usage.yml
               - template: ../common_tasks/cargo-auth.yml
               - script: |
                   set -eux
                   sudo systemctl start docker
-                workingDirectory: $(Pipeline.Workspace)/s/trident
                 displayName: Start Docker
               - template: ../common_tasks/download-osmodifier.yml
                 parameters:
