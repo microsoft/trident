@@ -25,6 +25,7 @@ steps:
       inlineScript: |
         set -eux
 
+        cd $(TRIDENT_SOURCE_DIR)
         if [ "${{ parameters.config }}" == 'misc' ]; then
           # Remove COSI images
           ./bin/storm-trident script acr-delete \
@@ -50,6 +51,5 @@ steps:
         fi
 
     displayName: "Log into ACR and delete images by tag"
-    workingDirectory: $(TRIDENT_SOURCE_DIR)
     retryCountOnTaskFailure: 3
     condition: always()
