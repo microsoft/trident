@@ -70,15 +70,7 @@ stages:
           ob_artifactBaseName: $(artifactName)
 
         steps:
-          - ${{ if eq(variables['Build.Repository.Name'], 'trident')}}:
-              - checkout: self
-                fetchDepth: 1
-                path: s/trident
-          - ${{ else }}:
-              - checkout: trident
-                fetchDepth: 1
-                path: s/trident
-
+          - template: ../common_tasks/checkout_trident.yml
           - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../common_tasks/update-protoc.yml
             parameters:
@@ -101,7 +93,7 @@ stages:
                   make bin/netlaunch
                   mkdir -p $(ob_outputDirectory)
                   mv bin/netlaunch $(ob_outputDirectory)
-                workingDirectory: $(Pipeline.Workspace)/s/trident
+                workingDirectory: $(TRIDENT_SOURCE_DIR)
                 displayName: "Building netlaunch"
 
           - ${{ if eq(parameters.buildNetlaunch, true) }}:
@@ -110,7 +102,7 @@ stages:
                   make bin/netlisten
                   mkdir -p $(ob_outputDirectory)
                   mv bin/netlisten $(ob_outputDirectory)
-                workingDirectory: $(Pipeline.Workspace)/s/trident
+                workingDirectory: $(TRIDENT_SOURCE_DIR)
                 displayName: "Building netlisten"
 
           - ${{ if eq(parameters.buildMiniproxy, true) }}:
@@ -119,7 +111,7 @@ stages:
                   make bin/miniproxy
                   mkdir -p $(ob_outputDirectory)
                   mv bin/miniproxy $(ob_outputDirectory)
-                workingDirectory: $(Pipeline.Workspace)/s/trident
+                workingDirectory: $(TRIDENT_SOURCE_DIR)
                 displayName: "Building miniproxy"
 
           - ${{ if eq(parameters.buildMkcosi, true) }}:
@@ -128,7 +120,7 @@ stages:
                   make bin/mkcosi
                   mkdir -p $(ob_outputDirectory)
                   mv bin/mkcosi $(ob_outputDirectory)
-                workingDirectory: $(Pipeline.Workspace)/s/trident
+                workingDirectory: $(TRIDENT_SOURCE_DIR)
                 displayName: "Building mkcosi"
 
           - ${{ if eq(parameters.buildStormTrident, true) }}:
@@ -137,7 +129,7 @@ stages:
                   make bin/storm-trident
                   mkdir -p $(ob_outputDirectory)
                   mv bin/storm-trident $(ob_outputDirectory)
-                workingDirectory: $(Pipeline.Workspace)/s/trident
+                workingDirectory: $(TRIDENT_SOURCE_DIR)
                 displayName: "Building storm-trident"
 
           - ${{ if eq(parameters.buildVirtdeploy, true) }}:
@@ -146,7 +138,7 @@ stages:
                   make bin/virtdeploy
                   mkdir -p $(ob_outputDirectory)
                   mv bin/virtdeploy $(ob_outputDirectory)
-                workingDirectory: $(Pipeline.Workspace)/s/trident
+                workingDirectory: $(TRIDENT_SOURCE_DIR)
                 displayName: "Building virtdeploy"
 
           - ${{ if eq(parameters.buildRcpAgent, true) }}:
@@ -155,5 +147,5 @@ stages:
                   make bin/rcp-agent
                   mkdir -p $(ob_outputDirectory)
                   mv bin/rcp-agent $(ob_outputDirectory)
-                workingDirectory: $(Pipeline.Workspace)/s/trident
+                workingDirectory: $(TRIDENT_SOURCE_DIR)
                 displayName: "Building rcp-agent"

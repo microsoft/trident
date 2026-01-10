@@ -45,6 +45,7 @@ stages:
               value: "${{ variables.stage_rel_suffix }}"
 
         steps:
+          - template: ../common_tasks/checkout_trident.yml
           - script: echo $(Build.BuildNumber)
             displayName: "Print Trident Version"
 
@@ -69,7 +70,7 @@ stages:
               set +x
               echo "##vso[task.setvariable variable=isVersionInFeed;]$alreadyPublished"
             displayName: "Check if package version has already been published in the feed."
-            workingDirectory: $(Pipeline.Workspace)/s/trident
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
             env:
               AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
 
@@ -80,7 +81,7 @@ stages:
               command: publish
               vstsFeedPublish: ${{ parameters.feed }}
               vstsFeedPackagePublish: "${{ variables.rpmsPackageBaseName }}${{ variables.artifactSuffix }}"
-              publishDirectory: "$(Pipeline.Workspace)/rpms"
+              publishDirectory: "$(TRIDENT_SOURCE_DIR)/rpms"
               versionPublish: $(Build.BuildNumber)
               versionOption: custom
 

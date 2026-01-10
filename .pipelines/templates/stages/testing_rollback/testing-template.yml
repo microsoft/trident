@@ -82,12 +82,12 @@ jobs:
       hostArchitecture: amd64
 
     variables:
-      tridentSourceDirectory: $(Pipeline.Workspace)/s/trident
-      ob_outputDirectory: $(tridentSourceDirectory)/deployment_logs_${{ parameters.flavor }}
+      ob_outputDirectory: $(Pipeline.Workspace)/s/trident/deployment_logs_${{ parameters.flavor }}
       ob_artifactBaseName: "rollback-testing-${{ parameters.flavor }}"
       TEST_RESOURCE_GROUP: trident-vm-servicing-validation-$(Build.BuildId)
 
     steps:
+      - template: ../common_tasks/checkout_trident.yml
       - task: DownloadPipelineArtifact@2
         inputs:
           buildType: current
@@ -117,12 +117,12 @@ jobs:
           patterns: |
             netlisten
             storm-trident
-          targetPath: "$(tridentSourceDirectory)/bin"
+          targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
 
       - bash: |
           set -eux
-          chmod +x $(tridentSourceDirectory)/bin/netlisten
-          chmod +x $(tridentSourceDirectory)/bin/storm-trident
+          chmod +x $(TRIDENT_SOURCE_DIR)/bin/netlisten
+          chmod +x $(TRIDENT_SOURCE_DIR)/bin/storm-trident
           cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* ~/.ssh/
           chmod -R 700 ~/.ssh/
           mkdir -p $(ob_outputDirectory)
@@ -136,6 +136,7 @@ jobs:
 
           find $(Build.ArtifactStagingDirectory)
         displayName: "Create extensions for test"
+        workingDirectory: $(TRIDENT_SOURCE_DIR)
 
       - template: common/mic-download-template.yaml@platform-pipelines
         parameters:
@@ -184,6 +185,7 @@ jobs:
             --ssh-public-key-path $(SSH_PUBLIC_KEY_PATH) \
             --force-cleanup
         displayName: "Rollback test (${{ parameters.platform }})"
+        workingDirectory: $(TRIDENT_SOURCE_DIR)
         timeoutInMinutes: 5
 
       - bash: |
@@ -191,7 +193,7 @@ jobs:
 
           sudo zstd -T0 $(Build.ArtifactStagingDirectory)/booted.qcow2
           sudo mv $(Build.ArtifactStagingDirectory)/booted.qcow2.zst $(ob_outputDirectory)/
-        workingDirectory: $(tridentSourceDirectory)
+        workingDirectory: $(TRIDENT_SOURCE_DIR)
         condition: failed()
         displayName: "Publish logs and OS disk on failure"
         timeoutInMinutes: 5

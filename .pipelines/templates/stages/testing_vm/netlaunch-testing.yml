@@ -110,14 +110,7 @@ stages:
           - group: trident_e2e_params
 
         steps:
-          - ${{ if eq(variables['Build.Repository.Name'], 'trident')}}:
-              - checkout: self
-                fetchDepth: 1
-                path: s/trident
-          - ${{ else }}:
-              - checkout: trident
-                fetchDepth: 1
-                path: s/trident
+          - template: ../common_tasks/checkout_trident.yml
 
           - bash: |
               if [ ${{ variables['tridentConfigurationName'] }} == 'split' ]; then
@@ -249,6 +242,7 @@ stages:
 
             timeoutInMinutes: 5
             condition: succeededOrFailed()
+            workingDirectory: $(tridentSourceDirectory)
             displayName: "📄 Check target OS deployment"
 
           - bash: |
@@ -271,6 +265,7 @@ stages:
                   --artifacts-folder "$(ob_outputDirectory)"
             displayName: "📷 Capture screenshot: clean install"
             condition: succeededOrFailed()
+            workingDirectory: $(tridentSourceDirectory)
 
           - bash: |
               set -eux
@@ -280,6 +275,7 @@ stages:
                   --artifacts-folder "$(ob_outputDirectory)"
             displayName: "📄 Display clean install logs"
             condition: succeededOrFailed()
+            workingDirectory: $(tridentSourceDirectory)
 
           - bash: |
               set -eux
@@ -294,6 +290,7 @@ stages:
             timeoutInMinutes: 5
             condition: eq('${{ parameters.runtimeEnv }}', 'host')
             displayName: "📄 Check for SELinux failures"
+            workingDirectory: $(tridentSourceDirectory)
 
           - bash: |
               set -eux
@@ -304,7 +301,7 @@ stages:
                 'sudo journalctl -u trident-container.service'
             condition: eq('${{ parameters.runtimeEnv }}', 'container')
             displayName: "📄 Display Container logs"
-
+            workingDirectory: $(tridentSourceDirectory)
           - bash: |
               set -eux
               HOST_IP=$(jq -r '.virtualmachines[0].ip' $(tridentSourceDirectory)/tools/virt-deploy-metadata.json)
@@ -316,6 +313,7 @@ stages:
                   --metrics-file $(tridentSourceDirectory)/trident-clean-install-metrics.jsonl \
                   --metrics-operation install
             displayName: "Create boot metrics for booting into target OS"
+            workingDirectory: $(tridentSourceDirectory)
 
           - template: ../testing_common/trident-metrics.yml
             parameters:
