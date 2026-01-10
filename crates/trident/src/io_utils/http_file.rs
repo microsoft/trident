@@ -1,5 +1,4 @@
 use std::{
-    fs::File,
     io::{Error as IoError, ErrorKind as IoErrorKind, Read, Result as IoResult, Seek},
     thread,
     time::{Duration, Instant},
@@ -176,7 +175,7 @@ impl HttpFile {
     /// enabled, will default to anonymous access.
     fn get_auth(_img_ref: &Reference) -> RegistryAuth {
         #[cfg(feature = "dangerous-options")]
-        if let Ok(docker_config) = File::open(
+        if let Ok(docker_config) = std::fs::File::open(
             env::home_dir()
                 .unwrap_or_default()
                 .join(DOCKER_CONFIG_FILE_PATH),
