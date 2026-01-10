@@ -14,8 +14,8 @@ use url::Url;
 
 use super::http_file::HttpFile;
 
-/// A trait alias for types that implement both `Read` and `Seek` used to return
-/// dynamic object that implement both traits.
+/// A trait for types that implement both `Read` and `Seek`, used to return
+/// dynamic objects implementing both traits.
 pub(crate) trait ReadSeek: Read + Seek {}
 
 impl ReadSeek for HttpFile {}
