@@ -33,24 +33,8 @@ func main() {
 	)
 
 	// Handle Ctrl+C gracefully
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-
-	go func() {
-		select {
-		// Wait for a termination signal.
-		case sig := <-sigChan:
-			logrus.Warnf("Received signal %v, shutting down gracefully...", sig)
-			cancel()
-
-		// Or context cancellation, this would happen on a normal shutdown.
-		case <-ctx.Done():
-		}
-	}()
-
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 	logrus.Infof("Starting reverse-connect proxy with client address: '%s' and server address: '%s'", cli.ClientAddress, cli.ServerAddress)
 	if err := proxy.StartReverseConnectProxy(ctx, tlscerts.ClientCertProvider, cli.ClientAddress, cli.ServerAddress, time.Second); err != nil {
 		logrus.Fatalf("reverse-connect proxy error: %v", err)
