@@ -306,7 +306,7 @@ mod tests {
     }
 
     #[test]
-    fn check_triedent_version_serde() {
+    fn check_trident_version_serde() {
         // Check missing TridentVersion
         let hs = HostStatus {
             ..Default::default()
