@@ -181,10 +181,7 @@ pub fn execute_rollback(
             ServicingState::ManualRollbackAbStaged | ServicingState::ManualRollbackAbFinalized => {
                 ServicingType::ManualRollbackAb
             }
-            ServicingState::ManualRollbackRuntimeStaged
-            | ServicingState::ManualRollbackRuntimeFinalized => {
-                ServicingType::ManualRollbackRuntime
-            }
+            ServicingState::ManualRollbackRuntimeStaged => ServicingType::ManualRollbackRuntime,
             state => {
                 return Err(TridentError::new(InvalidInputError::InvalidRollbackState {
                     reason: format!("in unexpected state: {state:?}"),
