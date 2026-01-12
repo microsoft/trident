@@ -987,7 +987,7 @@ mod tests {
                 ServicingState::ManualRollbackAbStaged,
                 UefiFallbackMode::Conservative,
                 Some(AbVolumeSelection::VolumeA),
-                ServicingType::ManualRollback,
+                ServicingType::ManualRollbackAb,
                 Some("AZLB".to_string()), // in ManualRollbackAbStaged, with 'conservative', copy from inactive volume
                 "Validate ManualRollbackAbStaged + Conservative + active volume A ==> AZLB",
             ),
@@ -995,7 +995,7 @@ mod tests {
                 ServicingState::ManualRollbackAbStaged,
                 UefiFallbackMode::Optimistic,
                 Some(AbVolumeSelection::VolumeA),
-                ServicingType::ManualRollback,
+                ServicingType::ManualRollbackAb,
                 Some("AZLB".to_string()), // in ManualRollbackAbStaged, with 'optimistic', copy from inactive volume
                 "Validate ManualRollbackAbStaged + Optimistic + active volume A ==> AZLB",
             ),
@@ -1003,7 +1003,7 @@ mod tests {
                 ServicingState::ManualRollbackAbStaged,
                 UefiFallbackMode::Disabled,
                 Some(AbVolumeSelection::VolumeA),
-                ServicingType::ManualRollback,
+                ServicingType::ManualRollbackAb,
                 None::<String>, // with Disabled, we do not copy anything
                 "Validate ManualRollbackAbStaged + Disabled + active volume A ==> None",
             ),

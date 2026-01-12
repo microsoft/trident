@@ -137,10 +137,15 @@ pub fn execute_rollback(
             }
         };
 
+        let rollback_type = match requested_rollback.kind {
+            utils::ManualRollbackKind::Ab => ServicingType::ManualRollbackAb,
+            utils::ManualRollbackKind::Runtime => ServicingType::ManualRollbackRuntime,
+        };
+
         let engine_context = EngineContext {
             spec: requested_rollback.spec.clone(),
             spec_old: datastore.host_status().spec.clone(),
-            servicing_type: ServicingType::ManualRollback,
+            servicing_type: rollback_type,
             partition_paths: datastore.host_status().partition_paths.clone(),
             ab_active_volume: datastore.host_status().ab_active_volume,
             disk_uuids: datastore.host_status().disk_uuids.clone(),
@@ -172,22 +177,24 @@ pub fn execute_rollback(
 
     // Perform finalize if operation is allowed
     if allowed_operations.has_finalize() {
-        match datastore.host_status().servicing_state {
-            ServicingState::ManualRollbackAbStaged
-            | ServicingState::ManualRollbackRuntimeStaged
-            | ServicingState::ManualRollbackFinalized => {
-                // OK to proceed
+        let current_servicing_type = match datastore.host_status().servicing_state {
+            ServicingState::ManualRollbackAbStaged | ServicingState::ManualRollbackAbFinalized => {
+                ServicingType::ManualRollbackAb
+            }
+            ServicingState::ManualRollbackRuntimeStaged
+            | ServicingState::ManualRollbackRuntimeFinalized => {
+                ServicingType::ManualRollbackRuntime
             }
             state => {
                 return Err(TridentError::new(InvalidInputError::InvalidRollbackState {
                     reason: format!("in unexpected state: {state:?}"),
                 }));
             }
-        }
+        };
         let engine_context = EngineContext {
             spec: datastore.host_status().spec.clone(),
             spec_old: datastore.host_status().spec_old.clone(),
-            servicing_type: ServicingType::ManualRollback,
+            servicing_type: current_servicing_type,
             partition_paths: datastore.host_status().partition_paths.clone(),
             ab_active_volume: datastore.host_status().ab_active_volume,
             disk_uuids: datastore.host_status().disk_uuids.clone(),
@@ -322,7 +329,7 @@ fn finalize_rollback(
 
     datastore.with_host_status(|host_status| {
         host_status.spec = engine_context.spec.clone();
-        host_status.servicing_state = ServicingState::ManualRollbackFinalized;
+        host_status.servicing_state = ServicingState::ManualRollbackAbFinalized;
     })?;
 
     if !datastore

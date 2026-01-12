@@ -116,7 +116,7 @@ pub fn create_and_update_boot_variables(
     if uki::is_staged(esp_path) {
         let oneshot = !matches!(
             ctx.servicing_type,
-            ServicingType::CleanInstall | ServicingType::ManualRollback
+            ServicingType::CleanInstall | ServicingType::ManualRollbackAb
         );
         uki::update_uki_boot_order(ctx, esp_path, oneshot)?;
     }
@@ -171,7 +171,7 @@ pub fn set_boot_next_and_update_boot_order(
                 .structured(ServicingError::UpdateBootOrder)?;
         } else if matches!(
             ctx.servicing_type,
-            ServicingType::CleanInstall | ServicingType::ManualRollback
+            ServicingType::CleanInstall | ServicingType::ManualRollbackAb
         ) && !use_virtdeploy_workaround
         {
             // During clean install or manual rollback, immediately set the bootorder to use the new entry.
