@@ -1,0 +1,11 @@
+[Unit]
+Description=Trident Daemon gRPC Socket
+
+[Socket]
+ListenStream=/run/trident.sock
+SocketMode=0666
+SocketUser=root
+SocketGroup=root
+
+[Install]
+WantedBy=sockets.target
