@@ -180,7 +180,7 @@ stages:
 
               # Enable SecureBoot for all E2E tests.
               SECURE_BOOT=""
-              if [[ '${{ parameters.testSecureBoot }}" == 'true' ]]; then
+              if [[ "${{ parameters.testSecureBoot }}" == 'true' ]]; then
                 SECURE_BOOT="--secure-boot"
               fi
 
