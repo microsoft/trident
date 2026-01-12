@@ -55,6 +55,11 @@ parameters:
     type: string
     default: ""
 
+  - name: testSecureBoot
+    displayName: "Test Secure Boot"
+    type: boolean
+    default: true
+
 stages:
   - ${{ if eq(parameters.testingRun, false) }}:
       - ${{ if eq(parameters.includeQemuGrub, true) }}:
@@ -120,6 +125,7 @@ stages:
               flavor: qemu-grub
               micBuildType: ${{ parameters.micBuildType }}
               micVersion: ${{ parameters.micVersion }}
+              testSecureBoot: ${{ parameters.testSecureBoot }}
       - ${{ if eq(parameters.includeQemu, true) }}:
           - template: testing-template.yml
             parameters:

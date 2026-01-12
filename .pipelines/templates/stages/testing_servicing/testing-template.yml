@@ -44,6 +44,11 @@ parameters:
     type: string
     default: "trident-ubuntu-1es-pool-eastus2"
 
+  - name: testSecureBoot
+    displayName: "Test Secure Boot"
+    type: boolean
+    default: true
+
 jobs:
   # For azure tests where there are multiple workers, use a dedicated job to publish the base
   # image.  Otherwise, the publish will be done as part of the actual test.
@@ -203,7 +208,9 @@ jobs:
             FLAGS="$FLAGS --verbose"
           fi
           if [ "${{ parameters.flavor }}" != "uki" ]; then
-            FLAGS="$FLAGS --secure-boot"
+            if [[ '${{ parameters.testSecureBoot }}" == 'true' ]]; then
+              FLAGS="$FLAGS --secure-boot"
+            fi
           fi
           if [ "${{ parameters.rollbackTesting }}" == "True" ]; then
             FLAGS="$FLAGS --rollback-retry-count ${{ parameters.updateIterationCount }} --rollback"

@@ -72,6 +72,11 @@ parameters:
     type: string
     default: "false"
 
+  - name: testSecureBoot
+    displayName: "Test Secure Boot"
+    type: boolean
+    default: true
+
 jobs:
   - job: RollbackTesting_${{ replace(parameters.flavor, '-', '_') }}
     displayName: Rollback Testing - ${{ parameters.flavor }}
@@ -152,7 +157,9 @@ jobs:
             STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --verbose"
           fi
           if [ "${{ parameters.flavor }}" != "uki" ]; then
-            STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --secure-boot"
+            if [[ '${{ parameters.testSecureBoot }}" == 'true' ]]; then
+              STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --secure-boot"
+            fi
           fi
           if [ "${{ parameters.skipManualRollbackTesting }}" == "true" ]; then
             # skip manual rollback testing

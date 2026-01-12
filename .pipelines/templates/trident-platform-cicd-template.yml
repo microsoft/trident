@@ -26,6 +26,11 @@ parameters:
       - forceBuild
       - prebuilt
 
+  - name: testSecureBoot
+    displayName: "Test Secure Boot"
+    type: boolean
+    default: true
+
 stages:
   - ${{ if eq( parameters.targetArchitecture, 'amd64') }}:
     - template: e2e-template.yml
@@ -34,6 +39,7 @@ stages:
         baremetalTestsEnabled: ${{ parameters.baremetalTestsEnabled }}
         baseImageArtifactStage: ${{ parameters.baseImageArtifactStage }}
         tridentBuildOptions: ${{ parameters.tridentBuildOptions }}
+        testSecureBoot: ${{ parameters.testSecureBoot }}
 
   - ${{ if eq( parameters.targetArchitecture, 'arm64') }}:
     - template: e2e-arm64-template.yml
