@@ -45,6 +45,7 @@ func StartReverseConnectProxy(ctx context.Context, clientAddress string, serverA
 		Certificates: []tls.Certificate{cer},
 		RootCAs:      caCertPool,
 		ServerName:   tlscerts.ServerSubjectAltName,
+		MinVersion:   tls.VersionTLS13,
 	}
 
 	// Bool to keep track if the connection has been refused multiple times
@@ -64,12 +65,10 @@ func StartReverseConnectProxy(ctx context.Context, clientAddress string, serverA
 			var errno syscall.Errno
 
 			// Check if this is a connection refused error
-			if ok := errors.As(err, &errno); ok {
-				if errno == syscall.ECONNREFUSED {
-					if !multipleRefused {
-						multipleRefused = true
-						logrus.Warnf("Client connection refused, will retry silently.")
-					}
+			if ok := errors.As(err, &errno); ok && errno == syscall.ECONNREFUSED {
+				if !multipleRefused {
+					multipleRefused = true
+					logrus.Warnf("Client connection refused, will retry silently.")
 				}
 			} else {
 				// Some other error occurred

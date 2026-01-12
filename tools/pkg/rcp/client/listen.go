@@ -43,6 +43,7 @@ func ListenAndAccept(ctx context.Context, port uint32) (net.Conn, error) {
 		Certificates: []tls.Certificate{cer},
 		ClientCAs:    caCertPool,
 		ClientAuth:   tls.RequireAndVerifyClientCert,
+		MinVersion:   tls.VersionTLS13,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to listen on port %d: %w", port, err)
