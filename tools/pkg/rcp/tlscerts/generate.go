@@ -85,8 +85,18 @@ func generateCerts(subjectAltName string) error {
 func checkAllFilesExist() bool {
 	for _, file := range outputFiles {
 		stat, err := os.Stat(file)
-		if os.IsNotExist(err) || stat.IsDir() {
-			logrus.Infof("File '%s' does not exist or is a directory", file)
+		if err != nil {
+			if os.IsNotExist(err) {
+				logrus.Infof("File '%s' does not exist", file)
+				return false
+			}
+
+			logrus.WithError(err).Warnf("Failed to stat %q", file)
+			return false
+		}
+
+		if stat.IsDir() {
+			logrus.Infof("File '%s' is a directory", file)
 			return false
 		}
 	}
