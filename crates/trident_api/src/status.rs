@@ -79,7 +79,9 @@ pub enum ServicingType {
     /// Clean install of the target OS image when the host is booted from the provisioning OS.
     CleanInstall = 3,
     /// Manual Rollback of the target OS image to a previously deployed state.
-    ManualRollback = 4,
+    ManualRollbackAb = 4,
+    /// Manual Rollback of the target OS image to a previously deployed state.
+    ManualRollbackRuntime = 5,
 }
 
 /// Servicing state describes the progress of the servicing that the Trident agent is executing on
@@ -108,8 +110,10 @@ pub enum ServicingState {
     /// A/B update has been finalized. For the next boot, the firmware will boot from the updated
     /// target OS image.
     AbUpdateFinalized,
-    /// Manual rollback has been finalized.
-    ManualRollbackFinalized,
+    /// Manual rollback for an AbUpdate has been finalized.
+    ManualRollbackAbFinalized,
+    /// Manual rollback for a RuntimeUpdate has been finalized.
+    ManualRollbackRuntimeFinalized,
     /// Servicing has been completed, and the host successfully booted from the updated target OS
     /// image. Trident is ready to begin a new servicing.
     Provisioned,

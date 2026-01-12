@@ -180,7 +180,8 @@ pub(crate) fn validate_rebuild_raid(
         | ServicingState::AbUpdateHealthCheckFailed
         | ServicingState::ManualRollbackAbStaged
         | ServicingState::ManualRollbackRuntimeStaged
-        | ServicingState::ManualRollbackFinalized => {
+        | ServicingState::ManualRollbackAbFinalized
+        | ServicingState::ManualRollbackRuntimeFinalized => {
             bail!(
                 "rebuild-raid command is not allowed when servicing state is {:?}",
                 host_status.servicing_state

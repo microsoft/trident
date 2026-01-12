@@ -58,7 +58,9 @@ fn os_changes_required(ctx: &EngineContext) -> bool {
             (!new_os_config.sysexts.is_empty() && old_os_config.sysexts.is_empty())
                 || (!new_os_config.confexts.is_empty() && old_os_config.confexts.is_empty())
         }
-        ServicingType::ManualRollback | ServicingType::NoActiveServicing => false,
+        ServicingType::ManualRollbackAb
+        | ServicingType::ManualRollbackRuntime
+        | ServicingType::NoActiveServicing => false,
     }
 }
 

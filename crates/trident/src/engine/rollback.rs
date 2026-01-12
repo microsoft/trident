@@ -50,7 +50,10 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         // For *Finalized, use the active volume set in Host Status
         ServicingState::AbUpdateFinalized
         | ServicingState::CleanInstallFinalized
-        | ServicingState::ManualRollbackFinalized => datastore.host_status().ab_active_volume,
+        | ServicingState::ManualRollbackAbFinalized
+        | ServicingState::ManualRollbackRuntimeFinalized => {
+            datastore.host_status().ab_active_volume
+        }
         // For AbUpdateHealthCheckFailed, use the opposite active volume of the one
         // set in Host Status
         ServicingState::AbUpdateHealthCheckFailed => {
@@ -73,7 +76,8 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
             ServicingType::AbUpdate
         }
         ServicingState::CleanInstallFinalized => ServicingType::CleanInstall,
-        ServicingState::ManualRollbackFinalized => ServicingType::ManualRollback,
+        ServicingState::ManualRollbackAbFinalized => ServicingType::ManualRollbackAb,
+        ServicingState::ManualRollbackRuntimeFinalized => ServicingType::ManualRollbackRuntime,
         _ => ServicingType::NoActiveServicing,
     };
 
@@ -108,7 +112,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
     match (booted_to_expected_root, current_servicing_state) {
         (true, ServicingState::CleanInstallFinalized)
         | (true, ServicingState::AbUpdateFinalized)
-        | (true, ServicingState::ManualRollbackFinalized) => {
+        | (true, ServicingState::ManualRollbackAbFinalized) => {
             // For *Finalized states, when booting from the expected
             // root, finish the commit process
             info!("Host successfully booted from target OS image");
@@ -177,8 +181,8 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
                 expected_device_path: expected_root_path.to_string_lossy().to_string(),
             }));
         }
-        (false, ServicingState::ManualRollbackFinalized) => {
-            // ManualRollbackFinalize, when booting from incorrect root (the servicing OS), mark host status
+        (false, ServicingState::ManualRollbackAbFinalized) => {
+            // ManualRollbackAbFinalize, when booting from incorrect root (the servicing OS), mark host status
             // state as Provisioned
             error!("Update host status from {current_servicing_state:?} to Provisioned");
             datastore.with_host_status(|host_status| {
@@ -216,7 +220,7 @@ fn commit_finalized_on_expected_root(
 ) -> Result<BootValidationResult, TridentError> {
     if matches!(
         servicing_type,
-        ServicingType::CleanInstall | ServicingType::AbUpdate | ServicingType::ManualRollback
+        ServicingType::CleanInstall | ServicingType::AbUpdate | ServicingType::ManualRollbackAb
     ) {
         // Run health checks to ensure the system is in the desired state
         let health_check_status =
@@ -299,7 +303,7 @@ fn commit_finalized_on_expected_root(
             info!("A/B update succeeded");
             tracing::info!(metric_name = "ab_update_success", value = true);
         }
-        ServicingState::ManualRollbackFinalized => {
+        ServicingState::ManualRollbackAbFinalized => {
             info!("Manual rollback succeeded");
             tracing::info!(metric_name = "manual_rollback_success", value = true);
         }

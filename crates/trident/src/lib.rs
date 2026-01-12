@@ -604,7 +604,7 @@ impl Trident {
             ServicingState::CleanInstallFinalized
                 | ServicingState::AbUpdateFinalized
                 | ServicingState::AbUpdateHealthCheckFailed
-                | ServicingState::ManualRollbackFinalized
+                | ServicingState::ManualRollbackAbFinalized
         ) {
             info!(
                 "No servicing in progress ({:?}), skipping commit",
@@ -692,7 +692,8 @@ impl Trident {
             ServicingState::Provisioned
                 | ServicingState::ManualRollbackAbStaged
                 | ServicingState::ManualRollbackRuntimeStaged
-                | ServicingState::ManualRollbackFinalized
+                | ServicingState::ManualRollbackAbFinalized
+                | ServicingState::ManualRollbackRuntimeFinalized
         ) {
             info!(
                 "Not in required state ({:?}), cannot rollback",

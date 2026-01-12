@@ -80,7 +80,7 @@ pub(crate) fn update(
             // Execute pre-servicing scripts
             HooksSubsystem::new_for_local_scripts().execute_pre_servicing_scripts(&ctx)?;
         }
-        ServicingType::ManualRollback => {
+        ServicingType::ManualRollbackAb | ServicingType::ManualRollbackRuntime => {
             return Err(TridentError::new(InternalError::Internal(
                 "Subsystem reported manual rollback servicing type",
             )));
@@ -156,9 +156,11 @@ pub(crate) fn update(
         ServicingType::CleanInstall => Err(TridentError::new(
             InvalidInputError::CleanInstallOnProvisionedHost,
         )),
-        ServicingType::ManualRollback => Err(TridentError::new(InternalError::Internal(
-            "Cannot update during manual rollback",
-        ))),
+        ServicingType::ManualRollbackAb | ServicingType::ManualRollbackRuntime => {
+            Err(TridentError::new(InternalError::Internal(
+                "Cannot update during manual rollback",
+            )))
+        }
         ServicingType::NoActiveServicing => Err(TridentError::new(InternalError::Internal(
             "No active servicing type",
         ))),
