@@ -84,7 +84,7 @@ pub struct Os {
     pub confexts: Vec<Extension>,
 
     /// Options for configuring the UEFI fallback.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_default")]
     pub uefi_fallback: UefiFallbackMode,
 }
 
