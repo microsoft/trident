@@ -122,14 +122,28 @@ func handleClientConnection(ctx context.Context, clientConn net.Conn, serverAddr
 	go func() {
 		_, err := io.Copy(serverConn, clientConn)
 		if err != nil {
-			logrus.Errorf("Error copying from client to server: %v", err)
+			switch {
+			case errors.Is(err, io.EOF),
+				errors.Is(err, net.ErrClosed),
+				errors.Is(err, syscall.EPIPE):
+				logrus.Debugf("Connection closed while copying from client to server: %v", err)
+			default:
+				logrus.Errorf("Error copying from client to server: %v", err)
+			}
 		}
 		doneChan <- "client->server"
 	}()
 	go func() {
 		_, err := io.Copy(clientConn, serverConn)
 		if err != nil {
-			logrus.Errorf("Error copying from server to client: %v", err)
+			switch {
+			case errors.Is(err, io.EOF),
+				errors.Is(err, net.ErrClosed),
+				errors.Is(err, syscall.EPIPE):
+				logrus.Debugf("Connection closed while copying from server to client: %v", err)
+			default:
+				logrus.Errorf("Error copying from server to client: %v", err)
+			}
 		}
 		doneChan <- "server->client"
 	}()
