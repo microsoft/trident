@@ -693,7 +693,6 @@
         },
         "uefiFallback": {
           "description": "Options for configuring the UEFI fallback.",
-          "default": "conservative",
           "allOf": [
             {
               "$ref": "#/definitions/UefiFallbackMode"
