@@ -112,8 +112,6 @@ pub enum ServicingState {
     AbUpdateFinalized,
     /// Manual rollback for an AbUpdate has been finalized.
     ManualRollbackAbFinalized,
-    /// Manual rollback for a RuntimeUpdate has been finalized.
-    ManualRollbackRuntimeFinalized,
     /// Servicing has been completed, and the host successfully booted from the updated target OS
     /// image. Trident is ready to begin a new servicing.
     Provisioned,

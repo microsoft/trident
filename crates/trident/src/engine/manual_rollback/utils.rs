@@ -191,7 +191,6 @@ impl ManualRollbackContext {
                         ServicingState::ManualRollbackAbStaged
                             | ServicingState::ManualRollbackRuntimeStaged
                             | ServicingState::ManualRollbackAbFinalized
-                            | ServicingState::ManualRollbackRuntimeFinalized
                     );
                 needs_reboot =
                     needs_reboot || matches!(hs.servicing_state, ServicingState::AbUpdateFinalized);
@@ -573,7 +572,6 @@ mod tests {
     const MR_AB_STAGE: ServicingState = ServicingState::ManualRollbackAbStaged;
     const MR_RU_STAGE: ServicingState = ServicingState::ManualRollbackRuntimeStaged;
     const MR_AB_FINAL: ServicingState = ServicingState::ManualRollbackAbFinalized;
-    const MR_RU_FINAL: ServicingState = ServicingState::ManualRollbackRuntimeFinalized;
 
     #[test]
     fn test_rollback_context() {
@@ -619,7 +617,6 @@ mod tests {
             inter(VOL_A, RU_STAGE, MIN),
             prov(VOL_A, false, vec![6, 4, 2], MIN),
             inter(VOL_A, MR_RU_STAGE, MIN),
-            inter(VOL_A, MR_RU_FINAL, MIN),
         ];
         rollback_context_testing(
             &host_status_list,
@@ -760,8 +757,7 @@ mod tests {
             // Manual Rollback of the available a/b update skips
             // 2 runtime updates
             inter(VOL_B, MR_RU_STAGE, MIN),
-            inter(VOL_B, MR_RU_FINAL, MIN),
-            prov(VOL_A, false, vec![], MIN),
+            prov(VOL_B, false, vec![], MIN),
         ];
         rollback_context_testing(
             &host_status_list,

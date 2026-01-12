@@ -701,7 +701,6 @@ impl Trident {
                 | ServicingState::ManualRollbackAbStaged
                 | ServicingState::ManualRollbackRuntimeStaged
                 | ServicingState::ManualRollbackAbFinalized
-                | ServicingState::ManualRollbackRuntimeFinalized
         ) {
             info!(
                 "Not in required state ({:?}), cannot rollback",

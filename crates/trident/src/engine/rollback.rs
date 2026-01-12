@@ -50,10 +50,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         // For *Finalized, use the active volume set in Host Status
         ServicingState::AbUpdateFinalized
         | ServicingState::CleanInstallFinalized
-        | ServicingState::ManualRollbackAbFinalized
-        | ServicingState::ManualRollbackRuntimeFinalized => {
-            datastore.host_status().ab_active_volume
-        }
+        | ServicingState::ManualRollbackAbFinalized => datastore.host_status().ab_active_volume,
         // For AbUpdateHealthCheckFailed, use the opposite active volume of the one
         // set in Host Status
         ServicingState::AbUpdateHealthCheckFailed => {
@@ -77,7 +74,6 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         }
         ServicingState::CleanInstallFinalized => ServicingType::CleanInstall,
         ServicingState::ManualRollbackAbFinalized => ServicingType::ManualRollbackAb,
-        ServicingState::ManualRollbackRuntimeFinalized => ServicingType::ManualRollbackRuntime,
         _ => ServicingType::NoActiveServicing,
     };
 
