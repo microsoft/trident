@@ -756,8 +756,9 @@ mod tests {
             prov(VOL_B, false, vec![7, 5, 2], MIN),
             // Manual Rollback of the available a/b update skips
             // 2 runtime updates
-            inter(VOL_B, MR_RU_STAGE, MIN),
-            prov(VOL_B, false, vec![], MIN),
+            inter(VOL_B, MR_AB_STAGE, MIN),
+            inter(VOL_B, MR_AB_FINAL, MIN),
+            prov(VOL_A, false, vec![], MIN),
         ];
         rollback_context_testing(
             &host_status_list,
