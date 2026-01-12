@@ -98,6 +98,7 @@ os:
   additionalFiles:
   - destination: /var/config-script.sh
     content: 'echo ''Running from newly deployed chroot: $SAMPLE_VARIABLE'''
+  uefiFallback: conservative
 image:
   url: file:///path/to/verity_image.cosi
   sha384: ec9a9aa23f02b30f4ec6a168b9bc24733b652eeab4f8abc243630666a5e34cea1667c34313a13ec1564ac4871b80112f
