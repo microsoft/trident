@@ -22,6 +22,11 @@ parameters:
       - host
       - container
 
+  - name: testSecureBoot
+    displayName: "Test Secure Boot"
+    type: boolean
+    default: true
+
 stages:
   - stage: DefineTests_VM_${{ parameters.runtimeEnv }}
     displayName: Test List for VM:${{ parameters.runtimeEnv }}
@@ -174,7 +179,10 @@ stages:
               fi
 
               # Enable SecureBoot for all E2E tests.
-              SECURE_BOOT="--secure-boot"
+              SECURE_BOOT=""
+              if [[ '${{ parameters.testSecureBoot }}" == 'true' ]]; then
+                SECURE_BOOT="--secure-boot"
+              fi
 
               # If this is a usr-verity UKI image, a signing certificate must
               # be set via --signing-cert; otherwise, set it to an empty

@@ -67,6 +67,11 @@ parameters:
     type: string
     default: ""
 
+  - name: testSecureBoot
+    displayName: "Test Secure Boot"
+    type: boolean
+    default: true
+
 stages:
   - ${{ if eq(parameters.testingRun, false) }}:
       - stage: PrepareSSHKeys
@@ -225,6 +230,7 @@ stages:
               verboseLogging: ${{ parameters.verboseLogging }}
               platform: qemu
               flavor: qemu
+              testSecureBoot: ${{ parameters.testSecureBoot }}
 
       - ${{ if eq(parameters.includeAzure, true) }}:
           - template: testing-template.yml
@@ -237,6 +243,7 @@ stages:
               platform: azure
               flavor: azure
               pool: trident-ubuntu-official-1es-pool-eastus2
+              testSecureBoot: ${{ parameters.testSecureBoot }}
 
       - ${{ if eq(parameters.includeUKI, true) }}:
           - template: testing-template.yml
@@ -248,3 +255,4 @@ stages:
               verboseLogging: ${{ parameters.verboseLogging }}
               platform: qemu
               flavor: uki
+              testSecureBoot: ${{ parameters.testSecureBoot }}

@@ -55,6 +55,11 @@ parameters:
     type: string
     default: ""
 
+  - name: testSecureBoot
+    displayName: "Test Secure Boot"
+    type: boolean
+    default: true
+
 stages:
   - ${{ if eq(parameters.testingRun, false) }}:
       - ${{ if eq(parameters.includeQemuGrub, true) }}:
@@ -120,6 +125,7 @@ stages:
               flavor: qemu-grub
               skipExtensionTesting: false
               skipRuntimeUpdateTesting: false
+              testSecureBoot: ${{ parameters.testSecureBoot }}
       - ${{ if eq(parameters.includeQemu, true) }}:
           - template: testing-template.yml
             parameters:
@@ -131,6 +137,7 @@ stages:
               # an extension to the servicing qcow2
               skipExtensionTesting: true
               skipRuntimeUpdateTesting: false
+              testSecureBoot: ${{ parameters.testSecureBoot }}
       - ${{ if eq(parameters.includeUKI, true) }}:
           - template: testing-template.yml
             parameters:
@@ -140,3 +147,4 @@ stages:
               flavor: uki
               skipExtensionTesting: false
               skipRuntimeUpdateTesting: false
+              testSecureBoot: ${{ parameters.testSecureBoot }}
