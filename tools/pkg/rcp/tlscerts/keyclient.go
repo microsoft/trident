@@ -10,6 +10,15 @@ import (
 //go:embed client.key
 var clientKey []byte
 
-func GetClientX509Cert() (tls.Certificate, error) {
+// ClientCertProvider provides certificates for the TLS client.
+var ClientCertProvider CertProvider = clientCertProviderImpl{}
+
+type clientCertProviderImpl struct{}
+
+func (p clientCertProviderImpl) LocalCert() (tls.Certificate, error) {
 	return tls.X509KeyPair(clientCert, clientKey)
+}
+
+func (p clientCertProviderImpl) RemoteCertPEM() []byte {
+	return serverCert
 }

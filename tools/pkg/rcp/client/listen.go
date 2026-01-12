@@ -1,5 +1,3 @@
-//go:build tls_server
-
 package client
 
 import (
@@ -27,16 +25,18 @@ import (
 // valid certificates. This listener is intended to be used by the RCP-proxy
 // built with the same TLS setup. Any other clients or certificates will be
 // rejected mutually.
-func ListenAndAccept(ctx context.Context, port uint32) (net.Conn, error) {
+func ListenAndAccept(ctx context.Context, certProvider tlscerts.CertProvider, port uint32) (net.Conn, error) {
 	// Load our private server certificate
-	cer, err := tlscerts.GetServerX509Cert()
+	cer, err := certProvider.LocalCert()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load server certificate: %w", err)
 	}
 
 	// Create a certificate pool and load the client public certificate
 	caCertPool := x509.NewCertPool()
-	caCertPool.AppendCertsFromPEM(tlscerts.GetClientCertPEM())
+	if !caCertPool.AppendCertsFromPEM(certProvider.RemoteCertPEM()) {
+		return nil, fmt.Errorf("failed to load client CA certificate(s) into pool")
+	}
 
 	// Start a TLS listener
 	listener, err := tls.Listen("tcp", fmt.Sprintf(":%d", port), &tls.Config{

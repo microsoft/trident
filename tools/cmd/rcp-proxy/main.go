@@ -14,6 +14,7 @@ import (
 
 	"tridenttools/pkg/rcp"
 	"tridenttools/pkg/rcp/proxy"
+	"tridenttools/pkg/rcp/tlscerts"
 )
 
 var cli struct {
@@ -51,7 +52,7 @@ func main() {
 	}()
 
 	logrus.Infof("Starting reverse-connect proxy with client address: '%s' and server address: '%s'", cli.ClientAddress, cli.ServerAddress)
-	if err := proxy.StartReverseConnectProxy(ctx, cli.ClientAddress, cli.ServerAddress, time.Second); err != nil {
+	if err := proxy.StartReverseConnectProxy(ctx, tlscerts.ClientCertProvider, cli.ClientAddress, cli.ServerAddress, time.Second); err != nil {
 		logrus.Fatalf("reverse-connect proxy error: %v", err)
 	}
 	logrus.Info("Shutdown complete")

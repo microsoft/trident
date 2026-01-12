@@ -4,6 +4,7 @@
 package tlscerts
 
 import (
+	"crypto/tls"
 	_ "embed"
 )
 
@@ -12,16 +13,13 @@ import (
 // ServerSubjectAltName is the default SAN for the server certificate.
 const ServerSubjectAltName = "reverseconnectproxy"
 
+type CertProvider interface {
+	LocalCert() (tls.Certificate, error)
+	RemoteCertPEM() []byte
+}
+
 //go:embed server.crt
 var serverCert []byte
 
-func GetServerCertPEM() []byte {
-	return serverCert
-}
-
 //go:embed client.crt
 var clientCert []byte
-
-func GetClientCertPEM() []byte {
-	return clientCert
-}

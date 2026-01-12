@@ -1,5 +1,3 @@
-//go:build tls_client
-
 package proxy
 
 import (
@@ -27,16 +25,22 @@ import (
 // Both client and server connections use mutual TLS authentication, requiring
 // valid certificates. This proxy is intended to be used by the RCP-client built
 // with the same TLS setup. Any other certificates will be rejected mutually.
-func StartReverseConnectProxy(ctx context.Context, clientAddress string, serverAddress string, retryInterval time.Duration) error {
+func StartReverseConnectProxy(
+	ctx context.Context,
+	certProvider tlscerts.CertProvider,
+	clientAddress string,
+	serverAddress string,
+	retryInterval time.Duration,
+) error {
 	// Load our private client certificate
-	cer, err := tlscerts.GetClientX509Cert()
+	cer, err := certProvider.LocalCert()
 	if err != nil {
 		return fmt.Errorf("failed to load client certificate: %w", err)
 	}
 
 	// Create a certificate pool and load the server public certificate
 	caCertPool := x509.NewCertPool()
-	if ok := caCertPool.AppendCertsFromPEM(tlscerts.GetServerCertPEM()); !ok {
+	if ok := caCertPool.AppendCertsFromPEM(certProvider.RemoteCertPEM()); !ok {
 		return fmt.Errorf("failed to load server CA certificate(s) into pool")
 	}
 
