@@ -17,7 +17,7 @@ use crate::{config::HostConfiguration, is_default, BlockDeviceId};
 /// HostStatus is the status of a host. Reflects the current state of the host and any encountered
 /// errors.
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct HostStatus {
     pub spec: HostConfiguration,
 
@@ -67,7 +67,7 @@ pub struct HostStatus {
 
 /// Servicing type is the type of servicing that the Trident agent is executing on the host.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 pub enum ServicingType {
     /// No servicing is currently in progress.
     #[default]
@@ -88,7 +88,7 @@ pub enum ServicingType {
 /// the host. The host will transition through a different sequence of servicing states while
 /// servicing the host.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 pub enum ServicingState {
     /// The host is running from the provisioning OS and has not yet been provisioned by Trident.
     #[default]
@@ -124,7 +124,7 @@ pub enum ServicingState {
 /// A/B volume selection. Determines which set of volumes are currently
 /// active/used by the OS.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, EnumIter)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 pub enum AbVolumeSelection {
     VolumeA,
     VolumeB,
