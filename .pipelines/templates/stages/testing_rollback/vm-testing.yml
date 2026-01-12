@@ -55,6 +55,11 @@ parameters:
     type: string
     default: ""
 
+  - name: testSecureBoot
+    displayName: "Test Secure Boot"
+    type: boolean
+    default: true
+
 stages:
   - ${{ if eq(parameters.testingRun, false) }}:
       - ${{ if eq(parameters.includeQemuGrub, true) }}:
@@ -118,6 +123,7 @@ stages:
               verboseLogging: ${{ parameters.verboseLogging }}
               platform: qemu
               flavor: qemu-grub
+              testSecureBoot: ${{ parameters.testSecureBoot }}
       - ${{ if eq(parameters.includeQemu, true) }}:
           - template: testing-template.yml
             parameters:
