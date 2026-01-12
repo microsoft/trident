@@ -36,7 +36,9 @@ func StartReverseConnectProxy(ctx context.Context, clientAddress string, serverA
 
 	// Create a certificate pool and load the server public certificate
 	caCertPool := x509.NewCertPool()
-	caCertPool.AppendCertsFromPEM(tlscerts.GetServerCertPEM())
+	if ok := caCertPool.AppendCertsFromPEM(tlscerts.GetServerCertPEM()); !ok {
+		return fmt.Errorf("failed to load server CA certificate(s) into pool")
+	}
 
 	// Configure TLS with mutual authentication
 	tlsConfig := tls.Config{
