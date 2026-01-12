@@ -209,7 +209,7 @@ func (u *UpdateTest) doRollbackTest(
 	rollbackNeedsReboot bool,
 	needManualCommit bool,
 ) error {
-	// Check that rollback fails if expected failure expectaqtion is set
+	// Check that rollback fails if expected failure expectation is set
 	err := u.validateRollbackFailedExpectation(rollbackFailureExpectation)
 	if err != nil {
 		return fmt.Errorf("failed to validate rollback failure expectation: %w", err)
