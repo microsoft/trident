@@ -39,9 +39,15 @@ func main() {
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		sig := <-sigChan
-		logrus.Warnf("Received signal %v, shutting down gracefully...", sig)
-		cancel()
+		select {
+		// Wait for a termination signal.
+		case sig := <-sigChan:
+			logrus.Warnf("Received signal %v, shutting down gracefully...", sig)
+			cancel()
+
+		// Or context cancellation, this would happen on a normal shutdown.
+		case <-ctx.Done():
+		}
 	}()
 
 	logrus.Infof("Starting reverse-connect proxy with client address: '%s' and server address: '%s'", cli.ClientAddress, cli.ServerAddress)
