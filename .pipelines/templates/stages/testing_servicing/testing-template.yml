@@ -208,7 +208,7 @@ jobs:
             FLAGS="$FLAGS --verbose"
           fi
           if [ "${{ parameters.flavor }}" != "uki" ]; then
-            if [[ '${{ parameters.testSecureBoot }}" == 'true' ]]; then
+            if [[ "${{ parameters.testSecureBoot }}" == 'true' ]]; then
               FLAGS="$FLAGS --secure-boot"
             fi
           fi
