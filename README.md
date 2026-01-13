@@ -1,5 +1,7 @@
 # Trident
 
+
+
 **Trident** is a declarative, security-first OS lifecycle agent designed
 primarily for [Azure
 Linux](https://github.com/microsoft/azurelinux/?tab=readme-ov-file#azure-linux).
