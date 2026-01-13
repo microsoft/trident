@@ -1,4 +1,7 @@
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Error};
 use chrono::Utc;
@@ -47,10 +50,10 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
 
     let current_servicing_state = datastore.host_status().servicing_state;
     let ab_active_volume = match current_servicing_state {
-        // For *Finalized, use the active volume set in Host Status
-        ServicingState::AbUpdateFinalized | ServicingState::CleanInstallFinalized => {
-            datastore.host_status().ab_active_volume
-        }
+        // For *Finalized and AbUpdateRollbackFailed, use the active volume set in Host Status
+        ServicingState::AbUpdateRollbackFailed
+        | ServicingState::AbUpdateFinalized
+        | ServicingState::CleanInstallFinalized => datastore.host_status().ab_active_volume,
         // For AbUpdateHealthCheckFailed, use the opposite active volume of the one
         // set in Host Status
         ServicingState::AbUpdateHealthCheckFailed => {
@@ -73,7 +76,12 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
             ServicingType::AbUpdate
         }
         ServicingState::CleanInstallFinalized => ServicingType::CleanInstall,
-        _ => ServicingType::NoActiveServicing,
+        // For any other state, this function should not have been called
+        state => {
+            return Err(TridentError::new(InternalError::UnexpectedServicingState {
+                state,
+            }));
+        }
     };
 
     // Create an EngineContext based on the Host Status
@@ -104,18 +112,82 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         compare_root_device_paths(current_root_path.clone(), expected_root_path.clone())
             .message("Host failed to boot from expected root device")?;
 
+    // Check for cases where we are not booting from the expected root. Failures
+    // here will return early and have updated the host status appropriately.
+    handle_boot_validation_errors(
+        datastore,
+        booted_to_expected_root,
+        current_servicing_state,
+        &current_root_path,
+        &expected_root_path,
+    )?;
+
+    info!("Host successfully booted in updated target OS image");
+
+    // Check health of updated OS, failures here will return early and
+    // ValidBootHealthCheckFailed will invoke a reboot.
+    match check_health(&ctx, datastore, current_servicing_state, servicing_type)? {
+        BootValidationResult::ValidBootHealthCheckFailed(err) => {
+            return Ok(BootValidationResult::ValidBootHealthCheckFailed(err));
+        }
+        BootValidationResult::ValidBootProvisioned => {
+            // continue
+        }
+    }
+
+    // Complete the commit, update the boot and encryption configurations
+    match commit_finalized_on_expected_root(&ctx, datastore, current_servicing_state) {
+        Ok(result) => {
+            return Ok(result);
+        }
+        Err(_err) => {
+            if servicing_type == ServicingType::AbUpdate {
+                // Failed to update UEFI boot order or encryption configuration after
+                // successful boot to expected root for A/B Update, re-set host status
+                // state to AbUpdateRollbackFailed
+                error!(
+                    "Re-set host status from {current_servicing_state:?} to AbUpdateRollbackFailed"
+                );
+                datastore.with_host_status(|host_status| {
+                    host_status.servicing_state = ServicingState::AbUpdateRollbackFailed;
+                })?;
+
+                return Err(TridentError::new(ServicingError::AbUpdateRebootCheck {
+                    root_device_path: current_root_path.to_string_lossy().to_string(),
+                    expected_device_path: expected_root_path.to_string_lossy().to_string(),
+                }));
+            } else if servicing_type == ServicingType::CleanInstall {
+                // For Clean Install, when not booting from expected root, re-set
+                // host status state to NotProvisioned
+                error!("Re-set host status from {current_servicing_state:?} to NotProvisioned");
+                datastore.with_host_status(|host_status| {
+                    host_status.spec = Default::default();
+                    host_status.servicing_state = ServicingState::NotProvisioned;
+                })?;
+
+                return Err(TridentError::new(ServicingError::CleanInstallRebootCheck {
+                    root_device_path: current_root_path.to_string_lossy().to_string(),
+                    expected_device_path: expected_root_path.to_string_lossy().to_string(),
+                }));
+            }
+        }
+    };
+    Ok(BootValidationResult::ValidBootProvisioned)
+}
+
+fn handle_boot_validation_errors(
+    datastore: &mut DataStore,
+    booted_to_expected_root: bool,
+    current_servicing_state: ServicingState,
+    current_root_path: &Path,
+    expected_root_path: &Path,
+) -> Result<(), TridentError> {
     match (booted_to_expected_root, current_servicing_state) {
+        // Success case, nothing to handle here
         (true, ServicingState::CleanInstallFinalized)
         | (true, ServicingState::AbUpdateFinalized) => {
-            // For *Finalized states, when booting from the expected
-            // root, finish the commit process
-            info!("Host successfully booted from updated target OS image");
-            return commit_finalized_on_expected_root(
-                &ctx,
-                datastore,
-                current_servicing_state,
-                servicing_type,
-            );
+            // no-op
+            Ok(())
         }
         //
         // Every case below will return an error.
@@ -125,10 +197,15 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
             // failed to rollback, i.e boot from the servicing OS, report error
             // and leave host status alone
             error!("Host failed to rollback into the servicing OS");
-            return Err(TridentError::new(ServicingError::AbUpdateRebootCheck {
+            info!("Re-set host status from {current_servicing_state:?} to AbUpdateRollbackFailed");
+            datastore.with_host_status(|host_status| {
+                host_status.servicing_state = ServicingState::AbUpdateRollbackFailed;
+            })?;
+
+            Err(TridentError::new(ServicingError::AbUpdateRebootCheck {
                 root_device_path: current_root_path.to_string_lossy().to_string(),
                 expected_device_path: expected_root_path.to_string_lossy().to_string(),
-            }));
+            }))
         }
         (false, ServicingState::CleanInstallFinalized) => {
             // For Clean Install, when not booting from expected root, re-set
@@ -139,10 +216,10 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
                 host_status.servicing_state = ServicingState::NotProvisioned;
             })?;
 
-            return Err(TridentError::new(ServicingError::CleanInstallRebootCheck {
+            Err(TridentError::new(ServicingError::CleanInstallRebootCheck {
                 root_device_path: current_root_path.to_string_lossy().to_string(),
                 expected_device_path: expected_root_path.to_string_lossy().to_string(),
-            }));
+            }))
         }
         (true, ServicingState::AbUpdateHealthCheckFailed) => {
             // AbUpdateHealthCheckFailed, when booting from expected root (the servicing OS), mark host
@@ -154,11 +231,11 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
                 host_status.servicing_state = ServicingState::Provisioned;
             })?;
 
-            return Err(TridentError::new(
+            Err(TridentError::new(
                 HealthChecksError::AbUpdateHealthCheckCommitCheck {
                     expected_device_path: current_root_path.to_string_lossy().to_string(),
                 },
-            ));
+            ))
         }
         (false, ServicingState::AbUpdateFinalized) => {
             // AbUpdateFinalize, when booting from incorrect root (the servicing OS), mark host status
@@ -170,26 +247,23 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
                 host_status.servicing_state = ServicingState::Provisioned;
             })?;
 
-            return Err(TridentError::new(ServicingError::AbUpdateRebootCheck {
+            Err(TridentError::new(ServicingError::AbUpdateRebootCheck {
                 root_device_path: current_root_path.to_string_lossy().to_string(),
                 expected_device_path: expected_root_path.to_string_lossy().to_string(),
-            }));
+            }))
         }
         (_, state) => {
             // No other states should happen, return error
             error!("Unexpected status: {current_servicing_state:?}");
-            return Err(TridentError::new(InternalError::UnexpectedServicingState {
+            Err(TridentError::new(InternalError::UnexpectedServicingState {
                 state,
-            }));
+            }))
         }
     }
 }
 
-/// Completes the commit for AbUpdateFinalized and CleanInstallFinalized states when
-/// the host has booted from the expected root device. This includes running health
-/// checks, updating boot order, updating the encryption pcrlock policy if needed, and
-/// updating the Host Status.
-fn commit_finalized_on_expected_root(
+/// Runs health checks on target OS
+fn check_health(
     ctx: &EngineContext,
     datastore: &mut DataStore,
     current_servicing_state: ServicingState,
@@ -206,7 +280,17 @@ fn commit_finalized_on_expected_root(
             return Err(err);
         }
     }
+    Ok(BootValidationResult::ValidBootProvisioned)
+}
 
+/// Completes the commit for AbUpdateFinalized and CleanInstallFinalized states when
+/// the host has booted from the expected root device. This includes updating boot order,
+/// updating the encryption pcrlock policy if needed, and updating the Host Status.
+fn commit_finalized_on_expected_root(
+    ctx: &EngineContext,
+    datastore: &mut DataStore,
+    current_servicing_state: ServicingState,
+) -> Result<BootValidationResult, TridentError> {
     // If it's virtdeploy, after confirming that we have booted into the correct image, we need
     // to update the `BootOrder` to boot from the correct image next time.
     let use_virtdeploy_workaround = virt::is_virtdeploy()

@@ -186,6 +186,7 @@ pub(crate) fn validate_rebuild_raid(
         | ServicingState::RuntimeUpdateStaged
         | ServicingState::AbUpdateStaged
         | ServicingState::AbUpdateFinalized
+        | ServicingState::AbUpdateRollbackFailed
         | ServicingState::AbUpdateHealthCheckFailed => {}
     }
 
