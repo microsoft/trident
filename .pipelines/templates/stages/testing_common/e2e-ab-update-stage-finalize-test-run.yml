@@ -101,6 +101,7 @@ steps:
           --artifacts-folder "$(ob_outputDirectory)"
     displayName: "📄 Stage A/B update deployment logs"
     condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
+    workingDirectory: $(TRIDENT_SOURCE_DIR)
 
   - bash: |
       set -eux
@@ -178,6 +179,7 @@ steps:
             --artifacts-folder "$(ob_outputDirectory)"
       displayName: "📷 Capture Finalize A/B update screenshot"
       condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
+      workingDirectory: $(TRIDENT_SOURCE_DIR)
 
   - bash: |
       set -eux
@@ -188,6 +190,7 @@ steps:
           --artifacts-folder "$(ob_outputDirectory)"
     displayName: "📄 Finalize A/B update deployment logs"
     condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
+    workingDirectory: $(TRIDENT_SOURCE_DIR)
 
   - bash: |
       set -eux
@@ -210,6 +213,7 @@ steps:
           --metrics-operation update1
     displayName: "Create boot metrics for booting into target OS B"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+    workingDirectory: $(TRIDENT_SOURCE_DIR)
 
   - template: ../testing_common/trident-metrics.yml
     parameters:
