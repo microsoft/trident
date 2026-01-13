@@ -17,6 +17,12 @@ parameters:
       - amd64
       - arm64
 
+  - name: micVersion
+    displayName: MIC Version
+    type: string
+    default: "*.*.*"
+
+
 stages:
   - ${{ if eq( parameters.targetArchitecture, 'amd64') }}:
     - template: e2e-template.yml
@@ -27,6 +33,8 @@ stages:
         forceFunctionalTestImageRebuild: true
         baremetalTestsEnabled: ${{ parameters.baremetalTestsEnabled }}
         baseImageArtifactStage: ${{ parameters.baseImageArtifactStage }}
+        micVersion: ${{ parameters.micVersion }}
+        micBuildType: dev
 
   - ${{ if eq( parameters.targetArchitecture, 'arm64') }}:
     - template: e2e-arm64-template.yml
