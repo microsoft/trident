@@ -14,6 +14,7 @@ MAX_VERSION_COUNT=${MAX_VERSION_COUNT:-'-1'}
 
 EXCLUDED_VERSIONS=${EXCLUDED_VERSIONS:-''}
 DEV_BRANCH=${DEV_BRANCH:-'main'}
+USE_MERGE_COMMIT=${USE_MERGE_COMMIT:-'false'}
 
 # Configuration
 REPO="microsoft/trident"
@@ -95,6 +96,12 @@ create_version_docs() {
     if [[ "$DEBUG_USE_DEV_BRANCH" == "true" ]]; then
         # Debug: clone the dev branch
         gh repo clone "https://github.com/${REPO}.git" "${tmp_dir}" -- --depth 1 --branch "${DEV_BRANCH}"
+    elif [[ "$version" == "$DEV_BRANCH" ]] && [[ "$USE_MERGE_COMMIT" == "true" ]]; then
+        # For merge commits (external PRs), we need to clone and checkout the specific ref
+        gh repo clone "https://github.com/${REPO}.git" "${tmp_dir}"
+        cd "${tmp_dir}"
+        git fetch origin "${DEV_BRANCH}"
+        git checkout FETCH_HEAD
     else
         gh repo clone "https://github.com/${REPO}.git" "${tmp_dir}" -- --depth 1 --branch "${version}" 
     fi

@@ -49,6 +49,7 @@ Options:
 - [get](#get)
 - [validate](#validate)
 - [offline-initialize](#offline-initialize)
+- [daemon](#daemon)
 - [help](#help)
 
 
@@ -497,6 +498,56 @@ Provide path for history.json
 Conflicts with:
 
 - `<HS_PATH>`
+
+
+#### <span>--verbosity &lt;VERBOSITY&gt;</span>
+
+Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
+
+Default: `DEBUG`
+
+
+## daemon
+
+Usage:
+
+```
+trident daemon [OPTIONS]
+```
+
+Argument summary:
+
+```
+Options:
+      --inactivity-timeout <INACTIVITY_TIMEOUT>
+          Inactivity timeout. The server will shut down automatically
+          after being inactive for this duration. Supports
+          human-readable durations, e.g., "5m", "1h30m", "300s"
+          [default: 300s]
+  -v, --verbosity <VERBOSITY>
+          Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
+          [default: DEBUG]
+      --socket-path <SOCKET_PATH>
+          Path to the UNIX socket to listen on when not running in
+          systemd socket-activated mode [default:
+          /var/run/trident.sock]
+```
+
+
+### Argument Details
+
+#### <span>--inactivity_timeout &lt;INACTIVITY_TIMEOUT&gt;</span>
+
+Inactivity timeout. The server will shut down automatically after being inactive for this duration. Supports human-readable durations, e.g., "5m", "1h30m", "300s"
+
+Default: `300s`
+
+
+#### <span>--socket_path &lt;SOCKET_PATH&gt;</span>
+
+Path to the UNIX socket to listen on when not running in systemd socket-activated mode
+
+Default: `/var/run/trident.sock`
 
 
 #### <span>--verbosity &lt;VERBOSITY&gt;</span>

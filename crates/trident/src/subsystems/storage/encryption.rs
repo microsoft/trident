@@ -252,12 +252,23 @@ pub fn provision(ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentEr
                     "Wrote systemd drop-in '{}' with RequiresMountsFor=/var/lib/trident",
                     dropin_path.display()
                 );
+
+                // log contents for debugging
+                let dropin_file_contents = fs::read_to_string(&dropin_path).structured(
+                    ServicingError::WriteDropInForSystemdCryptsetup {
+                        path: dropin_path.display().to_string(),
+                    },
+                )?;
+                debug!("Drop-in file contents:\n{}", dropin_file_contents);
+
                 Ok(())
             };
 
             // web-a instance: systemd-cryptsetup@web\x2da.service
+            debug!("Creating systemd drop-in for web-a encrypted volume");
             create_dropin("systemd-cryptsetup@web\\x2da.service")?;
             // web-b instance: systemd-cryptsetup@web\x2db.service
+            debug!("Creating systemd drop-in for web-b encrypted volume");
             create_dropin("systemd-cryptsetup@web\\x2db.service")?;
         }
     }
