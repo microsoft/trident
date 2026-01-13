@@ -132,7 +132,7 @@ jobs:
             STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --verbose"
           fi
           if [ "${{ parameters.flavor }}" != "uki" ]; then
-            if [[ '${{ parameters.testSecureBoot }}" == 'true' ]]; then
+            if [[ "${{ parameters.testSecureBoot }}" == 'true' ]]; then
               STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --secure-boot"
             fi
           fi
