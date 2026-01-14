@@ -220,7 +220,7 @@ fn deploy_os_image_file(
 
     ensure!(
         dev_info.size >= image_file.uncompressed_size,
-        "Block device is too small, expected at least {} bytes, got {} bytes",
+        "Block device '{id}' is too small: expected at least {} bytes, got {} bytes",
         image_file.uncompressed_size,
         dev_info.size
     );
@@ -237,12 +237,12 @@ fn deploy_os_image_file(
             block_device_path.display()
         ))?;
 
-    trace!("Deployed image with hash {computed_sha384}");
+    trace!("Deployed image with hash '{computed_sha384}' on block device '{id}'");
 
     // Ensure computed SHA384 matches SHA384 in OS image
     if image_file.sha384 != computed_sha384 {
         bail!(
-            "SHA384 mismatch for OS image: expected {}, got {}",
+            "SHA384 mismatch for OS image for block device '{id}': expected {}, got {}",
             image_file.sha384,
             computed_sha384
         )
