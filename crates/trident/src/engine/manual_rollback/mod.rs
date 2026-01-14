@@ -104,7 +104,7 @@ pub fn execute_rollback(
             | ServicingState::Provisioned => {
                 if datastore.host_status().last_error.is_some() {
                     return Err(TridentError::new(InvalidInputError::InvalidRollbackState {
-                        reason: "in required state but has a last error set".to_string(),
+                        reason: "in required state but has a last error set, use install or update rather than rollback".to_string(),
                     }));
                 }
                 // OK to proceed
