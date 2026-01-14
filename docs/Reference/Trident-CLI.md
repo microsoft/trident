@@ -27,7 +27,7 @@ Commands:
   validate            Validate the provided Host Configuration
   offline-initialize  Initialize for a system that wasn't
                           installed by Trident
-  rollback            Manually rollback to previous state
+  rollback            Trigger a manual rollback to previous state
   help                Print this message or the help of the given
                           subcommand(s)
 
@@ -514,7 +514,7 @@ Default: `DEBUG`
 
 ## rollback
 
-Manually rollback to previous state
+Trigger a manual rollback to previous state
 
 Usage:
 
@@ -537,7 +537,7 @@ Options:
           is only applicable for stage operation and will be ignored
           for finalize
       --ab
-          Invoke available A/B rollback If allowed-operations is
+          Invoke next available A/B rollback If allowed-operations is
           specified, this argument is only applicable for stage
           operation and will be ignored for finalize
       --allowed-operations [<ALLOWED_OPERATIONS>...]
@@ -569,7 +569,7 @@ Conflicts with:
 
 #### <span>--ab &lt;AB&gt;</span>
 
-Invoke available A/B rollback If allowed-operations is specified, this argument is only applicable for stage operation and will be ignored for finalize
+Invoke next available A/B rollback If allowed-operations is specified, this argument is only applicable for stage operation and will be ignored for finalize
 
 Conflicts with:
 
@@ -681,7 +681,7 @@ Commands:
   validate            Validate the provided Host Configuration
   offline-initialize  Initialize for a system that wasn't
                           installed by Trident
-  rollback            Manually rollback to previous state
+  rollback            Trigger a manual rollback to previous state
   help                Print this message or the help of the given
                           subcommand(s)
 ```

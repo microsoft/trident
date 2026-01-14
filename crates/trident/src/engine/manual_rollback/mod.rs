@@ -26,6 +26,7 @@ use crate::{
 
 // Manual Rollback util
 mod utils;
+use utils::{ManualRollbackContext, ManualRollbackKind};
 
 /// Print rollback info for 'trident get'.
 pub fn get_rollback_info(datastore: &DataStore, kind: GetKind) -> Result<String, TridentError> {
@@ -34,7 +35,7 @@ pub fn get_rollback_info(datastore: &DataStore, kind: GetKind) -> Result<String,
         .get_host_statuses()
         .message("Failed to get datastore HostStatus entries")?;
     // Create ManualRollback context from HostStatus entries.
-    let context = utils::ManualRollbackContext::new(&host_statuses)
+    let context = ManualRollbackContext::new(&host_statuses)
         .message("Failed to create manual rollback context")?;
     let rollback_chain =
         context
@@ -83,7 +84,7 @@ pub fn check_rollback(
         .get_host_statuses()
         .message("Failed to get datastore HostStatus entries")?;
     // Create ManualRollback context from HostStatus entries.
-    let rollback_context = utils::ManualRollbackContext::new(&host_statuses)
+    let rollback_context = ManualRollbackContext::new(&host_statuses)
         .message("Failed to create manual rollback context")?;
     let check_string = rollback_context
         .check_requested_rollback(invoke_if_next_is_runtime, invoke_available_ab)?;
@@ -123,7 +124,7 @@ pub fn execute_rollback(
             .get_host_statuses()
             .message("Failed to get datastore HostStatus entries")?;
         // Create ManualRollback context from HostStatus entries.
-        let rollback_context = utils::ManualRollbackContext::new(&host_statuses)
+        let rollback_context = ManualRollbackContext::new(&host_statuses)
             .message("Failed to create manual rollback context")?;
 
         let requested_rollback = rollback_context
@@ -138,8 +139,8 @@ pub fn execute_rollback(
         };
 
         let rollback_type = match requested_rollback.kind {
-            utils::ManualRollbackKind::Ab => ServicingType::ManualRollbackAb,
-            utils::ManualRollbackKind::Runtime => ServicingType::ManualRollbackRuntime,
+            ManualRollbackKind::Ab => ServicingType::ManualRollbackAb,
+            ManualRollbackKind::Runtime => ServicingType::ManualRollbackRuntime,
         };
 
         let engine_context = EngineContext {
@@ -153,12 +154,12 @@ pub fn execute_rollback(
             is_uki: Some(efivar::current_var_is_uki()),
             image: None,
             storage_graph: engine::build_storage_graph(&datastore.host_status().spec.storage)?, // Build storage graph
-            filesystems: Vec::new(), // Will be populated after dynamic validation
+            filesystems: Vec::new(),
         };
 
         let staging_state = match requested_rollback.kind {
-            utils::ManualRollbackKind::Ab => ServicingState::ManualRollbackAbStaged,
-            utils::ManualRollbackKind::Runtime => ServicingState::ManualRollbackRuntimeStaged,
+            ManualRollbackKind::Ab => ServicingState::ManualRollbackAbStaged,
+            ManualRollbackKind::Runtime => ServicingState::ManualRollbackRuntimeStaged,
         };
 
         stage_rollback(datastore, &engine_context, staging_state)
@@ -178,9 +179,7 @@ pub fn execute_rollback(
     // Perform finalize if operation is allowed
     if allowed_operations.has_finalize() {
         let current_servicing_type = match datastore.host_status().servicing_state {
-            ServicingState::ManualRollbackAbStaged | ServicingState::ManualRollbackAbFinalized => {
-                ServicingType::ManualRollbackAb
-            }
+            ServicingState::ManualRollbackAbStaged => ServicingType::ManualRollbackAb,
             ServicingState::ManualRollbackRuntimeStaged => ServicingType::ManualRollbackRuntime,
             state => {
                 return Err(TridentError::new(InvalidInputError::InvalidRollbackState {
@@ -208,7 +207,7 @@ pub fn execute_rollback(
         )
         .message("Failed to finalize manual rollback");
         // Persist the Trident background log and metrics file. Otherwise, the
-        // staging logs would be lost.
+        // finalize logs would be lost.
         engine::persist_background_log_and_metrics(
             &datastore.host_status().spec.trident.datastore_path,
             None,
@@ -300,13 +299,8 @@ fn finalize_rollback(
 
     trace!("Manual rollback requires reboot");
 
-    let root_path = if container::is_running_in_container()
-        .message("Failed to check if Trident is running in a container")?
-    {
-        container::get_host_root_path().message("Failed to get host root path")?
-    } else {
-        PathBuf::from(ROOT_MOUNT_POINT_PATH)
-    };
+    let root_path = container::get_host_relative_path(PathBuf::from(ROOT_MOUNT_POINT_PATH))
+        .message("Failed to get host root path")?;
     let esp_path = Path::join(&root_path, ESP_RELATIVE_MOUNT_POINT_PATH);
 
     // In UKI, find the previous UKI and set it as default boot entry

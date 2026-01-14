@@ -95,7 +95,9 @@ fn enumerate_trident_managed_ukis(
             .to_str()
             .and_then(|filename| filename.strip_prefix("vmlinuz-"))
             .and_then(|f| f.split_once('-'))
-            .filter(|(_, suffix)| suffix.contains("azla") || suffix.contains("azlb"))
+            .filter(|(_, suffix)| {
+                suffix.contains("staged") || suffix.contains("azla") || suffix.contains("azlb")
+            })
             .and_then(|(index, suffix)| Some((index.parse::<usize>().ok()?, suffix.to_string())))
         {
             uki_entries.push((index, suffix, entry.path()));
@@ -243,6 +245,7 @@ pub fn find_previous_uki(esp_dir_path: &Path) -> Result<PathBuf, TridentError> {
     }
 }
 
+/// Construct the previous UKI filename and set it as the default boot entry.
 pub fn use_previous_uki_as_default(esp_dir_path: &Path) -> Result<(), TridentError> {
     let previous_uki_entry_path = find_previous_uki(esp_dir_path)?;
     let entry_name = previous_uki_entry_path

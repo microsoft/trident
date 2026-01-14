@@ -78,9 +78,9 @@ pub enum ServicingType {
     AbUpdate = 2,
     /// Clean install of the target OS image when the host is booted from the provisioning OS.
     CleanInstall = 3,
-    /// Manual Rollback of the target OS image to a previously deployed state.
+    /// Manual Rollback of the target OS image into the inactive volume to the previously deployed state.
     ManualRollbackAb = 4,
-    /// Manual Rollback of the target OS image to a previously deployed state.
+    /// Manual Rollback of the target OS image within the active volume to the previously deployed state.
     ManualRollbackRuntime = 5,
 }
 

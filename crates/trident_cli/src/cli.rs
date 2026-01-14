@@ -177,7 +177,7 @@ pub enum Commands {
         history_path: Option<PathBuf>,
     },
 
-    /// Manually rollback to previous state
+    /// Trigger manual rollback to previous state
     #[clap(name = "rollback")]
     Rollback {
         /// Check operation that would be performed

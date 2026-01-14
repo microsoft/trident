@@ -264,7 +264,7 @@ fn copy_file_artifacts(
 ///  * For A/B update
 ///    - 'optimistic': use the opposite of the active volume
 ///    - 'conservative': use the active volume (this may be a redundant copy)
-///  * For manual rollback (this should only be called during manual rollback of an a/b update)
+///  * For manual rollback (this should only be called during manual rollback of an A/B update)
 ///    - use the opposite of the active volume
 /// 2. During commit, after the target OS boot has been verified, the target OS boot files
 ///    are copied to the UEFI fallback folder.
@@ -429,7 +429,7 @@ pub fn replace_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
         })
         .context("Failed to copy files")?;
 
-    // Rename everything all pre-existing files from to_dir/<filename> to to_dir/<filename>.old
+    // Rename all pre-existing files from to_dir/<filename> to to_dir/<filename>.old
     fs::read_dir(to_dir)?
         .collect::<Result<Vec<_>, _>>()?
         .iter()

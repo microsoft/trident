@@ -91,7 +91,8 @@ impl DataStore {
             .prepare("SELECT contents FROM hoststatus ORDER BY id ASC")
             .structured(ServicingError::Datastore {
                 inner: DatastoreError::InitializeDatastore,
-            })?;
+            })
+            .message("Failed to read all database host statuses")?;
 
         while let State::Row = query_statement
             .next()

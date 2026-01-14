@@ -166,7 +166,7 @@ pub enum Commands {
         history_path: Option<PathBuf>,
     },
 
-    /// Manually rollback to previous state
+    /// Trigger a manual rollback to previous state
     Rollback {
         /// Check operation that would be performed
         #[arg(long)]
@@ -178,7 +178,7 @@ pub enum Commands {
         #[arg(long, conflicts_with = "ab")]
         runtime: bool,
 
-        /// Invoke available A/B rollback
+        /// Invoke next available A/B rollback
         /// If allowed-operations is specified, this argument is only applicable for
         /// stage operation and will be ignored for finalize.
         #[arg(long, conflicts_with = "runtime")]

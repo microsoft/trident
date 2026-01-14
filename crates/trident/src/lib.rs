@@ -5,11 +5,11 @@ use std::{
 };
 
 use cli::GetKind;
-use engine::{bootentries, EngineContext};
 use log::{debug, error, info, warn};
 use nix::unistd::Uid;
 use semver::Version;
 
+use engine::{bootentries, EngineContext};
 use osutils::{block_devices, container, dependencies::Dependency};
 use trident_api::{
     config::{HostConfiguration, HostConfigurationSource, Operations},
@@ -700,10 +700,9 @@ impl Trident {
             ServicingState::Provisioned
                 | ServicingState::ManualRollbackAbStaged
                 | ServicingState::ManualRollbackRuntimeStaged
-                | ServicingState::ManualRollbackAbFinalized
         ) {
             info!(
-                "Not in required state ({:?}), cannot rollback",
+                "Cannot trigger rollback from current state ({:?})",
                 datastore.host_status().servicing_state
             );
             return Ok(ExitKind::Done);
