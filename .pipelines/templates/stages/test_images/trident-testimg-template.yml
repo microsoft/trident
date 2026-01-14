@@ -42,6 +42,11 @@ parameters:
     type: string
     default: "*.*.*"
 
+  - name: rpmsVersion
+    displayName: RPM Version
+    type: string
+    default: "*.*.*"
+
   - name: baseimgAzureLinuxVersion
     displayName: Version of AzureLinux for the Base Image
     type: string
@@ -162,7 +167,7 @@ steps:
   # template is always run and contains logic to skip if not needed.
   - template: common/rpms-download-template.yaml@platform-pipelines
     parameters:
-      imageVersion: ${{ parameters.baseimgVersion }}
+      rpmsVersion: ${{ parameters.baseimgVersion }}
       azureLinuxVersion: ${{ parameters.baseimgAzureLinuxVersion }}
       runtimeBuildType: ${{ parameters.baseimgBuildType }}
 
