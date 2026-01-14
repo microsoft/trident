@@ -78,6 +78,8 @@ jobs:
           micVersion: ${{ parameters.micVersion }}
           baseimgBuildType: $(BASEIMG_BUILD_TYPE)
           baseimgVersion: $(BASEIMG_VERSION)
+          # Use same build id for baseimg and rpms
+          rpmsVersion: $(BASEIMG_VERSION)
           baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
           baseimgTypes: 
             - ${{ parameters.baseimgType }}

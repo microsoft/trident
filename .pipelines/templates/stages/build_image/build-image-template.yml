@@ -47,6 +47,11 @@ parameters:
     type: string
     default: "*.*.*"
 
+  - name: rpmsVersion
+    displayName: RPM Version
+    type: string
+    default: "*.*.*"
+
   - name: clones
     type: number
     default: 1
@@ -104,7 +109,7 @@ steps:
   # template is always run and contains logic to skip if not needed.
   - template: common/rpms-download-template.yaml@platform-pipelines
     parameters:
-      imageVersion: ${{ parameters.baseimgVersion }}
+      rpmsVersion: ${{ parameters.rpmsVersion }}
       azureLinuxVersion: ${{ parameters.azureLinuxVersion }}
       runtimeBuildType: ${{ parameters.baseimgBuildType }}
 
