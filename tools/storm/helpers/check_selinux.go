@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
-	stormenv "tridenttools/storm/utils/env"
 	stormretry "tridenttools/storm/utils/retry"
 	stormsshclient "tridenttools/storm/utils/ssh/client"
 	stormsshconfig "tridenttools/storm/utils/ssh/config"
+	"tridenttools/storm/utils/trident"
 
 	"github.com/microsoft/storm"
 	"github.com/sirupsen/logrus"
@@ -17,7 +17,7 @@ import (
 type CheckSelinuxHelper struct {
 	args struct {
 		stormsshconfig.SshCliSettings `embed:""`
-		stormenv.EnvCliSettings       `embed:""`
+		trident.RuntimeCliSettings    `embed:""`
 		AuditFile                     string `required:"" help:"Audit logs file." type:"path"`
 	}
 }
@@ -36,7 +36,7 @@ func (h *CheckSelinuxHelper) RegisterTestCases(r storm.TestRegistrar) error {
 }
 
 func (h *CheckSelinuxHelper) checkSelinuxDenials(tc storm.TestCase) error {
-	if h.args.Env == stormenv.TridentEnvironmentNone {
+	if h.args.TridentRuntimeType == trident.RuntimeTypeNone {
 		tc.Skip("No Trident environment specified")
 	}
 
