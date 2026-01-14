@@ -242,7 +242,7 @@ enum ManualRollbackKind {
 
 message CheckRollbackRequest {
   // The rollback kind parameter for the servicing operation.
-  ManualRollbackKind    kind = 1;
+  ManualRollbackKind kind = 1;
 }
 
 enum CheckRollbackKind {
@@ -260,12 +260,12 @@ message RollbackRequest {
   // The finalize parameters for the servicing operation.
   FinalizeRequest finalize = 2;
   // The rollback kind parameter for the servicing operation.
-  ManualRollbackKind    type = 3;
+  ManualRollbackKind kind = 3;
 }
 
 message RollbackStageRequest {
   // The rollback kind parameter for the servicing operation.
-  ManualRollbackKind    kind = 3;
+  ManualRollbackKind kind = 3;
 }
 
 message RollbackFinalizeRequest {
