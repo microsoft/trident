@@ -64,7 +64,7 @@ fn run_trident(
             runtime,
             ..
         } => {
-            let datastore = DataStore::open_or_create(&load_agent_config()?.datastore)
+            let datastore = DataStore::open_or_create(AgentConfig::load()?.datastore_path())
                 .message("Failed to open datastore")?;
             return check_rollback(&datastore, *ab, *runtime)
                 .message("Failed to check manual rollback availability")

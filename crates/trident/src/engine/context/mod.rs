@@ -89,7 +89,7 @@ impl EngineContext {
             // If host is executing a runtime update, active and update volumes are the same.
             | ServicingType::RuntimeUpdate => self.ab_active_volume,
 
-            // If host is executing a manual rollback for an A/B udpate, update volume
+            // If host is executing a manual rollback for an A/B update, update volume
             // is the opposite of the active volume.
             ServicingType::ManualRollbackAb
             // If host is executing an A/B update, update volume is the opposite of active volume.

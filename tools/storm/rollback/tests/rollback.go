@@ -242,10 +242,10 @@ func SplitRollbackTest(testConfig stormrollbackconfig.TestConfig, vmConfig storm
 	// Check `rollback --allowed-operations` for ab update rollback, need to:
 	//   1. abupdate
 	//   2. runtime update
-	//   3. (for runtime udpate) rollback --allowed-operations stage
-	//   4. (for runtime udpate) rollback --allowed-operations finalize
-	//   5. (for ab udpate) rollback --allowed-operations stage
-	//   6. (for ab udpate) rollback --allowed-operations finalize
+	//   3. (for runtime update) rollback --allowed-operations stage
+	//   4. (for runtime update) rollback --allowed-operations finalize
+	//   5. (for ab update) rollback --allowed-operations stage
+	//   6. (for ab update) rollback --allowed-operations finalize
 
 	// Create context to ensure goroutines exit cleanly
 	ctx, cancel := context.WithCancel(context.Background())
