@@ -10,12 +10,18 @@ use std::{env, io::BufReader};
 use anyhow::{ensure, Context, Error};
 use log::{debug, trace, warn};
 use oci_client::{secrets::RegistryAuth, Client as OciClient, Reference};
-use reqwest::blocking::{Client, Response};
+use reqwest::{
+    blocking::{Client, Response},
+    header::{ACCEPT_RANGES, AUTHORIZATION, CONTENT_LENGTH, CONTENT_RANGE, RANGE},
+    StatusCode,
+};
 use tokio::runtime::Runtime;
 use url::Url;
 
 #[cfg(feature = "dangerous-options")]
 use docker_credential::{self, DockerCredential};
+
+use super::http_range::HttpRangeRequest;
 
 #[cfg(feature = "dangerous-options")]
 const DOCKER_CONFIG_FILE_PATH: &str = ".docker/config.json";
@@ -82,7 +88,7 @@ impl HttpFile {
         let request_sender = || {
             let mut request = client.head(url.as_str());
             if let Some(token) = &token {
-                request = request.header("Authorization", format!("Bearer {token}"));
+                request = request.header(AUTHORIZATION, format!("Bearer {token}"));
             }
             request.send()
         };
@@ -92,22 +98,24 @@ impl HttpFile {
         // Get the file size from the response headers
         let size = response
             .headers()
-            .get("Content-Length")
-            .ok_or(IoError::other(
-                "Failed to get 'Content-Length' in the response header",
-            ))?
+            .get(CONTENT_LENGTH)
+            .ok_or_else(|| {
+                IoError::other(format!(
+                    "Failed to get '{CONTENT_LENGTH}' in the response header"
+                ))
+            })?
             .to_str()
             .map_err(|e| {
                 IoError::new(
                     IoErrorKind::InvalidData,
-                    format!("Could not parse 'Content-Length': {e}"),
+                    format!("Could not parse '{CONTENT_LENGTH}': {e}"),
                 )
             })?
             .parse()
             .map_err(|e| {
                 IoError::new(
                     IoErrorKind::InvalidData,
-                    format!("Could not parse 'Content-Length' as an integer: {e}"),
+                    format!("Could not parse '{CONTENT_LENGTH}' as an integer: {e}"),
                 )
             })?;
 
@@ -115,25 +123,25 @@ impl HttpFile {
 
         // Ensure the server supports range requests, this implementation
         // requires that feature!
-        let accept_ranges_header = response.headers().get("Accept-Ranges");
+        let accept_ranges_header = response.headers().get(ACCEPT_RANGES);
         if accept_ranges_header.is_none() && ignore_ranges_header_absence {
-            warn!("OCI server does not provide 'Accept-Ranges' header, continuing anyway");
+            warn!("OCI server does not provide '{ACCEPT_RANGES}' header, continuing anyway");
         } else if accept_ranges_header
-            .ok_or(IoError::other(
-                "Server does not support range requests: 'Accept-Ranges' header was not provided",
+            .ok_or_else(|| IoError::other(
+                format!("Server does not support range requests: '{ACCEPT_RANGES}' header was not provided"),
             ))?
             .to_str()
             .map_err(|e| {
                 IoError::new(
                     IoErrorKind::InvalidData,
-                    format!("Could not parse 'Accept-Ranges': {e}"),
+                    format!("Could not parse '{ACCEPT_RANGES}': {e}"),
                 )
             })?
             .to_lowercase()
             .eq("none")
         {
             return Err(IoError::other(
-                "Server does not support range requests: 'Accept-Ranges: none'",
+                format!("Server does not support range requests: '{ACCEPT_RANGES}: none'"),
             ));
         }
 
@@ -175,29 +183,48 @@ impl HttpFile {
     /// enabled, will default to anonymous access.
     fn get_auth(_img_ref: &Reference) -> RegistryAuth {
         #[cfg(feature = "dangerous-options")]
-        if let Ok(docker_config) = std::fs::File::open(
-            env::home_dir()
-                .unwrap_or_default()
-                .join(DOCKER_CONFIG_FILE_PATH),
-        ) {
+        'config_auth: {
+            let Some(user_home) = env::home_dir() else {
+                debug!("Could not determine user home directory, using anonymous access.");
+                break 'config_auth;
+            };
+
+            let docker_config_path = user_home.join(DOCKER_CONFIG_FILE_PATH);
+            if !docker_config_path.exists() {
+                debug!(
+                    "Docker config file does not exist at '{}'",
+                    docker_config_path.display()
+                );
+                break 'config_auth;
+            }
+
+            let docker_config = match std::fs::File::open(docker_config_path) {
+                Ok(file) => file,
+                Err(e) => {
+                    debug!("Failed to open docker config file: {}", e);
+                    break 'config_auth;
+                }
+            };
+
             let registry = _img_ref
                 .resolve_registry()
                 .strip_suffix('/')
                 .unwrap_or_else(|| _img_ref.resolve_registry());
+
             match docker_credential::get_credential_from_reader(
                 BufReader::new(docker_config),
                 registry,
             ) {
                 Ok(DockerCredential::UsernamePassword(username, password)) => {
-                    debug!("Found username and password docker credential");
+                    debug!("Using username and password docker credential");
                     return RegistryAuth::Basic(username, password);
                 }
                 Ok(DockerCredential::IdentityToken(_)) => {
-                    debug!("Found identity token docker credential")
+                    debug!("Found identity token docker credential, ignoring")
                 }
-                Err(_) => debug!("Failed to find docker credentials"),
+                Err(e) => debug!("Failed to retrieve docker credentials: {e}"),
             }
-        };
+        }
 
         debug!("Proceeding with anonymous access");
         RegistryAuth::Anonymous
@@ -241,12 +268,16 @@ impl HttpFile {
     fn http_to_io_err(e: reqwest::Error) -> IoError {
         let formatted = format!("HTTP File error: {e}");
         if let Some(status) = e.status() {
-            match status.as_u16() {
-                400 => IoError::new(IoErrorKind::InvalidInput, formatted),
-                401 | 403 => IoError::new(IoErrorKind::PermissionDenied, formatted),
-                404 => IoError::new(IoErrorKind::NotFound, formatted),
-                408 => IoError::new(IoErrorKind::TimedOut, formatted),
-                500..=599 => IoError::new(IoErrorKind::ConnectionAborted, formatted),
+            match status {
+                StatusCode::BAD_REQUEST => IoError::new(IoErrorKind::InvalidInput, formatted),
+                StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
+                    IoError::new(IoErrorKind::PermissionDenied, formatted)
+                }
+                StatusCode::NOT_FOUND => IoError::new(IoErrorKind::NotFound, formatted),
+                StatusCode::REQUEST_TIMEOUT => IoError::new(IoErrorKind::TimedOut, formatted),
+                _ if status.is_server_error() => {
+                    IoError::new(IoErrorKind::ConnectionAborted, formatted)
+                }
                 _ => IoError::other(formatted),
             }
         } else if e.is_timeout() {
@@ -267,20 +298,12 @@ impl HttpFile {
             let mut request = self.client.get(self.url.as_str());
 
             if let Some(token) = self.token.clone() {
-                request = request.header("Authorization", format!("Bearer {token}"));
+                request = request.header(AUTHORIZATION, format!("Bearer {token}"));
             }
 
-            // Generate the range header when appropriate
-            let range_header = match (start, end) {
-                (Some(start), Some(end)) => Some(format!("bytes={start}-{end}")),
-                (Some(start), None) => Some(format!("bytes={start}-")),
-                (None, Some(end)) => Some(format!("bytes=0-{end}")),
-                (None, None) => None,
-            };
-
             // Add the range header to the request
-            if let Some(range) = range_header {
-                request = request.header("Range", range);
+            if let Some(range) = HttpRangeRequest::new(start, end).to_header_value() {
+                request = request.header(RANGE, range);
             }
 
             request.send()
@@ -350,7 +373,7 @@ impl HttpFile {
 
         let response = self.reader(Some(section_offset), Some(end))?;
 
-        if let Some(data) = response.headers().get("Content-Range") {
+        if let Some(data) = response.headers().get(CONTENT_RANGE) {
             trace!(
                 "Returned content range: {:?}",
                 String::from_utf8_lossy(data.as_bytes())
@@ -447,6 +470,8 @@ mod tests {
         },
     };
 
+    use reqwest::header::CONTENT_TYPE;
+
     #[test]
     fn test_retrieve_access_token() {
         let client = OciClient::default();
@@ -496,8 +521,8 @@ mod tests {
         let document_mock = server
             .mock("GET", relative_file_path)
             .with_body(data)
-            .with_header("content-length", &data.len().to_string())
-            .with_header("content-type", "text/plain")
+            .with_header(CONTENT_RANGE, &data.len().to_string())
+            .with_header(CONTENT_TYPE, "text/plain")
             .with_status(200)
             .expect(1)
             .create();
