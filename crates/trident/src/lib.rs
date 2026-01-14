@@ -42,7 +42,10 @@ pub mod validation;
 
 pub use crate::{
     datastore::DataStore,
-    engine::{manual_rollback, provisioning_network, reboot},
+    engine::{
+        manual_rollback::{self, utils::ManualRollbackRequestKind},
+        provisioning_network, reboot,
+    },
     logging::{
         background_log::BackgroundLog, filter::LogFilter, logfwd::LogForwarder,
         logstream::Logstream, multilog::MultiLogger, tracestream::TraceStream,
@@ -711,8 +714,10 @@ impl Trident {
         let rollback_result = self.execute_and_record_error(datastore, |datastore| {
             manual_rollback::execute_rollback(
                 datastore,
-                invoke_if_next_is_runtime,
-                invoke_available_ab,
+                ManualRollbackRequestKind::from_flags(
+                    invoke_if_next_is_runtime,
+                    invoke_available_ab,
+                )?,
                 &allowed_operations,
             )
             .message("Failed to rollback")

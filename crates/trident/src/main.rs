@@ -7,7 +7,7 @@ use log::{error, info, LevelFilter, Log};
 use trident::{
     agentconfig::AgentConfig,
     cli::{self, Cli, Commands, GetKind},
-    manual_rollback::check_rollback,
+    manual_rollback::{self, utils::ManualRollbackRequestKind},
     offline_init, validation, BackgroundLog, DataStore, ExitKind, LogFilter, LogForwarder,
     Logstream, MultiLogger, TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
 };
@@ -66,9 +66,12 @@ fn run_trident(
         } => {
             let datastore = DataStore::open_or_create(AgentConfig::load()?.datastore_path())
                 .message("Failed to open datastore")?;
-            return check_rollback(&datastore, *ab, *runtime)
-                .message("Failed to check manual rollback availability")
-                .map(|()| ExitKind::Done);
+            return manual_rollback::check_rollback(
+                &datastore,
+                ManualRollbackRequestKind::from_flags(*runtime, *ab)?,
+            )
+            .message("Failed to check manual rollback availability")
+            .map(|()| ExitKind::Done);
         }
 
         Commands::StartNetwork { config } => {

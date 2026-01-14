@@ -19,6 +19,31 @@ lazy_static! {
             .expect("Failed to parse minimum rollback Trident version");
 }
 
+pub enum ManualRollbackRequestKind {
+    RollbackOnlyIfNextIsRuntimeUpdate,
+    RollbackAvailableAbUpdate,
+    RollbackNext,
+}
+
+impl ManualRollbackRequestKind {
+    pub fn from_flags(
+        invoke_if_next_is_runtime: bool,
+        invoke_available_ab: bool,
+    ) -> Result<Self, TridentError> {
+        match (invoke_if_next_is_runtime, invoke_available_ab) {
+            (false, false) => Ok(ManualRollbackRequestKind::RollbackNext),
+            (true, false) => Ok(ManualRollbackRequestKind::RollbackOnlyIfNextIsRuntimeUpdate),
+            (false, true) => Ok(ManualRollbackRequestKind::RollbackAvailableAbUpdate),
+            (true, true) => Err(TridentError::new(
+                InvalidInputError::InvalidRollbackExpectation {
+                    reason: "conflicting expectations: cannot expect to undo both a runtime update and an A/B update"
+                        .to_string(),
+                },
+            )),
+        }
+    }
+}
+
 #[derive(clap::ValueEnum, Copy, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ManualRollbackKind {
@@ -277,8 +302,7 @@ impl ManualRollbackContext {
     /// * If both ab and runtime are requested, return error.
     pub fn get_requested_rollback(
         &self,
-        invoke_if_next_is_runtime: bool,
-        invoke_available_ab: bool,
+        requested_rollback_kind: ManualRollbackRequestKind,
     ) -> Result<Option<ManualRollbackChainItem>, TridentError> {
         let available_rollbacks =
             self.get_rollback_chain()
@@ -290,12 +314,12 @@ impl ManualRollbackContext {
             return Ok(None);
         }
 
-        match (invoke_if_next_is_runtime, invoke_available_ab) {
-            (false, false) => {
+        match requested_rollback_kind {
+            ManualRollbackRequestKind::RollbackNext => {
                 // No expectations specified, proceed with first
                 Ok(Some(available_rollbacks[0].clone()))
             }
-            (true, false) => {
+            ManualRollbackRequestKind::RollbackOnlyIfNextIsRuntimeUpdate => {
                 // Expecting runtime rollback as first
                 if matches!(available_rollbacks[0].kind, ManualRollbackKind::Ab) {
                     return Err(TridentError::new(
@@ -308,7 +332,7 @@ impl ManualRollbackContext {
                 }
                 Ok(Some(available_rollbacks[0].clone()))
             }
-            (false, true) => {
+            ManualRollbackRequestKind::RollbackAvailableAbUpdate => {
                 // Find first A/B rollback along with its index
                 let Some((index, _)) = available_rollbacks
                     .iter()
@@ -325,14 +349,6 @@ impl ManualRollbackContext {
                 };
                 Ok(Some(available_rollbacks[index].clone()))
             }
-            (true, true) => {
-                Err(TridentError::new(
-                    InvalidInputError::InvalidRollbackExpectation {
-                        reason: "conflicting expectations: cannot expect to undo both a runtime update and an A/B update"
-                            .to_string(),
-                    },
-                ))
-            }
         }
     }
 
@@ -342,11 +358,9 @@ impl ManualRollbackContext {
     ///   * ab: if ab is the next available and runtime was not requested or if ab was requested and available in the chain
     pub fn check_requested_rollback(
         &self,
-        invoke_if_next_is_runtime: bool,
-        invoke_available_ab: bool,
+        rollback_request_kind: ManualRollbackRequestKind,
     ) -> Result<String, TridentError> {
-        let rollback =
-            self.get_requested_rollback(invoke_if_next_is_runtime, invoke_available_ab)?;
+        let rollback = self.get_requested_rollback(rollback_request_kind)?;
         match rollback {
             None => Ok("none".to_string()),
             Some(item) => Ok(match item.kind {
@@ -857,31 +871,28 @@ mod tests {
             prov(VOL_A, false, vec![], MIN),
         ];
         let context = create_rollback_context_for_testing(&host_status_list);
-        // if nothing is requested and there are no rollbacks, none is returned
+        // if both runtime rollback is requested but no rollbacks are available, error is returned
         assert!(context
-            .get_requested_rollback(false, false)
+            .get_requested_rollback(ManualRollbackRequestKind::RollbackOnlyIfNextIsRuntimeUpdate)
             .unwrap()
             .is_none());
         assert_eq!(
-            context.check_requested_rollback(false, false).unwrap(),
+            context
+                .check_requested_rollback(
+                    ManualRollbackRequestKind::RollbackOnlyIfNextIsRuntimeUpdate
+                )
+                .unwrap(),
             "none"
         );
-        // if both ab and runtime rollback is requested simultaneously, error is returned
+        // if ab rollback is requested but no rollbacks are available, error is returned
         assert!(context
-            .get_requested_rollback(true, false)
+            .get_requested_rollback(ManualRollbackRequestKind::RollbackAvailableAbUpdate)
             .unwrap()
             .is_none());
         assert_eq!(
-            context.check_requested_rollback(true, false).unwrap(),
-            "none"
-        );
-        // if both ab and runtime rollback is requested simultaneously, error is returned
-        assert!(context
-            .get_requested_rollback(false, true)
-            .unwrap()
-            .is_none());
-        assert_eq!(
-            context.check_requested_rollback(false, true).unwrap(),
+            context
+                .check_requested_rollback(ManualRollbackRequestKind::RollbackAvailableAbUpdate)
+                .unwrap(),
             "none"
         );
 
@@ -892,24 +903,28 @@ mod tests {
         host_status_list.push(inter(VOL_B, RU_STAGE, MIN));
         host_status_list.push(prov(VOL_B, false, vec![5, 2], MIN));
         let context = create_rollback_context_for_testing(&host_status_list);
-        // if runtime rollback is requested and it is the next rollback, return the index of the runtime rollback and 'runtime'
+        // if no specific rollback is requested and the next rollback is runtime, return runtime rollback
         assert!(context
-            .get_requested_rollback(false, false)
+            .get_requested_rollback(ManualRollbackRequestKind::RollbackNext)
             .unwrap()
             .is_some());
         assert_eq!(
-            context.check_requested_rollback(false, false).unwrap(),
+            context
+                .check_requested_rollback(ManualRollbackRequestKind::RollbackNext)
+                .unwrap(),
             "runtime"
         );
-        // if ab rollback is requested and it is not the next rollback, return the index of the ab rollback and 'ab'
+        // if ab rollback is requested and it is not the next rollback, return the ab rollback
         assert!(context
-            .get_requested_rollback(false, true)
+            .get_requested_rollback(ManualRollbackRequestKind::RollbackAvailableAbUpdate)
             .unwrap()
             .is_some());
-        assert_eq!(context.check_requested_rollback(false, true).unwrap(), "ab");
-        // if both ab and runtime rollback is requested simultaneously, error is returned
-        assert!(context.get_requested_rollback(true, true).is_err());
-        assert!(context.check_requested_rollback(true, true).is_err(),);
+        assert_eq!(
+            context
+                .check_requested_rollback(ManualRollbackRequestKind::RollbackAvailableAbUpdate)
+                .unwrap(),
+            "ab"
+        );
 
         // Add an A/B update to database
         host_status_list.push(inter(VOL_B, AB_STAGE, MIN));
@@ -917,7 +932,11 @@ mod tests {
         host_status_list.push(prov(VOL_B, true, vec![2], MIN));
         let context = create_rollback_context_for_testing(&host_status_list);
         // if runtime rollback is requested and it is not the next rollback, return an error
-        assert!(context.get_requested_rollback(true, false).is_err());
-        assert!(context.check_requested_rollback(true, false).is_err(),);
+        assert!(context
+            .get_requested_rollback(ManualRollbackRequestKind::RollbackOnlyIfNextIsRuntimeUpdate)
+            .is_err());
+        assert!(context
+            .check_requested_rollback(ManualRollbackRequestKind::RollbackOnlyIfNextIsRuntimeUpdate)
+            .is_err(),);
     }
 }

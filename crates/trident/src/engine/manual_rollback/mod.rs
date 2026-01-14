@@ -25,8 +25,8 @@ use crate::{
 };
 
 // Manual Rollback util
-mod utils;
-use utils::{ManualRollbackContext, ManualRollbackKind};
+pub mod utils;
+use utils::{ManualRollbackContext, ManualRollbackKind, ManualRollbackRequestKind};
 
 /// Print rollback info for 'trident get'.
 pub fn get_rollback_info(datastore: &DataStore, kind: GetKind) -> Result<String, TridentError> {
@@ -76,8 +76,7 @@ pub fn get_rollback_info(datastore: &DataStore, kind: GetKind) -> Result<String,
 /// Check rollback availability and type.
 pub fn check_rollback(
     datastore: &DataStore,
-    invoke_if_next_is_runtime: bool,
-    invoke_available_ab: bool,
+    rollback_request_kind: ManualRollbackRequestKind,
 ) -> Result<(), TridentError> {
     // Get all HostStatus entries from the datastore.
     let host_statuses = datastore
@@ -86,8 +85,7 @@ pub fn check_rollback(
     // Create ManualRollback context from HostStatus entries.
     let rollback_context = ManualRollbackContext::new(&host_statuses)
         .message("Failed to create manual rollback context")?;
-    let check_string = rollback_context
-        .check_requested_rollback(invoke_if_next_is_runtime, invoke_available_ab)?;
+    let check_string = rollback_context.check_requested_rollback(rollback_request_kind)?;
     println!("{check_string}");
     Ok(())
 }
@@ -95,8 +93,7 @@ pub fn check_rollback(
 /// Handle manual rollback operations.
 pub fn execute_rollback(
     datastore: &mut DataStore,
-    invoke_if_next_is_runtime: bool,
-    invoke_available_ab: bool,
+    requested_rollback_kind: ManualRollbackRequestKind,
     allowed_operations: &Operations,
 ) -> Result<ExitKind, TridentError> {
     // Perform staging if operation is allowed
@@ -127,8 +124,8 @@ pub fn execute_rollback(
         let rollback_context = ManualRollbackContext::new(&host_statuses)
             .message("Failed to create manual rollback context")?;
 
-        let requested_rollback = rollback_context
-            .get_requested_rollback(invoke_if_next_is_runtime, invoke_available_ab)?;
+        let requested_rollback =
+            rollback_context.get_requested_rollback(requested_rollback_kind)?;
 
         let requested_rollback = match requested_rollback {
             Some(rollback_item) => rollback_item,
