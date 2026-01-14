@@ -31,7 +31,7 @@ type CommonOpts struct {
 	Source          string `arg:"" help:"Source directory to build COSI from." required:"" type:"path"`
 	Output          string `arg:"" help:"Output file to write COSI to." required:"" type:"path"`
 	SourceExtension string `name:"extension" short:"e" help:"Source file extension." default:"rawzst"`
-	Arch            string `short:"a" help:"Architecture to build for" default:"aarch64" enum:"aarch64,x86_64"`
+	Arch            string `short:"a" help:"Architecture to build for" default:"x86_64" enum:"aarch64,x86_64"`
 }
 
 func (opts CommonOpts) Validate() error {
