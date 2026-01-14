@@ -90,6 +90,9 @@ extends:
                   baseimgBuildType: $(BASEIMG_BUILD_TYPE)
                   baseImagePipelineBuildId: $(BASE_IMAGE_PIPELINE_BUILD_ID)
                   baseImageArm64PipelineBuildId: $(BASE_IMAGE_ARM64_PIPELINE_BUILD_ID)
+                  # Use same build ids for rpms as base image
+                  rpmsPipelineBuildId: $(BASE_IMAGE_PIPELINE_BUILD_ID)
+                  rpmsArm64PipelineBuildId: $(BASE_IMAGE_ARM64_PIPELINE_BUILD_ID)
                   outputDirectory: $(ob_outputDirectory)
 
       # Test amd64 if targetArchitecture is "all" or "amd64" (i.e. !arm64)

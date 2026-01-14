@@ -73,6 +73,9 @@ stages:
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
       baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
+      # Use same build ids for rpms as base image
+      rpmsPipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
+      rpmsArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
 
   # Build tools (Go stuff)
   - template: stages/building_tools/building-tools.yml
