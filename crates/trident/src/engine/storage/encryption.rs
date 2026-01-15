@@ -379,6 +379,13 @@ fn get_uki_paths(
         debug!("UKI binary {}: {}", i + 1, path.display());
     }
 
+    // TODO: Lexographically sort the paths to ensure consistent ordering across runs
+    uki_binaries.sort();
+    debug!("Sorted paths of UKI binaries required for pcrlock encryption:");
+    for (i, path) in uki_binaries.iter().enumerate() {
+        debug!("UKI binary {}: {}", i + 1, path.display());
+    }
+
     Ok(uki_binaries)
 }
 
@@ -474,6 +481,13 @@ fn get_bootloader_paths(
     }
 
     debug!("Paths of bootloader binaries required for pcrlock encryption:");
+    for (i, path) in bootloader_binaries.iter().enumerate() {
+        debug!("Bootloader binary {}: {}", i + 1, path.display());
+    }
+
+    // TODO: Lexographically sort the paths to ensure consistent ordering across runs
+    bootloader_binaries.sort();
+    debug!("Sorted paths of bootloader binaries required for pcrlock encryption:");
     for (i, path) in bootloader_binaries.iter().enumerate() {
         debug!("Bootloader binary {}: {}", i + 1, path.display());
     }
