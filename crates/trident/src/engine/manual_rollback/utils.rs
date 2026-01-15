@@ -114,10 +114,10 @@ impl ManualRollbackContext {
         };
 
         // Track state as HostStatus entries are processed
-        let mut last_provisioned = false;
         let mut is_auto_rollback = false;
         let mut is_manual_rollback = false;
         let mut is_ab_update = false;
+        let mut last_provisioned_index = -1;
 
         for (i, hs) in host_statuses.iter().enumerate() {
             trace!(
@@ -160,18 +160,19 @@ impl ManualRollbackContext {
                 // processed that is not the first Provisioned state (which would
                 // be install or offline-init, and not something that can be rolled
                 // back).
-                if !last_provisioned && i > 0 {
+                if last_provisioned_index != -1 && last_provisioned_index != (i - 1) as i32 {
                     // Create the rollback chain item for this Provisioned state
                     let host_status_context = ManualRollbackChainItem {
-                        spec: host_statuses[i].spec.clone(),
-                        ab_active_volume: host_statuses[i].ab_active_volume,
-                        install_index: host_statuses[i].install_index,
+                        spec: host_statuses[last_provisioned_index as usize].spec.clone(),
+                        ab_active_volume: host_statuses[last_provisioned_index as usize]
+                            .ab_active_volume,
+                        install_index: host_statuses[last_provisioned_index as usize].install_index,
                         kind: if is_ab_update {
                             ManualRollbackKind::Ab
                         } else {
                             ManualRollbackKind::Runtime
                         },
-                        host_status_index: i as i32,
+                        host_status_index: last_provisioned_index,
                     };
                     if is_auto_rollback {
                         // If this Provisioned state was reached via an auto-rollback,
@@ -275,14 +276,14 @@ impl ManualRollbackContext {
                 }
                 // Update the context's active volume
                 instance.active_volume = hs.ab_active_volume;
+                // Track last provisioned state index
+                last_provisioned_index = i as i32;
                 // Reset the loop's update-type tracking
                 is_ab_update = false;
                 // Reset the loop's manual rollback tracking
                 is_manual_rollback = false;
                 // Reset the loop's auto-rollback tracking
                 is_auto_rollback = false;
-                // Last state seen was Provisioned: guard against sequential 'duplicate' Provisioned states
-                last_provisioned = true;
             } else {
                 // Update tracking for non-Provisioned state
                 match hs.servicing_state {
@@ -299,7 +300,6 @@ impl ManualRollbackContext {
                     }
                     _ => {}
                 }
-                last_provisioned = false;
             }
         }
         Ok(instance)
