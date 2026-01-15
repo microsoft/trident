@@ -11,7 +11,7 @@ use log::{debug, trace, warn};
 use oci_client::{secrets::RegistryAuth, Client as OciClient, Reference};
 use reqwest::{
     blocking::{Client, Response},
-    header::{ACCEPT_RANGES, AUTHORIZATION, CONTENT_LENGTH, CONTENT_RANGE, RANGE},
+    header::{ACCEPT_RANGES, AUTHORIZATION, CONTENT_RANGE, RANGE},
 };
 use tokio::runtime::Runtime;
 use url::Url;
