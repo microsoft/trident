@@ -90,8 +90,8 @@ impl ManualRollbackContext {
                 hs.ab_active_volume,
             );
             // If the inactive volume is overwritten by
-            // ab-update-staged, clear the available
-            // rollbacks for it
+            // ab-update-staged, clear the ManualRollbackContext's
+            // available rollback list for the inactive volume.
             if hs.servicing_state == ServicingState::AbUpdateStaged {
                 trace!("AbUpdateStaged detected at index {}: clearing available rollbacks for inactive volume {:?}: a:[{:?}] b:[{:?}]",
                     i,
