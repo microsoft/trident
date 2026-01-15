@@ -283,7 +283,7 @@ mod tests {
         let sub_body = &full_body[start as usize..=end as usize];
 
         let relative_path = "/subfile.bin";
-        let expected_range = format!("bytes={}-{}", start, end - 1);
+        let expected_range = format!("bytes={}-{}", start, end);
         let expected_content_range = format!("bytes {}-{}/{}", start, end, full_body.len());
         let expected_content_length = sub_body.len().to_string();
 
@@ -319,7 +319,7 @@ mod tests {
         let sub_body = &full_body[start as usize..=end as usize];
 
         let relative_path = "/subfile-large.bin";
-        let expected_range = format!("bytes={}-{}", start, end - 1);
+        let expected_range = format!("bytes={}-{}", start, end);
         let expected_content_range = format!("bytes {}-{}/{}", start, end, full_body.len());
         let expected_content_length = sub_body.len().to_string();
 
@@ -354,10 +354,10 @@ mod tests {
 
     #[test]
     fn test_subfile_multiple_requests_single_read() {
-        env_logger::builder()
+        let _ = env_logger::builder()
             .filter_level(log::LevelFilter::Trace)
             .is_test(true)
-            .init();
+            .try_init();
 
         let mut server = mockito::Server::new();
         let full_body = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -375,7 +375,7 @@ mod tests {
             let chunk = &sub_body[chunk_start..chunk_end];
 
             let range_start = start + (chunk_index * chunk_size as u64);
-            let expected_range = format!("bytes={}-{}", range_start, end - 1);
+            let expected_range = format!("bytes={}-{}", range_start, end);
             let chunk_content_length = chunk.len().to_string();
 
             let mock = server
@@ -406,13 +406,13 @@ mod tests {
 
     #[test]
     fn test_subfile_three_chunks_two_reads() {
-        env_logger::builder()
+        let _ = env_logger::builder()
             .filter(Some("request"), log::LevelFilter::Info)
             .filter(Some("hyper_util"), log::LevelFilter::Info)
             .filter(Some("trident"), log::LevelFilter::Trace)
             // .filter_level(log::LevelFilter::Trace)
             .is_test(true)
-            .init();
+            .try_init();
 
         let mut server = mockito::Server::new();
         let full_body = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -430,7 +430,7 @@ mod tests {
             let chunk = &sub_body[chunk_start..chunk_end];
 
             let range_start = start + (chunk_index * chunk_size as u64);
-            let expected_range = format!("bytes={}-{}", range_start, end - 1);
+            let expected_range = format!("bytes={}-{}", range_start, end);
             let chunk_content_length = chunk.len().to_string();
 
             let mock = server
@@ -467,13 +467,13 @@ mod tests {
 
     #[test]
     fn test_interrupted_download_resumes() {
-        env_logger::builder()
+        let _ = env_logger::builder()
             .filter(Some("request"), log::LevelFilter::Info)
             .filter(Some("hyper_util"), log::LevelFilter::Info)
             .filter(Some("trident"), log::LevelFilter::Trace)
             // .filter_level(log::LevelFilter::Trace)
             .is_test(true)
-            .init();
+            .try_init();
 
         let mut server = mockito::Server::new();
         let full_body =
