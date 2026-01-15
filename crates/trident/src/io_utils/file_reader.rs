@@ -12,7 +12,7 @@ use anyhow::{bail, ensure, Error};
 use log::debug;
 use url::Url;
 
-use super::http_file::HttpFile;
+use super::http::HttpFile;
 
 /// A trait for types that implement both `Read` and `Seek`, used to return
 /// dynamic objects implementing both traits.
@@ -118,7 +118,7 @@ impl FileReader {
                 Box::new(File::open(file_path)?)
             }
 
-            Self::Http(http_file) => Box::new(http_file.section_reader(0, http_file.size)?),
+            Self::Http(http_file) => Box::new(http_file.complete_reader()?),
 
             #[cfg(test)]
             Self::Buffer(cursor) => {
