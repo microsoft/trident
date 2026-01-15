@@ -119,7 +119,17 @@ impl Read for HttpSubFile {
             let reader = self.populate_reader()?;
 
             // Attempt to read from the current reader.
-            let bytes_read = reader.read(&mut buf[buf_position..])?;
+            let bytes_read = match reader.read(&mut buf[buf_position..]) {
+                Ok(n) => n,
+                Err(e) => {
+                    trace!(
+                        "Error reading from HTTP subfile at position {}: {e}",
+                        self.position,
+                    );
+
+                    continue;
+                }
+            };
             self.position += bytes_read as u64;
             buf_position += bytes_read;
 
@@ -192,5 +202,206 @@ impl Read for PartialResponseReader {
         self.bytes_remaining -= bytes_read as u64;
 
         Ok(bytes_read)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Read as _;
+
+    use reqwest::header::{CONTENT_LENGTH, CONTENT_RANGE};
+    use url::Url;
+
+    use super::HttpSubFile;
+
+    #[test]
+    fn test_subfile_single_request_full_read() {
+        let mut server = mockito::Server::new();
+        let full_body = "abcdefghij";
+        let start = 2_u64;
+        let end = 6_u64;
+        let sub_body = &full_body[start as usize..=end as usize];
+
+        let relative_path = "/subfile.bin";
+        let expected_range = format!("bytes={}-{}", start, end - 1);
+        let expected_content_range = format!("bytes {}-{}/{}", start, end, full_body.len());
+        let expected_content_length = sub_body.len().to_string();
+
+        let mock = server
+            .mock("GET", relative_path)
+            .match_header("range", expected_range.as_str())
+            .with_status(206)
+            .with_header(CONTENT_LENGTH, expected_content_length.as_str())
+            .with_header(CONTENT_RANGE, expected_content_range.as_str())
+            .with_body(sub_body)
+            .expect(1)
+            .create();
+
+        let url = Url::parse(&server.url()).unwrap();
+        let request_url = url.join(relative_path).unwrap();
+
+        let mut subfile = HttpSubFile::new(request_url, start, end);
+        let mut buf = vec![0_u8; subfile.len() as usize];
+        let bytes_read = subfile.read(&mut buf).unwrap();
+
+        assert_eq!(bytes_read, sub_body.len());
+        assert_eq!(buf, sub_body.as_bytes());
+
+        mock.assert();
+    }
+
+    #[test]
+    fn test_subfile_single_request_multiple_small_reads() {
+        let mut server = mockito::Server::new();
+        let full_body = "abcdefghijklmnopqrstuvwxyz0123456789";
+        let start = 5_u64;
+        let end = 30_u64;
+        let sub_body = &full_body[start as usize..=end as usize];
+
+        let relative_path = "/subfile-large.bin";
+        let expected_range = format!("bytes={}-{}", start, end - 1);
+        let expected_content_range = format!("bytes {}-{}/{}", start, end, full_body.len());
+        let expected_content_length = sub_body.len().to_string();
+
+        let mock = server
+            .mock("GET", relative_path)
+            .match_header("range", expected_range.as_str())
+            .with_status(206)
+            .with_header(CONTENT_LENGTH, expected_content_length.as_str())
+            .with_header(CONTENT_RANGE, expected_content_range.as_str())
+            .with_body(sub_body)
+            .expect(1)
+            .create();
+
+        let url = Url::parse(&server.url()).unwrap();
+        let request_url = url.join(relative_path).unwrap();
+
+        let mut subfile = HttpSubFile::new(request_url, start, end);
+        let mut collected = Vec::new();
+        let mut buf = vec![0_u8; 4];
+
+        loop {
+            let bytes_read = subfile.read(&mut buf).unwrap();
+            if bytes_read == 0 {
+                break;
+            }
+            collected.extend_from_slice(&buf[..bytes_read]);
+        }
+
+        assert_eq!(collected, sub_body.as_bytes());
+        mock.assert();
+    }
+
+    #[test]
+    fn test_subfile_multiple_requests_single_read() {
+        env_logger::builder()
+            .filter_level(log::LevelFilter::Trace)
+            .is_test(true)
+            .init();
+
+        let mut server = mockito::Server::new();
+        let full_body = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        let start = 10_u64;
+        let end = 49_u64;
+        let sub_body = &full_body[start as usize..=end as usize];
+
+        let relative_path = "/subfile-chunked.bin";
+
+        let chunk_size = 10_usize;
+        let mut mocks = Vec::new();
+        for chunk_index in 0..4_u64 {
+            let chunk_start = (chunk_index as usize) * chunk_size;
+            let chunk_end = chunk_start + chunk_size;
+            let chunk = &sub_body[chunk_start..chunk_end];
+
+            let range_start = start + (chunk_index * chunk_size as u64);
+            let expected_range = format!("bytes={}-{}", range_start, end - 1);
+            let chunk_content_length = chunk.len().to_string();
+
+            let mock = server
+                .mock("GET", relative_path)
+                .match_header("range", expected_range.as_str())
+                .with_status(206)
+                .with_header(CONTENT_LENGTH, chunk_content_length.as_str())
+                .with_body(chunk)
+                .expect(1)
+                .create();
+            mocks.push(mock);
+        }
+
+        let url = Url::parse(&server.url()).unwrap();
+        let request_url = url.join(relative_path).unwrap();
+
+        let mut subfile = HttpSubFile::new(request_url, start, end);
+        let mut buf = vec![0_u8; subfile.len() as usize];
+        let bytes_read = subfile.read(&mut buf).unwrap();
+
+        assert_eq!(bytes_read, sub_body.len());
+        assert_eq!(buf, sub_body.as_bytes());
+
+        for mock in mocks {
+            mock.assert();
+        }
+    }
+
+    #[test]
+    fn test_subfile_three_chunks_two_reads() {
+        env_logger::builder()
+            .filter(Some("request"), log::LevelFilter::Info)
+            .filter(Some("hyper_util"), log::LevelFilter::Info)
+            .filter(Some("trident"), log::LevelFilter::Trace)
+            // .filter_level(log::LevelFilter::Trace)
+            .is_test(true)
+            .init();
+
+        let mut server = mockito::Server::new();
+        let full_body = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        let start = 10_u64;
+        let end = start + 59;
+        let sub_body = &full_body[start as usize..=end as usize];
+
+        let relative_path = "/subfile-three-chunks.bin";
+
+        let chunk_size = 20_usize;
+        let mut mocks = Vec::new();
+        for chunk_index in 0..3_u64 {
+            let chunk_start = (chunk_index as usize) * chunk_size;
+            let chunk_end = chunk_start + chunk_size;
+            let chunk = &sub_body[chunk_start..chunk_end];
+
+            let range_start = start + (chunk_index * chunk_size as u64);
+            let expected_range = format!("bytes={}-{}", range_start, end - 1);
+            let chunk_content_length = chunk.len().to_string();
+
+            let mock = server
+                .mock("GET", relative_path)
+                .match_header("range", expected_range.as_str())
+                .with_status(206)
+                .with_header(CONTENT_LENGTH, chunk_content_length.as_str())
+                .with_body(chunk)
+                .expect(1)
+                .create();
+            mocks.push(mock);
+        }
+
+        let url = Url::parse(&server.url()).unwrap();
+        let request_url = url.join(relative_path).unwrap();
+
+        let mut subfile = HttpSubFile::new(request_url, start, end);
+        let mut collected = Vec::new();
+
+        let mut first_buf = vec![0_u8; 30];
+        let first_read = subfile.read(&mut first_buf).unwrap();
+        collected.extend_from_slice(&first_buf[..first_read]);
+
+        let mut second_buf = vec![0_u8; 40];
+        let second_read = subfile.read(&mut second_buf).unwrap();
+        collected.extend_from_slice(&second_buf[..second_read]);
+
+        assert_eq!(collected, sub_body.as_bytes());
+
+        for mock in mocks {
+            mock.assert();
+        }
     }
 }
