@@ -537,7 +537,7 @@ Options:
           is only applicable for stage operation and will be ignored
           for finalize
       --ab
-          Invoke next available A/B rollback If allowed-operations is
+          Invoke next available A/B rollback. If allowed-operations is
           specified, this argument is only applicable for stage
           operation and will be ignored for finalize
       --allowed-operations [<ALLOWED_OPERATIONS>...]
@@ -569,7 +569,7 @@ Conflicts with:
 
 #### <span>--ab &lt;AB&gt;</span>
 
-Invoke next available A/B rollback If allowed-operations is specified, this argument is only applicable for stage operation and will be ignored for finalize
+Invoke next available A/B rollback. If allowed-operations is specified, this argument is only applicable for stage operation and will be ignored for finalize
 
 Conflicts with:
 

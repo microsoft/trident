@@ -178,7 +178,7 @@ pub enum Commands {
         #[arg(long, conflicts_with = "ab")]
         runtime: bool,
 
-        /// Invoke next available A/B rollback
+        /// Invoke next available A/B rollback.
         /// If allowed-operations is specified, this argument is only applicable for
         /// stage operation and will be ignored for finalize.
         #[arg(long, conflicts_with = "runtime")]

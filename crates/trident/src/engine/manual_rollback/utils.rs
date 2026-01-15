@@ -44,26 +44,42 @@ impl ManualRollbackRequestKind {
     }
 }
 
+/// ManualRollbackKind represents the kind of manual rollback.
 #[derive(clap::ValueEnum, Copy, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ManualRollbackKind {
+    /// Rollback of an A/B update that requires a reboot.
     Ab,
+    /// Rollback of a runtime update that does not require a reboot.
     Runtime,
 }
 
+/// ManualRollbackChainItem represents an available rollback.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ManualRollbackChainItem {
+    /// The kind of manual rollback, either A/B or runtime.
     pub kind: ManualRollbackKind,
+    /// The HostConfiguration that the rollback will restore.
     pub spec: HostConfiguration,
+    /// The active volume that the rollback will restore.
     pub ab_active_volume: Option<AbVolumeSelection>,
+    /// The install index of the rollback.
     pub install_index: usize,
+    /// The index of the HostStatus entry that this rollback was
+    /// derived from, used internally to maintian ordering.
     #[serde(skip)]
     host_status_index: i32,
 }
+
+/// ManualRollbackContext tracks available rollbacks for each volume and
+/// provides methods to query them.
 pub(crate) struct ManualRollbackContext {
+    /// Track the available rollbacks for volume A.
     volume_a_available_rollbacks: Vec<ManualRollbackChainItem>,
+    /// Track the available rollbacks for volume B.
     volume_b_available_rollbacks: Vec<ManualRollbackChainItem>,
+    /// Track the currently active volume.
     active_volume: Option<AbVolumeSelection>,
 }
 impl ManualRollbackContext {
