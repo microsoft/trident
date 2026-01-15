@@ -31,6 +31,7 @@ type CommonOpts struct {
 	Source          string `arg:"" help:"Source directory to build COSI from." required:"" type:"path"`
 	Output          string `arg:"" help:"Output file to write COSI to." required:"" type:"path"`
 	SourceExtension string `name:"extension" short:"e" help:"Source file extension." default:"rawzst"`
+	Arch            string `short:"a" help:"Architecture to build for" default:"x86_64" enum:"aarch64,x86_64"`
 }
 
 func (opts CommonOpts) Validate() error {
@@ -84,7 +85,7 @@ func buildCosiFile(variant ImageVariant) error {
 
 	cosiMetadata := metadata.MetadataJson{
 		Version: "1.0",
-		OsArch:  "x86_64",
+		OsArch:  commonOpts.Arch,
 		Id:      uuid.New().String(),
 		Images:  make([]metadata.Image, len(expectedImages)),
 	}
@@ -214,7 +215,8 @@ func DecompressImage(source string) (*os.File, error) {
 		return nil, fmt.Errorf("failed to create temporary file: %w", err)
 	}
 
-	zr, err := zstd.NewReader(src)
+	// Configure decoder to support larger window sizes (up to 1GB for --long=30)
+	zr, err := zstd.NewReader(src, zstd.WithDecoderMaxWindow(1<<30))
 	if err != nil {
 		tmpFile.Close()
 		return nil, fmt.Errorf("failed to create zstd reader: %w", err)
