@@ -223,7 +223,7 @@ fn stage_rollback(
     staging_state: ServicingState,
 ) -> Result<(), TridentError> {
     if matches!(staging_state, ServicingState::ManualRollbackAbStaged) {
-        info!("Staging rollback that requires reboot");
+        info!("Staging rollback of A/B update that requires reboot");
 
         // If we have encrypted volumes and this is a UKI image, then we need to re-generate pcrlock
         // policy to include both the current boot and the rollback boot.
@@ -259,7 +259,7 @@ fn stage_rollback(
             }
         }
     } else {
-        info!("Staging rollback that does not require reboot");
+        info!("Staging rollback of runtime update that does not require reboot");
         // noop
     }
 
@@ -279,7 +279,7 @@ fn finalize_rollback(
     staging_state: ServicingState,
 ) -> Result<ExitKind, TridentError> {
     if matches!(staging_state, ServicingState::ManualRollbackRuntimeStaged) {
-        trace!("Manual rollback does not require reboot");
+        trace!("Finalizing rollback of runtime update that does not require reboot");
 
         let mut subsystems = SUBSYSTEMS.lock().unwrap();
         let rollback_exit_kind =
@@ -294,7 +294,7 @@ fn finalize_rollback(
         return Ok(rollback_exit_kind);
     }
 
-    trace!("Manual rollback requires reboot");
+    trace!("Finalizing rollback of A/B update that requires reboot");
 
     let root_path = container::get_host_relative_path(PathBuf::from(ROOT_MOUNT_POINT_PATH))
         .message("Failed to get host root path")?;
