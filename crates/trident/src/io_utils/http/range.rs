@@ -11,7 +11,7 @@ impl HttpRangeRequest {
     /// when requesting the whole file because both start and end are None.
     pub fn to_header_value_option(self) -> Option<String> {
         Some(match (self.start, self.end) {
-            (Some(start), Some(end)) => format!("bytes={}-{}", start, end - 1),
+            (Some(start), Some(end)) => format!("bytes={}-{}", start, end),
             (Some(start), None) => format!("bytes={}-", start),
             (None, Some(end)) => format!("bytes=-{}", end),
             (None, None) => return None,
@@ -35,6 +35,20 @@ impl HttpRangeRequest {
         Self {
             start: Some(start),
             end: Some(end),
+        }
+    }
+
+    /// Returns the size of the range in bytes, if it can be determined.
+    pub fn size(&self) -> Option<u64> {
+        match (self.start, self.end) {
+            // Both start and end are defined
+            (Some(start), Some(end)) if end >= start => Some(end - start + 1),
+
+            // Only end is defined, start is 0
+            (None, Some(end)) => Some(end + 1),
+
+            // End is not defined, size cannot be determined
+            _ => None,
         }
     }
 }

@@ -75,6 +75,14 @@ impl HttpSubFile {
             // Create a new partial response reader for the next range and
             // replace any existing reader.
             self.reader = Some(self.new_partial_response_reader()?);
+        } else {
+            #[cfg(test)]
+            trace!(
+                "Reusing existing PartialResponseReader at position {} with remaining bytes {} for subfile: {}",
+                self.position,
+                self.reader.as_ref().map(|r| r.bytes_remaining).unwrap_or(0),
+                self.url,
+            );
         }
 
         // Safe to unwrap because we just populated it if it was None.
@@ -85,22 +93,41 @@ impl HttpSubFile {
     /// the subfile.
     fn new_partial_response_reader(&self) -> IoResult<PartialResponseReader> {
         // Always attempt to read up to the end of the subfile.
-        let range =
-            HttpRangeRequest::new_bounded(self.start + self.position, self.end).to_header_value();
+        let range = HttpRangeRequest::new_bounded(self.start + self.position, self.end);
 
         // Perform the HTTP request with retries. This function guarantees that
         // the resulting response was successful.
+        trace!(
+            "Requesting HTTP range '{}' for subfile at position {}: {}",
+            range.to_header_value(),
+            self.position,
+            self.url,
+        );
+
         let response = super::retriable_request_sender(
             || {
                 self.client
                     .get(self.url.clone())
-                    .header(RANGE, &range)
+                    .header(RANGE, &range.to_header_value())
                     .send()
             },
             Duration::from_secs(30),
         )?;
 
-        PartialResponseReader::new_from_response(response)
+        let resp = PartialResponseReader::new_from_response(response)?;
+
+        #[cfg(test)]
+        trace!(
+            "Server responded with {} bytes for range '{}' of size {}",
+            resp.bytes_remaining,
+            range.to_header_value(),
+            range
+                .size()
+                .map(|size| size.to_string())
+                .unwrap_or_else(|| "undetermined".to_string()),
+        );
+
+        Ok(resp)
     }
 }
 
@@ -203,11 +230,21 @@ impl PartialResponseReader {
 impl Read for PartialResponseReader {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         if self.exhausted() {
+            #[cfg(test)]
+            trace!("PartialResponseReader exhausted, returning 0 bytes read");
+
             return Ok(0);
         }
 
         // Determine the maximum number of bytes we can read.
         let max_bytes_to_read = std::cmp::min(buf.len() as u64, self.bytes_remaining) as usize;
+
+        #[cfg(test)]
+        trace!(
+            "Reading up to {} bytes from PartialResponseReader ({} bytes remaining)",
+            max_bytes_to_read,
+            self.bytes_remaining,
+        );
 
         // Read from the inner response.
         let bytes_read = self.inner.read(&mut buf[..max_bytes_to_read])?;
@@ -215,18 +252,27 @@ impl Read for PartialResponseReader {
         // Update the bytes remaining.
         self.bytes_remaining -= bytes_read as u64;
 
+        #[cfg(test)]
+        trace!(
+            "Read {} bytes from PartialResponseReader ({} bytes remaining)",
+            bytes_read,
+            self.bytes_remaining
+        );
+
         Ok(bytes_read)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::io::Read as _;
+    use super::*;
 
+    use std::io::{Error as IoError, ErrorKind as IoErrorKind};
+
+    use hyper::StatusCode;
     use reqwest::header::{CONTENT_LENGTH, CONTENT_RANGE};
-    use url::Url;
 
-    use super::HttpSubFile;
+    static PARTIAL_CONTENT: usize = StatusCode::PARTIAL_CONTENT.as_u16() as usize;
 
     #[test]
     fn test_subfile_single_request_full_read() {
@@ -244,7 +290,7 @@ mod tests {
         let mock = server
             .mock("GET", relative_path)
             .match_header("range", expected_range.as_str())
-            .with_status(206)
+            .with_status(PARTIAL_CONTENT)
             .with_header(CONTENT_LENGTH, expected_content_length.as_str())
             .with_header(CONTENT_RANGE, expected_content_range.as_str())
             .with_body(sub_body)
@@ -280,7 +326,7 @@ mod tests {
         let mock = server
             .mock("GET", relative_path)
             .match_header("range", expected_range.as_str())
-            .with_status(206)
+            .with_status(PARTIAL_CONTENT)
             .with_header(CONTENT_LENGTH, expected_content_length.as_str())
             .with_header(CONTENT_RANGE, expected_content_range.as_str())
             .with_body(sub_body)
@@ -335,7 +381,7 @@ mod tests {
             let mock = server
                 .mock("GET", relative_path)
                 .match_header("range", expected_range.as_str())
-                .with_status(206)
+                .with_status(PARTIAL_CONTENT)
                 .with_header(CONTENT_LENGTH, chunk_content_length.as_str())
                 .with_body(chunk)
                 .expect(1)
@@ -390,7 +436,7 @@ mod tests {
             let mock = server
                 .mock("GET", relative_path)
                 .match_header("range", expected_range.as_str())
-                .with_status(206)
+                .with_status(PARTIAL_CONTENT)
                 .with_header(CONTENT_LENGTH, chunk_content_length.as_str())
                 .with_body(chunk)
                 .expect(1)
@@ -411,6 +457,81 @@ mod tests {
         let mut second_buf = vec![0_u8; 40];
         let second_read = subfile.read(&mut second_buf).unwrap();
         collected.extend_from_slice(&second_buf[..second_read]);
+
+        assert_eq!(collected, sub_body.as_bytes());
+
+        for mock in mocks {
+            mock.assert();
+        }
+    }
+
+    #[test]
+    fn test_interrupted_download_resumes() {
+        env_logger::builder()
+            .filter(Some("request"), log::LevelFilter::Info)
+            .filter(Some("hyper_util"), log::LevelFilter::Info)
+            .filter(Some("trident"), log::LevelFilter::Trace)
+            // .filter_level(log::LevelFilter::Trace)
+            .is_test(true)
+            .init();
+
+        let mut server = mockito::Server::new();
+        let full_body =
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz";
+        let start = 10_u64;
+        let end = 69_u64;
+        let sub_body = &full_body[start as usize..=end as usize];
+
+        let relative_path = "/subfile-interrupted.bin";
+        let interrupt = 20;
+
+        let mut mocks = Vec::new();
+
+        let full_range = format!("bytes={}-{}", start, end);
+        let interrupted_payload: Vec<u8> = sub_body.as_bytes()[..interrupt as usize].to_vec();
+        let mock_interrupted = server
+            .mock("GET", relative_path)
+            .match_header("range", full_range.as_str())
+            .with_status(PARTIAL_CONTENT)
+            .with_header(CONTENT_LENGTH, sub_body.len().to_string().as_str())
+            .with_chunked_body(move |writer| {
+                // Write part of the payload, then simulate a network error.
+                writer.write_all(&interrupted_payload)?;
+                Err(IoError::new(
+                    IoErrorKind::ConnectionReset,
+                    "simulated network drop",
+                ))
+            })
+            .expect(1)
+            .create();
+        mocks.push(mock_interrupted);
+
+        let retry_range = format!("bytes={}-{}", start + interrupt, end);
+        let retry_payload = &sub_body.as_bytes()[interrupt as usize..];
+        let mock_retry = server
+            .mock("GET", relative_path)
+            .match_header("range", retry_range.as_str())
+            .with_status(PARTIAL_CONTENT)
+            .with_header(CONTENT_LENGTH, retry_payload.len().to_string().as_str())
+            .with_body(retry_payload)
+            .expect(1)
+            .create();
+        mocks.push(mock_retry);
+
+        let url = Url::parse(&server.url()).unwrap();
+        let request_url = url.join(relative_path).unwrap();
+
+        let mut subfile = HttpSubFile::new(request_url, start, end);
+        let mut collected = Vec::new();
+        let mut buf = vec![0_u8; 8];
+
+        loop {
+            let bytes_read = subfile.read(&mut buf).unwrap();
+            if bytes_read == 0 {
+                break;
+            }
+            collected.extend_from_slice(&buf[..bytes_read]);
+        }
 
         assert_eq!(collected, sub_body.as_bytes());
 
