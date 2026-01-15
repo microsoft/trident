@@ -3,6 +3,7 @@ use std::{
     time::Duration,
 };
 
+use log::trace;
 use reqwest::{
     blocking::{Client, Response},
     header::RANGE,
@@ -129,10 +130,24 @@ impl Read for HttpSubFile {
             //   the number of bytes read.
             if self.is_eof() || buf_position == buf.len() {
                 // Reached the end of the subfile.
+                trace!(
+                    "Subfile read request of {} bytes satisfied ({} bytes read, position {}, EOF: {})",
+                    buf.len(),
+                    buf_position,
+                    self.position,
+                    self.is_eof(),
+                );
+
                 return Ok(buf_position);
             }
 
             // Otherwise, we need to continue reading from the next range.
+            trace!(
+                "Subfile read request of {} bytes partially satisfied ({} bytes read so far, position {}), continuing with next HTTP range request",
+                buf.len(),
+                buf_position,
+                self.position,
+            )
         }
     }
 }
