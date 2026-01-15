@@ -3,7 +3,7 @@ use std::{
     time::Duration,
 };
 
-use log::trace;
+use log::{trace, warn};
 use reqwest::{
     blocking::{Client, Response},
     header::RANGE,
@@ -122,14 +122,28 @@ impl Read for HttpSubFile {
             let bytes_read = match reader.read(&mut buf[buf_position..]) {
                 Ok(n) => n,
                 Err(e) => {
-                    trace!(
+                    warn!(
                         "Error reading from HTTP subfile at position {}: {e}",
                         self.position,
                     );
 
+                    // We failed to execute the last read, possibly because of a
+                    // network error. Discard the current reader and try again.
+                    // This should allow us to resume reading from the current
+                    // position and save the caller from having to restart the
+                    // read entirely if the connection can be re-established.
+                    //
+                    // Callers of read will *generally* use buffers of at most
+                    // some MiBs, so re-requesting the current range should not
+                    // be too expensive, and will provide better resiliency when
+                    // downloading a subfile that could be hundreds of MiBs or
+                    // more.
+                    self.reader = None;
                     continue;
                 }
             };
+
+            // On success, update our position in the file and the buffer position.
             self.position += bytes_read as u64;
             buf_position += bytes_read;
 
