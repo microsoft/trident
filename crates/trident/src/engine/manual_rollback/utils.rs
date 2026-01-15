@@ -68,6 +68,43 @@ pub(crate) struct ManualRollbackContext {
 }
 impl ManualRollbackContext {
     /// Creates a new ManualRollbackContext from a list of HostStatus entries.
+    /// Start from the oldest HostStatus and work forward to the newest,
+    /// tracking available rollbacks for each volume.
+    ///
+    /// For any operation (install, update, rollback), there are a series of
+    /// HostStatus entries that represent the state transitions. These related
+    /// states can be used to infer what operations were performed, and what
+    /// volumes were affected, and thus what rollbacks are available.
+    ///
+    /// The list of available rollbacks for each volume can be:
+    /// - active volume: 0 or more runtime rollbacks
+    /// - inactive volume: 1 A/B update followed by 0 or more runtime rollbacks
+    ///
+    /// As each HostStatus is processed, the available rollback lists are updated
+    /// for each successful Provisioned state.
+    /// - A Provisioned state that was reached via an update operation will be added
+    ///   to the list of available rollbacks for the servicing volume.
+    /// - A Provisioned state that was reached via a runtime manual-rollback operation
+    ///   will remove the next available rollback(s) from the active volume available
+    ///   rollbacks list.
+    /// - A Provisioned state that was reached via an A/B manual-rollback operation
+    ///   will remove all of the available rollback(s) from the active volume available
+    ///   rollbacks list and the first available rollback from the inactive volume.
+    ///
+    /// There are a some complications:
+    /// - Only Trident versions >= MINIMUM_ROLLBACK_TRIDENT_VERSION_STR support
+    ///   manual rollback. Older versions will not have rollbacks added.
+    /// - If a last_error is set on the HostStatus, no rollback will be added.
+    /// - If encryption is configured, no rollback will be added when the
+    ///   active volume changes, as we do not yet support manual rollback of
+    ///   A/B update with encryption.
+    /// - The database may have consequutive 'duplicate' Provisioned states; these
+    ///   are typically found after offline-init and should be consolidated into a
+    ///   single state for rollback purposes.
+    /// - ManualRollback must be considered, typically by popping the appropriate
+    ///   available rollback(s) from the active volume available rollbacks list.
+    /// - Auto-rollback must be considered, typically by not adding the an available
+    ///   rollback for the Provisioned state reached via auto-rollback.
     pub fn new(host_statuses: &[HostStatus]) -> Result<Self, TridentError> {
         // Initialize context from HostStatus entries.
         let mut instance = ManualRollbackContext {
@@ -76,11 +113,11 @@ impl ManualRollbackContext {
             active_volume: None,
         };
 
-        let mut auto_rollback = false;
+        // Track state as HostStatus entries are processed
         let mut last_provisioned = false;
-        let mut manual_rollback = false;
-        let mut needs_reboot = false;
-        let mut active_index = -1;
+        let mut is_auto_rollback = false;
+        let mut is_manual_rollback = false;
+        let mut is_ab_update = false;
 
         for (i, hs) in host_statuses.iter().enumerate() {
             trace!(
@@ -89,9 +126,10 @@ impl ManualRollbackContext {
                 hs.servicing_state,
                 hs.ab_active_volume,
             );
-            // If the inactive volume is overwritten by
-            // ab-update-staged, clear the ManualRollbackContext's
-            // available rollback list for the inactive volume.
+            // An A/B update overwrites the inactive volume, so the
+            // inactive volume will no longer have any available rollbacks.
+            // Clear the ManualRollbackContext's available rollback list
+            // for the inactive volume to reflect this.
             if hs.servicing_state == ServicingState::AbUpdateStaged {
                 trace!("AbUpdateStaged detected at index {}: clearing available rollbacks for inactive volume {:?}: a:[{:?}] b:[{:?}]",
                     i,
@@ -104,7 +142,13 @@ impl ManualRollbackContext {
                 }
             }
 
-            // Update rollback context for each HostStatus.ServicingState == Provisioned
+            // Handle each HostStatus entry based on whether it's a Provisioned
+            // state or not.
+            //
+            // Available rollbacks are added when Provisioned states are processed.
+            // Other states are used to track what type of operation (install, runtime
+            // update, A/B update, auto-rollback, manual-rollback) was performed
+            // to reach the Provisioned state.
             if hs.servicing_state == ServicingState::Provisioned {
                 trace!(
                     "Processing Provisioned state at index {} for active volume {:?}",
@@ -112,48 +156,88 @@ impl ManualRollbackContext {
                     hs.ab_active_volume
                 );
 
-                // If we entered a Provisioned state from a Provisioned state (so
-                // ignoring the first Provisioned state, where there can be no rollback),
-                // update the available rollbacks depending on whether the last action
-                // was a rollback or not
-                if !last_provisioned && active_index != -1 {
+                // Update context if a new (non-repeated) Provisioned state is
+                // processed that is not the first Provisioned state (which would
+                // be install or offline-init, and not something that can be rolled
+                // back).
+                if !last_provisioned && i > 0 {
+                    // Create the rollback chain item for this Provisioned state
                     let host_status_context = ManualRollbackChainItem {
-                        spec: host_statuses[active_index as usize].spec.clone(),
-                        ab_active_volume: host_statuses[active_index as usize].ab_active_volume,
-                        install_index: host_statuses[active_index as usize].install_index,
-                        kind: if needs_reboot {
+                        spec: host_statuses[i].spec.clone(),
+                        ab_active_volume: host_statuses[i].ab_active_volume,
+                        install_index: host_statuses[i].install_index,
+                        kind: if is_ab_update {
                             ManualRollbackKind::Ab
                         } else {
                             ManualRollbackKind::Runtime
                         },
-                        host_status_index: active_index,
+                        host_status_index: i as i32,
                     };
-                    if auto_rollback {
+                    if is_auto_rollback {
+                        // If this Provisioned state was reached via an auto-rollback,
+                        // it cannot be rolled back from, so do not add it to the available
+                        // rollbacks.
                         trace!(
                             "Auto-rollback detected at index {} for active volume {:?}",
                             i,
                             instance.active_volume
                         );
-                    } else if manual_rollback {
+                    } else if is_manual_rollback {
+                        // If this Provisioned state was reached via a manual rollback,
+                        // we need to remove the appropriate available rollback(s).
                         let active_volume_changed = hs.ab_active_volume != instance.active_volume;
+                        trace!(
+                            "Manual rollback detected at index {} for active volume {:?}, active_volume_changed={}",
+                            i,
+                            instance.active_volume,
+                            active_volume_changed
+                        );
                         if active_volume_changed {
-                            // If the active volume changed during a manual rollback, then
-                            //   1. we can remove all of the available rollbacks for the previously active volume
+                            // If the active volume changed during a manual rollback, then:
+                            //   1. All of the available rollbacks for the previously active
+                            //      volume can be removed. If these exist, they are runtime
+                            //      updates that were applied after the A/B udpate that is
+                            //      being rolled back.
                             if let Some(volume) = instance.active_volume {
+                                trace!(
+                                    "Active volume changed during manual rollback at index {}: clearing available rollbacks for previously active volume {:?}: a:[{:?}] b:[{:?}]",
+                                    i,
+                                    volume,
+                                    instance.volume_a_available_rollbacks.len(),
+                                    instance.volume_b_available_rollbacks.len()
+                                );
                                 instance.clear_available_rollbacks(volume, false);
                             }
-                            //   2. we can remove the first available rollback for the newly active volume
+                            //   2. The first available rollback for the newly active volume,
+                            //      which is the A/B update being rolled back, can be removed.
                             if let Some(volume) = hs.ab_active_volume {
+                                trace!(
+                                    "Removing first available rollback for newly active volume {:?} during manual rollback at index {}",
+                                    volume,
+                                    i
+                                );
                                 instance.remove_available_rollback(volume);
                             }
                         } else {
                             // If the active volume did not change, then a runtime rollback was performed
                             // and we can remove the first available rollback for the active volume
                             if let Some(volume) = instance.active_volume {
+                                trace!(
+                                    "Removing first available rollback for active volume {:?} during manual rollback at index {}",
+                                    volume,
+                                    i
+                                );
                                 instance.remove_available_rollback(volume);
                             }
                         }
                     } else {
+                        // This provisioned state was reached via an update operation.
+                        // Add this update to the update's servicing volume's available
+                        // rollbacks unless prevented by one of these conditions:
+                        //   1. The Trident version is too old to support manual rollback
+                        //   2. If a last_error is set on the HostStatus
+                        //   3. FOR NOW: if encryption is configured, as we do not yet support
+                        //      manual rollback of ab update with encryption
                         let trident_is_compatible =
                             Self::is_trident_version_compatible(hs.trident_version.clone())?;
                         let last_error_exists = hs.last_error.is_some();
@@ -169,14 +253,6 @@ impl ManualRollbackContext {
                             trident_is_compatible,
                             encryption_with_volume_change
                         );
-                        // Prepend the last Provisioned index to the previously active volume's available
-                        // rollbacks.
-                        //
-                        // There are a set of reasons to not add an available rollback:
-                        //   1. The Trident version is too old to support manual rollback
-                        //   2. If a last_error is set on the HostStatus
-                        //   3. FOR NOW: if encryption is configured, as we do not yet support
-                        //      manual rollback of ab update with encryption
                         if trident_is_compatible
                             && !last_error_exists
                             && !encryption_with_volume_change
@@ -197,33 +273,32 @@ impl ManualRollbackContext {
                         }
                     }
                 }
-                // Update the context's active volume and index
+                // Update the context's active volume
                 instance.active_volume = hs.ab_active_volume;
-                active_index = i as i32;
-                // Reset the loop's reboot tracking
-                needs_reboot = false;
+                // Reset the loop's update-type tracking
+                is_ab_update = false;
                 // Reset the loop's manual rollback tracking
-                manual_rollback = false;
+                is_manual_rollback = false;
                 // Reset the loop's auto-rollback tracking
-                auto_rollback = false;
+                is_auto_rollback = false;
                 // Last state seen was Provisioned: guard against sequential 'duplicate' Provisioned states
                 last_provisioned = true;
             } else {
-                // Check each non-Provisioned state
-                manual_rollback = manual_rollback
-                    || matches!(
-                        hs.servicing_state,
-                        ServicingState::ManualRollbackAbStaged
-                            | ServicingState::ManualRollbackRuntimeStaged
-                            | ServicingState::ManualRollbackAbFinalized
-                    );
-                needs_reboot =
-                    needs_reboot || matches!(hs.servicing_state, ServicingState::AbUpdateFinalized);
-                auto_rollback = auto_rollback
-                    || matches!(
-                        hs.servicing_state,
-                        ServicingState::AbUpdateHealthCheckFailed
-                    );
+                // Update tracking for non-Provisioned state
+                match hs.servicing_state {
+                    ServicingState::ManualRollbackAbStaged
+                    | ServicingState::ManualRollbackRuntimeStaged
+                    | ServicingState::ManualRollbackAbFinalized => {
+                        is_manual_rollback = true;
+                    }
+                    ServicingState::AbUpdateStaged | ServicingState::AbUpdateFinalized => {
+                        is_ab_update = true;
+                    }
+                    ServicingState::AbUpdateHealthCheckFailed => {
+                        is_auto_rollback = true;
+                    }
+                    _ => {}
+                }
                 last_provisioned = false;
             }
         }
