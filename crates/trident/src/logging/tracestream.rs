@@ -30,7 +30,7 @@ use crate::{TRIDENT_METRICS_FILE_PATH, TRIDENT_VERSION};
 const PRODUCT_UUID_FILE: &str = "/sys/class/dmi/id/product_uuid";
 lazy_static::lazy_static! {
     static ref ADDITIONAL_FIELDS: BTreeMap<String, Value> = populate_additional_fields();
-    static ref PLATFORM_INFO: BTreeMap<String, Value> = populate_platform_info();
+    pub static ref PLATFORM_INFO: BTreeMap<String, Value> = populate_platform_info();
 }
 
 #[derive(Default)]
