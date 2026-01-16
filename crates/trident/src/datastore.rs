@@ -78,9 +78,9 @@ impl DataStore {
         })
     }
 
-    /// Retrieve all HostStatus entries from the datastore, sorted from oldest to newest.
-    pub(crate) fn get_host_statuses(&self) -> Result<Vec<HostStatus>, TridentError> {
-        let mut all_rows_data: Vec<HostStatus> = Vec::new();
+    /// Retrieve all HostStatus entries from the datastore, sorted from newest to oldest.
+    pub(crate) fn get_host_statuses(&self) -> Result<Vec<Option<HostStatus>>, TridentError> {
+        let mut all_rows_data: Vec<Option<HostStatus>> = Vec::new();
 
         // Read all HostStatus entries from the datastore, parse them into
         // HostStatus structs, and return a slice of them.
@@ -88,31 +88,38 @@ impl DataStore {
             .db
             .as_ref()
             .structured(ServicingError::from(DatastoreError::OpenDatastore))?
-            .prepare("SELECT contents FROM hoststatus ORDER BY id ASC")
+            .prepare("SELECT contents FROM hoststatus ORDER BY id DESC")
             .structured(ServicingError::Datastore {
                 inner: DatastoreError::InitializeDatastore,
             })
             .message("Failed to read all database host statuses")?;
 
-        while let State::Row = query_statement
-            .next()
-            .structured(ServicingError::Datastore {
-                inner: DatastoreError::ReadDatastore,
-            })
-            .message("Failed to get next datastore row")?
-        {
-            let host_status_yaml = query_statement
-                .read::<String, _>(0)
-                .structured(ServicingError::Datastore {
-                    inner: DatastoreError::ReadDatastore,
-                })
-                .message("Failed to read datastore row")?;
-            let host_status = serde_yaml::from_str(&host_status_yaml)
-                .structured(ServicingError::Datastore {
-                    inner: DatastoreError::ReadDatastore,
-                })
-                .message("Failed to parse Host Status as YAML")?;
-            all_rows_data.push(host_status);
+        loop {
+            let row_result = query_statement.next();
+
+            match row_result {
+                Ok(State::Done) => break,
+                Err(e) => {
+                    debug!("Error getting next datastore row: {:?}", e);
+                    all_rows_data.push(None);
+                    continue;
+                }
+                Ok(State::Row) => match query_statement.read::<String, _>(0) {
+                    Ok(host_status_yaml) => match serde_yaml::from_str(&host_status_yaml) {
+                        Ok(host_status) => {
+                            all_rows_data.push(Some(host_status));
+                        }
+                        Err(e) => {
+                            debug!("Failed to parse Host Status as YAML: {:?}", e);
+                            all_rows_data.push(None);
+                        }
+                    },
+                    Err(e) => {
+                        debug!("Failed to read datastore row: {:?}", e);
+                        all_rows_data.push(None);
+                    }
+                },
+            }
         }
         Ok(all_rows_data)
     }
