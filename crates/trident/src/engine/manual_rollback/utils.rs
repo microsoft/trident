@@ -67,7 +67,7 @@ pub(crate) struct ManualRollbackChainItem {
     /// The install index of the rollback.
     pub install_index: usize,
     /// The index of the HostStatus entry that this rollback was
-    /// derived from, used internally to maintian ordering.
+    /// derived from, used internally to maintain ordering.
     #[serde(skip)]
     host_status_index: i32,
 }
@@ -114,7 +114,7 @@ impl ManualRollbackContext {
     /// - If encryption is configured, no rollback will be added when the
     ///   active volume changes, as we do not yet support manual rollback of
     ///   A/B update with encryption.
-    /// - The database may have consequutive 'duplicate' Provisioned states; these
+    /// - The database may have consecutive 'duplicate' Provisioned states; these
     ///   are typically found after offline-init and should be consolidated into a
     ///   single state for rollback purposes.
     /// - ManualRollback must be considered, typically by popping the appropriate
@@ -213,7 +213,7 @@ impl ManualRollbackContext {
                             // If the active volume changed during a manual rollback, then:
                             //   1. All of the available rollbacks for the previously active
                             //      volume can be removed. If these exist, they are runtime
-                            //      updates that were applied after the A/B udpate that is
+                            //      updates that were applied after the A/B update that is
                             //      being rolled back.
                             if let Some(volume) = instance.active_volume {
                                 trace!(
