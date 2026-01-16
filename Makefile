@@ -167,11 +167,13 @@ clean-azl3-builder-image:
 	@echo "Removing local image $(AZL3_BUILDER_IMAGE)..."
 	@docker rmi $(AZL3_BUILDER_IMAGE) || echo "Image $(AZL3_BUILDER_IMAGE) not found locally."
 
-build-azl3: azl3-builder-image
+build-azl3: azl3-builder-image version-vars
 	@mkdir -p bin/
 	@mkdir -p target/azl3/
 	@echo "Building Trident for Azure Linux 3 using Docker image $(AZL3_BUILDER_IMAGE)..."
-	@docker run --rm -v $(PWD):/work -w /work $(AZL3_BUILDER_IMAGE) \
+	@docker run --rm \
+		-e TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
+		-v $(PWD):/work -w /work $(AZL3_BUILDER_IMAGE) \
 		cargo build --target-dir target/azl3 --release --features dangerous-options
 
 bin/trident-azl3: build-azl3
