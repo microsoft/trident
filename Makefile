@@ -13,6 +13,9 @@ OVERRIDE_RUST_FEED ?= true
 
 SERVER_PORT ?= 8133
 
+# Azl3 builder docker image name
+AZL3_BUILDER_IMAGE := azl3/trident-builder:latest
+
 .PHONY: all
 all: format check test build-api-docs bin/trident-rpms.tar.gz docker-build build-functional-test coverage validate-configs
 
@@ -149,6 +152,25 @@ artifacts/osmodifier: packaging/docker/Dockerfile-osmodifier.azl3
 bin/trident: build
 	@mkdir -p bin
 	@cp -u target/release/trident bin/
+
+.PHONY: azl3-builder-image clean-azl3-builder-image
+azl3-builder-image:
+	@echo "Checking for local image $(AZL3_BUILDER_IMAGE)..."
+	@if docker image inspect $(AZL3_BUILDER_IMAGE) >/dev/null 2>&1 ; then \
+		echo "Image $(AZL3_BUILDER_IMAGE) found locally." ; \
+	else \
+		echo "Image $(AZL3_BUILDER_IMAGE) not found locally. Building..." ; \
+		docker build -t $(AZL3_BUILDER_IMAGE) -f packaging/docker/Dockerfile.azl3-builder . ; \
+	fi
+
+clean-azl3-builder-image:
+	@echo "Removing local image $(AZL3_BUILDER_IMAGE)..."
+	@docker rmi $(AZL3_BUILDER_IMAGE) || echo "Image $(AZL3_BUILDER_IMAGE) not found locally."
+
+bin/trident-azl3: azl3-builder-image
+	docker run --rm -v $(PWD):/work -w /work $(AZL3_BUILDER_IMAGE) \
+		cargo build --release --features dangerous-options && \
+		cp -u target/release/trident bin/trident-azl3
 
 # This will do a proper build on azl3, exactly as the pipelines would, with the custom registry and all.
 bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full packaging/systemd/*.service packaging/rpm/trident.spec artifacts/osmodifier packaging/selinux-policy-trident/* version-vars
@@ -495,9 +517,9 @@ input/netlaunch.yaml: tools/vm-netlaunch.yaml
 	ln -vsf "$$(realpath "$<")" $@
 
 .PHONY: run-netlaunch
-run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch validate artifacts/osmodifier
+run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch validate artifacts/osmodifier bin/trident-azl3
 	@mkdir -p artifacts/test-image
-	@cp bin/trident artifacts/test-image/
+	@cp bin/trident-azl3 artifacts/test-image/
 	@cp artifacts/osmodifier artifacts/test-image/
 	@bin/netlaunch \
 	 	--iso $(NETLAUNCH_ISO) \
