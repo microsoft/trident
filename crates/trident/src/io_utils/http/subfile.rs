@@ -12,14 +12,28 @@ use url::Url;
 
 use super::HttpRangeRequest;
 
-/// Object that represents a subfile located entirely and contiguously within a
+/// HttpSubFile represents a subfile located entirely and contiguously within a
 /// single HTTP resource. It implements `Read` to read only the specified byte
 /// range from the resource. It uses HTTP Range requests to fetch only the
 /// needed data, and can handle performing multiple requests as needed when
 /// reading in case the server cannot provide the full subfile at once.
+///
+/// HttpSubFile is optimistic and will always attempt to read all data in a
+/// single request first. If the read cannot be satisfied in a single request,
+/// it will transparently perform additional requests as needed to satisfy the
+/// read.
+///
+/// Because of this behavior, HttpSubFile is resilient to transient network
+/// errors that may occur during reading. If a read fails due to a network
+/// error, it will discard the current request and re-issue a new request for
+/// the remaining data, allowing the read to continue without requiring the
+/// caller to restart the read from the beginning.
 pub struct HttpSubFile {
     /// The URL of the HTTP resource.
     url: Url,
+    /// An optional value of the AUTHORIZATION header to use for requests. If
+    /// None, no authorization header is sent.
+    authorization: Option<String>,
     /// The HTTP client used to make requests.
     client: Client,
     /// The start byte of the subfile (inclusive).
@@ -30,21 +44,21 @@ pub struct HttpSubFile {
     position: u64,
     /// The current response reader, if any.
     reader: Option<PartialResponseReader>,
+    /// Request timeout duration. This is the total time allowed including
+    /// retries for every specific request that is made. If a request cannot be
+    /// completed within this time, the read will fail. If multiple requests are
+    /// needed to satisfy a read, each request will have this timeout applied
+    /// separately. Default is 30 seconds.
+    timeout: Duration,
 }
 
 impl HttpSubFile {
     // Creates a new HttpSubFile that reads the byte range [start, end] from the
     // given URL. The range is inclusive like the HTTP Range header, and is
     // expected to have been validated beforehand.
+    #[allow(dead_code)] // Used in tests
     pub fn new(url: Url, start: u64, end: u64) -> Self {
-        HttpSubFile {
-            url,
-            start,
-            end,
-            client: Client::new(),
-            position: 0,
-            reader: None,
-        }
+        Self::new_with_client(url, start, end, Client::new())
     }
 
     /// Same as `new`, but allows specifying a custom HTTP client.
@@ -56,7 +70,21 @@ impl HttpSubFile {
             client,
             position: 0,
             reader: None,
+            authorization: None,
+            timeout: Duration::from_secs(30),
         }
+    }
+
+    /// Sets the authorization header value to use for requests.
+    pub(super) fn with_authorization(mut self, authorization: impl Into<String>) -> Self {
+        self.authorization = Some(authorization.into());
+        self
+    }
+
+    /// Sets the timeout duration for each HTTP request.
+    pub(super) fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
     }
 
     /// Returns the length of the subfile in bytes.
@@ -111,7 +139,7 @@ impl HttpSubFile {
                     .header(RANGE, &range.to_header_value())
                     .send()
             },
-            Duration::from_secs(30),
+            self.timeout,
         )?;
 
         let resp = PartialResponseReader::new_from_response(response)?;

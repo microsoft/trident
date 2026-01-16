@@ -10,8 +10,8 @@ use anyhow::{ensure, Context, Error};
 use log::{debug, trace, warn};
 use oci_client::{secrets::RegistryAuth, Client as OciClient, Reference};
 use reqwest::{
-    blocking::{Client, Response},
-    header::{ACCEPT_RANGES, AUTHORIZATION, CONTENT_RANGE, RANGE},
+    blocking::Client,
+    header::{ACCEPT_RANGES, AUTHORIZATION},
 };
 use tokio::runtime::Runtime;
 use url::Url;
@@ -19,7 +19,7 @@ use url::Url;
 #[cfg(feature = "dangerous-options")]
 use docker_credential::{self, DockerCredential};
 
-use super::HttpRangeRequest;
+use crate::io_utils::http::subfile::HttpSubFile;
 
 #[cfg(feature = "dangerous-options")]
 const DOCKER_CONFIG_FILE_PATH: &str = ".docker/config.json";
@@ -241,30 +241,9 @@ impl HttpFile {
         })
     }
 
-    /// Performs a request with optional range headers to get the file content.
-    /// Returns the HTTP response.
-    pub(crate) fn reader(&self, start: Option<u64>, end: Option<u64>) -> IoResult<Response> {
-        let request_sender = || {
-            let mut request = self.client.get(self.url.as_str());
-
-            if let Some(token) = self.token.clone() {
-                request = request.header(AUTHORIZATION, format!("Bearer {token}"));
-            }
-
-            // Add the range header to the request
-            if let Some(range) = HttpRangeRequest::new(start, end).to_header_value_option() {
-                request = request.header(RANGE, range);
-            }
-
-            request.send()
-        };
-
-        super::retriable_request_sender(request_sender, self.timeout)
-    }
-
-    /// Performs a request of a specific section of the file. Returns the HTTP
-    /// response.
-    pub(crate) fn section_reader(&self, section_offset: u64, size: u64) -> IoResult<Response> {
+    /// Performs a request of a specific section of the file. Returns an
+    /// HTTPSubFile object.
+    pub(crate) fn section_reader(&self, section_offset: u64, size: u64) -> HttpSubFile {
         let end = section_offset + size - 1;
         trace!(
             "Reading HTTP file '{}' from {} to {} (inclusive) [{} bytes]",
@@ -274,22 +253,25 @@ impl HttpFile {
             size
         );
 
-        let response = self.reader(Some(section_offset), Some(end))?;
+        let mut subfile = HttpSubFile::new_with_client(
+            self.url.clone(),
+            section_offset,
+            end,
+            self.client.clone(),
+        )
+        .with_timeout(self.timeout);
 
-        if let Some(data) = response.headers().get(CONTENT_RANGE) {
-            trace!(
-                "Returned content range: {:?}",
-                String::from_utf8_lossy(data.as_bytes())
-            );
+        if let Some(token) = self.token.as_ref() {
+            subfile = subfile.with_authorization(format!("Bearer {token}"));
         }
 
-        Ok(response)
+        subfile
     }
 
     /// Performs a request to read the complete file. Returns the HTTP response.
-    pub(crate) fn complete_reader(&self) -> IoResult<Response> {
+    pub(crate) fn complete_reader(&self) -> HttpSubFile {
         trace!("Reading complete HTTP file '{}'", self.url);
-        self.reader(None, None)
+        self.section_reader(0, self.size)
     }
 }
 
@@ -346,22 +328,22 @@ impl Seek for HttpFile {
 
 impl Read for HttpFile {
     fn read(&mut self, buf: &mut [u8]) -> IoResult<usize> {
-        let mut response = self.section_reader(self.position, buf.len() as u64)?;
-        let res = response.read(buf)?;
+        let mut subfile = self.section_reader(self.position, buf.len() as u64);
+        let res = subfile.read(buf)?;
         self.position += res as u64;
         Ok(res)
     }
 
     fn read_exact(&mut self, buf: &mut [u8]) -> IoResult<()> {
-        let mut response = self.section_reader(self.position, buf.len() as u64)?;
-        response.read_exact(buf)?;
+        let mut subfile = self.section_reader(self.position, buf.len() as u64);
+        subfile.read_exact(buf)?;
         self.position += buf.len() as u64;
         Ok(())
     }
 
     fn read_to_end(&mut self, buf: &mut Vec<u8>) -> IoResult<usize> {
-        let mut response = self.reader(Some(self.position), None)?;
-        let res = response.read_to_end(buf)?;
+        let mut subfile = self.section_reader(self.position, buf.len() as u64);
+        let res = subfile.read_to_end(buf)?;
         self.position += res as u64;
         Ok(res)
     }
