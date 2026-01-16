@@ -6,6 +6,7 @@ use std::{
 
 use anyhow::{bail, Context};
 use log::{debug, info};
+use semver::Version;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 use strum_macros::EnumIter;
@@ -16,7 +17,7 @@ use crate::{config::HostConfiguration, is_default, BlockDeviceId};
 /// HostStatus is the status of a host. Reflects the current state of the host and any encountered
 /// errors.
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct HostStatus {
     pub spec: HostConfiguration,
 
@@ -58,11 +59,15 @@ pub struct HostStatus {
     /// Whether this HostStatus is stored on the management OS.
     #[serde(default, skip_serializing_if = "is_default")]
     pub is_management_os: bool,
+
+    /// Version of Trident that last updated this HostStatus.
+    #[serde(default, skip_serializing_if = "TridentVersion::is_none")]
+    pub trident_version: TridentVersion,
 }
 
 /// Servicing type is the type of servicing that the Trident agent is executing on the host.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 pub enum ServicingType {
     /// No servicing is currently in progress.
     #[default]
@@ -73,13 +78,17 @@ pub enum ServicingType {
     AbUpdate = 2,
     /// Clean install of the target OS image when the host is booted from the provisioning OS.
     CleanInstall = 3,
+    /// Manual Rollback of the target OS image into the inactive volume to the previously deployed state.
+    ManualRollbackAb = 4,
+    /// Manual Rollback of the target OS image within the active volume to the previously deployed state.
+    ManualRollbackRuntime = 5,
 }
 
 /// Servicing state describes the progress of the servicing that the Trident agent is executing on
 /// the host. The host will transition through a different sequence of servicing states while
 /// servicing the host.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 pub enum ServicingState {
     /// The host is running from the provisioning OS and has not yet been provisioned by Trident.
     #[default]
@@ -89,6 +98,10 @@ pub enum ServicingState {
     CleanInstallStaged,
     /// A/B update has been staged. The new target OS images have been deployed onto block devices.
     AbUpdateStaged,
+    /// Manual rollback for an AbUpdate has been staged.
+    ManualRollbackAbStaged,
+    /// Manual rollback for a RuntimeUpdate has been staged.
+    ManualRollbackRuntimeStaged,
     /// Runtime update has been staged.
     RuntimeUpdateStaged,
     /// Clean install has been finalized, i.e., UEFI variables have been set, so that firmware boots
@@ -97,6 +110,8 @@ pub enum ServicingState {
     /// A/B update has been finalized. For the next boot, the firmware will boot from the updated
     /// target OS image.
     AbUpdateFinalized,
+    /// Manual rollback for an AbUpdate has been finalized.
+    ManualRollbackAbFinalized,
     /// Servicing has been completed, and the host successfully booted from the updated target OS
     /// image. Trident is ready to begin a new servicing.
     Provisioned,
@@ -107,7 +122,7 @@ pub enum ServicingState {
 /// A/B volume selection. Determines which set of volumes are currently
 /// active/used by the OS.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, EnumIter)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 pub enum AbVolumeSelection {
     VolumeA,
     VolumeB,
@@ -119,6 +134,22 @@ impl Display for AbVolumeSelection {
             AbVolumeSelection::VolumeA => write!(f, "Volume A"),
             AbVolumeSelection::VolumeB => write!(f, "Volume B"),
         }
+    }
+}
+
+/// Trident version
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum TridentVersion {
+    SemVer(Version),
+    Other(String),
+    #[default]
+    None,
+}
+
+impl TridentVersion {
+    fn is_none(&self) -> bool {
+        matches!(self, Self::None)
     }
 }
 
@@ -274,5 +305,44 @@ mod tests {
 
         let hs = decode_host_status(yaml).unwrap();
         hs.spec.validate().unwrap();
+    }
+
+    #[test]
+    fn check_trident_version_serde() {
+        // Check missing TridentVersion
+        let hs = HostStatus {
+            ..Default::default()
+        };
+        let yaml = serde_yaml::to_string(&hs).unwrap();
+        assert!(!yaml.contains("tridentVersion"));
+        let hs_dserialized: HostStatus = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(hs, hs_dserialized);
+        assert!(hs_dserialized.trident_version.is_none());
+
+        // Check semver TridentVersion
+        let semver_version = TridentVersion::SemVer(Version::parse("1.2.3").unwrap());
+        let hs = HostStatus {
+            trident_version: semver_version.clone(),
+            ..Default::default()
+        };
+        let yaml = serde_yaml::to_string(&hs).unwrap();
+        assert!(!yaml.contains("!sem-ver"));
+        assert!(yaml.contains("tridentVersion: 1.2.3"));
+        let hs_dserialized: HostStatus = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(hs, hs_dserialized);
+        assert_eq!(hs_dserialized.trident_version, semver_version);
+
+        // Check other TridentVersion
+        let other_version = TridentVersion::Other("foo".to_string());
+        let hs = HostStatus {
+            trident_version: other_version.clone(),
+            ..Default::default()
+        };
+        let yaml = serde_yaml::to_string(&hs).unwrap();
+        assert!(!yaml.contains("!other"));
+        assert!(yaml.contains("tridentVersion: foo"));
+        let hs_dserialized: HostStatus = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(hs, hs_dserialized);
+        assert_eq!(hs_dserialized.trident_version, other_version);
     }
 }

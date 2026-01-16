@@ -7,6 +7,7 @@ use log::{error, info, LevelFilter, Log};
 use trident::{
     agentconfig::AgentConfig,
     cli::{self, Cli, Commands, GetKind},
+    manual_rollback::{self, utils::ManualRollbackRequestKind},
     offline_init, validation, BackgroundLog, DataStore, ExitKind, LogFilter, LogForwarder,
     Logstream, MultiLogger, TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
 };
@@ -54,6 +55,23 @@ fn run_trident(
             return Trident::get(AgentConfig::load()?.datastore_path(), outfile, *kind)
                 .message("Failed to retrieve Host Status")
                 .map(|()| ExitKind::Done);
+        }
+
+        // Handle manual rollback check here so root is not required for --check
+        Commands::Rollback {
+            check: true,
+            ab,
+            runtime,
+            ..
+        } => {
+            let datastore = DataStore::open_or_create(AgentConfig::load()?.datastore_path())
+                .message("Failed to open datastore")?;
+            return manual_rollback::check_rollback(
+                &datastore,
+                ManualRollbackRequestKind::from_flags(*runtime, *ab)?,
+            )
+            .message("Failed to check manual rollback availability")
+            .map(|()| ExitKind::Done);
         }
 
         Commands::StartNetwork { config } => {
@@ -118,7 +136,8 @@ fn run_trident(
             Commands::Install { status, error, .. }
             | Commands::Update { status, error, .. }
             | Commands::Commit { status, error }
-            | Commands::RebuildRaid { status, error, .. } => {
+            | Commands::RebuildRaid { status, error, .. }
+            | Commands::Rollback { status, error, .. } => {
                 let config_path = match &args.command {
                     Commands::Update { config, .. } | Commands::Install { config, .. } => {
                         Some(config.clone())
@@ -176,6 +195,17 @@ fn run_trident(
                         ..
                     } => trident.update(&mut datastore, cli::to_operations(allowed_operations)),
                     Commands::Commit { .. } => trident.commit(&mut datastore),
+                    Commands::Rollback {
+                        runtime,
+                        ab,
+                        ref allowed_operations,
+                        ..
+                    } => trident.rollback(
+                        &mut datastore,
+                        runtime,
+                        ab,
+                        cli::to_operations(allowed_operations),
+                    ),
                     Commands::RebuildRaid { .. } => trident
                         .rebuild_raid(&mut datastore)
                         .map(|()| ExitKind::Done),
@@ -255,6 +285,7 @@ fn setup_logging(
             | Commands::Update { .. }
             | Commands::Commit { .. }
             | Commands::RebuildRaid { .. }
+            | Commands::Rollback { .. }
     ) {
         multilogger.add_logger(BackgroundLog::new(TRIDENT_BACKGROUND_LOG_PATH).into_logger());
     }
@@ -279,6 +310,7 @@ fn setup_tracing(args: &Cli) -> Result<TraceStream, Error> {
             | Commands::Update { .. }
             | Commands::Commit { .. }
             | Commands::RebuildRaid { .. }
+            | Commands::Rollback { .. }
     ) {
         // Set up the trace sender
         let trace_sender = tracestream
