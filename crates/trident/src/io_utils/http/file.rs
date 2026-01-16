@@ -270,7 +270,8 @@ impl HttpFile {
     /// Returns an HTTPSubFile object covering the complete file.
     pub(crate) fn complete_reader(&self) -> HttpSubFile {
         trace!("Reading complete HTTP file '{}'", self.url);
-        self.section_reader(0, self.size)
+        // Create a section reader optimized to read the complete file.
+        self.section_reader(0, self.size).with_end_is_parent_eof()
     }
 }
 
@@ -341,7 +342,7 @@ impl Read for HttpFile {
     }
 
     fn read_to_end(&mut self, buf: &mut Vec<u8>) -> IoResult<usize> {
-        let mut subfile = self.section_reader(self.position, buf.len() as u64);
+        let mut subfile = self.section_reader(self.position, self.size - self.position);
         let res = subfile.read_to_end(buf)?;
         self.position += res as u64;
         Ok(res)

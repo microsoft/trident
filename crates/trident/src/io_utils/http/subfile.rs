@@ -1,5 +1,6 @@
 use std::{
     io::{Read, Result as IoResult},
+    ops::Not,
     time::Duration,
 };
 
@@ -98,6 +99,11 @@ pub struct HttpSubFile {
     /// needed to satisfy a read, each request will have this timeout applied
     /// separately. Default is 30 seconds.
     timeout: Duration,
+
+    /// Whether the end of the subfile is also the end of the parent file. Used
+    /// for specific optimizations to avoid sending a Range header when not
+    /// needed.
+    end_is_parent_eof: bool,
 }
 
 impl HttpSubFile {
@@ -120,6 +126,7 @@ impl HttpSubFile {
             reader: None,
             authorization: None,
             timeout: Duration::from_secs(30),
+            end_is_parent_eof: false,
         }
     }
 
@@ -132,6 +139,14 @@ impl HttpSubFile {
     /// Sets the timeout duration for each HTTP request.
     pub(super) fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
+        self
+    }
+
+    /// Directs the subfile to optimize for the case where the end of the subfile
+    /// is also the end of the parent file. This allows avoiding sending a Range
+    /// header when reading to the end of the file.
+    pub(super) fn with_end_is_parent_eof(mut self) -> Self {
+        self.end_is_parent_eof = true;
         self
     }
 
@@ -169,7 +184,12 @@ impl HttpSubFile {
     /// the subfile.
     fn new_partial_response_reader(&self) -> IoResult<PartialResponseReader> {
         // Always attempt to read up to the end of the subfile.
-        let range = HttpRangeRequest::new_bounded(self.start + self.position, self.end);
+        let range = HttpRangeRequest::new(
+            Some(self.start + self.position),
+            // If the end of the subfile is also the end of the parent file, we
+            // can avoid setting the end.
+            self.end_is_parent_eof.not().then_some(self.end),
+        );
 
         // Perform the HTTP request with retries. This function guarantees that
         // the resulting response was successful.
@@ -182,10 +202,17 @@ impl HttpSubFile {
 
         let response = super::retriable_request_sender(
             || {
-                self.client
-                    .get(self.url.clone())
-                    .header(RANGE, &range.to_header_value())
-                    .send()
+                let mut req = self.client.get(self.url.clone()).timeout(self.timeout);
+
+                if let Some(range) = range.to_header_value_option() {
+                    req = req.header(RANGE, range);
+                }
+
+                if let Some(auth) = &self.authorization {
+                    req = req.header("Authorization", auth);
+                }
+
+                req.send()
             },
             self.timeout,
         )?;
@@ -343,7 +370,11 @@ impl Read for PartialResponseReader {
 mod tests {
     use super::*;
 
-    use std::io::{Error as IoError, ErrorKind as IoErrorKind};
+    use std::{
+        io::{Error as IoError, ErrorKind as IoErrorKind},
+        sync::{Arc, Mutex},
+        thread,
+    };
 
     use hyper::StatusCode;
     use reqwest::header::{CONTENT_LENGTH, CONTENT_RANGE};
@@ -547,7 +578,7 @@ mod tests {
             .filter(Some("request"), log::LevelFilter::Info)
             .filter(Some("hyper_util"), log::LevelFilter::Info)
             .filter(Some("trident"), log::LevelFilter::Trace)
-            // .filter_level(log::LevelFilter::Trace)
+            .filter(Some("mockito"), log::LevelFilter::Trace)
             .is_test(true)
             .try_init();
 
@@ -563,6 +594,16 @@ mod tests {
 
         let mut mocks = Vec::new();
 
+        // To make this test deterministic, we use a mutex to control when the
+        // simulated network error occurs. The reading code will hold the lock
+        // until after the first read, ensuring we read the initial bytes before
+        // the error is triggered. The server waits to acquire the lock before
+        // simulating the error, ensuring the client has read the initial bytes
+        // first.
+        let err_lock = Arc::new(Mutex::new(()));
+        let err_lock_clone = err_lock.clone();
+        let mut err_guard = Some(err_lock.lock().unwrap());
+
         let full_range = format!("bytes={}-{}", start, end);
         let interrupted_payload: Vec<u8> = sub_body.as_bytes()[..interrupt as usize].to_vec();
         let mock_interrupted = server
@@ -573,6 +614,15 @@ mod tests {
             .with_chunked_body(move |writer| {
                 // Write part of the payload, then simulate a network error.
                 writer.write_all(&interrupted_payload)?;
+                // Sleep a bit to ensure the bytes are flushed and client has
+                // time to read the data.
+                trace!(
+                    "Simulating network interruption after sending {} bytes",
+                    interrupted_payload.len()
+                );
+                let _guard = err_lock_clone.lock().unwrap();
+                thread::sleep(Duration::from_millis(250));
+                trace!("Simulated network interruption occurring now");
                 Err(IoError::new(
                     IoErrorKind::ConnectionReset,
                     "simulated network drop",
@@ -607,6 +657,14 @@ mod tests {
                 break;
             }
             collected.extend_from_slice(&buf[..bytes_read]);
+
+            // Take the error lock after the first read to allow the interrupted
+            // mock to proceed.
+            // err_guard.take();
+            if let Some(guard) = err_guard.take() {
+                trace!("Releasing error lock to allow interrupted mock to proceed");
+                drop(guard);
+            }
         }
 
         assert_eq!(collected, sub_body.as_bytes());

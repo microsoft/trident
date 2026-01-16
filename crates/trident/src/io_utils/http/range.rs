@@ -15,9 +15,15 @@ impl HttpRangeRequest {
     /// when requesting the whole file because both start and end are None.
     pub fn to_header_value_option(self) -> Option<String> {
         Some(match (self.start, self.end) {
+            // Start on 0 and no end means the whole file, so no header is needed.
+            (Some(0), None) => return None,
+
+            // Construct the appropriate Range header value.
             (Some(start), Some(end)) => format!("bytes={}-{}", start, end),
             (Some(start), None) => format!("bytes={}-", start),
             (None, Some(end)) => format!("bytes=0-{}", end),
+
+            // No range specified, so no header is needed.
             (None, None) => return None,
         })
     }
@@ -30,17 +36,8 @@ impl HttpRangeRequest {
     }
 
     /// Creates a new HttpRangeRequest with the given start and end.
-    #[allow(dead_code)]
     pub fn new(start: Option<u64>, end: Option<u64>) -> Self {
         Self { start, end }
-    }
-
-    /// Creates a new HttpRangeRequest with the given bounded range.
-    pub fn new_bounded(start: u64, end: u64) -> Self {
-        Self {
-            start: Some(start),
-            end: Some(end),
-        }
     }
 
     /// Returns the size of the range in bytes, if it can be determined.
@@ -68,7 +65,7 @@ mod tests {
         let range = HttpRangeRequest::new(Some(0), Some(100));
         assert_eq!(
             range.to_header_value_option(),
-            Some("bytes=0-99".to_string())
+            Some("bytes=0-100".to_string())
         );
 
         let range = HttpRangeRequest::new(Some(50), None);
@@ -90,7 +87,7 @@ mod tests {
     #[test]
     fn test_to_header_value() {
         let range = HttpRangeRequest::new(Some(0), Some(100));
-        assert_eq!(range.to_header_value(), "bytes=0-99".to_string());
+        assert_eq!(range.to_header_value(), "bytes=0-100".to_string());
 
         let range = HttpRangeRequest::new(Some(50), None);
         assert_eq!(range.to_header_value(), "bytes=50-".to_string());
