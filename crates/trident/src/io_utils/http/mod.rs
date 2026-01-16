@@ -132,7 +132,7 @@ mod tests {
 
     use reqwest::{
         blocking::Client,
-        header::{CONTENT_RANGE, CONTENT_TYPE},
+        header::{CONTENT_LENGTH, CONTENT_TYPE},
     };
     use url::Url;
 
@@ -160,7 +160,7 @@ mod tests {
         let document_mock = server
             .mock("GET", relative_file_path)
             .with_body(data)
-            .with_header(CONTENT_RANGE, &data.len().to_string())
+            .with_header(CONTENT_LENGTH, &data.len().to_string())
             .with_header(CONTENT_TYPE, "text/plain")
             .with_status(200)
             .expect(1)
