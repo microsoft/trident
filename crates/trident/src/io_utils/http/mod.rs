@@ -17,7 +17,7 @@ mod subfile;
 pub use file::HttpFile;
 use range::HttpRangeRequest;
 
-/// Converts an reqwest HTTP error into an IO error.
+/// Converts a reqwest HTTP error into an IO error.
 fn http_to_io_err(e: ReqwestError) -> IoError {
     let formatted = format!("HTTP File error: {e}");
     if let Some(status) = e.status() {
@@ -74,11 +74,11 @@ fn get_content_length(response: &Response) -> IoResult<u64> {
         })
 }
 
-/// Performs an HTTP request and retries it for up to `timeout` if
-/// it fails. The HTTP request is created and invoked by `request_sender`, a
-/// closure that that returns a `reqwest::Result<Response>`. If the request is
-/// successful, it returns the response. If the request fails after all retries,
-/// it returns an IO error.
+/// Performs an HTTP request and retries it for up to `timeout` if it fails. The
+/// HTTP request is created and invoked by `request_sender`, a closure that
+/// returns a `reqwest::Result<Response>`. If the request is successful, it
+/// returns the response. If the request fails after all retries, it returns an
+/// IO error.
 fn retriable_request_sender<F>(request_sender: F, timeout: Duration) -> IoResult<Response>
 where
     F: Fn() -> ReqwestResult<Response>,
