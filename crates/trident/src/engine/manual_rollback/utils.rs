@@ -67,7 +67,7 @@ pub(crate) struct ManualRollbackChainItem {
     /// The install index of the rollback.
     pub install_index: usize,
     /// The index of the HostStatus entry that this rollback was
-    /// derived from, used internally to maintian ordering.
+    /// derived from, used internally to maintain ordering.
     #[serde(skip)]
     host_status_index: i32,
 }
@@ -210,7 +210,7 @@ impl ManualRollbackContext {
                             // If the active volume changed during a manual rollback, then:
                             //   1. All of the available rollbacks for the previously active
                             //      volume can be removed. If these exist, they are runtime
-                            //      updates that were applied after the A/B udpate that is
+                            //      updates that were applied after the A/B update that is
                             //      being rolled back.
                             if let Some(volume) = instance.active_volume {
                                 trace!(
