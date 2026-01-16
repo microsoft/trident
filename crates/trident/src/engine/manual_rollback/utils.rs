@@ -101,7 +101,7 @@ impl Operation {
     fn can_rollback(&self) -> bool {
         // Check operation kind
         if !self.kind.can_rollback() {
-            println!("Operation kind {:?} cannot rollback", self.kind);
+            trace!("Operation kind {:?} cannot rollback", self.kind);
             return false;
         }
 
@@ -111,7 +111,7 @@ impl Operation {
             match &from_hs.trident_version {
                 // If version is not set or is not semver, consider it incompatible
                 TridentVersion::Other(_) | TridentVersion::None => {
-                    println!(
+                    trace!(
                         "From HostStatus has incompatible Trident version: {:?}, cannot rollback",
                         from_hs.trident_version
                     );
@@ -119,7 +119,7 @@ impl Operation {
                 }
                 TridentVersion::SemVer(version) => {
                     if *version < *MINIMUM_ROLLBACK_TRIDENT_VERSION {
-                        println!(
+                        trace!(
                             "From HostStatus has Trident version below minimum: {:?}, cannot rollback",
                             version
                         );
@@ -133,7 +133,7 @@ impl Operation {
         let to_hs = match &self.to_host_status {
             Some(hs) => hs,
             None => {
-                println!("To HostStatus is missing, cannot rollback");
+                trace!("To HostStatus is missing, cannot rollback");
                 return false;
             }
         };
@@ -142,7 +142,7 @@ impl Operation {
         match &to_hs.trident_version {
             // If version is not set or is not semver, consider it incompatible
             TridentVersion::Other(_) | TridentVersion::None => {
-                println!(
+                trace!(
                     "To HostStatus has incompatible Trident version: {:?}, cannot rollback",
                     to_hs.trident_version
                 );
@@ -150,7 +150,7 @@ impl Operation {
             }
             TridentVersion::SemVer(version) => {
                 if *version < *MINIMUM_ROLLBACK_TRIDENT_VERSION {
-                    println!(
+                    trace!(
                         "To HostStatus has Trident version below minimum: {:?}, cannot rollback",
                         version
                     );
@@ -161,13 +161,13 @@ impl Operation {
 
         // Check to last_error
         if to_hs.last_error.is_some() {
-            println!("To HostStatus has last_error set, cannot rollback");
+            trace!("To HostStatus has last_error set, cannot rollback");
             return false;
         }
 
         // Check to encryption configuration for A/B update
         if matches!(self.kind, OperationKind::AbUpdate) && to_hs.spec.storage.encryption.is_some() {
-            println!(
+            trace!(
                 "To HostStatus has encryption configuration set for A/B update, cannot rollback"
             );
             return false;
