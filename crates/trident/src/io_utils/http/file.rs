@@ -241,8 +241,7 @@ impl HttpFile {
         })
     }
 
-    /// Performs a request of a specific section of the file. Returns an
-    /// HTTPSubFile object.
+    /// Returns an HTTPSubFile object covering a specific section of the file.
     pub(crate) fn section_reader(&self, section_offset: u64, size: u64) -> HttpSubFile {
         let end = section_offset + size - 1;
         trace!(
@@ -268,7 +267,7 @@ impl HttpFile {
         subfile
     }
 
-    /// Performs a request to read the complete file. Returns the HTTP response.
+    /// Returns an HTTPSubFile object covering the complete file.
     pub(crate) fn complete_reader(&self) -> HttpSubFile {
         trace!("Reading complete HTTP file '{}'", self.url);
         self.section_reader(0, self.size)

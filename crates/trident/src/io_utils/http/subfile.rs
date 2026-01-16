@@ -19,15 +19,63 @@ use super::HttpRangeRequest;
 /// reading in case the server cannot provide the full subfile at once.
 ///
 /// HttpSubFile is optimistic and will always attempt to read all data in a
-/// single request first. If the read cannot be satisfied in a single request,
-/// it will transparently perform additional requests as needed to satisfy the
-/// read.
+/// single request first, so on good cases it is functionally equivalent to just
+/// doing one HTTP request directly. If the requested `read()` call cannot be
+/// satisfied in a single request, it will transparently perform additional
+/// requests as needed to satisfy the read.
 ///
 /// Because of this behavior, HttpSubFile is resilient to transient network
 /// errors that may occur during reading. If a read fails due to a network
 /// error, it will discard the current request and re-issue a new request for
 /// the remaining data, allowing the read to continue without requiring the
 /// caller to restart the read from the beginning.
+///
+/// For example, assume there is a file of 8 KiB, and we want to read the
+/// subfile from byte 256 to byte 4095 inclusive (3840 bytes). The first read
+/// request will always attempt to read bytes 256-4095 in a single HTTP Range
+/// request. Then, the server responds with a partial response of only 1536
+/// bytes because it cannot provide more. The HttpSubFile will read those bytes
+/// and then continue issues additional HTTP Range requests for the remaining
+/// bytes (bytes 1792-4095) until the full subfile has been read. If during this
+/// process a network error occurs, it will discard the current response and
+/// re-issue a new request for the remaining bytes, allowing the read to
+/// continue. The sequence of operations would look like this:
+///
+/// ```text
+/// Full file:    |<------------------------- 8 KiB ------------------------>|
+/// Subfile:              |<--- 3840 bytes ---->| (from byte 256 to byte 4095 inclusive)
+///
+/// read() call #1:       |<--->|                 (1 KiB buffer)
+/// First request:        |<--- 3840 bytes ---->| (attempt to read full subfile)
+/// Server response:      |<------>|              (only 1536 bytes read)
+/// Bytes read so far:    |<--->|                 (1 KiB read by caller)
+///
+/// read() call #2:             |<--->|           (1 KiB buffer)
+/// Consume from response:      |<>|              (512 bytes read from existing response)
+/// Next request:                  |<---------->| (bytes 1792-4095)
+/// Server response:               |<---------->| (full remaining bytes)
+/// Consume from response:         |<>|           (512 bytes read from new response)
+/// Bytes read so far:    |<--------->|           (2 KiB read by caller)
+///
+/// read() call #3:                   |<--->|     (1 KiB buffer)
+/// Consume from response:            |<-X        (an error occurs after 512 bytes)
+/// Next request:                     |<------->| (bytes 2304-4095)
+/// Server response:                  |<------->| (full remaining bytes)
+/// Consume from response:            |<--->|     (1 KiB read)
+/// Bytes read so far:    |<--------------->|     (3 KiB read by caller)
+///
+/// read() call #4:                         |<--->| (1 KiB buffer)
+/// Consume from response:                  |<->| (768 bytes read, EOF)
+/// Bytes read so far:    |<------------------->| (full 3840 bytes read)
+/// ```
+///
+/// In this example, after the server refuses to send the full subfile in the
+/// first request, HttpSubFile transparently handles performing the additional
+/// requests as needed to satisfy the calls to `read()`. It also handles
+/// re-establishing the connection and continuing the read after a network error
+/// occurs, without the caller even needing to be aware of it. Note that the
+/// `read()` call never fails in this example, even though multiple requests
+/// were needed and a network error occurred during the process.
 pub struct HttpSubFile {
     /// The URL of the HTTP resource.
     url: Url,
