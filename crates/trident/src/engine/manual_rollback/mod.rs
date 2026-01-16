@@ -3,9 +3,10 @@ use std::{
     time::Instant,
 };
 
+use enumflags2::BitFlags;
 use log::{debug, info, trace, warn};
 
-use osutils::efivar;
+use osutils::{efivar, pcrlock};
 use trident_api::{
     config::Operations,
     constants::{
@@ -19,7 +20,10 @@ use crate::{
     cli::GetKind,
     container,
     datastore::DataStore,
-    engine::{self, boot::uki, bootentries, runtime_update, EngineContext, SUBSYSTEMS},
+    engine::{
+        self, boot::uki, bootentries, runtime_update, storage::encryption, EngineContext,
+        SUBSYSTEMS,
+    },
     subsystems::esp,
     ExitKind,
 };
@@ -225,32 +229,25 @@ fn stage_rollback(
     if matches!(staging_state, ServicingState::ManualRollbackAbStaged) {
         info!("Staging rollback of A/B update that requires reboot");
 
-        // If we have encrypted volumes and this is a UKI image, then we need to re-generate pcrlock
-        // policy to include both the current boot and the rollback boot.
-        if let Some(ref _encryption) = engine_context.spec.storage.encryption {
-            // TODO: We know how to update the pcrlock policy in the servicing OS, but are
-            // not able to do so for the target OS yet.
+        // If we have encrypted volumes and this is a UKI image, then we need to re-generate
+        // pcrlock policy to include both current boot and rollback boots.
+        if let Some(encryption) = &engine_context.spec.storage.encryption {
             if engine_context.is_uki()? {
-                return Err(TridentError::new(ServicingError::ManualRollback {
-                    message: "Cannot update pcrlock policy for UKI images during manual rollback",
-                }));
-                // debug!("Regenerating pcrlock policy to include rollback boot");
+                debug!("Regenerating pcrlock policy to include rollback boot");
 
-                // // Get the PCRs from Host Configuration
-                // let pcrs = encryption
-                //     .pcrs
-                //     .iter()
-                //     .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr));
+                // Get the PCRs from Host Configuration
+                let pcrs = encryption
+                    .pcrs
+                    .iter()
+                    .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr));
 
-                // // Get UKI and bootloader binaries for .pcrlock file generation
-                // let (uki_binaries, bootloader_binaries) =
-                //     encryption::get_binary_paths_pcrlock(engine_context, pcrs, None, true)
-                //         .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
+                // Get UKI and bootloader binaries for .pcrlock file generation
+                let (uki_binaries, bootloader_binaries) =
+                    encryption::get_binary_paths_pcrlock(engine_context, pcrs, None, true)
+                        .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
 
-                // // Generate a pcrlock policy
-                // pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
-
-                // // Update the rollback OS pcrlock.json file
+                // Generate a pcrlock policy
+                pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
             } else {
                 debug!(
                     "Rollback OS is a grub image, \
