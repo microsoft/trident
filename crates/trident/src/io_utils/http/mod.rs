@@ -130,10 +130,7 @@ mod tests {
         Arc,
     };
 
-    use reqwest::{
-        blocking::Client,
-        header::{CONTENT_LENGTH, CONTENT_TYPE},
-    };
+    use reqwest::{blocking::Client, header::CONTENT_TYPE};
     use url::Url;
 
     use super::*;
@@ -160,7 +157,6 @@ mod tests {
         let document_mock = server
             .mock("GET", relative_file_path)
             .with_body(data)
-            .with_header(CONTENT_LENGTH, &data.len().to_string())
             .with_header(CONTENT_TYPE, "text/plain")
             .with_status(200)
             .expect(1)
