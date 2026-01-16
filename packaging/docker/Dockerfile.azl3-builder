@@ -1,5 +1,8 @@
 # Simple container image with all build tools required to build Trident RPMs for Azure Linux 3.
 FROM mcr.microsoft.com/azurelinux/base/core:3.0
 
-RUN tdnf install -y build-essential rpmdevtools openssl-devel clang-devel protobuf-devel rust sed selinux-policy-devel ca-certificates
+RUN tdnf install -y build-essential openssl-devel clang-devel protobuf-devel rust sed selinux-policy-devel ca-certificates
 RUN tdnf clean all
+
+# Pre-fetch cargo dependencies to leverage Docker layer caching.
+RUN --mount=type=bind,source=.,target=/src cd /src && cargo fetch --locked
