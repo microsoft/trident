@@ -2,7 +2,7 @@
 /// https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Range
 ///
 /// Currently only supports byte ranges. There is no support for multi-part
-/// ranges, not suffix byte ranges.
+/// ranges, nor suffix byte ranges.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct HttpRangeRequest {
     pub start: Option<u64>,
