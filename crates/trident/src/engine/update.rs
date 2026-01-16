@@ -5,7 +5,7 @@ use log::{debug, info, warn};
 use trident_api::{
     config::{HostConfiguration, Operations},
     constants::internal_params::ENABLE_UKI_SUPPORT,
-    error::{InvalidInputError, TridentError, TridentResultExt},
+    error::{InternalError, InvalidInputError, TridentError, TridentResultExt},
     status::{ServicingState, ServicingType},
 };
 
@@ -80,10 +80,15 @@ pub(crate) fn update(
             // Execute pre-servicing scripts
             HooksSubsystem::new_for_local_scripts().execute_pre_servicing_scripts(&ctx)?;
         }
+        ServicingType::ManualRollbackAb | ServicingType::ManualRollbackRuntime => {
+            return Err(TridentError::new(InternalError::Internal(
+                "Subsystem reported manual rollback servicing type",
+            )));
+        }
         ServicingType::CleanInstall => {
-            return Err(TridentError::new(
-                InvalidInputError::CleanInstallOnProvisionedHost,
-            ));
+            return Err(TridentError::new(InternalError::Internal(
+                "Subsystem reported clean install servicing type",
+            )));
         }
     }
 
@@ -151,6 +156,13 @@ pub(crate) fn update(
         ServicingType::CleanInstall => Err(TridentError::new(
             InvalidInputError::CleanInstallOnProvisionedHost,
         )),
-        ServicingType::NoActiveServicing => Err(TridentError::internal("No active servicing type")),
+        ServicingType::ManualRollbackAb | ServicingType::ManualRollbackRuntime => {
+            Err(TridentError::new(InternalError::Internal(
+                "Cannot update during manual rollback",
+            )))
+        }
+        ServicingType::NoActiveServicing => Err(TridentError::new(InternalError::Internal(
+            "No active servicing type",
+        ))),
     }
 }

@@ -48,7 +48,9 @@ func (s *TridentRollbackScenario) RegisterTestCases(r storm.TestRegistrar) error
 	r.RegisterTestCase("prepare-qcow2", s.prepareQcow2)
 	r.RegisterTestCase("deploy-vm", s.deployVm)
 	r.RegisterTestCase("check-deployment", s.checkDeployment)
-	r.RegisterTestCase("update-and-rollback", s.updateAndRollback)
+	r.RegisterTestCase("multi-rollback", s.multiRollback)
+	r.RegisterTestCase("skip-to-ab-rollback", s.skipToAbRollback)
+	r.RegisterTestCase("split-rollback", s.splitRollback)
 	r.RegisterTestCase("collect-logs", s.collectLogs)
 	r.RegisterTestCase("cleanup-vm", s.cleanupVm)
 	return nil
@@ -119,8 +121,25 @@ func (s *TridentRollbackScenario) checkDeployment(tc storm.TestCase) error {
 	return s.runTestCase(tc, stormrollbacktests.CheckDeployment)
 }
 
-func (s *TridentRollbackScenario) updateAndRollback(tc storm.TestCase) error {
-	return s.runTestCase(tc, stormrollbacktests.RollbackTest)
+func (s *TridentRollbackScenario) multiRollback(tc storm.TestCase) error {
+	return s.runTestCase(tc, stormrollbacktests.MultiRollbackTest)
+}
+
+func (s *TridentRollbackScenario) skipToAbRollback(tc storm.TestCase) error {
+	if s.args.SkipRuntimeUpdates {
+		tc.Skip("Skipping skip-to-ab rollback test due to SkipRuntimeUpdates being true")
+	}
+	if s.args.SkipManualRollbacks {
+		tc.Skip("Skipping skip-to-ab rollback test due to SkipManualRollbacks being true")
+	}
+	return s.runTestCase(tc, stormrollbacktests.SkipToAbRollbackTest)
+}
+
+func (s *TridentRollbackScenario) splitRollback(tc storm.TestCase) error {
+	if s.args.SkipManualRollbacks {
+		tc.Skip("Skipping split rollback test due to SkipManualRollbacks being true")
+	}
+	return s.runTestCase(tc, stormrollbacktests.SplitRollbackTest)
 }
 
 func (s *TridentRollbackScenario) collectLogs(tc storm.TestCase) error {

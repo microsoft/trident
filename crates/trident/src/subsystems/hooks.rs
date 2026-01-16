@@ -380,6 +380,8 @@ fn match_servicing_type_env_var(servicing_type: &ServicingType) -> &OsStr {
         ServicingType::AbUpdate => OsStr::new("ab_update"),
         ServicingType::CleanInstall => OsStr::new("clean_install"),
         ServicingType::NoActiveServicing => OsStr::new("none"),
+        ServicingType::ManualRollbackAb => OsStr::new("manual_rollback_ab"),
+        ServicingType::ManualRollbackRuntime => OsStr::new("manual_rollback_runtime"),
     }
 }
 

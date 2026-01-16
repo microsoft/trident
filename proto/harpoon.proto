@@ -24,6 +24,18 @@ service TridentService {
   // UpdateFinalize performs the finalize operation of an OS update.
   rpc UpdateFinalize(FinalizeRequest) returns (stream ServicingResponse);
 
+  // CheckRollback checks what type of rollback would be performed.
+  rpc CheckRollback(CheckRollbackRequest) returns (CheckRollbackResponse);
+
+  // Rollback performs a rollback.
+  rpc Rollback(RollbackRequest) returns (stream ServicingResponse);
+
+  // RollbackStage performs the stage operation of a rollback.
+  rpc RollbackStage(RollbackStageRequest) returns (stream ServicingResponse);
+
+  // RollbackFinalize performs the finalize operation of a rollback.
+  rpc RollbackFinalize(RollbackFinalizeRequest) returns (stream ServicingResponse);
+
   // CheckRoot validates that the host booted using the expected root
   // filesystem.
   rpc CheckRoot(CheckRootRequest) returns (stream ServicingResponse);
@@ -60,6 +72,12 @@ service TridentService {
 
   // GetActiveVolume returns the currently active volume (A or B).
   rpc GetActiveVolume(GetActiveVolumeRequest) returns (GetActiveVolumeResponse);
+
+  // GetRollbackChain returns list of available rollbacks.
+  rpc GetRollbackChain(GetRollbackChainRequest) returns (GetRollbackChainResponse);
+
+  // GetRollbackTarget returns the next rollback target OS Host Configuration.
+  rpc GetRollbackTarget(GetRollbackTargetRequest) returns (GetRollbackTargetResponse);
 
   // Version returns the Trident version.
   rpc Version(VersionRequest) returns (VersionResponse);
@@ -214,6 +232,59 @@ message GetRequiredServicingTypeRequest {
 message GetRequiredServicingTypeResponse {
   // The type of servicing required.
   ServicingType servicing_type = 1;
+}
+
+enum ManualRollbackKind {
+  AnyRollbackRequested      = 0;
+  AbRollbackRequested       = 1;
+  RuntimeRollbackRequested  = 2;
+}
+
+message CheckRollbackRequest {
+  // The rollback kind parameter for the servicing operation.
+  ManualRollbackKind kind = 1;
+}
+
+enum CheckRollbackKind {
+  NoRollbackAvailable      = 0;
+  AbRollbackExpected       = 1;
+  RuntimeRollbackExpected  = 2;
+}
+
+message CheckRollbackResponse {
+  // The rollback kind as a string.
+  CheckRollbackKind kind = 1;
+}
+
+message RollbackRequest {
+  // The finalize parameters for the servicing operation.
+  FinalizeRequest finalize = 2;
+  // The rollback kind parameter for the servicing operation.
+  ManualRollbackKind kind = 3;
+}
+
+message RollbackStageRequest {
+  // The rollback kind parameter for the servicing operation.
+  ManualRollbackKind kind = 3;
+}
+
+message RollbackFinalizeRequest {
+  // The finalize parameters for the servicing operation.
+  FinalizeRequest finalize = 2;
+}
+
+message GetRollbackChainRequest {}
+
+message GetRollbackChainResponse {
+  // The rollback list content as a list of strings.
+  repeated string rollback_chain = 1;
+}
+
+message GetRollbackTargetRequest {}
+
+message GetRollbackTargetResponse {
+  // The rollback target Host Configuration content as a string.
+  optional string rollback_target = 1;
 }
 
 message CheckRootRequest {}

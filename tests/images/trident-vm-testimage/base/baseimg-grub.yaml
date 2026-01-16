@@ -71,6 +71,7 @@ os:
       - openssh-server
       - trident-service
       - vim
+      - netplan
 
   additionalFiles:
     - source: files/sshd-keygen.service
