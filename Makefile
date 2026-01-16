@@ -535,7 +535,7 @@ RUN_NETLAUNCH_TRIDENT_BIN ?= $(if $(filter yes,$(IS_UBUNTU_24_OR_NEWER)),bin/tri
 run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch validate artifacts/osmodifier $(RUN_NETLAUNCH_TRIDENT_BIN)
 	@echo "Using trident binary: $(RUN_NETLAUNCH_TRIDENT_BIN)"
 	@mkdir -p artifacts/test-image
-	@cp $(RUN_NETLAUNCH_TRIDENT_BIN) artifacts/test-image/
+	@cp $(RUN_NETLAUNCH_TRIDENT_BIN) artifacts/test-image/trident
 	@cp artifacts/osmodifier artifacts/test-image/
 	@bin/netlaunch \
 	 	--iso $(NETLAUNCH_ISO) \
