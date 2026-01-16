@@ -383,7 +383,7 @@ fn get_uki_paths(
     if staging_rollback {
         debug!("Constructing UKI binary path for rollback OS during rollback staging");
         // Fetch previous boot entry
-        let uki_rollback = uki::find_previous_uki(&esp_uki_directory).unstructured(
+        let uki_rollback = uki::find_previous_uki(esp_path).unstructured(
             "Failed to find previous UKI boot entry during staging of manual rollback",
         )?;
 
