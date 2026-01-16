@@ -7,7 +7,7 @@ use std::{
 use log::{trace, warn};
 use reqwest::{
     blocking::{Client, Response},
-    header::RANGE,
+    header::{AUTHORIZATION, RANGE},
 };
 use url::Url;
 
@@ -107,9 +107,9 @@ pub struct HttpSubFile {
 }
 
 impl HttpSubFile {
-    // Creates a new HttpSubFile that reads the byte range [start, end] from the
-    // given URL. The range is inclusive like the HTTP Range header, and is
-    // expected to have been validated beforehand.
+    /// Creates a new HttpSubFile that reads the byte range [start, end] from the
+    /// given URL. The range is inclusive like the HTTP Range header, and is
+    /// expected to have been validated beforehand.
     #[allow(dead_code)] // Used in tests
     pub fn new(url: Url, start: u64, end: u64) -> Self {
         Self::new_with_client(url, start, end, Client::new())
@@ -151,14 +151,14 @@ impl HttpSubFile {
     }
 
     /// Returns the length of the subfile in bytes.
-    pub fn len(&self) -> u64 {
+    pub fn size(&self) -> u64 {
         // Add 1 because the range is inclusive.
         self.end - self.start + 1
     }
 
     /// Returns whether we have reached the end of the subfile.
     fn is_eof(&self) -> bool {
-        self.position >= self.len()
+        self.position >= self.size()
     }
 
     fn populate_reader(&mut self) -> IoResult<&mut PartialResponseReader> {
@@ -209,7 +209,7 @@ impl HttpSubFile {
                 }
 
                 if let Some(auth) = &self.authorization {
-                    req = req.header("Authorization", auth);
+                    req = req.header(AUTHORIZATION, auth);
                 }
 
                 req.send()
@@ -410,7 +410,7 @@ mod tests {
         let request_url = url.join(relative_path).unwrap();
 
         let mut subfile = HttpSubFile::new(request_url, start, end);
-        let mut buf = vec![0_u8; subfile.len() as usize];
+        let mut buf = vec![0_u8; subfile.size() as usize];
         let bytes_read = subfile.read(&mut buf).unwrap();
 
         assert_eq!(bytes_read, sub_body.len());
@@ -502,7 +502,7 @@ mod tests {
         let request_url = url.join(relative_path).unwrap();
 
         let mut subfile = HttpSubFile::new(request_url, start, end);
-        let mut buf = vec![0_u8; subfile.len() as usize];
+        let mut buf = vec![0_u8; subfile.size() as usize];
         let bytes_read = subfile.read(&mut buf).unwrap();
 
         assert_eq!(bytes_read, sub_body.len());
@@ -519,7 +519,6 @@ mod tests {
             .filter(Some("request"), log::LevelFilter::Info)
             .filter(Some("hyper_util"), log::LevelFilter::Info)
             .filter(Some("trident"), log::LevelFilter::Trace)
-            // .filter_level(log::LevelFilter::Trace)
             .is_test(true)
             .try_init();
 
@@ -660,9 +659,6 @@ mod tests {
             }
             collected.extend_from_slice(&buf[..bytes_read]);
 
-            // Take the error lock after the first read to allow the interrupted
-            // mock to proceed.
-            // err_guard.take();
             if let Some(guard) = err_guard.take() {
                 trace!("Releasing error lock to allow interrupted mock to proceed");
                 drop(guard);
