@@ -382,6 +382,7 @@ mod tests {
     use reqwest::header::{CONTENT_LENGTH, CONTENT_RANGE};
 
     static PARTIAL_CONTENT: usize = StatusCode::PARTIAL_CONTENT.as_u16() as usize;
+    static OK: usize = StatusCode::OK.as_u16() as usize;
 
     #[test]
     fn test_subfile_single_request_full_read() {
@@ -670,5 +671,93 @@ mod tests {
         for mock in mocks {
             mock.assert();
         }
+    }
+
+    #[test]
+    fn test_with_authorization_header() {
+        // Simple 1-request test to ensure we get the authorization header as expected.
+        let authorization = "Bearer testtoken123";
+
+        let mut server = mockito::Server::new();
+        let full_body = "abcdefghij";
+        let mock = server
+            .mock("GET", "/auth-subfile.bin")
+            .match_header(AUTHORIZATION, authorization)
+            .with_status(OK)
+            .with_body(full_body)
+            .expect(1)
+            .create();
+
+        let url = Url::parse(&server.url()).unwrap();
+        let request_url = url.join("/auth-subfile.bin").unwrap();
+
+        let mut subfile = HttpSubFile::new(request_url, 0, (full_body.len() - 1) as u64)
+            .with_authorization(authorization)
+            .with_end_is_parent_eof();
+        let mut buf = vec![0_u8; subfile.size() as usize];
+        let bytes_read = subfile.read(&mut buf).unwrap();
+        assert_eq!(bytes_read, full_body.len());
+        assert_eq!(buf, full_body.as_bytes());
+
+        mock.assert();
+    }
+
+    #[test]
+    fn test_exhaust_partial_response_reader() {
+        let mut server = mockito::Server::new();
+        let body = "1234567890";
+        let content_length = body.len().to_string();
+
+        let mock = server
+            .mock("GET", "/partial-reader.bin")
+            .with_status(OK)
+            .with_header(CONTENT_LENGTH, content_length.as_str())
+            .with_body(body)
+            .expect(1)
+            .create();
+
+        let url = Url::parse(&server.url()).unwrap();
+        let request_url = url.join("/partial-reader.bin").unwrap();
+
+        let client = Client::new();
+        let response = client.get(request_url).send().unwrap();
+        let mut reader = PartialResponseReader::new_from_response(response).unwrap();
+
+        let mut buf = vec![0_u8; 4];
+        let bytes_read1 = reader.read(&mut buf).unwrap();
+        assert_eq!(bytes_read1, 4);
+        assert_eq!(&buf[..bytes_read1], b"1234");
+        assert_eq!(reader.bytes_remaining, 6);
+
+        let bytes_read2 = reader.read(&mut buf).unwrap();
+        assert_eq!(bytes_read2, 4);
+        assert_eq!(&buf[..bytes_read2], b"5678");
+        assert_eq!(reader.bytes_remaining, 2);
+
+        let bytes_read3 = reader.read(&mut buf).unwrap();
+        assert_eq!(bytes_read3, 2);
+        assert_eq!(&buf[..bytes_read3], b"90");
+        assert_eq!(reader.bytes_remaining, 0);
+
+        let bytes_read4 = reader.read(&mut buf).unwrap();
+        assert_eq!(bytes_read4, 0); // EOF
+
+        mock.assert();
+    }
+
+    #[test]
+    fn test_timeout_is_respected() {
+        let mut subfile = HttpSubFile::new(
+            Url::parse("http://localhost:45555/does/not/exit").unwrap(),
+            0,
+            16,
+        )
+        .with_timeout(Duration::from_millis(200));
+
+        let mut buf = vec![0_u8; 16];
+        let result = subfile.read(&mut buf);
+
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), IoErrorKind::TimedOut);
     }
 }
