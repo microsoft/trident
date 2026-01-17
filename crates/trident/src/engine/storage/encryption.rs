@@ -630,7 +630,85 @@ mod tests {
             expected_paths_b_with_target
         );
 
-        // TODO: Add unit tests to validate manual rollback scenario!
+        // Test case #7: Staging of manual rollback. Active volume is A.
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
+        let expected_paths_rollback = vec![
+            esp_azla_path.join("bootx64.efi"),
+            esp_azla_path.join("grubx64.efi"),
+            esp_azlb_path.join("bootx64.efi"),
+            esp_azlb_path.join("grubx64.efi"),
+        ];
+        assert_eq!(
+            get_bootloader_paths(&ctx, &esp_path, None, true).unwrap(),
+            expected_paths_rollback.clone()
+        );
+
+        // Test case #8: Staging of manual rollback. Active volume is B.
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
+        assert_eq!(
+            get_bootloader_paths(&ctx, &esp_path, None, true).unwrap(),
+            expected_paths_rollback
+        );
+    }
+
+    #[test]
+    fn test_get_path_label() {
+        // Test case #1. Current boot, so label same as active volume.
+        assert_eq!(
+            get_path_label(Some(AbVolumeSelection::VolumeA), true),
+            "AZLA"
+        );
+        assert_eq!(
+            get_path_label(Some(AbVolumeSelection::VolumeB), true),
+            "AZLB"
+        );
+        assert_eq!(get_path_label(None, true), "AZLB");
+
+        // Test case #2. Update or rollback boot, so label opposite to active volume.
+        assert_eq!(
+            get_path_label(Some(AbVolumeSelection::VolumeA), false),
+            "AZLB"
+        );
+        assert_eq!(
+            get_path_label(Some(AbVolumeSelection::VolumeB), false),
+            "AZLA"
+        );
+        assert_eq!(get_path_label(None, false), "AZLA");
+    }
+
+    #[test]
+    fn test_sort_binary_paths() {
+        let path_a1 = PathBuf::from("/path/to/azla1");
+        let path_a2 = PathBuf::from("/path/to/azla2");
+        let path_b1 = PathBuf::from("/path/to/azlb1");
+        let path_b2 = PathBuf::from("/path/to/azlb2");
+
+        // Test that AZLA comes before AZLB
+        let binaries = vec![
+            (path_b1.clone(), "AZLB".to_string()),
+            (path_a1.clone(), "AZLA".to_string()),
+            (path_b2.clone(), "AZLB".to_string()),
+            (path_a2.clone(), "AZLA".to_string()),
+        ];
+
+        let sorted = sort_binary_paths(binaries);
+        let expected = vec![path_a1, path_a2, path_b1, path_b2];
+        assert_eq!(sorted, expected);
+
+        // Test sorting by path when labels are the same
+        let path_x = PathBuf::from("/x");
+        let path_y = PathBuf::from("/y");
+        let path_z = PathBuf::from("/z");
+
+        let binaries = vec![
+            (path_z.clone(), "AZLA".to_string()),
+            (path_x.clone(), "AZLA".to_string()),
+            (path_y.clone(), "AZLA".to_string()),
+        ];
+
+        let sorted = sort_binary_paths(binaries);
+        let expected = vec![path_x, path_y, path_z];
+        assert_eq!(sorted, expected);
     }
 }
 
@@ -644,8 +722,7 @@ mod functional_test {
 
     #[functional_test(feature = "helpers")]
     fn test_get_uki_paths() {
-        // TODO: NEED TO FIX FT BEFORE MERGING
-        let ctx = EngineContext {
+        let mut ctx = EngineContext {
             ab_active_volume: None,
             install_index: 0,
             servicing_type: ServicingType::CleanInstall,
@@ -674,6 +751,7 @@ mod functional_test {
         // Test case #2: mount_path provided, so two paths are returned, i.e. current entry and
         // update entry.
         let mount_path = PathBuf::from("/mnt");
+        ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         let expected_mount_paths = vec![
             esp_uki_path.join(current_entry),
             esp_uki_path.join(TMP_UKI_NAME),
@@ -687,7 +765,7 @@ mod functional_test {
         efivar::set_efi_variable(&var_name, &efivar::encode_utf16le("")).unwrap();
     }
 
-    /// Helper: create dirs and test files at the given paths
+    // Create dirs and test files at the given paths.
     fn create_test_files(paths: &[PathBuf]) {
         for p in paths {
             if let Some(parent) = p.parent() {
