@@ -10,8 +10,6 @@ use trident_api::{
     status::{AbVolumeSelection, HostStatus, ServicingState, TridentVersion},
 };
 
-use crate::engine::rollback;
-
 /// Minimum Trident version that supports manual rollback.
 const MINIMUM_ROLLBACK_TRIDENT_VERSION_STR: &str = "0.21.0";
 lazy_static! {
