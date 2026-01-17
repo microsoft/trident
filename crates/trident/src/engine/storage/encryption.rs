@@ -454,7 +454,7 @@ fn get_bootloader_paths(
         debug!("Constructing bootloader binaries for target OS image during A/B update staging");
         let esp_dir_path = join_relative(mount_path, ESP_MOUNT_POINT_PATH);
 
-        // Update OS gets the opposite label of current active volume
+        // Determine label for update boot
         let update_label = get_path_label(ctx.ab_active_volume, false);
 
         // Primary bootloader, i.e. shim EFI executable, in target OS
@@ -478,8 +478,8 @@ fn get_bootloader_paths(
             AbVolumeSelection::VolumeA => AbVolumeSelection::VolumeB,
         };
 
-        // Rollback OS gets the opposite label of current active volume
-        let rollback_label = get_path_label(Some(rollback_volume), false);
+        // Determine label for rollback boot
+        let rollback_label = get_path_label(Some(active_volume), false);
 
         // Construct rollback primary bootloader path, i.e. shim EFI executable
         let esp_dir_name = boot::make_esp_dir_name(ctx.install_index, rollback_volume);

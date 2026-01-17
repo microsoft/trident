@@ -456,12 +456,7 @@ steps:
             "${{ parameters.runtimeEnv }}" \
             $PROXY_ARG
       fi
-    env:
-      ${{ if or(eq(parameters.buildPurpose, 'daily'), eq(parameters.buildPurpose, 'validation'), eq(parameters.buildPurpose, 'weekly')) }}:
-        TARGET_OS: "A"
-      ${{ else }}:
-        TARGET_OS: "B"
-    displayName: "🔄 Stage and finalize manual rollback into target OS $(TARGET_OS)"
+    displayName: "🔄 Stage and finalize manual rollback"
     timeoutInMinutes: 5
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
@@ -471,7 +466,7 @@ steps:
         # sudo is needed to read qemu VM serial logs, `-a` is needed with sudo
         sudo ./bin/storm-trident helper display-logs -a \
             --netlisten-config "${{ parameters.netlistenConfigFile }}" \
-            --serial-log-artifact-file-name "rollback-target-os-A-serial.log" \
+            --serial-log-artifact-file-name "rollback-target-os-${TARGET_OS}-serial.log" \
             --artifacts-folder "$(ob_outputDirectory)"
       fi
     displayName: "📄 Manual rollback deployment logs"
@@ -498,5 +493,5 @@ steps:
         TARGET_OS: "B"
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)/tests/e2e_tests
-    displayName: "🔬 Run Trident E2E tests after manual rollback into target OS $(TARGET_OS)"
+    displayName: "🔬 Run Trident E2E tests after manual rollback"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
