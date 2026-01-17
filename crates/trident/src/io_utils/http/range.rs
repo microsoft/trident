@@ -29,7 +29,7 @@ impl HttpRangeRequest {
     }
 
     /// Converts the HttpRangeRequest to a header value string. Returns a default
-    /// value of "bytes=-" if no range header would be provided in the request.
+    /// value of "bytes=0-" if no range header would be provided in the request.
     pub fn to_header_value(self) -> String {
         self.to_header_value_option()
             .unwrap_or_else(|| "bytes=0-".into())
