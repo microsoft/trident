@@ -88,7 +88,10 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 	tc.ArtifactBroker().PublishLogFile("rollback_chain.yaml", tmpRollbackChainFile.Name())
 
 	// Get pre-rollback datastore
-	copyRemoteFileToArtifacts(client, "/var/lib/trident/datastore.sqlite", "pre-rollback-datastore.sqlite", tc)
+	if err := copyRemoteFileToArtifacts(client, "/var/lib/trident/datastore.sqlite", "pre-rollback-datastore.sqlite", tc); err != nil {
+		logrus.Errorf("Failed to copy pre-rollback datastore: %v", err)
+		return err
+	}
 
 	// Execute rollback
 	out, err := stormtrident.InvokeTrident(h.args.Env, client, h.args.EnvVars, "rollback -v trace --allowed-operations stage")
@@ -101,7 +104,10 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 		return err
 	}
 	// Get trident-full.log contents after rollback staging
-	copyRemoteFileToArtifacts(client, "/var/log/trident-full.log", "rollback-staging.log", tc)
+	if err := copyRemoteFileToArtifacts(client, "/var/log/trident-full.log", "rollback-staging.log", tc); err != nil {
+		logrus.Errorf("Failed to copy rollback staging log: %v", err)
+		return err
+	}
 
 	out, err = stormtrident.InvokeTrident(h.args.Env, client, h.args.EnvVars, "rollback -v trace --allowed-operations finalize")
 	if err != nil {
@@ -152,7 +158,10 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 	}
 
 	// Get trident-full.log contents after rollback reboot
-	copyRemoteFileToArtifacts(client, "/var/log/trident-full.log", "rollback-commit.log", tc)
+	if err := copyRemoteFileToArtifacts(client, "/var/log/trident-full.log", "rollback-commit.log", tc); err != nil {
+		logrus.Errorf("Failed to copy rollback commit log: %v", err)
+		return err
+	}
 
 	return nil
 }

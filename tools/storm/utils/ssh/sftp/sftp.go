@@ -91,7 +91,7 @@ func DownloadRemoteFile(client *ssh.Client, remotePath string, localPath string)
 			return "", fmt.Errorf("failed to create local file (%s): %w", localPath, err)
 		}
 	}
-	defer localFile.Close() // Move this right after file creation
+	defer localFile.Close()
 
 	sftpClient, err := NewSftpSudoClient(client)
 	if err != nil {
