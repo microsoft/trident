@@ -521,7 +521,7 @@ fn get_path_label(active_volume: Option<AbVolumeSelection>, current_boot: bool) 
     }
 }
 
-/// Sorts binary paths based by their labels ("AZLA" first, then "AZLB") and then paths.
+/// Sorts binary paths based on their labels ("AZLA" first, then "AZLB") and then paths.
 fn sort_binary_paths(binaries_with_labels: Vec<(PathBuf, String)>) -> Vec<PathBuf> {
     let mut sorted_binaries = binaries_with_labels;
     sorted_binaries.sort_by(|a, b| {
