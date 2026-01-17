@@ -259,20 +259,6 @@ impl ManualRollbackContext {
                                 }
                                 current_operation.from_host_status = Some(current_hs.clone());
                                 operation_list.push(current_operation.clone());
-
-                                if current_operation.clone().from_host_status.clone()
-                                    == current_operation.clone().to_host_status.clone()
-                                {
-                                    println!(
-                                        "Added operation of kind {:?} to operation list",
-                                        current_operation.clone().kind
-                                    );
-                                    panic!(
-                                        "from_host_status == to_host_status: {:?}",
-                                        current_operation.clone().from_host_status.clone()
-                                            == current_operation.clone().to_host_status.clone()
-                                    );
-                                }
                             }
 
                             // Start new operation
