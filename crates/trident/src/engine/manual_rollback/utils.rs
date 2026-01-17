@@ -10,6 +10,8 @@ use trident_api::{
     status::{AbVolumeSelection, HostStatus, ServicingState, TridentVersion},
 };
 
+use crate::engine::rollback;
+
 /// Minimum Trident version that supports manual rollback.
 const MINIMUM_ROLLBACK_TRIDENT_VERSION_STR: &str = "0.21.0";
 lazy_static! {
@@ -223,8 +225,8 @@ impl ManualRollbackContext {
         let mut first_host_status_is_provisioned = false;
         if let Some(Some(hs)) = host_statuses.first() {
             if matches!(hs.servicing_state, ServicingState::Provisioned) {
-                first_host_status_is_provisioned = true;
                 current_operation.to_host_status = Some(hs.clone());
+                first_host_status_is_provisioned = true;
             }
         }
         if !first_host_status_is_provisioned {
@@ -232,7 +234,7 @@ impl ManualRollbackContext {
             return Ok(Self { chain: vec![] });
         }
 
-        let mut filter_for_rollback_type: Option<OperationKind> = None;
+        let mut rollback_filters: Vec<OperationKind> = vec![];
 
         // Parse host status groups, where [provisioned & *finalize & *stage] == "group"
         // into operations
@@ -249,14 +251,28 @@ impl ManualRollbackContext {
                             // may be added to the operation list.
                             if Self::add_operation_to_list(
                                 current_operation.kind.clone(),
-                                &mut filter_for_rollback_type,
+                                &mut rollback_filters,
                             )? {
                                 if !current_operation.keep_parsing() {
                                     trace!("Operation cannot be part of operation list, ending parsing here.");
                                     break;
                                 }
                                 current_operation.from_host_status = Some(current_hs.clone());
-                                operation_list.push(current_operation);
+                                operation_list.push(current_operation.clone());
+
+                                if current_operation.clone().from_host_status.clone()
+                                    == current_operation.clone().to_host_status.clone()
+                                {
+                                    println!(
+                                        "Added operation of kind {:?} to operation list",
+                                        current_operation.clone().kind
+                                    );
+                                    panic!(
+                                        "from_host_status == to_host_status: {:?}",
+                                        current_operation.clone().from_host_status.clone()
+                                            == current_operation.clone().to_host_status.clone()
+                                    );
+                                }
                             }
 
                             // Start new operation
@@ -316,14 +332,14 @@ impl ManualRollbackContext {
             chain: operation_list
                 .iter()
                 .map(|op| {
-                    let to_hs = op
+                    let from_hs = op
                         .clone()
-                        .to_host_status
+                        .from_host_status
                         .expect("to_host_status must be present for rollbackable operation");
                     ManualRollbackChainItem {
-                        spec: to_hs.spec.clone(),
-                        ab_active_volume: to_hs.ab_active_volume,
-                        install_index: to_hs.install_index,
+                        spec: from_hs.spec.clone(),
+                        ab_active_volume: from_hs.ab_active_volume,
+                        install_index: from_hs.install_index,
                         kind: match &op.kind {
                             OperationKind::AbUpdate => ManualRollbackKind::Ab,
                             OperationKind::RuntimeUpdate => ManualRollbackKind::Runtime,
@@ -345,37 +361,25 @@ impl ManualRollbackContext {
     //    its required AbUpdate operation (which will also be filtered out)
     fn add_operation_to_list(
         current_operation_kind: OperationKind,
-        filter_for_rollback_type: &mut Option<OperationKind>,
+        rollback_filters: &mut Vec<OperationKind>,
     ) -> Result<bool, TridentError> {
         // For ManualRollback operations, do not add to the operation list, and
         // configure ongoing_rollback_operation_type so that subsesquent Update
         // operations are not added either.
         Ok(match current_operation_kind {
             OperationKind::AbManualRollback => {
-                if filter_for_rollback_type.is_some() {
-                    return Err(TridentError::new(InvalidInputError::InvalidRollbackExpectation {
-                        reason: "Unexpected host_status sequence: A/B rollback operation found another manual rollback".to_string(),
-                    }));
-                }
-                // Set filter for AbManualRollback operations; skip this operation
-                *filter_for_rollback_type = Some(OperationKind::AbManualRollback);
+                rollback_filters.insert(0, OperationKind::AbManualRollback);
                 false
             }
             OperationKind::RuntimeManualRollback => {
-                if filter_for_rollback_type.is_some() {
-                    return Err(TridentError::new(InvalidInputError::InvalidRollbackExpectation {
-                        reason: "Unexpected host_status sequence: runtime rollback operation found another manual rollback".to_string(),
-                    }));
-                }
-                // Set filter for RuntimeManualRollback operations; skip this operation
-                *filter_for_rollback_type = Some(OperationKind::RuntimeManualRollback);
+                rollback_filters.insert(0, OperationKind::RuntimeManualRollback);
                 false
             }
             OperationKind::AbUpdate => {
-                match filter_for_rollback_type {
+                match rollback_filters.first() {
                     Some(OperationKind::AbManualRollback) => {
                         // Currently filtering for A/B manual rollback; reset filter and skip this operation
-                        *filter_for_rollback_type = None;
+                        rollback_filters.remove(0);
                         false
                     }
                     Some(OperationKind::RuntimeManualRollback) => {
@@ -390,14 +394,14 @@ impl ManualRollbackContext {
                 }
             }
             OperationKind::RuntimeUpdate => {
-                match filter_for_rollback_type {
+                match rollback_filters.first() {
                     Some(OperationKind::AbManualRollback) => {
                         // Currently filtering for A/B manual rollback; skip this operation
                         false
                     }
                     Some(OperationKind::RuntimeManualRollback) => {
                         // Currently filtering for Runtime manual rollback; reset filter and skip this operation
-                        *filter_for_rollback_type = None;
+                        rollback_filters.remove(0);
                         false
                     }
                     _ => {
@@ -407,7 +411,7 @@ impl ManualRollbackContext {
                 }
             }
             _ => {
-                if filter_for_rollback_type.is_some() {
+                if !rollback_filters.is_empty() {
                     return Err(TridentError::new(InvalidInputError::InvalidRollbackExpectation {
                         reason: "Unexpected host_status sequence: non-update operation found during manual rollback".to_string(),
                     }));
