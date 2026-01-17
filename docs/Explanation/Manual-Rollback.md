@@ -4,11 +4,9 @@
 
 For A/B updates, an update populates the inactive volume with a new target OS and then boots into it. This leaves the previously active OS in the newly inactive volume. Because of this, `Manual rollback` is able to boot into the inactive volume to restore the previously active OS, but is also restricted to only rolling back 1 (the last) A/B update.
 
-> Note: we currently do not support A/B update rollbacks when using PCR-based encryption.
-
 For Runtime updates, an update modifies OS components like sysexts and confexts without switching active volumes. Because of this, runtime updates applied to the current active partition can be rolled back one-at-a-time.
 
-## API to support rollback
+## API to Support Rollback
 
 * `trident rollback` is provided to rollback the last update (note that this could be either a Runtime update or an A/B update)
 * `trident rollback -ab` can be used to rollback the last A/B update and boot into the inactive OS
