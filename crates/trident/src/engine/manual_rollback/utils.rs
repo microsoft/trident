@@ -111,10 +111,7 @@ impl ManualRollbackContext {
     /// - Only Trident versions >= MINIMUM_ROLLBACK_TRIDENT_VERSION_STR support
     ///   manual rollback. Older versions will not have rollbacks added.
     /// - If a last_error is set on the HostStatus, no rollback will be added.
-    /// - If encryption is configured, no rollback will be added when the
-    ///   active volume changes, as we do not yet support manual rollback of
-    ///   A/B update with encryption.
-    /// - The database may have consequutive 'duplicate' Provisioned states; these
+    /// - The database may have consecutive 'duplicate' Provisioned states; these
     ///   are typically found after offline-init and should be consolidated into a
     ///   single state for rollback purposes.
     /// - ManualRollback must be considered, typically by popping the appropriate
@@ -137,7 +134,7 @@ impl ManualRollbackContext {
 
         for (i, hs) in host_statuses.iter().enumerate() {
             trace!(
-                "Processing HostStatus at index {}: servicing_state={:?}, ab_active_volume={:?}",
+                "Processing HostStatus at index {}: servicing_state='{:?}', ab_active_volume='{:?}'",
                 i,
                 hs.servicing_state,
                 hs.ab_active_volume,
@@ -147,7 +144,7 @@ impl ManualRollbackContext {
             // Clear the ManualRollbackContext's available rollback list
             // for the inactive volume to reflect this.
             if hs.servicing_state == ServicingState::AbUpdateStaged {
-                trace!("AbUpdateStaged detected at index {}: clearing available rollbacks for inactive volume {:?}: a:[{:?}] b:[{:?}]",
+                trace!("'AbUpdateStaged' detected at index {}: clearing available rollbacks for inactive volume '{:?}': a:[{:?}] b:[{:?}]",
                     i,
                     hs.ab_active_volume,
                     instance.volume_a_available_rollbacks.len(),
@@ -167,7 +164,7 @@ impl ManualRollbackContext {
             // to reach the Provisioned state.
             if hs.servicing_state == ServicingState::Provisioned {
                 trace!(
-                    "Processing Provisioned state at index {} for active volume {:?}",
+                    "Processing 'Provisioned' state at index {} for active volume '{:?}'",
                     i,
                     hs.ab_active_volume
                 );
@@ -195,7 +192,7 @@ impl ManualRollbackContext {
                         // it cannot be rolled back from, so do not add it to the available
                         // rollbacks.
                         trace!(
-                            "Auto-rollback detected at index {} for active volume {:?}",
+                            "Auto-rollback detected at index {} for active volume '{:?}'",
                             i,
                             instance.active_volume
                         );
@@ -204,7 +201,7 @@ impl ManualRollbackContext {
                         // we need to remove the appropriate available rollback(s).
                         let active_volume_changed = hs.ab_active_volume != instance.active_volume;
                         trace!(
-                            "Manual rollback detected at index {} for active volume {:?}, active_volume_changed={}",
+                            "Manual rollback detected at index {} for active volume '{:?}', active_volume_changed={}",
                             i,
                             instance.active_volume,
                             active_volume_changed
@@ -217,7 +214,7 @@ impl ManualRollbackContext {
                             //      being rolled back.
                             if let Some(volume) = instance.active_volume {
                                 trace!(
-                                    "Active volume changed during manual rollback at index {}: clearing available rollbacks for previously active volume {:?}: a:[{:?}] b:[{:?}]",
+                                    "Active volume changed during manual rollback at index {}: clearing available rollbacks for previously active volume '{:?}': a:[{:?}] b:[{:?}]",
                                     i,
                                     volume,
                                     instance.volume_a_available_rollbacks.len(),
@@ -229,7 +226,7 @@ impl ManualRollbackContext {
                             //      which is the A/B update being rolled back, can be removed.
                             if let Some(volume) = hs.ab_active_volume {
                                 trace!(
-                                    "Removing first available rollback for newly active volume {:?} during manual rollback at index {}",
+                                    "Removing first available rollback for newly active volume '{:?}' during manual rollback at index {}",
                                     volume,
                                     i
                                 );
@@ -240,7 +237,7 @@ impl ManualRollbackContext {
                             // and we can remove the first available rollback for the active volume
                             if let Some(volume) = instance.active_volume {
                                 trace!(
-                                    "Removing first available rollback for active volume {:?} during manual rollback at index {}",
+                                    "Removing first available rollback for active volume '{:?}' during manual rollback at index {}",
                                     volume,
                                     i
                                 );
@@ -253,27 +250,17 @@ impl ManualRollbackContext {
                         // rollbacks unless prevented by one of these conditions:
                         //   1. The Trident version is too old to support manual rollback
                         //   2. If a last_error is set on the HostStatus
-                        //   3. FOR NOW: if encryption is configured, as we do not yet support
-                        //      manual rollback of ab update with encryption
                         let trident_is_compatible =
                             Self::is_trident_version_compatible(hs.trident_version.clone())?;
                         let last_error_exists = hs.last_error.is_some();
-                        let encryption_configured = hs.spec.storage.encryption.is_some();
-                        let active_volume_changed = hs.ab_active_volume != instance.active_volume;
-                        let encryption_with_volume_change =
-                            encryption_configured && active_volume_changed;
                         trace!(
-                            "New Provisioned state detected at index {} for active volume {:?}, last_error_exists={}, trident_compatible={}, encryption_with_volume_change={}",
+                            "New 'Provisioned' state detected at index {} for active volume '{:?}', last_error_exists={}, trident_compatible={}",
                             i,
                             instance.active_volume,
                             last_error_exists,
-                            trident_is_compatible,
-                            encryption_with_volume_change
+                            trident_is_compatible
                         );
-                        if trident_is_compatible
-                            && !last_error_exists
-                            && !encryption_with_volume_change
-                        {
+                        if trident_is_compatible && !last_error_exists {
                             match instance.active_volume {
                                 Some(AbVolumeSelection::VolumeA) => {
                                     instance
@@ -773,7 +760,7 @@ mod tests {
             inter(VOL_A, AB_FINAL, MIN),
             prov(VOL_B, true, vec![2], MIN),
         ];
-        rollback_context_testing(&host_status_list, "Offline init and a/b update");
+        rollback_context_testing(&host_status_list, "Offline init and A/B update");
     }
 
     #[test]
@@ -796,7 +783,7 @@ mod tests {
             inter(VOL_A, AB_FINAL, MIN),
             prov(VOL_B, true, vec![2], MIN),
         ];
-        rollback_context_testing(&host_status_list, "Clean install and a/b update");
+        rollback_context_testing(&host_status_list, "Clean install and A/B update");
     }
 
     #[test]
@@ -859,7 +846,7 @@ mod tests {
             prov(VOL_B, false, vec![5, 2], MIN),
             inter(VOL_B, RU_STAGE, MIN),
             prov(VOL_B, false, vec![7, 5, 2], MIN),
-            // Manual Rollback of the available a/b update skips
+            // Manual Rollback of the available A/B update skips
             // 2 runtime updates
             inter(VOL_B, MR_AB_STAGE, MIN),
             inter(VOL_B, MR_AB_FINAL, MIN),
@@ -867,7 +854,7 @@ mod tests {
         ];
         rollback_context_testing(
             &host_status_list,
-            "Validate a/b update rollback that skips runtime rollbacks",
+            "Validate A/B update rollback that skips runtime rollbacks",
         );
     }
 
@@ -886,7 +873,7 @@ mod tests {
             &host_status_list,
             vec![],
             false,
-            "Validate a/b update stage as final state",
+            "Validate A/B update stage as final state",
         );
     }
 
@@ -926,7 +913,7 @@ mod tests {
             inter(VOL_B, AB_HC_FAIL, MIN),
             prov_e(VOL_B, false, vec![], MIN, Some("failure".to_string())),
         ];
-        rollback_context_testing(&host_status_list, "Validate a/b update health check failed");
+        rollback_context_testing(&host_status_list, "Validate A/B update health check failed");
     }
 
     #[test]
@@ -937,9 +924,9 @@ mod tests {
             prov_enc(VOL_A, false, vec![], MIN),
             inter_enc(VOL_A, AB_STAGE, MIN),
             inter_enc(VOL_A, AB_FINAL, MIN),
-            prov_enc(VOL_B, false, vec![], MIN),
+            prov_enc(VOL_B, true, vec![2], MIN), // Now expects rollback available, referring to index 2
         ];
-        rollback_context_testing(&host_status_list, "Validate a/b update with encryption");
+        rollback_context_testing(&host_status_list, "Validate A/B update with encryption");
     }
 
     #[test]

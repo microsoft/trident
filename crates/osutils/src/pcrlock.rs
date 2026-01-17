@@ -182,9 +182,6 @@ fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
 /// Please refer to `systemd-pcrlock` doc for additional info:
 /// https://www.man7.org/linux/man-pages/man8/systemd-pcrlock.8.html.
 fn validate_log(required_pcrs: BitFlags<Pcr>) -> Result<(), Error> {
-    // Print out combined TPM 2.0 event log
-    cel().context("Failed to print out combined TPM 2.0 event log")?;
-
     debug!(
         "Validating 'systemd-pcrlock log' output for required PCRs: {:?}",
         required_pcrs
@@ -257,16 +254,6 @@ fn log_parsed() -> Result<LogOutput, Error> {
         serde_json::from_str(&output).context("Failed to parse 'systemd-pcrlock log' output")?;
 
     Ok(parsed_log)
-}
-
-/// Runs the `systemd-pcrlock cel` command to print out the combined TPM 2.0 event log in TCG
-/// Canonical Event Log Format (CEL-JSON).
-fn cel() -> Result<(), Error> {
-    Dependency::SystemdPcrlock
-        .cmd()
-        .arg("cel")
-        .run_and_check()
-        .context("Failed to run 'systemd-pcrlock cel'")
 }
 
 /// Returns a list of entries from the 'systemd-pcrlock log' output that correspond to (1) PCRs

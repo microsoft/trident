@@ -197,9 +197,14 @@ fn enumerate_non_trident_managed_ukis(
     Ok(non_trident_managed_ukis)
 }
 
-/// Get list of UKI files (both Trident-managed and pre-existing) and find the previous UKI to use for rollback.
+/// Get list of UKI files (both Trident-managed and pre-existing) and find the previous UKI to use
+/// for rollback.
 pub fn find_previous_uki(esp_dir_path: &Path) -> Result<PathBuf, TridentError> {
     let esp_uki_directory = esp_dir_path.join(UKI_DIRECTORY);
+    debug!(
+        "Searching for previous UKI in directory '{}'",
+        esp_uki_directory.display()
+    );
     let trident_managed_ukis = enumerate_trident_managed_ukis(&esp_uki_directory)
         .structured(ServicingError::EnumerateUkis)
         .message("Failed to enumerate Trident-managed UKIs")?;
