@@ -455,6 +455,7 @@ steps:
             "${{ parameters.userName }}" \
             "${{ parameters.runtimeEnv }}" \
             $PROXY_ARG
+      fi
     displayName: "🔄 Stage and finalize manual rollback"
     timeoutInMinutes: 5
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
