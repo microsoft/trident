@@ -748,7 +748,7 @@ mod tests {
     #[test]
     fn test_timeout_is_respected() {
         let mut subfile = HttpSubFile::new(
-            Url::parse("http://localhost:45555/does/not/exit").unwrap(),
+            Url::parse("http://localhost:45555/does/not/exist").unwrap(),
             0,
             16,
         )
