@@ -95,7 +95,7 @@ where
             Ok(response) => {
                 if response.status().is_success() {
                     return Ok(response);
-                } else if std::time::Instant::now() > timeout_time {
+                } else if Instant::now() > timeout_time {
                     return response.error_for_status().map_err(http_to_io_err);
                 } else {
                     warn!("HTTP request failed with status: {}", response.status());
