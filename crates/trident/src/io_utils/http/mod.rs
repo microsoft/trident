@@ -53,14 +53,14 @@ fn get_content_length(response: &Response) -> IoResult<u64> {
         .ok_or_else(|| {
             IoError::new(
                 IoErrorKind::InvalidData,
-                "Missing Content-Length header in HTTP response",
+                format!("Missing '{CONTENT_LENGTH}' header in HTTP response"),
             )
         })
         .and_then(|value| {
             value.to_str().map_err(|e| {
                 IoError::new(
                     IoErrorKind::InvalidData,
-                    format!("Invalid Content-Length header: {e}"),
+                    format!("Invalid '{CONTENT_LENGTH}' header: {e}"),
                 )
             })
         })
@@ -68,7 +68,7 @@ fn get_content_length(response: &Response) -> IoResult<u64> {
             s.parse::<u64>().map_err(|e| {
                 IoError::new(
                     IoErrorKind::InvalidData,
-                    format!("Failed to parse Content-Length header: {e}"),
+                    format!("Failed to parse '{CONTENT_LENGTH}' header: {e}"),
                 )
             })
         })
