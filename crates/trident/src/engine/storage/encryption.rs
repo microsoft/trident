@@ -1,4 +1,5 @@
 use std::{
+    cmp::Ordering,
     fs::{self, Permissions},
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
@@ -349,19 +350,15 @@ fn get_uki_paths(
 ) -> Result<Vec<PathBuf>, Error> {
     // Construct UKI binary with paths along with their labels, to match them to A or B OS
     // volume
-    let mut uki_binaries_with_labels: Vec<(PathBuf, &str)> = Vec::new();
+    let mut uki_binaries_with_labels: Vec<(PathBuf, String)> = Vec::new();
 
     // Always construct current UKI binary path
     let esp_uki_directory = join_relative(esp_path, UKI_DIRECTORY);
     let uki_filename =
         efivar::read_current_var().unstructured("Failed to read current boot entry")?;
     let uki_current = esp_uki_directory.join(uki_filename);
-    // Determine label
-    let current_label = match ctx.ab_active_volume {
-        Some(AbVolumeSelection::VolumeA) => "AZLA",
-        // Default to AZLB for clean install; doesn't matter b/c we cannot roll back clean install
-        Some(AbVolumeSelection::VolumeB) | None => "AZLB",
-    };
+    // Determine path label for current boot
+    let current_label = get_path_label(ctx.ab_active_volume, true);
     uki_binaries_with_labels.push((Path::new(&uki_current).to_path_buf(), current_label));
 
     // During staging of A/B update, i.e. update image is mounted at mount_path, also construct the
@@ -371,12 +368,9 @@ fn get_uki_paths(
         // UKI binary in target OS to be measured; it's currently staged at designated path
         let uki_update = esp_uki_directory.join(TMP_UKI_NAME);
 
-        // Target OS gets the opposite label of current active volume
-        let target_label = match ctx.ab_active_volume {
-            Some(AbVolumeSelection::VolumeA) => "AZLB",
-            Some(AbVolumeSelection::VolumeB) | None => "AZLA",
-        };
-        uki_binaries_with_labels.push((uki_update.clone(), target_label));
+        // Determine label for update boot
+        let update_label = get_path_label(ctx.ab_active_volume, false);
+        uki_binaries_with_labels.push((uki_update.clone(), update_label));
     }
 
     // During staging of rollback, also construct the rollback UKI binary path
@@ -388,27 +382,12 @@ fn get_uki_paths(
         )?;
 
         // Rollback OS gets the opposite label of current active volume
-        let rollback_label = match ctx.ab_active_volume {
-            Some(AbVolumeSelection::VolumeA) => "AZLB",
-            Some(AbVolumeSelection::VolumeB) | None => "AZLA",
-        };
+        let rollback_label = get_path_label(ctx.ab_active_volume, false);
         uki_binaries_with_labels.push((Path::new(&uki_rollback).to_path_buf(), rollback_label));
     }
 
-    // Sort by label (AZLA first, then AZLB), then by path for consistent ordering
-    uki_binaries_with_labels.sort_by(|a, b| {
-        match (a.1, b.1) {
-            ("AZLA", "AZLB") => std::cmp::Ordering::Less,
-            ("AZLB", "AZLA") => std::cmp::Ordering::Greater,
-            _ => a.0.cmp(&b.0), // Same label, sort by path
-        }
-    });
-
-    let uki_binaries: Vec<PathBuf> = uki_binaries_with_labels
-        .into_iter()
-        .map(|(path, _)| path)
-        .collect();
-
+    // Sort UKI binaries
+    let uki_binaries = sort_binary_paths(uki_binaries_with_labels);
     debug!("Paths of UKI binaries required for pcrlock encryption:\n");
     for (i, path) in uki_binaries.iter().enumerate() {
         debug!("UKI binary {}: {}", i + 1, path.display());
@@ -432,7 +411,7 @@ fn get_bootloader_paths(
     mount_path: Option<&Path>,
     staging_rollback: bool,
 ) -> Result<Vec<PathBuf>, Error> {
-    let mut bootloader_binaries_with_labels: Vec<(PathBuf, &str)> = Vec::new();
+    let mut bootloader_binaries_with_labels: Vec<(PathBuf, String)> = Vec::new();
 
     let active_volume = match (mount_path.is_some(), staging_rollback) {
         // Staging of an A/B update or a manual rollback: A/B active volume is set
@@ -453,10 +432,7 @@ fn get_bootloader_paths(
     };
 
     // Determine label for current bootloader based on active volume
-    let current_label = match active_volume {
-        AbVolumeSelection::VolumeA => "AZLA",
-        AbVolumeSelection::VolumeB => "AZLB",
-    };
+    let current_label = get_path_label(Some(active_volume), true);
 
     // Construct current primary bootloader path, i.e. shim EFI executable
     let esp_dir_name = boot::make_esp_dir_name(ctx.install_index, active_volume);
@@ -464,7 +440,7 @@ fn get_bootloader_paths(
         .join(&esp_dir_name)
         .join(BOOT_EFI);
     let shim_current = join_relative(esp_path, &shim_path);
-    bootloader_binaries_with_labels.push((shim_current, current_label));
+    bootloader_binaries_with_labels.push((shim_current, current_label.clone()));
 
     // Construct current secondary bootloader path, i.e. systemd-boot EFI executable
     let systemd_boot_path = Path::new(ESP_EFI_DIRECTORY)
@@ -478,21 +454,18 @@ fn get_bootloader_paths(
         debug!("Constructing bootloader binaries for target OS image during A/B update staging");
         let esp_dir_path = join_relative(mount_path, ESP_MOUNT_POINT_PATH);
 
-        // Target OS gets the opposite label of current active volume
-        let target_label = match ctx.ab_active_volume {
-            Some(AbVolumeSelection::VolumeA) => "AZLB",
-            Some(AbVolumeSelection::VolumeB) | None => "AZLA",
-        };
+        // Update OS gets the opposite label of current active volume
+        let update_label = get_path_label(ctx.ab_active_volume, false);
 
         // Primary bootloader, i.e. shim EFI executable, in target OS
         let (_, shim_update_relative) = bootentries::get_label_and_path(ctx, BOOT_EFI)?;
         let shim_update = join_relative(esp_dir_path.clone(), shim_update_relative);
-        bootloader_binaries_with_labels.push((shim_update, target_label));
+        bootloader_binaries_with_labels.push((shim_update, update_label.clone()));
 
         // Secondary bootloader, i.e. systemd-boot EFI executable, in target OS
         let (_, systemd_boot_update_relative) = bootentries::get_label_and_path(ctx, GRUB_EFI)?;
         let systemd_boot_update = join_relative(esp_dir_path, systemd_boot_update_relative);
-        bootloader_binaries_with_labels.push((systemd_boot_update, target_label));
+        bootloader_binaries_with_labels.push((systemd_boot_update, update_label));
     }
 
     // If this is done during staging of rollback, we also construct paths to rollback bootloader
@@ -506,10 +479,7 @@ fn get_bootloader_paths(
         };
 
         // Rollback OS gets the opposite label of current active volume
-        let rollback_label = match rollback_volume {
-            AbVolumeSelection::VolumeA => "AZLA",
-            AbVolumeSelection::VolumeB => "AZLB",
-        };
+        let rollback_label = get_path_label(Some(rollback_volume), false);
 
         // Construct rollback primary bootloader path, i.e. shim EFI executable
         let esp_dir_name = boot::make_esp_dir_name(ctx.install_index, rollback_volume);
@@ -517,7 +487,7 @@ fn get_bootloader_paths(
             .join(&esp_dir_name)
             .join(BOOT_EFI);
         let shim_rollback = join_relative(esp_path, &shim_path);
-        bootloader_binaries_with_labels.push((shim_rollback, rollback_label));
+        bootloader_binaries_with_labels.push((shim_rollback, rollback_label.clone()));
 
         // Construct rollback secondary bootloader path, i.e. systemd-boot EFI executable
         let systemd_boot_path = Path::new(ESP_EFI_DIRECTORY)
@@ -527,26 +497,41 @@ fn get_bootloader_paths(
         bootloader_binaries_with_labels.push((systemd_boot_rollback, rollback_label));
     }
 
-    // Sort by label (AZLA first, then AZLB), then by path for consistent ordering
-    bootloader_binaries_with_labels.sort_by(|a, b| {
-        match (a.1, b.1) {
-            ("AZLA", "AZLB") => std::cmp::Ordering::Less,
-            ("AZLB", "AZLA") => std::cmp::Ordering::Greater,
-            _ => a.0.cmp(&b.0), // Same label, sort by path
-        }
-    });
-
-    let bootloader_binaries: Vec<PathBuf> = bootloader_binaries_with_labels
-        .into_iter()
-        .map(|(path, _)| path)
-        .collect();
-
-    debug!("Paths of bootloader binaries required for pcrlock encryption:");
+    // Sort bootloader binaries
+    let bootloader_binaries = sort_binary_paths(bootloader_binaries_with_labels);
+    debug!("Paths of bootloader binaries required for pcrlock encryption:\n");
     for (i, path) in bootloader_binaries.iter().enumerate() {
         debug!("Bootloader binary {}: {}", i + 1, path.display());
     }
 
     Ok(bootloader_binaries)
+}
+
+/// Returns a string label ("AZLA" or "AZLB") corresponding to the given OS boot. Used by helpers
+/// constructing vectors of binary paths for pcrlock encryption, so that the paths and .pcrlock
+/// files are sorted as "AZLA" -> "AZLB".
+fn get_path_label(active_volume: Option<AbVolumeSelection>, current_boot: bool) -> String {
+    match (active_volume, current_boot) {
+        (Some(AbVolumeSelection::VolumeA), true)
+        | (Some(AbVolumeSelection::VolumeB), false)
+        | (None, false) => "AZLA".to_string(),
+        (Some(AbVolumeSelection::VolumeB), true)
+        | (Some(AbVolumeSelection::VolumeA), false)
+        | (None, true) => "AZLB".to_string(),
+    }
+}
+
+/// Sorts binary paths based by their labels ("AZLA" first, then "AZLB") and then paths.
+fn sort_binary_paths(binaries_with_labels: Vec<(PathBuf, String)>) -> Vec<PathBuf> {
+    let mut sorted_binaries = binaries_with_labels;
+    sorted_binaries.sort_by(|a, b| {
+        match (a.1.as_str(), b.1.as_str()) {
+            ("AZLA", "AZLB") => Ordering::Less,
+            ("AZLB", "AZLA") => Ordering::Greater,
+            _ => a.0.cmp(&b.0), // Same label, sort by path
+        }
+    });
+    sorted_binaries.into_iter().map(|(path, _)| path).collect()
 }
 
 #[cfg(test)]
