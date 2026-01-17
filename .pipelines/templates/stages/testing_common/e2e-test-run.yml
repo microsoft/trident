@@ -456,6 +456,13 @@ steps:
             "${{ parameters.runtimeEnv }}" \
             $PROXY_ARG
       fi
+    env:
+      ${{ if or(eq(parameters.buildPurpose, 'daily'), eq(parameters.buildPurpose, 'validation'), eq(parameters.buildPurpose, 'weekly')) }}:
+        EXPECTED_VOLUME: "volume-a"
+        TARGET_OS: "A"
+      ${{ else }}:
+        EXPECTED_VOLUME: "volume-b"
+        TARGET_OS: "B"
     displayName: "🔄 Stage and finalize manual rollback"
     timeoutInMinutes: 5
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
@@ -484,13 +491,6 @@ steps:
           --configuration ${{ parameters.tridentConfigPath }} \
           --ab-active-volume ${EXPECTED_VOLUME}
       fi
-    env:
-      ${{ if or(eq(parameters.buildPurpose, 'daily'), eq(parameters.buildPurpose, 'validation'), eq(parameters.buildPurpose, 'weekly')) }}:
-        EXPECTED_VOLUME: "volume-a"
-        TARGET_OS: "A"
-      ${{ else }}:
-        EXPECTED_VOLUME: "volume-b"
-        TARGET_OS: "B"
     timeoutInMinutes: 5
     workingDirectory: $(Build.SourcesDirectory)/tests/e2e_tests
     displayName: "🔬 Run Trident E2E tests after manual rollback"
