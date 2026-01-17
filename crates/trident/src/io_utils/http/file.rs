@@ -1,7 +1,6 @@
 use std::{
     io::{Error as IoError, ErrorKind as IoErrorKind, Read, Result as IoResult, Seek},
-    thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 #[cfg(feature = "dangerous-options")]
@@ -10,12 +9,17 @@ use std::{env, io::BufReader};
 use anyhow::{ensure, Context, Error};
 use log::{debug, trace, warn};
 use oci_client::{secrets::RegistryAuth, Client as OciClient, Reference};
-use reqwest::blocking::{Client, Response};
+use reqwest::{
+    blocking::Client,
+    header::{ACCEPT_RANGES, AUTHORIZATION},
+};
 use tokio::runtime::Runtime;
 use url::Url;
 
 #[cfg(feature = "dangerous-options")]
 use docker_credential::{self, DockerCredential};
+
+use crate::io_utils::http::subfile::HttpSubFile;
 
 #[cfg(feature = "dangerous-options")]
 const DOCKER_CONFIG_FILE_PATH: &str = ".docker/config.json";
@@ -82,58 +86,39 @@ impl HttpFile {
         let request_sender = || {
             let mut request = client.head(url.as_str());
             if let Some(token) = &token {
-                request = request.header("Authorization", format!("Bearer {token}"));
+                request = request.header(AUTHORIZATION, format!("Bearer {token}"));
             }
             request.send()
         };
-        let response = Self::retriable_request_sender(request_sender, timeout)?;
+        let response = super::retriable_request_sender(request_sender, timeout)?;
         trace!("HTTP file '{}' has status: {}", url, response.status());
 
         // Get the file size from the response headers
-        let size = response
-            .headers()
-            .get("Content-Length")
-            .ok_or(IoError::other(
-                "Failed to get 'Content-Length' in the response header",
-            ))?
-            .to_str()
-            .map_err(|e| {
-                IoError::new(
-                    IoErrorKind::InvalidData,
-                    format!("Could not parse 'Content-Length': {e}"),
-                )
-            })?
-            .parse()
-            .map_err(|e| {
-                IoError::new(
-                    IoErrorKind::InvalidData,
-                    format!("Could not parse 'Content-Length' as an integer: {e}"),
-                )
-            })?;
+        let size = super::get_content_length(&response)?;
 
         trace!("HTTP file '{}' has size: {}", url, size);
 
         // Ensure the server supports range requests, this implementation
         // requires that feature!
-        let accept_ranges_header = response.headers().get("Accept-Ranges");
+        let accept_ranges_header = response.headers().get(ACCEPT_RANGES);
         if accept_ranges_header.is_none() && ignore_ranges_header_absence {
-            warn!("OCI server does not provide 'Accept-Ranges' header, continuing anyway");
+            warn!("OCI server does not provide '{ACCEPT_RANGES}' header, continuing anyway");
         } else if accept_ranges_header
-            .ok_or(IoError::other(
-                "Server does not support range requests: 'Accept-Ranges' header was not provided",
+            .ok_or_else(|| IoError::other(
+                format!("Server does not support range requests: '{ACCEPT_RANGES}' header was not provided"),
             ))?
             .to_str()
             .map_err(|e| {
                 IoError::new(
                     IoErrorKind::InvalidData,
-                    format!("Could not parse 'Accept-Ranges': {e}"),
+                    format!("Could not parse '{ACCEPT_RANGES}': {e}"),
                 )
             })?
             .to_lowercase()
             .eq("none")
         {
             return Err(IoError::other(
-                "Server does not support range requests: 'Accept-Ranges: none'",
+                format!("Server does not support range requests: '{ACCEPT_RANGES}: none'"),
             ));
         }
 
@@ -175,29 +160,48 @@ impl HttpFile {
     /// enabled, will default to anonymous access.
     fn get_auth(_img_ref: &Reference) -> RegistryAuth {
         #[cfg(feature = "dangerous-options")]
-        if let Ok(docker_config) = std::fs::File::open(
-            env::home_dir()
-                .unwrap_or_default()
-                .join(DOCKER_CONFIG_FILE_PATH),
-        ) {
+        'config_auth: {
+            let Some(user_home) = env::home_dir() else {
+                debug!("Could not determine user home directory, using anonymous access.");
+                break 'config_auth;
+            };
+
+            let docker_config_path = user_home.join(DOCKER_CONFIG_FILE_PATH);
+            if !docker_config_path.exists() {
+                debug!(
+                    "Docker config file does not exist at '{}'",
+                    docker_config_path.display()
+                );
+                break 'config_auth;
+            }
+
+            let docker_config = match std::fs::File::open(docker_config_path) {
+                Ok(file) => file,
+                Err(e) => {
+                    debug!("Failed to open docker config file: {}", e);
+                    break 'config_auth;
+                }
+            };
+
             let registry = _img_ref
                 .resolve_registry()
                 .strip_suffix('/')
                 .unwrap_or_else(|| _img_ref.resolve_registry());
+
             match docker_credential::get_credential_from_reader(
                 BufReader::new(docker_config),
                 registry,
             ) {
                 Ok(DockerCredential::UsernamePassword(username, password)) => {
-                    debug!("Found username and password docker credential");
+                    debug!("Using username and password docker credential");
                     return RegistryAuth::Basic(username, password);
                 }
                 Ok(DockerCredential::IdentityToken(_)) => {
-                    debug!("Found identity token docker credential")
+                    debug!("Found identity token docker credential, ignoring")
                 }
-                Err(_) => debug!("Failed to find docker credentials"),
+                Err(e) => debug!("Failed to retrieve docker credentials: {e}"),
             }
-        };
+        }
 
         debug!("Proceeding with anonymous access");
         RegistryAuth::Anonymous
@@ -237,108 +241,8 @@ impl HttpFile {
         })
     }
 
-    /// Converts an HTTP error into an IO error.
-    fn http_to_io_err(e: reqwest::Error) -> IoError {
-        let formatted = format!("HTTP File error: {e}");
-        if let Some(status) = e.status() {
-            match status.as_u16() {
-                400 => IoError::new(IoErrorKind::InvalidInput, formatted),
-                401 | 403 => IoError::new(IoErrorKind::PermissionDenied, formatted),
-                404 => IoError::new(IoErrorKind::NotFound, formatted),
-                408 => IoError::new(IoErrorKind::TimedOut, formatted),
-                500..=599 => IoError::new(IoErrorKind::ConnectionAborted, formatted),
-                _ => IoError::other(formatted),
-            }
-        } else if e.is_timeout() {
-            IoError::new(IoErrorKind::TimedOut, formatted)
-        } else if e.is_connect() {
-            IoError::new(IoErrorKind::ConnectionRefused, formatted)
-        } else if e.is_request() {
-            IoError::new(IoErrorKind::InvalidData, formatted)
-        } else {
-            IoError::other(formatted)
-        }
-    }
-
-    /// Performs a request with optional range headers to get the file content.
-    /// Returns the HTTP response.
-    pub(super) fn reader(&self, start: Option<u64>, end: Option<u64>) -> IoResult<Response> {
-        let request_sender = || {
-            let mut request = self.client.get(self.url.as_str());
-
-            if let Some(token) = self.token.clone() {
-                request = request.header("Authorization", format!("Bearer {token}"));
-            }
-
-            // Generate the range header when appropriate
-            let range_header = match (start, end) {
-                (Some(start), Some(end)) => Some(format!("bytes={start}-{end}")),
-                (Some(start), None) => Some(format!("bytes={start}-")),
-                (None, Some(end)) => Some(format!("bytes=0-{end}")),
-                (None, None) => None,
-            };
-
-            // Add the range header to the request
-            if let Some(range) = range_header {
-                request = request.header("Range", range);
-            }
-
-            request.send()
-        };
-
-        Self::retriable_request_sender(request_sender, self.timeout)
-    }
-
-    /// Performs an HTTP request and retries it for up to `timeout` if
-    /// it fails. The HTTP request is created and invoked by `request_sender`, a
-    /// closure that that returns a `reqwest::Result<Response>`. If the request is
-    /// successful, it returns the response. If the request fails after all retries,
-    /// it returns an IO error.
-    fn retriable_request_sender<F>(request_sender: F, timeout: Duration) -> IoResult<Response>
-    where
-        F: Fn() -> reqwest::Result<Response>,
-    {
-        let mut retry = 0;
-        let now = Instant::now();
-        let timeout_time = now + timeout;
-        let mut sleep_duration = Duration::from_millis(10);
-        loop {
-            if retry != 0 {
-                trace!("Retrying HTTP request (attempt {})", retry + 1);
-            }
-            match request_sender() {
-                Ok(response) => {
-                    if response.status().is_success() {
-                        return Ok(response);
-                    } else if std::time::Instant::now() > timeout_time {
-                        return response.error_for_status().map_err(Self::http_to_io_err);
-                    } else {
-                        warn!("HTTP request failed with status: {}", response.status());
-                    }
-                }
-                Err(e) => {
-                    if Instant::now() > timeout_time {
-                        return Err(Self::http_to_io_err(e));
-                    }
-                    warn!("HTTP request failed: {}", e);
-                }
-            };
-            // Sleep for a short duration before retrying
-            if Instant::now() + sleep_duration > timeout_time {
-                return Err(IoError::new(
-                    IoErrorKind::TimedOut,
-                    "HTTP request timed out",
-                ));
-            }
-            thread::sleep(sleep_duration);
-            sleep_duration *= 2;
-            retry += 1;
-        }
-    }
-
-    /// Performs a request of a specific section of the file. Returns the HTTP
-    /// response.
-    pub(super) fn section_reader(&self, section_offset: u64, size: u64) -> IoResult<Response> {
+    /// Returns an HTTPSubFile object covering a specific section of the file.
+    pub(crate) fn section_reader(&self, section_offset: u64, size: u64) -> HttpSubFile {
         let end = section_offset + size - 1;
         trace!(
             "Reading HTTP file '{}' from {} to {} (inclusive) [{} bytes]",
@@ -348,16 +252,26 @@ impl HttpFile {
             size
         );
 
-        let response = self.reader(Some(section_offset), Some(end))?;
+        let mut subfile = HttpSubFile::new_with_client(
+            self.url.clone(),
+            section_offset,
+            end,
+            self.client.clone(),
+        )
+        .with_timeout(self.timeout);
 
-        if let Some(data) = response.headers().get("Content-Range") {
-            trace!(
-                "Returned content range: {:?}",
-                String::from_utf8_lossy(data.as_bytes())
-            );
+        if let Some(token) = self.token.as_ref() {
+            subfile = subfile.with_authorization(format!("Bearer {token}"));
         }
 
-        Ok(response)
+        subfile
+    }
+
+    /// Returns an HTTPSubFile object covering the complete file.
+    pub(crate) fn complete_reader(&self) -> HttpSubFile {
+        trace!("Reading complete HTTP file '{}'", self.url);
+        // Create a section reader optimized to read the complete file.
+        self.section_reader(0, self.size).with_end_is_parent_eof()
     }
 }
 
@@ -414,22 +328,22 @@ impl Seek for HttpFile {
 
 impl Read for HttpFile {
     fn read(&mut self, buf: &mut [u8]) -> IoResult<usize> {
-        let mut response = self.section_reader(self.position, buf.len() as u64)?;
-        let res = response.read(buf)?;
+        let mut subfile = self.section_reader(self.position, buf.len() as u64);
+        let res = subfile.read(buf)?;
         self.position += res as u64;
         Ok(res)
     }
 
     fn read_exact(&mut self, buf: &mut [u8]) -> IoResult<()> {
-        let mut response = self.section_reader(self.position, buf.len() as u64)?;
-        response.read_exact(buf)?;
+        let mut subfile = self.section_reader(self.position, buf.len() as u64);
+        subfile.read_exact(buf)?;
         self.position += buf.len() as u64;
         Ok(())
     }
 
     fn read_to_end(&mut self, buf: &mut Vec<u8>) -> IoResult<usize> {
-        let mut response = self.reader(Some(self.position), None)?;
-        let res = response.read_to_end(buf)?;
+        let mut subfile = self.section_reader(self.position, self.size - self.position);
+        let res = subfile.read_to_end(buf)?;
         self.position += res as u64;
         Ok(res)
     }
@@ -439,13 +353,7 @@ impl Read for HttpFile {
 mod tests {
     use super::*;
 
-    use std::{
-        io::SeekFrom,
-        sync::{
-            atomic::{AtomicU16, Ordering},
-            Arc,
-        },
-    };
+    use std::io::SeekFrom;
 
     #[test]
     fn test_retrieve_access_token() {
@@ -473,55 +381,6 @@ mod tests {
             HttpFile::retrieve_artifact_digest(&img_ref, &rt, &client).unwrap(),
             "sha256:940c619fbd418f9b2b1b63e25d8861f9cc1b46e3fc8b018ccfe8b78f19b8cc4f"
         );
-    }
-
-    #[test]
-    fn test_retriable_request_sender_retry_count() {
-        let tries = Arc::new(AtomicU16::new(0));
-        let closure_tries = tries.clone();
-        let request_sender = || {
-            closure_tries.fetch_add(1, Ordering::SeqCst);
-            let client = Client::new();
-            client.get("").send()
-        };
-        HttpFile::retriable_request_sender(request_sender, Duration::from_secs(2)).unwrap_err();
-        assert!(tries.load(Ordering::SeqCst) > 1);
-    }
-
-    #[test]
-    fn test_retriable_request_sender_initial_failure() {
-        let relative_file_path = "/test.yaml";
-        let mut server = mockito::Server::new();
-        let data = "test document";
-        let document_mock = server
-            .mock("GET", relative_file_path)
-            .with_body(data)
-            .with_header("content-length", &data.len().to_string())
-            .with_header("content-type", "text/plain")
-            .with_status(200)
-            .expect(1)
-            .create();
-        let url = Url::parse(&server.url()).unwrap();
-        let request_url = url.join(relative_file_path).unwrap().to_string();
-
-        let tries = Arc::new(AtomicU16::new(0));
-        let closure_tries = tries.clone();
-        let request_sender = || {
-            closure_tries.fetch_add(1, Ordering::SeqCst);
-            if closure_tries.load(Ordering::SeqCst) < 2 {
-                let client = Client::new();
-                return client.get("").send();
-            }
-            let client = Client::new();
-            client.get(&request_url).send()
-        };
-        let document = HttpFile::retriable_request_sender(request_sender, Duration::from_secs(5))
-            .unwrap()
-            .text()
-            .unwrap();
-        assert!(tries.load(Ordering::SeqCst) > 1);
-        assert_eq!(document, data);
-        document_mock.assert();
     }
 
     #[test]

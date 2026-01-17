@@ -12,7 +12,7 @@ use anyhow::{bail, ensure, Error};
 use log::debug;
 use url::Url;
 
-use super::http_file::HttpFile;
+use super::http::HttpFile;
 
 /// A trait for types that implement both `Read` and `Seek`, used to return
 /// dynamic objects implementing both traits.
@@ -95,7 +95,7 @@ impl FileReader {
                 Box::new(file.take(size))
             }
 
-            Self::Http(http_file) => Box::new(http_file.section_reader(section_offset, size)?),
+            Self::Http(http_file) => Box::new(http_file.section_reader(section_offset, size)),
 
             #[cfg(test)]
             Self::Buffer(cursor) => {
@@ -118,7 +118,7 @@ impl FileReader {
                 Box::new(File::open(file_path)?)
             }
 
-            Self::Http(http_file) => Box::new(http_file.section_reader(0, http_file.size)?),
+            Self::Http(http_file) => Box::new(http_file.complete_reader()),
 
             #[cfg(test)]
             Self::Buffer(cursor) => {
@@ -292,8 +292,7 @@ mod tests {
         // Test read the whole thing, do not specify a range.
         let mut buf = String::new();
         let read = http_file
-            .reader(None, None)
-            .unwrap()
+            .complete_reader()
             .read_to_string(&mut buf)
             .unwrap();
         assert_eq!(read, body.len(), "Did not read expected number of bytes");
@@ -311,7 +310,6 @@ mod tests {
             let mut buf = String::new();
             let read = http_file
                 .section_reader(start as u64, size as u64)
-                .unwrap()
                 .read_to_string(&mut buf)
                 .unwrap();
             trace!("Read: '{}' ({} bytes)", buf, read);
