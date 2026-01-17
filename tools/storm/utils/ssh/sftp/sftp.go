@@ -86,23 +86,29 @@ func DownloadRemoteFile(client *ssh.Client, remotePath string, localPath string)
 		}
 		localPath = localFile.Name()
 	} else {
-		localFile, err = os.Open(localPath)
+		localFile, err = os.Create(localPath)
 		if err != nil {
 			return "", fmt.Errorf("failed to create local file (%s): %w", localPath, err)
 		}
 	}
+	defer localFile.Close() // Move this right after file creation
+
 	sftpClient, err := NewSftpSudoClient(client)
 	if err != nil {
 		return "", fmt.Errorf("failed to create SudoSFTP client: %w", err)
 	}
 	defer sftpClient.Close()
+
 	remoteDatastoreFile, err := sftpClient.Open(remotePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to open remote file (%s): %w", remotePath, err)
 	}
+	defer remoteDatastoreFile.Close()
+
 	_, err = remoteDatastoreFile.WriteTo(localFile)
 	if err != nil {
 		return "", fmt.Errorf("failed to copy remote file to local: %w", err)
 	}
+
 	return localPath, nil
 }

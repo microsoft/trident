@@ -111,7 +111,7 @@ impl ManualRollbackContext {
     /// - Only Trident versions >= MINIMUM_ROLLBACK_TRIDENT_VERSION_STR support
     ///   manual rollback. Older versions will not have rollbacks added.
     /// - If a last_error is set on the HostStatus, no rollback will be added.
-    /// - The database may have consequutive 'duplicate' Provisioned states; these
+    /// - The database may have consecutive 'duplicate' Provisioned states; these
     ///   are typically found after offline-init and should be consolidated into a
     ///   single state for rollback purposes.
     /// - ManualRollback must be considered, typically by popping the appropriate

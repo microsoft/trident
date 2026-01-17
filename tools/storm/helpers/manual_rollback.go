@@ -81,7 +81,10 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 	if err != nil {
 		return fmt.Errorf("failed to create local rollback chain file: %w", err)
 	}
-	os.WriteFile(tmpRollbackChainFile.Name(), []byte(output.Stdout), 0644)
+	defer tmpRollbackChainFile.Close()
+	if err := os.WriteFile(tmpRollbackChainFile.Name(), []byte(output.Stdout), 0644); err != nil {
+		return fmt.Errorf("failed to write local rollback chain file: %w", err)
+	}
 	tc.ArtifactBroker().PublishLogFile("rollback_chain.yaml", tmpRollbackChainFile.Name())
 
 	// Get pre-rollback datastore
