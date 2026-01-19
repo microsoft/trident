@@ -432,43 +432,39 @@ steps:
   # For 'combined' tests, trigger a rollback and test encryption
   - bash: |
       set -eux
-      if [ "${{ parameters.tridentConfigurationName }}" == "combined" ]; then
-        # If there is a netlisten process, kill it so there is no port clash in the instance
-        if pgrep netlisten > /dev/null; then pkill netlisten; fi
-        NETLISTEN_CONFIG_ARGS=""
-        if [ -n "${{ parameters.netlistenConfigFile }}" ]; then
-          NETLISTEN_CONFIG_ARGS="--config ${{ parameters.netlistenConfigFile }}"
-        fi
-        ./bin/netlisten --force-color $NETLISTEN_CONFIG_ARGS \
-            -m $(Build.SourcesDirectory)/trident-rollback-metrics.jsonl \
-            -p ${{ parameters.netlistenPort }} \
-            -s "${{ parameters.artifactsDirectory }}" > ./rollback.log 2>&1 &
-        PROXY_ARG=""
-        if [ -n "${{ parameters.httpsProxy }}" ]; then
-          PROXY_ARG="--env-vars HTTPS_PROXY=${{ parameters.httpsProxy }}"
-        fi
-        # To allow storm to access VM serial logs, need sudo.
-        sudo $(Build.SourcesDirectory)/bin/storm-trident helper manual-rollback -a \
-            --log-dir "$(ob_outputDirectory)" \
-            "${{ parameters.sshKeyPath }}" \
-            "${{ parameters.hostIp }}" \
-            "${{ parameters.userName }}" \
-            "${{ parameters.runtimeEnv }}" \
-            $PROXY_ARG
+      # If there is a netlisten process, kill it so there is no port clash in the instance
+      if pgrep netlisten > /dev/null; then pkill netlisten; fi
+      NETLISTEN_CONFIG_ARGS=""
+      if [ -n "${{ parameters.netlistenConfigFile }}" ]; then
+        NETLISTEN_CONFIG_ARGS="--config ${{ parameters.netlistenConfigFile }}"
       fi
+      ./bin/netlisten --force-color $NETLISTEN_CONFIG_ARGS \
+          -m $(Build.SourcesDirectory)/trident-rollback-metrics.jsonl \
+          -p ${{ parameters.netlistenPort }} \
+          -s "${{ parameters.artifactsDirectory }}" > ./rollback.log 2>&1 &
+      PROXY_ARG=""
+      if [ -n "${{ parameters.httpsProxy }}" ]; then
+        PROXY_ARG="--env-vars HTTPS_PROXY=${{ parameters.httpsProxy }}"
+      fi
+      # To allow storm to access VM serial logs, need sudo.
+      sudo $(Build.SourcesDirectory)/bin/storm-trident helper manual-rollback -a \
+          --log-dir "$(ob_outputDirectory)" \
+          "${{ parameters.sshKeyPath }}" \
+          "${{ parameters.hostIp }}" \
+          "${{ parameters.userName }}" \
+          "${{ parameters.runtimeEnv }}" \
+          $PROXY_ARG
     displayName: "🔄 Stage and finalize manual rollback"
     timeoutInMinutes: 5
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - bash: |
       set -eux
-      if [ "${{ parameters.tridentConfigurationName }}" == "combined" ]; then
-        # sudo is needed to read qemu VM serial logs, `-a` is needed with sudo
-        sudo ./bin/storm-trident helper display-logs -a \
-            --netlisten-config "${{ parameters.netlistenConfigFile }}" \
-            --serial-log-artifact-file-name "rollback-target-os-${TARGET_OS}-serial.log" \
-            --artifacts-folder "$(ob_outputDirectory)"
-      fi
+      # sudo is needed to read qemu VM serial logs, `-a` is needed with sudo
+      sudo ./bin/storm-trident helper display-logs -a \
+          --netlisten-config "${{ parameters.netlistenConfigFile }}" \
+          --serial-log-artifact-file-name "rollback-target-os-${TARGET_OS}-serial.log" \
+          --artifacts-folder "$(ob_outputDirectory)"
     env:
       ${{ if or(eq(parameters.buildPurpose, 'daily'), eq(parameters.buildPurpose, 'validation'), eq(parameters.buildPurpose, 'weekly'), eq(parameters.buildPurpose, 'post_merge')) }}:
         TARGET_OS: "A"
@@ -479,7 +475,8 @@ steps:
 
   - bash: |
       set -eux
-      if [ "${{ parameters.tridentConfigurationName }}" == "combined" ]; then
+      encryptionExists=$(sudo yq e '.storage.encryption != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
+      if [ "$encryptionExists" == "true" ]; then
         python3 -u -m pytest \
           -m encryption \
           --capture=no \
