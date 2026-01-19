@@ -100,7 +100,7 @@ impl DataStore {
             match row_result {
                 Ok(State::Done) => break,
                 Err(e) => {
-                    debug!("Error getting next datastore row: {:?}", e);
+                    debug!("Failed to get next datastore row: {:?}", e);
                     all_rows_data.push(None);
                     continue;
                 }
