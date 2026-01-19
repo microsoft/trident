@@ -475,17 +475,19 @@ steps:
 
   - bash: |
       set -eux
+      PYTEST_MARKER='base'
       encryptionExists=$(sudo yq e '.storage.encryption != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
       if [ "$encryptionExists" == "true" ]; then
-        python3 -u -m pytest \
-          -m encryption \
-          --capture=no \
-          --junit-xml=${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_rollback_${TARGET_OS}_$(System.JobAttempt).junit.xml \
-          --host ${{ parameters.hostIp }} \
-          --runtime-env ${{ parameters.runtimeEnv }} \
-          --configuration ${{ parameters.tridentConfigPath }} \
-          --ab-active-volume ${EXPECTED_VOLUME}
+        PYTEST_MARKER='encryption'
       fi
+      python3 -u -m pytest \
+        -m $PYTEST_MARKER \
+        --capture=no \
+        --junit-xml=${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_rollback_${TARGET_OS}_$(System.JobAttempt).junit.xml \
+        --host ${{ parameters.hostIp }} \
+        --runtime-env ${{ parameters.runtimeEnv }} \
+        --configuration ${{ parameters.tridentConfigPath }} \
+        --ab-active-volume ${EXPECTED_VOLUME}
     env:
       ${{ if or(eq(parameters.buildPurpose, 'daily'), eq(parameters.buildPurpose, 'validation'), eq(parameters.buildPurpose, 'weekly'), eq(parameters.buildPurpose, 'post_merge')) }}:
         EXPECTED_VOLUME: "volume-a"
