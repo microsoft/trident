@@ -426,7 +426,7 @@ steps:
           "${{ parameters.runtimeEnv }}" \
           --trident-config-path "${{ parameters.tridentConfigPath }}/trident-config.yaml" \
           --deployment-environment "${{ parameters.deploymentEnvironment }}"
-    displayName: "Test Trident rebuild-raid"
+    displayName: "🔬 Test Trident rebuild-raid"
     timeoutInMinutes: 15
 
   # For 'combined' tests, trigger a rollback and test encryption
@@ -470,7 +470,7 @@ steps:
             --artifacts-folder "$(ob_outputDirectory)"
       fi
     env:
-      ${{ if or(eq(parameters.buildPurpose, 'daily'), eq(parameters.buildPurpose, 'validation'), eq(parameters.buildPurpose, 'weekly')) }}:
+      ${{ if or(eq(parameters.buildPurpose, 'daily'), eq(parameters.buildPurpose, 'validation'), eq(parameters.buildPurpose, 'weekly'), eq(parameters.buildPurpose, 'post_merge')) }}:
         TARGET_OS: "A"
       ${{ else }}:
         TARGET_OS: "B"
@@ -490,7 +490,7 @@ steps:
           --ab-active-volume ${EXPECTED_VOLUME}
       fi
     env:
-      ${{ if or(eq(parameters.buildPurpose, 'daily'), eq(parameters.buildPurpose, 'validation'), eq(parameters.buildPurpose, 'weekly')) }}:
+      ${{ if or(eq(parameters.buildPurpose, 'daily'), eq(parameters.buildPurpose, 'validation'), eq(parameters.buildPurpose, 'weekly'), eq(parameters.buildPurpose, 'post_merge')) }}:
         EXPECTED_VOLUME: "volume-a"
         TARGET_OS: "A"
       ${{ else }}:
