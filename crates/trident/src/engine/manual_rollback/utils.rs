@@ -230,7 +230,6 @@ impl ManualRollbackContext {
         let mut first_host_status_is_provisioned = false;
         if let Some(Some(hs)) = host_statuses.first() {
             if matches!(hs.servicing_state, ServicingState::Provisioned) {
-                // current_operation.to_host_status = Some(hs.clone());
                 first_host_status_is_provisioned = true;
             }
         }
@@ -333,18 +332,24 @@ impl ManualRollbackContext {
                             },
                         ));
                     };
+                    let kind = match op.kind {
+                        OperationKind::AbUpdate => ManualRollbackKind::Ab,
+                        OperationKind::RuntimeUpdate => ManualRollbackKind::Runtime,
+                        _ => {
+                            return Err(TridentError::new(
+                                InvalidInputError::InvalidRollbackExpectation {
+                                    reason: "unexpected operation kind for rollback operation"
+                                        .to_string(),
+                                },
+                            ));
+                        }
+                    };
                     Ok(ManualRollbackChainItem {
+                        // For rollback, use the from_host_status as the source
                         spec: from_hs.spec.clone(),
                         ab_active_volume: from_hs.ab_active_volume,
                         install_index: from_hs.install_index,
-                        kind: match &op.kind {
-                            OperationKind::AbUpdate => ManualRollbackKind::Ab,
-                            OperationKind::RuntimeUpdate => ManualRollbackKind::Runtime,
-                            kind => panic!(
-                                "Unexpected operation kind for rollbackable operation: {:?}",
-                                kind
-                            ),
-                        },
+                        kind,
                     })
                 })
                 .collect::<Result<Vec<ManualRollbackChainItem>, TridentError>>()?,
