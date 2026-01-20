@@ -429,7 +429,7 @@ steps:
     displayName: "🔬 Test Trident rebuild-raid"
     timeoutInMinutes: 15
 
-  # For 'combined' tests, trigger a rollback and test encryption
+  # Trigger a rollback and test encryption
   - bash: |
       set -eux
       # If there is a netlisten process, kill it so there is no port clash in the instance
@@ -478,7 +478,7 @@ steps:
       SPECIFIC_TESTS='-m base'
       encryptionExists=$(sudo yq e '.storage.encryption != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
       if [ "$encryptionExists" == "true" ]; then
-        SPECIFIC_TESTS="$SPECIFIC_TESTS -m encryption"
+        SPECIFIC_TESTS="$SPECIFIC_TESTS or encryption"
       fi
       python3 -u -m pytest \
         $SPECIFIC_TESTS \
