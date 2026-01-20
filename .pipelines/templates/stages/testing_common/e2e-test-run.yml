@@ -478,7 +478,7 @@ steps:
       SPECIFIC_TESTS='-m base'
       encryptionExists=$(sudo yq e '.storage.encryption != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
       if [ "$encryptionExists" == "true" ]; then
-        SPECIFIC_TESTS='$SPECIFIC_TESTS -m encryption'
+        SPECIFIC_TESTS="$SPECIFIC_TESTS -m encryption"
       fi
       python3 -u -m pytest \
         $SPECIFIC_TESTS \
