@@ -173,6 +173,15 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 			}
 		}
 
+		if config.Iso.DirectStreamingImage != nil {
+			log.Info("Patching in direct-streaming-url.conf!")
+			streamImageUrl := fmt.Sprintf("http://%s/files/%s", announceAddress, *config.Iso.DirectStreamingImage)
+			err = isopatcher.PatchFile(iso, "/trident_cdrom/direct-streaming-url.conf", []byte(streamImageUrl))
+			if err != nil {
+				return fmt.Errorf("failed to patch direct-streaming-url.conf into ISO: %w", err)
+			}
+		}
+
 		if config.Iso.PreTridentScript != nil {
 			log.Info("Patching in pre-trident script!")
 			err = isopatcher.PatchFile(iso, "/trident_cdrom/pre-trident-script.sh", []byte(*config.Iso.PreTridentScript))

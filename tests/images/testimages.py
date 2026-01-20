@@ -25,6 +25,43 @@ DEFAULT_IMAGE_CUSTOMIZER_VERSION = "0.19"
 
 DEFINED_IMAGES: List[ImageConfig] = [
     ImageConfig(
+        "trident-installer",
+        config="trident-installer",
+        output_format=OutputFormat.ISO,
+    ),
+    ImageConfig(
+        "trident-split-installer",
+        config="trident-installer",
+        config_file="base/baseimg-split.yaml",
+        output_format=OutputFormat.ISO,
+    ),
+    ImageConfig(
+        "trident-installer-arm64",
+        config="trident-installer",
+        output_format=OutputFormat.ISO,
+        base_image=BaseImage.CORE_ARM64,
+        architecture=SystemArchitecture.ARM64,
+    ),
+    ImageConfig(
+        "trident-direct-streaming-installer",
+        config="trident-installer",
+        config_file="base/baseimg-direct-streaming.yaml",
+        output_format=OutputFormat.ISO,
+    ),
+    ImageConfig(
+        "trident-direct-streaming-installer-arm64",
+        config="trident-installer",
+        config_file="base/baseimg-direct-streaming.yaml",
+        output_format=OutputFormat.ISO,
+        base_image=BaseImage.CORE_ARM64,
+        architecture=SystemArchitecture.ARM64,
+    ),
+    ImageConfig(
+        "trident-container-installer",
+        config="trident-container-installer",
+        output_format=OutputFormat.ISO,
+    ),
+    ImageConfig(
         "trident-functest",
         output_format=OutputFormat.QCOW2,
         requires_trident=False,

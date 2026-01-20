@@ -80,10 +80,6 @@ parameters:
     type: string
     default: trident-binaries
 
-  - name: testImagesRepo
-    type: string
-    default: self
-
   - name: generateSshKeys
     type: boolean
     default: false

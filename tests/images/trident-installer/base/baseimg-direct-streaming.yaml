@@ -1,0 +1,97 @@
+storage:
+  bootType: efi
+
+  disks:
+    - partitionTableType: gpt
+      maxSize: 4G
+      partitions:
+        - id: esp
+          type: esp
+          size: 8M
+
+        - id: rootfs
+          size: grow
+
+  filesystems:
+    - deviceId: esp
+      type: fat32
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+
+    - deviceId: rootfs
+      type: ext4
+      mountPoint:
+        path: /
+
+os:
+  bootloader:
+    resetType: hard-reset
+  hostname: trident-mos-testimage
+
+  packages:
+    install:
+      - binutils
+      - curl
+      - device-mapper
+      - dnf
+      - dosfstools
+      - efibootmgr
+      - iproute
+      - iptables
+      - lsof
+      - mdadm
+      - netplan
+      # Optional dependencies for NTFS
+      - ntfs-3g
+      - ntfsprogs
+      - openssh-server
+      # Package required for systemd-pcrlock & PCR-based encryption; can be removed once AZL 4.0
+      # merges a fix to provide statically defined files inside the same package as the
+      # systemd-pcrlock binary, i.e. systemd-udev.
+      - trident-static-pcrlock-files
+      - squashfs-tools
+      - tar
+      - tpm2-tools
+      - trident
+      - vim
+      - veritysetup
+      - selinux-policy
+      - selinux-policy-devel
+      - audit
+
+  services:
+    enable:
+      - sshd
+      - trident-direct-streaming
+
+  additionalFiles:
+    - source: files/getty@.service
+      destination: /usr/lib/systemd/system/getty@.service
+    - source: files/serial-getty@.service
+      destination: /usr/lib/systemd/system/serial-getty@.service
+    - source: files/root.profile
+      destination: /root/.profile
+    - source: files/trident-direct-streaming.service
+      destination: /usr/lib/systemd/system/trident-direct-streaming.service
+
+  selinux:
+    mode: enforcing
+
+scripts:
+  postCustomization:
+    - path: post-install.sh
+
+iso:
+  additionalFiles:
+    - source: files/config-placeholder.yaml
+      destination: /trident-config.yaml
+    - source: files/override-placeholder.conf
+      destination: /trident-override.conf
+    - source: files/direct-streaming-url-placeholder.conf
+      destination: /direct-streaming-url.conf
+  kernelCommandLine:
+    extraCommandLine:
+      - console=tty0
+      - console=ttyS0
+      - rd.luks=0

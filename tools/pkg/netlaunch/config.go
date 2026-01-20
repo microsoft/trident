@@ -122,8 +122,9 @@ type HostConnectionConfiguration struct {
 }
 
 type IsoConfig struct {
-	PreTridentScript *string `yaml:"preTridentScript,omitempty"`
-	ServiceOverride  *string `yaml:"serviceOverride,omitempty"`
+	PreTridentScript     *string `yaml:"preTridentScript,omitempty"`
+	ServiceOverride      *string `yaml:"serviceOverride,omitempty"`
+	DirectStreamingImage *string `yaml:"directStreamingImage,omitempty"`
 }
 
 type NetListenConfig struct {

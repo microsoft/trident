@@ -48,3 +48,24 @@ stages:
       osModifierBranch: ${{ parameters.osModifierBranch }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
       targetArchitecture: arm64
+
+  # Build Trident direct streaming installer ISO
+  - template: stages/trident_images/build-image.yml
+    parameters:
+      label: "azure-base"
+      makeTarget: "trident-direct-streaming-installer-arm64"
+
+  - template: stages/trident_images/build-image.yml
+    parameters:
+      label: "direct-streaming-base-a"
+      makeTarget: "trident-direct-streaming-testimage-arm64.cosi"
+      baseimgType: qemu_guest
+      baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+      micBuildType: ${{ parameters.micBuildType }}
+      micVersion: ${{ parameters.micVersion }}
+      useStagedSshKeys: true
+
+  - template: stages/direct-streaming/netlaunch-testing.yml
+    parameters:
+      architecture: arm64
+

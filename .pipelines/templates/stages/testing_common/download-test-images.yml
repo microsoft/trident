@@ -25,6 +25,7 @@ parameters:
     values:
       - trident-verity-testimage
       - trident-container-verity-testimage
+      - skip
 
   - name: tridentTestImageUsrVerity
     displayName: "Image used in the usr-verity target OS, source of Trident (container vs host)"
@@ -33,6 +34,7 @@ parameters:
     values:
       - trident-usrverity-testimage
       - trident-container-usrverity-testimage
+      - skip
 
   - name: downloadTridentContainer
     displayName: "Download Trident container"
@@ -105,19 +107,21 @@ steps:
       artifactName: "${{ parameters.tridentTestImage }}"
       targetPath: "${{ parameters.testImageDir }}"
 
-  - task: DownloadPipelineArtifact@2
-    displayName: "Download ${{ parameters.tridentTestImageVerity }}"
-    inputs:
-      buildType: current
-      artifactName: "${{ parameters.tridentTestImageVerity }}"
-      targetPath: "${{ parameters.testImageDirVerity }}"
+  - ${{ if ne(parameters.tridentTestImageVerity, 'skip') }}:
+    - task: DownloadPipelineArtifact@2
+      displayName: "Download ${{ parameters.tridentTestImageVerity }}"
+      inputs:
+        buildType: current
+        artifactName: "${{ parameters.tridentTestImageVerity }}"
+        targetPath: "${{ parameters.testImageDirVerity }}"
 
-  - task: DownloadPipelineArtifact@2
-    displayName: "Download ${{ parameters.tridentTestImageUsrVerity }}"
-    inputs:
-      buildType: current
-      artifactName: "${{ parameters.tridentTestImageUsrVerity }}"
-      targetPath: "${{ parameters.testImageDirUsrVerity }}"
+  - ${{ if ne(parameters.tridentTestImageUsrVerity, 'skip') }}:
+    - task: DownloadPipelineArtifact@2
+      displayName: "Download ${{ parameters.tridentTestImageUsrVerity }}"
+      inputs:
+        buildType: current
+        artifactName: "${{ parameters.tridentTestImageUsrVerity }}"
+        targetPath: "${{ parameters.testImageDirUsrVerity }}"
 
   - task: DownloadPipelineArtifact@2
     displayName: "Download go-tools"
