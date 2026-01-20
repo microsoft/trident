@@ -37,12 +37,24 @@ parameters:
     type: boolean
     default: false
 
+  - name: micArchitecture
+    displayName: Architecture for MIC
+    type: string
+    values:
+      - arm64
+      - amd64
+    default: "amd64"
+
 jobs:
   - job: PrepareImage_${{ replace(parameters.label, '-', '_') }}
     displayName: Prepare Image ${{ parameters.label }}
     timeoutInMinutes: 20
     pool:
-      type: linux
+      ${{ if eq(parameters.micArchitecture, 'arm64') }}:
+        name: azl3-hci-ARM64-1es-pool-westcentralus
+        hostArchitecture: arm64
+      ${{ if eq(parameters.micArchitecture, 'amd64') }}:
+        type: linux
 
     variables:
       ob_outputDirectory: $(Build.SourcesDirectory)/out
@@ -66,11 +78,10 @@ jobs:
         displayName: Download SSH Keys
 
       - template: ../common_tasks/find-base-image-version.yml
-      - template: ../test_images/trident-testimg-template.yml
+      - template: ./trident-testimg-template.yml
         parameters:
           target: ${{ parameters.makeTarget }}
           outputDirectory: "$(ob_outputDirectory)"
-          testImagesRepo: test-images
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
           baseimgBuildType: $(BASEIMG_BUILD_TYPE)
