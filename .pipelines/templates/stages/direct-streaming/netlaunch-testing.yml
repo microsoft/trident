@@ -1,0 +1,151 @@
+parameters:
+  - name: testingRun
+    displayName: "Download prebuilt test artifacts"
+    type: boolean
+    default: false
+
+  - name: architecture
+    displayName: Architecture
+    type: string
+    values:
+      - arm64
+      - amd64
+    default: "amd64"
+
+stages:
+  - stage: DirectStreaming_DeploymentTesting_${{ parameters.architecture }}
+    displayName: Direct Streaming Deployment VM ${{ parameters.architecture }} Testing
+    dependsOn:
+      - ${{ if eq(parameters.testingRun, true) }}:
+          - DownloadTestingElements
+      - ${{ else }}:
+          - BuildingTools
+          - BuildTridentContainerImage
+          - TridentTestImg_trident_direct_streaming_installer
+          - TridentTestImg_trident_direct_streaming_testimage
+
+    jobs:
+      - job: Testing
+        timeoutInMinutes: 50
+        pool:
+          ${{ if eq(parameters.architecture, 'amd64') }}:
+            type: linux
+            name: trident-ubuntu-1es-pool-eastus2
+            hostArchitecture: amd64
+          ${{ else }}}:
+            type: linux
+            name: azl3-hci-ARM64-1es-pool-westcentralus
+            hostArchitecture: arm64
+
+        variables:
+          - name: tridentSourceDirectory
+            value: $(Build.SourcesDirectory)
+          - ${{ if eq(parameters.architecture, 'arm64') }}:
+            - name: installerISOName
+              value: trident-direct-streaming-installer-arm64
+            - name: testImageName
+              value: trident-direct-streaming-testimage-arm64
+            ${{ else }}:
+            - name: installerISOName
+              value: trident-direct-streaming-installer
+            - name: testImageName
+              value: trident-direct-streaming-testimage
+          - name: ob_outputDirectory
+            value: $(tridentSourceDirectory)/deployment_logs
+          - name: ob_artifactBaseName
+            value: direct_streaming_deployment _${{ parameters.architecture }}_log_$(System.JobAttempt)
+          - name: netlaunchPort
+            value: 4000
+
+          # Provides: ACR_NAME
+          - group: trident_e2e_params
+
+        steps:
+          # Download all test images
+          - template: ../testing_common/download-test-images.yml
+            parameters:
+              installerISO: $(installerISOName)
+              tridentTestImage: ${{ variables.testImageName }}
+              tridentTestImageVerity: skip
+              tridentTestImageUsrVerity: skip
+              downloadTridentContainer: false
+
+          - template: ../testing-vm/netlaunch-prep.yml
+
+          # Take tiny pieces of testing_common/trident-prep.yml:
+          - bash: |
+              set -eux
+              sudo snap install yq
+              chmod 600 ${{ parameters.tridentSourceDirectory }}/tests/e2e_tests/helpers/key
+              ssh-keygen -p -m PEM -f ${{ parameters.tridentSourceDirectory }}/tests/e2e_tests/helpers/key -N ""
+            displayName: "Installing dependencies and preparing SSH key"
+
+          - bash: |
+              set -eux
+
+              # Disable virtlogd rollover by setting max_size to 0
+              cat /etc/libvirt/virtlogd.conf
+              echo "max_size = 0" | sudo tee -a /etc/libvirt/virtlogd.conf
+              cat /etc/libvirt/virtlogd.conf
+              sudo systemctl restart virtlogd.socket
+
+              ./tools/virt-deploy create --mem 12 --disks 32,32
+            workingDirectory: $(tridentSourceDirectory)
+            displayName: "Creating virt-deploy VM"
+
+          - bash: |
+              set -euxo pipefail
+
+              # Enable SecureBoot for all E2E tests.
+              SECURE_BOOT="--secure-boot"
+
+              # If this is a usr-verity UKI image, a signing certificate must
+              # be set via --signing-cert; otherwise, set it to an empty
+              # string. This can also be used for sysext signing.
+              TRIDENT_CONFIG="${{ parameters.tridentSourceDirectory }}/tests/e2e_tests/trident_configurations/simple/trident-config.yaml"
+              HANDLE_PROVISIONED_STATE_ARG="--wait-for-provisioned-state"
+
+              ./bin/netlaunch \
+                  --iso ./artifacts/iso/$(installerISOName).iso \
+                  --directStreamingImage $(testImageName).cosi \
+                  --config $(tridentSourceDirectory)/tools/vm-netlaunch.yaml \
+                  --trident "$TRIDENT_CONFIG" \
+                  --servefolder ./artifacts/test-image \
+                  --logstream \
+                  --trace-file $(tridentSourceDirectory)/trident-clean-install-metrics.jsonl \
+                  --force-color \
+                  --full-logstream logstream-full.log \
+                  $HANDLE_PROVISIONED_STATE_ARG \
+                  $SECURE_BOOT \
+                  --port ${{variables.netlaunchPort}} 2>&1 | tee ./direct-streaming-deployment.log
+            workingDirectory: $(tridentSourceDirectory)
+            displayName: "🚀 Run netlaunch for testing"
+            timeoutInMinutes: 20
+
+          - bash: |
+              set -eux
+
+              sudo ./bin/storm-trident helper wait-for-login -a \
+                  --vm-name "$(jq -r '.virtualmachines[0].name' $(tridentSourceDirectory)/tools/virt-deploy-metadata.json)" \
+                  --artifacts-folder "$(ob_outputDirectory)"
+
+            timeoutInMinutes: 5
+            condition: succeededOrFailed()
+            displayName: "📄 Check target OS deployment"
+
+          - bash: |
+              set -eux
+              ./bin/storm-trident script capture-screenshot \
+                  --screenshot-filename "direct-streaming.png" \
+                  --artifacts-folder "$(ob_outputDirectory)"
+            displayName: "📷 Capture screenshot: direct streaming"
+            condition: succeededOrFailed()
+
+          - bash: |
+              set -eux
+              sudo ./bin/storm-trident helper display-logs -a \
+                  --serial-log-artifact-file-name "direct-streaming-target-os-A-serial.log" \
+                  --trident-trace-log-file "$(tridentSourceDirectory)/logstream-full.log" \
+                  --artifacts-folder "$(ob_outputDirectory)"
+            displayName: "📄 Display direct streaming logs"
+            condition: succeededOrFailed()
