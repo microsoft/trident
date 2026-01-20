@@ -18,9 +18,6 @@ class BaseImage(Enum):
     QEMU_GUEST = BaseImageData("qemu_guest", Path("artifacts/qemu_guest.vhdx"))
     CORE_ARM64 = BaseImageData("core_arm64", Path("artifacts/core_arm64.vhdx"))
     MINIMAL = BaseImageData("minimal", Path("artifacts/minimal.vhdx"))
-    MINIMAL_AARCH64 = BaseImageData(
-        "minimal_aarch64", Path("artifacts/minimal_aarch64.vhdx")
-    )
 
     @property
     def path(self) -> Path:
@@ -211,12 +208,6 @@ class ImageConfig:
         if path is not None and not path:
             raise ValueError("output.artifacts.path cannot be empty")
         return path
-
-    def get_items_to_sign(self) -> List[str]:
-        """Return the list of items to sign from the image configuration YAML."""
-        return (
-            self.base_ic_config.get("output", {}).get("artifacts", {}).get("items", [])
-        )
 
 
 # IMPORTANT: THESE NAMES ARE EXPOSED IN THE CLI, MAKE SURE TO UPDATE ALL
