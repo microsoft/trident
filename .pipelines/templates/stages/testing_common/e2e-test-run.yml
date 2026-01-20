@@ -475,13 +475,13 @@ steps:
 
   - bash: |
       set -eux
-      SPECIFIC_TESTS='-m base'
+      SPECIFIC_TESTS='base'
       encryptionExists=$(sudo yq e '.storage.encryption != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
       if [ "$encryptionExists" == "true" ]; then
         SPECIFIC_TESTS="$SPECIFIC_TESTS or encryption"
       fi
       python3 -u -m pytest \
-        $SPECIFIC_TESTS \
+        -m "$SPECIFIC_TESTS" \
         --capture=no \
         --junit-xml=${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_rollback_${TARGET_OS}_$(System.JobAttempt).junit.xml \
         --host ${{ parameters.hostIp }} \
