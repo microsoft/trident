@@ -10,7 +10,7 @@ parameters:
     values:
       - arm64
       - amd64
-    default: "amd64"
+    default: amd64
 
 stages:
   - stage: DirectStreaming_DeploymentTesting_${{ parameters.architecture }}
@@ -24,7 +24,8 @@ stages:
           - BuildArm64ImagesForDirectStreaming
 
     jobs:
-      - job: Testing
+      - job: DirectStreamingTesting_${{ parameters.architecture }}
+        displayName: Direct Streaming Deployment Testing for ${{ parameters.architecture }}
         timeoutInMinutes: 50
         pool:
           ${{ if eq(parameters.architecture, 'amd64') }}:
@@ -55,9 +56,6 @@ stages:
             value: direct_streaming_deployment _${{ parameters.architecture }}_log_$(System.JobAttempt)
           - name: netlaunchPort
             value: 4000
-
-          # Provides: ACR_NAME
-          - group: trident_e2e_params
 
         steps:
           # Download all test images

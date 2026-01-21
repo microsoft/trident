@@ -135,10 +135,10 @@ steps:
         targetPath: "${{ parameters.testImageDirUsrVerity }}"
 
   - task: DownloadPipelineArtifact@2
-    displayName: "Download go-tools"
+    displayName: "Download ${{ parameters.goToolsArtifactName }}"
     inputs:
       buildType: current
-      artifactName: "go-tools"
+      artifactName: ${{ parameters.goToolsArtifactName }}
       patterns: |
         netlaunch
         netlisten
