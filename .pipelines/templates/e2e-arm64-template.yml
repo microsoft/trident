@@ -67,7 +67,7 @@ stages:
       # Build direct streaming COSI VHD
       - template: stages/trident_images/build-image.yml
         parameters:
-          label: "trident-direct-streaming-base-arm64"
+          label: "trident-direct-streaming-testimage-arm64"
           labelPrefix: "" # No prefix for this image
           makeTarget: "artifacts/trident-direct-streaming-testimage-arm64.cosi"
           baseimgType: core_arm64
