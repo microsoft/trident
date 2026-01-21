@@ -60,6 +60,7 @@ stages:
           label: "azure-base"
           makeTarget: "trident-direct-streaming-installer-arm64"
           baseimgType: core_arm64
+          architecture: arm64
 
       # Build direct streaming COSI VHD
       - template: stages/trident_images/build-image.yml
@@ -67,6 +68,7 @@ stages:
           label: "direct-streaming-base-a"
           makeTarget: "artifacts/trident-direct-streaming-testimage-arm64.cosi"
           baseimgType: core_arm64
+          architecture: arm64
 
   # Run netlaunch test to validate direct streaming installer
   - template: stages/direct-streaming/netlaunch-testing.yml
