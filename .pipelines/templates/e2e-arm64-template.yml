@@ -59,6 +59,7 @@ stages:
       - template: stages/trident_images/build-image.yml
         parameters:
           label: "trident-direct-streaming-installer-arm64"
+          labelPrefix: "" # No prefix for this image
           makeTarget: "artifacts/trident-direct-streaming-installer-arm64.iso"
           baseimgType: core_arm64
           architecture: arm64
@@ -67,6 +68,7 @@ stages:
       - template: stages/trident_images/build-image.yml
         parameters:
           label: "trident-direct-streaming-base-arm64"
+          labelPrefix: "" # No prefix for this image
           makeTarget: "artifacts/trident-direct-streaming-testimage-arm64.cosi"
           baseimgType: core_arm64
           architecture: arm64
