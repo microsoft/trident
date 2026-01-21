@@ -34,6 +34,8 @@ stages:
             hostArchitecture: amd64
           ${{ if eq(parameters.architecture, 'arm64') }}:
             type: linux
+            # name: azl3-hci-ARM64-1es-pool-westcentralus
+            # name: mariner-hci-ARM64-1es-pool-westcentralus
             name: trident-ubuntu-ARM64-1es-pool-westus2
             hostArchitecture: arm64
 
@@ -70,6 +72,13 @@ stages:
                 goToolsArtifactName: go-tools-arm64
               ${{ if eq(parameters.architecture, 'amd64') }}:
                 goToolsArtifactName: go-tools
+
+          - bash: |
+              set -ex
+              sudo apt update -y
+              sudo apt install -y python3 python3-pip
+            displayName: "Install pip"
+            retryCountOnTaskFailure: 3
 
           - template: ../testing_vm/netlaunch-prep.yml
 
