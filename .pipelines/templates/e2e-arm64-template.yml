@@ -38,6 +38,11 @@ parameters:
     default: ''
 
 stages:
+  # Build tools (Go stuff)
+  - template: stages/building_tools/building-tools.yml
+    parameters:
+      architecture: arm64
+
   # Trident Build/Download
   - template: stages/trident_rpms/trident-stage.yml
     parameters:
