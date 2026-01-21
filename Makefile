@@ -1120,3 +1120,8 @@ artifacts/trident-direct-streaming-testimage.cosi: \
 		artifacts/trident-testimage.cosi \
 		artifacts/trident-direct-streaming-testimage.cosi
 
+artifacts/trident-direct-streaming-installer.iso: \
+	trident-direct-streaming-installer
+
+artifacts/trident-direct-streaming-installer-arm64.iso: \
+	trident-direct-streaming-installer-arm64
