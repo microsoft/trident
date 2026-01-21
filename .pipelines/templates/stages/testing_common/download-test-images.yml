@@ -77,7 +77,7 @@ steps:
       # So, do validation here.
       #
       case "${{ parameters.installerISO }}" in
-          trident-installer|trident-split-installer|trident-container-installer)
+          trident-installer|trident-split-installer|trident-container-installer|trident-direct-streaming-installer|trident-direct-streaming-installer-arm64)
               # Valid image_type, do nothing
               ;;
           *)
