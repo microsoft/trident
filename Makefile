@@ -872,6 +872,14 @@ $(COSI_TARGETS): %: artifacts/%.cosi
 .PHONY: all-cosi
 all-cosi: $(COSI_TARGETS)
 
+ISO_TARGETS = $(shell ./tests/images/testimages.py list iso)
+
+.PHONY: $(ISO_TARGETS)
+$(ISO_TARGETS): %: artifacts/%.iso
+
+.PHONY: all-iso
+all-iso: $(ISO_TARGETS)
+
 #
 # Generic COSI image build target pattern
 #
@@ -886,6 +894,24 @@ artifacts/%.cosi: $$(shell ./tests/images/testimages.py dependencies $$*)
 	@echo "Prerequisites:"
 	@echo "$^" | tr ' ' '\n' | sed 's/^/    /'
 	@echo "Building image..."
+	sudo ./tests/images/testimages.py build \
+		$* \
+		--output-dir ./artifacts \
+		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE))
+
+# Generic ISO image build target pattern
+#
+
+# Fun trick to use the stem of the target (%) as a variable ($*) in the
+# prerequisites so that we can use find to get all the files in the directory.
+# https://www.gnu.org/software/make/manual/make.html#Secondary-Expansion
+.SECONDEXPANSION:
+
+artifacts/%.iso: $$(shell ./tests/images/testimages.py dependencies $$*)
+	@echo "Building '$*' [$@] from $<"
+	@echo "Prerequisites:"
+	@echo "$^" | tr ' ' '\n' | sed 's/^/    /'
+	@echo "Building ISO..."
 	sudo ./tests/images/testimages.py build \
 		$* \
 		--output-dir ./artifacts \
