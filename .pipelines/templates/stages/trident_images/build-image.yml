@@ -4,6 +4,11 @@ parameters:
     displayName: "Label for the image"
     default: ""
 
+  - name: labelPrefix
+    type: string
+    displayName: "Prefix for the image label"
+    default: "image-"
+
   - name: makeTarget
     type: string
     displayName: "Make target for the image"
@@ -58,7 +63,7 @@ jobs:
 
     variables:
       ob_outputDirectory: $(Build.SourcesDirectory)/out
-      ob_artifactBaseName: "image-${{ parameters.label }}"
+      ob_artifactBaseName: "${{ parameters.labelPrefix }}${{ parameters.label }}"
       ${{ if eq(parameters.architecture, 'amd64') }}:
         tridentArtifactName: trident-binaries
       ${{ if eq(parameters.architecture, 'arm64') }}:
