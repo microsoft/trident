@@ -45,7 +45,7 @@ stages:
               value: trident-direct-streaming-installer-arm64
             - name: testImageName
               value: trident-direct-streaming-testimage-arm64
-            ${{ else }}:
+          - ${{ if eq(parameters.architecture, 'amd64') }}:
             - name: installerISOName
               value: trident-direct-streaming-installer
             - name: testImageName
