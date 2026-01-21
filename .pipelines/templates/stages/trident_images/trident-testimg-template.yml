@@ -102,6 +102,7 @@ steps:
           buildType: current
           artifactName: ${{ parameters.tridentArtifactName}}
           targetPath: "$(Build.ArtifactStagingDirectory)/trident"
+          architecture: ${{ parameters.micArchitecture }}
         displayName: Download Trident RPMs
 
   - ${{ if eq(parameters.generateSshKeys, true) }}:

@@ -59,6 +59,10 @@ jobs:
     variables:
       ob_outputDirectory: $(Build.SourcesDirectory)/out
       ob_artifactBaseName: "image-${{ parameters.label }}"
+      ${{ if eq(parameters.architecture, 'amd64') }}:
+        tridentArtifactName: trident-binaries
+      ${{ if eq(parameters.architecture, 'arm64') }}:
+        tridentArtifactName: trident-binaries-arm64
 
     steps:
       - template: ../common_tasks/avoid-pypi-usage.yml
@@ -66,10 +70,7 @@ jobs:
       - task: DownloadPipelineArtifact@2
         inputs:
           buildType: current
-          ${{ if eq(parameters.architecture, 'amd64') }}:
-            artifactName: trident-binaries
-          ${{ if eq(parameters.architecture, 'arm64') }}:
-            artifactName: trident-binaries-arm64
+          artifactName: $(tridentArtifactName)
           targetPath: "$(Build.ArtifactStagingDirectory)/trident"
         displayName: Download Trident RPMs
 
@@ -87,6 +88,8 @@ jobs:
           outputDirectory: "$(ob_outputDirectory)"
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
+          micArchitecture: ${{ parameters.architecture }}
+          tridentArtifactName: $(tridentArtifactName)
           baseimgBuildType: $(BASEIMG_BUILD_TYPE)
           baseimgVersion: $(BASEIMG_VERSION)
           baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}

@@ -53,6 +53,7 @@ stages:
     displayName: Build Arm64 Images for Direct Streaming
     dependsOn:
       - GetTridentBinaries_rpms_arm64
+      - PrepareSSHKeys
     jobs:
       # Build Trident direct streaming installer ISO
       - template: stages/trident_images/build-image.yml
