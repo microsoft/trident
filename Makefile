@@ -766,10 +766,6 @@ download-trident-container-installer-iso:
 		--path artifacts/ \
 		--artifact-name 'trident-container-installer'
 
-artifacts/trident-container-installer.iso:
-	$(MAKE) download-trident-container-installer-iso; \
-	ls -l artifacts/trident-container-installer.iso
-
 # Copies locally built runtime images from ../test-images/build to ./artifacts/test-image.
 # Expects that both the regular and verity Trident test images have been built.
 .PHONY: copy-runtime-images
@@ -907,9 +903,10 @@ validate-pipeline-website-artifact:
 		npm install && \
 			npm run serve -- --port $(SERVER_PORT)
 
-# Test images
-
-COSI_TARGETS = $(shell ./tests/images/testimages.py list)
+#
+# Generic COSI image build target pattern
+#
+COSI_TARGETS = $(shell ./tests/images/testimages.py list --filter-type cosi)
 
 .PHONY: $(COSI_TARGETS)
 $(COSI_TARGETS): %: artifacts/%.cosi
@@ -918,15 +915,21 @@ $(COSI_TARGETS): %: artifacts/%.cosi
 all-cosi: $(COSI_TARGETS)
 
 #
-# Generic COSI image build target pattern
+# Generic ISO image build target pattern
 #
+ISO_TARGETS = $(shell ./tests/images/testimages.py list --filter-type iso)
+
+.PHONY: $(ISO_TARGETS)
+$(ISO_TARGETS): %: artifacts/%.iso
+
+.PHONY: all-iso
+all-iso: $(ISO_TARGETS)
 
 # Fun trick to use the stem of the target (%) as a variable ($*) in the
 # prerequisites so that we can use find to get all the files in the directory.
 # https://www.gnu.org/software/make/manual/make.html#Secondary-Expansion
 .SECONDEXPANSION:
-
-artifacts/%.cosi: $$(shell ./tests/images/testimages.py dependencies $$*)
+artifacts/%.cosi artifacts/%.iso: $$(shell ./tests/images/testimages.py dependencies $$*)
 	@echo "Building '$*' [$@] from $<"
 	@echo "Prerequisites:"
 	@echo "$^" | tr ' ' '\n' | sed 's/^/    /'
@@ -935,6 +938,7 @@ artifacts/%.cosi: $$(shell ./tests/images/testimages.py dependencies $$*)
 		$* \
 		--output-dir ./artifacts \
 		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE))
+
 
 MIC_CONTAINER_IMAGE ?= $(shell ./tests/images/testimages.py show-artifact customizer-container-full)
 artifacts/trident-functest.qcow2: $$(shell ./tests/images/testimages.py dependencies $$(basename $$(notdir $$@)))
@@ -1164,9 +1168,3 @@ artifacts/trident-direct-streaming-testimage.cosi: \
 	bin/mkcosi add-vpc \
 		artifacts/trident-testimage.cosi \
 		artifacts/trident-direct-streaming-testimage.cosi
-
-artifacts/trident-direct-streaming-installer.iso: \
-	trident-direct-streaming-installer
-
-artifacts/trident-direct-streaming-installer-arm64.iso: \
-	trident-direct-streaming-installer-arm64
