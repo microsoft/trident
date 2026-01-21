@@ -69,7 +69,11 @@ def setup_parser_list(subparsers: argparse._SubParsersAction) -> None:
     parser_list = subparsers.add_parser(
         SubCommand.LIST.value, help="List all image definitions"
     )
-
+    parser_list.add_argument(
+        "filter_type",
+        choices=OutputFormat.kebab_fields(),
+        help="Output type items to list",
+    )
 
 def setup_parser_show(
     subparsers: argparse._SubParsersAction,
