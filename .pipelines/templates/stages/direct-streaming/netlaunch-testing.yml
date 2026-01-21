@@ -21,8 +21,8 @@ stages:
       - ${{ else }}:
           - BuildingTools
           - BuildTridentContainerImage
-          - TridentTestImg_trident_direct_streaming_installer
-          - TridentTestImg_trident_direct_streaming_testimage
+          - TridentTestImg_trident_direct_streaming_installer_arm64
+          - TridentTestImg_trident_direct_streaming_testimage_arm64
 
     jobs:
       - job: Testing
