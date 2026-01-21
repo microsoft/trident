@@ -1,4 +1,5 @@
 use std::{
+    future::Future,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
@@ -49,6 +50,18 @@ impl ActivityTracker {
 
     pub(crate) fn middleware(&self) -> ActivityTrackerMiddleware {
         ActivityTrackerMiddleware::new(self.clone())
+    }
+
+    /// Returns a future that resolves when there are no active servicing
+    /// operations. If there are no active servicing operations at the time of
+    /// calling, the future resolves immediately.
+    pub(crate) fn wait_on_service_end(&self) -> impl Future<Output = ()> {
+        let active_servicing = self.active_servicing.clone();
+        async move {
+            while active_servicing.load(Ordering::SeqCst) {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }
     }
 
     pub(crate) fn on_connection_start(&self) {
