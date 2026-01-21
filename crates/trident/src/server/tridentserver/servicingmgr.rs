@@ -155,7 +155,7 @@ impl ServicingManager {
                 let mut exit_kind = self.exit_kind.lock().await;
                 *exit_kind = ExitKind::NeedsReboot;
 
-                // Request a cancellation to signal shutdown the server gracefully.
+                // Request a cancellation to signal shut down the server gracefully.
                 self.cancellation_token.cancel();
 
                 (false, true)

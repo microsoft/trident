@@ -342,4 +342,30 @@ mod tests {
             .await
             .expect("Timeout waiting for shutdown signal");
     }
+
+    #[tokio::test]
+    async fn test_activity_tracker_wait_on_service_end() {
+        let (tracker, _shutdown_rx, _token) = ActivityTracker::new(Duration::from_millis(100));
+
+        tracker.on_servicing_started();
+
+        let tracker_clone = tracker.clone();
+        let wait_task = tokio::spawn(async move {
+            tracker_clone.wait_on_service_end().await;
+        });
+
+        time::timeout(Duration::from_millis(50), wait_task)
+            .await
+            .expect_err("wait_on_service_end returned while servicing is active");
+
+        tracker.on_servicing_ended();
+
+        let tracker_clone = tracker.clone();
+        let wait_task = tokio::spawn(async move {
+            tracker_clone.wait_on_service_end().await;
+        });
+        time::timeout(Duration::from_millis(200), wait_task)
+            .await
+            .expect("Timeout waiting for servicing to end");
+    }
 }

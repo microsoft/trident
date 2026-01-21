@@ -54,6 +54,13 @@ pub const DEFAULT_INACTIVITY_TIMEOUT: &str = "300s"; // 5 minutes
 /// or error even after the server has shut down. This is intentional, as we
 /// want servicing operations to complete even if the server is no longer
 /// reachable.
+///
+/// Exit codes:
+/// - 0: Normal exit
+/// - 1: Setup failed: Tokio runtime or listener setup
+/// - 2: Server runtime error
+/// - 3: Reboot requested but failed
+/// - 4: Agent configuration load failed
 pub fn server_main(
     log_fwd: LogForwarder,
     shutdown_timeout: Duration,
@@ -79,7 +86,7 @@ pub fn server_main(
         Ok(cfg) => cfg,
         Err(e) => {
             error!("Failed to load agent configuration: {e:?}");
-            return ExitCode::from(3);
+            return ExitCode::from(4);
         }
     };
 
