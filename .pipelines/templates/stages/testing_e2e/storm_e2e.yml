@@ -7,7 +7,7 @@ stages:
   - stage: DefineTests_E2E
     displayName: Define all E2E test matrices
     dependsOn:
-      - BuildingTools
+      - BuildingTools_amd64
     jobs:
       - job: DefineTests
         displayName: Get List of tests to run

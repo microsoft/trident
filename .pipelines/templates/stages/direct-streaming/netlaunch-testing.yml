@@ -19,7 +19,7 @@ stages:
       - ${{ if eq(parameters.testingRun, true) }}:
           - DownloadTestingElements
       - ${{ else }}:
-          - BuildingTools
+          - BuildingTools_${{ parameters.architecture }}
           - BuildTridentContainerImage
           - BuildArm64ImagesForDirectStreaming
 
@@ -68,16 +68,12 @@ stages:
               tridentTestImageVerity: skip
               tridentTestImageUsrVerity: skip
               downloadTridentContainer: false
+              ${{ if eq(parameters.architecture, 'arm64') }}:
+                goToolsArtifactName: go-tools-arm64
+              ${{ if eq(parameters.architecture, 'amd64') }}:
+                goToolsArtifactName: go-tools
 
           - template: ../testing_vm/netlaunch-prep.yml
-
-          # Take tiny pieces of testing_common/trident-prep.yml:
-          - bash: |
-              set -eux
-              sudo snap install yq
-              chmod 600 $(tridentSourceDirectory)/tests/e2e_tests/helpers/key
-              ssh-keygen -p -m PEM -f $(tridentSourceDirectory)/tests/e2e_tests/helpers/key -N ""
-            displayName: "Installing dependencies and preparing SSH key"
 
           - bash: |
               set -eux

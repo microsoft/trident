@@ -69,6 +69,13 @@ parameters:
     type: string
     default: "$(System.ArtifactsDirectory)/usrverity-testimage"
 
+  - name: goToolsArtifactName
+    type: string
+    default: go-tools
+    values:
+      - go-tools
+      - go-tools-arm64
+
 steps:
   - bash: |
       set -eux
@@ -145,9 +152,11 @@ steps:
       echo "REGULAR IMAGES:"
       ls -alh "${{ parameters.testImageDir }}"
 
-      echo ""
-      echo "VERITY IMAGES:"
-      ls -alh "${{ parameters.testImageDirVerity }}"
+      if [ "${{ parameters.tridentTestImageVerity }}" != "skip" ]; then
+        echo ""
+        echo "VERITY IMAGES:"
+        ls -alh "${{ parameters.testImageDirVerity }}"
+      fi
 
       set -eux
 

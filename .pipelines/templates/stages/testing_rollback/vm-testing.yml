@@ -93,7 +93,7 @@ stages:
       - ${{ if eq(parameters.testingRun, true) }}:
           - DownloadTestingElements
       - ${{ else }}:
-          - BuildingTools
+          - BuildingTools_amd64
           - ${{ if eq(parameters.includeQemuGrub, true) }}:
               - BuildImagesQemuGrub
           - ${{ if eq(parameters.includeQemu, true) }}:
