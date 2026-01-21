@@ -17,9 +17,10 @@ def find_image(configs: List[ImageConfig], name: str) -> ImageConfig:
     raise ValueError(f"Image '{name}' is not defined")
 
 
-def list_configs(*, configs: List[ImageConfig]) -> None:
+def list_configs(*, configs: List[ImageConfig], filter_type: str) -> None:
     for config in configs:
-        print(config.name)
+        if config.output_format.ext() == filter_type:
+            print(config.name)
 
 
 def list_files(*, configs: List[ImageConfig], output_dir: Path) -> None:
