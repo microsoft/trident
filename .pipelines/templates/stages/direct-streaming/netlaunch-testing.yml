@@ -76,8 +76,8 @@ stages:
           - bash: |
               set -eux
               sudo snap install yq
-              chmod 600 ${{ parameters.tridentSourceDirectory }}/tests/e2e_tests/helpers/key
-              ssh-keygen -p -m PEM -f ${{ parameters.tridentSourceDirectory }}/tests/e2e_tests/helpers/key -N ""
+              chmod 600 $(tridentSourceDirectory)/tests/e2e_tests/helpers/key
+              ssh-keygen -p -m PEM -f $(tridentSourceDirectory)/tests/e2e_tests/helpers/key -N ""
             displayName: "Installing dependencies and preparing SSH key"
 
           - bash: |
@@ -102,7 +102,7 @@ stages:
               # If this is a usr-verity UKI image, a signing certificate must
               # be set via --signing-cert; otherwise, set it to an empty
               # string. This can also be used for sysext signing.
-              TRIDENT_CONFIG="${{ parameters.tridentSourceDirectory }}/tests/e2e_tests/trident_configurations/simple/trident-config.yaml"
+              TRIDENT_CONFIG="$(tridentSourceDirectory)/tests/e2e_tests/trident_configurations/simple/trident-config.yaml"
               HANDLE_PROVISIONED_STATE_ARG="--wait-for-provisioned-state"
 
               ./bin/netlaunch \
