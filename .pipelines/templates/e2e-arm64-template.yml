@@ -59,7 +59,7 @@ stages:
       - template: stages/trident_images/build-image.yml
         parameters:
           label: "azure-base"
-          makeTarget: "trident-direct-streaming-installer-arm64"
+          makeTarget: "artifacts/trident-direct-streaming-installer-arm64.iso"
           baseimgType: core_arm64
           architecture: arm64
 
