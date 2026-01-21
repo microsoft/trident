@@ -27,7 +27,7 @@ stages:
       - ${{ if eq(parameters.testingRun, true) }}:
           - DownloadTestingElements
       - ${{ else }}:
-          - BuildingTools
+          - BuildingTools_amd64
           - ${{ if eq(parameters.runtimeType, 'CONTAINER') }}:
               - BuildTridentContainerImage
               - TridentTestImg_trident_container_installer
