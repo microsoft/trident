@@ -32,7 +32,7 @@ stages:
             type: linux
             name: trident-ubuntu-1es-pool-eastus2
             hostArchitecture: amd64
-          ${{ else }}}:
+          ${{ if eq(parameters.architecture, 'arm64') }}:
             type: linux
             name: azl3-hci-ARM64-1es-pool-westcentralus
             hostArchitecture: arm64
