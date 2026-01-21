@@ -58,7 +58,7 @@ stages:
       # Build Trident direct streaming installer ISO
       - template: stages/trident_images/build-image.yml
         parameters:
-          label: "azure-base"
+          label: "trident-direct-streaming-installer-arm64"
           makeTarget: "artifacts/trident-direct-streaming-installer-arm64.iso"
           baseimgType: core_arm64
           architecture: arm64
@@ -66,7 +66,7 @@ stages:
       # Build direct streaming COSI VHD
       - template: stages/trident_images/build-image.yml
         parameters:
-          label: "direct-streaming-base-a"
+          label: "trident-direct-streaming-base-arm64"
           makeTarget: "artifacts/trident-direct-streaming-testimage-arm64.cosi"
           baseimgType: core_arm64
           architecture: arm64
