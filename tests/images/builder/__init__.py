@@ -61,6 +61,10 @@ class OutputFormat(Enum):
             return "vhd"
         return self.value
 
+    @classmethod
+    def kebab_fields(cls) -> List[str]:
+        """Return a list of fields in kebab-case."""
+        return [f.name.replace("_", "-") for f in fields(cls)]
 
 class RpmSources(Enum):
     TRIDENT = Path("bin/RPMS")
