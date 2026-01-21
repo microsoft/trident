@@ -366,6 +366,7 @@ mod tests {
         });
         time::timeout(Duration::from_millis(200), wait_task)
             .await
-            .expect("Timeout waiting for servicing to end");
+            .expect("Timeout waiting for servicing to end")
+            .expect("Task failed to join");
     }
 }
