@@ -70,7 +70,7 @@ stages:
               tridentTestImageUsrVerity: skip
               downloadTridentContainer: false
 
-          - template: ../testing-vm/netlaunch-prep.yml
+          - template: ../testing_vm/netlaunch-prep.yml
 
           # Take tiny pieces of testing_common/trident-prep.yml:
           - bash: |
