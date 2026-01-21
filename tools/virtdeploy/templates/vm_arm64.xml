@@ -16,7 +16,6 @@
     <features>
         <acpi />
         <apic />
-        <vmport state="off" />
     </features>
     <cpu mode='custom' match='exact' check='none'>
         <model fallback='allow'>cortex-a57</model>
