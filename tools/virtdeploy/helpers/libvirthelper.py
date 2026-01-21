@@ -3,6 +3,7 @@ import tempfile
 import jinja2
 import libvirt
 import logging
+import platform
 import random
 import xml.etree.ElementTree as ET
 
@@ -380,8 +381,11 @@ class LibvirtHelper:
                 for index, cdrom in enumerate(cdrom_paths)
             ]
 
-            # Set up VM itself
-            template = self.env.get_template("vm.xml")
+            # Set up VM
+            template_for_architecture = "vm.xml"
+            if platform.machine().lower() in ("arm64", "aarch64"):
+                template_for_architecture = "vm_arm64.xml"
+            template = self.env.get_template(template_for_architecture)
             xml = template.render(
                 name=vm.name,
                 cpus=vm.cpus,
