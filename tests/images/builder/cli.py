@@ -70,8 +70,9 @@ def setup_parser_list(subparsers: argparse._SubParsersAction) -> None:
         SubCommand.LIST.value, help="List all image definitions"
     )
     parser_list.add_argument(
-        "filter_type",
-        choices=OutputFormat.kebab_fields(),
+        "--filter-type",
+        default=OutputFormat.COSI.ext(),
+        type=str,
         help="Output type items to list",
     )
 
@@ -243,6 +244,7 @@ def run_cmd(
     if subcommand == SubCommand.LIST:
         run.list_configs(
             configs=configs,
+            filter_type=args.filter_type,
         )
     elif subcommand == SubCommand.DEPENDENCIES:
         run.list_dependencies(
