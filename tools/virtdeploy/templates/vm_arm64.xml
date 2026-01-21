@@ -26,10 +26,6 @@
         <timer name="pit" tickpolicy="delay" />
         <timer name="hpet" present="no" />
     </clock>
-    <pm>
-        <suspend-to-mem enabled="no" />
-        <suspend-to-disk enabled="no" />
-    </pm>
     <devices>
         <emulator>/usr/bin/qemu-system-aarch64</emulator>
 
