@@ -19,8 +19,8 @@ parameters:
     values:
       - trident-container-testimage
       - trident-testimage
-      - trident-direct-streaming-installer
-      - trident-direct-streaming-installer-arm64
+      - trident-direct-streaming-testimage
+      - trident-direct-streaming-testimage-arm64
 
   - name: tridentTestImageVerity
     displayName: "Image used in the root-verity target OS, source of Trident (container vs host)"
