@@ -54,17 +54,16 @@ stages:
     parameters:
       label: "azure-base"
       makeTarget: "trident-direct-streaming-installer-arm64"
+      baseimgType: core_arm64
 
+  # Build direct streaming COSI VHD
   - template: stages/trident_images/build-image.yml
     parameters:
       label: "direct-streaming-base-a"
-      makeTarget: "trident-direct-streaming-testimage-arm64.cosi"
-      baseimgType: qemu_guest
-      baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-      micBuildType: ${{ parameters.micBuildType }}
-      micVersion: ${{ parameters.micVersion }}
-      useStagedSshKeys: true
+      makeTarget: "artifacts/trident-direct-streaming-testimage-arm64.cosi"
+      baseimgType: core_arm64
 
+  # Run netlaunch test to validate direct streaming installer
   - template: stages/direct-streaming/netlaunch-testing.yml
     parameters:
       architecture: arm64

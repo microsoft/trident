@@ -66,6 +66,13 @@ DEFINED_IMAGES: List[ImageConfig] = [
         output_format=OutputFormat.QCOW2,
         requires_trident=False,
     ),
+    ImageConfig("trident-testimage"),
+    ImageConfig(
+        "trident-testimage-arm64",
+        config="trident-testimage",
+        base_image=BaseImage.CORE_ARM64,
+        architecture=SystemArchitecture.ARM64,
+    ),
     ImageConfig(
         "azl-installer",
         config_file=Path("installer-iso.yaml"),

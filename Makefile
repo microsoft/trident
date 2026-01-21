@@ -1151,3 +1151,17 @@ artifacts/trident-vm-grub-verity-azure-testimage.vhd: \
 			--output-image-format vhd-fixed \
 			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-grub-verity-azure.yaml
 
+artifacts/trident-direct-streaming-testimage-arm64.cosi: \
+	bin/mkcosi \
+	artifacts/trident-testimage-arm64.cosi
+	bin/mkcosi add-vpc \
+		artifacts/trident-testimage-arm64.cosi \
+		artifacts/trident-direct-streaming-testimage-arm64.cosi
+
+artifacts/trident-direct-streaming-testimage.cosi: \
+	bin/mkcosi \
+	artifacts/trident-testimage.cosi
+	bin/mkcosi add-vpc \
+		artifacts/trident-testimage.cosi \
+		artifacts/trident-direct-streaming-testimage.cosi
+
