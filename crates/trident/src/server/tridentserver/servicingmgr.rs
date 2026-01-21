@@ -529,7 +529,8 @@ mod tests {
                 })
                 .await;
             assert_eq!(result.status, StatusCode::Success as i32);
-            assert!(result.reboot_required);
+            assert!(!result.reboot_required);
+            assert!(result.reboot_enqueued);
         }
     }
 }
