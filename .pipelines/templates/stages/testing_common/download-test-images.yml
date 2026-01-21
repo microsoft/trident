@@ -81,7 +81,7 @@ steps:
               # Valid image_type, do nothing
               ;;
           *)
-              echo "installerISO should be either 'trident-installer', 'trident-split-installer', or 'trident-container-installer'."
+              echo "installerISO should be either 'trident-installer', 'trident-split-installer', 'trident-container-installer', 'trident-direct-streaming-installer', or 'trident-direct-streaming-installer-arm64'."
               exit 1
               ;;
       esac
