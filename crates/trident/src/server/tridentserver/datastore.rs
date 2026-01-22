@@ -121,7 +121,7 @@ mod tests {
     use trident_api::error::{InternalError, TridentError};
 
     #[test]
-    fn test_test() {
+    fn test_harpoon_trident_error_from_value() {
         let panic_body = "some foo";
         let err = TridentError::with_source(
             InternalError::Panic(panic_body.to_string()),
