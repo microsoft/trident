@@ -111,7 +111,7 @@ stages:
               HANDLE_PROVISIONED_STATE_ARG="--wait-for-provisioned-state"
 
               # Update vm-netlaunch.yaml with direct streaming image
-               yq -i '.iso += {"directStreamingImage": "$(testImageName).cosi"}' $(tridentSourceDirectory)/tools/vm-netlaunch.yaml
+              sudo yq -i '.iso += {"directStreamingImage": "$(testImageName).cosi"}' $(tridentSourceDirectory)/tools/vm-netlaunch.yaml
 
               ./bin/netlaunch \
                   --iso ./artifacts/iso/$(installerISOName).iso \
