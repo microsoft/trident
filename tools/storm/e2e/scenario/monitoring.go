@@ -83,8 +83,8 @@ func (s *TridentE2EScenario) spawnVMSerialMonitor(ctx context.Context, output io
 	return doneChannel, nil
 }
 
-func waitForVmSerialLogLoginLibvirt(ctx context.Context, lv *libvirt.Libvirt, dom libvirt.Domain, out io.Writer) error {
-	pr, pw := io.Pipe()
+func waitForVmSerialLogLoginLibvirt(ctx context.Context, lv *libvirt.Libvirt, domain libvirt.Domain, out io.Writer) error {
+	pipeReader, pipeWriter := io.Pipe()
 	consoleCtx, consoleCancel := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 
@@ -93,8 +93,8 @@ func waitForVmSerialLogLoginLibvirt(ctx context.Context, lv *libvirt.Libvirt, do
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		defer pw.Close()
-		wN := ioutils.NewNotifyWriter(pw)
+		defer pipeWriter.Close()
+		pipeNotifyWriter := ioutils.NewNotifyWriter(pipeWriter)
 		for {
 			// If context is cancelled, exit the goroutine.
 			if consoleCtx.Err() != nil {
@@ -104,8 +104,8 @@ func waitForVmSerialLogLoginLibvirt(ctx context.Context, lv *libvirt.Libvirt, do
 			// Try to open the console. This is a blocking call that only
 			// returns when the console is closed or an error occurs. It writes
 			// to the provided writer in the background.
-			err := lv.DomainOpenConsole(dom, nil, wN, uint32(libvirt.DomainConsoleForce))
-			if err == nil && wN.Active() {
+			err := lv.DomainOpenConsole(domain, nil, pipeNotifyWriter, uint32(libvirt.DomainConsoleForce))
+			if err == nil && pipeNotifyWriter.Active() {
 				// DomainOpenConsole returned without error and data was
 				// written, this is an expected outcome when the console closed
 				// naturally.
@@ -118,7 +118,7 @@ func waitForVmSerialLogLoginLibvirt(ctx context.Context, lv *libvirt.Libvirt, do
 				return
 			}
 
-			if !wN.Active() {
+			if !pipeNotifyWriter.Active() {
 				// No data has been written yet, so this is likely a
 				// transient error such as the domain not being fully
 				// started yet. Retry silently.
@@ -138,19 +138,19 @@ func waitForVmSerialLogLoginLibvirt(ctx context.Context, lv *libvirt.Libvirt, do
 	}()
 
 	// Call inner loop
-	loopErr := readerLoop(ctx, pr, errCh, out, 30)
+	loopErr := readerLoop(ctx, pipeReader, errCh, out, 30)
 	// Regardless of whether readerLoop returned an error, cancel the console
 	// context and close the pipe to stop the DomainOpenConsole goroutine.
 	consoleCancel()
-	pr.Close()
-	pw.Close()
+	pipeReader.Close()
+	pipeWriter.Close()
 
 	// Even after we close all of this, the DomainOpenConsole goroutine may
 	// still be running because it doesn't take in a context. We force it to
 	// close by opening a new console with the DomainConsoleForce flag, and a
 	// nil stream, which will signal the existing DomainOpenConsole to exit, and
 	// make this new one exit immediately.
-	err := lv.DomainOpenConsole(dom, nil, nil, uint32(libvirt.DomainConsoleForce))
+	err := lv.DomainOpenConsole(domain, nil, nil, uint32(libvirt.DomainConsoleForce))
 	if err != nil {
 		logrus.Warnf("failed to force close DomainOpenConsole: %v", err)
 	}
