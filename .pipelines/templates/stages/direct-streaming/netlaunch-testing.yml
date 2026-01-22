@@ -111,7 +111,10 @@ stages:
                 $(tridentSourceDirectory)/tools/vm-netlaunch.yaml > \
                 /tmp/vm-netlaunch-adjusted.yaml
 
-              ./bin/netlaunch \
+              # Run netlaunch in background to serve the ISO and direct streaming image
+              # The deployed image will **not** reach out to netlaunch, so success will be
+              # determined by the next task that waits for login in the VM serial output.
+              (./bin/netlaunch \
                   --iso ./artifacts/iso/$(installerISOName).iso \
                   --config /tmp/vm-netlaunch-adjusted.yaml \
                   --port 34671 \
@@ -121,10 +124,10 @@ stages:
                   --force-color \
                   --full-logstream logstream-full.log \
                   $SECURE_BOOT \
-                  --port ${{variables.netlaunchPort}} 2>&1 | tee ./direct-streaming-deployment.log
+                  --port ${{variables.netlaunchPort}} 2>&1 | tee ./direct-streaming-deployment.log) &
             workingDirectory: $(tridentSourceDirectory)
             displayName: "🚀 Run netlaunch for testing"
-            timeoutInMinutes: 20
+            timeoutInMinutes: 5
 
           - bash: |
               set -eux
@@ -133,7 +136,7 @@ stages:
                   --vm-name "$(jq -r '.virtualmachines[0].name' $(tridentSourceDirectory)/tools/virt-deploy-metadata.json)" \
                   --artifacts-folder "$(ob_outputDirectory)"
 
-            timeoutInMinutes: 5
+            timeoutInMinutes: 20
             condition: succeededOrFailed()
             displayName: "📄 Check target OS deployment"
 
