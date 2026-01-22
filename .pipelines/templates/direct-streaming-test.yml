@@ -12,12 +12,14 @@ stages:
     dependsOn:
       - GetTridentBinaries_rpms_${{ parameters.architecture }}
       - PrepareSSHKeys
+      - BuildingTools_${{ parameters.architecture }}
     jobs:
       # Build Trident direct streaming installer ISO
       - template: stages/trident_images/build-image.yml
         parameters:
           labelPrefix: "" # No prefix for this image
           architecture: ${{ parameters.architecture }}
+          downloadGoTools: true
           ${{ if eq(parameters.architecture, 'arm64') }}:
             label: "trident-direct-streaming-installer-arm64"
             makeTarget: "artifacts/trident-direct-streaming-installer-arm64.iso"
@@ -32,6 +34,7 @@ stages:
         parameters:
           labelPrefix: "" # No prefix for this image
           architecture: ${{ parameters.architecture }}
+          downloadGoTools: true
           ${{ if eq(parameters.architecture, 'arm64') }}:
             label: "trident-direct-streaming-testimage-arm64"
             makeTarget: "artifacts/trident-direct-streaming-testimage-arm64.cosi"
