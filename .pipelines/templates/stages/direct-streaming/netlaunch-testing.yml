@@ -105,9 +105,9 @@ stages:
               SECURE_BOOT="--secure-boot"
 
               # Create updated vm-netlaunch.yaml with direct streaming image
-              HASH=$(./scripts/cosi-sha384.py ./artifacts/test-image/$(testImageName).cosi)
+              HASH=$(./scripts/cosi-sha384.py ./artifacts/test-image/regular.cosi)
               sudo yq \
-                '.iso += {"directStreaming": {"image": "$(testImageName).cosi", "hash": "$HASH"}}' < \
+                '.iso += {"directStreaming": {"image": "regular.cosi", "hash": "$HASH"}}' < \
                 $(tridentSourceDirectory)/tools/vm-netlaunch.yaml > \
                 /tmp/vm-netlaunch-adjusted.yaml
 
