@@ -25,8 +25,6 @@ import (
 // The output of the serial monitor will be written live to the provided
 // io.WriteCloser. The WriteCloser will be closed when the monitor exits.
 //
-// If the hardware type is not VM, this function is a no-op and returns nil.
-//
 // If an error occurs while starting the monitor, that error is returned.
 //
 // The returned channel can be used to wait for the monitor to finish by waiting
@@ -47,6 +45,7 @@ func (s *TridentE2EScenario) spawnVMSerialMonitor(ctx context.Context, output io
 		// Immediately signal that the monitor is done
 		doneChannel <- true
 		close(doneChannel)
+		output.Close()
 		return doneChannel, nil
 	}
 
@@ -54,6 +53,7 @@ func (s *TridentE2EScenario) spawnVMSerialMonitor(ctx context.Context, output io
 	vmInfo := s.testHost.VmInfo()
 	if ref.IsNilInterface(vmInfo) {
 		close(doneChannel)
+		output.Close()
 		return doneChannel, fmt.Errorf("vm host info not set")
 	}
 
@@ -88,11 +88,19 @@ func waitForVmSerialLogLoginLibvirt(ctx context.Context, lv *libvirt.Libvirt, do
 	consoleCtx, consoleCancel := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 
+	// Context to track whether the console is open. This is used to cancel the
+	// reader loop if the console goroutine exits, because this means there will
+	// never be any more data to read, so we should exit the reader loop as
+	// well.
+	consoleIsOpenCtx, consoleIsOpenCancel := context.WithCancel(ctx)
+	defer consoleIsOpenCancel()
+
 	// Spawn DomainOpenConsole in a goroutine because it's a blocking call.
 	errCh := make(chan error, 1)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		defer consoleIsOpenCancel()
 		defer pipeWriter.Close()
 		pipeNotifyWriter := ioutils.NewNotifyWriter(pipeWriter)
 		for {
@@ -138,7 +146,7 @@ func waitForVmSerialLogLoginLibvirt(ctx context.Context, lv *libvirt.Libvirt, do
 	}()
 
 	// Call inner loop
-	loopErr := readerLoop(ctx, pipeReader, errCh, out, 30)
+	loopErr := readerLoop(consoleIsOpenCtx, pipeReader, errCh, out, 30)
 	// Regardless of whether readerLoop returned an error, cancel the console
 	// context and close the pipe to stop the DomainOpenConsole goroutine.
 	consoleCancel()
