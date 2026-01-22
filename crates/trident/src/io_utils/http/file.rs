@@ -8,7 +8,7 @@ use std::{env, io::BufReader};
 
 use anyhow::{ensure, Context, Error};
 use log::{debug, trace, warn};
-use oci_client::{secrets::RegistryAuth, Client as OciClient, Reference};
+use oci_client::{secrets::RegistryAuth, Client as OciClient, Reference, RegistryOperation};
 use reqwest::{
     blocking::Client,
     header::{ACCEPT_RANGES, AUTHORIZATION},
@@ -144,9 +144,9 @@ impl HttpFile {
             "Retrieving access token for OCI registry '{}'",
             img_ref.registry()
         );
-        let auth = Self::get_auth(img_ref);
+        let auth = Self::get_docker_auth(img_ref);
         runtime
-            .block_on(client.auth(img_ref, &auth, oci_client::RegistryOperation::Pull))
+            .block_on(client.auth(img_ref, &auth, RegistryOperation::Pull))
             .with_context(|| {
                 format!(
                     "Registry '{}' is not accessible or does not exist",
@@ -158,7 +158,7 @@ impl HttpFile {
 
     /// Get authentication credentials for accessing registry. Unless "dangerous-options" flag is
     /// enabled, will default to anonymous access.
-    fn get_auth(_img_ref: &Reference) -> RegistryAuth {
+    fn get_docker_auth(_img_ref: &Reference) -> RegistryAuth {
         #[cfg(feature = "dangerous-options")]
         'config_auth: {
             let Some(user_home) = env::home_dir() else {

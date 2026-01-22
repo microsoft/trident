@@ -137,8 +137,15 @@ message FinalStatus {
   StatusCode status = 1;
   // Message associated with the final status.
   optional TridentError error = 2;
-  // Whether a reboot is required to complete the servicing operation.
+  // Whether a reboot is required to complete the servicing operation. If true,
+  // the caller is expected to reboot the system to finalize the servicing
+  // immediately upon receiving this status.
   bool reboot_required = 3;
+  // Whether the servicing operation enqueued a reboot. If true, the system is
+  // expected to reboot automatically to finalize the servicing. No further
+  // action from the caller is needed. This field can be true only if
+  // reboot_required is false.
+  bool reboot_enqueued = 4;
 }
 
 message Start {}
@@ -235,9 +242,12 @@ message GetRequiredServicingTypeResponse {
 }
 
 enum ManualRollbackKind {
-  ANY_ROLLBACK = 0;
-  AB_ROLLBACK = 1;
-  RUNTIME_ROLLBACK = 2;
+  // No specific rollback kind was requested
+  ANY_ROLLBACK_REQUESTED = 0;
+  // Rollback of an A/B update was requested
+  AB_ROLLBACK_REQUESTED = 1;
+  // Rollback of a runtime update was requested
+  RUNTIME_ROLLBACK_REQUESTED = 2;
 }
 
 message CheckRollbackRequest {
@@ -246,8 +256,11 @@ message CheckRollbackRequest {
 }
 
 enum CheckRollbackKind {
+  // No rollbacks are available
   NO_ROLLBACK_AVAILABLE = 0;
+  // Rollback of an A/B update is expected
   AB_ROLLBACK_EXPECTED = 1;
+  // Rollback of a runtime update is expected
   RUNTIME_ROLLBACK_EXPECTED = 2;
 }
 
@@ -301,6 +314,8 @@ message StreamImageRequest {
   string image_path = 1;
   // Hash of the image file for integrity verification.
   string image_hash = 2;
+  // The finalize parameters for the servicing operation.
+  FinalizeRequest finalize = 3;
 }
 
 message TridentError {
