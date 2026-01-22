@@ -77,7 +77,10 @@ stages:
               set -ex
               sudo apt update -y
               sudo apt install -y python3 python3-pip
-            displayName: "Install pip"
+
+              sudo snap install yq
+
+            displayName: "Install pip and yq"
             retryCountOnTaskFailure: 3
 
           - template: ../testing_vm/netlaunch-prep.yml
