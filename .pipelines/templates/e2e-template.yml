@@ -347,6 +347,11 @@ stages:
           buildPurpose: "pullrequest"
           runtimeEnv: "container"
 
+      # Run direct streaming tests for amd64
+      - template: direct-streaming-test.yml
+        parameters:
+          architecture: amd64
+
   # PUBLISHING
   #
   # Only enabled for PRERELEASE and CI unless blockPublishing is set to true.

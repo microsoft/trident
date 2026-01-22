@@ -1,0 +1,47 @@
+parameters:
+  - name: architecture
+    type: string
+    values:
+      - arm64
+      - amd64
+    default: arm64
+
+stages:
+  - stage: BuildArm64ImagesForDirectStreaming
+    displayName: Build Arm64 Images for Direct Streaming
+    dependsOn:
+      - GetTridentBinaries_rpms_${{ parameters.architecture }}
+    jobs:
+      # Build Trident direct streaming installer ISO
+      - template: stages/trident_images/build-image.yml
+        parameters:
+          labelPrefix: "" # No prefix for this image
+          architecture: ${{ parameters.architecture }}
+          ${{ if eq(parameters.architecture, 'arm64') }}:
+            label: "trident-direct-streaming-installer-arm64"
+            makeTarget: "artifacts/trident-direct-streaming-installer-arm64.iso"
+            baseimgType: core_arm64
+          ${{ if eq(parameters.architecture, 'amd64') }}:
+            label: "trident-direct-streaming-installer"
+            makeTarget: "artifacts/trident-direct-streaming-installer.iso"
+            baseimgType: baremetal
+
+      # Build direct streaming COSI VHD
+      - template: stages/trident_images/build-image.yml
+        parameters:
+          labelPrefix: "" # No prefix for this image
+          architecture: ${{ parameters.architecture }}
+          ${{ if eq(parameters.architecture, 'arm64') }}:
+            label: "trident-direct-streaming-testimage-arm64"
+            makeTarget: "artifacts/trident-direct-streaming-testimage-arm64.cosi"
+            baseimgType: core_arm64
+          ${{ if eq(parameters.architecture, 'amd64') }}:
+            label: "trident-direct-streaming-testimage"
+            makeTarget: "artifacts/trident-direct-streaming-testimage.cosi"
+            baseimgType: baremetal
+
+  # Run netlaunch test to validate direct streaming installer
+  - template: stages/direct-streaming/netlaunch-testing.yml
+    parameters:
+      architecture: ${{ parameters.architecture }}
+
