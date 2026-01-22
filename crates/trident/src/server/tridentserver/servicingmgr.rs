@@ -29,11 +29,11 @@ type ServicingReadGuard = OwnedRwLockReadGuard<()>;
 /// Enum to specify how reboot requests from servicing tasks should be handled.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(super) enum RebootDecision {
-    /// Reboot requests are forwarded to the caller when needed.
-    Forward,
+    /// Reboot requests are deferred to the caller when needed.
+    Defer,
 
-    /// Trident may directly request a reboot if needed.
-    Allowed,
+    /// Trident will directly handle reboot requests.
+    Handle,
 
     /// A reboot request is not allowed during this operation and will result in
     /// an error if one is requested.
@@ -147,10 +147,10 @@ impl ServicingManager {
 
         let (reboot_required, reboot_enqueued) = match (exit_kind, reboot_decision) {
             // Notify the caller that a reboot is required.
-            (ExitKind::NeedsReboot, RebootDecision::Forward) => (true, false),
+            (ExitKind::NeedsReboot, RebootDecision::Defer) => (true, false),
 
             // Trident is allowed to request a reboot directly.
-            (ExitKind::NeedsReboot, RebootDecision::Allowed) => {
+            (ExitKind::NeedsReboot, RebootDecision::Handle) => {
                 // Set the manager's exit kind to NeedsReboot.
                 let mut exit_kind = self.exit_kind.lock().await;
                 *exit_kind = ExitKind::NeedsReboot;
@@ -321,7 +321,7 @@ mod tests {
         let (tracker, _rx, _token) = ActivityTracker::new(Duration::from_secs(30));
 
         let result = manager
-            .spawn_servicing_task(RebootDecision::Allowed, guard, tracker, || {
+            .spawn_servicing_task(RebootDecision::Handle, guard, tracker, || {
                 Ok(ExitKind::Done)
             })
             .await;
@@ -338,7 +338,7 @@ mod tests {
         let (tracker, _rx, _token) = ActivityTracker::new(Duration::from_secs(30));
 
         let result = manager
-            .spawn_servicing_task(RebootDecision::Forward, guard, tracker, || {
+            .spawn_servicing_task(RebootDecision::Defer, guard, tracker, || {
                 Ok(ExitKind::NeedsReboot)
             })
             .await;
@@ -366,7 +366,7 @@ mod tests {
         let (tracker, _rx, _token) = ActivityTracker::new(Duration::from_secs(30));
 
         let result = manager
-            .spawn_servicing_task(RebootDecision::Allowed, guard, tracker, || {
+            .spawn_servicing_task(RebootDecision::Handle, guard, tracker, || {
                 Ok(ExitKind::NeedsReboot)
             })
             .await;
@@ -428,7 +428,7 @@ mod tests {
         let (tracker, _rx, _token) = ActivityTracker::new(Duration::from_secs(30));
 
         let result = manager
-            .spawn_servicing_task(RebootDecision::Allowed, guard, tracker, || {
+            .spawn_servicing_task(RebootDecision::Handle, guard, tracker, || {
                 Err(TridentError::new(
                     InvalidInputError::CleanInstallOnProvisionedHost,
                 ))
@@ -452,7 +452,7 @@ mod tests {
         // Spawn a task that takes some time
         let handle = tokio::spawn(async move {
             manager
-                .spawn_servicing_task(RebootDecision::Allowed, guard, tracker, || {
+                .spawn_servicing_task(RebootDecision::Handle, guard, tracker, || {
                     // Task body
                     std::thread::sleep(Duration::from_millis(50));
                     Ok(ExitKind::Done)
@@ -477,7 +477,7 @@ mod tests {
         let (tracker, _rx, _token) = ActivityTracker::new(Duration::from_secs(30));
 
         let result = manager
-            .spawn_servicing_task(RebootDecision::Allowed, guard, tracker, || {
+            .spawn_servicing_task(RebootDecision::Handle, guard, tracker, || {
                 panic!("Simulated panic in servicing task");
             })
             .await;
@@ -511,7 +511,7 @@ mod tests {
                 .try_lock_servicing()
                 .expect("First lock should succeed");
             let result = manager
-                .spawn_servicing_task(RebootDecision::Allowed, guard, tracker.clone(), || {
+                .spawn_servicing_task(RebootDecision::Handle, guard, tracker.clone(), || {
                     Ok(ExitKind::Done)
                 })
                 .await;
@@ -524,7 +524,7 @@ mod tests {
                 .try_lock_servicing()
                 .expect("Second lock should succeed");
             let result = manager
-                .spawn_servicing_task(RebootDecision::Allowed, guard, tracker.clone(), || {
+                .spawn_servicing_task(RebootDecision::Handle, guard, tracker.clone(), || {
                     Ok(ExitKind::NeedsReboot)
                 })
                 .await;

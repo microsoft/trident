@@ -32,9 +32,9 @@ fn reboot_allowed(finalize: &FinalizeRequest) -> RebootDecision {
     // If the finalize request indicates that the orchestrator handles reboots,
     // then Trident should NOT perform a reboot itself.
     if finalize.orchestrator_handles_reboot {
-        RebootDecision::Forward
+        RebootDecision::Defer
     } else {
-        RebootDecision::Allowed
+        RebootDecision::Handle
     }
 }
 
