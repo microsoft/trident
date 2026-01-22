@@ -21,7 +21,7 @@ stages:
       - ${{ else }}:
           - BuildingTools_${{ parameters.architecture }}
           - BuildTridentContainerImage
-          - BuildArm64ImagesForDirectStreaming
+          - BuildImagesForDirectStreaming_${{ parameters.architecture }}
 
     jobs:
       - job: DirectStreamingTesting_${{ parameters.architecture }}
