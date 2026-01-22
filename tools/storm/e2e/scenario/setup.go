@@ -70,6 +70,13 @@ func (s *TridentE2EScenario) setupTestHostVm(tc storm.TestCase) error {
 		return fmt.Errorf("failed to parse libvirt URI: %w", err)
 	}
 
+	log.Debugf("Connecting to libvirt at '%s'", parsedURL.String())
+	lvConn, err := libvirt.ConnectToURI(parsedURL)
+	if err != nil {
+		log.Errorf("Failed to connect to the hypervisor '%s'. Is your user in the libvirt group?", parsedURL.String())
+		return fmt.Errorf("failed to connect to libvirt: %w", err)
+	}
+
 	_, ipNet, err := net.ParseCIDR("192.168.242.0/24")
 	if err != nil {
 		return fmt.Errorf("failed to parse CIDR: %w", err)
@@ -89,14 +96,8 @@ func (s *TridentE2EScenario) setupTestHostVm(tc storm.TestCase) error {
 		},
 	})
 	if err != nil {
+		lvConn.Disconnect()
 		return fmt.Errorf("failed to create VM resources: %w", err)
-	}
-
-	log.Debugf("Connecting to libvirt at '%s'", parsedURL.String())
-	lvConn, err := libvirt.ConnectToURI(parsedURL)
-	if err != nil {
-		log.Errorf("Failed to connect to the hypervisor '%s'. Is your user in the libvirt group?", parsedURL.String())
-		return fmt.Errorf("failed to connect to libvirt: %w", err)
 	}
 
 	s.testHost = &testHostVirtDeploy{
