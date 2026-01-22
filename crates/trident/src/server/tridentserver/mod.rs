@@ -32,6 +32,7 @@ use crate::{
     ExitKind, Logstream, TraceStream,
 };
 
+mod datastore;
 mod harpoon_impl;
 mod servicingmgr;
 

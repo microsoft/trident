@@ -175,12 +175,37 @@ message GetServicingStateRequest {}
 
 // Mapped to existing Trident servicing states
 enum ServicingState {
-  NOT_PROVISIONED   = 0;
-  INSTALL_STAGED    = 1;
-  UPDATE_STAGED     = 2;
-  INSTALL_FINALIZED = 3;
-  UPDATE_FINALIZED  = 4;
-  PROVISIONED       = 5;
+  // Unknown or unspecified servicing state.
+  SERVICING_STATE_UNSPECIFIED = 0;
+  // The host is running from the provisioning OS and has not yet been
+  // provisioned by Trident.
+  NOT_PROVISIONED = 1;
+  // Install has been staged, i.e., the initial target OS images have been
+  // deployed onto block devices.
+  INSTALL_STAGED = 2;
+  // A/B update has been staged. The new target OS images have been deployed
+  // onto block devices.
+  UPDATE_AB_STAGED = 3;
+  // Manual rollback for an AbUpdate has been staged.
+  MANUAL_ROLLBACK_AB_STAGED = 4;
+  // Manual rollback for a RuntimeUpdate has been staged.
+  MANUAL_ROLLBACK_RUNTIME_STAGED = 5;
+  // Runtime update has been staged.
+  UPDATE_RUNTIME_STAGED = 6;
+  // Install has been finalized, i.e., UEFI variables have been set, so
+  // that firmware boots from the target OS image after reboot.
+  INSTALL_FINALIZED = 7;
+  // A/B update has been finalized. For the next boot, the firmware will boot
+  // from the updated target OS image.
+  UPDATE_AB_FINALIZED = 8;
+  // Manual rollback for an AbUpdate has been finalized.
+  MANUAL_ROLLBACK_AB_FINALIZED = 9;
+  // Servicing has been completed, and the host successfully booted from the
+  // updated target OS image. Trident is ready to begin a new servicing.
+  PROVISIONED = 10;
+  // A/B update has been completed, the host booted into the target OS but the
+  // health checks failed.
+  UPDATE_AB_HEALTH_CHECK_FAILED = 11;
 }
 
 message GetServicingStateResponse {
@@ -235,9 +260,9 @@ message GetRequiredServicingTypeResponse {
 }
 
 enum ManualRollbackKind {
-  AnyRollbackRequested      = 0;
-  AbRollbackRequested       = 1;
-  RuntimeRollbackRequested  = 2;
+  AnyRollbackRequested     = 0;
+  AbRollbackRequested      = 1;
+  RuntimeRollbackRequested = 2;
 }
 
 message CheckRollbackRequest {
@@ -246,9 +271,9 @@ message CheckRollbackRequest {
 }
 
 enum CheckRollbackKind {
-  NoRollbackAvailable      = 0;
-  AbRollbackExpected       = 1;
-  RuntimeRollbackExpected  = 2;
+  NoRollbackAvailable     = 0;
+  AbRollbackExpected      = 1;
+  RuntimeRollbackExpected = 2;
 }
 
 message CheckRollbackResponse {
