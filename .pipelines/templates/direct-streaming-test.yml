@@ -7,8 +7,8 @@ parameters:
     default: arm64
 
 stages:
-  - stage: BuildArm64ImagesForDirectStreaming
-    displayName: Build Arm64 Images for Direct Streaming
+  - stage: BuildImagesForDirectStreaming_${{ parameters.architecture }}
+    displayName: Build ${{ parameters.architecture }} Images for Direct Streaming
     dependsOn:
       - GetTridentBinaries_rpms_${{ parameters.architecture }}
     jobs:
