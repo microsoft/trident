@@ -1162,11 +1162,11 @@ artifacts/trident-direct-streaming-testimage-arm64.cosi: \
 	$(eval TMP_NO_HC_VHD_COSI := $(shell mktemp))
 	@bin/mkcosi add-vpc \
 		artifacts/trident-testimage-arm64.cosi \
-		$TMP_NO_HC_VHD_COSI
+		$(TMP_NO_HC_VHD_COSI)
 	@bin/mkcosi insert-template \
-		$TMP_NO_HC_VHD_COSI \
+		$(TMP_NO_HC_VHD_COSI) \
 		artifacts/trident-direct-streaming-testimage-arm64.cosi \
-		$DIRECT_STREAMING_HOST_CONFIGURATION
+		$(DIRECT_STREAMING_HOST_CONFIGURATION)
 
 artifacts/trident-direct-streaming-testimage.cosi: \
 	bin/mkcosi \
