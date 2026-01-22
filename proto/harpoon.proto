@@ -235,9 +235,9 @@ message GetRequiredServicingTypeResponse {
 }
 
 enum ManualRollbackKind {
-  AnyRollbackRequested      = 0;
-  AbRollbackRequested       = 1;
-  RuntimeRollbackRequested  = 2;
+  AnyRollbackRequested     = 0;
+  AbRollbackRequested      = 1;
+  RuntimeRollbackRequested = 2;
 }
 
 message CheckRollbackRequest {
@@ -246,9 +246,9 @@ message CheckRollbackRequest {
 }
 
 enum CheckRollbackKind {
-  NoRollbackAvailable      = 0;
-  AbRollbackExpected       = 1;
-  RuntimeRollbackExpected  = 2;
+  NoRollbackAvailable     = 0;
+  AbRollbackExpected      = 1;
+  RuntimeRollbackExpected = 2;
 }
 
 message CheckRollbackResponse {
@@ -318,25 +318,27 @@ message TridentError {
 
 // Major kinds of Trident errors.
 enum TridentErrorKind {
+  // Default unspecified error kind.
+  TRIDENT_ERROR_KIND_UNSPECIFIED = 0;
   // Identifies errors that occur when the execution environment is
   // misconfigured.
-  EXECUTION_ENVIRONMENT_MISCONFIGURATION = 0;
+  EXECUTION_ENVIRONMENT_MISCONFIGURATION = 1;
   // Identifies errors that are related to health checks.
-  HEALTH_CHECKS = 1;
+  HEALTH_CHECKS = 2;
   // Identifies errors that occur when Trident fails to initialize.
-  INITIALIZATION = 2;
+  INITIALIZATION = 3;
   // Identifies errors that occur due to an internal bug or failure in Trident.
-  INTERNAL = 3;
+  INTERNAL = 4;
   // Identifies errors that occur when the user provides invalid input.
-  INVALID_INPUT = 4;
+  INVALID_INPUT = 5;
   // Identifies errors that occur during servicing and require further user
   // investigation, to determine whether the error occurred due to an internal
   // failure in Trident, a failure in one of its dependencies, or a system
   // misconfiguration.
-  SERVICING = 5;
+  SERVICING = 6;
   // Identifies errors that occur when clean install or update fail due to the
   // current configuration of the host.
-  UNSUPPORTED_CONFIGURATION = 6;
+  UNSUPPORTED_CONFIGURATION = 7;
 }
 
 message FileLocation {
