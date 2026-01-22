@@ -88,11 +88,19 @@ func waitForVmSerialLogLoginLibvirt(ctx context.Context, lv *libvirt.Libvirt, do
 	consoleCtx, consoleCancel := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 
+	// Context to track whether the console is open. This is used to cancel the
+	// reader loop if the console goroutine exits, because this means there will
+	// never be any more data to read, so we should exit the reader loop as
+	// well.
+	consoleIsOpenCtx, consoleIsOpenCancel := context.WithCancel(ctx)
+	defer consoleIsOpenCancel()
+
 	// Spawn DomainOpenConsole in a goroutine because it's a blocking call.
 	errCh := make(chan error, 1)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		defer consoleIsOpenCancel()
 		defer pipeWriter.Close()
 		pipeNotifyWriter := ioutils.NewNotifyWriter(pipeWriter)
 		for {
@@ -104,7 +112,7 @@ func waitForVmSerialLogLoginLibvirt(ctx context.Context, lv *libvirt.Libvirt, do
 			// Try to open the console. This is a blocking call that only
 			// returns when the console is closed or an error occurs. It writes
 			// to the provided writer in the background.
-			err := lv.DomainOpenConsole(domain, nil, pipeNotifyWriter, 0)
+			err := lv.DomainOpenConsole(domain, nil, pipeNotifyWriter, uint32(libvirt.DomainConsoleForce))
 			if err == nil && pipeNotifyWriter.Active() {
 				// DomainOpenConsole returned without error and data was
 				// written, this is an expected outcome when the console closed
@@ -138,7 +146,7 @@ func waitForVmSerialLogLoginLibvirt(ctx context.Context, lv *libvirt.Libvirt, do
 	}()
 
 	// Call inner loop
-	loopErr := readerLoop(ctx, pipeReader, errCh, out, 30)
+	loopErr := readerLoop(consoleIsOpenCtx, pipeReader, errCh, out, 30)
 	// Regardless of whether readerLoop returned an error, cancel the console
 	// context and close the pipe to stop the DomainOpenConsole goroutine.
 	consoleCancel()
