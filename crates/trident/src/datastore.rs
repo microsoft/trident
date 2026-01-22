@@ -104,11 +104,23 @@ impl DataStore {
                     all_rows_data.push(None);
                     continue;
                 }
+                // 1. Read each row as a string containing YAML-encoded Host Status.
+                // 2. Decode the YAML string into a serde_yaml Value.
+                // 3. Use decode_host_status to convert the serde_yaml Value into a HostStatus struct.
+                //
+                // If any step fails, log the error and push None for that row.
+                // If all steps succeed, push Some(HostStatus) for that row.
                 Ok(State::Row) => match query_statement.read::<String, _>(0) {
                     Ok(host_status_yaml) => match serde_yaml::from_str(&host_status_yaml) {
-                        Ok(host_status) => {
-                            all_rows_data.push(Some(host_status));
-                        }
+                        Ok(host_status_value) => match decode_host_status(host_status_value) {
+                            Ok(host_status) => {
+                                all_rows_data.push(Some(host_status));
+                            }
+                            Err(e) => {
+                                debug!("Failed to decode Host Status from datastore YAML: {:?}", e);
+                                all_rows_data.push(None);
+                            }
+                        },
                         Err(e) => {
                             debug!("Failed to parse Host Status as YAML: {:?}", e);
                             all_rows_data.push(None);

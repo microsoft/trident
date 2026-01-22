@@ -266,11 +266,11 @@ impl ManualRollbackContext {
                                 current_operation.kind.clone(),
                                 &mut rollback_filters,
                             )? {
+                                current_operation.from_host_status = Some(current_hs.clone());
                                 if !current_operation.keep_parsing() {
                                     trace!("Operation cannot be part of operation list, ending parsing here.");
                                     break;
                                 }
-                                current_operation.from_host_status = Some(current_hs.clone());
                                 operation_list.push(current_operation.clone());
                             }
 
@@ -1101,6 +1101,42 @@ mod tests {
             ManualRollbackRequestKind::RollbackAvailableAbUpdate
         ));
         assert!(ManualRollbackRequestKind::from_flags(true, true).is_err());
+    }
+
+    #[test]
+    fn test_first_host_status() {
+        // Validate empty host status list creates context with no available rollblacks
+        let context = ManualRollbackContext::new(&[]);
+        assert_eq!(context.unwrap().get_rollback_chain().len(), 0);
+
+        let host_status_base_list = vec![
+            Some(HostStatus {
+                servicing_state: ServicingState::Provisioned,
+                ..Default::default()
+            }),
+            Some(HostStatus {
+                servicing_state: ServicingState::CleanInstallFinalized,
+                ..Default::default()
+            }),
+        ];
+
+        // Validate that a host status list with the first entry as None returns an error
+        let mut test_list = host_status_base_list.clone();
+        test_list.insert(0, None);
+        let context = ManualRollbackContext::new(&test_list);
+        assert!(context.is_err());
+
+        // Validate that a host status list with the first entry as non-Provisioned creates context with no available rollblacks
+        let mut test_list = host_status_base_list.clone();
+        test_list.insert(
+            0,
+            Some(HostStatus {
+                servicing_state: ServicingState::CleanInstallFinalized,
+                ..Default::default()
+            }),
+        );
+        let context = ManualRollbackContext::new(&test_list);
+        assert_eq!(context.unwrap().get_rollback_chain().len(), 0);
     }
 
     #[test]
