@@ -11,6 +11,7 @@ stages:
     displayName: Build ${{ parameters.architecture }} Images for Direct Streaming
     dependsOn:
       - GetTridentBinaries_rpms_${{ parameters.architecture }}
+      - PrepareSSHKeys
     jobs:
       # Build Trident direct streaming installer ISO
       - template: stages/trident_images/build-image.yml
