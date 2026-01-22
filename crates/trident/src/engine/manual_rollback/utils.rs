@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use trident_api::{
     config::HostConfiguration,
-    error::{InvalidInputError, ReportError, ServicingError, TridentError},
+    error::{InvalidInputError, TridentError},
     status::{AbVolumeSelection, HostStatus, ServicingState, TridentVersion},
 };
 
@@ -226,17 +226,25 @@ impl ManualRollbackContext {
             to_host_status: None,
         };
 
-        // Check that the first host status is Provisioned; if not, return empty chain
-        let mut first_host_status_is_provisioned = false;
-        if let Some(Some(hs)) = host_statuses.first() {
-            if matches!(hs.servicing_state, ServicingState::Provisioned) {
-                first_host_status_is_provisioned = true;
+        // Check that the first host status is parsed correctly (error state) and
+        // that the state is Provisioned (otherwise, no rollbacks are possible)
+        match host_statuses.first() {
+            Some(None) => {
+                return Err(TridentError::new(
+                    InvalidInputError::InvalidRollbackExpectation {
+                        reason: "first host status was not parsed correctly".to_string(),
+                    },
+                ));
             }
-        }
-        if !first_host_status_is_provisioned {
-            trace!("First host status is not Provisioned, returning empty rollback chain");
-            return Ok(Self { chain: vec![] });
-        }
+            Some(Some(hs)) if hs.servicing_state != ServicingState::Provisioned => {
+                trace!(
+                    "First host status is not Provisioned ({:?}), returning empty rollback chain",
+                    hs.servicing_state
+                );
+                return Ok(Self { chain: vec![] });
+            }
+            _ => {}
+        };
 
         let mut rollback_filters: Vec<OperationKind> = vec![];
 
@@ -426,13 +434,13 @@ impl ManualRollbackContext {
     }
 
     /// Get the full rollback chain
-    pub fn get_rollback_chain(&self) -> Result<Vec<ManualRollbackChainItem>, Error> {
-        Ok(self.chain.clone())
+    pub fn get_rollback_chain(&self) -> Vec<ManualRollbackChainItem> {
+        self.chain.clone()
     }
 
     /// Get the full rollback chain as YAML string
     pub fn get_rollback_chain_yaml(&self) -> Result<String, Error> {
-        let contexts = self.get_rollback_chain()?;
+        let contexts = self.get_rollback_chain();
         let full_yaml =
             serde_yaml::to_string(&contexts).context("Failed to serialize rollback contexts")?;
         info!("Available rollbacks:\n{}", full_yaml);
@@ -453,11 +461,7 @@ impl ManualRollbackContext {
         &self,
         requested_rollback_kind: ManualRollbackRequestKind,
     ) -> Result<Option<ManualRollbackChainItem>, TridentError> {
-        let available_rollbacks =
-            self.get_rollback_chain()
-                .structured(ServicingError::ManualRollback {
-                    message: "Failed to get available rollbacks",
-                })?;
+        let available_rollbacks = self.get_rollback_chain();
 
         if available_rollbacks.is_empty() {
             return Ok(None);
@@ -698,7 +702,7 @@ mod tests {
             expected_requires_reboot,
             expected_available_rollbacks
         );
-        let rollback_chain = context.get_rollback_chain().unwrap();
+        let rollback_chain = context.get_rollback_chain();
         assert_eq!(rollback_chain.len(), expected_available_rollbacks.len());
         if !expected_available_rollbacks.is_empty() {
             let next_rollback = rollback_chain.first().unwrap();
