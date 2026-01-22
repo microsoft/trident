@@ -104,28 +104,22 @@ stages:
               # Enable SecureBoot for all E2E tests.
               SECURE_BOOT="--secure-boot"
 
-              # If this is a usr-verity UKI image, a signing certificate must
-              # be set via --signing-cert; otherwise, set it to an empty
-              # string. This can also be used for sysext signing.
-              TRIDENT_CONFIG="$(tridentSourceDirectory)/tests/e2e_tests/trident_configurations/simple/trident-config.yaml"
-              HANDLE_PROVISIONED_STATE_ARG="--wait-for-provisioned-state"
-
               # Create updated vm-netlaunch.yaml with direct streaming image
+              HASH=$(./scripts/cosi-sha384.py ./artifacts/test-image/$(testImageName).cosi)
               sudo yq \
-                '.iso += {"directStreamingImage": "$(testImageName).cosi"}' < \
+                '.iso += {"directStreaming": {"image": "$(testImageName).cosi", "hash": "$HASH"}}' < \
                 $(tridentSourceDirectory)/tools/vm-netlaunch.yaml > \
                 /tmp/vm-netlaunch-adjusted.yaml
 
               ./bin/netlaunch \
                   --iso ./artifacts/iso/$(installerISOName).iso \
                   --config /tmp/vm-netlaunch-adjusted.yaml \
-                  --trident "$TRIDENT_CONFIG" \
+                  --port 34671 \
                   --servefolder ./artifacts/test-image \
                   --logstream \
                   --trace-file $(tridentSourceDirectory)/trident-clean-install-metrics.jsonl \
                   --force-color \
                   --full-logstream logstream-full.log \
-                  $HANDLE_PROVISIONED_STATE_ARG \
                   $SECURE_BOOT \
                   --port ${{variables.netlaunchPort}} 2>&1 | tee ./direct-streaming-deployment.log
             workingDirectory: $(tridentSourceDirectory)

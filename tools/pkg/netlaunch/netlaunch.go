@@ -111,8 +111,24 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 	terminateCtx, terminateFunc := context.WithCancel(ctx)
 	defer terminateFunc()
 
-	var finalHostConfigurationYaml string
+	if config.Iso.DirectStreaming != nil {
+		log.Info("Patching in direct-streaming.conf!")
+		directStreamingConfigFormat := `
+URL=%s
+HASH=%s
+`
+		fileContents := fmt.Sprintf(
+			directStreamingConfigFormat,
+			fmt.Sprintf("http://%s/files/%s", announceAddress, config.Iso.DirectStreaming.Image),
+			config.Iso.DirectStreaming.Hash,
+		)
+		err = isopatcher.PatchFile(iso, "/trident_cdrom/direct-streaming.conf", []byte(fileContents))
+		if err != nil {
+			return fmt.Errorf("failed to patch direct-streaming.conf into ISO: %w", err)
+		}
+	}
 
+	var finalHostConfigurationYaml string
 	// If we have a Trident config file, we need to patch it into the ISO.
 	if len(config.HostConfigFile) != 0 {
 		log.Info("Using Trident config file: ", config.HostConfigFile)
@@ -170,15 +186,6 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 			err = injectRcpAgentConfig(mux, announceIp, announceAddress, iso, rcpListener, *config.Rcp, extraRcpAgentFiles...)
 			if err != nil {
 				return fmt.Errorf("failed to inject RCP agent config into ISO: %w", err)
-			}
-		}
-
-		if config.Iso.DirectStreamingImage != nil {
-			log.Info("Patching in direct-streaming-url.conf!")
-			streamImageUrl := fmt.Sprintf("http://%s/files/%s", announceAddress, *config.Iso.DirectStreamingImage)
-			err = isopatcher.PatchFile(iso, "/trident_cdrom/direct-streaming-url.conf", []byte(streamImageUrl))
-			if err != nil {
-				return fmt.Errorf("failed to patch direct-streaming-url.conf into ISO: %w", err)
 			}
 		}
 

@@ -1155,16 +1155,27 @@ artifacts/trident-vm-grub-verity-azure-testimage.vhd: \
 			--output-image-format vhd-fixed \
 			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-grub-verity-azure.yaml
 
+DIRECT_STREAMING_HOST_CONFIGURATION ?= tests/e2e_tests/trident_configurations/base/trident-config.yaml
 artifacts/trident-direct-streaming-testimage-arm64.cosi: \
 	bin/mkcosi \
 	artifacts/trident-testimage-arm64.cosi
-	bin/mkcosi add-vpc \
+	$(eval TMP_NO_HC_VHD_COSI := $(shell mktemp))
+	@bin/mkcosi add-vpc \
 		artifacts/trident-testimage-arm64.cosi \
-		artifacts/trident-direct-streaming-testimage-arm64.cosi
+		$TMP_NO_HC_VHD_COSI
+	@bin/mkcosi insert-template \
+		$TMP_NO_HC_VHD_COSI \
+		artifacts/trident-direct-streaming-testimage-arm64.cosi \
+		$DIRECT_STREAMING_HOST_CONFIGURATION
 
 artifacts/trident-direct-streaming-testimage.cosi: \
 	bin/mkcosi \
 	artifacts/trident-testimage.cosi
-	bin/mkcosi add-vpc \
+	$(eval TMP_NO_HC_VHD_COSI := $(shell mktemp))
+	@bin/mkcosi add-vpc \
 		artifacts/trident-testimage.cosi \
-		artifacts/trident-direct-streaming-testimage.cosi
+		$(TMP_NO_HC_VHD_COSI)
+	@bin/mkcosi insert-template \
+		$(TMP_NO_HC_VHD_COSI) \
+		artifacts/trident-direct-streaming-testimage.cosi \
+		$(DIRECT_STREAMING_HOST_CONFIGURATION)
