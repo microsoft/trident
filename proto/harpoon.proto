@@ -235,9 +235,9 @@ message GetRequiredServicingTypeResponse {
 }
 
 enum ManualRollbackKind {
-  AnyRollbackRequested     = 0;
-  AbRollbackRequested      = 1;
-  RuntimeRollbackRequested = 2;
+  AnyRollbackRequested      = 0;
+  AbRollbackRequested       = 1;
+  RuntimeRollbackRequested  = 2;
 }
 
 message CheckRollbackRequest {
@@ -246,9 +246,9 @@ message CheckRollbackRequest {
 }
 
 enum CheckRollbackKind {
-  NoRollbackAvailable     = 0;
-  AbRollbackExpected      = 1;
-  RuntimeRollbackExpected = 2;
+  NoRollbackAvailable      = 0;
+  AbRollbackExpected       = 1;
+  RuntimeRollbackExpected  = 2;
 }
 
 message CheckRollbackResponse {
