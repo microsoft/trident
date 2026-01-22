@@ -107,9 +107,11 @@ stages:
               TRIDENT_CONFIG="$(tridentSourceDirectory)/tests/e2e_tests/trident_configurations/simple/trident-config.yaml"
               HANDLE_PROVISIONED_STATE_ARG="--wait-for-provisioned-state"
 
+              # Update vm-netlaunch.yaml with direct streaming image
+               yq -i '.iso += {"directStreamingImage": "$(testImageName).cosi"}' $(tridentSourceDirectory)/tools/vm-netlaunch.yaml
+
               ./bin/netlaunch \
                   --iso ./artifacts/iso/$(installerISOName).iso \
-                  --directStreamingImage $(testImageName).cosi \
                   --config $(tridentSourceDirectory)/tools/vm-netlaunch.yaml \
                   --trident "$TRIDENT_CONFIG" \
                   --servefolder ./artifacts/test-image \
