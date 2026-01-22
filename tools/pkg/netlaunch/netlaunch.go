@@ -111,24 +111,8 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 	terminateCtx, terminateFunc := context.WithCancel(ctx)
 	defer terminateFunc()
 
-	if config.Iso.DirectStreaming != nil {
-		log.Info("Patching in direct-streaming.conf!")
-		directStreamingConfigFormat := `
-URL=%s
-HASH=%s
-`
-		fileContents := fmt.Sprintf(
-			directStreamingConfigFormat,
-			fmt.Sprintf("http://%s/files/%s", announceAddress, config.Iso.DirectStreaming.Image),
-			config.Iso.DirectStreaming.Hash,
-		)
-		err = isopatcher.PatchFile(iso, "/trident_cdrom/direct-streaming.conf", []byte(fileContents))
-		if err != nil {
-			return fmt.Errorf("failed to patch direct-streaming.conf into ISO: %w", err)
-		}
-	}
-
 	var finalHostConfigurationYaml string
+
 	// If we have a Trident config file, we need to patch it into the ISO.
 	if len(config.HostConfigFile) != 0 {
 		log.Info("Using Trident config file: ", config.HostConfigFile)
@@ -212,6 +196,27 @@ HASH=%s
 
 		// We injected the phonehome & logstream config, so we're expecting Trident to reach back
 		enable_phonehome_listening = true
+	} else if config.Iso.DirectStreaming != nil {
+		log.Info("Patching in direct-streaming.conf!")
+		directStreamingConfigFormat := `
+URL=%s
+HASH=%s
+`
+		fileContents := fmt.Sprintf(
+			directStreamingConfigFormat,
+			fmt.Sprintf("http://%s/files/%s", announceAddress, config.Iso.DirectStreaming.Image),
+			config.Iso.DirectStreaming.Hash,
+		)
+		err = isopatcher.PatchFile(iso, "/trident_cdrom/direct-streaming.conf", []byte(fileContents))
+		if err != nil {
+			return fmt.Errorf("failed to patch direct-streaming.conf into ISO: %w", err)
+		}
+
+		// Serve the ISO file to start the servicing OS
+		http.HandleFunc("/provision.iso", func(w http.ResponseWriter, r *http.Request) {
+			isoLogFunc(r.RemoteAddr)
+			http.ServeContent(w, r, "provision.iso", time.Now(), bytes.NewReader(iso))
+		})
 	} else {
 		// Otherwise, serve the iso as-is
 		mux.HandleFunc("/provision.iso", func(w http.ResponseWriter, r *http.Request) {
