@@ -8,6 +8,7 @@ use log::{debug, info, trace, warn};
 
 use osutils::{e2fsck, lsblk, resize2fs};
 use trident_api::{
+    constants::{internal_params::RAW_COSI_STORAGE, ESP_MOUNT_POINT_PATH},
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::ServicingType,
     BlockDeviceId,
@@ -40,10 +41,23 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
         "No OS image available for deployment",
     ))?;
 
-    let images = os_img
-        .filesystems()
-        .map(|fs| (fs.mount_point.to_owned(), fs))
-        .collect::<HashMap<_, _>>();
+    let images = {
+        let mut tmp = os_img
+            .filesystems()
+            .map(|fs| (fs.mount_point.to_owned(), fs))
+            .collect::<HashMap<_, _>>();
+
+        if ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
+            tmp.insert(
+                ESP_MOUNT_POINT_PATH.into(),
+                os_img
+                    .esp_filesystem()
+                    .structured(InternalError::Internal("COSI doesn't have ESP"))?,
+            );
+        }
+
+        tmp
+    };
 
     // Now, deploy the filesystems sourced from the OS image
     for (id, mpp, fs) in fs_from_img {
@@ -136,7 +150,7 @@ fn filesystems_from_image(
             continue;
         };
 
-        if img_fs.is_esp() {
+        if img_fs.is_esp() && !ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
             debug!(
                 "Skipping deployment of filesystem [{}] sourced from OS Image, as it is the ESP.",
                 filesystem.description()
@@ -206,7 +220,7 @@ fn deploy_os_image_file(
 
     ensure!(
         dev_info.size >= image_file.uncompressed_size,
-        "Block device is too small, expected at least {} bytes, got {} bytes",
+        "Block device '{id}' is too small: expected at least {} bytes, got {} bytes",
         image_file.uncompressed_size,
         dev_info.size
     );
@@ -223,12 +237,12 @@ fn deploy_os_image_file(
             block_device_path.display()
         ))?;
 
-    trace!("Deployed image with hash {computed_sha384}");
+    trace!("Deployed image with hash '{computed_sha384}' on block device '{id}'");
 
     // Ensure computed SHA384 matches SHA384 in OS image
     if image_file.sha384 != computed_sha384 {
         bail!(
-            "SHA384 mismatch for OS image: expected {}, got {}",
+            "SHA384 mismatch for OS image for block device '{id}': expected {}, got {}",
             image_file.sha384,
             computed_sha384
         )

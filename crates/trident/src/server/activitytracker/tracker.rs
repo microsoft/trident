@@ -1,4 +1,5 @@
 use std::{
+    future::Future,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
@@ -51,6 +52,18 @@ impl ActivityTracker {
         ActivityTrackerMiddleware::new(self.clone())
     }
 
+    /// Returns a future that resolves when there are no active servicing
+    /// operations. If there are no active servicing operations at the time of
+    /// calling, the future resolves immediately.
+    pub(crate) fn wait_on_service_end(&self) -> impl Future<Output = ()> {
+        let active_servicing = self.active_servicing.clone();
+        async move {
+            while active_servicing.load(Ordering::SeqCst) {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }
+    }
+
     pub(crate) fn on_connection_start(&self) {
         trace!("Connection started.");
         self.active_connections.fetch_add(1, Ordering::SeqCst);
@@ -69,13 +82,20 @@ impl ActivityTracker {
         self.notify_event(EventType::Inactivity);
     }
 
-    pub(crate) fn on_servicing_started(&self) {
+    /// Creates a guard that signals the start and end of a servicing operation.
+    /// When the guard is created, it marks servicing as active, and when
+    /// dropped, it marks servicing as ended.
+    pub(crate) fn servicing_guard(&self) -> ServicingActivityGuard {
+        ServicingActivityGuard::new(self.clone())
+    }
+
+    fn on_servicing_started(&self) {
         trace!("Servicing started.");
         self.active_servicing.store(true, Ordering::SeqCst);
         self.notify_event(EventType::NewActivity);
     }
 
-    pub(crate) fn on_servicing_ended(&self) {
+    fn on_servicing_ended(&self) {
         trace!("Servicing ended.");
         self.active_servicing.store(false, Ordering::SeqCst);
         self.notify_event(EventType::Inactivity);
@@ -155,6 +175,25 @@ impl ActivityTracker {
                 }
             }
         });
+    }
+}
+
+/// Guard that signals the start and end of a servicing operation
+/// to the associated ActivityTracker.
+pub(crate) struct ServicingActivityGuard {
+    tracker: ActivityTracker,
+}
+
+impl ServicingActivityGuard {
+    fn new(tracker: ActivityTracker) -> Self {
+        tracker.on_servicing_started();
+        Self { tracker }
+    }
+}
+
+impl Drop for ServicingActivityGuard {
+    fn drop(&mut self) {
+        self.tracker.on_servicing_ended();
     }
 }
 
@@ -280,5 +319,54 @@ mod tests {
         time::timeout(Duration::from_secs(1), shutdown_rx.recv())
             .await
             .expect("Timeout waiting for shutdown signal");
+    }
+
+    #[tokio::test]
+    async fn test_activity_tracker_servicing_guard() {
+        let (tracker, mut shutdown_rx, _token) = ActivityTracker::new(Duration::from_millis(100));
+
+        {
+            let _guard = tracker.servicing_guard();
+            // Ensure no shutdown signal is received within the timeout duration
+            time::timeout(Duration::from_millis(200), shutdown_rx.recv())
+                .await
+                .expect_err("Unexpected shutdown signal received");
+
+            assert!(tracker.is_servicing_active());
+        } // Guard is dropped here
+
+        assert!(!tracker.is_servicing_active());
+
+        // Now wait for the shutdown signal after the timeout
+        time::timeout(Duration::from_secs(1), shutdown_rx.recv())
+            .await
+            .expect("Timeout waiting for shutdown signal");
+    }
+
+    #[tokio::test]
+    async fn test_activity_tracker_wait_on_service_end() {
+        let (tracker, _shutdown_rx, _token) = ActivityTracker::new(Duration::from_millis(100));
+
+        tracker.on_servicing_started();
+
+        let tracker_clone = tracker.clone();
+        let wait_task = tokio::spawn(async move {
+            tracker_clone.wait_on_service_end().await;
+        });
+
+        time::timeout(Duration::from_millis(50), wait_task)
+            .await
+            .expect_err("wait_on_service_end returned while servicing is active");
+
+        tracker.on_servicing_ended();
+
+        let tracker_clone = tracker.clone();
+        let wait_task = tokio::spawn(async move {
+            tracker_clone.wait_on_service_end().await;
+        });
+        time::timeout(Duration::from_millis(200), wait_task)
+            .await
+            .expect("Timeout waiting for servicing to end")
+            .expect("Task failed to join");
     }
 }

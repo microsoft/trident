@@ -959,7 +959,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     Swap {
                         device_id: "swap2".into(),
                     },
-                ]
+                ],
             },
             os: Os {
                 users: vec![User {

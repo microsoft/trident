@@ -47,6 +47,17 @@ Agent for bare metal platform
 %{_bindir}/%{name}
 %dir /etc/%{name}
 %{_bindir}/osmodifier
+%{_unitdir}/%{name}d.service
+%{_unitdir}/%{name}d.socket
+
+%post
+%systemd_post %{name}d.socket
+
+%preun
+%systemd_preun %{name}d.socket
+
+%postun
+%systemd_postun %{name}d.socket
 
 # ------------------------------------------------------------------------------
 
@@ -77,23 +88,19 @@ Requires:       %{name}
 Conflicts:      %{name}-install-service
 
 %description service
-Trident files for SystemD update and commit services
+Trident files for SystemD commit service
 
 %files service
 %{_unitdir}/%{name}.service
-%{_unitdir}/%{name}-update.service
 
 %post service
 %systemd_post %{name}.service
-%systemd_post %{name}-update.service
 
 %preun service
 %systemd_preun %{name}.service
-%systemd_preun %{name}-update.service
 
 %postun service
 %systemd_postun_with_restart %{name}.service
-%systemd_postun_with_restart %{name}-update.service
 
 # ------------------------------------------------------------------------------
 
@@ -116,28 +123,6 @@ Trident files for SystemD install service
 
 %postun install-service
 %systemd_postun_with_restart %{name}-install.service
-
-# ------------------------------------------------------------------------------
-
-%package update-poll
-Summary:        Trident files for SystemD service
-Requires:       %{name}
-Requires:       %{name}-service
-
-%description update-poll
-SystemD timer for update polling with Harpoon.
-
-%files update-poll
-%{_unitdir}/%{name}-update.timer
-
-%post update-poll
-%systemd_post %{name}-update.timer
-
-%preun update-poll
-%systemd_preun %{name}-update.timer
-
-%postun update-poll
-%systemd_postun_with_restart %{name}-update.timer
 
 # ------------------------------------------------------------------------------
 
@@ -214,11 +199,15 @@ install -D -m 0644 %{name}.pp.bz2 %{buildroot}%{_datadir}/selinux/packages/%{sel
 install -D -p -m 0644 selinux/%{name}.if %{buildroot}%{_datadir}/selinux/devel/include/distributed/%{name}.if
 
 mkdir -p %{buildroot}%{_unitdir}
+# Commit service
 install -D -m 644 systemd/%{name}.service %{buildroot}%{_unitdir}/%{name}.service
+# Auto-installation service
 install -D -m 644 systemd/%{name}-install.service %{buildroot}%{_unitdir}/%{name}-install.service
-install -D -m 644 systemd/%{name}-update.service %{buildroot}%{_unitdir}/%{name}-update.service
+# Network configuration service for provisioning OS
 install -D -m 644 systemd/%{name}-network.service %{buildroot}%{_unitdir}/%{name}-network.service
-install -D -m 644 systemd/%{name}-update.timer %{buildroot}%{_unitdir}/%{name}-update.timer
+# Daemon socket and service
+install -D -m 644 systemd/%{name}d.socket %{buildroot}%{_unitdir}/%{name}d.socket
+install -D -m 644 systemd/%{name}d.service %{buildroot}%{_unitdir}/%{name}d.service
 
 mkdir -p %{buildroot}/etc/%{name}
 

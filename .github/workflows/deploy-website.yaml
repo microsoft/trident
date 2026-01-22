@@ -1,7 +1,6 @@
 name: Deploy to GitHub Pages
 
 on:
-
   # Manual trigger
   workflow_dispatch:
 
@@ -10,9 +9,9 @@ on:
     types: [opened, reopened, synchronize, ready_for_review]
     branches: [main]
     paths:
-     - 'docs/**'
-     - 'website/**'
-     - '.github/workflows/deploy-website.yaml'
+      - "docs/**"
+      - "website/**"
+      - ".github/workflows/deploy-website.yaml"
 
   # # Trigger on release
   # release:
@@ -44,8 +43,15 @@ jobs:
           echo ${{ secrets.GITHUB_TOKEN }} | gh auth login --with-token
           # For pull requests, use branch as dev version so branch docs are validated
           if [[ "${{github.event_name}}" == "pull_request" ]]; then
-            export DEV_BRANCH=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}
-            echo "Using PR branch as dev branch: $DEV_BRANCH"
+            # For external PRs, use the merge commit ref instead of the branch name
+            if [[ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]]; then
+              export DEV_BRANCH="refs/pull/${{ github.event.number }}/merge"
+              export USE_MERGE_COMMIT="true"
+              echo "External PR detected. Using merge ref: $DEV_BRANCH"
+            else
+              export DEV_BRANCH=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}
+              echo "Using PR branch as dev branch: $DEV_BRANCH"
+            fi
           fi
           # Construct multi-version docs
           ./scripts/create_versioned_docs.sh
@@ -84,4 +90,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4 
+        uses: actions/deploy-pages@v4

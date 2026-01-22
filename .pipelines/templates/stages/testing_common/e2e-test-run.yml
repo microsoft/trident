@@ -174,13 +174,13 @@ steps:
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - ${{ if eq(parameters.deploymentEnvironment, 'virtualMachine') }}:
-    - bash: |
-        set -eux
-        ./bin/storm-trident script capture-screenshot \
-            --screenshot-filename "update-b.png" \
-            --artifacts-folder "$(ob_outputDirectory)"
-      displayName: "📷 Capture screenshot: stage and finalize A/B update into target OS B"
-      condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
+      - bash: |
+          set -eux
+          ./bin/storm-trident script capture-screenshot \
+              --screenshot-filename "update-b.png" \
+              --artifacts-folder "$(ob_outputDirectory)"
+        displayName: "📷 Capture screenshot: stage and finalize A/B update into target OS B"
+        condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
 
   - bash: |
       set -eux
@@ -324,13 +324,13 @@ steps:
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 
   - ${{ if eq(parameters.deploymentEnvironment, 'virtualMachine') }}:
-    - bash: |
-        set -eux
-        ./bin/storm-trident script capture-screenshot \
-            --screenshot-filename "update-a.png" \
-            --artifacts-folder "$(ob_outputDirectory)"
-      displayName: "📷 Capture screenshot: stage and finalize A/B update into target OS A"
-      condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
+      - bash: |
+          set -eux
+          ./bin/storm-trident script capture-screenshot \
+              --screenshot-filename "update-a.png" \
+              --artifacts-folder "$(ob_outputDirectory)"
+        displayName: "📷 Capture screenshot: stage and finalize A/B update into target OS A"
+        condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
 
   - bash: |
       set -eux
@@ -426,5 +426,76 @@ steps:
           "${{ parameters.runtimeEnv }}" \
           --trident-config-path "${{ parameters.tridentConfigPath }}/trident-config.yaml" \
           --deployment-environment "${{ parameters.deploymentEnvironment }}"
-    displayName: "Test Trident rebuild-raid"
+    displayName: "🔬 Test Trident rebuild-raid"
     timeoutInMinutes: 15
+
+  # Trigger a rollback and test encryption
+  - bash: |
+      set -eux
+      # If there is a netlisten process, kill it so there is no port clash in the instance
+      if pgrep netlisten > /dev/null; then pkill netlisten; fi
+      NETLISTEN_CONFIG_ARGS=""
+      if [ -n "${{ parameters.netlistenConfigFile }}" ]; then
+        NETLISTEN_CONFIG_ARGS="--config ${{ parameters.netlistenConfigFile }}"
+      fi
+      ./bin/netlisten --force-color $NETLISTEN_CONFIG_ARGS \
+          -m $(Build.SourcesDirectory)/trident-rollback-metrics.jsonl \
+          -p ${{ parameters.netlistenPort }} \
+          -s "${{ parameters.artifactsDirectory }}" > ./rollback.log 2>&1 &
+      PROXY_ARG=""
+      if [ -n "${{ parameters.httpsProxy }}" ]; then
+        PROXY_ARG="--env-vars HTTPS_PROXY=${{ parameters.httpsProxy }}"
+      fi
+      # To allow storm to access VM serial logs, need sudo.
+      sudo $(Build.SourcesDirectory)/bin/storm-trident helper manual-rollback -a \
+          --log-dir "$(ob_outputDirectory)" \
+          "${{ parameters.sshKeyPath }}" \
+          "${{ parameters.hostIp }}" \
+          "${{ parameters.userName }}" \
+          "${{ parameters.runtimeEnv }}" \
+          $PROXY_ARG
+    displayName: "🔄 Stage and finalize manual rollback"
+    timeoutInMinutes: 5
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
+
+  - bash: |
+      set -eux
+      # sudo is needed to read qemu VM serial logs, `-a` is needed with sudo
+      sudo ./bin/storm-trident helper display-logs -a \
+          --netlisten-config "${{ parameters.netlistenConfigFile }}" \
+          --serial-log-artifact-file-name "rollback-target-os-${TARGET_OS}-serial.log" \
+          --artifacts-folder "$(ob_outputDirectory)"
+    env:
+      ${{ if or(eq(parameters.buildPurpose, 'daily'), eq(parameters.buildPurpose, 'validation'), eq(parameters.buildPurpose, 'weekly'), eq(parameters.buildPurpose, 'post_merge')) }}:
+        TARGET_OS: "A"
+      ${{ else }}:
+        TARGET_OS: "B"
+    displayName: "📄 Manual rollback deployment logs"
+    condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
+
+  - bash: |
+      set -eux
+      SPECIFIC_TESTS='base'
+      encryptionExists=$(sudo yq e '.storage.encryption != null' "${{ parameters.tridentConfigPath }}/trident-config.yaml")
+      if [ "$encryptionExists" == "true" ]; then
+        SPECIFIC_TESTS="$SPECIFIC_TESTS or encryption"
+      fi
+      python3 -u -m pytest \
+        -m "$SPECIFIC_TESTS" \
+        --capture=no \
+        --junit-xml=${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_rollback_${TARGET_OS}_$(System.JobAttempt).junit.xml \
+        --host ${{ parameters.hostIp }} \
+        --runtime-env ${{ parameters.runtimeEnv }} \
+        --configuration ${{ parameters.tridentConfigPath }} \
+        --ab-active-volume ${EXPECTED_VOLUME}
+    env:
+      ${{ if or(eq(parameters.buildPurpose, 'daily'), eq(parameters.buildPurpose, 'validation'), eq(parameters.buildPurpose, 'weekly'), eq(parameters.buildPurpose, 'post_merge')) }}:
+        EXPECTED_VOLUME: "volume-a"
+        TARGET_OS: "A"
+      ${{ else }}:
+        EXPECTED_VOLUME: "volume-b"
+        TARGET_OS: "B"
+    timeoutInMinutes: 5
+    workingDirectory: $(Build.SourcesDirectory)/tests/e2e_tests
+    displayName: "🔬 Run Trident E2E tests after manual rollback"
+    condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))

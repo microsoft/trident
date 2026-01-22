@@ -83,16 +83,24 @@ impl EngineContext {
         match self.servicing_type {
             // If there is no servicing in progress, update volume is None.
             ServicingType::NoActiveServicing => None,
+            // If host is executing a manual rollback for a runtime update, active and update
+            // volumes are the same.
+            ServicingType::ManualRollbackRuntime
             // If host is executing a runtime update, active and update volumes are the same.
-            ServicingType::RuntimeUpdate => self.ab_active_volume,
+            | ServicingType::RuntimeUpdate => self.ab_active_volume,
+
+            // If host is executing a manual rollback for an A/B update, update volume
+            // is the opposite of the active volume.
+            ServicingType::ManualRollbackAb
             // If host is executing an A/B update, update volume is the opposite of active volume.
-            ServicingType::AbUpdate => {
+            | ServicingType::AbUpdate => {
                 if self.ab_active_volume == Some(AbVolumeSelection::VolumeA) {
                     Some(AbVolumeSelection::VolumeB)
                 } else {
                     Some(AbVolumeSelection::VolumeA)
                 }
             }
+
             // If host is executing a clean install, update volume is always A.
             ServicingType::CleanInstall => Some(AbVolumeSelection::VolumeA),
         }

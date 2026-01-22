@@ -1,3 +1,5 @@
+//! Trident gRPC server module.
+
 use std::{
     os::{fd::AsRawFd, unix::net::UnixListener as StdUnixListener},
     path::Path,
@@ -20,15 +22,17 @@ use tonic_middleware::MiddlewareFor;
 use harpoon::trident_service_server::TridentServiceServer;
 
 use crate::{
+    agentconfig::AgentConfig,
     logging::logfwd::LogForwarder,
     server::{activitytracker::ActivityTracker, fds::UnixSocketCleanup, support::fds},
+    ExitKind, Logstream, TraceStream,
 };
 
 mod activitytracker;
 mod support;
 mod tridentserver;
 
-use tridentserver::TridentHarpoonServer;
+use tridentserver::{ServicingManager, TridentHarpoonServer};
 
 /// Default path for the Trident Unix domain socket. This is used when Trident
 /// itself creates the socket when invoked directly, and not as part of a
@@ -50,10 +54,19 @@ pub const DEFAULT_INACTIVITY_TIMEOUT: &str = "300s"; // 5 minutes
 /// or error even after the server has shut down. This is intentional, as we
 /// want servicing operations to complete even if the server is no longer
 /// reachable.
+///
+/// Exit codes:
+/// - 0: Normal exit
+/// - 1: Setup failed: Tokio runtime or listener setup
+/// - 2: Server runtime error
+/// - 3: Reboot requested but failed
+/// - 4: Agent configuration load failed
 pub fn server_main(
     log_fwd: LogForwarder,
     shutdown_timeout: Duration,
     default_socket_path: impl AsRef<Path>,
+    logstream: Logstream,
+    tracestream: TraceStream,
 ) -> ExitCode {
     // Start the Tokio runtime
     let Ok(runtime) = Builder::new_multi_thread().enable_all().build() else {
@@ -69,11 +82,47 @@ pub fn server_main(
         }
     };
 
-    if let Err(e) =
-        runtime.block_on(async { server_main_inner(listener, log_fwd, shutdown_timeout).await })
-    {
-        error!("Daemon failed: {e:?}");
-        return ExitCode::from(2);
+    let agent_config = match AgentConfig::load() {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            error!("Failed to load agent configuration: {e:?}");
+            return ExitCode::from(4);
+        }
+    };
+
+    let main_task = runtime.block_on(async {
+        server_main_inner(
+            listener,
+            log_fwd,
+            shutdown_timeout,
+            agent_config,
+            logstream,
+            tracestream,
+        )
+        .await
+    });
+
+    // Drop the runtime to clean up resources. This implicitly waits for all
+    // spawned blocking tasks to complete.
+    drop(runtime);
+
+    let exit_kind = match main_task {
+        Ok(exit_kind) => exit_kind,
+        Err(e) => {
+            error!("Daemon failed: {e:?}");
+            return ExitCode::from(2);
+        }
+    };
+
+    match exit_kind {
+        ExitKind::Done => {} // Normal exit
+
+        ExitKind::NeedsReboot => {
+            if let Err(e) = crate::reboot() {
+                error!("Failed to reboot: {e:?}");
+                return ExitCode::from(3);
+            }
+        }
     }
 
     ExitCode::SUCCESS
@@ -83,7 +132,10 @@ async fn server_main_inner(
     listener: StdUnixListener,
     log_fwd: LogForwarder,
     shutdown_timeout: Duration,
-) -> AnyhowRes<()> {
+    agent_config: AgentConfig,
+    logstream: Logstream,
+    tracestream: TraceStream,
+) -> AnyhowRes<ExitKind> {
     // Ensure the listener is in non-blocking state as required by Tokio
     listener
         .set_nonblocking(true)
@@ -100,13 +152,22 @@ async fn server_main_inner(
     let mut sigterm =
         unix::signal(SignalKind::terminate()).context("Failed to set up SIGTERM handler")?;
 
+    let (servicing_manager, exit_token) = ServicingManager::new();
+
     info!(
         "Starting gRPC server listening on: {:?}",
         listener.local_addr()?
     );
     Server::builder()
         .add_service(MiddlewareFor::new(
-            TridentServiceServer::new(TridentHarpoonServer::new(log_fwd, activity_tracker.clone())),
+            TridentServiceServer::new(TridentHarpoonServer::new(
+                servicing_manager.clone(),
+                log_fwd,
+                activity_tracker.clone(),
+                agent_config,
+                logstream,
+                tracestream,
+            )),
             activity_tracker.middleware(),
         ))
         .serve_with_incoming_shutdown(UnixListenerStream::new(listener), async {
@@ -120,6 +181,9 @@ async fn server_main_inner(
                 _ = sigterm.recv() => {
                     info!("SIGTERM received, shutting down");
                 }
+                _ = exit_token.cancelled() => {
+                    info!("Exit request received from server, shutting down");
+                }
             }
         })
         .await
@@ -130,15 +194,14 @@ async fn server_main_inner(
 
     info!("Server shut down gracefully");
 
-    // NOTE:
-    //
-    // Any active servicing operation will run on a blocking task thread from
-    // Tokio's blocking thread pool, so it will continue running until
-    // completion or error even after the server has shut down. This is
-    // intentional, as we want servicing operations to complete even if the
-    // server is no longer reachable.
+    // Wait on any ongoing servicing operations to complete. This should only
+    // block in the relatively uncommon case where the server has exited but
+    // there was an ongoing servicing task.
+    info!("Waiting for ongoing servicing operations to complete...");
+    activity_tracker.wait_on_service_end().await;
+    info!("All servicing operations completed");
 
-    Ok(())
+    Ok(servicing_manager.get_exit_kind().await)
 }
 
 /// Sets up the UnixListener for the server, either from a systemd-passed

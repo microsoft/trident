@@ -184,6 +184,9 @@ pub enum InvalidInputError {
     #[error("Image contains invalid agent configuration")]
     ImageBadAgentConfiguration,
 
+    #[error("Invalid boot configuration")]
+    InvalidBootConfiguration,
+
     #[error("Host Configuration failed dynamic validation: {inner}")]
     InvalidHostConfigurationDynamic {
         #[from]
@@ -201,6 +204,12 @@ pub enum InvalidInputError {
 
     #[error("Invalid --lazy-partitions provided")]
     InvalidLazyPartition,
+
+    #[error("Invalid rollback expectation: '{reason}'")]
+    InvalidRollbackExpectation { reason: String },
+
+    #[error("Invalid state for rollback: '{reason}'")]
+    InvalidRollbackState { reason: String },
 
     #[error("Failed to load COSI file from '{url}'")]
     LoadCosi { url: Url },
@@ -243,6 +252,9 @@ pub enum InvalidInputError {
 
     #[error("Old style configuration not supported, 'hostConfiguration:' tag must be removed")]
     OldStyleConfiguration,
+
+    #[error("Failed to parse Host Configuration YAML")]
+    ParseHostConfiguration,
 
     #[error("Failed to parse Host Configuration file from '{path}'")]
     ParseHostConfigurationFile { path: String },
@@ -524,6 +536,15 @@ pub enum ServicingError {
     #[error("Failed to list boot entries via efibootmgr or parse them")]
     ListAndParseBootEntries,
 
+    #[error(
+        "Manual rollback failed as host booted from '{root_device_path}' instead of the expected device \
+        '{expected_device_path}'"
+    )]
+    ManualRollbackRebootCheck {
+        root_device_path: String,
+        expected_device_path: String,
+    },
+
     #[error("Failed to mount execroot binary")]
     MountExecrootBinary,
 
@@ -574,6 +595,9 @@ pub enum ServicingError {
 
     #[error("Failed to remove the pre-existing pcrlock policy")]
     RemovePcrlockPolicy,
+
+    #[error("Failed to execute rollback: {message}")]
+    ManualRollback { message: &'static str },
 
     #[error(
         "Failed to match current root device path '{root_device_path}' to either root volume A \
@@ -668,6 +692,9 @@ pub enum DatastoreError {
 
     #[error("Failed to open new datastore")]
     OpenDatastore,
+
+    #[error("Failed to read from datastore")]
+    ReadDatastore,
 
     #[error("Failed to write to datastore as it is closed")]
     WriteToClosedDatastore,
@@ -969,12 +996,19 @@ fn stringify_iterable(iterable: impl Iterator<Item = impl AsRef<str>>) -> String
         .join(", ")
 }
 
+impl From<TridentError> for HarpoonTridentError {
+    fn from(e: TridentError) -> Self {
+        HarpoonTridentError::from(&e)
+    }
+}
+
 impl From<&TridentError> for HarpoonTridentError {
     fn from(e: &TridentError) -> Self {
         HarpoonTridentError {
             kind: HarpoonTridentErrorKind::from(e.kind()) as i32,
             subkind: e.subkind().unwrap_or("unknown").to_string(),
-            message: format!("{:?}", e),
+            message: e.0.kind.to_string(),
+            full_body: format!("{:?}", e),
             location: Some(FileLocation {
                 path: e.0.location.file().to_string(),
                 line: e.0.location.line(),
