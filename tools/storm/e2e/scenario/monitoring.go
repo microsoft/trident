@@ -45,6 +45,7 @@ func (s *TridentE2EScenario) spawnVMSerialMonitor(ctx context.Context, output io
 		// Immediately signal that the monitor is done
 		doneChannel <- true
 		close(doneChannel)
+		output.Close()
 		return doneChannel, nil
 	}
 
@@ -52,6 +53,7 @@ func (s *TridentE2EScenario) spawnVMSerialMonitor(ctx context.Context, output io
 	vmInfo := s.testHost.VmInfo()
 	if ref.IsNilInterface(vmInfo) {
 		close(doneChannel)
+		output.Close()
 		return doneChannel, fmt.Errorf("vm host info not set")
 	}
 
