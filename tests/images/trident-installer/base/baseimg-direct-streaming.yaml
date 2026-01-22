@@ -88,8 +88,8 @@ iso:
       destination: /trident-config.yaml
     - source: files/override-placeholder.conf
       destination: /trident-override.conf
-    - source: files/direct-streaming-url-placeholder.conf
-      destination: /direct-streaming-url.conf
+    - source: files/direct-streaming-placeholder.conf
+      destination: /direct-streaming.conf
   kernelCommandLine:
     extraCommandLine:
       - console=tty0
