@@ -3,10 +3,10 @@
     <memory unit="GiB">{{ mem }}</memory>
     <vcpu>{{ cpus }}</vcpu>
     <os>
-        <smbios mode='sysinfo'/>
-        <type arch='aarch64' machine='virt'>hvm</type>
-        <loader readonly="yes" type="pflash">/usr/share/AAVMF/AAVMF_CODE.fd</loader>
-        <nvram template="/usr/share/AAVMF/AAVMF_VARS.fd">/var/lib/libvirt/qemu/nvram/{{ name }}_VARS.fd</nvram>
+        <type arch='aarch64' machine='virt-6.2'>hvm</type>
+        <loader readonly='yes' secure='no' type='pflash'>/usr/share/AAVMF/AAVMF_CODE.ms.fd</loader>
+        <nvram template='/usr/share/AAVMF/AAVMF_VARS.ms.fd'>/var/lib/libvirt/qemu/nvram/{{ name }}_VARS.fd</nvram>
+        <boot dev='hd'/>
     </os>
     <sysinfo type="smbios">
         <oemStrings>
@@ -18,7 +18,7 @@
         <apic />
     </features>
     <cpu mode='custom' match='exact' check='none'>
-        <model fallback='allow'>cortex-a57</model>
+        <model fallback='forbid'>cortex-a57</model>
     </cpu>
     <clock offset="utc">
         <timer name="rtc" tickpolicy="catchup" />
