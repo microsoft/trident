@@ -125,20 +125,14 @@ stages:
                   --full-logstream logstream-full.log \
                   $SECURE_BOOT \
                   --port ${{variables.netlaunchPort}} 2>&1 | tee ./direct-streaming-deployment.log) &
-            workingDirectory: $(tridentSourceDirectory)
-            displayName: "🚀 Run netlaunch for testing"
-            timeoutInMinutes: 5
-
-          - bash: |
-              set -eux
 
               sudo ./bin/storm-trident helper wait-for-login -a \
                   --vm-name "$(jq -r '.virtualmachines[0].name' $(tridentSourceDirectory)/tools/virt-deploy-metadata.json)" \
                   --artifacts-folder "$(ob_outputDirectory)"
 
+            workingDirectory: $(tridentSourceDirectory)
+            displayName: "🚀 Run netlaunch for testing"
             timeoutInMinutes: 20
-            condition: succeededOrFailed()
-            displayName: "📄 Check target OS deployment"
 
           - bash: |
               set -eux
