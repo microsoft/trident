@@ -25,8 +25,6 @@ import (
 // The output of the serial monitor will be written live to the provided
 // io.WriteCloser. The WriteCloser will be closed when the monitor exits.
 //
-// If the hardware type is not VM, this function is a no-op and returns nil.
-//
 // If an error occurs while starting the monitor, that error is returned.
 //
 // The returned channel can be used to wait for the monitor to finish by waiting
