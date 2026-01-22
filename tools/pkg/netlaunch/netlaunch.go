@@ -1,3 +1,5 @@
+//go:build tls_server
+
 package netlaunch
 
 import (
@@ -10,16 +12,19 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"tridenttools/pkg/isopatcher"
-	"tridenttools/pkg/netfinder"
-	"tridenttools/pkg/phonehome"
-	stormutils "tridenttools/storm/utils"
 
 	"github.com/bmc-toolbox/bmclib/v2"
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 	"github.com/stmcginnis/gofish/redfish"
 	"gopkg.in/yaml.v2"
+
+	"tridenttools/pkg/isopatcher"
+	"tridenttools/pkg/netfinder"
+	"tridenttools/pkg/phonehome"
+	rcpclient "tridenttools/pkg/rcp/client"
+	"tridenttools/pkg/rcp/tlscerts"
+	stormutils "tridenttools/storm/utils"
 )
 
 func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
@@ -41,6 +46,21 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 		announcePort = fmt.Sprintf("%d", *config.Netlaunch.AnnouncePort)
 	} else {
 		announcePort = strings.Split(listen.Addr().String(), ":")[1]
+	}
+
+	// When enabled, set up RCP listener.
+	var rcpListener *rcpclient.RcpListener
+	if config.Rcp != nil && config.Rcp.GrpcMode {
+		port := uint16(0)
+		if config.Rcp.ListenPort != nil {
+			port = *config.Rcp.ListenPort
+		}
+
+		rcpListener, err = rcpclient.ListenAndAccept(ctx, tlscerts.ServerCertProvider, port)
+		if err != nil {
+			return fmt.Errorf("failed to start RCP listener: %w", err)
+		}
+		log.WithField("port", rcpListener.Port).Info("RCP listener started")
 	}
 
 	// Do we expect Trident to reach back? If so we need to listen to it.
@@ -116,9 +136,19 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 			return fmt.Errorf("failed to marshal Trident config: %w", err)
 		}
 
+		// Store the modified trident config for later use
+		config.HostConfigFile = string(tridentConfig)
+
 		err = isopatcher.PatchFile(iso, "/etc/trident/config.yaml", tridentConfig)
 		if err != nil {
 			return fmt.Errorf("failed to patch Trident config into ISO: %w", err)
+		}
+
+		if config.Rcp != nil {
+			err = injectRcpAgentConfig(announceIp, announceAddress, iso, rcpListener, *config.Rcp)
+			if err != nil {
+				return fmt.Errorf("failed to inject RCP agent config into ISO: %w", err)
+			}
 		}
 
 		if config.Iso.PreTridentScript != nil {
@@ -293,6 +323,50 @@ func startLocalVm(localVmUuidStr string, isoLocation string, secureBoot bool, si
 
 	if err = vm.Start(); err != nil {
 		return fmt.Errorf("failed to start VM: %w", err)
+	}
+
+	return nil
+}
+
+func injectRcpAgentConfig(
+	announceIp string,
+	anounceHttpAddress string,
+	iso []byte,
+	rcpListener *rcpclient.RcpListener,
+	localRcpConf RcpConfiguration,
+) error {
+	// Create an empty RcpAgentConfiguration
+	var rcpAgentConf RcpAgentConfiguration
+
+	// If we have a local trident path, serve that file via HTTP and set the download URL.
+	if localRcpConf.LocalTridentPath != nil {
+		data, err := os.ReadFile(*localRcpConf.LocalTridentPath)
+		if err != nil {
+			return fmt.Errorf("failed to read local Trident binary from '%s': %w", *localRcpConf.LocalTridentPath, err)
+		}
+		// Create an http endpoint that exclusively serves the local Trident binary
+		http.HandleFunc("/trident", func(w http.ResponseWriter, r *http.Request) {
+			http.ServeContent(w, r, "trident", time.Now(), bytes.NewReader(data))
+		})
+
+		tridentUrl := fmt.Sprintf("http://%s/trident", anounceHttpAddress)
+		log.WithField("url", tridentUrl).Info("Serving local Trident binary via HTTP")
+		rcpAgentConf.TridentDownloadUrl = tridentUrl
+	}
+
+	// If we have an RCP listener, set the client address to point to it.
+	if rcpListener != nil {
+		rcpAgentConf.ClientAddress = fmt.Sprintf("%s:%d", announceIp, rcpListener.Port)
+	}
+
+	encoded, err := yaml.Marshal(rcpAgentConf)
+	if err != nil {
+		return fmt.Errorf("failed to marshal RCP agent config to YAML: %w", err)
+	}
+
+	err = isopatcher.PatchFile(iso, "/trident_cdrom/rcp-agent.toml", encoded)
+	if err != nil {
+		return fmt.Errorf("failed to patch RCP agent config into ISO: %w", err)
 	}
 
 	return nil

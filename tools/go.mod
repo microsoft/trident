@@ -26,6 +26,7 @@ require (
 )
 
 require (
+	github.com/alecthomas/kong-yaml v0.2.0 // indirect
 	github.com/jstemmer/go-junit-report/v2 v2.1.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
@@ -39,7 +40,7 @@ require (
 	github.com/Jeffail/gabs/v2 v2.7.0
 	github.com/VictorLowther/simplexml v0.0.0-20180716164440-0bff93621230 // indirect
 	github.com/VictorLowther/soap v0.0.0-20150314151524-8e36fca84b22 // indirect
-	github.com/alecthomas/kong v1.8.1
+	github.com/alecthomas/kong v1.12.1
 	github.com/bmc-toolbox/common v0.0.0-20240806132831-ba8adc6a35e3 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect

@@ -32,6 +32,13 @@ var (
 	onlyPrintExitCode   bool
 	secureBoot          bool
 	signingCert         string
+	rcpMode             string
+	tridentBinaryPath   string
+)
+
+const (
+	rcpModeLegacy = "cli"
+	rcpModeGrpc   = "grpc"
 )
 
 var backgroundLogstreamFull string
@@ -63,6 +70,15 @@ var rootCmd = &cobra.Command{
 			color.NoColor = false
 		}
 
+		if rcpMode != "" {
+			log.Infof("Using RCP mode: %s", rcpMode)
+			if rcpMode != rcpModeGrpc && rcpMode != rcpModeLegacy {
+				log.Fatalf("Invalid RCP mode, must be: %s or %s, got: %s", rcpModeLegacy, rcpModeGrpc, rcpMode)
+			}
+		} else if tridentBinaryPath != "" {
+			log.Fatal("Trident binary path specified without RCP mode")
+		}
+
 		// Set log level
 		log.SetLevel(log.DebugLevel)
 	},
@@ -90,6 +106,19 @@ var rootCmd = &cobra.Command{
 		config.EnableSecureBoot = secureBoot
 		config.WaitForProvisioning = waitForProvisioned
 		config.MaxPhonehomeFailures = maxFailures
+
+		if rcpMode != "" {
+			config.Rcp = &netlaunch.RcpConfiguration{}
+			if rcpMode == rcpModeGrpc {
+				config.Rcp.GrpcMode = true
+			} else {
+				config.Rcp.GrpcMode = false
+			}
+
+			if tridentBinaryPath != "" {
+				config.Rcp.LocalTridentPath = &tridentBinaryPath
+			}
+		}
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -124,6 +153,8 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&forceColor, "force-color", "", false, "Force colored output")
 	rootCmd.PersistentFlags().BoolVarP(&secureBoot, "secure-boot", "", false, "Enable SecureBoot")
 	rootCmd.PersistentFlags().StringVarP(&signingCert, "signing-cert", "", "", "Path to signing certificate")
+	rootCmd.PersistentFlags().StringVarP(&rcpMode, "rcp-mode", "", "", "RCP mode to use (grpc|cli). If not specified, RCP is not used.")
+	rootCmd.PersistentFlags().StringVarP(&tridentBinaryPath, "trident-binary", "b", "", "Optional path to Trident binary to be copied into the VM, requires RCP mode.")
 	rootCmd.Flags().StringVarP(&iso, "iso", "i", "", "ISO for Netlaunch testing")
 	rootCmd.MarkFlagRequired("iso-template")
 }
