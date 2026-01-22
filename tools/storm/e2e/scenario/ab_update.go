@@ -38,7 +38,7 @@ func (s *TridentE2EScenario) addAbUpdateTests(r storm.TestRegistrar, prefix stri
 
 // addSplitABUpdateTests adds the split A/B update test cases to the provided test registrar
 func (s *TridentE2EScenario) addSplitABUpdateTests(r storm.TestRegistrar, prefix string) {
-	skipIfNotSplitTest := func(s *TridentE2EScenario, tc storm.TestCase, testFn func(storm.TestCase) error) error {
+	filterSplitTestForCurrentRing := func(s *TridentE2EScenario, tc storm.TestCase, testFn func(storm.TestCase) error) error {
 		// The lowest ring for which we do split testing is 'prerelease'.
 		if s.args.TestRing < testrings.TestRingPre {
 			tc.Skip(fmt.Sprintf("Skipping split AB update test on ring '%s'", s.args.TestRing.ToString()))
@@ -48,16 +48,16 @@ func (s *TridentE2EScenario) addSplitABUpdateTests(r storm.TestRegistrar, prefix
 	}
 
 	r.RegisterTestCase(prefix+"-sync-hc", func(tc storm.TestCase) error {
-		return skipIfNotSplitTest(s, tc, s.syncHostConfig)
+		return filterSplitTestForCurrentRing(s, tc, s.syncHostConfig)
 	})
 	r.RegisterTestCase(prefix+"-update-hc", func(tc storm.TestCase) error {
-		return skipIfNotSplitTest(s, tc, s.updateHostConfig)
+		return filterSplitTestForCurrentRing(s, tc, s.updateHostConfig)
 	})
 	r.RegisterTestCase(prefix+"-upload-new-hc", func(tc storm.TestCase) error {
-		return skipIfNotSplitTest(s, tc, s.uploadNewConfig)
+		return filterSplitTestForCurrentRing(s, tc, s.uploadNewConfig)
 	})
 	r.RegisterTestCase(prefix+"-ab-update", func(tc storm.TestCase) error {
-		return skipIfNotSplitTest(s, tc, func(tc storm.TestCase) error {
+		return filterSplitTestForCurrentRing(s, tc, func(tc storm.TestCase) error {
 			return s.abUpdateOs(tc, true)
 		})
 	})
@@ -122,9 +122,9 @@ func (s *TridentE2EScenario) updateHostConfig(tc storm.TestCase) error {
 
 		name := matches[1]
 		buildId := matches[2]
-		config_name := matches[3]
+		configName := matches[3]
 		deploymentEnv := matches[4]
-		newCosiName = fmt.Sprintf("%s:v%s.%s.%s.%d", name, buildId, config_name, deploymentEnv, s.version)
+		newCosiName = fmt.Sprintf("%s:v%s.%s.%s.%d", name, buildId, configName, deploymentEnv, s.version)
 	} else {
 		// Match form <name>_v<version number>.<file extension> (note that "_v<version number>" is optional)
 		matches := regexp.MustCompile(`^(.*?)(_v\d+)?\.(.+)$`).FindStringSubmatch(base)
@@ -345,6 +345,8 @@ func checkUrlIsAccessible(url string) error {
 	if err != nil {
 		return fmt.Errorf("failed to check new image URL: %w", err)
 	}
+	defer resp.Body.Close()
+
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("new image URL is not accessible: %s, got HTTP code: %d", url, resp.StatusCode)
 	}

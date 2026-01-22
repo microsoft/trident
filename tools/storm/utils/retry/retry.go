@@ -38,7 +38,7 @@ func RetryContext[T any](ctx context.Context, backoff time.Duration, f func(ctx 
 		if err = ctx.Err(); err != nil {
 			break
 		}
-		
+
 		attempt++
 		var result *T
 		result, err = f(ctx, attempt)

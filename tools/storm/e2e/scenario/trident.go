@@ -190,9 +190,11 @@ func (s *TridentE2EScenario) populateSshClient(ctx context.Context) error {
 		// There is already an open client, check if it's still valid.
 		session, err := s.sshClient.NewSession()
 		if err == nil {
-			defer session.Close()
+			// Session creation succeeded, so the client is still valid. We
+			// ignore any error from closing the short-lived session here, as it
+			// does not affect the validity of the client itself.
+			_ = session.Close()
 			logrus.Debug("SSH client is still valid")
-			// Still valid
 			return nil
 		}
 
