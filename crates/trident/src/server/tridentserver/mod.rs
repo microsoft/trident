@@ -35,7 +35,8 @@ use crate::{
 mod harpoon_impl;
 mod servicingmgr;
 
-use servicingmgr::ServicingManager;
+use servicingmgr::RebootDecision;
+pub(super) use servicingmgr::ServicingManager;
 
 pub(super) struct TridentHarpoonServer {
     log_forwarder: LogForwarder,
@@ -52,6 +53,7 @@ type ServicingResponseStream = StreamWithLock<Result<ServicingResponse, Status>,
 
 impl TridentHarpoonServer {
     pub(super) fn new(
+        servicing_manager: ServicingManager,
         log_forwarder: LogForwarder,
         tracker: ActivityTracker,
         agent_config: AgentConfig,
@@ -61,7 +63,7 @@ impl TridentHarpoonServer {
         TridentHarpoonServer {
             log_forwarder,
             tracker,
-            servicing_manager: ServicingManager::new(),
+            servicing_manager,
             rwlock: Arc::new(RwLock::new(())),
             agent_config,
             logstream,
@@ -197,6 +199,7 @@ impl TridentHarpoonServer {
     fn servicing_request<F>(
         &self,
         name: &'static str,
+        reboot_decision: RebootDecision,
         f: F,
     ) -> Result<Response<ServicingResponseStream>, Status>
     where
@@ -233,12 +236,14 @@ impl TridentHarpoonServer {
 
         let logstream = self.logstream.clone();
         let tracestream = self.tracestream.clone();
+        let manager = self.servicing_manager.clone();
 
         // Spawn the servicing task
         tokio::spawn(async move {
             // Spawn the servicing task and await its completion
-            let final_status =
-                ServicingManager::spawn_servicing_task(servicing_guard, tracker_clone, f).await;
+            let final_status = manager
+                .spawn_servicing_task(reboot_decision, servicing_guard, tracker_clone, f)
+                .await;
 
             // Reset logstream and tracestream server URLs, in case they were set.
             if let Err(e) = logstream.clear_server() {
