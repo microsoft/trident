@@ -119,16 +119,24 @@ impl fmt::Display for OperationKind {
 }
 
 /// Operation is an encapsulation of a set of HostStatus entries for use
-/// internally with ManualRollbackContext's parsing logic.
+/// internally with ManualRollbackContext's parsing logic. An operation can
+/// be thought of in 2 ways:
+///   1. As the operation occurred, where the rollback_host_status is the
+///      HostStatus before the operation and the operation_host_status is the
+///      HostStatus after the operation.
+///   2. As the operation is rolled back, where the rollback_host_status is the
+///      HostStatus after the rollback and the operation_host_status is the
+///      HostStatus before the rollback.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Operation {
     /// The kind of operation (i.e. A/B update, runtime update, etc.)
     kind: OperationKind,
-    /// The HostStatus representing the state before the operation.
-    from_host_status: Option<HostStatus>,
+    /// The HostStatus representing the state before the operation,
+    /// which could be rolled back to.
+    rollback_host_status: Option<HostStatus>,
     /// The HostStatus representing the state after the operation.
-    to_host_status: Option<HostStatus>,
+    operation_host_status: Option<HostStatus>,
 }
 impl Operation {
     fn keep_parsing(&self) -> bool {
@@ -139,21 +147,21 @@ impl Operation {
         }
 
         // Check HostStatus fields
-        if let Some(from_hs) = &self.from_host_status {
-            // Check from trident version
-            match &from_hs.trident_version {
+        if let Some(rollback_hs) = &self.rollback_host_status {
+            // Check rollback trident version
+            match &rollback_hs.trident_version {
                 // If version is not set or is not semver, consider it incompatible
                 TridentVersion::Other(_) | TridentVersion::None => {
                     trace!(
-                        "From HostStatus has incompatible Trident version: {:?}, cannot rollback",
-                        from_hs.trident_version
+                        "The rollback HostStatus has incompatible Trident version: {:?}, cannot rollback",
+                        rollback_hs.trident_version
                     );
                     return false;
                 }
                 TridentVersion::SemVer(version) => {
                     if *version < *MINIMUM_ROLLBACK_TRIDENT_VERSION {
                         trace!(
-                            "From HostStatus has Trident version below minimum: {:?}, cannot rollback",
+                            "The rollback HostStatus has Trident version below minimum: {:?}, cannot rollback",
                             version
                         );
                         return false;
@@ -162,29 +170,29 @@ impl Operation {
             };
         }
 
-        // For all operations, to_host_status must be present
-        let to_hs = match &self.to_host_status {
+        // For all operations, operation_host_status must be present
+        let operation_hs = match &self.operation_host_status {
             Some(hs) => hs,
             None => {
-                trace!("To HostStatus is missing, cannot rollback");
+                trace!("The operation HostStatus is missing, cannot rollback");
                 return false;
             }
         };
 
-        // Check to trident version
-        match &to_hs.trident_version {
+        // Check operation trident version
+        match &operation_hs.trident_version {
             // If version is not set or is not semver, consider it incompatible
             TridentVersion::Other(_) | TridentVersion::None => {
                 trace!(
-                    "To HostStatus has incompatible Trident version: {:?}, cannot rollback",
-                    to_hs.trident_version
+                    "The operation HostStatus has incompatible Trident version: {:?}, cannot rollback",
+                    operation_hs.trident_version
                 );
                 return false;
             }
             TridentVersion::SemVer(version) => {
                 if *version < *MINIMUM_ROLLBACK_TRIDENT_VERSION {
                     trace!(
-                        "To HostStatus has Trident version below minimum: {:?}, cannot rollback",
+                        "The operation HostStatus has Trident version below minimum: {:?}, cannot rollback",
                         version
                     );
                     return false;
@@ -192,13 +200,13 @@ impl Operation {
             }
         };
 
-        // Check to last_error
-        if to_hs.last_error.is_some() {
-            trace!("To HostStatus has last_error set, cannot rollback");
+        // Check operation last_error
+        if operation_hs.last_error.is_some() {
+            trace!("The operation HostStatus has last_error set, cannot rollback");
             return false;
         }
 
-        // All checks passed; operation can be rolled back
+        // All checks passed; continue parsing operations
         true
     }
 }
@@ -238,8 +246,8 @@ impl ManualRollbackContext {
         // Create staging variable to track the current operation
         let mut current_operation = Operation {
             kind: OperationKind::Unknown,
-            from_host_status: None,
-            to_host_status: None,
+            rollback_host_status: None,
+            operation_host_status: None,
         };
 
         // Check that the first host status is parsed correctly (error state) and
@@ -282,7 +290,7 @@ impl ManualRollbackContext {
                                 current_operation.kind.clone(),
                                 &mut rollback_filters,
                             )? {
-                                current_operation.from_host_status = Some(current_hs.clone());
+                                current_operation.rollback_host_status = Some(current_hs.clone());
                                 if !current_operation.keep_parsing() {
                                     trace!("Operation cannot be part of operation list, ending parsing here.");
                                     break;
@@ -293,19 +301,19 @@ impl ManualRollbackContext {
                             // Start new operation
                             current_operation = Operation {
                                 kind: OperationKind::Unknown,
-                                from_host_status: None,
-                                to_host_status: None,
+                                rollback_host_status: None,
+                                operation_host_status: None,
                             };
                         }
                     }
                     ServicingState::CleanInstallStaged => {
                         current_operation.kind = OperationKind::Initial;
-                        current_operation.from_host_status = None;
-                        current_operation.to_host_status = Some(current_hs.clone());
+                        current_operation.rollback_host_status = None;
+                        current_operation.operation_host_status = Some(current_hs.clone());
                     }
                     ServicingState::AbUpdateStaged => {
                         current_operation.kind = OperationKind::AbUpdate;
-                        current_operation.to_host_status = Some(current_hs.clone());
+                        current_operation.operation_host_status = Some(current_hs.clone());
                         // An A/B update operation represents an active volume
                         // change
                         active_volume_changes += 1;
@@ -316,15 +324,15 @@ impl ManualRollbackContext {
                     }
                     ServicingState::RuntimeUpdateStaged => {
                         current_operation.kind = OperationKind::RuntimeUpdate;
-                        current_operation.to_host_status = Some(current_hs.clone());
+                        current_operation.operation_host_status = Some(current_hs.clone());
                     }
                     ServicingState::ManualRollbackAbStaged => {
                         current_operation.kind = OperationKind::AbManualRollback;
-                        current_operation.to_host_status = Some(current_hs.clone());
+                        current_operation.operation_host_status = Some(current_hs.clone());
                     }
                     ServicingState::ManualRollbackRuntimeStaged => {
                         current_operation.kind = OperationKind::RuntimeManualRollback;
-                        current_operation.to_host_status = Some(current_hs.clone());
+                        current_operation.operation_host_status = Some(current_hs.clone());
                     }
                     ServicingState::AbUpdateHealthCheckFailed => {
                         current_operation.kind = OperationKind::AbUpdateAutoRollback;
@@ -347,11 +355,11 @@ impl ManualRollbackContext {
             chain: operation_list
                 .iter()
                 .map(|op| {
-                    let Some(from_hs) = op.clone().from_host_status else {
+                    let Some(rollback_hs) = op.clone().rollback_host_status else {
                         return Err(TridentError::new(
                             InvalidInputError::InvalidRollbackExpectation {
                                 reason:
-                                    "from_host_status must be present for rollbackable operation"
+                                    "rollback_host_status must be present for rollbackable operation"
                                         .to_string(),
                             },
                         ));
@@ -369,10 +377,10 @@ impl ManualRollbackContext {
                         }
                     };
                     Ok(ManualRollbackChainItem {
-                        // For rollback, use the from_host_status as the source
-                        spec: from_hs.spec.clone(),
-                        ab_active_volume: from_hs.ab_active_volume,
-                        install_index: from_hs.install_index,
+                        // For rollback, use the rollback_host_status as the source
+                        spec: rollback_hs.spec.clone(),
+                        ab_active_volume: rollback_hs.ab_active_volume,
+                        install_index: rollback_hs.install_index,
                         kind,
                     })
                 })
@@ -1172,8 +1180,8 @@ mod tests {
     fn test_operation_keep_parsing() {
         let mut operation = Operation {
             kind: OperationKind::Unknown,
-            from_host_status: None,
-            to_host_status: None,
+            rollback_host_status: None,
+            operation_host_status: None,
         };
         // Validate kinds that should stop parsing
         operation.kind = OperationKind::Unknown;
@@ -1183,16 +1191,16 @@ mod tests {
         operation.kind = OperationKind::AbUpdateAutoRollback;
         assert!(!operation.keep_parsing());
 
-        // Validate that from_host_status with unset trident_version stops parsing
+        // Validate that rollback_host_status with unset trident_version stops parsing
         operation.kind = OperationKind::AbUpdate;
-        operation.from_host_status = Some(HostStatus {
+        operation.rollback_host_status = Some(HostStatus {
             trident_version: TridentVersion::None,
             ..Default::default()
         });
         assert!(!operation.keep_parsing());
 
-        // Validate that from_host_status with incompatible trident_version stops parsing
-        operation.from_host_status = Some(HostStatus {
+        // Validate that rollback_host_status with incompatible trident_version stops parsing
+        operation.rollback_host_status = Some(HostStatus {
             trident_version: TridentVersion::SemVer(
                 Version::parse("0.18.0").expect("Failed to parse version"),
             ),
@@ -1200,23 +1208,23 @@ mod tests {
         });
         assert!(!operation.keep_parsing());
 
-        // Validate that missing to_host_status stops parsing
-        operation.from_host_status = Some(HostStatus {
+        // Validate that missing operation_host_status stops parsing
+        operation.rollback_host_status = Some(HostStatus {
             trident_version: TridentVersion::SemVer(MINIMUM_ROLLBACK_TRIDENT_VERSION.clone()),
             ..Default::default()
         });
-        operation.to_host_status = None;
+        operation.operation_host_status = None;
         assert!(!operation.keep_parsing());
 
-        // Validate that to_host_status with unset trident_version stops parsing
-        operation.to_host_status = Some(HostStatus {
+        // Validate that operation_host_status with unset trident_version stops parsing
+        operation.operation_host_status = Some(HostStatus {
             trident_version: TridentVersion::None,
             ..Default::default()
         });
         assert!(!operation.keep_parsing());
 
-        // Validate that to_host_status with incompatible trident_version stops parsing
-        operation.to_host_status = Some(HostStatus {
+        // Validate that operation_host_status with incompatible trident_version stops parsing
+        operation.operation_host_status = Some(HostStatus {
             trident_version: TridentVersion::SemVer(
                 Version::parse("0.18.0").expect("Failed to parse version"),
             ),
@@ -1224,8 +1232,8 @@ mod tests {
         });
         assert!(!operation.keep_parsing());
 
-        // Validate that to_host_status with last_error stops parsing
-        operation.to_host_status = Some(HostStatus {
+        // Validate that operation_host_status with last_error stops parsing
+        operation.operation_host_status = Some(HostStatus {
             trident_version: TridentVersion::SemVer(MINIMUM_ROLLBACK_TRIDENT_VERSION.clone()),
             last_error: Some(serde_yaml::Value::Null),
             ..Default::default()
