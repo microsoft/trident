@@ -106,18 +106,16 @@ stages:
 
               # Create updated vm-netlaunch.yaml with direct streaming image
               HASH=$(./scripts/cosi-sha384.py ./artifacts/test-image/regular.cosi)
-              sudo yq \
-                '.iso += {"directStreaming": {"image": "regular.cosi", "hash": "$HASH"}}' < \
-                $(tridentSourceDirectory)/tools/vm-netlaunch.yaml > \
-                /tmp/vm-netlaunch-adjusted.yaml
+              (sudo yq '.iso += {"directStreaming": {"image": "regular.cosi", "hash": "ignored"}}' < ./tools/vm-netlaunch.yaml) > ./vm-netlaunch.yaml
+              sed -i "s|hash: ignored|hash: sha384:$HASH|" /tmp/vm-netlaunch.yaml
+              cat /tmp/vm-netlaunch.yaml
 
               # Run netlaunch in background to serve the ISO and direct streaming image
               # The deployed image will **not** reach out to netlaunch, so success will be
               # determined by the next task that waits for login in the VM serial output.
               (./bin/netlaunch \
                   --iso ./artifacts/iso/$(installerISOName).iso \
-                  --config /tmp/vm-netlaunch-adjusted.yaml \
-                  --port 34671 \
+                  --config /tmp/vm-netlaunch.yaml \
                   --servefolder ./artifacts/test-image \
                   --logstream \
                   --trace-file $(tridentSourceDirectory)/trident-clean-install-metrics.jsonl \
@@ -125,6 +123,8 @@ stages:
                   --full-logstream logstream-full.log \
                   $SECURE_BOOT \
                   --port ${{variables.netlaunchPort}} 2>&1 | tee ./direct-streaming-deployment.log) &
+
+              sleep 20
 
               sudo ./bin/storm-trident helper wait-for-login -a \
                   --vm-name "$(jq -r '.virtualmachines[0].name' $(tridentSourceDirectory)/tools/virt-deploy-metadata.json)" \
