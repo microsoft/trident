@@ -43,6 +43,10 @@ stages:
         steps:
           - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../common_tasks/update-protoc.yml
+          - bash: |
+              set -eux
+              go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+            displayName: "Install protoc-gen-go"
 
           - ${{ if eq(parameters.buildNetlaunch, true) }}:
               - bash: |
