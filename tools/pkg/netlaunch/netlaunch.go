@@ -155,7 +155,7 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 
 		if config.Rcp != nil {
 			// Populate RCP agent config into the ISO. This handles both CLI and
-			// GRPC modes, were rcpListener == nil and rcpListener != nil
+			// GRPC modes, where rcpListener == nil and rcpListener != nil
 			// respectively.
 			err = injectRcpAgentConfig(mux, announceIp, announceAddress, iso, rcpListener, *config.Rcp)
 			if err != nil {
