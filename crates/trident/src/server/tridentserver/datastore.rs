@@ -30,8 +30,14 @@ pub(super) fn servicing_state_from_datastore(datastore: &DataStore) -> HarpoonSe
 mod tests {
     use super::*;
 
+    use strum::IntoEnumIterator;
     use tempfile::TempDir;
 
+    /// An overly-paranoid test to ensure that all variants of ServicingState
+    /// are covered in servicing_state_from_datastore function and that the
+    /// mapping is correct. It is essentially a re-implementation of the mapping
+    /// in the function, but in different form, meaning that any error would
+    /// need to be typed twice for this test to pass.
     #[test]
     fn test_servicing_state_from_datastore() {
         let test_cases = vec![
@@ -81,7 +87,13 @@ mod tests {
             ),
         ];
 
+        // Track which ServicingState variants have been tested for coverage.
+        let mut coverage_assertions = ServicingState::iter().collect::<Vec<_>>();
+
         for (input, expected) in test_cases {
+            // Remove input from coverage assertions
+            coverage_assertions.retain(|item| *item != input);
+
             let temp_dir = TempDir::new().unwrap();
             let mut datastore =
                 DataStore::open_or_create(&temp_dir.path().join("datastore.sqlite")).unwrap();
@@ -95,5 +107,12 @@ mod tests {
                 "Failed for input: {input:?}, result: {result:?}, expected: {expected:?}"
             );
         }
+
+        // Ensure all ServicingState variants were tested, coverage_assertions should be empty.
+        assert!(
+            coverage_assertions.is_empty(),
+            "Not all ServicingState variants were tested: {:?}",
+            coverage_assertions
+        );
     }
 }
