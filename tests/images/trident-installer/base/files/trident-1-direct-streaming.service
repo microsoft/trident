@@ -6,6 +6,7 @@ After=network.target network-online.target systemd-udev-settle.service
 StandardOutput=journal+console
 StandardError=journal+console
 ExecStart=/bin/bash -c "trident --version"
+ExecStart=/bin/bash -c "trident --help"
 Type=oneshot
 
 [Install]
