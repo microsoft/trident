@@ -5,7 +5,9 @@ package netlaunch
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -14,11 +16,14 @@ import (
 	"time"
 
 	"github.com/bmc-toolbox/bmclib/v2"
+	"github.com/fatih/color"
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 	"github.com/stmcginnis/gofish/redfish"
 	"gopkg.in/yaml.v2"
 
+	"tridenttools/pkg/harpoon"
+	"tridenttools/pkg/harpoon/harpoonpbv1"
 	"tridenttools/pkg/isopatcher"
 	"tridenttools/pkg/netfinder"
 	"tridenttools/pkg/phonehome"
@@ -60,6 +65,7 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 		if err != nil {
 			return fmt.Errorf("failed to start RCP listener: %w", err)
 		}
+		defer rcpListener.Close()
 		log.WithField("port", rcpListener.Port).Info("RCP listener started")
 	}
 
@@ -108,6 +114,8 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 	terminateCtx, terminateFunc := context.WithCancel(ctx)
 	defer terminateFunc()
 
+	var finalHostConfigurationYaml string
+
 	// If we have a Trident config file, we need to patch it into the ISO.
 	if len(config.HostConfigFile) != 0 {
 		log.Info("Using Trident config file: ", config.HostConfigFile)
@@ -125,11 +133,11 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 			return fmt.Errorf("failed to unmarshal Trident config: %w", err)
 		}
 
-		if _, ok := trident["trident"]; !ok {
-			trident["trident"] = make(map[interface{}]interface{})
-		}
-		trident["trident"].(map[interface{}]interface{})["phonehome"] = fmt.Sprintf("http://%s/phonehome", announceAddress)
-		trident["trident"].(map[interface{}]interface{})["logstream"] = fmt.Sprintf("http://%s/logstream", announceAddress)
+		// if _, ok := trident["trident"]; !ok {
+		// 	trident["trident"] = make(map[interface{}]interface{})
+		// }
+		// trident["trident"].(map[interface{}]interface{})["phonehome"] = fmt.Sprintf("http://%s/phonehome", announceAddress)
+		// trident["trident"].(map[interface{}]interface{})["logstream"] = fmt.Sprintf("http://%s/logstream", announceAddress)
 
 		tridentConfig, err := yaml.Marshal(trident)
 		if err != nil {
@@ -137,7 +145,7 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 		}
 
 		// Store the modified trident config for later use
-		config.HostConfigFile = string(tridentConfig)
+		finalHostConfigurationYaml = string(tridentConfig)
 
 		err = isopatcher.PatchFile(iso, "/etc/trident/config.yaml", tridentConfig)
 		if err != nil {
@@ -286,6 +294,29 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 		log.Info("Waiting for phone home...")
 	}
 
+	if rcpListener != nil {
+		log.Info("Waiting for RCP connection...")
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case conn := <-rcpListener.ConnChan:
+			log.Infof("Accepted RCP connection from %s", conn.RemoteAddr())
+			installCtx, installCancel := context.WithTimeout(ctx, time.Minute*10)
+			defer installCancel()
+
+			go func() {
+				// Defer termination of the phonehome listener
+				defer terminateFunc()
+
+				err := doGrpcInstall(installCtx, conn, finalHostConfigurationYaml)
+				if err != nil {
+					log.WithError(err).Errorln("gRPC installation failed")
+					return
+				}
+			}()
+		}
+	}
+
 	// Wait for something to happen
 	exitError := phonehome.ListenLoop(terminateCtx, result, config.WaitForProvisioning, config.MaxPhonehomeFailures)
 
@@ -383,6 +414,60 @@ func injectRcpAgentConfig(
 	err = isopatcher.PatchFile(iso, "/trident_cdrom/rcp-agent.yaml", encoded)
 	if err != nil {
 		return fmt.Errorf("failed to patch RCP agent config into ISO: %w", err)
+	}
+
+	return nil
+}
+
+func doGrpcInstall(ctx context.Context, conn net.Conn, hostConfiguration string) error {
+	harpoonClient, err := harpoon.NewHarpoonClientFromNetworkConnection(conn)
+	if err != nil {
+		return fmt.Errorf("failed to create Harpoon client from RCP connection: %w", err)
+	}
+
+	installCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+
+	stream, err := harpoonClient.Install(installCtx, &harpoonpbv1.ServicingRequest{
+		Stage: &harpoonpbv1.StageRequest{
+			Config: hostConfiguration,
+		},
+		Finalize: &harpoonpbv1.FinalizeRequest{
+			// Let Trident handle the reboot
+			OrchestratorHandlesReboot: false,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to start installation via Harpoon: %w", err)
+	}
+
+	colorize := color.New(color.FgCyan).SprintfFunc()
+	grpcHeader := colorize("[GRPC]")
+
+	for {
+		resp, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			log.Info("Install stream ended")
+			break
+		} else if err != nil {
+			return fmt.Errorf("failed to receive installation response via Harpoon: %w", err)
+		}
+
+		switch payload := resp.Response.(type) {
+		case *harpoonpbv1.ServicingResponse_Start:
+			log.Infof(grpcHeader + "[START]")
+		case *harpoonpbv1.ServicingResponse_Log:
+			log.Infof(grpcHeader+"[%s] %s", payload.Log.Level.String(), payload.Log.Message)
+		case *harpoonpbv1.ServicingResponse_FinalStatus:
+			var errStr string
+			if tridentError := payload.FinalStatus.GetError(); tridentError != nil {
+				errStr = fmt.Sprintf("\n%s", tridentError.FullBody)
+			}
+
+			log.Infof(grpcHeader+"[STATUS] %s%s", payload.FinalStatus.Status.String(), errStr)
+		default:
+			log.Warnf("Received unknown response type from Harpoon: %T", payload)
+		}
 	}
 
 	return nil

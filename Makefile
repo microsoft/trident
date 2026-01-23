@@ -430,6 +430,8 @@ go-tools: bin/netlaunch bin/netlisten bin/miniproxy bin/virtdeploy bin/isopatch
 
 bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/*
 	@mkdir -p bin
+	cd tools && go generate pkg/rcp/tlscerts/certs.go
+	cd tools && go generate pkg/harpoon/harpoon.go
 	cd tools && go build -tags tls_server -o ../bin/netlaunch ./cmd/netlaunch
 
 bin/netlisten: tools/cmd/netlisten/* tools/go.sum tools/pkg/*
@@ -557,8 +559,8 @@ run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlau
 	@cp artifacts/osmodifier artifacts/test-image/
 	@bin/netlaunch \
 	    --trident-binary $(RUN_NETLAUNCH_TRIDENT_BIN) \
-		--oscustomizer-binary artifacts/osmodifier \
-		--rcp-agent-mode cli \
+		--osmodifier-binary artifacts/osmodifier \
+		--rcp-agent-mode grpc \
 	 	--iso $(NETLAUNCH_ISO) \
 		$(if $(NETLAUNCH_PORT),--port $(NETLAUNCH_PORT)) \
 		--config $(NETLAUNCH_CONFIG) \
