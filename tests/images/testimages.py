@@ -147,6 +147,11 @@ ARTIFACTS = ArtifactManifest(
             version="*",
         ),
         BaseImageManifest(
+            image=BaseImage.CORE_ARM64,
+            package_name="core_vhdx-arm64-3.0-stable",
+            version="*",
+        ),
+        BaseImageManifest(
             image=BaseImage.CORE_SELINUX,
             package_name="core_selinux_vhdx-3.0-stable",
             version="*",
