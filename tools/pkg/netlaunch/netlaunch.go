@@ -154,7 +154,7 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 		}
 
 		if config.Rcp != nil {
-			err = injectRcpAgentConfig(announceIp, announceAddress, iso, rcpListener, *config.Rcp)
+			err = injectRcpAgentConfig(mux, announceIp, announceAddress, iso, rcpListener, *config.Rcp)
 			if err != nil {
 				return fmt.Errorf("failed to inject RCP agent config into ISO: %w", err)
 			}
@@ -366,6 +366,7 @@ func startLocalVm(localVmUuidStr string, isoLocation string, secureBoot bool, si
 }
 
 func injectRcpAgentConfig(
+	mux *http.ServeMux,
 	announceIp string,
 	announceHttpAddress string,
 	iso []byte,
@@ -382,7 +383,7 @@ func injectRcpAgentConfig(
 			return fmt.Errorf("failed to read local Trident binary from '%s': %w", *localRcpConf.LocalTridentPath, err)
 		}
 		// Create an http endpoint that exclusively serves the local Trident binary
-		http.HandleFunc("/trident", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/trident", func(w http.ResponseWriter, r *http.Request) {
 			http.ServeContent(w, r, "trident", time.Now(), bytes.NewReader(data))
 		})
 
@@ -398,7 +399,7 @@ func injectRcpAgentConfig(
 			return fmt.Errorf("failed to read local Osmodifier binary from '%s': %w", *localRcpConf.LocalOsmodifierPath, err)
 		}
 		// Create an http endpoint that exclusively serves the local Osmodifier binary
-		http.HandleFunc("/osmodifier", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/osmodifier", func(w http.ResponseWriter, r *http.Request) {
 			http.ServeContent(w, r, "osmodifier", time.Now(), bytes.NewReader(data))
 		})
 
