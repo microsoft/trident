@@ -100,12 +100,15 @@ stages:
 
           - bash: |
               set -euxo pipefail
-
+              ISO_FILE=./artifacts/iso/$(installerISOName).iso
+              COSI_FILE=./artifacts/test-image/regular.cosi
+              HASH=$(./scripts/cosi-sha384.py $COSI_FILE)
               sudo ./bin/storm-trident helper direct-streaming -a \
                   --log-dir $(ob_outputDirectory) \
                   --netlaunch-config-file ./tools/vm-netlaunch.yaml \
-                  --cosi-file ./artifacts/test-image/regular.cosi \
-                  --iso-file ./artifacts/trident-direct-streaming-installer.iso \
+                  --cosi-file $COSI_FILE \
+                  --cosi-metadata-sha384 $HASH \
+                  --iso-file $ISO_FILE \
                   --port ${{variables.netlaunchPort}} \
                   --enable-secure-boot
 
