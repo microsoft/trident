@@ -64,9 +64,9 @@ os:
     enable:
       - sshd
       - trident-direct-streaming
-      - trident-direct-streaming-1
-      - trident-direct-streaming-2
-      - trident-direct-streaming-3
+      - trident-1-direct-streaming
+      - trident-2-direct-streaming
+      - trident-3-direct-streaming
 
   additionalFiles:
     - source: files/getty@.service
@@ -77,12 +77,12 @@ os:
       destination: /root/.profile
     - source: files/trident-direct-streaming.service
       destination: /usr/lib/systemd/system/trident-direct-streaming.service
-    - source: files/trident-direct-streaming-1.service
-      destination: /usr/lib/systemd/system/trident-direct-streaming-1.service
-    - source: files/trident-direct-streaming-2.service
-      destination: /usr/lib/systemd/system/trident-direct-streaming-2.service
-    - source: files/trident-direct-streaming-3.service
-      destination: /usr/lib/systemd/system/trident-direct-streaming-3.service
+    - source: files/trident-1-direct-streaming.service
+      destination: /usr/lib/systemd/system/trident-1-direct-streaming.service
+    - source: files/trident-2-direct-streaming.service
+      destination: /usr/lib/systemd/system/trident-2-direct-streaming.service
+    - source: files/trident-3-direct-streaming.service
+      destination: /usr/lib/systemd/system/trident-3-direct-streaming.service
 
   selinux:
     mode: enforcing
