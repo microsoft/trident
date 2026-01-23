@@ -1121,7 +1121,7 @@ mod tests {
 
     #[test]
     fn test_first_host_status() {
-        // Validate empty host status list creates context with no available rollblacks
+        // Validate empty host status list creates context with no available rollbacks
         let context = ManualRollbackContext::new(&[]);
         assert_eq!(context.unwrap().get_rollback_chain().len(), 0);
 
@@ -1142,7 +1142,7 @@ mod tests {
         let context = ManualRollbackContext::new(&test_list);
         assert!(context.is_err());
 
-        // Validate that a host status list with the first entry as non-Provisioned creates context with no available rollblacks
+        // Validate that a host status list with the first entry as non-Provisioned creates context with no available rollbacks
         let mut test_list = host_status_base_list.clone();
         test_list.insert(
             0,
