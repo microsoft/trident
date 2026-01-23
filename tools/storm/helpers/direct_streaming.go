@@ -21,7 +21,7 @@ type DirectStreamingHelper struct {
 	args struct {
 		VmName              string `help:"Name of VM." type:"string" default:"virtdeploy-vm-0"`
 		CosiFile            string `required:"" help:"Path to the COSI file to read." type:"existingfile"`
-		CosiMetadataSha384  string `help:"Expected sha384 hash of the COSI metadata." default:"ignored"`
+		CosiMetadataSha384  string `name:"cosi-metadata-sha384" help:"Expected sha384 hash of the COSI metadata." default:"ignored"`
 		IsoFile             string `required:"" help:"Path to the ISO file to read." type:"existingfile"`
 		Port                uint16 `required:"" help:"Port on which the netlaunch server is running."`
 		NetlaunchConfigFile string `required:"" help:"Path to the netlaunch config file." type:"existingfile"`
