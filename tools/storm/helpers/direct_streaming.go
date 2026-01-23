@@ -51,9 +51,6 @@ func (h *DirectStreamingHelper) directStreaming(tc storm.TestCase) error {
 	defer tc.ArtifactBroker().PublishLogFile("netlaunch.log", "/tmp/netlaunch.log")
 	defer tc.ArtifactBroker().PublishLogFile("netlaunch-trace.jsonl", "/tmp/netlaunch-trace.jsonl")
 
-	netlaunchContext, netlaunchCancel := context.WithCancel(context.Background())
-	defer netlaunchCancel()
-
 	// Get the VM serial log file path
 	vmSerialLog, err := h.findVmSerialLogFile()
 	if err != nil {
@@ -72,9 +69,9 @@ func (h *DirectStreamingHelper) directStreaming(tc storm.TestCase) error {
 	// Start netlaunch in background because the VM will not connect back to
 	// netlaunch and we need the file server to continue running until the image
 	// has been pulled and deployed.
+	netlaunchContext := context.Background()
 	go func() {
 		logrus.Info("Starting netlaunch...")
-		defer netlaunchCancel()
 		err = netlaunch.RunNetlaunch(netlaunchContext, netlaunchConfig)
 		logrus.Info("netlaunch stopped.")
 		if err != nil && err != context.Canceled {
