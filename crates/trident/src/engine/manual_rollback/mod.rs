@@ -41,12 +41,7 @@ pub fn get_rollback_info(datastore: &DataStore, kind: GetKind) -> Result<String,
     // Create ManualRollback context from HostStatus entries.
     let context = ManualRollbackContext::new(&host_statuses)
         .message("Failed to create manual rollback context")?;
-    let rollback_chain =
-        context
-            .get_rollback_chain()
-            .structured(ServicingError::ManualRollback {
-                message: "Failed to get available rollbacks",
-            })?;
+    let rollback_chain = context.get_rollback_chain();
 
     match kind {
         GetKind::RollbackTarget => {

@@ -573,14 +573,14 @@ func (rc *virtDeployResourceConfig) setupVm(vm *VirtDeployVM) error {
 	// libvirt sees it. We use the DomainGetXMLDesc method with 0 flags to get
 	// the full XML. The previous domainXML variable may not include all
 	// auto-generated fields.
-	rXml, err := rc.lv.DomainGetXMLDesc(vm.domain, 0)
+	finalDomainXml, err := rc.lv.DomainGetXMLDesc(vm.domain, 0)
 	if err != nil {
 		return fmt.Errorf("get domain XML description: %w", err)
 	}
 
 	// Initialize empty struct and unmarshal the XML into it
 	vm.domainDefinition = &libvirtxml.Domain{}
-	err = vm.domainDefinition.Unmarshal(rXml)
+	err = vm.domainDefinition.Unmarshal(finalDomainXml)
 	if err != nil {
 		return fmt.Errorf("unmarshal domain XML description: %w", err)
 	}
