@@ -3,6 +3,8 @@ Description=Trident Direct Streaming Service
 After=network.target network-online.target systemd-udev-settle.service
 
 [Service]
+StandardOutput=journal+console
+StandardError=journal+console
 ExecStart=/bin/bash -c "trident stream-image $(cat /trident_cdrom/direct-streaming.conf | grep URL | cut -d '=' -f 2) --hash $(cat /trident_cdrom/direct-streaming.conf | grep HASH | cut -d '=' -f 2) --verbosity DEBUG"
 Type=oneshot
 
