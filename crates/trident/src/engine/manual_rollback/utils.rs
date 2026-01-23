@@ -1,8 +1,11 @@
+use std::fmt;
+
 use anyhow::{Context, Error};
 use lazy_static::lazy_static;
 use log::{info, trace};
 use semver::Version;
 use serde::{Deserialize, Serialize};
+use strum_macros::EnumIs;
 
 use trident_api::{
     config::HostConfiguration,
@@ -72,8 +75,8 @@ pub(crate) struct ManualRollbackChainItem {
 
 /// OperationKind is classification of Operations based on their servicing state.
 /// It is intended to be internal to the ManualRollbackContext construction logic.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, EnumIs, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 enum OperationKind {
     /// An operation that has not been classified yet. Typically represents
     /// an Operation that has just been created from a Provisioned
@@ -101,6 +104,19 @@ impl OperationKind {
         )
     }
 }
+impl fmt::Display for OperationKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            OperationKind::Unknown => write!(f, "unknown"),
+            OperationKind::Initial => write!(f, "initial"),
+            OperationKind::AbUpdate => write!(f, "ab-update"),
+            OperationKind::RuntimeUpdate => write!(f, "runtime-update"),
+            OperationKind::AbManualRollback => write!(f, "ab-manual-rollback"),
+            OperationKind::RuntimeManualRollback => write!(f, "runtime-manual-rollback"),
+            OperationKind::AbUpdateAutoRollback => write!(f, "ab-update-auto-rollback"),
+        }
+    }
+}
 
 /// Operation is an encapsulation of a set of HostStatus entries for use
 /// internally with ManualRollbackContext's parsing logic.
@@ -118,7 +134,7 @@ impl Operation {
     fn keep_parsing(&self) -> bool {
         // Check operation kind
         if !self.kind.keep_parsing() {
-            trace!("Operation kind {:?} cannot rollback", self.kind);
+            trace!("Operation kind {} cannot rollback", self.kind);
             return false;
         }
 
@@ -434,8 +450,8 @@ impl ManualRollbackContext {
     }
 
     /// Get the full rollback chain
-    pub fn get_rollback_chain(&self) -> Vec<ManualRollbackChainItem> {
-        self.chain.clone()
+    pub fn get_rollback_chain(&self) -> &Vec<ManualRollbackChainItem> {
+        &self.chain
     }
 
     /// Get the full rollback chain as YAML string
