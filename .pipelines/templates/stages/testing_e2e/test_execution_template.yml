@@ -108,7 +108,9 @@ stages:
 
               mkdir -p $(ob_outputDirectory)
 
-              ./bin/storm-trident run "$(scenario)" -- \
+              ./bin/storm-trident run "$(scenario)" \
+                  -o $(ob_outputDirectory) \
+                  -- \
                   --pipeline-run \
                   --iso "./artifacts/iso/$(installerISOName).iso"
             displayName: "🧪 Run E2E Test"
