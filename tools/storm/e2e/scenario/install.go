@@ -8,20 +8,26 @@ import (
 	"time"
 	"tridenttools/pkg/netlaunch"
 	"tridenttools/pkg/phonehome"
+	"tridenttools/storm/utils/trident"
 
 	"github.com/microsoft/storm"
 	log "github.com/sirupsen/logrus"
 )
 
 func (s *TridentE2EScenario) installOs(tc storm.TestCase) error {
+	// Bump the version for this installation
+	s.version += 1
+
+	// Get netlaunch connection config
 	connConfig := s.testHost.NetlaunchConnectionConfig()
 
 	// Prepare host config
-	hostConfigFile, err := s.renderHostConfiguration()
+	hostConfigFile, err := s.config.ToYaml()
 	if err != nil {
 		return err
 	}
 
+	// Prepare temporary host config file to be used by netlaunch
 	tempHostConfigFilePath, err := prepareHostConfig(hostConfigFile)
 	if err != nil {
 		return err
@@ -98,7 +104,7 @@ func (s *TridentE2EScenario) installOs(tc storm.TestCase) error {
 	return nil
 }
 
-func prepareHostConfig(hostConfigYaml string) (string, error) {
+func prepareHostConfig(hostConfigYaml []byte) (string, error) {
 	tempHostConfigFile, err := os.CreateTemp("", "hc-tmp-")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temporary host config file: %w", err)
@@ -114,7 +120,7 @@ func prepareHostConfig(hostConfigYaml string) (string, error) {
 		tempHostConfigFile.Close()
 	}()
 
-	_, err = tempHostConfigFile.WriteString(hostConfigYaml)
+	_, err = tempHostConfigFile.Write(hostConfigYaml)
 	if err != nil {
 		return "", fmt.Errorf("failed to write to temporary host config file: %w", err)
 	}
@@ -125,4 +131,22 @@ func prepareHostConfig(hostConfigYaml string) (string, error) {
 	}
 
 	return tempHostConfigFile.Name(), nil
+}
+
+func (s *TridentE2EScenario) checkTridentViaSshAfterInstall(tc storm.TestCase) error {
+	// Short timeout since we're expecting the host to already be up.
+	conn_ctx, cancel := context.WithTimeout(tc.Context(), time.Minute)
+	defer cancel()
+	err := s.populateSshClient(conn_ctx)
+	if err != nil {
+		tc.FailFromError(err)
+		return nil
+	}
+
+	err = trident.CheckTridentService(s.sshClient, s.runtime, time.Minute*2, true)
+	if err != nil {
+		tc.FailFromError(err)
+	}
+
+	return nil
 }

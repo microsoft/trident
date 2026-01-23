@@ -47,8 +47,11 @@ func (l LogLevel) AsLogrusLevel() log.Level {
 	}
 }
 
-func SetupLogstream(backgroundLogFile string) (*os.File, error) {
+func SetupLogstream(mux *http.ServeMux, backgroundLogFile string) (*os.File, error) {
 	colorize := color.New(color.FgYellow).SprintfFunc()
+	if mux == nil {
+		mux = http.DefaultServeMux
+	}
 
 	// Setup background logger
 	bgLogger := log.New()
@@ -63,7 +66,7 @@ func SetupLogstream(backgroundLogFile string) (*os.File, error) {
 		ForceColors: true,
 	})
 
-	http.HandleFunc("/logstream", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/logstream", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(201)
 		w.Write([]byte("OK"))
 
