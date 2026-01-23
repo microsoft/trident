@@ -242,9 +242,12 @@ message GetRequiredServicingTypeResponse {
 }
 
 enum ManualRollbackKind {
-  ANY_ROLLBACK_REQUESTED      = 0;
-  AB_ROLLBACK_REQUESTED       = 1;
-  RUNTIME_ROLLBACK_REQUESTED  = 2;
+  // No specific rollback kind was requested
+  ANY_ROLLBACK_REQUESTED = 0;
+  // Rollback of an A/B update was requested
+  AB_ROLLBACK_REQUESTED = 1;
+  // Rollback of a runtime update was requested
+  RUNTIME_ROLLBACK_REQUESTED = 2;
 }
 
 message CheckRollbackRequest {
@@ -253,9 +256,12 @@ message CheckRollbackRequest {
 }
 
 enum CheckRollbackKind {
-  NO_ROLLBACK_AVAILABLE      = 0;
-  AB_ROLLBACK_EXPECTED       = 1;
-  RUNTIME_ROLLBACK_EXPECTED  = 2;
+  // No rollbacks are available
+  NO_ROLLBACK_AVAILABLE = 0;
+  // Rollback of an A/B update is expected
+  AB_ROLLBACK_EXPECTED = 1;
+  // Rollback of a runtime update is expected
+  RUNTIME_ROLLBACK_EXPECTED = 2;
 }
 
 message CheckRollbackResponse {

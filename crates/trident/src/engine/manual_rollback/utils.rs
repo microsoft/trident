@@ -1,12 +1,15 @@
+use std::fmt;
+
 use anyhow::{Context, Error};
 use lazy_static::lazy_static;
 use log::{info, trace};
 use semver::Version;
 use serde::{Deserialize, Serialize};
+use strum_macros::EnumIs;
 
 use trident_api::{
     config::HostConfiguration,
-    error::{InvalidInputError, ReportError, ServicingError, TridentError},
+    error::{InvalidInputError, TridentError},
     status::{AbVolumeSelection, HostStatus, ServicingState, TridentVersion},
 };
 
@@ -19,6 +22,7 @@ lazy_static! {
             .expect("Failed to parse minimum rollback Trident version");
 }
 
+/// ManualRollbackRequestKind represents the kind of manual rollback request.
 pub enum ManualRollbackRequestKind {
     RollbackOnlyIfNextIsRuntimeUpdate,
     RollbackAvailableAbUpdate,
@@ -26,6 +30,7 @@ pub enum ManualRollbackRequestKind {
 }
 
 impl ManualRollbackRequestKind {
+    /// Create ManualRollbackRequestKind from flags.
     pub fn from_flags(
         invoke_if_next_is_runtime: bool,
         invoke_available_ab: bool,
@@ -66,306 +71,404 @@ pub(crate) struct ManualRollbackChainItem {
     pub ab_active_volume: Option<AbVolumeSelection>,
     /// The install index of the rollback.
     pub install_index: usize,
-    /// The index of the HostStatus entry that this rollback was
-    /// derived from, used internally to maintian ordering.
-    #[serde(skip)]
-    host_status_index: i32,
 }
 
-/// ManualRollbackContext tracks available rollbacks for each volume and
-/// provides methods to query them.
+/// OperationKind is classification of Operations based on their servicing state.
+/// It is intended to be internal to the ManualRollbackContext construction logic.
+#[derive(Clone, Debug, EnumIs, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum OperationKind {
+    /// An operation that has not been classified yet. Typically represents
+    /// an Operation that has just been created from a Provisioned
+    /// HostStatus entry prior to parsing any subsequent HostStatus
+    /// entries that inform the operation kind.
+    Unknown,
+    /// Represents Clean Install or Offline-Initialize operations.
+    Initial,
+    /// Represents A/B Update operations.
+    AbUpdate,
+    /// Represents Runtime Update operations.
+    RuntimeUpdate,
+    /// Represents A/B Manual Rollback operations.
+    AbManualRollback,
+    /// Represents Runtime Manual Rollback operations.
+    RuntimeManualRollback,
+    /// Represents A/B Update Auto Rollback operations.
+    AbUpdateAutoRollback,
+}
+impl OperationKind {
+    fn keep_parsing(&self) -> bool {
+        !matches!(
+            self,
+            OperationKind::Unknown | OperationKind::Initial | OperationKind::AbUpdateAutoRollback
+        )
+    }
+}
+impl fmt::Display for OperationKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            OperationKind::Unknown => write!(f, "unknown"),
+            OperationKind::Initial => write!(f, "initial"),
+            OperationKind::AbUpdate => write!(f, "ab-update"),
+            OperationKind::RuntimeUpdate => write!(f, "runtime-update"),
+            OperationKind::AbManualRollback => write!(f, "ab-manual-rollback"),
+            OperationKind::RuntimeManualRollback => write!(f, "runtime-manual-rollback"),
+            OperationKind::AbUpdateAutoRollback => write!(f, "ab-update-auto-rollback"),
+        }
+    }
+}
+
+/// Operation is an encapsulation of a set of HostStatus entries for use
+/// internally with ManualRollbackContext's parsing logic. An operation can
+/// be thought of in 2 ways:
+///   1. As the operation occurred, where the rollback_host_status is the
+///      HostStatus before the operation and the operation_host_status is the
+///      HostStatus after the operation.
+///   2. As the operation is rolled back, where the rollback_host_status is the
+///      HostStatus after the rollback and the operation_host_status is the
+///      HostStatus before the rollback.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Operation {
+    /// The kind of operation (i.e. A/B update, runtime update, etc.)
+    kind: OperationKind,
+    /// The HostStatus representing the state before the operation,
+    /// which could be rolled back to.
+    rollback_host_status: Option<HostStatus>,
+    /// The HostStatus representing the state after the operation.
+    operation_host_status: Option<HostStatus>,
+}
+impl Operation {
+    fn keep_parsing(&self) -> bool {
+        // Check operation kind
+        if !self.kind.keep_parsing() {
+            trace!("Operation kind {} cannot rollback", self.kind);
+            return false;
+        }
+
+        // Check HostStatus fields
+        if let Some(rollback_hs) = &self.rollback_host_status {
+            // Check rollback trident version
+            match &rollback_hs.trident_version {
+                // If version is not set or is not semver, consider it incompatible
+                TridentVersion::Other(_) | TridentVersion::None => {
+                    trace!(
+                        "The rollback HostStatus has incompatible Trident version: {:?}, cannot rollback",
+                        rollback_hs.trident_version
+                    );
+                    return false;
+                }
+                TridentVersion::SemVer(version) => {
+                    if *version < *MINIMUM_ROLLBACK_TRIDENT_VERSION {
+                        trace!(
+                            "The rollback HostStatus has Trident version below minimum: {:?}, cannot rollback",
+                            version
+                        );
+                        return false;
+                    }
+                }
+            };
+        }
+
+        // For all operations, operation_host_status must be present
+        let operation_hs = match &self.operation_host_status {
+            Some(hs) => hs,
+            None => {
+                trace!("The operation HostStatus is missing, cannot rollback");
+                return false;
+            }
+        };
+
+        // Check operation trident version
+        match &operation_hs.trident_version {
+            // If version is not set or is not semver, consider it incompatible
+            TridentVersion::Other(_) | TridentVersion::None => {
+                trace!(
+                    "The operation HostStatus has incompatible Trident version: {:?}, cannot rollback",
+                    operation_hs.trident_version
+                );
+                return false;
+            }
+            TridentVersion::SemVer(version) => {
+                if *version < *MINIMUM_ROLLBACK_TRIDENT_VERSION {
+                    trace!(
+                        "The operation HostStatus has Trident version below minimum: {:?}, cannot rollback",
+                        version
+                    );
+                    return false;
+                }
+            }
+        };
+
+        // Check operation last_error
+        if operation_hs.last_error.is_some() {
+            trace!("The operation HostStatus has last_error set, cannot rollback");
+            return false;
+        }
+
+        // All checks passed; continue parsing operations
+        true
+    }
+}
+
+/// ManualRollbackContext tracks available rollbacks and provides methods to query them.
 pub(crate) struct ManualRollbackContext {
-    /// Track the available rollbacks for volume A.
-    volume_a_available_rollbacks: Vec<ManualRollbackChainItem>,
-    /// Track the available rollbacks for volume B.
-    volume_b_available_rollbacks: Vec<ManualRollbackChainItem>,
-    /// Track the currently active volume.
-    active_volume: Option<AbVolumeSelection>,
+    /// The chain of available manual rollbacks.
+    chain: Vec<ManualRollbackChainItem>,
 }
 impl ManualRollbackContext {
     /// Creates a new ManualRollbackContext from a list of HostStatus entries.
-    /// Start from the oldest HostStatus and work forward to the newest,
-    /// tracking available rollbacks for each volume.
+    /// Starts from the newest HostStatus and works backward to the oldest.
     ///
-    /// For any operation (install, update, rollback), there are a series of
-    /// HostStatus entries that represent the state transitions. These related
-    /// states can be used to infer what operations were performed, and what
-    /// volumes were affected, and thus what rollbacks are available.
+    /// A set of HostStatus entries are grouped into an Operation based on
+    /// the servicing states. A set of Host Status entries is considered
+    /// a group if it starts with a Provisioned state and includes all subsequent
+    /// staged states until the next Provisioned state (or the end of the list).
     ///
-    /// The list of available rollbacks for each volume can be:
-    /// - active volume: 0 or more runtime rollbacks
-    /// - inactive volume: 1 A/B update followed by 0 or more runtime rollbacks
+    /// Operations are parsed until either:
+    /// * the second A/B update operation is found (indicating that both volumes
+    ///   have been updated)
+    /// * an operation that cannot be rolled back is found
+    /// * a HostStatus entry is None
     ///
-    /// As each HostStatus is processed, the available rollback lists are updated
-    /// for each successful Provisioned state.
-    /// - A Provisioned state that was reached via an update operation will be added
-    ///   to the list of available rollbacks for the servicing volume.
-    /// - A Provisioned state that was reached via a runtime manual-rollback operation
-    ///   will remove the next available rollback(s) from the active volume available
-    ///   rollbacks list.
-    /// - A Provisioned state that was reached via an A/B manual-rollback operation
-    ///   will remove all of the available rollback(s) from the active volume available
-    ///   rollbacks list and the first available rollback from the inactive volume.
+    /// Once the Operations have been parsed, the ManualRollback operations (both
+    /// A/B and runtime) and the operations that they undo (both A/B and runtime
+    /// updates) are pruned from the list of Operations.
     ///
-    /// There are a some complications:
-    /// - Only Trident versions >= MINIMUM_ROLLBACK_TRIDENT_VERSION_STR support
-    ///   manual rollback. Older versions will not have rollbacks added.
-    /// - If a last_error is set on the HostStatus, no rollback will be added.
-    /// - The database may have consecutive 'duplicate' Provisioned states; these
-    ///   are typically found after offline-init and should be consolidated into a
-    ///   single state for rollback purposes.
-    /// - ManualRollback must be considered, typically by popping the appropriate
-    ///   available rollback(s) from the active volume available rollbacks list.
-    /// - Auto-rollback must be considered, typically by not adding the an available
-    ///   rollback for the Provisioned state reached via auto-rollback.
-    pub fn new(host_statuses: &[HostStatus]) -> Result<Self, TridentError> {
-        // Initialize context from HostStatus entries.
-        let mut instance = ManualRollbackContext {
-            volume_a_available_rollbacks: Vec::new(),
-            volume_b_available_rollbacks: Vec::new(),
-            active_volume: None,
+    /// The remaining operations are converted into ManualRollbackChainItems and
+    /// stored in the ManualRollbackContext.
+    pub fn new(host_statuses: &[Option<HostStatus>]) -> Result<Self, TridentError> {
+        let mut operation_list: Vec<Operation> = vec![];
+
+        // Only need to parse until the second A/B volume change
+        let mut active_volume_changes = 0;
+
+        // Create staging variable to track the current operation
+        let mut current_operation = Operation {
+            kind: OperationKind::Unknown,
+            rollback_host_status: None,
+            operation_host_status: None,
         };
 
-        // Track state as HostStatus entries are processed
-        let mut is_auto_rollback = false;
-        let mut is_manual_rollback = false;
-        let mut is_ab_update = false;
-        let mut last_provisioned_index = -1;
-
-        for (i, hs) in host_statuses.iter().enumerate() {
-            trace!(
-                "Processing HostStatus at index {}: servicing_state='{:?}', ab_active_volume='{:?}'",
-                i,
-                hs.servicing_state,
-                hs.ab_active_volume,
-            );
-            // An A/B update overwrites the inactive volume, so the
-            // inactive volume will no longer have any available rollbacks.
-            // Clear the ManualRollbackContext's available rollback list
-            // for the inactive volume to reflect this.
-            if hs.servicing_state == ServicingState::AbUpdateStaged {
-                trace!("'AbUpdateStaged' detected at index {}: clearing available rollbacks for inactive volume '{:?}': a:[{:?}] b:[{:?}]",
-                    i,
-                    hs.ab_active_volume,
-                    instance.volume_a_available_rollbacks.len(),
-                    instance.volume_b_available_rollbacks.len()
-                );
-                if let Some(volume) = hs.ab_active_volume {
-                    instance.clear_available_rollbacks(volume, true);
-                }
+        // Check that the first host status is parsed correctly (error state) and
+        // that the state is Provisioned (otherwise, no rollbacks are possible)
+        match host_statuses.first() {
+            Some(None) => {
+                return Err(TridentError::new(
+                    InvalidInputError::InvalidRollbackExpectation {
+                        reason: "first host status was not parsed correctly".to_string(),
+                    },
+                ));
             }
-
-            // Handle each HostStatus entry based on whether it's a Provisioned
-            // state or not.
-            //
-            // Available rollbacks are added when Provisioned states are processed.
-            // Other states are used to track what type of operation (install, runtime
-            // update, A/B update, auto-rollback, manual-rollback) was performed
-            // to reach the Provisioned state.
-            if hs.servicing_state == ServicingState::Provisioned {
+            Some(Some(hs)) if hs.servicing_state != ServicingState::Provisioned => {
                 trace!(
-                    "Processing 'Provisioned' state at index {} for active volume '{:?}'",
-                    i,
-                    hs.ab_active_volume
+                    "First host status is not Provisioned ({:?}), returning empty rollback chain",
+                    hs.servicing_state
                 );
+                return Ok(Self { chain: vec![] });
+            }
+            _ => {}
+        };
 
-                // Update context if a new (non-repeated) Provisioned state is
-                // processed that is not the first Provisioned state (which would
-                // be install or offline-init, and not something that can be rolled
-                // back).
-                if last_provisioned_index != -1 && last_provisioned_index != (i - 1) as i32 {
-                    // Create the rollback chain item for this Provisioned state
-                    let host_status_context = ManualRollbackChainItem {
-                        spec: host_statuses[last_provisioned_index as usize].spec.clone(),
-                        ab_active_volume: host_statuses[last_provisioned_index as usize]
-                            .ab_active_volume,
-                        install_index: host_statuses[last_provisioned_index as usize].install_index,
-                        kind: if is_ab_update {
-                            ManualRollbackKind::Ab
+        let mut rollback_filters: Vec<OperationKind> = vec![];
+
+        // Parse host status groups, where [provisioned & *finalize & *stage] == "group"
+        // into operations. Skip the first host status since it is already known to be Provisioned
+        // and `current_operation` has been created.
+        for hs in host_statuses.iter().skip(1) {
+            match hs {
+                Some(current_hs) => match current_hs.servicing_state {
+                    ServicingState::Provisioned => {
+                        if matches!(current_operation.kind, OperationKind::Unknown) {
+                            // If operation kind has not been found, this is either a repeated
+                            // Provisioned state (e.g., after offline-init) or the top of the
+                            // host status list. In either case, do not push the operation.
                         } else {
-                            ManualRollbackKind::Runtime
-                        },
-                        host_status_index: last_provisioned_index,
-                    };
-                    if is_auto_rollback {
-                        // If this Provisioned state was reached via an auto-rollback,
-                        // it cannot be rolled back from, so do not add it to the available
-                        // rollbacks.
-                        trace!(
-                            "Auto-rollback detected at index {} for active volume '{:?}'",
-                            i,
-                            instance.active_volume
-                        );
-                    } else if is_manual_rollback {
-                        // If this Provisioned state was reached via a manual rollback,
-                        // we need to remove the appropriate available rollback(s).
-                        let active_volume_changed = hs.ab_active_volume != instance.active_volume;
-                        trace!(
-                            "Manual rollback detected at index {} for active volume '{:?}', active_volume_changed={}",
-                            i,
-                            instance.active_volume,
-                            active_volume_changed
-                        );
-                        if active_volume_changed {
-                            // If the active volume changed during a manual rollback, then:
-                            //   1. All of the available rollbacks for the previously active
-                            //      volume can be removed. If these exist, they are runtime
-                            //      updates that were applied after the A/B udpate that is
-                            //      being rolled back.
-                            if let Some(volume) = instance.active_volume {
-                                trace!(
-                                    "Active volume changed during manual rollback at index {}: clearing available rollbacks for previously active volume '{:?}': a:[{:?}] b:[{:?}]",
-                                    i,
-                                    volume,
-                                    instance.volume_a_available_rollbacks.len(),
-                                    instance.volume_b_available_rollbacks.len()
-                                );
-                                instance.clear_available_rollbacks(volume, false);
-                            }
-                            //   2. The first available rollback for the newly active volume,
-                            //      which is the A/B update being rolled back, can be removed.
-                            if let Some(volume) = hs.ab_active_volume {
-                                trace!(
-                                    "Removing first available rollback for newly active volume '{:?}' during manual rollback at index {}",
-                                    volume,
-                                    i
-                                );
-                                instance.remove_available_rollback(volume);
-                            }
-                        } else {
-                            // If the active volume did not change, then a runtime rollback was performed
-                            // and we can remove the first available rollback for the active volume
-                            if let Some(volume) = instance.active_volume {
-                                trace!(
-                                    "Removing first available rollback for active volume '{:?}' during manual rollback at index {}",
-                                    volume,
-                                    i
-                                );
-                                instance.remove_available_rollback(volume);
-                            }
-                        }
-                    } else {
-                        // This provisioned state was reached via an update operation.
-                        // Add this update to the update's servicing volume's available
-                        // rollbacks unless prevented by one of these conditions:
-                        //   1. The Trident version is too old to support manual rollback
-                        //   2. If a last_error is set on the HostStatus
-                        let trident_is_compatible =
-                            Self::is_trident_version_compatible(hs.trident_version.clone())?;
-                        let last_error_exists = hs.last_error.is_some();
-                        trace!(
-                            "New 'Provisioned' state detected at index {} for active volume '{:?}', last_error_exists={}, trident_compatible={}",
-                            i,
-                            instance.active_volume,
-                            last_error_exists,
-                            trident_is_compatible
-                        );
-                        if trident_is_compatible && !last_error_exists {
-                            match instance.active_volume {
-                                Some(AbVolumeSelection::VolumeA) => {
-                                    instance
-                                        .volume_a_available_rollbacks
-                                        .insert(0, host_status_context);
+                            // If operation kind has been found, the operation is complete and
+                            // may be added to the operation list.
+                            if Self::add_operation_to_list(
+                                current_operation.kind.clone(),
+                                &mut rollback_filters,
+                            )? {
+                                current_operation.rollback_host_status = Some(current_hs.clone());
+                                if !current_operation.keep_parsing() {
+                                    trace!("Operation cannot be part of operation list, ending parsing here.");
+                                    break;
                                 }
-                                Some(AbVolumeSelection::VolumeB) => {
-                                    instance
-                                        .volume_b_available_rollbacks
-                                        .insert(0, host_status_context);
-                                }
-                                None => {}
+                                operation_list.push(current_operation.clone());
                             }
+
+                            // Start new operation
+                            current_operation = Operation {
+                                kind: OperationKind::Unknown,
+                                rollback_host_status: None,
+                                operation_host_status: None,
+                            };
                         }
                     }
-                }
-                // Update the context's active volume
-                instance.active_volume = hs.ab_active_volume;
-                // Track last provisioned state index
-                last_provisioned_index = i as i32;
-                // Reset the loop's update-type tracking
-                is_ab_update = false;
-                // Reset the loop's manual rollback tracking
-                is_manual_rollback = false;
-                // Reset the loop's auto-rollback tracking
-                is_auto_rollback = false;
-            } else {
-                // Update tracking for non-Provisioned state
-                match hs.servicing_state {
-                    ServicingState::ManualRollbackAbStaged
-                    | ServicingState::ManualRollbackRuntimeStaged
-                    | ServicingState::ManualRollbackAbFinalized => {
-                        is_manual_rollback = true;
+                    ServicingState::CleanInstallStaged => {
+                        current_operation.kind = OperationKind::Initial;
+                        current_operation.rollback_host_status = None;
+                        current_operation.operation_host_status = Some(current_hs.clone());
                     }
-                    ServicingState::AbUpdateStaged | ServicingState::AbUpdateFinalized => {
-                        is_ab_update = true;
+                    ServicingState::AbUpdateStaged => {
+                        current_operation.kind = OperationKind::AbUpdate;
+                        current_operation.operation_host_status = Some(current_hs.clone());
+                        // An A/B update operation represents an active volume
+                        // change
+                        active_volume_changes += 1;
+                        if active_volume_changes >= 2 {
+                            trace!("Detected second active volume change, ending parsing here.");
+                            break;
+                        }
+                    }
+                    ServicingState::RuntimeUpdateStaged => {
+                        current_operation.kind = OperationKind::RuntimeUpdate;
+                        current_operation.operation_host_status = Some(current_hs.clone());
+                    }
+                    ServicingState::ManualRollbackAbStaged => {
+                        current_operation.kind = OperationKind::AbManualRollback;
+                        current_operation.operation_host_status = Some(current_hs.clone());
+                    }
+                    ServicingState::ManualRollbackRuntimeStaged => {
+                        current_operation.kind = OperationKind::RuntimeManualRollback;
+                        current_operation.operation_host_status = Some(current_hs.clone());
                     }
                     ServicingState::AbUpdateHealthCheckFailed => {
-                        is_auto_rollback = true;
+                        current_operation.kind = OperationKind::AbUpdateAutoRollback;
+                        trace!("Detected AbUpdateAutoRollback operation, ending parsing here.");
+                        break;
                     }
-                    _ => {}
+                    _ => {
+                        // skip
+                    }
+                },
+                None => {
+                    trace!("Host status is None, ending parsing here.");
+                    break;
                 }
             }
         }
-        Ok(instance)
+
+        // The remaining operations are the available rollbacks
+        Ok(Self {
+            chain: operation_list
+                .iter()
+                .map(|op| {
+                    let Some(rollback_hs) = op.clone().rollback_host_status else {
+                        return Err(TridentError::new(
+                            InvalidInputError::InvalidRollbackExpectation {
+                                reason:
+                                    "rollback_host_status must be present for rollbackable operation"
+                                        .to_string(),
+                            },
+                        ));
+                    };
+                    let kind = match op.kind {
+                        OperationKind::AbUpdate => ManualRollbackKind::Ab,
+                        OperationKind::RuntimeUpdate => ManualRollbackKind::Runtime,
+                        _ => {
+                            return Err(TridentError::new(
+                                InvalidInputError::InvalidRollbackExpectation {
+                                    reason: "unexpected operation kind for rollback operation"
+                                        .to_string(),
+                                },
+                            ));
+                        }
+                    };
+                    Ok(ManualRollbackChainItem {
+                        // For rollback, use the rollback_host_status as the source
+                        spec: rollback_hs.spec.clone(),
+                        ab_active_volume: rollback_hs.ab_active_volume,
+                        install_index: rollback_hs.install_index,
+                        kind,
+                    })
+                })
+                .collect::<Result<Vec<ManualRollbackChainItem>, TridentError>>()?,
+        })
+    }
+
+    // Helper function to determine if an operation should be added to the operation list.
+    // Specifically, this function filters out:
+    //  * a RuntimeManualRollback operation and its required subsequent RuntimeUpdate
+    //  * an AbManualRollback operation and any subsequent RuntimeUpdates that occur before
+    //    its required AbUpdate operation (which will also be filtered out)
+    fn add_operation_to_list(
+        current_operation_kind: OperationKind,
+        rollback_filters: &mut Vec<OperationKind>,
+    ) -> Result<bool, TridentError> {
+        // For ManualRollback operations, do not add to the operation list, and
+        // configure ongoing_rollback_operation_type so that subsequent Update
+        // operations are not added either.
+        Ok(match current_operation_kind {
+            OperationKind::AbManualRollback => {
+                rollback_filters.insert(0, OperationKind::AbManualRollback);
+                false
+            }
+            OperationKind::RuntimeManualRollback => {
+                rollback_filters.insert(0, OperationKind::RuntimeManualRollback);
+                false
+            }
+            OperationKind::AbUpdate => {
+                match rollback_filters.first() {
+                    Some(OperationKind::AbManualRollback) => {
+                        // Currently filtering for A/B manual rollback; reset filter and skip this operation
+                        rollback_filters.remove(0);
+                        false
+                    }
+                    Some(OperationKind::RuntimeManualRollback) => {
+                        return Err(TridentError::new(InvalidInputError::InvalidRollbackExpectation {
+                            reason: "Unexpected host_status sequence: A/B update operation found during runtime manual rollback".to_string(),
+                        }));
+                    }
+                    _ => {
+                        // Do not filter this operation
+                        true
+                    }
+                }
+            }
+            OperationKind::RuntimeUpdate => {
+                match rollback_filters.first() {
+                    Some(OperationKind::AbManualRollback) => {
+                        // Currently filtering for A/B manual rollback; skip this operation
+                        false
+                    }
+                    Some(OperationKind::RuntimeManualRollback) => {
+                        // Currently filtering for Runtime manual rollback; reset filter and skip this operation
+                        rollback_filters.remove(0);
+                        false
+                    }
+                    _ => {
+                        // Do not filter this operation
+                        true
+                    }
+                }
+            }
+            _ => {
+                if !rollback_filters.is_empty() {
+                    return Err(TridentError::new(InvalidInputError::InvalidRollbackExpectation {
+                        reason: "Unexpected host_status sequence: non-update operation found during manual rollback".to_string(),
+                    }));
+                } else {
+                    // Do not filter this operation
+                    true
+                }
+            }
+        })
     }
 
     /// Get the full rollback chain
-    pub fn get_rollback_chain(&self) -> Result<Vec<ManualRollbackChainItem>, Error> {
-        let mut contexts = self
-            .volume_a_available_rollbacks
-            .clone()
-            .into_iter()
-            .chain(self.volume_b_available_rollbacks.clone())
-            .collect::<Vec<_>>();
-        contexts.sort_by(|a, b| b.host_status_index.cmp(&a.host_status_index));
-        info!("Available rollback count: {}", contexts.len());
-        Ok(contexts)
+    pub fn get_rollback_chain(&self) -> &Vec<ManualRollbackChainItem> {
+        &self.chain
     }
 
     /// Get the full rollback chain as YAML string
     pub fn get_rollback_chain_yaml(&self) -> Result<String, Error> {
-        let contexts = self.get_rollback_chain()?;
+        let contexts = self.get_rollback_chain();
         let full_yaml =
             serde_yaml::to_string(&contexts).context("Failed to serialize rollback contexts")?;
         info!("Available rollbacks:\n{}", full_yaml);
         Ok(full_yaml)
-    }
-
-    /// Clear available rollbacks for a given active/inactive volume.
-    fn clear_available_rollbacks(&mut self, volume: AbVolumeSelection, inactive: bool) {
-        match (inactive, volume) {
-            (false, AbVolumeSelection::VolumeA) => self.volume_a_available_rollbacks.clear(),
-            (false, AbVolumeSelection::VolumeB) => self.volume_b_available_rollbacks.clear(),
-            (true, AbVolumeSelection::VolumeA) => self.volume_b_available_rollbacks.clear(),
-            (true, AbVolumeSelection::VolumeB) => self.volume_a_available_rollbacks.clear(),
-        }
-    }
-
-    /// Remove the first available rollback for a given volume.
-    fn remove_available_rollback(&mut self, volume: AbVolumeSelection) {
-        match volume {
-            AbVolumeSelection::VolumeA => {
-                if !self.volume_a_available_rollbacks.is_empty() {
-                    self.volume_a_available_rollbacks.remove(0);
-                }
-            }
-            AbVolumeSelection::VolumeB => {
-                if !self.volume_b_available_rollbacks.is_empty() {
-                    self.volume_b_available_rollbacks.remove(0);
-                }
-            }
-        }
-    }
-
-    /// Check if the given Trident version is compatible with manual rollback.
-    fn is_trident_version_compatible(
-        trident_version: TridentVersion,
-    ) -> Result<bool, TridentError> {
-        let trident_is_compatible = match trident_version {
-            // If version is not set or is not semver, consider it incompatible
-            TridentVersion::Other(_) | TridentVersion::None => false,
-            TridentVersion::SemVer(version) => version >= *MINIMUM_ROLLBACK_TRIDENT_VERSION,
-        };
-        Ok(trident_is_compatible)
     }
 
     /// Get detail for requested rollback.
@@ -382,11 +485,7 @@ impl ManualRollbackContext {
         &self,
         requested_rollback_kind: ManualRollbackRequestKind,
     ) -> Result<Option<ManualRollbackChainItem>, TridentError> {
-        let available_rollbacks =
-            self.get_rollback_chain()
-                .structured(ServicingError::ManualRollback {
-                    message: "Failed to get available rollbacks",
-                })?;
+        let available_rollbacks = self.get_rollback_chain();
 
         if available_rollbacks.is_empty() {
             return Ok(None);
@@ -456,10 +555,6 @@ mod tests {
     use sysdefs::tpm2::Pcr;
 
     use super::*;
-
-    // fn get_requires_reboot(ctx: &ManualRollbackContext) -> bool {
-    //     matches!(ctx.rollback_action, Some(ServicingType::AbUpdate))
-    // }
 
     struct HostStatusTest {
         host_status: HostStatus,
@@ -604,16 +699,13 @@ mod tests {
     ) -> ManualRollbackContext {
         let host_statuses = host_status_test_list
             .iter()
-            .map(|hst| hst.host_status.clone())
+            .map(|hst| Some(hst.host_status.clone()))
+            .rev()
             .collect::<Vec<_>>();
         ManualRollbackContext::new(&host_statuses).unwrap()
     }
     fn rollback_context_testing(host_status_test_list: &[HostStatusTest], test_description: &str) {
-        let final_state = host_status_test_list
-            .iter()
-            .filter(|hst| hst.host_status.servicing_state == ServicingState::Provisioned)
-            .next_back()
-            .unwrap();
+        let final_state = host_status_test_list.last().unwrap();
         rollback_context_testing_for_expected(
             host_status_test_list,
             final_state.expected_available_rollbacks.clone(),
@@ -634,7 +726,7 @@ mod tests {
             expected_requires_reboot,
             expected_available_rollbacks
         );
-        let rollback_chain = context.get_rollback_chain().unwrap();
+        let rollback_chain = context.get_rollback_chain();
         assert_eq!(rollback_chain.len(), expected_available_rollbacks.len());
         if !expected_available_rollbacks.is_empty() {
             let next_rollback = rollback_chain.first().unwrap();
@@ -819,9 +911,9 @@ mod tests {
             inter(None, CI_FINAL, NONE),
             prov(VOL_A, false, vec![], NONE),
             inter(VOL_A, RU_STAGE, NONE),
-            prov(VOL_A, false, vec![], NONE),
-            inter(VOL_A, RU_STAGE, OLD),
             prov(VOL_A, false, vec![], OLD),
+            inter(VOL_A, RU_STAGE, OLD),
+            prov(VOL_A, false, vec![], MIN),
             inter(VOL_A, RU_STAGE, MIN),
             prov(VOL_A, false, vec![6], MIN),
             inter(VOL_A, RU_STAGE, NEW),
@@ -1016,5 +1108,136 @@ mod tests {
         assert!(context
             .check_requested_rollback(ManualRollbackRequestKind::RollbackOnlyIfNextIsRuntimeUpdate)
             .is_err(),);
+    }
+
+    #[test]
+    fn test_manual_rollback_request_kind_from_flags() {
+        assert!(matches!(
+            ManualRollbackRequestKind::from_flags(false, false).unwrap(),
+            ManualRollbackRequestKind::RollbackNext
+        ));
+        assert!(matches!(
+            ManualRollbackRequestKind::from_flags(true, false).unwrap(),
+            ManualRollbackRequestKind::RollbackOnlyIfNextIsRuntimeUpdate
+        ));
+        assert!(matches!(
+            ManualRollbackRequestKind::from_flags(false, true).unwrap(),
+            ManualRollbackRequestKind::RollbackAvailableAbUpdate
+        ));
+        assert!(ManualRollbackRequestKind::from_flags(true, true).is_err());
+    }
+
+    #[test]
+    fn test_first_host_status() {
+        // Validate empty host status list creates context with no available rollbacks
+        let context = ManualRollbackContext::new(&[]);
+        assert_eq!(context.unwrap().get_rollback_chain().len(), 0);
+
+        let host_status_base_list = vec![
+            Some(HostStatus {
+                servicing_state: ServicingState::Provisioned,
+                ..Default::default()
+            }),
+            Some(HostStatus {
+                servicing_state: ServicingState::CleanInstallFinalized,
+                ..Default::default()
+            }),
+        ];
+
+        // Validate that a host status list with the first entry as None returns an error
+        let mut test_list = host_status_base_list.clone();
+        test_list.insert(0, None);
+        let context = ManualRollbackContext::new(&test_list);
+        assert!(context.is_err());
+
+        // Validate that a host status list with the first entry as non-Provisioned creates context with no available rollbacks
+        let mut test_list = host_status_base_list.clone();
+        test_list.insert(
+            0,
+            Some(HostStatus {
+                servicing_state: ServicingState::CleanInstallFinalized,
+                ..Default::default()
+            }),
+        );
+        let context = ManualRollbackContext::new(&test_list);
+        assert_eq!(context.unwrap().get_rollback_chain().len(), 0);
+    }
+
+    #[test]
+    fn test_operation_kind_keep_parsing() {
+        // Validate kinds that should stop parsing
+        assert!(!OperationKind::Unknown.keep_parsing());
+        assert!(!OperationKind::Initial.keep_parsing());
+        assert!(!OperationKind::AbUpdateAutoRollback.keep_parsing());
+        // Validate kinds that should continue parsing
+        assert!(OperationKind::AbUpdate.keep_parsing());
+        assert!(OperationKind::RuntimeUpdate.keep_parsing());
+        assert!(OperationKind::AbManualRollback.keep_parsing());
+        assert!(OperationKind::RuntimeManualRollback.keep_parsing());
+    }
+
+    #[test]
+    fn test_operation_keep_parsing() {
+        let mut operation = Operation {
+            kind: OperationKind::Unknown,
+            rollback_host_status: None,
+            operation_host_status: None,
+        };
+        // Validate kinds that should stop parsing
+        operation.kind = OperationKind::Unknown;
+        assert!(!operation.keep_parsing());
+        operation.kind = OperationKind::Initial;
+        assert!(!operation.keep_parsing());
+        operation.kind = OperationKind::AbUpdateAutoRollback;
+        assert!(!operation.keep_parsing());
+
+        // Validate that rollback_host_status with unset trident_version stops parsing
+        operation.kind = OperationKind::AbUpdate;
+        operation.rollback_host_status = Some(HostStatus {
+            trident_version: TridentVersion::None,
+            ..Default::default()
+        });
+        assert!(!operation.keep_parsing());
+
+        // Validate that rollback_host_status with incompatible trident_version stops parsing
+        operation.rollback_host_status = Some(HostStatus {
+            trident_version: TridentVersion::SemVer(
+                Version::parse("0.18.0").expect("Failed to parse version"),
+            ),
+            ..Default::default()
+        });
+        assert!(!operation.keep_parsing());
+
+        // Validate that missing operation_host_status stops parsing
+        operation.rollback_host_status = Some(HostStatus {
+            trident_version: TridentVersion::SemVer(MINIMUM_ROLLBACK_TRIDENT_VERSION.clone()),
+            ..Default::default()
+        });
+        operation.operation_host_status = None;
+        assert!(!operation.keep_parsing());
+
+        // Validate that operation_host_status with unset trident_version stops parsing
+        operation.operation_host_status = Some(HostStatus {
+            trident_version: TridentVersion::None,
+            ..Default::default()
+        });
+        assert!(!operation.keep_parsing());
+
+        // Validate that operation_host_status with incompatible trident_version stops parsing
+        operation.operation_host_status = Some(HostStatus {
+            trident_version: TridentVersion::SemVer(
+                Version::parse("0.18.0").expect("Failed to parse version"),
+            ),
+            ..Default::default()
+        });
+        assert!(!operation.keep_parsing());
+
+        // Validate that operation_host_status with last_error stops parsing
+        operation.operation_host_status = Some(HostStatus {
+            trident_version: TridentVersion::SemVer(MINIMUM_ROLLBACK_TRIDENT_VERSION.clone()),
+            last_error: Some(serde_yaml::Value::Null),
+            ..Default::default()
+        });
+        assert!(!operation.keep_parsing());
     }
 }
