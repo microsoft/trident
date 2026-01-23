@@ -26,6 +26,7 @@ import (
 
 const (
 	defaultTridentBinaryLocation = "/usr/bin/trident"
+	defaultOsmodifierLocation    = "/usr/bin/osmodifier"
 	tridentInstallServiceName    = "trident-install.service"
 )
 
@@ -41,6 +42,10 @@ func main() {
 		kong.Configuration(kongyaml.Loader, "/etc/rcp-agent/config.yaml", "./rcp-agent.yaml"),
 	)
 
+	logrus.SetFormatter(&logrus.TextFormatter{
+		ForceColors: true,
+	})
+
 	// Handle Ctrl+C gracefully
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -50,6 +55,13 @@ func main() {
 		logrus.Infof("Trident download URL provided, downloading Trident.")
 		if err := downloadTrident(cli.TridentDownloadUrl); err != nil {
 			logrus.Fatalf("Failed to download Trident: %v", err)
+		}
+	}
+
+	if cli.OsmodifierDownloadUrl != "" {
+		logrus.Infof("Osmodifier download URL provided, downloading Osmodifier.")
+		if err := downloadOsmodifier(cli.OsmodifierDownloadUrl); err != nil {
+			logrus.Fatalf("Failed to download Osmodifier: %v", err)
 		}
 	}
 
@@ -73,7 +85,7 @@ func main() {
 
 func downloadTrident(url string) error {
 	logrus.Infof("Downloading Trident from URL: %s", url)
-	err := downloadFile(url, defaultTridentBinaryLocation)
+	err := downloadExecutableFile(url, defaultTridentBinaryLocation)
 	if err != nil {
 		return fmt.Errorf("failed to download Trident: %w", err)
 	}
@@ -81,7 +93,17 @@ func downloadTrident(url string) error {
 	return nil
 }
 
-func downloadFile(url string, destinationPath string) error {
+func downloadOsmodifier(url string) error {
+	logrus.Infof("Downloading Osmodifier from URL: %s", url)
+	err := downloadExecutableFile(url, defaultOsmodifierLocation)
+	if err != nil {
+		return fmt.Errorf("failed to download Osmodifier: %w", err)
+	}
+
+	return nil
+}
+
+func downloadExecutableFile(url string, destinationPath string) error {
 	parent := filepath.Dir(destinationPath)
 	if err := os.MkdirAll(parent, 0755); err != nil {
 		return fmt.Errorf("failed to create parent directory '%s': %w", parent, err)
@@ -102,6 +124,12 @@ func downloadFile(url string, destinationPath string) error {
 	_, err = io.Copy(out, resp.Body)
 	if err != nil {
 		return fmt.Errorf("failed to write to file '%s': %w", destinationPath, err)
+	}
+
+	// Now make the binary executable
+	err = os.Chmod(destinationPath, 0755)
+	if err != nil {
+		return fmt.Errorf("failed to make binary executable: %w", err)
 	}
 
 	return nil

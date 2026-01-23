@@ -10,5 +10,8 @@ type RcpAgentConfiguration struct {
 	// Non-CLI params that can be obtained from the YAML config file
 
 	// An optional URL to download Trident from.
-	TridentDownloadUrl string `yaml:"tridentDownloadUrl,omitempty"`
+	TridentDownloadUrl string `yaml:"tridentDownloadUrl,omitempty" name:"tridentDownloadUrl" hidden:""`
+
+	// An optional URL to download osmodifier from.
+	OsmodifierDownloadUrl string `yaml:"osmodifierDownloadUrl,omitempty" name:"osmodifierDownloadUrl" hidden:""`
 }

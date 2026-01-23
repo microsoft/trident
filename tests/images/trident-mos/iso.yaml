@@ -98,6 +98,8 @@ os:
     enable:
       - rcp-agent
       - tridentd.socket
+    disable:
+      - trident-install
 
 scripts:
   postCustomization:
@@ -112,8 +114,8 @@ iso:
     - source: files/pre-trident-script.sh
       destination: /pre-trident-script.sh
     # Add overridable default config for rcp-agent
-    - source: files/rcp-agent.toml
-      destination: /rcp-agent.toml
+    - source: files/rcp-agent.yaml
+      destination: /rcp-agent.yaml
 
   kernelCommandLine:
     extraCommandLine:

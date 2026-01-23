@@ -18,22 +18,23 @@ import (
 )
 
 var (
-	netlaunchConfigFile string
-	tridentConfigFile   string
-	iso                 string
-	logstream           bool
-	listenPort          uint16
-	remoteAddressFile   string
-	serveFolder         string
-	maxFailures         uint
-	traceFile           string
-	forceColor          bool
-	waitForProvisioned  bool
-	onlyPrintExitCode   bool
-	secureBoot          bool
-	signingCert         string
-	rcpMode             string
-	tridentBinaryPath   string
+	netlaunchConfigFile  string
+	tridentConfigFile    string
+	iso                  string
+	logstream            bool
+	listenPort           uint16
+	remoteAddressFile    string
+	serveFolder          string
+	maxFailures          uint
+	traceFile            string
+	forceColor           bool
+	waitForProvisioned   bool
+	onlyPrintExitCode    bool
+	secureBoot           bool
+	signingCert          string
+	rcpMode              string
+	tridentBinaryPath    string
+	osmodifierBinaryPath string
 )
 
 const (
@@ -75,8 +76,13 @@ var rootCmd = &cobra.Command{
 			if rcpMode != rcpModeGrpc && rcpMode != rcpModeLegacy {
 				log.Fatalf("Invalid RCP mode, must be: %s or %s, got: %s", rcpModeLegacy, rcpModeGrpc, rcpMode)
 			}
-		} else if tridentBinaryPath != "" {
-			log.Fatal("Trident binary path specified without RCP mode")
+		} else {
+			if tridentBinaryPath != "" {
+				log.Fatal("Trident binary path specified without RCP mode")
+			}
+			if osmodifierBinaryPath != "" {
+				log.Fatal("Osmodifier binary path specified without RCP mode")
+			}
 		}
 
 		// Set log level
@@ -118,6 +124,10 @@ var rootCmd = &cobra.Command{
 			if tridentBinaryPath != "" {
 				config.Rcp.LocalTridentPath = &tridentBinaryPath
 			}
+
+			if osmodifierBinaryPath != "" {
+				config.Rcp.LocalOsmodifierPath = &osmodifierBinaryPath
+			}
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -153,8 +163,9 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&forceColor, "force-color", "", false, "Force colored output")
 	rootCmd.PersistentFlags().BoolVarP(&secureBoot, "secure-boot", "", false, "Enable SecureBoot")
 	rootCmd.PersistentFlags().StringVarP(&signingCert, "signing-cert", "", "", "Path to signing certificate")
-	rootCmd.PersistentFlags().StringVarP(&rcpMode, "rcp-mode", "", "", "RCP mode to use (grpc|cli). If not specified, RCP is not used.")
-	rootCmd.PersistentFlags().StringVarP(&tridentBinaryPath, "trident-binary", "b", "", "Optional path to Trident binary to be copied into the VM, requires RCP mode.")
+	rootCmd.PersistentFlags().StringVarP(&rcpMode, "rcp-agent-mode", "", "", "RCP agent mode to use (grpc|cli). If not specified, RCP is not used.")
+	rootCmd.PersistentFlags().StringVarP(&tridentBinaryPath, "trident-binary", "", "", "Optional path to Trident binary to be copied into the VM, requires RCP mode.")
+	rootCmd.PersistentFlags().StringVarP(&osmodifierBinaryPath, "osmodifier-binary", "", "", "Optional path to Osmodifier binary to be copied into the VM, requires RCP mode.")
 	rootCmd.Flags().StringVarP(&iso, "iso", "i", "", "ISO for Netlaunch testing")
 	rootCmd.MarkFlagRequired("iso-template")
 }

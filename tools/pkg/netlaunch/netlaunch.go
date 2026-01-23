@@ -354,6 +354,22 @@ func injectRcpAgentConfig(
 		rcpAgentConf.TridentDownloadUrl = tridentUrl
 	}
 
+	// If we have a local osmodifier path, serve that file via HTTP and set the download URL.
+	if localRcpConf.LocalOsmodifierPath != nil {
+		data, err := os.ReadFile(*localRcpConf.LocalOsmodifierPath)
+		if err != nil {
+			return fmt.Errorf("failed to read local Osmodifier binary from '%s': %w", *localRcpConf.LocalOsmodifierPath, err)
+		}
+		// Create an http endpoint that exclusively serves the local Osmodifier binary
+		http.HandleFunc("/osmodifier", func(w http.ResponseWriter, r *http.Request) {
+			http.ServeContent(w, r, "osmodifier", time.Now(), bytes.NewReader(data))
+		})
+
+		osmodifierUrl := fmt.Sprintf("http://%s/osmodifier", anounceHttpAddress)
+		log.WithField("url", osmodifierUrl).Info("Serving local Osmodifier binary via HTTP")
+		rcpAgentConf.OsmodifierDownloadUrl = osmodifierUrl
+	}
+
 	// If we have an RCP listener, set the client address to point to it.
 	if rcpListener != nil {
 		rcpAgentConf.ClientAddress = fmt.Sprintf("%s:%d", announceIp, rcpListener.Port)
@@ -364,7 +380,7 @@ func injectRcpAgentConfig(
 		return fmt.Errorf("failed to marshal RCP agent config to YAML: %w", err)
 	}
 
-	err = isopatcher.PatchFile(iso, "/trident_cdrom/rcp-agent.toml", encoded)
+	err = isopatcher.PatchFile(iso, "/trident_cdrom/rcp-agent.yaml", encoded)
 	if err != nil {
 		return fmt.Errorf("failed to patch RCP agent config into ISO: %w", err)
 	}
