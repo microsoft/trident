@@ -133,11 +133,11 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 			return fmt.Errorf("failed to unmarshal Trident config: %w", err)
 		}
 
-		// if _, ok := trident["trident"]; !ok {
-		// 	trident["trident"] = make(map[interface{}]interface{})
-		// }
-		// trident["trident"].(map[interface{}]interface{})["phonehome"] = fmt.Sprintf("http://%s/phonehome", announceAddress)
-		// trident["trident"].(map[interface{}]interface{})["logstream"] = fmt.Sprintf("http://%s/logstream", announceAddress)
+		if _, ok := trident["trident"]; !ok {
+			trident["trident"] = make(map[interface{}]interface{})
+		}
+		trident["trident"].(map[interface{}]interface{})["phonehome"] = fmt.Sprintf("http://%s/phonehome", announceAddress)
+		trident["trident"].(map[interface{}]interface{})["logstream"] = fmt.Sprintf("http://%s/logstream", announceAddress)
 
 		tridentConfig, err := yaml.Marshal(trident)
 		if err != nil {
@@ -299,7 +299,11 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case conn := <-rcpListener.ConnChan:
+		case conn, ok := <-rcpListener.ConnChan:
+			if !ok {
+				return fmt.Errorf("RCP listener channel closed")
+			}
+
 			log.Infof("Accepted RCP connection from %s", conn.RemoteAddr())
 			installCtx, installCancel := context.WithTimeout(ctx, time.Minute*10)
 			defer installCancel()
@@ -307,6 +311,7 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 			go func() {
 				// Defer termination of the phonehome listener
 				defer terminateFunc()
+				defer conn.Close()
 
 				err := doGrpcInstall(installCtx, conn, finalHostConfigurationYaml)
 				if err != nil {
@@ -361,7 +366,7 @@ func startLocalVm(localVmUuidStr string, isoLocation string, secureBoot bool, si
 
 func injectRcpAgentConfig(
 	announceIp string,
-	anounceHttpAddress string,
+	announceHttpAddress string,
 	iso []byte,
 	rcpListener *rcpclient.RcpListener,
 	localRcpConf RcpConfiguration,
@@ -380,7 +385,7 @@ func injectRcpAgentConfig(
 			http.ServeContent(w, r, "trident", time.Now(), bytes.NewReader(data))
 		})
 
-		tridentUrl := fmt.Sprintf("http://%s/trident", anounceHttpAddress)
+		tridentUrl := fmt.Sprintf("http://%s/trident", announceHttpAddress)
 		log.WithField("url", tridentUrl).Info("Serving local Trident binary via HTTP")
 		rcpAgentConf.TridentDownloadUrl = tridentUrl
 	}
@@ -396,7 +401,7 @@ func injectRcpAgentConfig(
 			http.ServeContent(w, r, "osmodifier", time.Now(), bytes.NewReader(data))
 		})
 
-		osmodifierUrl := fmt.Sprintf("http://%s/osmodifier", anounceHttpAddress)
+		osmodifierUrl := fmt.Sprintf("http://%s/osmodifier", announceHttpAddress)
 		log.WithField("url", osmodifierUrl).Info("Serving local Osmodifier binary via HTTP")
 		rcpAgentConf.OsmodifierDownloadUrl = osmodifierUrl
 	}

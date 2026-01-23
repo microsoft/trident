@@ -11,5 +11,4 @@ StandardOutput=journal+console
 StandardError=journal+console
 
 [Install]
-WantedBy=multi-user.target
-RequiredBy=tridentd.service
+WantedBy=multi-user.target tridentd.service

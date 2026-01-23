@@ -94,6 +94,10 @@ func ListenAndAccept(ctx context.Context, certProvider tlscerts.CertProvider, po
 				acceptCancel() // Stop the listener-closure goroutine
 				connChan <- conn
 				return
+			} else if acceptCtx.Err() != nil {
+				// Context was cancelled
+				logrus.Debug("RCP listener context cancelled, stopping accept loop")
+				return
 			}
 
 			logrus.Errorf("Failed to accept connection: %v", err)
