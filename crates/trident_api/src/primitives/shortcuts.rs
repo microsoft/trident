@@ -144,6 +144,46 @@ where
     }
 }
 
+/// A deserializer for an optional value that returns None if the value is null
+/// or if the value fails to be deserialized as the target type.
+pub fn lenient_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de>,
+{
+    struct LenientEnum<T>(PhantomData<fn() -> T>);
+
+    impl<'de, T> Visitor<'de> for LenientEnum<T>
+    where
+        T: Deserialize<'de>,
+    {
+        type Value = Option<T>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("none, or some value")
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            match T::deserialize(deserializer) {
+                Ok(value) => Ok(Some(value)),
+                Err(_) => Ok(None),
+            }
+        }
+    }
+
+    deserializer.deserialize_any(LenientEnum(PhantomData))
+}
+
 #[cfg(feature = "schemars")]
 pub const STRING_SHORTCUT_EXTENSION: &str = "string_shortcut";
 

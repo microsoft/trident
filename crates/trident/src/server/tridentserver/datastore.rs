@@ -3,7 +3,7 @@ use serde_yaml::Value;
 use harpoon::{
     FileLocation, TridentError as HarpoonTridentError, TridentErrorKind as HarpoonTridentErrorKind,
 };
-use trident_api::error::{ErrorCategory, TridentError};
+use trident_api::error::{ErrorKindCategory, TridentError};
 
 use crate::DataStore;
 
@@ -36,7 +36,7 @@ fn harpoon_trident_error_from_value(value: &Value) -> HarpoonTridentError {
     let kind = root
         .get(s(TridentError::SERIALIZE_FIELD_CATEGORY))
         .and_then(|v| v.as_str())
-        .and_then(|s| ErrorCategory::try_from(s).ok())
+        .and_then(|s| ErrorKindCategory::try_from(s).ok())
         .map(HarpoonTridentErrorKind::from)
         .unwrap_or(HarpoonTridentErrorKind::Unspecified);
 
