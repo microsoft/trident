@@ -1,0 +1,10 @@
+[Unit]
+Description=Trident Direct Streaming Service
+After=network.target network-online.target systemd-udev-settle.service
+
+[Service]
+ExecStart=/bin/bash -c "cat /trident_cdrom/direct-streaming.conf | grep URL | cut -d '=' -f 2 | grep http"
+Type=oneshot
+
+[Install]
+WantedBy=multi-user.target

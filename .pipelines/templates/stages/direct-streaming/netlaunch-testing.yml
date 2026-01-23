@@ -110,7 +110,8 @@ stages:
                   --cosi-metadata-sha384 $HASH \
                   --iso-file $ISO_FILE \
                   --port ${{variables.netlaunchPort}} \
-                  --enable-secure-boot
+                  --enable-secure-boot \
+                  --timeout-in-seconds 1200
 
             workingDirectory: $(tridentSourceDirectory)
             displayName: "🚀 Run netlaunch for testing"
