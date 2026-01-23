@@ -92,8 +92,7 @@ mod tests {
             let result = servicing_state_from_datastore(&datastore);
             assert_eq!(
                 result, expected,
-                "Failed for input: {:?}, result: {:?}, expected: {:?}",
-                input, result, expected
+                "Failed for input: {input:?}, result: {result:?}, expected: {expected:?}"
             );
         }
     }
