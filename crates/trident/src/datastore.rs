@@ -95,12 +95,6 @@ impl DataStore {
             .message("Failed to read all database host statuses")?;
 
         loop {
-            // 1. Read each row as a string containing YAML-encoded Host Status.
-            // 2. Decode the YAML string into a serde_yaml Value.
-            // 3. Use decode_host_status to convert the serde_yaml Value into a HostStatus struct.
-            //
-            // If any step fails, log the error and push None for that row.
-            // If all steps succeed, push Some(HostStatus) for that row.
             match query_statement.next() {
                 Ok(State::Done) => break,
                 Err(e) => {
@@ -110,25 +104,7 @@ impl DataStore {
                 }
                 Ok(State::Row) => {} // continue below
             }
-
-            let host_status_yaml = match query_statement.read::<String, _>(0) {
-                Ok(yaml) => yaml,
-                Err(e) => {
-                    warn!("Failed to read datastore row: {:?}", e);
-                    all_rows_data.push(None);
-                    continue;
-                }
-            };
-
-            match serde_yaml::from_str(&host_status_yaml) {
-                Ok(host_status) => {
-                    all_rows_data.push(Some(host_status));
-                }
-                Err(e) => {
-                    warn!("Failed to parse Host Status as YAML: {:?}", e);
-                    all_rows_data.push(None);
-                }
-            }
+            all_rows_data.push(self.parse_host_status(query_statement.read::<String, _>(0)));
         }
         Ok(all_rows_data)
     }
@@ -242,6 +218,39 @@ impl DataStore {
     pub(crate) fn close(&mut self) {
         self.db = None;
     }
+
+    /// Parse a single HostStatus entry from a datastore query result.
+    /// 1. Read each row as a string containing YAML-encoded Host Status.
+    /// 2. Decode the YAML string into a serde_yaml Value.
+    /// 3. Use decode_host_status to convert the serde_yaml Value into a HostStatus struct.
+    ///
+    /// If any step fails, log the error and push None for that row.
+    /// If all steps succeed, push Some(HostStatus) for that row.
+    fn parse_host_status(&self, query_result: Result<String, sqlite::Error>) -> Option<HostStatus> {
+        let host_status_yaml = match query_result {
+            Ok(yaml) => yaml,
+            Err(e) => {
+                warn!("Failed to read datastore row: {:?}", e);
+                return None;
+            }
+        };
+
+        let host_status_value: serde_yaml::Value = match serde_yaml::from_str(&host_status_yaml) {
+            Ok(host_status_value) => host_status_value,
+            Err(e) => {
+                warn!("Failed to parse Host Status as serde value: {:?}", e);
+                return None;
+            }
+        };
+
+        match decode_host_status(host_status_value) {
+            Ok(host_status) => Some(host_status),
+            Err(e) => {
+                warn!("Failed to parse Host Status: {:?}", e);
+                None
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -265,6 +274,37 @@ mod tests {
         assert!(new_path.exists());
 
         temp_dir.close().unwrap();
+    }
+
+    #[test]
+    fn test_parse_host_status() {
+        let ds = super::DataStore {
+            db: None,
+            host_status: Default::default(),
+            temporary: true,
+        };
+        // Validate when db row is an error
+        assert!(ds
+            .parse_host_status(Err(sqlite::Error {
+                code: None,
+                message: None,
+            }))
+            .is_none());
+        // Validate when db row cannot be parsed into serde_yaml::Value
+        assert!(ds
+            .parse_host_status(Ok("[@ notserdevalue".to_string()))
+            .is_none());
+        // Validate when db row can be parsed into serde_yaml::Value but not HostStatus
+        assert!(ds
+            .parse_host_status(Ok("serdeyaml: but-not-host-status".to_string()))
+            .is_none());
+        // Validate when db row can be parsed into serde_yaml::Value and HostStatus
+        let valid_host_status = super::HostStatus {
+            ..Default::default()
+        };
+        assert!(ds
+            .parse_host_status(Ok(serde_yaml::to_string(&valid_host_status).unwrap()))
+            .is_some());
     }
 }
 
