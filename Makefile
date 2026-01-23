@@ -456,7 +456,7 @@ bin/mkcosi: tools/cmd/mkcosi/* tools/go.sum tools/pkg/* tools/cmd/mkcosi/**/*
 bin/storm-trident: tools/cmd/storm-trident/main.go tools/storm/**/*
 	@mkdir -p bin
 	cd tools && go generate storm/e2e/discover.go
-	cd tools && go build -o ../bin/storm-trident ./cmd/storm-trident/main.go
+	cd tools && go build -tags tls_server -o ../bin/storm-trident ./cmd/storm-trident/main.go
 
 bin/virtdeploy: tools/cmd/virtdeploy/* tools/go.sum tools/pkg/* tools/pkg/virtdeploy/*
 	@mkdir -p bin
