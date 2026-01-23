@@ -62,7 +62,7 @@ stages:
           - name: ob_outputDirectory
             value: $(Build.SourcesDirectory)/output
           - name: ob_artifactBaseName
-            value: $(scenario)_$(System.JobAttempt)
+            value: $(SCENARIO)_$(System.JobAttempt)
           - ${{ if eq(parameters.runtimeType, 'CONTAINER') }}:
               - name: installerISOName
                 value: trident-container-installer
@@ -108,7 +108,9 @@ stages:
 
               mkdir -p $(ob_outputDirectory)
 
-              ./bin/storm-trident run "$(scenario)" -- \
+              ./bin/storm-trident run "$(SCENARIO)" \
+                  -o $(ob_outputDirectory) \
+                  -- \
                   --pipeline-run \
                   --iso "./artifacts/iso/$(installerISOName).iso"
             displayName: "🧪 Run E2E Test"

@@ -1,4 +1,4 @@
-package keys
+package sshutils
 
 import (
 	"crypto/rand"

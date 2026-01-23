@@ -94,6 +94,7 @@ const SAFETY_OVERRIDE_CHECK_PATH: &str = "/override-trident-safety-check";
 const TEMPORARY_DATASTORE_PATH: &str = "/tmp/trident-datastore.sqlite";
 
 #[must_use]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ExitKind {
     /// Requested operation completed successfully.
     Done,

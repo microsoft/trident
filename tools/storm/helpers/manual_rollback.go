@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	stormenv "tridenttools/storm/utils/env"
+
 	stormsshcheck "tridenttools/storm/utils/ssh/check"
 	stormsshclient "tridenttools/storm/utils/ssh/client"
 	stormsshconfig "tridenttools/storm/utils/ssh/config"
 	stormsftp "tridenttools/storm/utils/ssh/sftp"
+	"tridenttools/storm/utils/trident"
 	stormtrident "tridenttools/storm/utils/trident"
 
 	"github.com/microsoft/storm"
@@ -20,7 +21,7 @@ import (
 type ManualRollbackHelper struct {
 	args struct {
 		stormsshconfig.SshCliSettings `embed:""`
-		stormenv.EnvCliSettings       `embed:""`
+		trident.RuntimeCliSettings    `embed:""`
 		EnvVars                       []string `short:"e" help:"Environment variables. Multiple vars can be passed as a list of comma-separated strings, or this flag can be used multiple times. Each var should include the env var name, i.e. HTTPS_PROXY=http://0.0.0.0."`
 		VmName                        string   `help:"Name of VM." type:"string" default:"virtdeploy-vm-0"`
 		ExpectRuntimeRollback         bool     `help:"Whether to expect a runtime rollback to occur during the test." default:"false"`
@@ -48,7 +49,7 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 	defer client.Close()
 
 	// Get current configuration
-	output, err := stormtrident.InvokeTrident(h.args.Env, client, []string{}, "get configuration")
+	output, err := stormtrident.InvokeTrident(h.args.TridentRuntimeType, client, []string{}, "get configuration")
 	if err != nil {
 		logrus.Errorf("Failed to invoke Trident: %v", err)
 		return err
@@ -60,7 +61,7 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 	logrus.Infof("Trident 'get configuration' output:\n%s", output.Stdout)
 
 	// Check for available rollbacks
-	output, err = stormtrident.InvokeTrident(h.args.Env, client, []string{}, "get rollback-chain")
+	output, err = stormtrident.InvokeTrident(h.args.TridentRuntimeType, client, []string{}, "get rollback-chain")
 	if err != nil {
 		logrus.Errorf("Failed to invoke Trident: %v", err)
 		return err
@@ -94,7 +95,7 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 	}
 
 	// Execute rollback
-	out, err := stormtrident.InvokeTrident(h.args.Env, client, h.args.EnvVars, "rollback -v trace --allowed-operations stage")
+	out, err := stormtrident.InvokeTrident(h.args.TridentRuntimeType, client, h.args.EnvVars, "rollback -v trace --allowed-operations stage")
 	if err != nil {
 		logrus.Errorf("Failed to invoke Trident: %v", err)
 		return err
@@ -109,7 +110,7 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 		return err
 	}
 
-	out, err = stormtrident.InvokeTrident(h.args.Env, client, h.args.EnvVars, "rollback -v trace --allowed-operations finalize")
+	out, err = stormtrident.InvokeTrident(h.args.TridentRuntimeType, client, h.args.EnvVars, "rollback -v trace --allowed-operations finalize")
 	if err != nil {
 		if err, ok := err.(*ssh.ExitMissingError); ok && strings.Contains(out.Stderr, "Rebooting system") {
 			// The connection closed without an exit code, and the output contains "Rebooting system".
@@ -126,7 +127,7 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 	if !h.args.ExpectRuntimeRollback {
 		err := stormsshcheck.CheckTridentService(
 			h.args.SshCliSettings,
-			h.args.EnvCliSettings,
+			h.args.TridentRuntimeType,
 			true,
 			h.args.TimeoutDuration(),
 			tc,
@@ -147,7 +148,7 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 	defer client.Close()
 
 	// Verify rollback success
-	output, err = stormtrident.InvokeTrident(h.args.Env, client, []string{}, "get status")
+	output, err = stormtrident.InvokeTrident(h.args.TridentRuntimeType, client, []string{}, "get status")
 	if err != nil {
 		logrus.Errorf("Failed to invoke Trident: %v", err)
 		return err

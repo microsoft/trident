@@ -18,19 +18,19 @@ import (
 	"oras.land/oras-go/v2/content/file"
 	"oras.land/oras-go/v2/registry/remote"
 
-	stormenv "tridenttools/storm/utils/env"
 	stormsha384 "tridenttools/storm/utils/sha384"
 	stormsshcheck "tridenttools/storm/utils/ssh/check"
 	stormsshclient "tridenttools/storm/utils/ssh/client"
 	stormsshconfig "tridenttools/storm/utils/ssh/config"
 	stormsftp "tridenttools/storm/utils/ssh/sftp"
+	"tridenttools/storm/utils/trident"
 	stormtrident "tridenttools/storm/utils/trident"
 )
 
 type AbUpdateHelper struct {
 	args struct {
 		stormsshconfig.SshCliSettings `embed:""`
-		stormenv.EnvCliSettings       `embed:""`
+		trident.RuntimeCliSettings    `embed:""`
 		TridentConfig                 string   `short:"c" required:"" help:"File name of the custom read-write Trident config on the host to point Trident to."`
 		Version                       string   `short:"v" required:"" help:"Version of the Trident image to use for the A/B update."`
 		StageAbUpdate                 bool     `short:"s" help:"Controls whether A/B update should be staged."`
@@ -61,8 +61,8 @@ func (h *AbUpdateHelper) RegisterTestCases(r storm.TestRegistrar) error {
 }
 
 func (h *AbUpdateHelper) getHostConfig(tc storm.TestCase) error {
-	if h.args.Env == stormenv.TridentEnvironmentNone {
-		return fmt.Errorf("environment %s is not supported", h.args.Env)
+	if h.args.TridentRuntimeType == trident.RuntimeTypeNone {
+		return fmt.Errorf("environment %s is not supported", h.args.TridentRuntimeType)
 	}
 
 	var err error
@@ -77,7 +77,7 @@ func (h *AbUpdateHelper) getHostConfig(tc storm.TestCase) error {
 		}
 	})
 
-	out, err := stormtrident.InvokeTrident(h.args.Env, h.client, h.args.EnvVars, "get configuration")
+	out, err := stormtrident.InvokeTrident(h.args.TridentRuntimeType, h.client, h.args.EnvVars, "get configuration")
 	if err != nil {
 		return fmt.Errorf("failed to invoke Trident: %w", err)
 	}
@@ -311,7 +311,7 @@ func (h *AbUpdateHelper) triggerTridentUpdate(tc storm.TestCase) error {
 
 	args := fmt.Sprintf(
 		"update -v trace %s --allowed-operations %s",
-		path.Join(h.args.Env.HostPath(), h.args.TridentConfig),
+		path.Join(h.args.TridentRuntimeType.HostPath(), h.args.TridentConfig),
 		strings.Join(allowedOperations, ","),
 	)
 
@@ -325,7 +325,7 @@ func (h *AbUpdateHelper) triggerTridentUpdate(tc storm.TestCase) error {
 	for i := 1; ; i++ {
 		logrus.Infof("Invoking Trident attempt #%d with args: %s", i, args)
 
-		out, err := stormtrident.InvokeTrident(h.args.Env, h.client, h.args.EnvVars, args)
+		out, err := stormtrident.InvokeTrident(h.args.TridentRuntimeType, h.client, h.args.EnvVars, args)
 		if err != nil {
 			if err, ok := err.(*ssh.ExitMissingError); ok && strings.Contains(out.Stderr, "Rebooting system") {
 				// The connection closed without an exit code, and the output contains "Rebooting system".
@@ -362,14 +362,14 @@ func (h *AbUpdateHelper) triggerTridentUpdate(tc storm.TestCase) error {
 }
 
 func (h *AbUpdateHelper) checkTridentService(tc storm.TestCase) error {
-	if h.args.Env == stormenv.TridentEnvironmentNone {
+	if h.args.TridentRuntimeType == trident.RuntimeTypeNone {
 		tc.Skip("No Trident environment specified")
 	}
 
 	expectSuccessfulCommit := !h.args.ExpectFailedCommit
 	err := stormsshcheck.CheckTridentService(
 		h.args.SshCliSettings,
-		h.args.EnvCliSettings,
+		h.args.TridentRuntimeType,
 		expectSuccessfulCommit,
 		h.args.TimeoutDuration(),
 		tc)
