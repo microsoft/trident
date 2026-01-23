@@ -100,7 +100,7 @@ impl DataStore {
                 Err(e) => {
                     warn!("Failed to get next datastore row: {:?}", e);
                     all_rows_data.push(None);
-                    continue;
+                    break;
                 }
                 Ok(State::Row) => {} // continue below
             }
