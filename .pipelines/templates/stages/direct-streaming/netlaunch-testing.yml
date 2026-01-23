@@ -103,20 +103,22 @@ stages:
 
               # Enable SecureBoot for all E2E tests.
               SECURE_BOOT="--secure-boot"
+              SERVE_FOLDER=./artifacts/test-image
+              NETLAUNCH_CONF=/tmp/vm-netlaunch.yaml
 
               # Create updated vm-netlaunch.yaml with direct streaming image
-              HASH=$(./scripts/cosi-sha384.py ./artifacts/test-image/regular.cosi)
-              (sudo yq '.iso += {"directStreaming": {"image": "regular.cosi", "hash": "ignored"}}' < ./tools/vm-netlaunch.yaml) > ./vm-netlaunch.yaml
-              sed -i "s|hash: ignored|hash: sha384:$HASH|" /tmp/vm-netlaunch.yaml
-              cat /tmp/vm-netlaunch.yaml
+              HASH=$(./scripts/cosi-sha384.py $SERVE_FOLDER/regular.cosi)
+              (sudo yq '.iso += {"directStreaming": {"image": "regular.cosi", "hash": "ignored"}}' < ./tools/vm-netlaunch.yaml) > $NETLAUNCH_CONF
+              sed -i "s|hash: ignored|hash: sha384:$HASH|" $NETLAUNCH_CONF
+              cat $NETLAUNCH_CONF
 
               # Run netlaunch in background to serve the ISO and direct streaming image
               # The deployed image will **not** reach out to netlaunch, so success will be
               # determined by the next task that waits for login in the VM serial output.
               (./bin/netlaunch \
                   --iso ./artifacts/iso/$(installerISOName).iso \
-                  --config /tmp/vm-netlaunch.yaml \
-                  --servefolder ./artifacts/test-image \
+                  --config $NETLAUNCH_CONF \
+                  --servefolder $SERVE_FOLDER \
                   --logstream \
                   --trace-file $(tridentSourceDirectory)/trident-clean-install-metrics.jsonl \
                   --force-color \
