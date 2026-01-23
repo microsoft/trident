@@ -26,6 +26,7 @@ type DirectStreamingHelper struct {
 		Port                uint16 `required:"" help:"Port on which the netlaunch server is running."`
 		NetlaunchConfigFile string `required:"" help:"Path to the netlaunch config file." type:"existingfile"`
 		EnableSecureBoot    bool   `help:"Whether to enable secure boot for the netlaunch server." default:"false"`
+		TimeoutInSeconds    uint   `help:"Timeout in seconds to wait for login message in VM serial log." default:"1200"`
 	}
 }
 
@@ -43,6 +44,7 @@ func (h *DirectStreamingHelper) RegisterTestCases(r storm.TestRegistrar) error {
 }
 
 func (h *DirectStreamingHelper) directStreaming(tc storm.TestCase) error {
+	startTime := time.Now()
 	// Create adjusted netlaunch config with direct streaming image
 	netlaunchConfig, err := h.createNetlaunchConfig()
 	if err != nil {
@@ -82,9 +84,8 @@ func (h *DirectStreamingHelper) directStreaming(tc storm.TestCase) error {
 	time.Sleep(10 * time.Second) // Give netlaunch some time to start
 
 	// Wait for login message in serial log
-	logrus.Info("Starting to monitor the serial log for login message...")
-	err = stormutils.WaitForLoginMessageInSerialLog(vmSerialLog, true, 1, "/tmp/serial.log", time.Minute*5)
-	logrus.Info("Finished monitoring the serial log for login message.")
+	remainingTimeout := (time.Duration(h.args.TimeoutInSeconds) * time.Second) - time.Now().Sub(startTime)
+	err = stormutils.WaitForLoginMessageInSerialLog(vmSerialLog, true, 1, "/tmp/serial.log", remainingTimeout)
 	tc.ArtifactBroker().PublishLogFile("serial.log", "/tmp/serial.log")
 	if err != nil {
 		logrus.Errorf("Failed to find login message in VM serial log: %v", err)
