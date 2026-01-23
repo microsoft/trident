@@ -121,6 +121,10 @@ func downloadExecutableFile(url string, destinationPath string) error {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to download file from URL '%s': received status code %d", url, resp.StatusCode)
+	}
+
 	_, err = io.Copy(out, resp.Body)
 	if err != nil {
 		return fmt.Errorf("failed to write to file '%s': %w", destinationPath, err)

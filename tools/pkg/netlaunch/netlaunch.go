@@ -154,6 +154,9 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 		}
 
 		if config.Rcp != nil {
+			// Populate RCP agent config into the ISO. This handles both CLI and
+			// GRPC modes, were rcpListener == nil and rcpListener != nil
+			// respectively.
 			err = injectRcpAgentConfig(mux, announceIp, announceAddress, iso, rcpListener, *config.Rcp)
 			if err != nil {
 				return fmt.Errorf("failed to inject RCP agent config into ISO: %w", err)
@@ -431,11 +434,9 @@ func doGrpcInstall(ctx context.Context, conn net.Conn, hostConfiguration string)
 	if err != nil {
 		return fmt.Errorf("failed to create Harpoon client from RCP connection: %w", err)
 	}
+	defer harpoonClient.Close()
 
-	installCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
-	defer cancel()
-
-	stream, err := harpoonClient.Install(installCtx, &harpoonpbv1.ServicingRequest{
+	stream, err := harpoonClient.Install(ctx, &harpoonpbv1.ServicingRequest{
 		Stage: &harpoonpbv1.StageRequest{
 			Config: hostConfiguration,
 		},
@@ -448,8 +449,8 @@ func doGrpcInstall(ctx context.Context, conn net.Conn, hostConfiguration string)
 		return fmt.Errorf("failed to start installation via Harpoon: %w", err)
 	}
 
-	colorize := color.New(color.FgCyan).SprintfFunc()
-	grpcHeader := colorize("[GRPC]")
+	colorize := color.New(color.FgGreen).SprintfFunc()
+	grpcHeader := colorize("|GRPC|")
 
 	for {
 		resp, err := stream.Recv()

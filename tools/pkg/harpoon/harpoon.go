@@ -16,6 +16,11 @@ import (
 // HarpoonClient is a client for interacting with the Harpoon gRPC service.
 type HarpoonClient struct {
 	harpoonpbv1.TridentServiceClient
+	grpcConn *grpc.ClientConn
+}
+
+func (c *HarpoonClient) Close() error {
+	return c.grpcConn.Close()
 }
 
 // NewHarpoonClientFromNetworkConnection creates a new Harpoon gRPC client using
@@ -34,5 +39,6 @@ func NewHarpoonClientFromNetworkConnection(conn net.Conn) (*HarpoonClient, error
 
 	return &HarpoonClient{
 		TridentServiceClient: harpoonpbv1.NewTridentServiceClient(grpcConn),
+		grpcConn:             grpcConn,
 	}, nil
 }

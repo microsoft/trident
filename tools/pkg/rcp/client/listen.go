@@ -64,7 +64,12 @@ func ListenAndAccept(ctx context.Context, certProvider tlscerts.CertProvider, po
 	}
 
 	// If port 0 was specified, get the actual assigned port.
-	port = uint16(listener.Addr().(*net.TCPAddr).Port)
+	if tcpAddr, ok := listener.Addr().(*net.TCPAddr); ok {
+		port = uint16(tcpAddr.Port)
+	} else {
+		listener.Close()
+		return nil, fmt.Errorf("failed to get assigned port from listener address: %v", listener.Addr())
+	}
 
 	logrus.Debugf("RCP-client listening on port %d", port)
 
@@ -87,6 +92,7 @@ func ListenAndAccept(ctx context.Context, certProvider tlscerts.CertProvider, po
 	// Wait for an incoming connection
 	go func() {
 		defer close(connChan)
+		defer listener.Close()
 		for {
 			conn, err := listener.Accept()
 			if err == nil {
