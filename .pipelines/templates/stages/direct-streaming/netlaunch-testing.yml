@@ -101,36 +101,13 @@ stages:
           - bash: |
               set -euxo pipefail
 
-              # Enable SecureBoot for all E2E tests.
-              SECURE_BOOT="--secure-boot"
-              SERVE_FOLDER=./artifacts/test-image
-              NETLAUNCH_CONF=/tmp/vm-netlaunch.yaml
-
-              # Create updated vm-netlaunch.yaml with direct streaming image
-              HASH=$(./scripts/cosi-sha384.py $SERVE_FOLDER/regular.cosi)
-              (sudo yq '.iso += {"directStreaming": {"image": "regular.cosi", "hash": "ignored"}}' < ./tools/vm-netlaunch.yaml) > $NETLAUNCH_CONF
-              sed -i "s|hash: ignored|hash: sha384:$HASH|" $NETLAUNCH_CONF
-              cat $NETLAUNCH_CONF
-
-              # Run netlaunch in background to serve the ISO and direct streaming image
-              # The deployed image will **not** reach out to netlaunch, so success will be
-              # determined by the next task that waits for login in the VM serial output.
-              (./bin/netlaunch \
-                  --iso ./artifacts/iso/$(installerISOName).iso \
-                  --config $NETLAUNCH_CONF \
-                  --servefolder $SERVE_FOLDER \
-                  --logstream \
-                  --trace-file $(tridentSourceDirectory)/trident-clean-install-metrics.jsonl \
-                  --force-color \
-                  --full-logstream logstream-full.log \
-                  $SECURE_BOOT \
-                  --port ${{variables.netlaunchPort}} 2>&1 | tee ./direct-streaming-deployment.log) &
-
-              sleep 20
-
-              sudo ./bin/storm-trident helper wait-for-login -a \
-                  --vm-name "$(jq -r '.virtualmachines[0].name' $(tridentSourceDirectory)/tools/virt-deploy-metadata.json)" \
-                  --artifacts-folder "$(ob_outputDirectory)"
+              sudo ./bin/storm-trident helper direct-streaming -a \
+                  --log-dir $(ob_outputDirectory) \
+                  --netlaunch-config-file ./tools/vm-netlaunch.yaml \
+                  --cosi-file ./artifacts/test-image/regular.cosi \
+                  --iso-file ./artifacts/trident-direct-streaming-installer.iso \
+                  --port ${{variables.netlaunchPort}} \
+                  --enable-secure-boot
 
             workingDirectory: $(tridentSourceDirectory)
             displayName: "🚀 Run netlaunch for testing"
