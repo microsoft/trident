@@ -1,5 +1,7 @@
 use std::{
     collections::HashMap,
+    io::Read,
+    ops::ControlFlow,
     path::{Path, PathBuf},
 };
 
@@ -59,6 +61,8 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
         tmp
     };
 
+    let mut combined_images = HashMap::new();
+
     // Now, deploy the filesystems sourced from the OS image
     for (id, mpp, fs) in fs_from_img {
         let image = images
@@ -77,57 +81,61 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
                 ));
             };
 
-            // Deploy the data image to the underlying data device.
-            info!(
-                "Initializing '{}': writing image for filesystem at '{}' from '{}'",
-                verity_device.data_device_id,
-                image.mount_point.display(),
-                os_img.source()
+            combined_images.insert(
+                image.image_file.path.clone(),
+                (
+                    verity_device.data_device_id.clone(),
+                    &image.image_file,
+                    FileSystemResize::NoResize,
+                ),
             );
-            deploy_os_image_file(
-                ctx,
-                &verity_device.data_device_id,
-                &image.image_file,
-                FileSystemResize::NoResize,
-            )
-            .structured(ServicingError::DeployImages)?;
-
-            info!(
-                "Initializing '{}': writing verity hash image for filesystem at '{}' from '{}'",
-                verity_device.hash_device_id,
-                image.mount_point.display(),
-                os_img.source()
+            combined_images.insert(
+                image_file_verity.hash_image_file.path.clone(),
+                (
+                    verity_device.hash_device_id.clone(),
+                    &image_file_verity.hash_image_file,
+                    FileSystemResize::NoResize,
+                ),
             );
-            deploy_os_image_file(
-                ctx,
-                &verity_device.hash_device_id,
-                &image_file_verity.hash_image_file,
-                FileSystemResize::NoResize,
-            )
-            .structured(ServicingError::DeployImages)?;
         } else {
             // For non-verity devices, we can deploy the image directly.
-            info!(
-                "Initializing '{id}': writing image for filesystem at '{}' from '{}'",
-                image.mount_point.display(),
-                os_img.source()
-            );
 
+            // Determine if/how the filesystem should be resized.
             let fs_type = fs.fs_type.structured(InternalError::Internal(
                 "Filesystem from image doesn't have fs type set",
             ))?;
-
-            // Determine if/how the filesystem should be resized.
             let resize = if fs.is_read_only() || !fs_type.is_ext() {
                 FileSystemResize::NoResize
             } else {
                 FileSystemResize::Ext
             };
 
-            deploy_os_image_file(ctx, &id, &image.image_file, resize)
-                .structured(ServicingError::DeployImages)?;
+            combined_images.insert(
+                image.image_file.path.clone(),
+                (id.clone(), &image.image_file, resize),
+            );
         }
     }
+
+    os_img.read_images(|path, reader| -> ControlFlow<Result<(), TridentError>> {
+        let Some((id, image_file, resize)) = combined_images.remove(path) else {
+            return ControlFlow::Continue(());
+        };
+
+        info!(
+            "Initializing '{id}': writing image for filesystem from '{}'",
+            os_img.source()
+        );
+        if let Err(e) = deploy_os_image_file(ctx, &id, &image_file, resize, reader) {
+            return ControlFlow::Break(Err(e).structured(ServicingError::DeployImages));
+        }
+
+        if combined_images.is_empty() {
+            ControlFlow::Break(Ok(()))
+        } else {
+            ControlFlow::Continue(())
+        }
+    })?;
 
     Ok(())
 }
@@ -206,6 +214,7 @@ fn deploy_os_image_file(
     id: &BlockDeviceId,
     image_file: &OsImageFile,
     fs_resize: FileSystemResize,
+    reader: Box<dyn Read>,
 ) -> Result<(), Error> {
     let block_device_path = ctx
         .get_block_device_path(id)
@@ -225,11 +234,7 @@ fn deploy_os_image_file(
         dev_info.size
     );
 
-    let stream = HashingReader384::new(
-        image_file
-            .reader()
-            .context("Failed to create reader for filesystem image file")?,
-    );
+    let stream = HashingReader384::new(reader);
 
     let computed_sha384 = image_streamer::stream_zstd_and_hash(stream, &block_device_path)
         .context(format!(

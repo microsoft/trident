@@ -206,8 +206,8 @@ pub(crate) struct ImageFile {
 
     pub sha384: Sha384Hash,
 
-    #[serde(skip)]
-    pub(super) entry: CosiEntry,
+    // #[serde(skip)]
+    // pub(super) entry: CosiEntry,
 }
 
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
@@ -371,7 +371,6 @@ mod tests {
             compressed_size: 50,
             uncompressed_size: 100,
             sha384: Sha384Hash::from("sample_sha384"),
-            entry: CosiEntry::default(),
         }
     }
 
