@@ -4,12 +4,13 @@ package harpoon.v1;
 
 // Mapped to existing Trident servicing states
 enum ServicingState {
-  NOT_PROVISIONED   = 0;
-  INSTALL_STAGED    = 1;
-  UPDATE_STAGED     = 2;
-  INSTALL_FINALIZED = 3;
-  UPDATE_FINALIZED  = 4;
-  PROVISIONED       = 5;
+  SERVICING_STATE_UNSPECIFIED       = 0;
+  SERVICING_STATE_NOT_PROVISIONED   = 1;
+  SERVICING_STATE_INSTALL_STAGED    = 2;
+  SERVICING_STATE_UPDATE_STAGED     = 3;
+  SERVICING_STATE_INSTALL_FINALIZED = 4;
+  SERVICING_STATE_UPDATE_FINALIZED  = 5;
+  SERVICING_STATE_PROVISIONED       = 6;
 }
 
 message GetServicingStateRequest {}

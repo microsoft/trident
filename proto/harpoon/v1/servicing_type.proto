@@ -3,14 +3,15 @@ syntax = "proto3";
 package harpoon.v1;
 
 enum ServicingType {
+  SERVICING_TYPE_UNSPECIFIED = 0;
   // No servicing is currently in progress or not required.
-  NO_ACTIVE_SERVICING = 0;
+  SERVICING_TYPE_NO_ACTIVE_SERVICING = 1;
   // Update that can be applied without necessitating a reboot.
-  RUNTIME_UPDATE = 1;
+  SERVICING_TYPE_RUNTIME_UPDATE = 2;
   // Update that requires switching to a different root partition and rebooting.
-  AB_UPDATE = 2;
+  SERVICING_TYPE_AB_UPDATE = 3;
   // Clean install of the target OS.
-  CLEAN_INSTALL = 3;
+  SERVICING_TYPE_CLEAN_INSTALL = 4;
 }
 
 message GetRequiredServicingTypeRequest {

@@ -6,9 +6,10 @@ message GetActiveVolumeRequest {}
 
 // Represents the active volume in a dual-volume setup.
 enum ABVolumeState {
-  NONE = 0;
-  A    = 1;
-  B    = 2;
+  AB_VOLUME_STATE_UNSPECIFIED = 0;
+  AB_VOLUME_STATE_NONE        = 1;
+  AB_VOLUME_STATE_A           = 2;
+  AB_VOLUME_STATE_B           = 3;
 }
 
 message GetActiveVolumeResponse {

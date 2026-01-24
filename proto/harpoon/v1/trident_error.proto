@@ -6,25 +6,26 @@ import "file_location.proto";
 
 // Major kinds of Trident errors.
 enum TridentErrorKind {
+  TRIDENT_ERROR_KIND_UNSPECIFIED = 0;
   // Identifies errors that occur when the execution environment is
   // misconfigured.
-  EXECUTION_ENVIRONMENT_MISCONFIGURATION = 0;
+  TRIDENT_ERROR_KIND_EXECUTION_ENVIRONMENT_MISCONFIGURATION = 1;
   // Identifies errors that are related to health checks.
-  HEALTH_CHECKS = 1;
+  TRIDENT_ERROR_KIND_HEALTH_CHECKS = 2;
   // Identifies errors that occur when Trident fails to initialize.
-  INITIALIZATION = 2;
+  TRIDENT_ERROR_KIND_INITIALIZATION = 3;
   // Identifies errors that occur due to an internal bug or failure in Trident.
-  INTERNAL = 3;
+  TRIDENT_ERROR_KIND_INTERNAL = 4;
   // Identifies errors that occur when the user provides invalid input.
-  INVALID_INPUT = 4;
+  TRIDENT_ERROR_KIND_INVALID_INPUT = 5;
   // Identifies errors that occur during servicing and require further user
   // investigation, to determine whether the error occurred due to an internal
   // failure in Trident, a failure in one of its dependencies, or a system
   // misconfiguration.
-  SERVICING = 5;
+  TRIDENT_ERROR_KIND_SERVICING = 6;
   // Identifies errors that occur when clean install or update fail due to the
   // current configuration of the host.
-  UNSUPPORTED_CONFIGURATION = 6;
+  TRIDENT_ERROR_KIND_UNSUPPORTED_CONFIGURATION = 7;
 }
 
 // Protobuf serialization of a Trident error.
