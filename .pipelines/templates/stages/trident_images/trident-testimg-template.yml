@@ -136,6 +136,7 @@ steps:
         sudo apt install -y createrepo-c swtpm squashfs-tools lsof
       fi
       az extension add --name azure-devops
+      sudo snap install -y yq
     displayName: "Install native dependencies"
     retryCountOnTaskFailure: 3
 
