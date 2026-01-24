@@ -1159,11 +1159,11 @@ DIRECT_STREAMING_HOST_CONFIGURATION ?= tests/e2e_tests/trident_configurations/ba
 artifacts/trident-direct-streaming-testimage-arm64.cosi: \
 	bin/mkcosi \
 	artifacts/trident-testimage-arm64.cosi
-	$(eval TMP_HC := $(shell mktemp))
-	$(eval TMP_NO_HC_VHD_COSI := $(shell mktemp))
+	$(eval TMP_HC := $(shell mktemp tmp-hc.XXX.yaml))
+	$(eval TMP_NO_HC_VHD_COSI := $(shell mktemp tmp.XXX.cosi))
 	@cp $(DIRECT_STREAMING_HOST_CONFIGURATION) $(TMP_HC)
 	@sed -i 's|pci-0000:00:1f.2-ata|pci-0000:02:02.0-ata|' $(TMP_HC)
-	yq -i 'del(.os.selinux)' $(TMP_HC)
+	@yq -i 'del(.os.selinux)' $(TMP_HC)
 	@bin/mkcosi add-vpc \
 		artifacts/trident-testimage-arm64.cosi \
 		$(TMP_NO_HC_VHD_COSI)
@@ -1175,10 +1175,10 @@ artifacts/trident-direct-streaming-testimage-arm64.cosi: \
 artifacts/trident-direct-streaming-testimage.cosi: \
 	bin/mkcosi \
 	artifacts/trident-testimage.cosi
-	$(eval TMP_HC := $(shell mktemp))
-	$(eval TMP_NO_HC_VHD_COSI := $(shell mktemp))
+	$(eval TMP_HC := $(shell mktemp tmp-hc.XXX.yaml))
+	$(eval TMP_NO_HC_VHD_COSI := $(shell mktemp tmp.XXX.cosi))
 	@cp $(DIRECT_STREAMING_HOST_CONFIGURATION) $(TMP_HC)
-	yq -i 'del(.os.selinux)' $(TMP_HC)
+	@yq -i 'del(.os.selinux)' $(TMP_HC)
 	@bin/mkcosi add-vpc \
 		artifacts/trident-testimage.cosi \
 		$(TMP_NO_HC_VHD_COSI)
