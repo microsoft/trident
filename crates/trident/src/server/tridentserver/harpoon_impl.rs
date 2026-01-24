@@ -4,24 +4,25 @@ use log::info;
 use tonic::{async_trait, Request, Response, Status};
 
 use harpoon::{
-    trident_service_server::TridentService, CheckRollbackRequest, CheckRollbackResponse,
-    CheckRootRequest, CommitRequest, FinalizeRequest, GetActiveVolumeRequest,
-    GetActiveVolumeResponse, GetConfigRequest, GetConfigResponse, GetLastErrorRequest,
-    GetLastErrorResponse, GetRequiredServicingTypeRequest, GetRequiredServicingTypeResponse,
-    GetRollbackChainRequest, GetRollbackTargetRequest, GetServicingStateRequest,
-    GetServicingStateResponse, RebuildRaidRequest, RollbackFinalizeRequest, RollbackRequest,
-    RollbackStageRequest, ServicingRequest, StageRequest, StreamImageRequest,
-    TridentError as HarpoonTridentError, ValidateHostConfigurationRequest,
+    trident_service_server::TridentService, AbVolumeState, CheckRollbackRequest,
+    CheckRollbackResponse, CheckRootRequest, CommitRequest, FinalizeRequest,
+    GetActiveVolumeRequest, GetActiveVolumeResponse, GetConfigRequest, GetConfigResponse,
+    GetLastErrorRequest, GetLastErrorResponse, GetRequiredServicingTypeRequest,
+    GetRequiredServicingTypeResponse, GetRollbackChainRequest, GetRollbackTargetRequest,
+    GetServicingStateRequest, GetServicingStateResponse, RebuildRaidRequest,
+    RollbackFinalizeRequest, RollbackRequest, RollbackStageRequest, ServicingRequest, StageRequest,
+    StreamImageRequest, TridentError as HarpoonTridentError, ValidateHostConfigurationRequest,
     ValidateHostConfigurationResponse, VersionRequest, VersionResponse,
 };
 use trident_api::{
     config::{HostConfigurationSource, Operation, Operations},
     error::{InternalError, TridentError, TridentResultExt},
+    status::AbVolumeSelection,
 };
 use url::Url;
 
 use crate::{
-    server::TridentHarpoonServer, stream, validation, DataStore, Trident, TRIDENT_VERSION,
+    server::TridentHarpoonServer, stream, validation, DataStore, ExitKind, Trident, TRIDENT_VERSION,
 };
 
 use super::{RebootDecision, ServicingResponseStream};
@@ -231,10 +232,18 @@ impl TridentService for TridentHarpoonServer {
         &self,
         _request: Request<CommitRequest>,
     ) -> Result<Response<Self::CommitStream>, Status> {
-        self.servicing_request("commit", RebootDecision::Error, || {
-            Err(TridentError::new(InternalError::Internal(
-                "Not implemented: commit",
-            )))
+        let data_store_path = self.agent_config.datastore_path().to_owned();
+        let logstream = self.logstream.clone();
+        let tracestream = self.tracestream.clone();
+
+        self.servicing_request("commit", RebootDecision::Error, move || {
+            let mut trident = Trident::new(None, &data_store_path, logstream, tracestream)
+                .message("Failed to initialize Trident")?;
+
+            let mut datastore =
+                DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
+
+            trident.commit(&mut datastore)
         })
     }
 
@@ -281,10 +290,22 @@ impl TridentService for TridentHarpoonServer {
         &self,
         _request: Request<RebuildRaidRequest>,
     ) -> Result<Response<Self::RebuildRaidStream>, Status> {
-        self.servicing_request("rebuild_raid", RebootDecision::Error, || {
-            Err(TridentError::new(InternalError::Internal(
-                "Not implemented: rebuild_raid",
-            )))
+        let data_store_path = self.agent_config.datastore_path().to_owned();
+        let logstream = self.logstream.clone();
+        let tracestream = self.tracestream.clone();
+
+        self.servicing_request("rebuild_raid", RebootDecision::Error, move || {
+            let mut trident = Trident::new(None, &data_store_path, logstream, tracestream)
+                .message("Failed to initialize Trident")?;
+
+            let mut datastore =
+                DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
+
+            trident
+                .rebuild_raid(&mut datastore)
+                .message("Failed to rebuild RAID arrays")?;
+
+            Ok(ExitKind::Done)
         })
     }
 
@@ -369,10 +390,19 @@ impl TridentService for TridentHarpoonServer {
         &self,
         _request: Request<GetActiveVolumeRequest>,
     ) -> Result<Response<GetActiveVolumeResponse>, Status> {
-        self.reading_request("get_active_volume", || {
-            Err(TridentError::new(InternalError::Internal(
-                "Not implemented: get_active_volume",
-            )))
+        let data_store_path = self.agent_config.datastore_path().to_owned();
+        self.reading_request("check_rollback", || {
+            let datastore =
+                DataStore::open(&data_store_path).message("Failed to open datastore")?;
+
+            Ok(GetActiveVolumeResponse {
+                active_volume: match datastore.host_status().ab_active_volume.as_ref() {
+                    Some(AbVolumeSelection::VolumeA) => AbVolumeState::A,
+                    Some(AbVolumeSelection::VolumeB) => AbVolumeState::B,
+                    None => AbVolumeState::None,
+                }
+                .into(),
+            })
         })
         .await
     }
