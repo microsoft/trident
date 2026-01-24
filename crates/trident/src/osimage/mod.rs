@@ -1,8 +1,5 @@
 use std::{
-    fmt::{Display, Formatter},
-    io::{Error as IoError, Read},
-    path::{Path, PathBuf},
-    time::Duration,
+    fmt::{Display, Formatter}, io::{Error as IoError, Read}, marker::PhantomData, ops::ControlFlow, path::{Path, PathBuf}, time::Duration
 };
 
 use anyhow::Error;
@@ -191,6 +188,17 @@ impl OsImage {
             OsImageInner::Mock(_mock) => None,
         }
     }
+
+    pub(crate) fn read_images<F>(&self, f: F) -> Result<(), TridentError>
+    where
+        F: FnMut(&Path, Box<dyn Read>) -> ControlFlow<Result<(), TridentError>>,
+    {
+        match &self.0 {
+            OsImageInner::Cosi(cosi) => cosi.read_images(f),
+            #[cfg(test)]
+            _ => todo!(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -214,14 +222,10 @@ pub struct OsImageFile<'a> {
     pub compressed_size: u64,
     pub sha384: Sha384Hash,
     pub uncompressed_size: u64,
-    reader: Box<dyn Fn() -> Result<Box<dyn Read>, IoError> + 'a>,
-}
 
-impl OsImageFile<'_> {
-    /// Returns a reader for the image file.
-    pub fn reader(&self) -> Result<Box<dyn Read>, IoError> {
-        (self.reader)()
-    }
+    /// Path of the partition image within the COSI.
+    pub path: PathBuf,
+    _phantom: PhantomData<&'a ()>,
 }
 
 #[derive(Debug)]
