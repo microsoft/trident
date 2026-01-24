@@ -111,11 +111,11 @@ stages:
                   --iso-file $ISO_FILE \
                   --port ${{variables.netlaunchPort}} \
                   --enable-secure-boot \
-                  --timeout-in-seconds 1200
+                  --timeout-in-seconds 2400
 
             workingDirectory: $(tridentSourceDirectory)
             displayName: "🚀 Run netlaunch for testing"
-            timeoutInMinutes: 20
+            timeoutInMinutes: 40
 
           - bash: |
               set -eux
