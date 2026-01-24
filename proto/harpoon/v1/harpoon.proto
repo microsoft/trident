@@ -1,0 +1,95 @@
+// Proto file defining the TridentService and related messages.
+
+syntax = "proto3";
+
+package harpoon.v1;
+
+import "active_volume.proto";
+import "finalize_request.proto";
+import "get_config.proto";
+import "get_error.proto";
+import "rollback.proto";
+import "servicing_state.proto";
+import "servicing_type.proto";
+import "servicing.proto";
+import "validation.proto";
+import "version.proto";
+
+// TridentService provides methods for managing Trident servicing operations
+service TridentService {
+  // Install performs an OS installation.
+  rpc Install(ServicingRequest) returns (stream ServicingResponse);
+
+  // InstallStage performs the stage operation of an OS installation.
+  rpc InstallStage(StageRequest) returns (stream ServicingResponse);
+
+  // InstallFinalize performs the finalize operation of an OS installation.
+  rpc InstallFinalize(FinalizeRequest) returns (stream ServicingResponse);
+
+  // Update performs an OS update.
+  rpc Update(ServicingRequest) returns (stream ServicingResponse);
+
+  // UpdateStage performs the stage operation of an OS update.
+  rpc UpdateStage(StageRequest) returns (stream ServicingResponse);
+
+  // UpdateFinalize performs the finalize operation of an OS update.
+  rpc UpdateFinalize(FinalizeRequest) returns (stream ServicingResponse);
+
+  // CheckRollback checks what type of rollback would be performed.
+  rpc CheckRollback(CheckRollbackRequest) returns (CheckRollbackResponse);
+
+  // Rollback performs a rollback.
+  rpc Rollback(RollbackRequest) returns (stream ServicingResponse);
+
+  // RollbackStage performs the stage operation of a rollback.
+  rpc RollbackStage(RollbackStageRequest) returns (stream ServicingResponse);
+
+  // RollbackFinalize performs the finalize operation of a rollback.
+  rpc RollbackFinalize(RollbackFinalizeRequest) returns (stream ServicingResponse);
+
+  // CheckRoot validates that the host booted using the expected root
+  // filesystem.
+  rpc CheckRoot(CheckRootRequest) returns (stream ServicingResponse);
+
+  // Commit attempts the commit operation to finalize a servicing.
+  rpc Commit(CommitRequest) returns (stream ServicingResponse);
+
+  // StreamImage streams an OS image to the target device.
+  rpc StreamImage(StreamImageRequest) returns (stream ServicingResponse);
+
+  // RebuildRaid performs a RAID rebuild operation to restore a degraded RAID
+  // array on new disks.
+  rpc RebuildRaid(RebuildRaidRequest) returns (stream ServicingResponse);
+
+  // ValidateHostConfiguration performs static validation of a Host Configuration.
+  rpc ValidateHostConfiguration(ValidateHostConfigurationRequest) returns (ValidateHostConfigurationResponse);
+
+  // GetServicingType returns the servicing type that would be required to apply
+  // the given Host Configuration.
+  rpc GetRequiredServicingType(GetRequiredServicingTypeRequest) returns (GetRequiredServicingTypeResponse);
+
+  // GetProvisionedConfig returns the currently provisioned configuration, if any.
+  rpc GetProvisionedConfig(GetConfigRequest) returns (GetConfigResponse);
+
+  // GetServicingConfig returns the active servicing configuration, if any.
+  rpc GetServicingConfig(GetConfigRequest) returns (GetConfigResponse);
+
+  // GetLastError returns the last error encountered during the last servicing,
+  // if any.
+  rpc GetLastError(GetLastErrorRequest) returns (GetLastErrorResponse);
+
+  // GetServicingState returns the current servicing state.
+  rpc GetServicingState(GetServicingStateRequest) returns (GetServicingStateResponse);
+
+  // GetActiveVolume returns the currently active volume (A or B).
+  rpc GetActiveVolume(GetActiveVolumeRequest) returns (GetActiveVolumeResponse);
+
+  // GetRollbackChain returns list of available rollbacks.
+  rpc GetRollbackChain(GetRollbackChainRequest) returns (GetRollbackChainResponse);
+
+  // GetRollbackTarget returns the next rollback target OS Host Configuration.
+  rpc GetRollbackTarget(GetRollbackTargetRequest) returns (GetRollbackTargetResponse);
+
+  // Version returns the Trident version.
+  rpc Version(VersionRequest) returns (VersionResponse);
+}

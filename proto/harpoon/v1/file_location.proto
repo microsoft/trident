@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package harpoon.v1;
+
+// Location in a source file.
+message FileLocation {
+  // Path to the file.
+  string path = 1;
+  // Line number in the file.
+  uint32 line = 2;
+}

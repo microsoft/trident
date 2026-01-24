@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package harpoon.v1;
+
+import "finalize_request.proto";
+
+// Enum representing the result of a rollback check.
+enum CheckRollbackKind {
+  CHECK_ROLLBACK_KIND_UNSPECIFIED = 0;
+  // No rollbacks are available
+  CHECK_ROLLBACK_KIND_NO_ROLLBACK_AVAILABLE = 1;
+  // Rollback of an A/B update is expected
+  CHECK_ROLLBACK_KIND_AB_ROLLBACK_EXPECTED = 2;
+  // Rollback of a runtime update is expected
+  CHECK_ROLLBACK_KIND_RUNTIME_ROLLBACK_EXPECTED = 3;
+}
+
+enum ManualRollbackKind {
+  MANUAL_ROLLBACK_KIND_UNSPECIFIED = 0;
+  // No specific rollback kind was requested
+  MANUAL_ROLLBACK_KIND_ANY_ROLLBACK_REQUESTED = 1;
+  // Rollback of an A/B update was requested
+  MANUAL_ROLLBACK_KIND_AB_ROLLBACK_REQUESTED = 2;
+  // Rollback of a runtime update was requested
+  MANUAL_ROLLBACK_KIND_RUNTIME_ROLLBACK_REQUESTED = 3;
+}
+
+message CheckRollbackRequest {
+  // The rollback kind parameter for the servicing operation.
+  ManualRollbackKind kind = 1;
+}
+
+message CheckRollbackResponse {
+  // The rollback kind as a string.
+  CheckRollbackKind kind = 1;
+}
+
+message RollbackRequest {
+  // The finalize parameters for the servicing operation.
+  FinalizeRequest finalize = 2;
+  // The rollback kind parameter for the servicing operation.
+  ManualRollbackKind kind = 3;
+}
+
+message RollbackStageRequest {
+  // The rollback kind parameter for the servicing operation.
+  ManualRollbackKind kind = 3;
+}
+
+message RollbackFinalizeRequest {
+  // The finalize parameters for the servicing operation.
+  FinalizeRequest finalize = 2;
+}
+
+message GetRollbackChainRequest {}
+
+message GetRollbackChainResponse {
+  // The rollback list content as a list of strings.
+  repeated string rollback_chain = 1;
+}
+
+message GetRollbackTargetRequest {}
+
+message GetRollbackTargetResponse {
+  // The rollback target Host Configuration content as a string.
+  optional string rollback_target = 1;
+}

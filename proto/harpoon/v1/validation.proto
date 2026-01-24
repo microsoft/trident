@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package harpoon.v1;
+
+import "trident_error.proto";
+
+message ValidateHostConfigurationRequest {
+  // The Host Configuration to be validated.
+  string config = 1;
+}
+
+message ValidateHostConfigurationResponse {
+  // Whether the configuration is valid.
+  bool ok = 1;
+  // Validation error, if any. Nil if the configuration is valid.
+  optional TridentError error = 2;
+}

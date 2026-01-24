@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package harpoon.v1;
+
+message GetConfigRequest {}
+
+message GetConfigResponse {
+  // The Host Configuration content as a string.
+  optional string config = 1;
+}

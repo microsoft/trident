@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package harpoon.v1;
+
+// Request to finalize a Host Configuration.
+message FinalizeRequest {
+  // Indicates whether the orchestrator will handle any required reboots of the
+  // system. When set to false, Trident will perform any necessary reboots
+  // itself. When set to true, Trident will complete the servicing operation
+  // without rebooting, and will expect the orchestrator to reboot the system
+  // immediately after finalization, when requested.
+  bool orchestrator_handles_reboot = 1;
+}

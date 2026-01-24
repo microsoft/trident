@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+package harpoon.v1;
+
+import "google/protobuf/timestamp.proto";
+
+import "finalize_request.proto";
+import "logging.proto";
+import "trident_error.proto";
+
+// Request to stage a Host Configuration.
+message StageRequest {
+  // The target Host Configuration.
+  string config = 1;
+}
+
+message ServicingRequest {
+  // The staging parameters for the servicing operation.
+  StageRequest stage = 1;
+  // The finalize parameters for the servicing operation.
+  FinalizeRequest finalize = 2;
+}
+
+message StreamImageRequest {
+  // Path to the image file to be streamed.
+  string image_path = 1;
+  // Hash of the image file for integrity verification.
+  string image_hash = 2;
+  // The finalize parameters for the servicing operation.
+  FinalizeRequest finalize = 3;
+}
+
+message RebuildRaidRequest {
+  // The Host Configuration to be used for RAID rebuild.
+  string config = 1;
+}
+
+message CheckRootRequest {}
+
+message CommitRequest {}
+
+// Notification that a servicing operation has started.
+message Start {}
+
+// Represents the final status of a servicing operation.
+enum StatusCode {
+  STATUS_CODE_UNSPECIFIED = 0;
+  STATUS_CODE_SUCCESS     = 1;
+  STATUS_CODE_FAILURE     = 2;
+}
+
+message FinalStatus {
+  // Final status of the servicing operation.
+  StatusCode status = 1;
+  // Message associated with the final status.
+  optional TridentError error = 2;
+  // Whether a reboot is required to complete the servicing operation. If true,
+  // the caller is expected to reboot the system to finalize the servicing
+  // immediately upon receiving this status.
+  bool reboot_required = 3;
+  // Whether the servicing operation enqueued a reboot. If true, the system is
+  // expected to reboot automatically to finalize the servicing. No further
+  // action from the caller is needed. This field can be true only if
+  // reboot_required is false.
+  bool reboot_enqueued = 4;
+}
+
+// Response messages from a servicing operation.
+message ServicingResponse {
+  // Timestamp of the response message.
+  google.protobuf.Timestamp timestamp = 1;
+  // Body of the response message.
+  oneof response {
+    // A start message indicating the beginning of the servicing operation.
+    Start start = 2;
+    // A log message from the servicing operation.
+    Log log = 3;
+    // A final status message from the servicing operation.
+    FinalStatus final_status = 4;
+  }
+}

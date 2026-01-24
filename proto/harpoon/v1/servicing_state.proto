@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package harpoon.v1;
+
+// Mapped to existing Trident servicing states
+enum ServicingState {
+  NOT_PROVISIONED   = 0;
+  INSTALL_STAGED    = 1;
+  UPDATE_STAGED     = 2;
+  INSTALL_FINALIZED = 3;
+  UPDATE_FINALIZED  = 4;
+  PROVISIONED       = 5;
+}
+
+message GetServicingStateRequest {}
+
+message GetServicingStateResponse {
+  // The current servicing state of Trident.
+  ServicingState state = 1;
+}

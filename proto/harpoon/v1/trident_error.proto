@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package harpoon.v1;
+
+import "file_location.proto";
+
+// Major kinds of Trident errors.
+enum TridentErrorKind {
+  // Identifies errors that occur when the execution environment is
+  // misconfigured.
+  EXECUTION_ENVIRONMENT_MISCONFIGURATION = 0;
+  // Identifies errors that are related to health checks.
+  HEALTH_CHECKS = 1;
+  // Identifies errors that occur when Trident fails to initialize.
+  INITIALIZATION = 2;
+  // Identifies errors that occur due to an internal bug or failure in Trident.
+  INTERNAL = 3;
+  // Identifies errors that occur when the user provides invalid input.
+  INVALID_INPUT = 4;
+  // Identifies errors that occur during servicing and require further user
+  // investigation, to determine whether the error occurred due to an internal
+  // failure in Trident, a failure in one of its dependencies, or a system
+  // misconfiguration.
+  SERVICING = 5;
+  // Identifies errors that occur when clean install or update fail due to the
+  // current configuration of the host.
+  UNSUPPORTED_CONFIGURATION = 6;
+}
+
+// Protobuf serialization of a Trident error.
+message TridentError {
+  // Error kind.
+  TridentErrorKind kind = 1;
+  // Error subkind.
+  string subkind = 2;
+  // Specific error message.
+  string message = 3;
+  // Full formatted body of the error, including context and source.
+  string full_body = 4;
+  // Location in the file where the error occurred.
+  FileLocation location = 5;
+}
