@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, fmt::Display, path::PathBuf};
+use std::{cmp::Ordering, fmt::Display, iter, path::PathBuf};
 
 use anyhow::{ensure, Error};
 use log::trace;
@@ -28,13 +28,19 @@ pub(super) enum KnownMetadataVersion {
     ///
     /// Introduces bootloader metadata.
     V1_1,
+
+    /// COSI metadata specification version 1.2.
+    ///
+    /// Introduces partition metadata.
+    V1_2,
 }
 
 impl KnownMetadataVersion {
     pub(super) fn as_version(&self) -> MetadataVersion {
         match self {
-            KnownMetadataVersion::V1_0 => MetadataVersion { major: 1, minor: 0 },
-            KnownMetadataVersion::V1_1 => MetadataVersion { major: 1, minor: 1 },
+            Self::V1_0 => MetadataVersion { major: 1, minor: 0 },
+            Self::V1_1 => MetadataVersion { major: 1, minor: 1 },
+            Self::V1_2 => MetadataVersion { major: 1, minor: 2 },
         }
     }
 }
@@ -91,6 +97,13 @@ pub(crate) struct CosiMetadata {
     /// Template for a host configuration embedded within the image.
     #[serde(default)]
     pub host_configuration_template: Option<String>,
+
+    /// Original image partition metadata.
+    ///
+    /// The order of `Partition` objects in the `partitions` array is
+    /// unspecified since the `number` field indicates the original ordering.
+    #[serde(default)]
+    pub partitions: Option<Vec<Partition>>,
 }
 
 impl CosiMetadata {
@@ -141,6 +154,19 @@ impl CosiMetadata {
     /// Returns an iterator over all images that are NOT the ESP filesystem image.
     pub(super) fn get_regular_filesystems(&self) -> impl Iterator<Item = &Image> {
         self.images.iter().filter(|image| !image.is_esp())
+    }
+
+    /// Returns an iterator over all image files in the COSI metadata, including
+    /// verity files if present.
+    pub(super) fn image_files(&self) -> impl Iterator<Item = &ImageFile> {
+        self.images
+            // Iterate over all images
+            .iter()
+            // Get a flattened iterator over the image files and their verity files
+            // (if any)
+            .flat_map(|fs| {
+                iter::once(&fs.file).chain(fs.verity.as_ref().map(|verity| &verity.file))
+            })
     }
 }
 
@@ -332,6 +358,33 @@ pub(crate) enum SystemdBootloaderType {
     Unknown(String),
 }
 
+#[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Partition {
+    /// Absolute path of the compressed image file inside the tarball. MUST
+    /// start with `images/`.
+    pub path: Option<PathBuf>,
+
+    /// Size of the partition before any filesystem shrinking. SHOULD be at
+    /// least as large as the `uncompressedSize` field of the corresponding
+    /// `ImageFile` object (matched by `path`).
+    pub original_size: u64,
+
+    /// The partition type UUID.
+    pub part_type: Uuid,
+
+    /// The partition UUID.
+    pub part_uuid: Uuid,
+
+    /// Partition label (GPT partition name, may be an empty string).
+    #[serde(default)]
+    pub label: String,
+
+    /// The index where the partition originally appeared in the partition table
+    /// (1-indexed).
+    pub number: u32,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -378,7 +431,7 @@ mod tests {
     #[test]
     fn test_get_esp_filesystem() {
         let mut metadata = CosiMetadata {
-            version: MetadataVersion { major: 1, minor: 0 },
+            version: KnownMetadataVersion::V1_0.as_version(),
             os_arch: SystemArchitecture::Amd64,
             os_release: OsRelease::default(),
             images: vec![], // Empty images
@@ -386,6 +439,7 @@ mod tests {
             id: None,
             bootloader: None,
             host_configuration_template: None,
+            partitions: None,
         };
 
         // No images
@@ -449,7 +503,7 @@ mod tests {
     #[test]
     fn test_get_regular_filesystems() {
         let mut metadata = CosiMetadata {
-            version: MetadataVersion { major: 1, minor: 0 },
+            version: KnownMetadataVersion::V1_0.as_version(),
             os_arch: SystemArchitecture::Amd64,
             os_release: OsRelease::default(),
             images: vec![], // Empty images
@@ -457,6 +511,7 @@ mod tests {
             id: None,
             bootloader: None,
             host_configuration_template: None,
+            partitions: None,
         };
 
         // No images
