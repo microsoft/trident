@@ -105,8 +105,10 @@ impl CosiMetadata {
                 return mk_err(CosiMetadataErrorKind::V1_2PartitionsRequired);
             };
 
-            // Collect known image paths for validation.
-            let known_paths = self
+            // Collect known image paths for validation. It is mutable so that
+            // we can remove entries as we match them to partitions and check if
+            // there are any leftovers.
+            let mut known_paths = self
                 .image_files()
                 .map(|img| (img.path.as_path(), img))
                 .collect::<HashMap<_, _>>();
@@ -131,7 +133,7 @@ impl CosiMetadata {
                     continue;
                 };
 
-                let Some(image_file) = known_paths.get(path.as_path()) else {
+                let Some(image_file) = known_paths.remove(path.as_path()) else {
                     return mk_err(CosiMetadataErrorKind::V1_2PartitionPathUnknown {
                         number: partition.number,
                         path: path.display().to_string(),
@@ -149,6 +151,15 @@ impl CosiMetadata {
                         image_file.uncompressed_size
                     );
                 }
+            }
+
+            // Any leftover known paths were not referenced by any partition.
+            if let Some((path, _)) = known_paths.into_iter().next() {
+                return mk_err(
+                    CosiMetadataErrorKind::V1_2ImageFileHasNoCorrespondingPartition(
+                        path.display().to_string(),
+                    ),
+                );
             }
         }
 
@@ -366,8 +377,6 @@ mod tests {
     #[test]
     fn test_cosi_1_2_validation() {
         // Base COSI metadata (v1.2) that is valid for this version of Trident.
-        // We keep `images` empty to focus coverage on the v1.2 partitions validation.
-
         let base = json!({
             "version": "1.2",
             "osArch": "amd64",
@@ -439,7 +448,7 @@ mod tests {
                     "number": 1,
                 },
                 {
-                    "path": "/path/to/image2",
+                    "path": "/path/to/image1.verity",
                     "originalSize": 209715200,
                     "partType": "0FC63DAF-8483-4772-8E79-3D69D8477DE4",
                     "partUuid": "550e8400-e29b-41d4-a716-446655440002",
@@ -447,11 +456,19 @@ mod tests {
                     "number": 2,
                 },
                 {
+                    "path": "/path/to/image2",
                     "originalSize": 209715200,
                     "partType": "0FC63DAF-8483-4772-8E79-3D69D8477DE4",
                     "partUuid": "550e8400-e29b-41d4-a716-446655440002",
                     "label": "label1",
                     "number": 3,
+                },
+                {
+                    "originalSize": 209715200,
+                    "partType": "0FC63DAF-8483-4772-8E79-3D69D8477DE4",
+                    "partUuid": "550e8400-e29b-41d4-a716-446655440002",
+                    "label": "label1",
+                    "number": 4,
                 },
             ]
         });
@@ -496,5 +513,44 @@ mod tests {
         let mut partition_size_smaller = base.clone();
         partition_size_smaller["partitions"][0]["originalSize"] = json!(4);
         parse_and_validate(partition_size_smaller).unwrap();
+
+        // All image files must have a corresponding partition.
+        let mut image_file_no_partition = base.clone();
+        image_file_no_partition["images"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!(
+                {
+                    "image": {
+                        "path": "/path/to/image3",
+                        "compressedSize": 100,
+                        "uncompressedSize": 200,
+                        "sha384": SAMPLE_SHA384
+                    },
+                    "mountPoint": "/mnt3",
+                    "fsType": "ext4",
+                    "fsUuid": "550e8400-e29b-41d4-a716-446655440015",
+                    "partType": "0FC63DAF-8483-4772-8E79-3D69D8477DE4",
+                }
+            ));
+        assert_validate_err_kind(
+            image_file_no_partition,
+            CosiMetadataErrorKind::V1_2ImageFileHasNoCorrespondingPartition(
+                "/path/to/image3".to_string(),
+            ),
+        );
+
+        // That includes verity image files as well.
+        let mut verity_image_file_no_partition = base.clone();
+        verity_image_file_no_partition["partitions"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|p| p["path"] != json!("/path/to/image1.verity"));
+        assert_validate_err_kind(
+            verity_image_file_no_partition,
+            CosiMetadataErrorKind::V1_2ImageFileHasNoCorrespondingPartition(
+                "/path/to/image1.verity".to_string(),
+            ),
+        );
     }
 }

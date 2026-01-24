@@ -46,4 +46,7 @@ pub enum CosiMetadataErrorKind {
 
     #[error("Partition numbers must be 1-indexed; found partition number 0")]
     V1_2PartitionNumberZero,
+
+    #[error("Image file at path '{0}' has no corresponding partition")]
+    V1_2ImageFileHasNoCorrespondingPartition(String),
 }
