@@ -209,7 +209,6 @@ pub enum Commands {
         error: Option<PathBuf>,
     },
 
-    #[cfg(feature = "dangerous-options")]
     StreamImage {
         /// URL of the image to stream
         #[clap(index = 1)]
@@ -244,7 +243,6 @@ impl Commands {
             #[cfg(feature = "pytest-generator")]
             Commands::Pytest => "pytest",
             Commands::OfflineInitialize { .. } => "offline-initialize",
-            #[cfg(feature = "dangerous-options")]
             Commands::StreamImage { .. } => "stream-image",
         }
     }
