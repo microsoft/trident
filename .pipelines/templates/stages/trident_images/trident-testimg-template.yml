@@ -128,13 +128,12 @@ steps:
       set -eux
 
       if which tdnf; then
-        sudo tdnf install -y veritysetup squashfs-tools lsof yq
+        sudo tdnf install -y veritysetup squashfs-tools lsof
         sudo systemctl start docker
       else
         # Ubuntu is used for building and testing of VM images suitable for
         # servicing by Trident
         sudo apt install -y createrepo-c swtpm squashfs-tools lsof
-        sudo snap install -y yq
       fi
       az extension add --name azure-devops
     displayName: "Install native dependencies"
