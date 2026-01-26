@@ -13,6 +13,7 @@ use trident::{
 };
 use trident_api::{
     config::HostConfigurationSource,
+    constants::internal_params::NO_TRANSITION,
     error::{InternalError, InvalidInputError, TridentError, TridentResultExt},
 };
 
@@ -89,13 +90,19 @@ fn run_trident(
             hash,
             status,
             error,
+            skip_reboot,
             ..
         } => {
             use std::io::Write;
             use trident_api::error::ReportError;
 
-            let config = trident::stream::config_from_image_url(image.clone(), hash)
+            let mut config = trident::stream::config_from_image_url(image.clone(), hash)
                 .message("Failed to generate Host Configuration from image URL")?;
+            if *skip_reboot {
+                info!("Skipping reboot as per --skip-reboot flag");
+                // Set InternalParams NoTransition to skip reboot
+                config.internal_params.set_flag(NO_TRANSITION.to_string());
+            }
 
             // Write config to a temporary file
             let file = tempfile::NamedTempFile::new()

@@ -213,6 +213,10 @@ pub enum Commands {
         /// Path to save an eventual fatal error
         #[clap(short, long)]
         error: Option<PathBuf>,
+
+        /// DO NOT MERGE: Enable reboot skipping for development
+        #[clap(long, default_value_t = false)]
+        skip_reboot: bool,
     },
 
     #[clap(hide(true))]
