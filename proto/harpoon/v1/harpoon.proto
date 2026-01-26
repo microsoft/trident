@@ -109,11 +109,11 @@ message ServicingRequest {
 // Rust log levels
 enum LogLevel {
   LOG_LEVEL_UNSPECIFIED = 0;
-  LOG_LEVEL_ERROR       = 1;
-  LOG_LEVEL_WARN        = 2;
-  LOG_LEVEL_INFO        = 3;
-  LOG_LEVEL_DEBUG       = 4;
-  LOG_LEVEL_TRACE       = 5;
+  ERROR_LOG             = 1;
+  WARN_LOG              = 2;
+  INFO_LOG              = 3;
+  DEBUG_LOG             = 4;
+  TRACE_LOG             = 5;
 }
 
 message Log {
@@ -132,8 +132,8 @@ message Log {
 // Represents the final status of a servicing operation.
 enum StatusCode {
   STATUS_CODE_UNSPECIFIED = 0;
-  STATUS_CODE_SUCCESS     = 1;
-  STATUS_CODE_FAILURE     = 2;
+  SUCCESS                 = 1;
+  FAILURE                 = 2;
 }
 
 message FinalStatus {
@@ -186,13 +186,13 @@ message GetServicingStateRequest {}
 
 // Mapped to existing Trident servicing states
 enum ServicingState {
-  SERVICING_STATE_UNSPECIFIED       = 0;
-  SERVICING_STATE_NOT_PROVISIONED   = 1;
-  SERVICING_STATE_INSTALL_STAGED    = 2;
-  SERVICING_STATE_UPDATE_STAGED     = 3;
-  SERVICING_STATE_INSTALL_FINALIZED = 4;
-  SERVICING_STATE_UPDATE_FINALIZED  = 5;
-  SERVICING_STATE_PROVISIONED       = 6;
+  SERVICING_STATE_UNSPECIFIED = 0;
+  NOT_PROVISIONED             = 1;
+  INSTALL_STAGED              = 2;
+  UPDATE_STAGED               = 3;
+  INSTALL_FINALIZED           = 4;
+  UPDATE_FINALIZED            = 5;
+  PROVISIONED                 = 6;
 }
 
 message GetServicingStateResponse {
@@ -205,9 +205,9 @@ message GetActiveVolumeRequest {}
 // Represents the active volume in a dual-volume setup.
 enum ABVolumeState {
   AB_VOLUME_STATE_UNSPECIFIED = 0;
-  AB_VOLUME_STATE_NONE        = 1;
-  AB_VOLUME_STATE_A           = 2;
-  AB_VOLUME_STATE_B           = 3;
+  NO_VOLUME                   = 1;
+  VOLUME_A                    = 2;
+  VOLUME_B                    = 3;
 }
 
 message GetActiveVolumeResponse {
@@ -229,13 +229,13 @@ message ValidateHostConfigurationResponse {
 enum ServicingType {
   SERVICING_TYPE_UNSPECIFIED = 0;
   // No servicing is currently in progress or not required.
-  SERVICING_TYPE_NO_ACTIVE_SERVICING = 1;
+  NO_ACTIVE_SERVICING = 1;
   // Update that can be applied without necessitating a reboot.
-  SERVICING_TYPE_RUNTIME_UPDATE = 2;
+  RUNTIME_UPDATE = 2;
   // Update that requires switching to a different root partition and rebooting.
-  SERVICING_TYPE_AB_UPDATE = 3;
+  AB_UPDATE = 3;
   // Clean install of the target OS.
-  SERVICING_TYPE_CLEAN_INSTALL = 4;
+  CLEAN_INSTALL = 4;
 }
 
 message GetRequiredServicingTypeRequest {
@@ -251,11 +251,11 @@ message GetRequiredServicingTypeResponse {
 enum ManualRollbackKind {
   MANUAL_ROLLBACK_KIND_UNSPECIFIED = 0;
   // No specific rollback kind was requested
-  MANUAL_ROLLBACK_KIND_ANY_ROLLBACK_REQUESTED = 1;
+  ANY_ROLLBACK_REQUESTED = 1;
   // Rollback of an A/B update was requested
-  MANUAL_ROLLBACK_KIND_AB_ROLLBACK_REQUESTED = 2;
+  AB_ROLLBACK_REQUESTED = 2;
   // Rollback of a runtime update was requested
-  MANUAL_ROLLBACK_KIND_RUNTIME_ROLLBACK_REQUESTED = 3;
+  RUNTIME_ROLLBACK_REQUESTED = 3;
 }
 
 message CheckRollbackRequest {
@@ -266,11 +266,11 @@ message CheckRollbackRequest {
 enum CheckRollbackKind {
   CHECK_ROLLBACK_KIND_UNSPECIFIED = 0;
   // No rollbacks are available
-  CHECK_ROLLBACK_KIND_NO_ROLLBACK_AVAILABLE = 1;
+  NO_ROLLBACK_AVAILABLE = 1;
   // Rollback of an A/B update is expected
-  CHECK_ROLLBACK_KIND_AB_ROLLBACK_EXPECTED = 2;
+  AB_ROLLBACK_EXPECTED = 2;
   // Rollback of a runtime update is expected
-  CHECK_ROLLBACK_KIND_RUNTIME_ROLLBACK_EXPECTED = 3;
+  RUNTIME_ROLLBACK_EXPECTED = 3;
 }
 
 message CheckRollbackResponse {
@@ -345,23 +345,23 @@ enum TridentErrorKind {
   TRIDENT_ERROR_KIND_UNSPECIFIED = 0;
   // Identifies errors that occur when the execution environment is
   // misconfigured.
-  TRIDENT_ERROR_KIND_EXECUTION_ENVIRONMENT_MISCONFIGURATION = 1;
+  EXECUTION_ENVIRONMENT_MISCONFIGURATION_ERROR = 1;
   // Identifies errors that are related to health checks.
-  TRIDENT_ERROR_KIND_HEALTH_CHECKS = 2;
+  HEALTH_CHECKS_ERROR = 2;
   // Identifies errors that occur when Trident fails to initialize.
-  TRIDENT_ERROR_KIND_INITIALIZATION = 3;
+  INITIALIZATION_ERROR = 3;
   // Identifies errors that occur due to an internal bug or failure in Trident.
-  TRIDENT_ERROR_KIND_INTERNAL = 4;
+  INTERNAL_ERROR = 4;
   // Identifies errors that occur when the user provides invalid input.
-  TRIDENT_ERROR_KIND_INVALID_INPUT = 5;
+  INVALID_INPUT_ERROR = 5;
   // Identifies errors that occur during servicing and require further user
   // investigation, to determine whether the error occurred due to an internal
   // failure in Trident, a failure in one of its dependencies, or a system
   // misconfiguration.
-  TRIDENT_ERROR_KIND_SERVICING = 6;
+  SERVICING_ERROR = 6;
   // Identifies errors that occur when clean install or update fail due to the
   // current configuration of the host.
-  TRIDENT_ERROR_KIND_UNSUPPORTED_CONFIGURATION = 7;
+  UNSUPPORTED_CONFIGURATION_ERROR = 7;
 }
 
 message FileLocation {
