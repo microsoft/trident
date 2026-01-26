@@ -1,24 +1,33 @@
 package scenario
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
+	"time"
 	"tridenttools/pkg/netlaunch"
 	"tridenttools/pkg/phonehome"
+	"tridenttools/storm/utils/trident"
 
 	"github.com/microsoft/storm"
 	log "github.com/sirupsen/logrus"
 )
 
 func (s *TridentE2EScenario) installOs(tc storm.TestCase) error {
+	// Bump the version for this installation
+	s.version += 1
+
+	// Get netlaunch connection config
 	connConfig := s.testHost.NetlaunchConnectionConfig()
 
 	// Prepare host config
-	hostConfigFile, err := s.renderHostConfiguration()
+	hostConfigFile, err := s.config.ToYaml()
 	if err != nil {
 		return err
 	}
 
+	// Prepare temporary host config file to be used by netlaunch
 	tempHostConfigFilePath, err := prepareHostConfig(hostConfigFile)
 	if err != nil {
 		return err
@@ -53,12 +62,28 @@ func (s *TridentE2EScenario) installOs(tc storm.TestCase) error {
 		EnableSecureBoot:    true,
 	}
 
-	nlErr := netlaunch.RunNetlaunch(tc.Context(), &config)
+	timeoutCtx, cancel := context.WithTimeout(tc.Context(), time.Duration(s.args.VmWaitForLoginTimeout)*time.Second)
+	defer cancel()
+
+	// Start VM serial monitor (only runs if hardware is VM)
+	monWaitChan, monErr := s.spawnVMSerialMonitor(timeoutCtx, tc.ArtifactBroker().StreamArtifactData("install/serial.log"))
+	if monErr != nil {
+		return fmt.Errorf("failed to start VM serial monitor: %w", monErr)
+	}
+
+	nlErr := netlaunch.RunNetlaunch(timeoutCtx, &config)
 	if nlErr != nil {
 		// If this is a phonehome error, log the details and fail the test case
 		// immediately.
-		if phonehomeErr, ok := nlErr.(*phonehome.PhoneHomeFailureError); ok {
+		var phonehomeErr *phonehome.PhoneHomeFailureError
+		if errors.As(nlErr, &phonehomeErr) {
 			log.Errorf("Phonehome error details: %s", phonehomeErr.Message)
+			tc.FailFromError(nlErr)
+		}
+
+		// If this is a timeout error, log and fail the test case.
+		if errors.Is(nlErr, context.DeadlineExceeded) {
+			log.Errorln("Netlaunch operation timed out")
 			tc.FailFromError(nlErr)
 		}
 
@@ -66,10 +91,20 @@ func (s *TridentE2EScenario) installOs(tc storm.TestCase) error {
 		return nlErr
 	}
 
+	// If we got here netlaunch completed successfully, give some time for the
+	// serial monitor to get to the login prompt.
+	select {
+	case <-time.After(time.Minute):
+		log.Infof("Waited 1 minute for serial monitor to reach login prompt, cancelling monitor.")
+		cancel()
+	case <-monWaitChan:
+		// Monitor exited on its own
+	}
+
 	return nil
 }
 
-func prepareHostConfig(hostConfigYaml string) (string, error) {
+func prepareHostConfig(hostConfigYaml []byte) (string, error) {
 	tempHostConfigFile, err := os.CreateTemp("", "hc-tmp-")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temporary host config file: %w", err)
@@ -85,7 +120,7 @@ func prepareHostConfig(hostConfigYaml string) (string, error) {
 		tempHostConfigFile.Close()
 	}()
 
-	_, err = tempHostConfigFile.WriteString(hostConfigYaml)
+	_, err = tempHostConfigFile.Write(hostConfigYaml)
 	if err != nil {
 		return "", fmt.Errorf("failed to write to temporary host config file: %w", err)
 	}
@@ -96,4 +131,22 @@ func prepareHostConfig(hostConfigYaml string) (string, error) {
 	}
 
 	return tempHostConfigFile.Name(), nil
+}
+
+func (s *TridentE2EScenario) checkTridentViaSshAfterInstall(tc storm.TestCase) error {
+	// Short timeout since we're expecting the host to already be up.
+	conn_ctx, cancel := context.WithTimeout(tc.Context(), time.Minute)
+	defer cancel()
+	err := s.populateSshClient(conn_ctx)
+	if err != nil {
+		tc.FailFromError(err)
+		return nil
+	}
+
+	err = trident.CheckTridentService(s.sshClient, s.runtime, time.Minute*2, true)
+	if err != nil {
+		tc.FailFromError(err)
+	}
+
+	return nil
 }

@@ -68,7 +68,7 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 	go stormnetlisten.StartNetListenAndWait(ctx, testConfig.UpdatePortA, fmt.Sprintf("%s/update-a", testConfig.ArtifactsDir), "logstream-full-update-a.log", aStartedChannel)
 	bStartedChannel := make(chan bool)
 	go stormnetlisten.StartNetListenAndWait(ctx, testConfig.UpdatePortB, fmt.Sprintf("%s/update-b", testConfig.ArtifactsDir), "logstream-full-update-b.log", bStartedChannel)
-	// Wait for both udpate servers to start
+	// Wait for both update servers to start
 	<-aStartedChannel
 	<-bStartedChannel
 	expectedVolume := "volume-b"

@@ -1,13 +1,16 @@
 use std::{fs, path::Path};
 
-use log::debug;
+use log::{debug, warn};
+use sqlite::State;
 
 use trident_api::{
     error::{
         DatastoreError, InternalError, ReportError, ServicingError, TridentError, TridentResultExt,
     },
-    status::{decode_host_status, HostStatus},
+    status::{decode_host_status, HostStatus, TridentVersion},
 };
+
+use crate::TRIDENT_SEMVER_VERSION;
 
 pub struct DataStore {
     db: Option<sqlite::Connection>,
@@ -75,6 +78,37 @@ impl DataStore {
         })
     }
 
+    /// Retrieve all HostStatus entries from the datastore, sorted from newest to oldest.
+    pub(crate) fn get_host_statuses(&self) -> Result<Vec<Option<HostStatus>>, TridentError> {
+        let mut all_rows_data: Vec<Option<HostStatus>> = Vec::new();
+
+        // Read all HostStatus entries from the datastore, parse them into
+        // HostStatus structs, and return a slice of them.
+        let mut query_statement = self
+            .db
+            .as_ref()
+            .structured(ServicingError::from(DatastoreError::OpenDatastore))?
+            .prepare("SELECT contents FROM hoststatus ORDER BY id DESC")
+            .structured(ServicingError::Datastore {
+                inner: DatastoreError::ReadDatastore,
+            })
+            .message("Failed to read all database host statuses")?;
+
+        loop {
+            match query_statement.next() {
+                Ok(State::Done) => break,
+                Err(e) => {
+                    warn!("Failed to get next datastore row: {:?}", e);
+                    all_rows_data.push(None);
+                    break;
+                }
+                Ok(State::Row) => {} // continue below
+            }
+            all_rows_data.push(self.parse_host_status(query_statement.read::<String, _>(0)));
+        }
+        Ok(all_rows_data)
+    }
+
     pub(crate) fn is_persistent(&self) -> bool {
         !self.temporary
     }
@@ -101,6 +135,8 @@ impl DataStore {
         if self.temporary {
             let persistent_db = Self::make_datastore(path)?;
             self.host_status.is_management_os = false;
+            self.host_status.trident_version =
+                TridentVersion::SemVer(TRIDENT_SEMVER_VERSION.clone());
             Self::write_host_status(&persistent_db, self.host_status())?;
 
             self.db = Some(persistent_db);
@@ -114,13 +150,17 @@ impl DataStore {
         db: &sqlite::Connection,
         host_status: &HostStatus,
     ) -> Result<(), TridentError> {
+        // Create a mutable copy of the Host Status to add Trident version before writing.
+        let mut host_status_with_trident_version = host_status.clone();
+        host_status_with_trident_version.trident_version =
+            TridentVersion::SemVer(TRIDENT_SEMVER_VERSION.clone());
         let mut statement = db
             .prepare("INSERT INTO hoststatus (contents) VALUES (?)")
             .structured(ServicingError::from(DatastoreError::WriteToDatastore))?;
         statement
             .bind((
                 1,
-                &*serde_yaml::to_string(host_status)
+                &*serde_yaml::to_string(&host_status_with_trident_version)
                     .structured(InternalError::SerializeHostStatus)?,
             ))
             .structured(ServicingError::from(DatastoreError::WriteToDatastore))?;
@@ -178,6 +218,39 @@ impl DataStore {
     pub(crate) fn close(&mut self) {
         self.db = None;
     }
+
+    /// Parse a single HostStatus entry from a datastore query result.
+    /// 1. Read each row as a string containing YAML-encoded Host Status.
+    /// 2. Decode the YAML string into a serde_yaml Value.
+    /// 3. Use decode_host_status to convert the serde_yaml Value into a HostStatus struct.
+    ///
+    /// If any step fails, log the error and push None for that row.
+    /// If all steps succeed, push Some(HostStatus) for that row.
+    fn parse_host_status(&self, query_result: Result<String, sqlite::Error>) -> Option<HostStatus> {
+        let host_status_yaml = match query_result {
+            Ok(yaml) => yaml,
+            Err(e) => {
+                warn!("Failed to read datastore row: {:?}", e);
+                return None;
+            }
+        };
+
+        let host_status_value: serde_yaml::Value = match serde_yaml::from_str(&host_status_yaml) {
+            Ok(host_status_value) => host_status_value,
+            Err(e) => {
+                warn!("Failed to parse Host Status as serde value: {:?}", e);
+                return None;
+            }
+        };
+
+        match decode_host_status(host_status_value) {
+            Ok(host_status) => Some(host_status),
+            Err(e) => {
+                warn!("Failed to parse Host Status: {:?}", e);
+                None
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -201,6 +274,37 @@ mod tests {
         assert!(new_path.exists());
 
         temp_dir.close().unwrap();
+    }
+
+    #[test]
+    fn test_parse_host_status() {
+        let ds = super::DataStore {
+            db: None,
+            host_status: Default::default(),
+            temporary: true,
+        };
+        // Validate when db row is an error
+        assert!(ds
+            .parse_host_status(Err(sqlite::Error {
+                code: None,
+                message: None,
+            }))
+            .is_none());
+        // Validate when db row cannot be parsed into serde_yaml::Value
+        assert!(ds
+            .parse_host_status(Ok("[@ notserdevalue".to_string()))
+            .is_none());
+        // Validate when db row can be parsed into serde_yaml::Value but not HostStatus
+        assert!(ds
+            .parse_host_status(Ok("serdeyaml: but-not-host-status".to_string()))
+            .is_none());
+        // Validate when db row can be parsed into serde_yaml::Value and HostStatus
+        let valid_host_status = super::HostStatus {
+            ..Default::default()
+        };
+        assert!(ds
+            .parse_host_status(Ok(serde_yaml::to_string(&valid_host_status).unwrap()))
+            .is_some());
     }
 }
 

@@ -41,6 +41,7 @@ pub mod bootentries;
 mod clean_install;
 mod context;
 mod kexec;
+pub mod manual_rollback;
 mod newroot;
 pub mod provisioning_network;
 pub mod rollback;

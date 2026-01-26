@@ -3,11 +3,12 @@ use std::sync::{
     Arc, RwLock,
 };
 
-use anyhow::Context;
+use anyhow::{anyhow, Context, Error};
 use log::{info, Log};
 
 use super::LogEntry;
 
+#[derive(Clone)]
 pub struct Logstream {
     // TODO: Consider changing this to a LockOnce when rustc is updated to >=1.70
     target: Arc<RwLock<Option<String>>>,
@@ -29,7 +30,10 @@ impl Logstream {
         self.disabled = true;
     }
 
-    pub fn set_server(&self, url: String) -> Result<(), anyhow::Error> {
+    /// Set the logstream server URL
+    ///
+    /// If the logstream is disabled, this is a no-op.
+    pub fn set_server(&self, url: String) -> Result<(), Error> {
         if self.disabled {
             info!("Logstream is disabled, ignoring set_server");
             return Ok(());
@@ -39,8 +43,20 @@ impl Logstream {
         let mut val = self
             .target
             .write()
-            .map_err(|_| anyhow::anyhow!("Failed to lock logstream"))?;
+            .map_err(|_| anyhow!("Failed to lock logstream"))?;
         val.replace(url);
+        Ok(())
+    }
+
+    /// Clear the logstream server URL
+    ///
+    /// This will stop logs from being sent to the server.
+    pub fn clear_server(&self) -> Result<(), Error> {
+        let mut val = self
+            .target
+            .write()
+            .map_err(|_| anyhow!("Failed to lock logstream"))?;
+        val.take();
         Ok(())
     }
 

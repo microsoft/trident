@@ -184,6 +184,9 @@ pub enum InvalidInputError {
     #[error("Image contains invalid agent configuration")]
     ImageBadAgentConfiguration,
 
+    #[error("Invalid boot configuration")]
+    InvalidBootConfiguration,
+
     #[error("Host Configuration failed dynamic validation: {inner}")]
     InvalidHostConfigurationDynamic {
         #[from]
@@ -201,6 +204,12 @@ pub enum InvalidInputError {
 
     #[error("Invalid --lazy-partitions provided")]
     InvalidLazyPartition,
+
+    #[error("Invalid rollback expectation: '{reason}'")]
+    InvalidRollbackExpectation { reason: String },
+
+    #[error("Invalid state for rollback: '{reason}'")]
+    InvalidRollbackState { reason: String },
 
     #[error("Failed to load COSI file from '{url}'")]
     LoadCosi { url: Url },
@@ -527,6 +536,15 @@ pub enum ServicingError {
     #[error("Failed to list boot entries via efibootmgr or parse them")]
     ListAndParseBootEntries,
 
+    #[error(
+        "Manual rollback failed as host booted from '{root_device_path}' instead of the expected device \
+        '{expected_device_path}'"
+    )]
+    ManualRollbackRebootCheck {
+        root_device_path: String,
+        expected_device_path: String,
+    },
+
     #[error("Failed to mount execroot binary")]
     MountExecrootBinary,
 
@@ -577,6 +595,9 @@ pub enum ServicingError {
 
     #[error("Failed to remove the pre-existing pcrlock policy")]
     RemovePcrlockPolicy,
+
+    #[error("Failed to execute rollback: {message}")]
+    ManualRollback { message: &'static str },
 
     #[error(
         "Failed to match current root device path '{root_device_path}' to either root volume A \
@@ -671,6 +692,9 @@ pub enum DatastoreError {
 
     #[error("Failed to open new datastore")]
     OpenDatastore,
+
+    #[error("Failed to read from datastore")]
+    ReadDatastore,
 
     #[error("Failed to write to datastore as it is closed")]
     WriteToClosedDatastore,

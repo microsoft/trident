@@ -432,6 +432,8 @@ mod tests {
 
     use crate::osimage::OsImageFileSystemType;
 
+    use super::metadata::KnownMetadataVersion;
+
     /// Generate a test tarball with the given entries.
     ///
     /// An entry is a tuple of (path, data).
@@ -1072,7 +1074,7 @@ mod tests {
             source: Url::parse("mock://").unwrap(),
             entries,
             metadata: CosiMetadata {
-                version: MetadataVersion { major: 1, minor: 0 },
+                version: KnownMetadataVersion::V1_0.as_version(),
                 id: Some(Uuid::new_v4()),
                 os_arch: SystemArchitecture::Amd64,
                 os_release: OsRelease::default(),
@@ -1080,6 +1082,7 @@ mod tests {
                 images,
                 bootloader: None,
                 host_configuration_template: None,
+                partitions: None,
             },
             reader: FileReader::Buffer(data),
             metadata_sha384: Sha384Hash::from("0".repeat(96)),
@@ -1093,7 +1096,7 @@ mod tests {
             source: Url::parse("mock://").unwrap(),
             entries: HashMap::new(),
             metadata: CosiMetadata {
-                version: MetadataVersion { major: 1, minor: 0 },
+                version: KnownMetadataVersion::V1_0.as_version(),
                 id: Some(Uuid::new_v4()),
                 os_arch: SystemArchitecture::Amd64,
                 os_release: OsRelease::default(),
@@ -1101,6 +1104,7 @@ mod tests {
                 os_packages: None,
                 bootloader: None,
                 host_configuration_template: None,
+                partitions: None,
             },
             reader: FileReader::Buffer(Cursor::new(Vec::<u8>::new())),
             metadata_sha384: Sha384Hash::from("0".repeat(96)),

@@ -4,54 +4,43 @@ use log::info;
 use tonic::{async_trait, Request, Response, Status};
 
 use harpoon::{
-    trident_service_server::TridentService, CheckRootRequest, CommitRequest, FinalizeRequest,
-    GetActiveVolumeRequest, GetActiveVolumeResponse, GetConfigRequest, GetConfigResponse,
-    GetLastErrorRequest, GetLastErrorResponse, GetRequiredServicingTypeRequest,
-    GetRequiredServicingTypeResponse, GetServicingStateRequest, GetServicingStateResponse,
-    RebuildRaidRequest, ServicingRequest, StageRequest, StreamImageRequest,
+    trident_service_server::TridentService, CheckRollbackRequest, CheckRollbackResponse,
+    CheckRootRequest, CommitRequest, FinalizeRequest, GetActiveVolumeRequest,
+    GetActiveVolumeResponse, GetConfigRequest, GetConfigResponse, GetLastErrorRequest,
+    GetLastErrorResponse, GetRequiredServicingTypeRequest, GetRequiredServicingTypeResponse,
+    GetRollbackChainRequest, GetRollbackTargetRequest, GetServicingStateRequest,
+    GetServicingStateResponse, RebuildRaidRequest, RollbackFinalizeRequest, RollbackRequest,
+    RollbackStageRequest, ServicingRequest, StageRequest, StreamImageRequest,
     TridentError as HarpoonTridentError, ValidateHostConfigurationRequest,
     ValidateHostConfigurationResponse, VersionRequest, VersionResponse,
 };
-use trident_api::error::{InternalError, TridentError};
+use trident_api::{
+    config::{HostConfigurationSource, Operation, Operations},
+    error::{InternalError, TridentError, TridentResultExt},
+};
+use url::Url;
 
 use crate::{
-    server::{tridentserver::ServicingResponseStream, TridentHarpoonServer},
-    validation, TRIDENT_VERSION,
+    server::TridentHarpoonServer, stream, validation, DataStore, Trident, TRIDENT_VERSION,
 };
+
+use super::{RebootDecision, ServicingResponseStream};
+
+/// Returns a `RebootDecision` indicating whether Trident can perform a reboot
+/// given a provided FinalizeRequest.
+fn reboot_allowed(finalize: &FinalizeRequest) -> RebootDecision {
+    // If the finalize request indicates that the orchestrator handles reboots,
+    // then Trident should NOT perform a reboot itself.
+    if finalize.orchestrator_handles_reboot {
+        RebootDecision::Defer
+    } else {
+        RebootDecision::Handle
+    }
+}
 
 /// Implements the gRPC TridentService for the TridentHarpoonServer struct.
 #[async_trait]
 impl TridentService for TridentHarpoonServer {
-    // /// Sample data read method
-    // ///
-    // /// TODO: Remove once real methods are implemented.
-    // async fn read_data(
-    //     &self,
-    //     _request: Request<ReadRequest>,
-    // ) -> Result<Response<ReadResponse>, Status> {
-    //     self.reading_request("read_data", || {
-    //         let value = servicing::some_reading_operation("hello from server")?;
-    //         Ok(ReadResponse { output: value })
-    //     })
-    // }
-
-    // /// Sample servicing method
-    // ///
-    // /// TODO: Remove once real methods are implemented.
-    // type DoProcessStream = ServicingResponseStream;
-    // async fn do_process(
-    //     &self,
-    //     request: Request<DoProcessRequest>,
-    // ) -> Result<Response<Self::DoProcessStream>, Status> {
-    //     let process_req = request.into_inner();
-    //     self.servicing_request("do_process", move || {
-    //         servicing::some_servicing_operation(
-    //             process_req.count,
-    //             Duration::from_millis(process_req.interval_ms.into()),
-    //         )
-    //     })
-    // }
-
     async fn version(
         &self,
         _request: Request<VersionRequest>,
@@ -64,72 +53,164 @@ impl TridentService for TridentHarpoonServer {
     type InstallStream = ServicingResponseStream;
     async fn install(
         &self,
-        _request: Request<ServicingRequest>,
+        request: Request<ServicingRequest>,
     ) -> Result<Response<Self::InstallStream>, Status> {
-        self.servicing_request("install", || {
-            Err(TridentError::new(InternalError::Internal(
-                "Not implemented: install",
-            )))
+        let req = request.into_inner();
+        let Some(staging) = req.stage else {
+            return Err(Status::invalid_argument("Missing staging configuration"));
+        };
+        let Some(finalize) = req.finalize else {
+            return Err(Status::invalid_argument("Missing finalize configuration"));
+        };
+
+        let data_store_path = self.agent_config.datastore_path().to_owned();
+        let logstream = self.logstream.clone();
+        let tracestream = self.tracestream.clone();
+
+        self.servicing_request("install", reboot_allowed(&finalize), move || {
+            let mut trident = Trident::new(
+                Some(HostConfigurationSource::RawString(staging.config)),
+                &data_store_path,
+                logstream,
+                tracestream,
+            )
+            .message("Failed to initialize Trident")?;
+
+            let mut datastore =
+                DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
+
+            trident.install(&mut datastore, Operations::all(), false)
         })
     }
 
     type InstallStageStream = ServicingResponseStream;
     async fn install_stage(
         &self,
-        _request: Request<StageRequest>,
+        request: Request<StageRequest>,
     ) -> Result<Response<Self::InstallStageStream>, Status> {
-        self.servicing_request("install_stage", || {
-            Err(TridentError::new(InternalError::Internal(
-                "Not implemented: install_stage",
-            )))
+        let req = request.into_inner();
+
+        let data_store_path = self.agent_config.datastore_path().to_owned();
+        let logstream = self.logstream.clone();
+        let tracestream = self.tracestream.clone();
+
+        self.servicing_request("install_stage", RebootDecision::Error, move || {
+            let mut trident = Trident::new(
+                Some(HostConfigurationSource::RawString(req.config)),
+                &data_store_path,
+                logstream,
+                tracestream,
+            )
+            .message("Failed to initialize Trident")?;
+
+            let mut datastore =
+                DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
+
+            trident.install(&mut datastore, Operation::Stage.into(), false)
         })
     }
 
     type InstallFinalizeStream = ServicingResponseStream;
     async fn install_finalize(
         &self,
-        _request: Request<FinalizeRequest>,
+        request: Request<FinalizeRequest>,
     ) -> Result<Response<Self::InstallFinalizeStream>, Status> {
-        self.servicing_request("install_finalize", || {
-            Err(TridentError::new(InternalError::Internal(
-                "Not implemented: install_finalize",
-            )))
+        let finalize = request.into_inner();
+
+        let data_store_path = self.agent_config.datastore_path().to_owned();
+        let logstream = self.logstream.clone();
+        let tracestream = self.tracestream.clone();
+
+        self.servicing_request("install_finalize", reboot_allowed(&finalize), move || {
+            let mut trident = Trident::new(None, &data_store_path, logstream, tracestream)
+                .message("Failed to initialize Trident")?;
+
+            let mut datastore =
+                DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
+
+            trident.install(&mut datastore, Operation::Finalize.into(), false)
         })
     }
 
     type UpdateStream = ServicingResponseStream;
     async fn update(
         &self,
-        _request: Request<ServicingRequest>,
+        request: Request<ServicingRequest>,
     ) -> Result<Response<Self::UpdateStream>, Status> {
-        self.servicing_request("update", || {
-            Err(TridentError::new(InternalError::Internal(
-                "Not implemented: update",
-            )))
+        let req = request.into_inner();
+        let Some(staging) = req.stage else {
+            return Err(Status::invalid_argument("Missing staging configuration"));
+        };
+        let Some(finalize) = req.finalize else {
+            return Err(Status::invalid_argument("Missing finalize configuration"));
+        };
+
+        let data_store_path = self.agent_config.datastore_path().to_owned();
+        let logstream = self.logstream.clone();
+        let tracestream = self.tracestream.clone();
+
+        self.servicing_request("update", reboot_allowed(&finalize), move || {
+            let mut trident = Trident::new(
+                Some(HostConfigurationSource::RawString(staging.config)),
+                &data_store_path,
+                logstream,
+                tracestream,
+            )
+            .message("Failed to initialize Trident")?;
+
+            let mut datastore =
+                DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
+
+            trident.update(&mut datastore, Operations::all())
         })
     }
 
     type UpdateStageStream = ServicingResponseStream;
     async fn update_stage(
         &self,
-        _request: Request<StageRequest>,
+        request: Request<StageRequest>,
     ) -> Result<Response<Self::UpdateStageStream>, Status> {
-        self.servicing_request("update_stage", || {
-            Err(TridentError::new(InternalError::Internal(
-                "Not implemented: update_stage",
-            )))
+        let req = request.into_inner();
+
+        let data_store_path = self.agent_config.datastore_path().to_owned();
+        let logstream = self.logstream.clone();
+        let tracestream = self.tracestream.clone();
+
+        self.servicing_request("update_stage", RebootDecision::Error, move || {
+            let mut trident = Trident::new(
+                Some(HostConfigurationSource::RawString(req.config)),
+                &data_store_path,
+                logstream,
+                tracestream,
+            )
+            .message("Failed to initialize Trident")?;
+
+            let mut datastore =
+                DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
+
+            trident.update(&mut datastore, Operation::Stage.into())
         })
     }
 
     type UpdateFinalizeStream = ServicingResponseStream;
     async fn update_finalize(
         &self,
-        _request: Request<FinalizeRequest>,
+        request: Request<FinalizeRequest>,
     ) -> Result<Response<Self::UpdateFinalizeStream>, Status> {
-        self.servicing_request("update_finalize", || {
-            Err(TridentError::new(InternalError::Internal(
-                "Not implemented: update_finalize",
-            )))
+        let finalize = request.into_inner();
+
+        let data_store_path = self.agent_config.datastore_path().to_owned();
+        let logstream = self.logstream.clone();
+        let tracestream = self.tracestream.clone();
+
+        self.servicing_request("update_finalize", reboot_allowed(&finalize), move || {
+            let mut trident = Trident::new(None, &data_store_path, logstream, tracestream)
+                .message("Failed to initialize Trident")?;
+
+            let mut datastore =
+                DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
+
+            trident.update(&mut datastore, Operation::Finalize.into())
         })
     }
 
@@ -138,7 +219,7 @@ impl TridentService for TridentHarpoonServer {
         &self,
         _request: Request<CheckRootRequest>,
     ) -> Result<Response<Self::CheckRootStream>, Status> {
-        self.servicing_request("check_root", || {
+        self.servicing_request("check_root", RebootDecision::Error, || {
             Err(TridentError::new(InternalError::Internal(
                 "Not implemented: check_root",
             )))
@@ -150,7 +231,7 @@ impl TridentService for TridentHarpoonServer {
         &self,
         _request: Request<CommitRequest>,
     ) -> Result<Response<Self::CommitStream>, Status> {
-        self.servicing_request("commit", || {
+        self.servicing_request("commit", RebootDecision::Error, || {
             Err(TridentError::new(InternalError::Internal(
                 "Not implemented: commit",
             )))
@@ -160,12 +241,38 @@ impl TridentService for TridentHarpoonServer {
     type StreamImageStream = ServicingResponseStream;
     async fn stream_image(
         &self,
-        _request: Request<StreamImageRequest>,
+        request: Request<StreamImageRequest>,
     ) -> Result<Response<Self::StreamImageStream>, Status> {
-        self.servicing_request("stream_image", || {
-            Err(TridentError::new(InternalError::Internal(
-                "Not implemented: stream_image",
-            )))
+        let req = request.into_inner();
+
+        let url = Url::parse(&req.image_path).map_err(|e| {
+            Status::invalid_argument(format!("Invalid image URL '{}': {}", req.image_path, e))
+        })?;
+
+        let Some(finalize) = req.finalize else {
+            return Err(Status::invalid_argument("Missing finalize configuration"));
+        };
+
+        let data_store_path = self.agent_config.datastore_path().to_owned();
+        let logstream = self.logstream.clone();
+        let tracestream = self.tracestream.clone();
+
+        self.servicing_request("stream_image", reboot_allowed(&finalize), move || {
+            let config = stream::config_from_image_url(url, &req.image_hash)
+                .message("Failed to generate Host Configuration from image URL")?;
+
+            let mut trident = Trident::new(
+                Some(HostConfigurationSource::Embedded(Box::new(config))),
+                &data_store_path,
+                logstream,
+                tracestream,
+            )
+            .message("Failed to initialize Trident")?;
+
+            let mut datastore =
+                DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
+
+            trident.install(&mut datastore, Operations::all(), false)
         })
     }
 
@@ -174,7 +281,7 @@ impl TridentService for TridentHarpoonServer {
         &self,
         _request: Request<RebuildRaidRequest>,
     ) -> Result<Response<Self::RebuildRaidStream>, Status> {
-        self.servicing_request("rebuild_raid", || {
+        self.servicing_request("rebuild_raid", RebootDecision::Error, || {
             Err(TridentError::new(InternalError::Internal(
                 "Not implemented: rebuild_raid",
             )))
@@ -265,6 +372,78 @@ impl TridentService for TridentHarpoonServer {
         self.reading_request("get_active_volume", || {
             Err(TridentError::new(InternalError::Internal(
                 "Not implemented: get_active_volume",
+            )))
+        })
+        .await
+    }
+
+    async fn check_rollback(
+        &self,
+        _request: Request<CheckRollbackRequest>,
+    ) -> Result<Response<CheckRollbackResponse>, Status> {
+        self.reading_request("check_rollback", || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: check_rollback",
+            )))
+        })
+        .await
+    }
+
+    type RollbackStream = ServicingResponseStream;
+    async fn rollback(
+        &self,
+        _request: Request<RollbackRequest>,
+    ) -> Result<Response<Self::RollbackStream>, Status> {
+        self.servicing_request("rollback", RebootDecision::Error, || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: rollback",
+            )))
+        })
+    }
+
+    type RollbackStageStream = ServicingResponseStream;
+    async fn rollback_stage(
+        &self,
+        _request: Request<RollbackStageRequest>,
+    ) -> Result<Response<Self::RollbackStageStream>, Status> {
+        self.servicing_request("rollback_stage", RebootDecision::Error, || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: rollback_stage",
+            )))
+        })
+    }
+
+    type RollbackFinalizeStream = ServicingResponseStream;
+    async fn rollback_finalize(
+        &self,
+        _request: Request<RollbackFinalizeRequest>,
+    ) -> Result<Response<Self::RollbackFinalizeStream>, Status> {
+        self.servicing_request("rollback_finalize", RebootDecision::Error, || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: rollback_finalize",
+            )))
+        })
+    }
+
+    async fn get_rollback_chain(
+        &self,
+        _request: Request<GetRollbackChainRequest>,
+    ) -> Result<Response<harpoon::GetRollbackChainResponse>, Status> {
+        self.reading_request("get_rollback_chain", || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: get_rollback_chain",
+            )))
+        })
+        .await
+    }
+
+    async fn get_rollback_target(
+        &self,
+        _request: Request<GetRollbackTargetRequest>,
+    ) -> Result<Response<harpoon::GetRollbackTargetResponse>, Status> {
+        self.reading_request("get_rollback_target", || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: get_rollback_target",
             )))
         })
         .await

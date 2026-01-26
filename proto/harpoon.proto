@@ -24,6 +24,18 @@ service TridentService {
   // UpdateFinalize performs the finalize operation of an OS update.
   rpc UpdateFinalize(FinalizeRequest) returns (stream ServicingResponse);
 
+  // CheckRollback checks what type of rollback would be performed.
+  rpc CheckRollback(CheckRollbackRequest) returns (CheckRollbackResponse);
+
+  // Rollback performs a rollback.
+  rpc Rollback(RollbackRequest) returns (stream ServicingResponse);
+
+  // RollbackStage performs the stage operation of a rollback.
+  rpc RollbackStage(RollbackStageRequest) returns (stream ServicingResponse);
+
+  // RollbackFinalize performs the finalize operation of a rollback.
+  rpc RollbackFinalize(RollbackFinalizeRequest) returns (stream ServicingResponse);
+
   // CheckRoot validates that the host booted using the expected root
   // filesystem.
   rpc CheckRoot(CheckRootRequest) returns (stream ServicingResponse);
@@ -60,6 +72,12 @@ service TridentService {
 
   // GetActiveVolume returns the currently active volume (A or B).
   rpc GetActiveVolume(GetActiveVolumeRequest) returns (GetActiveVolumeResponse);
+
+  // GetRollbackChain returns list of available rollbacks.
+  rpc GetRollbackChain(GetRollbackChainRequest) returns (GetRollbackChainResponse);
+
+  // GetRollbackTarget returns the next rollback target OS Host Configuration.
+  rpc GetRollbackTarget(GetRollbackTargetRequest) returns (GetRollbackTargetResponse);
 
   // Version returns the Trident version.
   rpc Version(VersionRequest) returns (VersionResponse);
@@ -119,8 +137,15 @@ message FinalStatus {
   StatusCode status = 1;
   // Message associated with the final status.
   optional TridentError error = 2;
-  // Whether a reboot is required to complete the servicing operation.
+  // Whether a reboot is required to complete the servicing operation. If true,
+  // the caller is expected to reboot the system to finalize the servicing
+  // immediately upon receiving this status.
   bool reboot_required = 3;
+  // Whether the servicing operation enqueued a reboot. If true, the system is
+  // expected to reboot automatically to finalize the servicing. No further
+  // action from the caller is needed. This field can be true only if
+  // reboot_required is false.
+  bool reboot_enqueued = 4;
 }
 
 message Start {}
@@ -216,6 +241,65 @@ message GetRequiredServicingTypeResponse {
   ServicingType servicing_type = 1;
 }
 
+enum ManualRollbackKind {
+  // No specific rollback kind was requested
+  ANY_ROLLBACK_REQUESTED = 0;
+  // Rollback of an A/B update was requested
+  AB_ROLLBACK_REQUESTED = 1;
+  // Rollback of a runtime update was requested
+  RUNTIME_ROLLBACK_REQUESTED = 2;
+}
+
+message CheckRollbackRequest {
+  // The rollback kind parameter for the servicing operation.
+  ManualRollbackKind kind = 1;
+}
+
+enum CheckRollbackKind {
+  // No rollbacks are available
+  NO_ROLLBACK_AVAILABLE = 0;
+  // Rollback of an A/B update is expected
+  AB_ROLLBACK_EXPECTED = 1;
+  // Rollback of a runtime update is expected
+  RUNTIME_ROLLBACK_EXPECTED = 2;
+}
+
+message CheckRollbackResponse {
+  // The rollback kind as a string.
+  CheckRollbackKind kind = 1;
+}
+
+message RollbackRequest {
+  // The finalize parameters for the servicing operation.
+  FinalizeRequest finalize = 2;
+  // The rollback kind parameter for the servicing operation.
+  ManualRollbackKind kind = 3;
+}
+
+message RollbackStageRequest {
+  // The rollback kind parameter for the servicing operation.
+  ManualRollbackKind kind = 3;
+}
+
+message RollbackFinalizeRequest {
+  // The finalize parameters for the servicing operation.
+  FinalizeRequest finalize = 2;
+}
+
+message GetRollbackChainRequest {}
+
+message GetRollbackChainResponse {
+  // The rollback list content as a list of strings.
+  repeated string rollback_chain = 1;
+}
+
+message GetRollbackTargetRequest {}
+
+message GetRollbackTargetResponse {
+  // The rollback target Host Configuration content as a string.
+  optional string rollback_target = 1;
+}
+
 message CheckRootRequest {}
 
 message CommitRequest {}
@@ -230,6 +314,8 @@ message StreamImageRequest {
   string image_path = 1;
   // Hash of the image file for integrity verification.
   string image_hash = 2;
+  // The finalize parameters for the servicing operation.
+  FinalizeRequest finalize = 3;
 }
 
 message TridentError {
@@ -239,7 +325,7 @@ message TridentError {
   string subkind = 2;
   // Specific error message.
   string message = 3;
-  // Full body of the error, including debug information.
+  // Full formatted body of the error, including context and source.
   string full_body = 4;
   // Location in the file where the error occurred.
   FileLocation location = 5;

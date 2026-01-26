@@ -1,12 +1,13 @@
 //! Contains the servicing manager for Trident server.
 
-use std::{fmt::Debug, sync::Arc};
+use std::{fmt::Debug, panic, sync::Arc};
 
 use anyhow::anyhow;
 use log::error;
-use tokio::sync::{OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock};
+use tokio::sync::{Mutex, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock};
 
 use harpoon::{FinalStatus, StatusCode, TridentError as HarpoonTridentError};
+use tokio_util::sync::CancellationToken;
 use trident_api::error::{InternalError, TridentError};
 
 use crate::{server::activitytracker::ActivityTracker, ExitKind};
@@ -25,10 +26,30 @@ type ServicingLockGuard = OwnedRwLockWriteGuard<()>;
 /// they will block if a servicing action is in progress.
 type ServicingReadGuard = OwnedRwLockReadGuard<()>;
 
+/// Enum to specify how reboot requests from servicing tasks should be handled.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(super) enum RebootDecision {
+    /// Reboot requests are deferred to the caller when needed.
+    Defer,
+
+    /// Trident will directly handle reboot requests.
+    Handle,
+
+    /// A reboot request is not allowed during this operation and will result in
+    /// an error if one is requested.
+    Error,
+}
+
 /// Helper to manage concurrency for servicing operations.
 #[derive(Clone)]
 pub(crate) struct ServicingManager {
     servicing_lock: Arc<RwLock<()>>,
+
+    /// The exit kind currently registered in the manager.
+    exit_kind: Arc<Mutex<ExitKind>>,
+
+    /// Cancellation token to signal exit requests made by a servicing task.
+    cancellation_token: CancellationToken,
 }
 
 impl Debug for ServicingManager {
@@ -39,10 +60,24 @@ impl Debug for ServicingManager {
 
 impl ServicingManager {
     /// Creates a new ServicingManager instance.
-    pub(crate) fn new() -> Self {
-        Self {
+    pub(crate) fn new() -> (Self, CancellationToken) {
+        // Create a cancellation token for exit requests.
+        let token = CancellationToken::new();
+        let child = token.child_token();
+
+        let mgr = Self {
             servicing_lock: Arc::new(RwLock::new(())),
-        }
+            exit_kind: Arc::new(Mutex::new(ExitKind::Done)),
+            cancellation_token: token,
+        };
+
+        (mgr, child)
+    }
+
+    /// Gets the exit kind currently registered in the manager.
+    pub(crate) async fn get_exit_kind(&self) -> ExitKind {
+        let exit_kind = self.exit_kind.lock().await;
+        *exit_kind
     }
 
     /// Attempts to acquire the servicing (write) lock. Returns
@@ -64,48 +99,89 @@ impl ServicingManager {
     /// only one servicing operation is running at a time. The `ActivityTracker`
     /// is used to notify the start and end of servicing activity.
     pub(super) async fn spawn_servicing_task<F>(
+        &self,
+        reboot_decision: RebootDecision,
         _guard: ServicingLockGuard,
         tracker: ActivityTracker,
         f: F,
     ) -> FinalStatus
     where
-        F: FnOnce() -> Result<ExitKind, TridentError> + Send + 'static,
+        F: FnOnce() -> Result<ExitKind, TridentError> + Send + panic::UnwindSafe + 'static,
     {
         // Spawn the servicing operation in a blocking task, notifying the activity
         // tracker of start and end of servicing through the guard.
         let result = tokio::task::spawn_blocking(move || {
             let _activity_guard = tracker.servicing_guard();
-            f()
+            match panic::catch_unwind(f) {
+                Ok(res) => res,
+                Err(e) => Err(TridentError::new(InternalError::Panic(format!("{e:?}")))),
+            }
         })
         .await;
 
-        match result {
+        let exit_kind = match result {
             Ok(r) => match r {
-                Ok(exit_kind) => FinalStatus {
-                    status: StatusCode::Success.into(),
-                    error: None,
-                    reboot_required: match exit_kind {
-                        ExitKind::Done => false,
-                        ExitKind::NeedsReboot => true,
-                    },
-                },
-                Err(e) => FinalStatus {
-                    status: StatusCode::Failure.into(),
-                    error: Some(HarpoonTridentError::from(&e)),
-                    reboot_required: false,
-                },
+                Ok(exit_kind) => exit_kind,
+                Err(e) => {
+                    return FinalStatus {
+                        status: StatusCode::Failure.into(),
+                        error: Some(HarpoonTridentError::from(&e)),
+                        reboot_required: false,
+                        reboot_enqueued: false,
+                    }
+                }
             },
             Err(e) => {
                 error!("Servicing task join error: {:?}", e);
-                FinalStatus {
+                return FinalStatus {
                     status: StatusCode::Failure.into(),
                     error: Some(HarpoonTridentError::from(&TridentError::with_source(
                         InternalError::Internal("Servicing task panicked or was cancelled"),
                         anyhow!(e),
                     ))),
                     reboot_required: false,
-                }
+                    reboot_enqueued: false,
+                };
             }
+        };
+
+        let (reboot_required, reboot_enqueued) = match (exit_kind, reboot_decision) {
+            // Notify the caller that a reboot is required.
+            (ExitKind::NeedsReboot, RebootDecision::Defer) => (true, false),
+
+            // Trident is allowed to request a reboot directly.
+            (ExitKind::NeedsReboot, RebootDecision::Handle) => {
+                // Set the manager's exit kind to NeedsReboot.
+                let mut exit_kind = self.exit_kind.lock().await;
+                *exit_kind = ExitKind::NeedsReboot;
+
+                // Request a cancellation to signal shut down the server gracefully.
+                self.cancellation_token.cancel();
+
+                (false, true)
+            }
+
+            // Error if a reboot was requested but forbidden.
+            (ExitKind::NeedsReboot, RebootDecision::Error) => {
+                return FinalStatus {
+                    status: StatusCode::Failure.into(),
+                    error: Some(HarpoonTridentError::from(&TridentError::new(
+                        InternalError::Internal("The servicing task requested a reboot, but this task type should not cause reboots."),
+                    ))),
+                    reboot_required: false,
+                    reboot_enqueued: false,
+                };
+            }
+
+            // Nothing to do, no reboot needed.
+            (ExitKind::Done, _) => (false, false),
+        };
+
+        FinalStatus {
+            status: StatusCode::Success.into(),
+            error: None,
+            reboot_required,
+            reboot_enqueued,
         }
     }
 
@@ -135,6 +211,7 @@ mod tests {
 
     use std::time::Duration;
 
+    use harpoon::TridentErrorKind;
     use tokio::time;
 
     use trident_api::error::InvalidInputError;
@@ -148,14 +225,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_try_lock_servicing_success() {
-        let manager = ServicingManager::new();
+        let (manager, _) = ServicingManager::new();
         let guard = manager.try_lock_servicing();
         assert!(guard.is_some(), "Should acquire servicing lock");
     }
 
     #[tokio::test]
     async fn test_try_lock_servicing_fails_when_locked() {
-        let manager = ServicingManager::new();
+        let (manager, _) = ServicingManager::new();
         let _guard = manager
             .try_lock_servicing()
             .expect("First lock should succeed");
@@ -170,7 +247,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_try_lock_servicing_succeeds_after_release() {
-        let manager = ServicingManager::new();
+        let (manager, _) = ServicingManager::new();
         {
             let _guard = manager
                 .try_lock_servicing()
@@ -188,14 +265,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_try_lock_reading_success() {
-        let manager = ServicingManager::new();
+        let (manager, _) = ServicingManager::new();
         let guard = manager.try_lock_reading();
         assert!(guard.is_some(), "Should acquire read lock");
     }
 
     #[tokio::test]
     async fn test_try_lock_reading_multiple_readers() {
-        let manager = ServicingManager::new();
+        let (manager, _) = ServicingManager::new();
         let _guard1 = manager
             .try_lock_reading()
             .expect("First read lock should succeed");
@@ -209,7 +286,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_try_lock_reading_fails_when_write_locked() {
-        let manager = ServicingManager::new();
+        let (manager, _) = ServicingManager::new();
         let _write_guard = manager
             .try_lock_servicing()
             .expect("Write lock should succeed");
@@ -224,7 +301,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_try_lock_servicing_fails_when_read_locked() {
-        let manager = ServicingManager::new();
+        let (manager, _) = ServicingManager::new();
         let _read_guard = manager
             .try_lock_reading()
             .expect("Read lock should succeed");
@@ -239,12 +316,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_spawn_servicing_task_success() {
-        let manager = ServicingManager::new();
+        let (manager, _) = ServicingManager::new();
         let guard = manager.try_lock_servicing().expect("Lock should succeed");
         let (tracker, _rx, _token) = ActivityTracker::new(Duration::from_secs(30));
 
-        let result =
-            ServicingManager::spawn_servicing_task(guard, tracker, || Ok(ExitKind::Done)).await;
+        let result = manager
+            .spawn_servicing_task(RebootDecision::Handle, guard, tracker, || {
+                Ok(ExitKind::Done)
+            })
+            .await;
 
         assert_eq!(result.status, StatusCode::Success as i32);
         assert!(!result.reboot_required);
@@ -252,32 +332,108 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_spawn_servicing_task_success_with_reboot() {
-        let manager = ServicingManager::new();
+    async fn test_spawn_servicing_task_success_with_reboot_forward() {
+        let (manager, token) = ServicingManager::new();
         let guard = manager.try_lock_servicing().expect("Lock should succeed");
         let (tracker, _rx, _token) = ActivityTracker::new(Duration::from_secs(30));
 
-        let result =
-            ServicingManager::spawn_servicing_task(guard, tracker, || Ok(ExitKind::NeedsReboot))
-                .await;
+        let result = manager
+            .spawn_servicing_task(RebootDecision::Defer, guard, tracker, || {
+                Ok(ExitKind::NeedsReboot)
+            })
+            .await;
+
+        assert!(
+            !token.is_cancelled(),
+            "Cancellation token should not be cancelled"
+        );
+        assert_eq!(
+            manager.get_exit_kind().await,
+            ExitKind::Done,
+            "Exit kind should be Done"
+        );
 
         assert_eq!(result.status, StatusCode::Success as i32);
         assert!(result.reboot_required);
+        assert!(!result.reboot_enqueued);
         assert!(result.error.is_none());
     }
 
     #[tokio::test]
-    async fn test_spawn_servicing_task_error() {
-        let manager = ServicingManager::new();
+    async fn test_spawn_servicing_task_success_with_reboot_allowed() {
+        let (manager, token) = ServicingManager::new();
         let guard = manager.try_lock_servicing().expect("Lock should succeed");
         let (tracker, _rx, _token) = ActivityTracker::new(Duration::from_secs(30));
 
-        let result = ServicingManager::spawn_servicing_task(guard, tracker, || {
-            Err(TridentError::new(
-                InvalidInputError::CleanInstallOnProvisionedHost,
-            ))
-        })
-        .await;
+        let result = manager
+            .spawn_servicing_task(RebootDecision::Handle, guard, tracker, || {
+                Ok(ExitKind::NeedsReboot)
+            })
+            .await;
+
+        assert!(
+            token.is_cancelled(),
+            "Cancellation token should be cancelled"
+        );
+        assert_eq!(
+            manager.get_exit_kind().await,
+            ExitKind::NeedsReboot,
+            "Exit kind should be NeedsReboot"
+        );
+
+        assert_eq!(result.status, StatusCode::Success as i32);
+        assert!(!result.reboot_required);
+        assert!(result.reboot_enqueued);
+        assert!(result.error.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_spawn_servicing_task_success_with_reboot_error() {
+        let (manager, token) = ServicingManager::new();
+        let guard = manager.try_lock_servicing().expect("Lock should succeed");
+        let (tracker, _rx, _token) = ActivityTracker::new(Duration::from_secs(30));
+
+        let result = manager
+            .spawn_servicing_task(RebootDecision::Error, guard, tracker, || {
+                Ok(ExitKind::NeedsReboot)
+            })
+            .await;
+
+        assert!(
+            !token.is_cancelled(),
+            "Cancellation token should not be cancelled"
+        );
+        assert_eq!(
+            manager.get_exit_kind().await,
+            ExitKind::Done,
+            "Exit kind should be Done"
+        );
+
+        assert_eq!(result.status, StatusCode::Failure as i32);
+        assert!(!result.reboot_required);
+        assert!(!result.reboot_enqueued);
+
+        let err = result.error.expect("Error should be present");
+        assert_eq!(
+            err.kind(),
+            TridentErrorKind::Internal,
+            "Error kind should match"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_spawn_servicing_task_error() {
+        let (manager, _) = ServicingManager::new();
+        let guard = manager.try_lock_servicing().expect("Lock should succeed");
+        let (tracker, _rx, _token) = ActivityTracker::new(Duration::from_secs(30));
+
+        let result = manager
+            .spawn_servicing_task(RebootDecision::Handle, guard, tracker, || {
+                Err(TridentError::new(
+                    InvalidInputError::CleanInstallOnProvisionedHost,
+                ))
+            })
+            .await;
 
         assert_eq!(result.status, StatusCode::Failure as i32);
         assert!(!result.reboot_required);
@@ -285,7 +441,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_spawn_servicing_task_notifies_activity_tracker() {
-        let manager = ServicingManager::new();
+        let (manager, _) = ServicingManager::new();
         let guard = manager.try_lock_servicing().expect("Lock should succeed");
         let (tracker, _rx, _token) = ActivityTracker::new(Duration::from_secs(30));
 
@@ -295,12 +451,13 @@ mod tests {
 
         // Spawn a task that takes some time
         let handle = tokio::spawn(async move {
-            ServicingManager::spawn_servicing_task(guard, tracker, || {
-                // Task body
-                std::thread::sleep(Duration::from_millis(50));
-                Ok(ExitKind::Done)
-            })
-            .await
+            manager
+                .spawn_servicing_task(RebootDecision::Handle, guard, tracker, || {
+                    // Task body
+                    std::thread::sleep(Duration::from_millis(50));
+                    Ok(ExitKind::Done)
+                })
+                .await
         });
 
         // Give the task a moment to start
@@ -315,14 +472,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_spawn_servicing_task_panic_handling() {
-        let manager = ServicingManager::new();
+        let (manager, _) = ServicingManager::new();
         let guard = manager.try_lock_servicing().expect("Lock should succeed");
         let (tracker, _rx, _token) = ActivityTracker::new(Duration::from_secs(30));
 
-        let result = ServicingManager::spawn_servicing_task(guard, tracker, || {
-            panic!("Simulated panic in servicing task");
-        })
-        .await;
+        let result = manager
+            .spawn_servicing_task(RebootDecision::Handle, guard, tracker, || {
+                panic!("Simulated panic in servicing task");
+            })
+            .await;
 
         // Panic in spawn_blocking is caught and returns JoinError
         assert_eq!(result.status, StatusCode::Failure as i32);
@@ -331,7 +489,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_servicing_manager_is_clonable() {
-        let manager = ServicingManager::new();
+        let (manager, _) = ServicingManager::new();
         let manager_clone = manager.clone();
 
         // Both managers should share the same lock
@@ -344,7 +502,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_multiple_sequential_servicing_tasks() {
-        let manager = ServicingManager::new();
+        let (manager, _) = ServicingManager::new();
         let (tracker, _rx, _token) = ActivityTracker::new(Duration::from_secs(30));
 
         // First task
@@ -352,10 +510,11 @@ mod tests {
             let guard = manager
                 .try_lock_servicing()
                 .expect("First lock should succeed");
-            let result = ServicingManager::spawn_servicing_task(guard, tracker.clone(), || {
-                Ok(ExitKind::Done)
-            })
-            .await;
+            let result = manager
+                .spawn_servicing_task(RebootDecision::Handle, guard, tracker.clone(), || {
+                    Ok(ExitKind::Done)
+                })
+                .await;
             assert_eq!(result.status, StatusCode::Success as i32);
         }
 
@@ -364,12 +523,14 @@ mod tests {
             let guard = manager
                 .try_lock_servicing()
                 .expect("Second lock should succeed");
-            let result = ServicingManager::spawn_servicing_task(guard, tracker.clone(), || {
-                Ok(ExitKind::NeedsReboot)
-            })
-            .await;
+            let result = manager
+                .spawn_servicing_task(RebootDecision::Handle, guard, tracker.clone(), || {
+                    Ok(ExitKind::NeedsReboot)
+                })
+                .await;
             assert_eq!(result.status, StatusCode::Success as i32);
-            assert!(result.reboot_required);
+            assert!(!result.reboot_required);
+            assert!(result.reboot_enqueued);
         }
     }
 }

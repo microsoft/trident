@@ -2,8 +2,10 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
+	"tridenttools/storm/utils/sshutils"
 )
 
 type SshCliSettings struct {
@@ -20,6 +22,21 @@ func (s *SshCliSettings) TimeoutDuration() time.Duration {
 
 func (s *SshCliSettings) FullHost() string {
 	return fmt.Sprintf("%s:%d", s.Host, s.Port)
+}
+
+func (s *SshCliSettings) IntoClientConfig() (*sshutils.SshClientConfig, error) {
+	privateKey, err := os.ReadFile(s.PrivateKeyPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read SSH key file '%s': %w", s.PrivateKeyPath, err)
+	}
+
+	return &sshutils.SshClientConfig{
+		Host:       s.Host,
+		Port:       s.Port,
+		User:       s.User,
+		PrivateKey: privateKey,
+		Timeout:    s.TimeoutDuration(),
+	}, nil
 }
 
 type SshCmdOutput struct {

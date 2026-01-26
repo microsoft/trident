@@ -1,6 +1,7 @@
 package retry
 
 import (
+	"context"
 	"fmt"
 	"time"
 )
@@ -16,6 +17,33 @@ func Retry[T any](timeout, backoff time.Duration, f func(attempt int) (*T, error
 		result, err = f(attempt)
 		if err != nil {
 			if time.Since(startTime) >= timeout {
+				break
+			}
+
+			time.Sleep(backoff)
+			continue
+		}
+
+		return result, nil
+	}
+
+	return nil, fmt.Errorf("failed after %d attempts: %w", attempt, err)
+}
+
+func RetryContext[T any](ctx context.Context, backoff time.Duration, f func(ctx context.Context, attempt int) (*T, error)) (*T, error) {
+	attempt := 0
+	var err error = nil
+
+	for {
+		if err = ctx.Err(); err != nil {
+			break
+		}
+
+		attempt++
+		var result *T
+		result, err = f(ctx, attempt)
+		if err != nil {
+			if ctx.Err() != nil {
 				break
 			}
 

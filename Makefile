@@ -13,6 +13,9 @@ OVERRIDE_RUST_FEED ?= true
 
 SERVER_PORT ?= 8133
 
+# Azl3 builder docker image name
+AZL3_BUILDER_IMAGE := azl3/trident-builder:latest
+
 .PHONY: all
 all: format check test build-api-docs bin/trident-rpms.tar.gz docker-build build-functional-test coverage validate-configs
 
@@ -164,6 +167,32 @@ bin/trident: build
 bin/trident-aarch64: build-aarch64
 	@mkdir -p bin
 	@cp -u target/aarch64-unknown-linux-gnu/release/trident bin/trident-aarch64
+
+.PHONY: azl3-builder-image clean-azl3-builder-image build-azl3
+azl3-builder-image:
+	@echo "Checking for local image $(AZL3_BUILDER_IMAGE)..."
+	@if docker image inspect $(AZL3_BUILDER_IMAGE) >/dev/null 2>&1 ; then \
+		echo "Image $(AZL3_BUILDER_IMAGE) found locally." ; \
+	else \
+		echo "Image $(AZL3_BUILDER_IMAGE) not found locally. Building..." ; \
+		docker build -t $(AZL3_BUILDER_IMAGE) -f packaging/docker/Dockerfile.azl3-builder . ; \
+	fi
+
+clean-azl3-builder-image:
+	@echo "Removing local image $(AZL3_BUILDER_IMAGE)..."
+	@docker rmi $(AZL3_BUILDER_IMAGE) || echo "Image $(AZL3_BUILDER_IMAGE) not found locally."
+
+build-azl3: azl3-builder-image version-vars
+	@mkdir -p bin/
+	@mkdir -p target/azl3/
+	@echo "Building Trident for Azure Linux 3 using Docker image $(AZL3_BUILDER_IMAGE)..."
+	@docker run --rm \
+		-e TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
+		-v $(PWD):/work -w /work $(AZL3_BUILDER_IMAGE) \
+		cargo build --target-dir target/azl3 --release --features dangerous-options
+
+bin/trident-azl3: build-azl3
+	@cp -u target/azl3/release/trident bin/trident-azl3
 
 # This will do a proper build on azl3, exactly as the pipelines would, with the custom registry and all.
 bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full packaging/systemd/*.service packaging/rpm/trident.spec artifacts/osmodifier packaging/selinux-policy-trident/* version-vars
@@ -482,6 +511,22 @@ bin/virtdeploy: tools/cmd/virtdeploy/* tools/go.sum tools/pkg/* tools/pkg/virtde
 	@mkdir -p bin
 	cd tools && go build -o ../bin/virtdeploy ./cmd/virtdeploy
 
+bin/rcp-proxy: FORCE
+	@mkdir -p bin
+	cd tools && go generate pkg/rcp/tlscerts/certs.go
+	cd tools && go build -tags tls_client -o ../bin/rcp-proxy ./cmd/rcp-proxy/main.go
+
+# Clean generated RCP TLS certificates
+.PHONY: clean-rcp-certs
+clean-rcp-certs:
+	cd tools/pkg/rcp/tlscerts && go run generate.go clean
+
+# An empty target to force rebuilds of anything that depends on it. Useful for
+# tools that are smarter than Make and only rebuild when source files change.
+# (eg. go build)
+.PHONY: FORCE
+FORCE:
+
 # Installer tools
 
 INSTALLER_OUT_DIR := bin
@@ -547,10 +592,21 @@ input/netlaunch.yaml: tools/vm-netlaunch.yaml
 	@mkdir -p input
 	ln -vsf "$$(realpath "$<")" $@
 
+# Dynamically determine which netlaunch binary to use based on host OS version.
+OS_RELEASE_FILE ?= /etc/os-release
+OS_ID := $(shell . $(OS_RELEASE_FILE) 2>/dev/null && echo $$ID)
+OS_VERSION_ID := $(shell . $(OS_RELEASE_FILE) 2>/dev/null && echo $$VERSION_ID)
+IS_UBUNTU_24_OR_NEWER := $(shell \
+	. $(OS_RELEASE_FILE) 2>/dev/null && \
+	[ "$$ID" = "ubuntu" ] && [ "$${VERSION_ID%%.*}" -ge 24 ] && echo yes)
+
+RUN_NETLAUNCH_TRIDENT_BIN ?= $(if $(filter yes,$(IS_UBUNTU_24_OR_NEWER)),bin/trident-azl3,bin/trident)
+
 .PHONY: run-netlaunch
-run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch validate artifacts/osmodifier
+run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch validate artifacts/osmodifier $(RUN_NETLAUNCH_TRIDENT_BIN)
+	@echo "Using trident binary: $(RUN_NETLAUNCH_TRIDENT_BIN)"
 	@mkdir -p artifacts/test-image
-	@cp bin/trident artifacts/test-image/
+	@cp $(RUN_NETLAUNCH_TRIDENT_BIN) artifacts/test-image/trident
 	@cp artifacts/osmodifier artifacts/test-image/
 	@bin/netlaunch \
 	 	--iso $(NETLAUNCH_ISO) \

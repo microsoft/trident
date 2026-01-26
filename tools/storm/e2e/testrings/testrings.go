@@ -28,6 +28,32 @@ var pipelineRingsOrder = TestRingSet{
 	TestRingEmpty,
 }
 
+// Return the order index of the test ring. Lower index means lower ring. The
+// number does not mean anything outside of comparison between rings.
+func (tr TestRing) Order() uint {
+	for i, ring := range pipelineRingsOrder {
+		if ring == tr {
+			return uint(i)
+		}
+	}
+
+	// Unknown rings are considered highest order
+	return uint(len(pipelineRingsOrder))
+}
+
+func (tr TestRing) Compare(other TestRing) int {
+	thisOrder := tr.Order()
+	otherOrder := other.Order()
+
+	if thisOrder < otherOrder {
+		return -1
+	} else if thisOrder > otherOrder {
+		return 1
+	} else {
+		return 0
+	}
+}
+
 func (tr *TestRing) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	var ringStr string
 	if err := unmarshal(&ringStr); err != nil {
@@ -77,8 +103,23 @@ func (tr TestRing) GetTargetList() (TestRingSet, error) {
 	return targets, nil
 }
 
+// Container for a set of test rings.
 type TestRingSet []TestRing
 
+// Contains reports whether the test ring set contains the specified ring.
 func (trs TestRingSet) Contains(ring TestRing) bool {
 	return slices.Contains(trs, ring)
+}
+
+// Lowest returns the lowest test ring in the set.
+func (trs TestRingSet) Lowest() (TestRing, error) {
+	if len(trs) == 0 {
+		return TestRingEmpty, fmt.Errorf("test ring set is empty")
+	}
+
+	lowest := slices.MinFunc(trs, func(a, b TestRing) int {
+		return a.Compare(b)
+	})
+
+	return lowest, nil
 }

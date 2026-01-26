@@ -1,0 +1,43 @@
+//go:build tls_client
+
+package main
+
+import (
+	"context"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/alecthomas/kong"
+	"github.com/sirupsen/logrus"
+
+	"tridenttools/pkg/rcp"
+	"tridenttools/pkg/rcp/proxy"
+	"tridenttools/pkg/rcp/tlscerts"
+)
+
+var cli struct {
+	ClientAddress string `arg:"" help:"Address of the rcp-client to connect to"`
+	ServerAddress string `short:"s" long:"server-address" help:"Address of the server to connect to" default:"${defaultServerAddress}"`
+}
+
+func main() {
+	_ = kong.Parse(&cli,
+		kong.Name("rcp-proxy"),
+		kong.Description("A reverse-connect proxy that connects to an rcp-client to forward proxy connections between it and a server."),
+		kong.UsageOnError(),
+		kong.Vars{
+			"defaultServerAddress": rcp.DefaultTridentSocketPath,
+		},
+	)
+
+	// Handle Ctrl+C gracefully
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	logrus.Infof("Starting reverse-connect proxy with client address: '%s' and server address: '%s'", cli.ClientAddress, cli.ServerAddress)
+	if err := proxy.StartReverseConnectProxy(ctx, tlscerts.ClientCertProvider, cli.ClientAddress, cli.ServerAddress, time.Second); err != nil {
+		logrus.Fatalf("reverse-connect proxy error: %v", err)
+	}
+	logrus.Info("Shutdown complete")
+}

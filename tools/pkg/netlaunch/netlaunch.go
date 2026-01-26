@@ -48,7 +48,8 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 	enable_phonehome_listening := config.ListenPort != 0
 
 	result := make(chan phonehome.PhoneHomeResult)
-	server := &http.Server{}
+	mux := http.NewServeMux()
+	server := &http.Server{Handler: mux}
 
 	// Create the final address that will be announced to the BMC and Trident.
 	var announceIp string
@@ -137,7 +138,7 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 			}
 		}
 
-		http.HandleFunc("/provision.iso", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/provision.iso", func(w http.ResponseWriter, r *http.Request) {
 			isoLogFunc(r.RemoteAddr)
 			http.ServeContent(w, r, "provision.iso", time.Now(), bytes.NewReader(iso))
 		})
@@ -146,7 +147,7 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 		enable_phonehome_listening = true
 	} else {
 		// Otherwise, serve the iso as-is
-		http.HandleFunc("/provision.iso", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/provision.iso", func(w http.ResponseWriter, r *http.Request) {
 			isoLogFunc(r.RemoteAddr)
 			http.ServeContent(w, r, "provision.iso", time.Now(), bytes.NewReader(iso))
 			terminateFunc()
@@ -156,17 +157,17 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 	// If we're expecting Trident to reach back, we need to listen for it.
 	if enable_phonehome_listening {
 		// Set up listening for phonehome
-		phonehome.SetupPhoneHomeServer(result, config.RemoteAddressFile)
+		phonehome.SetupPhoneHomeServer(mux, result, config.RemoteAddressFile)
 
 		// Set up listening for logstream
-		logstreamFull, err := phonehome.SetupLogstream(config.LogstreamFile)
+		logstreamFull, err := phonehome.SetupLogstream(mux, config.LogstreamFile)
 		if err != nil {
 			return fmt.Errorf("failed to setup logstream: %w", err)
 		}
 		defer logstreamFull.Close()
 
 		// Set up listening for tracestream
-		traceFile, err := phonehome.SetupTraceStream(config.TracestreamFile)
+		traceFile, err := phonehome.SetupTraceStream(mux, config.TracestreamFile)
 		if err != nil {
 			return fmt.Errorf("failed to setup tracestream: %w", err)
 		}
@@ -175,7 +176,7 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 	}
 
 	if len(config.ServeDirectory) != 0 {
-		http.Handle("/files/", http.StripPrefix("/files/", http.FileServer(http.Dir(config.ServeDirectory))))
+		mux.Handle("/files/", http.StripPrefix("/files/", http.FileServer(http.Dir(config.ServeDirectory))))
 	}
 
 	// Start the HTTP server

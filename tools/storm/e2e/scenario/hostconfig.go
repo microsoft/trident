@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"tridenttools/storm/utils/ssh/keys"
+	"tridenttools/storm/utils/sshutils"
+	"tridenttools/storm/utils/trident"
 
 	"github.com/microsoft/storm"
 )
@@ -15,11 +16,11 @@ const (
 
 func (s *TridentE2EScenario) prepareHostConfig(tc storm.TestCase) error {
 	// Generate an SSH key pair for VM access, store the private key for later use
-	private, public, err := keys.GenerateRsaKeyPair(2048)
+	private, public, err := sshutils.GenerateRsaKeyPair(2048)
 	if err != nil {
 		return fmt.Errorf("failed to generate RSA key pair for e2e: %w", err)
 	}
-	s.sshPrivateKey = string(private)
+	s.sshPrivateKey = private
 
 	// Dump the private key to a file if requested
 	if s.args.DumpSshKeyFile != "" {
@@ -37,7 +38,11 @@ func (s *TridentE2EScenario) prepareHostConfig(tc storm.TestCase) error {
 	// Add the public key to the testing user
 	found := false
 	for _, user := range s.config.S("os", "users").Children() {
-		if user.S("name").Data().(string) == testingUsername {
+		name, ok := user.S("name").Data().(string)
+		if !ok {
+			continue
+		}
+		if name == testingUsername {
 			user.ArrayAppend(string(public), "sshPublicKeys")
 			found = true
 		}
@@ -51,7 +56,7 @@ func (s *TridentE2EScenario) prepareHostConfig(tc storm.TestCase) error {
 	}
 
 	// If this is a container runtime, add the trident-container.tar.gz file to additional files.
-	if s.runtime == RuntimeTypeContainer {
+	if s.runtime == trident.RuntimeTypeContainer {
 		containerAdditionalFile := map[string]string{
 			"source":      "/var/lib/trident/trident-container.tar.gz",
 			"destination": "/var/lib/trident/trident-container.tar.gz",

@@ -6,7 +6,7 @@ use std::{
     time::Instant,
 };
 
-use anyhow::Context;
+use anyhow::{anyhow, Context, Error};
 use chrono::{DateTime, Utc};
 use log::{debug, info, trace, warn};
 use serde::{Deserialize, Serialize};
@@ -79,7 +79,7 @@ struct TraceEntry {
     pub platform_info: BTreeMap<String, Value>,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct TraceStream {
     // TODO: Consider changing this to a LockOnce when rustc is updated to
     // >=1.70
@@ -98,7 +98,7 @@ impl TraceStream {
         self.disabled = true;
     }
 
-    pub fn set_server(&self, url: String) -> Result<(), anyhow::Error> {
+    pub fn set_server(&self, url: String) -> Result<(), Error> {
         if self.disabled {
             info!("tracestream is disabled, ignoring set_server");
             return Ok(());
@@ -108,8 +108,20 @@ impl TraceStream {
         let mut val = self
             .target
             .write()
-            .map_err(|_| anyhow::anyhow!("Failed to lock tracestream"))?;
+            .map_err(|_| anyhow!("Failed to lock tracestream"))?;
         val.replace(url);
+        Ok(())
+    }
+
+    /// Clear the tracestream server URL
+    ///
+    /// This will stop logs from being sent to the server.
+    pub fn clear_server(&self) -> Result<(), Error> {
+        let mut val = self
+            .target
+            .write()
+            .map_err(|_| anyhow!("Failed to lock tracestream"))?;
+        val.take();
         Ok(())
     }
 

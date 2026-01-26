@@ -174,19 +174,19 @@ pub(crate) fn validate_rebuild_raid(
         .context("Failed to validate Host Configuration delta for rebuild-raid operation")?;
 
     match host_status.servicing_state {
-        ServicingState::NotProvisioned
-        | ServicingState::CleanInstallStaged
-        | ServicingState::CleanInstallFinalized => {
+        ServicingState::Provisioned
+        | ServicingState::RuntimeUpdateStaged
+        | ServicingState::AbUpdateStaged
+        | ServicingState::AbUpdateFinalized => {
+            // Allowed states for rebuild-raid
+        }
+
+        _ => {
             bail!(
                 "rebuild-raid command is not allowed when servicing state is {:?}",
                 host_status.servicing_state
             );
         }
-        ServicingState::Provisioned
-        | ServicingState::RuntimeUpdateStaged
-        | ServicingState::AbUpdateStaged
-        | ServicingState::AbUpdateFinalized
-        | ServicingState::AbUpdateHealthCheckFailed => {}
     }
 
     validate_raid_recovery(host_config, disks_to_rebuild)
@@ -1022,7 +1022,7 @@ mod functional_test {
         // Disks to rebuild is empty as 2 disks UUIDs are already present in Host Status.
         rebuild_raid(&host_config, &mut host_status).unwrap();
 
-        // Verify that the RAID array hasnt been rebuilt as disks to rebuild is empty.
+        // Verify that the RAID array hasn't been rebuilt as disks to rebuild is empty.
         let raid_devices = mdadm::detail(raid_path.as_ref()).unwrap();
         // Check if the RAID array has only 1 device.
         assert_eq!(raid_devices.devices.len(), 1);
