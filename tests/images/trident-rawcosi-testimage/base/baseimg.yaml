@@ -72,6 +72,11 @@ os:
       - dracut-virtio
       - dracut-xen
 
+  users:
+    - name: testuser
+      secondaryGroups:
+        - wheel
+
 scripts:
   postCustomization:
     - path: post-install.sh
