@@ -10,6 +10,7 @@ use chrono::Utc;
 use log::{debug, error, info, trace, warn};
 
 use osutils::{dependencies::Dependency, path::join_relative};
+use sysdefs::arch::SystemArchitecture;
 use trident_api::{
     config::Storage,
     constants,
@@ -462,6 +463,12 @@ pub fn reboot() -> Result<(), TridentError> {
     // Sync all writes to the filesystem.
     info!("Syncing filesystem");
     nix::unistd::sync();
+
+    // Skip reboot on arm for now
+    if SystemArchitecture::current() == SystemArchitecture::Aarch64 {
+        warn!("Skip reboot on aarch64");
+        return Ok(());
+    }
 
     // This trace event will be used with the trident_start event to track the
     // total time taken for the reboot
