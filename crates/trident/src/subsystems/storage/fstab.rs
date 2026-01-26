@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Error};
 use log::trace;
@@ -74,7 +77,11 @@ pub(super) fn generate_fstab(ctx: &EngineContext, output_path: &Path) -> Result<
         .write(output_path)
         .context(format!("Failed to write {}", output_path.display()))?;
 
-    trace!("Wrote '{}', contents: '{:?}'", output_path.display(), fstab);
+    trace!(
+        "Wrote fstab to '{}', contents: '{:?}'",
+        output_path.display(),
+        fs::read_to_string(output_path).unwrap_or("<failed to read>".to_string())
+    );
 
     Ok(())
 }
