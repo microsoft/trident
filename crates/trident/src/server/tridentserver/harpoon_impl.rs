@@ -24,7 +24,7 @@ use crate::{
     server::TridentHarpoonServer, stream, validation, DataStore, Trident, TRIDENT_VERSION,
 };
 
-use super::{RebootDecision, ServicingResponseStream};
+use super::{datastore, RebootDecision, ServicingResponseStream};
 
 /// Returns a `RebootDecision` indicating whether Trident can perform a reboot
 /// given a provided FinalizeRequest.
@@ -345,10 +345,20 @@ impl TridentService for TridentHarpoonServer {
         &self,
         _request: Request<GetLastErrorRequest>,
     ) -> Result<Response<GetLastErrorResponse>, Status> {
-        self.reading_request("get_last_error", || {
-            Err(TridentError::new(InternalError::Internal(
-                "Not implemented: get_last_error",
-            )))
+        let data_store_path = self.agent_config.datastore_path().to_owned();
+
+        self.reading_request("get_last_error", move || {
+            if !data_store_path.exists() {
+                // No datastore means no error recorded.
+                return Ok(GetLastErrorResponse { error: None });
+            }
+
+            let datastore =
+                DataStore::open(&data_store_path).message("Failed to open datastore")?;
+
+            Ok(GetLastErrorResponse {
+                error: datastore::error_from_datastore(&datastore),
+            })
         })
         .await
     }

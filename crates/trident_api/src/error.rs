@@ -6,7 +6,6 @@ use std::{
 };
 
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
-use strum_macros::IntoStaticStr;
 use url::Url;
 
 use harpoon::{
@@ -15,7 +14,7 @@ use harpoon::{
 
 use crate::{
     config::{HostConfigurationDynamicValidationError, HostConfigurationStaticValidationError},
-    primitives::bytes::ByteCount,
+    primitives::{bytes::ByteCount, shortcuts},
     status::{ServicingState, ServicingType},
     storage_graph::error::StorageGraphBuildError,
 };
@@ -736,8 +735,7 @@ pub enum UnsupportedConfigurationError {
 ///
 /// Each variant of `ErrorKind` corresponds to a different category of error. The categories are
 /// intended to be meaningful to the user and assist in routing issues to the appropriate team.
-#[derive(Debug, Eq, thiserror::Error, IntoStaticStr, PartialEq)]
-#[strum(serialize_all = "kebab-case")]
+#[derive(Debug, Eq, thiserror::Error, PartialEq)]
 pub enum ErrorKind {
     /// Identifies errors that occur when the execution environment is misconfigured.
     #[error(transparent)]
@@ -896,29 +894,48 @@ impl<T> TridentResultExt<T> for Result<T, TridentError> {
     }
 }
 
+/// Serialization constants and implementations for TridentError.
+impl TridentError {
+    pub const SERIALIZE_STRUCT_NAME: &'static str = "trident-error";
+    pub const SERIALIZE_FIELD_MESSAGE: &'static str = "message";
+    pub const SERIALIZE_FIELD_ERROR: &'static str = "error";
+    pub const SERIALIZE_FIELD_CATEGORY: &'static str = "category";
+    pub const SERIALIZE_FIELD_LOCATION: &'static str = "location";
+    pub const SERIALIZE_FIELD_CAUSE: &'static str = "cause";
+}
+
+impl From<&ErrorKind> for &str {
+    fn from(kind: &ErrorKind) -> Self {
+        ErrorKindCategory::from(kind).into()
+    }
+}
+
 impl Serialize for TridentError {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut state = serializer.serialize_struct("trident-error", 5)?;
-        state.serialize_field("message", &self.0.kind.to_string())?;
+        let mut state = serializer.serialize_struct(Self::SERIALIZE_STRUCT_NAME, 5)?;
+        state.serialize_field(Self::SERIALIZE_FIELD_MESSAGE, &self.0.kind.to_string())?;
+        let errname = Self::SERIALIZE_FIELD_ERROR;
         match self.0.kind {
             ErrorKind::ExecutionEnvironmentMisconfiguration(ref e) => {
-                state.serialize_field("error", e)?
+                state.serialize_field(errname, e)?
             }
-            ErrorKind::HealthChecks(ref e) => state.serialize_field("error", e)?,
-            ErrorKind::Initialization(ref e) => state.serialize_field("error", e)?,
-            ErrorKind::Internal(ref e) => state.serialize_field("error", e)?,
-            ErrorKind::InvalidInput(ref e) => state.serialize_field("error", e)?,
-            ErrorKind::Servicing(ref e) => state.serialize_field("error", e)?,
-            ErrorKind::UnsupportedConfiguration(ref e) => state.serialize_field("error", e)?,
+            ErrorKind::HealthChecks(ref e) => state.serialize_field(errname, e)?,
+            ErrorKind::Initialization(ref e) => state.serialize_field(errname, e)?,
+            ErrorKind::Internal(ref e) => state.serialize_field(errname, e)?,
+            ErrorKind::InvalidInput(ref e) => state.serialize_field(errname, e)?,
+            ErrorKind::Servicing(ref e) => state.serialize_field(errname, e)?,
+            ErrorKind::UnsupportedConfiguration(ref e) => state.serialize_field(errname, e)?,
         }
-        state.serialize_field("category", <&str>::from(&self.0.kind))?;
+        state.serialize_field(Self::SERIALIZE_FIELD_CATEGORY, <&str>::from(&self.0.kind))?;
         state.serialize_field(
-            "location",
+            Self::SERIALIZE_FIELD_LOCATION,
             &format!("{}:{}", self.0.location.file(), self.0.location.line()),
         )?;
         match self.0.source {
-            Some(ref e) => state.serialize_field("cause", &Some(format!("{e:?}")))?,
-            None => state.serialize_field("cause", &None::<String>)?,
+            Some(ref e) => {
+                state.serialize_field(Self::SERIALIZE_FIELD_CAUSE, &Some(format!("{e:?}")))?
+            }
+            None => state.serialize_field(Self::SERIALIZE_FIELD_CAUSE, &None::<String>)?,
         }
         state.end()
     }
@@ -1019,18 +1036,155 @@ impl From<&TridentError> for HarpoonTridentError {
 
 impl From<&ErrorKind> for HarpoonTridentErrorKind {
     fn from(kind: &ErrorKind) -> Self {
+        ErrorKindCategory::from(kind).into()
+    }
+}
+
+/// A simple to serialize/deserialize simplified representation of a TridentError.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SerializableTridentError {
+    #[serde(
+        default,
+        alias = "category",
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "shortcuts::lenient_option"
+    )]
+    pub kind: Option<ErrorKindCategory>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "shortcuts::lenient_option"
+    )]
+    pub subkind: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "shortcuts::lenient_option"
+    )]
+    pub message: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "shortcuts::lenient_option"
+    )]
+    pub full_body: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "shortcuts::lenient_option"
+    )]
+    pub location: Option<SerializableFileLocation>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SerializableFileLocation {
+    #[serde(
+        default, 
+        skip_serializing_if = "Option::is_none", 
+        deserialize_with = "shortcuts::lenient_option"
+    )]
+    pub path: Option<String>,
+    #[serde(
+        default, 
+        skip_serializing_if = "Option::is_none", 
+        deserialize_with = "shortcuts::lenient_option"
+    )]
+    pub line: Option<u32>,
+}
+
+/// A mapping of ErrorKind to unit-like enum variants for categorization purposes.
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[cfg_attr(test, derive(strum_macros::EnumIter))]
+pub enum ErrorKindCategory {
+    ExecutionEnvironmentMisconfiguration,
+    HealthChecks,
+    Initialization,
+    Internal,
+    InvalidInput,
+    Servicing,
+    UnsupportedConfiguration,
+}
+
+/// String constants for each error category.
+impl ErrorKindCategory {
+    pub const CATEGORY_EXECUTION_ENVIRONMENT_MISCONFIGURATION: &'static str =
+        "execution-environment-misconfiguration";
+    pub const CATEGORY_HEALTH_CHECKS: &'static str = "health-checks";
+    pub const CATEGORY_INITIALIZATION: &'static str = "initialization";
+    pub const CATEGORY_INTERNAL: &'static str = "internal";
+    pub const CATEGORY_INVALID_INPUT: &'static str = "invalid-input";
+    pub const CATEGORY_SERVICING: &'static str = "servicing";
+    pub const CATEGORY_UNSUPPORTED_CONFIGURATION: &'static str = "unsupported-configuration";
+}
+
+impl From<&ErrorKind> for ErrorKindCategory {
+    fn from(kind: &ErrorKind) -> Self {
         match kind {
             ErrorKind::ExecutionEnvironmentMisconfiguration(_) => {
-                HarpoonTridentErrorKind::ExecutionEnvironmentMisconfiguration
+                Self::ExecutionEnvironmentMisconfiguration
             }
-            ErrorKind::HealthChecks(_) => HarpoonTridentErrorKind::HealthChecks,
-            ErrorKind::Initialization(_) => HarpoonTridentErrorKind::Initialization,
-            ErrorKind::Internal(_) => HarpoonTridentErrorKind::Internal,
-            ErrorKind::InvalidInput(_) => HarpoonTridentErrorKind::InvalidInput,
-            ErrorKind::Servicing(_) => HarpoonTridentErrorKind::Servicing,
-            ErrorKind::UnsupportedConfiguration(_) => {
-                HarpoonTridentErrorKind::UnsupportedConfiguration
+            ErrorKind::HealthChecks(_) => Self::HealthChecks,
+            ErrorKind::Initialization(_) => Self::Initialization,
+            ErrorKind::Internal(_) => Self::Internal,
+            ErrorKind::InvalidInput(_) => Self::InvalidInput,
+            ErrorKind::Servicing(_) => Self::Servicing,
+            ErrorKind::UnsupportedConfiguration(_) => Self::UnsupportedConfiguration,
+        }
+    }
+}
+
+impl From<ErrorKindCategory> for &str {
+    fn from(category: ErrorKindCategory) -> Self {
+        match category {
+            ErrorKindCategory::ExecutionEnvironmentMisconfiguration => {
+                ErrorKindCategory::CATEGORY_EXECUTION_ENVIRONMENT_MISCONFIGURATION
             }
+            ErrorKindCategory::HealthChecks => ErrorKindCategory::CATEGORY_HEALTH_CHECKS,
+            ErrorKindCategory::Initialization => ErrorKindCategory::CATEGORY_INITIALIZATION,
+            ErrorKindCategory::Internal => ErrorKindCategory::CATEGORY_INTERNAL,
+            ErrorKindCategory::InvalidInput => ErrorKindCategory::CATEGORY_INVALID_INPUT,
+            ErrorKindCategory::Servicing => ErrorKindCategory::CATEGORY_SERVICING,
+            ErrorKindCategory::UnsupportedConfiguration => {
+                ErrorKindCategory::CATEGORY_UNSUPPORTED_CONFIGURATION
+            }
+        }
+    }
+}
+
+impl TryFrom<&str> for ErrorKindCategory {
+    type Error = ();
+
+    fn try_from(category: &str) -> Result<Self, Self::Error> {
+        Ok(match category {
+            Self::CATEGORY_EXECUTION_ENVIRONMENT_MISCONFIGURATION => {
+                Self::ExecutionEnvironmentMisconfiguration
+            }
+            Self::CATEGORY_HEALTH_CHECKS => Self::HealthChecks,
+            Self::CATEGORY_INITIALIZATION => Self::Initialization,
+            Self::CATEGORY_INTERNAL => Self::Internal,
+            Self::CATEGORY_INVALID_INPUT => Self::InvalidInput,
+            Self::CATEGORY_SERVICING => Self::Servicing,
+            Self::CATEGORY_UNSUPPORTED_CONFIGURATION => Self::UnsupportedConfiguration,
+            _ => return Err(()),
+        })
+    }
+}
+
+impl From<ErrorKindCategory> for HarpoonTridentErrorKind {
+    fn from(category: ErrorKindCategory) -> Self {
+        match category {
+            ErrorKindCategory::ExecutionEnvironmentMisconfiguration => {
+                Self::ExecutionEnvironmentMisconfiguration
+            }
+            ErrorKindCategory::HealthChecks => Self::HealthChecks,
+            ErrorKindCategory::Initialization => Self::Initialization,
+            ErrorKindCategory::Internal => Self::Internal,
+            ErrorKindCategory::InvalidInput => Self::InvalidInput,
+            ErrorKindCategory::Servicing => Self::Servicing,
+            ErrorKindCategory::UnsupportedConfiguration => Self::UnsupportedConfiguration,
         }
     }
 }
@@ -1110,5 +1264,20 @@ mod tests {
                 error.0.location.line(),
             ),
         );
+    }
+
+    #[test]
+    fn test_error_category_roundtrip() {
+        // NOTE: If this test is failing you probably added a new ErrorKind but
+        // haven't updated the ErrorCategory enum to have a corresponding variant.
+
+        use strum::IntoEnumIterator;
+        let categories = ErrorKindCategory::iter().collect::<Vec<_>>();
+
+        for category in categories {
+            let as_str: &str = category.into();
+            let from_str = ErrorKindCategory::try_from(as_str).unwrap();
+            assert_eq!(category, from_str);
+        }
     }
 }
