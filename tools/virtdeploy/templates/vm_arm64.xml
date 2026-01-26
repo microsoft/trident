@@ -4,8 +4,8 @@
     <vcpu>{{ cpus }}</vcpu>
     <os>
         <type arch='aarch64' machine='virt-6.2'>hvm</type>
-        <loader readonly='yes' secure='no' type='pflash'>/usr/share/AAVMF/AAVMF_CODE.ms.fd</loader>
-        <nvram template='/usr/share/AAVMF/AAVMF_VARS.ms.fd'>/var/lib/libvirt/qemu/nvram/{{ name }}_VARS.fd</nvram>
+        <loader readonly='yes' secure='no' type='pflash'>/usr/share/AAVMF/AAVMF_CODE.fd</loader>
+        <nvram template='/usr/share/AAVMF/AAVMF_VARS.fd'>/var/lib/libvirt/qemu/nvram/{{ name }}_VARS.fd</nvram>
         <boot dev='hd'/>
     </os>
     <sysinfo type="smbios">
