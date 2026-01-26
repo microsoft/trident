@@ -1155,10 +1155,10 @@ artifacts/trident-vm-grub-verity-azure-testimage.vhd: \
 			--output-image-format vhd-fixed \
 			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-grub-verity-azure.yaml
 
-DIRECT_STREAMING_HOST_CONFIGURATION ?= tests/e2e_tests/trident_configurations/base/trident-config.yaml
+DIRECT_STREAMING_HOST_CONFIGURATION ?= tests/images/trident-rawcosi-testimage/trident-config.yaml
 artifacts/trident-direct-streaming-testimage-arm64.cosi: \
 	bin/mkcosi \
-	artifacts/trident-testimage-arm64.cosi
+	artifacts/trident-rawcosi-testimage-arm64.cosi
 	$(eval TMP_HC := $(shell mktemp tmp-hc.XXX.yaml --tmpdir))
 	$(eval TMP_NO_HC_VHD_COSI := $(shell mktemp tmp.XXX.cosi --tmpdir))
 	sed '/mode: enforcing/d' $(DIRECT_STREAMING_HOST_CONFIGURATION) | \
@@ -1166,7 +1166,7 @@ artifacts/trident-direct-streaming-testimage-arm64.cosi: \
 		sed '/selinux:/d' | \
 		sed 's|pci-0000:00:1f.2-ata|pci-0000:02:02.0-ata|' > $(TMP_HC)
 	bin/mkcosi add-vpc \
-		artifacts/trident-testimage-arm64.cosi \
+		artifacts/trident-rawcosi-testimage-arm64.cosi \
 		$(TMP_NO_HC_VHD_COSI)
 	bin/mkcosi insert-template \
 		$(TMP_NO_HC_VHD_COSI) \
@@ -1175,14 +1175,14 @@ artifacts/trident-direct-streaming-testimage-arm64.cosi: \
 
 artifacts/trident-direct-streaming-testimage.cosi: \
 	bin/mkcosi \
-	artifacts/trident-testimage.cosi
+	artifacts/trident-rawcosi-testimage.cosi
 	$(eval TMP_HC := $(shell mktemp tmp-hc.XXX.yaml --tmpdir))
 	$(eval TMP_NO_HC_VHD_COSI := $(shell mktemp tmp.XXX.cosi --tmpdir))
 	sed '/mode: enforcing/d' $(DIRECT_STREAMING_HOST_CONFIGURATION) | \
 	   sed '/mode: disabled/d' | \
 	   sed '/selinux:/d' > $(TMP_HC)
 	bin/mkcosi add-vpc \
-		artifacts/trident-testimage.cosi \
+		artifacts/trident-rawcosi-testimage.cosi \
 		$(TMP_NO_HC_VHD_COSI)
 	bin/mkcosi insert-template \
 		$(TMP_NO_HC_VHD_COSI) \

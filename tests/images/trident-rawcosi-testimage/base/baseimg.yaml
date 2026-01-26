@@ -1,0 +1,77 @@
+storage:
+  disks:
+    - partitionTableType: gpt
+      maxSize: 10G
+      partitions:
+        - id: esp
+          type: esp
+          size: 8M
+
+        - id: trident
+          type: linux-generic
+          size: 1G
+
+        - id: root-a
+          type: root
+          size: 4G
+
+        - id: root-b
+          type: root
+          size: 4G
+
+  bootType: efi
+
+  filesystems:
+    - deviceId: esp
+      type: fat32
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+
+    - deviceId: trident
+      type: ext4
+      mountPoint:
+        path: /var/lib/trident
+
+    - deviceId: root-a
+      type: ext4
+      mountPoint:
+        path: /
+
+os:
+  bootloader:
+    resetType: hard-reset
+  hostname: trident-rawcosi-testimg
+
+  kernelCommandLine:
+    # Replicates BM base image settings, that would otherwise be lost
+    extraCommandLine:
+    # debugging ARM64 issues
+    # - console=tty0
+    # - console=tty1
+    # - console=ttyS0
+    - rd.debug
+    - loglevel=6
+    - log_buf_len=1M
+    # - systemd.journald.forward_to_console=1
+
+  packages:
+    install:
+      - dnf
+      - efibootmgr
+      # Note: grub2-efi-binary-noprefix package is going to be the default grub package for azl3
+      - grub2-efi-binary
+      - iproute
+      - iptables
+      - jq
+      - openssh-server
+      - trident-service
+      - vim
+      # debugging ARM64 qemu issues
+      - dracut-hyperv
+      - dracut-virtio
+      - dracut-xen
+
+scripts:
+  postCustomization:
+    - path: post-install.sh
