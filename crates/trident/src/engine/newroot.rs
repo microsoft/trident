@@ -812,6 +812,8 @@ mod functional_test {
                             id: "sr0".to_string(),
                             partition_type: PartitionType::Esp,
                             size: 0.into(),
+                            uuid: None,
+                            label: None,
                         }],
                         ..Default::default()
                     }],
@@ -869,11 +871,15 @@ mod functional_test {
                                 id: "esp".to_string(),
                                 partition_type: PartitionType::Esp,
                                 size: 0.into(),
+                                uuid: None,
+                                label: None,
                             },
                             Partition {
                                 id: "root".to_string(),
                                 partition_type: PartitionType::Root,
                                 size: 0.into(),
+                                uuid: None,
+                                label: None,
                             },
                         ],
                         ..Default::default()
@@ -1005,6 +1011,8 @@ mod functional_test {
                             id: "sr0".to_string(),
                             partition_type: PartitionType::Esp,
                             size: 0.into(),
+                            uuid: None,
+                            label: None,
                         }],
                         ..Default::default()
                     }],
@@ -1112,6 +1120,8 @@ mod functional_test {
                             id: "sr0".to_string(),
                             partition_type: PartitionType::Esp,
                             size: 0.into(),
+                            uuid: None,
+                            label: None,
                         }],
                         ..Default::default()
                     }],
@@ -1199,6 +1209,8 @@ mod functional_test {
                             id: "staging".to_string(),
                             partition_type: PartitionType::LinuxGeneric,
                             size: PartitionSize::from_str("1M").unwrap(),
+                            uuid: None,
+                            label: None,
                         }],
                         ..Default::default()
                     }],

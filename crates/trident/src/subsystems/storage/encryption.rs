@@ -316,16 +316,22 @@ mod tests {
                         id: "esp".to_owned(),
                         partition_type: PartitionType::Esp,
                         size: PartitionSize::from_str("1G").unwrap(),
+                        uuid: None,
+                        label: None,
                     },
                     Partition {
                         id: "root".to_owned(),
                         partition_type: PartitionType::Root,
                         size: PartitionSize::from_str("8G").unwrap(),
+                        uuid: None,
+                        label: None,
                     },
                     Partition {
                         id: "srv-enc".to_owned(),
                         partition_type: PartitionType::Srv,
                         size: PartitionSize::from_str("1T").unwrap(),
+                        uuid: None,
+                        label: None,
                     },
                 ],
                 ..Default::default()

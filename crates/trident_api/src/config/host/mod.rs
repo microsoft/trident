@@ -331,21 +331,29 @@ mod tests {
                         id: "root-a".to_string(),
                         partition_type: PartitionType::Root,
                         size: 0x200000000.into(), // 8GiB
+                        uuid: None,
+                        label: None,
                     },
                     Partition {
                         id: "root-b".to_string(),
                         partition_type: PartitionType::Root,
                         size: 0x200000000.into(), // 8GiB
+                        uuid: None,
+                        label: None,
                     },
                     Partition {
                         id: "data-a".to_string(),
                         partition_type: PartitionType::LinuxGeneric,
                         size: 0x200000000.into(), // 8GiB
+                        uuid: None,
+                        label: None,
                     },
                     Partition {
                         id: "data-b".to_string(),
                         partition_type: PartitionType::LinuxGeneric,
                         size: 0x200000000.into(), // 8GiB
+                        uuid: None,
+                        label: None,
                     },
                 ],
                 adopted_partitions: vec![],
@@ -412,16 +420,22 @@ mod tests {
                         id: "root-a".to_string(),
                         partition_type: PartitionType::Root,
                         size: 0x200000000.into(), // 8GiB
+                        uuid: None,
+                        label: None,
                     },
                     Partition {
                         id: "root-b".to_string(),
                         partition_type: PartitionType::Root,
                         size: 0x200000000.into(), // 8GiB
+                        uuid: None,
+                        label: None,
                     },
                     Partition {
                         id: "shared".to_string(),
                         partition_type: PartitionType::LinuxGeneric,
                         size: 0x200000000.into(), // 8GiB
+                        uuid: None,
+                        label: None,
                     },
                 ],
                 adopted_partitions: vec![],
@@ -633,11 +647,15 @@ mod tests {
                             id: "root-data".to_string(),
                             partition_type: PartitionType::Root,
                             size: 0x200000000.into(), // 8GiB
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "root-hash".to_string(),
                             partition_type: PartitionType::RootVerity,
                             size: 0x19000000.into(), // 400MiB
+                            uuid: None,
+                            label: None,
                         },
                     ],
                     adopted_partitions: vec![],

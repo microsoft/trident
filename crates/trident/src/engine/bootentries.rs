@@ -856,11 +856,15 @@ mod tests {
                                 id: "esp1".into(),
                                 size: PartitionSize::from_str("512M").unwrap(),
                                 partition_type: PartitionType::Esp,
+                                uuid: None,
+                                label: None,
                             },
                             Partition {
                                 id: "esp2".into(),
                                 size: PartitionSize::from_str("512M").unwrap(),
                                 partition_type: PartitionType::Esp,
+                                uuid: None,
+                                label: None,
                             },
                         ],
                         ..Default::default()
@@ -906,6 +910,8 @@ mod tests {
                             id: "esp".into(),
                             size: PartitionSize::from_str("512M").unwrap(),
                             partition_type: PartitionType::Esp,
+                            uuid: None,
+                            label: None,
                         }],
                         ..Default::default()
                     }],
@@ -1416,6 +1422,8 @@ mod functional_test {
                                 id: "esp1".into(),
                                 size: PartitionSize::from_str("512M").unwrap(),
                                 partition_type: PartitionType::Esp,
+                                uuid: None,
+                                label: None,
                             }],
                             ..Default::default()
                         },
@@ -1426,6 +1434,8 @@ mod functional_test {
                                 id: "esp2".into(),
                                 size: PartitionSize::from_str("512M").unwrap(),
                                 partition_type: PartitionType::Esp,
+                                uuid: None,
+                                label: None,
                             }],
                             ..Default::default()
                         },

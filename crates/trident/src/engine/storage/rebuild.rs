@@ -446,11 +446,15 @@ mod tests {
                                 id: "disk1part1".to_string(),
                                 partition_type: PartitionType::Root,
                                 size: PartitionSize::from_str("1M").unwrap(),
+                                uuid: None,
+                                label: None,
                             },
                             Partition {
                                 id: "disk1part2".to_string(),
                                 partition_type: PartitionType::Swap,
                                 size: PartitionSize::from_str("2M").unwrap(),
+                                uuid: None,
+                                label: None,
                             },
                         ],
                         ..Default::default()
@@ -463,11 +467,15 @@ mod tests {
                                 id: "disk2part1".to_string(),
                                 partition_type: PartitionType::Root,
                                 size: PartitionSize::from_str("1M").unwrap(),
+                                uuid: None,
+                                label: None,
                             },
                             Partition {
                                 id: "disk2part2".to_string(),
                                 partition_type: PartitionType::Swap,
                                 size: PartitionSize::from_str("2M").unwrap(),
+                                uuid: None,
+                                label: None,
                             },
                         ],
                         ..Default::default()
@@ -517,11 +525,15 @@ mod tests {
                     id: "disk3part1".to_string(),
                     partition_type: PartitionType::Root,
                     size: PartitionSize::from_str("1M").unwrap(),
+                    uuid: None,
+                    label: None,
                 },
                 Partition {
                     id: "disk3part2".to_string(),
                     partition_type: PartitionType::Swap,
                     size: PartitionSize::from_str("2M").unwrap(),
+                    uuid: None,
+                    label: None,
                 },
             ],
             ..Default::default()
@@ -553,11 +565,15 @@ mod tests {
                     id: "disk3part1".to_string(),
                     partition_type: PartitionType::Root,
                     size: PartitionSize::from_str("1M").unwrap(),
+                    uuid: None,
+                    label: None,
                 },
                 Partition {
                     id: "disk3part2".to_string(),
                     partition_type: PartitionType::Swap,
                     size: PartitionSize::from_str("2M").unwrap(),
+                    uuid: None,
+                    label: None,
                 },
             ],
             ..Default::default()
@@ -657,11 +673,15 @@ mod tests {
                             id: "disk1part1".to_string(),
                             partition_type: PartitionType::Root,
                             size: PartitionSize::from_str("1M").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "disk1part2".to_string(),
                             partition_type: PartitionType::Swap,
                             size: PartitionSize::from_str("2M").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                     ],
                     ..Default::default()
@@ -714,11 +734,15 @@ mod tests {
                     id: "disk3part1".to_string(),
                     partition_type: PartitionType::Root,
                     size: PartitionSize::from_str("1M").unwrap(),
+                    uuid: None,
+                    label: None,
                 },
                 Partition {
                     id: "disk3part2".to_string(),
                     partition_type: PartitionType::Swap,
                     size: PartitionSize::from_str("2M").unwrap(),
+                    uuid: None,
+                    label: None,
                 },
             ],
             ..Default::default()
@@ -820,6 +844,8 @@ mod tests {
             id: "disk2part3".to_string(),
             partition_type: PartitionType::Esp,
             size: PartitionSize::from_str("1M").unwrap(),
+            uuid: None,
+            label: None,
         });
 
         host_config
@@ -893,6 +919,8 @@ mod functional_test {
                             id: "raidpart1".to_string(),
                             partition_type: PartitionType::Root,
                             size: PartitionSize::from_str("1G").unwrap(),
+                            uuid: None,
+                            label: None,
                         }],
                         partition_table_type: PartitionTableType::Gpt,
                         adopted_partitions: vec![
@@ -930,6 +958,8 @@ mod functional_test {
                             id: "raidpart2".to_string(),
                             partition_type: PartitionType::Root,
                             size: PartitionSize::from_str("1G").unwrap(),
+                            uuid: None,
+                            label: None,
                         }],
                         ..Default::default()
                     },
@@ -1078,11 +1108,15 @@ mod functional_test {
             id: "disk2part2".to_string(),
             partition_type: PartitionType::Root,
             size: PartitionSize::from_str("1G").unwrap(),
+            uuid: None,
+            label: None,
         });
         host_config.storage.disks[1].partitions.push(Partition {
             id: "disk2part3".to_string(),
             partition_type: PartitionType::Root,
             size: PartitionSize::from_str("1G").unwrap(),
+            uuid: None,
+            label: None,
         });
         host_config
             .storage

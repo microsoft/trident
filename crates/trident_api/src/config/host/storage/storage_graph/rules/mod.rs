@@ -329,7 +329,16 @@ impl BlkDevKind {
                     Ok(Some(blkdev.unwrap_disk()?.device.as_os_str().as_bytes()))
                 }),
             )]),
-            Self::Partition => None,
+            Self::Partition => Some(vec![(
+                "uuid",
+                Box::new(|blkdev: &HostConfigBlockDevice| {
+                    Ok(blkdev
+                        .unwrap_partition()?
+                        .uuid
+                        .as_ref()
+                        .map(|u| u.as_bytes().as_slice()))
+                }),
+            )]),
             Self::AdoptedPartition => Some(vec![
                 (
                     "matchLabel",

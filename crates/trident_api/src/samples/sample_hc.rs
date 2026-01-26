@@ -43,11 +43,15 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 id: "esp".to_string(),
                                 partition_type: PartitionType::Esp,
                                 size: 0x4000000.into(), // 64MiB
+                                uuid: None,
+                                label: None,
                             },
                             Partition {
                                 id: "root".to_string(),
                                 partition_type: PartitionType::Root,
                                 size: 0x200000000.into(), // 8GiB
+                                uuid: None,
+                                label: None,
                             },
                         ],
                         adopted_partitions: vec![],
@@ -82,129 +86,133 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     url: Url::parse("file:///path/to/image.cosi").unwrap(),
                     sha384: ImageSha384::Checksum(SAMPLE_SHA384.into()),
                 }),
-            storage: Storage {
-                disks: vec![Disk {
-                    id: "os".to_string(),
-                    device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-2.0".into(),
-                    partition_table_type: PartitionTableType::Gpt,
-                    partitions: vec![
-                        Partition {
-                            id: "esp".to_string(),
-                            partition_type: PartitionType::Esp,
-                            size: 0x4000000.into(), // 64MiB
+                storage: Storage {
+                    disks: vec![Disk {
+                        id: "os".to_string(),
+                        device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-2.0".into(),
+                        partition_table_type: PartitionTableType::Gpt,
+                        partitions: vec![
+                            Partition {
+                                id: "esp".to_string(),
+                                partition_type: PartitionType::Esp,
+                                size: 0x4000000.into(), // 64MiB
+                                uuid: None,
+                                label: None,
+                            },
+                            Partition {
+                                id: "root".to_string(),
+                                partition_type: PartitionType::Root,
+                                size: 0x200000000.into(), // 8GiB
+                                uuid: None,
+                                label: None,
+                            },
+                        ],
+                        adopted_partitions: vec![],
+                    }],
+                    filesystems: vec![
+                        FileSystem {
+                            device_id: Some("esp".into()),
+                            mount_point: Some(MountPoint {
+                                path: constants::ESP_MOUNT_POINT_PATH.into(),
+                                options: MountOptions::new("umask=0077"),
+                            }),
+                            source: FileSystemSource::Image,
                         },
-                        Partition {
-                            id: "root".to_string(),
-                            partition_type: PartitionType::Root,
-                            size: 0x200000000.into(), // 8GiB
+                        FileSystem {
+                            device_id: Some("root".into()),
+                            mount_point: Some(MountPoint {
+                                path: constants::ROOT_MOUNT_POINT_PATH.into(),
+                                options: MountOptions::defaults(),
+                            }),
+                            source: FileSystemSource::Image,
                         },
                     ],
-                    adopted_partitions: vec![],
-                }],
-                filesystems: vec![
-                    FileSystem {
-                        device_id: Some("esp".into()),
-                        mount_point: Some(MountPoint {
-                            path: constants::ESP_MOUNT_POINT_PATH.into(),
-                            options: MountOptions::new("umask=0077"),
-                        }),
-                        source: FileSystemSource::Image,
-                    },
-                    FileSystem {
-                        device_id: Some("root".into()),
-                        mount_point: Some(MountPoint {
-                            path: constants::ROOT_MOUNT_POINT_PATH.into(),
-                            options: MountOptions::defaults(),
-                        }),
-                        source: FileSystemSource::Image,
-                    },
-                ],
-                ..Default::default()
-            },
-            os: Os {
-                users: vec![User {
-                    name: "my-custom-user".into(),
-                    ssh_public_keys: vec!["<MY_PUBLIC_SSH_KEY>".into()],
-                    ssh_mode: SshMode::KeyOnly,
                     ..Default::default()
-                }],
-                netplan: Some(NetworkConfig {
-                    version: 2,
-                    ethernets: Some(HashMap::from([(
-                        "eths".into(),
-                        EthernetConfig {
-                            common_all: Some(CommonPropertiesAllDevices {
-                                dhcp4: Some(true),
-                                ..Default::default()
-                            }),
-                            common_physical: Some(CommonPropertiesPhysicalDeviceType {
-                                r#match: Some(MatchConfig {
-                                    name: Some("enp*".into()),
+                },
+                os: Os {
+                    users: vec![User {
+                        name: "my-custom-user".into(),
+                        ssh_public_keys: vec!["<MY_PUBLIC_SSH_KEY>".into()],
+                        ssh_mode: SshMode::KeyOnly,
+                        ..Default::default()
+                    }],
+                    netplan: Some(NetworkConfig {
+                        version: 2,
+                        ethernets: Some(HashMap::from([(
+                            "eths".into(),
+                            EthernetConfig {
+                                common_all: Some(CommonPropertiesAllDevices {
+                                    dhcp4: Some(true),
+                                    ..Default::default()
+                                }),
+                                common_physical: Some(CommonPropertiesPhysicalDeviceType {
+                                    r#match: Some(MatchConfig {
+                                        name: Some("enp*".into()),
+                                        ..Default::default()
+                                    }),
                                     ..Default::default()
                                 }),
                                 ..Default::default()
-                            }),
-                            ..Default::default()
-                        },
-                    )])),
+                            },
+                        )])),
+                        ..Default::default()
+                    }),
+                    additional_files: vec![AdditionalFile {
+                        destination: "/var/config-script.sh".into(),
+                        content: Some(
+                            "echo 'Running from newly deployed chroot: $SAMPLE_VARIABLE'".into(),
+                        ),
+                        permissions: Some("0755".into()),
+                        ..Default::default()
+                    }],
                     ..Default::default()
-                }),
-                additional_files: vec![AdditionalFile {
-                    destination: "/var/config-script.sh".into(),
-                    content: Some(
-                        "echo 'Running from newly deployed chroot: $SAMPLE_VARIABLE'".into(),
-                    ),
-                    permissions: Some("0755".into()),
-                    ..Default::default()
-                }],
+                },
+                scripts: Scripts {
+                    pre_servicing: vec![Script {
+                        name: "sample-pre-servicing-script".into(),
+                        run_on: vec![ServicingTypeSelection::All],
+                        source: ScriptSource::Content("echo 'Running before Trident servicing'".into()),
+                        ..Default::default()
+                    }],
+                    post_provision: vec![Script {
+                        name: "sample-provision-script".into(),
+                        run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
+                        source: ScriptSource::Content("ls".into()),
+                        arguments: vec!["$TARGET_ROOT".into(), "-l".into()],
+                        ..Default::default()
+                    }],
+                    post_configure: vec![Script {
+                        name: "sample-configure-script".into(),
+                        run_on: vec![ServicingTypeSelection::All],
+                        source: ScriptSource::Content("/var/config-script.sh".into()),
+                        environment_variables: HashMap::from([(
+                            "SAMPLE_VARIABLE".into(),
+                            "sample-variable-value".into(),
+                        )]),
+                        ..Default::default()
+                    }],
+                },
+                health: Health {
+                    checks: vec![
+                        Check::Script(
+                            Script {
+                                name: "sample-commit-script".into(),
+                                run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
+                                source: ScriptSource::Content("echo 'success'".into()),
+                                ..Default::default()
+                            }
+                        ),
+                        Check::SystemdCheck(
+                            SystemdCheck {
+                                name: "systemd-networkd".into(),
+                                systemd_services: vec!["systemd-networkd".into()],
+                                timeout_seconds: 10,
+                                run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
+                            }
+                        )
+                    ],
+                },
                 ..Default::default()
-            },
-            scripts: Scripts {
-                pre_servicing: vec![Script {
-                    name: "sample-pre-servicing-script".into(),
-                    run_on: vec![ServicingTypeSelection::All],
-                    source: ScriptSource::Content("echo 'Running before Trident servicing'".into()),
-                    ..Default::default()
-                }],
-                post_provision: vec![Script {
-                    name: "sample-provision-script".into(),
-                    run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
-                    source: ScriptSource::Content("ls".into()),
-                    arguments: vec!["$TARGET_ROOT".into(), "-l".into()],
-                    ..Default::default()
-                }],
-                post_configure: vec![Script {
-                    name: "sample-configure-script".into(),
-                    run_on: vec![ServicingTypeSelection::All],
-                    source: ScriptSource::Content("/var/config-script.sh".into()),
-                    environment_variables: HashMap::from([(
-                        "SAMPLE_VARIABLE".into(),
-                        "sample-variable-value".into(),
-                    )]),
-                    ..Default::default()
-                }],
-            },
-            health: Health {
-                checks: vec![
-                    Check::Script(
-                        Script {
-                            name: "sample-commit-script".into(),
-                            run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
-                            source: ScriptSource::Content("echo 'success'".into()),
-                            ..Default::default()
-                        }
-                    ),
-                    Check::SystemdCheck(
-                        SystemdCheck {
-                            name: "systemd-networkd".into(),
-                            systemd_services: vec!["systemd-networkd".into()],
-                            timeout_seconds: 10,
-                            run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
-                        }
-                    )
-                ],
-            },
-            ..Default::default()
             }
         ),
         "base" => (
@@ -214,211 +222,227 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     url: Url::parse("file:///path/to/image.cosi").unwrap(),
                     sha384: ImageSha384::Checksum(SAMPLE_SHA384.into()),
                 }),
-            storage: Storage {
-                disks: vec![Disk {
-                    id: "os".to_string(),
-                    device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-2.0".into(),
-                    partition_table_type: PartitionTableType::Gpt,
-                    partitions: vec![
-                        Partition {
-                            id: "esp".to_string(),
-                            partition_type: PartitionType::Esp,
-                            size: 0x4000000.into(), // 64MiB
+                storage: Storage {
+                    disks: vec![Disk {
+                        id: "os".to_string(),
+                        device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-2.0".into(),
+                        partition_table_type: PartitionTableType::Gpt,
+                        partitions: vec![
+                            Partition {
+                                id: "esp".to_string(),
+                                partition_type: PartitionType::Esp,
+                                size: 0x4000000.into(), // 64MiB
+                                uuid: None,
+                                label: None,
+                            },
+                            Partition {
+                                id: "root-a".to_string(),
+                                partition_type: PartitionType::Root,
+                                size: 0x200000000.into(), // 8GiB
+                                uuid: None,
+                                label: None,
+                            },
+                            Partition {
+                                id: "root-b".to_string(),
+                                partition_type: PartitionType::Root,
+                                size: 0x200000000.into(), // 8GiB
+                                uuid: None,
+                                label: None,
+                            },
+                            Partition {
+                                id: "swap".to_string(),
+                                partition_type: PartitionType::Swap,
+                                size: 0x80000000.into(), // 2GiB
+                                uuid: None,
+                                label: None,
+                            },
+                            Partition {
+                                id: "trident".to_string(),
+                                partition_type: PartitionType::LinuxGeneric,
+                                size: 0x8000000.into(), // 1GiB
+                                uuid: None,
+                                label: None,
+                            },
+                            Partition {
+                                id: "enc-srv".to_string(),
+                                partition_type: PartitionType::LinuxGeneric,
+                                size: 0x40000000.into(), // 128MiB
+                                uuid: None,
+                                label: None,
+                            },
+                            Partition {
+                                id: "raid-a".to_string(),
+                                partition_type: PartitionType::LinuxGeneric,
+                                size: 0x40000000.into(), // 1GiB
+                                uuid: None,
+                                label: None,
+                            },
+                            Partition {
+                                id: "raid-b".to_string(),
+                                partition_type: PartitionType::LinuxGeneric,
+                                size: 0x40000000.into(), // 1GiB
+                                uuid: None,
+                                label: None,
+                            },
+                        ],
+                        adopted_partitions: vec![],
+                    }],
+                    encryption: Some(Encryption {
+                        recovery_key_url: Some(Url::parse("file:///recovery.key").unwrap()),
+                        volumes: vec![EncryptedVolume {
+                            id: "srv".to_string(),
+                            device_name: "luks-srv".to_string(),
+                            device_id: "enc-srv".to_string(),
+                        }],
+                        pcrs: vec![Pcr::Pcr7],
+                        ..Default::default()
+                    }),
+                    raid: Raid {
+                        software: vec![SoftwareRaidArray {
+                            id: "some_raid".to_string(),
+                            name: "some_raid1".to_string(),
+                            level: RaidLevel::Raid1,
+                            devices: vec!["raid-a".to_string(), "raid-b".to_string()],
+                        }],
+                        ..Default::default()
+                    },
+                    filesystems: vec![
+                        FileSystem {
+                            device_id: Some("esp".into()),
+                            mount_point: Some(MountPoint {
+                                path: constants::ESP_MOUNT_POINT_PATH.into(),
+                                options: MountOptions::new("umask=0077"),
+                            }),
+                            source: FileSystemSource::Image,
                         },
-                        Partition {
-                            id: "root-a".to_string(),
-                            partition_type: PartitionType::Root,
-                            size: 0x200000000.into(), // 8GiB
+                        FileSystem {
+                            device_id: Some("root".into()),
+                            mount_point: Some(MountPoint {
+                                path: constants::ROOT_MOUNT_POINT_PATH.into(),
+                                options: MountOptions::defaults(),
+                            }),
+                            source: FileSystemSource::Image,
                         },
-                        Partition {
-                            id: "root-b".to_string(),
-                            partition_type: PartitionType::Root,
-                            size: 0x200000000.into(), // 8GiB
+                        FileSystem {
+                            device_id: Some("trident".into()),
+                            mount_point: Some(MountPoint {
+                                path: "/var/lib/trident".into(),
+                                options: MountOptions::defaults(),
+                            }),
+                            source: FileSystemSource::New(NewFileSystemType::Ext4),
                         },
-                        Partition {
-                            id: "swap".to_string(),
-                            partition_type: PartitionType::Swap,
-                            size: 0x80000000.into(), // 2GiB
+                        FileSystem {
+                            device_id: Some("srv".into()),
+                            mount_point: Some(MountPoint {
+                                path: "/srv".into(),
+                                options: MountOptions::defaults(),
+                            }),
+                            source: FileSystemSource::New(NewFileSystemType::Ext4),
                         },
-                        Partition {
-                            id: "trident".to_string(),
-                            partition_type: PartitionType::LinuxGeneric,
-                            size: 0x8000000.into(), // 1GiB
-                        },
-                        Partition {
-                            id: "enc-srv".to_string(),
-                            partition_type: PartitionType::LinuxGeneric,
-                            size: 0x40000000.into(), // 128MiB
-                        },
-                        Partition {
-                            id: "raid-a".to_string(),
-                            partition_type: PartitionType::LinuxGeneric,
-                            size: 0x40000000.into(), // 1GiB
-                        },
-                        Partition {
-                            id: "raid-b".to_string(),
-                            partition_type: PartitionType::LinuxGeneric,
-                            size: 0x40000000.into(), // 1GiB
+                        FileSystem {
+                            device_id: Some("some_raid".into()),
+                            mount_point: Some(MountPoint {
+                                path: "/mnt/raid".into(),
+                                options: MountOptions::defaults(),
+                            }),
+                            source: FileSystemSource::New(NewFileSystemType::Ext4),
                         },
                     ],
-                    adopted_partitions: vec![],
-                }],
-                encryption: Some(Encryption {
-                    recovery_key_url: Some(Url::parse("file:///recovery.key").unwrap()),
-                    volumes: vec![EncryptedVolume {
-                        id: "srv".to_string(),
-                        device_name: "luks-srv".to_string(),
-                        device_id: "enc-srv".to_string(),
-                    }],
-                    pcrs: vec![Pcr::Pcr7],
-                    ..Default::default()
-                }),
-                raid: Raid {
-                    software: vec![SoftwareRaidArray {
-                        id: "some_raid".to_string(),
-                        name: "some_raid1".to_string(),
-                        level: RaidLevel::Raid1,
-                        devices: vec!["raid-a".to_string(), "raid-b".to_string()],
+                    ab_update: Some(AbUpdate {
+                        volume_pairs: vec![AbVolumePair {
+                            id: "root".into(),
+                            volume_a_id: "root-a".into(),
+                            volume_b_id: "root-b".into(),
+                        }],
+                    }),
+                    swap: vec![Swap {
+                        device_id: "swap".into(),
                     }],
                     ..Default::default()
                 },
-                filesystems: vec![
-                    FileSystem {
-                        device_id: Some("esp".into()),
-                        mount_point: Some(MountPoint {
-                            path: constants::ESP_MOUNT_POINT_PATH.into(),
-                            options: MountOptions::new("umask=0077"),
-                        }),
-                        source: FileSystemSource::Image,
-                    },
-                    FileSystem {
-                        device_id: Some("root".into()),
-                        mount_point: Some(MountPoint {
-                            path: constants::ROOT_MOUNT_POINT_PATH.into(),
-                            options: MountOptions::defaults(),
-                        }),
-                        source: FileSystemSource::Image,
-                    },
-                    FileSystem {
-                        device_id: Some("trident".into()),
-                        mount_point: Some(MountPoint {
-                            path: "/var/lib/trident".into(),
-                            options: MountOptions::defaults(),
-                        }),
-                        source: FileSystemSource::New(NewFileSystemType::Ext4),
-                    },
-                    FileSystem {
-                        device_id: Some("srv".into()),
-                        mount_point: Some(MountPoint {
-                            path: "/srv".into(),
-                            options: MountOptions::defaults(),
-                        }),
-                        source: FileSystemSource::New(NewFileSystemType::Ext4),
-                    },
-                    FileSystem {
-                        device_id: Some("some_raid".into()),
-                        mount_point: Some(MountPoint {
-                            path: "/mnt/raid".into(),
-                            options: MountOptions::defaults(),
-                        }),
-                        source: FileSystemSource::New(NewFileSystemType::Ext4),
-                    },
-                ],
-                ab_update: Some(AbUpdate {
-                    volume_pairs: vec![AbVolumePair {
-                        id: "root".into(),
-                        volume_a_id: "root-a".into(),
-                        volume_b_id: "root-b".into(),
+                os: Os {
+                    users: vec![User {
+                        name: "my-custom-user".into(),
+                        ssh_public_keys: vec!["<MY_PUBLIC_SSH_KEY>".into()],
+                        ssh_mode: SshMode::KeyOnly,
+                        ..Default::default()
                     }],
-                }),
-                swap: vec![Swap {
-                    device_id: "swap".into(),
-                }],
-                ..Default::default()
-            },
-            os: Os {
-                users: vec![User {
-                    name: "my-custom-user".into(),
-                    ssh_public_keys: vec!["<MY_PUBLIC_SSH_KEY>".into()],
-                    ssh_mode: SshMode::KeyOnly,
-                    ..Default::default()
-                }],
-                netplan: Some(NetworkConfig {
-                    version: 2,
-                    ethernets: Some(HashMap::from([(
-                        "eths".into(),
-                        EthernetConfig {
-                            common_all: Some(CommonPropertiesAllDevices {
-                                dhcp4: Some(true),
-                                ..Default::default()
-                            }),
-                            common_physical: Some(CommonPropertiesPhysicalDeviceType {
-                                r#match: Some(MatchConfig {
-                                    name: Some("enp*".into()),
+                    netplan: Some(NetworkConfig {
+                        version: 2,
+                        ethernets: Some(HashMap::from([(
+                            "eths".into(),
+                            EthernetConfig {
+                                common_all: Some(CommonPropertiesAllDevices {
+                                    dhcp4: Some(true),
+                                    ..Default::default()
+                                }),
+                                common_physical: Some(CommonPropertiesPhysicalDeviceType {
+                                    r#match: Some(MatchConfig {
+                                        name: Some("enp*".into()),
+                                        ..Default::default()
+                                    }),
                                     ..Default::default()
                                 }),
                                 ..Default::default()
-                            }),
-                            ..Default::default()
-                        },
-                    )])),
+                            },
+                        )])),
+                        ..Default::default()
+                    }),
+                    additional_files: vec![AdditionalFile {
+                        destination: "/var/config-script.sh".into(),
+                        content: Some(
+                            "echo 'Running from newly deployed chroot: $SAMPLE_VARIABLE'".into(),
+                        ),
+                        permissions: Some("0755".into()),
+                        ..Default::default()
+                    }],
                     ..Default::default()
-                }),
-                additional_files: vec![AdditionalFile {
-                    destination: "/var/config-script.sh".into(),
-                    content: Some(
-                        "echo 'Running from newly deployed chroot: $SAMPLE_VARIABLE'".into(),
-                    ),
-                    permissions: Some("0755".into()),
-                    ..Default::default()
-                }],
+                },
+                scripts: Scripts {
+                    pre_servicing: vec![Script {
+                        name: "sample-pre-servicing-script".into(),
+                        run_on: vec![ServicingTypeSelection::All],
+                        source: ScriptSource::Content("echo 'Running before Trident servicing'".into()),
+                        ..Default::default()
+                    }],
+                    post_provision: vec![Script {
+                        name: "sample-provision-script".into(),
+                        run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
+                        source: ScriptSource::Content("ls $TARGET_ROOT".into()),
+                        ..Default::default()
+                    }],
+                    post_configure: vec![Script {
+                        name: "sample-configure-script".into(),
+                        run_on: vec![ServicingTypeSelection::All],
+                        source: ScriptSource::Content("/var/config-script.sh".into()),
+                        environment_variables: HashMap::from([(
+                            "SAMPLE_VARIABLE".into(),
+                            "sample-variable-value".into(),
+                        )]),
+                        ..Default::default()
+                    }],
+                },
+                health: Health {
+                    checks: vec![
+                        Check::Script(
+                            Script {
+                                name: "sample-commit-script".into(),
+                                run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
+                                source: ScriptSource::Content("echo 'success'".into()),
+                                ..Default::default()
+                            }
+                        ),
+                        Check::SystemdCheck(
+                            SystemdCheck {
+                                name: "systemd-networkd".into(),
+                                systemd_services: vec!["systemd-networkd".into()],
+                                timeout_seconds: 10,
+                                run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
+                            }
+                        )
+                    ],
+                },
                 ..Default::default()
-            },
-            scripts: Scripts {
-                pre_servicing: vec![Script {
-                    name: "sample-pre-servicing-script".into(),
-                    run_on: vec![ServicingTypeSelection::All],
-                    source: ScriptSource::Content("echo 'Running before Trident servicing'".into()),
-                    ..Default::default()
-                }],
-                post_provision: vec![Script {
-                    name: "sample-provision-script".into(),
-                    run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
-                    source: ScriptSource::Content("ls $TARGET_ROOT".into()),
-                    ..Default::default()
-                }],
-                post_configure: vec![Script {
-                    name: "sample-configure-script".into(),
-                    run_on: vec![ServicingTypeSelection::All],
-                    source: ScriptSource::Content("/var/config-script.sh".into()),
-                    environment_variables: HashMap::from([(
-                        "SAMPLE_VARIABLE".into(),
-                        "sample-variable-value".into(),
-                    )]),
-                    ..Default::default()
-                }],
-            },
-            health: Health {
-                checks: vec![
-                    Check::Script(
-                        Script {
-                            name: "sample-commit-script".into(),
-                            run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
-                            source: ScriptSource::Content("echo 'success'".into()),
-                            ..Default::default()
-                        }
-                    ),
-                    Check::SystemdCheck(
-                        SystemdCheck {
-                            name: "systemd-networkd".into(),
-                            systemd_services: vec!["systemd-networkd".into()],
-                            timeout_seconds: 10,
-                            run_on: vec![ServicingTypeSelection::CleanInstall, ServicingTypeSelection::AbUpdate],
-                        }
-                    )
-                ],
-            },
-            ..Default::default()
             }
         ),
         "verity" => (
@@ -428,169 +452,185 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     url: Url::parse("file:///path/to/verity_image.cosi").unwrap(),
                     sha384: ImageSha384::Checksum(SAMPLE_SHA384.into()),
                 }),
-            storage: Storage {
-                disks: vec![Disk {
-                    id: "os".to_string(),
-                    device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-2.0".into(),
-                    partition_table_type: PartitionTableType::Gpt,
-                    partitions: vec![
-                        Partition {
-                            id: "esp".to_string(),
-                            partition_type: PartitionType::Esp,
-                            size: 0x4000000.into(), // 64MiB
-                        },
-                        Partition {
-                            id: "boot".to_string(),
-                            partition_type: PartitionType::Xbootldr,
-                            size: 0x20000000.into(), // 512MiB
-                        },
-                        Partition {
-                            id: "root-data".to_string(),
-                            partition_type: PartitionType::Root,
-                            size: 0x200000000.into(), // 8GiB
-                        },
-                        Partition {
-                            id: "root-hash".to_string(),
-                            partition_type: PartitionType::RootVerity,
-                            size: 0x19000000.into(), // 400MiB
-                        },
-                        Partition {
-                            id: "trident".to_string(),
-                            partition_type: PartitionType::LinuxGeneric,
-                            size: 0x8000000.into(), // 128MiB
-                        },
-                        Partition {
-                            id: "trident-overlay".to_string(),
-                            partition_type: PartitionType::LinuxGeneric,
-                            size: 0x8000000.into(), // 128MiB
-                        },
-                        Partition {
-                            id: "var".to_string(),
-                            partition_type: PartitionType::LinuxGeneric,
-                            size: 0x40000000.into(), // 1GiB
-                        },
-                        Partition {
-                            id: "home".to_string(),
-                            partition_type: PartitionType::LinuxGeneric,
-                            size: 0x40000000.into(), // 1GiB
-                        },
-                    ],
-                    adopted_partitions: vec![],
-                }],
-                filesystems: vec![
-                    FileSystem {
-                        device_id: Some("esp".into()),
-                        mount_point: Some(MountPoint {
-                            path: constants::ESP_MOUNT_POINT_PATH.into(),
-                            options: MountOptions::new("umask=0077"),
-                        }),
-                        source: FileSystemSource::Image,
-                    },
-                    FileSystem {
-                        device_id: Some("boot".into()),
-                        mount_point: Some(MountPoint {
-                            path: constants::BOOT_MOUNT_POINT_PATH.into(),
-                            options: MountOptions::defaults(),
-                        }),
-                        source: FileSystemSource::Image,
-                    },
-                    FileSystem {
-                        device_id: Some("trident".into()),
-                        source: FileSystemSource::New(NewFileSystemType::Ext4),
-                        mount_point: Some(MountPoint {
-                            path: "/var/lib/trident".into(),
-                            options: MountOptions::defaults(),
-                        }),
-                    },
-                    FileSystem {
-                        device_id: Some("trident-overlay".into()),
-                        source: FileSystemSource::New(NewFileSystemType::Ext4),
-                        mount_point: Some(MountPoint {
-                            path: "/var/lib/trident-overlay".into(),
-                            options: MountOptions::defaults(),
-                        }),
-                    },
-                    FileSystem {
-                        device_id: Some("var".into()),
-                        source: FileSystemSource::Image,
-                        mount_point: Some(MountPoint {
-                            path: "/var".into(),
-                            options: MountOptions::defaults(),
-                        }),
-                    },
-                    FileSystem {
-                        device_id: Some("home".into()),
-                        source: FileSystemSource::New(NewFileSystemType::Ext4),
-                        mount_point: Some(MountPoint {
-                            path: "/home".into(),
-                            options: MountOptions::defaults(),
-                        }),
-                    },
-                    FileSystem {
-                        device_id: Some("root".into()),
-                        source: FileSystemSource::Image,
-                        mount_point: Some(MountPoint {
-                            path: ROOT_MOUNT_POINT_PATH.into(),
-                            options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
-                        }),
-                    }
-                ],
-                verity: vec![VerityDevice {
-                    id: "root".into(),
-                    data_device_id: "root-data".into(),
-                    hash_device_id: "root-hash".into(),
-                    name: "root".into(),
-                    ..Default::default()
-                }],
-                ..Default::default()
-            },
-            os: Os {
-                users: vec![User {
-                    name: "my-custom-user".into(),
-                    ssh_public_keys: vec!["<MY_PUBLIC_SSH_KEY>".into()],
-                    ssh_mode: SshMode::KeyOnly,
-                    ..Default::default()
-                }],
-                netplan: Some(NetworkConfig {
-                    version: 2,
-                    ethernets: Some(HashMap::from([(
-                        "eths".into(),
-                        EthernetConfig {
-                            common_all: Some(CommonPropertiesAllDevices {
-                                dhcp4: Some(true),
-                                ..Default::default()
+                storage: Storage {
+                    disks: vec![Disk {
+                        id: "os".to_string(),
+                        device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-2.0".into(),
+                        partition_table_type: PartitionTableType::Gpt,
+                        partitions: vec![
+                            Partition {
+                                id: "esp".to_string(),
+                                partition_type: PartitionType::Esp,
+                                size: 0x4000000.into(), // 64MiB
+                                uuid: None,
+                                label: None,
+                            },
+                            Partition {
+                                id: "boot".to_string(),
+                                partition_type: PartitionType::Xbootldr,
+                                size: 0x20000000.into(), // 512MiB
+                                uuid: None,
+                                label: None,
+                            },
+                            Partition {
+                                id: "root-data".to_string(),
+                                partition_type: PartitionType::Root,
+                                size: 0x200000000.into(), // 8GiB
+                                uuid: None,
+                                label: None,
+                            },
+                            Partition {
+                                id: "root-hash".to_string(),
+                                partition_type: PartitionType::RootVerity,
+                                size: 0x19000000.into(), // 400MiB
+                                uuid: None,
+                                label: None,
+                            },
+                            Partition {
+                                id: "trident".to_string(),
+                                partition_type: PartitionType::LinuxGeneric,
+                                size: 0x8000000.into(), // 128MiB
+                                uuid: None,
+                                label: None,
+                            },
+                            Partition {
+                                id: "trident-overlay".to_string(),
+                                partition_type: PartitionType::LinuxGeneric,
+                                size: 0x8000000.into(), // 128MiB
+                                uuid: None,
+                                label: None,
+                            },
+                            Partition {
+                                id: "var".to_string(),
+                                partition_type: PartitionType::LinuxGeneric,
+                                size: 0x40000000.into(), // 1GiB
+                                uuid: None,
+                                label: None,
+                            },
+                            Partition {
+                                id: "home".to_string(),
+                                partition_type: PartitionType::LinuxGeneric,
+                                size: 0x40000000.into(), // 1GiB
+                                uuid: None,
+                                label: None,
+                            },
+                        ],
+                        adopted_partitions: vec![],
+                    }],
+                    filesystems: vec![
+                        FileSystem {
+                            device_id: Some("esp".into()),
+                            mount_point: Some(MountPoint {
+                                path: constants::ESP_MOUNT_POINT_PATH.into(),
+                                options: MountOptions::new("umask=0077"),
                             }),
-                            common_physical: Some(CommonPropertiesPhysicalDeviceType {
-                                r#match: Some(MatchConfig {
-                                    name: Some("enp*".into()),
+                            source: FileSystemSource::Image,
+                        },
+                        FileSystem {
+                            device_id: Some("boot".into()),
+                            mount_point: Some(MountPoint {
+                                path: constants::BOOT_MOUNT_POINT_PATH.into(),
+                                options: MountOptions::defaults(),
+                            }),
+                            source: FileSystemSource::Image,
+                        },
+                        FileSystem {
+                            device_id: Some("trident".into()),
+                            source: FileSystemSource::New(NewFileSystemType::Ext4),
+                            mount_point: Some(MountPoint {
+                                path: "/var/lib/trident".into(),
+                                options: MountOptions::defaults(),
+                            }),
+                        },
+                        FileSystem {
+                            device_id: Some("trident-overlay".into()),
+                            source: FileSystemSource::New(NewFileSystemType::Ext4),
+                            mount_point: Some(MountPoint {
+                                path: "/var/lib/trident-overlay".into(),
+                                options: MountOptions::defaults(),
+                            }),
+                        },
+                        FileSystem {
+                            device_id: Some("var".into()),
+                            source: FileSystemSource::Image,
+                            mount_point: Some(MountPoint {
+                                path: "/var".into(),
+                                options: MountOptions::defaults(),
+                            }),
+                        },
+                        FileSystem {
+                            device_id: Some("home".into()),
+                            source: FileSystemSource::New(NewFileSystemType::Ext4),
+                            mount_point: Some(MountPoint {
+                                path: "/home".into(),
+                                options: MountOptions::defaults(),
+                            }),
+                        },
+                        FileSystem {
+                            device_id: Some("root".into()),
+                            source: FileSystemSource::Image,
+                            mount_point: Some(MountPoint {
+                                path: ROOT_MOUNT_POINT_PATH.into(),
+                                options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
+                            }),
+                        }
+                    ],
+                    verity: vec![VerityDevice {
+                        id: "root".into(),
+                        data_device_id: "root-data".into(),
+                        hash_device_id: "root-hash".into(),
+                        name: "root".into(),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+                os: Os {
+                    users: vec![User {
+                        name: "my-custom-user".into(),
+                        ssh_public_keys: vec!["<MY_PUBLIC_SSH_KEY>".into()],
+                        ssh_mode: SshMode::KeyOnly,
+                        ..Default::default()
+                    }],
+                    netplan: Some(NetworkConfig {
+                        version: 2,
+                        ethernets: Some(HashMap::from([(
+                            "eths".into(),
+                            EthernetConfig {
+                                common_all: Some(CommonPropertiesAllDevices {
+                                    dhcp4: Some(true),
+                                    ..Default::default()
+                                }),
+                                common_physical: Some(CommonPropertiesPhysicalDeviceType {
+                                    r#match: Some(MatchConfig {
+                                        name: Some("enp*".into()),
+                                        ..Default::default()
+                                    }),
                                     ..Default::default()
                                 }),
                                 ..Default::default()
-                            }),
-                            ..Default::default()
-                        },
-                    )])),
+                            },
+                        )])),
+                        ..Default::default()
+                    }),
+                    additional_files: vec![AdditionalFile {
+                        destination: "/var/config-script.sh".into(),
+                        content: Some(
+                            "echo 'Running from newly deployed chroot: $SAMPLE_VARIABLE'".into(),
+                        ),
+                        ..Default::default()
+                    }],
                     ..Default::default()
-                }),
-                additional_files: vec![AdditionalFile {
-                    destination: "/var/config-script.sh".into(),
-                    content: Some(
-                        "echo 'Running from newly deployed chroot: $SAMPLE_VARIABLE'".into(),
-                    ),
+                },
+                scripts: Scripts {
+                    post_configure: vec![Script {
+                        name: "rw-overlay".into(),
+                        run_on: vec![ServicingTypeSelection::All],
+                        source: ScriptSource::Content("mkdir -p /var/lib/trident-overlay/etc-rw/upper && mkdir -p /var/lib/trident-overlay/etc-rw/work".into()),
+                        ..Default::default()
+                    }],
                     ..Default::default()
-                }],
+                },
                 ..Default::default()
-            },
-            scripts: Scripts {
-                post_configure: vec![Script {
-                    name: "rw-overlay".into(),
-                    run_on: vec![ServicingTypeSelection::All],
-                    source: ScriptSource::Content("mkdir -p /var/lib/trident-overlay/etc-rw/upper && mkdir -p /var/lib/trident-overlay/etc-rw/work".into()),
-                    ..Default::default()
-                }],
-                ..Default::default()
-            },
-            ..Default::default()
             }
         ),
         "advanced" => (
@@ -600,414 +640,470 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                     url: Url::parse("file:///path/to/verity_image.cosi").unwrap(),
                     sha384: ImageSha384::Checksum(SAMPLE_SHA384.into()),
                 }),
-            storage: Storage {
-                disks: vec![
-                    Disk {
-                        id: "disk1".to_string(),
-                        device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-2".into(),
-                        partition_table_type: PartitionTableType::Gpt,
-                        partitions: vec![
-                            Partition {
-                                id: "esp1".to_string(),
-                                partition_type: PartitionType::Esp,
-                                size: 0x4000000.into(), // 64MiB
+                storage: Storage {
+                    disks: vec![
+                        Disk {
+                            id: "disk1".to_string(),
+                            device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-2".into(),
+                            partition_table_type: PartitionTableType::Gpt,
+                            partitions: vec![
+                                Partition {
+                                    id: "esp1".to_string(),
+                                    partition_type: PartitionType::Esp,
+                                    size: 0x4000000.into(), // 64MiB
+                                    uuid: None,
+                                    label: None,
+                                },
+                                Partition {
+                                    id: "boot-a1".to_string(),
+                                    partition_type: PartitionType::Xbootldr,
+                                    size: 0x20000000.into(), // 512MiB
+                                    uuid: None,
+                                    label: None,
+                                },
+                                Partition {
+                                    id: "boot-b1".to_string(),
+                                    partition_type: PartitionType::Xbootldr,
+                                    size: 0x20000000.into(), // 512MiB
+                                    uuid: None,
+                                    label: None,
+                                },
+                                Partition {
+                                    id: "root-data-a1".to_string(),
+                                    partition_type: PartitionType::Root,
+                                    size: 0x100000000.into(), // 4GiB
+                                    uuid: None,
+                                    label: None,
+                                },
+                                Partition {
+                                    id: "root-data-b1".to_string(),
+                                    partition_type: PartitionType::Root,
+                                    size: 0x100000000.into(), // 4GiB
+                                    uuid: None,
+                                    label: None,
+                                },
+                                Partition {
+                                    id: "root-hash-a1".to_string(),
+                                    partition_type: PartitionType::RootVerity,
+                                    size: 0x19000000.into(), // 400MiB
+                                    uuid: None,
+                                    label: None,
+                                },
+                                Partition {
+                                    id: "root-hash-b1".to_string(),
+                                    partition_type: PartitionType::RootVerity,
+                                    size: 0x19000000.into(), // 400MiB
+                                    uuid: None,
+                                    label: None,
+                                },
+                                Partition {
+                                    id: "swap1".to_string(),
+                                    partition_type: PartitionType::Swap,
+                                    size: 0x80000000.into(), // 2GiB
+                                    uuid: None,
+                                    label: None,
+                                },
+                                Partition {
+                                    id: "trident1".to_string(),
+                                    partition_type: PartitionType::LinuxGeneric,
+                                    size: 0x8000000.into(), // 128MiB
+                                    uuid: None,
+                                    label: None,
+                                },
+                                Partition {
+                                    id: "trident-overlay-a1".to_string(),
+                                    partition_type: PartitionType::LinuxGeneric,
+                                    size: 0x8000000.into(), // 128MiB
+                                    uuid: None,
+                                    label: None,
+                                },
+                                Partition {
+                                    id: "trident-overlay-b1".to_string(),
+                                    partition_type: PartitionType::LinuxGeneric,
+                                    size: 0x8000000.into(), // 128MiB
+                                    uuid: None,
+                                    label: None,
+                                },
+                                Partition {
+                                    id: "var-a1".to_string(),
+                                    partition_type: PartitionType::LinuxGeneric,
+                                    size: 0x40000000.into(), // 1GiB
+                                    uuid: None,
+                                    label: None,
+                                },
+                                Partition {
+                                    id: "var-b1".to_string(),
+                                    partition_type: PartitionType::LinuxGeneric,
+                                    size: 0x40000000.into(), // 1GiB
+                                    uuid: None,
+                                    label: None,
+                                },
+                                Partition {
+                                    id: "enc-home1".to_string(),
+                                    partition_type: PartitionType::LinuxGeneric,
+                                    size: 0x40000000.into(), // 1GiB
+                                    uuid: None,
+                                    label: None,
+                                },
+                            ],
+                            ..Default::default()
+                        },
+                        Disk {
+                            id: "disk2".to_string(),
+                            device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-3".into(),
+                            partition_table_type: PartitionTableType::Gpt,
+                            partitions: vec![
+                                Partition {
+                                    id: "esp2".to_string(),
+                                    partition_type: PartitionType::Esp,
+                                    size: 0x4000000.into(), // 64MiB
+                                    uuid: None,
+                                    label: None,
+                                },
+                                Partition {
+                                    id: "boot-a2".to_string(),
+                                    partition_type: PartitionType::Xbootldr,
+                                    size: 0x20000000.into(), // 512MiB
+                                    uuid: None,
+                                    label: None,
+                                },
+                                Partition {
+                                    id: "boot-b2".to_string(),
+                                    partition_type: PartitionType::Xbootldr,
+                                    size: 0x20000000.into(), // 512MiB
+                                    uuid: None,
+                                    label: None,
+                                },
+                                Partition {
+                                    id: "root-data-a2".to_string(),
+                                    partition_type: PartitionType::Root,
+                                    size: 0x100000000.into(), // 4GiB
+                                    uuid: None,
+                                    label: None,
+                                },
+                                Partition {
+                                    id: "root-data-b2".to_string(),
+                                    partition_type: PartitionType::Root,
+                                    size: 0x100000000.into(), // 4GiB
+                                    uuid: None,
+                                    label: None,
+                                },
+                                Partition {
+                                    id: "root-hash-a2".to_string(),
+                                    partition_type: PartitionType::RootVerity,
+                                    size: 0x19000000.into(), // 400MiB
+                                    uuid: None,
+                                    label: None,
+                                },
+                                Partition {
+                                    id: "root-hash-b2".to_string(),
+                                    partition_type: PartitionType::RootVerity,
+                                    size: 0x19000000.into(), // 400MiB
+                                    uuid: None,
+                                    label: None,
+                                },
+                                Partition {
+                                    id: "swap2".to_string(),
+                                    partition_type: PartitionType::Swap,
+                                    size: 0x80000000.into(), // 2GiB
+                                    uuid: None,
+                                    label: None,
+                                },
+                                Partition {
+                                    id: "trident2".to_string(),
+                                    partition_type: PartitionType::LinuxGeneric,
+                                    size: 0x8000000.into(), // 128MiB
+                                    uuid: None,
+                                    label: None,
+                                },
+                                Partition {
+                                    id: "trident-overlay-a2".to_string(),
+                                    partition_type: PartitionType::LinuxGeneric,
+                                    size: 0x8000000.into(), // 128MiB
+                                    uuid: None,
+                                    label: None,
+                                },
+                                Partition {
+                                    id: "trident-overlay-b2".to_string(),
+                                    partition_type: PartitionType::LinuxGeneric,
+                                    size: 0x8000000.into(), // 128MiB
+                                    uuid: None,
+                                    label: None,
+                                },
+                                Partition {
+                                    id: "var-a2".to_string(),
+                                    partition_type: PartitionType::LinuxGeneric,
+                                    size: 0x40000000.into(), // 1GiB
+                                    uuid: None,
+                                    label: None,
+                                },
+                                Partition {
+                                    id: "var-b2".to_string(),
+                                    partition_type: PartitionType::LinuxGeneric,
+                                    size: 0x40000000.into(), // 1GiB
+                                    uuid: None,
+                                    label: None,
+                                },
+                                Partition {
+                                    id: "enc-home2".to_string(),
+                                    partition_type: PartitionType::LinuxGeneric,
+                                    size: 0x40000000.into(), // 1GiB
+                                    uuid: None,
+                                    label: None,
+                                },
+                            ],
+                            ..Default::default()
+                        },
+                    ],
+                    raid: Raid {
+                        // add 3 minute timeout for syncing
+                        sync_timeout: Some(180), // 180 seconds, 3 minutes
+                        software: vec![
+                            SoftwareRaidArray {
+                                id: "boot-a".to_string(),
+                                name: "boot-a".to_string(),
+                                level: RaidLevel::Raid1,
+                                devices: vec!["boot-a1".to_string(), "boot-a2".to_string()],
                             },
-                            Partition {
-                                id: "boot-a1".to_string(),
-                                partition_type: PartitionType::Xbootldr,
-                                size: 0x20000000.into(), // 512MiB
+                            SoftwareRaidArray {
+                                id: "boot-b".to_string(),
+                                name: "boot-b".to_string(),
+                                level: RaidLevel::Raid1,
+                                devices: vec!["boot-b1".to_string(), "boot-b2".to_string()],
                             },
-                            Partition {
-                                id: "boot-b1".to_string(),
-                                partition_type: PartitionType::Xbootldr,
-                                size: 0x20000000.into(), // 512MiB
+                            SoftwareRaidArray {
+                                id: "root-data-a".to_string(),
+                                name: "root-data-a".to_string(),
+                                level: RaidLevel::Raid1,
+                                devices: vec!["root-data-a1".to_string(), "root-data-a2".to_string()],
                             },
-                            Partition {
-                                id: "root-data-a1".to_string(),
-                                partition_type: PartitionType::Root,
-                                size: 0x100000000.into(), // 4GiB
+                            SoftwareRaidArray {
+                                id: "root-data-b".to_string(),
+                                name: "root-data-b".to_string(),
+                                level: RaidLevel::Raid1,
+                                devices: vec!["root-data-b1".to_string(), "root-data-b2".to_string()],
                             },
-                            Partition {
-                                id: "root-data-b1".to_string(),
-                                partition_type: PartitionType::Root,
-                                size: 0x100000000.into(), // 4GiB
+                            SoftwareRaidArray {
+                                id: "root-hash-a".to_string(),
+                                name: "root-hash-a".to_string(),
+                                level: RaidLevel::Raid1,
+                                devices: vec!["root-hash-a1".to_string(), "root-hash-a2".to_string()],
                             },
-                            Partition {
-                                id: "root-hash-a1".to_string(),
-                                partition_type: PartitionType::RootVerity,
-                                size: 0x19000000.into(), // 400MiB
+                            SoftwareRaidArray {
+                                id: "root-hash-b".to_string(),
+                                name: "root-hash-b".to_string(),
+                                level: RaidLevel::Raid1,
+                                devices: vec!["root-hash-b1".to_string(), "root-hash-b2".to_string()],
                             },
-                            Partition {
-                                id: "root-hash-b1".to_string(),
-                                partition_type: PartitionType::RootVerity,
-                                size: 0x19000000.into(), // 400MiB
+                            SoftwareRaidArray {
+                                id: "trident".to_string(),
+                                name: "trident".to_string(),
+                                level: RaidLevel::Raid1,
+                                devices: vec!["trident1".to_string(), "trident2".to_string()],
                             },
-                            Partition {
-                                id: "swap1".to_string(),
-                                partition_type: PartitionType::Swap,
-                                size: 0x80000000.into(), // 2GiB
+                            SoftwareRaidArray {
+                                id: "trident-overlay-a".to_string(),
+                                name: "trident-overlay-a".to_string(),
+                                level: RaidLevel::Raid1,
+                                devices: vec![
+                                    "trident-overlay-a1".to_string(),
+                                    "trident-overlay-a2".to_string(),
+                                ],
                             },
-                            Partition {
-                                id: "trident1".to_string(),
-                                partition_type: PartitionType::LinuxGeneric,
-                                size: 0x8000000.into(), // 128MiB
+                            SoftwareRaidArray {
+                                id: "trident-overlay-b".to_string(),
+                                name: "trident-overlay-b".to_string(),
+                                level: RaidLevel::Raid1,
+                                devices: vec![
+                                    "trident-overlay-b1".to_string(),
+                                    "trident-overlay-b2".to_string(),
+                                ],
                             },
-                            Partition {
-                                id: "trident-overlay-a1".to_string(),
-                                partition_type: PartitionType::LinuxGeneric,
-                                size: 0x8000000.into(), // 128MiB
+                            SoftwareRaidArray {
+                                id: "var-a".to_string(),
+                                name: "var-a".to_string(),
+                                level: RaidLevel::Raid1,
+                                devices: vec!["var-a1".to_string(), "var-a2".to_string()],
                             },
-                            Partition {
-                                id: "trident-overlay-b1".to_string(),
-                                partition_type: PartitionType::LinuxGeneric,
-                                size: 0x8000000.into(), // 128MiB
+                            SoftwareRaidArray {
+                                id: "var-b".to_string(),
+                                name: "var-b".to_string(),
+                                level: RaidLevel::Raid1,
+                                devices: vec!["var-b1".to_string(), "var-b2".to_string()],
                             },
-                            Partition {
-                                id: "var-a1".to_string(),
-                                partition_type: PartitionType::LinuxGeneric,
-                                size: 0x40000000.into(), // 1GiB
-                            },
-                            Partition {
-                                id: "var-b1".to_string(),
-                                partition_type: PartitionType::LinuxGeneric,
-                                size: 0x40000000.into(), // 1GiB
-                            },
-                            Partition {
-                                id: "enc-home1".to_string(),
-                                partition_type: PartitionType::LinuxGeneric,
-                                size: 0x40000000.into(), // 1GiB
+                            SoftwareRaidArray {
+                                id: "enc-home".to_string(),
+                                name: "home".to_string(),
+                                level: RaidLevel::Raid1,
+                                devices: vec!["enc-home1".to_string(), "enc-home2".to_string()],
                             },
                         ],
-                        ..Default::default()
                     },
-                    Disk {
-                        id: "disk2".to_string(),
-                        device: "/dev/disk/by-path/pci-0000:00:1f.2-ata-3".into(),
-                        partition_table_type: PartitionTableType::Gpt,
-                        partitions: vec![
-                            Partition {
-                                id: "esp2".to_string(),
-                                partition_type: PartitionType::Esp,
-                                size: 0x4000000.into(), // 64MiB
+                    encryption: Some(Encryption {
+                        recovery_key_url: Some(Url::parse("file:///recovery.key").unwrap()),
+                        volumes: vec![EncryptedVolume {
+                            id: "home".to_string(),
+                            device_name: "home".to_string(),
+                            device_id: "enc-home".to_string(),
+                        }],
+                        pcrs: vec![Pcr::Pcr7],
+                        ..Default::default()
+                    }),
+                    ab_update: Some(AbUpdate {
+                        volume_pairs: vec![
+                            AbVolumePair {
+                                id: "boot".into(),
+                                volume_a_id: "boot-a".into(),
+                                volume_b_id: "boot-b".into(),
                             },
-                            Partition {
-                                id: "boot-a2".to_string(),
-                                partition_type: PartitionType::Xbootldr,
-                                size: 0x20000000.into(), // 512MiB
+                            AbVolumePair {
+                                id: "root-data".into(),
+                                volume_a_id: "root-data-a".into(),
+                                volume_b_id: "root-data-b".into(),
                             },
-                            Partition {
-                                id: "boot-b2".to_string(),
-                                partition_type: PartitionType::Xbootldr,
-                                size: 0x20000000.into(), // 512MiB
+                            AbVolumePair {
+                                id: "root-hash".into(),
+                                volume_a_id: "root-hash-a".into(),
+                                volume_b_id: "root-hash-b".into(),
                             },
-                            Partition {
-                                id: "root-data-a2".to_string(),
-                                partition_type: PartitionType::Root,
-                                size: 0x100000000.into(), // 4GiB
+                            AbVolumePair {
+                                id: "trident-overlay".into(),
+                                volume_a_id: "trident-overlay-a".into(),
+                                volume_b_id: "trident-overlay-b".into(),
                             },
-                            Partition {
-                                id: "root-data-b2".to_string(),
-                                partition_type: PartitionType::Root,
-                                size: 0x100000000.into(), // 4GiB
-                            },
-                            Partition {
-                                id: "root-hash-a2".to_string(),
-                                partition_type: PartitionType::RootVerity,
-                                size: 0x19000000.into(), // 400MiB
-                            },
-                            Partition {
-                                id: "root-hash-b2".to_string(),
-                                partition_type: PartitionType::RootVerity,
-                                size: 0x19000000.into(), // 400MiB
-                            },
-                            Partition {
-                                id: "swap2".to_string(),
-                                partition_type: PartitionType::Swap,
-                                size: 0x80000000.into(), // 2GiB
-                            },
-                            Partition {
-                                id: "trident2".to_string(),
-                                partition_type: PartitionType::LinuxGeneric,
-                                size: 0x8000000.into(), // 128MiB
-                            },
-                            Partition {
-                                id: "trident-overlay-a2".to_string(),
-                                partition_type: PartitionType::LinuxGeneric,
-                                size: 0x8000000.into(), // 128MiB
-                            },
-                            Partition {
-                                id: "trident-overlay-b2".to_string(),
-                                partition_type: PartitionType::LinuxGeneric,
-                                size: 0x8000000.into(), // 128MiB
-                            },
-                            Partition {
-                                id: "var-a2".to_string(),
-                                partition_type: PartitionType::LinuxGeneric,
-                                size: 0x40000000.into(), // 1GiB
-                            },
-                            Partition {
-                                id: "var-b2".to_string(),
-                                partition_type: PartitionType::LinuxGeneric,
-                                size: 0x40000000.into(), // 1GiB
-                            },
-                            Partition {
-                                id: "enc-home2".to_string(),
-                                partition_type: PartitionType::LinuxGeneric,
-                                size: 0x40000000.into(), // 1GiB
+                            AbVolumePair {
+                                id: "var".into(),
+                                volume_a_id: "var-a".into(),
+                                volume_b_id: "var-b".into(),
                             },
                         ],
+                    }),
+                    filesystems: vec![
+                        FileSystem {
+                            device_id: Some("esp1".into()),
+                            mount_point: Some(MountPoint {
+                                path: constants::ESP_MOUNT_POINT_PATH.into(),
+                                options: MountOptions::new("umask=0077"),
+                            }),
+                            source: FileSystemSource::Image,
+                        },
+                        FileSystem {
+                            device_id: Some("esp2".into()),
+                            mount_point: None,
+                            source: FileSystemSource::Image,
+                        },
+                        FileSystem {
+                            device_id: Some("boot".into()),
+                            mount_point: Some(MountPoint {
+                                path: constants::BOOT_MOUNT_POINT_PATH.into(),
+                                options: MountOptions::defaults(),
+                            }),
+                            source: FileSystemSource::Image,
+                        },
+                        FileSystem {
+                            device_id: Some("trident".into()),
+                            source: FileSystemSource::New(NewFileSystemType::Ext4),
+                            mount_point: Some(MountPoint {
+                                path: "/var/lib/trident".into(),
+                                options: MountOptions::defaults(),
+                            }),
+                        },
+                        FileSystem {
+                            device_id: Some("trident-overlay".into()),
+                            source: FileSystemSource::New(NewFileSystemType::Ext4),
+                            mount_point: Some(MountPoint {
+                                path: "/var/lib/trident-overlay".into(),
+                                options: MountOptions::defaults(),
+                            }),
+                        },
+                        FileSystem {
+                            device_id: Some("var".into()),
+                            source: FileSystemSource::Image,
+                            mount_point: Some(MountPoint {
+                                path: "/var".into(),
+                                options: MountOptions::defaults(),
+                            }),
+                        },
+                        FileSystem {
+                            device_id: Some("home".into()),
+                            source: FileSystemSource::New(NewFileSystemType::Ext4),
+                            mount_point: Some(MountPoint {
+                                path: "/home".into(),
+                                options: MountOptions::defaults(),
+                            }),
+                        },
+                        FileSystem {
+                            device_id: Some("root".into()),
+                            source: FileSystemSource::Image,
+                            mount_point: Some(MountPoint {
+                                path: ROOT_MOUNT_POINT_PATH.into(),
+                                options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
+                            }),
+                        }
+                    ],
+                    verity: vec![VerityDevice {
+                        id: "root".into(),
+                        data_device_id: "root-data".into(),
+                        hash_device_id: "root-hash".into(),
+                        name: "root".into(),
                         ..Default::default()
-                    },
-                ],
-                raid: Raid {
-                    // add 3 minute timeout for syncing
-                    sync_timeout: Some(180), // 180 seconds, 3 minutes
-                    software: vec![
-                        SoftwareRaidArray {
-                            id: "boot-a".to_string(),
-                            name: "boot-a".to_string(),
-                            level: RaidLevel::Raid1,
-                            devices: vec!["boot-a1".to_string(), "boot-a2".to_string()],
+                    }],
+                    swap: vec![
+                        Swap {
+                            device_id: "swap1".into(),
                         },
-                        SoftwareRaidArray {
-                            id: "boot-b".to_string(),
-                            name: "boot-b".to_string(),
-                            level: RaidLevel::Raid1,
-                            devices: vec!["boot-b1".to_string(), "boot-b2".to_string()],
-                        },
-                        SoftwareRaidArray {
-                            id: "root-data-a".to_string(),
-                            name: "root-data-a".to_string(),
-                            level: RaidLevel::Raid1,
-                            devices: vec!["root-data-a1".to_string(), "root-data-a2".to_string()],
-                        },
-                        SoftwareRaidArray {
-                            id: "root-data-b".to_string(),
-                            name: "root-data-b".to_string(),
-                            level: RaidLevel::Raid1,
-                            devices: vec!["root-data-b1".to_string(), "root-data-b2".to_string()],
-                        },
-                        SoftwareRaidArray {
-                            id: "root-hash-a".to_string(),
-                            name: "root-hash-a".to_string(),
-                            level: RaidLevel::Raid1,
-                            devices: vec!["root-hash-a1".to_string(), "root-hash-a2".to_string()],
-                        },
-                        SoftwareRaidArray {
-                            id: "root-hash-b".to_string(),
-                            name: "root-hash-b".to_string(),
-                            level: RaidLevel::Raid1,
-                            devices: vec!["root-hash-b1".to_string(), "root-hash-b2".to_string()],
-                        },
-                        SoftwareRaidArray {
-                            id: "trident".to_string(),
-                            name: "trident".to_string(),
-                            level: RaidLevel::Raid1,
-                            devices: vec!["trident1".to_string(), "trident2".to_string()],
-                        },
-                        SoftwareRaidArray {
-                            id: "trident-overlay-a".to_string(),
-                            name: "trident-overlay-a".to_string(),
-                            level: RaidLevel::Raid1,
-                            devices: vec![
-                                "trident-overlay-a1".to_string(),
-                                "trident-overlay-a2".to_string(),
-                            ],
-                        },
-                        SoftwareRaidArray {
-                            id: "trident-overlay-b".to_string(),
-                            name: "trident-overlay-b".to_string(),
-                            level: RaidLevel::Raid1,
-                            devices: vec![
-                                "trident-overlay-b1".to_string(),
-                                "trident-overlay-b2".to_string(),
-                            ],
-                        },
-                        SoftwareRaidArray {
-                            id: "var-a".to_string(),
-                            name: "var-a".to_string(),
-                            level: RaidLevel::Raid1,
-                            devices: vec!["var-a1".to_string(), "var-a2".to_string()],
-                        },
-                        SoftwareRaidArray {
-                            id: "var-b".to_string(),
-                            name: "var-b".to_string(),
-                            level: RaidLevel::Raid1,
-                            devices: vec!["var-b1".to_string(), "var-b2".to_string()],
-                        },
-                        SoftwareRaidArray {
-                            id: "enc-home".to_string(),
-                            name: "home".to_string(),
-                            level: RaidLevel::Raid1,
-                            devices: vec!["enc-home1".to_string(), "enc-home2".to_string()],
+                        Swap {
+                            device_id: "swap2".into(),
                         },
                     ],
                 },
-                encryption: Some(Encryption {
-                    recovery_key_url: Some(Url::parse("file:///recovery.key").unwrap()),
-                    volumes: vec![EncryptedVolume {
-                        id: "home".to_string(),
-                        device_name: "home".to_string(),
-                        device_id: "enc-home".to_string(),
+                os: Os {
+                    users: vec![User {
+                        name: "my-custom-user".into(),
+                        ssh_public_keys: vec!["<MY_PUBLIC_SSH_KEY>".into()],
+                        ssh_mode: SshMode::KeyOnly,
+                        ..Default::default()
                     }],
-                    pcrs: vec![Pcr::Pcr7],
-                    ..Default::default()
-                }),
-                ab_update: Some(AbUpdate {
-                    volume_pairs: vec![
-                        AbVolumePair {
-                            id: "boot".into(),
-                            volume_a_id: "boot-a".into(),
-                            volume_b_id: "boot-b".into(),
-                        },
-                        AbVolumePair {
-                            id: "root-data".into(),
-                            volume_a_id: "root-data-a".into(),
-                            volume_b_id: "root-data-b".into(),
-                        },
-                        AbVolumePair {
-                            id: "root-hash".into(),
-                            volume_a_id: "root-hash-a".into(),
-                            volume_b_id: "root-hash-b".into(),
-                        },
-                        AbVolumePair {
-                            id: "trident-overlay".into(),
-                            volume_a_id: "trident-overlay-a".into(),
-                            volume_b_id: "trident-overlay-b".into(),
-                        },
-                        AbVolumePair {
-                            id: "var".into(),
-                            volume_a_id: "var-a".into(),
-                            volume_b_id: "var-b".into(),
-                        },
-                    ],
-                }),
-                filesystems: vec![
-                    FileSystem {
-                        device_id: Some("esp1".into()),
-                        mount_point: Some(MountPoint {
-                            path: constants::ESP_MOUNT_POINT_PATH.into(),
-                            options: MountOptions::new("umask=0077"),
-                        }),
-                        source: FileSystemSource::Image,
-                    },
-                    FileSystem {
-                        device_id: Some("esp2".into()),
-                        mount_point: None,
-                        source: FileSystemSource::Image,
-                    },
-                    FileSystem {
-                        device_id: Some("boot".into()),
-                        mount_point: Some(MountPoint {
-                            path: constants::BOOT_MOUNT_POINT_PATH.into(),
-                            options: MountOptions::defaults(),
-                        }),
-                        source: FileSystemSource::Image,
-                    },
-                    FileSystem {
-                        device_id: Some("trident".into()),
-                        source: FileSystemSource::New(NewFileSystemType::Ext4),
-                        mount_point: Some(MountPoint {
-                            path: "/var/lib/trident".into(),
-                            options: MountOptions::defaults(),
-                        }),
-                    },
-                    FileSystem {
-                        device_id: Some("trident-overlay".into()),
-                        source: FileSystemSource::New(NewFileSystemType::Ext4),
-                        mount_point: Some(MountPoint {
-                            path: "/var/lib/trident-overlay".into(),
-                            options: MountOptions::defaults(),
-                        }),
-                    },
-                    FileSystem {
-                        device_id: Some("var".into()),
-                        source: FileSystemSource::Image,
-                        mount_point: Some(MountPoint {
-                            path: "/var".into(),
-                            options: MountOptions::defaults(),
-                        }),
-                    },
-                    FileSystem {
-                        device_id: Some("home".into()),
-                        source: FileSystemSource::New(NewFileSystemType::Ext4),
-                        mount_point: Some(MountPoint {
-                            path: "/home".into(),
-                            options: MountOptions::defaults(),
-                        }),
-                    },
-                    FileSystem {
-                        device_id: Some("root".into()),
-                        source: FileSystemSource::Image,
-                        mount_point: Some(MountPoint {
-                            path: ROOT_MOUNT_POINT_PATH.into(),
-                            options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
-                        }),
-                    }
-                ],
-                verity: vec![VerityDevice {
-                    id: "root".into(),
-                    data_device_id: "root-data".into(),
-                    hash_device_id: "root-hash".into(),
-                    name: "root".into(),
-                    ..Default::default()
-                }],
-                swap: vec![
-                    Swap {
-                        device_id: "swap1".into(),
-                    },
-                    Swap {
-                        device_id: "swap2".into(),
-                    },
-                ],
-            },
-            os: Os {
-                users: vec![User {
-                    name: "my-custom-user".into(),
-                    ssh_public_keys: vec!["<MY_PUBLIC_SSH_KEY>".into()],
-                    ssh_mode: SshMode::KeyOnly,
-                    ..Default::default()
-                }],
-                netplan: Some(NetworkConfig {
-                    version: 2,
-                    ethernets: Some(HashMap::from([(
-                        "eths".into(),
-                        EthernetConfig {
-                            common_all: Some(CommonPropertiesAllDevices {
-                                dhcp4: Some(true),
-                                ..Default::default()
-                            }),
-                            common_physical: Some(CommonPropertiesPhysicalDeviceType {
-                                r#match: Some(MatchConfig {
-                                    name: Some("enp*".into()),
+                    netplan: Some(NetworkConfig {
+                        version: 2,
+                        ethernets: Some(HashMap::from([(
+                            "eths".into(),
+                            EthernetConfig {
+                                common_all: Some(CommonPropertiesAllDevices {
+                                    dhcp4: Some(true),
+                                    ..Default::default()
+                                }),
+                                common_physical: Some(CommonPropertiesPhysicalDeviceType {
+                                    r#match: Some(MatchConfig {
+                                        name: Some("enp*".into()),
+                                        ..Default::default()
+                                    }),
                                     ..Default::default()
                                 }),
                                 ..Default::default()
-                            }),
+                            },
+                        )])),
+                        ..Default::default()
+                    }),
+                    additional_files: vec![
+                        AdditionalFile {
+                            destination: "/var/config-script.sh".into(),
+                            content: Some("echo 'Hello, world!'".into()),
                             ..Default::default()
                         },
-                    )])),
+                    ],
                     ..Default::default()
-                }),
-                additional_files: vec![
-                    AdditionalFile {
-                        destination: "/var/config-script.sh".into(),
-                        content: Some("echo 'Hello, world!'".into()),
+                },
+                scripts: Scripts {
+                    post_configure: vec![Script {
+                        name: "rw-overlay".into(),
+                        run_on: vec![ServicingTypeSelection::All],
+                        source: ScriptSource::Content("mkdir -p /var/lib/trident-overlay/etc-rw/upper && mkdir -p /var/lib/trident-overlay/etc-rw/work".into()),
                         ..Default::default()
-                    },
-                ],
-                ..Default::default()
-            },
-            scripts: Scripts {
-                post_configure: vec![Script {
-                    name: "rw-overlay".into(),
-                    run_on: vec![ServicingTypeSelection::All],
-                    source: ScriptSource::Content("mkdir -p /var/lib/trident-overlay/etc-rw/upper && mkdir -p /var/lib/trident-overlay/etc-rw/work".into()),
+                    }],
                     ..Default::default()
-                }],
+                },
                 ..Default::default()
-            },
-            ..Default::default()
             }
         ),
         "raid" => (
@@ -1028,16 +1124,22 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                     id: "esp1".to_string(),
                                     partition_type: PartitionType::Esp,
                                     size: 0x4000000.into(), // 64MiB
+                                    uuid: None,
+                                    label: None,
                                 },
                                 Partition {
                                     id: "root1".to_string(),
                                     partition_type: PartitionType::Root,
                                     size: 0x100000000.into(), // 4GiB
+                                    uuid: None,
+                                    label: None,
                                 },
                                 Partition {
                                     id: "swap1".to_string(),
                                     partition_type: PartitionType::Swap,
                                     size: 0x80000000.into(), // 2GiB
+                                    uuid: None,
+                                    label: None,
                                 },
                             ],
                             adopted_partitions: vec![],
@@ -1051,16 +1153,22 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                     id: "esp2".to_string(),
                                     partition_type: PartitionType::Esp,
                                     size: 0x4000000.into(), // 64MiB
+                                    uuid: None,
+                                    label: None,
                                 },
                                 Partition {
                                     id: "root2".to_string(),
                                     partition_type: PartitionType::Root,
                                     size: 0x100000000.into(), // 4GiB
+                                    uuid: None,
+                                    label: None,
                                 },
                                 Partition {
                                     id: "swap2".to_string(),
                                     partition_type: PartitionType::Swap,
                                     size: 0x80000000.into(), // 2GiB
+                                    uuid: None,
+                                    label: None,
                                 },
                             ],
                             adopted_partitions: vec![],
@@ -1180,21 +1288,29 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                     id: "esp".to_string(),
                                     partition_type: PartitionType::Esp,
                                     size: 0x4000000.into(), // 64MiB
+                                    uuid: None,
+                                    label: None,
                                 },
                                 Partition {
                                     id: "root".to_string(),
                                     partition_type: PartitionType::Root,
                                     size: 0x100000000.into(), // 4GiB
+                                    uuid: None,
+                                    label: None,
                                 },
                                 Partition {
                                     id: "swap".to_string(),
                                     partition_type: PartitionType::Swap,
                                     size: 0x80000000.into(), // 2GiB
+                                    uuid: None,
+                                    label: None,
                                 },
                                 Partition {
                                     id: "luks-srv".to_string(),
                                     partition_type: PartitionType::LinuxGeneric,
                                     size: 0x4000000.into(), // 64MiB
+                                    uuid: None,
+                                    label: None,
                                 },
                             ],
                             adopted_partitions: vec![],
@@ -1328,16 +1444,22 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                     id: "esp1".to_string(),
                                     partition_type: PartitionType::Esp,
                                     size: 0x4000000.into(), // 64MiB
+                                    uuid: None,
+                                    label: None,
                                 },
                                 Partition {
                                     id: "root1".to_string(),
                                     partition_type: PartitionType::Root,
                                     size: 0x100000000.into(), // 4GiB
+                                    uuid: None,
+                                    label: None,
                                 },
                                 Partition {
                                     id: "trident1".to_string(),
                                     partition_type: PartitionType::LinuxGeneric,
                                     size: 0x8000000.into(), // 1GiB
+                                    uuid: None,
+                                    label: None,
                                 },
                             ],
                             adopted_partitions: vec![],
@@ -1351,16 +1473,22 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                     id: "esp2".to_string(),
                                     partition_type: PartitionType::Esp,
                                     size: 0x4000000.into(), // 64MiB
+                                    uuid: None,
+                                    label: None,
                                 },
                                 Partition {
                                     id: "root2".to_string(),
                                     partition_type: PartitionType::Root,
                                     size: 0x100000000.into(), // 4GiB
+                                    uuid: None,
+                                    label: None,
                                 },
                                 Partition {
                                     id: "trident2".to_string(),
                                     partition_type: PartitionType::LinuxGeneric,
                                     size: 0x8000000.into(), // 1GiB
+                                    uuid: None,
+                                    label: None,
                                 },
                             ],
                             adopted_partitions: vec![],

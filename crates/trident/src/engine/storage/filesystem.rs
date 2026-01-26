@@ -195,21 +195,29 @@ mod tests {
                                 id: "esp".to_owned(),
                                 size: 100.into(),
                                 partition_type: PartitionType::Esp,
+                                uuid: None,
+                                label: None,
                             },
                             Partition {
                                 id: "root-a".to_owned(),
                                 size: 100.into(),
                                 partition_type: PartitionType::Root,
+                                uuid: None,
+                                label: None,
                             },
                             Partition {
                                 id: "root-b".to_owned(),
                                 size: 100.into(),
                                 partition_type: PartitionType::Root,
+                                uuid: None,
+                                label: None,
                             },
                             Partition {
                                 id: "trident".to_owned(),
                                 size: 100.into(),
                                 partition_type: PartitionType::LinuxGeneric,
+                                uuid: None,
+                                label: None,
                             },
                         ],
                         ..Default::default()
@@ -306,21 +314,29 @@ mod tests {
                                 id: "esp".to_owned(),
                                 size: 100.into(),
                                 partition_type: PartitionType::Esp,
+                                uuid: None,
+                                label: None,
                             },
                             Partition {
                                 id: "root-a".to_owned(),
                                 size: 100.into(),
                                 partition_type: PartitionType::Root,
+                                uuid: None,
+                                label: None,
                             },
                             Partition {
                                 id: "root-b".to_owned(),
                                 size: 100.into(),
                                 partition_type: PartitionType::Root,
+                                uuid: None,
+                                label: None,
                             },
                             Partition {
                                 id: "trident".to_owned(),
                                 size: 100.into(),
                                 partition_type: PartitionType::LinuxGeneric,
+                                uuid: None,
+                                label: None,
                             },
                         ],
                         ..Default::default()
@@ -415,6 +431,8 @@ mod tests {
                             id: "root-b".to_owned(),
                             size: 100.into(),
                             partition_type: PartitionType::Root,
+                            uuid: None,
+                            label: None,
                         }],
                         adopted_partitions: vec![
                             AdoptedPartition {
