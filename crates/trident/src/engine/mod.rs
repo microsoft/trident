@@ -464,12 +464,6 @@ pub fn reboot() -> Result<(), TridentError> {
     info!("Syncing filesystem");
     nix::unistd::sync();
 
-    // Skip reboot on arm for now
-    if SystemArchitecture::current() == SystemArchitecture::Aarch64 {
-        warn!("Skip reboot on aarch64");
-        return Ok(());
-    }
-
     // This trace event will be used with the trident_start event to track the
     // total time taken for the reboot
     tracing::info!(metric_name = "trident_system_reboot");
