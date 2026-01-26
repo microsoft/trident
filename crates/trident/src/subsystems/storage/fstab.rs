@@ -1,6 +1,9 @@
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
-use anyhow::{bail, Context, Error};
+use anyhow::{Context, Error};
 use log::trace;
 
 use osutils::{
@@ -71,14 +74,20 @@ pub(super) fn generate_fstab(ctx: &EngineContext, output_path: &Path) -> Result<
     let fstab = TabFile { entries };
 
     if ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
-        bail!("Regenerate fstab is not yet supported with raw COSI storage");
+        fstab
+            .merge_and_write(output_path)
+            .context(format!("Failed to update {}", output_path.display()))?;
     } else {
         fstab
             .write(output_path)
             .context(format!("Failed to write {}", output_path.display()))?;
     }
 
-    trace!("Wrote '{}', contents: '{:?}'", output_path.display(), fstab);
+    trace!(
+        "Wrote fstab to '{}', contents: '{:?}'",
+        output_path.display(),
+        fs::read_to_string(output_path).unwrap_or("<failed to read>".to_string())
+    );
 
     Ok(())
 }
