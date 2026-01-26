@@ -109,11 +109,11 @@ message ServicingRequest {
 // Rust log levels
 enum LogLevel {
   LOG_LEVEL_UNSPECIFIED = 0;
-  ERROR_LOG             = 1;
-  WARN_LOG              = 2;
-  INFO_LOG              = 3;
-  DEBUG_LOG             = 4;
-  TRACE_LOG             = 5;
+  LOG_LEVEL_ERROR       = 1;
+  LOG_LEVEL_WARN        = 2;
+  LOG_LEVEL_INFO        = 3;
+  LOG_LEVEL_DEBUG       = 4;
+  LOG_LEVEL_TRACE       = 5;
 }
 
 message Log {
@@ -132,8 +132,8 @@ message Log {
 // Represents the final status of a servicing operation.
 enum StatusCode {
   STATUS_CODE_UNSPECIFIED = 0;
-  SUCCESS                 = 1;
-  FAILURE                 = 2;
+  STATUS_CODE_SUCCESS     = 1;
+  STATUS_CODE_FAILURE     = 2;
 }
 
 message FinalStatus {

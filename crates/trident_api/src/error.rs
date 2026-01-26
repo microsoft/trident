@@ -1021,15 +1021,15 @@ impl From<&ErrorKind> for HarpoonTridentErrorKind {
     fn from(kind: &ErrorKind) -> Self {
         match kind {
             ErrorKind::ExecutionEnvironmentMisconfiguration(_) => {
-                HarpoonTridentErrorKind::ExecutionEnvironmentMisconfiguration
+                HarpoonTridentErrorKind::ExecutionEnvironmentMisconfigurationError
             }
-            ErrorKind::HealthChecks(_) => HarpoonTridentErrorKind::HealthChecks,
-            ErrorKind::Initialization(_) => HarpoonTridentErrorKind::Initialization,
-            ErrorKind::Internal(_) => HarpoonTridentErrorKind::Internal,
-            ErrorKind::InvalidInput(_) => HarpoonTridentErrorKind::InvalidInput,
-            ErrorKind::Servicing(_) => HarpoonTridentErrorKind::Servicing,
+            ErrorKind::HealthChecks(_) => HarpoonTridentErrorKind::HealthChecksError,
+            ErrorKind::Initialization(_) => HarpoonTridentErrorKind::InitializationError,
+            ErrorKind::Internal(_) => HarpoonTridentErrorKind::InternalError,
+            ErrorKind::InvalidInput(_) => HarpoonTridentErrorKind::InvalidInputError,
+            ErrorKind::Servicing(_) => HarpoonTridentErrorKind::ServicingError,
             ErrorKind::UnsupportedConfiguration(_) => {
-                HarpoonTridentErrorKind::UnsupportedConfiguration
+                HarpoonTridentErrorKind::UnsupportedConfigurationError
             }
         }
     }
