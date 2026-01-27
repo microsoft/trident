@@ -391,7 +391,7 @@ impl TridentService for TridentHarpoonServer {
         _request: Request<GetActiveVolumeRequest>,
     ) -> Result<Response<GetActiveVolumeResponse>, Status> {
         let data_store_path = self.agent_config.datastore_path().to_owned();
-        self.reading_request("check_rollback", move || {
+        self.reading_request("get_active_volume", move || {
             let datastore =
                 DataStore::open(&data_store_path).message("Failed to open datastore")?;
 
