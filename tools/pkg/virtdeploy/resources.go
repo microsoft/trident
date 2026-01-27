@@ -502,7 +502,7 @@ func (rc *virtDeployResourceConfig) setupVm(vm *VirtDeployVM) error {
 
 	for i := range vm.volumes {
 		vol := &vm.volumes[i]
-		vol.device = fmt.Sprintf("sd%c", 'a'+i) // /dev/sda, /dev/sdb, etc.
+		vol.device = fmt.Sprintf("%s%c", vm.getDevicePrefix(), 'a'+i) // /dev/sda, /dev/sdb, etc.
 		err := rc.setupVolume(vol, rc.pool)
 		if err != nil {
 			return fmt.Errorf("setup volume for disk #%d: %w", i+1, err)
@@ -566,7 +566,7 @@ func (rc *virtDeployResourceConfig) setupVm(vm *VirtDeployVM) error {
 	// to avoid conflicts with disk device names.
 	// e.g. if there are 3 disks (sda, sdb, sdc), CDROMs will be sdz, sdy, sdx, etc.
 	for i := range vm.cdroms {
-		vm.cdroms[i].device = fmt.Sprintf("sd%c", 'z'-i) // /dev/sdz, /dev/sdy, etc.
+		vm.cdroms[i].device = fmt.Sprintf("%s%c", vm.getDevicePrefix(), 'z'-i) // /dev/sdz, /dev/sdy, etc.
 	}
 
 	// Generate the final domain definition, and store it in the VM struct
