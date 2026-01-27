@@ -1043,7 +1043,7 @@ mod tests {
             .images
             .iter()
             .skip(1)
-            .map(|img| cosi_image_to_os_image_filesystem(img))
+            .map(cosi_image_to_os_image_filesystem)
             .collect::<Vec<_>>();
         let img_data = mock_images
             .iter()
