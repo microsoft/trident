@@ -416,7 +416,7 @@ mod tests {
         let err = result.error.expect("Error should be present");
         assert_eq!(
             err.kind(),
-            TridentErrorKind::Internal,
+            TridentErrorKind::InternalError,
             "Error kind should match"
         );
     }
