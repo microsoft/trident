@@ -2,6 +2,7 @@ package virtdeploy
 
 import (
 	"fmt"
+	"runtime"
 	"tridenttools/pkg/ref"
 
 	"libvirt.org/go/libvirtxml"
@@ -12,6 +13,27 @@ import (
 // Some low-level address/controller elements are omitted for brevity; libvirt
 // will auto-assign them. Extend if deterministic addressing is required.
 func (vm *VirtDeployVM) asXml(network *virtDeployNetwork, nvramPool storagePool) (string, error) {
+	// Check machine architecture
+	domainType := "kvm"
+	osType := libvirtxml.DomainOSType{Arch: "x86_64", Machine: "q35", Type: "hvm"}
+	cpuModel := libvirtxml.DomainCPUModel{Fallback: "allow", Value: "Broadwell-IBRS"}
+	cpuFeatures := []libvirtxml.DomainCPUFeature{{Policy: "require", Name: "vmx"}}
+	pm := &libvirtxml.DomainPM{
+		SuspendToMem:  &libvirtxml.DomainPMPolicy{Enabled: "no"},
+		SuspendToDisk: &libvirtxml.DomainPMPolicy{Enabled: "no"},
+	}
+	emulator := "/usr/bin/qemu-system-x86_64"
+	vmPort := &libvirtxml.DomainFeatureState{State: "off"}
+	if runtime.GOARCH == "arm64" {
+		domainType = "qemu"
+		osType = libvirtxml.DomainOSType{Arch: "aarch64", Machine: "virt-6.2", Type: "hvm"}
+		cpuModel = libvirtxml.DomainCPUModel{Fallback: "forbid", Value: "cortex-a57"}
+		cpuFeatures = []libvirtxml.DomainCPUFeature{}
+		pm = nil
+		emulator = "/usr/bin/qemu-system-aarch64"
+		vmPort = nil
+	}
+
 	// Build disks (regular volumes)
 	disks := make([]libvirtxml.DomainDisk, 0, len(vm.volumes)+len(vm.cdroms))
 	for i, vol := range vm.volumes {
@@ -86,13 +108,13 @@ func (vm *VirtDeployVM) asXml(network *virtDeployNetwork, nvramPool storagePool)
 	}}
 
 	dom := libvirtxml.Domain{
-		Type:   "kvm",
+		Type:   domainType,
 		Name:   vm.name,
 		Memory: &libvirtxml.DomainMemory{Unit: "GiB", Value: vm.Mem},
 		VCPU:   &libvirtxml.DomainVCPU{Value: vm.Cpus},
 		OS: &libvirtxml.DomainOS{
 
-			Type:   &libvirtxml.DomainOSType{Arch: "x86_64", Machine: "q35", Type: "hvm"},
+			Type:   &osType,
 			SMBios: &libvirtxml.DomainSMBios{Mode: "sysinfo"},
 			Loader: &libvirtxml.DomainLoader{Path: vm.firmwareLoaderPath, Type: "pflash", Readonly: "yes"},
 			NVRam: &libvirtxml.DomainNVRam{
@@ -112,13 +134,13 @@ func (vm *VirtDeployVM) asXml(network *virtDeployNetwork, nvramPool storagePool)
 		Features: &libvirtxml.DomainFeatureList{
 			ACPI:   &libvirtxml.DomainFeature{},
 			APIC:   &libvirtxml.DomainFeatureAPIC{},
-			VMPort: &libvirtxml.DomainFeatureState{State: "off"},
+			VMPort: vmPort,
 		},
 		CPU: &libvirtxml.DomainCPU{
 			Match:    "exact",
 			Check:    "none",
-			Model:    &libvirtxml.DomainCPUModel{Fallback: "allow", Value: "Broadwell-IBRS"},
-			Features: []libvirtxml.DomainCPUFeature{{Policy: "require", Name: "vmx"}},
+			Model:    &cpuModel,
+			Features: cpuFeatures,
 		},
 		Clock: &libvirtxml.DomainClock{
 			Offset: "utc",
@@ -128,12 +150,9 @@ func (vm *VirtDeployVM) asXml(network *virtDeployNetwork, nvramPool storagePool)
 				{Name: "hpet", Present: "no"},
 			},
 		},
-		PM: &libvirtxml.DomainPM{
-			SuspendToMem:  &libvirtxml.DomainPMPolicy{Enabled: "no"},
-			SuspendToDisk: &libvirtxml.DomainPMPolicy{Enabled: "no"},
-		},
+		PM: pm,
 		Devices: &libvirtxml.DomainDeviceList{
-			Emulator: "/usr/bin/qemu-system-x86_64",
+			Emulator: emulator,
 			Disks:    disks,
 			Controllers: []libvirtxml.DomainController{
 				{Type: "usb", Index: new(uint), Model: "ich9-ehci1"},
@@ -179,12 +198,6 @@ func (vm *VirtDeployVM) asXml(network *virtDeployNetwork, nvramPool storagePool)
 						Compression: "off",
 					},
 				},
-			}},
-			Sounds: []libvirtxml.DomainSound{{
-				Model: "ich6",
-			}},
-			Videos: []libvirtxml.DomainVideo{{
-				Model: libvirtxml.DomainVideoModel{Type: "qxl"},
 			}},
 			RedirDevs: []libvirtxml.DomainRedirDev{
 				{Bus: "usb", Source: &libvirtxml.DomainChardevSource{
