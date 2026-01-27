@@ -37,7 +37,7 @@ storage:
 os:
   bootloader:
     resetType: hard-reset
-  hostname: trident-functest
+  hostname: trident-rawcosi-testimage
 
   selinux:
     mode: permissive
