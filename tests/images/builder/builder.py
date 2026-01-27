@@ -152,6 +152,7 @@ def build_one(
                 container_image,
                 image,
                 tmp_rpm_sources,
+                output_dir,
                 output_file,
                 ca_nss_key_db,
                 dry_run,
@@ -370,6 +371,7 @@ def build_signed_image(
     container_image: str,
     image: ImageConfig,
     tmp_rpm_sources: List[Path],
+    output_dir: Path,
     output_file: Path,
     ca_nss_key_db: Path,
     dry_run: bool = False,
@@ -410,9 +412,9 @@ def build_signed_image(
     sign.sign_boot_artifacts(
         ca_nss_key_db,
         leaf_key_name,
+        image.get_items_to_sign(),
         inject_files_yaml_path,
         output_artifacts_dir,
-        stack,
     )
 
     # Run inject-files via Image Customizer to inject the signed UKI back into the image
