@@ -8,33 +8,32 @@ import (
 	"libvirt.org/go/libvirtxml"
 )
 
+func (vm *VirtDeployVM) getDiskBus() string {
+	if runtime.GOARCH == "arm64" {
+		return "virtio"
+	}
+	return "sata"
+}
+
+func (vm *VirtDeployVM) getDevicePrefix() string {
+	if runtime.GOARCH == "arm64" {
+		return "vd"
+	}
+	return "sd"
+}
+
 // asXml renders the libvirt domain XML corresponding to the VM definition.
 // It translates the earlier XML template into structured Go objects.
 // Some low-level address/controller elements are omitted for brevity; libvirt
 // will auto-assign them. Extend if deterministic addressing is required.
 func (vm *VirtDeployVM) asXml(network *virtDeployNetwork, nvramPool storagePool) (string, error) {
-	// Check machine architecture
-	domainType := "kvm"
-	osType := libvirtxml.DomainOSType{Arch: "x86_64", Machine: "q35", Type: "hvm"}
-	cpuModel := libvirtxml.DomainCPUModel{Fallback: "allow", Value: "Broadwell-IBRS"}
-	cpuFeatures := []libvirtxml.DomainCPUFeature{{Policy: "require", Name: "vmx"}}
-	pm := &libvirtxml.DomainPM{
-		SuspendToMem:  &libvirtxml.DomainPMPolicy{Enabled: "no"},
-		SuspendToDisk: &libvirtxml.DomainPMPolicy{Enabled: "no"},
-	}
-	emulator := "/usr/bin/qemu-system-x86_64"
-	vmPort := &libvirtxml.DomainFeatureState{State: "off"}
 	if runtime.GOARCH == "arm64" {
-		domainType = "qemu"
-		osType = libvirtxml.DomainOSType{Arch: "aarch64", Machine: "virt-6.2", Type: "hvm"}
-		cpuModel = libvirtxml.DomainCPUModel{Fallback: "forbid", Value: "cortex-a57"}
-		cpuFeatures = []libvirtxml.DomainCPUFeature{}
-		pm = nil
-		emulator = "/usr/bin/qemu-system-aarch64"
-		vmPort = nil
+		return vm.asArm64Xml(network, nvramPool)
 	}
+	return vm.asAmd64Xml(network, nvramPool)
+}
 
-	// Build disks (regular volumes)
+func (vm *VirtDeployVM) configureDisks() []libvirtxml.DomainDisk {
 	disks := make([]libvirtxml.DomainDisk, 0, len(vm.volumes)+len(vm.cdroms))
 	for i, vol := range vm.volumes {
 		disks = append(disks, libvirtxml.DomainDisk{
@@ -48,7 +47,7 @@ func (vm *VirtDeployVM) asXml(network *virtDeployNetwork, nvramPool storagePool)
 			},
 			Target: &libvirtxml.DomainDiskTarget{
 				Dev: vol.device, // e.g. sda, sdb
-				Bus: "sata",
+				Bus: vm.getDiskBus(),
 			},
 			Address: &libvirtxml.DomainAddress{
 				Drive: &libvirtxml.DomainAddressDrive{
@@ -60,13 +59,11 @@ func (vm *VirtDeployVM) asXml(network *virtDeployNetwork, nvramPool storagePool)
 			},
 		})
 	}
-
-	// Build CDROM devices
 	for i, cd := range vm.cdroms {
 		d := libvirtxml.DomainDisk{
 			Device:   "cdrom",
 			Driver:   &libvirtxml.DomainDiskDriver{Name: "qemu", Type: "raw"},
-			Target:   &libvirtxml.DomainDiskTarget{Dev: cd.device, Bus: "sata"},
+			Target:   &libvirtxml.DomainDiskTarget{Dev: cd.device, Bus: vm.getDiskBus()},
 			ReadOnly: &libvirtxml.DomainDiskReadOnly{},
 			Address: &libvirtxml.DomainAddress{
 				Drive: &libvirtxml.DomainAddressDrive{
@@ -82,7 +79,10 @@ func (vm *VirtDeployVM) asXml(network *virtDeployNetwork, nvramPool storagePool)
 		}
 		disks = append(disks, d)
 	}
+	return disks
+}
 
+func (vm *VirtDeployVM) configureTpms() []libvirtxml.DomainTPM {
 	// Optional TPM
 	var tpms []libvirtxml.DomainTPM
 	if vm.EmulatedTPM {
@@ -95,8 +95,10 @@ func (vm *VirtDeployVM) asXml(network *virtDeployNetwork, nvramPool storagePool)
 			},
 		}}
 	}
+	return tpms
+}
 
-	// Network interface (single)
+func (vm *VirtDeployVM) configureNetwork(network *virtDeployNetwork) []libvirtxml.DomainInterface {
 	ifaces := []libvirtxml.DomainInterface{{
 		Model: &libvirtxml.DomainInterfaceModel{Type: "virtio"},
 		MAC:   &libvirtxml.DomainInterfaceMAC{Address: vm.mac.String()},
@@ -106,6 +108,34 @@ func (vm *VirtDeployVM) asXml(network *virtDeployNetwork, nvramPool storagePool)
 			},
 		},
 	}}
+	return ifaces
+}
+
+func (vm *VirtDeployVM) asAmd64Xml(network *virtDeployNetwork, nvramPool storagePool) (string, error) {
+	// Check machine architecture
+	domainType := "kvm"
+	osType := libvirtxml.DomainOSType{Arch: "x86_64", Machine: "q35", Type: "hvm"}
+	cpuModel := libvirtxml.DomainCPUModel{Fallback: "allow", Value: "Broadwell-IBRS"}
+	cpuFeatures := []libvirtxml.DomainCPUFeature{{Policy: "require", Name: "vmx"}}
+	pm := &libvirtxml.DomainPM{
+		SuspendToMem:  &libvirtxml.DomainPMPolicy{Enabled: "no"},
+		SuspendToDisk: &libvirtxml.DomainPMPolicy{Enabled: "no"},
+	}
+	timer := []libvirtxml.DomainTimer{
+		{Name: "rtc", TickPolicy: "catchup"},
+		{Name: "pit", TickPolicy: "delay"},
+		{Name: "hpet", Present: "no"},
+	}
+	emulator := "/usr/bin/qemu-system-x86_64"
+	vmPort := &libvirtxml.DomainFeatureState{State: "off"}
+
+	// Build disks
+	disks := vm.configureDisks()
+	// Optional TPM
+	tpms := vm.configureTpms()
+
+	// Network interface (single)
+	ifaces := vm.configureNetwork(network)
 
 	dom := libvirtxml.Domain{
 		Type:   domainType,
@@ -144,11 +174,7 @@ func (vm *VirtDeployVM) asXml(network *virtDeployNetwork, nvramPool storagePool)
 		},
 		Clock: &libvirtxml.DomainClock{
 			Offset: "utc",
-			Timer: []libvirtxml.DomainTimer{
-				{Name: "rtc", TickPolicy: "catchup"},
-				{Name: "pit", TickPolicy: "delay"},
-				{Name: "hpet", Present: "no"},
-			},
+			Timer:  timer,
 		},
 		PM: pm,
 		Devices: &libvirtxml.DomainDeviceList{
@@ -189,16 +215,6 @@ func (vm *VirtDeployVM) asXml(network *virtDeployNetwork, nvramPool storagePool)
 				},
 			}},
 			Inputs: []libvirtxml.DomainInput{{Type: "tablet", Bus: "usb"}},
-			Graphics: []libvirtxml.DomainGraphic{{
-				Spice: &libvirtxml.DomainGraphicSpice{
-					Port:     -1,
-					TLSPort:  -1,
-					AutoPort: "yes",
-					Image: &libvirtxml.DomainGraphicSpiceImage{
-						Compression: "off",
-					},
-				},
-			}},
 			RedirDevs: []libvirtxml.DomainRedirDev{
 				{Bus: "usb", Source: &libvirtxml.DomainChardevSource{
 					SpiceVMC: &libvirtxml.DomainChardevSourceSpiceVMC{},
@@ -207,6 +223,100 @@ func (vm *VirtDeployVM) asXml(network *virtDeployNetwork, nvramPool storagePool)
 					SpiceVMC: &libvirtxml.DomainChardevSourceSpiceVMC{},
 				}},
 			},
+			Serials: []libvirtxml.DomainSerial{{
+				Source: &libvirtxml.DomainChardevSource{
+					Pty: &libvirtxml.DomainChardevSourcePty{
+						Path: "/dev/pts/2",
+					},
+				},
+				Target: &libvirtxml.DomainSerialTarget{Port: new(uint)},
+				Log:    &libvirtxml.DomainChardevLog{File: fmt.Sprintf("/tmp/%s-serial0.log", vm.name), Append: "off"},
+			}},
+			TPMs: tpms,
+		},
+	}
+
+	xml, err := dom.Marshal()
+	if err != nil {
+		return "", fmt.Errorf("marshal domain to XML: %w", err)
+	}
+	return xml, nil
+}
+
+func (vm *VirtDeployVM) asArm64Xml(network *virtDeployNetwork, nvramPool storagePool) (string, error) {
+	domainType := "qemu"
+	osType := libvirtxml.DomainOSType{Arch: "aarch64", Machine: "virt-6.2", Type: "hvm"}
+	cpuModel := libvirtxml.DomainCPUModel{Fallback: "forbid", Value: "cortex-a57"}
+	cpuFeatures := []libvirtxml.DomainCPUFeature{}
+	emulator := "/usr/bin/qemu-system-aarch64"
+
+	// Build disks
+	disks := vm.configureDisks()
+
+	// Optional TPM
+	tpms := vm.configureTpms()
+
+	// Network interface (single)
+	ifaces := vm.configureNetwork(network)
+
+	dom := libvirtxml.Domain{
+		Type:   domainType,
+		Name:   vm.name,
+		Memory: &libvirtxml.DomainMemory{Unit: "GiB", Value: vm.Mem},
+		VCPU:   &libvirtxml.DomainVCPU{Value: vm.Cpus},
+		OS: &libvirtxml.DomainOS{
+
+			Type:   &osType,
+			SMBios: &libvirtxml.DomainSMBios{Mode: "sysinfo"},
+			Loader: &libvirtxml.DomainLoader{Path: vm.firmwareLoaderPath, Type: "pflash", Readonly: "yes"},
+			NVRam: &libvirtxml.DomainNVRam{
+				NVRam:    vm.nvramPath,
+				Template: vm.firmwareVarsTemplatePath,
+			},
+		},
+		SysInfo: []libvirtxml.DomainSysInfo{
+			{
+				SMBIOS: &libvirtxml.DomainSysInfoSMBIOS{
+					OEMStrings: &libvirtxml.DomainSysInfoOEMStrings{
+						Entry: []string{"virtdeploy:1"},
+					},
+				},
+			},
+		},
+		Features: &libvirtxml.DomainFeatureList{
+			ACPI: &libvirtxml.DomainFeature{},
+		},
+		CPU: &libvirtxml.DomainCPU{
+			Match:    "exact",
+			Check:    "none",
+			Model:    &cpuModel,
+			Features: cpuFeatures,
+		},
+		Clock: &libvirtxml.DomainClock{
+			Offset: "utc",
+		},
+		Devices: &libvirtxml.DomainDeviceList{
+			Emulator: emulator,
+			Disks:    disks,
+			Controllers: []libvirtxml.DomainController{
+				{Type: "usb", Index: new(uint), Model: "qemu-xhci", Alias: &libvirtxml.DomainAlias{Name: "usb"}},
+			},
+			Interfaces: ifaces,
+			Consoles: []libvirtxml.DomainConsole{{
+				Source: &libvirtxml.DomainChardevSource{
+					Pty: &libvirtxml.DomainChardevSourcePty{},
+				},
+			}},
+			Channels: []libvirtxml.DomainChannel{{
+				Source: &libvirtxml.DomainChardevSource{
+					UNIX: &libvirtxml.DomainChardevSourceUNIX{Mode: "bind"},
+				},
+				Target: &libvirtxml.DomainChannelTarget{
+					VirtIO: &libvirtxml.DomainChannelTargetVirtIO{
+						Name: "org.qemu.guest_agent.0",
+					},
+				},
+			}},
 			Serials: []libvirtxml.DomainSerial{{
 				Source: &libvirtxml.DomainChardevSource{
 					Pty: &libvirtxml.DomainChardevSourcePty{
