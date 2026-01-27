@@ -124,12 +124,3 @@ stages:
                   --artifacts-folder "$(ob_outputDirectory)"
             displayName: "📷 Capture screenshot: direct streaming"
             condition: succeededOrFailed()
-
-          - bash: |
-              set -eux
-              sudo ./bin/storm-trident helper display-logs -a \
-                  --serial-log-artifact-file-name "direct-streaming-target-os-A-serial.log" \
-                  --trident-trace-log-file "$(tridentSourceDirectory)/logstream-full.log" \
-                  --artifacts-folder "$(ob_outputDirectory)"
-            displayName: "📄 Display direct streaming logs"
-            condition: succeededOrFailed()
