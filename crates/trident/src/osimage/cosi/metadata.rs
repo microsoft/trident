@@ -256,8 +256,6 @@ pub(crate) struct ImageFile {
     pub uncompressed_size: u64,
 
     pub sha384: Sha384Hash,
-    // #[serde(skip)]
-    // pub(super) entry: CosiEntry,
 }
 
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq)]

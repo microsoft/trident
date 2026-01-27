@@ -322,57 +322,6 @@ fn validate_cosi_metadata_version(version: &MetadataVersion) -> Result<(), Error
     Ok(())
 }
 
-// /// Populates the metadata with the actual content location of the images.
-// /// As a side effect, this function also validates that all images defined in the
-// /// metadata are present in the COSI file, and that their basic properties match.
-// fn populate_cosi_metadata_content_location(
-//     entries: &HashMap<PathBuf, CosiEntry>,
-//     metadata: &mut CosiMetadata,
-// ) -> Result<(), Error> {
-//     let find_entry = |img: &ImageFile| {
-//         let Some(entry) = entries.get(&img.path) else {
-//             bail!(
-//                 "COSI metadata contains an entry for a filesystem image at '{}', but the entry was not found in the COSI file",
-//                 img.path.display()
-//             );
-//         };
-
-//         ensure!(entry.size == img.compressed_size,
-//                 "COSI metadata specifies a compressed size of {} bytes for the filesystem image at '{}', but the actual entry size is {} bytes",
-//                 img.compressed_size,
-//                 img.path.display(),
-//                 entry.size
-//         );
-
-//         Ok(*entry)
-//     };
-
-//     // Ensure that all images defined in the metadata are present in the COSI file.
-//     for image in metadata.images.iter_mut() {
-//         trace!(
-//             "Looking for entry for image mounted at '{}'",
-//             image.mount_point.display()
-//         );
-//         image.file.entry = find_entry(&image.file).with_context(|| {
-//             format!(
-//                 "Failed to find entry for image mounted at '{}'",
-//                 image.mount_point.display()
-//             )
-//         })?;
-
-//         if let Some(verity) = image.verity.as_mut() {
-//             verity.file.entry = find_entry(&verity.file).with_context(|| {
-//                 format!(
-//                     "Failed to find entry for verity hash of image mounted at '{}'",
-//                     image.mount_point.display()
-//                 )
-//             })?;
-//         }
-//     }
-
-//     Ok(())
-// }
-
 #[cfg(test)]
 mod tests {
     use super::*;
