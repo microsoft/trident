@@ -1,25 +1,26 @@
 storage:
+  bootType: efi
+
   disks:
     - partitionTableType: gpt
-      maxSize: 10G
+      maxSize: 15G
       partitions:
         - id: esp
           type: esp
-          size: 8M
-
-        - id: trident
-          type: linux-generic
-          size: 1G
-
+          size: 50M
+          label: esp
         - id: root-a
-          type: root
           size: 4G
-
+          type: root
+          label: root-a
         - id: root-b
-          type: root
           size: 4G
-
-  bootType: efi
+          type: root
+          label: root-b
+        - id: swap
+          size: 2G
+          type: swap
+          label: swap
 
   filesystems:
     - deviceId: esp
@@ -27,11 +28,6 @@ storage:
       mountPoint:
         path: /boot/efi
         options: umask=0077
-
-    - deviceId: trident
-      type: ext4
-      mountPoint:
-        path: /var/lib/trident
 
     - deviceId: root-a
       type: ext4
@@ -41,42 +37,42 @@ storage:
 os:
   bootloader:
     resetType: hard-reset
-  hostname: trident-rawcosi-testimg
+  hostname: trident-functest
+
+  selinux:
+    mode: permissive
 
   kernelCommandLine:
     # Replicates BM base image settings, that would otherwise be lost
     extraCommandLine:
-    # debugging ARM64 issues
-    # - console=tty0
-    # - console=tty1
-    # - console=ttyS0
-    - rd.debug
-    - loglevel=6
-    - log_buf_len=1M
-    # - systemd.journald.forward_to_console=1
+      - console=tty0
+      - console=ttyS0
+      - rd.info
+      - log_buf_len=1M
 
   packages:
     install:
+      - curl
       - dnf
       - efibootmgr
-      # Note: grub2-efi-binary-noprefix package is going to be the default grub package for azl3
-      - grub2-efi-binary
       - iproute
       - iptables
-      - jq
+      - lsof
+      - mdadm
+      - netplan
       - openssh-server
-      - trident-service
+      - tpm2-tools
       - vim
-      # debugging ARM64 qemu issues
-      - dracut-hyperv
-      - dracut-virtio
-      - dracut-xen
+      - audit
+      # Packages required for functional tests, which currently use this image:
+      - device-mapper
+      - dosfstools
+      - lvm2
+      - veritysetup
+      # Optional dependencies for NTFS
+      - ntfs-3g
+      - ntfsprogs
 
-  users:
-    - name: testuser
-      secondaryGroups:
-        - wheel
-
-scripts:
-  postCustomization:
-    - path: post-install.sh
+  services:
+    enable:
+      - sshd
