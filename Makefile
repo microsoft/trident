@@ -1161,7 +1161,7 @@ artifacts/trident-direct-streaming-testimage-arm64.cosi: \
 	artifacts/trident-rawcosi-testimage-arm64.cosi
 	$(eval TMP_HC := $(shell mktemp tmp-hc.XXX.yaml --tmpdir))
 	$(eval TMP_NO_HC_VHD_COSI := $(shell mktemp tmp.XXX.cosi --tmpdir))
-	sed 's|pci-0000:00:1f.2-ata-2|virtio-pci-0000:08:00.0|' $(DIRECT_STREAMING_HOST_CONFIGURATION) |
+	sed 's|pci-0000:00:1f.2-ata-2|virtio-pci-0000:08:00.0|' $(DIRECT_STREAMING_HOST_CONFIGURATION) | \
 	   sed 's|pci-0000:00:1f.2-ata-3|virtio-pci-0000:09:00.0|' > $(TMP_HC)
 	bin/mkcosi add-vpc \
 		artifacts/trident-rawcosi-testimage-arm64.cosi \
