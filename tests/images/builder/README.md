@@ -5,6 +5,7 @@ Builder is a Python tool to declare, customize, and build images with AZL Image 
 ## Overview
 
 Builder is a builder system designed around declarative image definitions that wraps around the AZL Image Customizer concepts and API.
+
 `testimages.py` script in the top-level directory contains declarative definitions of all images and artifacts, such as the Image Customizer container. It is a convenient entry point for building an image locally or in the pipelines. To learn more about the supported commands, run:
 
 ```bash
@@ -31,6 +32,7 @@ builder/
 ### `__init__.py`
 
 Defines foundational data structures and enums used throughout Builder. Specifically, defines `ImageConfig`, which represents an Image Customizer config, and `ArtifactManifest`, which describes the Image Cuztomizer container to be used for building images.
+
 Also, contains a series of other definitions that represent the base image type, output format, system architecture, etc.
 
 ### `cli.py`
@@ -48,6 +50,7 @@ This is where the high-level logic around building images, signed and unsigned, 
 ### `customize.py`
 
 Wrapper around the AZL Image Customizer API. Only container-based execution is now supported since running IC as a raw binary is no longer supported.
+
 Specifically, provides APIs for (1) building an image and (2) injecting signed boot artifacts into an image via the preview feature `inject-files`.
 
 ### Utility Files
