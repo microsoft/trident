@@ -32,4 +32,21 @@ pub enum CosiMetadataErrorKind {
 
     #[error("OS package '{0}' is missing required architecture information")]
     V1_1OsPackageMissingArch(String),
+
+    #[error("Image partition metadata is required for COSI version >= 1.2, but not provided")]
+    V1_2PartitionsRequired,
+
+    #[error(
+        "Partition {number} references path '{path}' which does not match any filesystem image"
+    )]
+    V1_2PartitionPathUnknown { number: u32, path: String },
+
+    #[error("Duplicate partition number: {0}")]
+    V1_2DuplicatePartitionNumber(u32),
+
+    #[error("Partition numbers must be 1-indexed; found partition number 0")]
+    V1_2PartitionNumberZero,
+
+    #[error("Image file at path '{0}' has no corresponding partition")]
+    V1_2ImageFileHasNoCorrespondingPartition(String),
 }
