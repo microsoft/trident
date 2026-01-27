@@ -27,7 +27,7 @@ storage:
 os:
   bootloader:
     resetType: hard-reset
-  hostname: trident-mos-testimage
+  hostname: trident-direct-streaming-mos-testimage
 
   packages:
     install:
