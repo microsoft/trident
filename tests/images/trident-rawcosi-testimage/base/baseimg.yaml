@@ -72,6 +72,8 @@ os:
       # Optional dependencies for NTFS
       - ntfs-3g
       - ntfsprogs
+      # selinux
+      - selinux-policy
 
   services:
     enable:
