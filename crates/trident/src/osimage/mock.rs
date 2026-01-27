@@ -1,6 +1,5 @@
 use std::{
     io::Read,
-    marker::PhantomData,
     ops::ControlFlow,
     path::{Path, PathBuf},
 };
@@ -59,13 +58,12 @@ pub struct MockVerity {
     pub roothash: String,
 }
 
-fn mock_os_image_file() -> OsImageFile<'static> {
+fn mock_os_image_file() -> OsImageFile {
     OsImageFile {
         compressed_size: 0,
         sha384: Sha384Hash::from("mock-sha384"),
         uncompressed_size: 0,
         path: "/img.raw.zstd".into(),
-        _phantom: PhantomData,
     }
 }
 
@@ -102,7 +100,7 @@ impl MockOsImage {
     }
 
     /// Returns the ESP filesystem image.
-    pub fn esp_filesystem(&self) -> Result<OsImageFileSystem<'_>, Error> {
+    pub fn esp_filesystem(&self) -> Result<OsImageFileSystem, Error> {
         if let Some(esp_img) = self
             .images
             .iter()
@@ -125,7 +123,7 @@ impl MockOsImage {
     }
 
     /// Returns non-ESP filesystems.
-    pub fn filesystems(&self) -> impl Iterator<Item = OsImageFileSystem<'_>> {
+    pub fn filesystems(&self) -> impl Iterator<Item = OsImageFileSystem> {
         self.images
             .iter()
             .filter(|fs| fs.part_type != DiscoverablePartitionType::Esp)

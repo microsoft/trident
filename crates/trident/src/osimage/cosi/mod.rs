@@ -1,7 +1,6 @@
 use std::{
     collections::HashMap,
     io::{Read, Seek},
-    marker::PhantomData,
     ops::ControlFlow,
     path::{Path, PathBuf},
     time::Duration,
@@ -78,10 +77,10 @@ impl Cosi {
     }
 
     /// Returns the ESP filesystem image.
-    pub(super) fn esp_filesystem(&self) -> Result<OsImageFileSystem<'_>, Error> {
+    pub(super) fn esp_filesystem(&self) -> Result<OsImageFileSystem, Error> {
         self.metadata
             .get_esp_filesystem()
-            .map(|image| cosi_image_to_os_image_filesystem(&self.reader, image))
+            .map(|image| cosi_image_to_os_image_filesystem(image))
     }
 
     /// Returns an iterator of available mount points in the COSI file.
@@ -92,10 +91,10 @@ impl Cosi {
     }
 
     /// Returns an iterator over all images that are NOT the ESP filesystem image.
-    pub(super) fn filesystems(&self) -> impl Iterator<Item = OsImageFileSystem<'_>> {
+    pub(super) fn filesystems(&self) -> impl Iterator<Item = OsImageFileSystem> {
         self.metadata
             .get_regular_filesystems()
-            .map(|image| cosi_image_to_os_image_filesystem(&self.reader, image))
+            .map(|image| cosi_image_to_os_image_filesystem(image))
     }
 
     /// Derives the storage and image section of a Host Configuration from this COSI file.
@@ -146,10 +145,7 @@ impl Cosi {
 }
 
 /// Converts a COSI metadata Image to an OsImageFileSystem.
-fn cosi_image_to_os_image_filesystem<'a>(
-    _cosi_reader: &'a FileReader,
-    image: &metadata::Image,
-) -> OsImageFileSystem<'a> {
+fn cosi_image_to_os_image_filesystem(image: &metadata::Image) -> OsImageFileSystem {
     // Make an early copy so the borrow checker knows that we are not keeping a reference to the
     // original image. Calling as_rer().map() on image.verity seems to tell the borrow checker
     // that we are keeping a reference to the original image, even if we only clone stuff and don't
@@ -165,12 +161,6 @@ fn cosi_image_to_os_image_filesystem<'a>(
             sha384: image.file.sha384,
             uncompressed_size: image.file.uncompressed_size,
             path: image.file.path.clone(),
-            _phantom: PhantomData,
-            // reader: {
-            //     Box::new(move || {
-            //         cosi_reader.section_reader(image.file.entry.offset, image.file.entry.size)
-            //     })
-            // },
         },
         verity: image.verity.map(|verity| OsImageVerityHash {
             hash_image_file: OsImageFile {
@@ -178,12 +168,6 @@ fn cosi_image_to_os_image_filesystem<'a>(
                 sha384: verity.file.sha384,
                 uncompressed_size: verity.file.uncompressed_size,
                 path: image.file.path,
-                _phantom: PhantomData,
-                // reader: {
-                //     Box::new(move || {
-                //         cosi_reader.section_reader(verity.file.entry.offset, verity.file.entry.size)
-                //     })
-                // },
             },
             roothash: verity.roothash,
         }),
@@ -773,7 +757,6 @@ mod tests {
     #[test]
     fn test_cosi_image_to_os_image_filesystem() {
         let data = "some data";
-        let reader = FileReader::Buffer(Cursor::new(data.as_bytes().to_vec()));
         let mut cosi_img = Image {
             file: ImageFile {
                 path: PathBuf::from("some/path"),
@@ -787,7 +770,7 @@ mod tests {
             part_type: DiscoverablePartitionType::LinuxGeneric,
             verity: None,
         };
-        let os_fs = cosi_image_to_os_image_filesystem(&reader, &cosi_img);
+        let os_fs = cosi_image_to_os_image_filesystem(&cosi_img);
 
         assert_eq!(os_fs.mount_point, cosi_img.mount_point);
         assert_eq!(os_fs.fs_type, cosi_img.fs_type);
@@ -811,7 +794,6 @@ mod tests {
         // Now test with verity.
         let root_hash = "some-root-hash-1234";
         let verity_data = "some data";
-        let reader = FileReader::Buffer(Cursor::new(verity_data.as_bytes().to_vec()));
         cosi_img.verity = Some(VerityMetadata {
             file: ImageFile {
                 path: PathBuf::from("some/verity/path"),
@@ -822,7 +804,7 @@ mod tests {
             roothash: root_hash.to_string(),
         });
 
-        let os_fs = cosi_image_to_os_image_filesystem(&reader, &cosi_img);
+        let os_fs = cosi_image_to_os_image_filesystem(&cosi_img);
 
         assert_eq!(os_fs.mount_point, cosi_img.mount_point);
         assert_eq!(os_fs.fs_type, cosi_img.fs_type);
@@ -966,7 +948,6 @@ mod tests {
         let esp = cosi.esp_filesystem().unwrap();
 
         let expected = cosi_image_to_os_image_filesystem(
-            &cosi.reader,
             // The ESP is the first image in the list.
             &cosi.metadata.images[0],
         );
@@ -1062,7 +1043,7 @@ mod tests {
             .images
             .iter()
             .skip(1)
-            .map(|img| cosi_image_to_os_image_filesystem(&cosi.reader, img))
+            .map(|img| cosi_image_to_os_image_filesystem(img))
             .collect::<Vec<_>>();
         let img_data = mock_images
             .iter()

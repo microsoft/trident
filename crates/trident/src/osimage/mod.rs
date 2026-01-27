@@ -1,7 +1,6 @@
 use std::{
     fmt::{Display, Formatter},
     io::Read,
-    marker::PhantomData,
     ops::ControlFlow,
     path::{Path, PathBuf},
     time::Duration,
@@ -135,7 +134,7 @@ impl OsImage {
     }
 
     /// Find the mount point which contains the given path.
-    pub(crate) fn path_to_filesystem(&self, path: &Path) -> Option<OsImageFileSystem<'_>> {
+    pub(crate) fn path_to_filesystem(&self, path: &Path) -> Option<OsImageFileSystem> {
         self.filesystems()
             .filter(|fs| path.starts_with(&fs.mount_point))
             .max_by_key(|fs| fs.mount_point.components().count())
@@ -151,7 +150,7 @@ impl OsImage {
     }
 
     /// Returns the ESP filesystem image.
-    pub(crate) fn esp_filesystem(&self) -> Result<OsImageFileSystem<'_>, Error> {
+    pub(crate) fn esp_filesystem(&self) -> Result<OsImageFileSystem, Error> {
         match &self.0 {
             OsImageInner::Cosi(cosi) => cosi.esp_filesystem(),
             #[cfg(test)]
@@ -160,7 +159,7 @@ impl OsImage {
     }
 
     /// Returns an iterator over all images that are NOT the ESP filesystem image.
-    pub(crate) fn filesystems(&self) -> Box<dyn Iterator<Item = OsImageFileSystem<'_>> + '_> {
+    pub(crate) fn filesystems(&self) -> Box<dyn Iterator<Item = OsImageFileSystem> + '_> {
         match &self.0 {
             OsImageInner::Cosi(cosi) => Box::new(cosi.filesystems()),
             #[cfg(test)]
@@ -169,7 +168,7 @@ impl OsImage {
     }
 
     /// Returns the root filesystem image.
-    pub(crate) fn root_filesystem(&self) -> Option<OsImageFileSystem<'_>> {
+    pub(crate) fn root_filesystem(&self) -> Option<OsImageFileSystem> {
         self.filesystems()
             .find(|fs| fs.mount_point == Path::new(ROOT_MOUNT_POINT_PATH))
     }
@@ -207,36 +206,35 @@ impl OsImage {
 }
 
 #[derive(Debug)]
-pub struct OsImageFileSystem<'a> {
+pub struct OsImageFileSystem {
     pub mount_point: PathBuf,
     pub fs_type: OsImageFileSystemType,
     pub fs_uuid: OsUuid,
     pub part_type: DiscoverablePartitionType,
-    pub image_file: OsImageFile<'a>,
-    pub verity: Option<OsImageVerityHash<'a>>,
+    pub image_file: OsImageFile,
+    pub verity: Option<OsImageVerityHash>,
 }
 
-impl OsImageFileSystem<'_> {
+impl OsImageFileSystem {
     /// Returns whether the image has a verity hash.
     pub fn has_verity(&self) -> bool {
         self.verity.is_some()
     }
 }
 
-pub struct OsImageFile<'a> {
+pub struct OsImageFile {
     pub compressed_size: u64,
     pub sha384: Sha384Hash,
     pub uncompressed_size: u64,
 
     /// Path of the partition image within the COSI.
     pub path: PathBuf,
-    _phantom: PhantomData<&'a ()>,
 }
 
 #[derive(Debug)]
-pub struct OsImageVerityHash<'a> {
+pub struct OsImageVerityHash {
     pub roothash: String,
-    pub hash_image_file: OsImageFile<'a>,
+    pub hash_image_file: OsImageFile,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Eq, PartialEq)]
@@ -310,7 +308,7 @@ impl From<OsImageFileSystemType> for RealFilesystemType {
     }
 }
 
-impl std::fmt::Debug for OsImageFile<'_> {
+impl std::fmt::Debug for OsImageFile {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OsImageFile")
             .field("compressed_size", &self.compressed_size)
