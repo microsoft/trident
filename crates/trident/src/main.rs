@@ -94,7 +94,7 @@ fn run_trident(
             use std::io::Write;
             use trident_api::error::ReportError;
 
-            let mut config = trident::stream::config_from_image_url(image.clone(), hash)
+            let config = trident::stream::config_from_image_url(image.clone(), hash)
                 .message("Failed to generate Host Configuration from image URL")?;
 
             // Write config to a temporary file
