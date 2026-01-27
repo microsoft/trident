@@ -338,6 +338,10 @@ class LibvirtHelper:
         return volume
 
     def _setup_vms(self, pool: libvirt.virStoragePool) -> List[VirtualMachine]:
+        arm = platform.machine().lower() in ("arm64", "aarch64")
+        disk_dev_prefix = "vd" if arm else "sd"
+        vm_template = "vm_arm64.xml" if arm else "vm.xml"
+
         for vm in self.vms:
             # Locate and destroy any old VMs
             self._delete_domain_by_name(vm.name)
@@ -353,7 +357,7 @@ class LibvirtHelper:
                 source = self._setup_volume(
                     volname, pool, disk, vm.os_disk if index == 0 else None
                 ).path()
-                dev = f"sd{chr(ord('a') + index)}"
+                dev = f"{disk_dev_prefix}{chr(ord('a') + index)}"
                 volume = VolumeParameters(source, dev)
                 volumes.append(volume)
 
@@ -382,10 +386,7 @@ class LibvirtHelper:
             ]
 
             # Set up VM
-            template_for_architecture = "vm.xml"
-            if platform.machine().lower() in ("arm64", "aarch64"):
-                template_for_architecture = "vm_arm64.xml"
-            template = self.env.get_template(template_for_architecture)
+            template = self.env.get_template(vm_template)
             xml = template.render(
                 name=vm.name,
                 cpus=vm.cpus,
