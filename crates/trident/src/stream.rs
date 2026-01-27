@@ -110,7 +110,7 @@ fn pad_to_4k(part: &Partition) -> Result<u64, Error> {
             "Partition '{}' size {} is not aligned to 4KiB, padding to next 4KiB boundary",
             part.id, size
         );
-        Ok(size + (4096 - (size % 4096)))
+        Ok(size.next_multiple_of(4096))
     }
 }
 

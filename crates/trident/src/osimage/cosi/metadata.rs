@@ -46,6 +46,12 @@ impl KnownMetadataVersion {
     }
 }
 
+impl Display for KnownMetadataVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.as_version().fmt(f)
+    }
+}
+
 /// COSI metadata version reader.
 ///
 /// This struct only attempts to parse the COSI metadata version to ensure that

@@ -18,11 +18,12 @@ impl CosiMetadata {
         target_disk: impl AsRef<Path>,
     ) -> Result<HostConfiguration, Error> {
         if self.version < KnownMetadataVersion::V1_2 {
-            bail!("Host configuration derivation requires COSI metadata version 1.2 or higher, found {}", self.version);
+            bail!("Host configuration derivation requires COSI metadata version {} or higher, found {}", KnownMetadataVersion::V1_2, self.version);
         }
 
         let partition_metadata = {
             let Some(mut partition_metadata) = self.partitions.clone() else {
+                // This should be caught during validation.
                 bail!(
                     "COSI metadata version is {}, but partitions metadata is missing",
                     self.version
@@ -84,5 +85,131 @@ impl CosiMetadata {
             },
             ..Default::default()
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use sysdefs::arch::SystemArchitecture;
+    use trident_api::primitives::hash::Sha384Hash;
+    use uuid::Uuid;
+
+    use crate::osimage::{
+        cosi::metadata::{Image, ImageFile, Partition as CosiPartition},
+        OsImageFileSystemType,
+    };
+
+    use super::*;
+
+    #[test]
+    fn test_derive_host_configuration_ok() {
+        let metadata = CosiMetadata {
+            version: KnownMetadataVersion::V1_2.as_version(),
+            os_arch: SystemArchitecture::Amd64,
+            partitions: Some(vec![CosiPartition {
+                path: Some(PathBuf::from("/images/root.img")),
+                number: 1,
+                part_type: DiscoverablePartitionType::LinuxGeneric.to_uuid(),
+                part_uuid: Uuid::parse_str("11111111-2222-3333-4444-555555555555").unwrap(),
+                label: "root".to_string(),
+                original_size: 4 * 1024 * 1024, // 4 MiB
+            }]),
+            images: vec![Image {
+                file: ImageFile {
+                    path: PathBuf::from("/images/root.img"),
+                    compressed_size: 4096,
+                    uncompressed_size: 8192,
+                    sha384: Sha384Hash::from("1"),
+                    entry: Default::default(),
+                },
+                mount_point: "/some/location".into(),
+                fs_type: OsImageFileSystemType::Ext4,
+                fs_uuid: Uuid::parse_str("66666666-7777-8888-9999-aaaaaaaaaaaa")
+                    .unwrap()
+                    .into(),
+                part_type: DiscoverablePartitionType::LinuxGeneric,
+                verity: None,
+            }],
+            os_release: Default::default(),
+            os_packages: Default::default(),
+            id: Default::default(),
+            bootloader: Default::default(),
+        };
+
+        let target_disk = "/dev/sda";
+        let hc = metadata.derive_host_configuration(target_disk).unwrap();
+        assert_eq!(hc.storage.disks.len(), 1);
+        assert_eq!(hc.storage.disks[0].device, *target_disk);
+        assert_eq!(hc.storage.disks[0].partitions.len(), 1);
+        assert_eq!(hc.storage.filesystems.len(), 1);
+
+        let partition = &hc.storage.disks[0].partitions[0];
+        let filesystem = &hc.storage.filesystems[0];
+
+        assert_eq!(partition.size.to_bytes(), Some(4 * 1024 * 1024));
+        assert_eq!(
+            partition.uuid.unwrap().to_string(),
+            "11111111-2222-3333-4444-555555555555"
+        );
+        assert_eq!(partition.label.as_deref(), Some("root"));
+        assert_eq!(
+            partition.partition_type,
+            DiscoverablePartitionType::LinuxGeneric.into()
+        );
+
+        assert_eq!(filesystem.mount_point, Some("/some/location".into()));
+        assert_eq!(filesystem.source, FileSystemSource::Image);
+        assert_eq!(filesystem.device_id, Some(partition.id.clone()));
+    }
+
+    #[test]
+    fn test_derive_host_configuration_missing_image() {
+        let metadata = CosiMetadata {
+            version: KnownMetadataVersion::V1_2.as_version(),
+            os_arch: SystemArchitecture::Amd64,
+            partitions: Some(vec![CosiPartition {
+                path: Some(PathBuf::from("/images/root.img")),
+                number: 1,
+                part_type: DiscoverablePartitionType::LinuxGeneric.to_uuid(),
+                part_uuid: Uuid::parse_str("11111111-2222-3333-4444-555555555555").unwrap(),
+                label: "root".to_string(),
+                original_size: 4 * 1024 * 1024, // 4 MiB
+            }]),
+            images: vec![],
+            os_release: Default::default(),
+            os_packages: Default::default(),
+            id: Default::default(),
+            bootloader: Default::default(),
+        };
+
+        let target_disk = "/dev/sda";
+        let err = metadata.derive_host_configuration(target_disk).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("No image metadata found for partition at path"));
+    }
+
+    #[test]
+    fn test_derive_host_configuration_unsupported_version() {
+        let metadata = CosiMetadata {
+            version: KnownMetadataVersion::V1_1.as_version(),
+            os_arch: SystemArchitecture::Amd64,
+            partitions: None,
+            images: vec![],
+            os_release: Default::default(),
+            os_packages: Default::default(),
+            id: Default::default(),
+            bootloader: Default::default(),
+        };
+
+        let target_disk = "/dev/sda";
+        let err = metadata.derive_host_configuration(target_disk).unwrap_err();
+
+        assert!(err.to_string().contains(
+            "Host configuration derivation requires COSI metadata version 1.2 or higher"
+        ));
     }
 }
