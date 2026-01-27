@@ -1,9 +1,11 @@
 use std::{
-    io::Cursor,
+    io::{Cursor, Read},
+    ops::ControlFlow,
     path::{Path, PathBuf},
 };
 
 use anyhow::Error;
+use harpoon::TridentError;
 use serde::Deserialize;
 use url::Url;
 use uuid::Uuid;

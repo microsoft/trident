@@ -1,5 +1,10 @@
 use std::{
-    fmt::{Display, Formatter}, io::{Error as IoError, Read}, marker::PhantomData, ops::ControlFlow, path::{Path, PathBuf}, time::Duration
+    fmt::{Display, Formatter},
+    io::Read,
+    marker::PhantomData,
+    ops::ControlFlow,
+    path::{Path, PathBuf},
+    time::Duration,
 };
 
 use anyhow::Error;
@@ -196,7 +201,7 @@ impl OsImage {
         match &self.0 {
             OsImageInner::Cosi(cosi) => cosi.read_images(f),
             #[cfg(test)]
-            _ => todo!(),
+            OsImageInner::Mock(m) => unimplemented!(),
         }
     }
 }

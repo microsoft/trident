@@ -254,7 +254,7 @@ pub enum InvalidInputError {
     MissingOsImageFilesystem { mount_point: String },
 
     #[error(
-        "A multiboot install was requested, but the provided Host Configuration does not include 
+        "A multiboot install was requested, but the provided Host Configuration does not include
         any adopted partitions."
     )]
     MultibootWithoutAdoptedPartitions,
