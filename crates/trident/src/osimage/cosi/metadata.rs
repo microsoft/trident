@@ -19,6 +19,7 @@ use crate::osimage::OsImageFileSystemType;
 use super::CosiEntry;
 
 /// Enum of known COSI metadata versions up to the current implementation.
+#[derive(Debug, Eq, PartialEq)]
 pub(super) enum KnownMetadataVersion {
     /// Base version of the COSI metadata specification.
     #[allow(dead_code)]
@@ -93,10 +94,6 @@ pub(crate) struct CosiMetadata {
     #[allow(dead_code)]
     #[serde(default)]
     pub bootloader: Option<Bootloader>,
-
-    /// Template for a host configuration embedded within the image.
-    #[serde(default)]
-    pub host_configuration_template: Option<String>,
 
     /// Original image partition metadata.
     ///
@@ -194,6 +191,30 @@ impl Ord for MetadataVersion {
 impl Display for MetadataVersion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}.{}", self.major, self.minor)
+    }
+}
+
+impl PartialEq<MetadataVersion> for KnownMetadataVersion {
+    fn eq(&self, other: &MetadataVersion) -> bool {
+        self.as_version() == *other
+    }
+}
+
+impl PartialOrd<MetadataVersion> for KnownMetadataVersion {
+    fn partial_cmp(&self, other: &MetadataVersion) -> Option<Ordering> {
+        Some(self.as_version().cmp(other))
+    }
+}
+
+impl PartialEq<KnownMetadataVersion> for MetadataVersion {
+    fn eq(&self, other: &KnownMetadataVersion) -> bool {
+        *self == other.as_version()
+    }
+}
+
+impl PartialOrd<KnownMetadataVersion> for MetadataVersion {
+    fn partial_cmp(&self, other: &KnownMetadataVersion) -> Option<Ordering> {
+        Some(self.cmp(&other.as_version()))
     }
 }
 
@@ -438,7 +459,6 @@ mod tests {
             os_packages: None,
             id: None,
             bootloader: None,
-            host_configuration_template: None,
             partitions: None,
         };
 
@@ -510,7 +530,6 @@ mod tests {
             os_packages: None,
             id: None,
             bootloader: None,
-            host_configuration_template: None,
             partitions: None,
         };
 

@@ -8,13 +8,17 @@ use cli::GetKind;
 use log::{debug, error, info, warn};
 use nix::unistd::Uid;
 use semver::Version;
+use url::Url;
 
 use engine::{bootentries, EngineContext};
 use osutils::{block_devices, container, dependencies::Dependency};
 use trident_api::{
-    config::{HostConfiguration, HostConfigurationSource, Operations},
+    config::{
+        HostConfiguration, HostConfigurationSource, ImageSha384, Operations,
+        OsImage as ConfigOsImage,
+    },
     constants::internal_params::{
-        HTTP_CONNECTION_TIMEOUT_SECONDS, ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS,
+        HTTP_CONNECTION_TIMEOUT_SECONDS, ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS, RAW_COSI_STORAGE,
         WAIT_FOR_SYSTEMD_NETWORKD,
     },
     error::{
@@ -57,6 +61,7 @@ pub use crate::{
 use crate::{
     engine::{ab_update, rollback, runtime_update, storage::rebuild, SUBSYSTEMS},
     osimage::OsImage,
+    stream::DiskSelectionStrategy,
 };
 
 /// Trident version as provided by environment variables at build time
@@ -606,6 +611,42 @@ impl Trident {
                 }
             }
         })
+    }
+
+    pub fn stream_image(
+        &mut self,
+        datastore: &mut DataStore,
+        image_url: &Url,
+        hash: &str,
+    ) -> Result<ExitKind, TridentError> {
+        let mut image_source = ConfigOsImage {
+            url: image_url.clone(),
+            sha384: ImageSha384::new(hash)?,
+        };
+
+        let image = OsImage::load(&mut image_source, Duration::from_secs(10))
+            .message("Failed to download OS image")?;
+
+        let mut config = image
+            .derived_host_configuration("")
+            .structured(InvalidInputError::DeriveHostConfiguration)
+            .message("Host Configuration cannot be derived from this OS image.")?
+            .structured(InvalidInputError::DeriveHostConfiguration)?;
+
+        // Sanity check the derived Host Configuration
+        config
+            .validate()
+            .map_err(|e| TridentError::new(InternalError::from(e)))?;
+
+        // Set RAW_COSI_STORAGE internal parameter to true to indicate
+        // that the Host Configuration was derived from a raw COSI image.
+        config.internal_params.set_flag(RAW_COSI_STORAGE);
+
+        stream::update_target_disk_path(&mut config, DiskSelectionStrategy::SmallestThatWillFit)?;
+
+        self.host_config = Some(config);
+
+        self.install(datastore, Operations::all(), false)
     }
 
     pub fn commit(&mut self, datastore: &mut DataStore) -> Result<ExitKind, TridentError> {

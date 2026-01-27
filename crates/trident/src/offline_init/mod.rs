@@ -443,7 +443,7 @@ pub fn execute(
         host_status
             .spec
             .internal_params
-            .set_flag("injectedHostStatus".into());
+            .set_flag("injectedHostStatus");
         host_status
     } else {
         let history_file_paths = [Path::new("/usr/share/image-customizer/history.json")];

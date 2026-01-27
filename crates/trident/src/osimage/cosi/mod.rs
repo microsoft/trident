@@ -20,6 +20,7 @@ use crate::io_utils::{
     hashing_reader::{HashingReader, HashingReader384},
 };
 
+mod derived_hc;
 mod error;
 mod metadata;
 mod validation;
@@ -869,7 +870,6 @@ mod tests {
                 os_packages: None,
                 images,
                 bootloader: None,
-                host_configuration_template: None,
                 partitions: None,
             },
             reader: FileReader::Buffer(data),
@@ -891,7 +891,6 @@ mod tests {
                 images: vec![],
                 os_packages: None,
                 bootloader: None,
-                host_configuration_template: None,
                 partitions: None,
             },
             reader: FileReader::Buffer(Cursor::new(Vec::<u8>::new())),

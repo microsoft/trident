@@ -683,9 +683,7 @@ mod tests {
         let graph = host_config.storage.build_graph().unwrap();
 
         // Check that if self-upgrade internal parameter is set, we return an error
-        host_config
-            .internal_params
-            .set_flag(SELF_UPGRADE_TRIDENT.into());
+        host_config.internal_params.set_flag(SELF_UPGRADE_TRIDENT);
         let validation_error = host_config.validate_root_verity_config(&graph).unwrap_err();
         assert_eq!(
             validation_error,
