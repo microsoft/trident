@@ -36,6 +36,23 @@ func (vm *VirtDeployVM) asXml(network *virtDeployNetwork, nvramPool storagePool)
 func (vm *VirtDeployVM) configureDisks() []libvirtxml.DomainDisk {
 	disks := make([]libvirtxml.DomainDisk, 0, len(vm.volumes)+len(vm.cdroms))
 	for i, vol := range vm.volumes {
+		addressDrive := &libvirtxml.DomainAddressDrive{
+			Controller: new(uint),
+			Bus:        new(uint),
+			Target:     new(uint),
+			Unit:       ref.Of(uint(i + 1)),
+		}
+		addressPci := &libvirtxml.DomainAddressPCI{
+			Domain:   new(uint),
+			Bus:      new(uint),
+			Slot:     new(uint),
+			Function: new(uint),
+		}
+		if runtime.GOARCH == "arm64" {
+			addressDrive = nil
+		} else {
+			addressPci = nil
+		}
 		disks = append(disks, libvirtxml.DomainDisk{
 			Device: "disk",
 			Driver: &libvirtxml.DomainDiskDriver{
@@ -50,12 +67,8 @@ func (vm *VirtDeployVM) configureDisks() []libvirtxml.DomainDisk {
 				Bus: vm.getDiskBus(),
 			},
 			Address: &libvirtxml.DomainAddress{
-				Drive: &libvirtxml.DomainAddressDrive{
-					Controller: new(uint),
-					Bus:        new(uint),
-					Target:     new(uint),
-					Unit:       ref.Of(uint(i + 1)),
-				},
+				Drive: addressDrive,
+				PCI:   addressPci,
 			},
 		})
 	}
