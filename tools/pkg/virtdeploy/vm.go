@@ -79,25 +79,13 @@ func (vm *VirtDeployVM) configureDisks() []libvirtxml.DomainDisk {
 			Target:     new(uint),
 			Unit:       ref.Of(uint(i + 1)),
 		}
-		addressPci := &libvirtxml.DomainAddressPCI{
-			Domain:   new(uint),
-			Bus:      new(uint),
-			Slot:     new(uint),
-			Function: new(uint),
-		}
-		if runtime.GOARCH == "arm64" {
-			addressDrive = nil
-		} else {
-			addressPci = nil
-		}
 		d := libvirtxml.DomainDisk{
 			Device:   "cdrom",
 			Driver:   &libvirtxml.DomainDiskDriver{Name: "qemu", Type: "raw"},
-			Target:   &libvirtxml.DomainDiskTarget{Dev: cd.device, Bus: vm.getDiskBus()},
+			Target:   &libvirtxml.DomainDiskTarget{Dev: cd.device, Bus: "sata"},
 			ReadOnly: &libvirtxml.DomainDiskReadOnly{},
 			Address: &libvirtxml.DomainAddress{
 				Drive: addressDrive,
-				PCI:   addressPci,
 			},
 		}
 		if cd.path != "" {
