@@ -334,7 +334,7 @@ fn adopt_partitions(disk: &ResolvedDisk, repart: &mut SystemdRepartInvoker) -> R
                 // ignored by repart regardless of value because this partition
                 // already exists, so no need to pass it in. For convenience of
                 // any future reader, we *try* to pass in the existing UUID of
-                // this partition.W
+                // this partition.
                 //
                 // > The UUID to assign to the partition if none is assigned
                 // > yet. Note that this setting is not used for matching. It is
