@@ -12,27 +12,43 @@ storage:
     - id: esp
       type: esp
       size: 64M
+      uuid: null
+      label: null
     - id: boot
       type: xbootldr
       size: 512M
+      uuid: null
+      label: null
     - id: root-data
       type: root
       size: 8G
+      uuid: null
+      label: null
     - id: root-hash
       type: root-verity
       size: 400M
+      uuid: null
+      label: null
     - id: trident
       type: linux-generic
       size: 128M
+      uuid: null
+      label: null
     - id: trident-overlay
       type: linux-generic
       size: 128M
+      uuid: null
+      label: null
     - id: var
       type: linux-generic
       size: 1G
+      uuid: null
+      label: null
     - id: home
       type: linux-generic
       size: 1G
+      uuid: null
+      label: null
   filesystems:
   - deviceId: esp
     mountPoint:

@@ -12,45 +12,73 @@ storage:
     - id: esp1
       type: esp
       size: 64M
+      uuid: null
+      label: null
     - id: boot-a1
       type: xbootldr
       size: 512M
+      uuid: null
+      label: null
     - id: boot-b1
       type: xbootldr
       size: 512M
+      uuid: null
+      label: null
     - id: root-data-a1
       type: root
       size: 4G
+      uuid: null
+      label: null
     - id: root-data-b1
       type: root
       size: 4G
+      uuid: null
+      label: null
     - id: root-hash-a1
       type: root-verity
       size: 400M
+      uuid: null
+      label: null
     - id: root-hash-b1
       type: root-verity
       size: 400M
+      uuid: null
+      label: null
     - id: swap1
       type: swap
       size: 2G
+      uuid: null
+      label: null
     - id: trident1
       type: linux-generic
       size: 128M
+      uuid: null
+      label: null
     - id: trident-overlay-a1
       type: linux-generic
       size: 128M
+      uuid: null
+      label: null
     - id: trident-overlay-b1
       type: linux-generic
       size: 128M
+      uuid: null
+      label: null
     - id: var-a1
       type: linux-generic
       size: 1G
+      uuid: null
+      label: null
     - id: var-b1
       type: linux-generic
       size: 1G
+      uuid: null
+      label: null
     - id: enc-home1
       type: linux-generic
       size: 1G
+      uuid: null
+      label: null
   - id: disk2
     device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
     partitionTableType: gpt
@@ -58,45 +86,73 @@ storage:
     - id: esp2
       type: esp
       size: 64M
+      uuid: null
+      label: null
     - id: boot-a2
       type: xbootldr
       size: 512M
+      uuid: null
+      label: null
     - id: boot-b2
       type: xbootldr
       size: 512M
+      uuid: null
+      label: null
     - id: root-data-a2
       type: root
       size: 4G
+      uuid: null
+      label: null
     - id: root-data-b2
       type: root
       size: 4G
+      uuid: null
+      label: null
     - id: root-hash-a2
       type: root-verity
       size: 400M
+      uuid: null
+      label: null
     - id: root-hash-b2
       type: root-verity
       size: 400M
+      uuid: null
+      label: null
     - id: swap2
       type: swap
       size: 2G
+      uuid: null
+      label: null
     - id: trident2
       type: linux-generic
       size: 128M
+      uuid: null
+      label: null
     - id: trident-overlay-a2
       type: linux-generic
       size: 128M
+      uuid: null
+      label: null
     - id: trident-overlay-b2
       type: linux-generic
       size: 128M
+      uuid: null
+      label: null
     - id: var-a2
       type: linux-generic
       size: 1G
+      uuid: null
+      label: null
     - id: var-b2
       type: linux-generic
       size: 1G
+      uuid: null
+      label: null
     - id: enc-home2
       type: linux-generic
       size: 1G
+      uuid: null
+      label: null
   encryption:
     recoveryKeyUrl: file:///recovery.key
     volumes:
