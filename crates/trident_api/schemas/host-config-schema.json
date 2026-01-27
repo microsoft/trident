@@ -748,6 +748,11 @@
           "type": "string",
           "format": "Block Device ID"
         },
+        "label": {
+          "description": "Partition label. If not set, the partition's block device ID will be used as the label.",
+          "type": "string",
+          "nullable": true
+        },
         "size": {
           "description": "Size of the partition.",
           "allOf": [
@@ -764,6 +769,12 @@
               "$ref": "#/definitions/PartitionType"
             }
           ]
+        },
+        "uuid": {
+          "description": "Partition UUID. If not set, a new random UUID will be generated.",
+          "type": "string",
+          "format": "uuid",
+          "nullable": true
         }
       },
       "additionalProperties": false

@@ -34,6 +34,14 @@ Size of the partition.
 | Type           | `PartitionSize`                     |
 | Link           | [PartitionSize](./PartitionSize.md) |
 
+### `label` (optional)
+
+Partition label. If not set, the partition's block device ID will be used as the label.
+
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+
 ### `type` (optional)
 
 The type of the partition.
@@ -45,4 +53,13 @@ As defined by the [Discoverable Partitions Specification](https://uapi-group.org
 | Type           | `PartitionType`                     |
 | Default        | `"linux-generic"`                   |
 | Link           | [PartitionType](./PartitionType.md) |
+
+### `uuid` (optional)
+
+Partition UUID. If not set, a new random UUID will be generated.
+
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+| Format         | `uuid`   |
 

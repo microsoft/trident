@@ -12,9 +12,13 @@ storage:
     - id: esp
       type: esp
       size: 64M
+      uuid: null
+      label: null
     - id: root
       type: root
       size: 8G
+      uuid: null
+      label: null
   filesystems:
   - deviceId: esp
     mountPoint:

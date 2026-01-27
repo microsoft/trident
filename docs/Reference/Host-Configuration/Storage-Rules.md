@@ -118,6 +118,7 @@ across all block devices of that type.
 | Device Kind       | Field Name |
 | ----------------- | ---------- |
 | disk              | device     |
+| partition         | uuid       |
 | adopted-partition | matchLabel |
 | adopted-partition | matchUuid  |
 | raid-array        | name       |

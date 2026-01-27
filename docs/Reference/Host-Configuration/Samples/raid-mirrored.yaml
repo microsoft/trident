@@ -12,12 +12,18 @@ storage:
     - id: esp1
       type: esp
       size: 64M
+      uuid: null
+      label: null
     - id: root1
       type: root
       size: 4G
+      uuid: null
+      label: null
     - id: trident1
       type: linux-generic
       size: 128M
+      uuid: null
+      label: null
   - id: disk2
     device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
     partitionTableType: gpt
@@ -25,12 +31,18 @@ storage:
     - id: esp2
       type: esp
       size: 64M
+      uuid: null
+      label: null
     - id: root2
       type: root
       size: 4G
+      uuid: null
+      label: null
     - id: trident2
       type: linux-generic
       size: 128M
+      uuid: null
+      label: null
   raid:
     software:
     - id: esp

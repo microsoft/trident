@@ -12,27 +12,43 @@ storage:
     - id: esp
       type: esp
       size: 64M
+      uuid: null
+      label: null
     - id: root-a
       type: root
       size: 8G
+      uuid: null
+      label: null
     - id: root-b
       type: root
       size: 8G
+      uuid: null
+      label: null
     - id: swap
       type: swap
       size: 2G
+      uuid: null
+      label: null
     - id: trident
       type: linux-generic
       size: 128M
+      uuid: null
+      label: null
     - id: enc-srv
       type: linux-generic
       size: 1G
+      uuid: null
+      label: null
     - id: raid-a
       type: linux-generic
       size: 1G
+      uuid: null
+      label: null
     - id: raid-b
       type: linux-generic
       size: 1G
+      uuid: null
+      label: null
   encryption:
     recoveryKeyUrl: file:///recovery.key
     volumes:
