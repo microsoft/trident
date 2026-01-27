@@ -9,6 +9,8 @@
 
 use std::path::Path;
 
+use uuid::Uuid;
+
 use super::{
     builder::StorageGraphBuilder,
     error::StorageGraphBuildError,
@@ -667,6 +669,66 @@ fn test_unique_field_constraint_error() {
             kind: BlkDevKind::Disk,
             field_name: "device".into(),
             value: "/dev/sda".into()
+        }
+    );
+}
+
+#[test]
+fn test_partition_uuid_uniqueness_constraint() {
+    let uuid = Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap();
+    let other_uuid = Uuid::parse_str("223e4567-e89b-12d3-a456-426614174000").unwrap();
+
+    let partition1 = Partition {
+        id: "partition1".into(),
+        size: PartitionSize::Fixed(4096.into()),
+        partition_type: PartitionType::LinuxGeneric,
+        uuid: Some(uuid),
+        label: None,
+    };
+
+    let mut partition2 = Partition {
+        id: "partition2".into(),
+        size: PartitionSize::Fixed(4096.into()),
+        partition_type: PartitionType::LinuxGeneric,
+        // Some DIFFERENT UUID
+        uuid: Some(other_uuid),
+        label: None,
+    };
+
+    let partition3 = Partition {
+        id: "partition3".into(),
+        size: PartitionSize::Fixed(4096.into()),
+        partition_type: PartitionType::LinuxGeneric,
+        uuid: None,
+        label: None,
+    };
+
+    let mut builder = StorageGraphBuilder::default();
+    builder.add_node((&partition1).into());
+    builder.add_node((&partition2).into());
+    builder.add_node((&partition3).into());
+
+    // Ensure no error occurs when UUIDs are different
+    builder.build().unwrap();
+
+    let mut builder = StorageGraphBuilder::default();
+    builder.add_node((&partition1).into());
+
+    // Now set partition2's UUID to be the SAME as partition1's UUID
+    partition2.uuid = Some(uuid);
+    builder.add_node((&partition2).into());
+
+    builder.add_node((&partition3).into());
+
+    // Graph build should fail because partition UUIDs must be unique.
+    assert_eq!(
+        builder.build().unwrap_err(),
+        StorageGraphBuildError::UniqueFieldConstraintError {
+            node_id: "partition2".into(),
+            other_id: "partition1".into(),
+            kind: BlkDevKind::Partition,
+            field_name: "uuid".into(),
+            value: String::from_utf8_lossy(uuid.as_bytes()).into()
         }
     );
 }
