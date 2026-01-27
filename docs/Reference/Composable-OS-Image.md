@@ -171,14 +171,14 @@ identical.
 The order of `Partition` objects in the `partitions` array is unspecified since
 the `number` field indicates the original ordering.
 
-| Field          | Type   | Added in | Required        | Description                                                                               |
-| -------------- | ------ | -------- | --------------- | ----------------------------------------------------------------------------------------- |
-| `path`         | string | 1.2      | No              | Absolute path of the compressed image file inside the tarball. MUST start with `images/`. |
-| `originalSize` | number | 1.2      | Yes (since 1.2) | Size of the partition before any filesystem shrinking. SHOULD be at least as large as the `uncompressedSize` field of the corresponding `ImageFile` object (matched by `path`). |
-| `partType`     | UUID (string, case insensitive) | 1.2      | Yes (since 1.2) | The partition type UUID.                                         |
-| `partUuid`     | UUID (string, case insensitive) | 1.2      | Yes (since 1.2) | The partition UUID.                                              |
-| `label`        | string | 1.2      | Yes (since 1.2) | Partition label (GPT partition name, may be an empty string).                             |
-| `number`       | number | 1.2      | Yes (since 1.2) | The index where the partition originally appeared in the partition table (1-indexed).     |
+| Field          | Type                            | Added in | Required        | Description                                                                                                                                                                     |
+| -------------- | ------------------------------- | -------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`         | string                          | 1.2      | No              | Absolute path of the compressed image file inside the tarball. MUST start with `images/`.                                                                                       |
+| `originalSize` | number                          | 1.2      | Yes (since 1.2) | Size of the partition before any filesystem shrinking. SHOULD be at least as large as the `uncompressedSize` field of the corresponding `ImageFile` object (matched by `path`). |
+| `partType`     | UUID (string, case insensitive) | 1.2      | Yes (since 1.2) | The partition type UUID.                                                                                                                                                        |
+| `partUuid`     | UUID (string, case insensitive) | 1.2      | Yes (since 1.2) | The partition UUID.                                                                                                                                                             |
+| `label`        | string                          | 1.2      | Yes (since 1.2) | Partition label (GPT partition name, may be an empty string).                                                                                                                   |
+| `number`       | number                          | 1.2      | Yes (since 1.2) | The index where the partition originally appeared in the partition table (1-indexed).                                                                                           |
 
 ##### `OsArchitecture` Enum
 
