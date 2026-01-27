@@ -87,7 +87,7 @@ pub enum ServicingType {
 /// Servicing state describes the progress of the servicing that the Trident agent is executing on
 /// the host. The host will transition through a different sequence of servicing states while
 /// servicing the host.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, EnumIter)]
 #[serde(rename_all = "kebab-case")]
 pub enum ServicingState {
     /// The host is running from the provisioning OS and has not yet been provisioned by Trident.
