@@ -162,7 +162,9 @@ func CaptureScreenshot(vmName string, artifactsFolder string, screenshotFilename
 
 	pngPath := filepath.Join(artifactsFolder, screenshotFilename)
 	if err := convertPpmToPng(ppmPath, pngPath); err != nil {
-		return fmt.Errorf("failed to convert PPM to PNG: %w", err)
+		// As long as PPM succeeded, the image has been captured, so log
+		// any error, but do not fail the helper.
+		logrus.Warnf("Failed to convert PPM to PNG: %v", err)
 	}
 	return nil
 }
