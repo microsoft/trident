@@ -160,6 +160,9 @@ pub enum InvalidInputError {
     )]
     CleanInstallOnProvisionedHost,
 
+    #[error("The provided OS image file is corrupt")]
+    CorruptOsImage,
+
     #[error(
         "Filesystem mounted at '{mount_point}' requires at least {} [{fs_size} bytes] of storage. \
         However, the underlying block device '{device_id}' has storage size {} [{device_size} bytes].",

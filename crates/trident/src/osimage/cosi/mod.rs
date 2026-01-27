@@ -167,7 +167,7 @@ fn cosi_image_to_os_image_filesystem(image: &metadata::Image) -> OsImageFileSyst
                 compressed_size: verity.file.compressed_size,
                 sha384: verity.file.sha384,
                 uncompressed_size: verity.file.uncompressed_size,
-                path: image.file.path,
+                path: verity.file.path,
             },
             roothash: verity.roothash,
         }),
