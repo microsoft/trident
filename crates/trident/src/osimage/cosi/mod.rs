@@ -7,14 +7,14 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{bail, ensure, Context, Error};
+use anyhow::{bail, Context, Error};
 use log::{debug, trace};
 use tar::Archive;
 use url::Url;
 
 use trident_api::{
     config::{ImageSha384, OsImage},
-    error::{InternalError, InvalidInputError, ReportError, ServicingError, TridentError},
+    error::{InternalError, ReportError, TridentError},
     primitives::hash::Sha384Hash,
 };
 
@@ -27,7 +27,7 @@ mod error;
 mod metadata;
 mod validation;
 
-use metadata::{CosiMetadata, CosiMetadataVersion, ImageFile, MetadataVersion};
+use metadata::{CosiMetadata, CosiMetadataVersion, MetadataVersion};
 
 use super::{OsImageFile, OsImageFileSystem, OsImageVerityHash};
 
@@ -186,7 +186,7 @@ fn read_entries_until_metadata<R: Read + Seek>(
 }
 
 /// Iterate over entries from the given COSI tar archive.
-pub(crate) fn read_entries<'a, R: Read + Seek + 'a>(
+fn read_entries<'a, R: Read + Seek + 'a>(
     archive: &'a mut Archive<R>,
 ) -> Result<impl Iterator<Item = Result<(PathBuf, CosiEntry), Error>> + 'a, Error> {
     Ok(archive
@@ -765,10 +765,6 @@ mod tests {
                 compressed_size: data.len() as u64,
                 uncompressed_size: data.len() as u64,
                 sha384: Sha384Hash::from(format!("{:x}", Sha384::digest(data.as_bytes()))),
-                entry: CosiEntry {
-                    offset: 0,
-                    size: data.len() as u64,
-                },
             },
             mount_point: PathBuf::from("/some/mount/point"),
             fs_type: OsImageFileSystemType::Ext4,
