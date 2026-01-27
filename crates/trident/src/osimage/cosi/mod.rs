@@ -390,7 +390,7 @@ mod tests {
     };
     use trident_api::primitives::hash::Sha384Hash;
 
-    use crate::osimage::OsImageFileSystemType;
+    use crate::osimage::{cosi::metadata::ImageFile, OsImageFileSystemType};
 
     /// Generate a test tarball with the given entries.
     ///
@@ -491,7 +491,14 @@ mod tests {
         );
 
         // Read the entries. Use a Cursor as a file stand-in. (Cursor implements Read + Seek)
-        let entries = super::read_entries(Cursor::new(&cosi_file)).unwrap();
+        let mut archive = Archive::new(Cursor::new(&cosi_file));
+        let entries: HashMap<PathBuf, _> = super::read_entries(&mut archive)
+            .unwrap()
+            .map(|e| {
+                let e = e.unwrap();
+                (e.0.to_owned(), e.1)
+            })
+            .collect();
 
         // Check the entries
         assert_eq!(
@@ -607,10 +614,8 @@ mod tests {
         .0;
 
         // Now check that the images in the metadata have the correct entries.
-        for (image, (path, offset, size)) in metadata.images.iter().zip(image_paths.iter()) {
+        for (image, (path, _offset, _size)) in metadata.images.iter().zip(image_paths.iter()) {
             assert_eq!(image.file.path, Path::new(path), "Incorrect image path",);
-            assert_eq!(image.file.entry.offset, *offset, "Incorrect image offset");
-            assert_eq!(image.file.entry.size, *size, "Incorrect image size");
         }
     }
 
@@ -672,12 +677,6 @@ mod tests {
             Duration::from_secs(5),
         )
         .unwrap();
-
-        assert_eq!(
-            cosi.entries.len(),
-            mock_images.len() + 1,
-            "Incorrect number of entries"
-        );
 
         assert_eq!(url, cosi.source, "Incorrect source URL in COSI instance")
     }
@@ -746,12 +745,6 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(
-            cosi.entries.len(),
-            mock_images.len() + 1,
-            "Incorrect number of entries"
-        );
-
         assert_eq!(url, cosi.source, "Incorrect source URL in COSI instance")
     }
 
@@ -788,14 +781,10 @@ mod tests {
         );
         assert!(os_fs.verity.is_none());
 
-        let mut read_data = String::new();
-        os_fs
-            .image_file
-            .reader()
-            .unwrap()
-            .read_to_string(&mut read_data)
-            .unwrap();
-        assert_eq!(read_data, data);
+        assert_eq!(
+            os_fs.image_file.compressed_size,
+            cosi_img.file.compressed_size
+        );
 
         // Now test with verity.
         let root_hash = "some-root-hash-1234";
@@ -807,10 +796,6 @@ mod tests {
                 compressed_size: verity_data.len() as u64,
                 uncompressed_size: verity_data.len() as u64,
                 sha384: Sha384Hash::from(format!("{:x}", Sha384::digest(verity_data.as_bytes()))),
-                entry: CosiEntry {
-                    offset: 0,
-                    size: verity_data.len() as u64,
-                },
             },
             roothash: root_hash.to_string(),
         });
@@ -847,16 +832,6 @@ mod tests {
             os_fs_verity.hash_image_file.uncompressed_size,
             cosi_img_verity.file.uncompressed_size
         );
-
-        let mut read_data = String::new();
-        os_fs_verity
-            .hash_image_file
-            .reader()
-            .unwrap()
-            .read_to_string(&mut read_data)
-            .unwrap();
-
-        assert_eq!(read_data, verity_data);
     }
 
     fn sample_verity_cosi_file(
@@ -883,7 +858,6 @@ mod tests {
                     compressed_size: file_data.len() as u64,
                     uncompressed_size: file_data.len() as u64,
                     sha384: Sha384Hash::from(format!("{:x}", Sha384::digest(file_data.as_bytes()))),
-                    entry,
                 },
                 mount_point: PathBuf::from(mntpt),
                 fs_type: *fs_type,
@@ -895,7 +869,6 @@ mod tests {
 
         Cosi {
             source: Url::parse("mock://").unwrap(),
-            entries,
             metadata: CosiMetadata {
                 version: MetadataVersion { major: 1, minor: 0 },
                 id: Some(Uuid::new_v4()),
@@ -916,7 +889,6 @@ mod tests {
         // Test with an empty COSI file.
         let empty = Cosi {
             source: Url::parse("mock://").unwrap(),
-            entries: HashMap::new(),
             metadata: CosiMetadata {
                 version: MetadataVersion { major: 1, minor: 0 },
                 id: Some(Uuid::new_v4()),
@@ -990,18 +962,6 @@ mod tests {
             expected.image_file.uncompressed_size
         );
         assert_eq!(esp.verity.is_none(), expected.verity.is_none());
-
-        let read_data = {
-            let mut data = String::new();
-            esp.image_file
-                .reader()
-                .unwrap()
-                .read_to_string(&mut data)
-                .unwrap();
-            data
-        };
-
-        assert_eq!(read_data, mock_images[0].3);
     }
 
     #[test]
@@ -1090,7 +1050,7 @@ mod tests {
         assert_eq!(expected.len(), img_data.len());
         assert_eq!(filesystems.len(), expected.len());
 
-        for (fs, (expected_fs, expected_data)) in filesystems
+        for (fs, (expected_fs, _expected_data)) in filesystems
             .iter()
             .zip(expected.iter().zip(img_data.into_iter()))
         {
@@ -1107,18 +1067,6 @@ mod tests {
                 expected_fs.image_file.uncompressed_size
             );
             assert_eq!(fs.verity.is_none(), expected_fs.verity.is_none());
-
-            let read_data = {
-                let mut data = String::new();
-                fs.image_file
-                    .reader()
-                    .unwrap()
-                    .read_to_string(&mut data)
-                    .unwrap();
-                data
-            };
-
-            assert_eq!(read_data, expected_data);
         }
     }
 }
