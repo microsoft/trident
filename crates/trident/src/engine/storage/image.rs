@@ -11,7 +11,10 @@ use log::{debug, info, trace, warn};
 use osutils::{e2fsck, lsblk, resize2fs};
 use trident_api::{
     constants::{internal_params::RAW_COSI_STORAGE, ESP_MOUNT_POINT_PATH},
-    error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
+    error::{
+        InternalError, InvalidInputError, ReportError, ServicingError, TridentError,
+        TridentResultExt,
+    },
     status::ServicingType,
     BlockDeviceId,
 };
@@ -136,6 +139,11 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
             ControlFlow::Continue(())
         }
     })?;
+
+    if !combined_images.is_empty() {
+        return Err(TridentError::new(InvalidInputError::CorruptOsImage))
+            .message("Filesystem listed in COSI metadata but not present");
+    }
 
     Ok(())
 }
