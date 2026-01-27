@@ -10,7 +10,6 @@ use chrono::Utc;
 use log::{debug, error, info, trace, warn};
 
 use osutils::{dependencies::Dependency, path::join_relative};
-use sysdefs::arch::SystemArchitecture;
 use trident_api::{
     config::Storage,
     constants,
