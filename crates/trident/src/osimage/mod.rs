@@ -328,7 +328,7 @@ mod tests {
 
     use osutils::osrelease::OsRelease;
 
-    use mock::{MockImage, MOCK_OS_IMAGE_CONTENT};
+    use mock::MockImage;
     use uuid::Uuid;
 
     #[test]

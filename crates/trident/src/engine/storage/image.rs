@@ -126,7 +126,7 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
             "Initializing '{id}': writing image for filesystem from '{}'",
             os_img.source()
         );
-        if let Err(e) = deploy_os_image_file(ctx, &id, &image_file, resize, reader) {
+        if let Err(e) = deploy_os_image_file(ctx, &id, image_file, resize, reader) {
             return ControlFlow::Break(Err(e).structured(ServicingError::DeployImages));
         }
 
