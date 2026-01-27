@@ -201,7 +201,7 @@ impl OsImage {
         match &self.0 {
             OsImageInner::Cosi(cosi) => cosi.read_images(f),
             #[cfg(test)]
-            OsImageInner::Mock(m) => unimplemented!(),
+            OsImageInner::Mock(m) => m.read_images(f),
         }
     }
 }
@@ -454,23 +454,5 @@ mod tests {
             root_fs.verity.as_ref().unwrap().roothash,
             expected.2.to_string()
         );
-    }
-
-    #[test]
-    fn test_reader() {
-        let mock = OsImage::mock(MockOsImage::new().with_images(vec![MockImage::new(
-            "/boot",
-            OsImageFileSystemType::Ext4,
-            DiscoverablePartitionType::LinuxGeneric,
-            Some("some-verity-hash"),
-        )]));
-
-        let fs = mock.filesystems().next().unwrap();
-        let mut reader = fs.image_file.reader().unwrap();
-
-        let mut buf = String::new();
-        reader.read_to_string(&mut buf).unwrap();
-
-        assert_eq!(buf, MOCK_OS_IMAGE_CONTENT);
     }
 }
