@@ -337,10 +337,7 @@ message CheckRootRequest {}
 
 message CommitRequest {}
 
-message RebuildRaidRequest {
-  // The Host Configuration to be used for RAID rebuild.
-  string config = 1;
-}
+message RebuildRaidRequest {}
 
 message StreamImageRequest {
   // Path to the image file to be streamed.
