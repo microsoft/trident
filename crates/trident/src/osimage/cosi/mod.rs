@@ -80,7 +80,7 @@ impl Cosi {
     pub(super) fn esp_filesystem(&self) -> Result<OsImageFileSystem, Error> {
         self.metadata
             .get_esp_filesystem()
-            .map(|image| cosi_image_to_os_image_filesystem(image))
+            .map(cosi_image_to_os_image_filesystem)
     }
 
     /// Returns an iterator of available mount points in the COSI file.
@@ -94,7 +94,7 @@ impl Cosi {
     pub(super) fn filesystems(&self) -> impl Iterator<Item = OsImageFileSystem> {
         self.metadata
             .get_regular_filesystems()
-            .map(|image| cosi_image_to_os_image_filesystem(image))
+            .map(cosi_image_to_os_image_filesystem)
     }
 
     /// Derives the storage and image section of a Host Configuration from this COSI file.
