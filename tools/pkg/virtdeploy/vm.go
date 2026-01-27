@@ -15,7 +15,7 @@ func (vm *VirtDeployVM) getDiskBus() string {
 	return "sata"
 }
 
-func (vm *VirtDeployVM) getDevicePrefix() string {
+func (vm *VirtDeployVM) getDiskDevicePrefix() string {
 	if runtime.GOARCH == "arm64" {
 		return "vd"
 	}
