@@ -20,11 +20,7 @@
     <cpu mode='custom' match='exact' check='none'>
         <model fallback='forbid'>cortex-a57</model>
     </cpu>
-    <clock offset="utc">
-        <timer name="rtc" tickpolicy="catchup" />
-        <timer name="pit" tickpolicy="delay" />
-        <timer name="hpet" present="no" />
-    </clock>
+    <clock offset="utc" />
     <devices>
         <emulator>/usr/bin/qemu-system-aarch64</emulator>
 
@@ -32,8 +28,8 @@
         <disk type="file" device="disk">
             <driver name="qemu" type="qcow2" />
             <source file="{{ volume.source }}" />
-            <target dev="{{ volume.dev }}" bus="sata" />
-            <address type="drive" controller="0" bus="0" target="0" unit="{{loop.index}}" />
+            <target dev="{{ volume.dev }}" bus="virtio" />
+            <address type='pci' domain='0x0000' bus='0x06' slot='0x00' function='0x0'/>
         </disk>
         {% endfor %}
 
