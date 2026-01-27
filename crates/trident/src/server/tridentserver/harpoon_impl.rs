@@ -397,9 +397,9 @@ impl TridentService for TridentHarpoonServer {
 
             Ok(GetActiveVolumeResponse {
                 active_volume: match datastore.host_status().ab_active_volume.as_ref() {
-                    Some(AbVolumeSelection::VolumeA) => AbVolumeState::A,
-                    Some(AbVolumeSelection::VolumeB) => AbVolumeState::B,
-                    None => AbVolumeState::None,
+                    Some(AbVolumeSelection::VolumeA) => AbVolumeState::VolumeA,
+                    Some(AbVolumeSelection::VolumeB) => AbVolumeState::VolumeB,
+                    None => AbVolumeState::NoVolume,
                 }
                 .into(),
             })
