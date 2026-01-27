@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"runtime"
 
 	"github.com/digitalocean/go-libvirt"
 	"github.com/google/uuid"
@@ -13,10 +14,14 @@ import (
 )
 
 const (
-	FIRMWARE_LOADER_PATH            = "/usr/share/OVMF/OVMF_CODE_4M.fd"
-	FIRMWARE_LOADER_SECUREBOOT_PATH = "/usr/share/OVMF/OVMF_CODE_4M.ms.fd"
-	FIRMWARE_VARS_PATH              = "/usr/share/OVMF/OVMF_VARS_4M.fd"
-	FIRMWARE_VARS_SECUREBOOT_PATH   = "/usr/share/OVMF/OVMF_VARS_4M.ms.fd"
+	FIRMWARE_LOADER_PATH                  = "/usr/share/OVMF/OVMF_CODE_4M.fd"
+	FIRMWARE_LOADER_ARM64_PATH            = "/usr/share/AAVMF/AAVMF_CODE.fd"
+	FIRMWARE_LOADER_SECUREBOOT_PATH       = "/usr/share/OVMF/OVMF_CODE_4M.ms.fd"
+	FIRMWARE_LOADER_ARM64_SECUREBOOT_PATH = "/usr/share/AAVMF/AAVMF_CODE.ms.fd"
+	FIRMWARE_VARS_PATH                    = "/usr/share/OVMF/OVMF_VARS_4M.fd"
+	FIRMWARE_VARS_ARM64_PATH              = "/usr/share/AAVMF/AAVMF_VARS.fd"
+	FIRMWARE_VARS_SECUREBOOT_PATH         = "/usr/share/OVMF/OVMF_VARS_4M.ms.fd"
+	FIRMWARE_VARS_ARM64_SECUREBOOT_PATH   = "/usr/share/AAVMF/AAVMF_VARS.ms.fd"
 )
 
 type virtDeployResourceConfig struct {
@@ -77,11 +82,21 @@ func newVirtDeployResourceConfig(config VirtDeployConfig) (*virtDeployResourceCo
 		vm.nvramFile = fmt.Sprintf("%s_VARS.fd", vm.name)
 
 		if vm.SecureBoot {
-			vm.firmwareLoaderPath = FIRMWARE_LOADER_SECUREBOOT_PATH
-			vm.firmwareVarsTemplatePath = FIRMWARE_VARS_SECUREBOOT_PATH
+			if runtime.GOARCH == "arm64" {
+				vm.firmwareLoaderPath = FIRMWARE_LOADER_ARM64_SECUREBOOT_PATH
+				vm.firmwareVarsTemplatePath = FIRMWARE_VARS_ARM64_SECUREBOOT_PATH
+			} else {
+				vm.firmwareLoaderPath = FIRMWARE_LOADER_SECUREBOOT_PATH
+				vm.firmwareVarsTemplatePath = FIRMWARE_VARS_SECUREBOOT_PATH
+			}
 		} else {
-			vm.firmwareLoaderPath = FIRMWARE_LOADER_PATH
-			vm.firmwareVarsTemplatePath = FIRMWARE_VARS_PATH
+			if runtime.GOARCH == "arm64" {
+				vm.firmwareLoaderPath = FIRMWARE_LOADER_ARM64_PATH
+				vm.firmwareVarsTemplatePath = FIRMWARE_VARS_ARM64_PATH
+			} else {
+				vm.firmwareLoaderPath = FIRMWARE_LOADER_PATH
+				vm.firmwareVarsTemplatePath = FIRMWARE_VARS_PATH
+			}
 		}
 
 		// Set up volume configurations for the VM
