@@ -279,7 +279,6 @@ pub(crate) fn rebuild_raid(
 
         // Create Partitions on the new disk
         partitioning::create_partitions_on_disk(
-            host_config,
             resolved_disk,
             &mut host_status.partition_paths,
             &mut host_status.disk_uuids,

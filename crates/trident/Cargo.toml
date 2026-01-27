@@ -89,7 +89,6 @@ osutils = { path = "../osutils", features = ["test-utilities"] }
 
 [features]
 dangerous-options = ["trident_api/dangerous-options", "docker_credential"]
-sysupdate = ["trident_api/sysupdate"]
 functional-test = [
     "pytest",
     "pytest_gen",

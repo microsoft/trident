@@ -18,7 +18,7 @@ use osutils::{
 };
 use sysdefs::partition_types::DiscoverablePartitionType;
 use trident_api::{
-    config::{AdoptedPartition, Disk, HostConfiguration, PartitionSize, PartitionType, Storage},
+    config::{AdoptedPartition, Disk, PartitionSize, PartitionType},
     BlockDeviceId,
 };
 use uuid::Uuid;
@@ -37,19 +37,13 @@ pub fn create_partitions(ctx: &mut EngineContext) -> Result<(), Error> {
     partitioning_safety_check(&resolved_disks).context("Partitioning safety check failed")?;
 
     for disk in &resolved_disks {
-        create_partitions_on_disk(
-            &ctx.spec,
-            disk,
-            &mut ctx.partition_paths,
-            &mut ctx.disk_uuids,
-        )
-        .with_context(|| format!("Failed to create partitions for disk '{}'", disk.id))?;
+        create_partitions_on_disk(disk, &mut ctx.partition_paths, &mut ctx.disk_uuids)
+            .with_context(|| format!("Failed to create partitions for disk '{}'", disk.id))?;
     }
     Ok(())
 }
 
 pub fn create_partitions_on_disk(
-    host_config: &HostConfiguration,
     disk: &ResolvedDisk,
     partition_paths: &mut BTreeMap<BlockDeviceId, PathBuf>,
     disk_uuids: &mut HashMap<BlockDeviceId, Uuid>,
@@ -61,11 +55,7 @@ pub fn create_partitions_on_disk(
         .with_context(|| format!("Failed to adopt partitions for disk '{}'", disk.id))?;
 
     // Populate repart with entries for partitions that are to be created.
-    add_repart_entries(
-        &disk.spec,
-        &generate_sysupdate_partlabels(&host_config.storage),
-        &mut repart,
-    );
+    add_repart_entries(&disk.spec, &mut repart);
 
     info!("Initializing '{}': creating disk partitions", disk.id);
 
@@ -340,6 +330,22 @@ fn adopt_partitions(disk: &ResolvedDisk, repart: &mut SystemdRepartInvoker) -> R
                 // Keep the same label as the original partition.
                 label: part.name.clone(),
 
+                // This UUID is NOT used for matching and will be entirely
+                // ignored by repart regardless of value because this partition
+                // already exists, so no need to pass it in. For convenience of
+                // any future reader, we *try* to pass in the existing UUID of
+                // this partition.W
+                //
+                // > The UUID to assign to the partition if none is assigned
+                // > yet. Note that this setting is not used for matching. It is
+                // > also not used when a UUID is already set for an existing
+                // > partition. It is thus only used when a partition is newly
+                // > created or when an existing one had a all-zero UUID set.
+                //
+                // From:
+                // https://www.freedesktop.org/software/systemd/man/latest/repart.d.html#UUID=
+                uuid: part.id.as_uuid(),
+
                 // Inform repart about the size of the partition to avoid resizes.
                 size_max_bytes: Some(part.size),
                 size_min_bytes: Some(part.size),
@@ -359,11 +365,7 @@ fn adopt_partitions(disk: &ResolvedDisk, repart: &mut SystemdRepartInvoker) -> R
 }
 
 /// Add repart entries for partitions that are to be created.
-fn add_repart_entries(
-    disk: &Disk,
-    label_overrides: &HashMap<BlockDeviceId, String>,
-    repart: &mut SystemdRepartInvoker,
-) {
+fn add_repart_entries(disk: &Disk, repart: &mut SystemdRepartInvoker) {
     for partition in &disk.partitions {
         let size = match partition.size {
             PartitionSize::Grow => None,
@@ -377,51 +379,17 @@ fn add_repart_entries(
             // Inform repart about the partition type.
             partition_type: config_part_type_into_discoverable(partition.partition_type),
 
-            // Use the label override if present, otherwise use the partition id.
-            label: Some(
-                label_overrides
-                    .get(&partition.id)
-                    .unwrap_or(&partition.id)
-                    .clone(),
-            ),
+            // Use the configured label if present, otherwise use the partition id.
+            label: Some(partition.label.as_ref().unwrap_or(&partition.id).clone()),
+
+            // Copy over the Option<Uuid> from the partition config.
+            uuid: partition.uuid,
 
             // Inform repart about the size of the partition.
             size_max_bytes: size,
             size_min_bytes: size,
         })
     }
-}
-
-/// Generate a hash map of {key: partition_id, value: partlabel}, for all
-/// members of AB Volumes so that sdrepart.rs can give initial "old-version"
-/// labels, i.e. "_empty", to partitions that are inside any volume-pairs. This
-/// is so that when sysupdate is invoked, it interprets PARTLABEL of the
-/// partition to be updated as "old" enough.
-fn generate_sysupdate_partlabels(storage: &Storage) -> HashMap<BlockDeviceId, String> {
-    // Initialize an empty hash map, where key is BlockDeviceId,
-    // value is the label of the partition.
-    let mut partlabels: HashMap<BlockDeviceId, String> = HashMap::new();
-
-    // TODO: Potentially, provide support for custom user-provided
-    // PARTLABELs, if required by the users. Related ADO task:
-    // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6125.
-
-    // Iterate through ctx.storage.ab_update.volume_pairs. For each
-    // volume_pair, add each partition_id to the hash map, where value for
-    // volume-a-id (active) is "a" and value for volume-b-id (inactive) is
-    // "_empty". On next run of sysupdate, "_empty" will be updated.
-    if cfg!(feature = "sysupdate") {
-        if let Some(ab_update) = &storage.ab_update {
-            for volume_pair in &ab_update.volume_pairs {
-                // For volume-a-id
-                partlabels.insert(volume_pair.volume_a_id.clone(), "_empty".to_string());
-                // For volume-b-id
-                partlabels.insert(volume_pair.volume_b_id.clone(), "_empty".to_string());
-            }
-        }
-    }
-
-    partlabels
 }
 
 fn config_part_type_into_discoverable(part_type: PartitionType) -> DiscoverablePartitionType {
@@ -591,11 +559,13 @@ mod tests {
     use uuid::Uuid;
 
     use osutils::sfdisk::{SfDiskLabel, SfDiskUnit};
-    use trident_api::config::{AbUpdate, AbVolumePair, Partition, PartitionTableType};
+    use trident_api::config::{Partition, PartitionTableType};
 
     #[test]
     fn test_add_repart_entries() {
         let mut repart = SystemdRepartInvoker::new("/dev/sda", RepartEmptyMode::Force);
+
+        let uuid = Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap();
 
         let disk = Disk {
             id: "disk".to_string(),
@@ -613,25 +583,21 @@ mod tests {
                     partition_type: PartitionType::Swap,
                     size: 2048.into(),
                     uuid: None,
-                    label: None,
+                    label: Some("".to_string()),
                 },
                 Partition {
                     id: "part3".to_string(),
                     partition_type: PartitionType::LinuxGeneric,
                     size: PartitionSize::Grow,
-                    uuid: None,
-                    label: None,
+                    uuid: Some(uuid),
+                    label: Some("my-super-part-label".to_string()),
                 },
             ],
             adopted_partitions: vec![],
             partition_table_type: PartitionTableType::Gpt,
         };
 
-        let partlabels = maplit::hashmap! {
-            "part2".to_string() => "part2_label".to_string(),
-        };
-
-        add_repart_entries(&disk, &partlabels, &mut repart);
+        add_repart_entries(&disk, &mut repart);
 
         let entries = repart.partition_entries();
         assert_eq!(entries.len(), 3);
@@ -640,13 +606,15 @@ mod tests {
         assert_eq!(part1.id, "part1");
         assert_eq!(part1.partition_type, DiscoverablePartitionType::Root);
         assert_eq!(part1.label, Some("part1".to_string()));
+        assert_eq!(part1.uuid, None);
         assert_eq!(part1.size_max_bytes, Some(1024));
         assert_eq!(part1.size_min_bytes, Some(1024));
 
         let part2 = entries.get(1).unwrap();
         assert_eq!(part2.id, "part2");
         assert_eq!(part2.partition_type, DiscoverablePartitionType::Swap);
-        assert_eq!(part2.label, Some("part2_label".to_string()));
+        assert_eq!(part2.label, Some("".to_string()));
+        assert_eq!(part2.uuid, None);
         assert_eq!(part2.size_max_bytes, Some(2048));
         assert_eq!(part2.size_min_bytes, Some(2048));
 
@@ -656,7 +624,8 @@ mod tests {
             part3.partition_type,
             DiscoverablePartitionType::LinuxGeneric
         );
-        assert_eq!(part3.label, Some("part3".to_string()));
+        assert_eq!(part3.label, Some("my-super-part-label".to_string()));
+        assert_eq!(part3.uuid, Some(uuid));
         assert_eq!(part3.size_max_bytes, None);
         assert_eq!(part3.size_min_bytes, None);
     }
@@ -694,9 +663,7 @@ mod tests {
             partition_table_type: PartitionTableType::Gpt,
         };
 
-        let partlabels = maplit::hashmap! {};
-
-        add_repart_entries(&disk, &partlabels, &mut repart);
+        add_repart_entries(&disk, &mut repart);
 
         let entries = repart.partition_entries();
         assert_eq!(entries.len(), 2);
@@ -709,31 +676,6 @@ mod tests {
             part2.partition_type,
             DiscoverablePartitionType::LinuxGeneric
         );
-    }
-
-    #[test]
-    fn test_generate_sysupdate_partlabels() {
-        let storage = Storage {
-            disks: vec![],
-            ab_update: Some(AbUpdate {
-                volume_pairs: vec![AbVolumePair {
-                    volume_a_id: "volume_a".to_string(),
-                    volume_b_id: "volume_b".to_string(),
-                    id: "pair".to_string(),
-                }],
-            }),
-            ..Default::default()
-        };
-
-        let partlabels = generate_sysupdate_partlabels(&storage);
-
-        if cfg!(feature = "sysupdate") {
-            assert!(partlabels.len() == 2);
-            assert_eq!(partlabels.get("volume_a").unwrap(), "_empty");
-            assert_eq!(partlabels.get("volume_b").unwrap(), "_empty");
-        } else {
-            assert!(partlabels.is_empty());
-        }
     }
 
     #[test]
@@ -843,7 +785,7 @@ mod functional_test {
         wipefs,
     };
     use pytest_gen::functional_test;
-    use trident_api::config::{Partition, PartitionTableType};
+    use trident_api::config::{HostConfiguration, Partition, PartitionTableType, Storage};
 
     #[functional_test]
     fn test_wait_for_part_symlink() {
@@ -943,6 +885,7 @@ mod functional_test {
                     id: "part1".to_string(),
                     partition_type: DiscoverablePartitionType::Root,
                     label: Some("part1".to_string()),
+                    uuid: None,
                     size_max_bytes: Some(10 * 1048576),
                     size_min_bytes: Some(10 * 1048576),
                 },
@@ -950,6 +893,7 @@ mod functional_test {
                     id: "part2".to_string(),
                     partition_type: DiscoverablePartitionType::Swap,
                     label: Some("part2".to_string()),
+                    uuid: None,
                     size_max_bytes: Some(20 * 1048576),
                     size_min_bytes: Some(20 * 1048576),
                 },

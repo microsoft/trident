@@ -1187,6 +1187,7 @@ mod functional_test {
                 id: "1".to_string(),
                 partition_type: DiscoverablePartitionType::Root,
                 label: Some("1".to_string()),
+                uuid: None,
                 size_max_bytes: Some(10 * 1048576),
                 size_min_bytes: Some(10 * 1048576),
             }]);

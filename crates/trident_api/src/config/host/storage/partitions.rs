@@ -44,7 +44,8 @@ pub struct Partition {
     /// Partition UUID. If not set, a new random UUID will be generated.
     pub uuid: Option<Uuid>,
 
-    /// Partition label. If not set, no label will be assigned.
+    /// Partition label. If not set, the partition's block device ID will be
+    /// used as the label.
     pub label: Option<String>,
 }
 
