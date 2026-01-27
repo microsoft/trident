@@ -90,7 +90,6 @@ fn run_trident(
             hash,
             status,
             error,
-            skip_reboot,
             ..
         } => {
             use std::io::Write;
@@ -98,11 +97,6 @@ fn run_trident(
 
             let mut config = trident::stream::config_from_image_url(image.clone(), hash)
                 .message("Failed to generate Host Configuration from image URL")?;
-            if *skip_reboot {
-                info!("Skipping reboot as per --skip-reboot flag");
-                // Set InternalParams NoTransition to skip reboot
-                config.internal_params.set_flag(NO_TRANSITION.to_string());
-            }
 
             // Write config to a temporary file
             let file = tempfile::NamedTempFile::new()
