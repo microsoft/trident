@@ -8,10 +8,8 @@ use log::LevelFilter;
 
 use trident_api::config::{Operation, Operations};
 
-use crate::TRIDENT_VERSION;
-
 #[derive(Parser, Debug)]
-#[clap(version = TRIDENT_VERSION)]
+#[clap(version = env!("CARGO_PKG_VERSION"))]
 pub struct Cli {
     /// Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
     #[arg(global = true, short, long, default_value_t = LevelFilter::Debug)]
