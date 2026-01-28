@@ -156,7 +156,7 @@ mod tests {
                     fs_uuid: Uuid::parse_str("66666666-7777-8888-9999-aaaaaaaaaaaa")
                         .unwrap()
                         .into(),
-                    part_type: DiscoverablePartitionType::Esp,
+                    part_type: DiscoverablePartitionType::Root,
                     verity: None,
                 },
             ],
@@ -178,7 +178,7 @@ mod tests {
         hc.validate().unwrap();
 
         assert_eq!(hc.storage.disks.len(), 1);
-        assert_eq!(hc.storage.disks[0].device, *target_disk);
+        assert_eq!(hc.storage.disks[0].device, Path::new(target_disk));
         assert_eq!(hc.storage.disks[0].partitions.len(), 2);
         assert_eq!(hc.storage.filesystems.len(), 2);
 
