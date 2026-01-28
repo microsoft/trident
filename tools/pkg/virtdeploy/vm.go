@@ -125,33 +125,20 @@ func (vm *VirtDeployVM) configureNetwork(network *virtDeployNetwork) []libvirtxm
 	return ifaces
 }
 
-func (vm *VirtDeployVM) asAmd64Xml(network *virtDeployNetwork, nvramPool storagePool) (string, error) {
-	// Check machine architecture
-	domainType := "kvm"
-	osType := libvirtxml.DomainOSType{Arch: "x86_64", Machine: "q35", Type: "hvm"}
-	cpuModel := libvirtxml.DomainCPUModel{Fallback: "allow", Value: "Broadwell-IBRS"}
-	cpuFeatures := []libvirtxml.DomainCPUFeature{{Policy: "require", Name: "vmx"}}
-	pm := &libvirtxml.DomainPM{
-		SuspendToMem:  &libvirtxml.DomainPMPolicy{Enabled: "no"},
-		SuspendToDisk: &libvirtxml.DomainPMPolicy{Enabled: "no"},
-	}
-	timer := []libvirtxml.DomainTimer{
-		{Name: "rtc", TickPolicy: "catchup"},
-		{Name: "pit", TickPolicy: "delay"},
-		{Name: "hpet", Present: "no"},
-	}
-	emulator := "/usr/bin/qemu-system-x86_64"
-	vmPort := &libvirtxml.DomainFeatureState{State: "off"}
-
-	// Build disks
-	disks := vm.configureDisks()
-	// Optional TPM
-	tpms := vm.configureTpms()
-
-	// Network interface (single)
-	ifaces := vm.configureNetwork(network)
-
-	dom := libvirtxml.Domain{
+func (vm *VirtDeployVM) createDomain(
+	network *virtDeployNetwork, nvramPool storagePool,
+	domainType string,
+	osType libvirtxml.DomainOSType,
+	cpuModel libvirtxml.DomainCPUModel,
+	cpuFeatures []libvirtxml.DomainCPUFeature,
+	pm *libvirtxml.DomainPM,
+	timer []libvirtxml.DomainTimer,
+	emulator string,
+	apic *libvirtxml.DomainFeatureAPIC,
+	vmPort *libvirtxml.DomainFeatureState,
+	controllers []libvirtxml.DomainController,
+) libvirtxml.Domain {
+	return libvirtxml.Domain{
 		Type:   domainType,
 		Name:   vm.name,
 		Memory: &libvirtxml.DomainMemory{Unit: "GiB", Value: vm.Mem},
@@ -177,7 +164,7 @@ func (vm *VirtDeployVM) asAmd64Xml(network *virtDeployNetwork, nvramPool storage
 		},
 		Features: &libvirtxml.DomainFeatureList{
 			ACPI:   &libvirtxml.DomainFeature{},
-			APIC:   &libvirtxml.DomainFeatureAPIC{},
+			APIC:   apic,
 			VMPort: vmPort,
 		},
 		CPU: &libvirtxml.DomainCPU{
@@ -192,27 +179,10 @@ func (vm *VirtDeployVM) asAmd64Xml(network *virtDeployNetwork, nvramPool storage
 		},
 		PM: pm,
 		Devices: &libvirtxml.DomainDeviceList{
-			Emulator: emulator,
-			Disks:    disks,
-			Controllers: []libvirtxml.DomainController{
-				{Type: "usb", Index: new(uint), Model: "ich9-ehci1"},
-				{Type: "usb", Index: new(uint), Model: "ich9-uhci1", USB: &libvirtxml.DomainControllerUSB{
-					Master: &libvirtxml.DomainControllerUSBMaster{
-						StartPort: 0,
-					},
-				}},
-				{Type: "usb", Index: new(uint), Model: "ich9-uhci2", USB: &libvirtxml.DomainControllerUSB{
-					Master: &libvirtxml.DomainControllerUSBMaster{
-						StartPort: 2,
-					},
-				}},
-				{Type: "usb", Index: new(uint), Model: "ich9-uhci3", USB: &libvirtxml.DomainControllerUSB{
-					Master: &libvirtxml.DomainControllerUSBMaster{
-						StartPort: 4,
-					},
-				}},
-			},
-			Interfaces: ifaces,
+			Emulator:    emulator,
+			Disks:       vm.configureDisks(),
+			Controllers: controllers,
+			Interfaces:  vm.configureNetwork(network),
 			Consoles: []libvirtxml.DomainConsole{{
 				Source: &libvirtxml.DomainChardevSource{
 					Pty: &libvirtxml.DomainChardevSourcePty{},
@@ -246,116 +216,81 @@ func (vm *VirtDeployVM) asAmd64Xml(network *virtDeployNetwork, nvramPool storage
 				Target: &libvirtxml.DomainSerialTarget{Port: new(uint)},
 				Log:    &libvirtxml.DomainChardevLog{File: fmt.Sprintf("/tmp/%s-serial0.log", vm.name), Append: "off"},
 			}},
-			TPMs: tpms,
+			TPMs: vm.configureTpms(),
 		},
 	}
+}
+
+func (vm *VirtDeployVM) asAmd64Xml(network *virtDeployNetwork, nvramPool storagePool) (string, error) {
+	// AMD64-specific domain XML
+	dom := vm.createDomain(
+		network,
+		nvramPool,
+		"kvm",
+		libvirtxml.DomainOSType{Arch: "x86_64", Machine: "q35", Type: "hvm"},
+		libvirtxml.DomainCPUModel{Fallback: "allow", Value: "Broadwell-IBRS"},
+		[]libvirtxml.DomainCPUFeature{{Policy: "require", Name: "vmx"}},
+		&libvirtxml.DomainPM{
+			SuspendToMem:  &libvirtxml.DomainPMPolicy{Enabled: "no"},
+			SuspendToDisk: &libvirtxml.DomainPMPolicy{Enabled: "no"},
+		},
+		[]libvirtxml.DomainTimer{
+			{Name: "rtc", TickPolicy: "catchup"},
+			{Name: "pit", TickPolicy: "delay"},
+			{Name: "hpet", Present: "no"},
+		},
+		"/usr/bin/qemu-system-x86_64",
+		&libvirtxml.DomainFeatureAPIC{},
+		&libvirtxml.DomainFeatureState{State: "off"},
+		[]libvirtxml.DomainController{
+			{Type: "usb", Index: new(uint), Model: "ich9-ehci1"},
+			{Type: "usb", Index: new(uint), Model: "ich9-uhci1", USB: &libvirtxml.DomainControllerUSB{
+				Master: &libvirtxml.DomainControllerUSBMaster{
+					StartPort: 0,
+				},
+			}},
+			{Type: "usb", Index: new(uint), Model: "ich9-uhci2", USB: &libvirtxml.DomainControllerUSB{
+				Master: &libvirtxml.DomainControllerUSBMaster{
+					StartPort: 2,
+				},
+			}},
+			{Type: "usb", Index: new(uint), Model: "ich9-uhci3", USB: &libvirtxml.DomainControllerUSB{
+				Master: &libvirtxml.DomainControllerUSBMaster{
+					StartPort: 4,
+				},
+			}},
+		},
+	)
 
 	xml, err := dom.Marshal()
 	if err != nil {
-		return "", fmt.Errorf("marshal domain to XML: %w", err)
+		return "", fmt.Errorf("marshal amd64 domain to XML: %w", err)
 	}
 	return xml, nil
 }
 
 func (vm *VirtDeployVM) asArm64Xml(network *virtDeployNetwork, nvramPool storagePool) (string, error) {
-	domainType := "qemu"
-	osType := libvirtxml.DomainOSType{Arch: "aarch64", Machine: "virt-6.2", Type: "hvm"}
-	cpuModel := libvirtxml.DomainCPUModel{Fallback: "forbid", Value: "cortex-a57"}
-	cpuFeatures := []libvirtxml.DomainCPUFeature{}
-	emulator := "/usr/bin/qemu-system-aarch64"
-
-	// Build disks
-	disks := vm.configureDisks()
-
-	// Optional TPM
-	tpms := vm.configureTpms()
-
-	// Network interface (single)
-	ifaces := vm.configureNetwork(network)
-
-	dom := libvirtxml.Domain{
-		Type:   domainType,
-		Name:   vm.name,
-		Memory: &libvirtxml.DomainMemory{Unit: "GiB", Value: vm.Mem},
-		VCPU:   &libvirtxml.DomainVCPU{Value: vm.Cpus},
-		OS: &libvirtxml.DomainOS{
-
-			Type:   &osType,
-			SMBios: &libvirtxml.DomainSMBios{Mode: "sysinfo"},
-			Loader: &libvirtxml.DomainLoader{Path: vm.firmwareLoaderPath, Type: "pflash", Readonly: "yes"},
-			NVRam: &libvirtxml.DomainNVRam{
-				NVRam:    vm.nvramPath,
-				Template: vm.firmwareVarsTemplatePath,
-			},
+	// ARM64-specific domain XML
+	dom := vm.createDomain(
+		network,
+		nvramPool,
+		"qemu",
+		libvirtxml.DomainOSType{Arch: "aarch64", Machine: "virt-6.2", Type: "hvm"},
+		libvirtxml.DomainCPUModel{Fallback: "forbid", Value: "cortex-a57"},
+		[]libvirtxml.DomainCPUFeature{},
+		nil,
+		[]libvirtxml.DomainTimer{},
+		"/usr/bin/qemu-system-aarch64",
+		nil,
+		nil,
+		[]libvirtxml.DomainController{
+			{Type: "usb", Index: new(uint), Model: "qemu-xhci", Alias: &libvirtxml.DomainAlias{Name: "usb"}},
 		},
-		SysInfo: []libvirtxml.DomainSysInfo{
-			{
-				SMBIOS: &libvirtxml.DomainSysInfoSMBIOS{
-					OEMStrings: &libvirtxml.DomainSysInfoOEMStrings{
-						Entry: []string{"virtdeploy:1"},
-					},
-				},
-			},
-		},
-		Features: &libvirtxml.DomainFeatureList{
-			ACPI: &libvirtxml.DomainFeature{},
-		},
-		CPU: &libvirtxml.DomainCPU{
-			Match:    "exact",
-			Check:    "none",
-			Model:    &cpuModel,
-			Features: cpuFeatures,
-		},
-		Clock: &libvirtxml.DomainClock{
-			Offset: "utc",
-		},
-		Devices: &libvirtxml.DomainDeviceList{
-			Emulator: emulator,
-			Disks:    disks,
-			Controllers: []libvirtxml.DomainController{
-				{Type: "usb", Index: new(uint), Model: "qemu-xhci", Alias: &libvirtxml.DomainAlias{Name: "usb"}},
-			},
-			Interfaces: ifaces,
-			Consoles: []libvirtxml.DomainConsole{{
-				Source: &libvirtxml.DomainChardevSource{
-					Pty: &libvirtxml.DomainChardevSourcePty{},
-				},
-			}},
-			Channels: []libvirtxml.DomainChannel{{
-				Source: &libvirtxml.DomainChardevSource{
-					SpiceVMC: &libvirtxml.DomainChardevSourceSpiceVMC{},
-				},
-				Target: &libvirtxml.DomainChannelTarget{
-					VirtIO: &libvirtxml.DomainChannelTargetVirtIO{
-						Name: "com.redhat.spice.0",
-					},
-				},
-			}},
-			Inputs: []libvirtxml.DomainInput{{Type: "tablet", Bus: "usb"}},
-			RedirDevs: []libvirtxml.DomainRedirDev{
-				{Bus: "usb", Source: &libvirtxml.DomainChardevSource{
-					SpiceVMC: &libvirtxml.DomainChardevSourceSpiceVMC{},
-				}},
-				{Bus: "usb", Source: &libvirtxml.DomainChardevSource{
-					SpiceVMC: &libvirtxml.DomainChardevSourceSpiceVMC{},
-				}},
-			},
-			Serials: []libvirtxml.DomainSerial{{
-				Source: &libvirtxml.DomainChardevSource{
-					Pty: &libvirtxml.DomainChardevSourcePty{
-						Path: "/dev/pts/2",
-					},
-				},
-				Target: &libvirtxml.DomainSerialTarget{Port: new(uint)},
-				Log:    &libvirtxml.DomainChardevLog{File: fmt.Sprintf("/tmp/%s-serial0.log", vm.name), Append: "off"},
-			}},
-			TPMs: tpms,
-		},
-	}
+	)
 
 	xml, err := dom.Marshal()
 	if err != nil {
-		return "", fmt.Errorf("marshal domain to XML: %w", err)
+		return "", fmt.Errorf("marshal arm64 domain to XML: %w", err)
 	}
 	return xml, nil
 }
