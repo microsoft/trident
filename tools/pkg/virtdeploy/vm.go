@@ -323,14 +323,23 @@ func (vm *VirtDeployVM) asArm64Xml(network *virtDeployNetwork, nvramPool storage
 			}},
 			Channels: []libvirtxml.DomainChannel{{
 				Source: &libvirtxml.DomainChardevSource{
-					UNIX: &libvirtxml.DomainChardevSourceUNIX{Mode: "bind"},
+					SpiceVMC: &libvirtxml.DomainChardevSourceSpiceVMC{},
 				},
 				Target: &libvirtxml.DomainChannelTarget{
 					VirtIO: &libvirtxml.DomainChannelTargetVirtIO{
-						Name: "org.qemu.guest_agent.0",
+						Name: "com.redhat.spice.0",
 					},
 				},
 			}},
+			Inputs: []libvirtxml.DomainInput{{Type: "tablet", Bus: "usb"}},
+			RedirDevs: []libvirtxml.DomainRedirDev{
+				{Bus: "usb", Source: &libvirtxml.DomainChardevSource{
+					SpiceVMC: &libvirtxml.DomainChardevSourceSpiceVMC{},
+				}},
+				{Bus: "usb", Source: &libvirtxml.DomainChardevSource{
+					SpiceVMC: &libvirtxml.DomainChardevSourceSpiceVMC{},
+				}},
+			},
 			Serials: []libvirtxml.DomainSerial{{
 				Source: &libvirtxml.DomainChardevSource{
 					Pty: &libvirtxml.DomainChardevSourcePty{
