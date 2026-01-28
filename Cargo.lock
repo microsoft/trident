@@ -3341,6 +3341,7 @@ dependencies = [
  "hyper",
  "indoc",
  "inventory",
+ "itertools",
  "lazy_static",
  "libc",
  "log",

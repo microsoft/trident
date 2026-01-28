@@ -92,6 +92,7 @@ impl CosiMetadata {
 mod tests {
     use std::path::PathBuf;
 
+    use itertools::izip;
     use sysdefs::arch::SystemArchitecture;
     use trident_api::primitives::hash::Sha384Hash;
     use uuid::Uuid;
@@ -108,30 +109,58 @@ mod tests {
         let metadata = CosiMetadata {
             version: KnownMetadataVersion::V1_2.as_version(),
             os_arch: SystemArchitecture::Amd64,
-            partitions: Some(vec![CosiPartition {
-                path: Some(PathBuf::from("/images/root.img")),
-                number: 1,
-                part_type: DiscoverablePartitionType::LinuxGeneric.to_uuid(),
-                part_uuid: Uuid::parse_str("11111111-2222-3333-4444-555555555555").unwrap(),
-                label: "root".to_string(),
-                original_size: 4 * 1024 * 1024, // 4 MiB
-            }]),
-            images: vec![Image {
-                file: ImageFile {
-                    path: PathBuf::from("/images/root.img"),
-                    compressed_size: 4096,
-                    uncompressed_size: 8192,
-                    sha384: Sha384Hash::from("1"),
-                    entry: Default::default(),
+            partitions: Some(vec![
+                CosiPartition {
+                    path: Some(PathBuf::from("/images/esp.img")),
+                    number: 1,
+                    part_type: DiscoverablePartitionType::Esp.to_uuid(),
+                    part_uuid: Uuid::parse_str("11111111-2222-3333-4444-555555555555").unwrap(),
+                    label: "esp_part".to_string(),
+                    original_size: 4 * 1024 * 1024, // 4 MiB
                 },
-                mount_point: "/some/location".into(),
-                fs_type: OsImageFileSystemType::Ext4,
-                fs_uuid: Uuid::parse_str("66666666-7777-8888-9999-aaaaaaaaaaaa")
-                    .unwrap()
-                    .into(),
-                part_type: DiscoverablePartitionType::LinuxGeneric,
-                verity: None,
-            }],
+                CosiPartition {
+                    path: Some(PathBuf::from("/images/root.img")),
+                    number: 1,
+                    part_type: DiscoverablePartitionType::Root.to_uuid(),
+                    part_uuid: Uuid::parse_str("11111111-2222-3333-4444-666666666666").unwrap(),
+                    label: "root_part".to_string(),
+                    original_size: 16 * 1024 * 1024, // 16 MiB
+                },
+            ]),
+            images: vec![
+                Image {
+                    file: ImageFile {
+                        path: PathBuf::from("/images/esp.img"),
+                        compressed_size: 4096,
+                        uncompressed_size: 8192,
+                        sha384: Sha384Hash::from("1"),
+                        entry: Default::default(),
+                    },
+                    mount_point: "/boot/efi".into(),
+                    fs_type: OsImageFileSystemType::Ext4,
+                    fs_uuid: Uuid::parse_str("66666666-7777-8888-9999-aaaaaaaaaaaa")
+                        .unwrap()
+                        .into(),
+                    part_type: DiscoverablePartitionType::Esp,
+                    verity: None,
+                },
+                Image {
+                    file: ImageFile {
+                        path: PathBuf::from("/images/root.img"),
+                        compressed_size: 8192,
+                        uncompressed_size: 16384,
+                        sha384: Sha384Hash::from("1"),
+                        entry: Default::default(),
+                    },
+                    mount_point: "/".into(),
+                    fs_type: OsImageFileSystemType::Ext4,
+                    fs_uuid: Uuid::parse_str("66666666-7777-8888-9999-aaaaaaaaaaaa")
+                        .unwrap()
+                        .into(),
+                    part_type: DiscoverablePartitionType::Esp,
+                    verity: None,
+                },
+            ],
             os_release: Default::default(),
             os_packages: Default::default(),
             id: Default::default(),
@@ -140,28 +169,38 @@ mod tests {
 
         let target_disk = "/dev/sda";
         let hc = metadata.derive_host_configuration(target_disk).unwrap();
+
+        hc.validate().unwrap();
+
         assert_eq!(hc.storage.disks.len(), 1);
         assert_eq!(hc.storage.disks[0].device, *target_disk);
-        assert_eq!(hc.storage.disks[0].partitions.len(), 1);
-        assert_eq!(hc.storage.filesystems.len(), 1);
+        assert_eq!(hc.storage.disks[0].partitions.len(), 2);
+        assert_eq!(hc.storage.filesystems.len(), 2);
 
-        let partition = &hc.storage.disks[0].partitions[0];
-        let filesystem = &hc.storage.filesystems[0];
+        for (original_partition, original_fs, partition, filesystem) in izip!(
+            metadata.partitions.as_ref().unwrap().iter(),
+            metadata.images.iter(),
+            hc.storage.disks[0].partitions.iter(),
+            hc.storage.filesystems.iter()
+        ) {
+            assert_eq!(
+                partition.size.to_bytes(),
+                Some(original_partition.original_size)
+            );
+            assert_eq!(partition.uuid.unwrap(), original_partition.part_uuid,);
+            assert_eq!(partition.label, Some(original_partition.label.to_string()));
+            assert_eq!(
+                partition.partition_type,
+                DiscoverablePartitionType::from_uuid(&original_partition.part_type).into()
+            );
 
-        assert_eq!(partition.size.to_bytes(), Some(4 * 1024 * 1024));
-        assert_eq!(
-            partition.uuid.unwrap().to_string(),
-            "11111111-2222-3333-4444-555555555555"
-        );
-        assert_eq!(partition.label.as_deref(), Some("root"));
-        assert_eq!(
-            partition.partition_type,
-            DiscoverablePartitionType::LinuxGeneric.into()
-        );
-
-        assert_eq!(filesystem.mount_point, Some("/some/location".into()));
-        assert_eq!(filesystem.source, FileSystemSource::Image);
-        assert_eq!(filesystem.device_id, Some(partition.id.clone()));
+            assert_eq!(
+                filesystem.mount_point,
+                Some(original_fs.mount_point.as_path().into())
+            );
+            assert_eq!(filesystem.source, FileSystemSource::Image);
+            assert_eq!(filesystem.device_id, Some(partition.id.clone()));
+        }
     }
 
     #[test]
