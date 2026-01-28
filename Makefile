@@ -428,11 +428,11 @@ go.sum: go.mod
 .PHONY: go-tools
 go-tools: bin/netlaunch bin/netlisten bin/miniproxy bin/virtdeploy bin/isopatch
 
-bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/*
+bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/* tools/pkg/netlaunch/*
 	@mkdir -p bin
 	cd tools && go generate pkg/rcp/tlscerts/certs.go
 	cd tools && go generate pkg/harpoon/harpoon.go
-	cd tools && go build -tags tls_server -o ../bin/netlaunch ./cmd/netlaunch
+	cd tools && go build -o ../bin/netlaunch ./cmd/netlaunch
 
 bin/netlisten: tools/cmd/netlisten/* tools/go.sum tools/pkg/*
 	@mkdir -p bin
@@ -456,16 +456,16 @@ bin/mkcosi: tools/cmd/mkcosi/* tools/go.sum tools/pkg/* tools/cmd/mkcosi/**/*
 bin/storm-trident: tools/cmd/storm-trident/main.go tools/storm/**/*
 	@mkdir -p bin
 	cd tools && go generate storm/e2e/discover.go
-	cd tools && go build -tags tls_server -o ../bin/storm-trident ./cmd/storm-trident/main.go
+	cd tools && go build -o ../bin/storm-trident ./cmd/storm-trident/main.go
 
 bin/virtdeploy: tools/cmd/virtdeploy/* tools/go.sum tools/pkg/* tools/pkg/virtdeploy/*
 	@mkdir -p bin
 	cd tools && go build -o ../bin/virtdeploy ./cmd/virtdeploy
 
-bin/rcp-agent: tools/cmd/rcp-agent/* tools/go.sum tools/pkg/rcp/* tools/pkg/rcp/tlscerts/* tools/pkg/rcp/proxy/* tools/pkg/netlaunch/rcp.go
+bin/rcp-agent: tools/cmd/rcp-agent/* tools/go.sum tools/pkg/rcp/* tools/pkg/rcp/tlscerts/* tools/pkg/rcp/proxy/* tools/pkg/netlaunch/rcpagent.go
 	@mkdir -p bin
 	cd tools && go generate pkg/rcp/tlscerts/certs.go
-	cd tools && go build -tags tls_client -o ../bin/rcp-agent ./cmd/rcp-agent/main.go
+	cd tools && go build -o ../bin/rcp-agent ./cmd/rcp-agent/main.go
 
 # Clean generated RCP TLS certificates
 .PHONY: clean-rcp-certs
@@ -814,6 +814,7 @@ bin/trident-mos.iso: \
 	packaging/selinux-policy-trident/* \
 	tools/cmd/rcp-agent/rcp-agent.service \
 	bin/rcp-agent
+	@echo "Rebuilding Trident MOS ISO: $@ from $< because of: $?"
 	@mkdir -p bin
 	BUILD_DIR=`mktemp -d` && \
 		trap 'sudo rm -rf $$BUILD_DIR' EXIT; \

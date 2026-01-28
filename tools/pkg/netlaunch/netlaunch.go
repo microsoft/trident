@@ -3,6 +3,7 @@ package netlaunch
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -420,9 +421,9 @@ func injectRcpAgentConfig(
 	// Set up TLS data for RCP agent
 	clientCert, clientKey, serverCert := tlscerts.ClientTlsData()
 	rcpAgentConf.RcpClientTls = RcpTlsClientData{
-		ClientCert: clientCert,
-		ClientKey:  clientKey,
-		ServerCert: serverCert,
+		ClientCert: base64.StdEncoding.EncodeToString(clientCert),
+		ClientKey:  base64.StdEncoding.EncodeToString(clientKey),
+		ServerCert: base64.StdEncoding.EncodeToString(serverCert),
 	}
 
 	// If we have an RCP listener, set the client address to point to it.
@@ -434,6 +435,8 @@ func injectRcpAgentConfig(
 	if err != nil {
 		return fmt.Errorf("failed to marshal RCP agent config to YAML: %w", err)
 	}
+
+	log.Warnf("RCP AGENT CONFIG:\n%s", string(encoded))
 
 	err = isopatcher.PatchFile(iso, "/trident_cdrom/rcp-agent.yaml", encoded)
 	if err != nil {

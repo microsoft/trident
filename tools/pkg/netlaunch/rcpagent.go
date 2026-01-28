@@ -2,6 +2,8 @@ package netlaunch
 
 import (
 	"crypto/tls"
+	"encoding/base64"
+	"fmt"
 	"os"
 )
 
@@ -21,17 +23,32 @@ type RcpAdditionalFile struct {
 }
 
 type RcpTlsClientData struct {
-	ClientCert []byte `yaml:"certData,omitempty" mapstructure:"certData"`
-	ClientKey  []byte `yaml:"keyData,omitempty" mapstructure:"keyData"`
-	ServerCert []byte `yaml:"serverCert,omitempty" mapstructure:"serverCert"`
+	ClientCert string `yaml:"certData,omitempty" mapstructure:"certData"`
+	ClientKey  string `yaml:"keyData,omitempty" mapstructure:"keyData"`
+	ServerCert string `yaml:"serverCert,omitempty" mapstructure:"serverCert"`
 }
 
 // LocalCert implements the CertProvider interface.
 func (d *RcpTlsClientData) LocalCert() (tls.Certificate, error) {
-	return tls.X509KeyPair(d.ClientCert, d.ClientKey)
+	clientCert, err := base64.StdEncoding.DecodeString(d.ClientCert)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("failed to decode client certificate: %w", err)
+	}
+
+	clientKey, err := base64.StdEncoding.DecodeString(d.ClientKey)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("failed to decode client key: %w", err)
+	}
+
+	return tls.X509KeyPair(clientCert, clientKey)
 }
 
 // RemoteCertPEM implements the CertProvider interface.
 func (d *RcpTlsClientData) RemoteCertPEM() []byte {
-	return d.ServerCert
+	cert, err := base64.StdEncoding.DecodeString(d.ServerCert)
+	if err != nil {
+		return nil
+	}
+
+	return cert
 }

@@ -13,7 +13,7 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 
 	"tridenttools/pkg/netlaunch"
 	"tridenttools/pkg/rcp"
@@ -45,28 +45,20 @@ func main() {
 	})
 
 	// Set possible config file locations
-	viper.SetConfigType("yaml")
+	configFile := "/etc/rcp-agent/config.yaml"
 	if cli.Config != "" {
-		viper.SetConfigFile(cli.Config)
-	} else {
-		viper.AddConfigPath("/etc/rcp-agent/config.yaml")
-		viper.AddConfigPath("./rcp-agent.yaml")
+		configFile = cli.Config
 	}
 
-	// Load configuration from file if it exists
-	err := viper.ReadInConfig()
+	configData, err := os.ReadFile(configFile)
 	if err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			logrus.Info("No configuration file found, proceeding with CLI arguments and defaults.")
-		} else {
-			logrus.Fatalf("Error reading config file: %v", err)
-		}
+		logrus.Fatalf("Failed to read config file '%s': %v", configFile, err)
 	}
 
 	var config netlaunch.RcpAgentConfiguration
-	err = viper.Unmarshal(&config)
+	err = yaml.Unmarshal(configData, &config)
 	if err != nil {
-		logrus.Fatalf("Unable to decode into struct: %v", err)
+		logrus.Fatalf("Failed to parse config file '%s': %v", configFile, err)
 	}
 
 	// Handle Ctrl+C gracefully
