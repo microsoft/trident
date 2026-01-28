@@ -92,6 +92,13 @@ impl BlockDevice {
             )
             .collect()
     }
+
+    /// Returns the `/dev/` path of this block device.
+    pub fn device_path(&self) -> PathBuf {
+        let mut out = PathBuf::from("/dev/");
+        out.push(&self.name);
+        out
+    }
 }
 
 /// All possible device types returned by lsblk
@@ -300,7 +307,7 @@ where
 mod tests {
     use super::*;
 
-    /// Output obtained from running `lsblk --json --bytes --output-all --path /dev/sda`
+    /// Output obtained from running `lsblk --json --bytes --output-all --paths /dev/sda`
     /// on the functional test VM AzL 3.0, lsblk from util-linux 2.40.2
     const SAMPLE_LSBLK_OUTPUT: &str = indoc::indoc! {
         r#"{
@@ -1187,87 +1194,97 @@ mod tests {
     #[test]
     fn unknown_partition_table_type() {
         let output = r#"{
-"blockdevices": [
-    {
-        "alignment": 0,
-        "id-link": null,
-        "id": null,
-        "disc-aln": 0,
-        "dax": false,
-        "disc-gran": 4096,
-        "disk-seq": 4309,
-        "disc-max": 4294966784,
-        "disc-zero": false,
-        "fsavail": null,
-        "fsroots": [
-            null
-        ],
-        "fssize": null,
-        "fstype": null,
-        "fsused": null,
-        "fsuse%": null,
-        "fsver": null,
-        "group": "daemon",
-        "hctl": null,
-        "hotplug": false,
-        "kname": "loop32",
-        "label": null,
-        "log-sec": 512,
-        "maj:min": "7:32",
-        "maj": "7",
-        "min": "32",
-        "min-io": 512,
-        "mode": "brw-rw----",
-        "model": null,
-        "mq": "  1",
-        "name": "loop32",
-        "opt-io": 0,
-        "owner": "root",
-        "partflags": null,
-        "partlabel": null,
-        "partn": null,
-        "parttype": null,
-        "parttypename": null,
-        "partuuid": null,
-        "path": "/dev/loop32",
-        "phy-sec": 512,
-        "pkname": null,
-        "pttype": "PMBR",
-        "ptuuid": null,
-        "ra": 128,
-        "rand": false,
-        "rev": null,
-        "rm": false,
-        "ro": false,
-        "rota": false,
-        "rq-size": 128,
-        "sched": "none",
-        "serial": null,
-        "size": 13893632000,
-        "start": null,
-        "state": null,
-        "subsystems": "block",
-        "mountpoint": null,
-        "mountpoints": [
-            null
-        ],
-        "tran": null,
-        "type": "loop",
-        "uuid": null,
-        "vendor": null,
-        "wsame": 0,
-        "wwn": null,
-        "zoned": "none",
-        "zone-sz": 0,
-        "zone-wgran": 0,
-        "zone-app": 0,
-        "zone-nr": 0,
-        "zone-omax": 0,
-        "zone-amax": 0,
-        "children": []
-    }
-]}"#;
+            "blockdevices": [
+                {
+                    "alignment": 0,
+                    "id-link": null,
+                    "id": null,
+                    "disc-aln": 0,
+                    "dax": false,
+                    "disc-gran": 4096,
+                    "disk-seq": 4309,
+                    "disc-max": 4294966784,
+                    "disc-zero": false,
+                    "fsavail": null,
+                    "fsroots": [
+                        null
+                    ],
+                    "fssize": null,
+                    "fstype": null,
+                    "fsused": null,
+                    "fsuse%": null,
+                    "fsver": null,
+                    "group": "daemon",
+                    "hctl": null,
+                    "hotplug": false,
+                    "kname": "loop32",
+                    "label": null,
+                    "log-sec": 512,
+                    "maj:min": "7:32",
+                    "maj": "7",
+                    "min": "32",
+                    "min-io": 512,
+                    "mode": "brw-rw----",
+                    "model": null,
+                    "mq": "  1",
+                    "name": "loop32",
+                    "opt-io": 0,
+                    "owner": "root",
+                    "partflags": null,
+                    "partlabel": null,
+                    "partn": null,
+                    "parttype": null,
+                    "parttypename": null,
+                    "partuuid": null,
+                    "path": "/dev/loop32",
+                    "phy-sec": 512,
+                    "pkname": null,
+                    "pttype": "PMBR",
+                    "ptuuid": null,
+                    "ra": 128,
+                    "rand": false,
+                    "rev": null,
+                    "rm": false,
+                    "ro": false,
+                    "rota": false,
+                    "rq-size": 128,
+                    "sched": "none",
+                    "serial": null,
+                    "size": 13893632000,
+                    "start": null,
+                    "state": null,
+                    "subsystems": "block",
+                    "mountpoint": null,
+                    "mountpoints": [
+                        null
+                    ],
+                    "tran": null,
+                    "type": "loop",
+                    "uuid": null,
+                    "vendor": null,
+                    "wsame": 0,
+                    "wwn": null,
+                    "zoned": "none",
+                    "zone-sz": 0,
+                    "zone-wgran": 0,
+                    "zone-app": 0,
+                    "zone-nr": 0,
+                    "zone-omax": 0,
+                    "zone-amax": 0,
+                    "children": []
+                }
+            ]
+        }"#;
         let _ = parse_lsblk_output(output).unwrap();
+    }
+
+    #[test]
+    fn test_device_path() {
+        let bd = BlockDevice {
+            name: "sda".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(bd.device_path(), PathBuf::from("/dev/sda"));
     }
 }
 

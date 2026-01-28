@@ -11,7 +11,7 @@ use tar::Archive;
 use url::Url;
 
 use trident_api::{
-    config::{ImageSha384, OsImage},
+    config::{HostConfiguration, ImageSha384, OsImage},
     primitives::hash::Sha384Hash,
 };
 
@@ -20,6 +20,7 @@ use crate::io_utils::{
     hashing_reader::{HashingReader, HashingReader384},
 };
 
+mod derived_hc;
 mod error;
 mod metadata;
 mod validation;
@@ -95,6 +96,25 @@ impl Cosi {
         self.metadata
             .get_regular_filesystems()
             .map(|image| cosi_image_to_os_image_filesystem(&self.reader, image))
+    }
+
+    /// Derives the storage and image section of a Host Configuration from this COSI file.
+    pub(super) fn derive_host_configuration(
+        &self,
+        target_disk: impl AsRef<Path>,
+    ) -> Result<HostConfiguration, Error> {
+        let storage = self
+            .metadata
+            .derive_host_configuration_storage(target_disk)?;
+
+        Ok(HostConfiguration {
+            image: Some(OsImage {
+                url: self.source.clone(),
+                sha384: ImageSha384::Checksum(self.metadata_sha384.clone()),
+            }),
+            storage,
+            ..Default::default()
+        })
     }
 }
 
@@ -869,7 +889,6 @@ mod tests {
                 os_packages: None,
                 images,
                 bootloader: None,
-                host_configuration_template: None,
                 partitions: None,
             },
             reader: FileReader::Buffer(data),
@@ -891,7 +910,6 @@ mod tests {
                 images: vec![],
                 os_packages: None,
                 bootloader: None,
-                host_configuration_template: None,
                 partitions: None,
             },
             reader: FileReader::Buffer(Cursor::new(Vec::<u8>::new())),

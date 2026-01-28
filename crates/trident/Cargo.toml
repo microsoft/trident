@@ -84,6 +84,7 @@ maplit = { workspace = true }
 mockito = { workspace = true }
 sha2 = { workspace = true }
 tower = { workspace = true }
+itertools = { workspace = true }
 
 osutils = { path = "../osutils", features = ["test-utilities"] }
 

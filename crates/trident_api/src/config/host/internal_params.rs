@@ -60,8 +60,8 @@ impl InternalParams {
     }
 
     /// Set a key to be a boolean flag with a value of 'true'.
-    pub fn set_flag(&mut self, key: String) {
-        self.0.insert(key, true.into());
+    pub fn set_flag(&mut self, key: impl Into<String>) {
+        self.0.insert(key.into(), true.into());
     }
 
     /// Set a key to be a boolean flag with a value of 'false'.
