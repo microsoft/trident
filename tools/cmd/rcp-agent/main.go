@@ -16,7 +16,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"tridenttools/pkg/netlaunch"
-	"tridenttools/pkg/rcp"
 	"tridenttools/pkg/rcp/proxy"
 	"tridenttools/storm/utils/cmd"
 )
@@ -28,7 +27,7 @@ const (
 )
 
 var cli struct {
-	Config string `short:"c" help:"Path to configuration file."`
+	Config string `short:"c" help:"Path to configuration file." default:"/etc/rcp-agent/config.yaml"`
 }
 
 func main() {
@@ -36,29 +35,21 @@ func main() {
 		&cli,
 		kong.Description("A reverse-connect proxy that connects to an rcp-client to forward proxy connections between it and a server."),
 		kong.UsageOnError(),
-		kong.Vars{
-			"defaultServerAddress": rcp.DefaultTridentSocketPath,
-		},
 	)
 	logrus.SetFormatter(&logrus.TextFormatter{
 		ForceColors: true,
 	})
 
 	// Set possible config file locations
-	configFile := "/etc/rcp-agent/config.yaml"
-	if cli.Config != "" {
-		configFile = cli.Config
-	}
-
-	configData, err := os.ReadFile(configFile)
+	configData, err := os.ReadFile(cli.Config)
 	if err != nil {
-		logrus.Fatalf("Failed to read config file '%s': %v", configFile, err)
+		logrus.Fatalf("Failed to read config file '%s': %v", cli.Config, err)
 	}
 
 	var config netlaunch.RcpAgentConfiguration
 	err = yaml.Unmarshal(configData, &config)
 	if err != nil {
-		logrus.Fatalf("Failed to parse config file '%s': %v", configFile, err)
+		logrus.Fatalf("Failed to parse config file '%s': %v", cli.Config, err)
 	}
 
 	// Handle Ctrl+C gracefully
