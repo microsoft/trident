@@ -560,7 +560,7 @@ run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlau
 	@bin/netlaunch \
 	    --trident-binary $(RUN_NETLAUNCH_TRIDENT_BIN) \
 		--osmodifier-binary artifacts/osmodifier \
-		--rcp-agent-mode grpc \
+		--rcp-agent-mode cli \
 	 	--iso $(NETLAUNCH_ISO) \
 		$(if $(NETLAUNCH_PORT),--port $(NETLAUNCH_PORT)) \
 		--config $(NETLAUNCH_CONFIG) \
