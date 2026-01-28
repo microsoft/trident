@@ -74,17 +74,17 @@ func (h *DirectStreamingHelper) directStreaming(tc storm.TestCase) error {
 	netlaunchContext := context.Background()
 	go func() {
 		logrus.Info("Starting netlaunch...")
-		err = netlaunch.RunNetlaunch(netlaunchContext, netlaunchConfig)
+		netlaunchErr := netlaunch.RunNetlaunch(netlaunchContext, netlaunchConfig)
 		logrus.Info("netlaunch stopped.")
-		if err != nil && err != context.Canceled {
-			tc.FailFromError(err)
+		if netlaunchErr != nil && netlaunchErr != context.Canceled {
+			tc.FailFromError(netlaunchErr)
 		}
 	}()
 
 	time.Sleep(10 * time.Second) // Give netlaunch some time to start
 
 	// Wait for login message in serial log
-	remainingTimeout := (time.Duration(h.args.TimeoutInSeconds) * time.Second) - time.Now().Sub(startTime)
+	remainingTimeout := (time.Duration(h.args.TimeoutInSeconds) * time.Second) - time.Since(startTime)
 	err = stormutils.WaitForLoginMessageInSerialLog(vmSerialLog, true, 1, "/tmp/serial.log", remainingTimeout)
 	tc.ArtifactBroker().PublishLogFile("serial.log", "/tmp/serial.log")
 	if err != nil {

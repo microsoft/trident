@@ -1149,6 +1149,8 @@ artifacts/trident-direct-streaming-testimage-arm64.cosi: \
 		$(TMP_NO_HC_VHD_COSI) \
 		artifacts/trident-direct-streaming-testimage-arm64.cosi \
 		$(TMP_HC)
+	rm -rf $(TMP_NO_HC_VHD_COSI)
+	rm -rf $(TMP_HC)
 
 artifacts/trident-direct-streaming-testimage.cosi: \
 	bin/mkcosi \
@@ -1161,3 +1163,5 @@ artifacts/trident-direct-streaming-testimage.cosi: \
 		$(TMP_NO_HC_VHD_COSI) \
 		artifacts/trident-direct-streaming-testimage.cosi \
 		$(DIRECT_STREAMING_HOST_CONFIGURATION)
+	rm -rf $(TMP_NO_HC_VHD_COSI)
+	rm -rf $(TMP_HC)
