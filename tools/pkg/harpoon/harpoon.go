@@ -13,6 +13,10 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+const (
+	DefaultTridentSocketPath = "/run/trident.sock"
+)
+
 // HarpoonClient is a client for interacting with the Harpoon gRPC service.
 type HarpoonClient struct {
 	harpoonpbv1.TridentServiceClient
