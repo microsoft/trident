@@ -18,7 +18,7 @@
   # baseimgBuildType == dev
   - script: |
       BASEIMG_VERSION="*.*.*"
-      if [[ "$(architecture)" == "arm64" ]]; then
+      if [[ "${{ parameters.architecture }}" == "arm64" ]]; then
         if [[ "$(BASE_IMAGE_ARM64_PIPELINE_BUILD_ID)" != "latestFromBranch" ]]; then
           BASEIMG_VERSION="$(BASE_IMAGE_ARM64_PIPELINE_BUILD_ID)"
         fi
@@ -40,14 +40,14 @@
       echo "BASEIMG_VERSION: $BASEIMG_VERSION"
 
       BASEIMG_PIPELINE_NAME="[AMD64-6-OneBranch]-Prod-BuildImages"
-      if [[ "$(architecture)" == "arm64" ]]; then
+      if [[ "${{ parameters.architecture }}" == "arm64" ]]; then
         BASEIMG_PIPELINE_NAME="[ARM64-6-OneBranch]-Prod-BuildImages"
       fi
       echo "##vso[task.setvariable variable=BASEIMG_PIPELINE_NAME]$BASEIMG_PIPELINE_NAME"
       echo "BASEIMG_PIPELINE_NAME: $BASEIMG_PIPELINE_NAME"
 
       BASEIMG_VERSION="$(BASE_IMAGE_PIPELINE_BUILD_ID)"
-      if [[ "$(architecture)" == "arm64" ]]; then
+      if [[ "${{ parameters.architecture }}" == "arm64" ]]; then
         BASEIMG_VERSION="$(BASE_IMAGE_ARM64_PIPELINE_BUILD_ID)"
       fi
       echo "##vso[task.setvariable variable=BASEIMG_VERSION]$BASEIMG_VERSION"

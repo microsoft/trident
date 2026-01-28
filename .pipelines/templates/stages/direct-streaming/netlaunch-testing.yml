@@ -55,7 +55,7 @@ stages:
           - name: ob_outputDirectory
             value: $(tridentSourceDirectory)/deployment_logs
           - name: ob_artifactBaseName
-            value: direct_streaming_deployment _${{ parameters.architecture }}_log_$(System.JobAttempt)
+            value: direct_streaming_deployment_${{ parameters.architecture }}_log_$(System.JobAttempt)
           - name: netlaunchPort
             value: 4000
 
