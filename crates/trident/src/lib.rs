@@ -628,7 +628,7 @@ impl Trident {
             .message("Failed to download OS image")?;
 
         let mut config = image
-            .derived_host_configuration("/dev/sda") // Use /dev/sda as a placeholder.
+            .derive_host_configuration("/dev/sda") // Use /dev/sda as a placeholder.
             .structured(InvalidInputError::DeriveHostConfiguration)
             .message("Host Configuration cannot be derived from this OS image.")?
             .structured(InvalidInputError::DeriveHostConfiguration)?;

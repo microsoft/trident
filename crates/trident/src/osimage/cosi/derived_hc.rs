@@ -1,9 +1,10 @@
 use std::{collections::HashMap, path::Path};
 
 use anyhow::{bail, Error};
+
 use sysdefs::partition_types::DiscoverablePartitionType;
 use trident_api::{
-    config::{Disk, FileSystem, FileSystemSource, HostConfiguration, Partition, Storage},
+    config::{Disk, FileSystem, FileSystemSource, Partition, Storage},
     misc::IdGenerator,
 };
 
@@ -13,10 +14,10 @@ use super::metadata::CosiMetadata;
 
 impl CosiMetadata {
     /// Derives a host configuration from the COSI >= v1.2 metadata.
-    pub fn derive_host_configuration(
+    pub(super) fn derive_host_configuration_storage(
         &self,
         target_disk: impl AsRef<Path>,
-    ) -> Result<HostConfiguration, Error> {
+    ) -> Result<Storage, Error> {
         if self.version < KnownMetadataVersion::V1_2 {
             bail!("Host configuration derivation requires COSI metadata version {} or higher, found {}", KnownMetadataVersion::V1_2, self.version);
         }
@@ -71,18 +72,15 @@ impl CosiMetadata {
             });
         }
 
-        Ok(HostConfiguration {
-            storage: Storage {
-                disks: vec![Disk {
-                    id: "disk0".to_string(),
-                    device: target_disk.as_ref().into(),
-                    partitions,
-                    partition_table_type: Default::default(),
-                    adopted_partitions: vec![],
-                }],
-                filesystems,
-                ..Default::default()
-            },
+        Ok(Storage {
+            disks: vec![Disk {
+                id: "disk0".to_string(),
+                device: target_disk.as_ref().into(),
+                partitions,
+                partition_table_type: Default::default(),
+                adopted_partitions: vec![],
+            }],
+            filesystems,
             ..Default::default()
         })
     }
@@ -90,19 +88,20 @@ impl CosiMetadata {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use std::path::PathBuf;
 
     use itertools::izip;
     use sysdefs::arch::SystemArchitecture;
-    use trident_api::primitives::hash::Sha384Hash;
     use uuid::Uuid;
+
+    use trident_api::{config::HostConfiguration, primitives::hash::Sha384Hash};
 
     use crate::osimage::{
         cosi::metadata::{Image, ImageFile, Partition as CosiPartition},
         OsImageFileSystemType,
     };
-
-    use super::*;
 
     #[test]
     fn test_derive_host_configuration_ok() {
@@ -168,7 +167,13 @@ mod tests {
         };
 
         let target_disk = "/dev/sda";
-        let hc = metadata.derive_host_configuration(target_disk).unwrap();
+
+        let hc = HostConfiguration {
+            storage: metadata
+                .derive_host_configuration_storage(target_disk)
+                .unwrap(),
+            ..Default::default()
+        };
 
         hc.validate().unwrap();
 
@@ -224,7 +229,9 @@ mod tests {
         };
 
         let target_disk = "/dev/sda";
-        let err = metadata.derive_host_configuration(target_disk).unwrap_err();
+        let err = metadata
+            .derive_host_configuration_storage(target_disk)
+            .unwrap_err();
 
         assert!(err
             .to_string()
@@ -245,7 +252,9 @@ mod tests {
         };
 
         let target_disk = "/dev/sda";
-        let err = metadata.derive_host_configuration(target_disk).unwrap_err();
+        let err = metadata
+            .derive_host_configuration_storage(target_disk)
+            .unwrap_err();
 
         assert!(err.to_string().contains(
             "Host configuration derivation requires COSI metadata version 1.2 or higher"

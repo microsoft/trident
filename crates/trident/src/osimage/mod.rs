@@ -181,12 +181,12 @@ impl OsImage {
     }
 
     /// Derives a host configuration from the OS image, if supported.
-    pub(crate) fn derived_host_configuration(
+    pub(crate) fn derive_host_configuration(
         &self,
         target_disk: impl AsRef<Path>,
     ) -> Option<Result<HostConfiguration, Error>> {
         match &self.0 {
-            OsImageInner::Cosi(cosi) => Some(cosi.metadata.derive_host_configuration(target_disk)),
+            OsImageInner::Cosi(cosi) => Some(cosi.derive_host_configuration(target_disk)),
             #[cfg(test)]
             OsImageInner::Mock(_mock) => None,
         }
