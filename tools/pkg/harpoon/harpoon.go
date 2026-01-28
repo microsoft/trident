@@ -32,6 +32,7 @@ func (c *HarpoonClient) Close() error {
 func NewHarpoonClientFromNetworkConnection(conn net.Conn) (*HarpoonClient, error) {
 	grpcConn, err := grpc.NewClient(
 		"passthrough:target",
+		// Not really insecure, we are using a pre-established TLS connection
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithContextDialer(func(_ context.Context, _ string) (net.Conn, error) {
 			return conn, nil

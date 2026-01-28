@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
@@ -15,7 +13,6 @@ import (
 	"time"
 
 	"github.com/bmc-toolbox/bmclib/v2"
-	"github.com/fatih/color"
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 	"github.com/stmcginnis/gofish/redfish"
@@ -43,6 +40,7 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 	if err != nil {
 		return fmt.Errorf("failed to open port listening on '%s': %v", localListenAddress, err)
 	}
+	defer listen.Close()
 
 	// Find the port we're listening on
 	var announcePort string
@@ -133,11 +131,14 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 			return fmt.Errorf("failed to unmarshal Trident config: %w", err)
 		}
 
-		if _, ok := trident["trident"]; !ok {
-			trident["trident"] = make(map[interface{}]interface{})
+		// Add phonehome & logstream config ONLY when NOT in gRPC RCP mode
+		if config.Rcp == nil || !config.Rcp.GrpcMode {
+			if _, ok := trident["trident"]; !ok {
+				trident["trident"] = make(map[interface{}]interface{})
+			}
+			trident["trident"].(map[interface{}]interface{})["phonehome"] = fmt.Sprintf("http://%s/phonehome", announceAddress)
+			trident["trident"].(map[interface{}]interface{})["logstream"] = fmt.Sprintf("http://%s/logstream", announceAddress)
 		}
-		trident["trident"].(map[interface{}]interface{})["phonehome"] = fmt.Sprintf("http://%s/phonehome", announceAddress)
-		trident["trident"].(map[interface{}]interface{})["logstream"] = fmt.Sprintf("http://%s/logstream", announceAddress)
 
 		tridentConfig, err := yaml.Marshal(trident)
 		if err != nil {
@@ -311,7 +312,7 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 			installCtx, installCancel := context.WithTimeout(ctx, time.Minute*10)
 			defer installCancel()
 
-			go func() {
+			func() {
 				// Defer termination of the phonehome listener
 				defer terminateFunc()
 				defer conn.Close()
@@ -323,19 +324,19 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 				}
 			}()
 		}
-	}
+	} else {
+		// Wait for something to happen
+		exitError := phonehome.ListenLoop(terminateCtx, result, config.WaitForProvisioning, config.MaxPhonehomeFailures)
 
-	// Wait for something to happen
-	exitError := phonehome.ListenLoop(terminateCtx, result, config.WaitForProvisioning, config.MaxPhonehomeFailures)
+		err = server.Shutdown(ctx)
+		if err != nil {
+			log.WithError(err).Errorln("failed to shutdown server")
+		}
 
-	err = server.Shutdown(ctx)
-	if err != nil {
-		log.WithError(err).Errorln("failed to shutdown server")
-	}
-
-	if exitError != nil {
-		log.WithError(exitError).Errorln("phonehome returned an error")
-		return exitError
+		if exitError != nil {
+			log.WithError(exitError).Errorln("phonehome returned an error")
+			return exitError
+		}
 	}
 
 	return nil
@@ -437,8 +438,6 @@ func injectRcpAgentConfig(
 		return fmt.Errorf("failed to marshal RCP agent config to YAML: %w", err)
 	}
 
-	log.Warnf("RCP AGENT CONFIG:\n%s", string(encoded))
-
 	err = isopatcher.PatchFile(iso, "/trident_cdrom/rcp-agent.yaml", encoded)
 	if err != nil {
 		return fmt.Errorf("failed to patch RCP agent config into ISO: %w", err)
@@ -467,33 +466,9 @@ func doGrpcInstall(ctx context.Context, conn net.Conn, hostConfiguration string)
 		return fmt.Errorf("failed to start installation via Harpoon: %w", err)
 	}
 
-	colorize := color.New(color.FgGreen).SprintfFunc()
-	grpcHeader := colorize("|GRPC|")
-
-	for {
-		resp, err := stream.Recv()
-		if errors.Is(err, io.EOF) {
-			log.Info("Install stream ended")
-			break
-		} else if err != nil {
-			return fmt.Errorf("failed to receive installation response via Harpoon: %w", err)
-		}
-
-		switch payload := resp.Response.(type) {
-		case *harpoonpbv1.ServicingResponse_Start:
-			log.Infof("%s%s", grpcHeader, color.GreenString("[START]"))
-		case *harpoonpbv1.ServicingResponse_Log:
-			log.Infof("%s[%s] %s", grpcHeader, payload.Log.Level.String(), payload.Log.Message)
-		case *harpoonpbv1.ServicingResponse_FinalStatus:
-			var errStr string
-			if tridentError := payload.FinalStatus.GetError(); tridentError != nil {
-				errStr = fmt.Sprintf("\n%s", tridentError.FullBody)
-			}
-
-			log.Infof("%s%s %s%s", grpcHeader, color.MagentaString("[STATUS]"), payload.FinalStatus.Status.String(), errStr)
-		default:
-			log.Warnf("Received unknown response type from Harpoon: %T", payload)
-		}
+	err = handleServicingResponseStream(stream)
+	if err != nil {
+		return fmt.Errorf("error during installation via Harpoon: %w", err)
 	}
 
 	return nil
