@@ -2,32 +2,17 @@ package virtdeploy
 
 import (
 	"fmt"
-	"runtime"
 	"tridenttools/pkg/ref"
 
 	"libvirt.org/go/libvirtxml"
 )
-
-func (vm *VirtDeployVM) getDiskBus() string {
-	if runtime.GOARCH == "arm64" {
-		return "virtio"
-	}
-	return "sata"
-}
-
-func (vm *VirtDeployVM) getDiskDevicePrefix() string {
-	if runtime.GOARCH == "arm64" {
-		return "vd"
-	}
-	return "sd"
-}
 
 // asXml renders the libvirt domain XML corresponding to the VM definition.
 // It translates the earlier XML template into structured Go objects.
 // Some low-level address/controller elements are omitted for brevity; libvirt
 // will auto-assign them. Extend if deterministic addressing is required.
 func (vm *VirtDeployVM) asXml(network *virtDeployNetwork, nvramPool storagePool) (string, error) {
-	if runtime.GOARCH == "arm64" {
+	if vm.Arch == "arm64" {
 		return vm.asArm64Xml(network, nvramPool)
 	}
 	return vm.asAmd64Xml(network, nvramPool)
@@ -36,24 +21,7 @@ func (vm *VirtDeployVM) asXml(network *virtDeployNetwork, nvramPool storagePool)
 func (vm *VirtDeployVM) configureDisks() []libvirtxml.DomainDisk {
 	disks := make([]libvirtxml.DomainDisk, 0, len(vm.volumes)+len(vm.cdroms))
 	for i, vol := range vm.volumes {
-		addressDrive := &libvirtxml.DomainAddressDrive{
-			Controller: new(uint),
-			Bus:        new(uint),
-			Target:     new(uint),
-			Unit:       ref.Of(uint(i + 1)),
-		}
-		addressPci := &libvirtxml.DomainAddressPCI{
-			Domain:   new(uint),
-			Bus:      new(uint),
-			Slot:     new(uint),
-			Function: new(uint),
-		}
-		if runtime.GOARCH == "arm64" {
-			addressDrive = nil
-		} else {
-			addressPci = nil
-		}
-		disks = append(disks, libvirtxml.DomainDisk{
+		domainDisk := libvirtxml.DomainDisk{
 			Device: "disk",
 			Driver: &libvirtxml.DomainDiskDriver{
 				Name: "qemu",
@@ -64,13 +32,27 @@ func (vm *VirtDeployVM) configureDisks() []libvirtxml.DomainDisk {
 			},
 			Target: &libvirtxml.DomainDiskTarget{
 				Dev: vol.device, // e.g. sda, sdb
-				Bus: vm.getDiskBus(),
 			},
-			Address: &libvirtxml.DomainAddress{
-				Drive: addressDrive,
-				PCI:   addressPci,
-			},
-		})
+			Address: &libvirtxml.DomainAddress{},
+		}
+		if vm.Arch == "arm64" {
+			domainDisk.Target.Bus = "virtio"
+			domainDisk.Address.PCI = &libvirtxml.DomainAddressPCI{
+				Domain:   new(uint),
+				Bus:      new(uint),
+				Slot:     new(uint),
+				Function: new(uint),
+			}
+		} else {
+			domainDisk.Target.Bus = "sata"
+			domainDisk.Address.Drive = &libvirtxml.DomainAddressDrive{
+				Controller: new(uint),
+				Bus:        new(uint),
+				Target:     new(uint),
+				Unit:       ref.Of(uint(i + 1)),
+			}
+		}
+		disks = append(disks, domainDisk)
 	}
 	for i, cd := range vm.cdroms {
 		addressDrive := &libvirtxml.DomainAddressDrive{
@@ -110,19 +92,6 @@ func (vm *VirtDeployVM) configureTpms() []libvirtxml.DomainTPM {
 		}}
 	}
 	return tpms
-}
-
-func (vm *VirtDeployVM) configureNetwork(network *virtDeployNetwork) []libvirtxml.DomainInterface {
-	ifaces := []libvirtxml.DomainInterface{{
-		Model: &libvirtxml.DomainInterfaceModel{Type: "virtio"},
-		MAC:   &libvirtxml.DomainInterfaceMAC{Address: vm.mac.String()},
-		Source: &libvirtxml.DomainInterfaceSource{
-			Network: &libvirtxml.DomainInterfaceSourceNetwork{
-				Network: network.name,
-			},
-		},
-	}}
-	return ifaces
 }
 
 func (vm *VirtDeployVM) createDomain(
@@ -182,7 +151,15 @@ func (vm *VirtDeployVM) createDomain(
 			Emulator:    emulator,
 			Disks:       vm.configureDisks(),
 			Controllers: controllers,
-			Interfaces:  vm.configureNetwork(network),
+			Interfaces: []libvirtxml.DomainInterface{{
+				Model: &libvirtxml.DomainInterfaceModel{Type: "virtio"},
+				MAC:   &libvirtxml.DomainInterfaceMAC{Address: vm.mac.String()},
+				Source: &libvirtxml.DomainInterfaceSource{
+					Network: &libvirtxml.DomainInterfaceSourceNetwork{
+						Network: network.name,
+					},
+				},
+			}},
 			Consoles: []libvirtxml.DomainConsole{{
 				Source: &libvirtxml.DomainChardevSource{
 					Pty: &libvirtxml.DomainChardevSourcePty{},
