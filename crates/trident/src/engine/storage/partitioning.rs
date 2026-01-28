@@ -178,11 +178,11 @@ fn partitioning_safety_check(disks: &Vec<ResolvedDisk>) -> Result<(), Error> {
         }
 
         // If the disk itself is mounted we cannot proceed because we can only adopt partitions.
-        if blkdev_info.mountpoint.is_some() {
+        if let Some(m) = blkdev_info.mountpoint {
             bail!(
                 "Disk '{}' is currently mounted at '{}', cannot proceed with partitioning.",
                 disk.id,
-                blkdev_info.mountpoint.unwrap().display()
+                m.display()
             );
         }
 
