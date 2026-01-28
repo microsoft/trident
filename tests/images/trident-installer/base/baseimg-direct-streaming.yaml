@@ -81,6 +81,8 @@ os:
 scripts:
   postCustomization:
     - path: post-install.sh
+      arguments:
+        - "no-trident-config"
 
 iso:
   additionalFiles:
