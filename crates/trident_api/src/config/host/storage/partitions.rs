@@ -40,6 +40,13 @@ pub struct Partition {
         schemars(schema_with = "unit_enum_with_untagged_variant::<PartitionSize, ByteCount>")
     )]
     pub size: PartitionSize,
+
+    /// Partition UUID. If not set, a new random UUID will be generated.
+    pub uuid: Option<Uuid>,
+
+    /// Partition label. If not set, the partition's block device ID will be
+    /// used as the label.
+    pub label: Option<String>,
 }
 
 /// Settings to adopt a pre-existing partition.

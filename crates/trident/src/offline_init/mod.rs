@@ -365,6 +365,8 @@ fn create_partition(
                 .message(format!("Failed to parse partition size '{s}'"))?,
             None => PartitionSize::Grow,
         },
+        uuid: None,
+        label: None,
     })
 }
 

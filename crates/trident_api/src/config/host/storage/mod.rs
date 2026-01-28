@@ -579,56 +579,78 @@ mod tests {
                             id: "esp".to_owned(),
                             partition_type: PartitionType::Esp,
                             size: PartitionSize::from_str("1M").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "root-a".to_owned(),
                             partition_type: PartitionType::Root,
                             size: PartitionSize::from_str("1G").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "root-a-verity".to_owned(),
                             partition_type: PartitionType::RootVerity,
                             size: PartitionSize::from_str("1G").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "root-b".to_owned(),
                             partition_type: PartitionType::Root,
                             size: PartitionSize::from_str("1G").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "root-b-verity".to_owned(),
                             partition_type: PartitionType::RootVerity,
                             size: PartitionSize::from_str("1G").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "mnt-raid-1".to_owned(),
                             partition_type: PartitionType::LinuxGeneric,
                             size: PartitionSize::from_str("1G").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "mnt-raid-2".to_owned(),
                             partition_type: PartitionType::LinuxGeneric,
                             size: PartitionSize::from_str("1G").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "srv-enc".to_owned(),
                             partition_type: PartitionType::LinuxGeneric,
                             size: PartitionSize::from_str("1G").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "boot".to_owned(),
                             partition_type: PartitionType::LinuxGeneric,
                             size: PartitionSize::from_str("1G").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "overlay".to_owned(),
                             partition_type: PartitionType::LinuxGeneric,
                             size: PartitionSize::from_str("1G").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "var".to_owned(),
                             partition_type: PartitionType::LinuxGeneric,
                             size: PartitionSize::from_str("1G").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                     ],
                     ..Default::default()
@@ -783,11 +805,15 @@ mod tests {
                             id: "disk1-partition1".to_string(),
                             partition_type: PartitionType::Esp,
                             size: PartitionSize::from_str("1M").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "disk1-partition2".to_string(),
                             partition_type: PartitionType::Root,
                             size: PartitionSize::from_str("1G").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                     ],
                     ..Default::default()
@@ -800,6 +826,8 @@ mod tests {
                         id: "disk2-partition1".to_string(),
                         partition_type: PartitionType::Esp,
                         size: PartitionSize::from_str("1M").unwrap(),
+                        uuid: None,
+                        label: None,
                     }],
                     ..Default::default()
                 },
@@ -835,11 +863,15 @@ mod tests {
                             id: "disk1-partition1".to_string(),
                             partition_type: PartitionType::Esp,
                             size: PartitionSize::from_str("1M").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "disk1-partition2".to_string(),
                             partition_type: PartitionType::Root,
                             size: PartitionSize::from_str("1G").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                     ],
                     ..Default::default()
@@ -853,11 +885,15 @@ mod tests {
                             id: "disk2-partition1".to_string(),
                             partition_type: PartitionType::Esp,
                             size: PartitionSize::from_str("1M").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "disk2-partition2".to_string(),
                             partition_type: PartitionType::Root,
                             size: PartitionSize::from_str("1G").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                     ],
                     ..Default::default()
@@ -995,26 +1031,36 @@ mod tests {
                             id: "part1".to_owned(),
                             partition_type: PartitionType::Esp,
                             size: PartitionSize::from_str("1M").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "part2".to_owned(),
                             partition_type: PartitionType::Root,
                             size: PartitionSize::from_str("1G").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "part3".to_owned(),
                             partition_type: PartitionType::Root,
                             size: PartitionSize::from_str("1G").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "part4".to_owned(),
                             partition_type: PartitionType::Root,
                             size: PartitionSize::from_str("1G").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "part5".to_owned(),
                             partition_type: PartitionType::Root,
                             size: PartitionSize::from_str("1G").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                     ],
                     ..Default::default()
@@ -1066,6 +1112,8 @@ mod tests {
             id: "part1".to_owned(),
             partition_type: PartitionType::Esp,
             size: PartitionSize::from_str("1M").unwrap(),
+            uuid: None,
+            label: None,
         }];
         assert_eq!(
             storage.validate(true).unwrap_err(),
@@ -1182,6 +1230,8 @@ mod tests {
             id: "srv-b-enc".to_owned(),
             partition_type: PartitionType::LinuxGeneric,
             size: PartitionSize::from_str("1G").unwrap(),
+            uuid: None,
+            label: None,
         });
 
         // Encrypt new partition
@@ -1225,11 +1275,15 @@ mod tests {
             id: "alt-a-enc".to_owned(),
             partition_type: PartitionType::LinuxGeneric,
             size: PartitionSize::from_str("1G").unwrap(),
+            uuid: None,
+            label: None,
         });
         storage.disks[0].partitions.push(Partition {
             id: "alt-b-enc".to_owned(),
             partition_type: PartitionType::LinuxGeneric,
             size: PartitionSize::from_str("1G").unwrap(),
+            uuid: None,
+            label: None,
         });
         // Encrypt alt a and alt b
         storage
@@ -1366,6 +1420,8 @@ mod tests {
             id: "alt-enc".to_owned(),
             partition_type: PartitionType::LinuxGeneric,
             size: PartitionSize::from_str("1G").unwrap(),
+            uuid: None,
+            label: None,
         });
         storage
             .encryption
@@ -1394,6 +1450,8 @@ mod tests {
             id: "alt-enc".to_owned(),
             partition_type: PartitionType::LinuxGeneric,
             size: PartitionSize::from_str("1G").unwrap(),
+            uuid: None,
+            label: None,
         });
         storage
             .encryption
@@ -1511,6 +1569,8 @@ mod tests {
             id: "alt-root".to_owned(),
             partition_type: PartitionType::Root,
             size: PartitionSize::from_str("1G").unwrap(),
+            uuid: None,
+            label: None,
         });
 
         // Encrypt alt root
@@ -1576,6 +1636,8 @@ mod tests {
             id: "usr-verity".to_owned(),
             partition_type: PartitionType::UsrVerity,
             size: PartitionSize::from_str("1G").unwrap(),
+            uuid: None,
+            label: None,
         });
 
         // Add usr-verity partition to the list of encrypted volumes
@@ -2045,11 +2107,15 @@ mod tests {
             id: "alt-a-enc".to_owned(),
             partition_type: PartitionType::LinuxGeneric,
             size: PartitionSize::from_str("1G").unwrap(),
+            uuid: None,
+            label: None,
         });
         storage.disks[0].partitions.push(Partition {
             id: "alt-b-enc".to_owned(),
             partition_type: PartitionType::LinuxGeneric,
             size: PartitionSize::from_str("1G").unwrap(),
+            uuid: None,
+            label: None,
         });
         // Encrypt alt a and alt b
         storage
@@ -2104,11 +2170,15 @@ mod tests {
             id: "alt-a-enc".to_owned(),
             partition_type: PartitionType::LinuxGeneric,
             size: PartitionSize::from_str("1G").unwrap(),
+            uuid: None,
+            label: None,
         });
         storage.disks[0].partitions.push(Partition {
             id: "alt-b-enc".to_owned(),
             partition_type: PartitionType::LinuxGeneric,
             size: PartitionSize::from_str("1G").unwrap(),
+            uuid: None,
+            label: None,
         });
         // Encrypt alt a and alt b
         storage
@@ -2338,21 +2408,29 @@ mod tests {
                         id: "esp1".into(),
                         size: PartitionSize::from_str("512M").unwrap(),
                         partition_type: PartitionType::Esp,
+                        uuid: None,
+                        label: None,
                     },
                     Partition {
                         id: "esp2".into(),
                         size: PartitionSize::from_str("512M").unwrap(),
                         partition_type: PartitionType::Esp,
+                        uuid: None,
+                        label: None,
                     },
                     Partition {
                         id: "var".to_owned(),
                         partition_type: PartitionType::LinuxGeneric,
                         size: PartitionSize::from_str("1G").unwrap(),
+                        uuid: None,
+                        label: None,
                     },
                     Partition {
                         id: "root".to_owned(),
                         partition_type: PartitionType::Root,
                         size: PartitionSize::from_str("1G").unwrap(),
+                        uuid: None,
+                        label: None,
                     },
                 ],
                 ..Default::default()
@@ -2425,26 +2503,36 @@ mod tests {
                                 id: "part1".to_owned(),
                                 partition_type: PartitionType::Esp,
                                 size: PartitionSize::from_str("1M").unwrap(),
+                                uuid: None,
+                                label: None,
                             },
                             Partition {
                                 id: "part2".to_owned(),
                                 partition_type: PartitionType::Root,
                                 size: PartitionSize::from_str("1G").unwrap(),
+                                uuid: None,
+                                label: None,
                             },
                             Partition {
                                 id: "part3".to_owned(),
                                 partition_type: PartitionType::Root,
                                 size: PartitionSize::from_str("1G").unwrap(),
+                                uuid: None,
+                                label: None,
                             },
                             Partition {
                                 id: "part4".to_owned(),
                                 partition_type: PartitionType::Root,
                                 size: PartitionSize::from_str("1G").unwrap(),
+                                uuid: None,
+                                label: None,
                             },
                             Partition {
                                 id: "part5".to_owned(),
                                 partition_type: PartitionType::Srv,
                                 size: PartitionSize::from_str("1G").unwrap(),
+                                uuid: None,
+                                label: None,
                             },
                         ],
                         ..Default::default()
@@ -2537,21 +2625,29 @@ mod tests {
                             id: "esp".to_string(),
                             partition_type: PartitionType::Esp,
                             size: 100.into(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "root-a".to_string(),
                             partition_type: PartitionType::Root,
                             size: 100.into(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "root-b".to_string(),
                             partition_type: PartitionType::Root,
                             size: 100.into(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "trident".to_string(),
                             partition_type: PartitionType::LinuxGeneric,
                             size: 100.into(),
+                            uuid: None,
+                            label: None,
                         },
                     ],
                     ..Default::default()

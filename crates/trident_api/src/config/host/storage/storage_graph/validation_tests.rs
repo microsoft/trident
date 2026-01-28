@@ -9,6 +9,8 @@
 
 use std::path::Path;
 
+use uuid::Uuid;
+
 use super::{
     builder::StorageGraphBuilder,
     error::StorageGraphBuildError,
@@ -32,6 +34,8 @@ fn generic_partition() -> Partition {
         id: "partition".into(),
         partition_type: PartitionType::LinuxGeneric,
         size: PartitionSize::Fixed(4096.into()),
+        uuid: None,
+        label: None,
     }
 }
 
@@ -54,6 +58,8 @@ fn test_basic_graph() {
             id: format!("partition{i}"),
             size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::LinuxGeneric,
+            uuid: None,
+            label: None,
         })
         .collect::<Vec<_>>();
     partitions.iter().for_each(|p| builder.add_node(p.into()));
@@ -153,6 +159,8 @@ fn test_duplicate_member() {
         id: "partition".into(),
         size: PartitionSize::Fixed(4096.into()),
         partition_type: PartitionType::Esp,
+        uuid: None,
+        label: None,
     };
 
     // Duplicate member in A/B volume
@@ -288,6 +296,8 @@ fn test_member_validity() {
         id: "partition".into(),
         size: PartitionSize::Fixed(4096.into()),
         partition_type: PartitionType::Esp,
+        uuid: None,
+        label: None,
     };
     builder.add_node((&partition).into());
 
@@ -321,6 +331,8 @@ fn test_cardinality() {
             id: "partition".into(),
             size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::LinuxGeneric,
+            uuid: None,
+            label: None,
         }),
         HostConfigBlockDevice::AdoptedPartition(AdoptedPartition {
             id: "adopted_partition".into(),
@@ -422,12 +434,16 @@ fn test_valid_target_count() {
         id: "partition1".into(),
         size: PartitionSize::Fixed(4096.into()),
         partition_type: PartitionType::LinuxGeneric,
+        uuid: None,
+        label: None,
     };
 
     let partition2 = Partition {
         id: "partition2".into(),
         size: PartitionSize::Fixed(4096.into()),
         partition_type: PartitionType::LinuxGeneric,
+        uuid: None,
+        label: None,
     };
 
     let mut base_builder = StorageGraphBuilder::default();
@@ -498,6 +514,8 @@ fn test_invalid_sizes() {
         id: "partition1".into(),
         size: PartitionSize::Fixed(2048.into()),
         partition_type: PartitionType::LinuxGeneric,
+        uuid: None,
+        label: None,
     };
     let mut builder = base_builder.clone();
     builder.add_node((&partition1).into());
@@ -515,6 +533,8 @@ fn test_invalid_sizes() {
         id: "partition2".into(),
         size: PartitionSize::Fixed(5032.into()),
         partition_type: PartitionType::LinuxGeneric,
+        uuid: None,
+        label: None,
     };
     let mut builder = base_builder.clone();
     builder.add_node((&partition2).into());
@@ -532,6 +552,8 @@ fn test_invalid_sizes() {
         id: "partition_zero".into(),
         size: PartitionSize::Fixed(0.into()),
         partition_type: PartitionType::LinuxGeneric,
+        uuid: None,
+        label: None,
     };
     let mut builder = base_builder.clone();
     builder.add_node((&partition_zero).into());
@@ -652,6 +674,66 @@ fn test_unique_field_constraint_error() {
 }
 
 #[test]
+fn test_partition_uuid_uniqueness_constraint() {
+    let uuid = Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap();
+    let other_uuid = Uuid::parse_str("223e4567-e89b-12d3-a456-426614174000").unwrap();
+
+    let partition1 = Partition {
+        id: "partition1".into(),
+        size: PartitionSize::Fixed(4096.into()),
+        partition_type: PartitionType::LinuxGeneric,
+        uuid: Some(uuid),
+        label: None,
+    };
+
+    let mut partition2 = Partition {
+        id: "partition2".into(),
+        size: PartitionSize::Fixed(4096.into()),
+        partition_type: PartitionType::LinuxGeneric,
+        // Some DIFFERENT UUID
+        uuid: Some(other_uuid),
+        label: None,
+    };
+
+    let partition3 = Partition {
+        id: "partition3".into(),
+        size: PartitionSize::Fixed(4096.into()),
+        partition_type: PartitionType::LinuxGeneric,
+        uuid: None,
+        label: None,
+    };
+
+    let mut builder = StorageGraphBuilder::default();
+    builder.add_node((&partition1).into());
+    builder.add_node((&partition2).into());
+    builder.add_node((&partition3).into());
+
+    // Ensure no error occurs when UUIDs are different
+    builder.build().unwrap();
+
+    let mut builder = StorageGraphBuilder::default();
+    builder.add_node((&partition1).into());
+
+    // Now set partition2's UUID to be the SAME as partition1's UUID
+    partition2.uuid = Some(uuid);
+    builder.add_node((&partition2).into());
+
+    builder.add_node((&partition3).into());
+
+    // Graph build should fail because partition UUIDs must be unique.
+    assert_eq!(
+        builder.build().unwrap_err(),
+        StorageGraphBuildError::UniqueFieldConstraintError {
+            node_id: "partition2".into(),
+            other_id: "partition1".into(),
+            kind: BlkDevKind::Partition,
+            field_name: "uuid".into(),
+            value: String::from_utf8_lossy(uuid.as_bytes()).into()
+        }
+    );
+}
+
+#[test]
 fn test_esp_enforce_partition_type() {
     // Test success case
     let mut builder = StorageGraphBuilder::default();
@@ -661,6 +743,8 @@ fn test_esp_enforce_partition_type() {
         size: PartitionSize::Fixed(4096.into()),
         // Correct type for ESP
         partition_type: PartitionType::Esp,
+        uuid: None,
+        label: None,
     };
     builder.add_node((&partition).into());
 
@@ -708,6 +792,8 @@ mod verity {
             id: "part1".into(),
             size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::Root,
+            uuid: None,
+            label: None,
         };
         builder.add_node((&part1).into());
 
@@ -715,6 +801,8 @@ mod verity {
             id: "part2".into(),
             size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::RootVerity,
+            uuid: None,
+            label: None,
         };
         builder.add_node((&part2).into());
 
@@ -738,6 +826,8 @@ mod verity {
             id: "part1".into(),
             size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::Root,
+            uuid: None,
+            label: None,
         };
         builder.add_node((&part1).into());
 
@@ -745,6 +835,8 @@ mod verity {
             id: "part2".into(),
             size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::Root,
+            uuid: None,
+            label: None,
         };
         builder.add_node((&part2).into());
 
@@ -752,6 +844,8 @@ mod verity {
             id: "part3".into(),
             size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::RootVerity,
+            uuid: None,
+            label: None,
         };
         builder.add_node((&part3).into());
 
@@ -789,6 +883,8 @@ mod verity {
             id: "part1".into(),
             size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::Home,
+            uuid: None,
+            label: None,
         };
         builder.add_node((&part1).into());
 
@@ -796,6 +892,8 @@ mod verity {
             id: "part2".into(),
             size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::RootVerity,
+            uuid: None,
+            label: None,
         };
         builder.add_node((&part2).into());
 
@@ -832,6 +930,8 @@ mod verity {
             id: "part1".into(),
             size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::Root,
+            uuid: None,
+            label: None,
         };
         builder.add_node((&part1).into());
 
@@ -839,6 +939,8 @@ mod verity {
             id: "part2".into(),
             size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::Usr,
+            uuid: None,
+            label: None,
         };
         builder.add_node((&part2).into());
 
@@ -875,6 +977,8 @@ mod verity {
             id: "part1".into(),
             size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::Root,
+            uuid: None,
+            label: None,
         };
         builder.add_node((&part1).into());
 
@@ -882,6 +986,8 @@ mod verity {
             id: "part2".into(),
             size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::RootVerity,
+            uuid: None,
+            label: None,
         };
         builder.add_node((&part2).into());
 
@@ -899,6 +1005,8 @@ mod verity {
             id: "part3".into(),
             size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::Root,
+            uuid: None,
+            label: None,
         };
         builder.add_node((&part3).into());
 
@@ -906,6 +1014,8 @@ mod verity {
             id: "part4".into(),
             size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::RootVerity,
+            uuid: None,
+            label: None,
         };
         builder.add_node((&part4).into());
 
@@ -972,6 +1082,8 @@ mod ab {
             id: "part1".into(),
             size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::Root,
+            uuid: None,
+            label: None,
         };
         builder.add_node((&part1).into());
 
@@ -979,6 +1091,8 @@ mod ab {
             id: "part2".into(),
             size: PartitionSize::Fixed(4096.into()),
             partition_type: PartitionType::Root,
+            uuid: None,
+            label: None,
         };
         builder.add_node((&part2).into());
 
@@ -1013,6 +1127,8 @@ mod ab {
             id: "part1".into(),
             partition_type: PartitionType::LinuxGeneric,
             size: PartitionSize::Fixed(4096.into()),
+            uuid: None,
+            label: None,
         };
         builder.add_node((&part1).into());
 
@@ -1020,6 +1136,8 @@ mod ab {
             id: "part2".into(),
             partition_type: PartitionType::LinuxGeneric,
             size: PartitionSize::Fixed(8192.into()),
+            uuid: None,
+            label: None,
         };
         builder.add_node((&part2).into());
 
@@ -1047,6 +1165,8 @@ mod ab {
             id: "part1".into(),
             partition_type: PartitionType::LinuxGeneric,
             size: PartitionSize::Grow,
+            uuid: None,
+            label: None,
         };
         builder.add_node((&part1).into());
 
@@ -1054,6 +1174,8 @@ mod ab {
             id: "part2".into(),
             partition_type: PartitionType::LinuxGeneric,
             size: PartitionSize::Grow,
+            uuid: None,
+            label: None,
         };
         builder.add_node((&part2).into());
 
@@ -1083,6 +1205,8 @@ mod ab {
             id: "part1".into(),
             partition_type: PartitionType::Root,
             size: PartitionSize::Fixed(4096.into()),
+            uuid: None,
+            label: None,
         };
         builder.add_node((&part1).into());
 
@@ -1090,6 +1214,8 @@ mod ab {
             id: "part2".into(),
             partition_type: PartitionType::LinuxGeneric,
             size: PartitionSize::Fixed(4096.into()),
+            uuid: None,
+            label: None,
         };
         builder.add_node((&part2).into());
 
