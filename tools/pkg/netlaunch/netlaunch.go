@@ -418,17 +418,18 @@ func injectRcpAgentConfig(
 		})
 	}
 
-	// Set up TLS data for RCP agent
-	clientCert, clientKey, serverCert := tlscerts.ClientTlsData()
-	rcpAgentConf.RcpClientTls = RcpTlsClientData{
-		ClientCert: base64.StdEncoding.EncodeToString(clientCert),
-		ClientKey:  base64.StdEncoding.EncodeToString(clientKey),
-		ServerCert: base64.StdEncoding.EncodeToString(serverCert),
-	}
-
 	// If we have an RCP listener, set the client address to point to it.
 	if rcpListener != nil {
 		rcpAgentConf.ClientAddress = fmt.Sprintf("%s:%d", announceIp, rcpListener.Port)
+		rcpAgentConf.ServerAddress = harpoon.DefaultTridentSocketPath
+
+		// Populate TLS certs for mutual authentication
+		clientCert, clientKey, serverCert := tlscerts.ClientTlsData()
+		rcpAgentConf.RcpClientTls = RcpTlsClientData{
+			ClientCert: base64.StdEncoding.EncodeToString(clientCert),
+			ClientKey:  base64.StdEncoding.EncodeToString(clientKey),
+			ServerCert: base64.StdEncoding.EncodeToString(serverCert),
+		}
 	}
 
 	encoded, err := yaml.Marshal(rcpAgentConf)

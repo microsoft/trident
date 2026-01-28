@@ -462,7 +462,7 @@ bin/virtdeploy: tools/cmd/virtdeploy/* tools/go.sum tools/pkg/* tools/pkg/virtde
 	@mkdir -p bin
 	cd tools && go build -o ../bin/virtdeploy ./cmd/virtdeploy
 
-bin/rcp-agent: tools/cmd/rcp-agent/* tools/go.sum tools/pkg/rcp/* tools/pkg/rcp/tlscerts/* tools/pkg/rcp/proxy/* tools/pkg/netlaunch/rcpagent.go
+bin/rcp-agent: tools/cmd/rcp-agent/* tools/go.sum tools/pkg/rcp/* tools/pkg/rcp/proxy/* tools/pkg/netlaunch/rcpagent.go
 	@mkdir -p bin
 	cd tools && go generate pkg/rcp/tlscerts/certs.go
 	cd tools && go build -o ../bin/rcp-agent ./cmd/rcp-agent/main.go
@@ -560,7 +560,7 @@ run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlau
 	@bin/netlaunch \
 	    --trident-binary $(RUN_NETLAUNCH_TRIDENT_BIN) \
 		--osmodifier-binary artifacts/osmodifier \
-		--rcp-agent-mode cli \
+		--rcp-agent-mode grpc \
 	 	--iso $(NETLAUNCH_ISO) \
 		$(if $(NETLAUNCH_PORT),--port $(NETLAUNCH_PORT)) \
 		--config $(NETLAUNCH_CONFIG) \
