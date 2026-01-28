@@ -213,7 +213,7 @@ HASH=%s
 		}
 
 		// Serve the ISO file to start the servicing OS
-		http.HandleFunc("/provision.iso", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/provision.iso", func(w http.ResponseWriter, r *http.Request) {
 			isoLogFunc(r.RemoteAddr)
 			http.ServeContent(w, r, "provision.iso", time.Now(), bytes.NewReader(iso))
 		})
