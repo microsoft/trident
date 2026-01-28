@@ -7,12 +7,17 @@ import (
 	"libvirt.org/go/libvirtxml"
 )
 
+// Helper to check VM architecture
+func (vm *VirtDeployVM) isArm64() bool {
+	return vm.Arch == "arm64"
+}
+
 // asXml renders the libvirt domain XML corresponding to the VM definition.
 // It translates the earlier XML template into structured Go objects.
 // Some low-level address/controller elements are omitted for brevity; libvirt
 // will auto-assign them. Extend if deterministic addressing is required.
 func (vm *VirtDeployVM) asXml(network *virtDeployNetwork, nvramPool storagePool) (string, error) {
-	if vm.Arch == "arm64" {
+	if vm.isArm64() {
 		return vm.asArm64Xml(network, nvramPool)
 	}
 	return vm.asAmd64Xml(network, nvramPool)
@@ -35,7 +40,7 @@ func (vm *VirtDeployVM) configureDisks() []libvirtxml.DomainDisk {
 			},
 			Address: &libvirtxml.DomainAddress{},
 		}
-		if vm.Arch == "arm64" {
+		if vm.isArm64() {
 			domainDisk.Target.Bus = "virtio"
 			domainDisk.Address.PCI = &libvirtxml.DomainAddressPCI{
 				Domain:   new(uint),
