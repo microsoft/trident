@@ -21,9 +21,7 @@ import (
 )
 
 const (
-	defaultTridentBinaryLocation = "/usr/bin/trident"
-	defaultOsmodifierLocation    = "/usr/bin/osmodifier"
-	tridentInstallServiceName    = "trident-install.service"
+	tridentInstallServiceName = "trident-install.service"
 )
 
 var cli struct {
