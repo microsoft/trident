@@ -110,20 +110,20 @@ mod tests {
             os_arch: SystemArchitecture::Amd64,
             partitions: Some(vec![
                 CosiPartition {
+                    path: Some(PathBuf::from("/images/root.img")),
+                    number: 2,
+                    part_type: DiscoverablePartitionType::Root.to_uuid(),
+                    part_uuid: Uuid::parse_str("11111111-2222-3333-4444-666666666666").unwrap(),
+                    label: "root_part".to_string(),
+                    original_size: 16 * 1024 * 1024, // 16 MiB
+                },
+                CosiPartition {
                     path: Some(PathBuf::from("/images/esp.img")),
                     number: 1,
                     part_type: DiscoverablePartitionType::Esp.to_uuid(),
                     part_uuid: Uuid::parse_str("11111111-2222-3333-4444-555555555555").unwrap(),
                     label: "esp_part".to_string(),
                     original_size: 4 * 1024 * 1024, // 4 MiB
-                },
-                CosiPartition {
-                    path: Some(PathBuf::from("/images/root.img")),
-                    number: 1,
-                    part_type: DiscoverablePartitionType::Root.to_uuid(),
-                    part_uuid: Uuid::parse_str("11111111-2222-3333-4444-666666666666").unwrap(),
-                    label: "root_part".to_string(),
-                    original_size: 16 * 1024 * 1024, // 16 MiB
                 },
             ]),
             images: vec![
@@ -183,7 +183,9 @@ mod tests {
         assert_eq!(hc.storage.filesystems.len(), 2);
 
         for (original_partition, original_fs, partition, filesystem) in izip!(
-            metadata.partitions.as_ref().unwrap().iter(),
+            // Reversed to match partition number ordering, this tests that the
+            // number was used instead of the order in the vec.
+            metadata.partitions.as_ref().unwrap().iter().rev(),
             metadata.images.iter(),
             hc.storage.disks[0].partitions.iter(),
             hc.storage.filesystems.iter()
