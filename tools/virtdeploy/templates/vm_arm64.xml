@@ -68,10 +68,6 @@
         <graphics type="spice" port="-1" tlsPort="-1" autoport="yes">
             <image compression="off" />
         </graphics>
-        <sound model="ich6" />
-        <video>
-            <model type="qxl" />
-        </video>
         <redirdev bus="usb" type="spicevmc" />
         <redirdev bus="usb" type="spicevmc" />
         <serial type='pty'>
