@@ -60,6 +60,11 @@ stages:
         steps:
           - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../common_tasks/update-protoc.yml
+            parameters:
+              ${{ if eq(parameters.architecture, 'arm64') }}:
+                protocArch: aarch_64
+              ${{ if eq(parameters.architecture, 'amd64') }}:
+                protocArch: x86_64
           - bash: |
               set -eux
               go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
