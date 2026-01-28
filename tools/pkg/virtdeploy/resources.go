@@ -5,7 +5,6 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"runtime"
 
 	"github.com/digitalocean/go-libvirt"
 	"github.com/google/uuid"
@@ -82,7 +81,7 @@ func newVirtDeployResourceConfig(config VirtDeployConfig) (*virtDeployResourceCo
 		vm.nvramFile = fmt.Sprintf("%s_VARS.fd", vm.name)
 
 		if vm.SecureBoot {
-			if runtime.GOARCH == "arm64" {
+			if vm.isArm64() {
 				vm.firmwareLoaderPath = FIRMWARE_LOADER_ARM64_SECUREBOOT_PATH
 				vm.firmwareVarsTemplatePath = FIRMWARE_VARS_ARM64_SECUREBOOT_PATH
 			} else {
@@ -90,7 +89,7 @@ func newVirtDeployResourceConfig(config VirtDeployConfig) (*virtDeployResourceCo
 				vm.firmwareVarsTemplatePath = FIRMWARE_VARS_SECUREBOOT_PATH
 			}
 		} else {
-			if runtime.GOARCH == "arm64" {
+			if vm.isArm64() {
 				vm.firmwareLoaderPath = FIRMWARE_LOADER_ARM64_PATH
 				vm.firmwareVarsTemplatePath = FIRMWARE_VARS_ARM64_PATH
 			} else {
@@ -503,7 +502,7 @@ func (rc *virtDeployResourceConfig) setupVm(vm *VirtDeployVM) error {
 	for i := range vm.volumes {
 		vol := &vm.volumes[i]
 		diskDevicePrefix := "sd"
-		if vm.Arch == "arm64" {
+		if vm.isArm64() {
 			diskDevicePrefix = "vd"
 		}
 		vol.device = fmt.Sprintf("%s%c", diskDevicePrefix, 'a'+i) // /dev/sda, /dev/sdb, etc.
