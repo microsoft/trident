@@ -97,7 +97,7 @@ func downloadFile(file *netlaunch.RcpAdditionalFile) error {
 		return fmt.Errorf("failed to create parent directory '%s': %w", parent, err)
 	}
 
-	out, err := os.OpenFile(file.Destination, os.O_CREATE|os.O_WRONLY, file.Mode)
+	out, err := os.OpenFile(file.Destination, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, file.Mode)
 	if err != nil {
 		return fmt.Errorf("failed to create file '%s': %w", file.Destination, err)
 	}
