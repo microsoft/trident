@@ -100,6 +100,9 @@ type VirtDeployVM struct {
 
 	// Configure an emulated TPM device
 	EmulatedTPM bool
+
+	// Architecture of the VM (amd64 or arm64)
+	Arch string
 }
 
 func (vm VirtDeployVM) validate() error {

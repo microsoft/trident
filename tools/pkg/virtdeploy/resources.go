@@ -502,7 +502,11 @@ func (rc *virtDeployResourceConfig) setupVm(vm *VirtDeployVM) error {
 
 	for i := range vm.volumes {
 		vol := &vm.volumes[i]
-		vol.device = fmt.Sprintf("%s%c", vm.getDiskDevicePrefix(), 'a'+i) // /dev/sda, /dev/sdb, etc.
+		diskDevicePrefix := "sd"
+		if vm.Arch == "arm64" {
+			diskDevicePrefix = "vd"
+		}
+		vol.device = fmt.Sprintf("%s%c", diskDevicePrefix, 'a'+i) // /dev/sda, /dev/sdb, etc.
 		err := rc.setupVolume(vol, rc.pool)
 		if err != nil {
 			return fmt.Errorf("setup volume for disk #%d: %w", i+1, err)
