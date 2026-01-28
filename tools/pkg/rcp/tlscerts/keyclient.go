@@ -1,5 +1,3 @@
-//go:build tls_client
-
 package tlscerts
 
 import (
@@ -21,4 +19,9 @@ func (p clientCertProviderImpl) LocalCert() (tls.Certificate, error) {
 
 func (p clientCertProviderImpl) RemoteCertPEM() []byte {
 	return serverCert
+}
+
+// ClientTlsData returns the client certificate, client key, and server certificate.
+func ClientTlsData() ([]byte, []byte, []byte) {
+	return clientCert, clientKey, serverCert
 }

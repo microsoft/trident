@@ -1,5 +1,3 @@
-//go:build ignore
-
 // This is a standalone tool to generate self-signed certificates for testing
 // purposes meant to be run by go generate.
 

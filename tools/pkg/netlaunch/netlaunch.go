@@ -1,5 +1,3 @@
-//go:build tls_server
-
 package netlaunch
 
 import (
@@ -392,7 +390,11 @@ func injectRcpAgentConfig(
 
 		tridentUrl := fmt.Sprintf("http://%s/trident", announceHttpAddress)
 		log.WithField("url", tridentUrl).Info("Serving local Trident binary via HTTP")
-		rcpAgentConf.TridentDownloadUrl = tridentUrl
+		rcpAgentConf.AdditionalFiles = append(rcpAgentConf.AdditionalFiles, RcpAdditionalFile{
+			DownloadUrl: tridentUrl,
+			Destination: "/usr/bin/trident",
+			Mode:        0755,
+		})
 	}
 
 	// If we have a local osmodifier path, serve that file via HTTP and set the download URL.
@@ -408,7 +410,19 @@ func injectRcpAgentConfig(
 
 		osmodifierUrl := fmt.Sprintf("http://%s/osmodifier", announceHttpAddress)
 		log.WithField("url", osmodifierUrl).Info("Serving local Osmodifier binary via HTTP")
-		rcpAgentConf.OsmodifierDownloadUrl = osmodifierUrl
+		rcpAgentConf.AdditionalFiles = append(rcpAgentConf.AdditionalFiles, RcpAdditionalFile{
+			DownloadUrl: osmodifierUrl,
+			Destination: "/usr/bin/osmodifier",
+			Mode:        0755,
+		})
+	}
+
+	// Set up TLS data for RCP agent
+	clientCert, clientKey, serverCert := tlscerts.ClientTlsData()
+	rcpAgentConf.RcpClientTls = RcpTlsClientData{
+		ClientCert: clientCert,
+		ClientKey:  clientKey,
+		ServerCert: serverCert,
 	}
 
 	// If we have an RCP listener, set the client address to point to it.
@@ -463,16 +477,16 @@ func doGrpcInstall(ctx context.Context, conn net.Conn, hostConfiguration string)
 
 		switch payload := resp.Response.(type) {
 		case *harpoonpbv1.ServicingResponse_Start:
-			log.Infof(grpcHeader + "[START]")
+			log.Infof("%s%s", grpcHeader, color.GreenString("[START]"))
 		case *harpoonpbv1.ServicingResponse_Log:
-			log.Infof(grpcHeader+"[%s] %s", payload.Log.Level.String(), payload.Log.Message)
+			log.Infof("%s[%s] %s", grpcHeader, payload.Log.Level.String(), payload.Log.Message)
 		case *harpoonpbv1.ServicingResponse_FinalStatus:
 			var errStr string
 			if tridentError := payload.FinalStatus.GetError(); tridentError != nil {
 				errStr = fmt.Sprintf("\n%s", tridentError.FullBody)
 			}
 
-			log.Infof(grpcHeader+"[STATUS] %s%s", payload.FinalStatus.Status.String(), errStr)
+			log.Infof("%s%s %s%s", grpcHeader, color.MagentaString("[STATUS]"), payload.FinalStatus.Status.String(), errStr)
 		default:
 			log.Warnf("Received unknown response type from Harpoon: %T", payload)
 		}

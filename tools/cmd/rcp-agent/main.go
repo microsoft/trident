@@ -1,5 +1,3 @@
-//go:build tls_client
-
 package main
 
 import (
@@ -14,13 +12,12 @@ import (
 	"time"
 
 	"github.com/alecthomas/kong"
-	kongyaml "github.com/alecthomas/kong-yaml"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 
 	"tridenttools/pkg/netlaunch"
 	"tridenttools/pkg/rcp"
 	"tridenttools/pkg/rcp/proxy"
-	"tridenttools/pkg/rcp/tlscerts"
 	"tridenttools/storm/utils/cmd"
 )
 
@@ -30,42 +27,61 @@ const (
 	tridentInstallServiceName    = "trident-install.service"
 )
 
-var cli netlaunch.RcpAgentConfiguration
+var cli struct {
+	Config string `short:"c" help:"Path to configuration file."`
+}
 
 func main() {
-	_ = kong.Parse(&cli,
+	_ = kong.Parse(
+		&cli,
 		kong.Description("A reverse-connect proxy that connects to an rcp-client to forward proxy connections between it and a server."),
 		kong.UsageOnError(),
 		kong.Vars{
 			"defaultServerAddress": rcp.DefaultTridentSocketPath,
 		},
-		kong.Configuration(kongyaml.Loader, "/etc/rcp-agent/config.yaml", "./rcp-agent.yaml"),
 	)
-
 	logrus.SetFormatter(&logrus.TextFormatter{
 		ForceColors: true,
 	})
+
+	// Set possible config file locations
+	viper.SetConfigType("yaml")
+	if cli.Config != "" {
+		viper.SetConfigFile(cli.Config)
+	} else {
+		viper.AddConfigPath("/etc/rcp-agent/config.yaml")
+		viper.AddConfigPath("./rcp-agent.yaml")
+	}
+
+	// Load configuration from file if it exists
+	err := viper.ReadInConfig()
+	if err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			logrus.Info("No configuration file found, proceeding with CLI arguments and defaults.")
+		} else {
+			logrus.Fatalf("Error reading config file: %v", err)
+		}
+	}
+
+	var config netlaunch.RcpAgentConfiguration
+	err = viper.Unmarshal(&config)
+	if err != nil {
+		logrus.Fatalf("Unable to decode into struct: %v", err)
+	}
 
 	// Handle Ctrl+C gracefully
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Download Trident when a URL is provided
-	if cli.TridentDownloadUrl != "" {
-		logrus.Infof("Trident download URL provided, downloading Trident.")
-		if err := downloadTrident(cli.TridentDownloadUrl); err != nil {
-			logrus.Fatalf("Failed to download Trident: %v", err)
+	// Download files when provided in config
+	for _, file := range config.AdditionalFiles {
+		logrus.Infof("Downloading additional file from URL '%s' to destination '%s' with mode '%v'", file.DownloadUrl, file.Destination, file.Mode)
+		if err := downloadFile(&file); err != nil {
+			logrus.Fatalf("Failed to download additional file: %v", err)
 		}
 	}
 
-	if cli.OsmodifierDownloadUrl != "" {
-		logrus.Infof("Osmodifier download URL provided, downloading Osmodifier.")
-		if err := downloadOsmodifier(cli.OsmodifierDownloadUrl); err != nil {
-			logrus.Fatalf("Failed to download Osmodifier: %v", err)
-		}
-	}
-
-	if cli.ClientAddress == "" {
+	if config.ClientAddress == "" {
 		logrus.Warn("No client address specified, running legacy Trident install service.")
 
 		err := enableAndStartTridentInstallService()
@@ -76,64 +92,38 @@ func main() {
 		return
 	}
 
-	logrus.Infof("Starting reverse-connect proxy with client address: '%s' and server address: '%s'", cli.ClientAddress, cli.ServerAddress)
-	if err := proxy.StartReverseConnectProxy(ctx, tlscerts.ClientCertProvider, cli.ClientAddress, cli.ServerAddress, time.Second); err != nil {
+	logrus.Infof("Starting reverse-connect proxy with client address: '%s' and server address: '%s'", config.ClientAddress, config.ServerAddress)
+	if err := proxy.StartReverseConnectProxy(ctx, &config.RcpClientTls, config.ClientAddress, config.ServerAddress, time.Second); err != nil {
 		logrus.Fatalf("reverse-connect proxy error: %v", err)
 	}
 	logrus.Info("Shutdown complete")
 }
 
-func downloadTrident(url string) error {
-	logrus.Infof("Downloading Trident from URL: %s", url)
-	err := downloadExecutableFile(url, defaultTridentBinaryLocation)
-	if err != nil {
-		return fmt.Errorf("failed to download Trident: %w", err)
-	}
-
-	return nil
-}
-
-func downloadOsmodifier(url string) error {
-	logrus.Infof("Downloading Osmodifier from URL: %s", url)
-	err := downloadExecutableFile(url, defaultOsmodifierLocation)
-	if err != nil {
-		return fmt.Errorf("failed to download Osmodifier: %w", err)
-	}
-
-	return nil
-}
-
-func downloadExecutableFile(url string, destinationPath string) error {
-	parent := filepath.Dir(destinationPath)
+func downloadFile(file *netlaunch.RcpAdditionalFile) error {
+	parent := filepath.Dir(file.Destination)
 	if err := os.MkdirAll(parent, 0755); err != nil {
 		return fmt.Errorf("failed to create parent directory '%s': %w", parent, err)
 	}
 
-	out, err := os.Create(destinationPath)
+	out, err := os.OpenFile(file.Destination, os.O_CREATE|os.O_WRONLY, file.Mode)
 	if err != nil {
-		return fmt.Errorf("failed to create file '%s': %w", destinationPath, err)
+		return fmt.Errorf("failed to create file '%s': %w", file.Destination, err)
 	}
 	defer out.Close()
 
-	resp, err := http.Get(url)
+	resp, err := http.Get(file.DownloadUrl)
 	if err != nil {
-		return fmt.Errorf("failed to download file from URL '%s': %w", url, err)
+		return fmt.Errorf("failed to download file from URL '%s': %w", file.DownloadUrl, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to download file from URL '%s': received status code %d", url, resp.StatusCode)
+		return fmt.Errorf("failed to download file from URL '%s': received status code %d", file.DownloadUrl, resp.StatusCode)
 	}
 
 	_, err = io.Copy(out, resp.Body)
 	if err != nil {
-		return fmt.Errorf("failed to write to file '%s': %w", destinationPath, err)
-	}
-
-	// Now make the binary executable
-	err = os.Chmod(destinationPath, 0755)
-	if err != nil {
-		return fmt.Errorf("failed to make binary executable: %w", err)
+		return fmt.Errorf("failed to write to file '%s': %w", file.Destination, err)
 	}
 
 	return nil
