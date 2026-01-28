@@ -1,11 +1,14 @@
-use std::path::Path;
+use std::{fs, path::Path};
 
-use log::debug;
+use log::{debug, trace, warn};
 use strum::IntoEnumIterator;
 
 use trident_api::{
-    constants::{AB_VOLUME_A_NAME, AB_VOLUME_B_NAME, AZURE_LINUX_INSTALL_ID_PREFIX, VAR_TMP_PATH},
-    error::{ReportError, ServicingError, TridentError},
+    constants::{
+        internal_params::RAW_COSI_STORAGE, AB_VOLUME_A_NAME, AB_VOLUME_B_NAME,
+        AZURE_LINUX_INSTALL_ID_PREFIX, VAR_TMP_PATH,
+    },
+    error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::AbVolumeSelection,
 };
 
@@ -31,9 +34,46 @@ impl Subsystem for BootSubsystem {
             debug!("Skipping grub configuration because UKI is in use");
             return Ok(());
         }
+        if ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
+            let paths = [
+                Path::new("/boot/grub/grub.cfg"),
+                Path::new("/boot/grub2/grub.cfg"),
+            ];
 
-        grub::update_configs(ctx, Path::new(OS_MODIFIER_NEWROOT_PATH))
-            .structured(ServicingError::UpdateGrubConfigs)?;
+            let Some(path) = paths.into_iter().find(|p| p.exists()) else {
+                debug!("No grub.cfg found on /boot. Skipping update");
+                return Ok(());
+            };
+
+            let Ok(grub_cfg) = fs::read_to_string(path) else {
+                debug!(
+                    "Failed to read grub.cfg from /boot/grub, skipping raw COSI grub configuration"
+                );
+                return Ok(());
+            };
+
+            // TODO: Use PARTUUID rather than PARTLABEL
+            let root_device_label = ctx
+                .root_filesystem()
+                .structured(InternalError::Internal("No root filesystem in image"))?
+                .device_id;
+
+            let regex =
+                regex::Regex::new(r"\broot=((PARTUUID|PARTLABEL)=([a-fA-F0-9\-]{36}))\b").unwrap();
+            let updated = regex
+                .replace_all(
+                    &grub_cfg,
+                    format!("root=PARTLABEL={root_device_label}").as_str(),
+                )
+                .to_string();
+            trace!("Updated grub.cfg:\n{}", &updated);
+            fs::write(path, updated)
+                .structured(ServicingError::UpdateGrubConfigs)
+                .message("Failed to write updated grub.cfg for raw COSI")?;
+        } else {
+            grub::update_configs(ctx, Path::new(OS_MODIFIER_NEWROOT_PATH))
+                .structured(ServicingError::UpdateGrubConfigs)?;
+        }
 
         Ok(())
     }

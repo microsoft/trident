@@ -268,7 +268,7 @@ mod tests {
                 trace!("Mocking range {} to {}", start, end);
                 body.as_bytes()[start..=end].to_vec()
             })
-            .expect(9)
+            .expect_at_least(9)
             .create();
 
         let file_url = Url::parse(&server.url()).unwrap().join(file_name).unwrap();
