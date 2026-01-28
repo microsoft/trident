@@ -428,8 +428,10 @@ go.sum: go.mod
 .PHONY: go-tools
 go-tools: bin/netlaunch bin/netlisten bin/miniproxy bin/virtdeploy bin/isopatch
 
-bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/*
+bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/* tools/pkg/netlaunch/*
 	@mkdir -p bin
+	cd tools && go generate pkg/rcp/tlscerts/certs.go
+	cd tools && go generate pkg/harpoon/harpoon.go
 	cd tools && go build -o ../bin/netlaunch ./cmd/netlaunch
 
 bin/netlisten: tools/cmd/netlisten/* tools/go.sum tools/pkg/*
@@ -460,10 +462,10 @@ bin/virtdeploy: tools/cmd/virtdeploy/* tools/go.sum tools/pkg/* tools/pkg/virtde
 	@mkdir -p bin
 	cd tools && go build -o ../bin/virtdeploy ./cmd/virtdeploy
 
-bin/rcp-proxy: FORCE
+bin/rcp-agent: tools/cmd/rcp-agent/* tools/go.sum tools/pkg/rcp/* tools/pkg/rcp/proxy/* tools/pkg/netlaunch/rcpagent.go
 	@mkdir -p bin
 	cd tools && go generate pkg/rcp/tlscerts/certs.go
-	cd tools && go build -tags tls_client -o ../bin/rcp-proxy ./cmd/rcp-proxy/main.go
+	cd tools && go build -o ../bin/rcp-agent ./cmd/rcp-agent/main.go
 
 # Clean generated RCP TLS certificates
 .PHONY: clean-rcp-certs
@@ -556,6 +558,9 @@ run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlau
 	@cp $(RUN_NETLAUNCH_TRIDENT_BIN) artifacts/test-image/trident
 	@cp artifacts/osmodifier artifacts/test-image/
 	@bin/netlaunch \
+	    --trident-binary $(RUN_NETLAUNCH_TRIDENT_BIN) \
+		--osmodifier-binary artifacts/osmodifier \
+		--rcp-agent-mode cli \
 	 	--iso $(NETLAUNCH_ISO) \
 		$(if $(NETLAUNCH_PORT),--port $(NETLAUNCH_PORT)) \
 		--config $(NETLAUNCH_CONFIG) \
@@ -806,7 +811,10 @@ bin/trident-mos.iso: \
 	tests/images/trident-mos/iso.yaml \
 	tests/images/trident-mos/files/* \
 	tests/images/trident-mos/post-install.sh \
-	packaging/selinux-policy-trident/*
+	packaging/selinux-policy-trident/* \
+	tools/cmd/rcp-agent/rcp-agent.service \
+	bin/rcp-agent
+	@echo "Rebuilding Trident MOS ISO: $@ from $< because of: $?"
 	@mkdir -p bin
 	BUILD_DIR=`mktemp -d` && \
 		trap 'sudo rm -rf $$BUILD_DIR' EXIT; \

@@ -1,5 +1,3 @@
-//go:build tls_server
-
 package tlscerts
 
 import (

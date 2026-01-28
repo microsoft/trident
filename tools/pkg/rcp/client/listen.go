@@ -12,9 +12,23 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// ListenAndAccept starts a TLS listener on the specified port and waits
-// (blocking) for a single incoming connection. It returns the accepted
-// connection and closes the listener.
+// RcpListener encapsulates a channel that will receive an incoming connection
+// and the port number the listener is bound to.
+type RcpListener struct {
+	ConnChan <-chan net.Conn
+	Port     uint16
+	cancel   context.CancelFunc
+}
+
+func (l *RcpListener) Close() {
+	if l.cancel != nil {
+		l.cancel()
+	}
+}
+
+// ListenAndAccept starts a TLS listener on the specified port and returns an
+// RcpListener containing a channel that will receive an incoming connection and
+// the port number the listener is bound to.
 //
 // If the context is cancelled before a connection is accepted, it returns the
 // context's error.
@@ -25,7 +39,7 @@ import (
 // valid certificates. This listener is intended to be used by the RCP-proxy
 // built with the same TLS setup. Any other clients or certificates will be
 // rejected mutually.
-func ListenAndAccept(ctx context.Context, certProvider tlscerts.CertProvider, port uint32) (net.Conn, error) {
+func ListenAndAccept(ctx context.Context, certProvider tlscerts.CertProvider, port uint16) (*RcpListener, error) {
 	// Load our private server certificate
 	cer, err := certProvider.LocalCert()
 	if err != nil {
@@ -48,13 +62,19 @@ func ListenAndAccept(ctx context.Context, certProvider tlscerts.CertProvider, po
 	if err != nil {
 		return nil, fmt.Errorf("failed to listen on port %d: %w", port, err)
 	}
-	defer listener.Close()
+
+	// If port 0 was specified, get the actual assigned port.
+	if tcpAddr, ok := listener.Addr().(*net.TCPAddr); ok {
+		port = uint16(tcpAddr.Port)
+	} else {
+		listener.Close()
+		return nil, fmt.Errorf("failed to get assigned port from listener address: %v", listener.Addr())
+	}
 
 	logrus.Debugf("RCP-client listening on port %d", port)
 
 	// Create a sub-context to handle listener closure on context cancellation.
-	acceptCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	acceptCtx, acceptCancel := context.WithCancel(ctx)
 
 	go func() {
 		// In the background, wait for context cancellation to close the
@@ -63,20 +83,36 @@ func ListenAndAccept(ctx context.Context, certProvider tlscerts.CertProvider, po
 		// waiting. Closing the listener will cause Accept() to return an error
 		// which we can handle appropriately.
 		<-acceptCtx.Done()
+		logrus.Debug("RCP-client listener context cancelled, closing listener")
 		listener.Close()
 	}()
 
+	connChan := make(chan net.Conn, 1)
+
 	// Wait for an incoming connection
-	conn, err := listener.Accept()
-	if err != nil {
-		if ctx.Err() != nil {
-			// Context was cancelled
-			return nil, ctx.Err()
+	go func() {
+		defer close(connChan)
+		defer listener.Close()
+		for {
+			conn, err := listener.Accept()
+			if err == nil {
+				logrus.Infof("RCP accepted connection from %s", conn.RemoteAddr().String())
+				acceptCancel() // Stop the listener-closure goroutine
+				connChan <- conn
+				return
+			} else if acceptCtx.Err() != nil {
+				// Context was cancelled
+				logrus.Debug("RCP listener context cancelled, stopping accept loop")
+				return
+			}
+
+			logrus.Errorf("Failed to accept connection: %v", err)
 		}
+	}()
 
-		// Some other error occurred
-		return nil, fmt.Errorf("failed to accept connection: %w", err)
-	}
-
-	return conn, nil
+	return &RcpListener{
+		ConnChan: connChan,
+		Port:     port,
+		cancel:   acceptCancel,
+	}, nil
 }
