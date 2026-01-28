@@ -140,6 +140,11 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 		trident["trident"].(map[interface{}]interface{})["logstream"] = fmt.Sprintf("http://%s/logstream", announceAddress)
 		// }
 
+		if _, ok := trident["internalParams"]; !ok {
+			trident["internalParams"] = make(map[interface{}]interface{})
+		}
+		trident["internalParams"].(map[interface{}]interface{})["ignorePhonehome"] = true
+
 		tridentConfig, err := yaml.Marshal(trident)
 		if err != nil {
 			return fmt.Errorf("failed to marshal Trident config: %w", err)
@@ -314,7 +319,7 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 
 			func() {
 				// Defer termination of the phonehome listener
-				defer terminateFunc()
+				// defer terminateFunc()
 				defer conn.Close()
 
 				err := doGrpcInstall(installCtx, conn, finalHostConfigurationYaml)
