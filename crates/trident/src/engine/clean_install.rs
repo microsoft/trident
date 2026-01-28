@@ -16,7 +16,8 @@ use trident_api::{
     config::{HostConfiguration, Operations},
     constants::{
         internal_params::{
-            DISABLE_MEDIA_EJECTION, ENABLE_UKI_SUPPORT, NO_TRANSITION, RAW_COSI_STORAGE,
+            DISABLE_MEDIA_EJECTION, ENABLE_UKI_SUPPORT, IGNORE_PHONEHOME, NO_TRANSITION,
+            RAW_COSI_STORAGE,
         },
         ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_PATH,
     },
@@ -321,7 +322,11 @@ pub(crate) fn finalize_clean_install(
         ServicingState::CleanInstallFinalized
     );
     state.with_host_status(|status| {
-        status.servicing_state = ServicingState::CleanInstallFinalized
+        status.servicing_state = ServicingState::CleanInstallFinalized;
+
+        // Remove the ignorePhonehome internal parameter so that
+        // phonehome/logstream configuration is respected on next boots.
+        status.spec.internal_params.unset(IGNORE_PHONEHOME);
     })?;
 
     // Persist the datastore to the new root

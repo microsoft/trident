@@ -14,7 +14,7 @@ use osutils::{block_devices, container, dependencies::Dependency};
 use trident_api::{
     config::{HostConfiguration, HostConfigurationSource, Operations},
     constants::internal_params::{
-        HTTP_CONNECTION_TIMEOUT_SECONDS, ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS,
+        HTTP_CONNECTION_TIMEOUT_SECONDS, IGNORE_PHONEHOME, ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS,
         WAIT_FOR_SYSTEMD_NETWORKD,
     },
     error::{
@@ -120,14 +120,20 @@ impl Trident {
 
         let (phonehome_url, logstream_url, connection_timeout_param, wait_for_network) =
             if let Some(config) = &host_config {
-                (
-                    config.trident.phonehome.clone(),
-                    config.trident.logstream.clone(),
-                    config
-                        .internal_params
-                        .get_u16(ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS),
-                    config.internal_params.get_flag(WAIT_FOR_SYSTEMD_NETWORKD),
-                )
+                let wait_for_network = config.internal_params.get_flag(WAIT_FOR_SYSTEMD_NETWORKD);
+                if config.internal_params.get_flag(IGNORE_PHONEHOME) {
+                    info!("Ignoring phonehome/logstream configuration as per internal parameter");
+                    (None, None, None, wait_for_network)
+                } else {
+                    (
+                        config.trident.phonehome.clone(),
+                        config.trident.logstream.clone(),
+                        config
+                            .internal_params
+                            .get_u16(ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS),
+                        wait_for_network,
+                    )
+                }
             } else if let Ok(datastore) = DataStore::open(datastore_path) {
                 let host_config = &datastore.host_status().spec;
                 (

@@ -65,9 +65,13 @@ impl InternalParams {
     }
 
     /// Set a key to be a boolean flag with a value of 'false'.
-    // TODO: instead, should there just be a clear_flag/reset_flag that removes the key?
     pub fn set_flag_false(&mut self, key: String) {
         self.0.insert(key, false.into());
+    }
+
+    /// Unsets an internal parameter.
+    pub fn unset(&mut self, key: impl AsRef<str>) {
+        self.0.remove(key.as_ref());
     }
 }
 

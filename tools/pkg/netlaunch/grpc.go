@@ -84,6 +84,10 @@ func handleServicingResponse(resp *harpoonpbv1.ServicingResponse) (err error) {
 			payload.FinalStatus.Status.String(),
 			errStr,
 		))
+
+		if payload.FinalStatus.GetRebootEnqueued() {
+			log.Info("Trident will reboot the system to complete the operation")
+		}
 	default:
 		log.Warnf("Received unknown response type from Harpoon: %T", payload)
 	}

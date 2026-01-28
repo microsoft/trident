@@ -268,4 +268,8 @@ pub mod internal_params {
     /// Enable Raw COSI mode where the storage configuration is sourced from the
     /// COSI metadata.
     pub const RAW_COSI_STORAGE: &str = "rawCosi";
+
+    /// Ignores phonehome/logstream configuration once. This value is NOT
+    /// persisted after a clean install.
+    pub const IGNORE_PHONEHOME: &str = "ignorePhonehome";
 }

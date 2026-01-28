@@ -132,13 +132,13 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 		}
 
 		// Add phonehome & logstream config ONLY when NOT in gRPC RCP mode
-		if config.Rcp == nil || !config.Rcp.GrpcMode {
-			if _, ok := trident["trident"]; !ok {
-				trident["trident"] = make(map[interface{}]interface{})
-			}
-			trident["trident"].(map[interface{}]interface{})["phonehome"] = fmt.Sprintf("http://%s/phonehome", announceAddress)
-			trident["trident"].(map[interface{}]interface{})["logstream"] = fmt.Sprintf("http://%s/logstream", announceAddress)
+		// if config.Rcp == nil || !config.Rcp.GrpcMode {
+		if _, ok := trident["trident"]; !ok {
+			trident["trident"] = make(map[interface{}]interface{})
 		}
+		trident["trident"].(map[interface{}]interface{})["phonehome"] = fmt.Sprintf("http://%s/phonehome", announceAddress)
+		trident["trident"].(map[interface{}]interface{})["logstream"] = fmt.Sprintf("http://%s/logstream", announceAddress)
+		// }
 
 		tridentConfig, err := yaml.Marshal(trident)
 		if err != nil {
@@ -324,19 +324,19 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 				}
 			}()
 		}
-	} else {
-		// Wait for something to happen
-		exitError := phonehome.ListenLoop(terminateCtx, result, config.WaitForProvisioning, config.MaxPhonehomeFailures)
+	}
 
-		err = server.Shutdown(ctx)
-		if err != nil {
-			log.WithError(err).Errorln("failed to shutdown server")
-		}
+	// Wait for something to happen
+	exitError := phonehome.ListenLoop(terminateCtx, result, config.WaitForProvisioning, config.MaxPhonehomeFailures)
 
-		if exitError != nil {
-			log.WithError(exitError).Errorln("phonehome returned an error")
-			return exitError
-		}
+	err = server.Shutdown(ctx)
+	if err != nil {
+		log.WithError(err).Errorln("failed to shutdown server")
+	}
+
+	if exitError != nil {
+		log.WithError(exitError).Errorln("phonehome returned an error")
+		return exitError
 	}
 
 	return nil
