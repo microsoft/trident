@@ -16,8 +16,6 @@ use trident_api::primitives::hash::Sha384Hash;
 
 use crate::osimage::OsImageFileSystemType;
 
-use super::CosiEntry;
-
 /// Enum of known COSI metadata versions up to the current implementation.
 pub(super) enum KnownMetadataVersion {
     /// Base version of the COSI metadata specification.
@@ -231,9 +229,6 @@ pub(crate) struct ImageFile {
     pub uncompressed_size: u64,
 
     pub sha384: Sha384Hash,
-
-    #[serde(skip)]
-    pub(super) entry: CosiEntry,
 }
 
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
@@ -424,7 +419,6 @@ mod tests {
             compressed_size: 50,
             uncompressed_size: 100,
             sha384: Sha384Hash::from("sample_sha384"),
-            entry: CosiEntry::default(),
         }
     }
 

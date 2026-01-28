@@ -1,5 +1,6 @@
 use std::{
-    io::Cursor,
+    io::Read,
+    ops::ControlFlow,
     path::{Path, PathBuf},
 };
 
@@ -12,7 +13,7 @@ use osutils::osrelease::OsRelease;
 use sysdefs::{
     arch::SystemArchitecture, osuuid::OsUuid, partition_types::DiscoverablePartitionType,
 };
-use trident_api::primitives::hash::Sha384Hash;
+use trident_api::{error::TridentError, primitives::hash::Sha384Hash};
 
 use super::{OsImageFile, OsImageFileSystem, OsImageFileSystemType, OsImageVerityHash};
 
@@ -57,16 +58,12 @@ pub struct MockVerity {
     pub roothash: String,
 }
 
-fn mock_os_image_file() -> OsImageFile<'static> {
+fn mock_os_image_file() -> OsImageFile {
     OsImageFile {
         compressed_size: 0,
         sha384: Sha384Hash::from("mock-sha384"),
         uncompressed_size: 0,
-        reader: Box::new(|| {
-            Ok(Box::new(Cursor::new(
-                MOCK_OS_IMAGE_CONTENT.as_bytes().to_vec(),
-            )))
-        }),
+        path: "/img.raw.zstd".into(),
     }
 }
 
@@ -103,7 +100,7 @@ impl MockOsImage {
     }
 
     /// Returns the ESP filesystem image.
-    pub fn esp_filesystem(&self) -> Result<OsImageFileSystem<'_>, Error> {
+    pub fn esp_filesystem(&self) -> Result<OsImageFileSystem, Error> {
         if let Some(esp_img) = self
             .images
             .iter()
@@ -126,7 +123,7 @@ impl MockOsImage {
     }
 
     /// Returns non-ESP filesystems.
-    pub fn filesystems(&self) -> impl Iterator<Item = OsImageFileSystem<'_>> {
+    pub fn filesystems(&self) -> impl Iterator<Item = OsImageFileSystem> {
         self.images
             .iter()
             .filter(|fs| fs.part_type != DiscoverablePartitionType::Esp)
@@ -150,6 +147,19 @@ impl MockOsImage {
 
     pub fn metadata_sha384(&self) -> Sha384Hash {
         Sha384Hash::from("0".repeat(96))
+    }
+
+    pub(super) fn read_images<F>(&self, mut f: F) -> Result<(), TridentError>
+    where
+        F: FnMut(&Path, Box<dyn Read>) -> ControlFlow<Result<(), TridentError>>,
+    {
+        match f(
+            Path::new("/img.raw.zstd"),
+            Box::new(MOCK_OS_IMAGE_CONTENT.as_bytes()),
+        ) {
+            ControlFlow::Continue(()) => Ok(()),
+            ControlFlow::Break(b) => b,
+        }
     }
 }
 
