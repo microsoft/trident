@@ -1219,7 +1219,7 @@ artifacts/ubuntu_arm64.vhdx:
 
 artifacts/ubuntu-direct-streaming-testimage-arm64.cosi: \
 	bin/mkcosi \
-	artifacts/ubuntu-arm64.vhdx \
+	artifacts/ubuntu_arm64.vhdx \
 	artifacts/ubuntu-22.04-arm64-config.yaml
 	$(eval TMP_NO_HC_VHD_COSI := $(shell mktemp tmp.XXX.cosi))
 	docker run \
@@ -1230,7 +1230,7 @@ artifacts/ubuntu-direct-streaming-testimage-arm64.cosi: \
 		${MIC_CONTAINER_IMAGE} \
 			--log-level=debug \
 			--build-dir ./build \
-			--image-file /repo/artifacts/ubuntu-arm64.vhdx \
+			--image-file /repo/artifacts/ubuntu_arm64.vhdx \
 			--output-image-file /repo/$(TMP_NO_HC_VHD_COSI) \
 			--output-image-format cosi \
 			--config-file /repo/artifacts/ubuntu-22.04-arm64-config.yaml
