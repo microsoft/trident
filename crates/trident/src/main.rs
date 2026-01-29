@@ -84,7 +84,6 @@ fn run_trident(
                 .map(|()| ExitKind::Done);
         }
 
-        #[cfg(feature = "dangerous-options")]
         Commands::StreamImage {
             image,
             hash,

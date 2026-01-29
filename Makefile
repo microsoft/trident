@@ -745,10 +745,6 @@ download-trident-container-installer-iso:
 		--path artifacts/ \
 		--artifact-name 'trident-container-installer'
 
-artifacts/trident-container-installer.iso:
-	$(MAKE) download-trident-container-installer-iso; \
-	ls -l artifacts/trident-container-installer.iso
-
 # Copies locally built runtime images from ../test-images/build to ./artifacts/test-image.
 # Expects that both the regular and verity Trident test images have been built.
 .PHONY: copy-runtime-images
@@ -886,9 +882,10 @@ validate-pipeline-website-artifact:
 		npm install && \
 			npm run serve -- --port $(SERVER_PORT)
 
-# Test images
-
-COSI_TARGETS = $(shell ./tests/images/testimages.py list)
+#
+# Generic COSI image build target pattern
+#
+COSI_TARGETS = $(shell ./tests/images/testimages.py list --filter-type cosi)
 
 .PHONY: $(COSI_TARGETS)
 $(COSI_TARGETS): %: artifacts/%.cosi
@@ -897,15 +894,21 @@ $(COSI_TARGETS): %: artifacts/%.cosi
 all-cosi: $(COSI_TARGETS)
 
 #
-# Generic COSI image build target pattern
+# Generic ISO image build target pattern
 #
+ISO_TARGETS = $(shell ./tests/images/testimages.py list --filter-type iso)
+
+.PHONY: $(ISO_TARGETS)
+$(ISO_TARGETS): %: artifacts/%.iso
+
+.PHONY: all-iso
+all-iso: $(ISO_TARGETS)
 
 # Fun trick to use the stem of the target (%) as a variable ($*) in the
 # prerequisites so that we can use find to get all the files in the directory.
 # https://www.gnu.org/software/make/manual/make.html#Secondary-Expansion
 .SECONDEXPANSION:
-
-artifacts/%.cosi: $$(shell ./tests/images/testimages.py dependencies $$*)
+artifacts/%.cosi artifacts/%.iso: $$(shell ./tests/images/testimages.py dependencies $$*)
 	@echo "Building '$*' [$@] from $<"
 	@echo "Prerequisites:"
 	@echo "$^" | tr ' ' '\n' | sed 's/^/    /'
@@ -914,6 +917,7 @@ artifacts/%.cosi: $$(shell ./tests/images/testimages.py dependencies $$*)
 		$* \
 		--output-dir ./artifacts \
 		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE))
+
 
 MIC_CONTAINER_IMAGE ?= $(shell ./tests/images/testimages.py show-artifact customizer-container-full)
 artifacts/trident-functest.qcow2: $$(shell ./tests/images/testimages.py dependencies $$(basename $$(notdir $$@)))
@@ -1130,3 +1134,33 @@ artifacts/trident-vm-grub-verity-azure-testimage.vhd: \
 			--output-image-format vhd-fixed \
 			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-grub-verity-azure.yaml
 
+DIRECT_STREAMING_HOST_CONFIGURATION ?= tests/images/trident-rawcosi-testimage/trident-config.yaml
+artifacts/trident-direct-streaming-testimage-arm64.cosi: \
+	bin/mkcosi \
+	artifacts/trident-rawcosi-testimage-arm64.cosi
+	$(eval TMP_HC := $(shell mktemp tmp-hc.XXX.yaml --tmpdir))
+	$(eval TMP_NO_HC_VHD_COSI := $(shell mktemp tmp.XXX.cosi --tmpdir))
+	sed 's|pci-0000:00:1f.2-ata-2|virtio-pci-0000:08:00.0|' $(DIRECT_STREAMING_HOST_CONFIGURATION) | \
+	   sed 's|pci-0000:00:1f.2-ata-3|virtio-pci-0000:09:00.0|' > $(TMP_HC)
+	bin/mkcosi add-vpc \
+		artifacts/trident-rawcosi-testimage-arm64.cosi \
+		$(TMP_NO_HC_VHD_COSI)
+	bin/mkcosi insert-template \
+		$(TMP_NO_HC_VHD_COSI) \
+		artifacts/trident-direct-streaming-testimage-arm64.cosi \
+		$(TMP_HC)
+	rm -rf $(TMP_NO_HC_VHD_COSI)
+	rm -rf $(TMP_HC)
+
+artifacts/trident-direct-streaming-testimage.cosi: \
+	bin/mkcosi \
+	artifacts/trident-rawcosi-testimage.cosi
+	$(eval TMP_NO_HC_VHD_COSI := $(shell mktemp tmp.XXX.cosi --tmpdir))
+	bin/mkcosi add-vpc \
+		artifacts/trident-rawcosi-testimage.cosi \
+		$(TMP_NO_HC_VHD_COSI)
+	bin/mkcosi insert-template \
+		$(TMP_NO_HC_VHD_COSI) \
+		artifacts/trident-direct-streaming-testimage.cosi \
+		$(DIRECT_STREAMING_HOST_CONFIGURATION)
+	rm -rf $(TMP_NO_HC_VHD_COSI)

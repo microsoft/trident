@@ -63,6 +63,9 @@ func (h *PrepareImages) copyRegularImages(tc storm.TestCase) error {
 }
 
 func (h *PrepareImages) copyVerityImages(tc storm.TestCase) error {
+	if h.args.VerityImageName == "skip" {
+		tc.Skip("Skipping verity image copy as per configuration")
+	}
 	// Skip test if the path doesn't exist
 	if _, err := os.Stat(h.args.VerityTestImageDir); os.IsNotExist(err) {
 		tc.Skip(fmt.Sprintf("Directory %s does not exist", h.args.VerityTestImageDir))
@@ -79,6 +82,9 @@ func (h *PrepareImages) copyVerityImages(tc storm.TestCase) error {
 }
 
 func (h *PrepareImages) copyUsrVerityImages(tc storm.TestCase) error {
+	if h.args.UsrVerityImageName == "skip" {
+		tc.Skip("Skipping usr-verity image copy as per configuration")
+	}
 	// Skip test if the path doesn't exist
 	if _, err := os.Stat(h.args.UsrVerityTestImageDir); os.IsNotExist(err) {
 		tc.Skip(fmt.Sprintf("Directory %s does not exist", h.args.UsrVerityTestImageDir))

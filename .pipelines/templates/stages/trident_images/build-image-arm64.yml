@@ -1,0 +1,84 @@
+parameters:
+  - name: label
+    type: string
+    displayName: "Label for the image"
+    default: ""
+
+  - name: makeTarget
+    type: string
+    displayName: "Make target for the image"
+    default: ""
+
+  - name: baseimgType
+    type: string
+    displayName: "Base image type"
+
+  - name: baseimgAzlVersion
+    displayName: Base Image AZL version
+    type: string
+    default: "3.0"
+
+  - name: micBuildType
+    displayName: MIC Build Type
+    type: string
+    values:
+    - dev
+    - preview
+    - release
+    default: release
+
+  - name: micVersion
+    displayName: MIC Version
+    type: string
+    default: "*.*.*"
+
+  - name: useStagedSshKeys
+    displayName: "Use staged SSH keys"
+    type: boolean
+    default: false
+
+jobs:
+  - job: PrepareImage_${{ replace(parameters.label, '-', '_') }}
+    displayName: Prepare Image ${{ parameters.label }}
+    timeoutInMinutes: 20
+    pool:
+      type: linux
+
+    variables:
+      ob_outputDirectory: $(Build.SourcesDirectory)/out
+      ob_artifactBaseName: "image-${{ parameters.label }}"
+
+    steps:
+      - template: ../common_tasks/avoid-pypi-usage.yml
+
+      - task: DownloadPipelineArtifact@2
+        inputs:
+          buildType: current
+          artifactName: trident-binaries
+          targetPath: "$(Build.ArtifactStagingDirectory)/trident"
+        displayName: Download Trident RPMs
+
+      - task: DownloadPipelineArtifact@2
+        inputs:
+          buildType: current
+          artifactName: ssh-keys
+          targetPath: "$(Build.ArtifactStagingDirectory)/ssh"
+        displayName: Download SSH Keys
+
+      - template: ../common_tasks/find-base-image-version.yml
+        parameters:
+          architecture: "arm64"
+
+      - template: ./trident-testimg-template.yml
+        parameters:
+          target: ${{ parameters.makeTarget }}
+          outputDirectory: "$(ob_outputDirectory)"
+          micBuildType: ${{ parameters.micBuildType }}
+          micVersion: ${{ parameters.micVersion }}
+          baseimgBuildType: $(BASEIMG_BUILD_TYPE)
+          baseimgVersion: $(BASEIMG_VERSION)
+          baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
+          baseimgTypes: 
+            - ${{ parameters.baseimgType }}
+          useStagedSshKeys: ${{ parameters.useStagedSshKeys }}
+          micArchitecture: arm64
