@@ -1164,4 +1164,3 @@ artifacts/trident-direct-streaming-testimage.cosi: \
 		artifacts/trident-direct-streaming-testimage.cosi \
 		$(DIRECT_STREAMING_HOST_CONFIGURATION)
 	rm -rf $(TMP_NO_HC_VHD_COSI)
-	rm -rf $(TMP_HC)
