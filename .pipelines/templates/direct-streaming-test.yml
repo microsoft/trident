@@ -60,4 +60,5 @@ stages:
   - template: stages/direct-streaming/netlaunch-testing.yml
     parameters:
       architecture: ${{ parameters.architecture }}
+      streamingImageDistro: ${{ parameters.streamingImageDistro }}
 
