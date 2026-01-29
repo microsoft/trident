@@ -25,7 +25,7 @@ DEFAULT_IMAGE_CUSTOMIZER_VERSION = "0.19"
 
 DEFINED_IMAGES: List[ImageConfig] = [
     ImageConfig(
-        "trident-direct-streaming-installer",
+        "trident-direct-streaming-installer-amd64",
         config="trident-installer",
         config_file="base/baseimg-direct-streaming.yaml",
         output_format=OutputFormat.ISO,
