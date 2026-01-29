@@ -35,10 +35,6 @@
 
   # baseimgBuildType == preview
   - script: |
-      BASEIMG_VERSION="*.*.*"
-      echo "##vso[task.setvariable variable=BASEIMG_VERSION]$BASEIMG_VERSION"
-      echo "BASEIMG_VERSION: $BASEIMG_VERSION"
-
       BASEIMG_PIPELINE_NAME="[AMD64-6-OneBranch]-Prod-BuildImages"
       if [[ "${{ parameters.architecture }}" == "arm64" ]]; then
         BASEIMG_PIPELINE_NAME="[ARM64-6-OneBranch]-Prod-BuildImages"
