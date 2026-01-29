@@ -13,7 +13,7 @@ parameters:
     default: amd64
 
   - name: streamingImageDistro
-    type: string
+    type: stringtrident-direct-streaming-installer-
     values:
       - ubuntu
       - azurelinux
@@ -27,7 +27,6 @@ stages:
           - DownloadTestingElements
       - ${{ else }}:
           - BuildingTools_${{ parameters.architecture }}
-          - BuildTridentContainerImage
           - BuildImagesForDirectStreaming_${{ parameters.streamingImageDistro }}_${{ parameters.architecture }}
           - BuildInstallerForDirectStreaming_${{ parameters.architecture }}
 

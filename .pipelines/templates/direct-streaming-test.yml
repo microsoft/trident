@@ -27,11 +27,10 @@ stages:
           architecture: ${{ parameters.architecture }}
           downloadGoTools: true
           label: "trident-direct-streaming-installer-${{ parameters.architecture }}"
+          makeTarget: "artifacts/trident-direct-streaming-installer-${{ parameters.architecture }}.iso"
           ${{ if eq(parameters.architecture, 'arm64') }}:
-            makeTarget: "artifacts/trident-direct-streaming-installer-arm64.iso"
             baseimgType: core_arm64
           ${{ if eq(parameters.architecture, 'amd64') }}:
-            makeTarget: "artifacts/trident-direct-streaming-installer.iso"
             baseimgType: baremetal
 
   - ${{ if parameters.testAzureLinuxStreamingImage }}:
