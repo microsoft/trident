@@ -13,7 +13,7 @@ parameters:
     default: amd64
 
   - name: streamingImageDistro
-    type: stringtrident-direct-streaming-installer-
+    type: string
     values:
       - ubuntu
       - azurelinux
