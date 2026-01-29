@@ -350,7 +350,7 @@ stages:
       # Build installer for direct streaming
       - template: direct-streaming-installer.yml
         parameters:
-          architecture: arm64
+          architecture: amd64
       # Run direct streaming tests for amd64 with azl streaming image
       - template: direct-streaming-test.yml
         parameters:
