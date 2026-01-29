@@ -347,19 +347,10 @@ stages:
           buildPurpose: "pullrequest"
           runtimeEnv: "container"
 
-      # Build installer for direct streaming
-      - template: direct-streaming-installer.yml
-        parameters:
-          architecture: amd64
-      # Run direct streaming tests for amd64 with azl streaming image
+      # Run direct streaming tests for amd64 with streaming images
       - template: direct-streaming-test.yml
         parameters:
           architecture: amd64
-      # Run direct streaming tests for amd64 with ubuntu streaming image
-      - template: direct-streaming-test.yml
-        parameters:
-          architecture: amd64
-          streamingImageDistro: ubuntu
 
   # PUBLISHING
   #

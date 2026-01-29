@@ -54,16 +54,7 @@ stages:
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
       targetArchitecture: arm64
 
-  # Build installer for direct streaming
-  - template: direct-streaming-installer.yml
-    parameters:
-      architecture: arm64
-  # Run direct streaming tests for arm64
+  # Run direct streaming tests for amd64 with streaming images
   - template: direct-streaming-test.yml
     parameters:
       architecture: arm64
-  # Run direct streaming tests for amd64 with ubuntu streaming image
-  - template: direct-streaming-test.yml
-    parameters:
-      architecture: arm64
-      streamingImageDistro: ubuntu
