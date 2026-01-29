@@ -28,11 +28,11 @@ stages:
       - ${{ else }}:
           - BuildingTools_${{ parameters.architecture }}
           - BuildTridentContainerImage
-          - BuildImagesForDirectStreaming_${{ parameters.architecture }}
+          - BuildImagesForDirectStreaming_${{ parameters.streamingImageDistro }}_${{ parameters.architecture }}
 
     jobs:
-      - job: DirectStreamingTesting_${{ parameters.architecture }}
-        displayName: Direct Streaming Deployment Testing for ${{ parameters.architecture }}
+      - job: DirectStreamingTesting_${{ parameters.streamingImageDistro }}_${{ parameters.architecture }}
+        displayName: Direct Streaming Deployment Testing for ${{ parameters.streamingImageDistro }} ${{ parameters.architecture }}
         timeoutInMinutes: 50
         pool:
           ${{ if eq(parameters.architecture, 'amd64') }}:
