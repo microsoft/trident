@@ -58,3 +58,8 @@ stages:
   - template: direct-streaming-test.yml
     parameters:
       architecture: arm64
+  # Run direct streaming tests for amd64 with ubuntu streaming image
+  - template: direct-streaming-test.yml
+    parameters:
+      architecture: arm64
+      streamingImageDistro: ubuntu

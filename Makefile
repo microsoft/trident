@@ -1185,3 +1185,84 @@ artifacts/trident-direct-streaming-testimage.cosi: \
 		artifacts/trident-direct-streaming-testimage.cosi \
 		$(DIRECT_STREAMING_HOST_CONFIGURATION)
 	rm -rf $(TMP_NO_HC_VHD_COSI)
+
+.PHONY: imagecustomizer-dev
+imagecustomizer-dev:
+	make -C ../azure-linux-image-tools/toolkit go-imagecustomizer
+	../azure-linux-image-tools/toolkit/tools/imagecustomizer/container/build-container.sh -t imagecustomizer:dev
+
+artifacts/ubuntu-22.04-amd64-config.yaml:
+	echo "output:" > artifacts/ubuntu-22.04-amd64-config.yaml
+	echo "  image:" >> artifacts/ubuntu-22.04-amd64-config.yaml
+	echo "    path: artifacts/ubuntu-direct-streaming-testimage-amd64.cosi" >> artifacts/ubuntu-22.04-amd64-config.yaml
+	echo "    format: cosi" >> artifacts/ubuntu-22.04-amd64-config.yaml
+	echo "previewFeatures:" >> artifacts/ubuntu-22.04-amd64-config.yaml
+	echo "  - ubuntu-22.04" >> artifacts/ubuntu-22.04-amd64-config.yaml
+
+artifacts/ubuntu-22.04-arm64-config.yaml:
+	echo "output:" > artifacts/ubuntu-22.04-arm64-config.yaml
+	echo "  image:" >> artifacts/ubuntu-22.04-arm64-config.yaml
+	echo "    path: artifacts/ubuntu-direct-streaming-testimage-arm64.cosi" >> artifacts/ubuntu-22.04-arm64-config.yaml
+	echo "    format: cosi" >> artifacts/ubuntu-22.04-arm64-config.yaml
+	echo "previewFeatures:" >> artifacts/ubuntu-22.04-arm64-config.yaml
+	echo "  - ubuntu-22.04" >> artifacts/ubuntu-22.04-arm64-config.yaml
+
+artifacts/ubuntu.vhdx:
+	curl -LO https://cloud-images.ubuntu.com/releases/server/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img
+	qemu-img convert -O vhdx ubuntu-22.04-server-cloudimg-amd64.img artifacts/ubuntu.vhdx
+	rm -rf ubuntu-22.04-server-cloudimg-amd64.img
+
+artifacts/ubuntu_arm64.vhdx:
+	curl -LO https://cloud-images.ubuntu.com/releases/server/22.04/release/ubuntu-22.04-server-cloudimg-arm64.img
+	qemu-img convert -O vhdx ubuntu-22.04-server-cloudimg-arm64.img artifacts/ubuntu_arm64.vhdx
+	rm -rf ubuntu-22.04-server-cloudimg-arm64.img
+
+artifacts/ubuntu-direct-streaming-testimage-arm64.cosi: \
+	bin/mkcosi \
+	artifacts/ubuntu-arm64.vhdx \
+	artifacts/ubuntu-22.04-arm64-config.yaml
+	$(eval TMP_NO_HC_VHD_COSI := $(shell mktemp tmp.XXX.cosi))
+	docker run \
+		--rm \
+		--privileged \
+		-v ".:/repo:z" \
+		-v "/dev:/dev" \
+		${MIC_CONTAINER_IMAGE} \
+			--log-level=debug \
+			--build-dir ./build \
+			--image-file /repo/artifacts/ubuntu-arm64.vhdx \
+			--output-image-file /repo/$(TMP_NO_HC_VHD_COSI) \
+			--output-image-format cosi \
+			--config-file /repo/artifacts/ubuntu-22.04-arm64-config.yaml
+	$(eval TMP_HC := $(shell mktemp tmp-hc.XXX.yaml --tmpdir))
+	sed 's|pci-0000:00:1f.2-ata-2|virtio-pci-0000:08:00.0|' $(DIRECT_STREAMING_HOST_CONFIGURATION) | \
+	   sed 's|pci-0000:00:1f.2-ata-3|virtio-pci-0000:09:00.0|' > $(TMP_HC)
+	bin/mkcosi insert-template \
+		$(TMP_NO_HC_VHD_COSI) \
+		artifacts/ubuntu-direct-streaming-testimage-arm64.cosi \
+		$(TMP_HC)
+	rm -rf $(TMP_NO_HC_VHD_COSI)
+	rm -rf $(TMP_HC)
+
+artifacts/ubuntu-direct-streaming-testimage.cosi: \
+	bin/mkcosi \
+	artifacts/ubuntu.vhdx \
+	artifacts/ubuntu-22.04-amd64-config.yaml
+	$(eval TMP_NO_HC_VHD_COSI := $(shell mktemp tmp.XXX.cosi))
+	docker run \
+		--rm \
+		--privileged \
+		-v ".:/repo:z" \
+		-v "/dev:/dev" \
+		${MIC_CONTAINER_IMAGE} \
+			--log-level=debug \
+			--build-dir ./build \
+			--image-file /repo/artifacts/ubuntu.vhdx \
+			--output-image-file /repo/$(TMP_NO_HC_VHD_COSI) \
+			--output-image-format cosi \
+			--config-file /repo/artifacts/ubuntu-22.04-amd64-config.yaml
+	bin/mkcosi insert-template \
+		$(TMP_NO_HC_VHD_COSI) \
+		artifacts/ubuntu-direct-streaming-testimage.cosi \
+		$(DIRECT_STREAMING_HOST_CONFIGURATION)
+	rm -rf $(TMP_NO_HC_VHD_COSI)
