@@ -19,41 +19,21 @@ stages:
       - GetTridentBinaries_rpms_${{ parameters.architecture }}
       - PrepareSSHKeys
       - BuildingTools_${{ parameters.architecture }}
+      - BuildInstallerForDirectStreaming_${{ parameters.architecture }}
     jobs:
-      # Build Trident direct streaming installer ISO
-      - template: stages/trident_images/build-image.yml
-        parameters:
-          labelPrefix: "" # No prefix for this image
-          architecture: ${{ parameters.architecture }}
-          downloadGoTools: true
-          ${{ if eq(parameters.architecture, 'arm64') }}:
-            label: "trident-direct-streaming-installer-arm64"
-            makeTarget: "artifacts/trident-direct-streaming-installer-arm64.iso"
-            baseimgType: core_arm64
-          ${{ if eq(parameters.architecture, 'amd64') }}:
-            label: "trident-direct-streaming-installer"
-            makeTarget: "artifacts/trident-direct-streaming-installer.iso"
-            baseimgType: baremetal
-
       # Build direct streaming COSI VHD
       - template: stages/trident_images/build-image.yml
         parameters:
           labelPrefix: "" # No prefix for this image
           architecture: ${{ parameters.architecture }}
           downloadGoTools: true
+          ${{ if eq(parameters.streamingImageDistro, 'ubuntu') }}:
+            micBuildType: dev
+          label: "${{ parameters.streamingImageDistro }}-direct-streaming-testimage-${{ parameters.architecture }}"
+          makeTarget: "artifacts/${{ parameters.streamingImageDistro }}-direct-streaming-testimage-${{ parameters.architecture }}.cosi"
           ${{ if eq(parameters.architecture, 'arm64') }}:
-            label: "direct-streaming-testimage-arm64"
-            ${{ if eq(parameters.streamingImageDistro, 'azurelinux') }}:
-              makeTarget: "artifacts/trident-direct-streaming-testimage-arm64.cosi"
-            ${{ if eq(parameters.streamingImageDistro, 'ubuntu') }}:
-              makeTarget: "artifacts/ubuntu-direct-streaming-testimage-arm64.cosi"
             baseimgType: core_arm64
           ${{ if eq(parameters.architecture, 'amd64') }}:
-            label: "direct-streaming-testimage"
-            ${{ if eq(parameters.streamingImageDistro, 'azurelinux') }}:
-              makeTarget: "artifacts/trident-direct-streaming-testimage.cosi"
-            ${{ if eq(parameters.streamingImageDistro, 'ubuntu') }}:
-              makeTarget: "artifacts/ubuntu-direct-streaming-testimage.cosi"
             baseimgType: baremetal
 
   # Run netlaunch test to validate direct streaming installer

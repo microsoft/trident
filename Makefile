@@ -1173,7 +1173,7 @@ artifacts/trident-direct-streaming-testimage-arm64.cosi: \
 	rm -rf $(TMP_NO_HC_VHD_COSI)
 	rm -rf $(TMP_HC)
 
-artifacts/trident-direct-streaming-testimage.cosi: \
+artifacts/trident-direct-streaming-testimage-amd64.cosi: \
 	bin/mkcosi \
 	artifacts/trident-rawcosi-testimage.cosi
 	$(eval TMP_NO_HC_VHD_COSI := $(shell mktemp tmp.XXX.cosi --tmpdir))
@@ -1182,7 +1182,7 @@ artifacts/trident-direct-streaming-testimage.cosi: \
 		$(TMP_NO_HC_VHD_COSI)
 	bin/mkcosi insert-template \
 		$(TMP_NO_HC_VHD_COSI) \
-		artifacts/trident-direct-streaming-testimage.cosi \
+		artifacts/trident-direct-streaming-testimage-amd64.cosi \
 		$(DIRECT_STREAMING_HOST_CONFIGURATION)
 	rm -rf $(TMP_NO_HC_VHD_COSI)
 
@@ -1244,7 +1244,7 @@ artifacts/ubuntu-direct-streaming-testimage-arm64.cosi: \
 	rm -rf $(TMP_NO_HC_VHD_COSI)
 	rm -rf $(TMP_HC)
 
-artifacts/ubuntu-direct-streaming-testimage.cosi: \
+artifacts/ubuntu-direct-streaming-testimage-amd64.cosi: \
 	bin/mkcosi \
 	artifacts/ubuntu.vhdx \
 	artifacts/ubuntu-22.04-amd64-config.yaml
@@ -1263,6 +1263,6 @@ artifacts/ubuntu-direct-streaming-testimage.cosi: \
 			--config-file /repo/artifacts/ubuntu-22.04-amd64-config.yaml
 	bin/mkcosi insert-template \
 		$(TMP_NO_HC_VHD_COSI) \
-		artifacts/ubuntu-direct-streaming-testimage.cosi \
+		artifacts/ubuntu-direct-streaming-testimage-amd64.cosi \
 		$(DIRECT_STREAMING_HOST_CONFIGURATION)
 	rm -rf $(TMP_NO_HC_VHD_COSI)

@@ -29,6 +29,7 @@ stages:
           - BuildingTools_${{ parameters.architecture }}
           - BuildTridentContainerImage
           - BuildImagesForDirectStreaming_${{ parameters.streamingImageDistro }}_${{ parameters.architecture }}
+          - BuildInstallerForDirectStreaming_${{ parameters.architecture }}
 
     jobs:
       - job: DirectStreamingTesting_${{ parameters.streamingImageDistro }}_${{ parameters.architecture }}
@@ -49,16 +50,10 @@ stages:
         variables:
           - name: tridentSourceDirectory
             value: $(Build.SourcesDirectory)
-          - ${{ if eq(parameters.architecture, 'arm64') }}:
-            - name: installerISOName
-              value: trident-direct-streaming-installer-arm64
-            - name: testImageName
-              value: trident-direct-streaming-testimage-arm64
-          - ${{ if eq(parameters.architecture, 'amd64') }}:
-            - name: installerISOName
-              value: trident-direct-streaming-installer
-            - name: testImageName
-              value: trident-direct-streaming-testimage
+          - name: testImageName
+            value: ${{ parameters.streamingImageDistro }}-direct-streaming-testimage-${{ parameters.architecture }}
+          - name: installerISOName
+            value: trident-direct-streaming-installer-${{ parameters.architecture }}
           - name: ob_outputDirectory
             value: $(tridentSourceDirectory)/deployment_logs
           - name: ob_artifactBaseName
