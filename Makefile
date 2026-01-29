@@ -1156,7 +1156,7 @@ artifacts/trident-vm-grub-verity-azure-testimage.vhd: \
 			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-grub-verity-azure.yaml
 
 DIRECT_STREAMING_HOST_CONFIGURATION ?= tests/images/trident-rawcosi-testimage/trident-config.yaml
-artifacts/trident-direct-streaming-testimage-arm64.cosi: \
+artifacts/azurelinux-direct-streaming-testimage-arm64.cosi: \
 	bin/mkcosi \
 	artifacts/trident-rawcosi-testimage-arm64.cosi
 	$(eval TMP_HC := $(shell mktemp tmp-hc.XXX.yaml --tmpdir))
@@ -1168,12 +1168,12 @@ artifacts/trident-direct-streaming-testimage-arm64.cosi: \
 		$(TMP_NO_HC_VHD_COSI)
 	bin/mkcosi insert-template \
 		$(TMP_NO_HC_VHD_COSI) \
-		artifacts/trident-direct-streaming-testimage-arm64.cosi \
+		artifacts/azurelinux-direct-streaming-testimage-arm64.cosi \
 		$(TMP_HC)
 	rm -rf $(TMP_NO_HC_VHD_COSI)
 	rm -rf $(TMP_HC)
 
-artifacts/trident-direct-streaming-testimage-amd64.cosi: \
+artifacts/azurelinux-direct-streaming-testimage-amd64.cosi: \
 	bin/mkcosi \
 	artifacts/trident-rawcosi-testimage.cosi
 	$(eval TMP_NO_HC_VHD_COSI := $(shell mktemp tmp.XXX.cosi --tmpdir))
@@ -1182,7 +1182,7 @@ artifacts/trident-direct-streaming-testimage-amd64.cosi: \
 		$(TMP_NO_HC_VHD_COSI)
 	bin/mkcosi insert-template \
 		$(TMP_NO_HC_VHD_COSI) \
-		artifacts/trident-direct-streaming-testimage-amd64.cosi \
+		artifacts/azurelinux-direct-streaming-testimage-amd64.cosi \
 		$(DIRECT_STREAMING_HOST_CONFIGURATION)
 	rm -rf $(TMP_NO_HC_VHD_COSI)
 
