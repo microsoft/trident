@@ -12,9 +12,16 @@ parameters:
       - amd64
     default: amd64
 
+  - name: streamingImageDistro
+    type: string
+    values:
+      - ubuntu
+      - azurelinux
+    default: azurelinux
+
 stages:
-  - stage: DirectStreaming_DeploymentTesting_${{ parameters.architecture }}
-    displayName: Direct Streaming Deployment VM ${{ parameters.architecture }} Testing
+  - stage: DirectStreaming_DeploymentTesting_${{ parameters.streamingImageDistro }}_${{ parameters.architecture }}
+    displayName: Direct Streaming Deployment VM ${{ parameters.streamingImageDistro }} ${{ parameters.architecture }} Testing
     dependsOn:
       - ${{ if eq(parameters.testingRun, true) }}:
           - DownloadTestingElements
