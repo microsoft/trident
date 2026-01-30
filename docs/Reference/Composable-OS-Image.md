@@ -168,6 +168,9 @@ image this COSI file was sourced from.
 | `type`    | [DiskType](#disktype-enum)         | 1.2      | Yes (since 1.2) | Partitioning type of the original disk.                  |
 | `regions` | [DiskRegion](#diskregion-object)[] | 1.2      | Yes (since 1.2) | Data about the GUID Partition Table of the source image. |
 
+The order of the `regions` array MUST match the physical order of the regions in
+the original disk image, from the beginning of the disk to the end.
+
 ##### `DiskType` Enum
 
 The partitioning table type. Currently, only `gpt` is supported.
@@ -175,6 +178,17 @@ The partitioning table type. Currently, only `gpt` is supported.
 | Value | Description                                          |
 | ----- | ---------------------------------------------------- |
 | `gpt` | The disk uses the GUID Partition Table (GPT) scheme. |
+
+##### `DiskRegion` Object
+
+This object holds information about a specific region of the original disk
+image.
+
+| Field   | Type                           | Added in | Required        | Description                               |
+| ------- | ------------------------------ | -------- | --------------- | ----------------------------------------- |
+| `image` | [ImageFile](#imagefile-object) | 1.2      | Yes (since 1.2) | Details of the image file in the tarball. |
+| `type`  | [RegionType](#regiontype-enum) | 1.2      | Yes (since 1.2) | The type of region this image represents. |
+| `start` | number                         | 1.2      | Yes (since 1.2) | The starting byte offset of the region.   |
 
 ##### `RegionType` Enum
 
@@ -187,17 +201,6 @@ The type of region in the original disk image.
 | `backup-gpt`  | The backup GPT header and entries at the end of the disk.                                                |
 | `unallocated` | Unallocated space between partitions or between the GPT and the first/last partition.                    |
 | `unknown`     | A region of unknown type.                                                                                |
-
-##### `DiskRegion` Object
-
-This object holds information about a specific region of the original disk
-image.
-
-| Field   | Type                           | Added in | Required        | Description                               |
-| ------- | ------------------------------ | -------- | --------------- | ----------------------------------------- |
-| `image` | [ImageFile](#imagefile-object) | 1.2      | Yes (since 1.2) | Details of the image file in the tarball. |
-| `type`  | [RegionType](#regiontype-enum) | 1.2      | Yes (since 1.2) | The type of region this image represents. |
-| `start` | number                         | 1.2      | Yes (since 1.2) | The starting byte offset of the region.   |
 
 ##### `OsArchitecture` Enum
 
