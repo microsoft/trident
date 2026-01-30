@@ -9,7 +9,7 @@ title: COSI Spec
 
 | Revision            | Spec Date  |
 | ------------------- | ---------- |
-| [1.2](#revision-12) | 2025-12-10 |
+| [1.2](#revision-12) | 2026-01-30 |
 | [1.1](#revision-11) | 2025-05-08 |
 | [1.0](#revision-10) | 2024-10-09 |
 
@@ -21,17 +21,6 @@ OS with Trident.
 
 This document adheres to [RFC2119: Key words for use in RFCs to Indicate
   Requirement Levels](https://datatracker.ietf.org/doc/html/rfc2119).
-
-## Goals
-
-COSI should:
-
-- Provide a one-file solution for users of PRISM and Trident.
-- Be a portable and relatively trivial format.
-- Contain all the images required to install a Linux OS
-  with Trident.
-- Contain enough metadata to inform Trident about the OS contained in the COSI
-  file without adding extra verbosity to the Host Configuration.
 
 ## COSI File Format
 
@@ -53,8 +42,9 @@ end-of-archive marker.
 The tarball MUST contain the following files:
 
 - `metadata.json`: A JSON file that contains the metadata of the COSI file.
-- Filesystem image files in the folder `images/`: The actual filesystem images
-  that Trident will use to install the OS.
+- Disk region images in the folder `images/`: ZSTD compressed raw images of
+  all the regions of the source disk image. This includes the primary and backup
+  GPT, protective MBR, partitions and any unallocated space in between them.
 
 To allow for future extensions, the tarball MAY contain other files, but Trident
 MUST ignore them. The tarball SHOULD NOT contain any extra files that will not
@@ -66,22 +56,31 @@ The tarball MUST NOT have a common root directory. The metadata file MUST be at
 the root of the tarball. If it were extracted with a standard `tar` invocation,
 the metadata file would be placed in the current directory.
 
-The metadata file SHOULD, be placed at the beginning of the tarball to allow for
+The metadata file MUST, be placed at the beginning of the tarball to allow for
 quick access to the metadata without having to traverse the entire tarball.
 
-### Partition Image Files
+The disk region images MUST be placed right after the metadata file in the
+tarball. The order of the image files in the tarball MUST match the original
+PHYSICAL order of the regions in the source disk image.
 
-The partition image files are the actual images that Trident will use to install
-the OS. These MUST be raw partition images.
+### Disk Region Images
 
-The image files SHOULD be compressed. They SHOULD use ZSTD compression. Trident
-only supports ZSTD-compressed images at the time of writing (2024-09-25), but
-that could change in the future. Not using ZSTD-compressed images will result in
-Trident failing to install the OS.
+The region images are compressed raw files containing the exact bytes of each
+region of the source disk image. This includes partitions, unallocated space,
+the GPT headers and entries, and the protective MBR.
 
-They MUST be located in a directory called `images/` inside the tarball. They
-MAY be placed in subdirectories of `images/` to organize them. Trident MUST be
-able to handle images in subdirectories.
+When uncompressed, the total size of all the region images MUST match the size
+of the source disk image. And when concatenated in the order they appear in the
+tarball, they MUST recreate the exact bytes of the source disk image.
+
+The images MUST be compressed using ZSTD compression.
+
+They MUST exist in the tarball under the `images/` directory. They MAY be placed
+in subdirectories of `images/` to organize them. Readers MUST be able to handle
+images in subdirectories.
+
+The physical order of the regions images in the tarball MUST match the order
+they appear in the source disk image, from the beginning of the disk to the end.
 
 ### Metadata JSON File
 
@@ -100,7 +99,7 @@ The metadata file MUST contain a JSON object with the following fields:
 | `osArch`     | [OsArchitecture](#osarchitecture-enum) | 1.0      | Yes (since 1.0) | The architecture of the OS.                      |
 | `osRelease`  | string                                 | 1.0      | Yes (since 1.0) | The contents of `/etc/os-release` verbatim.      |
 | `images`     | [Filesystem](#filesystem-object)[]     | 1.0      | Yes (since 1.0) | Filesystem metadata.                             |
-| `partitions` | [Partition](#partition-object)[]       | 1.2      | Yes (since 1.2) | Partition metadata.                              |
+| `disk`       | [Disk](#disk-object)                   | 1.2      | Yes (since 1.2) | Original disk metadata.                          |
 | `osPackages` | [OsPackage](#ospackage-object)[]       | 1.0      | Yes (since 1.1) | The list of packages installed in the OS.        |
 | `bootloader` | [Bootloader](#bootloader-object)       | 1.1      | Yes (since 1.1) | Information about the bootloader used by the OS. |
 | `id`         | UUID (string, case insensitive)        | 1.0      | No              | A unique identifier for the COSI file.           |
@@ -158,27 +157,50 @@ device on top of a data device.
 | `uncompressedSize` | number | 1.0      | Yes (since 1.0) | Size of the raw uncompressed image in bytes.                                              |
 | `sha384`           | string | 1.0      | Yes (since 1.1) | SHA-384 hash of the compressed hash image.                                                |
 
-##### `Partition` Object
+##### `Disk` Object
 
-`Partition` objects hold the data necessary to recreate partition tables. They
-provide a mapping between each image file and its original partition
-information. Starting in 1.2, each `ImageFile` in the COSI MUST have a
-corresponding `Partition` object. The correspondence between an `ImageFile` and
-a `Partition` object is established by matching their `path` fields: a
-`Partition` object corresponds to the `ImageFile` whose `path` field is
-identical.
+The `disk` field holds information about the original disk layout layout of the
+image this COSI file was sourced from.
 
-The order of `Partition` objects in the `partitions` array is unspecified since
-the `number` field indicates the original ordering.
+| Field     | Type                               | Added in | Required        | Description                                              |
+| --------- | ---------------------------------- | -------- | --------------- | -------------------------------------------------------- |
+| `size`    | number                             | 1.2      | Yes (since 1.2) | Size of the original disk in bytes.                      |
+| `type`    | [DiskType](#disktype-enum)         | 1.2      | Yes (since 1.2) | Partitioning type of the original disk.                  |
+| `regions` | [DiskRegion](#diskregion-object)[] | 1.2      | Yes (since 1.2) | Data about the GUID Partition Table of the source image. |
 
-| Field          | Type                            | Added in | Required        | Description                                                                                                                                                                     |
-| -------------- | ------------------------------- | -------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`         | string                          | 1.2      | No              | Absolute path of the compressed image file inside the tarball. MUST start with `images/`.                                                                                       |
-| `originalSize` | number                          | 1.2      | Yes (since 1.2) | Size of the partition before any filesystem shrinking. SHOULD be at least as large as the `uncompressedSize` field of the corresponding `ImageFile` object (matched by `path`). |
-| `partType`     | UUID (string, case insensitive) | 1.2      | Yes (since 1.2) | The partition type UUID.                                                                                                                                                        |
-| `partUuid`     | UUID (string, case insensitive) | 1.2      | Yes (since 1.2) | The partition UUID.                                                                                                                                                             |
-| `label`        | string                          | 1.2      | Yes (since 1.2) | Partition label (GPT partition name, may be an empty string).                                                                                                                   |
-| `number`       | number                          | 1.2      | Yes (since 1.2) | The index where the partition originally appeared in the partition table (1-indexed).                                                                                           |
+The order of the `regions` array MUST match the physical order of the regions in
+the original disk image, from the beginning of the disk to the end.
+
+##### `DiskType` Enum
+
+The partitioning table type. Currently, only `gpt` is supported.
+
+| Value | Description                                          |
+| ----- | ---------------------------------------------------- |
+| `gpt` | The disk uses the GUID Partition Table (GPT) scheme. |
+
+##### `DiskRegion` Object
+
+This object holds information about a specific region of the original disk
+image.
+
+| Field   | Type                           | Added in | Required        | Description                               |
+| ------- | ------------------------------ | -------- | --------------- | ----------------------------------------- |
+| `image` | [ImageFile](#imagefile-object) | 1.2      | Yes (since 1.2) | Details of the image file in the tarball. |
+| `type`  | [RegionType](#regiontype-enum) | 1.2      | Yes (since 1.2) | The type of region this image represents. |
+| `start` | number                         | 1.2      | Yes (since 1.2) | The starting byte offset of the region.   |
+
+##### `RegionType` Enum
+
+The type of region in the original disk image.
+
+| Value         | Description                                                                                              |
+| ------------- | -------------------------------------------------------------------------------------------------------- |
+| `primary-gpt` | Everything from offset 0 to the end of the primary GPT header and entries, including the protective MBR. |
+| `partition`   | A partition as defined in the GPT partition entries.                                                     |
+| `backup-gpt`  | The backup GPT header and entries at the end of the disk.                                                |
+| `unallocated` | Unallocated space between partitions or between the GPT and the first/last partition.                    |
+| `unknown`     | A region of unknown type.                                                                                |
 
 ##### `OsArchitecture` Enum
 
@@ -217,11 +239,11 @@ rpm -qa --queryformat "%{NAME} %{VERSION} %{RELEASE} %{ARCH}\n"
 | Field         | Type                                     | Added in | Required                         | Description                 |
 | ------------- | ---------------------------------------- | -------- | -------------------------------- | --------------------------- |
 | `type`        | [`BootloaderType`](#bootloadertype-enum) | 1.1      | Yes (since 1.1)                  | The type of the bootloader. |
-| `systemdBoot` | [`SystemDBoot`](#systemdboot-object)     | 1.1      | When `type` == `systemd-boot`[7] | systemd-boot configuration. |
+| `systemdBoot` | [`SystemDBoot`](#systemdboot-object)     | 1.1      | When `type` == `systemd-boot`[8] | systemd-boot configuration. |
 
 _Notes:_
 
-- **[7]** The `systemd-boot` field is required if the `type` field is set to
+- **[8]** The `systemd-boot` field is required if the `type` field is set to
     `systemd-boot`. It MUST be omitted OR set to `null` if the `type`
     field is set to any other value.
 
@@ -270,7 +292,7 @@ A string that represents the type of the systemd-boot entry.
 
 ```json
 {
-    "version": "1.1",
+    "version": "1.2",
     "images": [
         {
             "image": {
@@ -323,7 +345,24 @@ A string that represents the type of the systemd-boot entry.
             "arch": "x86_64"
         },
         // More packages...
-    ]
+    ],
+    "disk": {
+        "size": 1073741824,
+        "type": "gpt",
+        "regions": [
+            {
+                "image": {
+                    "path": "images/primary-gpt.rawzst",
+                    "compressedSize": 16384,
+                    "uncompressedSize": 32768,
+                    "sha384": "a3f5c6e2b4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7"
+                },
+                "type": "primary-gpt",
+                "start": 0
+            },
+            // More regions...
+        ]
+    }
 }
 ```
 
@@ -378,7 +417,24 @@ A string that represents the type of the systemd-boot entry.
             "arch": "x86_64"
         },
         // More packages...
-    ]
+    ],
+    "disk": {
+        "size": 1073741824,
+        "type": "gpt",
+        "regions": [
+            {
+                "image": {
+                    "path": "images/primary-gpt.rawzst",
+                    "compressedSize": 16384,
+                    "uncompressedSize": 32768,
+                    "sha384": "a3f5c6e2b4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7"
+                },
+                "type": "primary-gpt",
+                "start": 0
+            },
+            // More regions...
+        ]
+    }
 }
 ```
 
@@ -386,7 +442,8 @@ A string that represents the type of the systemd-boot entry.
 
 ### Revision 1.2
 
-- Added `partitions` field to the root object.
+- COSI file now contain a comprehensive set of compressed disk region images.
+- Added `disk` field to the root object.
 
 ### Revision 1.1
 
