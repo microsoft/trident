@@ -7,6 +7,7 @@ use std::{
 
 use anyhow::{bail, Context, Error};
 use log::{debug, trace};
+use zstd::stream::read::Decoder;
 
 use trident_api::primitives::bytes::ByteCount;
 
@@ -21,7 +22,12 @@ where
     R: Read + HashingReader,
 {
     // Instantiate decoder for ZSTD stream
-    let mut decoder = zstd::stream::read::Decoder::new(BufReader::new(&mut reader))?;
+    let mut decoder = Decoder::new(BufReader::new(&mut reader))?;
+
+    // Set the maximum window size to 1 GiB (2^30 bytes) to support large images.
+    decoder
+        .window_log_max(30)
+        .context("Failed to det ZSTD decoder log window to 2^30")?;
 
     write_to_path(&mut decoder, destination_path)?;
 
