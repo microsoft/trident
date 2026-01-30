@@ -13,7 +13,6 @@ use trident::{
 };
 use trident_api::{
     config::HostConfigurationSource,
-    constants::internal_params::NO_TRANSITION,
     error::{InternalError, InvalidInputError, TridentError, TridentResultExt},
 };
 

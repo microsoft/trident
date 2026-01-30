@@ -1191,22 +1191,6 @@ imagecustomizer-dev:
 	make -C ../azure-linux-image-tools/toolkit go-imagecustomizer
 	../azure-linux-image-tools/toolkit/tools/imagecustomizer/container/build-container.sh -t imagecustomizer:dev
 
-artifacts/ubuntu-22.04-amd64-config.yaml:
-	echo "output:" > artifacts/ubuntu-22.04-amd64-config.yaml
-	echo "  image:" >> artifacts/ubuntu-22.04-amd64-config.yaml
-	echo "    path: artifacts/ubuntu-direct-streaming-testimage-amd64.cosi" >> artifacts/ubuntu-22.04-amd64-config.yaml
-	echo "    format: baremetal-image" >> artifacts/ubuntu-22.04-amd64-config.yaml
-	echo "previewFeatures:" >> artifacts/ubuntu-22.04-amd64-config.yaml
-	echo "  - ubuntu-22.04" >> artifacts/ubuntu-22.04-amd64-config.yaml
-
-artifacts/ubuntu-22.04-arm64-config.yaml:
-	echo "output:" > artifacts/ubuntu-22.04-arm64-config.yaml
-	echo "  image:" >> artifacts/ubuntu-22.04-arm64-config.yaml
-	echo "    path: artifacts/ubuntu-direct-streaming-testimage-arm64.cosi" >> artifacts/ubuntu-22.04-arm64-config.yaml
-	echo "    format: baremetal-image" >> artifacts/ubuntu-22.04-arm64-config.yaml
-	echo "previewFeatures:" >> artifacts/ubuntu-22.04-arm64-config.yaml
-	echo "  - ubuntu-22.04" >> artifacts/ubuntu-22.04-arm64-config.yaml
-
 artifacts/ubuntu.vhdx:
 	curl -LO https://cloud-images.ubuntu.com/releases/server/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img
 	qemu-img convert -O vhdx ubuntu-22.04-server-cloudimg-amd64.img artifacts/ubuntu.vhdx
@@ -1221,7 +1205,13 @@ artifacts/ubuntu-direct-streaming-testimage-arm64.cosi: \
 	bin/mkcosi \
 	artifacts/ubuntu_arm64.vhdx \
 	artifacts/ubuntu-22.04-arm64-config.yaml
-	$(eval TMP_NO_HC_VHD_COSI := $(shell mktemp tmp.XXX.cosi))
+	$(eval TMP_IC_CONFIG := $(shell mktemp tmp.XXX.config))
+	echo "output:" > $(TMP_IC_CONFIG)
+	echo "  image:" >> $(TMP_IC_CONFIG)
+	echo "    path: artifacts/ubuntu-direct-streaming-testimage-arm64.cosi" >> $(TMP_IC_CONFIG)
+	echo "    format: baremetal-image" >> $(TMP_IC_CONFIG)
+	echo "previewFeatures:" >> $(TMP_IC_CONFIG)
+	echo "  - ubuntu-22.04" >> $(TMP_IC_CONFIG)
 	docker run \
 		--rm \
 		--privileged \
@@ -1231,24 +1221,22 @@ artifacts/ubuntu-direct-streaming-testimage-arm64.cosi: \
 			--log-level=debug \
 			--build-dir ./build \
 			--image-file /repo/artifacts/ubuntu_arm64.vhdx \
-			--output-image-file /repo/$(TMP_NO_HC_VHD_COSI) \
+			--output-image-file /repo/artifacts/ubuntu-direct-streaming-testimage-arm64.cosi \
 			--output-image-format baremetal-image \
-			--config-file /repo/artifacts/ubuntu-22.04-arm64-config.yaml
-	$(eval TMP_HC := $(shell mktemp tmp-hc.XXX.yaml --tmpdir))
-	sed 's|pci-0000:00:1f.2-ata-2|virtio-pci-0000:08:00.0|' $(DIRECT_STREAMING_HOST_CONFIGURATION) | \
-	   sed 's|pci-0000:00:1f.2-ata-3|virtio-pci-0000:09:00.0|' > $(TMP_HC)
-	bin/mkcosi insert-template \
-		$(TMP_NO_HC_VHD_COSI) \
-		artifacts/ubuntu-direct-streaming-testimage-arm64.cosi \
-		$(TMP_HC)
-	rm -rf $(TMP_NO_HC_VHD_COSI)
-	rm -rf $(TMP_HC)
+			--config-file /repo/$(TMP_IC_CONFIG)
+	rm -rf $(TMP_IC_CONFIG)
 
 artifacts/ubuntu-direct-streaming-testimage-amd64.cosi: \
 	bin/mkcosi \
 	artifacts/ubuntu.vhdx \
 	artifacts/ubuntu-22.04-amd64-config.yaml
-	$(eval TMP_NO_HC_VHD_COSI := $(shell mktemp tmp.XXX.cosi))
+	$(eval TMP_IC_CONFIG := $(shell mktemp tmp.XXX.config))
+	echo "output:" > $(TMP_IC_CONFIG)
+	echo "  image:" >> $(TMP_IC_CONFIG)
+	echo "    path: artifacts/ubuntu-direct-streaming-testimage-amd64.cosi" >> $(TMP_IC_CONFIG)
+	echo "    format: baremetal-image" >> $(TMP_IC_CONFIG)
+	echo "previewFeatures:" >> $(TMP_IC_CONFIG)
+	echo "  - ubuntu-22.04" >> $(TMP_IC_CONFIG)
 	docker run \
 		--rm \
 		--privileged \
@@ -1258,11 +1246,7 @@ artifacts/ubuntu-direct-streaming-testimage-amd64.cosi: \
 			--log-level=debug \
 			--build-dir ./build \
 			--image-file /repo/artifacts/ubuntu.vhdx \
-			--output-image-file /repo/$(TMP_NO_HC_VHD_COSI) \
+			--output-image-file /repo/artifacts/ubuntu-direct-streaming-testimage-amd64.cosi \
 			--output-image-format baremetal-image \
-			--config-file /repo/artifacts/ubuntu-22.04-amd64-config.yaml
-	bin/mkcosi insert-template \
-		$(TMP_NO_HC_VHD_COSI) \
-		artifacts/ubuntu-direct-streaming-testimage-amd64.cosi \
-		$(DIRECT_STREAMING_HOST_CONFIGURATION)
-	rm -rf $(TMP_NO_HC_VHD_COSI)
+			--config-file /repo/$(TMP_IC_CONFIG)
+	rm -rf $(TMP_IC_CONFIG)
