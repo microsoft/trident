@@ -52,7 +52,7 @@ impl CosiMetadata {
             partitions.push(Partition {
                 id: partition_id.clone(),
                 partition_type: DiscoverablePartitionType::from_uuid(&part.part_type).into(),
-                size: part.original_size.into(),
+                size: part.original_size.next_multiple_of(4096).into(),
                 uuid: Some(part.part_uuid),
                 label: Some(part.label),
             });
