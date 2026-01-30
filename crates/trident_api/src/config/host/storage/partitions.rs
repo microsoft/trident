@@ -1,6 +1,7 @@
 use std::{fmt::Display, num::ParseIntError, str::FromStr};
 
 use serde::{Deserialize, Serialize};
+use sysdefs::partition_types::DiscoverablePartitionType;
 use uuid::Uuid;
 
 #[cfg(feature = "schemars")]
@@ -47,6 +48,19 @@ pub struct Partition {
     /// Partition label. If not set, the partition's block device ID will be
     /// used as the label.
     pub label: Option<String>,
+}
+
+impl Partition {
+    /// Creates a new Partition with the given ID and size.
+    pub fn new(id: impl Into<BlockDeviceId>, size: impl Into<PartitionSize>) -> Self {
+        Self {
+            id: id.into(),
+            size: size.into(),
+            partition_type: PartitionType::default(),
+            uuid: None,
+            label: None,
+        }
+    }
 }
 
 /// Settings to adopt a pre-existing partition.
@@ -202,6 +216,53 @@ impl PartitionType {
 impl Display for PartitionType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.to_sdrepart_part_type())
+    }
+}
+
+impl From<DiscoverablePartitionType> for PartitionType {
+    fn from(dpt: DiscoverablePartitionType) -> Self {
+        match dpt {
+            // These types map directly
+            DiscoverablePartitionType::Esp => Self::Esp,
+            DiscoverablePartitionType::Xbootldr => Self::Xbootldr,
+            DiscoverablePartitionType::Swap => Self::Swap,
+            DiscoverablePartitionType::Home => Self::Home,
+            DiscoverablePartitionType::Srv => Self::Srv,
+            DiscoverablePartitionType::Var => Self::Var,
+            DiscoverablePartitionType::Tmp => Self::Tmp,
+            DiscoverablePartitionType::LinuxGeneric => Self::LinuxGeneric,
+
+            // We coalesce all root variants into one.
+            DiscoverablePartitionType::Root
+            | DiscoverablePartitionType::RootAmd64
+            | DiscoverablePartitionType::RootArm64 => Self::Root,
+
+            // We coalesce all root verity variants into one.
+            DiscoverablePartitionType::RootVerity
+            | DiscoverablePartitionType::RootAmd64Verity
+            | DiscoverablePartitionType::RootArm64Verity => Self::RootVerity,
+
+            // We coalesce all usr variants into one.
+            DiscoverablePartitionType::Usr
+            | DiscoverablePartitionType::UsrAmd64
+            | DiscoverablePartitionType::UsrArm64 => Self::Usr,
+
+            // We coalesce all usr verity variants into one.
+            DiscoverablePartitionType::UsrVerity
+            | DiscoverablePartitionType::UsrAmd64Verity
+            | DiscoverablePartitionType::UsrArm64Verity => Self::UsrVerity,
+
+            // These types do not have a direct mapping, so we treat them as unknown.
+            DiscoverablePartitionType::RootVeritySig
+            | DiscoverablePartitionType::UsrVeritySig
+            | DiscoverablePartitionType::RootAmd64VeritySig
+            | DiscoverablePartitionType::UsrAmd64VeritySig
+            | DiscoverablePartitionType::RootArm64VeritySig
+            | DiscoverablePartitionType::UsrArm64VeritySig => Self::Unknown(dpt.to_uuid()),
+
+            // Fallback for unknown types
+            DiscoverablePartitionType::Unknown(uuid) => Self::Unknown(uuid),
+        }
     }
 }
 

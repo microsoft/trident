@@ -15,7 +15,7 @@ use sysdefs::{
     partition_types::DiscoverablePartitionType,
 };
 use trident_api::{
-    config::{self, ImageSha384},
+    config::{self, HostConfiguration, ImageSha384},
     constants::ROOT_MOUNT_POINT_PATH,
     error::{InvalidInputError, ReportError, TridentError},
     primitives::hash::Sha384Hash,
@@ -180,11 +180,15 @@ impl OsImage {
         }
     }
 
-    pub(crate) fn host_configuration_template(&self) -> Option<&str> {
+    /// Derives a host configuration from the OS image, if supported.
+    pub(crate) fn derive_host_configuration(
+        &self,
+        target_disk: impl AsRef<Path>,
+    ) -> Option<Result<HostConfiguration, Error>> {
         match &self.0 {
-            OsImageInner::Cosi(cosi) => cosi.metadata.host_configuration_template.as_deref(),
+            OsImageInner::Cosi(cosi) => Some(cosi.derive_host_configuration(target_disk)),
             #[cfg(test)]
-            OsImageInner::Mock(_) => None,
+            OsImageInner::Mock(_mock) => None,
         }
     }
 }

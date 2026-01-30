@@ -139,6 +139,12 @@ pub enum InternalError {
 
     #[error("Failed to wait for 'systemd-networkd'")]
     WaitForSystemdNetworkd,
+
+    #[error("Derived Host Configuration is invalid: {inner}")]
+    DerivedHostConfigurationInvalid {
+        #[from]
+        inner: HostConfigurationStaticValidationError,
+    },
 }
 
 /// Identifies errors that occur when the user provides an invalid input.
@@ -213,6 +219,9 @@ pub enum InvalidInputError {
 
     #[error("Failed to load COSI file from '{url}'")]
     LoadCosi { url: Url },
+
+    #[error("Failed to derive Host Configuration from OS image")]
+    DeriveHostConfiguration,
 
     #[error("Failed to load Host Configuration file from '{path}'")]
     LoadHostConfigurationFile { path: String },
@@ -730,6 +739,9 @@ pub enum UnsupportedConfigurationError {
 
     #[error("Disk partition(s) no longer exist on system: {partition_ids:?}")]
     PartitionsRemoved { partition_ids: Vec<String> },
+
+    #[error("No suitable disk found for installation")]
+    NoSuitableDisk,
 }
 
 /// Describes different categories of structured errors that can occur in Trident.
