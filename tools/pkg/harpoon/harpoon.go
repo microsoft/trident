@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	DefaultTridentSocketPath = "/run/trident.sock"
+	DefaultTridentSocketPath = "/run/trident/trident.sock"
 )
 
 // HarpoonClient is a client for interacting with the Harpoon gRPC service.
