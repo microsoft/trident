@@ -1197,10 +1197,15 @@ artifacts/azurelinux-direct-streaming-testimage-amd64.cosi: \
 			--config-file /repo/$(TMP_IC_CONFIG)
 	rm -rf $(TMP_IC_CONFIG)
 
-.PHONY: imagecustomizer-dev
-imagecustomizer-dev:
+.PHONY: imagecustomizer-dev-amd64
+imagecustomizer-dev-amd64:
 	make -C ../azure-linux-image-tools/toolkit go-imagecustomizer
-	../azure-linux-image-tools/toolkit/tools/imagecustomizer/container/build-container.sh -t imagecustomizer:dev
+	../azure-linux-image-tools/toolkit/tools/imagecustomizer/container/build-container.sh -t imagecustomizer:dev -a amd64
+
+.PHONY: imagecustomizer-dev-arm64
+imagecustomizer-dev-amd64:
+	make -C ../azure-linux-image-tools/toolkit go-imagecustomizer
+	../azure-linux-image-tools/toolkit/tools/imagecustomizer/container/build-container.sh -t imagecustomizer:dev -a arm64
 
 artifacts/ubuntu.vhdx:
 	curl -LO https://cloud-images.ubuntu.com/releases/server/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img
