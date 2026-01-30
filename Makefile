@@ -1170,7 +1170,7 @@ artifacts/azurelinux-direct-streaming-testimage-arm64.cosi: \
 		${MIC_CONTAINER_IMAGE} \
 			--log-level=debug \
 			--build-dir ./build \
-			--image-file /repo/artifacts/trident-rawcosi-testimage.vhdx \
+			--image-file /repo/artifacts/trident-rawcosi-testimage-arm64.vhdx \
 			--output-image-file /repo/artifacts/azurelinux-direct-streaming-testimage-arm64.cosi \
 			--output-image-format baremetal-image \
 			--config-file /repo/$(TMP_IC_CONFIG)
