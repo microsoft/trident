@@ -53,8 +53,8 @@ end-of-archive marker.
 The tarball MUST contain the following files:
 
 - `metadata.json`: A JSON file that contains the metadata of the COSI file.
-- `gpt/header.bin`: The original GPT header binary file, if the disk uses GPT
-  partitioning (added in revision 1.2).
+- `gpt/table.bin`: A binary blob containing the original GPT header and partition
+  entries, if the disk uses GPT partitioning (added in revision 1.2).
 - Filesystem image files in the folder `images/`: The actual filesystem images
   that Trident will use to install the OS.
 
@@ -71,11 +71,8 @@ the metadata file would be placed in the current directory.
 The metadata file MUST, be placed at the beginning of the tarball to allow for
 quick access to the metadata without having to traverse the entire tarball.
 
-Starting in revision 1.2, a copy of the original image's GPT header MUST be
-placed at `gpt/header.bin` if the disk uses GPT partitioning. This file MUST
-contain the exact bytes of the original GPT header as read from the disk. This
-file, when present, must be placed immediately after the `metadata.json` file in
-the tarball.
+When the source image uses GPT partitioning, the GPT binary file MUST be placed
+immediately after the metadata file in the tarball.
 
 ### Partition Image Files
 
@@ -90,6 +87,14 @@ Trident failing to install the OS.
 They MUST be located in a directory called `images/` inside the tarball. They
 MAY be placed in subdirectories of `images/` to organize them. Trident MUST be
 able to handle images in subdirectories.
+
+### The GPT Binary File
+
+Starting in revision 1.2, if the source disk uses GPT partitioning, the tarball
+MUST contain a file at `gpt/table.bin` that contains the exact bytes of the
+original disk image from the beginning up until the end of the GPT partition
+entries. This file MUST be identical to the bytes read from the original disk
+when reading the GPT header and partition entries.
 
 ### Metadata JSON File
 
