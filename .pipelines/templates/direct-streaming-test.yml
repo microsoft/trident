@@ -25,7 +25,6 @@ stages:
         parameters:
           labelPrefix: "" # No prefix for this image
           architecture: ${{ parameters.architecture }}
-          downloadGoTools: true
           label: "trident-direct-streaming-installer-${{ parameters.architecture }}"
           makeTarget: "artifacts/trident-direct-streaming-installer-${{ parameters.architecture }}.iso"
           ${{ if eq(parameters.architecture, 'arm64') }}:
@@ -46,7 +45,6 @@ stages:
           parameters:
             labelPrefix: "" # No prefix for this image
             architecture: ${{ parameters.architecture }}
-            downloadGoTools: true
             label: "azurelinux-direct-streaming-testimage-${{ parameters.architecture }}"
             makeTarget: "artifacts/azurelinux-direct-streaming-testimage-${{ parameters.architecture }}.cosi"
             ${{ if eq(parameters.architecture, 'arm64') }}:
@@ -73,7 +71,6 @@ stages:
           parameters:
             labelPrefix: "" # No prefix for this image
             architecture: ${{ parameters.architecture }}
-            downloadGoTools: true
             micBuildType: dev
             label: "ubuntu-direct-streaming-testimage-${{ parameters.architecture }}"
             makeTarget: "artifacts/ubuntu-direct-streaming-testimage-${{ parameters.architecture }}.cosi"

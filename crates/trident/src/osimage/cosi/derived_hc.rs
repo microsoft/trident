@@ -52,7 +52,7 @@ impl Cosi {
 
             partitions.push(Partition {
                 id: partition_id.clone(),
-                size: partition.partition_size.into(),
+                size: partition.partition_size.next_multiple_of(4096).into(),
                 uuid: Some(partition.partition_uuid),
                 label: Some(partition.partition_label),
                 partition_type: partition.partition_type.into(),

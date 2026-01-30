@@ -43,12 +43,16 @@ DEFINED_IMAGES: List[ImageConfig] = [
         output_format=OutputFormat.QCOW2,
         requires_trident=False,
     ),
-    ImageConfig("trident-rawcosi-testimage"),
+    ImageConfig(
+        "trident-rawcosi-testimage",
+        output_format=OutputFormat.VHDX,
+    ),
     ImageConfig(
         "trident-rawcosi-testimage-arm64",
         config="trident-rawcosi-testimage",
         base_image=BaseImage.CORE_ARM64,
         architecture=SystemArchitecture.ARM64,
+        output_format=OutputFormat.VHDX,
     ),
     ImageConfig(
         "azl-installer",

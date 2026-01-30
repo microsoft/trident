@@ -50,11 +50,6 @@ parameters:
       - amd64
     default: "amd64"
 
-  - name: downloadGoTools
-    displayName: "Download Go Building Tools"
-    type: boolean
-    default: false
-
 jobs:
   - job: PrepareImage_${{ replace(parameters.label, '-', '_') }}
     displayName: Prepare Image ${{ parameters.label }}
@@ -78,23 +73,6 @@ jobs:
 
     steps:
       - template: ../common_tasks/avoid-pypi-usage.yml
-
-      - ${{ if eq(parameters.downloadGoTools, true) }}:
-        - task: DownloadPipelineArtifact@2
-          inputs:
-            buildType: current
-            artifactName: $(goToolsArtifactName)
-            targetPath: "$(Build.SourcesDirectory)/bin"
-        - bash: |
-            set -eux
-            ls -l $(Build.SourcesDirectory)/bin/
-            chmod +x $(Build.SourcesDirectory)/bin/net*
-            chmod +x $(Build.SourcesDirectory)/bin/mkcosi
-            chmod +x $(Build.SourcesDirectory)/bin/storm-trident
-            chmod +x $(Build.SourcesDirectory)/bin/virtdeploy
-            ls -l $(Build.SourcesDirectory)/bin/
-          displayName: Make Go Tools Executable
-
 
       - task: DownloadPipelineArtifact@2
         inputs:

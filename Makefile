@@ -929,7 +929,7 @@ all-iso: $(ISO_TARGETS)
 # prerequisites so that we can use find to get all the files in the directory.
 # https://www.gnu.org/software/make/manual/make.html#Secondary-Expansion
 .SECONDEXPANSION:
-artifacts/%.cosi artifacts/%.iso: $$(shell ./tests/images/testimages.py dependencies $$*)
+artifacts/%.cosi artifacts/%.iso artifacts/%.vhdx: $$(shell ./tests/images/testimages.py dependencies $$*)
 	@echo "Building '$*' [$@] from $<"
 	@echo "Prerequisites:"
 	@echo "$^" | tr ' ' '\n' | sed 's/^/    /'
@@ -1155,36 +1155,47 @@ artifacts/trident-vm-grub-verity-azure-testimage.vhd: \
 			--output-image-format vhd-fixed \
 			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-grub-verity-azure.yaml
 
-DIRECT_STREAMING_HOST_CONFIGURATION ?= tests/images/trident-rawcosi-testimage/trident-config.yaml
 artifacts/azurelinux-direct-streaming-testimage-arm64.cosi: \
-	bin/mkcosi \
-	artifacts/trident-rawcosi-testimage-arm64.cosi
-	$(eval TMP_HC := $(shell mktemp tmp-hc.XXX.yaml --tmpdir))
-	$(eval TMP_NO_HC_VHD_COSI := $(shell mktemp tmp.XXX.cosi --tmpdir))
-	sed 's|pci-0000:00:1f.2-ata-2|virtio-pci-0000:08:00.0|' $(DIRECT_STREAMING_HOST_CONFIGURATION) | \
-	   sed 's|pci-0000:00:1f.2-ata-3|virtio-pci-0000:09:00.0|' > $(TMP_HC)
-	bin/mkcosi add-vpc \
-		artifacts/trident-rawcosi-testimage-arm64.cosi \
-		$(TMP_NO_HC_VHD_COSI)
-	bin/mkcosi insert-template \
-		$(TMP_NO_HC_VHD_COSI) \
-		artifacts/azurelinux-direct-streaming-testimage-arm64.cosi \
-		$(TMP_HC)
-	rm -rf $(TMP_NO_HC_VHD_COSI)
-	rm -rf $(TMP_HC)
+	artifacts/trident-rawcosi-testimage-arm64.vhdx
+	$(eval TMP_IC_CONFIG := $(shell mktemp tmp.XXX.config))
+	echo "output:" > $(TMP_IC_CONFIG)
+	echo "  image:" >> $(TMP_IC_CONFIG)
+	echo "    path: artifacts/azurelinux-direct-streaming-testimage-arm64.cosi" >> $(TMP_IC_CONFIG)
+	echo "    format: baremetal-image" >> $(TMP_IC_CONFIG)
+	docker run \
+		--rm \
+		--privileged \
+		-v ".:/repo:z" \
+		-v "/dev:/dev" \
+		${MIC_CONTAINER_IMAGE} \
+			--log-level=debug \
+			--build-dir ./build \
+			--image-file /repo/artifacts/trident-rawcosi-testimage.vhdx \
+			--output-image-file /repo/artifacts/azurelinux-direct-streaming-testimage-arm64.cosi \
+			--output-image-format baremetal-image \
+			--config-file /repo/$(TMP_IC_CONFIG)
+	rm -rf $(TMP_IC_CONFIG)
 
 artifacts/azurelinux-direct-streaming-testimage-amd64.cosi: \
-	bin/mkcosi \
-	artifacts/trident-rawcosi-testimage.cosi
-	$(eval TMP_NO_HC_VHD_COSI := $(shell mktemp tmp.XXX.cosi --tmpdir))
-	bin/mkcosi add-vpc \
-		artifacts/trident-rawcosi-testimage.cosi \
-		$(TMP_NO_HC_VHD_COSI)
-	bin/mkcosi insert-template \
-		$(TMP_NO_HC_VHD_COSI) \
-		artifacts/azurelinux-direct-streaming-testimage-amd64.cosi \
-		$(DIRECT_STREAMING_HOST_CONFIGURATION)
-	rm -rf $(TMP_NO_HC_VHD_COSI)
+	artifacts/trident-rawcosi-testimage.vhdx
+	$(eval TMP_IC_CONFIG := $(shell mktemp tmp.XXX.config))
+	echo "output:" > $(TMP_IC_CONFIG)
+	echo "  image:" >> $(TMP_IC_CONFIG)
+	echo "    path: artifacts/azurelinux-direct-streaming-testimage-amd64.cosi" >> $(TMP_IC_CONFIG)
+	echo "    format: baremetal-image" >> $(TMP_IC_CONFIG)
+	docker run \
+		--rm \
+		--privileged \
+		-v ".:/repo:z" \
+		-v "/dev:/dev" \
+		${MIC_CONTAINER_IMAGE} \
+			--log-level=debug \
+			--build-dir ./build \
+			--image-file /repo/artifacts/trident-rawcosi-testimage.vhdx \
+			--output-image-file /repo/artifacts/azurelinux-direct-streaming-testimage-amd64.cosi \
+			--output-image-format baremetal-image \
+			--config-file /repo/$(TMP_IC_CONFIG)
+	rm -rf $(TMP_IC_CONFIG)
 
 .PHONY: imagecustomizer-dev
 imagecustomizer-dev:
@@ -1202,7 +1213,6 @@ artifacts/ubuntu_arm64.vhdx:
 	rm -rf ubuntu-22.04-server-cloudimg-arm64.img
 
 artifacts/ubuntu-direct-streaming-testimage-arm64.cosi: \
-	bin/mkcosi \
 	artifacts/ubuntu_arm64.vhdx \
 	artifacts/ubuntu-22.04-arm64-config.yaml
 	$(eval TMP_IC_CONFIG := $(shell mktemp tmp.XXX.config))
@@ -1227,7 +1237,6 @@ artifacts/ubuntu-direct-streaming-testimage-arm64.cosi: \
 	rm -rf $(TMP_IC_CONFIG)
 
 artifacts/ubuntu-direct-streaming-testimage-amd64.cosi: \
-	bin/mkcosi \
 	artifacts/ubuntu.vhdx \
 	artifacts/ubuntu-22.04-amd64-config.yaml
 	$(eval TMP_IC_CONFIG := $(shell mktemp tmp.XXX.config))
