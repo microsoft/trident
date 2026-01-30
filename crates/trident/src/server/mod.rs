@@ -37,7 +37,7 @@ use tridentserver::{ServicingManager, TridentHarpoonServer};
 /// Default path for the Trident Unix domain socket. This is used when Trident
 /// itself creates the socket when invoked directly, and not as part of a
 /// systemd socket invocation.
-pub const DEFAULT_TRIDENT_SOCKET_PATH: &str = "/var/run/trident.sock";
+pub const DEFAULT_TRIDENT_SOCKET_PATH: &str = "/run/trident/trident.sock";
 
 /// Default inactivity timeout in seconds for the ActivityTracker. When fully
 /// inactive, meaning there are no ongoing requests or active connections, for
