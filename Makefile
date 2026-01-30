@@ -1203,7 +1203,7 @@ imagecustomizer-dev-amd64:
 	../azure-linux-image-tools/toolkit/tools/imagecustomizer/container/build-container.sh -t imagecustomizer:dev -a amd64
 
 .PHONY: imagecustomizer-dev-arm64
-imagecustomizer-dev-amd64:
+imagecustomizer-dev-arm64:
 	make -C ../azure-linux-image-tools/toolkit go-imagecustomizer
 	../azure-linux-image-tools/toolkit/tools/imagecustomizer/container/build-container.sh -t imagecustomizer:dev -a arm64
 
