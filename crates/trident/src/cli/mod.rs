@@ -1,6 +1,7 @@
 use std::{
     fmt::{Display, Formatter, Result as FmtResult},
     path::PathBuf,
+    time::Duration,
 };
 
 use clap::{Parser, Subcommand};
@@ -8,8 +9,14 @@ use log::LevelFilter;
 
 use trident_api::config::{Operation, Operations};
 
+use crate::TRIDENT_VERSION;
+
+mod client;
+
+pub use client::ClientCommands;
+
 #[derive(Parser, Debug)]
-#[clap(version = env!("CARGO_PKG_VERSION"))]
+#[clap(version = TRIDENT_VERSION)]
 pub struct Cli {
     /// Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
     #[arg(global = true, short, long, default_value_t = LevelFilter::Debug)]
@@ -26,7 +33,6 @@ pub enum AllowedOperation {
     Finalize,
 }
 
-#[allow(unused)]
 pub fn to_operations(allowed_operations: &[AllowedOperation]) -> Operations {
     let mut ops = Operations::empty();
     for op in allowed_operations {
@@ -40,6 +46,16 @@ pub fn to_operations(allowed_operations: &[AllowedOperation]) -> Operations {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
+    /// Run the gRPC client
+    Client {
+        /// The server address to connect to
+        #[clap(short, long, default_value = "unix:///run/trident/trident.sock")]
+        server: String,
+
+        #[clap(subcommand)]
+        command: ClientCommands,
+    },
+
     /// Initiate an install of Azure Linux
     Install {
         /// The new configuration to apply
@@ -93,17 +109,6 @@ pub enum Commands {
         error: Option<PathBuf>,
     },
 
-    #[clap(hide(true))]
-    Listen {
-        /// Path to save the resulting Host Status
-        #[clap(short, long)]
-        status: Option<PathBuf>,
-
-        /// Path to save an eventual fatal error
-        #[clap(short, long)]
-        error: Option<PathBuf>,
-    },
-
     /// Rebuild software RAID arrays managed by Trident
     #[clap(name = "rebuild-raid")]
     RebuildRaid {
@@ -111,7 +116,7 @@ pub enum Commands {
         #[clap(short, long)]
         config: Option<PathBuf>,
 
-        /// Path to save the resulting Host Status
+        /// Path to save the resulting HostStatus
         #[clap(short, long)]
         status: Option<PathBuf>,
 
@@ -175,8 +180,7 @@ pub enum Commands {
         history_path: Option<PathBuf>,
     },
 
-    /// Trigger manual rollback to previous state
-    #[clap(name = "rollback")]
+    /// Trigger a manual rollback to previous state
     Rollback {
         /// Check operation that would be performed
         #[arg(long)]
@@ -188,7 +192,7 @@ pub enum Commands {
         #[arg(long, conflicts_with = "ab")]
         runtime: bool,
 
-        /// Invoke available A/B rollback
+        /// Invoke next available A/B rollback.
         /// If allowed-operations is specified, this argument is only applicable for
         /// stage operation and will be ignored for finalize.
         #[arg(long, conflicts_with = "runtime")]
@@ -217,7 +221,7 @@ pub enum Commands {
         #[clap(long)]
         hash: String,
 
-        /// Path to save the resulting Host Status
+        /// Path to save the resulting HostStatus
         #[clap(short, long)]
         status: Option<PathBuf>,
 
@@ -225,17 +229,30 @@ pub enum Commands {
         #[clap(short, long)]
         error: Option<PathBuf>,
     },
+
+    #[clap(hide(true))]
+    Daemon {
+        /// Inactivity timeout. The server will shut down automatically after
+        /// being inactive for this duration. Supports human-readable durations,
+        /// e.g., "5m", "1h30m", "300s".
+        #[clap(long, value_parser = humantime::parse_duration, default_value = crate::server::DEFAULT_INACTIVITY_TIMEOUT)]
+        inactivity_timeout: Duration,
+
+        /// Path to the UNIX socket to listen on when not running in systemd
+        /// socket-activated mode.
+        #[clap(long, default_value = crate::server::DEFAULT_TRIDENT_SOCKET_PATH)]
+        socket_path: PathBuf,
+    },
 }
 
 impl Commands {
     pub fn name(&self) -> &'static str {
         match self {
+            Commands::Client { command, .. } => command.name(),
             Commands::Install { .. } => "install",
             Commands::Update { .. } => "update",
             Commands::Commit { .. } => "commit",
-            Commands::Listen { .. } => "listen",
             Commands::RebuildRaid { .. } => "rebuild-raid",
-            Commands::Rollback { .. } => "rollback",
             Commands::StartNetwork { .. } => "start-network",
             Commands::Get { .. } => "get",
             Commands::Validate { .. } => "validate",
@@ -244,6 +261,8 @@ impl Commands {
             Commands::OfflineInitialize { .. } => "offline-initialize",
             #[cfg(feature = "dangerous-options")]
             Commands::StreamImage { .. } => "stream-image",
+            Commands::Daemon { .. } => "daemon",
+            Commands::Rollback { .. } => "rollback",
         }
     }
 }
@@ -259,4 +278,6 @@ pub enum GetKind {
     Configuration,
     Status,
     LastError,
+    RollbackChain,
+    RollbackTarget,
 }
