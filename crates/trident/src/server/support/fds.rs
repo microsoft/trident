@@ -233,11 +233,26 @@ pub(crate) fn create_unix_socket(
         )
     })?;
 
+    let parent_dir = abs_path.parent().with_context(|| {
+        format!(
+            "Failed to get parent directory of socket path {}",
+            abs_path.display()
+        )
+    })?;
+
     let perm_bits = Mode::from_bits_truncate(0o777);
     let mask = (!mode) & perm_bits;
     let old = stat::umask(mask);
     let listener = {
         let _guard = UmaskGuard(old);
+        fs::create_dir_all(parent_dir).with_context(|| {
+            format!(
+                "Failed to create parent directory '{}' for socket '{}'",
+                parent_dir.display(),
+                abs_path.display()
+            )
+        })?;
+
         StdUnixListener::bind(&abs_path)
             .with_context(|| format!("Failed to bind UnixListener to {}", abs_path.display()))?
     };
