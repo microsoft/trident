@@ -368,6 +368,15 @@ fn main() -> ExitCode {
             logstream.unwrap(),
             tracestream.unwrap(),
         )
+    } else if let Commands::Client(client_args) = &args.command {
+        let logstream = setup_logging(&args, iter::empty());
+        if let Err(e) = logstream {
+            error!("Failed to initialize logging: {e:?}");
+            return ExitCode::from(1);
+        }
+
+        // Run the client command
+        trident::client_main(client_args)
     } else {
         // Initialize the loggers
         let logstream = setup_logging(&args, iter::empty());

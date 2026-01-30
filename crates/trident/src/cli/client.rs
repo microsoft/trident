@@ -3,9 +3,19 @@ use std::{
     path::PathBuf,
 };
 
-use clap::Subcommand;
+use clap::{Args, Subcommand};
 
 use super::{AllowedOperation, GetKind};
+
+#[derive(Args, Debug)]
+pub struct ClientArgs {
+    /// The server address to connect to
+    #[clap(short, long, default_value = "unix:///run/trident/trident.sock")]
+    pub server: String,
+
+    #[clap(subcommand)]
+    pub command: ClientCommands,
+}
 
 #[derive(Subcommand, Debug)]
 pub enum ClientCommands {
@@ -151,7 +161,6 @@ pub enum ClientCommands {
         error: Option<PathBuf>,
     },
 
-    #[cfg(feature = "dangerous-options")]
     StreamImage {
         /// URL of the image to stream
         #[clap(index = 1)]
@@ -169,6 +178,8 @@ pub enum ClientCommands {
         #[clap(short, long)]
         error: Option<PathBuf>,
     },
+
+    Version,
 }
 
 impl ClientCommands {
@@ -185,6 +196,7 @@ impl ClientCommands {
             Self::Get { .. } => "client-get",
             Self::Validate { .. } => "client-validate",
             Self::StreamImage { .. } => "client-stream-image",
+            Self::Version => "client-version",
         }
     }
 }

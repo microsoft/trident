@@ -13,7 +13,7 @@ use crate::TRIDENT_VERSION;
 
 mod client;
 
-pub use client::ClientCommands;
+pub use client::{ClientArgs, ClientCommands};
 
 #[derive(Parser, Debug)]
 #[clap(version = TRIDENT_VERSION)]
@@ -47,14 +47,7 @@ pub fn to_operations(allowed_operations: &[AllowedOperation]) -> Operations {
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     /// Run the gRPC client
-    Client {
-        /// The server address to connect to
-        #[clap(short, long, default_value = "unix:///run/trident/trident.sock")]
-        server: String,
-
-        #[clap(subcommand)]
-        command: ClientCommands,
-    },
+    Client(ClientArgs),
 
     /// Initiate an install of Azure Linux
     Install {
@@ -248,7 +241,7 @@ pub enum Commands {
 impl Commands {
     pub fn name(&self) -> &'static str {
         match self {
-            Commands::Client { command, .. } => command.name(),
+            Commands::Client(args) => args.command.name(),
             Commands::Install { .. } => "install",
             Commands::Update { .. } => "update",
             Commands::Commit { .. } => "commit",
