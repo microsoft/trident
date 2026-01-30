@@ -1214,7 +1214,6 @@ artifacts/ubuntu_arm64.vhdx:
 
 artifacts/ubuntu-direct-streaming-testimage-arm64.cosi: \
 	artifacts/ubuntu_arm64.vhdx \
-	artifacts/ubuntu-22.04-arm64-config.yaml
 	$(eval TMP_IC_CONFIG := $(shell mktemp tmp.XXX.config))
 	echo "output:" > $(TMP_IC_CONFIG)
 	echo "  image:" >> $(TMP_IC_CONFIG)
@@ -1238,7 +1237,6 @@ artifacts/ubuntu-direct-streaming-testimage-arm64.cosi: \
 
 artifacts/ubuntu-direct-streaming-testimage-amd64.cosi: \
 	artifacts/ubuntu.vhdx \
-	artifacts/ubuntu-22.04-amd64-config.yaml
 	$(eval TMP_IC_CONFIG := $(shell mktemp tmp.XXX.config))
 	echo "output:" > $(TMP_IC_CONFIG)
 	echo "  image:" >> $(TMP_IC_CONFIG)
