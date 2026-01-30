@@ -53,6 +53,8 @@ end-of-archive marker.
 The tarball MUST contain the following files:
 
 - `metadata.json`: A JSON file that contains the metadata of the COSI file.
+- `gpt/header.bin`: The original GPT header binary file, if the disk uses GPT
+  partitioning (added in revision 1.2).
 - Filesystem image files in the folder `images/`: The actual filesystem images
   that Trident will use to install the OS.
 
@@ -66,8 +68,14 @@ The tarball MUST NOT have a common root directory. The metadata file MUST be at
 the root of the tarball. If it were extracted with a standard `tar` invocation,
 the metadata file would be placed in the current directory.
 
-The metadata file SHOULD, be placed at the beginning of the tarball to allow for
+The metadata file MUST, be placed at the beginning of the tarball to allow for
 quick access to the metadata without having to traverse the entire tarball.
+
+Starting in revision 1.2, a copy of the original image's GPT header MUST be
+placed at `gpt/header.bin` if the disk uses GPT partitioning. This file MUST
+contain the exact bytes of the original GPT header as read from the disk. This
+file, when present, must be placed immediately after the `metadata.json` file in
+the tarball.
 
 ### Partition Image Files
 
@@ -100,7 +108,7 @@ The metadata file MUST contain a JSON object with the following fields:
 | `osArch`     | [OsArchitecture](#osarchitecture-enum) | 1.0      | Yes (since 1.0) | The architecture of the OS.                      |
 | `osRelease`  | string                                 | 1.0      | Yes (since 1.0) | The contents of `/etc/os-release` verbatim.      |
 | `images`     | [Filesystem](#filesystem-object)[]     | 1.0      | Yes (since 1.0) | Filesystem metadata.                             |
-| `partitions` | [Partition](#partition-object)[]       | 1.2      | Yes (since 1.2) | Partition metadata.                              |
+| `disk`       | [Disk](#disk-object)                   | 1.2      | Yes (since 1.2) | Original disk metadata.                          |
 | `osPackages` | [OsPackage](#ospackage-object)[]       | 1.0      | Yes (since 1.1) | The list of packages installed in the OS.        |
 | `bootloader` | [Bootloader](#bootloader-object)       | 1.1      | Yes (since 1.1) | Information about the bootloader used by the OS. |
 | `id`         | UUID (string, case insensitive)        | 1.0      | No              | A unique identifier for the COSI file.           |
@@ -158,6 +166,36 @@ device on top of a data device.
 | `uncompressedSize` | number | 1.0      | Yes (since 1.0) | Size of the raw uncompressed image in bytes.                                              |
 | `sha384`           | string | 1.0      | Yes (since 1.1) | SHA-384 hash of the compressed hash image.                                                |
 
+##### `Disk` Object
+
+The `disk` field holds information about the original disk layout layout of the
+image this COSI file was sourced from.
+
+| Field  | Type                       | Added in | Required             | Description                                              |
+| ------ | -------------------------- | -------- | -------------------- | -------------------------------------------------------- |
+| `size` | number                     | 1.2      | Yes (since 1.2)      | Size of the original disk in bytes.                      |
+| `type` | [DiskType](#disktype-enum) | 1.2      | Yes (since 1.2)      | Partitioning type of the original disk.                  |
+| `gpt`  | [GptData](#gptdata-object) | 1.2      | When `type` == `gpt` | Data about the GUID Partition Table of the source image. |
+
+##### `GptData` Object
+
+This object holds information about the original GPT header of the disk this
+COSI file was sourced from.
+
+| Field        | Type                             | Added in | Required        | Description                                                                   |
+| ------------ | -------------------------------- | -------- | --------------- | ----------------------------------------------------------------------------- |
+| `path`       | string                           | 1.2      | Yes (since 1.2) | Absolute path of the GPT binary file in the tarball. MUST be `gpt/table.bin`. |
+| `sha384`     | string                           | 1.2      | Yes (since 1.2) | SHA-384 hash of the GPT binary file.                                          |
+| `partitions` | [Partition](#partition-object)[] | 1.2      | Yes (since 1.2) | Partition metadata.                                                           |
+
+##### `DiskType` Enum
+
+The partitioning table type. Currently, only `gpt` is supported.
+
+| Value | Description                                          |
+| ----- | ---------------------------------------------------- |
+| `gpt` | The disk uses the GUID Partition Table (GPT) scheme. |
+
 ##### `Partition` Object
 
 `Partition` objects hold the data necessary to recreate partition tables. They
@@ -171,14 +209,17 @@ identical.
 The order of `Partition` objects in the `partitions` array is unspecified since
 the `number` field indicates the original ordering.
 
-| Field          | Type                            | Added in | Required        | Description                                                                                                                                                                     |
-| -------------- | ------------------------------- | -------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`         | string                          | 1.2      | No              | Absolute path of the compressed image file inside the tarball. MUST start with `images/`.                                                                                       |
-| `originalSize` | number                          | 1.2      | Yes (since 1.2) | Size of the partition before any filesystem shrinking. SHOULD be at least as large as the `uncompressedSize` field of the corresponding `ImageFile` object (matched by `path`). |
-| `partType`     | UUID (string, case insensitive) | 1.2      | Yes (since 1.2) | The partition type UUID.                                                                                                                                                        |
-| `partUuid`     | UUID (string, case insensitive) | 1.2      | Yes (since 1.2) | The partition UUID.                                                                                                                                                             |
-| `label`        | string                          | 1.2      | Yes (since 1.2) | Partition label (GPT partition name, may be an empty string).                                                                                                                   |
-| `number`       | number                          | 1.2      | Yes (since 1.2) | The index where the partition originally appeared in the partition table (1-indexed).                                                                                           |
+| Field    | Type                           | Added in | Required         | Description                                                                           |
+| -------- | ------------------------------ | -------- | ---------------- | ------------------------------------------------------------------------------------- |
+| `image`  | [ImageFile](#imagefile-object) | 1.2      | Conditionally[7] | Details of the image file in the tarball.                                             |
+| `number` | number                         | 1.2      | Yes (since 1.2)  | The index where the partition originally appeared in the partition table (1-indexed). |
+
+_Notes:_
+
+- **[7]** The `image` field MUST be specified for every partition that has a corresponding
+    `ImageFile` in the COSI tarball. For partitions that do not have a corresponding
+    `ImageFile` (e.g., unallocated partitions), the `image` field MUST be omitted
+    OR set to `null`.
 
 ##### `OsArchitecture` Enum
 
@@ -217,11 +258,11 @@ rpm -qa --queryformat "%{NAME} %{VERSION} %{RELEASE} %{ARCH}\n"
 | Field         | Type                                     | Added in | Required                         | Description                 |
 | ------------- | ---------------------------------------- | -------- | -------------------------------- | --------------------------- |
 | `type`        | [`BootloaderType`](#bootloadertype-enum) | 1.1      | Yes (since 1.1)                  | The type of the bootloader. |
-| `systemdBoot` | [`SystemDBoot`](#systemdboot-object)     | 1.1      | When `type` == `systemd-boot`[7] | systemd-boot configuration. |
+| `systemdBoot` | [`SystemDBoot`](#systemdboot-object)     | 1.1      | When `type` == `systemd-boot`[8] | systemd-boot configuration. |
 
 _Notes:_
 
-- **[7]** The `systemd-boot` field is required if the `type` field is set to
+- **[8]** The `systemd-boot` field is required if the `type` field is set to
     `systemd-boot`. It MUST be omitted OR set to `null` if the `type`
     field is set to any other value.
 
