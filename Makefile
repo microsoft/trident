@@ -1195,7 +1195,7 @@ artifacts/ubuntu-22.04-amd64-config.yaml:
 	echo "output:" > artifacts/ubuntu-22.04-amd64-config.yaml
 	echo "  image:" >> artifacts/ubuntu-22.04-amd64-config.yaml
 	echo "    path: artifacts/ubuntu-direct-streaming-testimage-amd64.cosi" >> artifacts/ubuntu-22.04-amd64-config.yaml
-	echo "    format: cosi" >> artifacts/ubuntu-22.04-amd64-config.yaml
+	echo "    format: baremetal-image" >> artifacts/ubuntu-22.04-amd64-config.yaml
 	echo "previewFeatures:" >> artifacts/ubuntu-22.04-amd64-config.yaml
 	echo "  - ubuntu-22.04" >> artifacts/ubuntu-22.04-amd64-config.yaml
 
@@ -1203,7 +1203,7 @@ artifacts/ubuntu-22.04-arm64-config.yaml:
 	echo "output:" > artifacts/ubuntu-22.04-arm64-config.yaml
 	echo "  image:" >> artifacts/ubuntu-22.04-arm64-config.yaml
 	echo "    path: artifacts/ubuntu-direct-streaming-testimage-arm64.cosi" >> artifacts/ubuntu-22.04-arm64-config.yaml
-	echo "    format: cosi" >> artifacts/ubuntu-22.04-arm64-config.yaml
+	echo "    format: baremetal-image" >> artifacts/ubuntu-22.04-arm64-config.yaml
 	echo "previewFeatures:" >> artifacts/ubuntu-22.04-arm64-config.yaml
 	echo "  - ubuntu-22.04" >> artifacts/ubuntu-22.04-arm64-config.yaml
 
@@ -1232,7 +1232,7 @@ artifacts/ubuntu-direct-streaming-testimage-arm64.cosi: \
 			--build-dir ./build \
 			--image-file /repo/artifacts/ubuntu_arm64.vhdx \
 			--output-image-file /repo/$(TMP_NO_HC_VHD_COSI) \
-			--output-image-format cosi \
+			--output-image-format baremetal-image \
 			--config-file /repo/artifacts/ubuntu-22.04-arm64-config.yaml
 	$(eval TMP_HC := $(shell mktemp tmp-hc.XXX.yaml --tmpdir))
 	sed 's|pci-0000:00:1f.2-ata-2|virtio-pci-0000:08:00.0|' $(DIRECT_STREAMING_HOST_CONFIGURATION) | \
@@ -1259,7 +1259,7 @@ artifacts/ubuntu-direct-streaming-testimage-amd64.cosi: \
 			--build-dir ./build \
 			--image-file /repo/artifacts/ubuntu.vhdx \
 			--output-image-file /repo/$(TMP_NO_HC_VHD_COSI) \
-			--output-image-format cosi \
+			--output-image-format baremetal-image \
 			--config-file /repo/artifacts/ubuntu-22.04-amd64-config.yaml
 	bin/mkcosi insert-template \
 		$(TMP_NO_HC_VHD_COSI) \
