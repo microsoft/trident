@@ -49,6 +49,7 @@ impl<'de> Deserialize<'de> for SystemArchitecture {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub enum PackageArchitecture {
     /// NoArch
+    #[serde(alias = "all")]
     #[serde(alias = "noarch")]
     #[serde(alias = "(none)")]
     NoArch,

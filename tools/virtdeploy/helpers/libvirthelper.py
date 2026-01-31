@@ -3,6 +3,7 @@ import tempfile
 import jinja2
 import libvirt
 import logging
+import platform
 import random
 import xml.etree.ElementTree as ET
 
@@ -337,6 +338,10 @@ class LibvirtHelper:
         return volume
 
     def _setup_vms(self, pool: libvirt.virStoragePool) -> List[VirtualMachine]:
+        arm = platform.machine().lower() in ("arm64", "aarch64")
+        disk_dev_prefix = "vd" if arm else "sd"
+        vm_template = "vm_arm64.xml" if arm else "vm.xml"
+
         for vm in self.vms:
             # Locate and destroy any old VMs
             self._delete_domain_by_name(vm.name)
@@ -352,7 +357,7 @@ class LibvirtHelper:
                 source = self._setup_volume(
                     volname, pool, disk, vm.os_disk if index == 0 else None
                 ).path()
-                dev = f"sd{chr(ord('a') + index)}"
+                dev = f"{disk_dev_prefix}{chr(ord('a') + index)}"
                 volume = VolumeParameters(source, dev)
                 volumes.append(volume)
 
@@ -380,8 +385,8 @@ class LibvirtHelper:
                 for index, cdrom in enumerate(cdrom_paths)
             ]
 
-            # Set up VM itself
-            template = self.env.get_template("vm.xml")
+            # Set up VM
+            template = self.env.get_template(vm_template)
             xml = template.render(
                 name=vm.name,
                 cpus=vm.cpus,

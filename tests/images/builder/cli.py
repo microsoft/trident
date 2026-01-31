@@ -69,6 +69,12 @@ def setup_parser_list(subparsers: argparse._SubParsersAction) -> None:
     parser_list = subparsers.add_parser(
         SubCommand.LIST.value, help="List all image definitions"
     )
+    parser_list.add_argument(
+        "--filter-type",
+        default=None,
+        type=str,
+        help="Filter images by type",
+    )
 
 
 def setup_parser_show(
@@ -114,7 +120,7 @@ def setup_parser_build(
     parser_build.add_argument(
         "--output-dir",
         help="Where to write the output image.",
-        default=Path.cwd() / "build",
+        default=Path.cwd() / "artifacts",
         type=Path,
     )
     parser_build.add_argument(
@@ -239,6 +245,7 @@ def run_cmd(
     if subcommand == SubCommand.LIST:
         run.list_configs(
             configs=configs,
+            filter_type=args.filter_type,
         )
     elif subcommand == SubCommand.DEPENDENCIES:
         run.list_dependencies(

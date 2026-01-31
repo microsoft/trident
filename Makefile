@@ -745,10 +745,6 @@ download-trident-container-installer-iso:
 		--path artifacts/ \
 		--artifact-name 'trident-container-installer'
 
-artifacts/trident-container-installer.iso:
-	$(MAKE) download-trident-container-installer-iso; \
-	ls -l artifacts/trident-container-installer.iso
-
 # Copies locally built runtime images from ../test-images/build to ./artifacts/test-image.
 # Expects that both the regular and verity Trident test images have been built.
 .PHONY: copy-runtime-images
@@ -886,9 +882,10 @@ validate-pipeline-website-artifact:
 		npm install && \
 			npm run serve -- --port $(SERVER_PORT)
 
-# Test images
-
-COSI_TARGETS = $(shell ./tests/images/testimages.py list)
+#
+# Generic COSI image build target pattern
+#
+COSI_TARGETS = $(shell ./tests/images/testimages.py list --filter-type cosi)
 
 .PHONY: $(COSI_TARGETS)
 $(COSI_TARGETS): %: artifacts/%.cosi
@@ -897,15 +894,21 @@ $(COSI_TARGETS): %: artifacts/%.cosi
 all-cosi: $(COSI_TARGETS)
 
 #
-# Generic COSI image build target pattern
+# Generic ISO image build target pattern
 #
+ISO_TARGETS = $(shell ./tests/images/testimages.py list --filter-type iso)
+
+.PHONY: $(ISO_TARGETS)
+$(ISO_TARGETS): %: artifacts/%.iso
+
+.PHONY: all-iso
+all-iso: $(ISO_TARGETS)
 
 # Fun trick to use the stem of the target (%) as a variable ($*) in the
 # prerequisites so that we can use find to get all the files in the directory.
 # https://www.gnu.org/software/make/manual/make.html#Secondary-Expansion
 .SECONDEXPANSION:
-
-artifacts/%.cosi: $$(shell ./tests/images/testimages.py dependencies $$*)
+artifacts/%.cosi artifacts/%.iso artifacts/%.vhdx: $$(shell ./tests/images/testimages.py dependencies $$*)
 	@echo "Building '$*' [$@] from $<"
 	@echo "Prerequisites:"
 	@echo "$^" | tr ' ' '\n' | sed 's/^/    /'
@@ -914,6 +917,7 @@ artifacts/%.cosi: $$(shell ./tests/images/testimages.py dependencies $$*)
 		$* \
 		--output-dir ./artifacts \
 		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE))
+
 
 MIC_CONTAINER_IMAGE ?= $(shell ./tests/images/testimages.py show-artifact customizer-container-full)
 artifacts/trident-functest.qcow2: $$(shell ./tests/images/testimages.py dependencies $$(basename $$(notdir $$@)))
@@ -1130,3 +1134,110 @@ artifacts/trident-vm-grub-verity-azure-testimage.vhd: \
 			--output-image-format vhd-fixed \
 			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-grub-verity-azure.yaml
 
+artifacts/azurelinux-direct-streaming-testimage-arm64.cosi: \
+	artifacts/trident-rawcosi-testimage-arm64.vhdx
+	$(eval TMP_IC_CONFIG := $(shell mktemp tmp.XXX.config))
+	echo "output:" > $(TMP_IC_CONFIG)
+	echo "  image:" >> $(TMP_IC_CONFIG)
+	echo "    path: artifacts/azurelinux-direct-streaming-testimage-arm64.cosi" >> $(TMP_IC_CONFIG)
+	echo "    format: baremetal-image" >> $(TMP_IC_CONFIG)
+	docker run \
+		--rm \
+		--privileged \
+		-v ".:/repo:z" \
+		-v "/dev:/dev" \
+		${MIC_CONTAINER_IMAGE} \
+			--log-level=debug \
+			--build-dir ./build \
+			--image-file /repo/artifacts/trident-rawcosi-testimage-arm64.vhdx \
+			--output-image-file /repo/artifacts/azurelinux-direct-streaming-testimage-arm64.cosi \
+			--output-image-format baremetal-image \
+			--config-file /repo/$(TMP_IC_CONFIG)
+	rm -rf $(TMP_IC_CONFIG)
+
+artifacts/azurelinux-direct-streaming-testimage-amd64.cosi: \
+	artifacts/trident-rawcosi-testimage.vhdx
+	$(eval TMP_IC_CONFIG := $(shell mktemp tmp.XXX.config))
+	echo "output:" > $(TMP_IC_CONFIG)
+	echo "  image:" >> $(TMP_IC_CONFIG)
+	echo "    path: artifacts/azurelinux-direct-streaming-testimage-amd64.cosi" >> $(TMP_IC_CONFIG)
+	echo "    format: baremetal-image" >> $(TMP_IC_CONFIG)
+	docker run \
+		--rm \
+		--privileged \
+		-v ".:/repo:z" \
+		-v "/dev:/dev" \
+		${MIC_CONTAINER_IMAGE} \
+			--log-level=debug \
+			--build-dir ./build \
+			--image-file /repo/artifacts/trident-rawcosi-testimage.vhdx \
+			--output-image-file /repo/artifacts/azurelinux-direct-streaming-testimage-amd64.cosi \
+			--output-image-format baremetal-image \
+			--config-file /repo/$(TMP_IC_CONFIG)
+	rm -rf $(TMP_IC_CONFIG)
+
+.PHONY: imagecustomizer-dev-amd64
+imagecustomizer-dev-amd64:
+	make -C ../azure-linux-image-tools/toolkit go-imagecustomizer
+	../azure-linux-image-tools/toolkit/tools/imagecustomizer/container/build-container.sh -t imagecustomizer:dev -a amd64
+
+.PHONY: imagecustomizer-dev-arm64
+imagecustomizer-dev-arm64:
+	make -C ../azure-linux-image-tools/toolkit go-imagecustomizer
+	../azure-linux-image-tools/toolkit/tools/imagecustomizer/container/build-container.sh -t imagecustomizer:dev -a arm64
+
+artifacts/ubuntu.vhdx:
+	curl -LO https://cloud-images.ubuntu.com/releases/server/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img
+	qemu-img convert -O vhdx ubuntu-22.04-server-cloudimg-amd64.img artifacts/ubuntu.vhdx
+	rm -rf ubuntu-22.04-server-cloudimg-amd64.img
+
+artifacts/ubuntu_arm64.vhdx:
+	curl -LO https://cloud-images.ubuntu.com/releases/server/22.04/release/ubuntu-22.04-server-cloudimg-arm64.img
+	qemu-img convert -O vhdx ubuntu-22.04-server-cloudimg-arm64.img artifacts/ubuntu_arm64.vhdx
+	rm -rf ubuntu-22.04-server-cloudimg-arm64.img
+
+artifacts/ubuntu-direct-streaming-testimage-arm64.cosi: \
+	artifacts/ubuntu_arm64.vhdx \
+	$(eval TMP_IC_CONFIG := $(shell mktemp tmp.XXX.config))
+	echo "output:" > $(TMP_IC_CONFIG)
+	echo "  image:" >> $(TMP_IC_CONFIG)
+	echo "    path: artifacts/ubuntu-direct-streaming-testimage-arm64.cosi" >> $(TMP_IC_CONFIG)
+	echo "    format: baremetal-image" >> $(TMP_IC_CONFIG)
+	echo "previewFeatures:" >> $(TMP_IC_CONFIG)
+	echo "  - ubuntu-22.04" >> $(TMP_IC_CONFIG)
+	docker run \
+		--rm \
+		--privileged \
+		-v ".:/repo:z" \
+		-v "/dev:/dev" \
+		${MIC_CONTAINER_IMAGE} \
+			--log-level=debug \
+			--build-dir ./build \
+			--image-file /repo/artifacts/ubuntu_arm64.vhdx \
+			--output-image-file /repo/artifacts/ubuntu-direct-streaming-testimage-arm64.cosi \
+			--output-image-format baremetal-image \
+			--config-file /repo/$(TMP_IC_CONFIG)
+	rm -rf $(TMP_IC_CONFIG)
+
+artifacts/ubuntu-direct-streaming-testimage-amd64.cosi: \
+	artifacts/ubuntu.vhdx \
+	$(eval TMP_IC_CONFIG := $(shell mktemp tmp.XXX.config))
+	echo "output:" > $(TMP_IC_CONFIG)
+	echo "  image:" >> $(TMP_IC_CONFIG)
+	echo "    path: artifacts/ubuntu-direct-streaming-testimage-amd64.cosi" >> $(TMP_IC_CONFIG)
+	echo "    format: baremetal-image" >> $(TMP_IC_CONFIG)
+	echo "previewFeatures:" >> $(TMP_IC_CONFIG)
+	echo "  - ubuntu-22.04" >> $(TMP_IC_CONFIG)
+	docker run \
+		--rm \
+		--privileged \
+		-v ".:/repo:z" \
+		-v "/dev:/dev" \
+		${MIC_CONTAINER_IMAGE} \
+			--log-level=debug \
+			--build-dir ./build \
+			--image-file /repo/artifacts/ubuntu.vhdx \
+			--output-image-file /repo/artifacts/ubuntu-direct-streaming-testimage-amd64.cosi \
+			--output-image-format baremetal-image \
+			--config-file /repo/$(TMP_IC_CONFIG)
+	rm -rf $(TMP_IC_CONFIG)

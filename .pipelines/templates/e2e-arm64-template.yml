@@ -38,6 +38,11 @@ parameters:
     default: ''
 
 stages:
+  # Build tools (Go stuff)
+  - template: stages/building_tools/building-tools.yml
+    parameters:
+      architecture: arm64
+
   # Trident Build/Download
   - template: stages/trident_rpms/trident-stage.yml
     parameters:
@@ -48,3 +53,8 @@ stages:
       osModifierBranch: ${{ parameters.osModifierBranch }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
       targetArchitecture: arm64
+
+  # Run direct streaming tests for amd64 with streaming images
+  - template: direct-streaming-test.yml
+    parameters:
+      architecture: arm64
