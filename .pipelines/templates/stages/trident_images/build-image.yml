@@ -89,6 +89,8 @@ jobs:
         displayName: Download SSH Keys
 
       - template: ../common_tasks/find-base-image-version.yml
+        parameters:
+          architecture: ${{ parameters.architecture }}
       - template: ./trident-testimg-template.yml
         parameters:
           target: ${{ parameters.makeTarget }}

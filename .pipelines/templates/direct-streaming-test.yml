@@ -46,6 +46,7 @@ stages:
             labelPrefix: "" # No prefix for this image
             architecture: ${{ parameters.architecture }}
             micBuildType: dev
+            # TODO: merge this branch or adjust trident code to handle what is in main.
             micVersion: "user/bfjelds/cosi1.2-adjustment"
             label: "azurelinux-direct-streaming-testimage-${{ parameters.architecture }}"
             makeTarget: "artifacts/azurelinux-direct-streaming-testimage-${{ parameters.architecture }}.cosi"
