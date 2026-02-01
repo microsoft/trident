@@ -52,6 +52,7 @@ impl CosiMetadata {
             partitions.push(Partition {
                 id: partition_id.clone(),
                 partition_type: DiscoverablePartitionType::from_uuid(&part.part_type).into(),
+                // Ensure size is aligned to 4096 bytes.
                 size: part.original_size.next_multiple_of(4096).into(),
                 uuid: Some(part.part_uuid),
                 label: Some(part.label),
