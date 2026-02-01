@@ -41,8 +41,6 @@ stages:
             hostArchitecture: amd64
           ${{ if eq(parameters.architecture, 'arm64') }}:
             type: linux
-            # name: azl3-hci-ARM64-1es-pool-westcentralus
-            # name: mariner-hci-ARM64-1es-pool-westcentralus
             name: trident-ubuntu-ARM64-1es-pool-westus2
             hostArchitecture: arm64
 
