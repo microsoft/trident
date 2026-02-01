@@ -115,7 +115,7 @@ stages:
                   --timeout-in-seconds 2400
 
             workingDirectory: $(tridentSourceDirectory)
-            displayName: "🚀 Run netlaunch for testing"
+            displayName: "🚀 Deploy direct streaming ISO and validate stream-image for ${{ parameters.streamingImageDistro }} ${{ parameters.architecture }}"
             timeoutInMinutes: 40
 
           - bash: |
