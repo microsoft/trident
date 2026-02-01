@@ -13,7 +13,7 @@ import (
 
 	"github.com/microsoft/storm"
 	"github.com/sirupsen/logrus"
-	"github.com/stretchr/testify/assert/yaml"
+	"gopkg.in/yaml.v3"
 	"libvirt.org/go/libvirtxml"
 )
 
@@ -71,7 +71,8 @@ func (h *DirectStreamingHelper) directStreaming(tc storm.TestCase) error {
 	// Start netlaunch in background because the VM will not connect back to
 	// netlaunch and we need the file server to continue running until the image
 	// has been pulled and deployed.
-	netlaunchContext := context.Background()
+	netlaunchContext, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	go func() {
 		logrus.Info("Starting netlaunch...")
 		netlaunchErr := netlaunch.RunNetlaunch(netlaunchContext, netlaunchConfig)
@@ -131,7 +132,7 @@ func (h *DirectStreamingHelper) createNetlaunchConfig() (*netlaunch.NetLaunchCon
 func (h *DirectStreamingHelper) findVmSerialLogFile() (string, error) {
 	dumpxmlOutput, dumpxmlErr := exec.Command("sudo", "virsh", "dumpxml", h.args.VmName).CombinedOutput()
 	if dumpxmlErr != nil {
-		return "", dumpxmlErr
+		return "", fmt.Errorf("failed to dump VM XML: %w", dumpxmlErr)
 	}
 	parsedDomainXml := &libvirtxml.Domain{}
 	if err := parsedDomainXml.Unmarshal(string(dumpxmlOutput)); err != nil {
