@@ -52,7 +52,7 @@
     condition: eq(variables['BASEIMG_BUILD_TYPE'], 'preview')
     displayName: Set Base Image version variable for preview
 
-  # baseimgBuildType == preview
+  # Download when baseimgBuildType == preview
   - task: DownloadPipelineArtifact@2
     displayName: "Download version-full.config from Prod-BuildImages"
     condition: eq(variables['BASEIMG_BUILD_TYPE'], 'preview')
