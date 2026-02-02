@@ -40,7 +40,10 @@ stages:
     - stage: BuildImagesForDirectStreaming_azurelinux_${{ parameters.architecture }}
       displayName: Build ${{ parameters.architecture }} azurelinux Images for Direct Streaming
       dependsOn:
-        - GetTridentBinaries_rpms_${{ parameters.architecture }}
+        - ${{ if eq(parameters.architecture, 'arm64') }}:
+          - GetTridentBinaries_rpms_arm64
+        - ${{ if eq(parameters.architecture, 'amd64') }}:
+          - GetTridentBinaries_rpms
         - PrepareSSHKeys
         - BuildingTools_${{ parameters.architecture }}
       jobs:
@@ -69,7 +72,10 @@ stages:
     - stage: BuildImagesForDirectStreaming_ubuntu_${{ parameters.architecture }}
       displayName: Build ${{ parameters.architecture }} ubuntu Images for Direct Streaming
       dependsOn:
-        - GetTridentBinaries_rpms_${{ parameters.architecture }}
+        - ${{ if eq(parameters.architecture, 'arm64') }}:
+          - GetTridentBinaries_rpms_arm64
+        - ${{ if eq(parameters.architecture, 'amd64') }}:
+          - GetTridentBinaries_rpms
         - PrepareSSHKeys
         - BuildingTools_${{ parameters.architecture }}
       jobs:
