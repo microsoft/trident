@@ -29,108 +29,102 @@ parameters:
     default: preview
 
 stages:
-- ${{ if eq(parameters.targetArchitecture, 'amd64') }}:
-  - stage: GetTridentBinaries_rpms
-    displayName: Trident amd64 RPMs (Build)
+  - stage: GetTridentBinaries_rpms_${{ parameters.targetArchitecture }}
+    displayName: Trident ${{ parameters.targetArchitecture }} RPMs (Build)
     ${{ if ne(parameters.dependsOnStage, '') }}:
       dependsOn: ${{ parameters.dependsOnStage }}
 
     jobs:
-      - job: CheckTrident
-        displayName: Check
-        pool:
-          type: linux
+      - ${{ if eq( parameters.targetArchitecture, 'amd64' ) }}:
+          - job: CheckTrident_${{ parameters.targetArchitecture }}
+            displayName: Check ${{ parameters.targetArchitecture }}
+            pool:
+              type: linux
 
-        variables:
-          - name: ob_outputDirectory
-            value: "$(Build.SourcesDirectory)/trident/out"
+            variables:
+              - name: ob_outputDirectory
+                value: "$(Build.SourcesDirectory)/trident/out"
 
-        steps:
-          - template: ../common_tasks/avoid-pypi-usage.yml
-          - template: check.yml
+            steps:
+              - template: ../common_tasks/avoid-pypi-usage.yml
+              - template: check.yml
 
-      - job: TestTrident
-        displayName: Unit Test
-        pool:
-          type: linux
+          - job: TestTrident_${{ parameters.targetArchitecture }}
+            displayName: Unit Test ${{ parameters.targetArchitecture }}
+            pool:
+              type: linux
 
-        variables:
-          - name: ob_outputDirectory
-            value: "$(Build.SourcesDirectory)/trident/out"
+            variables:
+              - name: ob_outputDirectory
+                value: "$(Build.SourcesDirectory)/trident/out"
 
-        steps:
-          - template: ../common_tasks/avoid-pypi-usage.yml
-          # need newer rust for cargo-nextest, use rustup.yml to install
-          - template: ../common_tasks/rustup.yml
-          - template: ../common_tasks/cargo-auth.yml
-          - template: unit-test.yml
-            parameters:
-              codeCoverage: ${{ parameters.codeCoverage }}
-              unitTestCoverageBaseline: 70 # Unit tests
+            steps:
+              - template: ../common_tasks/avoid-pypi-usage.yml
+              # need newer rust for cargo-nextest, use rustup.yml to install
+              - template: ../common_tasks/rustup.yml
+              - template: ../common_tasks/cargo-auth.yml
+              - template: unit-test.yml
+                parameters:
+                  codeCoverage: ${{ parameters.codeCoverage }}
+                  unitTestCoverageBaseline: 70 # Unit tests
 
-      - job: BuildTrident
-        displayName: Build Trident 3.0 RPMs
-        pool:
-          type: linux
+          - job: BuildTrident_${{ parameters.targetArchitecture }}
+            displayName: Build Trident 3.0 ${{ parameters.targetArchitecture }} RPMs
+            pool:
+              type: linux
 
-        variables:
-          - name: ob_artifactBaseName
-            value: ${{ parameters.tridentArtifactName }}
-          - name: ob_outputDirectory
-            value: "$(Build.SourcesDirectory)/out"
-          - template: common/setup-registries-vars-template.yaml@platform-pipelines
-            parameters:
-              buildType: auto
+            variables:
+              - name: ob_artifactBaseName
+                value: ${{ parameters.tridentArtifactName }}
+              - name: ob_outputDirectory
+                value: "$(Build.SourcesDirectory)/out"
+              - template: common/setup-registries-vars-template.yaml@platform-pipelines
+                parameters:
+                  buildType: auto
 
-        steps:
-          - template: ../common_tasks/os-info.yml
-          - template: ../common_tasks/avoid-pypi-usage.yml
-          - template: ../common_tasks/cargo-auth.yml
-          - template: ../common_tasks/download-osmodifier.yml
-            parameters:
-              targetArchitecture: ${{ parameters.targetArchitecture }}
-              osModifierBranch: ${{ parameters.osModifierBranch }}
-              osModifierBuildType: ${{ parameters.osModifierBuildType }}
-          - template: release.yml
-            parameters:
-              targetArchitecture: ${{ parameters.targetArchitecture }}
+            steps:
+              - template: ../common_tasks/os-info.yml
+              - template: ../common_tasks/avoid-pypi-usage.yml
+              - template: ../common_tasks/cargo-auth.yml
+              - template: ../common_tasks/download-osmodifier.yml
+                parameters:
+                  targetArchitecture: ${{ parameters.targetArchitecture }}
+                  osModifierBranch: ${{ parameters.osModifierBranch }}
+                  osModifierBuildType: ${{ parameters.osModifierBuildType }}
+              - template: release.yml
+                parameters:
+                  targetArchitecture: ${{ parameters.targetArchitecture }}
 
-- ${{ if eq(parameters.targetArchitecture, 'arm64') }}:
-  - stage: GetTridentBinaries_rpms_arm64
-    displayName: Trident arm64 RPMs (Build)
-    ${{ if ne(parameters.dependsOnStage, '') }}:
-      dependsOn: ${{ parameters.dependsOnStage }}
+      - ${{ elseif eq( parameters.targetArchitecture, 'arm64' ) }}:
+          - job: BuildTrident_${{ parameters.targetArchitecture }}
+            displayName: Build Trident 3.0 ${{ parameters.targetArchitecture }} RPMs
+            pool:
+              type: linux
+              name: azl3-hci-ARM64-1es-pool-westcentralus
+              hostArchitecture: arm64
 
-    jobs:
-      - job: BuildTrident_arm64
-        displayName: Build Trident 3.0 arm64 RPMs
-        pool:
-          type: linux
-          name: azl3-hci-ARM64-1es-pool-westcentralus
-          hostArchitecture: arm64
+            variables:
+              - name: ob_artifactBaseName
+                value: ${{ parameters.tridentArtifactName }}-arm64
+              - name: ob_outputDirectory
+                value: "$(Build.SourcesDirectory)/out"
+              - template: common/setup-registries-vars-template.yaml@platform-pipelines
+                parameters:
+                  buildType: auto
 
-        variables:
-          - name: ob_artifactBaseName
-            value: ${{ parameters.tridentArtifactName }}-arm64
-          - name: ob_outputDirectory
-            value: "$(Build.SourcesDirectory)/out"
-          - template: common/setup-registries-vars-template.yaml@platform-pipelines
-            parameters:
-              buildType: auto
-
-        steps:
-          - template: ../common_tasks/avoid-pypi-usage.yml
-          - template: ../common_tasks/cargo-auth.yml
-          - script: |
-              set -eux
-              sudo systemctl start docker
-            workingDirectory: $(Build.SourcesDirectory)
-            displayName: Start Docker
-          - template: ../common_tasks/download-osmodifier.yml
-            parameters:
-              targetArchitecture: arm64
-              osModifierBranch: ${{ parameters.osModifierBranch }}
-              osModifierBuildType: ${{ parameters.osModifierBuildType }}
-          - template: release.yml
-            parameters:
-              targetArchitecture: arm64
+            steps:
+              - template: ../common_tasks/avoid-pypi-usage.yml
+              - template: ../common_tasks/cargo-auth.yml
+              - script: |
+                  set -eux
+                  sudo systemctl start docker
+                workingDirectory: $(Build.SourcesDirectory)
+                displayName: Start Docker
+              - template: ../common_tasks/download-osmodifier.yml
+                parameters:
+                  targetArchitecture: ${{ parameters.targetArchitecture }}
+                  osModifierBranch: ${{ parameters.osModifierBranch }}
+                  osModifierBuildType: ${{ parameters.osModifierBuildType }}
+              - template: release.yml
+                parameters:
+                  targetArchitecture: ${{ parameters.targetArchitecture }}
