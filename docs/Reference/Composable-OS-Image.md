@@ -37,20 +37,31 @@ such as footers or checksums.
 Readers MUST stop interpreting the COSI file as a tarball after the
 end-of-archive marker.
 
+### COSI as a Disk Image Format
+
+COSI does not carry the full contents of a raw disk image, instead it only
+contains the contents of the defined regions of a GPT-partitioned disk image.
+This includes the GPT headers and entries, partitions, but explicitly EXCLUDES
+any unallocated space that is not part of any defined region.
+
+The contents of any unallocated space outside of defined regions are NOT
+included in the COSI file. However, the sizes and locations of these unallocated
+spaces are preserved in the GPT data included in the COSI file.
+
 ### Contents
 
 The tarball MUST contain the following files:
 
 - `metadata.json`: A JSON file that contains the metadata of the COSI file.
-- Disk region images in the folder `images/`: ZSTD compressed raw images of
-  all the regions of the source disk image. This includes the primary and backup
-  GPT, protective MBR, partitions and any unallocated space in between them.
+- Disk region images in the folder `images/`: ZSTD compressed images of the
+  relevant regions of the source disk image. The region images in the COSI file
+  MUST exist in the same physical order as they appear in the source disk image.
 
 To allow for future extensions, the tarball MAY contain other files, but Trident
 MUST ignore them. The tarball SHOULD NOT contain any extra files that will not
 be used by Trident.
 
-### Layout
+### Tarball Layout
 
 The tarball MUST NOT have a common root directory. The metadata file MUST be at
 the root of the tarball. If it were extracted with a standard `tar` invocation,
@@ -65,13 +76,11 @@ PHYSICAL order of the regions in the source disk image.
 
 ### Disk Region Images
 
-The region images are compressed raw files containing the exact bytes of each
-region of the source disk image. This includes partitions, unallocated space,
-the GPT headers and entries, and the protective MBR.
+The region images are compressed raw files containing the data inside each of
+the defined regions of the source disk image. The defined regions are:
 
-When uncompressed, the total size of all the region images MUST match the size
-of the source disk image. And when concatenated in the order they appear in the
-tarball, they MUST recreate the exact bytes of the source disk image.
+- The primary GPT header and entries, along with the protective MBR.
+- Each partition defined in the GPT partition entries.
 
 The images MUST be compressed using ZSTD compression.
 
@@ -79,8 +88,47 @@ They MUST exist in the tarball under the `images/` directory. They MAY be placed
 in subdirectories of `images/` to organize them. Readers MUST be able to handle
 images in subdirectories.
 
-The physical order of the regions images in the tarball MUST match the order
+The physical order of the region images in the tarball MUST match the order
 they appear in the source disk image, from the beginning of the disk to the end.
+
+#### Filesystem Shrinking
+
+For reduced size and increased disk-write efficiency, writers of COSI files
+SHOULD shrink the filesystems before creating the images when:
+
+- the filesystem type supports shrinking,
+- the shrinking can be done safely, and
+- the filesystem covers the entire partition, guaranteeing that no data outside
+  the filesystem is lost.
+
+Any resize operation MUST be done with standard tools for the filesystem type.
+
+Readers MUST be able to handle filesystem images that have been shrunk and they
+SHOULD to resize the filesystem to fill the partition when writing the image
+to disk.
+
+To detect whether a filesystem has been shrunk, readers MUST compare the
+`uncompressedSize` field of the `ImageFile` object with the size of the
+partition as defined in the GPT partition entries.
+
+- If the uncompressed image is smaller, the reader MUST assume that the
+  filesystem has been shrunk.
+- If the uncompressed image is equal to the partition size, the reader MUST
+  assume that the image is intended to cover the full partition, its contents
+  are raw and unshrunk, and MUST NOT attempt to resize it.
+- If the uncompressed image is larger than the partition size, the reader MUST
+  consider the COSI file invalid.
+
+#### Compression
+
+All region images in the COSI file MUST be compressed using ZSTD compression.
+The compression level used is left to the writer's discretion.
+
+ALL images MUST be compressed with the same compression parameters.
+
+When NOT using the default compression parameters of the ZSTD library, writers
+MUST include the compression parameters used in the `compression` field of the
+root object in the metadata file.
 
 ### Metadata JSON File
 
@@ -89,23 +137,34 @@ tarball. The metadata file MUST be a valid JSON file.
 
 #### Schema
 
+Any schema object MAY contain other fields not listed in the tables below.
+Readers MUST ignore any fields not listed in the tables for future
+compatibility.
+
 ##### Root Object
 
 The metadata file MUST contain a JSON object with the following fields:
 
-| Field        | Type                                   | Added in | Required        | Description                                      |
-| ------------ | -------------------------------------- | -------- | --------------- | ------------------------------------------------ |
-| `version`    | string `MAJOR.MINOR`                   | 1.0      | Yes (since 1.0) | The version of the metadata schema.              |
-| `osArch`     | [OsArchitecture](#osarchitecture-enum) | 1.0      | Yes (since 1.0) | The architecture of the OS.                      |
-| `osRelease`  | string                                 | 1.0      | Yes (since 1.0) | The contents of `/etc/os-release` verbatim.      |
-| `images`     | [Filesystem](#filesystem-object)[]     | 1.0      | Yes (since 1.0) | Filesystem metadata.                             |
-| `disk`       | [Disk](#disk-object)                   | 1.2      | Yes (since 1.2) | Original disk metadata.                          |
-| `osPackages` | [OsPackage](#ospackage-object)[]       | 1.0      | Yes (since 1.1) | The list of packages installed in the OS.        |
-| `bootloader` | [Bootloader](#bootloader-object)       | 1.1      | Yes (since 1.1) | Information about the bootloader used by the OS. |
-| `id`         | UUID (string, case insensitive)        | 1.0      | No              | A unique identifier for the COSI file.           |
+| Field         | Type                                   | Added in | Required         | Description                                      |
+| ------------- | -------------------------------------- | -------- | ---------------- | ------------------------------------------------ |
+| `version`     | string `MAJOR.MINOR`                   | 1.0      | Yes (since 1.0)  | The version of the metadata schema.              |
+| `osArch`      | [OsArchitecture](#osarchitecture-enum) | 1.0      | Yes (since 1.0)  | The architecture of the OS.                      |
+| `osRelease`   | string                                 | 1.0      | Yes (since 1.0)  | The contents of `/etc/os-release` verbatim.      |
+| `images`      | [Filesystem](#filesystem-object)[]     | 1.0      | Yes (since 1.0)  | Filesystem metadata.                             |
+| `disk`        | [Disk](#disk-object)                   | 1.2      | Yes (since 1.2)  | Original disk metadata.                          |
+| `osPackages`  | [OsPackage](#ospackage-object)[]       | 1.0      | Yes (since 1.1)  | The list of packages installed in the OS.        |
+| `bootloader`  | [Bootloader](#bootloader-object)       | 1.1      | Yes (since 1.1)  | Information about the bootloader used by the OS. |
+| `id`          | UUID (string, case insensitive)        | 1.0      | No               | A unique identifier for the COSI file.           |
+| `compression` | [Compression](#compression-object)     | 1.2      | Conditionally[1] | Compression metadata for the COSI file.          |
 
 If the object contains other fields, readers MUST ignore them. A writer SHOULD
 NOT add any other files to the object.
+
+_Notes:_
+
+- **[1]** The `compression` field MUST be included if the compression parameters
+    used for the images differ from the default parameters of the ZSTD library.
+    Otherwise, it SHOULD be omitted OR set to `null`.
 
 ##### `Filesystem` Object
 
@@ -171,6 +230,9 @@ image this COSI file was sourced from.
 The order of the `regions` array MUST match the physical order of the regions in
 the original disk image, from the beginning of the disk to the end.
 
+A valid COSI `>=1.2` image MUST contain a region of type `primary-gpt` as the
+first entry in the `regions` array, with `start` set to 0.
+
 ##### `DiskType` Enum
 
 The partitioning table type. Currently, only `gpt` is supported.
@@ -184,11 +246,12 @@ The partitioning table type. Currently, only `gpt` is supported.
 This object holds information about a specific region of the original disk
 image.
 
-| Field   | Type                           | Added in | Required        | Description                               |
-| ------- | ------------------------------ | -------- | --------------- | ----------------------------------------- |
-| `image` | [ImageFile](#imagefile-object) | 1.2      | Yes (since 1.2) | Details of the image file in the tarball. |
-| `type`  | [RegionType](#regiontype-enum) | 1.2      | Yes (since 1.2) | The type of region this image represents. |
-| `start` | number                         | 1.2      | Yes (since 1.2) | The starting byte offset of the region.   |
+| Field    | Type                           | Added in | Required                   | Description                                             |
+| -------- | ------------------------------ | -------- | -------------------------- | ------------------------------------------------------- |
+| `image`  | [ImageFile](#imagefile-object) | 1.2      | Yes (since 1.2)            | Details of the image file in the tarball.               |
+| `type`   | [RegionType](#regiontype-enum) | 1.2      | Yes (since 1.2)            | The type of region this image represents.               |
+| `start`  | number                         | 1.2      | Yes (since 1.2)            | The starting byte offset of the region in the RAW disk. |
+| `number` | number                         | 1.2      | When `type` == `partition` | The partition number (1-based index).                   |
 
 ##### `RegionType` Enum
 
@@ -201,6 +264,9 @@ The type of region in the original disk image.
 | `backup-gpt`  | The backup GPT header and entries at the end of the disk.                                                |
 | `unallocated` | Unallocated space between partitions or between the GPT and the first/last partition.                    |
 | `unknown`     | A region of unknown type.                                                                                |
+
+In COSI 1.2, `backup-gpt`, `unallocated` and `unknown` regions are unused, but
+defined and left available for future use.
 
 ##### `OsArchitecture` Enum
 
@@ -239,11 +305,11 @@ rpm -qa --queryformat "%{NAME} %{VERSION} %{RELEASE} %{ARCH}\n"
 | Field         | Type                                     | Added in | Required                         | Description                 |
 | ------------- | ---------------------------------------- | -------- | -------------------------------- | --------------------------- |
 | `type`        | [`BootloaderType`](#bootloadertype-enum) | 1.1      | Yes (since 1.1)                  | The type of the bootloader. |
-| `systemdBoot` | [`SystemDBoot`](#systemdboot-object)     | 1.1      | When `type` == `systemd-boot`[8] | systemd-boot configuration. |
+| `systemdBoot` | [`SystemDBoot`](#systemdboot-object)     | 1.1      | When `type` == `systemd-boot`[1] | systemd-boot configuration. |
 
 _Notes:_
 
-- **[8]** The `systemd-boot` field is required if the `type` field is set to
+- **[1]** The `systemd-boot` field is required if the `type` field is set to
     `systemd-boot`. It MUST be omitted OR set to `null` if the `type`
     field is set to any other value.
 
@@ -285,6 +351,21 @@ A string that represents the type of the systemd-boot entry.
 | `uki-standalone` | The entry is a bare UKI file in the ESP.                           |
 | `uki-config`     | The entry is a config file with a UKI.                             |
 | `config`         | The entry is a config file with a kernel, initrd and command line. |
+
+##### `Compression` Object
+
+This object contains metadata about the compression used in the COSI file. It
+SHOULD be skipped when the default ZSTD compression parameters are used.
+
+| Field        | Type   | Added in | Required         | Description                                                                                                                                             |
+| ------------ | ------ | -------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `windowSize` | number | 1.2      | Conditionally[1] | The power of 2 representing the window size used for ZSTD compression. The client will use this to determine the maximum window size for decompression. |
+
+_Notes:_
+
+- **[1]** The `windowSize` field MUST be included if the compression
+    parameters used for the images differ from the default parameters of the
+    ZSTD library. Otherwise, it SHOULD be omitted OR set to `null`.
 
 #### Samples
 
