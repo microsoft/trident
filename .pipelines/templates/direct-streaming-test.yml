@@ -13,24 +13,25 @@ parameters:
     default: true
 
 stages:
-  - stage: BuildInstallerForDirectStreaming_${{ parameters.architecture }}
-    displayName: Build ${{ parameters.architecture }} Installer for Direct Streaming
-    dependsOn:
-      - GetTridentBinaries_rpms_${{ parameters.architecture }}
-      - PrepareSSHKeys
-      - BuildingTools_${{ parameters.architecture }}
-    jobs:
-      # Build Trident direct streaming installer ISO
-      - template: stages/trident_images/build-image.yml
-        parameters:
-          labelPrefix: "" # No prefix for this image
-          architecture: ${{ parameters.architecture }}
-          label: "trident-direct-streaming-installer-${{ parameters.architecture }}"
-          makeTarget: "artifacts/trident-direct-streaming-installer-${{ parameters.architecture }}.iso"
-          ${{ if eq(parameters.architecture, 'arm64') }}:
-            baseimgType: core_arm64
-          ${{ if eq(parameters.architecture, 'amd64') }}:
-            baseimgType: baremetal
+  - ${{ if or(parameters.testAzureLinuxStreamingImage, parameters.testUbuntuStreamingImage) }}:
+    - stage: BuildInstallerForDirectStreaming_${{ parameters.architecture }}
+      displayName: Build ${{ parameters.architecture }} Installer for Direct Streaming
+      dependsOn:
+        - GetTridentBinaries_rpms_${{ parameters.architecture }}
+        - PrepareSSHKeys
+        - BuildingTools_${{ parameters.architecture }}
+      jobs:
+        # Build Trident direct streaming installer ISO
+        - template: stages/trident_images/build-image.yml
+          parameters:
+            labelPrefix: "" # No prefix for this image
+            architecture: ${{ parameters.architecture }}
+            label: "trident-direct-streaming-installer-${{ parameters.architecture }}"
+            makeTarget: "artifacts/trident-direct-streaming-installer-${{ parameters.architecture }}.iso"
+            ${{ if eq(parameters.architecture, 'arm64') }}:
+              baseimgType: core_arm64
+            ${{ if eq(parameters.architecture, 'amd64') }}:
+              baseimgType: baremetal
 
   - ${{ if parameters.testAzureLinuxStreamingImage }}:
     - stage: BuildImagesForDirectStreaming_azurelinux_${{ parameters.architecture }}
