@@ -31,8 +31,12 @@ parameters:
       - amd64
     default: amd64
 
+  - name: stageName
+    type: string
+    default: BuildingTools
+
 stages:
-  - stage: BuildingTools_${{ parameters.architecture }}
+  - stage: ${{ parameters.stageName }}
     displayName: Building Tools for ${{ parameters.architecture }}
 
     jobs:
