@@ -747,6 +747,10 @@ download-trident-container-installer-iso:
 		--path artifacts/ \
 		--artifact-name 'trident-container-installer'
 
+artifacts/trident-container-installer.iso:
+	$(MAKE) download-trident-container-installer-iso; \
+	ls -l artifacts/trident-container-installer.iso
+
 # Copies locally built runtime images from ../test-images/build to ./artifacts/test-image.
 # Expects that both the regular and verity Trident test images have been built.
 .PHONY: copy-runtime-images
@@ -1136,11 +1140,11 @@ artifacts/trident-vm-grub-verity-azure-testimage.vhd: \
 			--output-image-format vhd-fixed \
 			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-grub-verity-azure.yaml
 
-IAMGE_CUSTOMIZATION_CONFIG := $(shell mktemp tmp.ic.XXX.conf)
+IMAGE_CUSTOMIZATION_CONFIG := $(shell mktemp tmp.ic.XXX.conf)
 
 artifacts/azurelinux-direct-streaming-testimage-arm64.cosi: \
 	artifacts/trident-rawcosi-testimage-arm64.vhdx
-	echo "output:" > $(IAMGE_CUSTOMIZATION_CONFIG) # specify everything in cmdline
+	echo "output:" > $(IMAGE_CUSTOMIZATION_CONFIG) # specify everything in cmdline
 	docker run \
 		--rm \
 		--privileged \
@@ -1152,12 +1156,12 @@ artifacts/azurelinux-direct-streaming-testimage-arm64.cosi: \
 			--image-file /repo/artifacts/trident-rawcosi-testimage-arm64.vhdx \
 			--output-image-file /repo/artifacts/azurelinux-direct-streaming-testimage-arm64.cosi \
 			--output-image-format baremetal-image \
-			--config-file /repo/$(IAMGE_CUSTOMIZATION_CONFIG)
-	rm -rf $(IAMGE_CUSTOMIZATION_CONFIG)
+			--config-file /repo/$(IMAGE_CUSTOMIZATION_CONFIG)
+	rm -rf $(IMAGE_CUSTOMIZATION_CONFIG)
 
 artifacts/azurelinux-direct-streaming-testimage-amd64.cosi: \
 	artifacts/trident-rawcosi-testimage.vhdx
-	echo "output:" > $(IAMGE_CUSTOMIZATION_CONFIG) # specify everything in cmdline
+	echo "output:" > $(IMAGE_CUSTOMIZATION_CONFIG) # specify everything in cmdline
 	docker run \
 		--rm \
 		--privileged \
@@ -1169,8 +1173,8 @@ artifacts/azurelinux-direct-streaming-testimage-amd64.cosi: \
 			--image-file /repo/artifacts/trident-rawcosi-testimage.vhdx \
 			--output-image-file /repo/artifacts/azurelinux-direct-streaming-testimage-amd64.cosi \
 			--output-image-format baremetal-image \
-			--config-file /repo/$(IAMGE_CUSTOMIZATION_CONFIG)
-	rm -rf $(IAMGE_CUSTOMIZATION_CONFIG)
+			--config-file /repo/$(IMAGE_CUSTOMIZATION_CONFIG)
+	rm -rf $(IMAGE_CUSTOMIZATION_CONFIG)
 
 .PHONY: imagecustomizer-dev-amd64
 imagecustomizer-dev-amd64:
@@ -1194,8 +1198,8 @@ artifacts/ubuntu_arm64.vhdx:
 
 artifacts/ubuntu-direct-streaming-testimage-arm64.cosi: \
 	artifacts/ubuntu_arm64.vhdx
-	echo "previewFeatures:" > $(IAMGE_CUSTOMIZATION_CONFIG)
-	echo "  - ubuntu-22.04" >> $(IAMGE_CUSTOMIZATION_CONFIG)
+	echo "previewFeatures:" > $(IMAGE_CUSTOMIZATION_CONFIG)
+	echo "  - ubuntu-22.04" >> $(IMAGE_CUSTOMIZATION_CONFIG)
 	docker run \
 		--rm \
 		--privileged \
@@ -1207,13 +1211,13 @@ artifacts/ubuntu-direct-streaming-testimage-arm64.cosi: \
 			--image-file /repo/artifacts/ubuntu_arm64.vhdx \
 			--output-image-file /repo/artifacts/ubuntu-direct-streaming-testimage-arm64.cosi \
 			--output-image-format baremetal-image \
-			--config-file /repo/$(IAMGE_CUSTOMIZATION_CONFIG)
-	rm -rf $(IAMGE_CUSTOMIZATION_CONFIG)
+			--config-file /repo/$(IMAGE_CUSTOMIZATION_CONFIG)
+	rm -rf $(IMAGE_CUSTOMIZATION_CONFIG)
 
 artifacts/ubuntu-direct-streaming-testimage-amd64.cosi: \
 	artifacts/ubuntu.vhdx
-	echo "previewFeatures:" > $(IAMGE_CUSTOMIZATION_CONFIG)
-	echo "  - ubuntu-22.04" >> $(IAMGE_CUSTOMIZATION_CONFIG)
+	echo "previewFeatures:" > $(IMAGE_CUSTOMIZATION_CONFIG)
+	echo "  - ubuntu-22.04" >> $(IMAGE_CUSTOMIZATION_CONFIG)
 	docker run \
 		--rm \
 		--privileged \
@@ -1225,5 +1229,5 @@ artifacts/ubuntu-direct-streaming-testimage-amd64.cosi: \
 			--image-file /repo/artifacts/ubuntu.vhdx \
 			--output-image-file /repo/artifacts/ubuntu-direct-streaming-testimage-amd64.cosi \
 			--output-image-format baremetal-image \
-			--config-file /repo/$(IAMGE_CUSTOMIZATION_CONFIG)
-	rm -rf $(IAMGE_CUSTOMIZATION_CONFIG)
+			--config-file /repo/$(IMAGE_CUSTOMIZATION_CONFIG)
+	rm -rf $(IMAGE_CUSTOMIZATION_CONFIG)
