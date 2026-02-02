@@ -55,8 +55,7 @@ stages:
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
       targetArchitecture: arm64
 
-  - ${{ if ne(parameters.stageType, 'pr-e2e-azure') }}:
-    # Run direct streaming tests for arm64 with streaming images
-    - template: direct-streaming-test.yml
-      parameters:
-        architecture: arm64
+  # Run direct streaming tests for arm64 with streaming images
+  - template: direct-streaming-test.yml
+    parameters:
+      architecture: arm64
