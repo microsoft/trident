@@ -19,10 +19,11 @@ stages:
       dependsOn:
         - ${{ if eq(parameters.architecture, 'arm64') }}:
           - GetTridentBinaries_rpms_arm64
+          - BuildingTools_arm64
         - ${{ if eq(parameters.architecture, 'amd64') }}:
           - GetTridentBinaries_rpms
+          - BuildingTools
         - PrepareSSHKeys
-        - BuildingTools_${{ parameters.architecture }}
       jobs:
         # Build Trident direct streaming installer ISO
         - template: stages/trident_images/build-image.yml
@@ -42,10 +43,11 @@ stages:
       dependsOn:
         - ${{ if eq(parameters.architecture, 'arm64') }}:
           - GetTridentBinaries_rpms_arm64
+          - BuildingTools_arm64
         - ${{ if eq(parameters.architecture, 'amd64') }}:
           - GetTridentBinaries_rpms
+          - BuildingTools
         - PrepareSSHKeys
-        - BuildingTools_${{ parameters.architecture }}
       jobs:
         # Build direct streaming COSI VHD
         - template: stages/trident_images/build-image.yml
@@ -74,10 +76,11 @@ stages:
       dependsOn:
         - ${{ if eq(parameters.architecture, 'arm64') }}:
           - GetTridentBinaries_rpms_arm64
+          - BuildingTools_arm64
         - ${{ if eq(parameters.architecture, 'amd64') }}:
           - GetTridentBinaries_rpms
+          - BuildingTools
         - PrepareSSHKeys
-        - BuildingTools_${{ parameters.architecture }}
       jobs:
         # Build direct streaming COSI VHD
         - template: stages/trident_images/build-image.yml
