@@ -14,7 +14,7 @@ stages:
           ob_outputDirectory: "$(Build.SourcesDirectory)/trident/out"
           ob_artifactBaseName: "trident-docker-image"
 
-          steps:
+        steps:
           - template: ../common_tasks/avoid-pypi-usage.yml
 
           - script: |
