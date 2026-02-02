@@ -49,8 +49,8 @@ async fn run_client(args: &ClientArgs) -> Result<ExitKind, Error> {
             let version = client
                 .version()
                 .await
-                .context("Failed to get Trident server version")?;
-            println!("server: {}", version);
+                .context("Failed to get Trident daemon version")?;
+            println!("daemon: {}", version);
         }
 
         ClientCommands::Install {
@@ -72,7 +72,7 @@ async fn run_client(args: &ClientArgs) -> Result<ExitKind, Error> {
                 return client
                     .install(config_yaml, RebootHandling::Trident)
                     .await
-                    .context("Failed to install configuration on Trident server");
+                    .context("Trident failed to perform install");
             } else if operations.has_stage() {
                 bail!("Staging-only installs are not implemented via gRPC client yet");
             } else if operations.has_finalize() {
@@ -86,8 +86,16 @@ async fn run_client(args: &ClientArgs) -> Result<ExitKind, Error> {
             return client
                 .stream_image(image, hash, RebootHandling::Trident)
                 .await
-                .context("Failed to stream image to Trident server");
+                .context("Trident failed to stream image");
         }
+
+        ClientCommands::Commit => {
+            return client
+                .commit()
+                .await
+                .context("Trident failed to perform commit");
+        }
+
         _ => {
             bail!("Unimplemented client command");
         }

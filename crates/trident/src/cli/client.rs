@@ -54,15 +54,7 @@ pub enum ClientCommands {
     },
 
     /// Detect whether an install or update succeeded, and update the boot order accordingly
-    Commit {
-        /// Path to save the resulting Host Status
-        #[clap(short, long)]
-        status: Option<PathBuf>,
-
-        /// Path to save an eventual fatal error
-        #[clap(short, long)]
-        error: Option<PathBuf>,
-    },
+    Commit,
 
     #[clap(hide(true))]
     Listen {

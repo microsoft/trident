@@ -5,8 +5,8 @@ use tonic::{transport::Channel, Request, Streaming};
 
 use harpoon::{
     servicing_response::Response as ResponseBody, trident_service_client::TridentServiceClient,
-    FinalizeRequest, LogLevel, ServicingRequest, ServicingResponse, StageRequest, StatusCode,
-    StreamImageRequest, VersionRequest,
+    CommitRequest, FinalizeRequest, LogLevel, ServicingRequest, ServicingResponse, StageRequest,
+    StatusCode, StreamImageRequest, VersionRequest,
 };
 use url::Url;
 
@@ -104,6 +104,18 @@ impl TridentClient {
             .stream_image(request)
             .await
             .map_err(|e| TridentClientError::RequestError("stream_image".to_string(), e))?
+            .into_inner();
+
+        handle_servicing_response_stream(response).await
+    }
+
+    /// Perform a commit on the Trident server.
+    pub async fn commit(&mut self) -> Result<ExitKind, TridentClientError> {
+        let response = self
+            .client
+            .commit(Request::new(CommitRequest {}))
+            .await
+            .map_err(|e| TridentClientError::RequestError("commit".to_string(), e))?
             .into_inner();
 
         handle_servicing_response_stream(response).await
