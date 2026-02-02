@@ -29,14 +29,6 @@ pub enum ClientCommands {
         #[clap(long, value_delimiter = ',', num_args = 0.., default_value = "stage,finalize")]
         allowed_operations: Vec<AllowedOperation>,
 
-        /// Path to save the resulting Host Status
-        #[clap(short, long)]
-        status: Option<PathBuf>,
-
-        /// Path to save an eventual fatal error
-        #[clap(short, long)]
-        error: Option<PathBuf>,
-
         /// Allow Trident to perform a multiboot install
         #[clap(long)]
         multiboot: bool,
@@ -169,14 +161,6 @@ pub enum ClientCommands {
         /// Hash of the image manifest
         #[clap(long)]
         hash: String,
-
-        /// Path to save the resulting Host Status
-        #[clap(short, long)]
-        status: Option<PathBuf>,
-
-        /// Path to save an eventual fatal error
-        #[clap(short, long)]
-        error: Option<PathBuf>,
     },
 
     Version,

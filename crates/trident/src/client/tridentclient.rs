@@ -6,8 +6,9 @@ use tonic::{transport::Channel, Request, Streaming};
 use harpoon::{
     servicing_response::Response as ResponseBody, trident_service_client::TridentServiceClient,
     FinalizeRequest, LogLevel, ServicingRequest, ServicingResponse, StageRequest, StatusCode,
-    VersionRequest,
+    StreamImageRequest, VersionRequest,
 };
+use url::Url;
 
 use crate::ExitKind;
 
@@ -16,7 +17,11 @@ use super::error::TridentClientError;
 /// Indicates who is responsible for handling any required reboots.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RebootHandling {
+    /// The orchestrator is responsible for handling reboots.
+    #[expect(dead_code)]
     Orchestrator,
+
+    /// Trident is responsible for handling reboots.
     Trident,
 }
 
@@ -28,7 +33,6 @@ impl RebootHandling {
 
 /// Client for interacting with the Trident gRPC server.
 pub struct TridentClient {
-    server_address: String,
     client: TridentServiceClient<Channel>,
 }
 
@@ -39,15 +43,7 @@ impl TridentClient {
             .await
             .map_err(|e| TridentClientError::ConnectionError(server_address.to_string(), e))?;
 
-        Ok(Self {
-            server_address: server_address.to_string(),
-            client,
-        })
-    }
-
-    /// Get the server address this client is connected to.
-    pub fn server_address(&self) -> &str {
-        &self.server_address
+        Ok(Self { client })
     }
 
     /// Get the version of the connected Trident server.
@@ -83,6 +79,31 @@ impl TridentClient {
             .install(request)
             .await
             .map_err(|e| TridentClientError::RequestError("install".to_string(), e))?
+            .into_inner();
+
+        handle_servicing_response_stream(response).await
+    }
+
+    /// Stream an image to the Trident server.
+    pub async fn stream_image(
+        &mut self,
+        image_url: &Url,
+        image_hash: impl Into<String>,
+        reboot_handling: RebootHandling,
+    ) -> Result<ExitKind, TridentClientError> {
+        let request = Request::new(StreamImageRequest {
+            image_path: image_url.to_string(),
+            image_hash: image_hash.into(),
+            finalize: Some(FinalizeRequest {
+                orchestrator_handles_reboot: reboot_handling.orchestrator_handles_reboot(),
+            }),
+        });
+
+        let response = self
+            .client
+            .stream_image(request)
+            .await
+            .map_err(|e| TridentClientError::RequestError("stream_image".to_string(), e))?
             .into_inner();
 
         handle_servicing_response_stream(response).await
@@ -132,7 +153,9 @@ async fn handle_servicing_response(
                 LogLevel::Error => Level::Error,
             };
 
-            log!(target: &log_entry.target, log_level, "[REMOTE]{}", log_entry.message);
+            let target = format!("REMOTE::{}", log_entry.target);
+
+            log!(target: &target, log_level, "{}", log_entry.message);
         }
         ResponseBody::FinalStatus(final_status) => {
             match (final_status.status(), final_status.error) {

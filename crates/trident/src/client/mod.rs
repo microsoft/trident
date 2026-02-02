@@ -2,34 +2,43 @@ use std::process::ExitCode;
 
 use anyhow::{bail, Context, Error};
 use log::error;
-use tokio::runtime::Builder;
+use tokio::{fs, runtime::Builder};
 
 use crate::{
-    cli::{ClientArgs, ClientCommands},
-    TRIDENT_VERSION,
+    cli::{self, ClientArgs, ClientCommands, TridentExitCodes},
+    ExitKind, TRIDENT_VERSION,
 };
 
-mod client;
 mod error;
+mod tridentclient;
 
-use client::TridentClient;
+use tridentclient::{RebootHandling, TridentClient};
 
 pub fn client_main(args: &ClientArgs) -> ExitCode {
     // Start the Tokio runtime
     let Ok(runtime) = Builder::new_multi_thread().enable_all().build() else {
         error!("Failed to create Tokio runtime");
-        return ExitCode::from(1);
+        return TridentExitCodes::SetupFailed.into();
     };
 
-    if let Err(e) = runtime.block_on(run_client(args)) {
-        error!("Client failed: {:?}", e);
-        return ExitCode::from(1);
+    match runtime.block_on(run_client(args)) {
+        Err(e) => {
+            error!("Client failed: {:?}", e);
+            return TridentExitCodes::Failed.into();
+        }
+        Ok(ExitKind::Done) => {}
+        Ok(ExitKind::NeedsReboot) => {
+            if let Err(e) = crate::reboot() {
+                error!("Failed to reboot: {e:?}");
+                return TridentExitCodes::RebootUnsuccessful.into();
+            }
+        }
     }
 
-    ExitCode::from(0)
+    TridentExitCodes::Success.into()
 }
 
-async fn run_client(args: &ClientArgs) -> Result<(), Error> {
+async fn run_client(args: &ClientArgs) -> Result<ExitKind, Error> {
     let mut client = TridentClient::connect(&args.server)
         .await
         .context("Failed to connect to Trident server")?;
@@ -43,10 +52,46 @@ async fn run_client(args: &ClientArgs) -> Result<(), Error> {
                 .context("Failed to get Trident server version")?;
             println!("server: {}", version);
         }
+
+        ClientCommands::Install {
+            config,
+            allowed_operations,
+            multiboot,
+        } => {
+            let config_yaml = fs::read_to_string(config).await.with_context(|| {
+                format!("Failed to read configuration file: {}", config.display())
+            })?;
+
+            if *multiboot {
+                bail!("Multiboot installas are not implemented via gRPC client yet");
+            }
+
+            let operations = cli::to_operations(allowed_operations);
+
+            if operations.has_finalize() && operations.has_stage() {
+                return client
+                    .install(config_yaml, RebootHandling::Trident)
+                    .await
+                    .context("Failed to install configuration on Trident server");
+            } else if operations.has_stage() {
+                bail!("Staging-only installs are not implemented via gRPC client yet");
+            } else if operations.has_finalize() {
+                bail!("Finalizing-only installs are not implemented via gRPC client yet");
+            } else {
+                bail!("At least one allowed operation must be specified");
+            }
+        }
+
+        ClientCommands::StreamImage { image, hash } => {
+            return client
+                .stream_image(image, hash, RebootHandling::Trident)
+                .await
+                .context("Failed to stream image to Trident server");
+        }
         _ => {
             bail!("Unimplemented client command");
         }
     }
 
-    Ok(())
+    Ok(ExitKind::Done)
 }

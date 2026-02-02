@@ -1,6 +1,7 @@
 use std::{
     fmt::{Display, Formatter, Result as FmtResult},
     path::PathBuf,
+    process::ExitCode,
     time::Duration,
 };
 
@@ -14,6 +15,31 @@ use crate::TRIDENT_VERSION;
 mod client;
 
 pub use client::{ClientArgs, ClientCommands};
+
+/// Standard exit codes used by Trident.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TridentExitCodes {
+    /// Indicates successful completion of the process.
+    Success = 0,
+
+    /// Indicates that the process failed during setup.
+    SetupFailed = 1,
+
+    /// Trident failed due to some error.
+    Failed = 2,
+
+    /// Trident attempted to reboot but timed out waiting for it to happen.
+    RebootUnsuccessful = 3,
+
+    /// Indicates that Trident failed to load the local agent configuration.
+    FailedToLoadAgentConfig = 4,
+}
+
+impl From<TridentExitCodes> for ExitCode {
+    fn from(code: TridentExitCodes) -> Self {
+        Self::from(code as u8)
+    }
+}
 
 #[derive(Parser, Debug)]
 #[clap(version = TRIDENT_VERSION)]
@@ -47,6 +73,7 @@ pub fn to_operations(allowed_operations: &[AllowedOperation]) -> Operations {
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     /// Run the gRPC client
+    #[clap(hide(true))]
     Client(ClientArgs),
 
     /// Initiate an install of Azure Linux
