@@ -16,7 +16,7 @@ parameters:
 stages:
   - stage: Publishing
     dependsOn:
-      - GetTridentBinaries_rpms_amd64
+      - GetTridentBinaries_rpms
       - ${{ if eq(parameters.stageType, 'pre') }}:
           - DeploymentTesting_host
           - DeploymentTesting_container
