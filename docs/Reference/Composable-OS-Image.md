@@ -77,7 +77,7 @@ PHYSICAL order of the regions in the source disk image.
 ### Disk Region Images
 
 The region images are compressed raw files containing the data inside each of
-the defined regions of the source disk image. The defined regions are:
+the relevant defined regions of the source disk image. The defined regions are:
 
 - The primary GPT header and entries, along with the protective MBR.
 - Each partition defined in the GPT partition entries.
