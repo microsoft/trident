@@ -83,6 +83,7 @@ fn run_trident(
             return Trident::start_network(HostConfigurationSource::File(config.clone()))
                 .map(|()| ExitKind::Done);
         }
+
         _ => (),
     }
 
