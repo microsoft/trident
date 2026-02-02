@@ -30,7 +30,7 @@ stages:
   - stage: FunctionalTesting
     displayName: Functional Testing
     dependsOn:
-      - BuildingTools_amd64
+      - BuildingTools
       - ${{ if eq(parameters.downloadPrebuiltImage, false) }}:
           - TridentTestImg_trident_functest
 

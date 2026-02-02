@@ -197,7 +197,7 @@ stages:
       - ${{ if eq(parameters.testingRun, true) }}:
           - DownloadTestingElements
       - ${{ else }}:
-          - BuildingTools_amd64
+          - BuildingTools
           - ${{ if eq(parameters.includeQemu, true) }}:
               - BuildImagesQemu
           - ${{ if eq(parameters.includeAzure, true) }}:
