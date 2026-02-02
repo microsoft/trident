@@ -2,7 +2,7 @@ stages:
   - stage: BuildTridentContainerImage
     displayName: Build Docker Image
     dependsOn:
-      - GetTridentBinaries_rpms_amd64
+      - GetTridentBinaries_rpms
 
     jobs:
       - job: BuildImage
