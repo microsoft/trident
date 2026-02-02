@@ -40,6 +40,8 @@ func (vm *VirtDeployVM) configureDisks() []libvirtxml.DomainDisk {
 			},
 			Address: &libvirtxml.DomainAddress{},
 		}
+		// ARM64 + SATA + QCOW2 seems to have issues: the EFI files are not loaded.
+		// Because of this, we use virtio for disks (not CDs) on ARM64
 		if vm.isArm64() {
 			domainDisk.Target.Bus = "virtio"
 			domainDisk.Address.PCI = &libvirtxml.DomainAddressPCI{
