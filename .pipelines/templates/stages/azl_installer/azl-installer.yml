@@ -25,7 +25,7 @@ stages:
     displayName: Build azl-installer-iso
     dependsOn:
       - BuildInstallerTools
-      - GetTridentBinaries_rpms
+      - GetTridentBinaries_rpms_amd64
       - TridentTestImg_trident_testimage
       - ${{ if ne(parameters.dependsOnStage, '') }}:
         - ${{ parameters.dependsOnStage }}

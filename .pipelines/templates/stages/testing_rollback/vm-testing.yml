@@ -62,7 +62,7 @@ stages:
             displayName: Build Base and Update Images for QEMU GRUB
             dependsOn:
               - PrepareSSHKeys
-              - GetTridentBinaries_rpms
+              - GetTridentBinaries_rpms_amd64
               - ${{ if ne(parameters.dependsOnStage, '') }}:
                   - ${{ parameters.dependsOnStage }}
 

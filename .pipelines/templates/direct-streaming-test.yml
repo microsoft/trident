@@ -21,7 +21,7 @@ stages:
           - GetTridentBinaries_rpms_arm64
           - BuildingTools_arm64
         - ${{ if eq(parameters.architecture, 'amd64') }}:
-          - GetTridentBinaries_rpms
+          - GetTridentBinaries_rpms_amd64
           - BuildingTools
         - PrepareSSHKeys
       jobs:
@@ -45,7 +45,7 @@ stages:
           - GetTridentBinaries_rpms_arm64
           - BuildingTools_arm64
         - ${{ if eq(parameters.architecture, 'amd64') }}:
-          - GetTridentBinaries_rpms
+          - GetTridentBinaries_rpms_amd64
           - BuildingTools
         - PrepareSSHKeys
       jobs:
@@ -78,7 +78,7 @@ stages:
           - GetTridentBinaries_rpms_arm64
           - BuildingTools_arm64
         - ${{ if eq(parameters.architecture, 'amd64') }}:
-          - GetTridentBinaries_rpms
+          - GetTridentBinaries_rpms_amd64
           - BuildingTools
         - PrepareSSHKeys
       jobs:
