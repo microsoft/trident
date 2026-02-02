@@ -2,7 +2,7 @@ stages:
   - stage: BuildTridentContainerImage
     displayName: Build Docker Image
     dependsOn:
-      - GetTridentBinaries_rpms
+      - GetTridentBinaries_rpms_amd64
 
     jobs:
       - job: BuildImage
@@ -13,6 +13,7 @@ stages:
         variables:
           ob_outputDirectory: "$(Build.SourcesDirectory)/trident/out"
           ob_artifactBaseName: "trident-docker-image"
+
 
         steps:
           - template: ../common_tasks/avoid-pypi-usage.yml
