@@ -1155,13 +1155,11 @@ artifacts/trident-vm-grub-verity-azure-testimage.vhd: \
 			--output-image-format vhd-fixed \
 			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-grub-verity-azure.yaml
 
+IAMGE_CUSTOMIZATION_CONFIG := $(shell mktemp tmp.ic.XXX.conf)
+
 artifacts/azurelinux-direct-streaming-testimage-arm64.cosi: \
 	artifacts/trident-rawcosi-testimage-arm64.vhdx
-	$(eval TMP_IC_CONFIG := $(shell mktemp tmp.XXX.config))
-	echo "output:" > $(TMP_IC_CONFIG)
-	echo "  image:" >> $(TMP_IC_CONFIG)
-	echo "    path: artifacts/azurelinux-direct-streaming-testimage-arm64.cosi" >> $(TMP_IC_CONFIG)
-	echo "    format: baremetal-image" >> $(TMP_IC_CONFIG)
+	echo "output:" > $(IAMGE_CUSTOMIZATION_CONFIG) # specify everything in cmdline
 	docker run \
 		--rm \
 		--privileged \
@@ -1173,16 +1171,12 @@ artifacts/azurelinux-direct-streaming-testimage-arm64.cosi: \
 			--image-file /repo/artifacts/trident-rawcosi-testimage-arm64.vhdx \
 			--output-image-file /repo/artifacts/azurelinux-direct-streaming-testimage-arm64.cosi \
 			--output-image-format baremetal-image \
-			--config-file /repo/$(TMP_IC_CONFIG)
-	rm -rf $(TMP_IC_CONFIG)
+			--config-file /repo/$(IAMGE_CUSTOMIZATION_CONFIG)
+	rm -rf $(IAMGE_CUSTOMIZATION_CONFIG)
 
 artifacts/azurelinux-direct-streaming-testimage-amd64.cosi: \
 	artifacts/trident-rawcosi-testimage.vhdx
-	$(eval TMP_IC_CONFIG := $(shell mktemp tmp.XXX.config))
-	echo "output:" > $(TMP_IC_CONFIG)
-	echo "  image:" >> $(TMP_IC_CONFIG)
-	echo "    path: artifacts/azurelinux-direct-streaming-testimage-amd64.cosi" >> $(TMP_IC_CONFIG)
-	echo "    format: baremetal-image" >> $(TMP_IC_CONFIG)
+	echo "output:" > $(IAMGE_CUSTOMIZATION_CONFIG) # specify everything in cmdline
 	docker run \
 		--rm \
 		--privileged \
@@ -1194,8 +1188,8 @@ artifacts/azurelinux-direct-streaming-testimage-amd64.cosi: \
 			--image-file /repo/artifacts/trident-rawcosi-testimage.vhdx \
 			--output-image-file /repo/artifacts/azurelinux-direct-streaming-testimage-amd64.cosi \
 			--output-image-format baremetal-image \
-			--config-file /repo/$(TMP_IC_CONFIG)
-	rm -rf $(TMP_IC_CONFIG)
+			--config-file /repo/$(IAMGE_CUSTOMIZATION_CONFIG)
+	rm -rf $(IAMGE_CUSTOMIZATION_CONFIG)
 
 .PHONY: imagecustomizer-dev-amd64
 imagecustomizer-dev-amd64:
@@ -1218,14 +1212,9 @@ artifacts/ubuntu_arm64.vhdx:
 	rm -rf ubuntu-22.04-server-cloudimg-arm64.img
 
 artifacts/ubuntu-direct-streaming-testimage-arm64.cosi: \
-	artifacts/ubuntu_arm64.vhdx \
-	$(eval TMP_IC_CONFIG := $(shell mktemp tmp.XXX.config))
-	echo "output:" > $(TMP_IC_CONFIG)
-	echo "  image:" >> $(TMP_IC_CONFIG)
-	echo "    path: artifacts/ubuntu-direct-streaming-testimage-arm64.cosi" >> $(TMP_IC_CONFIG)
-	echo "    format: baremetal-image" >> $(TMP_IC_CONFIG)
-	echo "previewFeatures:" >> $(TMP_IC_CONFIG)
-	echo "  - ubuntu-22.04" >> $(TMP_IC_CONFIG)
+	artifacts/ubuntu_arm64.vhdx
+	echo "previewFeatures:" > $(IAMGE_CUSTOMIZATION_CONFIG)
+	echo "  - ubuntu-22.04" >> $(IAMGE_CUSTOMIZATION_CONFIG)
 	docker run \
 		--rm \
 		--privileged \
@@ -1237,18 +1226,13 @@ artifacts/ubuntu-direct-streaming-testimage-arm64.cosi: \
 			--image-file /repo/artifacts/ubuntu_arm64.vhdx \
 			--output-image-file /repo/artifacts/ubuntu-direct-streaming-testimage-arm64.cosi \
 			--output-image-format baremetal-image \
-			--config-file /repo/$(TMP_IC_CONFIG)
-	rm -rf $(TMP_IC_CONFIG)
+			--config-file /repo/$(IAMGE_CUSTOMIZATION_CONFIG)
+	rm -rf $(IAMGE_CUSTOMIZATION_CONFIG)
 
 artifacts/ubuntu-direct-streaming-testimage-amd64.cosi: \
-	artifacts/ubuntu.vhdx \
-	$(eval TMP_IC_CONFIG := $(shell mktemp tmp.XXX.config))
-	echo "output:" > $(TMP_IC_CONFIG)
-	echo "  image:" >> $(TMP_IC_CONFIG)
-	echo "    path: artifacts/ubuntu-direct-streaming-testimage-amd64.cosi" >> $(TMP_IC_CONFIG)
-	echo "    format: baremetal-image" >> $(TMP_IC_CONFIG)
-	echo "previewFeatures:" >> $(TMP_IC_CONFIG)
-	echo "  - ubuntu-22.04" >> $(TMP_IC_CONFIG)
+	artifacts/ubuntu.vhdx
+	echo "previewFeatures:" > $(IAMGE_CUSTOMIZATION_CONFIG)
+	echo "  - ubuntu-22.04" >> $(IAMGE_CUSTOMIZATION_CONFIG)
 	docker run \
 		--rm \
 		--privileged \
@@ -1260,5 +1244,5 @@ artifacts/ubuntu-direct-streaming-testimage-amd64.cosi: \
 			--image-file /repo/artifacts/ubuntu.vhdx \
 			--output-image-file /repo/artifacts/ubuntu-direct-streaming-testimage-amd64.cosi \
 			--output-image-format baremetal-image \
-			--config-file /repo/$(TMP_IC_CONFIG)
-	rm -rf $(TMP_IC_CONFIG)
+			--config-file /repo/$(IAMGE_CUSTOMIZATION_CONFIG)
+	rm -rf $(IAMGE_CUSTOMIZATION_CONFIG)
