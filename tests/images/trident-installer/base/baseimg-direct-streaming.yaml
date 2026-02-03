@@ -63,6 +63,7 @@ os:
   services:
     enable:
       - sshd
+      - tridentd.socket
       - trident-direct-streaming
 
   additionalFiles:
