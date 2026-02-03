@@ -5,6 +5,7 @@ pub(super) mod background_log;
 pub(super) mod filter;
 pub(super) mod logfwd;
 pub(super) mod logstream;
+pub(super) mod logstream_async;
 pub(super) mod multilog;
 pub(super) mod tracestream;
 
