@@ -107,7 +107,7 @@ SHOULD shrink the filesystems before creating the images when:
 Any resize operation MUST be done with standard tools for the filesystem type.
 
 Readers MUST be able to handle filesystem images that have been shrunk and they
-SHOULD to resize the filesystem to fill the partition when writing the image
+SHOULD resize the filesystem to fill the partition when writing the image
 to disk.
 
 To detect whether a filesystem has been shrunk, readers MUST compare the
