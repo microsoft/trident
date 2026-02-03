@@ -6,6 +6,10 @@ Requires=tridentd.socket
 [Service]
 StandardOutput=journal+console
 StandardError=journal+console
+ExecStart=/bin/bash -c "trident --version"
+ExecStart=/bin/bash -c "trident grpc-client version"
+ExecStart=/bin/bash -c "systemctl status tridentd.socket --no-pager"
+ExecStart=/bin/bash -c "find / -name trident.sock"
 ExecStart=/bin/bash -c "echo Running: trident grpc-client stream-image $(cat /trident_cdrom/direct-streaming.conf | grep URL | cut -d '=' -f 2) --hash $(cat /trident_cdrom/direct-streaming.conf | grep HASH | cut -d '=' -f 2) --verbosity DEBUG"
 ExecStart=/bin/bash -c "trident grpc-client stream-image $(cat /trident_cdrom/direct-streaming.conf | grep URL | cut -d '=' -f 2) --hash $(cat /trident_cdrom/direct-streaming.conf | grep HASH | cut -d '=' -f 2) --verbosity DEBUG"
 Type=oneshot
