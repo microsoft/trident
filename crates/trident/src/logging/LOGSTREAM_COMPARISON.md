@@ -30,19 +30,19 @@ error!("An error occurred");   // Blocks here
 use crate::logging::logstream_async::LogstreamAsync;
 use log::{info, error};
 
-// Create and configure
-let logstream = LogstreamAsync::create();
+// Create and configure (worker thread spawned on create)
+let mut logstream = LogstreamAsync::create();
 logstream.set_server("http://logs.example.com/api/logs".to_string())?;
 
-// Create logger (spawns worker thread)
-let mut logger = logstream.make_logger();
+// Create logger
+let logger = logstream.make_logger();
 
 // Log messages (returns immediately, queued for background upload)
 info!("Application started");  // Non-blocking
 error!("An error occurred");   // Non-blocking
 
 // Explicit cleanup to ensure all logs are sent
-logger.finish();
+logstream.finish();
 ```
 
 ## Advanced Usage
@@ -115,7 +115,7 @@ logger.init()?;
 use crate::logging::multilog::MultiLogger;
 use crate::logging::logstream_async::LogstreamAsync;
 
-let logstream = LogstreamAsync::create();
+let mut logstream = LogstreamAsync::create();
 logstream.set_server("http://logs.example.com/api/logs".to_string())?;
 
 let logger = MultiLogger::new()
@@ -126,8 +126,8 @@ logger.init()?;
 
 // ... application runs ...
 
-// Note: With async version, ensure cleanup happens before shutdown
-// This is tricky with a global logger, so consider the trade-offs
+// Important: Call finish on logstream before shutdown
+logstream.finish();
 ```
 
 ## Shutdown Patterns
@@ -141,25 +141,23 @@ drop(logger);  // Safe to drop anytime
 
 ### Asynchronous Version
 
-**Option 1: Explicit finish**
+**Option 1: Explicit finish (Recommended)**
 ```rust
-logger.finish();  // Blocks until all pending logs are sent
-drop(logger);
+let mut logstream = LogstreamAsync::create();
+// ... use logstream ...
+logstream.finish();  // Blocks until all pending logs are sent
 ```
 
 **Option 2: Rely on Drop**
 ```rust
-drop(logger);  // Drop impl calls finish() automatically
-               // Blocks until worker thread completes
-```
-
-**Option 3: Let it go out of scope**
-```rust
 {
-    let logger = logstream.make_logger();
-    // ... use logger ...
+    let logstream = LogstreamAsync::create();
+    // ... use logstream ...
 }  // Drop called here, waits for worker thread
 ```
+
+**Important**: The logstream must remain in scope until you're done logging.
+The `finish()` method is on the logstream, not the logger.
 
 ## Performance Comparison
 
@@ -223,18 +221,18 @@ To migrate from sync to async:
    use crate::logging::logstream_async::LogstreamAsync;
    ```
 
-2. Change struct name:
+2. Make logstream mutable and change struct name:
    ```rust
    // FROM:
    let logstream = Logstream::create();
    // TO:
-   let logstream = LogstreamAsync::create();
+   let mut logstream = LogstreamAsync::create();
    ```
 
 3. Add finish call before shutdown:
    ```rust
    // Add this before application exit:
-   logger.finish();
+   logstream.finish();
    ```
 
 4. Test thoroughly, especially shutdown behavior

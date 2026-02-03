@@ -39,9 +39,9 @@ A struct that bundles a `LogEntry` with its target URL for the worker thread.
 
 ### Worker Thread Lifecycle
 
-1. **Creation**: Worker thread spawns when `AsyncLogSender::new()` is called
+1. **Creation**: Worker thread spawns when `LogstreamAsync::create()` is called
 2. **Operation**: Continuously reads from channel and sends HTTP requests
-3. **Shutdown**: When the channel sender is dropped:
+3. **Shutdown**: When all channel senders are dropped:
    - Channel closes
    - Worker thread drains remaining messages
    - Worker thread exits
@@ -49,44 +49,47 @@ A struct that bundles a `LogEntry` with its target URL for the worker thread.
 
 ### Graceful Shutdown
 
-The async version provides explicit control over shutdown:
+The async version provides explicit control over shutdown via the `LogstreamAsync` struct:
 
 ```rust
-let mut logger = logstream.make_logger();
+let mut logstream = LogstreamAsync::create();
+logstream.set_server("http://logs.example.com/api/logs".to_string())?;
+
+let logger = logstream.make_logger();
 
 // ... use logger ...
 
 // Explicitly finish all pending logs
-logger.finish();
+logstream.finish();
 ```
 
 The `finish()` method:
-1. Drops the channel sender (signals no more logs coming)
+1. Drops the LogstreamAsync's channel sender (signals no more logs coming)
 2. Waits for the worker thread to process all queued logs
 3. Joins the worker thread
 
-If `finish()` is not called explicitly, the `Drop` implementation ensures cleanup happens automatically.
+If `finish()` is not called explicitly, the `Drop` implementation on `LogstreamAsync` ensures cleanup happens automatically.
 
 ## Usage Example
 
 ```rust
 use trident::logging::logstream_async::LogstreamAsync;
 
-// Create the logstream
-let logstream = LogstreamAsync::create();
+// Create the logstream (spawns worker thread)
+let mut logstream = LogstreamAsync::create();
 
 // Set the server URL
 logstream.set_server("http://logs.example.com/api/logs".to_string())?;
 
 // Create a logger
-let mut logger = logstream.make_logger();
+let logger = logstream.make_logger();
 
 // Use with the log macros (non-blocking)
 log::info!("Application started");
 log::error!("An error occurred");
 
 // When shutting down, ensure all logs are sent
-logger.finish();
+logstream.finish();
 ```
 
 ## Benefits

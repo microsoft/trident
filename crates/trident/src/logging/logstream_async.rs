@@ -16,26 +16,26 @@
 //! use log::{info, error};
 //!
 //! // Create and configure the logstream
-//! let logstream = LogstreamAsync::create();
+//! let mut logstream = LogstreamAsync::create();
 //! logstream.set_server("http://logs.example.com/api/logs".to_string())
 //!     .expect("Failed to set server URL");
 //!
-//! // Create a logger (spawns worker thread)
-//! let mut logger = logstream.make_logger();
+//! // Create a logger (worker thread already spawned)
+//! let logger = logstream.make_logger();
 //!
 //! // Use with the log crate (non-blocking)
 //! info!("Application started");
 //! error!("An error occurred");
 //!
 //! // When done, ensure all logs are sent
-//! logger.finish();
+//! logstream.finish();
 //! ```
 //!
 //! # Graceful Shutdown
 //!
 //! The async logger provides explicit control over shutdown:
 //!
-//! 1. Call `finish()` to drain the queue and wait for the worker thread
+//! 1. Call `logstream.finish()` to wait for the worker thread to complete
 //! 2. If not called, `Drop` implementation handles cleanup automatically
 //!
 //! # Performance Characteristics
@@ -67,18 +67,32 @@ use log::{info, Log};
 
 use super::LogEntry;
 
-#[derive(Clone)]
 pub struct LogstreamAsync {
     // TODO: Consider changing this to a LockOnce when rustc is updated to >=1.70
     target: Arc<RwLock<Option<String>>>,
     disabled: bool,
+    sender: Option<Sender<LogMessage>>,
+    worker_thread: Option<JoinHandle<()>>,
+    send_failed: Arc<AtomicBool>,
 }
 
 impl LogstreamAsync {
     pub fn create() -> Self {
+        let (sender, receiver) = mpsc::channel();
+        let send_failed = Arc::new(AtomicBool::new(false));
+        let send_failed_clone = send_failed.clone();
+
+        // Spawn the worker thread that will send logs to the server
+        let worker_thread = thread::spawn(move || {
+            AsyncLogSender::worker_loop(receiver, send_failed_clone);
+        });
+
         Self {
             target: Arc::new(RwLock::new(None)),
             disabled: false,
+            sender: Some(sender),
+            worker_thread: Some(worker_thread),
+            send_failed,
         }
     }
 
@@ -123,12 +137,69 @@ impl LogstreamAsync {
     ///
     /// Sets the max level to Debug
     pub fn make_logger(&self) -> Box<AsyncLogSender> {
-        Box::new(AsyncLogSender::new(self.target.clone(), log::LevelFilter::Debug))
+        // Clone the sender if available, otherwise create a disconnected channel
+        let sender = self.sender.as_ref().map(|s| s.clone()).unwrap_or_else(|| {
+            // Create a dummy channel that's already closed
+            let (sender, _) = mpsc::channel();
+            sender
+        });
+        
+        Box::new(AsyncLogSender::new(
+            self.target.clone(),
+            sender,
+            log::LevelFilter::Debug,
+        ))
     }
 
     /// Create a Boxed AsyncLogSender with a specific max level
     pub fn make_logger_with_level(&self, max_level: log::LevelFilter) -> Box<AsyncLogSender> {
-        Box::new(AsyncLogSender::new(self.target.clone(), max_level))
+        // Clone the sender if available, otherwise create a disconnected channel
+        let sender = self.sender.as_ref().map(|s| s.clone()).unwrap_or_else(|| {
+            // Create a dummy channel that's already closed
+            let (sender, _) = mpsc::channel();
+            sender
+        });
+        
+        Box::new(AsyncLogSender::new(
+            self.target.clone(),
+            sender,
+            max_level,
+        ))
+    }
+
+    /// Finish sending all pending logs and shut down the worker thread
+    ///
+    /// This method should be called when no more logs will be sent.
+    /// It drops the sender channel (signaling completion) and waits for
+    /// the worker thread to finish processing all queued logs.
+    ///
+    /// After calling this method, any subsequent calls to make_logger() will
+    /// create loggers that silently drop all log entries.
+    ///
+    /// If the worker thread panicked, the panic is silently ignored.
+    pub fn finish(&mut self) {
+        // Drop our sender to signal the worker thread to finish
+        // Note: AsyncLogSender instances may still have their own clones
+        // The worker thread will exit when ALL senders are dropped
+        self.sender.take();
+        
+        // Wait for the worker thread to complete
+        if let Some(handle) = self.worker_thread.take() {
+            // Ignore panics from the worker thread
+            let _ = handle.join();
+        }
+    }
+}
+
+impl Drop for LogstreamAsync {
+    fn drop(&mut self) {
+        // Ensure the worker thread is properly shut down
+        // When LogstreamAsync is dropped, its sender is dropped
+        // This will close the channel (if all other senders are also dropped)
+        // and the worker thread will exit
+        if let Some(handle) = self.worker_thread.take() {
+            let _ = handle.join();
+        }
     }
 }
 
@@ -140,35 +211,27 @@ struct LogMessage {
 
 /// A logger that sends logs to a server asynchronously via a sidecar thread
 ///
-/// This logger spawns a background thread that handles all HTTP requests,
-/// allowing the main thread to continue without blocking on network I/O.
+/// This logger uses a shared channel to send log entries to a worker thread
+/// managed by the LogstreamAsync parent. Multiple loggers can share the same
+/// worker thread.
 ///
 /// Do not create this logger directly, use LogstreamAsync::make_logger instead.
 pub struct AsyncLogSender {
     max_level: log::LevelFilter,
     server: Arc<RwLock<Option<String>>>,
-    sender: Option<Sender<LogMessage>>,
-    worker_thread: Option<JoinHandle<()>>,
-    send_failed: Arc<AtomicBool>,
+    sender: Sender<LogMessage>,
 }
 
 impl AsyncLogSender {
-    fn new(server: Arc<RwLock<Option<String>>>, max_level: log::LevelFilter) -> Self {
-        let (sender, receiver) = mpsc::channel();
-        let send_failed = Arc::new(AtomicBool::new(false));
-        let send_failed_clone = send_failed.clone();
-
-        // Spawn the worker thread that will send logs to the server
-        let worker_thread = thread::spawn(move || {
-            Self::worker_loop(receiver, send_failed_clone);
-        });
-
+    fn new(
+        server: Arc<RwLock<Option<String>>>,
+        sender: Sender<LogMessage>,
+        max_level: log::LevelFilter,
+    ) -> Self {
         Self {
             server,
+            sender,
             max_level,
-            sender: Some(sender),
-            worker_thread: Some(worker_thread),
-            send_failed,
         }
     }
 
@@ -213,24 +276,6 @@ impl AsyncLogSender {
     fn get_server(&self) -> Option<String> {
         self.server.read().map(|s| s.clone()).unwrap_or_default()
     }
-
-    /// Finish sending all pending logs and shut down the worker thread
-    ///
-    /// This method should be called when no more logs will be sent.
-    /// It drops the sender channel (signaling completion) and waits for
-    /// the worker thread to finish processing all queued logs.
-    ///
-    /// If the worker thread panicked, the panic is silently ignored.
-    pub fn finish(&mut self) {
-        // Drop the sender to signal the worker thread to finish
-        self.sender.take();
-
-        // Wait for the worker thread to complete
-        if let Some(handle) = self.worker_thread.take() {
-            // Ignore panics from the worker thread
-            let _ = handle.join();
-        }
-    }
 }
 
 impl Log for AsyncLogSender {
@@ -248,30 +293,20 @@ impl Log for AsyncLogSender {
         if let Some(target) = self.get_server() {
             let log_entry = LogEntry::from(record);
             
-            // Try to send the log entry to the worker thread
-            if let Some(sender) = &self.sender {
-                let message = LogMessage {
-                    entry: log_entry,
-                    target_url: target,
-                };
-                
-                // Send is non-blocking (unbounded channel)
-                // If the channel is closed, we just drop the log
-                let _ = sender.send(message);
-            }
+            let message = LogMessage {
+                entry: log_entry,
+                target_url: target,
+            };
+            
+            // Send is non-blocking (unbounded channel)
+            // If the channel is closed, we just drop the log
+            let _ = self.sender.send(message);
         }
     }
 
     fn flush(&self) {
         // The worker thread continuously processes logs
         // Flush is essentially a no-op in this async design
-    }
-}
-
-impl Drop for AsyncLogSender {
-    fn drop(&mut self) {
-        // Ensure the worker thread is properly shut down
-        self.finish();
     }
 }
 
@@ -339,12 +374,12 @@ mod tests {
 
     #[test]
     fn test_finish_method() {
-        let logstream = LogstreamAsync::create();
+        let mut logstream = LogstreamAsync::create();
         logstream
             .set_server("http://localhost:8080".to_string())
             .unwrap();
 
-        let mut logger = logstream.make_logger();
+        let logger = logstream.make_logger();
 
         // Log some messages
         let record = log::Record::builder()
@@ -357,12 +392,11 @@ mod tests {
         logger.log(&record);
 
         // Finish should wait for all logs to be processed
-        logger.finish();
+        logstream.finish();
 
-        // After finish, the sender should be None
-        assert!(logger.sender.is_none(), "Sender should be None after finish");
+        // After finish, the worker thread should be None
         assert!(
-            logger.worker_thread.is_none(),
+            logstream.worker_thread.is_none(),
             "Worker thread should be None after finish"
         );
     }
@@ -392,12 +426,12 @@ mod tests {
 
     #[test]
     fn test_channel_communication() {
-        let logstream = LogstreamAsync::create();
+        let mut logstream = LogstreamAsync::create();
         logstream
             .set_server("http://localhost:8080".to_string())
             .unwrap();
 
-        let mut logger = logstream.make_logger();
+        let logger = logstream.make_logger();
 
         // Create several log records
         for i in 0..10 {
@@ -412,6 +446,6 @@ mod tests {
         std::thread::sleep(Duration::from_millis(100));
 
         // Finish and ensure cleanup
-        logger.finish();
+        logstream.finish();
     }
 }
