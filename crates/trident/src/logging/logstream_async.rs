@@ -52,8 +52,6 @@
 //! | Complexity | Simple | More complex |
 //! | Throughput | Limited by network | Higher |
 //! | Memory | Constant | Grows with queue |
-//!
-//! See `LOGSTREAM_ASYNC_README.md` for detailed documentation.
 
 use std::sync::{
     atomic::{AtomicBool, Ordering},
