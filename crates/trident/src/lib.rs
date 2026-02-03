@@ -30,9 +30,9 @@ use trident_api::{
 
 pub mod agentconfig;
 pub mod cli;
-mod client;
 mod datastore;
 mod engine;
+mod grpc_client;
 mod health;
 mod io_utils;
 mod logging;
@@ -46,12 +46,12 @@ mod subsystems;
 pub mod validation;
 
 pub use crate::{
-    client::client_main,
     datastore::DataStore,
     engine::{
         manual_rollback::{self, utils::ManualRollbackRequestKind},
         provisioning_network, reboot,
     },
+    grpc_client::client_main,
     logging::{
         background_log::BackgroundLog, filter::LogFilter, logfwd::LogForwarder,
         logstream::Logstream, multilog::MultiLogger, tracestream::TraceStream,

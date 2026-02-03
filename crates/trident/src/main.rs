@@ -369,7 +369,7 @@ fn main() -> ExitCode {
             logstream.unwrap(),
             tracestream.unwrap(),
         )
-    } else if let Commands::Client(client_args) = &args.command {
+    } else if let Commands::GrpcClient(client_args) = &args.command {
         let logstream = setup_logging(&args, iter::empty());
         if let Err(e) = logstream {
             error!("Failed to initialize logging: {e:?}");

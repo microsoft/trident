@@ -12,9 +12,9 @@ use trident_api::config::{Operation, Operations};
 
 use crate::TRIDENT_VERSION;
 
-mod client;
+mod grpc_client;
 
-pub use client::{ClientArgs, ClientCommands};
+pub use grpc_client::{ClientArgs, ClientCommands};
 
 /// Standard exit codes used by Trident.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,7 +74,7 @@ pub fn to_operations(allowed_operations: &[AllowedOperation]) -> Operations {
 pub enum Commands {
     /// Run the gRPC client
     #[clap(hide(true))]
-    Client(ClientArgs),
+    GrpcClient(ClientArgs),
 
     /// Initiate an install of Azure Linux
     Install {
@@ -268,7 +268,7 @@ pub enum Commands {
 impl Commands {
     pub fn name(&self) -> &'static str {
         match self {
-            Commands::Client(args) => args.command.name(),
+            Commands::GrpcClient(args) => args.command.name(),
             Commands::Install { .. } => "install",
             Commands::Update { .. } => "update",
             Commands::Commit { .. } => "commit",

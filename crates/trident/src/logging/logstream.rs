@@ -6,7 +6,7 @@ use std::sync::{
 use anyhow::{anyhow, Context, Error};
 use log::{info, Log};
 
-use super::{http_client::HTTP_CLIENT, LogEntry};
+use super::LogEntry;
 
 #[derive(Clone)]
 pub struct Logstream {
@@ -129,13 +129,7 @@ impl Log for LogSender {
                 }
             };
 
-            // if let Err(e) = self.client.post(target).body(body).send() {
-            //     if !self.send_failed.swap(true, Ordering::Relaxed) {
-            //         eprintln!("Failed to send log entry: {e}");
-            //     }
-            // }
-
-            if let Err(e) = HTTP_CLIENT.post(&target, body) {
+            if let Err(e) = self.client.post(target).body(body).send() {
                 if !self.send_failed.swap(true, Ordering::Relaxed) {
                     eprintln!("Failed to send log entry: {e}");
                 }
