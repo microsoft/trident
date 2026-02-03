@@ -23,6 +23,7 @@ use harpoon::trident_service_server::TridentServiceServer;
 
 use crate::{
     agentconfig::AgentConfig,
+    cli::TridentExitCodes,
     logging::logfwd::LogForwarder,
     server::{activitytracker::ActivityTracker, fds::UnixSocketCleanup, support::fds},
     ExitKind, Logstream, TraceStream,
@@ -71,14 +72,14 @@ pub fn server_main(
     // Start the Tokio runtime
     let Ok(runtime) = Builder::new_multi_thread().enable_all().build() else {
         error!("Failed to create Tokio runtime");
-        return ExitCode::from(1);
+        return TridentExitCodes::SetupFailed.into();
     };
 
     let (listener, _listener_cleanup) = match set_up_listener(default_socket_path.as_ref()) {
         Ok(res) => res,
         Err(e) => {
             error!("Failed to set up server listener: {e:?}");
-            return ExitCode::from(1);
+            return TridentExitCodes::SetupFailed.into();
         }
     };
 
@@ -86,7 +87,7 @@ pub fn server_main(
         Ok(cfg) => cfg,
         Err(e) => {
             error!("Failed to load agent configuration: {e:?}");
-            return ExitCode::from(4);
+            return TridentExitCodes::FailedToLoadAgentConfig.into();
         }
     };
 
@@ -110,7 +111,7 @@ pub fn server_main(
         Ok(exit_kind) => exit_kind,
         Err(e) => {
             error!("Daemon failed: {e:?}");
-            return ExitCode::from(2);
+            return TridentExitCodes::Failed.into();
         }
     };
 
@@ -120,12 +121,12 @@ pub fn server_main(
         ExitKind::NeedsReboot => {
             if let Err(e) = crate::reboot() {
                 error!("Failed to reboot: {e:?}");
-                return ExitCode::from(3);
+                return TridentExitCodes::RebootUnsuccessful.into();
             }
         }
     }
 
-    ExitCode::SUCCESS
+    TridentExitCodes::Success.into()
 }
 
 async fn server_main_inner(
