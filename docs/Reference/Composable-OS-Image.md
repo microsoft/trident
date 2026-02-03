@@ -88,7 +88,7 @@ and its uncompressed size MUST exactly match the size of that region on disk.
 
 For partition regions, the logical size of the region image (its
 `uncompressedSize` as recorded in the metadata) MAY be smaller than the full
-partition size an cases where the writer shrunk the filesystem before
+partition size in cases where the writer shrunk the filesystem before
 compressing the image. See [Filesystem Shrinking](#filesystem-shrinking) for
 more details.
 
