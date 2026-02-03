@@ -7,7 +7,7 @@ use anyhow::{anyhow, Context, Error};
 use log::{info, LevelFilter, Log, Metadata, Record};
 use url::Url;
 
-use super::{background_uploader::BackgroundUploadHandle, LogEntry};
+use super::{background_uploader::BackgroundUploadHandle, filter::LogFilter, LogEntry};
 
 type Remote = Arc<RwLock<Option<Url>>>;
 
@@ -68,21 +68,29 @@ impl Logstream {
     /// Create a Boxed LogSender
     ///
     /// Sets the max level to Debug
-    pub fn make_logger(&self) -> Box<LogSender> {
-        Box::new(LogSender::new(
-            self.target.clone(),
-            log::LevelFilter::Debug,
-            self.uploader.clone(),
-        ))
+    pub fn make_logger(&self) -> Box<LogFilter<LogSender>> {
+        self.make_logger_inner(LevelFilter::Debug)
     }
 
     /// Create a Boxed LogSender with a specific max level
-    pub fn make_logger_with_level(&self, max_level: log::LevelFilter) -> Box<LogSender> {
-        Box::new(LogSender::new(
+    pub fn make_logger_with_level(&self, max_level: LevelFilter) -> Box<LogFilter<LogSender>> {
+        self.make_logger_inner(max_level)
+    }
+
+    /// Internal function to create the logger with a specific max level and
+    /// filters to avoid recursion.
+    fn make_logger_inner(&self, max_level: LevelFilter) -> Box<LogFilter<LogSender>> {
+        LogFilter::new(LogSender::new(
             self.target.clone(),
             max_level,
             self.uploader.clone(),
         ))
+        // Filter all logs that could be produced as part of sending logs to avoid recursion.
+        .with_global_filter("hyper", LevelFilter::Error)
+        .with_global_filter("hyper_util", LevelFilter::Error)
+        .with_global_filter("request", LevelFilter::Error)
+        .with_global_filter(module_path!(), LevelFilter::Error)
+        .into_logger()
     }
 }
 
@@ -160,7 +168,7 @@ mod tests {
     #[test]
     fn test_logstream() {
         let logstream = Logstream::create(BackgroundUploadHandle::new_mock());
-        let logger = logstream.make_logger();
+        let logger = logstream.make_logger().into_inner();
 
         assert!(!logger.has_server(), "Logstream should not have a server");
         assert!(
@@ -188,7 +196,7 @@ mod tests {
     #[test]
     fn test_lock() {
         let mut logstream = Logstream::create(BackgroundUploadHandle::new_mock());
-        let logger = logstream.make_logger();
+        let logger = logstream.make_logger().into_inner();
 
         assert!(!logger.has_server(), "Logstream should not have a server");
         assert!(
