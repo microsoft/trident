@@ -96,8 +96,8 @@ async fn run_client(args: &ClientArgs) -> Result<ExitKind, Error> {
                 .context("Trident failed to perform commit");
         }
 
-        _ => {
-            bail!("Unimplemented client command");
+        cmd => {
+            bail!("Unimplemented command: '{}'", cmd.name());
         }
     }
 
