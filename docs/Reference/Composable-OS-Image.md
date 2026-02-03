@@ -451,7 +451,8 @@ _Notes:_
     "disk": {
         "size": 1073741824,
         "type": "gpt",
-        "regions": [
+        "lbaSize": 512,
+        "gptRegions": [
             {
                 "image": {
                     "path": "images/primary-gpt.rawzst",
@@ -526,7 +527,8 @@ _Notes:_
     "disk": {
         "size": 1073741824,
         "type": "gpt",
-        "regions": [
+        "lbaSize": 512,
+        "gptRegions": [
             {
                 "image": {
                     "path": "images/primary-gpt.rawzst",
