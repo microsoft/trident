@@ -529,7 +529,7 @@ _Notes:_
 
 ### Revision 1.2
 
-- COSI file now contain a comprehensive set of compressed disk region images.
+- COSI file now contains a comprehensive set of compressed disk region images.
 - Added `disk` field to the root object.
 
 ### Revision 1.1
