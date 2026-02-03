@@ -111,6 +111,16 @@ SHOULD shrink the filesystems before creating the images when:
 - the filesystem covers the entire partition, guaranteeing that no data outside
   the filesystem is lost.
 
+Full coverage of the partition by the filesystem MUST be determined by the
+writer based on the filesystem metadata and partition size. A filesystem is said
+to cover the entire partition when the filesystem begins at the start of the
+partition and:
+
+- the filesystem's reported size exactly matches the partition size, OR
+- the delta between the filesystem's reported size and the partition size is
+  smaller than the filesystem's block size, meaning that the filesystem cannot
+  grow to fill the partition.
+
 Any resize operation MUST be done with standard tools for the filesystem type.
 
 Readers MUST be able to handle filesystem images that have been shrunk and they
