@@ -347,6 +347,7 @@ stages:
           buildPurpose: "pullrequest"
           runtimeEnv: "container"
 
+  - ${{ if or( eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pre'), eq(parameters.stageType, 'full-validation') ) }}:
       # Run direct streaming tests for amd64 with streaming images
       - template: direct-streaming-test.yml
         parameters:
