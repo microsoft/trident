@@ -82,6 +82,16 @@ the relevant defined regions of the source disk image. The defined regions are:
 - The primary GPT header and entries, along with the protective MBR.
 - Each partition defined in the GPT partition entries.
 
+For non-partition regions (such as the primary GPT header and entries and the
+protective MBR), the corresponding region image MUST represent the entire region
+and its uncompressed size MUST exactly match the size of that region on disk.
+
+For partition regions, the logical size of the region image (its
+`uncompressedSize` as recorded in the metadata) MAY be smaller than the full
+partition size an cases where the writer shrunk the filesystem before
+compressing the image. See [Filesystem Shrinking](#filesystem-shrinking) for
+more details.
+
 The images MUST be compressed using ZSTD compression.
 
 They MUST exist in the tarball under the `images/` directory. They MAY be placed
