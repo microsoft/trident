@@ -1,3 +1,60 @@
+//! Asynchronous log streaming implementation using a sidecar thread.
+//!
+//! This module provides an async alternative to the synchronous logstream that
+//! uses a dedicated worker thread to handle HTTP requests for log uploads.
+//!
+//! # Architecture
+//!
+//! - Main thread: Sends log entries to a channel (non-blocking)
+//! - Worker thread: Reads from channel and makes HTTP POST requests
+//! - Channel: Unbounded mpsc channel for passing log entries
+//!
+//! # Example
+//!
+//! ```no_run
+//! use trident::logging::logstream_async::LogstreamAsync;
+//! use log::{info, error};
+//!
+//! // Create and configure the logstream
+//! let logstream = LogstreamAsync::create();
+//! logstream.set_server("http://logs.example.com/api/logs".to_string())
+//!     .expect("Failed to set server URL");
+//!
+//! // Create a logger (spawns worker thread)
+//! let mut logger = logstream.make_logger();
+//!
+//! // Use with the log crate (non-blocking)
+//! info!("Application started");
+//! error!("An error occurred");
+//!
+//! // When done, ensure all logs are sent
+//! logger.finish();
+//! ```
+//!
+//! # Graceful Shutdown
+//!
+//! The async logger provides explicit control over shutdown:
+//!
+//! 1. Call `finish()` to drain the queue and wait for the worker thread
+//! 2. If not called, `Drop` implementation handles cleanup automatically
+//!
+//! # Performance Characteristics
+//!
+//! - Log calls are O(1) and non-blocking (just sends to channel)
+//! - Worker thread processes logs sequentially
+//! - Memory usage grows if logs are produced faster than they can be sent
+//!
+//! # Comparison with Sync Version
+//!
+//! | Feature | Sync (`logstream.rs`) | Async (`logstream_async.rs`) |
+//! |---------|----------------------|------------------------------|
+//! | Blocking | Yes, on each log call | No, uses channel |
+//! | Complexity | Simple | More complex |
+//! | Throughput | Limited by network | Higher |
+//! | Memory | Constant | Grows with queue |
+//!
+//! See `LOGSTREAM_ASYNC_README.md` for detailed documentation.
+
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc::{self, Receiver, Sender},
