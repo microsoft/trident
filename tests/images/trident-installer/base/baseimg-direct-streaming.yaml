@@ -75,6 +75,12 @@ os:
       destination: /root/.profile
     - source: files/trident-direct-streaming.service
       destination: /usr/lib/systemd/system/trident-direct-streaming.service
+    - source: ../../../../packaging/selinux-policy-trident/trident.if
+      destination: /usr/share/selinux/packages/trident/trident.if
+    - source: ../../../../packaging/selinux-policy-trident/trident.fc
+      destination: /usr/share/selinux/packages/trident/trident.fc
+    - source: ../../../../packaging/selinux-policy-trident/trident.te
+      destination: /usr/share/selinux/packages/trident/trident.te
 
   selinux:
     mode: enforcing
