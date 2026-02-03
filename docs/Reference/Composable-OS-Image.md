@@ -267,16 +267,20 @@ The partitioning table type. Currently, only `gpt` is supported.
 This object holds information about a specific region of the original disk
 image.
 
-| Field      | Type                           | Added in | Required                   | Description                                  |
-| ---------- | ------------------------------ | -------- | -------------------------- | -------------------------------------------- |
-| `image`    | [ImageFile](#imagefile-object) | 1.2      | Yes (since 1.2)            | Details of the image file in the tarball.    |
-| `type`     | [RegionType](#regiontype-enum) | 1.2      | Yes (since 1.2)            | The type of region this image represents.    |
-| `startLba` | number                         | 1.2      | Conditionally [1]          | The first LBA of the region in the RAW disk. |
-| `number`   | number                         | 1.2      | When `type` == `partition` | The partition number (1-based index).        |
+| Field      | Type                               | Added in | Required                   | Description                                  |
+| ---------- | ---------------------------------- | -------- | -------------------------- | -------------------------------------------- |
+| `image`    | [ImageFile](#imagefile-object) [1] | 1.2      | Yes (since 1.2)            | Details of the image file in the tarball.    |
+| `type`     | [RegionType](#regiontype-enum)     | 1.2      | Yes (since 1.2)            | The type of region this image represents.    |
+| `startLba` | number                             | 1.2      | Conditionally [2]          | The first LBA of the region in the RAW disk. |
+| `number`   | number                             | 1.2      | When `type` == `partition` | The partition number (1-based index).        |
 
 _Notes:_
 
-- **[1]** `startLba` MUST be provided when `type` is one of: `backup-gpt`,
+- **[1]** When this region is a partition that is ALSO referenced by a
+    `Filesystem` object in the `images` array, both instances of
+    [ImageFile](#imagefile-object) MUST be exactly the same (same `path`, same
+    checksum, same sizes, etc.).
+- **[2]** `startLba` MUST be provided when `type` is one of: `backup-gpt`,
   `unallocated`, or `unknown`. It MUST NOT be provided when:
   - `type` is `primary-gpt` (it must always be 0), OR
   - `type` is `partition` (the start LBA is defined in the GPT partition
@@ -468,7 +472,7 @@ _Notes:_
                     "uncompressedSize": 32768,
                     "sha384": "a3f5c6e2b4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7"
                 },
-                "type": "primary-gpt",
+                "type": "primary-gpt"
             },
             {
                 "image": {
