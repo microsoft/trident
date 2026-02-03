@@ -248,9 +248,10 @@ fn run_trident(
 
 fn setup_logging(
     args: &Cli,
+    uploader: &BackgroundUploader,
     additional_loggers: impl Iterator<Item = Box<dyn Log>>,
 ) -> Result<Logstream, Error> {
-    let logstream = Logstream::create();
+    let logstream = Logstream::create(uploader.get_handle().context("Uploader is closed")?);
 
     // Set up the multilogger
     let mut multilogger = MultiLogger::new()
@@ -335,7 +336,7 @@ fn main() -> ExitCode {
         Ok(uploader) => uploader,
         Err(e) => {
             error!("Failed to initialize background uploader: {e:?}");
-            return ExitCode::from(1);
+            return TridentExitCodes::SetupFailed.into();
         }
     };
 
@@ -355,6 +356,7 @@ fn main() -> ExitCode {
         // Initialize the loggers
         let logstream = setup_logging(
             &args,
+            &bg_uploader,
             [LogFilter::new(log_forwarder.new_logger())
                 .with_global_filter("trident::server", LevelFilter::Off)
                 .with_global_filter("tonic", LevelFilter::Error)
@@ -378,7 +380,7 @@ fn main() -> ExitCode {
             tracestream.unwrap(),
         )
     } else if let Commands::GrpcClient(client_args) = &args.command {
-        let logstream = setup_logging(&args, iter::empty());
+        let logstream = setup_logging(&args, &bg_uploader, iter::empty());
         if let Err(e) = logstream {
             error!("Failed to initialize logging: {e:?}");
             return TridentExitCodes::SetupFailed.into();
@@ -388,7 +390,7 @@ fn main() -> ExitCode {
         trident::client_main(client_args)
     } else {
         // Initialize the loggers
-        let logstream = setup_logging(&args, iter::empty());
+        let logstream = setup_logging(&args, &bg_uploader, iter::empty());
         if let Err(e) = logstream {
             error!("Failed to initialize logging: {e:?}");
             return TridentExitCodes::SetupFailed.into();

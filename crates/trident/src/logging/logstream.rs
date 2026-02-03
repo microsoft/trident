@@ -4,22 +4,27 @@ use std::sync::{
 };
 
 use anyhow::{anyhow, Context, Error};
-use log::{info, Log};
+use log::{info, LevelFilter, Log, Metadata, Record};
+use url::Url;
 
-use super::LogEntry;
+use super::{background_uploader::BackgroundUploadHandle, LogEntry};
+
+type Remote = Arc<RwLock<Option<Url>>>;
 
 #[derive(Clone)]
 pub struct Logstream {
     // TODO: Consider changing this to a LockOnce when rustc is updated to >=1.70
-    target: Arc<RwLock<Option<String>>>,
+    target: Remote,
     disabled: bool,
+    uploader: BackgroundUploadHandle,
 }
 
 impl Logstream {
-    pub fn create() -> Self {
+    pub fn create(uploader: BackgroundUploadHandle) -> Self {
         Self {
             target: Arc::new(RwLock::new(None)),
             disabled: false,
+            uploader,
         }
     }
 
@@ -39,7 +44,7 @@ impl Logstream {
             return Ok(());
         }
 
-        reqwest::Url::parse(&url).context("Failed to parse logstream URL")?;
+        let url = Url::parse(&url).context("Failed to parse logstream URL")?;
         let mut val = self
             .target
             .write()
@@ -64,12 +69,20 @@ impl Logstream {
     ///
     /// Sets the max level to Debug
     pub fn make_logger(&self) -> Box<LogSender> {
-        Box::new(LogSender::new(self.target.clone(), log::LevelFilter::Debug))
+        Box::new(LogSender::new(
+            self.target.clone(),
+            log::LevelFilter::Debug,
+            self.uploader.clone(),
+        ))
     }
 
     /// Create a Boxed LogSender with a specific max level
     pub fn make_logger_with_level(&self, max_level: log::LevelFilter) -> Box<LogSender> {
-        Box::new(LogSender::new(self.target.clone(), max_level))
+        Box::new(LogSender::new(
+            self.target.clone(),
+            max_level,
+            self.uploader.clone(),
+        ))
     }
 }
 
@@ -79,23 +92,23 @@ impl Logstream {
 ///
 /// Do not create this logger directly, use Logstream::make_logger instead.
 pub struct LogSender {
-    max_level: log::LevelFilter,
-    server: Arc<RwLock<Option<String>>>,
-    client: reqwest::blocking::Client,
+    max_level: LevelFilter,
+    server: Remote,
+    uploader: BackgroundUploadHandle,
     send_failed: AtomicBool,
 }
 
 impl LogSender {
-    fn new(server: Arc<RwLock<Option<String>>>, max_level: log::LevelFilter) -> Self {
+    fn new(server: Remote, max_level: LevelFilter, uploader: BackgroundUploadHandle) -> Self {
         Self {
             server,
             max_level,
-            client: reqwest::blocking::Client::new(),
+            uploader,
             send_failed: AtomicBool::new(false),
         }
     }
 
-    pub fn with_max_level(self, max_level: log::LevelFilter) -> Self {
+    pub fn with_max_level(self, max_level: LevelFilter) -> Self {
         Self { max_level, ..self }
     }
 
@@ -103,13 +116,13 @@ impl LogSender {
         self.server.read().map(|s| s.is_some()).unwrap_or_default()
     }
 
-    fn get_server(&self) -> Option<String> {
+    fn get_server(&self) -> Option<Url> {
         self.server.read().map(|s| s.clone()).unwrap_or_default()
     }
 }
 
 impl Log for LogSender {
-    fn enabled(&self, metadata: &log::Metadata) -> bool {
+    fn enabled(&self, metadata: &Metadata) -> bool {
         // Block logs with a level higher than the max level
         // Block reqwest logs from being sent to the server
         // Block logs if there is no server
@@ -119,7 +132,7 @@ impl Log for LogSender {
             && self.has_server()
     }
 
-    fn log(&self, record: &log::Record) {
+    fn log(&self, record: &Record) {
         if let Some(target) = self.get_server() {
             let body = match serde_json::to_string(&LogEntry::from(record)) {
                 Ok(b) => b,
@@ -129,7 +142,7 @@ impl Log for LogSender {
                 }
             };
 
-            if let Err(e) = self.client.post(target).body(body).send() {
+            if let Err(e) = self.uploader.upload(&target, body) {
                 if !self.send_failed.swap(true, Ordering::Relaxed) {
                     eprintln!("Failed to send log entry: {e}");
                 }
@@ -146,7 +159,7 @@ mod tests {
 
     #[test]
     fn test_logstream() {
-        let logstream = Logstream::create();
+        let logstream = Logstream::create(BackgroundUploadHandle::new_mock());
         let logger = logstream.make_logger();
 
         assert!(!logger.has_server(), "Logstream should not have a server");
@@ -162,7 +175,7 @@ mod tests {
         assert!(logger.has_server(), "Logstream should have a server");
         assert_eq!(
             logger.get_server().unwrap(),
-            "http://localhost:8080",
+            Url::parse("http://localhost:8080").unwrap(),
             "Logstream should have a server"
         );
 
@@ -174,7 +187,7 @@ mod tests {
 
     #[test]
     fn test_lock() {
-        let mut logstream = Logstream::create();
+        let mut logstream = Logstream::create(BackgroundUploadHandle::new_mock());
         let logger = logstream.make_logger();
 
         assert!(!logger.has_server(), "Logstream should not have a server");

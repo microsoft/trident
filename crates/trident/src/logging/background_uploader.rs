@@ -1,6 +1,7 @@
-use std::sync::LazyLock;
+use std::{sync::LazyLock, thread::JoinHandle};
 
 use anyhow::{bail, Context, Error};
+use log::debug;
 use reqwest::Client;
 use tokio::sync::{
     mpsc::{self, UnboundedReceiver, UnboundedSender, WeakUnboundedSender},
@@ -17,33 +18,30 @@ pub struct UploadData {
 
 /// A background uploader that sends log data to a remote server asynchronously.
 pub struct BackgroundUploader {
-    sender: UnboundedSender<UploadData>,
+    inner: Option<(UnboundedSender<UploadData>, JoinHandle<()>)>,
 }
 
 impl BackgroundUploader {
     /// Creates a new background uploader.
     pub fn new() -> Result<Self, Error> {
         let (sender, receiver) = mpsc::unbounded_channel();
-        Self::start_upload_task(receiver)?;
-        Ok(Self { sender })
+        let handle = Self::start_upload_task(receiver)?;
+        Ok(Self {
+            inner: Some((sender, handle)),
+        })
     }
 
-    /// Gets a handle to send data to the uploader.
-    pub fn get_handle(&self) -> BackgroundUploadHandle {
-        BackgroundUploadHandle {
-            sender: self.sender.downgrade(),
-        }
-    }
-
-    /// Gracefully shuts down the uploader, waiting for all pending uploads to finish.
-    pub fn finish(self) {
-        drop(self.sender);
+    /// Gets a handle to send data to the uploader. Returns `None` if the uploader has been shut down.
+    pub fn get_handle(&self) -> Option<BackgroundUploadHandle> {
+        Some(BackgroundUploadHandle {
+            sender: self.inner.as_ref().map(|(sender, _)| sender)?.downgrade(),
+        })
     }
 
     /// Starts a new thread with a Tokio runtime to handle uploads.
-    fn start_upload_task(receiver: UnboundedReceiver<UploadData>) -> Result<(), Error> {
+    fn start_upload_task(receiver: UnboundedReceiver<UploadData>) -> Result<JoinHandle<()>, Error> {
         let (ready_tx, ready_rx) = oneshot::channel::<bool>();
-        std::thread::spawn(move || {
+        let handle = std::thread::spawn(move || {
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build();
@@ -63,7 +61,7 @@ impl BackgroundUploader {
 
         // Wait for the runtime to be ready
         match ready_rx.blocking_recv() {
-            Ok(true) => Ok(()),
+            Ok(true) => Ok(handle),
             Ok(false) => bail!("Failed to create Tokio runtime for background uploader"),
             Err(e) => bail!("Background uploader thread terminated unexpectedly: {e}"),
         }
@@ -81,26 +79,50 @@ impl BackgroundUploader {
                 eprintln!("Background upload failed: {e}");
             }
         }
+
+        log::debug!("Background uploader loop has exited");
+    }
+}
+
+impl Drop for BackgroundUploader {
+    fn drop(&mut self) {
+        // When the sender is dropped, the upload loop will exit gracefully
+        if let Some((sender, handle)) = self.inner.take() {
+            drop(sender);
+            debug!("Waiting for background uploader to shut down");
+            let _ = handle.join();
+        }
     }
 }
 
 /// A handle to send data to the background uploader.
+#[derive(Clone)]
 pub struct BackgroundUploadHandle {
     sender: WeakUnboundedSender<UploadData>,
 }
 
 impl BackgroundUploadHandle {
     /// Sends data to be uploaded in the background.
-    pub fn upload(&self, url: Url, body: impl Into<Vec<u8>>) -> Result<(), Error> {
+    pub fn upload(&self, url: &Url, body: impl Into<Vec<u8>>) -> Result<(), Error> {
         if let Some(sender) = self.sender.upgrade() {
             sender
                 .send(UploadData {
-                    url,
+                    url: url.clone(),
                     body: body.into(),
                 })
                 .context("Failed to send data to background uploader")
         } else {
             bail!("Background uploader has been shut down");
+        }
+    }
+
+    /// Creates a new mock handle that does nothing.
+    #[cfg(test)]
+    pub fn new_mock() -> Self {
+        let (tx, rx) = mpsc::unbounded_channel::<UploadData>();
+        std::mem::drop(rx); // Drop the receiver to simulate a closed uploader
+        Self {
+            sender: tx.downgrade(),
         }
     }
 }
