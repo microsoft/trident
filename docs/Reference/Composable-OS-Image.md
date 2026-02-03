@@ -469,7 +469,6 @@ _Notes:_
                     "sha384": "a3f5c6e2b4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7"
                 },
                 "type": "primary-gpt",
-                "startLba": 0
             },
             {
                 "image": {
@@ -479,8 +478,20 @@ _Notes:_
                     "sha384": "2decc64a828dbbb76779731cd4afd3b86cc4ad0af06f4afe594e72e62e33e520a6649719fe43f09f11d518e485eae0db"
                 },
                 "type": "partition",
-                "startLba": 34,
                 "number": 1
+            },
+            {
+                // NOTE: This region represents unallocated space between 
+                // partitions, this is currently unused, but an example is 
+                // provided for completeness.
+                "image": {
+                    "path": "images/unallocated.rawzst",
+                    "compressedSize": 839345,
+                    "uncompressedSize": 8388608,
+                    "sha384": "2decc64a828dbbb76779731cd4afd3b86cc4ad0af06f4afe594e72e62e33e520a6649719fe43f09f11d518e485eae0db"
+                },
+                "type": "unallocated",
+                "startLba": 16384
             },
         ]
     },
@@ -555,7 +566,6 @@ _Notes:_
                     "sha384": "a3f5c6e2b4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7"
                 },
                 "type": "primary-gpt",
-                "startLba": 0
             },
             // More regions...
         ]
