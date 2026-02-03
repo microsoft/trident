@@ -161,7 +161,7 @@ The metadata file MUST contain a JSON object with the following fields:
 | `compression` | [Compression](#compression-object)     | 1.2      | Conditionally[1] | Compression metadata for the COSI file.          |
 
 If the object contains other fields, readers MUST ignore them. A writer SHOULD
-NOT add any other files to the object.
+NOT add any other fields to the object.
 
 _Notes:_
 
