@@ -212,8 +212,6 @@ impl Drop for AsyncLogSender {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::AtomicUsize;
-    use std::sync::Arc;
     use std::time::Duration;
 
     #[test]
@@ -328,8 +326,6 @@ mod tests {
 
     #[test]
     fn test_channel_communication() {
-        use std::sync::Mutex;
-
         let logstream = LogstreamAsync::create();
         logstream
             .set_server("http://localhost:8080".to_string())
