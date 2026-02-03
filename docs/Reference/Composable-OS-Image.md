@@ -271,8 +271,16 @@ image.
 | ---------- | ------------------------------ | -------- | -------------------------- | -------------------------------------------- |
 | `image`    | [ImageFile](#imagefile-object) | 1.2      | Yes (since 1.2)            | Details of the image file in the tarball.    |
 | `type`     | [RegionType](#regiontype-enum) | 1.2      | Yes (since 1.2)            | The type of region this image represents.    |
-| `startLba` | number                         | 1.2      | Yes (since 1.2)            | The first LBA of the region in the RAW disk. |
+| `startLba` | number                         | 1.2      | Conditionally [1]          | The first LBA of the region in the RAW disk. |
 | `number`   | number                         | 1.2      | When `type` == `partition` | The partition number (1-based index).        |
+
+_Notes:_
+
+- **[1]** `startLba` MUST be provided when `type` is one of: `backup-gpt`,
+  `unallocated`, or `unknown`. It MUST NOT be provided when:
+  - `type` is `primary-gpt` (it must always be 0), OR
+  - `type` is `partition` (the start LBA is defined in the GPT partition
+    entries).
 
 ##### `RegionType` Enum
 
