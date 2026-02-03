@@ -200,10 +200,16 @@ impl AsyncLogSender {
         Self { max_level, ..self }
     }
 
+    /// Check if a server URL is configured
+    ///
+    /// Returns false if the lock is poisoned (indicates a panic in another thread).
     fn has_server(&self) -> bool {
         self.server.read().map(|s| s.is_some()).unwrap_or_default()
     }
 
+    /// Get the current server URL
+    ///
+    /// Returns None if the lock is poisoned (indicates a panic in another thread).
     fn get_server(&self) -> Option<String> {
         self.server.read().map(|s| s.clone()).unwrap_or_default()
     }
@@ -213,12 +219,15 @@ impl AsyncLogSender {
     /// This method should be called when no more logs will be sent.
     /// It drops the sender channel (signaling completion) and waits for
     /// the worker thread to finish processing all queued logs.
+    ///
+    /// If the worker thread panicked, the panic is silently ignored.
     pub fn finish(&mut self) {
         // Drop the sender to signal the worker thread to finish
         self.sender.take();
 
         // Wait for the worker thread to complete
         if let Some(handle) = self.worker_thread.take() {
+            // Ignore panics from the worker thread
             let _ = handle.join();
         }
     }
@@ -246,8 +255,8 @@ impl Log for AsyncLogSender {
                     target_url: target,
                 };
                 
-                // Send is non-blocking on the sender side
-                // If the channel is full or closed, we just drop the log
+                // Send is non-blocking (unbounded channel)
+                // If the channel is closed, we just drop the log
                 let _ = sender.send(message);
             }
         }
