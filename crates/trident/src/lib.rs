@@ -53,8 +53,9 @@ pub use crate::{
     },
     grpc_client::client_main,
     logging::{
-        background_log::BackgroundLog, filter::LogFilter, logfwd::LogForwarder,
-        logstream::Logstream, multilog::MultiLogger, tracestream::TraceStream,
+        background_log::BackgroundLog, background_uploader::BackgroundUploader, filter::LogFilter,
+        logfwd::LogForwarder, logstream::Logstream, multilog::MultiLogger,
+        tracestream::TraceStream,
     },
     orchestrate::OrchestratorConnection,
     server::server_main,
