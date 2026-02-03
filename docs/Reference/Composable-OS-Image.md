@@ -82,6 +82,9 @@ the relevant defined regions of the source disk image. The defined regions are:
 - The primary GPT header and entries, along with the protective MBR.
 - Each partition defined in the GPT partition entries.
 
+The sector and logical block address (LBA) size of the disk is always assumed to
+be 512 bytes.
+
 The images MUST be compressed using ZSTD compression.
 
 They MUST exist in the tarball under the `images/` directory. They MAY be placed
@@ -246,12 +249,12 @@ The partitioning table type. Currently, only `gpt` is supported.
 This object holds information about a specific region of the original disk
 image.
 
-| Field    | Type                           | Added in | Required                   | Description                                             |
-| -------- | ------------------------------ | -------- | -------------------------- | ------------------------------------------------------- |
-| `image`  | [ImageFile](#imagefile-object) | 1.2      | Yes (since 1.2)            | Details of the image file in the tarball.               |
-| `type`   | [RegionType](#regiontype-enum) | 1.2      | Yes (since 1.2)            | The type of region this image represents.               |
-| `start`  | number                         | 1.2      | Yes (since 1.2)            | The starting byte offset of the region in the RAW disk. |
-| `number` | number                         | 1.2      | When `type` == `partition` | The partition number (1-based index).                   |
+| Field      | Type                           | Added in | Required                   | Description                                  |
+| ---------- | ------------------------------ | -------- | -------------------------- | -------------------------------------------- |
+| `image`    | [ImageFile](#imagefile-object) | 1.2      | Yes (since 1.2)            | Details of the image file in the tarball.    |
+| `type`     | [RegionType](#regiontype-enum) | 1.2      | Yes (since 1.2)            | The type of region this image represents.    |
+| `startLba` | number                         | 1.2      | Yes (since 1.2)            | The first LBA of the region in the RAW disk. |
+| `number`   | number                         | 1.2      | When `type` == `partition` | The partition number (1-based index).        |
 
 ##### `RegionType` Enum
 
@@ -443,6 +446,9 @@ _Notes:_
             },
             // More regions...
         ]
+    },
+    "compression": {
+        "windowSize": 30 // <-- Non-default 1 GiB window size
     }
 }
 ```
