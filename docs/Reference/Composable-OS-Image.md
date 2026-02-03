@@ -463,7 +463,17 @@ _Notes:_
                 "type": "primary-gpt",
                 "startLba": 0
             },
-            // More regions...
+            {
+                "image": {
+                    "path": "images/esp.rawzst",
+                    "compressedSize": 839345,
+                    "uncompressedSize": 8388608,
+                    "sha384": "2decc64a828dbbb76779731cd4afd3b86cc4ad0af06f4afe594e72e62e33e520a6649719fe43f09f11d518e485eae0db"
+                },
+                "type": "partition",
+                "startLba": 34,
+                "number": 1
+            },
         ]
     },
     "compression": {
