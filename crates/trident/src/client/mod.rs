@@ -63,7 +63,7 @@ async fn run_client(args: &ClientArgs) -> Result<ExitKind, Error> {
             })?;
 
             if *multiboot {
-                bail!("Multiboot installas are not implemented via gRPC client yet");
+                bail!("Multiboot installs are not implemented via gRPC client yet");
             }
 
             let operations = cli::to_operations(allowed_operations);
