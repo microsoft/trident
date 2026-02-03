@@ -67,7 +67,7 @@ The tarball MUST NOT have a common root directory. The metadata file MUST be at
 the root of the tarball. If it were extracted with a standard `tar` invocation,
 the metadata file would be placed in the current directory.
 
-The metadata file MUST, be placed at the beginning of the tarball to allow for
+The metadata file MUST be placed at the beginning of the tarball to allow for
 quick access to the metadata without having to traverse the entire tarball.
 
 The disk region images MUST be placed right after the metadata file in the
