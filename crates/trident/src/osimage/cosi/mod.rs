@@ -101,20 +101,9 @@ impl Cosi {
     /// Derives the storage and image section of a Host Configuration from this COSI file.
     pub(super) fn derive_host_configuration(
         &self,
-        target_disk: impl AsRef<Path>,
+        _target_disk: impl AsRef<Path>,
     ) -> Result<HostConfiguration, Error> {
-        let storage = self
-            .metadata
-            .derive_host_configuration_storage(target_disk)?;
-
-        Ok(HostConfiguration {
-            image: Some(OsImage {
-                url: self.source.clone(),
-                sha384: ImageSha384::Checksum(self.metadata_sha384.clone()),
-            }),
-            storage,
-            ..Default::default()
-        })
+        todo!("Implement deriving HostConfiguration from COSI file once sequential reading merges.")
     }
 }
 
@@ -889,7 +878,8 @@ mod tests {
                 os_packages: None,
                 images,
                 bootloader: None,
-                partitions: None,
+                disk: None,
+                compression: Default::default(),
             },
             reader: FileReader::Buffer(data),
             metadata_sha384: Sha384Hash::from("0".repeat(96)),
@@ -910,7 +900,8 @@ mod tests {
                 images: vec![],
                 os_packages: None,
                 bootloader: None,
-                partitions: None,
+                disk: None,
+                compression: Default::default(),
             },
             reader: FileReader::Buffer(Cursor::new(Vec::<u8>::new())),
             metadata_sha384: Sha384Hash::from("0".repeat(96)),

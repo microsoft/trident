@@ -101,12 +101,13 @@ pub(crate) struct CosiMetadata {
     #[serde(default)]
     pub bootloader: Option<Bootloader>,
 
-    /// Original image partition metadata.
-    ///
-    /// The order of `Partition` objects in the `partitions` array is
-    /// unspecified since the `number` field indicates the original ordering.
+    /// Original disk metadata.
     #[serde(default)]
-    pub partitions: Option<Vec<Partition>>,
+    pub disk: Option<DiskInfo>,
+
+    /// Compression information.
+    #[serde(default)]
+    pub compression: CompressionInfo,
 }
 
 impl CosiMetadata {
@@ -159,9 +160,9 @@ impl CosiMetadata {
         self.images.iter().filter(|image| !image.is_esp())
     }
 
-    /// Returns an iterator over all image files in the COSI metadata, including
-    /// verity files if present.
-    pub(super) fn image_files(&self) -> impl Iterator<Item = &ImageFile> {
+    /// Returns an iterator over all *filesystem* image files in the COSI
+    /// metadata, including verity files if present.
+    pub(super) fn filesystem_image_files(&self) -> impl Iterator<Item = &ImageFile> {
         self.images
             // Iterate over all images
             .iter()
@@ -387,29 +388,78 @@ pub(crate) enum SystemdBootloaderType {
 
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Partition {
-    /// Absolute path of the compressed image file inside the tarball. MUST
-    /// start with `images/`.
-    pub path: Option<PathBuf>,
+pub(crate) struct DiskInfo {
+    /// Size of the disk in bytes.
+    pub size: u64,
 
-    /// Size of the partition before any filesystem shrinking. SHOULD be at
-    /// least as large as the `uncompressedSize` field of the corresponding
-    /// `ImageFile` object (matched by `path`).
-    pub original_size: u64,
+    /// Sector size of the disk in bytes.
+    pub lba_size: u32,
 
-    /// The partition type UUID.
-    pub part_type: Uuid,
+    /// Type of partition table on the disk.
+    #[serde(rename = "type")]
+    pub partition_table_type: PartitionTableType,
 
-    /// The partition UUID.
-    pub part_uuid: Uuid,
-
-    /// Partition label (GPT partition name, may be an empty string).
+    /// GPT region data, if applicable.
     #[serde(default)]
-    pub label: String,
+    pub gpt_regions: Vec<GptDiskRegion>,
+}
 
-    /// The index where the partition originally appeared in the partition table
-    /// (1-indexed).
-    pub number: u32,
+#[derive(Debug, Deserialize, Clone, Eq, PartialEq, Display)]
+pub(crate) enum PartitionTableType {
+    #[serde(rename = "gpt")]
+    #[strum(to_string = "gpt")]
+    Gpt,
+
+    #[serde(untagged)]
+    #[strum(to_string = "{0}")]
+    Unknown(String),
+}
+
+#[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct GptDiskRegion {
+    /// Details of the image file in the tarball.
+    pub image: ImageFile,
+
+    /// The type of region this image represents.
+    #[serde(flatten)]
+    pub region_type: GptRegionType,
+
+    /// The first LBA of the region in the RAW disk.
+    pub start_lba: u64,
+}
+
+#[derive(Debug, Deserialize, Clone, Eq, PartialEq, Display)]
+#[serde(rename_all = "kebab-case", tag = "type")]
+#[strum(serialize_all = "kebab-case")]
+pub(crate) enum GptRegionType {
+    /// Everything from offset 0 to the end of the primary GPT header and
+    /// entries, including the protective MBR.
+    PrimaryGpt,
+
+    /// A partition as defined in the GPT partition entries.
+    Partition {
+        /// The partition number as defined by GPT (1-based index).
+        number: u32,
+    },
+
+    /// The backup GPT header and entries at the end of the disk.
+    BackupGpt,
+
+    /// Unallocated space between partitions or between the GPT and the first/last partition.
+    Unallocated,
+
+    /// A region of unknown type.
+    Unknown,
+}
+
+#[derive(Debug, Default, Deserialize, Clone, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CompressionInfo {
+    /// The power of 2 representing the window size used for ZSTD compression.
+    /// The client will use this to determine the maximum window size for
+    /// decompression.
+    pub window_size: Option<u8>,
 }
 
 #[cfg(test)]
@@ -465,7 +515,8 @@ mod tests {
             os_packages: None,
             id: None,
             bootloader: None,
-            partitions: None,
+            disk: None,
+            compression: Default::default(),
         };
 
         // No images
@@ -536,7 +587,8 @@ mod tests {
             os_packages: None,
             id: None,
             bootloader: None,
-            partitions: None,
+            disk: None,
+            compression: Default::default(),
         };
 
         // No images
