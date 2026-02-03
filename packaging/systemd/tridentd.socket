@@ -3,7 +3,7 @@ Description=Trident Daemon gRPC Socket
 
 [Socket]
 ListenStream=/run/trident/trident.sock
-SocketMode=0666
+SocketMode=0600
 SocketUser=root
 SocketGroup=root
 
