@@ -82,9 +82,6 @@ the relevant defined regions of the source disk image. The defined regions are:
 - The primary GPT header and entries, along with the protective MBR.
 - Each partition defined in the GPT partition entries.
 
-The sector and logical block address (LBA) size of the disk is always assumed to
-be 512 bytes.
-
 The images MUST be compressed using ZSTD compression.
 
 They MUST exist in the tarball under the `images/` directory. They MAY be placed
@@ -224,11 +221,12 @@ device on top of a data device.
 The `disk` field holds information about the original disk layout of the image
 this COSI file was sourced from.
 
-| Field     | Type                               | Added in | Required        | Description                                              |
-| --------- | ---------------------------------- | -------- | --------------- | -------------------------------------------------------- |
-| `size`    | number                             | 1.2      | Yes (since 1.2) | Size of the original disk in bytes.                      |
-| `type`    | [DiskType](#disktype-enum)         | 1.2      | Yes (since 1.2) | Partitioning type of the original disk.                  |
-| `regions` | [DiskRegion](#diskregion-object)[] | 1.2      | Yes (since 1.2) | Data about the GUID Partition Table of the source image. |
+| Field     | Type                               | Added in | Required        | Description                                                        |
+| --------- | ---------------------------------- | -------- | --------------- | ------------------------------------------------------------------ |
+| `size`    | number                             | 1.2      | Yes (since 1.2) | Size of the original disk in bytes.                                |
+| `type`    | [DiskType](#disktype-enum)         | 1.2      | Yes (since 1.2) | Partitioning type of the original disk.                            |
+| `lbaSize` | number                             | 1.2      | Yes (since 1.2) | The size of a logical block address (LBA) in bytes. Generally 512. |
+| `regions` | [DiskRegion](#diskregion-object)[] | 1.2      | Yes (since 1.2) | Data about the GUID Partition Table of the source image.           |
 
 The order of the `regions` array MUST match the physical order of the regions in
 the original disk image, from the beginning of the disk to the end.
