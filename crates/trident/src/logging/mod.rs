@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 pub(super) mod background_log;
 pub(super) mod filter;
+mod http_client;
 pub(super) mod logfwd;
 pub(super) mod logstream;
 pub(super) mod multilog;
