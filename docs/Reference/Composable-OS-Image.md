@@ -234,7 +234,7 @@ The order of the `regions` array MUST match the physical order of the regions in
 the original disk image, from the beginning of the disk to the end.
 
 A valid COSI `>=1.2` image MUST contain a region of type `primary-gpt` as the
-first entry in the `regions` array, with `start` set to 0.
+first entry in the `regions` array, with `startLba` set to 0.
 
 ##### `DiskType` Enum
 
