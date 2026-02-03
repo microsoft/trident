@@ -8,8 +8,8 @@ use trident::{
     agentconfig::AgentConfig,
     cli::{self, Cli, Commands, GetKind},
     manual_rollback::{self, utils::ManualRollbackRequestKind},
-    offline_init, validation, BackgroundLog, DataStore, ExitKind, LogFilter, LogForwarder,
-    Logstream, MultiLogger, TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
+    offline_init, validation, BackgroundLog, BackgroundUploader, DataStore, ExitKind, LogFilter,
+    LogForwarder, Logstream, MultiLogger, TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
 };
 use trident_api::{
     config::HostConfigurationSource,
@@ -330,6 +330,14 @@ fn setup_tracing(args: &Cli) -> Result<TraceStream, Error> {
 fn main() -> ExitCode {
     // Parse args
     let args = Cli::parse();
+
+    let bg_uploader = match BackgroundUploader::new() {
+        Ok(uploader) => uploader,
+        Err(e) => {
+            error!("Failed to initialize background uploader: {e:?}");
+            return ExitCode::from(1);
+        }
+    };
 
     // Initialize the telemetry flow
     let tracestream = setup_tracing(&args);
