@@ -241,12 +241,12 @@ device on top of a data device.
 The `disk` field holds information about the original disk layout of the image
 this COSI file was sourced from.
 
-| Field     | Type                               | Added in | Required        | Description                                                        |
-| --------- | ---------------------------------- | -------- | --------------- | ------------------------------------------------------------------ |
-| `size`    | number                             | 1.2      | Yes (since 1.2) | Size of the original disk in bytes.                                |
-| `type`    | [DiskType](#disktype-enum)         | 1.2      | Yes (since 1.2) | Partitioning type of the original disk.                            |
-| `lbaSize` | number                             | 1.2      | Yes (since 1.2) | The size of a logical block address (LBA) in bytes. Generally 512. |
-| `regions` | [DiskRegion](#diskregion-object)[] | 1.2      | Yes (since 1.2) | Data about the GUID Partition Table of the source image.           |
+| Field        | Type                                     | Added in | Required             | Description                                                        |
+| ------------ | ---------------------------------------- | -------- | -------------------- | ------------------------------------------------------------------ |
+| `size`       | number                                   | 1.2      | Yes (since 1.2)      | Size of the original disk in bytes.                                |
+| `type`       | [DiskType](#disktype-enum)               | 1.2      | Yes (since 1.2)      | Partitioning type of the original disk.                            |
+| `lbaSize`    | number                                   | 1.2      | Yes (since 1.2)      | The size of a logical block address (LBA) in bytes. Generally 512. |
+| `gptRegions` | [GptDiskRegion](#gptdiskregion-object)[] | 1.2      | When `type` == `gpt` | Regions in the GPT disk.                                           |
 
 The order of the `regions` array MUST match the physical order of the regions in
 the original disk image, from the beginning of the disk to the end.
@@ -262,7 +262,7 @@ The partitioning table type. Currently, only `gpt` is supported.
 | ----- | ---------------------------------------------------- |
 | `gpt` | The disk uses the GUID Partition Table (GPT) scheme. |
 
-##### `DiskRegion` Object
+##### `GptDiskRegion` Object
 
 This object holds information about a specific region of the original disk
 image.
