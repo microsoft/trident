@@ -12,7 +12,6 @@ parameters:
       - "pr-e2e"
       - "ci"
       - "pre"
-      - "rel"
     displayName: "Stage to run"
 
 trigger: none
