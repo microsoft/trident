@@ -70,6 +70,9 @@ func main() {
 			logrus.Fatalf("Failed to enable and start Trident install service: %v", err)
 		}
 
+		// Wait forever so that systemd still considers the service active
+		<-ctx.Done()
+		logrus.Info("Shutdown complete")
 		return
 	}
 

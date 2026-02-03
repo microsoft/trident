@@ -67,14 +67,22 @@ os:
       destination: "/var/lib/pcrlock.d/"
 
   additionalFiles:
+    # Standard getty service files and root profile
     - source: files/getty@.service
       destination: /usr/lib/systemd/system/getty@.service
     - source: files/serial-getty@.service
       destination: /usr/lib/systemd/system/serial-getty@.service
     - source: files/root.profile
       destination: /root/.profile
+
+    # Trident installation service file
     - source: ../../../packaging/systemd/trident-install.service
       destination: /usr/lib/systemd/system/trident-install.service
+    # Override to use gRPC for Trident installation
+    - source: files/trident-install-grpc.conf
+      destination: /etc/systemd/system/trident-install.service.d/override.conf
+
+    # SELinux policy module for Trident
     - source: ../../../packaging/selinux-policy-trident/trident.if
       destination: /usr/share/selinux/packages/trident/trident.if
     - source: ../../../packaging/selinux-policy-trident/trident.fc
