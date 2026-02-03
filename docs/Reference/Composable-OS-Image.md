@@ -221,7 +221,7 @@ device on top of a data device.
 
 ##### `Disk` Object
 
-The `disk` field holds information about the original disk layout layout of the
+The `disk` field holds information about the original disk layout of the
 image this COSI file was sourced from.
 
 | Field     | Type                               | Added in | Required        | Description                                              |
