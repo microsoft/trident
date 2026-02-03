@@ -943,7 +943,6 @@ artifacts/%.cosi artifacts/%.iso artifacts/%.vhdx: $$(shell ./tests/images/testi
 		--output-dir ./artifacts \
 		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE))
 
-
 MIC_CONTAINER_IMAGE ?= $(shell ./tests/images/testimages.py show-artifact customizer-container-full)
 artifacts/trident-functest.qcow2: $$(shell ./tests/images/testimages.py dependencies $$(basename $$(notdir $$@)))
 	@echo "Building '$*' [$@] from $<"
