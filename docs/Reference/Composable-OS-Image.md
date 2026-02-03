@@ -457,7 +457,7 @@ _Notes:_
 
 ```json
 {
-    "version": "1.1",
+    "version": "1.2",
     "images": [
         {
             "image": {
@@ -529,8 +529,9 @@ _Notes:_
 
 ### Revision 1.2
 
-- COSI file now contains a comprehensive set of compressed disk region images.
 - Added `disk` field to the root object.
+- Added `compression` field to the root object.
+- COSI now ships the GPT data as a binary blob.
 
 ### Revision 1.1
 
