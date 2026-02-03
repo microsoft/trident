@@ -28,7 +28,7 @@ impl CosiMetadata {
         }
 
         // Validate bootloader on COSI version >= 1.1
-        if self.version >= KnownMetadataVersion::V1_1.as_version() {
+        if self.version >= KnownMetadataVersion::V1_1 {
             let Some(bootloader) = self.bootloader.as_ref() else {
                 return mk_err(CosiMetadataErrorKind::V1_1BootloaderRequired);
             };
@@ -99,7 +99,7 @@ impl CosiMetadata {
             }
         }
 
-        if self.version >= KnownMetadataVersion::V1_2.as_version() {
+        if self.version >= KnownMetadataVersion::V1_2 {
             // Ensure partitions metadata is present.
             let Some(partitions) = &self.partitions else {
                 return mk_err(CosiMetadataErrorKind::V1_2PartitionsRequired);
@@ -270,7 +270,7 @@ mod tests {
 
         // Sanity: base should validate.
         let metadata = parse_and_validate(base.clone()).unwrap();
-        assert_eq!(metadata.version, KnownMetadataVersion::V1_1.as_version());
+        assert_eq!(metadata.version, KnownMetadataVersion::V1_1);
 
         // v1.0 does not require bootloader metadata.
         let mut v1_0 = base.clone();
@@ -475,7 +475,7 @@ mod tests {
 
         // Sanity: base should validate.
         let metadata = parse_and_validate(base.clone()).unwrap();
-        assert_eq!(metadata.version, KnownMetadataVersion::V1_2.as_version());
+        assert_eq!(metadata.version, KnownMetadataVersion::V1_2);
 
         // v1.2 requires partitions metadata.
         let mut no_partitions = base.clone();

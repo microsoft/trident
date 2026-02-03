@@ -84,55 +84,56 @@ fn run_trident(
                 .map(|()| ExitKind::Done);
         }
 
-        #[cfg(feature = "dangerous-options")]
-        Commands::StreamImage {
-            image,
-            hash,
-            status,
-            error,
-            ..
-        } => {
-            use std::io::Write;
-            use trident_api::error::ReportError;
-
-            let config = trident::stream::config_from_image_url(image.clone(), hash)
-                .message("Failed to generate Host Configuration from image URL")?;
-
-            // Write config to a temporary file
-            let file = tempfile::NamedTempFile::new()
-                .structured(InternalError::Internal("serialize host config"))?;
-            file.as_file()
-                .write_all(
-                    serde_yaml::to_string(&config)
-                        .structured(InternalError::Internal("serialize host config"))?
-                        .as_bytes(),
-                )
-                .structured(InternalError::Internal("serialize host config"))?;
-
-            return run_trident(
-                logstream,
-                tracestream,
-                &Cli {
-                    command: Commands::Install {
-                        config: file.path().to_path_buf(),
-                        allowed_operations: vec![
-                            trident::cli::AllowedOperation::Stage,
-                            trident::cli::AllowedOperation::Finalize,
-                        ],
-                        status: status.clone(),
-                        error: error.clone(),
-                        multiboot: false,
-                    },
-                    verbosity: args.verbosity,
-                },
-            );
-        }
-
         _ => (),
     }
 
     let res = panic::catch_unwind(move || {
         match &args.command {
+            Commands::StreamImage {
+                image,
+                hash,
+                status,
+                error,
+            } => {
+                let agent_config = AgentConfig::load()?;
+                let mut trident =
+                    Trident::new(None, agent_config.datastore_path(), logstream, tracestream)
+                        .message("Failed to initialize Trident")?;
+                // After initialization, create a trace event for the purpose of
+                // measuring Trident reboot times
+                tracing::info!(metric_name = "trident_start");
+
+                let mut datastore = DataStore::open_or_create(agent_config.datastore_path())
+                    .message("Failed to open datastore")?;
+
+                let res = trident
+                    .stream_image(&mut datastore, image, hash)
+                    .message("Failed to stream image");
+
+                // Return Host Status if requested
+                if status.is_some() {
+                    if let Err(e) =
+                        Trident::get(agent_config.datastore_path(), status, GetKind::Status)
+                            .message("Failed to retrieve Host Status")
+                    {
+                        error!("{e:?}");
+                    }
+                }
+
+                // Return error if requested
+                if let Some(error_path) = error.as_ref() {
+                    if let Err(e) = &res {
+                        if let Err(e2) =
+                            fs::write(error_path, serde_yaml::to_string(&e).unwrap_or("".into()))
+                        {
+                            error!("Failed to write error to file: {e2}");
+                        }
+                    }
+                }
+
+                res.message(format!("Failed to execute '{}' command", args.command))
+            }
+
             Commands::Install { status, error, .. }
             | Commands::Update { status, error, .. }
             | Commands::Commit { status, error }

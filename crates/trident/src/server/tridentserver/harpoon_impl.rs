@@ -22,7 +22,7 @@ use trident_api::{
 use url::Url;
 
 use crate::{
-    server::TridentHarpoonServer, stream, validation, DataStore, ExitKind, Trident, TRIDENT_VERSION,
+    server::TridentHarpoonServer, validation, DataStore, ExitKind, Trident, TRIDENT_VERSION,
 };
 
 use super::{datastore, RebootDecision, ServicingResponseStream};
@@ -267,21 +267,13 @@ impl TridentService for TridentHarpoonServer {
         let tracestream = self.tracestream.clone();
 
         self.servicing_request("stream_image", reboot_allowed(&finalize), move || {
-            let config = stream::config_from_image_url(url, &req.image_hash)
-                .message("Failed to generate Host Configuration from image URL")?;
-
-            let mut trident = Trident::new(
-                Some(HostConfigurationSource::Embedded(Box::new(config))),
-                &data_store_path,
-                logstream,
-                tracestream,
-            )
-            .message("Failed to initialize Trident")?;
+            let mut trident = Trident::new(None, &data_store_path, logstream, tracestream)
+                .message("Failed to initialize Trident")?;
 
             let mut datastore =
                 DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
 
-            trident.install(&mut datastore, Operations::all(), false)
+            trident.stream_image(&mut datastore, &url, &req.image_hash)
         })
     }
 

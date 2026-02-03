@@ -1,223 +1,292 @@
-use std::{collections::HashMap, time::Duration};
+use std::path::PathBuf;
 
-use osutils::lsblk::{self, BlockDeviceType};
-use tera::Tera;
+use anyhow::{bail, Context, Error};
+
+use log::warn;
+use osutils::lsblk::{self, BlockDevice, BlockDeviceType};
+
 use trident_api::{
-    config::{self, HostConfiguration},
-    error::{InvalidInputError, ReportError, TridentError, TridentResultExt},
+    config::{Disk, HostConfiguration, Partition},
+    error::{ReportError, TridentError, UnsupportedConfigurationError},
 };
-use url::Url;
 
-use crate::osimage::OsImage;
+/// Extra bytes to account for GPT overhead. (34,304 bytes)
+///
+/// Calculated as:
+///
+/// Sectors:
+///  - Protective MBR:                 1 sector
+///  - Primary GPT Header:             1 sector
+///  - Primary GPT Partition Entries: 32 sectors
+///  - Backup GPT Header:              1 sector
+///  - Backup GPT Partition Entries:  32 sectors
+/// -----------------------------------------------
+///    Total Sectors:                 67 sectors
+///
+/// Sector Size:
+///  - 512 bytes/sector
+/// -----------------------------------------------
+///    Total Bytes:               34,304 bytes
+///
+/// Note: This assumes each GPT partition entry is 128 bytes and there are 128
+/// entries (the default).
+const GPT_EXTRA_BYTES: u64 = 512 * (1 + 33 + 33); // 34,304 bytes
 
-/// Stream a Host Configuration template from a COSI and expand it.
-pub fn config_from_image_url(
-    image_url: Url,
-    hash: &str,
-) -> Result<HostConfiguration, TridentError> {
-    let mut image_source = config::OsImage {
-        url: image_url.clone(),
-        sha384: config::ImageSha384::new(hash)?,
-    };
-
-    let image = OsImage::load(&mut image_source, Duration::from_secs(10))
-        .message("Failed to download OS image")?;
-
-    let template = image
-        .host_configuration_template()
-        .structured(InvalidInputError::LoadCosi {
-            url: image_url.clone(),
-        })
-        .message("Image file does not contain a Host Configuration template")?;
-
-    let expanded = expand_template(template)
-        .structured(InvalidInputError::LoadCosi {
-            url: image_url.clone(),
-        })
-        .message("Failed to expand Host Configuration template")?;
-
-    let mut config: HostConfiguration = serde_yaml::from_str(&expanded)
-        .structured(InvalidInputError::LoadCosi {
-            url: image_url.clone(),
-        })
-        .message("Failed to parse expanded Host Configuration template")?;
-
-    config.image = Some(config::OsImage {
-        url: image_url,
-        sha384: image_source.sha384,
-    });
-
-    Ok(config)
+/// Strategy for selecting a disk from a list of candidates.
+pub(super) enum DiskSelectionStrategy {
+    /// Select the smallest disk that will fit the minimum size requirement.
+    SmallestThatWillFit,
 }
 
-/// Use the `tera` templating engine to expand a Host Configuration template.
-///
-/// See https://keats.github.io/tera/docs for details on the templating syntax.
-///
-/// # Provided Context
-///
-/// * `get_disks()`: Returns a list of detected block devices of type `disk`. Accepts optional
-///   arguments `min_size` and `max_size` to filter disks by size in bytes. Each disk has the
-///   following fields:
-///   * `name`: The device name (e.g., `sda`, `nvme0n1`).
-///   * `path`: The full device path (e.g., `/dev/sda`, `/dev/nvme0n1`).
-///   * `size`: The size of the device in bytes.
-///   * `kind`: The kind of device (e.g., `sd`, `nvme`, `vd`, `hd`, `mmcblk`).
-///
-/// * `KiB`, `MiB`, `GiB`: Constants representing the number of bytes in a kilobyte, megabyte, etc.
-///
-/// # Examples
-///
-/// Select the smallest disk at least 10 GiB in size:
-/// ```yaml
-/// device: "{{ get_disks(min_size=10*GiB) | sort(attribute='size') | first | get(key='path') }}"
-/// ```
-///
-/// Select the largest NVMe disk:
-/// ```yaml
-/// device: "{{ get_disks() | filter(attribute='kind', value='nvme') | sort(attribute='size') | last | get(key='path') }}"
-/// ```
-fn expand_template(template: &str) -> Result<String, anyhow::Error> {
-    let disks: Vec<_> = lsblk::list()
+/// Updates the target disk path in the Host Configuration based on the given strategy.
+pub(super) fn update_target_disk_path(
+    host_config: &mut HostConfiguration,
+    strategy: DiskSelectionStrategy,
+) -> Result<(), TridentError> {
+    update_target_disk_path_with_candidates(host_config, strategy, get_candidates())
+        .structured(UnsupportedConfigurationError::NoSuitableDisk)
+}
+
+/// Updates the target disk path in the Host Configuration based on the given strategy and candidates.
+fn update_target_disk_path_with_candidates(
+    host_config: &mut HostConfiguration,
+    strategy: DiskSelectionStrategy,
+    candidates: Vec<BlockDevice>,
+) -> Result<(), Error> {
+    let Some(disk) = host_config.storage.disks.get_mut(0) else {
+        bail!("Host Configuration does not specify any target disks");
+    };
+
+    let selection = match strategy {
+        DiskSelectionStrategy::SmallestThatWillFit => smallest_that_will_fit(candidates, disk),
+    }
+    .context("Failed to select target disk")?;
+
+    disk.device = selection;
+
+    Ok(())
+}
+
+/// Returns a list of candidate block devices.
+fn get_candidates() -> Vec<BlockDevice> {
+    let allowed_kinds = ["sd", "nvme", "vd", "hd", "mmcblk"];
+
+    lsblk::list()
         .unwrap_or_default()
         .into_iter()
+        // Limit to block devices of type 'disk'.
         .filter(|b| b.blkdev_type == BlockDeviceType::Disk)
         .filter_map(|b| {
-            let kind = ["sd", "nvme", "vd", "hd", "mmcblk"]
-                .into_iter()
-                .find(|k| b.name.starts_with(*k))?;
-
-            let mut m = serde_json::Map::new();
-            m.insert("name".into(), tera::Value::String(b.name.clone()));
-            m.insert(
-                "path".into(),
-                tera::Value::String(format!("/dev/{}", b.name)),
-            );
-            m.insert("size".into(), tera::Value::Number(b.size.into()));
-            m.insert("kind".into(), tera::Value::String(kind.into()));
-
-            Some(tera::Value::Object(m))
+            // Ensure the block device is of an allowed kind.
+            allowed_kinds.iter().find(|k| b.name.starts_with(**k))?;
+            Some(b)
         })
-        .collect();
+        .collect()
+}
 
-    struct GetDisks(Vec<tera::Value>);
-    impl tera::Function for GetDisks {
-        fn call(&self, args: &HashMap<String, tera::Value>) -> tera::Result<tera::Value> {
-            let low = match args.get("min_size") {
-                Some(v) => v
-                    .as_u64()
-                    .ok_or_else(|| tera::Error::msg("Invalid 'min_size' value"))?,
-                None => 0,
-            };
-            let high = match args.get("max_size") {
-                Some(v) => v
-                    .as_u64()
-                    .ok_or_else(|| tera::Error::msg("Invalid 'max_size' value"))?,
-                None => u64::MAX,
-            };
+/// Computes the minimum required size in bytes of a disk.
+fn required_size_bytes(disk: &Disk) -> Result<u64, Error> {
+    let total_size: u64 = disk
+        .partitions
+        .iter()
+        .map(pad_to_4k)
+        .collect::<Result<Vec<u64>, Error>>()?
+        .into_iter()
+        .sum();
 
-            let filtered: Vec<tera::Value> = self
-                .0
-                .iter()
-                .filter(|item| {
-                    if let Some(size) = item.get("size").and_then(|s| s.as_u64()) {
-                        size >= low && size <= high
-                    } else {
-                        false
-                    }
-                })
-                .cloned()
-                .collect();
+    Ok(total_size + GPT_EXTRA_BYTES)
+}
 
-            Ok(tera::Value::Array(filtered))
-        }
+/// Pads the partition size to the next 4KiB boundary if necessary.
+fn pad_to_4k(part: &Partition) -> Result<u64, Error> {
+    let size = part
+        .size
+        .to_bytes()
+        .with_context(|| format!("Partition '{}' does not have a fixed size", part.id))?;
+    if size % 4096 == 0 {
+        Ok(size)
+    } else {
+        warn!(
+            "Partition '{}' size {} is not aligned to 4KiB, padding to next 4KiB boundary",
+            part.id, size
+        );
+        Ok(size.next_multiple_of(4096))
     }
+}
 
-    let mut tera = Tera::default();
-    tera.register_function("get_disks", GetDisks(disks));
-    tera.add_raw_template("config.yaml", template)?;
+/// Finds the smallest block device that will fit the required size.
+fn smallest_that_will_fit(candidates: Vec<BlockDevice>, disk: &Disk) -> Result<PathBuf, Error> {
+    let required_size = required_size_bytes(disk)?;
 
-    let mut context = tera::Context::new();
-    context.insert("KiB", &1024);
-    context.insert("MiB", &(1024 * 1024));
-    context.insert("GiB", &(1024 * 1024 * 1024));
-
-    Ok(tera.render("config.yaml", &context)?)
+    candidates
+        .iter()
+        .filter(|b| b.size >= required_size)
+        .min_by_key(|b| b.size)
+        .map(|b| b.device_path())
+        .with_context(|| {
+            format!(
+                "No block device found with required size of at least {} bytes",
+                required_size
+            )
+        })
 }
 
 #[cfg(test)]
 mod tests {
+    use trident_api::config::{PartitionSize, Storage};
+
     use super::*;
-    use indoc::indoc;
 
     #[test]
-    fn test_expand_template_basic_context() {
+    fn test_pad_to_4k_aligned() {
+        let part = Partition::new("part1", 8192);
+        let padded_size = pad_to_4k(&part).unwrap();
+        assert_eq!(padded_size, 8192);
+
+        let part2 = Partition::new("part2", 16384);
+        let padded_size2 = pad_to_4k(&part2).unwrap();
+        assert_eq!(padded_size2, 16384);
+
+        // Test a size that is not aligned to 4KiB
+        let part3 = Partition::new("part3", 4097);
+        let padded_size3 = pad_to_4k(&part3).unwrap();
+        assert_eq!(padded_size3, 8192);
+
+        let part4 = Partition::new("part4", PartitionSize::Grow);
+        pad_to_4k(&part4).unwrap_err();
+    }
+
+    #[test]
+    fn test_required_size_bytes() {
+        let mut disk = Disk {
+            device: PathBuf::from("/dev/sda"),
+            partitions: vec![],
+            id: "disk0".to_string(),
+            partition_table_type: Default::default(),
+            adopted_partitions: Default::default(),
+        };
+
+        disk.partitions.push(Partition::new("part1", 8192));
+        let required_size = required_size_bytes(&disk).unwrap();
+        // 8192 + 34304 (GPT overhead) = 42496
+        assert_eq!(required_size, 8192 + GPT_EXTRA_BYTES);
+
+        disk.partitions.push(Partition::new("part2", 16384));
+        let required_size = required_size_bytes(&disk).unwrap();
+        // 8192 + 16384 + 34304 (GPT overhead) = 58880
+        assert_eq!(required_size, 8192 + 16384 + GPT_EXTRA_BYTES);
+
+        disk.partitions
+            .push(Partition::new("part3", PartitionSize::Grow));
+        required_size_bytes(&disk).unwrap_err();
+    }
+
+    #[test]
+    fn test_smallest_that_will_fit() {
+        let candidates = vec![
+            BlockDevice {
+                name: "sda".to_string(),
+                size: 50 * 1024 * 1024 * 1024, // 50 GiB
+                ..Default::default()
+            },
+            BlockDevice {
+                name: "sdb".to_string(),
+                size: 100 * 1024 * 1024 * 1024, // 100 GiB
+                ..Default::default()
+            },
+            BlockDevice {
+                name: "sdc".to_string(),
+                size: 200 * 1024 * 1024 * 1024, // 200 GiB
+                ..Default::default()
+            },
+        ];
+
+        let mut disk = Disk {
+            device: PathBuf::from("/dev/sdx"),
+            partitions: vec![],
+            id: "disk0".to_string(),
+            partition_table_type: Default::default(),
+            adopted_partitions: Default::default(),
+        };
+
+        // Test 1: Require 10 GiB
+        disk.partitions
+            .push(Partition::new("part1", 10 * 1024 * 1024 * 1024)); // 10 GiB
+        let selection = smallest_that_will_fit(candidates.clone(), &disk).unwrap();
+        assert_eq!(selection, PathBuf::from("/dev/sda"));
+
+        // Test 2: Require 60 GiB
+        disk.partitions.clear();
+        disk.partitions
+            .push(Partition::new("part1", 60 * 1024 * 1024 * 1024)); // 60 GiB
+        let selection = smallest_that_will_fit(candidates.clone(), &disk).unwrap();
+        assert_eq!(selection, PathBuf::from("/dev/sdb"));
+
+        // Test 3: Require 150 GiB
+        disk.partitions.clear();
+        disk.partitions
+            .push(Partition::new("part1", 150 * 1024 * 1024 * 1024)); // 150 GiB
+        let selection = smallest_that_will_fit(candidates.clone(), &disk).unwrap();
+        assert_eq!(selection, PathBuf::from("/dev/sdc"));
+
+        // Test 4: Require 250 GiB (no suitable disk)
+        disk.partitions.clear();
+        disk.partitions
+            .push(Partition::new("part1", 250 * 1024 * 1024 * 1024)); // 250 GiB
+        smallest_that_will_fit(candidates.clone(), &disk).unwrap_err();
+    }
+
+    #[test]
+    fn test_update_target_disk_path_with_candidates() {
+        let candidates = vec![
+            BlockDevice {
+                name: "sda".to_string(),
+                size: 50 * 1024 * 1024 * 1024, // 50 GiB
+                ..Default::default()
+            },
+            BlockDevice {
+                name: "sdb".to_string(),
+                size: 100 * 1024 * 1024 * 1024, // 100 GiB
+                ..Default::default()
+            },
+        ];
+
+        let mut host_config = HostConfiguration {
+            storage: Storage {
+                disks: vec![Disk {
+                    device: PathBuf::from("/dev/sdx"),
+                    partitions: vec![Partition::new("part1", 60 * 1024 * 1024 * 1024)], // 60 GiB
+                    id: "disk0".to_string(),
+                    partition_table_type: Default::default(),
+                    adopted_partitions: Default::default(),
+                }],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        update_target_disk_path_with_candidates(
+            &mut host_config,
+            DiskSelectionStrategy::SmallestThatWillFit,
+            candidates,
+        )
+        .unwrap();
+
         assert_eq!(
-            expand_template(indoc! {r#"
-                kb_value: {{ KiB }}
-                mb_value: {{ MiB }}
-                gb_value: {{ GiB }}
-            "#})
-            .unwrap(),
-            indoc! {r#"
-                kb_value: 1024
-                mb_value: 1048576
-                gb_value: 1073741824
-            "#}
+            host_config.storage.disks[0].device,
+            PathBuf::from("/dev/sdb")
         );
-    }
-
-    #[test]
-    fn test_expand_template_detect_disks_function() {
-        assert!(expand_template(indoc! {r#"
-            disks: {{ get_disks() }}
-        "#})
-        .is_ok());
-    }
-
-    #[test]
-    fn test_expand_template_size_range_filter() {
-        let result = expand_template(indoc! {r#"
-            small_disks: {{ get_disks(max_size=1073741824) }}
-            large_disks: {{ get_disks(min_size=1073741824 + 1) }}
-        "#})
-        .unwrap();
-        assert!(result.starts_with("small_disks: "));
-        assert!(result.contains("\nlarge_disks: "));
-    }
-
-    #[test]
-    fn test_expand_template_invalid_syntax() {
-        assert!(expand_template(indoc! {r#"
-            invalid: {{ unclosed_brace
-        "#})
-        .is_err());
-    }
-
-    #[test]
-    fn test_expand_template_combined_features() {
-        let result = expand_template(indoc! {r#"
-            storage:
-              min_size: {{ 10 * GiB }}
-              detected_disks: {{ get_disks(min_size=1073741824) }}
-        "#})
-        .unwrap();
-        assert!(result.starts_with("storage:\n  min_size: 10737418240\n  detected_disks: "));
     }
 }
 
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
-    use super::*;
-    use indoc::indoc;
     use pytest_gen::functional_test;
 
     #[functional_test]
-    fn test_detect_disks() {
-        assert_eq!(
-            expand_template(indoc! {r#"{{ get_disks() | filter(attribute="name", value="sda") | first | get(key="path")}}"#}).unwrap(),
-            "/dev/sda"
-        );
+    fn test_get_candidates() {
+        let candidates = super::get_candidates();
+        assert_eq!(candidates.len(), 2);
     }
 }
