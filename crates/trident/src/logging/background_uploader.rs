@@ -11,7 +11,8 @@ use url::Url;
 
 static HTTP_ASYNC_CLIENT: LazyLock<Client> = LazyLock::new(Client::new);
 
-pub struct UploadData {
+/// Data to be uploaded by the background uploader.
+struct UploadData {
     pub url: Url,
     pub body: Vec<u8>,
 }
@@ -67,6 +68,7 @@ impl BackgroundUploader {
         }
     }
 
+    /// The main upload loop that processes incoming upload requests.
     async fn upload_loop(mut receiver: UnboundedReceiver<UploadData>) {
         while let Some(upload) = receiver.recv().await {
             let result = HTTP_ASYNC_CLIENT
