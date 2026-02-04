@@ -171,6 +171,30 @@ Writers MUST populate the `compression` field in the metadata to inform readers
 about settings that must be taken into consideration when decompressing the
 images.
 
+### GUID Partition Table (GPT) File
+
+Starting from COSI version 1.2, the immediate next file after the metadata file
+in the tar MUST be the ZSTD compressed binary image of the primary GPT header
+and entries, along with the protective MBR. This image MUST be referenced as the
+first entry in the `gptRegions` array of the `disk` object.
+
+The image is defined to be everything from offset 0 of the original disk image
+up to the end of the GPT entries, this includes:
+
+- The protective MBR (first 512 bytes of the disk).
+- The primary GPT header (at LBA 1, typically the second 512-byte block).
+- Any space between the primary GPT header and the GPT entries.
+- The GPT entries themselves. (generally starting at LBA 2).
+
+Writers MUST determine the end of this region by reading the GPT header to find
+the last GPT entry and calculating its end offset.
+
+The uncompressed image MAY not be aligned to a logical block address (LBA)
+boundary if the GPT entries do not end on an LBA boundary.
+
+In standard GPTs with 128 entries of 128 bytes each, this image will include
+LBAs 0 to 33 (inclusive), totaling 34 LBAs or 17 KiB.
+
 ### Metadata JSON File
 
 The metadata file MUST be named `metadata.json` and MUST be at the root of the
@@ -292,11 +316,11 @@ The partitioning table type. Currently, only `gpt` is supported.
 This object holds information about a specific region of the original disk
 image.
 
-| Field    | Type                           | Added in | Required                   | Description                                |
-| -------- | ------------------------------ | -------- | -------------------------- | ------------------------------------------ |
-| `image`  | [ImageFile](#imagefile-object) | 1.2      | Yes (since 1.2)            | Details of the image file in the tar file. |
-| `type`   | [RegionType](#regiontype-enum) | 1.2      | Yes (since 1.2)            | The type of region this image represents.  |
-| `number` | number                         | 1.2      | When `type` == `partition` | The partition number (1-based index).      |
+| Field    | Type                           | Added in | Required                   | Description                                      |
+| -------- | ------------------------------ | -------- | -------------------------- | ------------------------------------------------ |
+| `image`  | [ImageFile](#imagefile-object) | 1.2      | Yes (since 1.2)            | Details of the image file in the tar file.       |
+| `type`   | [RegionType](#regiontype-enum) | 1.2      | Yes (since 1.2)            | The type of region this image represents.        |
+| `number` | number                         | 1.2      | When `type` == `partition` | The partition's GPT entry index (1-based index). |
 
 ##### `RegionType` Enum
 
