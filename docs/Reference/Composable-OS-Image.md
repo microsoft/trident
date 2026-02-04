@@ -215,6 +215,12 @@ from in a virtual disk.
 | `partType`   | UUID (string, case insensitive)      | 1.0      | Yes (since 1.0)  | The GPT partition type. [3] [4] [5]        |
 | `verity`     | [VerityConfig](#verityconfig-object) | 1.0      | Conditionally[6] | The verity metadata of the filesystem.     |
 
+In COSI >= 1.2, all images referenced by the `image` field in the `Filesystem`
+objects MUST have exactly one corresponding entry in the `gptRegions` array of
+the `disk` object. Correspondence is determined by matching the `path` field of
+the `ImageFile` objects. The `ImageFile` objects in both locations MUST be
+exactly the same.
+
 _Notes:_
 
 - **[1]** It MUST use the name recognized by the kernel. For example, `ext4` for
@@ -244,12 +250,12 @@ device on top of a data device.
 
 ##### `ImageFile` Object
 
-| Field              | Type   | Added in | Required        | Description                                                                                |
-| ------------------ | ------ | -------- | --------------- | ------------------------------------------------------------------------------------------ |
-| `path`             | string | 1.0      | Yes (since 1.0) | Absolute path of the compressed image file inside the tar file. MUST start with `images/`. |
-| `compressedSize`   | number | 1.0      | Yes (since 1.0) | Size of the compressed image in bytes.                                                     |
-| `uncompressedSize` | number | 1.0      | Yes (since 1.0) | Size of the raw uncompressed image in bytes.                                               |
-| `sha384`           | string | 1.0      | Yes (since 1.1) | SHA-384 hash of the compressed hash image.                                                 |
+| Field              | Type   | Added in | Required        | Description                                                                       |
+| ------------------ | ------ | -------- | --------------- | --------------------------------------------------------------------------------- |
+| `path`             | string | 1.0      | Yes (since 1.0) | Path of the compressed image file inside the tar file. MUST start with `images/`. |
+| `compressedSize`   | number | 1.0      | Yes (since 1.0) | Size of the compressed image in bytes.                                            |
+| `uncompressedSize` | number | 1.0      | Yes (since 1.0) | Size of the raw uncompressed image in bytes.                                      |
+| `sha384`           | string | 1.0      | Yes (since 1.1) | SHA-384 hash of the compressed image.                                             |
 
 ##### `Disk` Object
 
@@ -271,6 +277,8 @@ primary-gpt entry and one partition entry for each partition present both in the
 GPT and in the tar file, ordered by increasing start LBA (with primary-gpt
 first).
 
+The field `size` MUST be a multiple of `lbaSize`.
+
 ##### `DiskType` Enum
 
 The partitioning table type. Currently, only `gpt` is supported.
@@ -284,17 +292,11 @@ The partitioning table type. Currently, only `gpt` is supported.
 This object holds information about a specific region of the original disk
 image.
 
-| Field    | Type                               | Added in | Required                   | Description                                |
-| -------- | ---------------------------------- | -------- | -------------------------- | ------------------------------------------ |
-| `image`  | [ImageFile](#imagefile-object) [1] | 1.2      | Yes (since 1.2)            | Details of the image file in the tar file. |
-| `type`   | [RegionType](#regiontype-enum)     | 1.2      | Yes (since 1.2)            | The type of region this image represents.  |
-| `number` | number                             | 1.2      | When `type` == `partition` | The partition number (1-based index).      |
-
-_Notes:_
-
-- **[1]** When this region is a partition that is ALSO referenced by a
-    `Filesystem` object in the `images` array, both instances of
-    [ImageFile](#imagefile-object) MUST be exactly the same.
+| Field    | Type                           | Added in | Required                   | Description                                |
+| -------- | ------------------------------ | -------- | -------------------------- | ------------------------------------------ |
+| `image`  | [ImageFile](#imagefile-object) | 1.2      | Yes (since 1.2)            | Details of the image file in the tar file. |
+| `type`   | [RegionType](#regiontype-enum) | 1.2      | Yes (since 1.2)            | The type of region this image represents.  |
+| `number` | number                         | 1.2      | When `type` == `partition` | The partition number (1-based index).      |
 
 ##### `RegionType` Enum
 
@@ -429,7 +431,7 @@ SHOULD be skipped when the default ZSTD compression parameters are used.
             "mountPoint": "/",
             "fsType": "ext4",
             "fsUuid": "88d2fa9b-7a32-450a-a9f8-aa9c3de79298",
-            "partType": "root",
+            "partType": "4f68bce3-e8cd-4db1-96e7-fbcaf984b709", // <-- Root amd64/x86_64 DPS GUID
             "verity": null
         }
     ],
