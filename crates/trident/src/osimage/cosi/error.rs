@@ -33,14 +33,20 @@ pub enum CosiMetadataErrorKind {
     #[error("OS package '{0}' is missing required architecture information")]
     V1_1OsPackageMissingArch(String),
 
+    #[error("Compression information is required for COSI version >= 1.2, but not provided")]
+    V1_2CompressionInfoRequired,
+
     #[error("Image disk metadata is required for COSI version >= 1.2, but not provided")]
     V1_2DiskInfoRequired,
 
     #[error("Disk regions array is empty")]
     V1_2DiskRegionsMissing,
 
-    #[error("First disk region in metadata must be the primary GPT at LBA 0, found region '{region_type}' at LBA {lba}")]
-    V1_2DiskRegionsInvalidFirstRegion { region_type: String, lba: u64 },
+    #[error("First disk region in metadata must be the primary GPT at LBA 0, found region '{region_type}'")]
+    V1_2DiskRegionsInvalidFirstRegion { region_type: String },
+
+    #[error("The COSI metadata contains multiple GPT regions")]
+    V1_2DuplicateGptRegion,
 
     #[error("Disk partition table type must be GPT, found '{0}'")]
     V1_2DiskPartitionTableNotGpt(String),

@@ -103,6 +103,11 @@ impl CosiMetadata {
         }
 
         if self.version >= KnownMetadataVersion::V1_2 {
+            // Ensure compression info is present.
+            if self.compression.window_size.is_none() {
+                return mk_err(CosiMetadataErrorKind::V1_2CompressionInfoRequired);
+            }
+
             // Ensure partitions metadata is present.
             let Some(disk) = &self.disk else {
                 return mk_err(CosiMetadataErrorKind::V1_2DiskInfoRequired);
@@ -123,11 +128,9 @@ impl CosiMetadata {
                 return mk_err(CosiMetadataErrorKind::V1_2DiskRegionsMissing);
             };
 
-            if first_region.region_type != GptRegionType::PrimaryGpt || first_region.start_lba != 0
-            {
+            if first_region.region_type != GptRegionType::PrimaryGpt {
                 return mk_err(CosiMetadataErrorKind::V1_2DiskRegionsInvalidFirstRegion {
                     region_type: first_region.region_type.to_string(),
-                    lba: first_region.start_lba,
                 });
             }
 
@@ -141,9 +144,24 @@ impl CosiMetadata {
 
             let mut partition_numbers = HashSet::new();
 
-            for gpt_region in &disk.gpt_regions {
-                let GptRegionType::Partition { number } = gpt_region.region_type else {
-                    continue;
+            // Scan all other GPT regions.
+            for gpt_region in disk.gpt_regions.iter().skip(1) {
+                let number = match &gpt_region.region_type {
+                    // Get partition number.
+                    GptRegionType::Partition { number } => *number,
+
+                    // Duplicate primary GPT region is an error.
+                    GptRegionType::PrimaryGpt => {
+                        return mk_err(CosiMetadataErrorKind::V1_2DuplicateGptRegion)
+                    }
+
+                    // Unknown region types are skipped with a warning. They are
+                    // harmless so we do not want to fail, but we should log
+                    // them.
+                    GptRegionType::Other => {
+                        warn!("Skipping validation for GPT region of unknown type");
+                        continue;
+                    }
                 };
 
                 // Partition numbers must be 1-indexed.
@@ -255,7 +273,7 @@ mod tests {
             "images": [
                 {
                     "image": {
-                        "path": "/path/to/image1",
+                        "path": "path/to/image1",
                         "compressedSize": 100,
                         "uncompressedSize": 200,
                         "sha384": SAMPLE_SHA384
@@ -267,7 +285,7 @@ mod tests {
                 },
                 {
                     "image": {
-                        "path": "/path/to/image2",
+                        "path": "path/to/image2",
                         "compressedSize": 150,
                         "uncompressedSize": 300,
                         "sha384": SAMPLE_SHA384
@@ -441,7 +459,7 @@ mod tests {
             "images": [
                 {
                     "image": {
-                        "path": "/path/to/image1",
+                        "path": "path/to/image1",
                         "compressedSize": 100,
                         "uncompressedSize": 200,
                         "sha384": SAMPLE_SHA384
@@ -453,7 +471,7 @@ mod tests {
                     "verity": {
                         "roothash": "abc123",
                         "image": {
-                            "path": "/path/to/image1.verity",
+                            "path": "path/to/image1.verity",
                             "compressedSize": 50,
                             "uncompressedSize": 100,
                             "sha384": SAMPLE_SHA384
@@ -462,7 +480,7 @@ mod tests {
                 },
                 {
                     "image": {
-                        "path": "/path/to/image2",
+                        "path": "path/to/image2",
                         "compressedSize": 100,
                         "uncompressedSize": 200,
                         "sha384": SAMPLE_SHA384
@@ -502,9 +520,8 @@ mod tests {
                 "gptRegions": [
                     {
                         "type": "primary-gpt",
-                        "startLba": 0,
                         "image": {
-                            "path": "/path/to/image1",
+                            "path": "path/to/image1",
                             "compressedSize": 4096,
                             "uncompressedSize": 17408,
                             "sha384": SAMPLE_SHA384
@@ -513,9 +530,8 @@ mod tests {
                     {
                         "type": "partition",
                         "number": 1,
-                        "startLba": 34,
                         "image": {
-                            "path": "/path/to/image1",
+                            "path": "path/to/image1",
                             "compressedSize": 100,
                             "uncompressedSize": 200,
                             "sha384": SAMPLE_SHA384
@@ -524,9 +540,8 @@ mod tests {
                     {
                         "type": "partition",
                         "number": 2,
-                        "startLba": 205,
                         "image": {
-                            "path": "/path/to/image1.verity",
+                            "path": "path/to/image1.verity",
                             "compressedSize": 50,
                             "uncompressedSize": 100,
                             "sha384": SAMPLE_SHA384
@@ -535,21 +550,34 @@ mod tests {
                     {
                         "type": "partition",
                         "number": 3,
-                        "startLba": 411,
                         "image": {
-                            "path": "/path/to/image2",
+                            "path": "path/to/image2",
                             "compressedSize": 100,
                             "uncompressedSize": 200,
                             "sha384": SAMPLE_SHA384
                         }
                     }
                 ]
+            },
+            "compression": {
+                "windowSize": 27
             }
         });
 
         // Sanity: base should validate.
         let metadata = parse_and_validate(base.clone()).unwrap();
         assert_eq!(metadata.version, KnownMetadataVersion::V1_2);
+
+        // v1.2 requires compression info.
+        let mut no_compression = base.clone();
+        no_compression
+            .as_object_mut()
+            .unwrap()
+            .remove("compression");
+        assert_validate_err_kind(
+            no_compression,
+            CosiMetadataErrorKind::V1_2CompressionInfoRequired,
+        );
 
         // v1.2 requires disk metadata.
         let mut no_disk = base.clone();
@@ -561,7 +589,7 @@ mod tests {
         empty_regions["disk"]["gptRegions"] = json!([]);
         assert_validate_err_kind(empty_regions, CosiMetadataErrorKind::V1_2DiskRegionsMissing);
 
-        // Fist region not primary GPT at LBA 0 should error.
+        // First region not primary GPT at LBA 0 should error.
         let mut invalid_first_region = base.clone();
         invalid_first_region["disk"]["gptRegions"][0]["type"] = json!("partition");
         invalid_first_region["disk"]["gptRegions"][0]["number"] = json!(42);
@@ -569,16 +597,6 @@ mod tests {
             invalid_first_region,
             CosiMetadataErrorKind::V1_2DiskRegionsInvalidFirstRegion {
                 region_type: "partition".to_string(),
-                lba: 0,
-            },
-        );
-        let mut invalid_first_region_lba = base.clone();
-        invalid_first_region_lba["disk"]["gptRegions"][0]["startLba"] = json!(34);
-        assert_validate_err_kind(
-            invalid_first_region_lba,
-            CosiMetadataErrorKind::V1_2DiskRegionsInvalidFirstRegion {
-                region_type: "primary-gpt".to_string(),
-                lba: 34,
             },
         );
 
@@ -613,7 +631,7 @@ mod tests {
         assert_validate_err_kind(
             image_file_mismatch_compressed,
             CosiMetadataErrorKind::V1_2ImageFileMetadataMismatch {
-                path: "/path/to/image1".to_string(),
+                path: "path/to/image1".to_string(),
                 field: "compressedSize".to_string(),
                 disk_image: "999".to_string(),
                 fs_image: "100".to_string(),
@@ -626,7 +644,7 @@ mod tests {
         assert_validate_err_kind(
             image_file_mismatch_uncompressed,
             CosiMetadataErrorKind::V1_2ImageFileMetadataMismatch {
-                path: "/path/to/image1".to_string(),
+                path: "path/to/image1".to_string(),
                 field: "uncompressedSize".to_string(),
                 disk_image: "999".to_string(),
                 fs_image: "200".to_string(),
@@ -639,7 +657,7 @@ mod tests {
         assert_validate_err_kind(
             image_file_mismatch_sha384,
             CosiMetadataErrorKind::V1_2ImageFileMetadataMismatch {
-                path: "/path/to/image1".to_string(),
+                path: "path/to/image1".to_string(),
                 field: "sha384".to_string(),
                 disk_image: other_sha.to_string(),
                 fs_image: SAMPLE_SHA384.to_string(),
@@ -654,7 +672,7 @@ mod tests {
             .push(json!(
                 {
                     "image": {
-                        "path": "/path/to/image3",
+                        "path": "path/to/image3",
                         "compressedSize": 100,
                         "uncompressedSize": 200,
                         "sha384": SAMPLE_SHA384
@@ -668,7 +686,7 @@ mod tests {
         assert_validate_err_kind(
             image_file_no_partition,
             CosiMetadataErrorKind::V1_2ImageFileHasNoCorrespondingPartition(
-                "/path/to/image3".to_string(),
+                "path/to/image3".to_string(),
             ),
         );
 
@@ -677,12 +695,47 @@ mod tests {
         verity_image_file_no_partition["disk"]["gptRegions"]
             .as_array_mut()
             .unwrap()
-            .retain(|p| p["image"]["path"] != json!("/path/to/image1.verity"));
+            .retain(|p| p["image"]["path"] != json!("path/to/image1.verity"));
         assert_validate_err_kind(
             verity_image_file_no_partition,
             CosiMetadataErrorKind::V1_2ImageFileHasNoCorrespondingPartition(
-                "/path/to/image1.verity".to_string(),
+                "path/to/image1.verity".to_string(),
             ),
         );
+
+        // More than one primary GPT region should error.
+        let mut duplicate_primary_gpt = base.clone();
+        duplicate_primary_gpt["disk"]["gptRegions"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({
+                "type": "primary-gpt",
+                "image": {
+                    "path": "path/to/image8",
+                    "compressedSize": 4096,
+                    "uncompressedSize": 17408,
+                    "sha384": SAMPLE_SHA384
+                }
+            }));
+        assert_validate_err_kind(
+            duplicate_primary_gpt,
+            CosiMetadataErrorKind::V1_2DuplicateGptRegion,
+        );
+
+        // Validation should ignore unknown region types with a warning.
+        let mut unknown_region_type = base.clone();
+        unknown_region_type["disk"]["gptRegions"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({
+                "type": "my-custom-type",
+                "image": {
+                    "path": "path/to/image8",
+                    "compressedSize": 4096,
+                    "uncompressedSize": 17408,
+                    "sha384": SAMPLE_SHA384
+                }
+            }));
+        parse_and_validate(unknown_region_type).unwrap();
     }
 }

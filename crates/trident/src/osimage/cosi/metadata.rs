@@ -418,15 +418,12 @@ pub(crate) enum PartitionTableType {
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct GptDiskRegion {
-    /// Details of the image file in the tarball.
+    /// Details of the image file in the COSI tar.
     pub image: ImageFile,
 
     /// The type of region this image represents.
     #[serde(flatten)]
     pub region_type: GptRegionType,
-
-    /// The first LBA of the region in the RAW disk.
-    pub start_lba: u64,
 }
 
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq, Display)]
@@ -443,14 +440,8 @@ pub(crate) enum GptRegionType {
         number: u32,
     },
 
-    /// The backup GPT header and entries at the end of the disk.
-    BackupGpt,
-
-    /// Unallocated space between partitions or between the GPT and the first/last partition.
-    Unallocated,
-
-    /// A region of unknown type.
-    Unknown,
+    #[serde(other)]
+    Other,
 }
 
 #[derive(Debug, Default, Deserialize, Clone, Eq, PartialEq)]
