@@ -49,7 +49,10 @@ func WaitForLoginMessageInSerialLog(vmSerialLog string, verbose bool, iteration 
 
 		reader := bufio.NewReader(file)
 		if scannerStartPosition != 0 {
-			file.Seek(scannerStartPosition, io.SeekStart) // Move underlying file
+			// Move the reader to the last position if it
+			// was cached from previous loop.
+			file.Seek(scannerStartPosition, io.SeekStart)
+			// Reset reader to repositioned underlying file
 			reader.Reset(file)
 		}
 		lineBuffer := ""
@@ -72,8 +75,12 @@ func WaitForLoginMessageInSerialLog(vmSerialLog string, verbose bool, iteration 
 				readRune, _, err = reader.ReadRune()
 				if err == io.EOF {
 					if time.Since(runeReadStartTime) >= time.Duration(5)*time.Second {
-						// 5 seconds without new serial output, restart the read loop
+						// 5 seconds without new serial output, reopen file in case the
+						// existing file object is no longer getting new data.
+
+						// Make sure to save current scanner position
 						scannerStartPosition, _ = file.Seek(0, io.SeekCurrent)
+						// Restart read loop
 						goto restartReadLoop
 					}
 					// Wait for new serial output
