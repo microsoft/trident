@@ -1,7 +1,7 @@
-use std::{sync::LazyLock, thread::JoinHandle};
+use std::{collections::HashSet, sync::LazyLock, thread::JoinHandle};
 
 use anyhow::{bail, Context, Error};
-use log::debug;
+use log::{debug, error};
 use reqwest::Client;
 use tokio::sync::{
     mpsc::{self, UnboundedReceiver, UnboundedSender, WeakUnboundedSender},
@@ -70,15 +70,27 @@ impl BackgroundUploader {
 
     /// The main upload loop that processes incoming upload requests.
     async fn upload_loop(mut receiver: UnboundedReceiver<UploadData>) {
+        let mut ignored_servers = HashSet::new();
+        
         while let Some(upload) = receiver.recv().await {
+            if let Some(host) = upload.url.host_str() {
+                if ignored_servers.contains(host) {
+                    continue;
+                }
+            }
+
             let result = HTTP_ASYNC_CLIENT
-                .post(upload.url)
+                .post(upload.url.clone())
                 .body(upload.body)
                 .send()
                 .await;
 
             if let Err(e) = result {
-                eprintln!("Background upload failed: {e}");
+                error!("Background upload failed: {e}");
+                if let Some(host) = upload.url.host_str() {
+                    ignored_servers.insert(host.to_string());
+                    error!("Ignoring future uploads to server: {}", host);
+                }
             }
         }
 
