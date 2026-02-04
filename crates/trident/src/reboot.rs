@@ -33,5 +33,12 @@ pub fn request_reboot() -> Result<(), Box<DependencyError>> {
         .cmd()
         .env("SYSTEMD_IGNORE_CHROOT", "true")
         .arg("reboot")
-        .run_and_check()
+        .run_and_check()?;
+
+    // IMPORTANT: This message is used by E2E A/B update tests to validate that
+    // a reboot was requested. Do not change or remove without updating the
+    // tests!
+    info!("Rebooting system");
+
+    Ok(())
 }
