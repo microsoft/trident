@@ -103,7 +103,10 @@ impl Cosi {
         &self,
         _target_disk: impl AsRef<Path>,
     ) -> Result<HostConfiguration, Error> {
-        todo!("Implement deriving HostConfiguration from COSI file once sequential reading merges.")
+        bail!(
+            "HostConfiguration derivation from COSI files is temporarily disabled \
+             (unimplemented; waiting on PR #478)."
+        );
     }
 }
 
