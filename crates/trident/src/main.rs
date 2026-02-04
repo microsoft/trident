@@ -335,7 +335,8 @@ fn main() -> ExitCode {
     let bg_uploader = match BackgroundUploader::new() {
         Ok(uploader) => uploader,
         Err(e) => {
-            error!("Failed to initialize background uploader: {e:?}");
+            // Defer to stderr since logging is not yet initialized.
+            eprintln!("Failed to initialize background uploader: {e:?}");
             return TridentExitCodes::SetupFailed.into();
         }
     };
@@ -343,7 +344,8 @@ fn main() -> ExitCode {
     // Initialize the telemetry flow
     let tracestream = setup_tracing(&args);
     if let Err(e) = tracestream {
-        error!("Failed to initialize tracing: {e:?}");
+        // Defer to stderr since logging is not yet initialized.
+        eprintln!("Failed to initialize tracing: {e:?}");
         return TridentExitCodes::SetupFailed.into();
     }
 

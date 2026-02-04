@@ -103,7 +103,7 @@ impl BackgroundUploader {
             // this is just a generic implementation.
         }
 
-        log::debug!("Background uploader loop has exited");
+        debug!("Background uploader loop has exited");
     }
 }
 

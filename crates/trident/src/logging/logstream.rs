@@ -95,7 +95,7 @@ impl Logstream {
         // Filter all logs that could be produced as part of sending logs to avoid recursion.
         .with_global_filter("hyper", LevelFilter::Error)
         .with_global_filter("hyper_util", LevelFilter::Error)
-        .with_global_filter("request", LevelFilter::Error)
+        .with_global_filter("reqwest", LevelFilter::Error)
         .with_global_filter(module_path!(), LevelFilter::Error)
         .with_global_filter(BACKGROUND_LOG_MODULE, LevelFilter::Off)
         .into_logger()
@@ -140,12 +140,9 @@ impl LogSender {
 impl Log for LogSender {
     fn enabled(&self, metadata: &Metadata) -> bool {
         // Block logs with a level higher than the max level
-        // Block reqwest logs from being sent to the server
         // Block logs if there is no server
         // Blocks logs from request to avoid logging recursively
-        metadata.level() <= self.max_level
-            && !metadata.target().starts_with("reqwest")
-            && self.has_server()
+        metadata.level() <= self.max_level && self.has_server()
     }
 
     fn log(&self, record: &Record) {

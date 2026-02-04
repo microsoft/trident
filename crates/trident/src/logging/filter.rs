@@ -27,7 +27,7 @@ where
         self
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn into_inner(self) -> T {
         self.inner
     }
