@@ -13,7 +13,7 @@ use url::Url;
 
 use trident_api::{
     config::{HostConfiguration, ImageSha384, OsImage},
-    error::{InternalError, InvalidInputError, ReportError, ServicingError, TridentError},
+    error::{InternalError, ReportError, TridentError},
     primitives::hash::Sha384Hash,
 };
 
