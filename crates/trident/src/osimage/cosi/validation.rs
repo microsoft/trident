@@ -181,11 +181,11 @@ impl CosiMetadata {
                 };
 
                 // Compare relevant fields between filesystem and disk images.
-                image_compare(self, "compressedSize", fs_image, &gpt_region.image, |img| {
+                compare_image_field(self, "compressedSize", fs_image, &gpt_region.image, |img| {
                     img.compressed_size
                 })?;
 
-                image_compare(
+                compare_image_field(
                     self,
                     "uncompressedSize",
                     fs_image,
@@ -193,7 +193,7 @@ impl CosiMetadata {
                     |img| img.uncompressed_size,
                 )?;
 
-                image_compare(self, "sha384", fs_image, &gpt_region.image, |img| {
+                compare_image_field(self, "sha384", fs_image, &gpt_region.image, |img| {
                     img.sha384.clone()
                 })?;
             }
@@ -214,7 +214,7 @@ impl CosiMetadata {
 
 /// Compares a specific field between a filesystem image and a disk image,
 /// returning an error if they do not match.
-fn image_compare<T>(
+fn compare_image_field<T>(
     metadata: &CosiMetadata,
     field: &str,
     fs: &ImageFile,
