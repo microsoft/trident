@@ -67,7 +67,8 @@ will not be used by Trident.
 
 The tar file MUST NOT have a common root directory. The metadata file MUST be at
 the root of the tar file. If it were extracted with a standard `tar` invocation,
-the metadata file would be placed in the current directory.
+the metadata file would be placed in the current directory. File names in the
+tar metadata MUST NOT have any leading characters such as `./` or `/`.
 
 The first entry of the tar file MUST be a regular file named `cosi-marker` of
 size zero. This file serves as an identifier for the COSI format. See
@@ -393,12 +394,6 @@ SHOULD be skipped when the default ZSTD compression parameters are used.
 | Field        | Type   | Added in | Required        | Description                                                                                                                                             |
 | ------------ | ------ | -------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `windowSize` | number | 1.2      | Yes (since 1.2) | The power of 2 representing the window size used for ZSTD compression. The client will use this to determine the maximum window size for decompression. |
-
-_Notes:_
-
-- **[1]** The `windowSize` field MUST be included if the compression
-    parameters used for the images differ from the default parameters of the
-    ZSTD library. Otherwise, it SHOULD be omitted OR set to `null`.
 
 #### Samples
 
