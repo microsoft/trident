@@ -19,11 +19,9 @@ use osutils::{
 use trident_api::{
     config::UefiFallbackMode,
     constants::{
-        internal_params::{DISABLE_GRUB_NOPREFIX_CHECK, RAW_COSI_STORAGE},
-        EFI_DEFAULT_BIN_DIRECTORY, EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY,
-        ESP_RELATIVE_MOUNT_POINT_PATH, GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
+        EFI_DEFAULT_BIN_DIRECTORY, EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY, ESP_RELATIVE_MOUNT_POINT_PATH, GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH, internal_params::{DISABLE_GRUB_NOPREFIX_CHECK, RAW_COSI_STORAGE}
     },
-    error::{ReportError, ServicingError, TridentError, TridentResultExt},
+    error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, ServicingState, ServicingType},
 };
 
@@ -117,11 +115,13 @@ fn deploy_esp(ctx: &EngineContext, mount_point: &Path) -> Result<(), TridentErro
     // have to store a potentially large ESP image in memory.
     let esp_extraction_dir = path::join_relative(mount_point, ESP_EXTRACTION_DIRECTORY);
 
+    let mut found_esp = false;
     os_image.read_images(|path, stream| {
         if path != esp_img.image_file.path {
             return ControlFlow::Continue(());
         }
 
+        found_esp = true;
         let (temp_file, computed_sha384) = match load_raw_image(
             &esp_extraction_dir,
             os_image.source(),
@@ -152,7 +152,15 @@ fn deploy_esp(ctx: &EngineContext, mount_point: &Path) -> Result<(), TridentErro
                 .structured(ServicingError::DeployESPImages)
                 .message("Failed to load raw image"),
         )
-    })
+    })?;
+
+    if !found_esp {
+        return Err(TridentError::new(InvalidInputError::CorruptOsImage)).message(
+            "ESP filesystem listed in OS image but not present",
+        );
+    }
+
+    Ok(())
 }
 
 /// Takes in a reader to the raw zstd-compressed ESP image and decompresses it
