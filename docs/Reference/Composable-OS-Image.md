@@ -267,23 +267,17 @@ The partitioning table type. Currently, only `gpt` is supported.
 This object holds information about a specific region of the original disk
 image.
 
-| Field      | Type                               | Added in | Required                   | Description                                  |
-| ---------- | ---------------------------------- | -------- | -------------------------- | -------------------------------------------- |
-| `image`    | [ImageFile](#imagefile-object) [1] | 1.2      | Yes (since 1.2)            | Details of the image file in the tarball.    |
-| `type`     | [RegionType](#regiontype-enum)     | 1.2      | Yes (since 1.2)            | The type of region this image represents.    |
-| `startLba` | number                             | 1.2      | Conditionally [2]          | The first LBA of the region in the RAW disk. |
-| `number`   | number                             | 1.2      | When `type` == `partition` | The partition number (1-based index).        |
+| Field    | Type                               | Added in | Required                   | Description                               |
+| -------- | ---------------------------------- | -------- | -------------------------- | ----------------------------------------- |
+| `image`  | [ImageFile](#imagefile-object) [1] | 1.2      | Yes (since 1.2)            | Details of the image file in the tarball. |
+| `type`   | [RegionType](#regiontype-enum)     | 1.2      | Yes (since 1.2)            | The type of region this image represents. |
+| `number` | number                             | 1.2      | When `type` == `partition` | The partition number (1-based index).     |
 
 _Notes:_
 
 - **[1]** When this region is a partition that is ALSO referenced by a
     `Filesystem` object in the `images` array, both instances of
     [ImageFile](#imagefile-object) MUST be exactly the same.
-- **[2]** `startLba` MUST be provided when `type` is one of: `backup-gpt`,
-  `unallocated`, or `unknown`. It MUST NOT be provided when:
-  - `type` is `primary-gpt` (it must always be 0), OR
-  - `type` is `partition` (the start LBA is defined in the GPT partition
-    entries).
 
 ##### `RegionType` Enum
 
@@ -293,12 +287,6 @@ The type of region in the original disk image.
 | ------------- | -------------------------------------------------------------------------------------------------------- |
 | `primary-gpt` | Everything from offset 0 to the end of the primary GPT header and entries, including the protective MBR. |
 | `partition`   | A partition as defined in the GPT partition entries.                                                     |
-| `backup-gpt`  | The backup GPT header and entries at the end of the disk.                                                |
-| `unallocated` | Unallocated space between partitions or between the GPT and the first/last partition.                    |
-| `unknown`     | A region of unknown type.                                                                                |
-
-In COSI 1.2, `backup-gpt`, `unallocated` and `unknown` regions are unused, but
-defined and left available for future use.
 
 ##### `OsArchitecture` Enum
 
@@ -483,19 +471,7 @@ _Notes:_
                 "type": "partition",
                 "number": 1
             },
-            {
-                // NOTE: This region represents unallocated space between 
-                // partitions, this is currently unused, but an example is 
-                // provided for completeness.
-                "image": {
-                    "path": "images/unallocated.rawzst",
-                    "compressedSize": 839345,
-                    "uncompressedSize": 8388608,
-                    "sha384": "2decc64a828dbbb76779731cd4afd3b86cc4ad0af06f4afe594e72e62e33e520a6649719fe43f09f11d518e485eae0db"
-                },
-                "type": "unallocated",
-                "startLba": 16384
-            },
+            // More regions...
         ]
     },
     "compression": {
