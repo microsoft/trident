@@ -61,7 +61,8 @@ The tar file MUST contain the following files:
 
 To allow for future extensions, the tar file MAY contain other files, but
 Trident MUST ignore them. The tar file SHOULD NOT contain any extra files that
-will not be used by Trident.
+will not be used by Trident. Any extra files, if present, MUST exist after the
+`cosi-marker` and `metadata.json` files.
 
 ### Tar file Layout
 
@@ -181,9 +182,9 @@ first entry in the `gptRegions` array of the `disk` object.
 The image is defined to be everything from offset 0 of the original disk image
 up to the end of the GPT entries, this includes:
 
-- The protective MBR (first 512 bytes of the disk).
-- The primary GPT header (at LBA 1, typically the second 512-byte block).
-- Any space between the primary GPT header and the GPT entries.
+- The protective MBR (LBA 0).
+- The primary GPT header (at LBA 1).
+- Any space between the primary GPT header and the GPT entries, if present.
 - The GPT entries themselves. (generally starting at LBA 2).
 
 Writers MUST determine the end of this region by reading the GPT header to find
@@ -194,6 +195,10 @@ boundary if the GPT entries do not end on an LBA boundary.
 
 In standard GPTs with 128 entries of 128 bytes each, this image will include
 LBAs 0 to 33 (inclusive), totaling 34 LBAs or 17 KiB.
+
+The GPT bundled in COSI MUST have a valid header according to the
+[UEFI Specification](https://uefi.org/specs/UEFI/2.10/05_GUID_Partition_Table_Format.html#guid-partition-table-gpt-disk-layout-1)
+and MUST NOT contain overlapping partitions.
 
 ### Metadata JSON File
 
