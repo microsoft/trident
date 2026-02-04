@@ -70,14 +70,14 @@ func (h *DirectStreamingHelper) directStreaming(tc storm.TestCase) error {
 
 	// Start netlaunch in background because the VM will not connect back to
 	// netlaunch and we need the file server to continue running until the image
-	// has been pulled and deployed.
-	netlaunchContext, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// has been pulled and deployed. Netlaunch is intended to run until the test
+	// ends.
+	netlaunchContext := context.Background()
 	go func() {
 		logrus.Info("Starting netlaunch...")
 		netlaunchErr := netlaunch.RunNetlaunch(netlaunchContext, netlaunchConfig)
-		logrus.Info("netlaunch stopped (expect phonehome to generate 'context canceled' error).")
-		if netlaunchErr != nil && netlaunchErr != context.Canceled {
+		logrus.Info("netlaunch stopped.")
+		if netlaunchErr != nil {
 			tc.FailFromError(netlaunchErr)
 		}
 	}()
