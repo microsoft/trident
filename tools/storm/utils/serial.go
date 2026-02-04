@@ -27,56 +27,71 @@ func WaitForLoginMessageInSerialLog(vmSerialLog string, verbose bool, iteration 
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	// Open the file for reading and writing (file is guaranteed to exist)
-	file, err := os.OpenFile(vmSerialLog, os.O_RDWR, 0644)
-	if err != nil {
-		return fmt.Errorf("failed to open serial log file: %w", err)
-	}
-	defer func() {
-		if cerr := file.Close(); cerr != nil {
-			logrus.Errorf("Failed to close serial log file: %v", cerr)
-		}
-	}()
-
-	reader := bufio.NewReader(file)
-	lineBuffer := ""
+	scannerStartPosition := int64(0)
 	for {
-		// Check if the current line contains the login prompt, and return if it does
-		if strings.Contains(lineBuffer, "login:") && !strings.Contains(lineBuffer, "mos") {
-			printAndSave(lineBuffer, verbose, localSerialLog)
-			return nil
+	restartReadLoop:
+		// Open the file for reading and writing (file is guaranteed to exist)
+		file, err := os.OpenFile(vmSerialLog, os.O_RDWR, 0644)
+		if err != nil {
+			return fmt.Errorf("failed to open serial log file: %w", err)
 		}
+		defer func() {
+			if cerr := file.Close(); cerr != nil {
+				logrus.Errorf("Failed to close serial log file: %v", cerr)
+			}
+		}()
 
-		// Read a rune from reader, if EOF is encountered, retry until either a new
-		// character is read or the timeout is reached
-		var readRune rune
-		for {
-			if time.Since(startTime) >= timeout {
-				return fmt.Errorf("timeout waiting for login prompt after %d seconds", int(timeout.Seconds()))
-			}
-			// Read a rune from the serial log file
-			readRune, _, err = reader.ReadRune()
-			if err == io.EOF {
-				// Wait for new serial output
-				time.Sleep(10 * time.Millisecond)
-				continue
-			}
-			if err != nil {
-				return fmt.Errorf("failed to read from serial log: %w", err)
-			}
-			// Successfully read a rune, break out of the loop
-			break
+		reader := bufio.NewReader(file)
+		if scannerStartPosition != 0 {
+			file.Seek(scannerStartPosition, io.SeekStart) // Move underlying file
+			reader.Reset(file)
 		}
-		// Handle the rune read from the serial log
-		runeStr := string(readRune)
-		if runeStr == "\n" {
-			// If the last character is a newline, print the line buffer
-			// and reset it
-			printAndSave(lineBuffer, verbose, localSerialLog)
-			lineBuffer = ""
-		} else {
-			// If non-newline, append the output to the buffer
-			lineBuffer += runeStr
+		lineBuffer := ""
+		for {
+			// Check if the current line contains the login prompt, and return if it does
+			if strings.Contains(lineBuffer, "login:") && !strings.Contains(lineBuffer, "mos") {
+				printAndSave(lineBuffer, verbose, localSerialLog)
+				return nil
+			}
+
+			// Read a rune from reader, if EOF is encountered, retry until either a new
+			// character is read or the timeout is reached
+			runeReadStartTime := time.Now()
+			var readRune rune
+			for {
+				if time.Since(startTime) >= timeout {
+					return fmt.Errorf("timeout waiting for login prompt after %d seconds", int(timeout.Seconds()))
+				}
+				// Read a rune from the serial log file
+				readRune, _, err = reader.ReadRune()
+				if err == io.EOF {
+					if time.Since(runeReadStartTime) >= time.Duration(5)*time.Second {
+						// 5 seconds without new serial output, restart the read loop
+						scannerStartPosition, _ = file.Seek(0, io.SeekCurrent)
+						file.Close()
+						goto restartReadLoop
+					}
+					// Wait for new serial output
+					time.Sleep(10 * time.Millisecond)
+					continue
+				}
+				if err != nil {
+					return fmt.Errorf("failed to read from serial log: %w", err)
+				}
+				// Successfully read a rune, break out of the loop
+				break
+			}
+			// Handle the rune read from the serial log
+			runeStr := string(readRune)
+			if runeStr == "\n" {
+				// If the last character is a newline, print the line buffer
+				// and reset it
+				printAndSave(lineBuffer, verbose, localSerialLog)
+				lineBuffer = ""
+			} else {
+				// If non-newline, append the output to the buffer
+				lineBuffer += runeStr
+			}
 		}
 	}
 }
