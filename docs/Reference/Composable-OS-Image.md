@@ -252,7 +252,7 @@ The order of the `gptRegions` array MUST match the physical order of the regions
 in the original disk image, from the beginning of the disk to the end.
 
 A valid COSI `>=1.2` image MUST contain a region of type `primary-gpt` as the
-first entry in the `gptRegions` array..
+first entry in the `gptRegions` array.
 
 ##### `DiskType` Enum
 
