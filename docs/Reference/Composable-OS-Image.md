@@ -90,7 +90,8 @@ the tar file. It MUST be a regular file of size zero bytes.
 Because of the structure of a standard tar header, this makes the first 11 bytes
 of the COSI file equal to `63 6f 73 69 2d 6d 61 72 6b 65 72`, which is the
 binary representation of the ASCII string `cosi-marker`. Writers MUST use a tar
-header format that guarantees this layout, such as USTAR, GNU, or PAX.
+header format that produces this output. THis includes using the standard USTAR,
+GNU, and PAX (when no extended attributes are used) tar formats.
 
 Readers MAY use this marker to quickly identify COSI files.
 
@@ -265,8 +266,10 @@ this COSI file was sourced from.
 The order of the `gptRegions` array MUST match the physical order of the regions
 in the original disk image, from the beginning of the disk to the end.
 
-A valid COSI `>=1.2` image MUST contain a region of type `primary-gpt` as the
-first entry in the `gptRegions` array.
+In COSI `>=1.2` when `type` == `gpt`, `gptRegions` MUST contain exactly one
+primary-gpt entry and one partition entry for each partition present both in the
+GPT and in the tar file, ordered by increasing start LBA (with primary-gpt
+first).
 
 ##### `DiskType` Enum
 
