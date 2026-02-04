@@ -45,8 +45,8 @@ pub enum CosiMetadataErrorKind {
     #[error("First disk region in metadata must be the primary GPT at LBA 0, found region '{region_type}'")]
     V1_2DiskRegionsInvalidFirstRegion { region_type: String },
 
-    #[error("The COSI metadata contains multiple GPT regions")]
-    V1_2DuplicateGptRegion,
+    #[error("The COSI metadata contains multiple primary GPT regions")]
+    V1_2MultiplePrimaryGptRegions,
 
     #[error("Disk partition table type must be GPT, found '{0}'")]
     V1_2DiskPartitionTableNotGpt(String),

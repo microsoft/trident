@@ -152,7 +152,7 @@ impl CosiMetadata {
 
                     // Duplicate primary GPT region is an error.
                     GptRegionType::PrimaryGpt => {
-                        return mk_err(CosiMetadataErrorKind::V1_2DuplicateGptRegion)
+                        return mk_err(CosiMetadataErrorKind::V1_2MultiplePrimaryGptRegions)
                     }
 
                     // Unknown region types are skipped with a warning. They are
@@ -521,7 +521,7 @@ mod tests {
                     {
                         "type": "primary-gpt",
                         "image": {
-                            "path": "path/to/image1",
+                            "path": "path/to/gpt-image",
                             "compressedSize": 4096,
                             "uncompressedSize": 17408,
                             "sha384": SAMPLE_SHA384
@@ -719,7 +719,7 @@ mod tests {
             }));
         assert_validate_err_kind(
             duplicate_primary_gpt,
-            CosiMetadataErrorKind::V1_2DuplicateGptRegion,
+            CosiMetadataErrorKind::V1_2MultiplePrimaryGptRegions,
         );
 
         // Validation should ignore unknown region types with a warning.
