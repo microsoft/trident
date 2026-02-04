@@ -156,7 +156,8 @@ impl Log for LogSender {
             };
 
             // Send logs with a reasonably low timeout. The uploader will drop
-            // logs if the server is unreachable or slow.
+            // logs if the server is unreachable or slow, or it it has been
+            // closed.
             if let Err(e) = self.uploader.upload(&target, body, Duration::from_secs(5)) {
                 if !self.send_failed.swap(true, Ordering::Relaxed) {
                     eprintln!("Failed to send log entry: {e}");

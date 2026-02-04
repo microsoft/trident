@@ -1,4 +1,9 @@
-use std::{collections::HashSet, sync::LazyLock, thread::JoinHandle, time::Duration};
+use std::{
+    collections::HashSet,
+    sync::LazyLock,
+    thread::{Builder, JoinHandle},
+    time::Duration,
+};
 
 use anyhow::{bail, Context, Error};
 use log::{debug, error};
@@ -50,23 +55,26 @@ impl BackgroundUploader {
     /// Starts a new thread with a Tokio runtime to handle uploads.
     fn start_upload_task(receiver: UnboundedReceiver<UploadData>) -> Result<JoinHandle<()>, Error> {
         let (ready_tx, ready_rx) = oneshot::channel::<bool>();
-        let handle = std::thread::spawn(move || {
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build();
-            let _ = ready_tx.send(runtime.is_ok());
-            let runtime = match runtime {
-                Ok(rt) => rt,
-                Err(e) => {
-                    eprintln!("Failed to create Tokio runtime for background uploader: {e}");
-                    return;
-                }
-            };
+        let handle = Builder::new()
+            .name("background-uploader".into())
+            .spawn(move || {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build();
+                let _ = ready_tx.send(runtime.is_ok());
+                let runtime = match runtime {
+                    Ok(rt) => rt,
+                    Err(e) => {
+                        eprintln!("Failed to create Tokio runtime for background uploader: {e}");
+                        return;
+                    }
+                };
 
-            runtime.block_on(async move {
-                Self::upload_loop(receiver).await;
-            });
-        });
+                runtime.block_on(async move {
+                    Self::upload_loop(receiver).await;
+                });
+            })
+            .context("Failed to create background-uploader thread.")?;
 
         // Wait for the runtime to be ready
         match ready_rx.blocking_recv() {
