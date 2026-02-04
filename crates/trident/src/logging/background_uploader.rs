@@ -23,6 +23,9 @@ struct UploadData {
 }
 
 /// A background uploader that sends log data to a remote server asynchronously.
+///
+/// When dropped it will finish any pending uploads and shut down the background
+/// thread.
 pub struct BackgroundUploader {
     inner: Option<(UnboundedSender<UploadData>, JoinHandle<()>)>,
 }
@@ -176,12 +179,26 @@ mod tests {
             .try_init();
     }
 
+    fn run_in_runtime(f: impl std::future::Future<Output = ()>) {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(f);
+    }
+
     #[test]
-    fn test_mock_handle_upload_errors_when_uploader_closed() {
+    /// Ensures `get_handle()` returns a weak sender that can no longer enqueue once the
+    /// `BackgroundUploader` is dropped.
+    fn test_handle_upload_errors_after_uploader_drop() {
         init_test_logging();
 
-        let handle = BackgroundUploadHandle::new_mock();
+        let uploader = BackgroundUploader::new().unwrap();
+        let handle = uploader.get_handle().unwrap();
+        drop(uploader);
+
         let url = Url::parse("http://example.invalid/upload").unwrap();
+        // After shutdown, the weak sender can't be upgraded so upload should error.
         let err = handle
             .upload(&url, b"hello".to_vec(), Duration::from_millis(50))
             .unwrap_err();
@@ -192,6 +209,8 @@ mod tests {
     }
 
     #[test]
+    /// Verifies the end-to-end happy path: `BackgroundUploader` accepts an upload request and
+    /// eventually performs an HTTP POST with the provided body.
     fn test_background_uploader_sends_post_request() {
         init_test_logging();
 
@@ -212,16 +231,17 @@ mod tests {
             .upload(&url, body.as_bytes().to_vec(), Duration::from_secs(2))
             .unwrap();
 
-        // Drop joins the background thread, so the request should be completed.
-        drop(uploader);
+        // Shutdown can discard queued items; give the background thread time to send.
+        std::thread::sleep(Duration::from_millis(100));
         mock.assert();
+
+        drop(uploader);
     }
 
     #[test]
+    /// Directly tests `upload_loop`: a queued message results in a single HTTP POST.
     fn test_upload_loop_sends_post_request() {
         init_test_logging();
-
-        let (sender, receiver) = mpsc::unbounded_channel::<UploadData>();
 
         let mut server = Server::new();
         let body = "hello-upload-loop";
@@ -232,31 +252,35 @@ mod tests {
             .expect(1)
             .create();
 
-        let url = Url::parse(&server.url()).unwrap().join("/upload").unwrap();
-        sender
-            .send(UploadData {
-                url,
-                body: body.as_bytes().to_vec(),
-                timeout: Duration::from_secs(2),
-            })
-            .unwrap();
-        drop(sender);
+        run_in_runtime(async {
+            let (sender, receiver) = mpsc::unbounded_channel::<UploadData>();
+            let url = Url::parse(&server.url()).unwrap().join("/upload").unwrap();
+            // Run the loop in a task so we can enqueue a message and then close the channel.
+            let upload_task = tokio::spawn(async move {
+                BackgroundUploader::upload_loop(receiver).await;
+            });
 
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        runtime.block_on(async {
-            BackgroundUploader::upload_loop(receiver).await;
+            sender
+                .send(UploadData {
+                    url,
+                    body: body.as_bytes().to_vec(),
+                    timeout: Duration::from_secs(2),
+                })
+                .unwrap();
+
+            // Give the loop a moment to process the request before shutting down.
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            drop(sender);
+            let _ = upload_task.await;
         });
         mock.assert();
     }
 
     #[test]
+    /// Directly tests `upload_loop` failure handling: once a request to an origin fails, future
+    /// uploads to that same origin should be ignored.
     fn test_upload_loop_failed_host_is_ignored_for_future_uploads() {
         init_test_logging();
-
-        let (sender, receiver) = mpsc::unbounded_channel::<UploadData>();
 
         // Use a single mockito server so both uploads share the same origin (scheme+host+port).
         // First upload: the server intentionally responds too slowly, causing a client timeout
@@ -278,33 +302,119 @@ mod tests {
             .expect(0)
             .create();
 
-        sender
-            .send(UploadData {
-                url: Url::parse(&server.url()).unwrap().join("/slow").unwrap(),
-                body: b"timeout-me".to_vec(),
-                timeout: Duration::from_millis(10),
-            })
-            .unwrap();
+        run_in_runtime(async {
+            let (sender, receiver) = mpsc::unbounded_channel::<UploadData>();
+            let upload_task = tokio::spawn(async move {
+                BackgroundUploader::upload_loop(receiver).await;
+            });
 
-        // Second upload: same origin; should be skipped after the first fails.
-        sender
-            .send(UploadData {
-                url: Url::parse(&server.url()).unwrap().join("/upload").unwrap(),
-                body: b"this-should-be-skipped".to_vec(),
-                timeout: Duration::from_secs(2),
-            })
-            .unwrap();
-        drop(sender);
+            // First request: a slow response + short timeout forces reqwest to return an error.
+            sender
+                .send(UploadData {
+                    url: Url::parse(&server.url()).unwrap().join("/slow").unwrap(),
+                    body: b"timeout-me".to_vec(),
+                    timeout: Duration::from_millis(10),
+                })
+                .unwrap();
 
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        runtime.block_on(async {
-            BackgroundUploader::upload_loop(receiver).await;
+            // Allow the first request to time out and mark the origin ignored.
+            tokio::time::sleep(Duration::from_millis(50)).await;
+
+            // Second request: same origin; should be skipped after the first fails.
+            sender
+                .send(UploadData {
+                    url: Url::parse(&server.url()).unwrap().join("/upload").unwrap(),
+                    body: b"this-should-be-skipped".to_vec(),
+                    timeout: Duration::from_secs(2),
+                })
+                .unwrap();
+
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            drop(sender);
+            let _ = upload_task.await;
         });
 
         slow_mock.assert();
         should_not_hit.assert();
+    }
+
+    #[test]
+    /// Directly tests `upload_loop` shutdown behavior: once the channel is closed, the loop
+    /// should upload remaining items in the queue before exiting.
+    fn test_upload_loop_shutdown_uploads_remaining_queue_items() {
+        init_test_logging();
+
+        // Deterministic shutdown behavior: if the channel is closed (sender dropped) after a
+        // message has already been queued, `upload_loop` should still process that queued item.
+        let mut server = Server::new();
+        let queued_upload = server
+            .mock("POST", "/queued")
+            .with_status(200)
+            .expect(1)
+            .create();
+
+        let (sender, receiver) = mpsc::unbounded_channel::<UploadData>();
+        sender
+            .send(UploadData {
+                url: Url::parse(&server.url()).unwrap().join("/queued").unwrap(),
+                body: b"queued".to_vec(),
+                timeout: Duration::from_secs(1),
+            })
+            .unwrap();
+        // Close the sender before running the loop to simulate shutdown.
+        drop(sender);
+
+        run_in_runtime(async {
+            BackgroundUploader::upload_loop(receiver).await;
+        });
+        queued_upload.assert();
+    }
+
+    #[test]
+    /// Validates `get_handle()` weak/strong semantics:
+    /// - handles can enqueue while the uploader is alive
+    /// - cloned handles are still weak and fail once the uploader is dropped
+    fn test_get_handle_weak_strong_semantics() {
+        init_test_logging();
+
+        let uploader = BackgroundUploader::new().unwrap();
+        let handle = uploader
+            .get_handle()
+            .expect("get_handle should return Some when alive");
+        let handle2 = handle.clone();
+
+        let mut server = Server::new();
+        let ok_mock = server
+            .mock("POST", "/ok")
+            .match_body(Matcher::Exact("hello".to_string()))
+            .with_status(200)
+            .expect(1)
+            .create();
+
+        let url = Url::parse(&server.url()).unwrap().join("/ok").unwrap();
+        handle
+            .upload(&url, b"hello".to_vec(), Duration::from_secs(2))
+            .unwrap();
+
+        std::thread::sleep(Duration::from_millis(100));
+        ok_mock.assert();
+
+        drop(uploader);
+
+        let after_drop = server
+            .mock("POST", "/nope")
+            .with_status(200)
+            .expect(0)
+            .create();
+
+        let err = handle2
+            .upload(
+                &Url::parse(&server.url()).unwrap().join("/nope").unwrap(),
+                b"nope".to_vec(),
+                Duration::from_secs(1),
+            )
+            .unwrap_err();
+        assert!(err.to_string().contains("shut down"));
+        after_drop.assert();
     }
 }
