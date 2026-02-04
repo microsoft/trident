@@ -1,4 +1,4 @@
-use std::{collections::HashSet, sync::LazyLock, thread::JoinHandle};
+use std::{collections::HashSet, sync::LazyLock, thread::JoinHandle, time::Duration};
 
 use anyhow::{bail, Context, Error};
 use log::{debug, error};
@@ -9,12 +9,17 @@ use tokio::sync::{
 };
 use url::Url;
 
+/// A static HTTP client for background uploads.
 static HTTP_ASYNC_CLIENT: LazyLock<Client> = LazyLock::new(Client::new);
+
+/// The module path of the background uploader. Can be used for filtering logs.
+pub(super) const BACKGROUND_LOG_MODULE: &str = module_path!();
 
 /// Data to be uploaded by the background uploader.
 struct UploadData {
-    pub url: Url,
-    pub body: Vec<u8>,
+    url: Url,
+    body: Vec<u8>,
+    timeout: Duration,
 }
 
 /// A background uploader that sends log data to a remote server asynchronously.
@@ -71,7 +76,7 @@ impl BackgroundUploader {
     /// The main upload loop that processes incoming upload requests.
     async fn upload_loop(mut receiver: UnboundedReceiver<UploadData>) {
         let mut ignored_servers = HashSet::new();
-        
+
         while let Some(upload) = receiver.recv().await {
             if let Some(host) = upload.url.host_str() {
                 if ignored_servers.contains(host) {
@@ -81,6 +86,7 @@ impl BackgroundUploader {
 
             let result = HTTP_ASYNC_CLIENT
                 .post(upload.url.clone())
+                .timeout(upload.timeout)
                 .body(upload.body)
                 .send()
                 .await;
@@ -92,6 +98,9 @@ impl BackgroundUploader {
                     error!("Ignoring future uploads to server: {}", host);
                 }
             }
+
+            // Note: we don't particularly care much for the status code since
+            // this is just a generic implementation.
         }
 
         log::debug!("Background uploader loop has exited");
@@ -104,7 +113,9 @@ impl Drop for BackgroundUploader {
         if let Some((sender, handle)) = self.inner.take() {
             drop(sender);
             debug!("Waiting for background uploader to shut down");
-            let _ = handle.join();
+            if let Err(e) = handle.join() {
+                error!("Background uploader thread panicked: {:?}", e);
+            }
         }
     }
 }
@@ -117,12 +128,18 @@ pub struct BackgroundUploadHandle {
 
 impl BackgroundUploadHandle {
     /// Sends data to be uploaded in the background.
-    pub fn upload(&self, url: &Url, body: impl Into<Vec<u8>>) -> Result<(), Error> {
+    pub fn upload(
+        &self,
+        url: &Url,
+        body: impl Into<Vec<u8>>,
+        timeout: Duration,
+    ) -> Result<(), Error> {
         if let Some(sender) = self.sender.upgrade() {
             sender
                 .send(UploadData {
                     url: url.clone(),
                     body: body.into(),
+                    timeout,
                 })
                 .context("Failed to send data to background uploader")
         } else {

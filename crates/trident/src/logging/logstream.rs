@@ -1,13 +1,20 @@
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc, RwLock,
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, RwLock,
+    },
+    time::Duration,
 };
 
 use anyhow::{anyhow, Context, Error};
 use log::{info, LevelFilter, Log, Metadata, Record};
 use url::Url;
 
-use super::{background_uploader::BackgroundUploadHandle, filter::LogFilter, LogEntry};
+use super::{
+    background_uploader::{BackgroundUploadHandle, BACKGROUND_LOG_MODULE},
+    filter::LogFilter,
+    LogEntry,
+};
 
 type Remote = Arc<RwLock<Option<Url>>>;
 
@@ -90,6 +97,7 @@ impl Logstream {
         .with_global_filter("hyper_util", LevelFilter::Error)
         .with_global_filter("request", LevelFilter::Error)
         .with_global_filter(module_path!(), LevelFilter::Error)
+        .with_global_filter(BACKGROUND_LOG_MODULE, LevelFilter::Off)
         .into_logger()
     }
 }
@@ -150,7 +158,9 @@ impl Log for LogSender {
                 }
             };
 
-            if let Err(e) = self.uploader.upload(&target, body) {
+            // Send logs with a reasonably low timeout. The uploader will drop
+            // logs if the server is unreachable or slow.
+            if let Err(e) = self.uploader.upload(&target, body, Duration::from_secs(5)) {
                 if !self.send_failed.swap(true, Ordering::Relaxed) {
                     eprintln!("Failed to send log entry: {e}");
                 }
