@@ -1,6 +1,6 @@
 use std::{thread, time::Duration};
 
-use log::{error, info};
+use log::{debug, error, info};
 
 use osutils::dependencies::{Dependency, DependencyError};
 use trident_api::error::{ReportError, ServicingError, TridentError};
@@ -28,10 +28,17 @@ pub fn request_reboot() -> Result<(), Box<DependencyError>> {
     // This trace event will be used with the trident_start event to track the
     // total time taken for the reboot
     tracing::info!(metric_name = "trident_system_reboot");
-    info!("Requesting reboot");
+    debug!("Requesting reboot");
     Dependency::Systemctl
         .cmd()
         .env("SYSTEMD_IGNORE_CHROOT", "true")
         .arg("reboot")
-        .run_and_check()
+        .run_and_check()?;
+
+    // IMPORTANT: This message is used by E2E A/B update tests to validate that
+    // a reboot was requested. Do not change or remove without updating the
+    // tests!
+    info!("Rebooting system");
+
+    Ok(())
 }
