@@ -19,7 +19,9 @@ use osutils::{
 use trident_api::{
     config::UefiFallbackMode,
     constants::{
-        EFI_DEFAULT_BIN_DIRECTORY, EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY, ESP_RELATIVE_MOUNT_POINT_PATH, GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH, internal_params::{DISABLE_GRUB_NOPREFIX_CHECK, RAW_COSI_STORAGE}
+        internal_params::{DISABLE_GRUB_NOPREFIX_CHECK, RAW_COSI_STORAGE},
+        EFI_DEFAULT_BIN_DIRECTORY, EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY,
+        ESP_RELATIVE_MOUNT_POINT_PATH, GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
     },
     error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, ServicingState, ServicingType},
@@ -155,9 +157,8 @@ fn deploy_esp(ctx: &EngineContext, mount_point: &Path) -> Result<(), TridentErro
     })?;
 
     if !found_esp {
-        return Err(TridentError::new(InvalidInputError::CorruptOsImage)).message(
-            "ESP filesystem listed in OS image but not present",
-        );
+        return Err(TridentError::new(InvalidInputError::CorruptOsImage))
+            .message("ESP filesystem listed in OS image but not present");
     }
 
     Ok(())
