@@ -165,26 +165,20 @@ compatibility.
 
 The metadata file MUST contain a JSON object with the following fields:
 
-| Field         | Type                                   | Added in | Required         | Description                                      |
-| ------------- | -------------------------------------- | -------- | ---------------- | ------------------------------------------------ |
-| `version`     | string `MAJOR.MINOR`                   | 1.0      | Yes (since 1.0)  | The version of the metadata schema.              |
-| `osArch`      | [OsArchitecture](#osarchitecture-enum) | 1.0      | Yes (since 1.0)  | The architecture of the OS.                      |
-| `osRelease`   | string                                 | 1.0      | Yes (since 1.0)  | The contents of `/etc/os-release` verbatim.      |
-| `images`      | [Filesystem](#filesystem-object)[]     | 1.0      | Yes (since 1.0)  | Filesystem metadata.                             |
-| `disk`        | [Disk](#disk-object)                   | 1.2      | Yes (since 1.2)  | Original disk metadata.                          |
-| `osPackages`  | [OsPackage](#ospackage-object)[]       | 1.0      | Yes (since 1.1)  | The list of packages installed in the OS.        |
-| `bootloader`  | [Bootloader](#bootloader-object)       | 1.1      | Yes (since 1.1)  | Information about the bootloader used by the OS. |
-| `id`          | UUID (string, case insensitive)        | 1.0      | No               | A unique identifier for the COSI file.           |
-| `compression` | [Compression](#compression-object)     | 1.2      | Conditionally[1] | Compression metadata for the COSI file.          |
+| Field         | Type                                   | Added in | Required        | Description                                      |
+| ------------- | -------------------------------------- | -------- | --------------- | ------------------------------------------------ |
+| `version`     | string `MAJOR.MINOR`                   | 1.0      | Yes (since 1.0) | The version of the metadata schema.              |
+| `osArch`      | [OsArchitecture](#osarchitecture-enum) | 1.0      | Yes (since 1.0) | The architecture of the OS.                      |
+| `osRelease`   | string                                 | 1.0      | Yes (since 1.0) | The contents of `/etc/os-release` verbatim.      |
+| `images`      | [Filesystem](#filesystem-object)[]     | 1.0      | Yes (since 1.0) | Filesystem metadata.                             |
+| `disk`        | [Disk](#disk-object)                   | 1.2      | Yes (since 1.2) | Original disk metadata.                          |
+| `osPackages`  | [OsPackage](#ospackage-object)[]       | 1.0      | Yes (since 1.1) | The list of packages installed in the OS.        |
+| `bootloader`  | [Bootloader](#bootloader-object)       | 1.1      | Yes (since 1.1) | Information about the bootloader used by the OS. |
+| `id`          | UUID (string, case insensitive)        | 1.0      | No              | A unique identifier for the COSI file.           |
+| `compression` | [Compression](#compression-object)     | 1.2      | Yes (since 1.2) | Compression metadata for the COSI file.          |
 
 If the object contains other fields, readers MUST ignore them. A writer SHOULD
 NOT add any other fields to the object.
-
-_Notes:_
-
-- **[1]** The `compression` field MUST be included if the compression parameters
-    used for the images differ from the default parameters of the ZSTD library.
-    Otherwise, it SHOULD be omitted OR set to `null`.
 
 ##### `Filesystem` Object
 
