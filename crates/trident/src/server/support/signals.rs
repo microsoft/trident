@@ -1,7 +1,11 @@
-use std::sync::mpsc::{self, Receiver};
+use std::{
+    sync::mpsc::{self, Receiver},
+    thread,
+};
 
 use anyhow::{Context, Error};
 use log::info;
+use nix::sys::signal::Signal;
 use signal_hook::{
     consts::signal::{SIGINT, SIGQUIT, SIGTERM},
     iterator::Signals,
@@ -40,18 +44,27 @@ impl ShutdownSignals {
         let token = CancellationToken::new();
         let token_child = token.child_token();
 
-        std::thread::spawn(move || {
+        thread::spawn(move || {
             for signal in signals.forever() {
                 match signal {
                     SIGTERM | SIGINT | SIGQUIT => {
                         // Handle termination signals
-                        info!("Received termination signal: {signal}");
+                        info!(
+                            "Received termination signal: {}",
+                            match Signal::try_from(signal) {
+                                Ok(sig) => sig.as_str().to_string(),
+                                Err(_) => signal.to_string(),
+                            }
+                        );
                         token.cancel();
                         let _ = tx.send(());
+
+                        // Exit the loop after handling the signal.
+                        return;
                     }
-                    other_signal => {
-                        log::warn!("Received unexpected signal: {}", other_signal);
-                    }
+
+                    // No other signals should be received
+                    _ => (),
                 }
             }
         });
