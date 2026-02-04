@@ -74,9 +74,11 @@ steps:
       tar -xzvf $(Pipeline.Workspace)/build-artifacts/container_base/core-*.tar.gz -C \
         artifacts/container_base/ > /dev/null 2>&1
       
+      # Only replace the *first* FROM line so multi-stage Dockerfiles keep
+      # their later stages intact (e.g. a final scratch "artifact" stage).
       sed -i \
-        's|^FROM .*|FROM scratch\nCOPY artifacts/container_base/ / \nCMD ["/bin/bash"]|g' \
-         ${{ parameters.dockerfilePath }}
+        '0,/^FROM[[:space:]]\+/{s|^FROM .*|FROM scratch as build\nCOPY artifacts/container_base/ / \nCMD ["/bin/bash"]|}' \
+        ${{ parameters.dockerfilePath }}
 
       cat ${{ parameters.dockerfilePath }}
     displayName: Replace azl container base with azl preview
