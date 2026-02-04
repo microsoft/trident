@@ -3,6 +3,11 @@ mkdir -p /var/log/audit
 # Use more intuitive path for the ISO mount
 ln -s -T /run/initramfs/live /trident_cdrom
 
+# Compile and load Trident SELinux module (this is otherwise handled in trident.spec)
+cd /usr/share/selinux/packages/trident
+make -f /usr/share/selinux/devel/Makefile trident.pp
+semodule -i trident.pp
+
 # Allow various purpose installer images to use post-install.sh, including
 # those that do not use Trident config for installation ('no-trident-config').
 if [ "$1" != "no-trident-config" ]; then
