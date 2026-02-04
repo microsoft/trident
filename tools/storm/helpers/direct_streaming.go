@@ -76,7 +76,7 @@ func (h *DirectStreamingHelper) directStreaming(tc storm.TestCase) error {
 	go func() {
 		logrus.Info("Starting netlaunch...")
 		netlaunchErr := netlaunch.RunNetlaunch(netlaunchContext, netlaunchConfig)
-		logrus.Info("netlaunch stopped.")
+		logrus.Info("netlaunch stopped (expect phonehome to generate 'context canceled' error).")
 		if netlaunchErr != nil && netlaunchErr != context.Canceled {
 			tc.FailFromError(netlaunchErr)
 		}
