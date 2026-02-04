@@ -24,25 +24,25 @@ This document adheres to [RFC2119: Key words for use in RFCs to Indicate
 
 ## COSI File Format
 
-The COSI file itself MUST be a simple uncompressed tarball with the extension
+The COSI file itself MUST be a simple uncompressed tar file with the extension
 `.cosi`.
 
-The tarball section of the COSI file MUST end with the standard tar
+The tar file section of the COSI file MUST end with the standard tar
 end-of-archive marker: two 512-byte blocks of zeroes, aligned to 512 bytes.
 
 After the end-of-archive marker, the COSI file MAY contain additional data that
 is not part of the tar archive. This additional data can be used for extensions
 such as footers or checksums.
 
-Readers MUST stop interpreting the COSI file as a tarball after the
+Readers MUST stop interpreting the COSI file as a tar file after the
 end-of-archive marker.
 
 ### COSI as a Disk Image Format
 
 COSI does not carry the full contents of a raw disk image, instead it only
 contains the contents of the defined regions of a GPT-partitioned disk image.
-This includes the GPT headers and entries, partitions, but explicitly EXCLUDES
-any unallocated space that is not part of any defined region.
+This includes the primary GPT header and entries, partitions, but explicitly
+EXCLUDES any unallocated space that is not part of any defined region.
 
 The contents of any unallocated space outside of defined regions are NOT
 included in the COSI file. However, the sizes and locations of these unallocated
@@ -50,29 +50,48 @@ spaces are preserved in the GPT data included in the COSI file.
 
 ### Contents
 
-The tarball MUST contain the following files:
+The tar file MUST contain the following files:
 
+- `cosi-marker` file: An empty file named `cosi-marker` at the beginning of the
+  tar file to identify the file as a COSI file.
 - `metadata.json`: A JSON file that contains the metadata of the COSI file.
 - Disk region images in the folder `images/`: ZSTD compressed images of the
   relevant regions of the source disk image. The region images in the COSI file
   MUST exist in the same physical order as they appear in the source disk image.
 
-To allow for future extensions, the tarball MAY contain other files, but Trident
-MUST ignore them. The tarball SHOULD NOT contain any extra files that will not
-be used by Trident.
+To allow for future extensions, the tar file MAY contain other files, but
+Trident MUST ignore them. The tar file SHOULD NOT contain any extra files that
+will not be used by Trident.
 
-### Tarball Layout
+### Tar file Layout
 
-The tarball MUST NOT have a common root directory. The metadata file MUST be at
-the root of the tarball. If it were extracted with a standard `tar` invocation,
+The tar file MUST NOT have a common root directory. The metadata file MUST be at
+the root of the tar file. If it were extracted with a standard `tar` invocation,
 the metadata file would be placed in the current directory.
 
-The metadata file MUST be placed at the beginning of the tarball to allow for
-quick access to the metadata without having to traverse the entire tarball.
+The first entry of the tar file MUST be a regular file named `cosi-marker` of
+size zero. This file serves as an identifier for the COSI format. See
+[COSI Marker File](#cosi-marker-file) for more details.
+
+The metadata file MUST be placed immediately after the `cosi-marker` file to
+allow for quick discovery and access to the metadata without having to traverse
+the entire tar file.
 
 The disk region images MUST be placed right after the metadata file in the
-tarball. The order of the image files in the tarball MUST match the original
+tar file. The order of the image files in the tar file MUST match the original
 PHYSICAL order of the regions in the source disk image.
+
+### COSI Marker File
+
+The COSI marker file MUST be named `cosi-marker` and MUST be the first entry in
+the tar file. It MUST be a regular file of size zero bytes.
+
+Because of the structure of a standard tar header, this makes the first 11 bytes
+of the COSI file equal to `63 6f 73 69 2d 6d 61 72 6b 65 72`, which is the
+binary representation of the ASCII string `cosi-marker`. Writers MUST use a tar
+header format that guarantees this layout, such as USTAR, GNU, or PAX.
+
+Readers MAY use this marker to quickly identify COSI files.
 
 ### Disk Region Images
 
@@ -94,11 +113,11 @@ more details.
 
 The images MUST be compressed using ZSTD compression.
 
-They MUST exist in the tarball under the `images/` directory. They MAY be placed
+They MUST exist in the tar file under the `images/` directory. They MAY be placed
 in subdirectories of `images/` to organize them. Readers MUST be able to handle
 images in subdirectories.
 
-The physical order of the region images in the tarball MUST match the order
+The physical order of the region images in the tar file MUST match the order
 they appear in the source disk image, from the beginning of the disk to the end.
 
 #### Filesystem Shrinking
@@ -153,7 +172,7 @@ images.
 ### Metadata JSON File
 
 The metadata file MUST be named `metadata.json` and MUST be at the root of the
-tarball. The metadata file MUST be a valid JSON file.
+tar file. The metadata file MUST be a valid JSON file.
 
 #### Schema
 
@@ -185,20 +204,20 @@ NOT add any other fields to the object.
 This object carries information about a filesystem and the partition it comes
 from in a virtual disk.
 
-| Field        | Type                                 | Added in | Required         | Description                               |
-| ------------ | ------------------------------------ | -------- | ---------------- | ----------------------------------------- |
-| `image`      | [ImageFile](#imagefile-object)       | 1.0      | Yes (since 1.0)  | Details of the image file in the tarball. |
-| `mountPoint` | string                               | 1.0      | Yes (since 1.0)  | The mount point of the filesystem.        |
-| `fsType`     | string                               | 1.0      | Yes (since 1.0)  | The filesystem's type. [1]                |
-| `fsUuid`     | string                               | 1.0      | Yes (since 1.0)  | The UUID of the filesystem. [2]           |
-| `partType`   | UUID (string, case insensitive)      | 1.0      | Yes (since 1.0)  | The GPT partition type. [3] [4] [5]       |
-| `verity`     | [VerityConfig](#verityconfig-object) | 1.0      | Conditionally[6] | The verity metadata of the filesystem.    |
+| Field        | Type                                 | Added in | Required         | Description                                |
+| ------------ | ------------------------------------ | -------- | ---------------- | ------------------------------------------ |
+| `image`      | [ImageFile](#imagefile-object)       | 1.0      | Yes (since 1.0)  | Details of the image file in the tar file. |
+| `mountPoint` | string                               | 1.0      | Yes (since 1.0)  | The mount point of the filesystem.         |
+| `fsType`     | string                               | 1.0      | Yes (since 1.0)  | The filesystem's type. [1]                 |
+| `fsUuid`     | string                               | 1.0      | Yes (since 1.0)  | The UUID of the filesystem. [2]            |
+| `partType`   | UUID (string, case insensitive)      | 1.0      | Yes (since 1.0)  | The GPT partition type. [3] [4] [5]        |
+| `verity`     | [VerityConfig](#verityconfig-object) | 1.0      | Conditionally[6] | The verity metadata of the filesystem.     |
 
 _Notes:_
 
 - **[1]** It MUST use the name recognized by the kernel. For example, `ext4` for
     ext4 filesystems, `vfat` for FAT32 filesystems, etc.
-- **[2]** It MUST be unique across all filesystems in the COSI tarball.
+- **[2]** It MUST be unique across all filesystems in the COSI tar file.
   Additionally, volumes in an A/B volume pair MUST have unique filesystem UUIDs.
 - **[3]** It MUST be a UUID defined by the [Discoverable Partition Specification
     (DPS)](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/)
@@ -216,19 +235,19 @@ _Notes:_
 The `VerityConfig` object contains information required to set up a verity
 device on top of a data device.
 
-| Field      | Type                           | Added in | Required        | Description                                              |
-| ---------- | ------------------------------ | -------- | --------------- | -------------------------------------------------------- |
-| `image`    | [ImageFile](#imagefile-object) | 1.0      | Yes (since 1.0) | Details of the hash partition image file in the tarball. |
-| `roothash` | string                         | 1.0      | Yes (since 1.0) | Verity root hash.                                        |
+| Field      | Type                           | Added in | Required        | Description                                               |
+| ---------- | ------------------------------ | -------- | --------------- | --------------------------------------------------------- |
+| `image`    | [ImageFile](#imagefile-object) | 1.0      | Yes (since 1.0) | Details of the hash partition image file in the tar file. |
+| `roothash` | string                         | 1.0      | Yes (since 1.0) | Verity root hash.                                         |
 
 ##### `ImageFile` Object
 
-| Field              | Type   | Added in | Required        | Description                                                                               |
-| ------------------ | ------ | -------- | --------------- | ----------------------------------------------------------------------------------------- |
-| `path`             | string | 1.0      | Yes (since 1.0) | Absolute path of the compressed image file inside the tarball. MUST start with `images/`. |
-| `compressedSize`   | number | 1.0      | Yes (since 1.0) | Size of the compressed image in bytes.                                                    |
-| `uncompressedSize` | number | 1.0      | Yes (since 1.0) | Size of the raw uncompressed image in bytes.                                              |
-| `sha384`           | string | 1.0      | Yes (since 1.1) | SHA-384 hash of the compressed hash image.                                                |
+| Field              | Type   | Added in | Required        | Description                                                                                |
+| ------------------ | ------ | -------- | --------------- | ------------------------------------------------------------------------------------------ |
+| `path`             | string | 1.0      | Yes (since 1.0) | Absolute path of the compressed image file inside the tar file. MUST start with `images/`. |
+| `compressedSize`   | number | 1.0      | Yes (since 1.0) | Size of the compressed image in bytes.                                                     |
+| `uncompressedSize` | number | 1.0      | Yes (since 1.0) | Size of the raw uncompressed image in bytes.                                               |
+| `sha384`           | string | 1.0      | Yes (since 1.1) | SHA-384 hash of the compressed hash image.                                                 |
 
 ##### `Disk` Object
 
@@ -261,11 +280,11 @@ The partitioning table type. Currently, only `gpt` is supported.
 This object holds information about a specific region of the original disk
 image.
 
-| Field    | Type                               | Added in | Required                   | Description                               |
-| -------- | ---------------------------------- | -------- | -------------------------- | ----------------------------------------- |
-| `image`  | [ImageFile](#imagefile-object) [1] | 1.2      | Yes (since 1.2)            | Details of the image file in the tarball. |
-| `type`   | [RegionType](#regiontype-enum)     | 1.2      | Yes (since 1.2)            | The type of region this image represents. |
-| `number` | number                             | 1.2      | When `type` == `partition` | The partition number (1-based index).     |
+| Field    | Type                               | Added in | Required                   | Description                                |
+| -------- | ---------------------------------- | -------- | -------------------------- | ------------------------------------------ |
+| `image`  | [ImageFile](#imagefile-object) [1] | 1.2      | Yes (since 1.2)            | Details of the image file in the tar file. |
+| `type`   | [RegionType](#regiontype-enum)     | 1.2      | Yes (since 1.2)            | The type of region this image represents.  |
+| `number` | number                             | 1.2      | When `type` == `partition` | The partition number (1-based index).      |
 
 _Notes:_
 
@@ -553,6 +572,7 @@ _Notes:_
 - Added `disk` field to the root object.
 - Added `compression` field to the root object.
 - COSI now ships the GPT data as a binary blob.
+- Added `cosi-marker` file as the first entry in the tar file.
 
 ### Revision 1.1
 
@@ -569,18 +589,18 @@ _Notes:_
 
 **Why tar?**
 
-- Tar is simple and ubiquitous. It is easy to create and extract tarballs on
+- Tar is simple and ubiquitous. It is easy to create and extract tar files on
   virtually any platform. There are native libraries for virtually every
-  programming language to handle tarballs, including Rust and Go.
+  programming language to handle tar files, including Rust and Go.
 - Tar is a super simple tape format. It is just a stream of files with metadata
   at the beginning. This makes it easy to read and write.
 
-**Why an uncompressed tarball?**
+**Why an uncompressed tar file?**
 
 - The images SHOULD be compressed, and other than that the file should be pretty
-  light-weight. Compressing the entire tarball does not yield a significant size
+  light-weight. Compressing the entire tar file does not yield a significant size
   reduction, if at all. This also allows us to read the metadata without having
-  to extract the entire tarball.
+  to extract the entire tar file.
 
 **Why not ZIP?**
 
@@ -603,7 +623,7 @@ _Notes:_
 
 - VHD and VHDX are complex formats that are not designed for our use case. They
   are designed to be used as virtual disks, not as a simple container for
-  partition images. They are also not as portable as tarballs.
+  partition images. They are also not as portable as tar files.
 - They do not have a standard way to store metadata. The spec does include some
   empty space reserved for future expansion, but using it would require us to
   implement our own fork of the VHD/VHDX spec.
