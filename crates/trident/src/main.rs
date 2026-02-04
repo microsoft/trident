@@ -394,7 +394,7 @@ fn main() -> ExitCode {
                 return TridentExitCodes::Failed.into();
             }
             Ok(ExitKind::NeedsReboot) => {
-                if let Err(e) = trident::reboot() {
+                if let Err(e) = trident::request_reboot_with_wait() {
                     error!("Failed to reboot: {e:?}");
                     return TridentExitCodes::RebootUnsuccessful.into();
                 }

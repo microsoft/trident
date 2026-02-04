@@ -28,7 +28,7 @@ pub fn client_main(args: &ClientArgs) -> ExitCode {
         }
         Ok(ExitKind::Done) => {}
         Ok(ExitKind::NeedsReboot) => {
-            if let Err(e) = crate::reboot() {
+            if let Err(e) = crate::request_reboot_with_wait() {
                 error!("Failed to reboot: {e:?}");
                 return TridentExitCodes::RebootUnsuccessful.into();
             }
