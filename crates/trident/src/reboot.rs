@@ -1,6 +1,6 @@
 use std::{thread, time::Duration};
 
-use log::{error, info};
+use log::{debug, error, info};
 
 use osutils::dependencies::{Dependency, DependencyError};
 use trident_api::error::{ReportError, ServicingError, TridentError};
@@ -28,7 +28,7 @@ pub fn request_reboot() -> Result<(), Box<DependencyError>> {
     // This trace event will be used with the trident_start event to track the
     // total time taken for the reboot
     tracing::info!(metric_name = "trident_system_reboot");
-    info!("Requesting reboot");
+    debug!("Requesting reboot");
     Dependency::Systemctl
         .cmd()
         .env("SYSTEMD_IGNORE_CHROOT", "true")
