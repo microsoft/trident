@@ -146,9 +146,9 @@ The compression level used is left to the writer's discretion.
 
 ALL images MUST be compressed with the same compression parameters.
 
-When NOT using the default compression parameters of the ZSTD library, writers
-MUST include the compression parameters used in the `compression` field of the
-root object in the metadata file.
+Writers MUST populate the `compression` field in the metadata to inform readers
+about settings that must be taken into consideration when decompressing the
+images.
 
 ### Metadata JSON File
 
@@ -248,11 +248,11 @@ this COSI file was sourced from.
 | `lbaSize`    | number                                   | 1.2      | Yes (since 1.2)      | The size of a logical block address (LBA) in bytes. Generally 512. |
 | `gptRegions` | [GptDiskRegion](#gptdiskregion-object)[] | 1.2      | When `type` == `gpt` | Regions in the GPT disk.                                           |
 
-The order of the `regions` array MUST match the physical order of the regions in
-the original disk image, from the beginning of the disk to the end.
+The order of the `gptRegions` array MUST match the physical order of the regions
+in the original disk image, from the beginning of the disk to the end.
 
 A valid COSI `>=1.2` image MUST contain a region of type `primary-gpt` as the
-first entry in the `regions` array, with `startLba` set to 0.
+first entry in the `gptRegions` array..
 
 ##### `DiskType` Enum
 
@@ -278,8 +278,7 @@ _Notes:_
 
 - **[1]** When this region is a partition that is ALSO referenced by a
     `Filesystem` object in the `images` array, both instances of
-    [ImageFile](#imagefile-object) MUST be exactly the same (same `path`, same
-    checksum, same sizes, etc.).
+    [ImageFile](#imagefile-object) MUST be exactly the same.
 - **[2]** `startLba` MUST be provided when `type` is one of: `backup-gpt`,
   `unallocated`, or `unknown`. It MUST NOT be provided when:
   - `type` is `primary-gpt` (it must always be 0), OR
@@ -390,9 +389,9 @@ A string that represents the type of the systemd-boot entry.
 This object contains metadata about the compression used in the COSI file. It
 SHOULD be skipped when the default ZSTD compression parameters are used.
 
-| Field        | Type   | Added in | Required         | Description                                                                                                                                             |
-| ------------ | ------ | -------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `windowSize` | number | 1.2      | Conditionally[1] | The power of 2 representing the window size used for ZSTD compression. The client will use this to determine the maximum window size for decompression. |
+| Field        | Type   | Added in | Required        | Description                                                                                                                                             |
+| ------------ | ------ | -------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `windowSize` | number | 1.2      | Yes (since 1.2) | The power of 2 representing the window size used for ZSTD compression. The client will use this to determine the maximum window size for decompression. |
 
 _Notes:_
 
