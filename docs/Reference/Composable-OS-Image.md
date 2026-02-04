@@ -79,8 +79,8 @@ The metadata file MUST be placed immediately after the `cosi-marker` file to
 allow for quick discovery and access to the metadata without having to traverse
 the entire tar file.
 
-The disk region images MUST be placed right after the metadata file in the
-tar file. The order of the image files in the tar file MUST match the original
+The disk region images SHOULD be placed right after the metadata file in the tar
+file. The order of the image files in the tar file MUST match the original
 PHYSICAL order of the regions in the source disk image.
 
 ### COSI Marker File
@@ -91,7 +91,7 @@ the tar file. It MUST be a regular file of size zero bytes.
 Because of the structure of a standard tar header, this makes the first 11 bytes
 of the COSI file equal to `63 6f 73 69 2d 6d 61 72 6b 65 72`, which is the
 binary representation of the ASCII string `cosi-marker`. Writers MUST use a tar
-header format that produces this output. THis includes using the standard USTAR,
+header format that produces this output. This includes using the standard USTAR,
 GNU, and PAX (when no extended attributes are used) tar formats.
 
 Readers MAY use this marker to quickly identify COSI files.
@@ -422,16 +422,19 @@ A string that represents the type of the systemd-boot entry.
 
 ##### `Compression` Object
 
-This object contains metadata about the compression used in the COSI file. It
-SHOULD be skipped when the default ZSTD compression parameters are used.
+This object contains metadata about the compression settings used to produce the
+COSI file.
 
-| Field        | Type   | Added in | Required        | Description                                                                                                                                             |
-| ------------ | ------ | -------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `windowSize` | number | 1.2      | Yes (since 1.2) | The power of 2 representing the window size used for ZSTD compression. The client will use this to determine the maximum window size for decompression. |
+| Field        | Type   | Added in | Required        | Description                                                                                                                                               |
+| ------------ | ------ | -------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `windowSize` | number | 1.2      | Yes (since 1.2) | The power of 2 representing the window size used for ZSTD compression. Readers MUST will use this to determine the maximum window size for decompression. |
 
 #### Samples
 
 ##### Simple Image
+
+Note: these are not complete samples and they contain comments for explanation,
+making them invalid JSON. They are provided for illustration purposes only.
 
 ```json
 {
