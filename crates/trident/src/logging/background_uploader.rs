@@ -7,7 +7,7 @@ use tokio::sync::{
     mpsc::{self, UnboundedReceiver, UnboundedSender, WeakUnboundedSender},
     oneshot,
 };
-use url::Url;
+use url::{Origin, Url};
 
 /// A static HTTP client for background uploads.
 static HTTP_ASYNC_CLIENT: LazyLock<Client> = LazyLock::new(Client::new);
@@ -78,10 +78,8 @@ impl BackgroundUploader {
         let mut ignored_servers = HashSet::new();
 
         while let Some(upload) = receiver.recv().await {
-            if let Some(host) = upload.url.host_str() {
-                if ignored_servers.contains(host) {
-                    continue;
-                }
+            if ignored_servers.contains(&upload.url.origin()) {
+                continue;
             }
 
             let result = HTTP_ASYNC_CLIENT
@@ -93,10 +91,15 @@ impl BackgroundUploader {
 
             if let Err(e) = result {
                 error!("Background upload failed: {e}");
-                if let Some(host) = upload.url.host_str() {
-                    ignored_servers.insert(host.to_string());
-                    error!("Ignoring future uploads to server: {}", host);
-                }
+                ignored_servers.insert(upload.url.origin());
+                error!(
+                    "Ignoring future uploads to server: {}",
+                    match upload.url.origin() {
+                        Origin::Tuple(scheme, host, port) =>
+                            format!("{}://{}:{}", scheme, host, port),
+                        Origin::Opaque(_) => "[opaque origin]".to_string(),
+                    }
+                );
             }
 
             // Note: we don't particularly care much for the status code since
@@ -155,5 +158,153 @@ impl BackgroundUploadHandle {
         Self {
             sender: tx.downgrade(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::time::Duration;
+
+    use mockito::{Matcher, Server};
+
+    fn init_test_logging() {
+        let _ = env_logger::builder()
+            .filter_level(log::LevelFilter::Trace)
+            .is_test(true)
+            .try_init();
+    }
+
+    #[test]
+    fn test_mock_handle_upload_errors_when_uploader_closed() {
+        init_test_logging();
+
+        let handle = BackgroundUploadHandle::new_mock();
+        let url = Url::parse("http://example.invalid/upload").unwrap();
+        let err = handle
+            .upload(&url, b"hello".to_vec(), Duration::from_millis(50))
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("shut down"),
+            "Unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_background_uploader_sends_post_request() {
+        init_test_logging();
+
+        let uploader = BackgroundUploader::new().unwrap();
+        let handle = uploader.get_handle().unwrap();
+
+        let mut server = Server::new();
+        let body = "hello-background-uploader";
+        let mock = server
+            .mock("POST", "/upload")
+            .match_body(Matcher::Exact(body.to_string()))
+            .with_status(200)
+            .expect(1)
+            .create();
+
+        let url = Url::parse(&server.url()).unwrap().join("/upload").unwrap();
+        handle
+            .upload(&url, body.as_bytes().to_vec(), Duration::from_secs(2))
+            .unwrap();
+
+        // Drop joins the background thread, so the request should be completed.
+        drop(uploader);
+        mock.assert();
+    }
+
+    #[test]
+    fn test_upload_loop_sends_post_request() {
+        init_test_logging();
+
+        let (sender, receiver) = mpsc::unbounded_channel::<UploadData>();
+
+        let mut server = Server::new();
+        let body = "hello-upload-loop";
+        let mock = server
+            .mock("POST", "/upload")
+            .match_body(Matcher::Exact(body.to_string()))
+            .with_status(200)
+            .expect(1)
+            .create();
+
+        let url = Url::parse(&server.url()).unwrap().join("/upload").unwrap();
+        sender
+            .send(UploadData {
+                url,
+                body: body.as_bytes().to_vec(),
+                timeout: Duration::from_secs(2),
+            })
+            .unwrap();
+        drop(sender);
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            BackgroundUploader::upload_loop(receiver).await;
+        });
+        mock.assert();
+    }
+
+    #[test]
+    fn test_upload_loop_failed_host_is_ignored_for_future_uploads() {
+        init_test_logging();
+
+        let (sender, receiver) = mpsc::unbounded_channel::<UploadData>();
+
+        // Use a single mockito server so both uploads share the same origin (scheme+host+port).
+        // First upload: the server intentionally responds too slowly, causing a client timeout
+        // (reqwest returns Err) which marks the origin as ignored.
+        let mut server = Server::new();
+        let slow_mock = server
+            .mock("POST", "/slow")
+            .with_status(200)
+            .with_body_from_request(|_| {
+                std::thread::sleep(Duration::from_millis(200));
+                b"ok".to_vec()
+            })
+            .expect(1)
+            .create();
+
+        let should_not_hit = server
+            .mock("POST", "/upload")
+            .with_status(200)
+            .expect(0)
+            .create();
+
+        sender
+            .send(UploadData {
+                url: Url::parse(&server.url()).unwrap().join("/slow").unwrap(),
+                body: b"timeout-me".to_vec(),
+                timeout: Duration::from_millis(10),
+            })
+            .unwrap();
+
+        // Second upload: same origin; should be skipped after the first fails.
+        sender
+            .send(UploadData {
+                url: Url::parse(&server.url()).unwrap().join("/upload").unwrap(),
+                body: b"this-should-be-skipped".to_vec(),
+                timeout: Duration::from_secs(2),
+            })
+            .unwrap();
+        drop(sender);
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            BackgroundUploader::upload_loop(receiver).await;
+        });
+
+        slow_mock.assert();
+        should_not_hit.assert();
     }
 }
