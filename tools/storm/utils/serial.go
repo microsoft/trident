@@ -28,14 +28,24 @@ func WaitForLoginMessageInSerialLog(vmSerialLog string, verbose bool, iteration 
 	}
 
 	scannerStartPosition := int64(0)
+	var file *os.File = nil
+	defer func() {
+		if file != nil {
+			file.Close()
+		}
+	}()
+
 	for {
 	restartReadLoop:
+		// Close file if previous loop opened it
+		if file != nil {
+			file.Close()
+		}
 		// Open the file for reading and writing (file is guaranteed to exist)
 		file, err := os.OpenFile(vmSerialLog, os.O_RDWR, 0644)
 		if err != nil {
 			return fmt.Errorf("failed to open serial log file: %w", err)
 		}
-		defer file.Close()
 
 		reader := bufio.NewReader(file)
 		if scannerStartPosition != 0 {
@@ -64,7 +74,6 @@ func WaitForLoginMessageInSerialLog(vmSerialLog string, verbose bool, iteration 
 					if time.Since(runeReadStartTime) >= time.Duration(5)*time.Second {
 						// 5 seconds without new serial output, restart the read loop
 						scannerStartPosition, _ = file.Seek(0, io.SeekCurrent)
-						file.Close()
 						goto restartReadLoop
 					}
 					// Wait for new serial output
