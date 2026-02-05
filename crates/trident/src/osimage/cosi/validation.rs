@@ -104,7 +104,7 @@ impl CosiMetadata {
 
         if self.version >= KnownMetadataVersion::V1_2 {
             // Ensure compression info is present.
-            if self.compression.window_size.is_none() {
+            if self.compression.is_none() {
                 return mk_err(CosiMetadataErrorKind::V1_2CompressionInfoRequired);
             }
 

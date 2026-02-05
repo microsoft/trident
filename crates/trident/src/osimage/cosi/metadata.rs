@@ -105,7 +105,7 @@ pub(crate) struct CosiMetadata {
 
     /// Compression information.
     #[serde(default)]
-    pub compression: CompressionInfo,
+    pub compression: Option<CompressionInfo>,
 }
 
 impl CosiMetadata {
@@ -439,13 +439,13 @@ pub(crate) enum GptRegionType {
     Other,
 }
 
-#[derive(Debug, Default, Deserialize, Clone, Eq, PartialEq)]
+#[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CompressionInfo {
     /// The power of 2 representing the window size used for ZSTD compression.
     /// The client will use this to determine the maximum window size for
     /// decompression.
-    pub window_size: Option<u8>,
+    pub max_window_log: u8,
 }
 
 #[cfg(test)]
