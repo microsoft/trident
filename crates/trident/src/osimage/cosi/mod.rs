@@ -156,8 +156,8 @@ impl Cosi {
     }
 
     /// Retrieves a reader for the given file inside the COSI file using cached
-    /// entries when possible and scanning the COSI archive otherwise and
-    /// updating the cache.
+    /// entries when possible and scanning the COSI archive otherwise, and
+    /// updating the cache as we scan.
     fn get_file_reader(&mut self, path: impl AsRef<Path>) -> Result<Box<dyn Read>, Error> {
         // Check if this entry has already been found.
         if let Some(entry) = self.entries.get(path.as_ref()) {
@@ -224,6 +224,7 @@ impl Cosi {
     /// Will error when:
     /// - The image is not found in the COSI file.
     /// - The image cannot be read from the COSI file. (Decompression errors, etc.)
+    /// - The read data size does not match the expected uncompressed size in the metadata.
     /// - The image hash does not match the expected hash in the metadata.
     fn stream_image(&mut self, image: &ImageFile, writer: &mut dyn Write) -> Result<u64, Error> {
         let mut hashing_reader = HashingReader384::new(self.get_file_reader(&image.path)?);
@@ -245,6 +246,15 @@ impl Cosi {
             "Failed to read COSI file entry '{}'",
             image.path.display()
         ))?;
+
+        if copied != image.uncompressed_size {
+            bail!(
+                "COSI file entry '{}' uncompressed size mismatch: expected {}, got {}",
+                image.path.display(),
+                image.uncompressed_size,
+                copied
+            );
+        }
 
         if image.sha384 != hashing_reader.hash() {
             bail!(
