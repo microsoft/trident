@@ -90,9 +90,11 @@ the tar file. It MUST be a regular file of size zero bytes.
 
 Because of the structure of a standard tar header, this makes the first 11 bytes
 of the COSI file equal to `63 6f 73 69 2d 6d 61 72 6b 65 72`, which is the
-binary representation of the ASCII string `cosi-marker`. Writers MUST use a tar
-header format that produces this output. This includes using the standard USTAR,
-GNU, and PAX (when no extended attributes are used) tar formats.
+binary representation of the ASCII string `cosi-marker`. Writers MUST ensure
+that the first 11 bytes of the COSI file are exactly this sequence, regardless
+of the specific tar variant used; this is typically satisfied when using
+standard USTAR or GNU tar formats, or PAX tar without additional PAX headers
+(for example, for long names or metadata) that would alter the initial header.
 
 Readers MAY use this marker to quickly identify COSI files.
 
@@ -189,11 +191,17 @@ up to the end of the GPT entries, this includes:
 Writers MUST determine the end of this region by reading the GPT header to find
 the last GPT entry and calculating its end offset.
 
-The uncompressed image MAY not be aligned to a logical block address (LBA)
-boundary if the GPT entries do not end on an LBA boundary.
+The entire GPT data must be saved verbatim, without any modifications. This
+means that the GPT image in the COSI file MUST be an exact copy of the
+corresponding bytes in the original disk image, including any unallocated space
+between the GPT header and entries. Readers MAY use the GPT data in the COSI
+file to reconstruct the full GPT on disk, including any unallocated space, to
+ensure that the disk layout is identical to the original disk image.
 
-In standard GPTs with 128 entries of 128 bytes each, this image will include
-LBAs 0 to 33 (inclusive), totaling 34 LBAs or 17 KiB.
+The uncompressed image MAY not be aligned to a logical block address (LBA)
+boundary if the GPT entries do not end on an LBA boundary. In standard GPTs with
+128 entries of 128 bytes each, this image will include LBAs 0 to 33 (inclusive),
+totaling 34 LBAs or 17 KiB.
 
 The GPT bundled in COSI MUST have a valid header according to the
 [UEFI Specification](https://uefi.org/specs/UEFI/2.10/05_GUID_Partition_Table_Format.html#guid-partition-table-gpt-disk-layout-1)
@@ -246,8 +254,8 @@ from in a virtual disk.
 In COSI >= 1.2, a `Filesystem` object is said to correspond to a partition in
 `.disk.gptRegions[]` when the path of its `image` field matches the path of the
 `image` field of a `GptDiskRegion` object with `type` equal to `partition`. When
-this correspondence exists, the `ImageFile` objects in both locations MUST be
-exactly the same.
+this correspondence exists, the `ImageFile` objects in both locations MUST have
+identical values for all fields.
 
 _Notes:_
 
