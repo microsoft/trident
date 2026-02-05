@@ -166,11 +166,10 @@ partition as defined in the GPT partition entries.
 All region images in the COSI file MUST be compressed using ZSTD compression.
 The compression level used is left to the writer's discretion.
 
-ALL images MUST be compressed with the same compression parameters.
-
-Writers MUST populate the `compression` field in the metadata to inform readers
-about settings that must be taken into consideration when decompressing the
-images.
+Images must be compressed with different parameters as the writer sees fit.
+However, writers MUST populate the `compression` field in the metadata with
+parameters that will guarantee successful decompression of all images by
+readers. See [`Compression Object`](#compression-object) for more details.
 
 ### GUID Partition Table (GPT) File
 
@@ -425,9 +424,18 @@ A string that represents the type of the systemd-boot entry.
 This object contains metadata about the compression settings used to produce the
 COSI file.
 
-| Field        | Type   | Added in | Required        | Description                                                                                                                                               |
-| ------------ | ------ | -------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `windowSize` | number | 1.2      | Yes (since 1.2) | The power of 2 representing the window size used for ZSTD compression. Readers MUST will use this to determine the maximum window size for decompression. |
+| Field          | Type   | Added in | Required        | Description                                       |
+| -------------- | ------ | -------- | --------------- | ------------------------------------------------- |
+| `maxWindowLog` | number | 1.2      | Yes (since 1.2) | The max zstd `windowLog`used for compression. [1] |
+
+_Notes:_
+
+- **[1]** The `windowLog` is the "Maximum allowed back-reference distance,
+  expressed as power of 2" (See: [zstd
+  manual](https://facebook.github.io/zstd/zstd_manual.html)) used during
+  compression of a file. The writer MUST populate this field with the maximum
+  value used across all images in the COSI file to guarantee successful
+  decompression of all images by readers.
 
 #### Samples
 
