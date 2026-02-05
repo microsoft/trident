@@ -243,10 +243,10 @@ from in a virtual disk.
 | `partType`   | UUID (string, case insensitive)      | 1.0      | Yes (since 1.0)  | The GPT partition type. [3] [4] [5]        |
 | `verity`     | [VerityConfig](#verityconfig-object) | 1.0      | Conditionally[6] | The verity metadata of the filesystem.     |
 
-In COSI >= 1.2, all images referenced by the `image` field in the `Filesystem`
-objects MUST have exactly one corresponding entry in the `gptRegions` array of
-the `disk` object. Correspondence is determined by matching the `path` field of
-the `ImageFile` objects. The `ImageFile` objects in both locations MUST be
+In COSI >= 1.2, a `Filesystem` object is said to correspond to a partition in
+`.disk.gptRegions[]` when the path of its `image` field matches the path of the
+`image` field of a `GptDiskRegion` object with `type` equal to `partition`. When
+this correspondence exists, the `ImageFile` objects in both locations MUST be
 exactly the same.
 
 _Notes:_
