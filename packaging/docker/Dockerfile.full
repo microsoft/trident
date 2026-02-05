@@ -1,6 +1,6 @@
 ### This file is used in pipelines to build Trident RPMs.
 
-FROM mcr.microsoft.com/azurelinux/base/core:3.0
+FROM mcr.microsoft.com/azurelinux/base/core:3.0 AS build
 
 RUN tdnf install -y rpmdevtools openssl-devel clang-devel protobuf-devel rust-1.86.0 sed ca-certificates perl build-essential selinux-policy-devel
 
@@ -38,3 +38,6 @@ RUN --mount=type=secret,id=registry_token \
     --define="rpm_ver $RPM_VER" \
     --define="rpm_rel $RPM_REL" && \
     tar -czvf trident-rpms.tar.gz -C /usr/src/azl ./RPMS
+
+FROM scratch AS artifact
+COPY --from=build /work/trident-rpms.tar.gz /trident-rpms.tar.gz
