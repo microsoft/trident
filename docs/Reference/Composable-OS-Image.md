@@ -168,7 +168,7 @@ partition as defined in the GPT partition entries.
 All region images in the COSI file MUST be compressed using ZSTD compression.
 The compression level used is left to the writer's discretion.
 
-Images must be compressed with different parameters as the writer sees fit.
+Each image MAY be compressed with different parameters as the writer sees fit.
 However, writers MUST populate the `compression` field in the metadata with
 parameters that will guarantee successful decompression of all images by
 readers. See [`Compression Object`](#compression-object) for more details.
