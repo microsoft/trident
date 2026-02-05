@@ -560,7 +560,7 @@ mod tests {
                 ]
             },
             "compression": {
-                "windowSize": 27
+                "maxWindowLog": 27
             }
         });
 
