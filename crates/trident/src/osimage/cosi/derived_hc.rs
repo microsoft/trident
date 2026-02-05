@@ -41,6 +41,24 @@ impl Cosi {
                 .context("Failed to populate GPT data for COSI version >= 1.2")?;
         }
 
+        self.derive_host_configuration_inner(target_disk)
+            .context("Failed to derive host configuration from COSI metadata and GPT data")
+    }
+
+    /// A helper function that performs the actual derivation of the host
+    /// configuration assuming that the necessary metadata and GPT data are
+    /// present. This is separated from `derive_host_configuration` to:
+    ///
+    /// - Allow for easier testing since we can directly construct a COSI object
+    ///   with the required fields without having to go through the GPT
+    ///   population logic.
+    /// - Take an immutable reference to self, which makes it clear that this
+    ///   function does not modify the COSI object and relies on all necessary
+    ///   data being pre-populated. (Also simplifies borrowing.)
+    pub(super) fn derive_host_configuration_inner(
+        &self,
+        target_disk: impl AsRef<Path>,
+    ) -> Result<HostConfiguration, Error> {
         let mut filesystems_by_path = self
             .metadata
             .images
