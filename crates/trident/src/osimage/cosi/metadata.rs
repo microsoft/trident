@@ -445,7 +445,7 @@ pub(crate) struct CompressionInfo {
     /// The power of 2 representing the window size used for ZSTD compression.
     /// The client will use this to determine the maximum window size for
     /// decompression.
-    pub max_window_log: u8,
+    pub max_window_log: u32,
 }
 
 #[cfg(test)]

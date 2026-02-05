@@ -1,13 +1,13 @@
 use std::{
     collections::HashMap,
-    io::{BufReader, Cursor, Read, Seek},
+    io::{self, BufReader, Cursor, Read, Seek, SeekFrom, Write},
     ops::ControlFlow,
     path::{Path, PathBuf},
     time::Duration,
 };
 
-use ::gpt::{disk, GptConfig, GptDisk};
 use anyhow::{bail, ensure, Context, Error};
+use gpt::{disk, GptConfig, GptDisk};
 use log::{debug, trace};
 use tar::Archive;
 use url::Url;
@@ -26,7 +26,6 @@ use crate::io_utils::{
 
 mod derived_hc;
 mod error;
-mod gpt;
 mod metadata;
 mod validation;
 
@@ -172,15 +171,38 @@ impl Cosi {
         }
 
         // Otherwise, read the entries until we find the requested file, storing
-        // all seen entries in the process.
+        // all seen entries in the process. For extra efficiency, we know that
+        // unknown entries must come _after_ any entries we've already seen, so
+        // we can start reading after the last known entry.
 
-        let mut archive = Archive::new(
-            self.reader
-                .reader()
-                .context("Failed to create COSI archive reader")?,
+        let next_header = self
+            .entries
+            .values()
+            .map(|entry| entry.offset + entry.size)
+            .max()
+            .unwrap_or(0)
+            .next_multiple_of(512);
+
+        let mut reader = self
+            .reader
+            .reader()
+            .context("Failed to create COSI archive reader")?;
+
+        trace!(
+            "Seeking to position {} to look for COSI file entry '{}'",
+            next_header,
+            path.as_ref().display()
         );
 
-        for entry in read_entries(&mut archive).context("Failed to read COSI entries")? {
+        reader
+            .seek(SeekFrom::Start(next_header))
+            .with_context(|| format!("Failed to seek to position {}", next_header))?;
+
+        let mut archive = Archive::new(reader);
+
+        for entry in read_entries_with_offset(&mut archive, next_header)
+            .context("Failed to read COSI entries")?
+        {
             let (entry_path, entry) = entry.context("Failed to read COSI entry")?;
             self.entries.insert(entry_path.clone(), entry);
             if entry_path == path.as_ref() {
@@ -197,20 +219,34 @@ impl Cosi {
         bail!("COSI file entry '{}' not found", path.as_ref().display());
     }
 
-    /// Retrieves the raw data of the given file inside the COSI file. Should only be used
-    /// for small files as it reads the entire file into memory!
-    fn get_file_data(&mut self, image: &ImageFile) -> Result<Vec<u8>, Error> {
+    /// Reads the given ImageFile into the provided writer. Returns the number of bytes read.
+    ///
+    /// Will error when:
+    /// - The image is not found in the COSI file.
+    /// - The image cannot be read from the COSI file. (Decompression errors, etc.)
+    /// - The image hash does not match the expected hash in the metadata.
+    fn stream_image(&mut self, image: &ImageFile, writer: &mut dyn Write) -> Result<u64, Error> {
         let mut hashing_reader = HashingReader384::new(self.get_file_reader(&image.path)?);
         let mut reader = Decoder::new(BufReader::new(&mut hashing_reader))?;
 
-        // Data will contain the full uncompressed file data.
-        let mut data = Vec::new();
-        reader.read_to_end(&mut data).context(format!(
+        // If the metadata specifies a max window log for compression, set it on
+        // the reader to guarantee successful decompression.
+        if let Some(max_window_log) = self.metadata.compression.as_ref().map(|c| c.max_window_log) {
+            reader.window_log_max(max_window_log).with_context(|| {
+                format!(
+                    "Failed to set max window log of {} on COSI file entry '{}'",
+                    max_window_log,
+                    image.path.display()
+                )
+            })?;
+        }
+
+        let copied = io::copy(&mut reader, writer).context(format!(
             "Failed to read COSI file entry '{}'",
             image.path.display()
         ))?;
 
-        if hashing_reader.hash() != image.sha384.to_string() {
+        if image.sha384 != hashing_reader.hash() {
             bail!(
                 "COSI file entry '{}' hash '{}' does not match expected hash '{}'",
                 image.path.display(),
@@ -219,6 +255,17 @@ impl Cosi {
             );
         }
 
+        Ok(copied)
+    }
+
+    /// Retrieves the raw data of the given file inside the COSI file. Should only be used
+    /// for small files as it reads the entire file into memory!
+    fn get_file_data(&mut self, image: &ImageFile) -> Result<Vec<u8>, Error> {
+        let mut data = Vec::with_capacity(image.uncompressed_size as usize);
+        self.stream_image(image, &mut data).context(format!(
+            "Failed to read COSI file entry '{}'",
+            image.path.display()
+        ))?;
         Ok(data)
     }
 
@@ -324,6 +371,14 @@ fn read_entries_until_file<R: Read + Seek>(
 fn read_entries<'a, R: Read + Seek + 'a>(
     archive: &'a mut Archive<R>,
 ) -> Result<impl Iterator<Item = Result<(PathBuf, CosiEntry), Error>> + 'a, Error> {
+    read_entries_with_offset(archive, 0)
+}
+
+/// Iterate over entries from the given COSI tar archive that located at a specific offset of the reader.
+fn read_entries_with_offset<'a, R: Read + Seek + 'a>(
+    archive: &'a mut Archive<R>,
+    offset: u64,
+) -> Result<impl Iterator<Item = Result<(PathBuf, CosiEntry), Error>> + 'a, Error> {
     Ok(archive
         .entries_with_seek()
         .context("Failed to read COSI file")?
@@ -344,17 +399,15 @@ fn read_entries<'a, R: Read + Seek + 'a>(
                 }
             };
         })
-        .collect::<Result<Vec<_>, _>>()
-        .context("Failed to read COSI file entries")?
-        .into_iter()
-        .map(|entry| {
+        .map(move |entry_res| {
+            let entry = entry_res.context("Failed to read COSI file entry")?;
             let entry = (
                 {
                     let path = entry.path().context("Failed to read entry path")?;
                     path.strip_prefix("./").unwrap_or(&path).to_path_buf()
                 },
                 CosiEntry {
-                    offset: entry.raw_file_position(),
+                    offset: entry.raw_file_position() + offset,
                     size: entry.size(),
                 },
             );
