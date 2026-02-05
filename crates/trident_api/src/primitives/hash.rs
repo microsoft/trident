@@ -150,4 +150,107 @@ mod tests {
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         );
     }
+
+    #[test]
+    fn test_deserialize_sha256_uppercase_normalized_to_lowercase() {
+        let hash: Sha256Hash = serde_json::from_str(
+            r#""0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF""#,
+        )
+        .unwrap();
+        assert_eq!(
+            hash.as_str(),
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        );
+    }
+
+    #[test]
+    fn test_deserialize_sha256_mixed_case_normalized_to_lowercase() {
+        let hash: Sha256Hash = serde_json::from_str(
+            r#""0123456789AbCdEf0123456789aBcDeF0123456789ABcdef0123456789abCDEF""#,
+        )
+        .unwrap();
+        assert_eq!(
+            hash.as_str(),
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        );
+    }
+
+    #[test]
+    fn test_from_str_sha256_uppercase_normalized_to_lowercase() {
+        let hash =
+            Sha256Hash::from("0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF");
+        assert_eq!(
+            hash.as_str(),
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        );
+    }
+
+    #[test]
+    fn test_from_string_sha256_mixed_case_normalized_to_lowercase() {
+        let hash = Sha256Hash::from(
+            "0123456789AbCdEf0123456789aBcDeF0123456789ABcdef0123456789abCDEF".to_string(),
+        );
+        assert_eq!(
+            hash.as_str(),
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        );
+    }
+
+    #[test]
+    fn test_deserialize_sha384_lowercase() {
+        let hash: Sha384Hash = serde_json::from_str(
+            r#""0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef""#,
+        )
+        .unwrap();
+        assert_eq!(
+            hash.as_str(),
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        );
+    }
+
+    #[test]
+    fn test_deserialize_sha384_uppercase_normalized_to_lowercase() {
+        let hash: Sha384Hash = serde_json::from_str(
+            r#""0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF""#,
+        )
+        .unwrap();
+        assert_eq!(
+            hash.as_str(),
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        );
+    }
+
+    #[test]
+    fn test_deserialize_sha384_mixed_case_normalized_to_lowercase() {
+        let hash: Sha384Hash = serde_json::from_str(
+            r#""0123456789AbCdEf0123456789aBcDeF0123456789ABcdef0123456789abCDEF0123456789AbCdEf0123456789aBcDeF""#,
+        )
+        .unwrap();
+        assert_eq!(
+            hash.as_str(),
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        );
+    }
+
+    #[test]
+    fn test_from_str_sha384_uppercase_normalized_to_lowercase() {
+        let hash = Sha384Hash::from(
+            "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
+        );
+        assert_eq!(
+            hash.as_str(),
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        );
+    }
+
+    #[test]
+    fn test_from_string_sha384_mixed_case_normalized_to_lowercase() {
+        let hash = Sha384Hash::from(
+            "0123456789AbCdEf0123456789aBcDeF0123456789ABcdef0123456789abCDEF0123456789AbCdEf0123456789aBcDeF".to_string(),
+        );
+        assert_eq!(
+            hash.as_str(),
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        );
+    }
 }
