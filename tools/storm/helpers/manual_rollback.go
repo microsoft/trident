@@ -112,8 +112,8 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 
 	out, err = stormtrident.InvokeTrident(h.args.TridentRuntimeType, client, h.args.EnvVars, "rollback -v trace --allowed-operations finalize")
 	if err != nil {
-		if err, ok := err.(*ssh.ExitMissingError); ok && strings.Contains(out.Stderr, "Rebooting system") {
-			// The connection closed without an exit code, and the output contains "Rebooting system".
+		if err, ok := err.(*ssh.ExitMissingError); ok && strings.Contains(out.Stderr, trident.REBOOTING_LOG_MESSAGE) {
+			// The connection closed without an exit code, and the output contains REBOOTING_LOG_MESSAGE.
 			// This indicates that the host has rebooted.
 			logrus.Infof("Host rebooted successfully")
 		} else {
