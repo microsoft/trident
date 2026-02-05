@@ -65,7 +65,7 @@ impl OsImage {
 
     /// Load the OS given the image source from the Host Configuration and either validate or
     /// populate the associated metadata sha384 checksum.
-    pub(crate) fn load(
+    pub fn load(
         image_source: &mut config::OsImage,
         timeout: Duration,
     ) -> Result<Self, TridentError> {
@@ -173,7 +173,7 @@ impl OsImage {
             .find(|fs| fs.mount_point == Path::new(ROOT_MOUNT_POINT_PATH))
     }
 
-    pub(crate) fn metadata_sha384(&self) -> Sha384Hash {
+    pub fn metadata_sha384(&self) -> Sha384Hash {
         match &self.0 {
             OsImageInner::Cosi(cosi) => cosi.metadata_sha384.clone(),
             #[cfg(test)]

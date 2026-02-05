@@ -6,6 +6,9 @@ publish = false
 rust-version = "1.85.0"
 license = "MIT"
 
+[[bin]]
+name = "cosi-reader"
+path = "src/bin/cosi_reader.rs"
 
 [dependencies]
 anyhow = { workspace = true }

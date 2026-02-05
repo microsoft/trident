@@ -51,6 +51,7 @@ pub enum PackageArchitecture {
     /// NoArch
     #[serde(alias = "noarch")]
     #[serde(alias = "(none)")]
+    #[serde(alias = "")]
     NoArch,
 
     #[serde(untagged)]
