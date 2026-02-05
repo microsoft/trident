@@ -1,10 +1,18 @@
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{bail, ensure, Context, Error};
+use gpt::disk::LogicalBlockSize;
+use uuid::Uuid;
 
 use sysdefs::partition_types::DiscoverablePartitionType;
 use trident_api::{
-    config::{Disk, FileSystem, FileSystemSource, Partition, Storage},
+    config::{
+        Disk, FileSystem, FileSystemSource, HostConfiguration, ImageSha384,
+        OsImage as ConfigOsImage, Partition, Storage,
+    },
     misc::IdGenerator,
 };
 
@@ -18,14 +26,111 @@ impl Cosi {
     /// from the COSI file. This requires COSI >= 1.2.
     pub(super) fn derive_host_configuration(
         &mut self,
-        _target_disk: impl AsRef<Path>,
-    ) -> Result<Storage, Error> {
+        target_disk: impl AsRef<Path>,
+    ) -> Result<HostConfiguration, Error> {
         ensure!(
             self.metadata.version >= KnownMetadataVersion::V1_2,
             "Host configuration derivation requires COSI version {} or higher, found {}",
             KnownMetadataVersion::V1_2,
             self.metadata.version
         );
+
+        // If we don't have GPT data, attempt to populate it from the disk metadata.
+        if self.gpt.is_none() {
+            self.populate_gpt_data()
+                .context("Failed to populate GPT data for COSI version >= 1.2")?;
+        }
+
+        let mut filesystems_by_path = self
+            .metadata
+            .images
+            .iter()
+            .map(|image| (image.file.path.as_path(), image))
+            .collect::<HashMap<_, _>>();
+
+        let mut id_gen = IdGenerator::new("partition-");
+
+        // The vecs we will be populating
+        let mut partitions = Vec::new();
+        let mut filesystems = Vec::new();
+
+        for partition in self.joined_disk_info_and_gpt()? {
+            let partition_id = id_gen.next_id();
+
+            partitions.push(Partition {
+                id: partition_id.clone(),
+                size: partition.partition_size.into(),
+                uuid: Some(partition.partition_uuid),
+                label: Some(partition.partition_label),
+                partition_type: partition.partition_type.into(),
+            });
+
+            let Some(filesystem_metadata) =
+                filesystems_by_path.remove(partition.image_path.as_path())
+            else {
+                // There is no filesystem associated to this partition.
+                continue;
+            };
+
+            filesystems.push(FileSystem {
+                device_id: Some(partition_id),
+                mount_point: Some(filesystem_metadata.mount_point.as_path().into()),
+                source: FileSystemSource::Image,
+            });
+        }
+
+        // Ensure that all filesystems were matched to a partition. If there are
+        // any left, that means they don't correspond to any partition in the
+        // GPT data, and we should error out since we don't know how to handle
+        // them.
+        if let Some(extra_filesystem) = filesystems_by_path.into_values().next() {
+            bail!(
+                "The filesystem at path '{}' (from '{}') does not correspond to any partition in the GPT data, cannot derive host configuration.",
+                extra_filesystem.mount_point.display(),
+                extra_filesystem.file.path.display()
+            );
+        }
+
+        Ok(HostConfiguration {
+            image: Some(ConfigOsImage {
+                url: self.source.clone(),
+                sha384: ImageSha384::Checksum(self.metadata_sha384.clone()),
+            }),
+            storage: Storage {
+                disks: vec![Disk {
+                    id: "disk-0".to_string(),
+                    device: target_disk.as_ref().to_path_buf(),
+                    partitions,
+                    ..Default::default()
+                }],
+                filesystems,
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+    }
+
+    /// Combines disk metadata and GPT data to produce a unified view of the
+    /// partitions.
+    ///
+    /// It ensures that the number of partitions in the disk metadata matches
+    /// the number of GPT partitions, and that each partition referenced in the
+    /// disk metadata has a corresponding GPT partition. It then constructs a
+    /// `JointPartitionMetadata` struct for each partition, which includes the
+    /// partition size, UUID, label, type, and associated image path.
+    fn joined_disk_info_and_gpt(&self) -> Result<Vec<JointPartitionMetadata>, Error> {
+        // First, retrieve the GPT partitions. We require GPT data for this
+        // operation, so we error if it's missing.
+        let gpt_partitions = self
+            .gpt
+            .as_ref()
+            .with_context(|| {
+                format!(
+                    "COSI is version {}, but GPT data is missing",
+                    self.metadata.version
+                )
+            })?
+            .partitions();
 
         // Ensure we have disk metadata, which is required for this operation.
         let disk_info = self.metadata.disk.as_ref().with_context(|| {
@@ -35,79 +140,66 @@ impl Cosi {
             )
         })?;
 
-        // Ensure we have partition information, which is required for this operation.
-        let gpt_data = self
-            .gpt()
-            .context("Failed to retrieve GPT data from COSI")?
-            .with_context(|| {
-                format!(
-                    "COSI is version {}, but GPT data is missing",
-                    self.metadata.version
-                )
-            })?;
+        // Determine the LBA size from the disk metadata. This is needed to
+        // calculate partition sizes from the GPT data. The GPT library we use
+        // only supports 512 and 4096 byte LBAs, so we error if it's any other
+        // value.
+        let lba_size = match disk_info.lba_size {
+            512 => LogicalBlockSize::Lb512,
+            4096 => LogicalBlockSize::Lb4096,
+            other => bail!("Unsupported LBA size: {}", other),
+        };
 
-        let partitions = disk_info
+        let metadata_partitions = disk_info
             .gpt_regions
             .iter()
             .filter_map(|r| match r.region_type {
-                GptRegionType::Partition { number } => Some((r.image, number)),
+                GptRegionType::Partition { number } => Some((&r.image, number)),
                 _ => None,
-            });
+            })
+            .collect::<Vec<_>>();
 
-        // let disk_metadata = {
-        //     let Some(mut partition_metadata) = self.disk.clone() else {
-        //         // This should be caught during validation.
-        //         bail!(
-        //             "COSI metadata version is {}, but partitions metadata is missing",
-        //             self.version
-        //         );
-        //     };
+        ensure!(
+            metadata_partitions.len() == gpt_partitions.len(),
+            "Number of partitions in disk metadata ({}) does not match number of GPT partitions ({})",
+            metadata_partitions.len(),
+            gpt_partitions.len()
+        );
 
-        //     // Sort partitions by number to ensure consistent ordering.
-        //     partition_metadata.sort_by_key(|a| a.number);
+        metadata_partitions
+            .into_iter()
+            .map(|(image, number)| {
+                let gpt_partition = gpt_partitions.get(&number).with_context(|| {
+                    format!(
+                        "GPT partition number {} referenced in disk metadata not found in GPT data",
+                        number
+                    )
+                })?;
 
-        //     partition_metadata
-        // };
+                let partition_size = gpt_partition
+                    .bytes_len(lba_size)
+                    .with_context(|| format!("Failed to calculate size of partition {number}"))?;
 
-        // let mut partitions = vec![];
-        // let mut filesystems = vec![];
-        // let mut id_gen = IdGenerator::new("partition");
-
-        // let filesystems_by_image = self
-        //     .images
-        //     .iter()
-        //     .map(|image| (image.file.path.as_path(), image))
-        //     .collect::<HashMap<_, _>>();
-
-        // for part in partition_metadata {
-        //     let partition_id = id_gen.next_id();
-        //     partitions.push(Partition {
-        //         id: partition_id.clone(),
-        //         partition_type: DiscoverablePartitionType::from_uuid(&part.part_type).into(),
-        //         size: part.original_size.into(),
-        //         uuid: Some(part.part_uuid),
-        //         label: Some(part.label),
-        //     });
-
-        //     let Some(path) = &part.path else {
-        //         continue;
-        //     };
-
-        //     let Some(fs_metadata) = filesystems_by_image.get(path.as_path()) else {
-        //         bail!("No image metadata found for partition at path {:?}", path);
-        //     };
-
-        //     filesystems.push(FileSystem {
-        //         device_id: Some(partition_id),
-        //         source: FileSystemSource::Image,
-        //         mount_point: Some(fs_metadata.mount_point.as_path().into()),
-        //     });
-        // }
-
-        Ok(Storage {
-            ..Default::default()
-        })
+                Ok(JointPartitionMetadata {
+                    partition_size,
+                    partition_uuid: gpt_partition.part_guid,
+                    partition_label: gpt_partition.name.clone(),
+                    partition_type: DiscoverablePartitionType::from_uuid(
+                        &gpt_partition.part_type_guid.guid,
+                    ),
+                    image_path: image.path.clone(),
+                })
+            })
+            .collect()
     }
+}
+
+struct JointPartitionMetadata {
+    partition_size: u64,
+    partition_uuid: Uuid,
+    partition_label: String,
+    partition_type: DiscoverablePartitionType,
+    image_path: PathBuf,
 }
 
 // #[cfg(test)]
