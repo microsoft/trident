@@ -8,7 +8,7 @@ license = "MIT"
 
 [[bin]]
 name = "cosi-reader"
-path = "src/bin/cosi_reader.rs"
+path = "bin/cosi_reader.rs"
 
 [dependencies]
 anyhow = { workspace = true }

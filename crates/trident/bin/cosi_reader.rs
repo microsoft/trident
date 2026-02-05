@@ -64,8 +64,15 @@ fn main() -> Result<()> {
 
     let timeout = Duration::from_secs(args.timeout);
 
-    let os_image =
+    let mut os_image =
         OsImage::load(&mut image_source, timeout).unstructured("Failed to load COSI file")?;
+
+    if let Some(gpt) = os_image.gpt().context("Failed to obtain GPT information")? {
+        info!("GPT data found in COSI file");
+    } else {
+        info!("No GPT data found in COSI file.");
+    }
+
     info!("COSI file read successfully!");
     println!("{}", os_image.metadata_sha384());
 

@@ -7,6 +7,7 @@ use std::{
 };
 
 use anyhow::Error;
+use gpt::{DiskDevice, GptDisk};
 use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -201,6 +202,15 @@ impl OsImage {
             OsImageInner::Cosi(cosi) => cosi.read_images(f),
             #[cfg(test)]
             OsImageInner::Mock(m) => m.read_images(f),
+        }
+    }
+
+    /// Returns the GPT disk if it is present in the OS Image.
+    pub fn gpt(&mut self) -> Result<Option<&GptDisk<impl DiskDevice>>, Error> {
+        match &mut self.0 {
+            OsImageInner::Cosi(cosi) => cosi.gpt(),
+            #[cfg(test)]
+            OsImageInner::Mock(_mock) => Ok(None),
         }
     }
 }

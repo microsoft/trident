@@ -7,7 +7,7 @@ use std::{
 };
 
 use anyhow::{bail, ensure, Context, Error};
-use gpt::{disk::LogicalBlockSize, GptConfig, GptDisk};
+use gpt::{disk::LogicalBlockSize, DiskDevice, GptConfig, GptDisk};
 use log::{debug, trace};
 use tar::Archive;
 use url::Url;
@@ -97,22 +97,14 @@ impl Cosi {
             .context("Failed to read COSI file metadata.")?;
 
         // Create a new COSI instance.
-        let mut cosi = Cosi {
+        Ok(Cosi {
             metadata,
             source: source.url.clone(),
             reader: cosi_reader,
             metadata_sha384: sha384,
             entries,
             gpt: None,
-        };
-
-        if cosi.metadata.version >= KnownMetadataVersion::V1_2 {
-            cosi.populate_gpt_data()
-                .context("Failed to populate GPT data for COSI version >= 1.2")?;
-        }
-
-        // Create a new COSI instance.
-        Ok(cosi)
+        })
     }
 
     /// Returns the ESP filesystem image.
@@ -134,6 +126,22 @@ impl Cosi {
         self.metadata
             .get_regular_filesystems()
             .map(cosi_image_to_os_image_filesystem)
+    }
+
+    /// Returns the GPT disk if it is present in the COSI file. This will be
+    /// present if the COSI version is >= 1.2 and the metadata contains a disk
+    /// section with a GPT region.
+    pub(super) fn gpt(&mut self) -> Result<Option<&GptDisk<impl DiskDevice>>, Error> {
+        if self.gpt.is_none() {
+            if self.metadata.version < KnownMetadataVersion::V1_2 {
+                bail!("GPT data is not available for COSI versions below 1.2");
+            }
+
+            self.populate_gpt_data()
+                .context("Failed to populate GPT data for COSI version >= 1.2")?;
+        }
+
+        Ok(self.gpt.as_ref())
     }
 
     /// Derives the storage and image section of a Host Configuration from this COSI file.
@@ -300,6 +308,7 @@ impl Cosi {
 
     /// On COSI >= v1.2, populates GPT data for images that require it.
     fn populate_gpt_data(&mut self) -> Result<(), Error> {
+        trace!("Populating GPT data for COSI file: {}", self.source);
         // First, get the gpt region from the metadata. All of the possible
         // errors here should have been checked in validation already.
         let (gpt_image, lba_size) = {
