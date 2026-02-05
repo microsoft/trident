@@ -1,47 +1,24 @@
 use std::{
     fmt::{Display, Formatter, Result as FmtResult},
     path::PathBuf,
-    time::Duration,
 };
 
-use clap::{Parser, Subcommand};
-use log::LevelFilter;
+use clap::{Args, Subcommand};
 
-use trident_api::config::{Operation, Operations};
+use super::{AllowedOperation, GetKind};
 
-use crate::TRIDENT_VERSION;
-
-#[derive(Parser, Debug)]
-#[clap(version = TRIDENT_VERSION)]
-pub struct Cli {
-    /// Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
-    #[arg(global = true, short, long, default_value_t = LevelFilter::Debug)]
-    pub verbosity: LevelFilter,
+#[derive(Args, Debug)]
+pub struct ClientArgs {
+    /// The server address to connect to
+    #[clap(short, long, default_value = "unix:///run/trident/trident.sock")]
+    pub server: String,
 
     #[clap(subcommand)]
-    pub command: Commands,
-}
-
-/// The operations that Trident is allowed to perform
-#[derive(clap::ValueEnum, Clone, Debug, Eq, PartialEq)]
-pub enum AllowedOperation {
-    Stage,
-    Finalize,
-}
-
-pub fn to_operations(allowed_operations: &[AllowedOperation]) -> Operations {
-    let mut ops = Operations::empty();
-    for op in allowed_operations {
-        match op {
-            AllowedOperation::Stage => ops.0.insert(Operation::Stage),
-            AllowedOperation::Finalize => ops.0.insert(Operation::Finalize),
-        };
-    }
-    ops
+    pub command: ClientCommands,
 }
 
 #[derive(Subcommand, Debug)]
-pub enum Commands {
+pub enum ClientCommands {
     /// Initiate an install of Azure Linux
     Install {
         /// The new configuration to apply
@@ -51,14 +28,6 @@ pub enum Commands {
         /// Comma-separated list of operations that Trident will be allowed to perform
         #[clap(long, value_delimiter = ',', num_args = 0.., default_value = "stage,finalize")]
         allowed_operations: Vec<AllowedOperation>,
-
-        /// Path to save the resulting Host Status
-        #[clap(short, long)]
-        status: Option<PathBuf>,
-
-        /// Path to save an eventual fatal error
-        #[clap(short, long)]
-        error: Option<PathBuf>,
 
         /// Allow Trident to perform a multiboot install
         #[clap(long)]
@@ -85,7 +54,10 @@ pub enum Commands {
     },
 
     /// Detect whether an install or update succeeded, and update the boot order accordingly
-    Commit {
+    Commit,
+
+    #[clap(hide(true))]
+    Listen {
         /// Path to save the resulting Host Status
         #[clap(short, long)]
         status: Option<PathBuf>,
@@ -102,7 +74,7 @@ pub enum Commands {
         #[clap(short, long)]
         config: Option<PathBuf>,
 
-        /// Path to save the resulting HostStatus
+        /// Path to save the resulting Host Status
         #[clap(short, long)]
         status: Option<PathBuf>,
 
@@ -141,32 +113,8 @@ pub enum Commands {
         config: PathBuf,
     },
 
-    #[cfg(feature = "pytest-generator")]
-    /// Generate Pytest wrappers for functional tests
-    Pytest,
-
-    /// Initialize for a system that wasn't installed by Trident
-    OfflineInitialize {
-        /// Path to a Host Status file (deprecated)
-        ///
-        /// If not provided, Trident will infer one based on the state of the system and history
-        /// information left by Image Customizer.
-        #[arg(conflicts_with = "lazy_partitions")]
-        hs_path: Option<PathBuf>,
-        /// Provide lazy partition information overrides for `-b` partitions
-        ///
-        /// This is a comma-separated list of `<b-partition-name>`:`<b-partition-partuuid>` pairs.
-        #[arg(long, value_delimiter = ',', num_args = 0.., conflicts_with = "hs_path")]
-        lazy_partitions: Vec<String>,
-        /// Provide disk path
-        #[arg(long, default_value = "/dev/sda", conflicts_with = "hs_path")]
-        disk: String,
-        /// Provide path for history.json
-        #[arg(long, conflicts_with = "hs_path")]
-        history_path: Option<PathBuf>,
-    },
-
-    /// Trigger a manual rollback to previous state
+    /// Trigger manual rollback to previous state
+    #[clap(name = "rollback")]
     Rollback {
         /// Check operation that would be performed
         #[arg(long)]
@@ -178,7 +126,7 @@ pub enum Commands {
         #[arg(long, conflicts_with = "ab")]
         runtime: bool,
 
-        /// Invoke next available A/B rollback.
+        /// Invoke available A/B rollback
         /// If allowed-operations is specified, this argument is only applicable for
         /// stage operation and will be ignored for finalize.
         #[arg(long, conflicts_with = "runtime")]
@@ -197,7 +145,6 @@ pub enum Commands {
         error: Option<PathBuf>,
     },
 
-    #[clap(hide(true))]
     StreamImage {
         /// URL of the image to stream
         #[clap(index = 1)]
@@ -206,62 +153,32 @@ pub enum Commands {
         /// Hash of the image manifest
         #[clap(long)]
         hash: String,
-
-        /// Path to save the resulting HostStatus
-        #[clap(short, long)]
-        status: Option<PathBuf>,
-
-        /// Path to save an eventual fatal error
-        #[clap(short, long)]
-        error: Option<PathBuf>,
     },
 
-    #[clap(hide(true))]
-    Daemon {
-        /// Inactivity timeout. The server will shut down automatically after
-        /// being inactive for this duration. Supports human-readable durations,
-        /// e.g., "5m", "1h30m", "300s".
-        #[clap(long, value_parser = humantime::parse_duration, default_value = crate::server::DEFAULT_INACTIVITY_TIMEOUT)]
-        inactivity_timeout: Duration,
-
-        /// Path to the UNIX socket to listen on when not running in systemd
-        /// socket-activated mode.
-        #[clap(long, default_value = crate::server::DEFAULT_TRIDENT_SOCKET_PATH)]
-        socket_path: PathBuf,
-    },
+    Version,
 }
 
-impl Commands {
+impl ClientCommands {
     pub fn name(&self) -> &'static str {
+        // TODO: remove "client-" prefix once the old CLI is removed
         match self {
-            Commands::Install { .. } => "install",
-            Commands::Update { .. } => "update",
-            Commands::Commit { .. } => "commit",
-            Commands::RebuildRaid { .. } => "rebuild-raid",
-            Commands::StartNetwork { .. } => "start-network",
-            Commands::Get { .. } => "get",
-            Commands::Validate { .. } => "validate",
-            #[cfg(feature = "pytest-generator")]
-            Commands::Pytest => "pytest",
-            Commands::OfflineInitialize { .. } => "offline-initialize",
-            Commands::StreamImage { .. } => "stream-image",
-            Commands::Daemon { .. } => "daemon",
-            Commands::Rollback { .. } => "rollback",
+            Self::Install { .. } => "client-install",
+            Self::Update { .. } => "client-update",
+            Self::Commit { .. } => "client-commit",
+            Self::Listen { .. } => "client-listen",
+            Self::RebuildRaid { .. } => "client-rebuild-raid",
+            Self::Rollback { .. } => "client-rollback",
+            Self::StartNetwork { .. } => "client-start-network",
+            Self::Get { .. } => "client-get",
+            Self::Validate { .. } => "client-validate",
+            Self::StreamImage { .. } => "client-stream-image",
+            Self::Version => "client-version",
         }
     }
 }
 
-impl Display for Commands {
+impl Display for ClientCommands {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "{}", self.name())
     }
-}
-
-#[derive(clap::ValueEnum, Copy, Clone, Debug, Eq, PartialEq)]
-pub enum GetKind {
-    Configuration,
-    Status,
-    LastError,
-    RollbackChain,
-    RollbackTarget,
 }

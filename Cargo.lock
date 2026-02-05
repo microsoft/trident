@@ -2675,6 +2675,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
+name = "signal-hook"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b57709da74f9ff9f4a27dce9526eec25ca8407c45a7887243b031a58935fb8e"
+dependencies = [
+ "libc",
+ "signal-hook-registry",
+]
+
+[[package]]
 name = "signal-hook-registry"
 version = "1.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3363,6 +3373,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sha2",
+ "signal-hook",
  "sqlite",
  "strum 0.26.3",
  "strum_macros 0.26.4",
@@ -3416,25 +3427,6 @@ dependencies = [
  "thiserror 1.0.69",
  "url",
  "uuid",
-]
-
-[[package]]
-name = "trident_cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "env_logger 0.11.5",
- "harpoon",
- "log",
- "osutils",
- "prost",
- "prost-types",
- "tokio",
- "tonic",
- "tonic-prost",
- "trident_api",
- "url",
 ]
 
 [[package]]

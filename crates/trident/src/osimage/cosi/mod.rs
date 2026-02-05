@@ -1,17 +1,19 @@
 use std::{
     collections::HashMap,
     io::{Read, Seek},
+    ops::ControlFlow,
     path::{Path, PathBuf},
     time::Duration,
 };
 
-use anyhow::{bail, ensure, Context, Error};
+use anyhow::{bail, Context, Error};
 use log::{debug, trace};
 use tar::Archive;
 use url::Url;
 
 use trident_api::{
     config::{HostConfiguration, ImageSha384, OsImage},
+    error::{InternalError, ReportError, TridentError},
     primitives::hash::Sha384Hash,
 };
 
@@ -25,7 +27,7 @@ mod error;
 mod metadata;
 mod validation;
 
-use metadata::{CosiMetadata, CosiMetadataVersion, ImageFile, MetadataVersion};
+use metadata::{CosiMetadata, CosiMetadataVersion, MetadataVersion};
 
 use super::{OsImageFile, OsImageFileSystem, OsImageVerityHash};
 
@@ -37,7 +39,6 @@ const COSI_METADATA_PATH: &str = "metadata.json";
 #[derive(Debug, Clone)]
 pub(super) struct Cosi {
     pub source: Url,
-    entries: HashMap<PathBuf, CosiEntry>,
     pub metadata: CosiMetadata,
     pub metadata_sha384: Sha384Hash,
     reader: FileReader,
@@ -60,8 +61,7 @@ impl Cosi {
         let cosi_reader =
             FileReader::new(&source.url, timeout).context("Failed to create COSI reader.")?;
 
-        // Scan all entries in the COSI file by seeking to all headers in the file.
-        let entries = read_entries_from_tar_archive(cosi_reader.reader()?)?;
+        let entries = read_entries_until_metadata(cosi_reader.reader()?)?;
         trace!("Collected {} COSI entries", entries.len());
 
         let (metadata, sha384) = read_cosi_metadata(&cosi_reader, &entries, source.sha384.clone())
@@ -70,7 +70,6 @@ impl Cosi {
         // Create a new COSI instance.
         Ok(Cosi {
             metadata,
-            entries,
             source: source.url.clone(),
             reader: cosi_reader,
             metadata_sha384: sha384,
@@ -78,10 +77,10 @@ impl Cosi {
     }
 
     /// Returns the ESP filesystem image.
-    pub(super) fn esp_filesystem(&self) -> Result<OsImageFileSystem<'_>, Error> {
+    pub(super) fn esp_filesystem(&self) -> Result<OsImageFileSystem, Error> {
         self.metadata
             .get_esp_filesystem()
-            .map(|image| cosi_image_to_os_image_filesystem(&self.reader, image))
+            .map(cosi_image_to_os_image_filesystem)
     }
 
     /// Returns an iterator of available mount points in the COSI file.
@@ -92,10 +91,10 @@ impl Cosi {
     }
 
     /// Returns an iterator over all images that are NOT the ESP filesystem image.
-    pub(super) fn filesystems(&self) -> impl Iterator<Item = OsImageFileSystem<'_>> {
+    pub(super) fn filesystems(&self) -> impl Iterator<Item = OsImageFileSystem> {
         self.metadata
             .get_regular_filesystems()
-            .map(|image| cosi_image_to_os_image_filesystem(&self.reader, image))
+            .map(cosi_image_to_os_image_filesystem)
     }
 
     /// Derives the storage and image section of a Host Configuration from this COSI file.
@@ -108,13 +107,37 @@ impl Cosi {
              (unimplemented; waiting on PR #478)."
         );
     }
+
+    pub(super) fn read_images<F>(&self, mut f: F) -> Result<(), TridentError>
+    where
+        F: FnMut(&Path, Box<dyn Read>) -> ControlFlow<Result<(), TridentError>>,
+    {
+        let mut archive = Archive::new(
+            self.reader
+                .reader()
+                .structured(InternalError::Internal("read COSI archive"))?,
+        );
+        for entry in
+            read_entries(&mut archive).structured(InternalError::Internal("read COSI archive"))?
+        {
+            let (path, entry) = entry.structured(InternalError::Internal("read COSI archive"))?;
+
+            let reader = Box::new(
+                self.reader
+                    .section_reader(entry.offset, entry.size)
+                    .structured(InternalError::Internal("read COSI archive"))?,
+            );
+            match f(&path, reader) {
+                ControlFlow::Continue(()) => {}
+                ControlFlow::Break(b) => return b,
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Converts a COSI metadata Image to an OsImageFileSystem.
-fn cosi_image_to_os_image_filesystem<'a>(
-    cosi_reader: &'a FileReader,
-    image: &metadata::Image,
-) -> OsImageFileSystem<'a> {
+fn cosi_image_to_os_image_filesystem(image: &metadata::Image) -> OsImageFileSystem {
     // Make an early copy so the borrow checker knows that we are not keeping a reference to the
     // original image. Calling as_rer().map() on image.verity seems to tell the borrow checker
     // that we are keeping a reference to the original image, even if we only clone stuff and don't
@@ -129,33 +152,40 @@ fn cosi_image_to_os_image_filesystem<'a>(
             compressed_size: image.file.compressed_size,
             sha384: image.file.sha384,
             uncompressed_size: image.file.uncompressed_size,
-            reader: {
-                Box::new(move || {
-                    cosi_reader.section_reader(image.file.entry.offset, image.file.entry.size)
-                })
-            },
+            path: image.file.path.clone(),
         },
         verity: image.verity.map(|verity| OsImageVerityHash {
             hash_image_file: OsImageFile {
                 compressed_size: verity.file.compressed_size,
                 sha384: verity.file.sha384,
                 uncompressed_size: verity.file.uncompressed_size,
-                reader: {
-                    Box::new(move || {
-                        cosi_reader.section_reader(verity.file.entry.offset, verity.file.entry.size)
-                    })
-                },
+                path: verity.file.path,
             },
             roothash: verity.roothash,
         }),
     }
 }
 
-/// Reads all entries from the given COSI tar archive.
-fn read_entries_from_tar_archive<R: Read + Seek>(
+fn read_entries_until_metadata<R: Read + Seek>(
     cosi_reader: R,
 ) -> Result<HashMap<PathBuf, CosiEntry>, Error> {
-    Archive::new(cosi_reader)
+    let mut entries = HashMap::new();
+    for entry in read_entries(&mut Archive::new(cosi_reader))? {
+        let (path, entry) = entry?;
+        entries.insert(path.clone(), entry);
+        if path == Path::new(COSI_METADATA_PATH) {
+            break;
+        }
+    }
+
+    Ok(entries)
+}
+
+/// Iterate over entries from the given COSI tar archive.
+fn read_entries<'a, R: Read + Seek + 'a>(
+    archive: &'a mut Archive<R>,
+) -> Result<impl Iterator<Item = Result<(PathBuf, CosiEntry), Error>> + 'a, Error> {
+    Ok(archive
         .entries_with_seek()
         .context("Failed to read COSI file")?
         .inspect(|entry| {
@@ -197,9 +227,7 @@ fn read_entries_from_tar_archive<R: Read + Seek>(
                 entry.1.size
             );
             Ok(entry)
-        })
-        .collect::<Result<HashMap<_, _>, Error>>()
-        .context("Failed to process COSI entries")
+        }))
 }
 
 /// Retrieves the COSI metadata from the given COSI file.
@@ -254,14 +282,11 @@ fn read_cosi_metadata(
     )?;
 
     // Now, parse the full metadata.
-    let mut metadata: CosiMetadata =
+    let metadata: CosiMetadata =
         serde_json::from_str(&raw_metadata).context("Failed to parse COSI metadata")?;
 
     // Validate the metadata.
     metadata.validate()?;
-
-    // Populate the metadata with the actual content location of the images.
-    populate_cosi_metadata_content_location(entries, &mut metadata)?;
 
     debug!(
         "Successfully read COSI metadata [v{}.{}]",
@@ -289,57 +314,6 @@ fn validate_cosi_metadata_version(version: &MetadataVersion) -> Result<(), Error
     Ok(())
 }
 
-/// Populates the metadata with the actual content location of the images.
-/// As a side effect, this function also validates that all images defined in the
-/// metadata are present in the COSI file, and that their basic properties match.
-fn populate_cosi_metadata_content_location(
-    entries: &HashMap<PathBuf, CosiEntry>,
-    metadata: &mut CosiMetadata,
-) -> Result<(), Error> {
-    let find_entry = |img: &ImageFile| {
-        let Some(entry) = entries.get(&img.path) else {
-            bail!(
-                "COSI metadata contains an entry for a filesystem image at '{}', but the entry was not found in the COSI file",
-                img.path.display()
-            );
-        };
-
-        ensure!(entry.size == img.compressed_size,
-                "COSI metadata specifies a compressed size of {} bytes for the filesystem image at '{}', but the actual entry size is {} bytes",
-                img.compressed_size,
-                img.path.display(),
-                entry.size
-        );
-
-        Ok(*entry)
-    };
-
-    // Ensure that all images defined in the metadata are present in the COSI file.
-    for image in metadata.images.iter_mut() {
-        trace!(
-            "Looking for entry for image mounted at '{}'",
-            image.mount_point.display()
-        );
-        image.file.entry = find_entry(&image.file).with_context(|| {
-            format!(
-                "Failed to find entry for image mounted at '{}'",
-                image.mount_point.display()
-            )
-        })?;
-
-        if let Some(verity) = image.verity.as_mut() {
-            verity.file.entry = find_entry(&verity.file).with_context(|| {
-                format!(
-                    "Failed to find entry for verity hash of image mounted at '{}'",
-                    image.mount_point.display()
-                )
-            })?;
-        }
-    }
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -361,7 +335,7 @@ mod tests {
     };
     use trident_api::primitives::hash::Sha384Hash;
 
-    use crate::osimage::OsImageFileSystemType;
+    use crate::osimage::{cosi::metadata::ImageFile, OsImageFileSystemType};
 
     use super::metadata::KnownMetadataVersion;
 
@@ -464,7 +438,14 @@ mod tests {
         );
 
         // Read the entries. Use a Cursor as a file stand-in. (Cursor implements Read + Seek)
-        let entries = super::read_entries_from_tar_archive(Cursor::new(&cosi_file)).unwrap();
+        let mut archive = Archive::new(Cursor::new(&cosi_file));
+        let entries: HashMap<PathBuf, _> = super::read_entries(&mut archive)
+            .unwrap()
+            .map(|e| {
+                let e = e.unwrap();
+                (e.0.to_owned(), e.1)
+            })
+            .collect();
 
         // Check the entries
         assert_eq!(
@@ -580,10 +561,8 @@ mod tests {
         .0;
 
         // Now check that the images in the metadata have the correct entries.
-        for (image, (path, offset, size)) in metadata.images.iter().zip(image_paths.iter()) {
+        for (image, (path, _offset, _size)) in metadata.images.iter().zip(image_paths.iter()) {
             assert_eq!(image.file.path, Path::new(path), "Incorrect image path",);
-            assert_eq!(image.file.entry.offset, *offset, "Incorrect image offset");
-            assert_eq!(image.file.entry.size, *size, "Incorrect image size");
         }
     }
 
@@ -645,12 +624,6 @@ mod tests {
             Duration::from_secs(5),
         )
         .unwrap();
-
-        assert_eq!(
-            cosi.entries.len(),
-            mock_images.len() + 1,
-            "Incorrect number of entries"
-        );
 
         assert_eq!(url, cosi.source, "Incorrect source URL in COSI instance")
     }
@@ -719,29 +692,18 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(
-            cosi.entries.len(),
-            mock_images.len() + 1,
-            "Incorrect number of entries"
-        );
-
         assert_eq!(url, cosi.source, "Incorrect source URL in COSI instance")
     }
 
     #[test]
     fn test_cosi_image_to_os_image_filesystem() {
         let data = "some data";
-        let reader = FileReader::Buffer(Cursor::new(data.as_bytes().to_vec()));
         let mut cosi_img = Image {
             file: ImageFile {
                 path: PathBuf::from("some/path"),
                 compressed_size: data.len() as u64,
                 uncompressed_size: data.len() as u64,
                 sha384: Sha384Hash::from(format!("{:x}", Sha384::digest(data.as_bytes()))),
-                entry: CosiEntry {
-                    offset: 0,
-                    size: data.len() as u64,
-                },
             },
             mount_point: PathBuf::from("/some/mount/point"),
             fs_type: OsImageFileSystemType::Ext4,
@@ -749,7 +711,7 @@ mod tests {
             part_type: DiscoverablePartitionType::LinuxGeneric,
             verity: None,
         };
-        let os_fs = cosi_image_to_os_image_filesystem(&reader, &cosi_img);
+        let os_fs = cosi_image_to_os_image_filesystem(&cosi_img);
 
         assert_eq!(os_fs.mount_point, cosi_img.mount_point);
         assert_eq!(os_fs.fs_type, cosi_img.fs_type);
@@ -765,34 +727,25 @@ mod tests {
         );
         assert!(os_fs.verity.is_none());
 
-        let mut read_data = String::new();
-        os_fs
-            .image_file
-            .reader()
-            .unwrap()
-            .read_to_string(&mut read_data)
-            .unwrap();
-        assert_eq!(read_data, data);
+        assert_eq!(
+            os_fs.image_file.compressed_size,
+            cosi_img.file.compressed_size
+        );
 
         // Now test with verity.
         let root_hash = "some-root-hash-1234";
         let verity_data = "some data";
-        let reader = FileReader::Buffer(Cursor::new(verity_data.as_bytes().to_vec()));
         cosi_img.verity = Some(VerityMetadata {
             file: ImageFile {
                 path: PathBuf::from("some/verity/path"),
                 compressed_size: verity_data.len() as u64,
                 uncompressed_size: verity_data.len() as u64,
                 sha384: Sha384Hash::from(format!("{:x}", Sha384::digest(verity_data.as_bytes()))),
-                entry: CosiEntry {
-                    offset: 0,
-                    size: verity_data.len() as u64,
-                },
             },
             roothash: root_hash.to_string(),
         });
 
-        let os_fs = cosi_image_to_os_image_filesystem(&reader, &cosi_img);
+        let os_fs = cosi_image_to_os_image_filesystem(&cosi_img);
 
         assert_eq!(os_fs.mount_point, cosi_img.mount_point);
         assert_eq!(os_fs.fs_type, cosi_img.fs_type);
@@ -824,16 +777,6 @@ mod tests {
             os_fs_verity.hash_image_file.uncompressed_size,
             cosi_img_verity.file.uncompressed_size
         );
-
-        let mut read_data = String::new();
-        os_fs_verity
-            .hash_image_file
-            .reader()
-            .unwrap()
-            .read_to_string(&mut read_data)
-            .unwrap();
-
-        assert_eq!(read_data, verity_data);
     }
 
     fn sample_verity_cosi_file(
@@ -860,7 +803,6 @@ mod tests {
                     compressed_size: file_data.len() as u64,
                     uncompressed_size: file_data.len() as u64,
                     sha384: Sha384Hash::from(format!("{:x}", Sha384::digest(file_data.as_bytes()))),
-                    entry,
                 },
                 mount_point: PathBuf::from(mntpt),
                 fs_type: *fs_type,
@@ -872,7 +814,6 @@ mod tests {
 
         Cosi {
             source: Url::parse("mock://").unwrap(),
-            entries,
             metadata: CosiMetadata {
                 version: KnownMetadataVersion::V1_0.as_version(),
                 id: Some(Uuid::new_v4()),
@@ -894,7 +835,6 @@ mod tests {
         // Test with an empty COSI file.
         let empty = Cosi {
             source: Url::parse("mock://").unwrap(),
-            entries: HashMap::new(),
             metadata: CosiMetadata {
                 version: KnownMetadataVersion::V1_0.as_version(),
                 id: Some(Uuid::new_v4()),
@@ -951,7 +891,6 @@ mod tests {
         let esp = cosi.esp_filesystem().unwrap();
 
         let expected = cosi_image_to_os_image_filesystem(
-            &cosi.reader,
             // The ESP is the first image in the list.
             &cosi.metadata.images[0],
         );
@@ -969,18 +908,6 @@ mod tests {
             expected.image_file.uncompressed_size
         );
         assert_eq!(esp.verity.is_none(), expected.verity.is_none());
-
-        let read_data = {
-            let mut data = String::new();
-            esp.image_file
-                .reader()
-                .unwrap()
-                .read_to_string(&mut data)
-                .unwrap();
-            data
-        };
-
-        assert_eq!(read_data, mock_images[0].3);
     }
 
     #[test]
@@ -1059,7 +986,7 @@ mod tests {
             .images
             .iter()
             .skip(1)
-            .map(|img| cosi_image_to_os_image_filesystem(&cosi.reader, img))
+            .map(cosi_image_to_os_image_filesystem)
             .collect::<Vec<_>>();
         let img_data = mock_images
             .iter()
@@ -1069,7 +996,7 @@ mod tests {
         assert_eq!(expected.len(), img_data.len());
         assert_eq!(filesystems.len(), expected.len());
 
-        for (fs, (expected_fs, expected_data)) in filesystems
+        for (fs, (expected_fs, _expected_data)) in filesystems
             .iter()
             .zip(expected.iter().zip(img_data.into_iter()))
         {
@@ -1086,18 +1013,6 @@ mod tests {
                 expected_fs.image_file.uncompressed_size
             );
             assert_eq!(fs.verity.is_none(), expected_fs.verity.is_none());
-
-            let read_data = {
-                let mut data = String::new();
-                fs.image_file
-                    .reader()
-                    .unwrap()
-                    .read_to_string(&mut data)
-                    .unwrap();
-                data
-            };
-
-            assert_eq!(read_data, expected_data);
         }
     }
 }

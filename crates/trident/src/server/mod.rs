@@ -10,12 +10,9 @@ use std::{
 use anyhow::{bail, Context, Result as AnyhowRes};
 use log::{debug, error, info};
 use nix::sys::stat::Mode;
-use tokio::{
-    net::UnixListener,
-    runtime::Builder,
-    signal::unix::{self, SignalKind},
-};
+use tokio::{net::UnixListener, runtime::Builder};
 use tokio_stream::wrappers::UnixListenerStream;
+use tokio_util::sync::CancellationToken;
 use tonic::transport::Server;
 use tonic_middleware::MiddlewareFor;
 
@@ -23,8 +20,9 @@ use harpoon::trident_service_server::TridentServiceServer;
 
 use crate::{
     agentconfig::AgentConfig,
+    cli::TridentExitCodes,
     logging::logfwd::LogForwarder,
-    server::{activitytracker::ActivityTracker, fds::UnixSocketCleanup, support::fds},
+    reboot::{self, REBOOT_WAIT_DURATION_SECS},
     ExitKind, Logstream, TraceStream,
 };
 
@@ -32,6 +30,11 @@ mod activitytracker;
 mod support;
 mod tridentserver;
 
+use activitytracker::ActivityTracker;
+use support::{
+    fds::{self, UnixSocketCleanup},
+    signals::ShutdownSignals,
+};
 use tridentserver::{ServicingManager, TridentHarpoonServer};
 
 /// Default path for the Trident Unix domain socket. This is used when Trident
@@ -71,14 +74,14 @@ pub fn server_main(
     // Start the Tokio runtime
     let Ok(runtime) = Builder::new_multi_thread().enable_all().build() else {
         error!("Failed to create Tokio runtime");
-        return ExitCode::from(1);
+        return TridentExitCodes::SetupFailed.into();
     };
 
     let (listener, _listener_cleanup) = match set_up_listener(default_socket_path.as_ref()) {
         Ok(res) => res,
         Err(e) => {
             error!("Failed to set up server listener: {e:?}");
-            return ExitCode::from(1);
+            return TridentExitCodes::SetupFailed.into();
         }
     };
 
@@ -86,7 +89,15 @@ pub fn server_main(
         Ok(cfg) => cfg,
         Err(e) => {
             error!("Failed to load agent configuration: {e:?}");
-            return ExitCode::from(4);
+            return TridentExitCodes::FailedToLoadAgentConfig.into();
+        }
+    };
+
+    let shutdown_signals = match ShutdownSignals::setup_signal_handlers() {
+        Ok(signals) => signals,
+        Err(e) => {
+            error!("Failed to set up signal handlers: {e:?}");
+            return TridentExitCodes::SetupFailed.into();
         }
     };
 
@@ -98,6 +109,7 @@ pub fn server_main(
             agent_config,
             logstream,
             tracestream,
+            shutdown_signals.token(),
         )
         .await
     });
@@ -110,22 +122,37 @@ pub fn server_main(
         Ok(exit_kind) => exit_kind,
         Err(e) => {
             error!("Daemon failed: {e:?}");
-            return ExitCode::from(2);
+            return TridentExitCodes::Failed.into();
         }
     };
 
     match exit_kind {
-        ExitKind::Done => {} // Normal exit
+        // Normal exit
+        ExitKind::Done => TridentExitCodes::Success.into(),
 
-        ExitKind::NeedsReboot => {
-            if let Err(e) = crate::reboot() {
-                error!("Failed to reboot: {e:?}");
-                return ExitCode::from(3);
-            }
-        }
+        // Reboot requested
+        ExitKind::NeedsReboot => reboot(shutdown_signals),
+    }
+}
+
+fn reboot(signals: ShutdownSignals) -> ExitCode {
+    if let Err(e) = reboot::request_reboot() {
+        error!("Failed to request reboot: {e:?}");
+        return TridentExitCodes::RebootUnsuccessful.into();
     }
 
-    ExitCode::SUCCESS
+    // Wait for either a shutdown signal or the reboot timeout
+    if let Err(e) = signals
+        .exit_receiver()
+        .recv_timeout(Duration::from_secs(REBOOT_WAIT_DURATION_SECS))
+    {
+        error!("Reboot wait timed out: {e:?}");
+        return TridentExitCodes::RebootUnsuccessful.into();
+    }
+
+    // A signal was received, exit successfully
+    info!("System is rebooting now");
+    TridentExitCodes::Success.into()
 }
 
 async fn server_main_inner(
@@ -135,6 +162,7 @@ async fn server_main_inner(
     agent_config: AgentConfig,
     logstream: Logstream,
     tracestream: TraceStream,
+    signals_token: CancellationToken,
 ) -> AnyhowRes<ExitKind> {
     // Ensure the listener is in non-blocking state as required by Tokio
     listener
@@ -147,10 +175,6 @@ async fn server_main_inner(
     // Set up activity tracker. This will monitor for inactivity and trigger
     // shutdown when the timeout is reached.
     let (activity_tracker, mut shutdown_rx, monitor_token) = ActivityTracker::new(shutdown_timeout);
-
-    // Set up signal handler for SIGTERM
-    let mut sigterm =
-        unix::signal(SignalKind::terminate()).context("Failed to set up SIGTERM handler")?;
 
     let (servicing_manager, exit_token) = ServicingManager::new();
 
@@ -173,16 +197,13 @@ async fn server_main_inner(
         .serve_with_incoming_shutdown(UnixListenerStream::new(listener), async {
             tokio::select! {
                 _ = shutdown_rx.recv() => {
-                    info!("Shutdown signal received");
+                    info!("gRPC server shutdown requested due to inactivity timeout");
                 }
-                _ = tokio::signal::ctrl_c() => {
-                    info!("Ctrl-C received, shutting down");
-                }
-                _ = sigterm.recv() => {
-                    info!("SIGTERM received, shutting down");
+                _ = signals_token.cancelled() => {
+                    info!("gRPC server shutdown requested by external signal");
                 }
                 _ = exit_token.cancelled() => {
-                    info!("Exit request received from server, shutting down");
+                    info!("gRPC server shutdown request received from servicing operation");
                 }
             }
         })

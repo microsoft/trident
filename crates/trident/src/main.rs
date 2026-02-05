@@ -6,7 +6,7 @@ use log::{error, info, LevelFilter, Log};
 
 use trident::{
     agentconfig::AgentConfig,
-    cli::{self, Cli, Commands, GetKind},
+    cli::{self, Cli, Commands, GetKind, TridentExitCodes},
     manual_rollback::{self, utils::ManualRollbackRequestKind},
     offline_init, validation, BackgroundLog, DataStore, ExitKind, LogFilter, LogForwarder,
     Logstream, MultiLogger, TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
@@ -335,7 +335,7 @@ fn main() -> ExitCode {
     let tracestream = setup_tracing(&args);
     if let Err(e) = tracestream {
         error!("Failed to initialize tracing: {e:?}");
-        return ExitCode::from(1);
+        return TridentExitCodes::SetupFailed.into();
     }
 
     if let Commands::Daemon {
@@ -356,7 +356,7 @@ fn main() -> ExitCode {
         );
         if let Err(e) = logstream {
             error!("Failed to initialize logging: {e:?}");
-            return ExitCode::from(1);
+            return TridentExitCodes::SetupFailed.into();
         }
 
         // Log version on startup
@@ -369,12 +369,21 @@ fn main() -> ExitCode {
             logstream.unwrap(),
             tracestream.unwrap(),
         )
+    } else if let Commands::GrpcClient(client_args) = &args.command {
+        let logstream = setup_logging(&args, iter::empty());
+        if let Err(e) = logstream {
+            error!("Failed to initialize logging: {e:?}");
+            return TridentExitCodes::SetupFailed.into();
+        }
+
+        // Run the client command
+        trident::client_main(client_args)
     } else {
         // Initialize the loggers
         let logstream = setup_logging(&args, iter::empty());
         if let Err(e) = logstream {
             error!("Failed to initialize logging: {e:?}");
-            return ExitCode::from(1);
+            return TridentExitCodes::SetupFailed.into();
         }
 
         // Invoke Trident
@@ -382,15 +391,16 @@ fn main() -> ExitCode {
             Ok(ExitKind::Done) => {}
             Err(e) => {
                 error!("{e:?}");
-                return ExitCode::from(2);
+                return TridentExitCodes::Failed.into();
             }
             Ok(ExitKind::NeedsReboot) => {
-                if let Err(e) = trident::reboot() {
+                if let Err(e) = trident::request_reboot_with_wait() {
                     error!("Failed to reboot: {e:?}");
-                    return ExitCode::from(3);
+                    return TridentExitCodes::RebootUnsuccessful.into();
                 }
             }
         }
-        ExitCode::SUCCESS
+
+        TridentExitCodes::Success.into()
     }
 }

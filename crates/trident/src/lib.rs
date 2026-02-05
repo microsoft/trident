@@ -32,6 +32,7 @@ pub mod agentconfig;
 pub mod cli;
 mod datastore;
 mod engine;
+mod grpc_client;
 mod health;
 mod io_utils;
 mod logging;
@@ -39,6 +40,7 @@ mod monitor_metrics;
 pub mod offline_init;
 mod orchestrate;
 pub mod osimage;
+mod reboot;
 mod server;
 pub mod stream;
 mod subsystems;
@@ -48,13 +50,15 @@ pub use crate::{
     datastore::DataStore,
     engine::{
         manual_rollback::{self, utils::ManualRollbackRequestKind},
-        provisioning_network, reboot,
+        provisioning_network,
     },
+    grpc_client::client_main,
     logging::{
         background_log::BackgroundLog, filter::LogFilter, logfwd::LogForwarder,
         logstream::Logstream, multilog::MultiLogger, tracestream::TraceStream,
     },
     orchestrate::OrchestratorConnection,
+    reboot::request_reboot_with_wait,
     server::server_main,
 };
 

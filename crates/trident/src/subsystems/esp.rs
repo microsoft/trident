@@ -1,6 +1,7 @@
 use std::{
     fs,
     io::Read,
+    ops::ControlFlow,
     path::{Path, PathBuf},
 };
 
@@ -22,7 +23,7 @@ use trident_api::{
         EFI_DEFAULT_BIN_DIRECTORY, EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY,
         ESP_RELATIVE_MOUNT_POINT_PATH, GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
     },
-    error::{ReportError, ServicingError, TridentError, TridentResultExt},
+    error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, ServicingState, ServicingType},
 };
 
@@ -50,7 +51,7 @@ impl Subsystem for EspSubsystem {
         // mounted and initialized.
 
         if !ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
-            deploy_esp(ctx, mount_path).structured(ServicingError::DeployESPImages)?;
+            deploy_esp(ctx, mount_path)?;
         }
 
         Ok(())
@@ -96,22 +97,19 @@ pub fn set_uefi_fallback_contents(
 }
 
 /// Performs file-based deployment of ESP images from the OS image.
-fn deploy_esp(ctx: &EngineContext, mount_point: &Path) -> Result<(), Error> {
+fn deploy_esp(ctx: &EngineContext, mount_point: &Path) -> Result<(), TridentError> {
     trace!("Deploying ESP from OS image");
 
     let os_image = ctx
         .image
         .as_ref()
-        .context("OS image is required to deploy ESP from OS image")?;
+        .structured(ServicingError::DeployESPImages)
+        .message("OS image is required to deploy ESP from OS image")?;
 
     let esp_img = os_image
         .esp_filesystem()
-        .context("Failed to get ESP image from OS image")?;
-
-    let stream = esp_img
-        .image_file
-        .reader()
-        .context("Failed to get reader for ESP image from OS image")?;
+        .structured(ServicingError::DeployESPImages)
+        .message("Failed to get ESP image from OS image")?;
 
     // Extract the ESP image to a temporary file in
     // `<newroot>/ESP_EXTRACTION_DIRECTORY`. This location is generally
@@ -119,23 +117,51 @@ fn deploy_esp(ctx: &EngineContext, mount_point: &Path) -> Result<(), Error> {
     // have to store a potentially large ESP image in memory.
     let esp_extraction_dir = path::join_relative(mount_point, ESP_EXTRACTION_DIRECTORY);
 
-    let (temp_file, computed_sha384) = load_raw_image(
-        &esp_extraction_dir,
-        os_image.source(),
-        HashingReader384::new(stream),
-    )
-    .context("Failed to load raw image")?;
+    let mut found_esp = false;
+    os_image.read_images(|path, stream| {
+        if path != esp_img.image_file.path {
+            return ControlFlow::Continue(());
+        }
 
-    if esp_img.image_file.sha384 != computed_sha384 {
-        bail!(
-            "SHA384 mismatch for disk image {}: expected {}, got {}",
+        found_esp = true;
+        let (temp_file, computed_sha384) = match load_raw_image(
+            &esp_extraction_dir,
             os_image.source(),
-            esp_img.image_file.sha384,
-            computed_sha384
-        );
+            HashingReader384::new(stream),
+        ) {
+            Ok(r) => r,
+            Err(e) => {
+                return ControlFlow::Break(
+                    Err(e)
+                        .structured(ServicingError::DeployESPImages)
+                        .message("Failed to load raw image"),
+                )
+            }
+        };
+        if esp_img.image_file.sha384 != computed_sha384 {
+            return ControlFlow::Break(
+                Err(TridentError::new(ServicingError::DeployESPImages)).message(format!(
+                    "SHA384 mismatch for disk image {}: expected {}, got {}",
+                    os_image.source(),
+                    esp_img.image_file.sha384,
+                    computed_sha384
+                )),
+            );
+        }
+
+        ControlFlow::Break(
+            copy_file_artifacts(temp_file.path(), ctx, mount_point)
+                .structured(ServicingError::DeployESPImages)
+                .message("Failed to load raw image"),
+        )
+    })?;
+
+    if !found_esp {
+        return Err(TridentError::new(InvalidInputError::CorruptOsImage))
+            .message("ESP filesystem listed in OS image but not present");
     }
 
-    copy_file_artifacts(temp_file.path(), ctx, mount_point)
+    Ok(())
 }
 
 /// Takes in a reader to the raw zstd-compressed ESP image and decompresses it

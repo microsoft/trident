@@ -160,6 +160,9 @@ pub enum InvalidInputError {
     )]
     CleanInstallOnProvisionedHost,
 
+    #[error("The provided OS image file is corrupt")]
+    CorruptOsImage,
+
     #[error(
         "Filesystem mounted at '{mount_point}' requires at least {} [{fs_size} bytes] of storage. \
         However, the underlying block device '{device_id}' has storage size {} [{device_size} bytes].",
@@ -254,7 +257,7 @@ pub enum InvalidInputError {
     MissingOsImageFilesystem { mount_point: String },
 
     #[error(
-        "A multiboot install was requested, but the provided Host Configuration does not include 
+        "A multiboot install was requested, but the provided Host Configuration does not include
         any adopted partitions."
     )]
     MultibootWithoutAdoptedPartitions,
