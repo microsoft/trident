@@ -41,13 +41,15 @@ func BuildCosi(output io.Writer, cosiMetadata *metadata.MetadataJson) error {
 
 	addedFiles := make(map[string]struct{})
 
-	for _, entry := range cosiMetadata.Disk.GptRegions {
-		err = addImage(tw, &entry.Image)
-		if err != nil {
-			return fmt.Errorf("failed to add disk image file: %w", err)
-		}
+	if cosiMetadata.Disk != nil {
+		for _, entry := range cosiMetadata.Disk.GptRegions {
+			err = addImage(tw, &entry.Image)
+			if err != nil {
+				return fmt.Errorf("failed to add disk image file: %w", err)
+			}
 
-		addedFiles[entry.Image.Path] = struct{}{}
+			addedFiles[entry.Image.Path] = struct{}{}
+		}
 	}
 
 	// Do another pass over the filesystem images to add any additional files
