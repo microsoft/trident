@@ -424,9 +424,9 @@ A string that represents the type of the systemd-boot entry.
 This object contains metadata about the compression settings used to produce the
 COSI file.
 
-| Field          | Type   | Added in | Required        | Description                                       |
-| -------------- | ------ | -------- | --------------- | ------------------------------------------------- |
-| `maxWindowLog` | number | 1.2      | Yes (since 1.2) | The max zstd `windowLog`used for compression. [1] |
+| Field          | Type   | Added in | Required        | Description                                        |
+| -------------- | ------ | -------- | --------------- | -------------------------------------------------- |
+| `maxWindowLog` | number | 1.2      | Yes (since 1.2) | The max zstd `windowLog` used for compression. [1] |
 
 _Notes:_
 
@@ -434,8 +434,8 @@ _Notes:_
   expressed as power of 2" (See: [zstd
   manual](https://facebook.github.io/zstd/zstd_manual.html)) used during
   compression of a file. The writer MUST populate this field with the maximum
-  value used across all images in the COSI file to guarantee successful
-  decompression of all images by readers.
+  WindowLog exponent value used across all images in the COSI file to guarantee
+  successful decompression of all images by readers.
 
 #### Samples
 
