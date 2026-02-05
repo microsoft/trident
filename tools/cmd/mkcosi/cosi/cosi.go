@@ -21,6 +21,20 @@ type Cosi struct {
 	tmpDir   string
 }
 
+// NewCosiWithTmpDir creates a new Cosi object with the given metadata and temporary directory.
+// The temporary directory will be cleaned up when Close() is called.
+func NewCosiWithTmpDir(meta metadata.MetadataJson, tmpDir string) *Cosi {
+	return &Cosi{
+		Metadata: meta,
+		tmpDir:   tmpDir,
+	}
+}
+
+// TmpDir returns the temporary directory where extracted images are stored.
+func (c *Cosi) TmpDir() string {
+	return c.tmpDir
+}
+
 func (c *Cosi) Close() error {
 	log.WithField("location", c.tmpDir).Debug("Removing temporary directory")
 	err := os.RemoveAll(c.tmpDir)

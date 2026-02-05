@@ -28,6 +28,12 @@ func BuildCosi(output io.Writer, cosiMetadata *metadata.MetadataJson) error {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}
 
+	// Add the cosi-marker file as the first file in the tarball.
+	err = addFile(tw, "cosi-marker", 0, nil)
+	if err != nil {
+		return fmt.Errorf("failed to add metadata file: %w", err)
+	}
+
 	err = addFile(tw, "metadata.json", uint64(len(marshalledMetadata)), bytes.NewReader(marshalledMetadata))
 	if err != nil {
 		return fmt.Errorf("failed to add metadata file: %w", err)
@@ -81,6 +87,10 @@ func addFile(tw *tar.Writer, name string, size uint64, content io.Reader) error 
 	})
 	if err != nil {
 		return fmt.Errorf("failed to write tar header for '%s': %w", name, err)
+	}
+
+	if size == 0 {
+		return nil
 	}
 
 	_, err = io.Copy(tw, content)

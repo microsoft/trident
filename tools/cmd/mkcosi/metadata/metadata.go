@@ -81,6 +81,7 @@ const (
 type Disk struct {
 	Size       uint64          `json:"size"`
 	Type       DiskType        `json:"type"`
+	LbaSize    uint64          `json:"lbaSize"`
 	GptRegions []GptDiskRegion `json:"gptRegions,omitempty"`
 }
 
