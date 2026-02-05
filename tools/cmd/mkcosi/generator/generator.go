@@ -178,7 +178,7 @@ func CosiFromImage(imagePath string, arch metadata.OsArchitecture) (*cosi.Cosi, 
 			"size":      partition.SizeInBytes(parsedGPT.LBASize),
 		}).Info("Processing partition")
 
-		imageFile, err := extractAndCompressPartition(file, &partition, parsedGPT.LBASize, imagesDir, partNumber)
+		imageFile, err := extractAndCompressPartition(file, &partition, parsedGPT.LBASize, imagesDir, partNumber, tmpDir)
 		if err != nil {
 			cleanup()
 			return nil, fmt.Errorf("failed to extract partition %d: %w", partNumber, err)
@@ -243,14 +243,30 @@ func extractAndCompressGPTRegion(file *os.File, parsedGPT *gpt.ParsedGPT, output
 	}, nil
 }
 
-// extractAndCompressPartition extracts a partition and compresses it with zstd.
-func extractAndCompressPartition(file *os.File, partition *gpt.PartitionEntry, lbaSize uint64, outputDir string, partNumber uint32) (*metadata.ImageFile, error) {
+// extractAndCompressPartition extracts a partition, optionally shrinks ext filesystems,
+// and compresses it with zstd.
+func extractAndCompressPartition(file *os.File, partition *gpt.PartitionEntry, lbaSize uint64, outputDir string, partNumber uint32, tmpDir string) (*metadata.ImageFile, error) {
 	startOffset := partition.StartOffset(lbaSize)
-	size := partition.SizeInBytes(lbaSize)
+	partitionSize := partition.SizeInBytes(lbaSize)
 
+	// First, extract the raw partition to a temporary file
+	rawPartPath := filepath.Join(tmpDir, fmt.Sprintf("partition-%d.raw", partNumber))
+	err := extractRegionToFile(file, int64(startOffset), int64(partitionSize), rawPartPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract partition: %w", err)
+	}
+	defer os.Remove(rawPartPath)
+
+	// Check if this is an ext filesystem and shrink it if possible
+	shrunkSize, err := shrinkExtFilesystem(rawPartPath, partitionSize)
+	if err != nil {
+		log.WithError(err).WithField("partition", partNumber).Debug("Could not shrink filesystem, using full partition")
+		shrunkSize = partitionSize
+	}
+
+	// Compress the (possibly shrunk) partition
 	outputPath := filepath.Join(outputDir, fmt.Sprintf("partition-%d.rawzst", partNumber))
-
-	compressedSize, uncompressedSize, sha384Hash, err := compressRegionToFile(file, int64(startOffset), int64(size), outputPath)
+	compressedSize, sha384Hash, err := compressFileRegionToFile(rawPartPath, int64(shrunkSize), outputPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compress partition: %w", err)
 	}
@@ -258,10 +274,155 @@ func extractAndCompressPartition(file *os.File, partition *gpt.PartitionEntry, l
 	return &metadata.ImageFile{
 		Path:             fmt.Sprintf("images/partition-%d.rawzst", partNumber),
 		CompressedSize:   compressedSize,
-		UncompressedSize: uncompressedSize,
+		UncompressedSize: shrunkSize,
 		Sha384:           sha384Hash,
 		SourceFile:       outputPath,
 	}, nil
+}
+
+// extractRegionToFile extracts a region from file to a new file.
+func extractRegionToFile(file *os.File, offset int64, size int64, outputPath string) error {
+	outputFile, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %w", err)
+	}
+	defer outputFile.Close()
+
+	reader := io.NewSectionReader(file, offset, size)
+	_, err = io.Copy(outputFile, reader)
+	if err != nil {
+		return fmt.Errorf("failed to copy region: %w", err)
+	}
+
+	return nil
+}
+
+// shrinkExtFilesystem shrinks an ext2/3/4 filesystem to its minimum size.
+// Returns the new size in bytes, or the original size if shrinking is not possible.
+func shrinkExtFilesystem(imagePath string, originalSize uint64) (uint64, error) {
+	// Check if this is an ext filesystem using blkid
+	cmd := exec.Command("blkid", "-o", "value", "-s", "TYPE", imagePath)
+	output, err := cmd.Output()
+	if err != nil {
+		return originalSize, fmt.Errorf("failed to detect filesystem type: %w", err)
+	}
+
+	fsType := strings.TrimSpace(string(output))
+	if fsType != "ext2" && fsType != "ext3" && fsType != "ext4" {
+		// Not an ext filesystem, return original size
+		return originalSize, nil
+	}
+
+	log.WithField("fsType", fsType).WithField("image", imagePath).Info("Shrinking ext filesystem")
+
+	// Run e2fsck to ensure filesystem is clean (required before resize)
+	e2fsckCmd := exec.Command("e2fsck", "-f", "-y", imagePath)
+	e2fsckCmd.Stdout = os.Stdout
+	e2fsckCmd.Stderr = os.Stderr
+	err = e2fsckCmd.Run()
+	if err != nil {
+		// e2fsck returns non-zero even for minor fixes, check if it's fatal
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			// Exit codes 0, 1, 2 are acceptable (0=no errors, 1=errors corrected, 2=reboot needed but we're on image)
+			if exitErr.ExitCode() > 2 {
+				return originalSize, fmt.Errorf("e2fsck failed with exit code %d: %w", exitErr.ExitCode(), err)
+			}
+		} else {
+			return originalSize, fmt.Errorf("e2fsck failed: %w", err)
+		}
+	}
+
+	// Resize to minimum size
+	resizeCmd := exec.Command("resize2fs", "-M", imagePath)
+	resizeCmd.Stdout = os.Stdout
+	resizeCmd.Stderr = os.Stderr
+	err = resizeCmd.Run()
+	if err != nil {
+		return originalSize, fmt.Errorf("resize2fs failed: %w", err)
+	}
+
+	// Get the new filesystem size using dumpe2fs
+	dumpe2fsCmd := exec.Command("dumpe2fs", "-h", imagePath)
+	dumpe2fsOutput, err := dumpe2fsCmd.Output()
+	if err != nil {
+		return originalSize, fmt.Errorf("dumpe2fs failed: %w", err)
+	}
+
+	// Parse the block count and block size
+	var blockCount, blockSize uint64
+	for _, line := range strings.Split(string(dumpe2fsOutput), "\n") {
+		if strings.HasPrefix(line, "Block count:") {
+			parts := strings.Fields(line)
+			if len(parts) >= 3 {
+				fmt.Sscanf(parts[2], "%d", &blockCount)
+			}
+		} else if strings.HasPrefix(line, "Block size:") {
+			parts := strings.Fields(line)
+			if len(parts) >= 3 {
+				fmt.Sscanf(parts[2], "%d", &blockSize)
+			}
+		}
+	}
+
+	if blockCount == 0 || blockSize == 0 {
+		return originalSize, fmt.Errorf("could not parse filesystem size from dumpe2fs")
+	}
+
+	newSize := blockCount * blockSize
+	log.WithFields(log.Fields{
+		"originalSize": originalSize,
+		"newSize":      newSize,
+		"saved":        originalSize - newSize,
+		"savedPercent": float64(originalSize-newSize) / float64(originalSize) * 100,
+	}).Info("Filesystem shrunk successfully")
+
+	return newSize, nil
+}
+
+// compressFileRegionToFile compresses a portion of a file and writes it to output.
+// Returns compressed size and SHA-384 hash.
+func compressFileRegionToFile(srcPath string, size int64, outputPath string) (uint64, string, error) {
+	srcFile, err := os.Open(srcPath)
+	if err != nil {
+		return 0, "", fmt.Errorf("failed to open source file: %w", err)
+	}
+	defer srcFile.Close()
+
+	outputFile, err := os.Create(outputPath)
+	if err != nil {
+		return 0, "", fmt.Errorf("failed to create output file: %w", err)
+	}
+	defer outputFile.Close()
+
+	// Create a multi-writer to compute SHA-384 while writing
+	sha384Hash := sha512.New384()
+	multiWriter := io.MultiWriter(outputFile, sha384Hash)
+
+	// Create zstd encoder
+	encoder, err := zstd.NewWriter(multiWriter, zstd.WithEncoderLevel(zstd.SpeedDefault), zstd.WithWindowSize(1<<DefaultZstdWindowLog))
+	if err != nil {
+		return 0, "", fmt.Errorf("failed to create zstd encoder: %w", err)
+	}
+
+	// Read only the specified size
+	reader := io.LimitReader(srcFile, size)
+	_, err = io.Copy(encoder, reader)
+	if err != nil {
+		encoder.Close()
+		return 0, "", fmt.Errorf("failed to compress file: %w", err)
+	}
+
+	if err := encoder.Close(); err != nil {
+		return 0, "", fmt.Errorf("failed to close zstd encoder: %w", err)
+	}
+
+	// Get the compressed file size
+	stat, err := outputFile.Stat()
+	if err != nil {
+		return 0, "", fmt.Errorf("failed to stat output file: %w", err)
+	}
+
+	return uint64(stat.Size()), fmt.Sprintf("%x", sha384Hash.Sum(nil)), nil
 }
 
 // compressDataToFile compresses data and writes it to a file.
