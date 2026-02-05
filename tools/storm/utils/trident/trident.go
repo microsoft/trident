@@ -23,6 +23,7 @@ const (
 	DOCKER_IMAGE_PATH = "/var/lib/trident/trident-container.tar.gz"
 
 	// MESSAGE logged by Trident before requesting a system reboot.
+	// Must match the message in crates/trident/src/reboot.rs
 	REBOOTING_LOG_MESSAGE = "Requesting reboot"
 )
 
