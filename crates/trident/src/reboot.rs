@@ -28,16 +28,19 @@ pub fn request_reboot() -> Result<(), Box<DependencyError>> {
     // This trace event will be used with the trident_start event to track the
     // total time taken for the reboot
     tracing::info!(metric_name = "trident_system_reboot");
+
+    // IMPORTANT: This message is used by E2E A/B update tests to validate that
+    // a reboot was requested. Do not change or remove without updating the
+    // test constant in:
+    // tools/storm/utils/trident/trident.go:REBOOTING_LOG_MESSAGE
     debug!("Requesting reboot");
+
     Dependency::Systemctl
         .cmd()
         .env("SYSTEMD_IGNORE_CHROOT", "true")
         .arg("reboot")
         .run_and_check()?;
 
-    // IMPORTANT: This message is used by E2E A/B update tests to validate that
-    // a reboot was requested. Do not change or remove without updating the
-    // tests!
     info!("Rebooting system");
 
     Ok(())
