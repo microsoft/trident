@@ -23,13 +23,13 @@ macro_rules! impl_common_sha2 {
 
         impl From<&str> for $name {
             fn from(s: &str) -> Self {
-                $name(s.to_string())
+                $name(s.to_lowercase())
             }
         }
 
         impl From<String> for $name {
             fn from(s: String) -> Self {
-                $name(s)
+                $name(s.to_lowercase())
             }
         }
 
@@ -55,7 +55,7 @@ macro_rules! impl_common_sha2 {
                 if !s.chars().all(|c| c.is_ascii_hexdigit()) {
                     return Err(serde::de::Error::custom("Expected hexadecimal string"));
                 }
-                Ok($name(s))
+                Ok($name(s.to_lowercase()))
             }
         }
 

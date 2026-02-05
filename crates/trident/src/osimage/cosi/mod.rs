@@ -1,12 +1,13 @@
 use std::{
     collections::HashMap,
-    io::{Read, Seek},
+    io::{BufReader, Cursor, Read, Seek},
     ops::ControlFlow,
     path::{Path, PathBuf},
     time::Duration,
 };
 
-use anyhow::{bail, Context, Error};
+use ::gpt::{disk, GptConfig, GptDisk};
+use anyhow::{bail, ensure, Context, Error};
 use log::{debug, trace};
 use tar::Archive;
 use url::Url;
@@ -16,6 +17,7 @@ use trident_api::{
     error::{InternalError, ReportError, TridentError},
     primitives::hash::Sha384Hash,
 };
+use zstd::Decoder;
 
 use crate::io_utils::{
     file_reader::FileReader,
@@ -24,10 +26,14 @@ use crate::io_utils::{
 
 mod derived_hc;
 mod error;
+mod gpt;
 mod metadata;
 mod validation;
 
-use metadata::{CosiMetadata, CosiMetadataVersion, MetadataVersion};
+use metadata::{
+    CosiMetadata, CosiMetadataVersion, GptRegionType, ImageFile, KnownMetadataVersion,
+    MetadataVersion,
+};
 
 use super::{OsImageFile, OsImageFileSystem, OsImageVerityHash};
 
@@ -41,7 +47,9 @@ pub(super) struct Cosi {
     pub source: Url,
     pub metadata: CosiMetadata,
     pub metadata_sha384: Sha384Hash,
+    gpt: Option<GptDisk<Cursor<Vec<u8>>>>,
     reader: FileReader,
+    entries: HashMap<PathBuf, CosiEntry>,
 }
 
 /// Entry inside the COSI file.
@@ -61,19 +69,32 @@ impl Cosi {
         let cosi_reader =
             FileReader::new(&source.url, timeout).context("Failed to create COSI reader.")?;
 
-        let entries = read_entries_until_metadata(cosi_reader.reader()?)?;
+        // TODO: probably revert this?
+        let mut entries = HashMap::new();
+        read_entries_until_file(COSI_METADATA_PATH, cosi_reader.reader()?, &mut entries)?;
         trace!("Collected {} COSI entries", entries.len());
 
+        // Read metadata from COSI file. Checksum validation is performed here.
         let (metadata, sha384) = read_cosi_metadata(&cosi_reader, &entries, source.sha384.clone())
             .context("Failed to read COSI file metadata.")?;
 
         // Create a new COSI instance.
-        Ok(Cosi {
+        let mut cosi = Cosi {
             metadata,
             source: source.url.clone(),
             reader: cosi_reader,
             metadata_sha384: sha384,
-        })
+            entries,
+            gpt: None,
+        };
+
+        if cosi.metadata.version >= KnownMetadataVersion::V1_2 {
+            cosi.populate_gpt_data()
+                .context("Failed to populate GPT data for COSI version >= 1.2")?;
+        }
+
+        // Create a new COSI instance.
+        Ok(cosi)
     }
 
     /// Returns the ESP filesystem image.
@@ -134,6 +155,123 @@ impl Cosi {
         }
         Ok(())
     }
+
+    /// Retrieves a reader for the given file inside the COSI file using cached
+    /// entries when possible and scanning the COSI archive otherwise and
+    /// updating the cache.
+    fn get_file_reader(&mut self, path: impl AsRef<Path>) -> Result<Box<dyn Read>, Error> {
+        // Check if this entry has already been found.
+        if let Some(entry) = self.entries.get(path.as_ref()) {
+            return self
+                .reader
+                .section_reader(entry.offset, entry.size)
+                .context(format!(
+                    "Failed to create reader for COSI file entry '{}'",
+                    path.as_ref().display()
+                ));
+        }
+
+        // Otherwise, read the entries until we find the requested file, storing
+        // all seen entries in the process.
+
+        let mut archive = Archive::new(
+            self.reader
+                .reader()
+                .context("Failed to create COSI archive reader")?,
+        );
+
+        for entry in read_entries(&mut archive).context("Failed to read COSI entries")? {
+            let (entry_path, entry) = entry.context("Failed to read COSI entry")?;
+            self.entries.insert(entry_path.clone(), entry);
+            if entry_path == path.as_ref() {
+                return self
+                    .reader
+                    .section_reader(entry.offset, entry.size)
+                    .context(format!(
+                        "Failed to create reader for COSI file entry '{}'",
+                        path.as_ref().display()
+                    ));
+            }
+        }
+
+        bail!("COSI file entry '{}' not found", path.as_ref().display());
+    }
+
+    /// Retrieves the raw data of the given file inside the COSI file. Should only be used
+    /// for small files as it reads the entire file into memory!
+    fn get_file_data(&mut self, image: &ImageFile) -> Result<Vec<u8>, Error> {
+        let mut hashing_reader = HashingReader384::new(self.get_file_reader(&image.path)?);
+        let mut reader = Decoder::new(BufReader::new(&mut hashing_reader))?;
+
+        // Data will contain the full uncompressed file data.
+        let mut data = Vec::new();
+        reader.read_to_end(&mut data).context(format!(
+            "Failed to read COSI file entry '{}'",
+            image.path.display()
+        ))?;
+
+        if hashing_reader.hash() != image.sha384.to_string() {
+            bail!(
+                "COSI file entry '{}' hash '{}' does not match expected hash '{}'",
+                image.path.display(),
+                hashing_reader.hash(),
+                image.sha384
+            );
+        }
+
+        Ok(data)
+    }
+
+    /// On COSI >= v1.2, populates GPT data for images that require it.
+    fn populate_gpt_data(&mut self) -> Result<(), Error> {
+        // First, get the gpt region from the metadata. All of the possible
+        // errors here should have been checked in validation already.
+        let (gpt_image, lba_size) = {
+            let disk = self
+                .metadata
+                .disk
+                .as_ref()
+                .context("Disk information not populated for COSI >= 1.2")?;
+
+            let gpt_region = disk
+                .gpt_regions
+                .first()
+                .context("GPT regions not defined in COSI >= 1.2")?;
+
+            // This should be checked by validation, but we double check here.
+            ensure!(
+                gpt_region.region_type == GptRegionType::PrimaryGpt,
+                "GPT region is not of type PrimaryGpt"
+            );
+
+            // Clone to avoid borrow issues.
+            (gpt_region.image.clone(), disk.lba_size)
+        };
+
+        // Now get a reader for the image that contains the GPT.
+        let raw_gpt = Cursor::new(
+            self.get_file_data(&gpt_image)
+                .context("Failed to read GPT image data")?,
+        );
+
+        let gpt_disk = GptConfig::new()
+            .writable(false)
+            .logical_block_size(match lba_size {
+                512 => disk::LogicalBlockSize::Lb512,
+                4096 => disk::LogicalBlockSize::Lb4096,
+                other => bail!("Unsupported LBA size for GPT: {}", other),
+            })
+            .open_from_device(raw_gpt)?;
+
+        trace!(
+            "Successfully read GPT data from COSI file, found {} partitions",
+            gpt_disk.partitions().len()
+        );
+
+        self.gpt = Some(gpt_disk);
+
+        Ok(())
+    }
 }
 
 /// Converts a COSI metadata Image to an OsImageFileSystem.
@@ -166,19 +304,20 @@ fn cosi_image_to_os_image_filesystem(image: &metadata::Image) -> OsImageFileSyst
     }
 }
 
-fn read_entries_until_metadata<R: Read + Seek>(
+fn read_entries_until_file<R: Read + Seek>(
+    file_name: impl AsRef<Path>,
     cosi_reader: R,
-) -> Result<HashMap<PathBuf, CosiEntry>, Error> {
-    let mut entries = HashMap::new();
+    entries: &mut HashMap<PathBuf, CosiEntry>,
+) -> Result<(), Error> {
     for entry in read_entries(&mut Archive::new(cosi_reader))? {
         let (path, entry) = entry?;
         entries.insert(path.clone(), entry);
-        if path == Path::new(COSI_METADATA_PATH) {
+        if path == file_name.as_ref() {
             break;
         }
     }
 
-    Ok(entries)
+    Ok(())
 }
 
 /// Iterate over entries from the given COSI tar archive.
@@ -827,6 +966,8 @@ mod tests {
             },
             reader: FileReader::Buffer(data),
             metadata_sha384: Sha384Hash::from("0".repeat(96)),
+            entries,
+            gpt: None,
         }
     }
 
@@ -848,6 +989,8 @@ mod tests {
             },
             reader: FileReader::Buffer(Cursor::new(Vec::<u8>::new())),
             metadata_sha384: Sha384Hash::from("0".repeat(96)),
+            entries: HashMap::new(),
+            gpt: None,
         };
 
         // Weird behavior with none/multiple ESPs is primarily tested by the
