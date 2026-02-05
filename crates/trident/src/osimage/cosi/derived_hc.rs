@@ -1,82 +1,114 @@
-// use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, path::Path};
 
-// use anyhow::{bail, Error};
+use anyhow::{bail, ensure, Context, Error};
 
-// use sysdefs::partition_types::DiscoverablePartitionType;
-// use trident_api::{
-//     config::{Disk, FileSystem, FileSystemSource, Partition, Storage},
-//     misc::IdGenerator,
-// };
+use sysdefs::partition_types::DiscoverablePartitionType;
+use trident_api::{
+    config::{Disk, FileSystem, FileSystemSource, Partition, Storage},
+    misc::IdGenerator,
+};
 
-// use crate::osimage::cosi::metadata::KnownMetadataVersion;
+use super::{
+    metadata::{GptRegionType, KnownMetadataVersion},
+    Cosi,
+};
 
-// use super::metadata::CosiMetadata;
+impl Cosi {
+    /// Derives the `image` and `storage` sections of the host configuration
+    /// from the COSI file. This requires COSI >= 1.2.
+    pub(super) fn derive_host_configuration(
+        &mut self,
+        _target_disk: impl AsRef<Path>,
+    ) -> Result<Storage, Error> {
+        ensure!(
+            self.metadata.version >= KnownMetadataVersion::V1_2,
+            "Host configuration derivation requires COSI version {} or higher, found {}",
+            KnownMetadataVersion::V1_2,
+            self.metadata.version
+        );
 
-// impl CosiMetadata {
-//     /// Derives a host configuration from the COSI >= v1.2 metadata.
-//     pub(super) fn derive_host_configuration_storage(
-//         &self,
-//         _target_disk: impl AsRef<Path>,
-//     ) -> Result<Storage, Error> {
-//         // if self.version < KnownMetadataVersion::V1_2 {
-//         //     bail!("Host configuration derivation requires COSI metadata version {} or higher, found {}", KnownMetadataVersion::V1_2, self.version);
-//         // }
+        // Ensure we have disk metadata, which is required for this operation.
+        let disk_info = self.metadata.disk.as_ref().with_context(|| {
+            format!(
+                "COSI metadata version is {}, but disk metadata is missing",
+                self.metadata.version
+            )
+        })?;
 
-//         // let disk_metadata = {
-//         //     let Some(mut partition_metadata) = self.disk.clone() else {
-//         //         // This should be caught during validation.
-//         //         bail!(
-//         //             "COSI metadata version is {}, but partitions metadata is missing",
-//         //             self.version
-//         //         );
-//         //     };
+        // Ensure we have partition information, which is required for this operation.
+        let gpt_data = self
+            .gpt()
+            .context("Failed to retrieve GPT data from COSI")?
+            .with_context(|| {
+                format!(
+                    "COSI is version {}, but GPT data is missing",
+                    self.metadata.version
+                )
+            })?;
 
-//         //     // Sort partitions by number to ensure consistent ordering.
-//         //     partition_metadata.sort_by_key(|a| a.number);
+        let partitions = disk_info
+            .gpt_regions
+            .iter()
+            .filter_map(|r| match r.region_type {
+                GptRegionType::Partition { number } => Some((r.image, number)),
+                _ => None,
+            });
 
-//         //     partition_metadata
-//         // };
+        // let disk_metadata = {
+        //     let Some(mut partition_metadata) = self.disk.clone() else {
+        //         // This should be caught during validation.
+        //         bail!(
+        //             "COSI metadata version is {}, but partitions metadata is missing",
+        //             self.version
+        //         );
+        //     };
 
-//         // let mut partitions = vec![];
-//         // let mut filesystems = vec![];
-//         // let mut id_gen = IdGenerator::new("partition");
+        //     // Sort partitions by number to ensure consistent ordering.
+        //     partition_metadata.sort_by_key(|a| a.number);
 
-//         // let filesystems_by_image = self
-//         //     .images
-//         //     .iter()
-//         //     .map(|image| (image.file.path.as_path(), image))
-//         //     .collect::<HashMap<_, _>>();
+        //     partition_metadata
+        // };
 
-//         // for part in partition_metadata {
-//         //     let partition_id = id_gen.next_id();
-//         //     partitions.push(Partition {
-//         //         id: partition_id.clone(),
-//         //         partition_type: DiscoverablePartitionType::from_uuid(&part.part_type).into(),
-//         //         size: part.original_size.into(),
-//         //         uuid: Some(part.part_uuid),
-//         //         label: Some(part.label),
-//         //     });
+        // let mut partitions = vec![];
+        // let mut filesystems = vec![];
+        // let mut id_gen = IdGenerator::new("partition");
 
-//         //     let Some(path) = &part.path else {
-//         //         continue;
-//         //     };
+        // let filesystems_by_image = self
+        //     .images
+        //     .iter()
+        //     .map(|image| (image.file.path.as_path(), image))
+        //     .collect::<HashMap<_, _>>();
 
-//         //     let Some(fs_metadata) = filesystems_by_image.get(path.as_path()) else {
-//         //         bail!("No image metadata found for partition at path {:?}", path);
-//         //     };
+        // for part in partition_metadata {
+        //     let partition_id = id_gen.next_id();
+        //     partitions.push(Partition {
+        //         id: partition_id.clone(),
+        //         partition_type: DiscoverablePartitionType::from_uuid(&part.part_type).into(),
+        //         size: part.original_size.into(),
+        //         uuid: Some(part.part_uuid),
+        //         label: Some(part.label),
+        //     });
 
-//         //     filesystems.push(FileSystem {
-//         //         device_id: Some(partition_id),
-//         //         source: FileSystemSource::Image,
-//         //         mount_point: Some(fs_metadata.mount_point.as_path().into()),
-//         //     });
-//         // }
+        //     let Some(path) = &part.path else {
+        //         continue;
+        //     };
 
-//         Ok(Storage {
-//             ..Default::default()
-//         })
-//     }
-// }
+        //     let Some(fs_metadata) = filesystems_by_image.get(path.as_path()) else {
+        //         bail!("No image metadata found for partition at path {:?}", path);
+        //     };
+
+        //     filesystems.push(FileSystem {
+        //         device_id: Some(partition_id),
+        //         source: FileSystemSource::Image,
+        //         mount_point: Some(fs_metadata.mount_point.as_path().into()),
+        //     });
+        // }
+
+        Ok(Storage {
+            ..Default::default()
+        })
+    }
+}
 
 // #[cfg(test)]
 // mod tests {

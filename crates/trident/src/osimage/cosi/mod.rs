@@ -144,17 +144,6 @@ impl Cosi {
         Ok(self.gpt.as_ref())
     }
 
-    /// Derives the storage and image section of a Host Configuration from this COSI file.
-    pub(super) fn derive_host_configuration(
-        &self,
-        _target_disk: impl AsRef<Path>,
-    ) -> Result<HostConfiguration, Error> {
-        bail!(
-            "HostConfiguration derivation from COSI files is temporarily disabled \
-             (unimplemented; waiting on PR #478)."
-        );
-    }
-
     pub(super) fn read_images<F>(&self, mut f: F) -> Result<(), TridentError>
     where
         F: FnMut(&Path, Box<dyn Read>) -> ControlFlow<Result<(), TridentError>>,
