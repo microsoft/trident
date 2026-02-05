@@ -23,18 +23,17 @@ const CosiFileExtension = ".cosi"
 
 type ImageVariant interface {
 	ExpectedImages() []ExpectedImage
-	CommonOpts() CommonOpts
+	CommonOpts() BuildOpts
 	IsVerity() bool
 }
 
-type CommonOpts struct {
-	Source          string `arg:"" help:"Source directory to build COSI from." required:"" type:"path"`
-	Output          string `arg:"" help:"Output file to write COSI to." required:"" type:"path"`
-	SourceExtension string `name:"extension" short:"e" help:"Source file extension." default:"rawzst"`
-	Arch            string `short:"a" help:"Architecture to build for" default:"x86_64" enum:"aarch64,x86_64"`
+type BuildOpts struct {
+	Source string `arg:"" help:"Source directory to build COSI from." required:"" type:"path"`
+	Output string `arg:"" help:"Output file to write COSI to." required:"" type:"path"`
+	Arch   string `short:"a" help:"Architecture to build for" default:"x86_64" enum:"aarch64,x86_64"`
 }
 
-func (opts CommonOpts) Validate() error {
+func (opts BuildOpts) Validate() error {
 	if path.Ext(opts.Output) != CosiFileExtension {
 		return fmt.Errorf("output file must have the extension %s", CosiFileExtension)
 	}
@@ -84,8 +83,8 @@ func buildCosiFile(variant ImageVariant) error {
 	}
 
 	cosiMetadata := metadata.MetadataJson{
-		Version: "1.0",
-		OsArch:  commonOpts.Arch,
+		Version: "1.2",
+		OsArch:  metadata.OsArchitecture(commonOpts.Arch),
 		Id:      uuid.New().String(),
 		Images:  make([]metadata.Image, len(expectedImages)),
 	}
@@ -102,7 +101,7 @@ func buildCosiFile(variant ImageVariant) error {
 	imageData := make([]ImageBuildData, len(expectedImages))
 	for i, image := range expectedImages {
 		// Ge the full name of the image
-		full_image_name := fmt.Sprintf("%s.%s", image.Name, commonOpts.SourceExtension)
+		full_image_name := fmt.Sprintf("%s.%s", image.Name, "") // commonOpts.SourceExtension)
 		// Get a reference to the imgMetadata for this index
 		imgMetadata := &cosiMetadata.Images[i]
 		// Populate the image build data for this index
@@ -122,7 +121,7 @@ func buildCosiFile(variant ImageVariant) error {
 		imgMetadata.MountPoint = image.MountPoint
 		// Populate verity data if needed
 		if variant.IsVerity() && image.VerityImageName != nil {
-			full_verity_image_name := fmt.Sprintf("%s.%s", *image.VerityImageName, commonOpts.SourceExtension)
+			full_verity_image_name := fmt.Sprintf("%s.%s", *image.VerityImageName, "") // commonOpts.SourceExtension)
 			imgMetadata.Verity = &metadata.Verity{
 				Image: metadata.ImageFile{
 					Path:       path.Join("images", full_verity_image_name),

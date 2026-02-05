@@ -1,14 +1,16 @@
 package metadata
 
 type MetadataJson struct {
-	Version                   string                   `json:"version"`
-	OsArch                    string                   `json:"osArch"`
-	Images                    []Image                  `json:"images"`
-	OsRelease                 string                   `json:"osRelease"`
-	OsPackages                []map[string]interface{} `json:"osPackages"`
-	Id                        string                   `json:"id"`
-	Bootloader                map[string]interface{}   `json:"bootloader"`
-	HostConfigurationTemplate string                   `json:"hostConfigurationTemplate,omitempty"`
+	Version                   string         `json:"version"`
+	OsArch                    OsArchitecture `json:"osArch"`
+	OsRelease                 string         `json:"osRelease"`
+	Images                    []Image        `json:"images"`
+	Disk                      *Disk          `json:"disk,omitempty"`
+	OsPackages                []OsPackage    `json:"osPackages"`
+	Bootloader                Bootloader     `json:"bootloader"`
+	Id                        string         `json:"id,omitempty"`
+	Compression               *Compression   `json:"compression,omitempty"`
+	HostConfigurationTemplate string         `json:"hostConfigurationTemplate,omitempty"`
 }
 
 type Image struct {
@@ -18,6 +20,81 @@ type Image struct {
 	FsUuid     string        `json:"fsUuid"`
 	PartType   PartitionType `json:"partType"`
 	Verity     *Verity       `json:"verity"`
+}
+
+type OsArchitecture string
+
+const (
+	OsArchitectureX8664 OsArchitecture = "x86_64"
+	OsArchitectureArm64 OsArchitecture = "arm64"
+)
+
+type OsPackage struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Release string `json:"release"`
+	Arch    string `json:"arch"`
+}
+
+type BootloaderType string
+
+const (
+	BootloaderTypeSystemDBoot BootloaderType = "systemd-boot"
+	BootloaderTypeGrub        BootloaderType = "grub"
+)
+
+type Bootloader struct {
+	Type        BootloaderType `json:"type"`
+	SystemDBoot *SystemDBoot   `json:"systemdBoot,omitempty"`
+}
+
+type SystemDBoot struct {
+	Entries []SystemDBootEntry `json:"entries"`
+}
+
+type SystemDBootEntryType string
+
+const (
+	SystemDBootEntryTypeUkiStandalone SystemDBootEntryType = "uki-standalone"
+	SystemDBootEntryTypeUkiConfig     SystemDBootEntryType = "uki-config"
+	SystemDBootEntryTypeConfig        SystemDBootEntryType = "config"
+)
+
+type SystemDBootEntry struct {
+	Type    SystemDBootEntryType `json:"type"`
+	Path    string               `json:"path"`
+	Cmdline string               `json:"cmdline"`
+	Kernel  string               `json:"kernel"`
+}
+
+type Compression struct {
+	// The power-of-two exponent for the ZSTD window size (e.g. 30 for 1 GiB).
+	WindowSize uint32 `json:"windowSize"`
+}
+
+type DiskType string
+
+const (
+	DiskTypeGpt DiskType = "gpt"
+)
+
+type Disk struct {
+	Size       uint64          `json:"size"`
+	Type       DiskType        `json:"type"`
+	GptRegions []GptDiskRegion `json:"gptRegions,omitempty"`
+}
+
+type RegionType string
+
+const (
+	RegionTypePrimaryGpt RegionType = "primary-gpt"
+	RegionTypePartition  RegionType = "partition"
+)
+
+type GptDiskRegion struct {
+	Image  ImageFile  `json:"image"`
+	Type   RegionType `json:"type"`
+	Number *uint32    `json:"number,omitempty"`
 }
 
 type Verity struct {
