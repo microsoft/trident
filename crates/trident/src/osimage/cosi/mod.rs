@@ -637,6 +637,12 @@ mod tests {
         )
     }
 
+    /// Tests the [`read_entries`] function for reading tar archive entries.
+    ///
+    /// Verifies that the function correctly iterates over entries in a tar archive,
+    /// extracting their paths, offsets, and sizes. The test creates a sample tarball
+    /// with multiple files (including nested paths), reads the entries, and validates
+    /// that the returned metadata matches the original data.
     #[test]
     fn test_read_entries_from_tar_archive() {
         env_logger::builder()
@@ -693,6 +699,11 @@ mod tests {
         }
     }
 
+    /// Tests the [`validate_cosi_metadata_version`] function for version validation.
+    ///
+    /// Verifies that:
+    /// - All COSI 1.x versions (1.0, 1.1, 1.2) are accepted as valid.
+    /// - Major version 0.x and 2.x are rejected as unsupported.
     #[test]
     fn test_validate_cosi_metadata_version() {
         // Test accepted versions
@@ -706,6 +717,16 @@ mod tests {
         super::validate_cosi_metadata_version(&MetadataVersion { major: 2, minor: 1 }).unwrap_err();
     }
 
+    /// Tests the [`read_cosi_metadata`] function for parsing COSI metadata.
+    ///
+    /// Validates that the function correctly:
+    /// - Reads and parses the metadata.json file from a COSI archive.
+    /// - Validates the SHA384 checksum of the metadata content.
+    /// - Parses image definitions with their paths and sizes.
+    ///
+    /// The test creates a mock metadata file with sample image entries, writes it
+    /// to a temporary file, and verifies that the parsed metadata matches the
+    /// expected structure.
     #[test]
     fn test_read_cosi_metadata() {
         env_logger::builder()
@@ -787,6 +808,13 @@ mod tests {
         }
     }
 
+    /// Tests the [`Cosi::new`] constructor for creating a COSI instance.
+    ///
+    /// Validates that a COSI instance can be successfully created from a valid
+    /// tarball containing metadata and image files. The test builds a complete
+    /// COSI file with mock images and metadata, writes it to a temporary file,
+    /// and verifies that `Cosi::new` correctly initializes the instance with
+    /// the expected source URL.
     #[test]
     fn test_create_cosi() {
         env_logger::builder()
@@ -849,6 +877,12 @@ mod tests {
         assert_eq!(url, cosi.source, "Incorrect source URL in COSI instance")
     }
 
+    /// Tests [`Cosi::new`] with a COSI file that has a VHD footer appended.
+    ///
+    /// COSI files may be wrapped in VHD format for deployment scenarios. This test
+    /// verifies that the COSI parser correctly handles tar archives that have
+    /// additional data (a mock VPC/VHD footer with the "conectix" signature)
+    /// appended after the tar content, without failing to parse the archive.
     #[test]
     fn test_create_cosi_with_footer() {
         env_logger::builder()
@@ -916,6 +950,16 @@ mod tests {
         assert_eq!(url, cosi.source, "Incorrect source URL in COSI instance")
     }
 
+    /// Tests the [`cosi_image_to_os_image_filesystem`] conversion function.
+    ///
+    /// Verifies that COSI metadata `Image` structures are correctly converted to
+    /// `OsImageFileSystem` structures, preserving all fields including:
+    /// - Mount point, filesystem type, and partition type.
+    /// - Image file metadata (sizes, SHA384 hash, path).
+    /// - Optional verity metadata when present.
+    ///
+    /// The test runs two scenarios: one without verity data and one with verity
+    /// metadata to ensure both cases are handled correctly.
     #[test]
     fn test_cosi_image_to_os_image_filesystem() {
         let data = "some data";
@@ -1000,6 +1044,17 @@ mod tests {
         );
     }
 
+    /// Creates a mock COSI instance for testing filesystem-related methods.
+    ///
+    /// This helper function builds a minimal `Cosi` struct with mock images stored
+    /// in an in-memory buffer. Each image entry is created from the provided tuple
+    /// containing mount point, filesystem type, partition type, and raw file data.
+    /// The data is written sequentially to a buffer, and the corresponding entry
+    /// offsets are tracked for the cache.
+    ///
+    /// Note: The images are stored uncompressed, making this helper unsuitable for
+    /// testing methods that require zstd decompression (use dedicated test setup
+    /// for those cases).
     fn sample_verity_cosi_file(
         mock_images: &[(&str, OsImageFileSystemType, DiscoverablePartitionType, &str)],
     ) -> Cosi {
@@ -1053,6 +1108,14 @@ mod tests {
         }
     }
 
+    /// Tests the [`Cosi::esp_filesystem`] method for retrieving the ESP partition.
+    ///
+    /// Validates that:
+    /// - An error is returned when no ESP filesystem exists in the COSI.
+    /// - The correct ESP filesystem is returned when present among multiple images.
+    ///
+    /// The test uses a mock COSI file with multiple filesystem images (ESP, /boot,
+    /// /, /var) and verifies that only the ESP partition is returned.
     #[test]
     fn test_esp_filesystem() {
         // Test with an empty COSI file.
@@ -1135,6 +1198,11 @@ mod tests {
         assert_eq!(esp.verity.is_none(), expected.verity.is_none());
     }
 
+    /// Tests the [`Cosi::available_mount_points`] method.
+    ///
+    /// Verifies that the method returns an iterator over all non-ESP mount points
+    /// defined in the COSI metadata. ESP partitions are excluded since they have
+    /// a separate accessor method.
     #[test]
     fn test_available_mount_points() {
         let mock_images = [
@@ -1175,6 +1243,12 @@ mod tests {
         assert_eq!(mount_points, expected);
     }
 
+    /// Tests the [`Cosi::filesystems`] method for iterating over regular filesystems.
+    ///
+    /// Verifies that the method returns an iterator over all non-ESP filesystem
+    /// images, correctly converting them to `OsImageFileSystem` structures. The
+    /// test uses a mock COSI with ESP and regular partitions, confirming that
+    /// only the regular filesystems are returned and all metadata is preserved.
     #[test]
     fn test_filesystems() {
         let mock_images = [
@@ -1241,6 +1315,17 @@ mod tests {
         }
     }
 
+    /// Tests the [`Cosi::get_file_reader`] method for lazy file access.
+    ///
+    /// This method implements lazy loading of COSI archive entries, caching
+    /// file locations as they are discovered. The test validates:
+    /// 1. Reading a file already present in the entry cache returns correct content.
+    /// 2. Reading an uncached file triggers archive scanning and caches the entry.
+    /// 3. Nested file paths are correctly resolved.
+    /// 4. Requesting a non-existent file returns an appropriate error.
+    ///
+    /// The test creates a tarball with mock files, pre-populates the cache with
+    /// only the first entry, then exercises all code paths.
     #[test]
     fn test_get_file_reader() {
         env_logger::builder()
@@ -1358,6 +1443,18 @@ mod tests {
         }
     }
 
+    /// Tests [`Cosi::stream_image`] and [`Cosi::get_file_data`] for reading compressed images.
+    ///
+    /// These methods handle zstd-compressed image files in COSI archives, performing
+    /// decompression and integrity validation. The test validates:
+    /// 1. `stream_image` correctly decompresses data and writes to a provided buffer.
+    /// 2. `get_file_data` returns the same decompressed content.
+    /// 3. Size mismatch between declared and actual uncompressed size is detected.
+    /// 4. Hash mismatch between declared and actual compressed data hash is detected.
+    /// 5. Non-existent files produce appropriate errors.
+    ///
+    /// The test creates zstd-compressed data, packages it in a tarball, and exercises
+    /// both success and error paths.
     #[test]
     fn test_stream_image_and_get_file_data() {
         use zstd::stream::encode_all;
@@ -1506,6 +1603,15 @@ mod tests {
         }
     }
 
+    /// Tests [`Cosi::populate_gpt_data`] for parsing GPT partition tables.
+    ///
+    /// For COSI >= 1.2, the archive may contain GPT partition table data that needs
+    /// to be parsed for verity and partition metadata. This test:
+    /// 1. Creates a valid GPT disk image in memory with a protective MBR and one partition.
+    /// 2. Compresses the primary GPT region with zstd.
+    /// 3. Packages it in a COSI-like tarball with appropriate metadata.
+    /// 4. Verifies that `populate_gpt_data` successfully parses the GPT.
+    /// 5. Confirms the parsed partition table contains the expected partition.
     #[test]
     fn test_populate_gpt_data() {
         use gpt::mbr::ProtectiveMBR;
@@ -1659,6 +1765,11 @@ mod tests {
         );
     }
 
+    /// Tests [`Cosi::populate_gpt_data`] error handling when disk info is missing.
+    ///
+    /// For COSI >= 1.2, disk metadata is required to locate GPT data. This test
+    /// verifies that calling `populate_gpt_data` on a COSI instance without
+    /// `disk` metadata returns an appropriate error message.
     #[test]
     fn test_populate_gpt_data_missing_disk_info() {
         env_logger::builder()
@@ -1698,6 +1809,11 @@ mod tests {
         );
     }
 
+    /// Tests [`Cosi::populate_gpt_data`] error handling when GPT regions are empty.
+    ///
+    /// Even when disk metadata is present, the `gpt_regions` array must contain
+    /// at least a `PrimaryGpt` entry. This test verifies that an empty
+    /// `gpt_regions` array produces an appropriate error.
     #[test]
     fn test_populate_gpt_data_missing_gpt_regions() {
         use metadata::{DiskInfo, PartitionTableType};
