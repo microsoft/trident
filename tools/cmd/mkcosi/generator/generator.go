@@ -135,7 +135,7 @@ func CosiFromImage(imagePath string, arch metadata.OsArchitecture) (*cosi.Cosi, 
 			LbaSize: parsedGPT.LBASize,
 		},
 		Compression: &metadata.Compression{
-			WindowSize: DefaultZstdWindowLog,
+			MaxWindowLog: DefaultZstdWindowLog,
 		},
 		Bootloader: metadata.Bootloader{
 			Type: metadata.BootloaderTypeGrub,

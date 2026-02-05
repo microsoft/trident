@@ -69,7 +69,7 @@ type SystemDBootEntry struct {
 
 type Compression struct {
 	// The power-of-two exponent for the ZSTD window size (e.g. 30 for 1 GiB).
-	WindowSize uint32 `json:"windowSize"`
+	MaxWindowLog uint32 `json:"maxWindowLog"`
 }
 
 type DiskType string
