@@ -433,9 +433,11 @@ _Notes:_
 - **[1]** The `windowLog` is the "Maximum allowed back-reference distance,
   expressed as power of 2" (See: [zstd
   manual](https://facebook.github.io/zstd/zstd_manual.html)) used during
-  compression of a file. The writer MUST populate this field with the maximum
-  WindowLog exponent value used across all images in the COSI file to guarantee
-  successful decompression of all images by readers.
+  compression of a file. This value is the exponent (e.g., `windowLog = 30`
+  means a window size of `2^30 = 1 GiB`), not the window size in bytes itself.
+  The writer MUST populate `maxWindowLog` with the maximum `windowLog` value
+  (the exponent) used across all images in the COSI file to guarantee successful
+  decompression of all images by readers.
 
 #### Samples
 
@@ -601,6 +603,9 @@ making them invalid JSON. They are provided for illustration purposes only.
             },
             // More regions...
         ]
+    },
+    "compression": {
+        "windowSize": 22
     }
 }
 ```
