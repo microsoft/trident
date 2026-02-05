@@ -61,7 +61,7 @@ fn main() -> Result<()> {
 
     let os_image =
         OsImage::load(&mut image_source, timeout).unstructured("Failed to load COSI file")?;
-    println!("COSI file read successfully!");
+    info!("COSI file read successfully!");
     println!("{}", os_image.metadata_sha384());
 
     Ok(())
