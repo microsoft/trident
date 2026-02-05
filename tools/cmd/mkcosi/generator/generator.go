@@ -228,14 +228,14 @@ func extractAndCompressGPTRegion(file *os.File, parsedGPT *gpt.ParsedGPT, output
 	}
 
 	// Compress and write to file
-	outputPath := filepath.Join(outputDir, "primary-gpt.rawzst")
+	outputPath := filepath.Join(outputDir, "primary-gpt.raw.zst")
 	compressedSize, sha384Hash, err := compressDataToFile(gptData, outputPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compress GPT region: %w", err)
 	}
 
 	return &metadata.ImageFile{
-		Path:             "images/primary-gpt.rawzst",
+		Path:             "images/primary-gpt.raw.zst",
 		CompressedSize:   compressedSize,
 		UncompressedSize: uint64(len(gptData)),
 		Sha384:           sha384Hash,
@@ -265,14 +265,14 @@ func extractAndCompressPartition(file *os.File, partition *gpt.PartitionEntry, l
 	}
 
 	// Compress the (possibly shrunk) partition
-	outputPath := filepath.Join(outputDir, fmt.Sprintf("partition-%d.rawzst", partNumber))
+	outputPath := filepath.Join(outputDir, fmt.Sprintf("partition-%d.raw.zst", partNumber))
 	compressedSize, sha384Hash, err := compressFileRegionToFile(rawPartPath, int64(shrunkSize), outputPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compress partition: %w", err)
 	}
 
 	return &metadata.ImageFile{
-		Path:             fmt.Sprintf("images/partition-%d.rawzst", partNumber),
+		Path:             fmt.Sprintf("images/partition-%d.raw.zst", partNumber),
 		CompressedSize:   compressedSize,
 		UncompressedSize: shrunkSize,
 		Sha384:           sha384Hash,

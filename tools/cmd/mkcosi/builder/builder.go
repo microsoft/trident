@@ -31,7 +31,7 @@ func BuildCosi(output io.Writer, cosiMetadata *metadata.MetadataJson) error {
 	// Add the cosi-marker file as the first file in the tarball.
 	err = addFile(tw, "cosi-marker", 0, nil)
 	if err != nil {
-		return fmt.Errorf("failed to add metadata file: %w", err)
+		return fmt.Errorf("failed to add cosi-marker file: %w", err)
 	}
 
 	err = addFile(tw, "metadata.json", uint64(len(marshalledMetadata)), bytes.NewReader(marshalledMetadata))
@@ -39,17 +39,36 @@ func BuildCosi(output io.Writer, cosiMetadata *metadata.MetadataJson) error {
 		return fmt.Errorf("failed to add metadata file: %w", err)
 	}
 
-	for _, img := range cosiMetadata.Images {
+	addedFiles := make(map[string]struct{})
 
-		err = addImage(tw, &img.Image)
+	for _, entry := range cosiMetadata.Disk.GptRegions {
+		err = addImage(tw, &entry.Image)
 		if err != nil {
-			return fmt.Errorf("failed to add image file: %w", err)
+			return fmt.Errorf("failed to add disk image file: %w", err)
+		}
+
+		addedFiles[entry.Image.Path] = struct{}{}
+	}
+
+	// Do another pass over the filesystem images to add any additional files
+	// referenced by the metadata that weren't already added as part of the disk
+	// images. This shouldn't generally happen for a COSI file built from one
+	// disk.
+	for _, img := range cosiMetadata.Images {
+		if _, alreadyAdded := addedFiles[img.Image.Path]; !alreadyAdded {
+			err = addImage(tw, &img.Image)
+			if err != nil {
+				return fmt.Errorf("failed to add image file: %w", err)
+			}
 		}
 
 		if img.Verity != nil {
-			err = addImage(tw, &img.Verity.Image)
-			if err != nil {
-				return fmt.Errorf("failed to add verity file: %w", err)
+			if _, alreadyAdded := addedFiles[img.Verity.Image.Path]; !alreadyAdded {
+				err = addImage(tw, &img.Verity.Image)
+				if err != nil {
+					return fmt.Errorf("failed to add verity file: %w", err)
+				}
+				addedFiles[img.Verity.Image.Path] = struct{}{}
 			}
 		}
 	}
