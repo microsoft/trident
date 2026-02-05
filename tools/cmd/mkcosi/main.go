@@ -14,6 +14,7 @@ type CLI struct {
 	InsertTemplate  cmd.InsertTemplate  `cmd:"" help:"Insert a Host Configuration template into a COSI file."`
 	RandomizeFsUuid cmd.RandomizeFsUuid `cmd:"" help:"Randomize the UUID of the specified filesystems in a COSI file."`
 	ReadMetadata    cmd.ReadMetadata    `cmd:"" help:"Read metadata from a COSI file."`
+	Serve           cmd.ServeCmd        `cmd:"" help:"Serve a COSI file over HTTP."`
 	ForceColor      bool                `help:"Force color output." short:"c"`
 	Trace           bool                `help:"Enable trace logging." short:"t"`
 }
