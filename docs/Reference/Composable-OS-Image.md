@@ -71,8 +71,8 @@ the root of the tar file. If it were extracted with a standard `tar` invocation,
 the metadata file would be placed in the current directory. File names in the
 tar metadata MUST NOT have any leading characters such as `./` or `/`.
 
-All files in the tar file MUST have unique paths in the archive. Two paths are
-considered to be unique if their path strings are identical (case sensitive).
+All files in the tar file MUST have unique paths in the archive. Path
+uniqueness is determined by case-sensitive string comparison.
 
 The first entry of the tar file MUST be a regular file named `cosi-marker` of
 size zero. This file serves as an identifier for the COSI format. See
