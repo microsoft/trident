@@ -297,7 +297,7 @@ mod tests {
             .mock("POST", "/slow")
             .with_status(200)
             .with_body_from_request(|_| {
-                std::thread::sleep(Duration::from_millis(2000));
+                std::thread::sleep(Duration::from_millis(1000));
                 b"slow-response".to_vec()
             })
             .expect(1)
@@ -317,7 +317,7 @@ mod tests {
 
         // First request: a slow response + short timeout forces reqwest to return an error.
         // The timeout (100ms) must be long enough for the request to be sent to the server,
-        // but short enough to expire before the mock's 200ms response delay completes.
+        // but short enough to expire before the mock's 1s response delay completes.
         sender
             .send(UploadData {
                 url: Url::parse(&server.url()).unwrap().join("/slow").unwrap(),
