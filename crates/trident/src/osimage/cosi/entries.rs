@@ -74,7 +74,7 @@ impl CosiEntries {
 /// a `CosiEntries` instance, calculating the last entry end offset
 /// automatically.
 ///
-/// NOTE: FUNCTION MAY PANIC!THIS IS ONLY USED IN TESTS TO SIMPLIFY SETUP.
+/// NOTE: FUNCTION MAY PANIC! THIS IS ONLY USED IN TESTS TO SIMPLIFY SETUP.
 #[cfg(test)]
 impl FromIterator<(PathBuf, CosiEntry)> for CosiEntries {
     fn from_iter<I: IntoIterator<Item = (PathBuf, CosiEntry)>>(iter: I) -> Self {
