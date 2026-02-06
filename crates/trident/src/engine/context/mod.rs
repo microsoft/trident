@@ -307,7 +307,7 @@ impl EngineContext {
 
     /// Returns the zstd max window log required for decompression of files
     /// coming from the OS image, if available.
-    pub(crate) fn image_zstd_max_log_window(&self) -> Option<u32> {
+    pub(crate) fn image_zstd_max_window_log(&self) -> Option<u32> {
         self.image
             .as_ref()?
             .zstd_decompression_parameters()

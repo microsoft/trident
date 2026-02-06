@@ -196,7 +196,7 @@ where
     let computed_hash = image_streamer::stream_zstd_and_hash(
         reader,
         &temp_image_path,
-        ctx.image_zstd_max_log_window(),
+        ctx.image_zstd_max_window_log(),
     )
     .context(format!("Failed to stream ESP image from {source}"))?;
 

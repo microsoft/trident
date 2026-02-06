@@ -247,7 +247,7 @@ fn deploy_os_image_file(
     let computed_sha384 = image_streamer::stream_zstd_and_hash(
         stream,
         &block_device_path,
-        ctx.image_zstd_max_log_window(),
+        ctx.image_zstd_max_window_log(),
     )
     .context(format!(
         "Failed to stream image to block device '{id}' at '{}'",
