@@ -213,6 +213,17 @@ impl OsImage {
             OsImageInner::Mock(_mock) => Ok(None),
         }
     }
+
+    /// Returns decompression parameters for images with zstd compressed files, if available.
+    pub(crate) fn zstd_decompression_parameters(&self) -> Option<ZstdDecompressionParameters> {
+        match &self.0 {
+            OsImageInner::Cosi(cosi) => Some(ZstdDecompressionParameters {
+                max_window_log: cosi.metadata.compression.as_ref().map(|c| c.max_window_log),
+            }),
+            #[cfg(test)]
+            OsImageInner::Mock(_mock) => None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -326,6 +337,13 @@ impl std::fmt::Debug for OsImageFile {
             .field("uncompressed_size", &self.uncompressed_size)
             .finish()
     }
+}
+
+/// Contains information about how to decompress an image
+pub(crate) struct ZstdDecompressionParameters {
+    /// The max window log parameter needed to decompress the image, if it is
+    /// present.
+    pub max_window_log: Option<u32>,
 }
 
 #[cfg(test)]

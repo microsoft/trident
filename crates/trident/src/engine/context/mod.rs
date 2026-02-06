@@ -304,6 +304,15 @@ impl EngineContext {
             "is_uki() called without it being set",
         ))
     }
+
+    /// Returns the zstd max window log required for decompression of files
+    /// coming from the OS image, if available.
+    pub(crate) fn image_zstd_max_log_window(&self) -> Option<u32> {
+        self.image
+            .as_ref()?
+            .zstd_decompression_parameters()
+            .and_then(|p| p.max_window_log)
+    }
 }
 
 #[cfg(test)]
