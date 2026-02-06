@@ -6,6 +6,9 @@ publish = false
 rust-version = "1.85.0"
 license = "MIT"
 
+[[bin]]
+name = "cosi-reader"
+path = "bin/cosi_reader.rs"
 
 [dependencies]
 anyhow = { workspace = true }
@@ -19,6 +22,7 @@ duct = { workspace = true }
 enumflags2 = { workspace = true }
 env_logger = { workspace = true }
 glob = { workspace = true }
+gpt = { workspace = true }
 humantime = { workspace = true }
 lazy_static = { workspace = true }
 libc = { workspace = true }
