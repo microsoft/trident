@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     io::{self, BufReader, Cursor, Read, Seek, SeekFrom, Write},
     ops::ControlFlow,
     path::{Path, PathBuf},
@@ -24,17 +23,19 @@ use crate::io_utils::{
     hashing_reader::{HashingReader, HashingReader384},
 };
 
+use super::{OsImageFile, OsImageFileSystem, OsImageVerityHash};
+
 mod derived_hc;
+mod entries;
 mod error;
 mod metadata;
 mod validation;
 
+use entries::{CosiEntries, CosiEntry};
 use metadata::{
     CosiMetadata, CosiMetadataVersion, GptRegionType, ImageFile, KnownMetadataVersion,
     MetadataVersion,
 };
-
-use super::{OsImageFile, OsImageFileSystem, OsImageVerityHash};
 
 /// Path to the COSI metadata file. Part of the COSI specification.
 const COSI_METADATA_PATH: &str = "metadata.json";
@@ -69,14 +70,7 @@ pub(super) struct Cosi {
     /// files are read from the COSI file, starting with the metadata file. This
     /// allows us to avoid reading the entire COSI archive at once, while still
     /// allowing for efficient access to files after they've been read once.
-    entries: HashMap<PathBuf, CosiEntry>,
-}
-
-/// Entry inside the COSI file.
-#[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
-struct CosiEntry {
-    offset: u64,
-    size: u64,
+    entries: CosiEntries,
 }
 
 impl Cosi {
@@ -133,9 +127,10 @@ impl Cosi {
     /// section with a GPT region.
     pub(super) fn gpt(&mut self) -> Result<Option<&GptDisk<impl DiskDevice>>, Error> {
         if self.gpt.is_none() {
-            if self.metadata.version < KnownMetadataVersion::V1_2 {
-                bail!("GPT data is not available for COSI versions below 1.2");
-            }
+            ensure!(
+                self.metadata.version >= KnownMetadataVersion::V1_2,
+                "GPT data is not available for COSI versions below 1.2"
+            );
 
             self.populate_gpt_data()
                 .context("Failed to populate GPT data for COSI version >= 1.2")?;
@@ -202,13 +197,7 @@ impl Cosi {
         // unknown entries must come _after_ any entries we've already seen, so
         // we can start reading after the last known entry.
 
-        let next_header = self
-            .entries
-            .values()
-            .map(|entry| entry.offset + entry.size)
-            .max()
-            .unwrap_or(0)
-            .next_multiple_of(512);
+        let next_header = self.entries.next_entry_offset();
 
         let mut reader = self
             .reader
@@ -231,7 +220,7 @@ impl Cosi {
             .context("Failed to read COSI entries")?
         {
             let (entry_path, entry) = entry.context("Failed to read COSI entry")?;
-            self.entries.insert(entry_path.clone(), entry);
+            self.entries.register(&entry_path, entry);
             if entry_path == path.as_ref() {
                 return self
                     .reader
@@ -392,11 +381,11 @@ fn cosi_image_to_os_image_filesystem(image: &metadata::Image) -> OsImageFileSyst
 fn read_entries_until_file<R: Read + Seek>(
     file_name: impl AsRef<Path>,
     cosi_reader: R,
-) -> Result<HashMap<PathBuf, CosiEntry>, Error> {
-    let mut entries = HashMap::new();
+) -> Result<CosiEntries, Error> {
+    let mut entries = CosiEntries::default();
     for entry in read_entries(&mut Archive::new(cosi_reader))? {
         let (path, entry) = entry?;
-        entries.insert(path.clone(), entry);
+        entries.register(&path, entry);
         if path == file_name.as_ref() {
             break;
         }
@@ -468,7 +457,7 @@ fn read_entries_with_offset<'a, R: Read + Seek + 'a>(
 /// - Populates metadata with the actual content location of the images.
 fn read_cosi_metadata(
     cosi_reader: &FileReader,
-    entries: &HashMap<PathBuf, CosiEntry>,
+    entries: &CosiEntries,
     expected_sha384: ImageSha384,
 ) -> Result<(CosiMetadata, Sha384Hash), Error> {
     trace!(
@@ -675,7 +664,7 @@ mod tests {
 
         // Read the entries. Use a Cursor as a file stand-in. (Cursor implements Read + Seek)
         let mut archive = Archive::new(Cursor::new(&cosi_file));
-        let entries: HashMap<PathBuf, _> = super::read_entries(&mut archive)
+        let entries: CosiEntries = super::read_entries(&mut archive)
             .unwrap()
             .map(|e| {
                 let e = e.unwrap();
@@ -692,7 +681,7 @@ mod tests {
 
         // Check that each entry matches the expected data.
         for (path, data) in sample_data.iter() {
-            let entry = entries.get(Path::new(path)).unwrap();
+            let entry = entries.get(path).unwrap();
             assert_eq!(entry.size, data.len() as u64, "Incorrect entry size");
             let read_data = cosi_file
                 .get(entry.offset as usize..(entry.offset + entry.size) as usize)
@@ -800,7 +789,7 @@ mod tests {
                 },
             )
         }))
-        .collect::<HashMap<_, _>>();
+        .collect();
 
         // Read the metadata.
         let metadata = read_cosi_metadata(
@@ -1069,7 +1058,7 @@ mod tests {
     ) -> Cosi {
         // Reader data
         let mut data = Cursor::new(Vec::<u8>::new());
-        let mut entries = HashMap::new();
+        let mut entries = CosiEntries::default();
         let mut images = Vec::new();
 
         for (mntpt, fs_type, pt_type, file_data) in mock_images.iter() {
@@ -1078,7 +1067,7 @@ mod tests {
                 offset: data.position(),
                 size: file_data.len() as u64,
             };
-            entries.insert(PathBuf::from(&filename), entry);
+            entries.register(&filename, entry);
 
             data.write_all(file_data.as_bytes()).unwrap();
 
@@ -1143,7 +1132,7 @@ mod tests {
             },
             reader: FileReader::Buffer(Cursor::new(Vec::<u8>::new())),
             metadata_sha384: Sha384Hash::from("0".repeat(96)),
-            entries: HashMap::new(),
+            entries: CosiEntries::default(),
             gpt: None,
         };
 
@@ -1367,12 +1356,12 @@ mod tests {
 
         // Pre-populate entries with only the first file to test both cached
         // and uncached scenarios.
-        let mut entries = HashMap::new();
+        let mut entries = CosiEntries::default();
         {
             let mut archive = Archive::new(Cursor::new(&tarball));
             for entry in read_entries(&mut archive).unwrap() {
                 let (path, entry) = entry.unwrap();
-                entries.insert(path.clone(), entry);
+                entries.register(&path, entry);
                 // Only cache the first file.
                 if path == Path::new("file_a.txt") {
                     break;
@@ -1497,7 +1486,7 @@ mod tests {
         let reader = FileReader::new(&url, Duration::from_secs(5)).unwrap();
 
         // Read entries from the tarball to populate the cache.
-        let entries: HashMap<PathBuf, CosiEntry> = {
+        let entries = {
             let mut archive = Archive::new(Cursor::new(&tarball));
             read_entries(&mut archive)
                 .unwrap()
@@ -1704,7 +1693,7 @@ mod tests {
         let reader = FileReader::new(&url, Duration::from_secs(5)).unwrap();
 
         // Read entries from the tarball.
-        let entries: HashMap<PathBuf, CosiEntry> = {
+        let entries = {
             let mut archive = Archive::new(Cursor::new(&tarball));
             read_entries(&mut archive)
                 .unwrap()
@@ -1803,7 +1792,7 @@ mod tests {
             },
             reader: FileReader::Buffer(Cursor::new(Vec::<u8>::new())),
             metadata_sha384: Sha384Hash::from("0".repeat(96)),
-            entries: HashMap::new(),
+            entries: CosiEntries::default(),
             gpt: None,
         };
 
@@ -1857,7 +1846,7 @@ mod tests {
             },
             reader: FileReader::Buffer(Cursor::new(Vec::<u8>::new())),
             metadata_sha384: Sha384Hash::from("0".repeat(96)),
-            entries: HashMap::new(),
+            entries: CosiEntries::default(),
             gpt: None,
         };
 
@@ -1869,6 +1858,212 @@ mod tests {
             err_msg.contains("GPT regions not defined"),
             "Error should mention missing GPT regions: {}",
             err_msg
+        );
+    }
+
+    /// Tests [`Cosi::gpt`] for lazy-loading and accessing GPT partition data.
+    ///
+    /// The `gpt()` method provides lazy access to the GPT partition table for
+    /// COSI >= 1.2 files. This test validates:
+    /// 1. GPT data is successfully loaded on first access.
+    /// 2. The returned GPT contains the expected partition.
+    /// 3. Subsequent calls return the cached GPT without re-parsing.
+    ///
+    /// The test creates a valid GPT disk image in memory, compresses it with zstd,
+    /// packages it in a tarball, and verifies the `gpt()` method correctly loads
+    /// and caches the partition table.
+    #[test]
+    fn test_cosi_gpt_lazy_loading() {
+        use gpt::mbr::ProtectiveMBR;
+        use metadata::{DiskInfo, GptDiskRegion, PartitionTableType};
+        use zstd::stream::encode_all;
+
+        env_logger::builder()
+            .filter_level(log::LevelFilter::Trace)
+            .is_test(true)
+            .try_init()
+            .ok();
+
+        // Create a GPT disk image in memory (same setup as test_populate_gpt_data).
+        let disk_size: u64 = 1024 * 1024;
+        let lba_size: u32 = 512;
+        let mut disk_buffer = vec![0u8; disk_size as usize];
+
+        // Write protective MBR.
+        {
+            let mut cursor = Cursor::new(&mut disk_buffer[..]);
+            let mbr = ProtectiveMBR::with_lb_size(
+                u32::try_from((disk_size / lba_size as u64) - 1).unwrap_or(0xFFFFFFFF),
+            );
+            mbr.overwrite_lba0(&mut cursor).unwrap();
+        }
+
+        // Initialize and write GPT with a test partition.
+        {
+            let cursor = Cursor::new(&mut disk_buffer[..]);
+            let mut gpt_disk = GptConfig::new()
+                .writable(true)
+                .logical_block_size(LogicalBlockSize::Lb512)
+                .create_from_device(cursor, None)
+                .expect("Failed to create GPT disk");
+
+            gpt_disk
+                .add_partition(
+                    "gpt_test_partition",
+                    64 * 1024,
+                    gpt::partition_types::LINUX_FS,
+                    0,
+                    None,
+                )
+                .expect("Failed to add partition");
+
+            gpt_disk.write().expect("Failed to write GPT");
+        }
+
+        // Extract and compress the primary GPT region.
+        let primary_gpt_size: u64 = 34 * lba_size as u64;
+        let raw_gpt_data = disk_buffer[..primary_gpt_size as usize].to_vec();
+        let compressed_gpt =
+            encode_all(raw_gpt_data.as_slice(), 3).expect("Failed to compress GPT data");
+        let compressed_hash = format!("{:x}", Sha384::digest(&compressed_gpt));
+
+        // Create tarball and temp file.
+        let gpt_file_path = "gpt_primary.zst";
+        let tarball =
+            generate_test_tarball([(gpt_file_path, compressed_gpt.as_slice())].into_iter());
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(&tarball).unwrap();
+
+        let url = Url::from_file_path(temp_file.path()).unwrap();
+        let reader = FileReader::new(&url, Duration::from_secs(5)).unwrap();
+
+        let entries = {
+            let mut archive = Archive::new(Cursor::new(&tarball));
+            read_entries(&mut archive)
+                .unwrap()
+                .map(|e| e.unwrap())
+                .collect()
+        };
+
+        let gpt_image_file = ImageFile {
+            path: PathBuf::from(gpt_file_path),
+            compressed_size: compressed_gpt.len() as u64,
+            uncompressed_size: raw_gpt_data.len() as u64,
+            sha384: Sha384Hash::from(compressed_hash),
+        };
+
+        let disk_info = DiskInfo {
+            size: disk_size,
+            lba_size,
+            partition_table_type: PartitionTableType::Gpt,
+            gpt_regions: vec![GptDiskRegion {
+                image: gpt_image_file,
+                region_type: GptRegionType::PrimaryGpt,
+            }],
+        };
+
+        let mut cosi = Cosi {
+            source: url,
+            metadata: CosiMetadata {
+                version: KnownMetadataVersion::V1_2.as_version(),
+                id: Some(Uuid::new_v4()),
+                os_arch: SystemArchitecture::Amd64,
+                os_release: OsRelease::default(),
+                os_packages: None,
+                images: vec![],
+                bootloader: None,
+                disk: Some(disk_info),
+                compression: Default::default(),
+            },
+            reader,
+            metadata_sha384: Sha384Hash::from("0".repeat(96)),
+            entries,
+            gpt: None,
+        };
+
+        // Verify GPT is not loaded initially.
+        assert!(cosi.gpt.is_none(), "GPT should not be pre-loaded");
+
+        // First call to gpt() should load the GPT.
+        let gpt_result = cosi.gpt();
+        assert!(gpt_result.is_ok(), "gpt() should succeed for COSI >= 1.2");
+
+        let gpt = gpt_result.unwrap();
+        assert!(gpt.is_some(), "GPT should be present after gpt() call");
+
+        let gpt_disk = gpt.unwrap();
+        assert_eq!(gpt_disk.partitions().len(), 1, "Should have one partition");
+
+        let (_, partition) = gpt_disk.partitions().iter().next().unwrap();
+        assert_eq!(
+            partition.name, "gpt_test_partition",
+            "Partition name should match"
+        );
+
+        // Verify GPT is now cached.
+        assert!(cosi.gpt.is_some(), "GPT should be cached after first call");
+
+        // Second call should return cached GPT (no re-parsing).
+        let gpt_result2 = cosi.gpt();
+        assert!(gpt_result2.is_ok(), "Second gpt() call should succeed");
+        assert!(
+            gpt_result2.unwrap().is_some(),
+            "Cached GPT should still be present"
+        );
+    }
+
+    /// Tests [`Cosi::gpt`] error handling for COSI versions below 1.2.
+    ///
+    /// GPT partition data is only available in COSI >= 1.2. This test verifies
+    /// that calling `gpt()` on a COSI 1.0 or 1.1 file returns an appropriate error
+    /// indicating the version requirement.
+    #[test]
+    fn test_cosi_gpt_version_too_low() {
+        env_logger::builder()
+            .filter_level(log::LevelFilter::Trace)
+            .is_test(true)
+            .try_init()
+            .ok();
+
+        // Create a COSI instance with version 1.0 (below 1.2).
+        let mut cosi = Cosi {
+            source: Url::parse("mock://").unwrap(),
+            metadata: CosiMetadata {
+                version: KnownMetadataVersion::V1_0.as_version(),
+                id: Some(Uuid::new_v4()),
+                os_arch: SystemArchitecture::Amd64,
+                os_release: OsRelease::default(),
+                os_packages: None,
+                images: vec![],
+                bootloader: None,
+                disk: None,
+                compression: Default::default(),
+            },
+            reader: FileReader::Buffer(Cursor::new(Vec::<u8>::new())),
+            metadata_sha384: Sha384Hash::from("0".repeat(96)),
+            entries: CosiEntries::default(),
+            gpt: None,
+        };
+
+        // Calling gpt() on COSI < 1.2 should fail.
+        let result = cosi.gpt();
+        assert!(result.is_err(), "gpt() should fail for COSI < 1.2");
+
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("below 1.2"),
+            "Error should mention version requirement: {}",
+            err_msg
+        );
+
+        cosi.metadata.version = KnownMetadataVersion::V1_1.as_version();
+        let result2 = cosi.gpt();
+        assert!(result2.is_err(), "gpt() should fail for COSI 1.1 as well");
+        let err_msg2 = result2.unwrap_err().to_string();
+        assert!(
+            err_msg2.contains("below 1.2"),
+            "Error should mention version requirement: {}",
+            err_msg2
         );
     }
 }
