@@ -33,14 +33,14 @@ impl CosiEntries {
     /// end offset if necessary. It will ensure that there are no duplicate
     /// entries for the same path, as that would indicate a malformed COSI file.
     pub fn register(&mut self, path: impl AsRef<Path>, entry: CosiEntry) -> Result<(), Error> {
-        self.last_entry_end = self.last_entry_end.max(entry.end());
         ensure!(
-            self.entries
-                .insert(path.as_ref().to_path_buf(), entry)
-                .is_none(),
+            !self.entries.contains_key(path.as_ref()),
             "Found multiple entries in COSI file with path: {:?}",
             path.as_ref()
         );
+
+        self.entries.insert(path.as_ref().to_path_buf(), entry);
+        self.last_entry_end = self.last_entry_end.max(entry.end());
 
         Ok(())
     }
@@ -442,11 +442,11 @@ mod tests {
             .to_string()
             .contains("Found multiple entries in COSI file with path"));
 
-        // Note: HashMap::insert replaces the value before returning the old one,
-        // so after the error, the new entry is in the map (not the original).
+        // The original entry should remain unchanged since `ensure!` returns
+        // early before the insert happens.
         assert_eq!(entries.len(), 1);
         let entry = entries.get("file.txt").unwrap();
-        assert_eq!(entry.offset, 512);
-        assert_eq!(entry.size, 200);
+        assert_eq!(entry.offset, 0);
+        assert_eq!(entry.size, 100);
     }
 }
