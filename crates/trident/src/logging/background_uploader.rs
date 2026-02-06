@@ -239,11 +239,10 @@ mod tests {
             .upload(&url, body.as_bytes().to_vec(), Duration::from_secs(2))
             .unwrap();
 
-        // Shutdown can discard queued items; give the background thread time to send.
-        std::thread::sleep(Duration::from_millis(100));
-        mock.assert();
-
+        // Drop uploader first to ensure the background thread finishes processing all queued
+        // uploads before asserting. The Drop impl waits for the thread to join.
         drop(uploader);
+        mock.assert();
     }
 
     #[test]
