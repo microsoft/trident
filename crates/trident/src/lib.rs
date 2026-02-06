@@ -629,7 +629,7 @@ impl Trident {
             sha384: ImageSha384::new(hash)?,
         };
 
-        let image = OsImage::load(&mut image_source, Duration::from_secs(10))
+        let mut image = OsImage::load(&mut image_source, Duration::from_secs(10))
             .message("Failed to download OS image")?;
 
         let mut config = image

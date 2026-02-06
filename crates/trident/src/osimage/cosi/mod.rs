@@ -139,15 +139,27 @@ impl Cosi {
         Ok(self.gpt.as_ref())
     }
 
-    /// Derives the storage and image section of a Host Configuration from this COSI file.
+    /// Derives the `image` and `storage` sections of the host configuration
+    /// from the COSI file. This requires COSI >= 1.2.
     pub(super) fn derive_host_configuration(
-        &self,
-        _target_disk: impl AsRef<Path>,
+        &mut self,
+        target_disk: impl AsRef<Path>,
     ) -> Result<HostConfiguration, Error> {
-        bail!(
-            "HostConfiguration derivation from COSI files is temporarily disabled \
-             (unimplemented; waiting on PR #478)."
+        ensure!(
+            self.metadata.version >= KnownMetadataVersion::V1_2,
+            "Host configuration derivation requires COSI version {} or higher, found {}",
+            KnownMetadataVersion::V1_2,
+            self.metadata.version
         );
+
+        // If we don't have GPT data, attempt to populate it from the disk metadata.
+        if self.gpt.is_none() {
+            self.populate_gpt_data()
+                .context("Failed to populate GPT data for COSI version >= 1.2")?;
+        }
+
+        self.derive_host_configuration_inner(target_disk)
+            .context("Failed to derive host configuration from COSI metadata and GPT data")
     }
 
     pub(super) fn read_images<F>(&self, mut f: F) -> Result<(), TridentError>
