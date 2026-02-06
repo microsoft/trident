@@ -635,7 +635,9 @@ impl Trident {
         let original_disk_size = image
             .disk_size()
             .structured(InvalidInputError::DeriveHostConfiguration)
-            .message("Image contains no information about the disk's original size.")?;
+            .message(
+                "Image does not contain disk metadata; streaming requires a COSI v1.2 or newer image with disk information.",
+            )?;
 
         let mut config = image
             .derive_host_configuration("/dev/sda") // Use /dev/sda as a placeholder.
