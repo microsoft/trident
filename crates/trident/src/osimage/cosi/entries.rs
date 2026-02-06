@@ -3,6 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use anyhow::{ensure, Error};
+
 /// Entry inside the COSI file.
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
 pub(super) struct CosiEntry {
@@ -28,10 +30,19 @@ pub(super) struct CosiEntries {
 
 impl CosiEntries {
     /// Registers a new entry in the COSI file. This will update the last entry
-    /// end offset if necessary.
-    pub fn register(&mut self, path: impl AsRef<Path>, entry: CosiEntry) {
-        self.last_entry_end = self.last_entry_end.max(entry.end());
+    /// end offset if necessary. It will ensure that there are no duplicate
+    /// entries for the same path, as that would indicate a malformed COSI file.
+    pub fn register(&mut self, path: impl AsRef<Path>, entry: CosiEntry) -> Result<(), Error> {
+        ensure!(
+            !self.entries.contains_key(path.as_ref()),
+            "Found multiple entries in COSI file with path: {:?}",
+            path.as_ref()
+        );
+
         self.entries.insert(path.as_ref().to_path_buf(), entry);
+        self.last_entry_end = self.last_entry_end.max(entry.end());
+
+        Ok(())
     }
 
     /// Retrieves an entry by its path.
@@ -61,16 +72,17 @@ impl CosiEntries {
 
 /// Allows collecting an iterator of `(PathBuf, CosiEntry)` tuples directly into
 /// a `CosiEntries` instance, calculating the last entry end offset
-/// automatically. Primarily used in tests where we want to create a CosiEntries
-/// instance from a simple list of entries without having to manually calculate
-/// the last entry end offset. In production code, entries should be registered
-/// using the `register` method to ensure the last entry end offset is updated
-/// correctly as entries are added.
+/// automatically.
+///
+/// NOTE: FUNCTION MAY PANIC! THIS IS ONLY USED IN TESTS TO SIMPLIFY SETUP.
+#[cfg(test)]
 impl FromIterator<(PathBuf, CosiEntry)> for CosiEntries {
     fn from_iter<I: IntoIterator<Item = (PathBuf, CosiEntry)>>(iter: I) -> Self {
         let mut entries = CosiEntries::default();
         for (path, entry) in iter {
-            entries.register(path, entry);
+            entries
+                .register(path, entry)
+                .expect("Failed to register COSI entry from iterator");
         }
         entries
     }
@@ -117,24 +129,28 @@ mod tests {
         let mut entries = CosiEntries::default();
 
         // Register first entry
-        entries.register(
-            "file1.txt",
-            CosiEntry {
-                offset: 0,
-                size: 100,
-            },
-        );
+        entries
+            .register(
+                "file1.txt",
+                CosiEntry {
+                    offset: 0,
+                    size: 100,
+                },
+            )
+            .unwrap();
         assert_eq!(entries.len(), 1);
         assert!(entries.contains_key("file1.txt"));
 
         // Register second entry - should update last_entry_end
-        entries.register(
-            "file2.txt",
-            CosiEntry {
-                offset: 512,
-                size: 200,
-            },
-        );
+        entries
+            .register(
+                "file2.txt",
+                CosiEntry {
+                    offset: 512,
+                    size: 200,
+                },
+            )
+            .unwrap();
         assert_eq!(entries.len(), 2);
         assert!(entries.contains_key("file2.txt"));
 
@@ -152,23 +168,27 @@ mod tests {
         let mut entries = CosiEntries::default();
 
         // Register a later entry first
-        entries.register(
-            "late.txt",
-            CosiEntry {
-                offset: 2048,
-                size: 100,
-            },
-        );
+        entries
+            .register(
+                "late.txt",
+                CosiEntry {
+                    offset: 2048,
+                    size: 100,
+                },
+            )
+            .unwrap();
         assert_eq!(entries.next_entry_offset(), 2560); // 2148 rounded up to 2560
 
         // Register an earlier entry - should NOT decrease last_entry_end
-        entries.register(
-            "early.txt",
-            CosiEntry {
-                offset: 0,
-                size: 50,
-            },
-        );
+        entries
+            .register(
+                "early.txt",
+                CosiEntry {
+                    offset: 0,
+                    size: 50,
+                },
+            )
+            .unwrap();
         assert_eq!(entries.next_entry_offset(), 2560); // Still 2560
     }
 
@@ -184,7 +204,7 @@ mod tests {
             offset: 512,
             size: 256,
         };
-        entries.register("test.txt", entry);
+        entries.register("test.txt", entry).unwrap();
 
         // Retrieve existing entry
         let retrieved = entries.get("test.txt");
@@ -204,13 +224,15 @@ mod tests {
     fn test_cosi_entries_get_nested_path() {
         let mut entries = CosiEntries::default();
 
-        entries.register(
-            "some/nested/path/file.txt",
-            CosiEntry {
-                offset: 0,
-                size: 100,
-            },
-        );
+        entries
+            .register(
+                "some/nested/path/file.txt",
+                CosiEntry {
+                    offset: 0,
+                    size: 100,
+                },
+            )
+            .unwrap();
 
         assert!(entries.get("some/nested/path/file.txt").is_some());
         assert!(entries.get("file.txt").is_none());
@@ -222,13 +244,15 @@ mod tests {
     fn test_cosi_entries_contains_key() {
         let mut entries = CosiEntries::default();
 
-        entries.register(
-            "exists.txt",
-            CosiEntry {
-                offset: 0,
-                size: 100,
-            },
-        );
+        entries
+            .register(
+                "exists.txt",
+                CosiEntry {
+                    offset: 0,
+                    size: 100,
+                },
+            )
+            .unwrap();
 
         assert!(entries.contains_key("exists.txt"));
         assert!(!entries.contains_key("missing.txt"));
@@ -247,36 +271,42 @@ mod tests {
         assert_eq!(entries.next_entry_offset(), 0);
 
         // Entry ending exactly on boundary (512 + 512 = 1024)
-        entries.register(
-            "aligned.txt",
-            CosiEntry {
-                offset: 512,
-                size: 512,
-            },
-        );
+        entries
+            .register(
+                "aligned.txt",
+                CosiEntry {
+                    offset: 512,
+                    size: 512,
+                },
+            )
+            .unwrap();
         assert_eq!(entries.next_entry_offset(), 1024);
 
         // Entry ending off-boundary should round up
         let mut entries = CosiEntries::default();
-        entries.register(
-            "unaligned.txt",
-            CosiEntry {
-                offset: 512,
-                size: 100,
-            },
-        );
+        entries
+            .register(
+                "unaligned.txt",
+                CosiEntry {
+                    offset: 512,
+                    size: 100,
+                },
+            )
+            .unwrap();
         // 512 + 100 = 612, rounded up to 1024
         assert_eq!(entries.next_entry_offset(), 1024);
 
         // Entry ending just past a boundary
         let mut entries = CosiEntries::default();
-        entries.register(
-            "test.txt",
-            CosiEntry {
-                offset: 0,
-                size: 513,
-            },
-        );
+        entries
+            .register(
+                "test.txt",
+                CosiEntry {
+                    offset: 0,
+                    size: 513,
+                },
+            )
+            .unwrap();
         // 513 rounded up to 1024
         assert_eq!(entries.next_entry_offset(), 1024);
     }
@@ -288,31 +318,37 @@ mod tests {
 
         assert_eq!(entries.len(), 0);
 
-        entries.register(
-            "a.txt",
-            CosiEntry {
-                offset: 0,
-                size: 10,
-            },
-        );
+        entries
+            .register(
+                "a.txt",
+                CosiEntry {
+                    offset: 0,
+                    size: 10,
+                },
+            )
+            .unwrap();
         assert_eq!(entries.len(), 1);
 
-        entries.register(
-            "b.txt",
-            CosiEntry {
-                offset: 512,
-                size: 20,
-            },
-        );
+        entries
+            .register(
+                "b.txt",
+                CosiEntry {
+                    offset: 512,
+                    size: 20,
+                },
+            )
+            .unwrap();
         assert_eq!(entries.len(), 2);
 
-        entries.register(
-            "c.txt",
-            CosiEntry {
-                offset: 1024,
-                size: 30,
-            },
-        );
+        entries
+            .register(
+                "c.txt",
+                CosiEntry {
+                    offset: 1024,
+                    size: 30,
+                },
+            )
+            .unwrap();
         assert_eq!(entries.len(), 3);
     }
 
@@ -372,22 +408,27 @@ mod tests {
         assert_eq!(entries.next_entry_offset(), 0);
     }
 
-    /// Tests that registering the same path twice overwrites the previous entry.
+    /// Tests that registering the same path twice results in an error.
     ///
-    /// The entry count should not increase, and the stored entry should be the
-    /// latest one registered.
+    /// The `register` method uses `ensure!` to verify that no duplicate paths
+    /// exist, returning an error if a path has already been registered.
     #[test]
-    fn test_cosi_entries_register_overwrite() {
+    fn test_cosi_entries_register_duplicate() {
         let mut entries = CosiEntries::default();
 
-        entries.register(
-            "file.txt",
-            CosiEntry {
-                offset: 0,
-                size: 100,
-            },
-        );
-        entries.register(
+        // First registration should succeed
+        entries
+            .register(
+                "file.txt",
+                CosiEntry {
+                    offset: 0,
+                    size: 100,
+                },
+            )
+            .unwrap();
+
+        // Second registration with the same path should fail
+        let result = entries.register(
             "file.txt",
             CosiEntry {
                 offset: 512,
@@ -395,10 +436,17 @@ mod tests {
             },
         );
 
-        assert_eq!(entries.len(), 1);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Found multiple entries in COSI file with path"));
 
+        // The original entry should remain unchanged since `ensure!` returns
+        // early before the insert happens.
+        assert_eq!(entries.len(), 1);
         let entry = entries.get("file.txt").unwrap();
-        assert_eq!(entry.offset, 512);
-        assert_eq!(entry.size, 200);
+        assert_eq!(entry.offset, 0);
+        assert_eq!(entry.size, 100);
     }
 }

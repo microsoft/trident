@@ -220,7 +220,7 @@ impl Cosi {
             .context("Failed to read COSI entries")?
         {
             let (entry_path, entry) = entry.context("Failed to read COSI entry")?;
-            self.entries.register(&entry_path, entry);
+            self.entries.register(&entry_path, entry)?;
             if entry_path == path.as_ref() {
                 return self
                     .reader
@@ -385,7 +385,7 @@ fn read_entries_until_file<R: Read + Seek>(
     let mut entries = CosiEntries::default();
     for entry in read_entries(&mut Archive::new(cosi_reader))? {
         let (path, entry) = entry?;
-        entries.register(&path, entry);
+        entries.register(&path, entry)?;
         if path == file_name.as_ref() {
             break;
         }
@@ -1067,7 +1067,7 @@ mod tests {
                 offset: data.position(),
                 size: file_data.len() as u64,
             };
-            entries.register(&filename, entry);
+            entries.register(&filename, entry).unwrap();
 
             data.write_all(file_data.as_bytes()).unwrap();
 
@@ -1361,7 +1361,7 @@ mod tests {
             let mut archive = Archive::new(Cursor::new(&tarball));
             for entry in read_entries(&mut archive).unwrap() {
                 let (path, entry) = entry.unwrap();
-                entries.register(&path, entry);
+                entries.register(&path, entry).unwrap();
                 // Only cache the first file.
                 if path == Path::new("file_a.txt") {
                     break;
