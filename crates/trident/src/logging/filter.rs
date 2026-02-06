@@ -27,6 +27,11 @@ where
         self
     }
 
+    #[cfg(test)]
+    pub fn into_inner(self) -> T {
+        self.inner
+    }
+
     pub fn with_global_filter(mut self, target: impl Into<String>, max_level: LevelFilter) -> Self {
         self.module_filters.push((target.into(), max_level));
         self

@@ -6,7 +6,6 @@ parameters:
       - arm64
       - amd64
 
-
 steps:
   - script: |
       set -eux
@@ -45,18 +44,22 @@ steps:
       version=$(echo $full_version | cut -d'-' -f1)
       prerelease=$(echo $full_version | cut -d'-' -f2-)
 
-      # Run docker build to create the RPMs
-      # CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN is populated by the CargoAuthenticate task
-      docker build -f packaging/docker/Dockerfile.full -t trident/trident-build:latest \
+      # Build RPMs and export only the artifact tarball (no image load/unpack).
+      # CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN is populated by the CargoAuthenticate task.
+      outdir="$(Build.SourcesDirectory)/_rpm_artifacts"
+      rm -rf "$outdir"
+      mkdir -p "$outdir"
+
+      docker buildx build -f packaging/docker/Dockerfile.full \
         --secret id=registry_token,env=CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN \
         --build-arg TRIDENT_VERSION="$full_version" \
         --build-arg RPM_VER="$version"\
         --build-arg RPM_REL="$prerelease"\
+        --target artifact \
+        --output type=local,dest="$outdir" \
         .
 
-      id=$(docker create trident/trident-build:latest) && \
-        docker cp -q $id:/work/trident-rpms.tar.gz . && \
-        docker rm -v $id
+      cp -f "$outdir/trident-rpms.tar.gz" ./trident-rpms.tar.gz
 
       mkdir -p $(ob_outputDirectory)
       tar -xzf trident-rpms.tar.gz -C $(ob_outputDirectory) --strip-components=3

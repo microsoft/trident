@@ -21,6 +21,10 @@ const (
 		"-v /etc/pki:/etc/pki:ro --pid host --ipc host "
 	TRIDENT_CONTAINER = "trident/trident:latest"
 	DOCKER_IMAGE_PATH = "/var/lib/trident/trident-container.tar.gz"
+
+	// MESSAGE logged by Trident before requesting a system reboot.
+	// Must match the message in crates/trident/src/reboot.rs
+	REBOOTING_LOG_MESSAGE = "Requesting reboot"
 )
 
 func BuildTridentContainerCommand(envVars []string) string {

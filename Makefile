@@ -183,19 +183,21 @@ bin/trident-azl3: build-azl3
 bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full packaging/systemd/*.service packaging/rpm/trident.spec artifacts/osmodifier packaging/selinux-policy-trident/* version-vars
 	$(eval CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN := $(shell az account get-access-token --query "join(' ', ['Bearer', accessToken])" --output tsv))
 	
-	@export CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN="$(CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN)" &&\
-		docker build -t trident/trident-build:latest \
+	@mkdir -p bin/
+	@tmpdir=$$(mktemp -d) && \
+		export CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN="$(CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN)" &&\
+		docker buildx build \
 			--secret id=registry_token,env=CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN \
 			--build-arg CARGO_REGISTRIES_FROM_ENV="true" \
 			--build-arg TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
 			--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)" \
 			--build-arg RPM_REL="dev.$(GIT_COMMIT)" \
+			--target artifact \
+			--output type=local,dest=$$tmpdir \
 			-f packaging/docker/Dockerfile.full \
-			.
-	@mkdir -p bin/
-	@id=$$(docker create trident/trident-build:latest) && \
-	    docker cp -q $$id:/work/trident-rpms.tar.gz $@ || \
-	    docker rm -v $$id
+			. && \
+		mv $$tmpdir/trident-rpms.tar.gz $@ && \
+		rm -rf $$tmpdir
 	@rm -rf bin/RPMS/
 	@tar xf $@ -C bin/
 

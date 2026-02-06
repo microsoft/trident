@@ -8,8 +8,8 @@ use trident::{
     agentconfig::AgentConfig,
     cli::{self, Cli, Commands, GetKind, TridentExitCodes},
     manual_rollback::{self, utils::ManualRollbackRequestKind},
-    offline_init, validation, BackgroundLog, DataStore, ExitKind, LogFilter, LogForwarder,
-    Logstream, MultiLogger, TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
+    offline_init, validation, BackgroundLog, BackgroundUploader, DataStore, ExitKind, LogFilter,
+    LogForwarder, Logstream, MultiLogger, TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
 };
 use trident_api::{
     config::HostConfigurationSource,
@@ -248,9 +248,10 @@ fn run_trident(
 
 fn setup_logging(
     args: &Cli,
+    uploader: &BackgroundUploader,
     additional_loggers: impl Iterator<Item = Box<dyn Log>>,
 ) -> Result<Logstream, Error> {
-    let logstream = Logstream::create();
+    let logstream = Logstream::create(uploader.get_handle().context("Uploader is closed")?);
 
     // Set up the multilogger
     let mut multilogger = MultiLogger::new()
@@ -331,10 +332,20 @@ fn main() -> ExitCode {
     // Parse args
     let args = Cli::parse();
 
+    let bg_uploader = match BackgroundUploader::new() {
+        Ok(uploader) => uploader,
+        Err(e) => {
+            // Defer to stderr since logging is not yet initialized.
+            eprintln!("Failed to initialize background uploader: {e:?}");
+            return TridentExitCodes::SetupFailed.into();
+        }
+    };
+
     // Initialize the telemetry flow
     let tracestream = setup_tracing(&args);
     if let Err(e) = tracestream {
-        error!("Failed to initialize tracing: {e:?}");
+        // Defer to stderr since logging is not yet initialized.
+        eprintln!("Failed to initialize tracing: {e:?}");
         return TridentExitCodes::SetupFailed.into();
     }
 
@@ -347,6 +358,7 @@ fn main() -> ExitCode {
         // Initialize the loggers
         let logstream = setup_logging(
             &args,
+            &bg_uploader,
             [LogFilter::new(log_forwarder.new_logger())
                 .with_global_filter("trident::server", LevelFilter::Off)
                 .with_global_filter("tonic", LevelFilter::Error)
@@ -370,7 +382,7 @@ fn main() -> ExitCode {
             tracestream.unwrap(),
         )
     } else if let Commands::GrpcClient(client_args) = &args.command {
-        let logstream = setup_logging(&args, iter::empty());
+        let logstream = setup_logging(&args, &bg_uploader, iter::empty());
         if let Err(e) = logstream {
             error!("Failed to initialize logging: {e:?}");
             return TridentExitCodes::SetupFailed.into();
@@ -380,7 +392,7 @@ fn main() -> ExitCode {
         trident::client_main(client_args)
     } else {
         // Initialize the loggers
-        let logstream = setup_logging(&args, iter::empty());
+        let logstream = setup_logging(&args, &bg_uploader, iter::empty());
         if let Err(e) = logstream {
             error!("Failed to initialize logging: {e:?}");
             return TridentExitCodes::SetupFailed.into();
