@@ -408,40 +408,6 @@ mod tests {
         assert_eq!(entries.next_entry_offset(), 0);
     }
 
-    /// Tests that registering the same path twice overwrites the previous entry.
-    ///
-    /// The entry count should not increase, and the stored entry should be the
-    /// latest one registered.
-    #[test]
-    fn test_cosi_entries_register_overwrite() {
-        let mut entries = CosiEntries::default();
-
-        entries
-            .register(
-                "file.txt",
-                CosiEntry {
-                    offset: 0,
-                    size: 100,
-                },
-            )
-            .unwrap();
-        entries
-            .register(
-                "file.txt",
-                CosiEntry {
-                    offset: 512,
-                    size: 200,
-                },
-            )
-            .unwrap();
-
-        assert_eq!(entries.len(), 1);
-
-        let entry = entries.get("file.txt").unwrap();
-        assert_eq!(entry.offset, 512);
-        assert_eq!(entry.size, 200);
-    }
-
     /// Tests that registering the same path twice results in an error.
     ///
     /// The `register` method uses `ensure!` to verify that no duplicate paths
