@@ -632,6 +632,11 @@ impl Trident {
         let image = OsImage::load(&mut image_source, Duration::from_secs(10))
             .message("Failed to download OS image")?;
 
+        let original_disk_size = image
+            .disk_size()
+            .structured(InvalidInputError::DeriveHostConfiguration)
+            .message("Image contains no information about the disk's original size.")?;
+
         let mut config = image
             .derive_host_configuration("/dev/sda") // Use /dev/sda as a placeholder.
             .structured(InvalidInputError::DeriveHostConfiguration)
@@ -647,7 +652,11 @@ impl Trident {
         // that the Host Configuration was derived from a raw COSI image.
         config.internal_params.set_flag(RAW_COSI_STORAGE);
 
-        stream::update_target_disk_path(&mut config, DiskSelectionStrategy::SmallestThatWillFit)?;
+        stream::update_target_disk_path(
+            &mut config,
+            original_disk_size,
+            DiskSelectionStrategy::SmallestThatWillFit,
+        )?;
 
         self.host_config = Some(config);
 

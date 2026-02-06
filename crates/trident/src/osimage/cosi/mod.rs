@@ -122,6 +122,12 @@ impl Cosi {
             .map(cosi_image_to_os_image_filesystem)
     }
 
+    /// Returns the full disk size of the original disk that the OS image was
+    /// created from, if specified in the metadata.
+    pub(super) fn original_disk_size(&self) -> Option<u64> {
+        self.metadata.disk.as_ref().map(|disk| disk.size)
+    }
+
     /// Returns the GPT disk if it is present in the COSI file. This will be
     /// present if the COSI version is >= 1.2 and the metadata contains a disk
     /// section with a GPT region.
