@@ -107,7 +107,7 @@ impl RepartPartitionEntry {
         repart_config.set(
             repart_partition_section,
             "Type",
-            Some(self.partition_type.to_str().into()),
+            Some(self.partition_type.to_name_or_uuid()),
         );
 
         // While set() accepts an Option<String>, we don't want to pass it on directly, because when
@@ -338,7 +338,7 @@ impl SystemdRepartInvoker {
                             "Failed to write systemd-repart config ({}) for partition #{} of type {}",
                             path.display(),
                             index,
-                            partition_entry.partition_type.to_str()
+                            partition_entry.partition_type.to_name_or_uuid()
                         )
                     })?;
 
@@ -630,7 +630,7 @@ mod tests {
 
                 assert_eq!(
                     ini.get("Partition", "Type").unwrap(),
-                    partition.partition_type.to_str(),
+                    partition.partition_type.to_name_or_uuid(),
                     "Type mismatch in {}",
                     filename.to_string_lossy()
                 );
