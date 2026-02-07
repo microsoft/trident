@@ -133,7 +133,17 @@ impl DiscoverablePartitionType {
         }
     }
 
-    pub fn to_str(&self) -> &'static str {
+    /// Converts the partition type to a string representing its name, or if it
+    /// doesn't have a well-known name, its UUID. Suitable for handing to tools
+    /// that accept either.
+    pub fn to_name_or_uuid(&self) -> String {
+        match self {
+            Self::Unknown(uuid) => uuid.hyphenated().to_string(),
+            _ => self.name().to_string(),
+        }
+    }
+
+    pub fn name(&self) -> &'static str {
         match self {
             DiscoverablePartitionType::Esp => "esp",
             DiscoverablePartitionType::Xbootldr => "xbootldr",
@@ -350,7 +360,7 @@ mod tests {
                 partition_type.resolve(), // We need to resolve aliases
                 partition_type_from_uuid,
                 "Round-trip failed for partition type {}",
-                partition_type.to_str()
+                partition_type.name()
             );
         }
     }
@@ -370,14 +380,37 @@ mod tests {
     #[test]
     fn test_name_roundtrip() {
         for partition_type in DiscoverablePartitionType::iter().filter(|pt| !pt.is_unknown()) {
-            let name = partition_type.to_str();
+            let name = partition_type.name();
             let partition_type_from_name = DiscoverablePartitionType::try_from_str(name).unwrap();
             assert_eq!(
                 partition_type, // We need to resolve aliases
                 partition_type_from_name,
                 "Round-trip failed for partition type {}",
-                partition_type.to_str()
+                partition_type.name()
             );
+        }
+    }
+
+    #[test]
+    fn test_name_or_uuid() {
+        for partition_type in DiscoverablePartitionType::iter() {
+            let name_or_uuid = partition_type.to_name_or_uuid();
+
+            // For known types, to_name_or_uuid should return the name, for
+            // unknown types it should return the UUID string.
+            if let DiscoverablePartitionType::Unknown(uuid) = partition_type {
+                assert_eq!(
+                    name_or_uuid,
+                    uuid.hyphenated().to_string(),
+                    "to_name_or_uuid should return the UUID string for unknown types"
+                );
+            } else {
+                assert_eq!(
+                    name_or_uuid,
+                    partition_type.name(),
+                    "to_name_or_uuid should return the name for known types"
+                );
+            }
         }
     }
 }
