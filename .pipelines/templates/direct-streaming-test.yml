@@ -54,9 +54,9 @@ stages:
           parameters:
             labelPrefix: "" # No prefix for this image
             architecture: ${{ parameters.architecture }}
+            # TODO: when IC next releases, no longer needs dev image
             micBuildType: dev
-            # TODO: merge this branch or adjust trident code to handle what is in main.
-            micVersion: "user/lanzeliu/gpt-tier2"
+            micVersion: "main"
             label: "azurelinux-direct-streaming-testimage-${{ parameters.architecture }}"
             makeTarget: "artifacts/azurelinux-direct-streaming-testimage-${{ parameters.architecture }}.cosi"
             ${{ if eq(parameters.architecture, 'arm64') }}:
@@ -87,8 +87,9 @@ stages:
           parameters:
             labelPrefix: "" # No prefix for this image
             architecture: ${{ parameters.architecture }}
+            # TODO: when IC next releases, no longer needs dev image
             micBuildType: dev
-            micVersion: "user/lanzeliu/gpt-tier2"
+            micVersion: "main"
             label: "ubuntu-direct-streaming-testimage-${{ parameters.architecture }}"
             makeTarget: "artifacts/ubuntu-direct-streaming-testimage-${{ parameters.architecture }}.cosi"
             ${{ if eq(parameters.architecture, 'arm64') }}:
