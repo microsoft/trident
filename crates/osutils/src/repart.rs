@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use sysdefs::partition_types::DiscoverablePartitionType;
 
-use crate::dependencies::Dependency;
+use crate::{block_devices, dependencies::Dependency};
 
 /// Representation of a partition created by `systemd-repart`.
 #[derive(Debug, Deserialize)]
@@ -72,7 +72,7 @@ impl RepartPartition {
     }
 
     pub fn path_by_uuid(&self) -> PathBuf {
-        Path::new("/dev/disk/by-partuuid").join(self.uuid.hyphenated().to_string())
+        block_devices::part_uuid_path(self.uuid)
     }
 }
 

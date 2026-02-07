@@ -12,6 +12,7 @@ use trident_api::{
     error::{InternalError, ReportError, TridentError},
     BlockDeviceId,
 };
+use uuid::Uuid;
 
 use crate::{
     container,
@@ -20,6 +21,11 @@ use crate::{
     sfdisk::SfDisk,
     tabfile,
 };
+
+/// Returns the disk-by-partuuid path for a given partition UUID.
+pub fn part_uuid_path(part_uuid: Uuid) -> PathBuf {
+    Path::new("/dev/disk/by-partuuid").join(part_uuid.hyphenated().to_string())
+}
 
 pub struct ResolvedDisk {
     /// Shortcut to the disk id.

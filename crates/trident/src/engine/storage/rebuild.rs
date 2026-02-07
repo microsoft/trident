@@ -278,7 +278,7 @@ pub(crate) fn rebuild_raid(
             .context(format!("Failed to find resolved disk for disk '{disk}'"))?;
 
         // Create Partitions on the new disk
-        partitioning::create_partitions_on_disk(
+        partitioning::repart_mode::create_partitions_on_disk(
             resolved_disk,
             &mut host_status.partition_paths,
             &mut host_status.disk_uuids,
