@@ -196,7 +196,6 @@ mod tests {
 
     use uuid::Uuid;
 
-    use osutils::sfdisk::{SfDiskLabel, SfDiskUnit};
     use trident_api::config::{Partition, PartitionTableType};
 
     #[test]
@@ -322,15 +321,8 @@ mod tests {
 mod functional_test {
     use super::*;
 
-    use std::str::FromStr;
-
-    use osutils::{
-        repart::RepartActivity,
-        testutils::repart::{OS_DISK_DEVICE_PATH, TEST_DISK_DEVICE_PATH},
-        wipefs,
-    };
+    use osutils::{repart::RepartActivity, testutils::repart::OS_DISK_DEVICE_PATH};
     use pytest_gen::functional_test;
-    use trident_api::config::{HostConfiguration, Partition, PartitionTableType, Storage};
 
     #[functional_test]
     fn test_wait_for_part_symlink() {

@@ -54,11 +54,7 @@ mod functional_test {
 
     use std::{path::PathBuf, str::FromStr};
 
-    use osutils::{
-        repart::RepartActivity,
-        testutils::repart::{OS_DISK_DEVICE_PATH, TEST_DISK_DEVICE_PATH},
-        wipefs,
-    };
+    use osutils::{testutils::repart::TEST_DISK_DEVICE_PATH, wipefs};
     use pytest_gen::functional_test;
     use trident_api::config::{
         Disk, HostConfiguration, Partition, PartitionSize, PartitionTableType, PartitionType,

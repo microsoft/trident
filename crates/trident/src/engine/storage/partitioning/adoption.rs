@@ -261,29 +261,15 @@ pub(super) fn adopt_partitions(
 mod tests {
     use super::*;
 
-    use std::{path::PathBuf, str::FromStr};
+    use std::path::PathBuf;
 
-    use anyhow::{bail, ensure, Context, Error};
-    use log::{debug, error, info, trace};
+    
+    
     use uuid::Uuid;
 
-    use osutils::{
-        block_devices::{self, ResolvedDisk},
-        lsblk,
-        repart::{
-            RepartActivity, RepartEmptyMode, RepartPartition, RepartPartitionEntry,
-            SystemdRepartInvoker,
-        },
-        sfdisk::{SfDisk, SfDiskLabel, SfDiskUnit, SfPartition},
-        udevadm,
-    };
+    use osutils::sfdisk::{SfDisk, SfDiskLabel, SfDiskUnit, SfPartition};
     use sysdefs::partition_types::DiscoverablePartitionType;
-    use trident_api::{
-        config::{
-            AdoptedPartition, Disk, Partition, PartitionSize, PartitionTableType, PartitionType,
-        },
-        BlockDeviceId,
-    };
+    use trident_api::config::AdoptedPartition;
 
     #[test]
     fn test_partition_adopter() {
@@ -382,34 +368,27 @@ mod tests {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
-    use super::*;
+    
 
     use std::{path::PathBuf, str::FromStr};
 
-    use anyhow::{bail, ensure, Context, Error};
-    use log::{debug, error, info, trace};
-    use uuid::Uuid;
+    
+    
+    
 
     use osutils::{
-        block_devices::{self, ResolvedDisk},
-        lsblk,
         repart::{
-            RepartActivity, RepartEmptyMode, RepartPartition, RepartPartitionEntry,
+            RepartEmptyMode, RepartPartitionEntry,
             SystemdRepartInvoker,
         },
-        sfdisk::{SfDisk, SfDiskLabel, SfDiskUnit, SfPartition},
-        testutils::repart::TEST_DISK_DEVICE_PATH,
-        udevadm, wipefs,
+        testutils::repart::TEST_DISK_DEVICE_PATH, wipefs,
     };
     use pytest_gen::functional_test;
     use sysdefs::partition_types::DiscoverablePartitionType;
-    use trident_api::{
-        config::{
+    use trident_api::config::{
             AdoptedPartition, Disk, HostConfiguration, Partition, PartitionSize,
             PartitionTableType, PartitionType, Storage,
-        },
-        BlockDeviceId,
-    };
+        };
 
     use crate::engine::{
         storage::partitioning::{self, repart_mode},
