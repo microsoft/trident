@@ -630,6 +630,7 @@ impl Trident {
         image_url: &Url,
         hash: &str,
     ) -> Result<ExitKind, TridentError> {
+        tracing::info!(metric_name = "stream_image_start", value = true,);
         let mut image_source = ConfigOsImage {
             url: image_url.clone(),
             sha384: ImageSha384::new(hash)?,

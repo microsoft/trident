@@ -69,6 +69,10 @@ impl InternalParams {
     pub fn set_flag_false(&mut self, key: String) {
         self.0.insert(key, false.into());
     }
+
+    pub fn get_flags(&self) -> Vec<String> {
+        self.0.keys().cloned().collect()
+    }
 }
 
 #[cfg(test)]

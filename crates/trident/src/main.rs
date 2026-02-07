@@ -309,23 +309,42 @@ fn setup_tracing(args: &Cli) -> Result<TraceStream, Error> {
 
     let tracestream = TraceStream::default();
 
-    if matches!(
-        args.command,
-        Commands::Install { .. }
-            | Commands::Update { .. }
-            | Commands::Commit { .. }
-            | Commands::RebuildRaid { .. }
-            | Commands::Rollback { .. }
-    ) {
-        // Set up the trace sender
-        let trace_sender = tracestream
-            .make_trace_sender()
-            .with_filter(filter::LevelFilter::INFO);
-
-        tracing::subscriber::set_global_default(
-            tracing_subscriber::Registry::default().with(trace_sender),
-        )
-        .context("Failed to set global default subscriber")?;
+    match &args.command {
+        Commands::Daemon { .. } => {
+            tracing::subscriber::set_global_default(
+                tracing_subscriber::Registry::default()
+                    .with(
+                        tracestream
+                            .make_trace_sender()
+                            .with_filter(filter::LevelFilter::INFO),
+                    )
+                    .with(
+                        tracing_journald::layer()?
+                            .with_syslog_identifier("trident-tracing".to_string())
+                            .with_filter(filter::LevelFilter::INFO),
+                    ),
+            )
+            .context("Failed to set global default subscriber")?;
+        }
+        Commands::Commit { .. }
+        | Commands::GrpcClient { .. }
+        | Commands::Install { .. }
+        | Commands::RebuildRaid { .. }
+        | Commands::Rollback { check: false, .. }
+        | Commands::StreamImage { .. }
+        | Commands::Update { .. } => {
+            tracing::subscriber::set_global_default(
+                tracing_subscriber::Registry::default().with(
+                    tracestream
+                        .make_trace_sender()
+                        .with_filter(filter::LevelFilter::INFO),
+                ),
+            )
+            .context("Failed to set global default subscriber")?;
+        }
+        _ => {
+            // no op
+        }
     }
 
     Ok(tracestream)
