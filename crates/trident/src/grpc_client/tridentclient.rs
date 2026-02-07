@@ -165,7 +165,7 @@ async fn handle_servicing_response(
                 LogLevel::Error => Level::Error,
             };
 
-            let target = format!("REMOTE::{}", log_entry.target);
+            let target = format!("DAEMON::{}", log_entry.target);
 
             log!(target: &target, log_level, "{}", log_entry.message);
         }

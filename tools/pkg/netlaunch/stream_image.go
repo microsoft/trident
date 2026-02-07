@@ -12,9 +12,10 @@ ExecStart=
 ExecStart=%s
 StandardOutput=journal+console
 StandardError=journal+console
+Environment="LOGSTREAM_URL=%s"
 `
 
-func makeStreamImageOverrideFileDownload(tridentConfig map[string]any) (rcpAgentFileDownload, error) {
+func makeStreamImageOverrideFileDownload(tridentConfig map[string]any, logstreamAddress string) (rcpAgentFileDownload, error) {
 	imgConf, ok := tridentConfig["image"]
 	if !ok {
 		return rcpAgentFileDownload{}, fmt.Errorf("trident config does not contain an image section")
@@ -40,6 +41,7 @@ func makeStreamImageOverrideFileDownload(tridentConfig map[string]any) (rcpAgent
 	fileContent := fmt.Sprintf(
 		systemdServiceExecOverrideTemplate,
 		fmt.Sprintf("/usr/bin/trident grpc-client stream-image %s --hash %s", imgUrl, imgSha384),
+		logstreamAddress,
 	)
 
 	return newRcpAgentFileDownload(

@@ -130,13 +130,15 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 			return fmt.Errorf("failed to unmarshal Trident config: %w", err)
 		}
 
+		logstreamAddress := fmt.Sprintf("http://%s/logstream", announceAddress)
+
 		// Add phonehome & logstream config ONLY when NOT in gRPC RCP mode
 		if !config.IsGrpcMode() {
 			if _, ok := trident["trident"]; !ok {
 				trident["trident"] = make(map[interface{}]interface{})
 			}
 			trident["trident"].(map[interface{}]interface{})["phonehome"] = fmt.Sprintf("http://%s/phonehome", announceAddress)
-			trident["trident"].(map[interface{}]interface{})["logstream"] = fmt.Sprintf("http://%s/logstream", announceAddress)
+			trident["trident"].(map[interface{}]interface{})["logstream"] = logstreamAddress
 		}
 
 		tridentConfig, err := yaml.Marshal(trident)
@@ -155,7 +157,7 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 		if config.Rcp != nil {
 			var extraRcpAgentFiles []rcpAgentFileDownload
 			if config.Rcp.UseStreamImage {
-				overrideFile, err := makeStreamImageOverrideFileDownload(trident)
+				overrideFile, err := makeStreamImageOverrideFileDownload(trident, logstreamAddress)
 				if err != nil {
 					return fmt.Errorf("failed to create stream image override file download: %w", err)
 				}
