@@ -239,11 +239,10 @@ mod tests {
             .upload(&url, body.as_bytes().to_vec(), Duration::from_secs(2))
             .unwrap();
 
-        // Shutdown can discard queued items; give the background thread time to send.
-        std::thread::sleep(Duration::from_millis(100));
-        mock.assert();
-
+        // Drop uploader first to ensure the background thread finishes processing all queued
+        // uploads before asserting. The Drop impl waits for the thread to join.
         drop(uploader);
+        mock.assert();
     }
 
     #[test]
@@ -298,8 +297,8 @@ mod tests {
             .mock("POST", "/slow")
             .with_status(200)
             .with_body_from_request(|_| {
-                std::thread::sleep(Duration::from_millis(200));
-                b"ok".to_vec()
+                std::thread::sleep(Duration::from_millis(1000));
+                b"slow-response".to_vec()
             })
             .expect(1)
             .create();
@@ -310,36 +309,38 @@ mod tests {
             .expect(0)
             .create();
 
+        // Queue both requests upfront, then close the channel. The loop processes
+        // messages sequentially, so the first request will timeout and mark the
+        // origin as ignored before the second request is even considered.
+        // This removes any timing dependency.
+        let (sender, receiver) = mpsc::unbounded_channel::<UploadData>();
+
+        // First request: a slow response + short timeout forces reqwest to return an error.
+        // The timeout (100ms) must be long enough for the request to be sent to the server,
+        // but short enough to expire before the mock's 1s response delay completes.
+        sender
+            .send(UploadData {
+                url: Url::parse(&server.url()).unwrap().join("/slow").unwrap(),
+                body: b"timeout-me".to_vec(),
+                timeout: Duration::from_millis(100),
+            })
+            .unwrap();
+
+        // Second request: same origin; should be skipped after the first fails.
+        sender
+            .send(UploadData {
+                url: Url::parse(&server.url()).unwrap().join("/upload").unwrap(),
+                body: b"this-should-be-skipped".to_vec(),
+                timeout: Duration::from_secs(2),
+            })
+            .unwrap();
+
+        // Close the channel before running the loop. The loop will process both
+        // queued messages in order, then exit.
+        drop(sender);
+
         run_in_runtime(async {
-            let (sender, receiver) = mpsc::unbounded_channel::<UploadData>();
-            let upload_task = tokio::spawn(async move {
-                BackgroundUploader::upload_loop(receiver).await;
-            });
-
-            // First request: a slow response + short timeout forces reqwest to return an error.
-            sender
-                .send(UploadData {
-                    url: Url::parse(&server.url()).unwrap().join("/slow").unwrap(),
-                    body: b"timeout-me".to_vec(),
-                    timeout: Duration::from_millis(10),
-                })
-                .unwrap();
-
-            // Allow the first request to time out and mark the origin ignored.
-            tokio::time::sleep(Duration::from_millis(50)).await;
-
-            // Second request: same origin; should be skipped after the first fails.
-            sender
-                .send(UploadData {
-                    url: Url::parse(&server.url()).unwrap().join("/upload").unwrap(),
-                    body: b"this-should-be-skipped".to_vec(),
-                    timeout: Duration::from_secs(2),
-                })
-                .unwrap();
-
-            tokio::time::sleep(Duration::from_millis(50)).await;
-            drop(sender);
-            let _ = upload_task.await;
+            BackgroundUploader::upload_loop(receiver).await;
         });
 
         slow_mock.assert();
@@ -404,10 +405,12 @@ mod tests {
             .upload(&url, b"hello".to_vec(), Duration::from_secs(2))
             .unwrap();
 
-        std::thread::sleep(Duration::from_millis(100));
-        ok_mock.assert();
-
+        // Drop the uploader to shut down the background thread. Both `handle`
+        // and `handle2` should fail to upload after this point since they both
+        // hold weak references. This also ensures that the background thread
+        // has finished processing the queued upload before we assert.
         drop(uploader);
+        ok_mock.assert();
 
         let after_drop = server
             .mock("POST", "/nope")
