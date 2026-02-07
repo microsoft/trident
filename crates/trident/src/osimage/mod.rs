@@ -184,10 +184,10 @@ impl OsImage {
 
     /// Derives a host configuration from the OS image, if supported.
     pub(crate) fn derive_host_configuration(
-        &self,
+        &mut self,
         target_disk: impl AsRef<Path>,
     ) -> Option<Result<HostConfiguration, Error>> {
-        match &self.0 {
+        match &mut self.0 {
             OsImageInner::Cosi(cosi) => Some(cosi.derive_host_configuration(target_disk)),
             #[cfg(test)]
             OsImageInner::Mock(_mock) => None,
@@ -211,6 +211,15 @@ impl OsImage {
             OsImageInner::Cosi(cosi) => cosi.gpt(),
             #[cfg(test)]
             OsImageInner::Mock(_mock) => Ok(None),
+        }
+    }
+
+    /// Returns the full disk size in bytes of the image, when available.
+    pub fn disk_size(&self) -> Option<u64> {
+        match &self.0 {
+            OsImageInner::Cosi(cosi) => cosi.original_disk_size(),
+            #[cfg(test)]
+            OsImageInner::Mock(_mock) => None,
         }
     }
 

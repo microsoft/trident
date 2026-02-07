@@ -122,6 +122,12 @@ impl Cosi {
             .map(cosi_image_to_os_image_filesystem)
     }
 
+    /// Returns the full disk size of the original disk that the OS image was
+    /// created from, if specified in the metadata.
+    pub(super) fn original_disk_size(&self) -> Option<u64> {
+        self.metadata.disk.as_ref().map(|disk| disk.size)
+    }
+
     /// Returns the GPT disk if it is present in the COSI file. This will be
     /// present if the COSI version is >= 1.2 and the metadata contains a disk
     /// section with a GPT region.
@@ -139,15 +145,27 @@ impl Cosi {
         Ok(self.gpt.as_ref())
     }
 
-    /// Derives the storage and image section of a Host Configuration from this COSI file.
+    /// Derives the `image` and `storage` sections of the host configuration
+    /// from the COSI file. This requires COSI >= 1.2.
     pub(super) fn derive_host_configuration(
-        &self,
-        _target_disk: impl AsRef<Path>,
+        &mut self,
+        target_disk: impl AsRef<Path>,
     ) -> Result<HostConfiguration, Error> {
-        bail!(
-            "HostConfiguration derivation from COSI files is temporarily disabled \
-             (unimplemented; waiting on PR #478)."
+        ensure!(
+            self.metadata.version >= KnownMetadataVersion::V1_2,
+            "Host configuration derivation requires COSI version {} or higher, found {}",
+            KnownMetadataVersion::V1_2,
+            self.metadata.version
         );
+
+        // If we don't have GPT data, attempt to populate it from the disk metadata.
+        if self.gpt.is_none() {
+            self.populate_gpt_data()
+                .context("Failed to populate GPT data for COSI version >= 1.2")?;
+        }
+
+        self.derive_host_configuration_inner(target_disk)
+            .context("Failed to derive host configuration from COSI metadata and GPT data")
     }
 
     pub(super) fn read_images<F>(&self, mut f: F) -> Result<(), TridentError>
@@ -220,7 +238,7 @@ impl Cosi {
             .context("Failed to read COSI entries")?
         {
             let (entry_path, entry) = entry.context("Failed to read COSI entry")?;
-            self.entries.register(&entry_path, entry);
+            self.entries.register(&entry_path, entry)?;
             if entry_path == path.as_ref() {
                 return self
                     .reader
@@ -385,7 +403,7 @@ fn read_entries_until_file<R: Read + Seek>(
     let mut entries = CosiEntries::default();
     for entry in read_entries(&mut Archive::new(cosi_reader))? {
         let (path, entry) = entry?;
-        entries.register(&path, entry);
+        entries.register(&path, entry)?;
         if path == file_name.as_ref() {
             break;
         }
@@ -1067,7 +1085,7 @@ mod tests {
                 offset: data.position(),
                 size: file_data.len() as u64,
             };
-            entries.register(&filename, entry);
+            entries.register(&filename, entry).unwrap();
 
             data.write_all(file_data.as_bytes()).unwrap();
 
@@ -1361,7 +1379,7 @@ mod tests {
             let mut archive = Archive::new(Cursor::new(&tarball));
             for entry in read_entries(&mut archive).unwrap() {
                 let (path, entry) = entry.unwrap();
-                entries.register(&path, entry);
+                entries.register(&path, entry).unwrap();
                 // Only cache the first file.
                 if path == Path::new("file_a.txt") {
                     break;
