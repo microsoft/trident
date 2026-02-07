@@ -215,7 +215,7 @@ impl OsImage {
     }
 
     /// Returns the full disk size in bytes of the image, when available.
-    pub fn disk_size(&self) -> Option<u64> {
+    pub fn original_disk_size(&self) -> Option<u64> {
         match &self.0 {
             OsImageInner::Cosi(cosi) => cosi.original_disk_size(),
             #[cfg(test)]
