@@ -213,6 +213,15 @@ impl OsImage {
             OsImageInner::Mock(_mock) => Ok(None),
         }
     }
+
+    /// Returns the full disk size in bytes of the image, when available.
+    pub fn disk_size(&self) -> Option<u64> {
+        match &self.0 {
+            OsImageInner::Cosi(cosi) => cosi.original_disk_size(),
+            #[cfg(test)]
+            OsImageInner::Mock(_mock) => None,
+        }
+    }
 }
 
 #[derive(Debug)]
