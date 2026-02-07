@@ -261,7 +261,29 @@ pub(super) fn adopt_partitions(
 mod tests {
     use super::*;
 
-    use osutils::sfdisk::{SfDiskLabel, SfDiskUnit};
+    use std::{path::PathBuf, str::FromStr};
+
+    use anyhow::{bail, ensure, Context, Error};
+    use log::{debug, error, info, trace};
+    use uuid::Uuid;
+
+    use osutils::{
+        block_devices::{self, ResolvedDisk},
+        lsblk,
+        repart::{
+            RepartActivity, RepartEmptyMode, RepartPartition, RepartPartitionEntry,
+            SystemdRepartInvoker,
+        },
+        sfdisk::{SfDisk, SfDiskLabel, SfDiskUnit, SfPartition},
+        udevadm,
+    };
+    use sysdefs::partition_types::DiscoverablePartitionType;
+    use trident_api::{
+        config::{
+            AdoptedPartition, Disk, Partition, PartitionSize, PartitionTableType, PartitionType,
+        },
+        BlockDeviceId,
+    };
 
     #[test]
     fn test_partition_adopter() {
@@ -364,14 +386,35 @@ mod functional_test {
 
     use std::{path::PathBuf, str::FromStr};
 
-    use osutils::{testutils::repart::TEST_DISK_DEVICE_PATH, wipefs};
+    use anyhow::{bail, ensure, Context, Error};
+    use log::{debug, error, info, trace};
+    use uuid::Uuid;
+
+    use osutils::{
+        block_devices::{self, ResolvedDisk},
+        lsblk,
+        repart::{
+            RepartActivity, RepartEmptyMode, RepartPartition, RepartPartitionEntry,
+            SystemdRepartInvoker,
+        },
+        sfdisk::{SfDisk, SfDiskLabel, SfDiskUnit, SfPartition},
+        testutils::repart::TEST_DISK_DEVICE_PATH,
+        udevadm, wipefs,
+    };
     use pytest_gen::functional_test;
-    use trident_api::config::{
-        Disk, HostConfiguration, Partition, PartitionSize, PartitionTableType, PartitionType,
-        Storage,
+    use sysdefs::partition_types::DiscoverablePartitionType;
+    use trident_api::{
+        config::{
+            AdoptedPartition, Disk, HostConfiguration, Partition, PartitionSize,
+            PartitionTableType, PartitionType, Storage,
+        },
+        BlockDeviceId,
     };
 
-    use crate::engine::storage::partitioning::{self, repart_mode};
+    use crate::engine::{
+        storage::partitioning::{self, repart_mode},
+        EngineContext,
+    };
 
     /// Create a test partition table on the test disk.
     /// The partition table will contain two partitions:
