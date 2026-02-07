@@ -1,27 +1,11 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    path::PathBuf,
-};
 
 use anyhow::{bail, ensure, Context, Error};
-use gpt::disk;
-use log::{debug, error, info, trace};
+use log::{debug, info};
 
 use osutils::{
-    block_devices::{self, ResolvedDisk},
+    block_devices::ResolvedDisk,
     lsblk,
-    repart::{
-        RepartActivity, RepartEmptyMode, RepartPartition, RepartPartitionEntry,
-        SystemdRepartInvoker,
-    },
-    sfdisk::{SfDisk, SfPartition},
-    udevadm,
-};
-use sysdefs::partition_types::DiscoverablePartitionType;
-use trident_api::{
-    config::{AdoptedPartition, Disk, PartitionSize, PartitionType},
-    constants::internal_params::RAW_COSI_STORAGE,
-    BlockDeviceId,
+    sfdisk::SfDisk,
 };
 
 use super::adoption::PartitionAdopter;

@@ -3,31 +3,26 @@ use std::{
     path::PathBuf,
 };
 
-use anyhow::{bail, ensure, Context, Error};
-use gpt::disk;
+use anyhow::{ensure, Context, Error};
 use log::{debug, error, info, trace};
 
 use osutils::{
     block_devices::{self, ResolvedDisk},
-    lsblk,
     repart::{
         RepartActivity, RepartEmptyMode, RepartPartition, RepartPartitionEntry,
         SystemdRepartInvoker,
     },
-    sfdisk::{SfDisk, SfPartition},
+    sfdisk::SfDisk,
     udevadm,
 };
 use sysdefs::partition_types::DiscoverablePartitionType;
 use trident_api::{
-    config::{AdoptedPartition, Disk, PartitionSize, PartitionType},
-    constants::internal_params::RAW_COSI_STORAGE,
+    config::{Disk, PartitionSize, PartitionType},
     BlockDeviceId,
 };
 use uuid::Uuid;
 
-use crate::engine::EngineContext;
-
-use super::adoption::{self, PartitionAdopter};
+use super::adoption::{self};
 
 pub fn create_partitions_on_disk(
     disk: &ResolvedDisk,

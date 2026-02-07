@@ -1,31 +1,14 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    path::PathBuf,
-};
+use std::collections::BTreeMap;
 
 use anyhow::{bail, ensure, Context, Error};
-use gpt::disk;
-use log::{debug, error, info, trace};
+use log::{debug, trace};
 
 use osutils::{
-    block_devices::{self, ResolvedDisk},
-    lsblk,
-    repart::{
-        RepartActivity, RepartEmptyMode, RepartPartition, RepartPartitionEntry,
-        SystemdRepartInvoker,
-    },
+    block_devices::ResolvedDisk,
+    repart::{RepartEmptyMode, RepartPartitionEntry, SystemdRepartInvoker},
     sfdisk::{SfDisk, SfPartition},
-    udevadm,
 };
-use sysdefs::partition_types::DiscoverablePartitionType;
-use trident_api::{
-    config::{AdoptedPartition, Disk, PartitionSize, PartitionType},
-    constants::internal_params::RAW_COSI_STORAGE,
-    BlockDeviceId,
-};
-use uuid::Uuid;
-
-use crate::engine::EngineContext;
+use trident_api::config::AdoptedPartition;
 
 pub(super) struct PartitionAdopter<'a> {
     /// BTreeMap of all candidate partitions in the disk in logical order.
