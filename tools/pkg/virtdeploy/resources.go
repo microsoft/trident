@@ -13,10 +13,14 @@ import (
 )
 
 const (
-	FIRMWARE_LOADER_PATH            = "/usr/share/OVMF/OVMF_CODE_4M.fd"
-	FIRMWARE_LOADER_SECUREBOOT_PATH = "/usr/share/OVMF/OVMF_CODE_4M.ms.fd"
-	FIRMWARE_VARS_PATH              = "/usr/share/OVMF/OVMF_VARS_4M.fd"
-	FIRMWARE_VARS_SECUREBOOT_PATH   = "/usr/share/OVMF/OVMF_VARS_4M.ms.fd"
+	FIRMWARE_LOADER_PATH                  = "/usr/share/OVMF/OVMF_CODE_4M.fd"
+	FIRMWARE_LOADER_ARM64_PATH            = "/usr/share/AAVMF/AAVMF_CODE.fd"
+	FIRMWARE_LOADER_SECUREBOOT_PATH       = "/usr/share/OVMF/OVMF_CODE_4M.ms.fd"
+	FIRMWARE_LOADER_ARM64_SECUREBOOT_PATH = "/usr/share/AAVMF/AAVMF_CODE.ms.fd"
+	FIRMWARE_VARS_PATH                    = "/usr/share/OVMF/OVMF_VARS_4M.fd"
+	FIRMWARE_VARS_ARM64_PATH              = "/usr/share/AAVMF/AAVMF_VARS.fd"
+	FIRMWARE_VARS_SECUREBOOT_PATH         = "/usr/share/OVMF/OVMF_VARS_4M.ms.fd"
+	FIRMWARE_VARS_ARM64_SECUREBOOT_PATH   = "/usr/share/AAVMF/AAVMF_VARS.ms.fd"
 )
 
 type virtDeployResourceConfig struct {
@@ -77,11 +81,21 @@ func newVirtDeployResourceConfig(config VirtDeployConfig) (*virtDeployResourceCo
 		vm.nvramFile = fmt.Sprintf("%s_VARS.fd", vm.name)
 
 		if vm.SecureBoot {
-			vm.firmwareLoaderPath = FIRMWARE_LOADER_SECUREBOOT_PATH
-			vm.firmwareVarsTemplatePath = FIRMWARE_VARS_SECUREBOOT_PATH
+			if vm.isArm64() {
+				vm.firmwareLoaderPath = FIRMWARE_LOADER_ARM64_SECUREBOOT_PATH
+				vm.firmwareVarsTemplatePath = FIRMWARE_VARS_ARM64_SECUREBOOT_PATH
+			} else {
+				vm.firmwareLoaderPath = FIRMWARE_LOADER_SECUREBOOT_PATH
+				vm.firmwareVarsTemplatePath = FIRMWARE_VARS_SECUREBOOT_PATH
+			}
 		} else {
-			vm.firmwareLoaderPath = FIRMWARE_LOADER_PATH
-			vm.firmwareVarsTemplatePath = FIRMWARE_VARS_PATH
+			if vm.isArm64() {
+				vm.firmwareLoaderPath = FIRMWARE_LOADER_ARM64_PATH
+				vm.firmwareVarsTemplatePath = FIRMWARE_VARS_ARM64_PATH
+			} else {
+				vm.firmwareLoaderPath = FIRMWARE_LOADER_PATH
+				vm.firmwareVarsTemplatePath = FIRMWARE_VARS_PATH
+			}
 		}
 
 		// Set up volume configurations for the VM
@@ -487,7 +501,11 @@ func (rc *virtDeployResourceConfig) setupVm(vm *VirtDeployVM) error {
 
 	for i := range vm.volumes {
 		vol := &vm.volumes[i]
-		vol.device = fmt.Sprintf("sd%c", 'a'+i) // /dev/sda, /dev/sdb, etc.
+		diskDevicePrefix := "sd"
+		if vm.isArm64() {
+			diskDevicePrefix = "vd"
+		}
+		vol.device = fmt.Sprintf("%s%c", diskDevicePrefix, 'a'+i) // /dev/sda, /dev/sdb, etc.
 		err := rc.setupVolume(vol, rc.pool)
 		if err != nil {
 			return fmt.Errorf("setup volume for disk #%d: %w", i+1, err)

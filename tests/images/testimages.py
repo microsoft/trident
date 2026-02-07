@@ -25,9 +25,34 @@ DEFAULT_IMAGE_CUSTOMIZER_VERSION = "0.19"
 
 DEFINED_IMAGES: List[ImageConfig] = [
     ImageConfig(
+        "trident-direct-streaming-installer-amd64",
+        config="trident-installer",
+        config_file="base/baseimg-direct-streaming.yaml",
+        output_format=OutputFormat.ISO,
+    ),
+    ImageConfig(
+        "trident-direct-streaming-installer-arm64",
+        config="trident-installer",
+        config_file="base/baseimg-direct-streaming.yaml",
+        output_format=OutputFormat.ISO,
+        base_image=BaseImage.CORE_ARM64,
+        architecture=SystemArchitecture.ARM64,
+    ),
+    ImageConfig(
         "trident-functest",
         output_format=OutputFormat.QCOW2,
         requires_trident=False,
+    ),
+    ImageConfig(
+        "trident-rawcosi-testimage",
+        output_format=OutputFormat.VHDX,
+    ),
+    ImageConfig(
+        "trident-rawcosi-testimage-arm64",
+        config="trident-rawcosi-testimage",
+        base_image=BaseImage.CORE_ARM64,
+        architecture=SystemArchitecture.ARM64,
+        output_format=OutputFormat.VHDX,
     ),
     ImageConfig(
         "azl-installer",
@@ -100,6 +125,11 @@ ARTIFACTS = ArtifactManifest(
         BaseImageManifest(
             image=BaseImage.BAREMETAL,
             package_name="baremetal_vhdx-3.0-stable",
+            version="*",
+        ),
+        BaseImageManifest(
+            image=BaseImage.CORE_ARM64,
+            package_name="core_vhdx-arm64-3.0-stable",
             version="*",
         ),
         BaseImageManifest(
