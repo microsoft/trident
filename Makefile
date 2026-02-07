@@ -464,7 +464,7 @@ bin/virtdeploy: tools/cmd/virtdeploy/* tools/go.sum tools/pkg/* tools/pkg/virtde
 	@mkdir -p bin
 	cd tools && go build -o ../bin/virtdeploy ./cmd/virtdeploy
 
-bin/rcp-agent: tools/cmd/rcp-agent/* tools/go.sum tools/pkg/rcp/* tools/pkg/rcp/proxy/* tools/pkg/netlaunch/rcpagent.go
+bin/rcp-agent: tools/cmd/rcp-agent/* tools/go.sum tools/pkg/rcp/* tools/pkg/rcp/proxy/* tools/pkg/rcp/agent/*
 	@mkdir -p bin
 	cd tools && go generate pkg/rcp/tlscerts/certs.go
 	cd tools && go build -o ../bin/rcp-agent ./cmd/rcp-agent/main.go
@@ -553,7 +553,7 @@ IS_UBUNTU_24_OR_NEWER := $(shell \
 
 RUN_NETLAUNCH_TRIDENT_BIN ?= $(if $(filter yes,$(IS_UBUNTU_24_OR_NEWER)),bin/trident-azl3,bin/trident)
 
-.PHONY: run-netlaunch
+.PHONY: run-netlaunch run-netlaunch-stream
 run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch validate artifacts/osmodifier $(RUN_NETLAUNCH_TRIDENT_BIN)
 	@echo "Using trident binary: $(RUN_NETLAUNCH_TRIDENT_BIN)"
 	@mkdir -p artifacts/test-image
@@ -573,6 +573,25 @@ run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlau
 		--trace-file trident-metrics.jsonl \
 		$(if $(LOG_TRACE),--log-trace)
 
+run-netlaunch-stream: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch artifacts/osmodifier $(RUN_NETLAUNCH_TRIDENT_BIN)
+	@echo "Using trident binary: $(RUN_NETLAUNCH_TRIDENT_BIN)"
+	@mkdir -p artifacts/test-image
+	@cp $(RUN_NETLAUNCH_TRIDENT_BIN) artifacts/test-image/trident
+	@cp artifacts/osmodifier artifacts/test-image/
+	@bin/netlaunch \
+	    --stream-image \
+	    --trident-binary $(RUN_NETLAUNCH_TRIDENT_BIN) \
+		--osmodifier-binary artifacts/osmodifier \
+		--rcp-agent-mode cli \
+	 	--iso $(NETLAUNCH_ISO) \
+		$(if $(NETLAUNCH_PORT),--port $(NETLAUNCH_PORT)) \
+		--config $(NETLAUNCH_CONFIG) \
+		--trident $(TRIDENT_CONFIG) \
+		--logstream \
+		--remoteaddress remote-addr \
+		--servefolder artifacts/test-image \
+		--trace-file trident-metrics.jsonl \
+		$(if $(LOG_TRACE),--log-trace)
 
 #  To run this, VM requires at least 11 GiB of memory (virt-deploy create --mem 11).
 .PHONY: run-netlaunch-container-images

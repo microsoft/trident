@@ -3,7 +3,6 @@ package netlaunch
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"fmt"
 	"net"
 	"net/http"
@@ -132,7 +131,7 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 		}
 
 		// Add phonehome & logstream config ONLY when NOT in gRPC RCP mode
-		if config.Rcp == nil || !config.Rcp.GrpcMode {
+		if !config.IsGrpcMode() {
 			if _, ok := trident["trident"]; !ok {
 				trident["trident"] = make(map[interface{}]interface{})
 			}
@@ -154,10 +153,19 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 		}
 
 		if config.Rcp != nil {
+			var extraRcpAgentFiles []rcpAgentFileDownload
+			if config.Rcp.UseStreamImage {
+				overrideFile, err := makeStreamImageOverrideFileDownload(trident)
+				if err != nil {
+					return fmt.Errorf("failed to create stream image override file download: %w", err)
+				}
+
+				extraRcpAgentFiles = append(extraRcpAgentFiles, overrideFile)
+			}
 			// Populate RCP agent config into the ISO. This handles both CLI and
 			// GRPC modes, where rcpListener == nil and rcpListener != nil
 			// respectively.
-			err = injectRcpAgentConfig(mux, announceIp, announceAddress, iso, rcpListener, *config.Rcp)
+			err = injectRcpAgentConfig(mux, announceIp, announceAddress, iso, rcpListener, *config.Rcp, extraRcpAgentFiles...)
 			if err != nil {
 				return fmt.Errorf("failed to inject RCP agent config into ISO: %w", err)
 			}
@@ -375,9 +383,10 @@ func injectRcpAgentConfig(
 	iso []byte,
 	rcpListener *rcpclient.RcpListener,
 	localRcpConf RcpConfiguration,
+	extraFiles ...rcpAgentFileDownload,
 ) error {
 	// Create an empty RcpAgentConfiguration
-	var rcpAgentConf RcpAgentConfiguration
+	rcpAgentConfBuilder := newRcpAgentConfigBuilder(mux, announceIp, announceHttpAddress, rcpListener)
 
 	// If we have a local trident path, serve that file via HTTP and set the download URL.
 	if localRcpConf.LocalTridentPath != nil {
@@ -385,18 +394,8 @@ func injectRcpAgentConfig(
 		if err != nil {
 			return fmt.Errorf("failed to read local Trident binary from '%s': %w", *localRcpConf.LocalTridentPath, err)
 		}
-		// Create an http endpoint that exclusively serves the local Trident binary
-		mux.HandleFunc("/trident", func(w http.ResponseWriter, r *http.Request) {
-			http.ServeContent(w, r, "trident", time.Now(), bytes.NewReader(data))
-		})
 
-		tridentUrl := fmt.Sprintf("http://%s/trident", announceHttpAddress)
-		log.WithField("url", tridentUrl).Info("Serving local Trident binary via HTTP")
-		rcpAgentConf.AdditionalFiles = append(rcpAgentConf.AdditionalFiles, RcpAdditionalFile{
-			DownloadUrl: tridentUrl,
-			Destination: "/usr/bin/trident",
-			Mode:        0755,
-		})
+		rcpAgentConfBuilder.registerRcpFile(newRcpAgentFileDownload("trident", "/usr/bin/trident", 0755, data))
 	}
 
 	// If we have a local osmodifier path, serve that file via HTTP and set the download URL.
@@ -405,35 +404,15 @@ func injectRcpAgentConfig(
 		if err != nil {
 			return fmt.Errorf("failed to read local Osmodifier binary from '%s': %w", *localRcpConf.LocalOsmodifierPath, err)
 		}
-		// Create an http endpoint that exclusively serves the local Osmodifier binary
-		mux.HandleFunc("/osmodifier", func(w http.ResponseWriter, r *http.Request) {
-			http.ServeContent(w, r, "osmodifier", time.Now(), bytes.NewReader(data))
-		})
 
-		osmodifierUrl := fmt.Sprintf("http://%s/osmodifier", announceHttpAddress)
-		log.WithField("url", osmodifierUrl).Info("Serving local Osmodifier binary via HTTP")
-		rcpAgentConf.AdditionalFiles = append(rcpAgentConf.AdditionalFiles, RcpAdditionalFile{
-			DownloadUrl: osmodifierUrl,
-			Destination: "/usr/bin/osmodifier",
-			Mode:        0755,
-		})
+		rcpAgentConfBuilder.registerRcpFile(newRcpAgentFileDownload("osmodifier", "/usr/bin/osmodifier", 0755, data))
 	}
 
-	// If we have an RCP listener, set the client address to point to it.
-	if rcpListener != nil {
-		rcpAgentConf.ClientAddress = fmt.Sprintf("%s:%d", announceIp, rcpListener.Port)
-		rcpAgentConf.ServerAddress = harpoon.DefaultTridentSocketPath
-
-		// Populate TLS certs for mutual authentication
-		clientCert, clientKey, serverCert := tlscerts.ClientTlsData()
-		rcpAgentConf.RcpClientTls = RcpTlsClientData{
-			ClientCert: base64.StdEncoding.EncodeToString(clientCert),
-			ClientKey:  base64.StdEncoding.EncodeToString(clientKey),
-			ServerCert: base64.StdEncoding.EncodeToString(serverCert),
-		}
+	for _, extraFile := range extraFiles {
+		rcpAgentConfBuilder.registerRcpFile(extraFile)
 	}
 
-	encoded, err := yaml.Marshal(rcpAgentConf)
+	encoded, err := yaml.Marshal(rcpAgentConfBuilder.build())
 	if err != nil {
 		return fmt.Errorf("failed to marshal RCP agent config to YAML: %w", err)
 	}

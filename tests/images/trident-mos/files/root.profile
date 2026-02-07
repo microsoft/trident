@@ -1,2 +1,2 @@
 # Open journalctl immediately after autologin
-journalctl -f --no-tail -u rcp-agent
+journalctl -f --no-tail -u trident-install.service -p emerg..info
