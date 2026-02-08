@@ -3,10 +3,14 @@ use std::{
     fs::OpenOptions,
 };
 
-use anyhow::{Context, Error};
+use anyhow::{ensure, Context, Error};
 use gpt::GptConfig;
+use log::{debug, trace};
 
-use osutils::block_devices::{self, ResolvedDisk};
+use osutils::{
+    block_devices::{self, ResolvedDisk},
+    udevadm,
+};
 
 use crate::engine::EngineContext;
 
@@ -45,6 +49,10 @@ pub(super) fn create_partitions_for_raw_cosi_storage(
 
     // First, the disk DeviceId -> UUID mapping.
     let staged_disk = [(disk.id.clone(), *raw_gpt.guid())];
+    trace!(
+        "Staged disk mapping for raw partitioning mode: {:#?}",
+        staged_disk
+    );
 
     // Then, the partition DeviceId -> disk by partition UUID mapping.
     let staged_partitions = {
@@ -59,6 +67,12 @@ pub(super) fn create_partitions_for_raw_cosi_storage(
                     )
                 })?;
 
+            trace!(
+                "Staging partition with DeviceId '{}' for raw partitioning mode, mapped from UUID '{}'",
+                part_device_id,
+                raw_part.part_guid
+            );
+
             tmp.insert(
                 part_device_id.to_owned().to_owned(),
                 block_devices::part_uuid_path(raw_part.part_guid),
@@ -69,6 +83,10 @@ pub(super) fn create_partitions_for_raw_cosi_storage(
     };
 
     // Now let's try to open the disk as a file!
+    trace!(
+        "Opening disk device at path '{}' for raw partitioning mode",
+        disk.dev_path.display()
+    );
     let mut disk_device = OpenOptions::new()
         .read(true)
         .write(true)
@@ -82,6 +100,10 @@ pub(super) fn create_partitions_for_raw_cosi_storage(
 
     // Create the new GPT on the disk using the raw GPT data from the image.
     // This will overwrite any existing partitions on the disk.
+    trace!(
+        "Creating new GPT on disk device at path '{}'",
+        disk.dev_path.display()
+    );
     let mut new_gpt = GptConfig::new()
         .writable(true)
         .change_partition_count(true)
@@ -94,6 +116,10 @@ pub(super) fn create_partitions_for_raw_cosi_storage(
         .update_partitions(raw_gpt.partitions().clone())
         .context("Failed to update partitions in raw partitioning mode")?;
 
+    trace!(
+        "Writing new GPT to disk device at path '{}'",
+        disk.dev_path.display()
+    );
     new_gpt
         .write()
         .context("Failed to write new GPT to disk in raw partitioning mode")?;
@@ -101,10 +127,49 @@ pub(super) fn create_partitions_for_raw_cosi_storage(
     disk_device
         .sync_all()
         .context("Failed to sync disk device after writing GPT in raw partitioning mode")?;
+    // Drop the file handle to the disk once we are done with it. Closing the
+    // file descriptor causes the kernel to re-read, so we want to do it at a
+    // controlled time.
+    drop(disk_device);
+
+    // Now force the kernel to re-read the partition table, so that the new
+    // partitions show up in /dev. This is gated behind a check for whether we
+    // actually created any partitions because partx --update will fail if there
+    // are no partitions.
+    if staged_partitions.len() > 1 {
+        block_devices::partx_update(&disk.dev_path)
+            .context("Failed to run partx --update after writing GPT in raw partitioning mode")?;
+    }
+
+    // syscall here
+
+    // After writing the GPT to disk, we need to wait for the new partition
+    // devices to appear before we can proceed, since the rest of the Engine
+    // logic expects the partition devices to be present.
+    for staged_partition_path in staged_partitions.values() {
+        trace!(
+            "Waiting for partition device at path '{}' to appear",
+            staged_partition_path.display()
+        );
+        udevadm::wait(staged_partition_path).context(format!(
+            "Failed waiting for '{}' to appear",
+            staged_partition_path.display()
+        ))?;
+
+        ensure!(
+            staged_partition_path.exists(),
+            "Expected partition device at path '{}' does not exist after waiting",
+            staged_partition_path.display()
+        );
+    }
 
     // If we got here, then the GPT has been successfully written to disk, so we
     // can now commit the staged disk and partition information to the
     // EngineContext.
+    debug!(
+        "Disk '{}' has been repartitioned successfully from the raw GPT, committing staged disk and partition information to EngineContext",
+        disk.dev_path.display()
+    );
     ctx.partition_paths.extend(staged_partitions);
     ctx.disk_uuids.extend(staged_disk);
 

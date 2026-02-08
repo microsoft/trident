@@ -1,5 +1,6 @@
 use anyhow::{ensure, Context, Error};
 
+use log::{debug, info};
 use osutils::block_devices;
 use trident_api::constants::internal_params::RAW_COSI_STORAGE;
 
@@ -22,9 +23,12 @@ pub fn create_partitions(ctx: &mut EngineContext) -> Result<(), Error> {
     safety_check::partitioning_safety_check(&resolved_disks)
         .context("Partitioning safety check failed")?;
 
+    info!("Starting repartitioning process");
+
     if !ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
         // Regular Host Configuration flow.
         for disk in &resolved_disks {
+            debug!("Creating partitions on disk '{}'", disk.id);
             repart_mode::create_partitions_on_disk(
                 disk,
                 &mut ctx.partition_paths,
@@ -34,6 +38,10 @@ pub fn create_partitions(ctx: &mut EngineContext) -> Result<(), Error> {
         }
     } else {
         // In raw COSI storage flow.
+        debug!(
+            "Recreating original GPT on disk '{}'",
+            resolved_disks[0].dev_path.display()
+        );
         ensure!(
             resolved_disks.len() == 1,
             "Expected exactly one disk in raw COSI storage mode, found {}",

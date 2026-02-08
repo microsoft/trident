@@ -409,6 +409,7 @@ impl Trident {
         datastore: &mut DataStore,
         allowed_operations: Operations,
         multiboot: bool,
+        prefetched_image: Option<OsImage>,
     ) -> Result<ExitKind, TridentError> {
         let mut host_config = self
             .host_config
@@ -460,7 +461,12 @@ impl Trident {
                 }
             }
 
-            let image = Self::get_cosi_image(&mut host_config)?;
+            // Use a prefetched image if provided, otherwise load the image
+            // specified in the Host Configuration.
+            let image = match prefetched_image {
+                Some(image) => image,
+                None => Self::get_cosi_image(&mut host_config)?,
+            };
 
             if datastore.host_status().spec != host_config {
                 debug!("Host Configuration has been updated");
@@ -662,7 +668,7 @@ impl Trident {
 
         self.host_config = Some(config);
 
-        self.install(datastore, Operations::all(), false)
+        self.install(datastore, Operations::all(), false, Some(image))
     }
 
     pub fn commit(&mut self, datastore: &mut DataStore) -> Result<ExitKind, TridentError> {

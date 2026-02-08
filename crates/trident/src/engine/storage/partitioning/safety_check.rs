@@ -1,12 +1,7 @@
-
 use anyhow::{bail, ensure, Context, Error};
 use log::{debug, info};
 
-use osutils::{
-    block_devices::ResolvedDisk,
-    lsblk,
-    sfdisk::SfDisk,
-};
+use osutils::{block_devices::ResolvedDisk, lsblk, sfdisk::SfDisk};
 
 use super::adoption::PartitionAdopter;
 
