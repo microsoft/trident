@@ -263,8 +263,6 @@ mod tests {
 
     use std::path::PathBuf;
 
-    
-    
     use uuid::Uuid;
 
     use osutils::sfdisk::{SfDisk, SfDiskLabel, SfDiskUnit, SfPartition};
@@ -368,27 +366,20 @@ mod tests {
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
-    
 
     use std::{path::PathBuf, str::FromStr};
 
-    
-    
-    
-
     use osutils::{
-        repart::{
-            RepartEmptyMode, RepartPartitionEntry,
-            SystemdRepartInvoker,
-        },
-        testutils::repart::TEST_DISK_DEVICE_PATH, wipefs,
+        repart::{RepartEmptyMode, RepartPartitionEntry, SystemdRepartInvoker},
+        testutils::repart::TEST_DISK_DEVICE_PATH,
+        wipefs,
     };
     use pytest_gen::functional_test;
     use sysdefs::partition_types::DiscoverablePartitionType;
     use trident_api::config::{
-            AdoptedPartition, Disk, HostConfiguration, Partition, PartitionSize,
-            PartitionTableType, PartitionType, Storage,
-        };
+        AdoptedPartition, Disk, HostConfiguration, Partition, PartitionSize, PartitionTableType,
+        PartitionType, Storage,
+    };
 
     use crate::engine::{
         storage::partitioning::{self, repart_mode},
