@@ -503,7 +503,9 @@ mod tests {
 
     /// Verifies that `stage_new_block_devices` correctly maps a multi-partition
     /// GPT to `StagedBlockDevices`, producing the right disk UUID and one
-    /// `/dev/disk/by-partuuid/` path entry per partition.
+    /// `/dev/disk/by-partuuid/` path entry per partition, and that
+    /// `commit_to_context` transfers the staged information into an
+    /// `EngineContext`.
     #[test]
     fn test_stage_new_block_devices_maps_partitions() {
         let (_lba0, gpt, _) = create_mock_gpt_disk(&[("esp", 64 * 1024), ("root", 128 * 1024)]);
@@ -523,9 +525,45 @@ mod tests {
         for gpt_part in gpt.partitions().values() {
             let expected_path = block_devices::part_uuid_path(gpt_part.part_guid);
             assert!(
-                staged.partitions.values().any(|p| *p == expected_path),
+                staged.partition_paths().any(|p| *p == expected_path),
                 "Expected staged partition path '{}' not found",
                 expected_path.display()
+            );
+        }
+
+        // Collect expected values before committing (which consumes staged).
+        let expected_partition_paths: BTreeMap<_, _> = staged
+            .partitions
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+
+        // Verify commit_to_context transfers everything into the EngineContext.
+        let mut ctx = EngineContext::default();
+        assert!(ctx.disk_uuids.is_empty());
+        assert!(ctx.partition_paths.is_empty());
+
+        staged.commit_to_context(&mut ctx);
+
+        // Disk UUID should be present in the context.
+        assert_eq!(
+            ctx.disk_uuids.get("disk-0"),
+            Some(gpt.guid()),
+            "Disk UUID should be committed to EngineContext"
+        );
+
+        // All partition paths should be present in the context.
+        assert_eq!(
+            ctx.partition_paths.len(),
+            expected_partition_paths.len(),
+            "All partition paths should be committed to EngineContext"
+        );
+        for (id, expected_path) in &expected_partition_paths {
+            assert_eq!(
+                ctx.partition_paths.get(id),
+                Some(expected_path),
+                "Partition path for '{}' should be committed to EngineContext",
+                id
             );
         }
     }
