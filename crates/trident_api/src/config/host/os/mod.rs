@@ -317,7 +317,7 @@ impl Os {
 
     // Emit tracing info about what features of the Host Configuration are being used
     pub fn feature_tracing(&self) {
-        if let Some(_) = self.netplan {
+        if self.netplan.is_some() {
             tracing::info!(metric_name = "host_config_netplan", value = true);
         }
         if let Some(mode) = self.selinux.mode {
