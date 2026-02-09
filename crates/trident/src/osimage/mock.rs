@@ -1,10 +1,12 @@
 use std::{
-    io::Read,
+    io::{Cursor, Read},
     ops::ControlFlow,
     path::{Path, PathBuf},
 };
 
 use anyhow::Error;
+use gpt::GptDisk;
+use gpt::{disk::LogicalBlockSize, mbr::ProtectiveMBR, GptConfig};
 use serde::Deserialize;
 use url::Url;
 use uuid::Uuid;
@@ -36,6 +38,44 @@ pub struct MockOsImage {
     pub images: Vec<MockImage>,
 
     pub is_uki: bool,
+
+    #[serde(skip)]
+    pub partitioning_info: Option<MockPartitioningInfo>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MockPartitioningInfo {
+    pub lba0: [u8; 512],
+    pub gpt: GptDisk<Cursor<Vec<u8>>>,
+}
+
+impl MockPartitioningInfo {
+    /// Creates a new `MockPartitioningInfo` with a protective MBR and GPT
+    /// header with no partitions.
+    pub fn new_protective_mbr_and_gpt() -> Result<Self, Error> {
+        let fake_disk_size = 10 * 1024 * 1024 * 1024; // 10 GiB
+        let lba_size = 512;
+
+        // Protective MBR bytes.
+        let protective_mbr = ProtectiveMBR::with_lb_size(fake_disk_size / lba_size - 1).to_bytes();
+
+        // lba0 + GPT header + partition entries
+        let mut mock_gpt_area = vec![0; lba_size as usize * 34];
+
+        // Set the first 512 bytes to the protective MBR.
+        mock_gpt_area[..lba_size as usize].copy_from_slice(&protective_mbr);
+
+        let disk = GptConfig::new()
+            .change_partition_count(true)
+            .writable(true)
+            .logical_block_size(LogicalBlockSize::Lb512)
+            .create_from_device(Cursor::new(mock_gpt_area), None)?;
+
+        Ok(Self {
+            lba0: protective_mbr,
+            gpt: disk,
+        })
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -76,6 +116,7 @@ impl MockOsImage {
             os_release: OsRelease::default(),
             is_uki: false,
             images: vec![],
+            partitioning_info: None,
         }
     }
 
@@ -88,6 +129,11 @@ impl MockOsImage {
     /// Adds an image to the mock OS image.
     pub fn with_images(mut self, images: impl IntoIterator<Item = MockImage>) -> Self {
         self.images.extend(images);
+        self
+    }
+
+    pub fn with_partitioning_info(mut self, info: MockPartitioningInfo) -> Self {
+        self.partitioning_info = Some(info);
         self
     }
 

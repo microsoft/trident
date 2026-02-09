@@ -217,7 +217,15 @@ impl OsImage {
                 }))
             }
             #[cfg(test)]
-            OsImageInner::Mock(_mock) => Ok(None),
+            OsImageInner::Mock(mock) => {
+                Ok(mock
+                    .partitioning_info
+                    .as_ref()
+                    .map(|gpt_data| PartitioningInfo {
+                        lba0: &gpt_data.lba0,
+                        gpt: &gpt_data.gpt,
+                    }))
+            }
         }
     }
 
@@ -377,6 +385,7 @@ mod tests {
             os_arch: arch,
             os_release: os_release.clone(),
             is_uki: false,
+            partitioning_info: None,
             images: vec![
                 MockImage::new(
                     "/boot/efi",

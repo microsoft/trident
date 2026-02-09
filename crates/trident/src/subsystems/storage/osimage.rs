@@ -661,6 +661,7 @@ mod tests {
                 },
             ],
             is_uki: false,
+            partitioning_info: None,
         };
         let os_image = OsImage::mock(mock_image.clone());
         let mut ctx = EngineContext {
@@ -711,6 +712,7 @@ mod tests {
                     },
                 ],
                 is_uki: false,
+                partitioning_info: None,
             })
             .with_spec(HostConfiguration {
                 storage: Storage {
@@ -767,6 +769,7 @@ mod tests {
                 },
             ],
             is_uki: false,
+            partitioning_info: None,
         });
 
         // Expect validation to fail
@@ -792,6 +795,7 @@ mod tests {
                 verity: None,
             }],
             is_uki: false,
+            partitioning_info: None,
         };
 
         // Expect validation to fail
@@ -1277,6 +1281,7 @@ mod functional_test {
                 part_type: DiscoverablePartitionType::Root,
                 verity: None,
             }],
+            partitioning_info: None,
         };
         let os_image = OsImage::mock(mock_image.clone());
         let mut ctx = EngineContext {

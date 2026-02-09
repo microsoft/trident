@@ -640,3 +640,131 @@ mod tests {
         );
     }
 }
+
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
+    use crate::osimage::{
+        mock::{MockOsImage, MockPartitioningInfo},
+        OsImage,
+    };
+
+    use super::*;
+
+    use std::io::Cursor;
+
+    use gpt::{
+        disk::LogicalBlockSize,
+        mbr::ProtectiveMBR,
+        partition_types::{EFI, LINUX_FS},
+        GptConfig, GptDisk,
+    };
+
+    use osutils::{block_devices::ResolvedDisk, testutils::repart::TEST_DISK_DEVICE_PATH, wipefs};
+    use pytest_gen::functional_test;
+    use trident_api::{
+        config::{Disk, HostConfiguration, Partition, PartitionSize, PartitionTableType, Storage},
+        constants::internal_params::RAW_COSI_STORAGE,
+    };
+
+    fn create_resolved_disk_matching_gpt<T>(gpt: &GptDisk<T>, device_path: &str) -> ResolvedDisk {
+        let partitions: Vec<Partition> = gpt
+            .partitions()
+            .iter()
+            .enumerate()
+            .map(|(i, (_id, part))| {
+                let mut p = Partition::new(
+                    format!("partition-{}", i),
+                    PartitionSize::Fixed(4096.into()),
+                );
+                p.uuid = Some(part.part_guid);
+                p
+            })
+            .collect();
+
+        let device = PathBuf::from(device_path);
+
+        ResolvedDisk {
+            id: "disk-0".to_string(),
+            spec: Disk {
+                id: "disk-0".to_string(),
+                device: device.clone(),
+                partition_table_type: PartitionTableType::Gpt,
+                partitions,
+                adopted_partitions: vec![],
+            },
+            dev_path: device,
+        }
+    }
+
+    #[functional_test]
+    fn test_create_partitions_for_raw_cosi_storage() {
+        let mut part_info =
+            MockPartitioningInfo::new_protective_mbr_and_gpt().expect("mock partitioning info");
+
+        part_info
+            .gpt
+            .add_partition("esp", 64 * 1024, gpt::partition_types::EFI, 0, None)
+            .unwrap();
+        part_info
+            .gpt
+            .add_partition("root", 128 * 1024, gpt::partition_types::LINUX_FS, 0, None)
+            .unwrap();
+
+        let resolved_disk = ResolvedDisk {
+            id: "disk-0".to_string(),
+            spec: Disk {
+                id: "disk-0".to_string(),
+                device: PathBuf::from(TEST_DISK_DEVICE_PATH),
+                partition_table_type: PartitionTableType::Gpt,
+                partitions: part_info
+                    .gpt
+                    .partitions()
+                    .values()
+                    .enumerate()
+                    .map(|(i, part)| {
+                        // Create partitions with matching UUIDs in the HC.
+                        let mut p = Partition::new(
+                            format!("partition-{}", i),
+                            PartitionSize::Fixed(4096.into()),
+                        );
+                        p.uuid = Some(part.part_guid);
+                        p
+                    })
+                    .collect(),
+                adopted_partitions: vec![],
+            },
+            dev_path: PathBuf::from(TEST_DISK_DEVICE_PATH),
+        };
+
+        let mut ctx = EngineContext {
+            image: Some(OsImage::mock(
+                MockOsImage::new().with_partitioning_info(part_info.clone()),
+            )),
+            ..Default::default()
+        };
+
+        create_partitions_for_raw_cosi_storage(&mut ctx, &resolved_disk)
+            .expect("Failed to replicate GPT for raw COSI storage");
+
+        assert_eq!(
+            ctx.disk_uuids.get(&resolved_disk.id),
+            Some(part_info.gpt.guid())
+        );
+        assert_eq!(ctx.partition_paths.len(), part_info.gpt.partitions().len());
+
+        for id in resolved_disk.spec.partitions.iter().map(|p| &p.id) {
+            let path = ctx
+                .partition_paths
+                .get(id)
+                .unwrap_or_else(|| panic!("Missing partition path for '{id}'"));
+            assert!(
+                path.exists(),
+                "Partition device path '{}' does not exist",
+                path.display()
+            );
+        }
+
+        wipefs::all(TEST_DISK_DEVICE_PATH).expect("Failed to wipe test disk");
+    }
+}
