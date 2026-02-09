@@ -40,7 +40,7 @@ func (h *CheckJournaldHelper) checkJournald(tc storm.TestCase) error {
 	}
 	defer client.Close()
 
-	tridentJournaldTraceLogs, err := stormsshclient.RunCommand(client, "sudo journalctl -t "+h.args.SyslogIdentifier+" -o json-pretty")
+	tridentJournaldTraceLogs, err := stormsshclient.RunCommand(client, fmt.Sprintf("sudo journalctl -t %s -o json-pretty", h.args.SyslogIdentifier))
 	if err != nil {
 		return err
 	}

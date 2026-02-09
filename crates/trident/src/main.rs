@@ -310,7 +310,7 @@ fn setup_tracing(args: &Cli) -> Result<TraceStream, Error> {
     let tracestream = TraceStream::default();
 
     match &args.command {
-        Commands::Daemon { .. } => {
+        Commands::Install { .. } | Commands::Daemon { .. } => {
             tracing::subscriber::set_global_default(
                 tracing_subscriber::Registry::default()
                     .with(
@@ -328,7 +328,6 @@ fn setup_tracing(args: &Cli) -> Result<TraceStream, Error> {
         }
         Commands::Commit { .. }
         | Commands::GrpcClient { .. }
-        | Commands::Install { .. }
         | Commands::RebuildRaid { .. }
         | Commands::Rollback { check: false, .. }
         | Commands::StreamImage { .. }
