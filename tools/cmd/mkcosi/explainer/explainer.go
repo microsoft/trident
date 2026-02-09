@@ -461,11 +461,6 @@ func printGptRegions(
 		strings.Repeat("─", 30))
 
 	for i, region := range meta.Disk.GptRegions {
-		numStr := "-"
-		if region.Number != nil {
-			numStr = fmt.Sprintf("%d", *region.Number)
-		}
-
 		pathDisplay := region.Image.Path
 		if len(pathDisplay) > 50 {
 			pathDisplay = pathDisplay[:47] + "..."
@@ -484,8 +479,6 @@ func printGptRegions(
 		} else if region.Type == metadata.RegionTypePartition {
 			fsInfo = dim.Sprint("(no filesystem mapping)")
 		}
-
-		_ = numStr
 		regionLabel := string(region.Type)
 		if region.Number != nil {
 			regionLabel = fmt.Sprintf("%s #%d", region.Type, *region.Number)

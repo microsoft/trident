@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+
+	log "github.com/sirupsen/logrus"
 )
 
 // RcpAgentConfiguration holds the configuration for the RCP agent.
@@ -47,6 +49,7 @@ func (d *RcpTlsClientData) LocalCert() (tls.Certificate, error) {
 func (d *RcpTlsClientData) RemoteCertPEM() []byte {
 	cert, err := base64.StdEncoding.DecodeString(d.ServerCert)
 	if err != nil {
+		log.Errorf("failed to decode server certificate: %v", err)
 		return nil
 	}
 

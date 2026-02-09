@@ -50,7 +50,7 @@ func newRcpAgentConfigBuilder(mux *http.ServeMux, announceIp string, announceHtt
 	}
 }
 
-func (b *rcpAgentConfigBuilder) registerRcpFile(file rcpAgentFileDownload) error {
+func (b *rcpAgentConfigBuilder) registerRcpFile(file rcpAgentFileDownload) {
 	// generate a unique URL path for this file based on its name
 	name := fmt.Sprintf("%s-%s", file.name, uuid.New().String())
 	// Create an http endpoint that exclusively serves the local file
@@ -65,8 +65,6 @@ func (b *rcpAgentConfigBuilder) registerRcpFile(file rcpAgentFileDownload) error
 		Destination: file.destination,
 		Mode:        file.mode,
 	})
-
-	return nil
 }
 
 func (b *rcpAgentConfigBuilder) build() *rcpagent.RcpAgentConfiguration {

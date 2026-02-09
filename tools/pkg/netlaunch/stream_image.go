@@ -2,8 +2,6 @@ package netlaunch
 
 import (
 	"fmt"
-
-	"github.com/sirupsen/logrus"
 )
 
 const systemdServiceExecOverrideTemplate = `
@@ -21,8 +19,6 @@ func makeStreamImageOverrideFileDownload(tridentConfig map[string]any, logstream
 		return rcpAgentFileDownload{}, fmt.Errorf("trident config does not contain an image section")
 	}
 
-	logrus.Infof("CONFIG: %v", imgConf)
-
 	imgConfMap, ok := imgConf.(map[any]any)
 	if !ok {
 		return rcpAgentFileDownload{}, fmt.Errorf("trident config image section is not a map")
@@ -35,6 +31,8 @@ func makeStreamImageOverrideFileDownload(tridentConfig map[string]any, logstream
 
 	imgSha384, ok := imgConfMap["sha384"].(string)
 	if !ok {
+		// If we can't find a sha384 field default to "ignored", which Trident
+		// will accept and just skip the hash verification.
 		imgSha384 = "ignored"
 	}
 
@@ -47,7 +45,7 @@ func makeStreamImageOverrideFileDownload(tridentConfig map[string]any, logstream
 	return newRcpAgentFileDownload(
 		"trident-stream-image-override",
 		"/etc/systemd/system/trident-install.service.d/override.conf",
-		0777,
+		0644,
 		[]byte(fileContent),
 	), nil
 }
