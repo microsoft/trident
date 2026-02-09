@@ -67,7 +67,10 @@ fn main() -> Result<()> {
     let mut os_image =
         OsImage::load(&mut image_source, timeout).unstructured("Failed to load COSI file")?;
 
-    if let Some(_gpt) = os_image.gpt().context("Failed to obtain GPT information")? {
+    if let Some(_gpt) = os_image
+        .partitioning_info()
+        .context("Failed to obtain GPT information")?
+    {
         info!("GPT data found in COSI file");
     } else {
         info!("No GPT data found in COSI file.");

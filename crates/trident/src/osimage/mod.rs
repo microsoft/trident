@@ -206,9 +206,16 @@ impl OsImage {
     }
 
     /// Returns the GPT disk if it is present in the OS Image.
-    pub fn gpt(&mut self) -> Result<Option<&GptDisk<impl DiskDevice>>, Error> {
+    pub fn partitioning_info<'a>(
+        &'a mut self,
+    ) -> Result<Option<PartitioningInfo<'a, impl DiskDevice>>, Error> {
         match &mut self.0 {
-            OsImageInner::Cosi(cosi) => cosi.gpt(),
+            OsImageInner::Cosi(cosi) => {
+                Ok(cosi.partitioning_info()?.map(|gpt_data| PartitioningInfo {
+                    lba0: &gpt_data.lba0,
+                    gpt: &gpt_data.gpt_disk,
+                }))
+            }
             #[cfg(test)]
             OsImageInner::Mock(_mock) => Ok(None),
         }
@@ -222,6 +229,11 @@ impl OsImage {
             OsImageInner::Mock(_mock) => None,
         }
     }
+}
+
+pub struct PartitioningInfo<'a, T: DiskDevice> {
+    pub lba0: &'a Vec<u8>,
+    pub gpt: &'a GptDisk<T>,
 }
 
 #[derive(Debug)]
