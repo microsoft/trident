@@ -37,15 +37,17 @@ pub fn create_partitions(ctx: &mut EngineContext) -> Result<(), Error> {
             .with_context(|| format!("Failed to create partitions for disk '{}'", disk.id))?;
         }
     } else {
-        // In raw COSI storage flow.
-        debug!(
-            "Recreating original GPT on disk '{}'",
-            resolved_disks[0].dev_path.display()
-        );
+        // Raw COSI storage flow. We will manually re-create the GPT based on
+        // what the image is carrying.
         ensure!(
             resolved_disks.len() == 1,
             "Expected exactly one disk in raw COSI storage mode, found {}",
             resolved_disks.len()
+        );
+
+        debug!(
+            "Recreating original GPT on disk '{}'",
+            resolved_disks[0].dev_path.display()
         );
 
         raw_mode::create_partitions_for_raw_cosi_storage(ctx, &resolved_disks[0])
