@@ -651,51 +651,9 @@ mod functional_test {
 
     use super::*;
 
-    use std::io::Cursor;
-
-    use gpt::{
-        disk::LogicalBlockSize,
-        mbr::ProtectiveMBR,
-        partition_types::{EFI, LINUX_FS},
-        GptConfig, GptDisk,
-    };
-
     use osutils::{block_devices::ResolvedDisk, testutils::repart::TEST_DISK_DEVICE_PATH, wipefs};
     use pytest_gen::functional_test;
-    use trident_api::{
-        config::{Disk, HostConfiguration, Partition, PartitionSize, PartitionTableType, Storage},
-        constants::internal_params::RAW_COSI_STORAGE,
-    };
-
-    fn create_resolved_disk_matching_gpt<T>(gpt: &GptDisk<T>, device_path: &str) -> ResolvedDisk {
-        let partitions: Vec<Partition> = gpt
-            .partitions()
-            .iter()
-            .enumerate()
-            .map(|(i, (_id, part))| {
-                let mut p = Partition::new(
-                    format!("partition-{}", i),
-                    PartitionSize::Fixed(4096.into()),
-                );
-                p.uuid = Some(part.part_guid);
-                p
-            })
-            .collect();
-
-        let device = PathBuf::from(device_path);
-
-        ResolvedDisk {
-            id: "disk-0".to_string(),
-            spec: Disk {
-                id: "disk-0".to_string(),
-                device: device.clone(),
-                partition_table_type: PartitionTableType::Gpt,
-                partitions,
-                adopted_partitions: vec![],
-            },
-            dev_path: device,
-        }
-    }
+    use trident_api::config::{Disk, Partition, PartitionSize, PartitionTableType};
 
     #[functional_test]
     fn test_create_partitions_for_raw_cosi_storage() {

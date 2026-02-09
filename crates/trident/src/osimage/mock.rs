@@ -53,11 +53,12 @@ impl MockPartitioningInfo {
     /// Creates a new `MockPartitioningInfo` with a protective MBR and GPT
     /// header with no partitions.
     pub fn new_protective_mbr_and_gpt() -> Result<Self, Error> {
-        let fake_disk_size = 10 * 1024 * 1024 * 1024; // 10 GiB
+        let fake_disk_size = 10u64 * 1024 * 1024 * 1024; // 10 GiB
         let lba_size = 512;
 
         // Protective MBR bytes.
-        let protective_mbr = ProtectiveMBR::with_lb_size(fake_disk_size / lba_size - 1).to_bytes();
+        let protective_mbr =
+            ProtectiveMBR::with_lb_size((fake_disk_size / lba_size - 1) as u32).to_bytes();
 
         // lba0 + GPT header + partition entries
         let mut mock_gpt_area = vec![0; lba_size as usize * 34];
