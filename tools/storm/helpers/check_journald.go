@@ -8,6 +8,7 @@ import (
 	"tridenttools/storm/utils/trident"
 
 	"github.com/microsoft/storm"
+	"github.com/sirupsen/logrus"
 )
 
 type CheckJournaldHelper struct {
@@ -44,8 +45,11 @@ func (h *CheckJournaldHelper) checkJournald(tc storm.TestCase) error {
 		return err
 	}
 
+	collectedLogs := tridentJournaldTraceLogs.Stdout
+	logrus.Infof("Journald logs for %s:\n%s\n", h.args.SyslogIdentifier, collectedLogs)
+
 	// Check if the expected metric is present in the journald logs
-	if !strings.Contains(tridentJournaldTraceLogs.Stdout, fmt.Sprintf("\"F_METRIC_NAME\" : \"%s\"", h.args.MetricToCheck)) {
+	if !strings.Contains(collectedLogs, fmt.Sprintf("\"F_METRIC_NAME\" : \"%s\"", h.args.MetricToCheck)) {
 		tc.Fail(fmt.Sprintf("Expected metric '%s' not found in journald logs for syslog identifier '%s'", h.args.MetricToCheck, h.args.SyslogIdentifier))
 	}
 
