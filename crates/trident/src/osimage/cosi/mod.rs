@@ -355,6 +355,13 @@ impl Cosi {
             .get_file_data(&gpt_image)
             .context("Failed to read GPT image data from COSI file")?;
 
+        ensure!(
+            raw_gpt_data.len() > lba_size as usize,
+            "Raw GPT data is too small to contain protective MBR and GPT header, data size: {}, LBA size: {}",
+            raw_gpt_data.len(),
+            lba_size,
+        );
+
         // Extract a copy of the protective MBR (LBA 0) from the raw GPT data.
         // This is needed because the protective MBR is not part of the GPT disk
         // structure and needs to be written separately when deploying the GPT

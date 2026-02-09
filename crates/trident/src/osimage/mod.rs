@@ -232,7 +232,7 @@ impl OsImage {
 }
 
 pub struct PartitioningInfo<'a, T: DiskDevice> {
-    pub lba0: &'a Vec<u8>,
+    pub lba0: &'a [u8],
     pub gpt: &'a GptDisk<T>,
 }
 

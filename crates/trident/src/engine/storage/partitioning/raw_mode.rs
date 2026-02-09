@@ -56,7 +56,7 @@ pub(super) fn create_partitions_for_raw_cosi_storage(
     // partitions show up in /dev. This is gated behind a check for whether we
     // actually created any partitions because partx --update will fail if there
     // are no partitions.
-    if staged.partitions.len() > 1 {
+    if !staged.partitions.is_empty() {
         block_devices::partx_update(&disk.dev_path)
             .context("Failed to run partx --update after writing GPT in raw partitioning mode")?;
     }
