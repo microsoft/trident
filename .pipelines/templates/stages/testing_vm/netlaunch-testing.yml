@@ -244,6 +244,19 @@ stages:
 
           - bash: |
               set -eux
+
+              HOST_IP=$(jq -r '.virtualmachines[0].ip' $(tridentSourceDirectory)/tools/virt-deploy-metadata.json)
+              ./bin/storm-trident helper check-journald \
+                  "$(tridentSourceDirectory)/tests/e2e_tests/helpers/key" \
+                  "$HOST_IP" \
+                  "testing-user" \
+                  "${{ parameters.runtimeEnv }}" \
+                  --metric-to-check clean_install_start
+            timeoutInMinutes: 5
+            displayName: "Check for journald logs for tracing"
+
+            - bash: |
+              set -eux
               ./bin/storm-trident script capture-screenshot \
                   --screenshot-filename "install.png" \
                   --artifacts-folder "$(ob_outputDirectory)"
