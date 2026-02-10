@@ -55,7 +55,7 @@ service TridentService {
   // ValidateHostConfiguration performs static validation of a Host Configuration.
   rpc ValidateHostConfiguration(ValidateHostConfigurationRequest) returns (ValidateHostConfigurationResponse);
 
-  // GetServicingType returns the servicing type that would be required to apply
+  // GetRequiredServicingType returns the servicing type that would be required to apply
   // the given Host Configuration.
   rpc GetRequiredServicingType(GetRequiredServicingTypeRequest) returns (GetRequiredServicingTypeResponse);
 
