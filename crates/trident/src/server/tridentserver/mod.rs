@@ -12,7 +12,7 @@ use prost_types::Timestamp;
 use tokio::{
     sync::{
         mpsc::{self, UnboundedSender},
-``        OwnedRwLockWriteGuard, RwLock,
+        OwnedRwLockWriteGuard, RwLock,
     },
     task::JoinHandle,
 };
