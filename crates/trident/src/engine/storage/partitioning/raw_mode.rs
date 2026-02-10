@@ -657,8 +657,9 @@ mod functional_test {
 
     #[functional_test]
     fn test_create_partitions_for_raw_cosi_storage() {
-        let mut part_info =
-            MockPartitioningInfo::new_protective_mbr_and_gpt().expect("mock partitioning info");
+        // Mock a 10 GiB disk with a protective MBR and GPT header, and two partitions: "esp" and "root".
+        let mut part_info = MockPartitioningInfo::new_protective_mbr_and_gpt(10 << 30)
+            .expect("mock partitioning info");
 
         part_info
             .gpt
