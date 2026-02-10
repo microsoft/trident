@@ -36,6 +36,8 @@ stages:
               baseimgType: core_arm64
             ${{ if eq(parameters.architecture, 'amd64') }}:
               baseimgType: baremetal
+            # Need rcp-agent from go tools
+            downloadGoTools: true
 
   - ${{ if parameters.testAzureLinuxStreamingImage }}:
     - stage: BuildImagesForDirectStreaming_azurelinux_${{ parameters.architecture }}

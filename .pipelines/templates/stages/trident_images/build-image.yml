@@ -50,6 +50,12 @@ parameters:
       - amd64
     default: "amd64"
 
+  - name: downloadGoTools
+    displayName: "Download Go Tools"
+    type: boolean
+    default: false
+
+
 jobs:
   - job: PrepareImage_${{ replace(parameters.label, '-', '_') }}
     displayName: Prepare Image ${{ parameters.label }}
@@ -81,6 +87,18 @@ jobs:
           artifactName: $(tridentArtifactName)
           targetPath: "$(Build.ArtifactStagingDirectory)/trident"
         displayName: Download Trident RPMs
+
+      - ${{ if parameters.downloadGoTools }}:
+        - task: DownloadPipelineArtifact@2
+          displayName: "Download ${{ parameters.goToolsArtifactName }}"
+          inputs:
+            buildType: current
+            artifactName: ${{ parameters.goToolsArtifactName }}
+            targetPath: "$(Build.SourcesDirectory)/bin"
+        - bash: |
+            set -eux
+            chmod +x $(Build.SourcesDirectory)/bin/*
+          displayName: "Make go tools executable"
 
       - task: DownloadPipelineArtifact@2
         inputs:

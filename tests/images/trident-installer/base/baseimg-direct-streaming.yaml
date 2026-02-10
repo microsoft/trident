@@ -58,8 +58,12 @@ os:
       # Support for building SELinux module and debugging
       - selinux-policy-devel
       - setools-console
-      # Add trident
+      # Add trident and tridentd
       - trident
+      # Add trident selinux policy files
+      - trident-selinux-policy
+      # Add trident-install.service
+      - trident-install-service
 
   services:
     enable:
@@ -76,20 +80,6 @@ os:
       destination: /usr/lib/systemd/system/serial-getty@.service
     - source: files/root.profile
       destination: /root/.profile
-    - source: ../../../../packaging/systemd/trident-install.service
-      destination: /usr/lib/systemd/system/trident-install.service
-    - source: ../../../../packaging/selinux-policy-trident/trident.if
-      destination: /usr/share/selinux/packages/trident/trident.if
-    - source: ../../../../packaging/selinux-policy-trident/trident.fc
-      destination: /usr/share/selinux/packages/trident/trident.fc
-    - source: ../../../../packaging/selinux-policy-trident/trident.te
-      destination: /usr/share/selinux/packages/trident/trident.te
-
-    # Trident daemon service files
-    - source: ../../../../packaging/systemd/tridentd.socket
-      destination: /usr/lib/systemd/system/tridentd.socket
-    - source: ../../../../packaging/systemd/tridentd.service
-      destination: /usr/lib/systemd/system/tridentd.service
 
     # Netlaunch RCP files
     - source: ../../../../bin/rcp-agent
