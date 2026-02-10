@@ -90,10 +90,10 @@ jobs:
 
       - ${{ if parameters.downloadGoTools }}:
         - task: DownloadPipelineArtifact@2
-          displayName: "Download ${{ parameters.goToolsArtifactName }}"
+          displayName: "Download $(goToolsArtifactName)"
           inputs:
             buildType: current
-            artifactName: ${{ parameters.goToolsArtifactName }}
+            artifactName: $(goToolsArtifactName)
             targetPath: "$(Build.SourcesDirectory)/bin"
         - bash: |
             set -eux
