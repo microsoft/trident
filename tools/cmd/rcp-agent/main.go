@@ -15,7 +15,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 
-	"tridenttools/pkg/netlaunch"
+	"tridenttools/pkg/rcp/agent"
 	"tridenttools/pkg/rcp/proxy"
 	"tridenttools/storm/utils/cmd"
 )
@@ -44,7 +44,7 @@ func main() {
 		logrus.Fatalf("Failed to read config file '%s': %v", cli.Config, err)
 	}
 
-	var config netlaunch.RcpAgentConfiguration
+	var config agent.RcpAgentConfiguration
 	err = yaml.Unmarshal(configData, &config)
 	if err != nil {
 		logrus.Fatalf("Failed to parse config file '%s': %v", cli.Config, err)
@@ -70,6 +70,9 @@ func main() {
 			logrus.Fatalf("Failed to enable and start Trident install service: %v", err)
 		}
 
+		// Wait forever until killed so systemd thinks the service is still running.
+		<-ctx.Done()
+		logrus.Info("Shutdown complete")
 		return
 	}
 
@@ -80,7 +83,7 @@ func main() {
 	logrus.Info("Shutdown complete")
 }
 
-func downloadFile(file *netlaunch.RcpAdditionalFile) error {
+func downloadFile(file *agent.RcpAdditionalFile) error {
 	parent := filepath.Dir(file.Destination)
 	if err := os.MkdirAll(parent, 0755); err != nil {
 		return fmt.Errorf("failed to create parent directory '%s': %w", parent, err)

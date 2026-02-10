@@ -11,6 +11,7 @@ type CLI struct {
 	AddVpc          cmd.AddVpcCmd       `cmd:"" help:"Add a VPC footer to a COSI file."`
 	Build           cmd.BuildCmd        `cmd:"" help:"Build a COSI file from a raw or fixed-vhd image."`
 	DeleteFs        cmd.DeleteFs        `cmd:"" help:"Delete the specified filesystems from a COSI file."`
+	Explain         cmd.ExplainCmd      `cmd:"" help:"Print a developer-friendly explanation of a COSI file's layout and metadata."`
 	InsertTemplate  cmd.InsertTemplate  `cmd:"" help:"Insert a Host Configuration template into a COSI file."`
 	RandomizeFsUuid cmd.RandomizeFsUuid `cmd:"" help:"Randomize the UUID of the specified filesystems in a COSI file."`
 	ReadMetadata    cmd.ReadMetadata    `cmd:"" help:"Read metadata from a COSI file."`
