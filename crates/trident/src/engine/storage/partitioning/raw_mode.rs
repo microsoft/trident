@@ -125,7 +125,7 @@ fn write_partition_table(
             )
         })?;
 
-    // Paranoid seek to start f the disk.
+    // Paranoid seek to start of the disk.
     disk_device
         .seek(SeekFrom::Start(0))
         .context("Failed to seek to start of disk device")?;
