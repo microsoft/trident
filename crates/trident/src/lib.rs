@@ -307,7 +307,10 @@ impl Trident {
                     Some(err) => err,
                     None => {
                         // Create trace error for new errors.
-                        tracing::error!(kind = e.kind().as_str(), subkind = e.subkind());
+                        tracing::error!(
+                            error_kind = e.kind().as_str(),
+                            error_subkind = e.subkind(),
+                        );
                         serde_yaml::to_value(&e).structured(InternalError::SerializeError)?
                     }
                 };
