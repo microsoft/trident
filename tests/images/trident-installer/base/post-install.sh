@@ -21,8 +21,3 @@ fi
 
 # Link rcp-agent config from the ISO
 ln -s /trident_cdrom/rcp-agent.yaml /etc/rcp-agent/config.yaml
-
-# Compile and load Trident SELinux module (this is otherwise handled in trident.spec)
-cd /usr/share/selinux/packages/trident
-make -f /usr/share/selinux/devel/Makefile trident.pp
-semodule -i trident.pp
