@@ -548,6 +548,14 @@ func populateFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []par
 		return fmt.Errorf("failed to create mounts directory: %w", err)
 	}
 
+	// Track mounted partitions with their mount paths for later processing
+	type mountedPartition struct {
+		info      *partitionInfo
+		mountPath string
+		imageIdx  int // index in cosiMeta.Images
+	}
+	var mountedParts []mountedPartition
+
 	for i := range partInfos {
 		pi := &partInfos[i]
 
@@ -555,20 +563,7 @@ func populateFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []par
 			continue
 		}
 
-		// Create the Image entry
-		partType := uuidToPartitionType(pi.entry.PartitionTypeGUID)
-
-		img := metadata.Image{
-			Image:      *pi.imageFile,
-			MountPoint: pi.mountPoint,
-			FsType:     pi.fsType,
-			FsUuid:     pi.fsUuid,
-			PartType:   partType,
-			Verity:     nil,
-		}
-		cosiMeta.Images = append(cosiMeta.Images, img)
-
-		// Decompress again for mounting (we removed it after blkid)
+		// Decompress for mounting
 		decompressedPath := filepath.Join(tmpDir, fmt.Sprintf("partition-%d.raw", pi.partNumber))
 		err := decompressFile(pi.imageFile.SourceFile, decompressedPath)
 		if err != nil {
@@ -595,6 +590,41 @@ func populateFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []par
 			os.Remove(dp)
 		}(mountPath, decompressedPath)
 
+		// Detect mount point if not already determined from partition type
+		if pi.mountPoint == "" {
+			pi.mountPoint = detectMountPointFromContent(mountPath)
+			log.WithFields(log.Fields{
+				"partition":  pi.partNumber,
+				"mountPoint": pi.mountPoint,
+			}).Debug("Detected mount point from filesystem content")
+		}
+
+		// Skip partitions with unknown or empty mount points
+		if pi.mountPoint == "" || pi.mountPoint == "/mnt/unknown" {
+			log.WithField("partition", pi.partNumber).Debug("Skipping partition with unknown mount point")
+			continue
+		}
+
+		// Create the Image entry
+		partType := uuidToPartitionType(pi.entry.PartitionTypeGUID)
+
+		imageIdx := len(cosiMeta.Images)
+		img := metadata.Image{
+			Image:      *pi.imageFile,
+			MountPoint: pi.mountPoint,
+			FsType:     pi.fsType,
+			FsUuid:     pi.fsUuid,
+			PartType:   partType,
+			Verity:     nil,
+		}
+		cosiMeta.Images = append(cosiMeta.Images, img)
+
+		mountedParts = append(mountedParts, mountedPartition{
+			info:      pi,
+			mountPath: mountPath,
+			imageIdx:  imageIdx,
+		})
+
 		// Track root and ESP mount paths
 		if pi.mountPoint == "/" {
 			rootMountPath = mountPath
@@ -618,6 +648,7 @@ func populateFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []par
 		if err != nil {
 			log.WithError(err).Warn("Could not extract package list")
 		} else {
+			log.WithField("count", len(packages)).Info("Extracted package list")
 			cosiMeta.OsPackages = packages
 		}
 	}
@@ -709,9 +740,60 @@ func determineMountPoint(partTypeGUID uuid.UUID) string {
 		return "/tmp"
 	case "0657fd6d-a4ab-43c4-84e5-0933c84b4f4f": // Swap
 		return "swap"
+	case "0fc63daf-8483-4772-8e79-3d69d8477de4": // Linux filesystem (generic)
+		// This is the generic Linux filesystem GUID, used by many distros including Ubuntu
+		// Mount point will be determined later by checking filesystem contents
+		return ""
 	default:
-		return "/mnt/unknown"
+		return ""
 	}
+}
+
+// detectMountPointFromContent examines the mounted filesystem content to determine the mount point.
+// Returns "/" for root filesystems (containing /etc/os-release), "/home" for home directories, etc.
+func detectMountPointFromContent(mountPath string) string {
+	// Check for root filesystem indicators
+	osReleaseLocations := []string{
+		filepath.Join(mountPath, "etc", "os-release"),
+		filepath.Join(mountPath, "usr", "lib", "os-release"),
+	}
+	for _, loc := range osReleaseLocations {
+		if _, err := os.Stat(loc); err == nil {
+			return "/"
+		}
+	}
+
+	// Check for home directory indicator (has user home directories)
+	if entries, err := os.ReadDir(mountPath); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				// Check if this looks like a user home directory
+				userHome := filepath.Join(mountPath, entry.Name())
+				if _, err := os.Stat(filepath.Join(userHome, ".bashrc")); err == nil {
+					return "/home"
+				}
+				if _, err := os.Stat(filepath.Join(userHome, ".profile")); err == nil {
+					return "/home"
+				}
+			}
+		}
+	}
+
+	// Check for /var indicators
+	if _, err := os.Stat(filepath.Join(mountPath, "lib", "dpkg")); err == nil {
+		return "/var"
+	}
+	if _, err := os.Stat(filepath.Join(mountPath, "lib", "rpm")); err == nil {
+		return "/var"
+	}
+	if _, err := os.Stat(filepath.Join(mountPath, "log")); err == nil {
+		if _, err := os.Stat(filepath.Join(mountPath, "cache")); err == nil {
+			return "/var"
+		}
+	}
+
+	// Default to unknown
+	return ""
 }
 
 // uuidToPartitionType converts a UUID to a PartitionType.
@@ -741,9 +823,29 @@ func detectArchitecture(osRelease string) metadata.OsArchitecture {
 	return metadata.OsArchitectureX8664
 }
 
-// extractPackages extracts the list of installed packages by reading the RPM database directly.
-// This does not require the rpm command to be installed on the host system.
+// extractPackages extracts the list of installed packages by reading the package database directly.
+// Supports both RPM-based (RHEL, Fedora, Azure Linux) and DEB-based (Debian, Ubuntu) distributions.
+// This does not require the rpm or dpkg commands to be installed on the host system.
 func extractPackages(mountPath string) ([]metadata.OsPackage, error) {
+	// Try RPM database first
+	packages, err := extractRpmPackages(mountPath)
+	if err == nil {
+		return packages, nil
+	}
+	rpmErr := err
+
+	// Try DPKG database
+	packages, err = extractDpkgPackages(mountPath)
+	if err == nil {
+		return packages, nil
+	}
+	dpkgErr := err
+
+	return nil, fmt.Errorf("no package database found: RPM error: %v, DPKG error: %v", rpmErr, dpkgErr)
+}
+
+// extractRpmPackages extracts packages from an RPM database.
+func extractRpmPackages(mountPath string) ([]metadata.OsPackage, error) {
 	// Try different RPM database file locations
 	// go-rpmdb needs the path to a specific database file, not just the directory
 	rpmDbPaths := []string{
@@ -794,6 +896,131 @@ func extractPackages(mountPath string) ([]metadata.OsPackage, error) {
 	}
 
 	return packages, nil
+}
+
+// extractDpkgPackages extracts packages from a DPKG status database.
+func extractDpkgPackages(mountPath string) ([]metadata.OsPackage, error) {
+	// DPKG status file locations
+	dpkgStatusPaths := []string{
+		filepath.Join(mountPath, "var", "lib", "dpkg", "status"),
+		filepath.Join(mountPath, "usr", "lib", "sysimage", "dpkg", "status"),
+	}
+
+	var statusPath string
+	for _, path := range dpkgStatusPaths {
+		log.WithField("path", path).Debug("Checking for DPKG status file")
+		if _, err := os.Stat(path); err == nil {
+			statusPath = path
+			break
+		}
+	}
+
+	if statusPath == "" {
+		return nil, fmt.Errorf("DPKG status file not found (checked: %v)", dpkgStatusPaths)
+	}
+
+	log.WithField("path", statusPath).Info("Found DPKG status file")
+
+	data, err := os.ReadFile(statusPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read DPKG status file: %w", err)
+	}
+
+	log.WithField("size", len(data)).Debug("Read DPKG status file")
+
+	packages, err := parseDpkgStatus(string(data))
+	if err != nil {
+		return nil, err
+	}
+
+	log.WithField("count", len(packages)).Info("Parsed DPKG packages")
+	return packages, nil
+}
+
+// parseDpkgStatus parses the DPKG status file format and extracts installed packages.
+// The status file contains package entries separated by blank lines, with field: value pairs.
+func parseDpkgStatus(content string) ([]metadata.OsPackage, error) {
+	var packages []metadata.OsPackage
+
+	// Split into package entries (separated by blank lines)
+	entries := strings.Split(content, "\n\n")
+
+	for _, entry := range entries {
+		if strings.TrimSpace(entry) == "" {
+			continue
+		}
+
+		pkg, installed := parseDpkgEntry(entry)
+		if installed && pkg.Name != "" {
+			packages = append(packages, pkg)
+		}
+	}
+
+	return packages, nil
+}
+
+// parseDpkgEntry parses a single DPKG status entry and returns the package info.
+// Returns the package and a boolean indicating if the package is installed.
+func parseDpkgEntry(entry string) (metadata.OsPackage, bool) {
+	var pkg metadata.OsPackage
+	var status string
+
+	lines := strings.Split(entry, "\n")
+	for _, line := range lines {
+		// Handle multi-line fields (continuation lines start with space)
+		if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
+			continue
+		}
+
+		colonIdx := strings.Index(line, ":")
+		if colonIdx == -1 {
+			continue
+		}
+
+		field := strings.TrimSpace(line[:colonIdx])
+		value := strings.TrimSpace(line[colonIdx+1:])
+
+		switch field {
+		case "Package":
+			pkg.Name = value
+		case "Version":
+			// Debian version format: [epoch:]upstream_version[-debian_revision]
+			// We split into version and release similar to RPM convention
+			pkg.Version, pkg.Release = parseDebianVersion(value)
+		case "Architecture":
+			pkg.Arch = value
+		case "Status":
+			status = value
+		}
+	}
+
+	// Check if package is installed
+	// Status field format: "want flag status" e.g., "install ok installed"
+	installed := strings.Contains(status, "installed") && !strings.Contains(status, "not-installed")
+
+	return pkg, installed
+}
+
+// parseDebianVersion parses a Debian version string into version and release components.
+// Debian version format: [epoch:]upstream_version[-debian_revision]
+// Returns (version, release) where release is the debian_revision if present.
+func parseDebianVersion(fullVersion string) (string, string) {
+	version := fullVersion
+	release := ""
+
+	// Remove epoch if present (e.g., "1:2.3.4-5" -> "2.3.4-5")
+	if colonIdx := strings.Index(version, ":"); colonIdx != -1 {
+		version = version[colonIdx+1:]
+	}
+
+	// Split upstream_version and debian_revision
+	// The debian_revision is the part after the last hyphen
+	if lastHyphen := strings.LastIndex(version, "-"); lastHyphen != -1 {
+		release = version[lastHyphen+1:]
+		version = version[:lastHyphen]
+	}
+
+	return version, release
 }
 
 // checkGrubPresence checks if GRUB is present in the given mount path.
