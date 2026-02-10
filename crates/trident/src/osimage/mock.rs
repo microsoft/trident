@@ -1,6 +1,6 @@
 use std::{
     collections::BTreeMap,
-    io::{Cursor, Read, Result as IoResult, Write},
+    io::{Cursor, Read, Result as IoResult, Seek, SeekFrom, Write},
     ops::ControlFlow,
     path::{Path, PathBuf},
 };
@@ -250,27 +250,198 @@ impl SparseCursor {
         }
     }
 
-    fn get_chunk_address(&mut self, offset: u64) -> Option<(&u64, &Vec<u8>)> {
-        self.data
-            .range_mut(..=offset)
-            .next_back()
-            .filter(|(chunk_offset, chunk_data)| offset < *chunk_offset + chunk_data.len() as u64)
+    /// Returns the number of bytes remaining until the end of the cursor.
+    fn remaining(&self) -> u64 {
+        self.size.saturating_sub(self.position)
     }
 
-    pub fn get_chunk(&mut self, offset: u64, size: usize) -> &mut Vec<u8> {}
+    /// Returns the number of bytes that can be written, which is the minimum of
+    /// the remaining bytes and the provided size.
+    fn writable_size(&self, size: u64) -> u64 {
+        self.remaining().min(size)
+    }
+
+    
+    fn chunk_end(start: u64, data: &[u8]) -> u64 {
+        start + data.len() as u64
+    }
+
+    fn copy_overlap(
+        dst: &mut [u8],
+        dst_start: u64,
+        dst_end: u64,
+        chunk_start: u64,
+        chunk_data: &[u8],
+    ) {
+        let chunk_end = Self::chunk_end(chunk_start, chunk_data);
+        let overlap_start = chunk_start.max(dst_start);
+        let overlap_end = chunk_end.min(dst_end);
+
+        if overlap_start >= overlap_end {
+            return;
+        }
+
+        let src_offset = (overlap_start - chunk_start) as usize;
+        let dst_offset = (overlap_start - dst_start) as usize;
+        let len = (overlap_end - overlap_start) as usize;
+
+        dst[dst_offset..dst_offset + len]
+            .copy_from_slice(&chunk_data[src_offset..src_offset + len]);
+    }
 }
 
 impl Write for SparseCursor {
     fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
-        let remaining = self.size.saturating_sub(self.position);
-        if remaining == 0 {
+        let to_write = self.writable_size(buf.len() as u64);
+        if to_write == 0 {
             return Ok(0);
         }
 
-        let to_write = remaining.min(buf.len() as u64) as usize;
+        let write_start = self.position;
+        let write_end = write_start + to_write;
+
+        // Fast path: write fits entirely within an existing chunk.
+        if let Some((chunk_start, chunk)) = self.data.range_mut(..=write_start).next_back() {
+            let chunk_end = Self::chunk_end(*chunk_start, chunk);
+            if write_end <= chunk_end {
+                let offset = (write_start - *chunk_start) as usize;
+                chunk[offset..offset + to_write as usize]
+                    .copy_from_slice(&buf[..to_write as usize]);
+                self.position = write_end;
+                return Ok(to_write as usize);
+            }
+        }
+
+        let mut merge_start = write_start;
+        let mut merge_end = write_end;
+        let mut keys_to_remove: Vec<u64> = Vec::new();
+
+        // Check previous chunk for overlap or adjacency.
+        if let Some((chunk_start, chunk)) = self.data.range(..=write_start).next_back() {
+            let chunk_end = Self::chunk_end(*chunk_start, chunk);
+            if chunk_end >= write_start {
+                merge_start = merge_start.min(*chunk_start);
+                merge_end = merge_end.max(chunk_end);
+                keys_to_remove.push(*chunk_start);
+            }
+        }
+
+        // Check following chunks that overlap or touch the merge range.
+        let mut search_start = write_start;
+        loop {
+            let next = self
+                .data
+                .range(search_start..)
+                .next()
+                .map(|(s, d)| (*s, d.len() as u64));
+
+            let Some((chunk_start, len)) = next else {
+                break;
+            };
+
+            if chunk_start > merge_end {
+                break;
+            }
+
+            let chunk_end = chunk_start + len;
+            merge_start = merge_start.min(chunk_start);
+            merge_end = merge_end.max(chunk_end);
+            keys_to_remove.push(chunk_start);
+
+            search_start = chunk_start + 1;
+        }
+
+        keys_to_remove.sort_unstable();
+        keys_to_remove.dedup();
+
+        let merged_len = (merge_end - merge_start) as usize;
+        let mut merged = vec![0u8; merged_len];
+
+        for key in keys_to_remove {
+            if let Some(chunk) = self.data.remove(&key) {
+                let offset = (key - merge_start) as usize;
+                merged[offset..offset + chunk.len()].copy_from_slice(&chunk);
+            }
+        }
+
+        let write_offset = (write_start - merge_start) as usize;
+        merged[write_offset..write_offset + to_write as usize]
+            .copy_from_slice(&buf[..to_write as usize]);
+
+        self.data.insert(merge_start, merged);
+
+        self.position = write_end;
+        Ok(to_write as usize)
     }
 
     fn flush(&mut self) -> IoResult<()> {
         Ok(())
+    }
+}
+
+impl Read for SparseCursor {
+    fn read(&mut self, buf: &mut [u8]) -> IoResult<usize> {
+        let to_read = self.remaining().min(buf.len() as u64) as usize;
+        if to_read == 0 {
+            return Ok(0);
+        }
+
+        let read_start = self.position;
+        let read_end = read_start + to_read as u64;
+
+        buf[..to_read].fill(0);
+
+        // Check previous chunk for overlap.
+        if let Some((chunk_start, chunk)) = self.data.range(..=read_start).next_back() {
+            let chunk_end = Self::chunk_end(*chunk_start, chunk);
+            if chunk_end > read_start {
+                Self::copy_overlap(
+                    &mut buf[..to_read],
+                    read_start,
+                    read_end,
+                    *chunk_start,
+                    chunk,
+                );
+            }
+        }
+
+        // Iterate over chunks starting at or after read_start.
+        for (chunk_start, chunk) in self.data.range(read_start..) {
+            if *chunk_start >= read_end {
+                break;
+            }
+            Self::copy_overlap(
+                &mut buf[..to_read],
+                read_start,
+                read_end,
+                *chunk_start,
+                chunk,
+            );
+        }
+
+        self.position = read_end;
+        Ok(to_read)
+    }
+}
+
+impl Seek for SparseCursor {
+    fn seek(&mut self, pos: SeekFrom) -> IoResult<u64> {
+        let size = self.size as i128;
+        let current = self.position as i128;
+        let next = match pos {
+            SeekFrom::Start(offset) => offset as i128,
+            SeekFrom::End(offset) => size + offset as i128,
+            SeekFrom::Current(offset) => current + offset as i128,
+        };
+
+        if next < 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Invalid seek to a negative position",
+            ));
+        }
+
+        self.position = next as u64;
+        Ok(self.position)
     }
 }
