@@ -23,6 +23,10 @@ parameters:
     type: boolean
     default: true
 
+  - name: buildRcpAgent
+    type: boolean
+    default: true
+
   - name: architecture
     displayName: System Architecture
     type: string
@@ -130,3 +134,14 @@ stages:
                   mkdir -p $(ob_outputDirectory)
                   mv bin/virtdeploy $(ob_outputDirectory)
                 workingDirectory: $(Build.SourcesDirectory)
+                displayName: "Building virtdeploy"
+
+          - ${{ if eq(parameters.buildRcpAgent, true) }}:
+              - bash: |
+                  set -eux
+                  make bin/rcp-agent
+                  mkdir -p $(ob_outputDirectory)
+                  mv bin/rcp-agent $(ob_outputDirectory)
+                workingDirectory: $(Build.SourcesDirectory)
+                displayName: "Building rcp-agent"
+
