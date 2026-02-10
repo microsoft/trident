@@ -305,10 +305,11 @@ impl Trident {
                 // Record error in datastore.
                 let error = match last_error_to_preserve {
                     Some(err) => err,
-                    None => serde_yaml::to_value(&e).structured(InternalError::SerializeError)?,
+                    None => {
+                        tracing::error!(kind = format!("{:?}", e.kind()), subkind = e.subkind());
+                        serde_yaml::to_value(&e).structured(InternalError::SerializeError)?
+                    }
                 };
-                // Create error trace
-                tracing::error!(error = format!("{error:?}"));
                 if let Err(e2) =
                     datastore.with_host_status(|status| status.last_error = Some(error))
                 {

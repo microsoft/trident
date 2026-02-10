@@ -251,7 +251,7 @@ stages:
                   "$HOST_IP" \
                   "testing-user" \
                   "${{ parameters.runtimeEnv }}" \
-                  --metric-to-check clean_install_success
+                  --metric-to-check trident_start
             timeoutInMinutes: 5
             displayName: "Check for journald logs for tracing"
 
