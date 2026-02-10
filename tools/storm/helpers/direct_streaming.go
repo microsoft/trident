@@ -110,7 +110,7 @@ func (h *DirectStreamingHelper) directStreaming(tc storm.TestCase) error {
 
 func (h *DirectStreamingHelper) createTempHostConfig() (string, error) {
 	hash := h.args.CosiMetadataSha384
-	if !strings.HasPrefix(hash, "sha384:") {
+	if hash != "ignored" && !strings.HasPrefix(hash, "sha384:") {
 		hash = "sha384:" + hash
 	}
 	hostConfig := map[string]any{
