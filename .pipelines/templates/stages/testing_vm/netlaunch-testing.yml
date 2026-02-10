@@ -251,7 +251,7 @@ stages:
                   "$HOST_IP" \
                   "testing-user" \
                   "${{ parameters.runtimeEnv }}" \
-                  --metric-to-check clean_install_start
+                  --metric-to-check clean_install_success
             timeoutInMinutes: 5
             displayName: "Check for journald logs for tracing"
 

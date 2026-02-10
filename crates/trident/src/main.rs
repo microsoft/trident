@@ -318,6 +318,10 @@ fn setup_tracing(args: &Cli) -> Result<TraceStream, Error> {
         | Commands::Rollback { check: false, .. }
         | Commands::StreamImage { .. }
         | Commands::Update { .. } => {
+            // As functionality moves to the Daemon, move the journald layer to
+            // only be enabled for the Daemon command. Until then, keep it enabled
+            // for all commands to ensure we have tracing info in journald for all
+            // commands.
             tracing::subscriber::set_global_default(
                 tracing_subscriber::Registry::default()
                     .with(

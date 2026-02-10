@@ -307,6 +307,8 @@ impl Trident {
                     Some(err) => err,
                     None => serde_yaml::to_value(&e).structured(InternalError::SerializeError)?,
                 };
+                // Create error trace
+                tracing::error!(error = format!("{error:?}"));
                 if let Err(e2) =
                     datastore.with_host_status(|status| status.last_error = Some(error))
                 {
