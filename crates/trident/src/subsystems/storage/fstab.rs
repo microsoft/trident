@@ -1,13 +1,13 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Error};
+use anyhow::{Context, Error};
 use log::trace;
 
 use osutils::{
     filesystems::TabFileSystemType,
     tabfile::{TabFile, TabFileEntry},
 };
-use trident_api::{config::Swap, constants::internal_params::RAW_COSI_STORAGE, BlockDeviceId};
+use trident_api::{config::Swap, BlockDeviceId};
 
 use crate::engine::{filesystem::FileSystemData, EngineContext};
 
@@ -70,13 +70,9 @@ pub(super) fn generate_fstab(ctx: &EngineContext, output_path: &Path) -> Result<
 
     let fstab = TabFile { entries };
 
-    if ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
-        bail!("Regenerate fstab is not yet supported with raw COSI storage");
-    } else {
-        fstab
-            .write(output_path)
-            .context(format!("Failed to write {}", output_path.display()))?;
-    }
+    fstab
+        .write(output_path)
+        .context(format!("Failed to write {}", output_path.display()))?;
 
     trace!("Wrote '{}', contents: '{:?}'", output_path.display(), fstab);
 

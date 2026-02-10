@@ -80,7 +80,7 @@ impl TridentService for TridentHarpoonServer {
             let mut datastore =
                 DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
 
-            trident.install(&mut datastore, Operations::all(), false)
+            trident.install(&mut datastore, Operations::all(), false, None)
         })
     }
 
@@ -107,7 +107,7 @@ impl TridentService for TridentHarpoonServer {
             let mut datastore =
                 DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
 
-            trident.install(&mut datastore, Operation::Stage.into(), false)
+            trident.install(&mut datastore, Operation::Stage.into(), false, None)
         })
     }
 
@@ -129,7 +129,7 @@ impl TridentService for TridentHarpoonServer {
             let mut datastore =
                 DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
 
-            trident.install(&mut datastore, Operation::Finalize.into(), false)
+            trident.install(&mut datastore, Operation::Finalize.into(), false, None)
         })
     }
 

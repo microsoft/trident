@@ -115,7 +115,7 @@ impl Cosi {
         // First, retrieve the GPT partitions. We require GPT data for this
         // operation, so we error if it's missing.
         let gpt_partitions = self
-            .gpt
+            .partitioning_info
             .as_ref()
             .with_context(|| {
                 format!(
@@ -123,6 +123,7 @@ impl Cosi {
                     self.metadata.version
                 )
             })?
+            .gpt_disk
             .partitions();
 
         // Ensure we have disk metadata, which is required for this operation.
@@ -216,7 +217,7 @@ mod tests {
                 metadata::{
                     CosiMetadata, DiskInfo, GptDiskRegion, Image, ImageFile, PartitionTableType,
                 },
-                KnownMetadataVersion,
+                Cosi, CosiPartitioningInfo, KnownMetadataVersion,
             },
             OsImageFileSystemType,
         },
@@ -276,12 +277,15 @@ mod tests {
     fn create_test_cosi(
         metadata: CosiMetadata,
         gpt: Option<gpt::GptDisk<Cursor<Vec<u8>>>>,
-    ) -> super::super::Cosi {
-        super::super::Cosi {
+    ) -> Cosi {
+        Cosi {
             source: Url::parse("file:///test/image.cosi").unwrap(),
             metadata,
             metadata_sha384: Sha384Hash::from("0".repeat(96)),
-            gpt,
+            partitioning_info: gpt.map(|gpt_disk| CosiPartitioningInfo {
+                lba0: Vec::new(),
+                gpt_disk,
+            }),
             reader: FileReader::Buffer(Cursor::new(Vec::<u8>::new())),
             entries: CosiEntries::default(),
         }

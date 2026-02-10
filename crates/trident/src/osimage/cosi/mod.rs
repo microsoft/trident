@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::{bail, ensure, Context, Error};
-use gpt::{disk::LogicalBlockSize, DiskDevice, GptConfig, GptDisk};
+use gpt::{disk::LogicalBlockSize, GptConfig, GptDisk};
 use log::{debug, trace};
 use tar::Archive;
 use url::Url;
@@ -61,7 +61,7 @@ pub(super) struct Cosi {
     /// in the metadata. This is populated on demand when the COSI instance is
     /// created, and can be used by images that require it (eg. for verity
     /// metadata on COSI v1.2+).
-    gpt: Option<GptDisk<Cursor<Vec<u8>>>>,
+    partitioning_info: Option<CosiPartitioningInfo>,
 
     /// Internal reader for the COSI file.
     reader: FileReader,
@@ -71,6 +71,17 @@ pub(super) struct Cosi {
     /// allows us to avoid reading the entire COSI archive at once, while still
     /// allowing for efficient access to files after they've been read once.
     entries: CosiEntries,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct CosiPartitioningInfo {
+    /// The raw data of the protective MBR (LBA 0) of the GPT disk. This is
+    /// needed for deploying the GPT to disk, as the protective MBR is not part
+    /// of the GPT disk structure and needs to be written separately.
+    pub(super) lba0: Vec<u8>,
+
+    /// The parsed GPT disk data from the COSI file.
+    pub(super) gpt_disk: GptDisk<Cursor<Vec<u8>>>,
 }
 
 impl Cosi {
@@ -97,7 +108,7 @@ impl Cosi {
             reader: cosi_reader,
             metadata_sha384: sha384,
             entries,
-            gpt: None,
+            partitioning_info: None,
         })
     }
 
@@ -131,8 +142,8 @@ impl Cosi {
     /// Returns the GPT disk if it is present in the COSI file. This will be
     /// present if the COSI version is >= 1.2 and the metadata contains a disk
     /// section with a GPT region.
-    pub(super) fn gpt(&mut self) -> Result<Option<&GptDisk<impl DiskDevice>>, Error> {
-        if self.gpt.is_none() {
+    pub(super) fn partitioning_info(&mut self) -> Result<Option<&CosiPartitioningInfo>, Error> {
+        if self.partitioning_info.is_none() {
             ensure!(
                 self.metadata.version >= KnownMetadataVersion::V1_2,
                 "GPT data is not available for COSI versions below 1.2"
@@ -142,7 +153,7 @@ impl Cosi {
                 .context("Failed to populate GPT data for COSI version >= 1.2")?;
         }
 
-        Ok(self.gpt.as_ref())
+        Ok(self.partitioning_info.as_ref())
     }
 
     /// Derives the `image` and `storage` sections of the host configuration
@@ -159,7 +170,7 @@ impl Cosi {
         );
 
         // If we don't have GPT data, attempt to populate it from the disk metadata.
-        if self.gpt.is_none() {
+        if self.partitioning_info.is_none() {
             self.populate_gpt_data()
                 .context("Failed to populate GPT data for COSI version >= 1.2")?;
         }
@@ -340,11 +351,25 @@ impl Cosi {
             (gpt_region.image.clone(), disk.lba_size)
         };
 
-        // Now get a reader for the image that contains the GPT.
-        let raw_gpt = Cursor::new(
-            self.get_file_data(&gpt_image)
-                .context("Failed to read GPT image data")?,
+        let raw_gpt_data = self
+            .get_file_data(&gpt_image)
+            .context("Failed to read GPT image data from COSI file")?;
+
+        ensure!(
+            raw_gpt_data.len() > lba_size as usize,
+            "Raw GPT data is too small to contain protective MBR and GPT header, data size: {}, LBA size: {}",
+            raw_gpt_data.len(),
+            lba_size,
         );
+
+        // Extract a copy of the protective MBR (LBA 0) from the raw GPT data.
+        // This is needed because the protective MBR is not part of the GPT disk
+        // structure and needs to be written separately when deploying the GPT
+        // to disk.
+        let lba0 = raw_gpt_data[0..lba_size as usize].to_vec();
+
+        // Now get a reader for the image that contains the GPT.
+        let raw_gpt_cursor = Cursor::new(raw_gpt_data);
 
         let gpt_disk = GptConfig::new()
             .writable(false)
@@ -353,14 +378,14 @@ impl Cosi {
                 4096 => LogicalBlockSize::Lb4096,
                 other => bail!("Unsupported LBA size for GPT: {}", other),
             })
-            .open_from_device(raw_gpt)?;
+            .open_from_device(raw_gpt_cursor)?;
 
         trace!(
             "Successfully read GPT data from COSI file, found {} partitions",
             gpt_disk.partitions().len()
         );
 
-        self.gpt = Some(gpt_disk);
+        self.partitioning_info = Some(CosiPartitioningInfo { lba0, gpt_disk });
 
         Ok(())
     }
@@ -1120,7 +1145,7 @@ mod tests {
             reader: FileReader::Buffer(data),
             metadata_sha384: Sha384Hash::from("0".repeat(96)),
             entries,
-            gpt: None,
+            partitioning_info: None,
         }
     }
 
@@ -1151,7 +1176,7 @@ mod tests {
             reader: FileReader::Buffer(Cursor::new(Vec::<u8>::new())),
             metadata_sha384: Sha384Hash::from("0".repeat(96)),
             entries: CosiEntries::default(),
-            gpt: None,
+            partitioning_info: None,
         };
 
         // Weird behavior with none/multiple ESPs is primarily tested by the
@@ -1404,7 +1429,7 @@ mod tests {
             reader,
             metadata_sha384: Sha384Hash::from("0".repeat(96)),
             entries,
-            gpt: None,
+            partitioning_info: None,
         };
 
         // Test 1: Read a file that's already in the cache.
@@ -1529,7 +1554,7 @@ mod tests {
             reader,
             metadata_sha384: Sha384Hash::from("0".repeat(96)),
             entries,
-            gpt: None,
+            partitioning_info: None,
         };
 
         // Create an ImageFile descriptor for the test image.
@@ -1755,7 +1780,7 @@ mod tests {
             reader,
             metadata_sha384: Sha384Hash::from("0".repeat(96)),
             entries,
-            gpt: None,
+            partitioning_info: None,
         };
 
         // Test: populate_gpt_data should succeed.
@@ -1763,18 +1788,21 @@ mod tests {
             .expect("populate_gpt_data should succeed");
 
         // Verify GPT was populated.
-        assert!(cosi.gpt.is_some(), "GPT should be populated after call");
+        assert!(
+            cosi.partitioning_info.is_some(),
+            "GPT should be populated after call"
+        );
 
-        let gpt_disk = cosi.gpt.as_ref().unwrap();
+        let gpt_data = cosi.partitioning_info.as_ref().unwrap();
 
         // Verify we can read the partition we added.
         assert_eq!(
-            gpt_disk.partitions().len(),
+            gpt_data.gpt_disk.partitions().len(),
             1,
             "Should have exactly one partition"
         );
 
-        let (_, partition) = gpt_disk.partitions().iter().next().unwrap();
+        let (_, partition) = gpt_data.gpt_disk.partitions().iter().next().unwrap();
         assert_eq!(
             partition.name, "test_partition",
             "Partition name should match"
@@ -1811,7 +1839,7 @@ mod tests {
             reader: FileReader::Buffer(Cursor::new(Vec::<u8>::new())),
             metadata_sha384: Sha384Hash::from("0".repeat(96)),
             entries: CosiEntries::default(),
-            gpt: None,
+            partitioning_info: None,
         };
 
         // Test: populate_gpt_data should fail without disk info.
@@ -1865,7 +1893,7 @@ mod tests {
             reader: FileReader::Buffer(Cursor::new(Vec::<u8>::new())),
             metadata_sha384: Sha384Hash::from("0".repeat(96)),
             entries: CosiEntries::default(),
-            gpt: None,
+            partitioning_info: None,
         };
 
         // Test: populate_gpt_data should fail without GPT regions.
@@ -1996,33 +2024,43 @@ mod tests {
             reader,
             metadata_sha384: Sha384Hash::from("0".repeat(96)),
             entries,
-            gpt: None,
+            partitioning_info: None,
         };
 
         // Verify GPT is not loaded initially.
-        assert!(cosi.gpt.is_none(), "GPT should not be pre-loaded");
+        assert!(
+            cosi.partitioning_info.is_none(),
+            "GPT should not be pre-loaded"
+        );
 
         // First call to gpt() should load the GPT.
-        let gpt_result = cosi.gpt();
+        let gpt_result = cosi.partitioning_info();
         assert!(gpt_result.is_ok(), "gpt() should succeed for COSI >= 1.2");
 
         let gpt = gpt_result.unwrap();
         assert!(gpt.is_some(), "GPT should be present after gpt() call");
 
-        let gpt_disk = gpt.unwrap();
-        assert_eq!(gpt_disk.partitions().len(), 1, "Should have one partition");
+        let gpt_data = gpt.unwrap();
+        assert_eq!(
+            gpt_data.gpt_disk.partitions().len(),
+            1,
+            "Should have one partition"
+        );
 
-        let (_, partition) = gpt_disk.partitions().iter().next().unwrap();
+        let (_, partition) = gpt_data.gpt_disk.partitions().iter().next().unwrap();
         assert_eq!(
             partition.name, "gpt_test_partition",
             "Partition name should match"
         );
 
         // Verify GPT is now cached.
-        assert!(cosi.gpt.is_some(), "GPT should be cached after first call");
+        assert!(
+            cosi.partitioning_info.is_some(),
+            "GPT should be cached after first call"
+        );
 
         // Second call should return cached GPT (no re-parsing).
-        let gpt_result2 = cosi.gpt();
+        let gpt_result2 = cosi.partitioning_info();
         assert!(gpt_result2.is_ok(), "Second gpt() call should succeed");
         assert!(
             gpt_result2.unwrap().is_some(),
@@ -2060,11 +2098,11 @@ mod tests {
             reader: FileReader::Buffer(Cursor::new(Vec::<u8>::new())),
             metadata_sha384: Sha384Hash::from("0".repeat(96)),
             entries: CosiEntries::default(),
-            gpt: None,
+            partitioning_info: None,
         };
 
         // Calling gpt() on COSI < 1.2 should fail.
-        let result = cosi.gpt();
+        let result = cosi.partitioning_info();
         assert!(result.is_err(), "gpt() should fail for COSI < 1.2");
 
         let err_msg = result.unwrap_err().to_string();
@@ -2075,7 +2113,7 @@ mod tests {
         );
 
         cosi.metadata.version = KnownMetadataVersion::V1_1.as_version();
-        let result2 = cosi.gpt();
+        let result2 = cosi.partitioning_info();
         assert!(result2.is_err(), "gpt() should fail for COSI 1.1 as well");
         let err_msg2 = result2.unwrap_err().to_string();
         assert!(

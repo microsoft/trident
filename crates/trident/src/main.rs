@@ -190,6 +190,7 @@ fn run_trident(
                         &mut datastore,
                         cli::to_operations(allowed_operations),
                         multiboot,
+                        None,
                     ),
                     Commands::Update {
                         ref allowed_operations,
@@ -261,7 +262,9 @@ fn setup_logging(
         .with_global_filter("reqwest", LevelFilter::Debug)
         // Filter out debug logs from h2, some of which have target "tracing::span"
         .with_global_filter("tracing::span", LevelFilter::Error)
-        .with_global_filter("h2", LevelFilter::Error);
+        .with_global_filter("h2", LevelFilter::Error)
+        // Filter out this very noisy module that logs a lot when logstream is active.
+        .with_global_filter("hyper_util::client", LevelFilter::Info);
 
     // Attempt to use the systemd journal if stderr is directly connected to it, and otherwise fall
     // back to env_logger.

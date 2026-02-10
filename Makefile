@@ -174,7 +174,7 @@ build-azl3: azl3-builder-image version-vars
 	@docker run --rm \
 		-e TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
 		-v $(PWD):/work -w /work $(AZL3_BUILDER_IMAGE) \
-		cargo build --target-dir target/azl3 --release --features dangerous-options
+		cargo build --color always --target-dir target/azl3 --release --features dangerous-options
 
 bin/trident-azl3: build-azl3
 	@cp -u target/azl3/release/trident bin/trident-azl3
