@@ -310,7 +310,14 @@ fn setup_tracing(args: &Cli) -> Result<TraceStream, Error> {
     let tracestream = TraceStream::default();
 
     match &args.command {
-        Commands::Install { .. } | Commands::Daemon { .. } => {
+        Commands::Commit { .. }
+        | Commands::Daemon { .. }
+        | Commands::GrpcClient { .. }
+        | Commands::Install { .. }
+        | Commands::RebuildRaid { .. }
+        | Commands::Rollback { check: false, .. }
+        | Commands::StreamImage { .. }
+        | Commands::Update { .. } => {
             tracing::subscriber::set_global_default(
                 tracing_subscriber::Registry::default()
                     .with(
@@ -323,21 +330,6 @@ fn setup_tracing(args: &Cli) -> Result<TraceStream, Error> {
                             .with_syslog_identifier("trident-tracing".to_string())
                             .with_filter(filter::LevelFilter::INFO),
                     ),
-            )
-            .context("Failed to set global default subscriber")?;
-        }
-        Commands::Commit { .. }
-        | Commands::GrpcClient { .. }
-        | Commands::RebuildRaid { .. }
-        | Commands::Rollback { check: false, .. }
-        | Commands::StreamImage { .. }
-        | Commands::Update { .. } => {
-            tracing::subscriber::set_global_default(
-                tracing_subscriber::Registry::default().with(
-                    tracestream
-                        .make_trace_sender()
-                        .with_filter(filter::LevelFilter::INFO),
-                ),
             )
             .context("Failed to set global default subscriber")?;
         }
