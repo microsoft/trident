@@ -1,5 +1,6 @@
 use std::{
-    io::{Cursor, Read},
+    collections::BTreeMap,
+    io::{Cursor, Read, Result as IoResult, Write},
     ops::ControlFlow,
     path::{Path, PathBuf},
 };
@@ -60,8 +61,9 @@ impl MockPartitioningInfo {
         let protective_mbr =
             ProtectiveMBR::with_lb_size((fake_disk_size / lba_size - 1) as u32).to_bytes();
 
-        // lba0 + GPT header + partition entries
-        let mut mock_gpt_area = vec![0; lba_size as usize * 34];
+        // A mini 100KiB disk that should be enough to hold the primary and
+        // backup gpt.
+        let mut mock_gpt_area = vec![0; lba_size as usize * 100];
 
         // Set the first 512 bytes to the protective MBR.
         mock_gpt_area[..lba_size as usize].copy_from_slice(&protective_mbr);
@@ -227,5 +229,48 @@ impl MockImage {
                 roothash: roothash.as_ref().to_owned(),
             }),
         }
+    }
+}
+
+/// An arbitrary data containers that pretends to be bigger than it actually is.
+pub struct SparseCursor {
+    size: u64,
+    // Holds sparse data in NON-overlapping chunks. The key is the offset of the
+    // chunk, and the value is the data.
+    data: BTreeMap<u64, Vec<u8>>,
+    position: u64,
+}
+
+impl SparseCursor {
+    pub fn new(size: u64) -> Self {
+        Self {
+            size,
+            data: BTreeMap::new(),
+            position: 0,
+        }
+    }
+
+    fn get_chunk_address(&mut self, offset: u64) -> Option<(&u64, &Vec<u8>)> {
+        self.data
+            .range_mut(..=offset)
+            .next_back()
+            .filter(|(chunk_offset, chunk_data)| offset < *chunk_offset + chunk_data.len() as u64)
+    }
+
+    pub fn get_chunk(&mut self, offset: u64, size: usize) -> &mut Vec<u8> {}
+}
+
+impl Write for SparseCursor {
+    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
+        let remaining = self.size.saturating_sub(self.position);
+        if remaining == 0 {
+            return Ok(0);
+        }
+
+        let to_write = remaining.min(buf.len() as u64) as usize;
+    }
+
+    fn flush(&mut self) -> IoResult<()> {
+        Ok(())
     }
 }
