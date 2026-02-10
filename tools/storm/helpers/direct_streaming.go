@@ -45,8 +45,19 @@ func (h *DirectStreamingHelper) RegisterTestCases(r storm.TestRegistrar) error {
 
 func (h *DirectStreamingHelper) directStreaming(tc storm.TestCase) error {
 	startTime := time.Now()
+
+	// Create Host Configuration with image information for direct streaming test
+	hostConfig, err := h.createTempHostConfig()
+	if err != nil {
+		return fmt.Errorf("failed to create host config: %w", err)
+	}
+	defer func() {
+		tc.ArtifactBroker().PublishLogFile("hostconfig.yaml", hostConfig)
+		os.Remove(hostConfig)
+	}()
+
 	// Create adjusted netlaunch config with direct streaming image
-	netlaunchConfig, err := h.createNetlaunchConfig()
+	netlaunchConfig, err := h.createNetlaunchConfig(hostConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create netlaunch config: %w", err)
 	}
@@ -59,14 +70,14 @@ func (h *DirectStreamingHelper) directStreaming(tc storm.TestCase) error {
 		tc.FailFromError(err)
 		return err
 	}
-	defer tc.ArtifactBroker().PublishLogFile("vm-serial.log", vmSerialLog)
-
+	// For local runs, if serial log already exists, delete it.
 	if _, err := os.Stat(vmSerialLog); err == nil {
 		logrus.Infof("VM serial log file (%s) already exists, delete it.", vmSerialLog)
 		if removeErr := os.Remove(vmSerialLog); removeErr != nil {
 			return fmt.Errorf("failed to remove existing VM serial log file: %w", removeErr)
 		}
 	}
+	defer tc.ArtifactBroker().PublishLogFile("vm-serial.log", vmSerialLog)
 
 	// Start netlaunch in background because the VM will not connect back to
 	// netlaunch and we need the file server to continue running until the image
@@ -97,7 +108,34 @@ func (h *DirectStreamingHelper) directStreaming(tc storm.TestCase) error {
 	return nil
 }
 
-func (h *DirectStreamingHelper) createNetlaunchConfig() (*netlaunch.NetLaunchConfig, error) {
+func (h *DirectStreamingHelper) createTempHostConfig() (string, error) {
+	hash := h.args.CosiMetadataSha384
+	if !strings.HasPrefix(hash, "sha384:") {
+		hash = "sha384:" + hash
+	}
+	hostConfig := map[string]any{
+		"image": map[string]any{
+			"url":    fmt.Sprintf("http://NETLAUNCH_HOST_ADDRESS/files/%s", filepath.Base(h.args.CosiFile)),
+			"sha384": hash,
+		},
+	}
+	hostConfigBytes, err := yaml.Marshal(hostConfig)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal host config to YAML: %w", err)
+	}
+	hostConfigFile, err := os.CreateTemp("", "host-config-*.yaml")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file for host config: %w", err)
+	}
+	_, err = hostConfigFile.Write(hostConfigBytes)
+	if err != nil {
+		return "", fmt.Errorf("failed to write host config to file: %w", err)
+	}
+	hostConfigFile.Close()
+	return hostConfigFile.Name(), nil
+}
+
+func (h *DirectStreamingHelper) createNetlaunchConfig(hostConfig string) (*netlaunch.NetLaunchConfig, error) {
 	// Create adjusted netlaunch config with direct streaming image
 	netlaunchConfigBytes, err := os.ReadFile(h.args.NetlaunchConfigFile)
 	if err != nil {
@@ -110,21 +148,17 @@ func (h *DirectStreamingHelper) createNetlaunchConfig() (*netlaunch.NetLaunchCon
 		return nil, fmt.Errorf("failed to parse netlaunch config file: %w", err)
 	}
 
-	if netlaunchConfig.Iso.DirectStreaming == nil {
-		netlaunchConfig.Iso.DirectStreaming = &netlaunch.DirectStreaming{}
-	}
-	netlaunchConfig.Iso.DirectStreaming.Image = filepath.Base(h.args.CosiFile)
-	hash := h.args.CosiMetadataSha384
-	if hash != "ignored" && !strings.HasPrefix(hash, "sha384:") {
-		hash = "sha384:" + hash
-	}
-	netlaunchConfig.Iso.DirectStreaming.Hash = hash
+	netlaunchConfig.HostConfigFile = hostConfig
 	netlaunchConfig.ListenPort = h.args.Port
 	netlaunchConfig.ServeDirectory = filepath.Dir(h.args.CosiFile)
 	netlaunchConfig.IsoPath = h.args.IsoFile
 	netlaunchConfig.EnableSecureBoot = h.args.EnableSecureBoot
 	netlaunchConfig.LogstreamFile = "/tmp/netlaunch.log"
 	netlaunchConfig.TracestreamFile = "/tmp/netlaunch-trace.jsonl"
+	netlaunchConfig.Rcp = &netlaunch.RcpConfiguration{
+		GrpcMode:       false,
+		UseStreamImage: true,
+	}
 
 	return &netlaunchConfig, nil
 }

@@ -30,6 +30,9 @@ os:
   hostname: trident-direct-streaming-mos-testimage
 
   packages:
+    update:
+      - systemd
+
     install:
       - binutils
       - curl
@@ -42,29 +45,29 @@ os:
       - lsof
       - mdadm
       - netplan
-      # Optional dependencies for NTFS
+      # Support for mounting NTFS filesystems
       - ntfs-3g
+      # Support for creating NTFS filesystems
       - ntfsprogs
       - openssh-server
-      # Package required for systemd-pcrlock & PCR-based encryption; can be removed once AZL 4.0
-      # merges a fix to provide statically defined files inside the same package as the
-      # systemd-pcrlock binary, i.e. systemd-udev.
-      - trident-static-pcrlock-files
       - squashfs-tools
       - tar
       - tpm2-tools
-      - trident
-      - vim
       - veritysetup
-      - selinux-policy
+      - vim
+      # Support for building SELinux module and debugging
       - selinux-policy-devel
-      - audit
+      - setools-console
+      # Add trident
+      - trident
 
   services:
     enable:
       - sshd
+      - rcp-agent
       - tridentd.socket
-      - trident-direct-streaming
+    disable:
+      - trident-install
 
   additionalFiles:
     - source: files/getty@.service
@@ -73,14 +76,26 @@ os:
       destination: /usr/lib/systemd/system/serial-getty@.service
     - source: files/root.profile
       destination: /root/.profile
-    - source: files/trident-direct-streaming.service
-      destination: /usr/lib/systemd/system/trident-direct-streaming.service
+    - source: ../../../../packaging/systemd/trident-install.service
+      destination: /usr/lib/systemd/system/trident-install.service
     - source: ../../../../packaging/selinux-policy-trident/trident.if
       destination: /usr/share/selinux/packages/trident/trident.if
     - source: ../../../../packaging/selinux-policy-trident/trident.fc
       destination: /usr/share/selinux/packages/trident/trident.fc
     - source: ../../../../packaging/selinux-policy-trident/trident.te
       destination: /usr/share/selinux/packages/trident/trident.te
+
+    # Trident daemon service files
+    - source: ../../../../packaging/systemd/tridentd.socket
+      destination: /usr/lib/systemd/system/tridentd.socket
+    - source: ../../../../packaging/systemd/tridentd.service
+      destination: /usr/lib/systemd/system/tridentd.service
+
+    # Netlaunch RCP files
+    - source: ../../../../bin/rcp-agent
+      destination: /usr/bin/rcp-agent
+    - source: ../../../../tools/cmd/rcp-agent/rcp-agent.service
+      destination: /usr/lib/systemd/system/rcp-agent.service
 
   selinux:
     mode: enforcing
@@ -89,14 +104,20 @@ scripts:
   postCustomization:
     - path: post-install.sh
       arguments:
-        - "no-trident-config"
+        - "stream-image-test"
 
 iso:
   additionalFiles:
-    - source: files/direct-streaming-placeholder.conf
-      destination: /direct-streaming.conf
+    # Add pre-trident script to be run early by rcp-agent
+    - source: files/pre-trident-script.sh
+      destination: /pre-trident-script.sh
+    # Add overridable default config for rcp-agent
+    - source: files/rcp-agent.yaml
+      destination: /rcp-agent.yaml
+
   kernelCommandLine:
     extraCommandLine:
       - console=tty0
       - console=ttyS0
       - rd.luks=0
+      - selinux=1

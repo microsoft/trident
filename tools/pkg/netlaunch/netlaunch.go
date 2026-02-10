@@ -141,17 +141,21 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 			trident["trident"].(map[interface{}]interface{})["logstream"] = logstreamAddress
 		}
 
-		tridentConfig, err := yaml.Marshal(trident)
-		if err != nil {
-			return fmt.Errorf("failed to marshal Trident config: %w", err)
-		}
+		// Patch the ISO Host Configuration file unless this is a stream-image test, where
+		// the Host Configuration file is not expected to be present.
+		if config.Rcp == nil || !config.Rcp.UseStreamImage {
+			tridentConfig, err := yaml.Marshal(trident)
+			if err != nil {
+				return fmt.Errorf("failed to marshal Trident config: %w", err)
+			}
 
-		// Store the modified trident config for later use
-		finalHostConfigurationYaml = string(tridentConfig)
+			// Store the modified trident config for later use
+			finalHostConfigurationYaml = string(tridentConfig)
 
-		err = isopatcher.PatchFile(iso, "/etc/trident/config.yaml", tridentConfig)
-		if err != nil {
-			return fmt.Errorf("failed to patch Trident config into ISO: %w", err)
+			err = isopatcher.PatchFile(iso, "/etc/trident/config.yaml", tridentConfig)
+			if err != nil {
+				return fmt.Errorf("failed to patch Trident config into ISO: %w", err)
+			}
 		}
 
 		if config.Rcp != nil {
@@ -196,27 +200,6 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 
 		// We injected the phonehome & logstream config, so we're expecting Trident to reach back
 		enable_phonehome_listening = true
-	} else if config.Iso.DirectStreaming != nil {
-		log.Info("Patching in direct-streaming.conf!")
-		directStreamingConfigFormat := `
-URL=%s
-HASH=%s
-`
-		fileContents := fmt.Sprintf(
-			directStreamingConfigFormat,
-			fmt.Sprintf("http://%s/files/%s", announceAddress, config.Iso.DirectStreaming.Image),
-			config.Iso.DirectStreaming.Hash,
-		)
-		err = isopatcher.PatchFile(iso, "/trident_cdrom/direct-streaming.conf", []byte(fileContents))
-		if err != nil {
-			return fmt.Errorf("failed to patch direct-streaming.conf into ISO: %w", err)
-		}
-
-		// Serve the ISO file to start the servicing OS
-		mux.HandleFunc("/provision.iso", func(w http.ResponseWriter, r *http.Request) {
-			isoLogFunc(r.RemoteAddr)
-			http.ServeContent(w, r, "provision.iso", time.Now(), bytes.NewReader(iso))
-		})
 	} else {
 		// Otherwise, serve the iso as-is
 		mux.HandleFunc("/provision.iso", func(w http.ResponseWriter, r *http.Request) {
