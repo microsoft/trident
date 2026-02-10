@@ -125,6 +125,7 @@ fn deploy_esp(ctx: &EngineContext, mount_point: &Path) -> Result<(), TridentErro
 
         found_esp = true;
         let (temp_file, computed_sha384) = match load_raw_image(
+            ctx,
             &esp_extraction_dir,
             os_image.source(),
             HashingReader384::new(stream),
@@ -171,6 +172,7 @@ fn deploy_esp(ctx: &EngineContext, mount_point: &Path) -> Result<(), TridentErro
 ///
 /// It also takes in the URL of the image to be shown in case of errors.
 fn load_raw_image<R>(
+    ctx: &EngineContext,
     esp_extraction_dir: &Path,
     source: &Url,
     reader: R,
@@ -191,8 +193,12 @@ where
     debug!("Extracting ESP image to {}", temp_image_path.display());
 
     // Stream image to the temporary file.
-    let computed_hash = image_streamer::stream_zstd_and_hash(reader, &temp_image_path)
-        .context(format!("Failed to stream ESP image from {source}"))?;
+    let computed_hash = image_streamer::stream_zstd_and_hash(
+        reader,
+        &temp_image_path,
+        ctx.image_zstd_max_window_log(),
+    )
+    .context(format!("Failed to stream ESP image from {source}"))?;
 
     Ok((temp_image, computed_hash))
 }

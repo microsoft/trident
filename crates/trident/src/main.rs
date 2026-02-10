@@ -391,6 +391,10 @@ fn main() -> ExitCode {
             return TridentExitCodes::SetupFailed.into();
         }
 
+        if let Err(e) = logstream.unwrap().try_initialize_from_env() {
+            error!("Failed to initialize logstream from environment: {e:?}");
+        }
+
         // Run the client command
         trident::client_main(client_args)
     } else {

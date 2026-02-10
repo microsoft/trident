@@ -1,54 +1,85 @@
 package netlaunch
 
 import (
-	"crypto/tls"
+	"bytes"
 	"encoding/base64"
 	"fmt"
+	"net/http"
 	"os"
+	"time"
+	"tridenttools/pkg/harpoon"
+	rcpagent "tridenttools/pkg/rcp/agent"
+	rcpclient "tridenttools/pkg/rcp/client"
+	"tridenttools/pkg/rcp/tlscerts"
+
+	"github.com/google/uuid"
+	log "github.com/sirupsen/logrus"
 )
 
-// RcpAgentConfiguration holds the configuration for the RCP agent.
-
-type RcpAgentConfiguration struct {
-	ClientAddress   string              `yaml:"clientAddress,omitempty" mapstructure:"clientAddress"`
-	ServerAddress   string              `yaml:"serverAddress,omitempty" mapstructure:"serverAddress"`
-	AdditionalFiles []RcpAdditionalFile `yaml:"additionalFiles,omitempty" mapstructure:"additionalFiles"`
-	RcpClientTls    RcpTlsClientData    `yaml:"rcpClientTls,omitempty" mapstructure:"rcpClientTls"`
+type rcpAgentFileDownload struct {
+	name        string
+	destination string
+	mode        os.FileMode
+	data        []byte
 }
 
-type RcpAdditionalFile struct {
-	DownloadUrl string      `yaml:"downloadUrl,omitempty" mapstructure:"downloadUrl"`
-	Destination string      `yaml:"destination,omitempty" mapstructure:"destination"`
-	Mode        os.FileMode `yaml:"mode,omitempty" mapstructure:"mode"`
+func newRcpAgentFileDownload(name string, destination string, mode os.FileMode, data []byte) rcpAgentFileDownload {
+	return rcpAgentFileDownload{
+		name:        name,
+		destination: destination,
+		mode:        mode,
+		data:        data,
+	}
 }
 
-type RcpTlsClientData struct {
-	ClientCert string `yaml:"certData,omitempty" mapstructure:"certData"`
-	ClientKey  string `yaml:"keyData,omitempty" mapstructure:"keyData"`
-	ServerCert string `yaml:"serverCert,omitempty" mapstructure:"serverCert"`
+type rcpAgentConfigBuilder struct {
+	rcpConf      *rcpagent.RcpAgentConfiguration
+	mux          *http.ServeMux
+	AnnounceIp   string
+	announceHttp string
+	rcpListener  *rcpclient.RcpListener
 }
 
-// LocalCert implements the CertProvider interface.
-func (d *RcpTlsClientData) LocalCert() (tls.Certificate, error) {
-	clientCert, err := base64.StdEncoding.DecodeString(d.ClientCert)
-	if err != nil {
-		return tls.Certificate{}, fmt.Errorf("failed to decode client certificate: %w", err)
+func newRcpAgentConfigBuilder(mux *http.ServeMux, announceIp string, announceHttpAddress string, rcpListener *rcpclient.RcpListener) *rcpAgentConfigBuilder {
+	return &rcpAgentConfigBuilder{
+		rcpConf:      &rcpagent.RcpAgentConfiguration{},
+		mux:          mux,
+		AnnounceIp:   announceIp,
+		announceHttp: announceHttpAddress,
+		rcpListener:  rcpListener,
+	}
+}
+
+func (b *rcpAgentConfigBuilder) registerRcpFile(file rcpAgentFileDownload) {
+	// generate a unique URL path for this file based on its name
+	name := fmt.Sprintf("%s-%s", file.name, uuid.New().String())
+	// Create an http endpoint that exclusively serves the local file
+	b.mux.HandleFunc(fmt.Sprintf("/%s", name), func(w http.ResponseWriter, r *http.Request) {
+		http.ServeContent(w, r, file.name, time.Now(), bytes.NewReader(file.data))
+	})
+
+	fileUrl := fmt.Sprintf("http://%s/%s", b.announceHttp, name)
+	log.WithField("url", fileUrl).Infof("Serving local file '%s' via HTTP", file.name)
+	b.rcpConf.AdditionalFiles = append(b.rcpConf.AdditionalFiles, rcpagent.RcpAdditionalFile{
+		DownloadUrl: fileUrl,
+		Destination: file.destination,
+		Mode:        file.mode,
+	})
+}
+
+func (b *rcpAgentConfigBuilder) build() *rcpagent.RcpAgentConfiguration {
+	if b.rcpListener != nil {
+		b.rcpConf.ClientAddress = fmt.Sprintf("%s:%d", b.AnnounceIp, b.rcpListener.Port)
+		b.rcpConf.ServerAddress = harpoon.DefaultTridentSocketPath
+
+		// Populate TLS certs for mutual authentication
+		clientCert, clientKey, serverCert := tlscerts.ClientTlsData()
+		b.rcpConf.RcpClientTls = rcpagent.RcpTlsClientData{
+			ClientCert: base64.StdEncoding.EncodeToString(clientCert),
+			ClientKey:  base64.StdEncoding.EncodeToString(clientKey),
+			ServerCert: base64.StdEncoding.EncodeToString(serverCert),
+		}
 	}
 
-	clientKey, err := base64.StdEncoding.DecodeString(d.ClientKey)
-	if err != nil {
-		return tls.Certificate{}, fmt.Errorf("failed to decode client key: %w", err)
-	}
-
-	return tls.X509KeyPair(clientCert, clientKey)
-}
-
-// RemoteCertPEM implements the CertProvider interface.
-func (d *RcpTlsClientData) RemoteCertPEM() []byte {
-	cert, err := base64.StdEncoding.DecodeString(d.ServerCert)
-	if err != nil {
-		return nil
-	}
-
-	return cert
+	return b.rcpConf
 }

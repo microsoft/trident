@@ -639,7 +639,7 @@ impl Trident {
             .message("Failed to download OS image")?;
 
         let original_disk_size = image
-            .disk_size()
+            .original_disk_size()
             .structured(InvalidInputError::DeriveHostConfiguration)
             .message(
                 "Image does not contain disk metadata; streaming requires a COSI v1.2 or newer image with disk information.",

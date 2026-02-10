@@ -229,14 +229,31 @@ impl OsImage {
         }
     }
 
-    /// Returns the full disk size in bytes of the image, when available.
-    pub fn disk_size(&self) -> Option<u64> {
+    /// Returns the size in bytes of the full original disk the image
+    /// represents, when available.
+    pub fn original_disk_size(&self) -> Option<u64> {
         match &self.0 {
             OsImageInner::Cosi(cosi) => cosi.original_disk_size(),
             #[cfg(test)]
             OsImageInner::Mock(_mock) => None,
         }
     }
+
+    /// Returns decompression parameters for images with zstd compressed files, if available.
+    pub(crate) fn zstd_decompression_parameters(&self) -> Option<ZstdDecompressionParameters> {
+        match &self.0 {
+            OsImageInner::Cosi(cosi) => Some(ZstdDecompressionParameters {
+                max_window_log: cosi.metadata.compression.as_ref().map(|c| c.max_window_log),
+            }),
+            #[cfg(test)]
+            OsImageInner::Mock(_mock) => None,
+        }
+    }
+}
+
+pub struct PartitioningInfo<'a, T: DiskDevice> {
+    pub lba0: &'a [u8],
+    pub gpt: &'a GptDisk<T>,
 }
 
 pub struct PartitioningInfo<'a, T: DiskDevice> {
@@ -355,6 +372,13 @@ impl std::fmt::Debug for OsImageFile {
             .field("uncompressed_size", &self.uncompressed_size)
             .finish()
     }
+}
+
+/// Contains information about how to decompress an image
+pub(crate) struct ZstdDecompressionParameters {
+    /// The max window log parameter needed to decompress the image, if it is
+    /// present.
+    pub max_window_log: Option<u32>,
 }
 
 #[cfg(test)]

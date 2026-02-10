@@ -1,4 +1,5 @@
 use std::{
+    env,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, RwLock,
@@ -15,6 +16,8 @@ use super::{
     filter::LogFilter,
     LogEntry,
 };
+
+const LOGSTREAM_ENV_VAR: &str = "LOGSTREAM_URL";
 
 type Remote = Arc<RwLock<Option<Url>>>;
 
@@ -40,6 +43,21 @@ impl Logstream {
     /// Useful for cases when we know we don't want to send logs to the server
     pub fn disable(&mut self) {
         self.disabled = true;
+    }
+
+    /// Try to initialize the logstream url from environment variables.
+    ///
+    /// If the environment variable is not set or empty, this is a no-op.
+    pub fn try_initialize_from_env(&mut self) -> Result<(), Error> {
+        let Ok(value) = env::var(LOGSTREAM_ENV_VAR) else {
+            return Ok(());
+        };
+
+        if value.is_empty() {
+            return Ok(());
+        }
+
+        self.set_server(value)
     }
 
     /// Set the logstream server URL

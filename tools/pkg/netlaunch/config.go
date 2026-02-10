@@ -87,6 +87,10 @@ type RcpConfiguration struct {
 	// An optional path to a local osmodifier binary to copy into the remote host.
 	// If not specified, no Osmodifier binary will be copied.
 	LocalOsmodifierPath *string `yaml:"localOsmodifierPath,omitempty"`
+
+	// Replace the execution for trident-install to use stream image instead of
+	// the default installation method.
+	UseStreamImage bool `yaml:"useStreamImage,omitempty"`
 }
 
 type HostConnectionConfiguration struct {
@@ -130,4 +134,8 @@ type NetListenConfig struct {
 	Netlisten struct {
 		Bmc *bmc.Bmc `yaml:"bmc,omitempty"`
 	}
+}
+
+func (c *NetLaunchConfig) IsGrpcMode() bool {
+	return c.Rcp != nil && c.Rcp.GrpcMode
 }

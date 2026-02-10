@@ -45,7 +45,7 @@ pub(super) fn create_partitions_for_raw_cosi_storage(
         .context("Failed to stage new block devices for raw partitioning mode")?;
 
     // Do the actual replication.
-    replicate_partitioning(
+    write_partition_table(
         partitioning_info.lba0,
         partitioning_info.gpt,
         &disk.dev_path,
@@ -96,7 +96,7 @@ pub(super) fn create_partitions_for_raw_cosi_storage(
 /// Takes in a GptDisk object and a target disk device path, and replicates the
 /// GPT from the image onto the target disk. This will overwrite any existing
 /// partitions on the target disk.
-fn replicate_partitioning(
+fn write_partition_table(
     lba0: &[u8],
     raw_gpt: &GptDisk<impl DiskDevice>,
     target_device: impl AsRef<Path>,
@@ -176,10 +176,10 @@ fn replicate_partitioning(
 
     // NOTE:
     //
-    // There is an implicit but very important drop of the file handle to the
-    // disk at the end of this function. Closing the file descriptor is
-    // important because it seems to re-trigger udev rules, so we need to do it
-    // at a controlled point in time.
+    // Closing the file descriptor is important because it seems to re-trigger
+    // udev rules, so we need to do it at a controlled point in time. We do it
+    // here with the drop() function to fulfill this requirement explicitly.
+    drop(disk_device);
 
     Ok(())
 }
@@ -362,7 +362,7 @@ mod tests {
 
         let target_file = create_empty_disk_file(disk_size);
 
-        replicate_partitioning(&lba0, &source_gpt, target_file.path())
+        write_partition_table(&lba0, &source_gpt, target_file.path())
             .expect("replicate_gpt failed");
 
         // Re-open the target and verify the GPT was replicated.
@@ -437,7 +437,7 @@ mod tests {
 
         let target_file = create_empty_disk_file(disk_size);
 
-        replicate_partitioning(&lba0, &source_gpt, target_file.path())
+        write_partition_table(&lba0, &source_gpt, target_file.path())
             .expect("replicate_gpt failed");
         let target_gpt = GptConfig::new()
             .writable(false)
@@ -462,7 +462,7 @@ mod tests {
     fn test_replicate_gpt_fails_on_nonexistent_target() {
         let (lba0, source_gpt, _) = create_mock_gpt_disk(&[("test", 64 * 1024)]);
 
-        let result = replicate_partitioning(&lba0, &source_gpt, "/nonexistent/path/to/disk");
+        let result = write_partition_table(&lba0, &source_gpt, "/nonexistent/path/to/disk");
         assert!(
             result.is_err(),
             "replicate_gpt should fail when target device does not exist"
