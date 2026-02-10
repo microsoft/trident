@@ -3,7 +3,7 @@ use std::path::Path;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Re-run the build script if the proto file changes
     let proto_path_prod = "../../proto/harpoon/v1/harpoon.proto";
-    let proto_path_prev = "../../proto/harpoon/v1/harpoon_preview.proto";
+    let proto_path_prev = "../../proto/harpoon/v1preview/harpoon.proto";
     compile_protos(proto_path_prod)?;
     compile_protos(proto_path_prev)?;
 
