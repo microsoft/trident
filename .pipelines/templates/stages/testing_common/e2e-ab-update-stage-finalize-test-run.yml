@@ -130,6 +130,7 @@ steps:
         kustoTableName: main
       ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:
         kustoTableName: dev
+      artifactsDirectory: $(ob_outputDirectory)
 
   - bash: |
       set -eux
@@ -224,6 +225,7 @@ steps:
         kustoTableName: main
       ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:
         kustoTableName: dev
+      artifactsDirectory: $(ob_outputDirectory)
 
   - bash: |
       set -eux

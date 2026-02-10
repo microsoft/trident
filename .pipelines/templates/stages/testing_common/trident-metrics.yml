@@ -33,6 +33,9 @@ parameters:
     type: string
     default: clean-install
 
+  - name: artifactsDirectory
+    type: string
+
 steps:
   - bash: |
       set -eux
@@ -42,6 +45,9 @@ steps:
         echo "##vso[task.setvariable variable=UploadMetrics]True"
         set -x
         echo "Metrics file exists and is not empty."
+
+        mkdir -p "${{ parameters.artifactsDirectory }}"
+        cp "${{ parameters.metricsFile }}" "${{ parameters.artifactsDirectory }}/"
 
         # Run the Python script to process the metrics
         python3 ${{ parameters.tridentSourceDirectory }}/tests/e2e_tests/helpers/process_trident_metrics.py \

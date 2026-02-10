@@ -219,6 +219,7 @@ steps:
         kustoTableName: main
       ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:
         kustoTableName: dev
+      artifactsDirectory: $(ob_outputDirectory)
 
   # Re-run E2E tests after A/B update into target OS B.
   - bash: |
@@ -369,6 +370,7 @@ steps:
         kustoTableName: main
       ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:
         kustoTableName: dev
+      artifactsDirectory: $(ob_outputDirectory)
 
   - bash: |
       set -eux

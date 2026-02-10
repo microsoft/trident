@@ -320,6 +320,7 @@ stages:
                 kustoTableName: main
               ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:
                 kustoTableName: dev
+              artifactsDirectory: $(ob_outputDirectory)
 
           - template: ../testing_common/e2e-test-run.yml
             parameters:
