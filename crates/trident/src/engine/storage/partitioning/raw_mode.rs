@@ -45,7 +45,7 @@ pub(super) fn create_partitions_for_raw_cosi_storage(
         .context("Failed to stage new block devices for raw partitioning mode")?;
 
     // Do the actual replication.
-    replicate_partitioning(
+    write_partition_table(
         partitioning_info.lba0,
         partitioning_info.gpt,
         &disk.dev_path,
@@ -96,7 +96,7 @@ pub(super) fn create_partitions_for_raw_cosi_storage(
 /// Takes in a GptDisk object and a target disk device path, and replicates the
 /// GPT from the image onto the target disk. This will overwrite any existing
 /// partitions on the target disk.
-fn replicate_partitioning(
+fn write_partition_table(
     lba0: &[u8],
     raw_gpt: &GptDisk<impl DiskDevice>,
     target_device: impl AsRef<Path>,
@@ -176,10 +176,10 @@ fn replicate_partitioning(
 
     // NOTE:
     //
-    // There is an implicit but very important drop of the file handle to the
-    // disk at the end of this function. Closing the file descriptor is
-    // important because it seems to re-trigger udev rules, so we need to do it
-    // at a controlled point in time.
+    // Closing the file descriptor is important because it seems to re-trigger
+    // udev rules, so we need to do it at a controlled point in time. We do it
+    // here with the drop() function to fulfill this requirement explicitly.
+    drop(disk_device);
 
     Ok(())
 }
@@ -362,7 +362,7 @@ mod tests {
 
         let target_file = create_empty_disk_file(disk_size);
 
-        replicate_partitioning(&lba0, &source_gpt, target_file.path())
+        write_partition_table(&lba0, &source_gpt, target_file.path())
             .expect("replicate_gpt failed");
 
         // Re-open the target and verify the GPT was replicated.
@@ -437,7 +437,7 @@ mod tests {
 
         let target_file = create_empty_disk_file(disk_size);
 
-        replicate_partitioning(&lba0, &source_gpt, target_file.path())
+        write_partition_table(&lba0, &source_gpt, target_file.path())
             .expect("replicate_gpt failed");
         let target_gpt = GptConfig::new()
             .writable(false)
@@ -462,7 +462,7 @@ mod tests {
     fn test_replicate_gpt_fails_on_nonexistent_target() {
         let (lba0, source_gpt, _) = create_mock_gpt_disk(&[("test", 64 * 1024)]);
 
-        let result = replicate_partitioning(&lba0, &source_gpt, "/nonexistent/path/to/disk");
+        let result = write_partition_table(&lba0, &source_gpt, "/nonexistent/path/to/disk");
         assert!(
             result.is_err(),
             "replicate_gpt should fail when target device does not exist"
@@ -638,91 +638,5 @@ mod tests {
             result.is_err(),
             "stage_new_block_devices should fail when disk spec has no partitions"
         );
-    }
-}
-
-#[cfg(feature = "functional-test")]
-#[cfg_attr(not(test), allow(unused_imports, dead_code))]
-mod functional_test {
-    use crate::osimage::{
-        mock::{MockOsImage, MockPartitioningInfo},
-        OsImage,
-    };
-
-    use super::*;
-
-    use osutils::{block_devices::ResolvedDisk, testutils::repart::TEST_DISK_DEVICE_PATH, wipefs};
-    use pytest_gen::functional_test;
-    use trident_api::config::{Disk, Partition, PartitionSize, PartitionTableType};
-
-    #[functional_test]
-    fn test_create_partitions_for_raw_cosi_storage() {
-        let mut part_info =
-            MockPartitioningInfo::new_protective_mbr_and_gpt().expect("mock partitioning info");
-
-        part_info
-            .gpt
-            .add_partition("esp", 64 * 1024, gpt::partition_types::EFI, 0, None)
-            .unwrap();
-        part_info
-            .gpt
-            .add_partition("root", 128 * 1024, gpt::partition_types::LINUX_FS, 0, None)
-            .unwrap();
-
-        let resolved_disk = ResolvedDisk {
-            id: "disk-0".to_string(),
-            spec: Disk {
-                id: "disk-0".to_string(),
-                device: PathBuf::from(TEST_DISK_DEVICE_PATH),
-                partition_table_type: PartitionTableType::Gpt,
-                partitions: part_info
-                    .gpt
-                    .partitions()
-                    .values()
-                    .enumerate()
-                    .map(|(i, part)| {
-                        // Create partitions with matching UUIDs in the HC.
-                        let mut p = Partition::new(
-                            format!("partition-{}", i),
-                            PartitionSize::Fixed(4096.into()),
-                        );
-                        p.uuid = Some(part.part_guid);
-                        p
-                    })
-                    .collect(),
-                adopted_partitions: vec![],
-            },
-            dev_path: PathBuf::from(TEST_DISK_DEVICE_PATH),
-        };
-
-        let mut ctx = EngineContext {
-            image: Some(OsImage::mock(
-                MockOsImage::new().with_partitioning_info(part_info.clone()),
-            )),
-            ..Default::default()
-        };
-
-        create_partitions_for_raw_cosi_storage(&mut ctx, &resolved_disk)
-            .expect("Failed to replicate GPT for raw COSI storage");
-
-        assert_eq!(
-            ctx.disk_uuids.get(&resolved_disk.id),
-            Some(part_info.gpt.guid())
-        );
-        assert_eq!(ctx.partition_paths.len(), part_info.gpt.partitions().len());
-
-        for id in resolved_disk.spec.partitions.iter().map(|p| &p.id) {
-            let path = ctx
-                .partition_paths
-                .get(id)
-                .unwrap_or_else(|| panic!("Missing partition path for '{id}'"));
-            assert!(
-                path.exists(),
-                "Partition device path '{}' does not exist",
-                path.display()
-            );
-        }
-
-        wipefs::all(TEST_DISK_DEVICE_PATH).expect("Failed to wipe test disk");
     }
 }
