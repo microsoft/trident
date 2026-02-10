@@ -786,6 +786,13 @@ pub enum ErrorKind {
     UnsupportedConfiguration(#[from] UnsupportedConfigurationError),
 }
 
+impl ErrorKind {
+    pub fn as_str(&self) -> &'static str {
+        // Use strum's IntoStaticStr trait
+        self.into()
+    }
+}
+
 #[derive(Debug)]
 struct TridentErrorInner {
     kind: ErrorKind,
