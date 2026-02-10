@@ -306,6 +306,7 @@ impl Trident {
                 let error = match last_error_to_preserve {
                     Some(err) => err,
                     None => {
+                        // Create trace error for new errors.
                         tracing::error!(kind = e.kind().as_str(), subkind = e.subkind());
                         serde_yaml::to_value(&e).structured(InternalError::SerializeError)?
                     }
