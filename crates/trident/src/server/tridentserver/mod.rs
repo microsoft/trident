@@ -12,18 +12,18 @@ use prost_types::Timestamp;
 use tokio::{
     sync::{
         mpsc::{self, UnboundedSender},
-        OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock,
+``        OwnedRwLockWriteGuard, RwLock,
     },
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
-use tonic::{Code, Response, Status};
+use tonic::{Response, Status};
 
 use harpoon::{
     servicing_response::Response as ResponseType, FileLocation, Log, LogLevel, ServicingResponse,
     Start,
 };
-use trident_api::error::{ErrorKind, TridentError};
+use trident_api::error::TridentError;
 
 use crate::{
     agentconfig::AgentConfig,
@@ -31,6 +31,15 @@ use crate::{
     server::{activitytracker::ActivityTracker, support::stream::StreamWithLock},
     ExitKind, Logstream, TraceStream,
 };
+
+#[cfg(feature = "grpc-preview")]
+use tokio::sync::OwnedRwLockReadGuard;
+
+#[cfg(feature = "grpc-preview")]
+use tonic::Code;
+
+#[cfg(feature = "grpc-preview")]
+use trident_api::error::ErrorKind;
 
 #[cfg(feature = "grpc-preview")]
 mod datastore;
@@ -170,7 +179,7 @@ impl TridentHarpoonServer {
     /// Tries to acquire a read lock on the server's RwLock. If the lock
     /// cannot be acquired, returns a gRPC Status indicating that the server is
     /// busy.
-    #[cfg(any(feature = "grpc-preview", test))]
+    #[cfg(feature = "grpc-preview")]
     fn try_acquire_read_lock(&self) -> Result<OwnedRwLockReadGuard<()>, Status> {
         self.rwlock.clone().try_read_owned().map_err(|_| {
             warn!("Trident is busy, cannot acquire read connection lock");
@@ -304,7 +313,7 @@ impl TridentHarpoonServer {
     /// the value produced by `f`. If `f` returns an error, the error is logged
     /// and converted into a [`Status::internal`] error. Failures to acquire the
     /// underlying locks are returned as appropriate [`Status`] errors.
-    #[cfg(any(feature = "grpc-preview", test))]
+    #[cfg(feature = "grpc-preview")]
     async fn reading_request<F, R>(&self, name: &'static str, f: F) -> Result<Response<R>, Status>
     where
         F: FnOnce() -> Result<R, TridentError> + Send + 'static,
@@ -337,7 +346,7 @@ impl TridentHarpoonServer {
     }
 }
 
-#[cfg(any(feature = "grpc-preview", test))]
+#[cfg(feature = "grpc-preview")]
 fn trident_error_to_status(err: TridentError) -> Status {
     let code = match err.kind() {
         ErrorKind::ExecutionEnvironmentMisconfiguration(_) => Code::FailedPrecondition,
