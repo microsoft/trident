@@ -32,6 +32,7 @@ use crate::{
     ExitKind, Logstream, TraceStream,
 };
 
+#[cfg(feature = "grpc-preview")]
 mod datastore;
 mod harpoon_impl;
 mod servicingmgr;
@@ -169,6 +170,7 @@ impl TridentHarpoonServer {
     /// Tries to acquire a read lock on the server's RwLock. If the lock
     /// cannot be acquired, returns a gRPC Status indicating that the server is
     /// busy.
+    #[allow(dead_code)]
     fn try_acquire_read_lock(&self) -> Result<OwnedRwLockReadGuard<()>, Status> {
         self.rwlock.clone().try_read_owned().map_err(|_| {
             warn!("Trident is busy, cannot acquire read connection lock");
@@ -302,6 +304,7 @@ impl TridentHarpoonServer {
     /// the value produced by `f`. If `f` returns an error, the error is logged
     /// and converted into a [`Status::internal`] error. Failures to acquire the
     /// underlying locks are returned as appropriate [`Status`] errors.
+    #[allow(dead_code)]
     async fn reading_request<F, R>(&self, name: &'static str, f: F) -> Result<Response<R>, Status>
     where
         F: FnOnce() -> Result<R, TridentError> + Send + 'static,
@@ -334,6 +337,7 @@ impl TridentHarpoonServer {
     }
 }
 
+#[allow(dead_code)]
 fn trident_error_to_status(err: TridentError) -> Status {
     let code = match err.kind() {
         ErrorKind::ExecutionEnvironmentMisconfiguration(_) => Code::FailedPrecondition,

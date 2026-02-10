@@ -24,6 +24,7 @@ type ServicingLockGuard = OwnedRwLockWriteGuard<()>;
 /// simultaneously with servicing actions. It is implemented as the read lock of
 /// a RwLock, so that multiple read operations can occur simultaneously, but
 /// they will block if a servicing action is in progress.
+#[allow(dead_code)]
 type ServicingReadGuard = OwnedRwLockReadGuard<()>;
 
 /// Enum to specify how reboot requests from servicing tasks should be handled.
@@ -37,6 +38,7 @@ pub(super) enum RebootDecision {
 
     /// A reboot request is not allowed during this operation and will result in
     /// an error if one is requested.
+    #[allow(dead_code)]
     Error,
 }
 
@@ -90,6 +92,7 @@ impl ServicingManager {
     /// Attempts to acquire the reading (read) lock. Returns
     /// `Some(ServicingReadGuard)` if the lock was successfully acquired, or
     /// `None` if a servicing lock is held.
+    #[allow(dead_code)]
     pub(super) fn try_lock_reading(&self) -> Option<ServicingReadGuard> {
         self.servicing_lock.clone().try_read_owned().ok()
     }
@@ -188,6 +191,7 @@ impl ServicingManager {
     /// Spawns a reading task that runs the provided function `f` in a
     /// blocking task. The `ServicingReadGuard` must be provided to ensure that
     /// no servicing operation is running concurrently.
+    #[allow(dead_code)]
     pub(super) async fn spawn_reading_task<F, T>(
         _guard: ServicingReadGuard,
         f: F,

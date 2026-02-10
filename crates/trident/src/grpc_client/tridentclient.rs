@@ -2,13 +2,14 @@ use std::ops::ControlFlow;
 
 use log::{info, log, Level};
 use tonic::{transport::Channel, Request, Streaming};
+use url::Url;
 
 use harpoon::{
     servicing_response::Response as ResponseBody, trident_service_client::TridentServiceClient,
-    CommitRequest, FinalizeRequest, LogLevel, ServicingRequest, ServicingResponse, StageRequest,
-    StatusCode, StreamImageRequest, VersionRequest,
+    FinalizeRequest, LogLevel, ServicingResponse, StatusCode, StreamImageRequest, VersionRequest,
 };
-use url::Url;
+#[cfg(feature = "grpc-preview")]
+use harpoon::{CommitRequest, ServicingRequest, StageRequest};
 
 use crate::ExitKind;
 
@@ -60,6 +61,7 @@ impl TridentClient {
     }
 
     /// Install an image on the Trident server.
+    #[cfg(feature = "grpc-preview")]
     pub async fn install(
         &mut self,
         host_configuration: impl Into<String>,
@@ -110,6 +112,7 @@ impl TridentClient {
     }
 
     /// Perform a commit on the Trident server.
+    #[cfg(feature = "grpc-preview")]
     pub async fn commit(&mut self) -> Result<ExitKind, TridentClientError> {
         let response = self
             .client

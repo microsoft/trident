@@ -103,3 +103,4 @@ functional-test = [
     "inventory",
 ]
 pytest-generator = ["pytest", "osutils/pytest-generator"]
+grpc-preview = ["harpoon/grpc-preview"]
