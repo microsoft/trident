@@ -18,8 +18,9 @@ type CheckJournaldHelper struct {
 		stormsshconfig.SshCliSettings `embed:""`
 		trident.RuntimeCliSettings    `embed:""`
 		SyslogIdentifier              string `help:"Syslog identifier to check for in journald logs." default:"trident-tracing"`
-		MetricToCheck                 string `help:"Name of the metric to check for in journald logs." default:"host_config_uefi_fallback_mode"`
+		SyslogMetricToCheck           string `help:"Name of the metric to check for in journald logs." default:"trident_start"`
 		MetricFile                    string `help:"Path to the file containing the expected metric value." default:""`
+		FileMetricToCheck             string `help:"Name of the metric to check for in the metric file." default:"host_config_uefi_fallback_mode"`
 	}
 }
 
@@ -61,15 +62,15 @@ func (h *CheckJournaldHelper) checkTraceFile(tc storm.TestCase) error {
 			return fmt.Errorf("failed to decode JSON from metric file: %w", err)
 		}
 
-		if logEntry["metric_name"] == h.args.MetricToCheck {
+		if logEntry["metric_name"] == h.args.FileMetricToCheck {
 			// Test passed
-			logrus.Infof("Found expected metric '%s' in trace file with value: %v", h.args.MetricToCheck, logEntry["value"])
+			logrus.Infof("Found expected metric '%s' in trace file with value: %v", h.args.FileMetricToCheck, logEntry["value"])
 			return nil
 		}
 	}
 
 	// Test failed
-	tc.Fail(fmt.Sprintf("Expected metric '%s' not found in trace file '%s'", h.args.MetricToCheck, h.args.MetricFile))
+	tc.Fail(fmt.Sprintf("Expected metric '%s' not found in trace file '%s'", h.args.FileMetricToCheck, h.args.MetricFile))
 	return nil
 }
 
@@ -89,8 +90,8 @@ func (h *CheckJournaldHelper) checkJournald(tc storm.TestCase) error {
 	logrus.Infof("Journald logs for %s:\n%s\n", h.args.SyslogIdentifier, collectedLogs)
 
 	// Check if the expected metric is present in the journald logs
-	if !strings.Contains(collectedLogs, fmt.Sprintf("\"F_METRIC_NAME\" : \"%s\"", h.args.MetricToCheck)) {
-		tc.Fail(fmt.Sprintf("Expected metric '%s' not found in journald logs for syslog identifier '%s'", h.args.MetricToCheck, h.args.SyslogIdentifier))
+	if !strings.Contains(collectedLogs, fmt.Sprintf("\"F_METRIC_NAME\" : \"%s\"", h.args.SyslogMetricToCheck)) {
+		tc.Fail(fmt.Sprintf("Expected metric '%s' not found in journald logs for syslog identifier '%s'", h.args.SyslogMetricToCheck, h.args.SyslogIdentifier))
 	}
 
 	return nil
