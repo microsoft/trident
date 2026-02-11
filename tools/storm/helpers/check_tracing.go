@@ -1,7 +1,9 @@
 package helpers
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	stormsshclient "tridenttools/storm/utils/ssh/client"
 	stormsshconfig "tridenttools/storm/utils/ssh/config"
@@ -16,12 +18,13 @@ type CheckJournaldHelper struct {
 		stormsshconfig.SshCliSettings `embed:""`
 		trident.RuntimeCliSettings    `embed:""`
 		SyslogIdentifier              string `help:"Syslog identifier to check for in journald logs." default:"trident-tracing"`
-		MetricToCheck                 string `help:"Name of the metric to check for in journald logs." required:""`
+		MetricToCheck                 string `help:"Name of the metric to check for in journald logs." default:"host_config_uefi_fallback_mode"`
+		MetricFile                    string `help:"Path to the file containing the expected metric value." default:""`
 	}
 }
 
 func (h CheckJournaldHelper) Name() string {
-	return "check-journald"
+	return "check-tracing"
 }
 
 func (h *CheckJournaldHelper) Args() any {
@@ -30,6 +33,43 @@ func (h *CheckJournaldHelper) Args() any {
 
 func (h *CheckJournaldHelper) RegisterTestCases(r storm.TestRegistrar) error {
 	r.RegisterTestCase("check-journald", h.checkJournald)
+	r.RegisterTestCase("check-trace-file", h.checkTraceFile)
+	return nil
+}
+
+func (h *CheckJournaldHelper) checkTraceFile(tc storm.TestCase) error {
+	if h.args.MetricFile == "" {
+		tc.Skip("No metric file provided, skipping trace file check.")
+	}
+
+	// Read each line from the metric file, parse the line as JSON, and check if the expected metric_name is present
+	// If found, the test passes.
+	// If not found, the test fails.
+	file, err := os.Open(h.args.MetricFile)
+	if err != nil {
+		return fmt.Errorf("failed to open metric file '%s': %w", h.args.MetricFile, err)
+	}
+	defer file.Close()
+
+	scanner := json.NewDecoder(file)
+	for {
+		var logEntry map[string]interface{}
+		if err := scanner.Decode(&logEntry); err != nil {
+			if strings.Contains(err.Error(), "EOF") {
+				break
+			}
+			return fmt.Errorf("failed to decode JSON from metric file: %w", err)
+		}
+
+		if logEntry["metric_name"] == h.args.MetricToCheck {
+			// Test passed
+			logrus.Infof("Found expected metric '%s' in trace file with value: %v", h.args.MetricToCheck, logEntry["value"])
+			return nil
+		}
+	}
+
+	// Test failed
+	tc.Fail(fmt.Sprintf("Expected metric '%s' not found in trace file '%s'", h.args.MetricToCheck, h.args.MetricFile))
 	return nil
 }
 

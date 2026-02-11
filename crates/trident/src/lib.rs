@@ -198,6 +198,11 @@ impl Trident {
             info!("Running Trident in a container");
         }
 
+        // Trace features enabled in the Host Configuration.
+        if let Some(hc) = &host_config {
+            hc.feature_tracing();
+        }
+
         if let Ok(selinux_context) = fs::read_to_string("/proc/self/attr/current") {
             debug!(
                 "Trident is running in SELinux domain '{}'",
@@ -255,9 +260,6 @@ impl Trident {
             serde_yaml::to_string(&host_config)
                 .unwrap_or("Failed to serialize Host Configuration".into())
         );
-
-        // Create tracing for the features enabled in the Host Configuration
-        Self::host_configuration_feature_tracing(&host_config);
 
         Ok(host_config)
     }
@@ -808,119 +810,5 @@ impl Trident {
         }
 
         rollback_result
-    }
-
-    /// Trace feature usage based on the Host Configuration.
-    fn host_configuration_feature_tracing(host_configuration: &HostConfiguration) {
-        info!("Tracing Host Configuration features for telemetry");
-        if host_configuration.os.netplan.is_some() {
-            tracing::info!(metric_name = "host_config_netplan", value = true);
-        }
-        if let Some(mode) = host_configuration.os.selinux.mode {
-            tracing::info!(
-                metric_name = "host_config_selinux",
-                value = mode.to_string()
-            );
-        }
-        if !host_configuration.os.modules.is_empty() {
-            tracing::info!(
-                metric_name = "host_config_modules",
-                value = host_configuration.os.modules.len() as u64
-            );
-        }
-        if !host_configuration.os.sysexts.is_empty() {
-            tracing::info!(
-                metric_name = "host_config_sysexts",
-                value = host_configuration.os.sysexts.len() as u64
-            );
-        }
-        if !host_configuration.os.confexts.is_empty() {
-            tracing::info!(
-                metric_name = "host_config_confexts",
-                value = host_configuration.os.confexts.len() as u64
-            );
-        }
-        if !host_configuration.os.modules.is_empty() {
-            tracing::info!(
-                metric_name = "host_config_modules",
-                value = host_configuration.os.modules.len() as u64
-            );
-        }
-        if !host_configuration.os.services.enable.is_empty() {
-            tracing::info!(
-                metric_name = "host_config_services_enabled",
-                value = host_configuration.os.services.enable.len() as u64
-            );
-        }
-        if !host_configuration.os.services.disable.is_empty() {
-            tracing::info!(
-                metric_name = "host_config_services_disabled",
-                value = host_configuration.os.services.disable.len() as u64
-            );
-        }
-        tracing::info!(
-            metric_name = "host_config_kernel_command_line_options",
-            value = host_configuration
-                .os
-                .kernel_command_line
-                .extra_command_line
-                .len() as u64
-        );
-        tracing::info!(
-            metric_name = "host_config_uefi_fallback_mode",
-            value = host_configuration.os.uefi_fallback.to_string()
-        );
-        if host_configuration.image.is_some() {
-            tracing::info!(metric_name = "host_config_image", value = true);
-        }
-        if !host_configuration.scripts.post_configure.is_empty() {
-            tracing::info!(
-                metric_name = "host_config_post_configure_scripts",
-                value = true
-            );
-        }
-        if !host_configuration.scripts.pre_servicing.is_empty() {
-            tracing::info!(
-                metric_name = "host_config_pre_servicing_scripts",
-                value = true
-            );
-        }
-        if !host_configuration.scripts.post_provision.is_empty() {
-            tracing::info!(
-                metric_name = "host_config_post_provision_scripts",
-                value = true
-            );
-        }
-        if let Some(encryption) = &host_configuration.storage.encryption {
-            encryption.pcrs.iter().for_each(|pcr| {
-                tracing::info!(
-                    metric_name = "host_config_storage_encryption_pcr",
-                    pcr = *pcr as u64
-                );
-            });
-        }
-        if host_configuration.storage.ab_update.is_some() {
-            tracing::info!(metric_name = "host_config_ab_update", value = true);
-        }
-        if !host_configuration.storage.raid.software.is_empty() {
-            tracing::info!(
-                metric_name = "host_config_software_raid_arrays",
-                value = host_configuration.storage.raid.software.len() as u64
-            );
-        }
-        host_configuration.storage.verity.iter().for_each(|verity| {
-            tracing::info!(metric_name = "host_config_verity", name = verity.name);
-        });
-
-        host_configuration
-            .internal_params
-            .get_flags()
-            .into_iter()
-            .for_each(|key| {
-                tracing::info!(
-                    metric_name = "host_config_internal_param",
-                    param_name = key.as_str(),
-                );
-            });
     }
 }

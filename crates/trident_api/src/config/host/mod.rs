@@ -107,6 +107,57 @@ impl HostConfiguration {
             .any(|disk| !disk.adopted_partitions.is_empty())
     }
 
+    /// Trace feature usage based on the Host Configuration.
+    pub fn feature_tracing(&self) {
+        self.os.feature_tracing();
+        if !self.scripts.post_configure.is_empty() {
+            tracing::info!(
+                metric_name = "host_config_post_configure_scripts",
+                value = true
+            );
+        }
+        if !self.scripts.pre_servicing.is_empty() {
+            tracing::info!(
+                metric_name = "host_config_pre_servicing_scripts",
+                value = true
+            );
+        }
+        if !self.scripts.post_provision.is_empty() {
+            tracing::info!(
+                metric_name = "host_config_post_provision_scripts",
+                value = true
+            );
+        }
+        if let Some(encryption) = &self.storage.encryption {
+            let pcrs = encryption
+                .pcrs
+                .iter()
+                .map(|pcr| pcr.to_num().to_string())
+                .collect::<Vec<_>>()
+                .join(",");
+            tracing::info!(metric_name = "host_config_encryption", value = pcrs);
+        }
+        if self.storage.ab_update.is_some() {
+            tracing::info!(metric_name = "host_config_ab_update", value = true);
+        }
+        if !self.storage.raid.software.is_empty() {
+            tracing::info!(metric_name = "host_config_software_raid", value = true);
+        }
+        self.storage.verity.iter().for_each(|verity| {
+            tracing::info!(metric_name = "host_config_verity", value = verity.name);
+        });
+
+        self.internal_params
+            .get_flags()
+            .into_iter()
+            .for_each(|key| {
+                tracing::info!(
+                    metric_name = "host_config_internal_param",
+                    value = key.as_str(),
+                );
+            });
+    }
+
     /// Performs extra checks required when using root-verity.
     fn validate_root_verity_config(
         &self,
