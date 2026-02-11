@@ -344,10 +344,12 @@ impl Os {
         if !self.services.disable.is_empty() {
             tracing::info!(metric_name = "host_config_services_disabled", value = true);
         }
-        tracing::info!(
-            metric_name = "host_config_kernel_command_line_options",
-            value = true
-        );
+        if !self.kernel_command_line.extra_command_line.is_empty() {
+            tracing::info!(
+                metric_name = "host_config_kernel_command_line_options",
+                value = true
+            );
+        }
         tracing::info!(
             metric_name = "host_config_uefi_fallback_mode",
             value = self.uefi_fallback.to_string()

@@ -13,7 +13,7 @@ pub(crate) fn parse_host_config(
     contents: &str,
     path: Option<impl AsRef<Path>>,
 ) -> Result<HostConfiguration, TridentError> {
-    let parsed = serde_yaml::from_str::<HostConfiguration>(contents).structured(match path {
+    let parsed = serde_yaml::from_str(contents).structured(match path {
         Some(path) => InvalidInputError::ParseHostConfigurationFile {
             path: path.as_ref().display().to_string(),
         },
