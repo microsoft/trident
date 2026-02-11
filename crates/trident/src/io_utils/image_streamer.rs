@@ -28,11 +28,6 @@ where
     // Instantiate decoder for ZSTD stream
     let mut decoder = Decoder::new(BufReader::new(&mut reader))?;
 
-    // Set the maximum window size to 2 GiB (2^31 bytes) to support large images.
-    decoder
-        .window_log_max(31)
-        .context("Failed to set ZSTD decoder log window to 2^31")?;
-
     if let Some(max_window_log) = max_window_log {
         decoder.window_log_max(max_window_log).with_context(|| {
             format!(
