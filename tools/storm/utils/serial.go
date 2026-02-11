@@ -29,6 +29,7 @@ func WaitForLoginMessageInSerialLog(vmSerialLog string, verbose bool, iteration 
 
 	scannerStartPosition := int64(0)
 	var file *os.File = nil
+	var err error = nil
 	defer func() {
 		if file != nil {
 			file.Close()
@@ -42,7 +43,7 @@ func WaitForLoginMessageInSerialLog(vmSerialLog string, verbose bool, iteration 
 			file.Close()
 		}
 		// Open the file for reading and writing (file is guaranteed to exist)
-		file, err := os.OpenFile(vmSerialLog, os.O_RDWR, 0644)
+		file, err = os.OpenFile(vmSerialLog, os.O_RDWR, 0644)
 		if err != nil {
 			return fmt.Errorf("failed to open serial log file: %w", err)
 		}

@@ -127,11 +127,11 @@ func (h *DirectStreamingHelper) createTempHostConfig() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file for host config: %w", err)
 	}
+	defer hostConfigFile.Close()
 	_, err = hostConfigFile.Write(hostConfigBytes)
 	if err != nil {
 		return "", fmt.Errorf("failed to write host config to file: %w", err)
 	}
-	hostConfigFile.Close()
 	return hostConfigFile.Name(), nil
 }
 
