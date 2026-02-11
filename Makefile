@@ -78,7 +78,7 @@ build: .cargo/config version-vars
 		OPENSSL_LIB_DIR=$(shell dirname `whereis libssl.a | cut -d" " -f2`) \
 		OPENSSL_INCLUDE_DIR=/usr/include/openssl \
 		TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
-		cargo build --release --features dangerous-options
+		cargo build --release --features dangerous-options,grpc-preview
 	@mkdir -p bin
 
 .PHONY: format
@@ -174,7 +174,7 @@ build-azl3: azl3-builder-image version-vars
 	@docker run --rm \
 		-e TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
 		-v $(PWD):/work -w /work $(AZL3_BUILDER_IMAGE) \
-		cargo build --color always --target-dir target/azl3 --release --features dangerous-options
+		cargo build --color always --target-dir target/azl3 --release --features dangerous-options,grpc-preview
 
 bin/trident-azl3: build-azl3
 	@cp -u target/azl3/release/trident bin/trident-azl3

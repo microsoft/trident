@@ -1,7 +1,7 @@
 package harpoon
 
-// Generate the Go structs for the Harpoon protobuf located at ../../../proto/harpoon/v1/harpoon.proto
-//go:generate protoc -I ../../../proto/harpoon/v1 --go_out=harpoonpbv1 --go_opt=paths=source_relative --go_opt=Mharpoon.proto=tridenttools/pkg/harpoon/harpoonpbv1 --go-grpc_out=harpoonpbv1 --go-grpc_opt=paths=source_relative --go-grpc_opt=Mharpoon.proto=tridenttools/pkg/harpoon/harpoonpbv1 harpoon.proto
+// Generate the Go structs for the Harpoon protobuf located at ../../../proto/harpoon/v1preview/harpoon.proto
+//go:generate protoc -I ../../../proto/harpoon/v1preview --go_out=harpoonpbv1 --go_opt=paths=source_relative --go_opt=Mharpoon.proto=tridenttools/pkg/harpoon/harpoonpbv1 --go-grpc_out=harpoonpbv1 --go-grpc_opt=paths=source_relative --go-grpc_opt=Mharpoon.proto=tridenttools/pkg/harpoon/harpoonpbv1 harpoon.proto
 
 import (
 	"context"
