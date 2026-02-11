@@ -812,6 +812,7 @@ impl Trident {
 
     /// Trace feature usage based on the Host Configuration.
     fn host_configuration_feature_tracing(host_configuration: &HostConfiguration) {
+        info!("Tracing Host Configuration features for telemetry");
         if host_configuration.os.netplan.is_some() {
             tracing::info!(metric_name = "host_config_netplan", value = true);
         }
