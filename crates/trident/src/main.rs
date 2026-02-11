@@ -316,7 +316,6 @@ fn setup_tracing(args: &Cli) -> Result<TraceStream, Error> {
         | Commands::Install { .. }
         | Commands::RebuildRaid { .. }
         | Commands::Rollback { check: false, .. }
-        | Commands::StreamImage { .. }
         | Commands::Update { .. } => {
             // As functionality moves to the Daemon, move the journald layer to
             // only be enabled for the Daemon command. Until then, keep it enabled
