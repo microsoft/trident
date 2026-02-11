@@ -1,4 +1,4 @@
-  parameters:
+parameters:
   - name: architecture
     displayName: Architecture
     type: string
@@ -7,7 +7,7 @@
       - amd64
     default: "amd64"
 
-  steps:
+steps:
   - template: ../base_image_config/read-base-image-config-artifact.yml
   - bash: |
       echo "BASEIMG_BUILD_TYPE: $(BASEIMG_BUILD_TYPE)"
