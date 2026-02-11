@@ -18,9 +18,9 @@ type CheckJournaldHelper struct {
 		stormsshconfig.SshCliSettings `embed:""`
 		trident.RuntimeCliSettings    `embed:""`
 		SyslogIdentifier              string `help:"Syslog identifier to check for in journald logs." default:"trident-tracing"`
-		SyslogMetricToCheck           string `help:"Name of the metric to check for in journald logs." default:"trident_start"`
+		SyslogMetricToCheck           string `help:"Name of the metric to check for in journald logs. Note this metric is queried after target OS runs commit, so the metric must be emitted by commit." default:"trident_start"`
 		MetricFile                    string `help:"Path to the file containing the expected metric value." default:""`
-		FileMetricToCheck             string `help:"Name of the metric to check for in the metric file." default:"host_config_uefi_fallback_mode"`
+		FileMetricToCheck             string `help:"Name of the metric to check for in the metric file, which is collected throughout servicing." default:"host_config_uefi_fallback_mode"`
 	}
 }
 
