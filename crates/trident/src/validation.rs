@@ -20,22 +20,19 @@ pub(crate) fn parse_host_config(
         None => InvalidInputError::ParseHostConfiguration,
     });
 
-    match &parsed {
-        Ok(hc) => hc.feature_tracing(),
-        Err(_) => {
-            match serde_yaml::from_str::<serde_yaml::Value>(contents) {
-                Ok(value) => {
-                    // Detect a few common issues with the Host Configuration
-                    if value.get("hostConfiguration").is_some() {
-                        return Err(TridentError::new(InvalidInputError::OldStyleConfiguration));
-                    } else if value.get("allowedOperations").is_some() {
-                        return Err(TridentError::new(
-                            InvalidInputError::AllowedOperationsInHostConfiguration,
-                        ));
-                    }
+    if parsed.is_err() {
+        match serde_yaml::from_str::<serde_yaml::Value>(contents) {
+            Ok(value) => {
+                // Detect a few common issues with the Host Configuration
+                if value.get("hostConfiguration").is_some() {
+                    return Err(TridentError::new(InvalidInputError::OldStyleConfiguration));
+                } else if value.get("allowedOperations").is_some() {
+                    return Err(TridentError::new(
+                        InvalidInputError::AllowedOperationsInHostConfiguration,
+                    ));
                 }
-                Err(_) => return parsed.message("Host Configuration is not valid YAML"),
             }
+            Err(_) => return parsed.message("Host Configuration is not valid YAML"),
         }
     }
     parsed

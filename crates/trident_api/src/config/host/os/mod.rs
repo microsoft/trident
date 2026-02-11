@@ -314,63 +314,6 @@ impl Os {
 
         Ok(())
     }
-
-    // Emit tracing info about what features of the Host Configuration are being used
-    pub fn feature_tracing(&self) {
-        if self.netplan.is_some() {
-            tracing::info!(metric_name = "host_config_netplan", value = true);
-        }
-        if let Some(mode) = self.selinux.mode {
-            tracing::info!(
-                metric_name = "host_config_selinux",
-                value = mode.to_string()
-            );
-        }
-        if !self.modules.is_empty() {
-            tracing::info!(
-                metric_name = "host_config_modules",
-                value = self.modules.len() as u64
-            );
-        }
-        if !self.sysexts.is_empty() {
-            tracing::info!(
-                metric_name = "host_config_sysexts",
-                value = self.sysexts.len() as u64
-            );
-        }
-        if !self.confexts.is_empty() {
-            tracing::info!(
-                metric_name = "host_config_confexts",
-                value = self.confexts.len() as u64
-            );
-        }
-        if !self.modules.is_empty() {
-            tracing::info!(
-                metric_name = "host_config_modules",
-                value = self.modules.len() as u64
-            );
-        }
-        if !self.services.enable.is_empty() {
-            tracing::info!(
-                metric_name = "host_config_services_enabled",
-                value = self.services.enable.len() as u64
-            );
-        }
-        if !self.services.disable.is_empty() {
-            tracing::info!(
-                metric_name = "host_config_services_disabled",
-                value = self.services.disable.len() as u64
-            );
-        }
-        tracing::info!(
-            metric_name = "host_config_kernel_command_line_options",
-            value = self.kernel_command_line.extra_command_line.len() as u64
-        );
-        tracing::info!(
-            metric_name = "host_config_uefi_fallback_mode",
-            value = self.uefi_fallback.to_string()
-        );
-    }
 }
 
 impl ManagementOs {
