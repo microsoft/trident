@@ -1,31 +1,46 @@
 //! Implements the gRPC TridentService for the TridentHarpoonServer struct.
 
-use log::info;
 use tonic::{async_trait, Request, Response, Status};
 
 use harpoon::{
-    trident_service_server::TridentService, AbVolumeState, CheckRollbackRequest,
-    CheckRollbackResponse, CheckRootRequest, CommitRequest, FinalizeRequest,
+    trident_service_server::TridentService, FinalizeRequest, StreamImageRequest, VersionRequest,
+    VersionResponse,
+};
+use trident_api::error::TridentResultExt;
+use url::Url;
+
+use crate::{server::TridentHarpoonServer, DataStore, Trident, TRIDENT_VERSION};
+
+use super::{RebootDecision, ServicingResponseStream};
+
+// IMPORT BLOCKS FOR PREVIEW FEATURES
+
+#[cfg(feature = "grpc-preview")]
+use log::info;
+
+#[cfg(feature = "grpc-preview")]
+use harpoon::{
+    AbVolumeState, CheckRollbackRequest, CheckRollbackResponse, CheckRootRequest, CommitRequest,
     GetActiveVolumeRequest, GetActiveVolumeResponse, GetConfigRequest, GetConfigResponse,
     GetLastErrorRequest, GetLastErrorResponse, GetRequiredServicingTypeRequest,
     GetRequiredServicingTypeResponse, GetRollbackChainRequest, GetRollbackTargetRequest,
     GetServicingStateRequest, GetServicingStateResponse, RebuildRaidRequest,
     RollbackFinalizeRequest, RollbackRequest, RollbackStageRequest, ServicingRequest, StageRequest,
-    StreamImageRequest, TridentError as HarpoonTridentError, ValidateHostConfigurationRequest,
-    ValidateHostConfigurationResponse, VersionRequest, VersionResponse,
+    TridentError as HarpoonTridentError, ValidateHostConfigurationRequest,
+    ValidateHostConfigurationResponse,
 };
+#[cfg(feature = "grpc-preview")]
 use trident_api::{
     config::{HostConfigurationSource, Operation, Operations},
-    error::{InternalError, TridentError, TridentResultExt},
+    error::{InternalError, TridentError},
     status::AbVolumeSelection,
 };
-use url::Url;
 
-use crate::{
-    server::TridentHarpoonServer, validation, DataStore, ExitKind, Trident, TRIDENT_VERSION,
-};
+#[cfg(feature = "grpc-preview")]
+use crate::{validation, ExitKind};
 
-use super::{datastore, RebootDecision, ServicingResponseStream};
+#[cfg(feature = "grpc-preview")]
+use super::datastore;
 
 /// Returns a `RebootDecision` indicating whether Trident can perform a reboot
 /// given a provided FinalizeRequest.
@@ -49,202 +64,6 @@ impl TridentService for TridentHarpoonServer {
         Ok(Response::new(VersionResponse {
             version: TRIDENT_VERSION.to_string(),
         }))
-    }
-
-    type InstallStream = ServicingResponseStream;
-    async fn install(
-        &self,
-        request: Request<ServicingRequest>,
-    ) -> Result<Response<Self::InstallStream>, Status> {
-        let req = request.into_inner();
-        let Some(staging) = req.stage else {
-            return Err(Status::invalid_argument("Missing staging configuration"));
-        };
-        let Some(finalize) = req.finalize else {
-            return Err(Status::invalid_argument("Missing finalize configuration"));
-        };
-
-        let data_store_path = self.agent_config.datastore_path().to_owned();
-        let logstream = self.logstream.clone();
-        let tracestream = self.tracestream.clone();
-
-        self.servicing_request("install", reboot_allowed(&finalize), move || {
-            let mut trident = Trident::new(
-                Some(HostConfigurationSource::RawString(staging.config)),
-                &data_store_path,
-                logstream,
-                tracestream,
-            )
-            .message("Failed to initialize Trident")?;
-
-            let mut datastore =
-                DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
-
-            trident.install(&mut datastore, Operations::all(), false, None)
-        })
-    }
-
-    type InstallStageStream = ServicingResponseStream;
-    async fn install_stage(
-        &self,
-        request: Request<StageRequest>,
-    ) -> Result<Response<Self::InstallStageStream>, Status> {
-        let req = request.into_inner();
-
-        let data_store_path = self.agent_config.datastore_path().to_owned();
-        let logstream = self.logstream.clone();
-        let tracestream = self.tracestream.clone();
-
-        self.servicing_request("install_stage", RebootDecision::Error, move || {
-            let mut trident = Trident::new(
-                Some(HostConfigurationSource::RawString(req.config)),
-                &data_store_path,
-                logstream,
-                tracestream,
-            )
-            .message("Failed to initialize Trident")?;
-
-            let mut datastore =
-                DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
-
-            trident.install(&mut datastore, Operation::Stage.into(), false, None)
-        })
-    }
-
-    type InstallFinalizeStream = ServicingResponseStream;
-    async fn install_finalize(
-        &self,
-        request: Request<FinalizeRequest>,
-    ) -> Result<Response<Self::InstallFinalizeStream>, Status> {
-        let finalize = request.into_inner();
-
-        let data_store_path = self.agent_config.datastore_path().to_owned();
-        let logstream = self.logstream.clone();
-        let tracestream = self.tracestream.clone();
-
-        self.servicing_request("install_finalize", reboot_allowed(&finalize), move || {
-            let mut trident = Trident::new(None, &data_store_path, logstream, tracestream)
-                .message("Failed to initialize Trident")?;
-
-            let mut datastore =
-                DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
-
-            trident.install(&mut datastore, Operation::Finalize.into(), false, None)
-        })
-    }
-
-    type UpdateStream = ServicingResponseStream;
-    async fn update(
-        &self,
-        request: Request<ServicingRequest>,
-    ) -> Result<Response<Self::UpdateStream>, Status> {
-        let req = request.into_inner();
-        let Some(staging) = req.stage else {
-            return Err(Status::invalid_argument("Missing staging configuration"));
-        };
-        let Some(finalize) = req.finalize else {
-            return Err(Status::invalid_argument("Missing finalize configuration"));
-        };
-
-        let data_store_path = self.agent_config.datastore_path().to_owned();
-        let logstream = self.logstream.clone();
-        let tracestream = self.tracestream.clone();
-
-        self.servicing_request("update", reboot_allowed(&finalize), move || {
-            let mut trident = Trident::new(
-                Some(HostConfigurationSource::RawString(staging.config)),
-                &data_store_path,
-                logstream,
-                tracestream,
-            )
-            .message("Failed to initialize Trident")?;
-
-            let mut datastore =
-                DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
-
-            trident.update(&mut datastore, Operations::all())
-        })
-    }
-
-    type UpdateStageStream = ServicingResponseStream;
-    async fn update_stage(
-        &self,
-        request: Request<StageRequest>,
-    ) -> Result<Response<Self::UpdateStageStream>, Status> {
-        let req = request.into_inner();
-
-        let data_store_path = self.agent_config.datastore_path().to_owned();
-        let logstream = self.logstream.clone();
-        let tracestream = self.tracestream.clone();
-
-        self.servicing_request("update_stage", RebootDecision::Error, move || {
-            let mut trident = Trident::new(
-                Some(HostConfigurationSource::RawString(req.config)),
-                &data_store_path,
-                logstream,
-                tracestream,
-            )
-            .message("Failed to initialize Trident")?;
-
-            let mut datastore =
-                DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
-
-            trident.update(&mut datastore, Operation::Stage.into())
-        })
-    }
-
-    type UpdateFinalizeStream = ServicingResponseStream;
-    async fn update_finalize(
-        &self,
-        request: Request<FinalizeRequest>,
-    ) -> Result<Response<Self::UpdateFinalizeStream>, Status> {
-        let finalize = request.into_inner();
-
-        let data_store_path = self.agent_config.datastore_path().to_owned();
-        let logstream = self.logstream.clone();
-        let tracestream = self.tracestream.clone();
-
-        self.servicing_request("update_finalize", reboot_allowed(&finalize), move || {
-            let mut trident = Trident::new(None, &data_store_path, logstream, tracestream)
-                .message("Failed to initialize Trident")?;
-
-            let mut datastore =
-                DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
-
-            trident.update(&mut datastore, Operation::Finalize.into())
-        })
-    }
-
-    type CheckRootStream = ServicingResponseStream;
-    async fn check_root(
-        &self,
-        _request: Request<CheckRootRequest>,
-    ) -> Result<Response<Self::CheckRootStream>, Status> {
-        self.servicing_request("check_root", RebootDecision::Error, || {
-            Err(TridentError::new(InternalError::Internal(
-                "Not implemented: check_root",
-            )))
-        })
-    }
-
-    type CommitStream = ServicingResponseStream;
-    async fn commit(
-        &self,
-        _request: Request<CommitRequest>,
-    ) -> Result<Response<Self::CommitStream>, Status> {
-        let data_store_path = self.agent_config.datastore_path().to_owned();
-        let logstream = self.logstream.clone();
-        let tracestream = self.tracestream.clone();
-
-        self.servicing_request("commit", RebootDecision::Error, move || {
-            let mut trident = Trident::new(None, &data_store_path, logstream, tracestream)
-                .message("Failed to initialize Trident")?;
-
-            let mut datastore =
-                DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
-
-            trident.commit(&mut datastore)
-        })
     }
 
     type StreamImageStream = ServicingResponseStream;
@@ -277,7 +96,221 @@ impl TridentService for TridentHarpoonServer {
         })
     }
 
+    #[cfg(feature = "grpc-preview")]
+    type InstallStream = ServicingResponseStream;
+    #[cfg(feature = "grpc-preview")]
+    async fn install(
+        &self,
+        request: Request<ServicingRequest>,
+    ) -> Result<Response<Self::InstallStream>, Status> {
+        let req = request.into_inner();
+        let Some(staging) = req.stage else {
+            return Err(Status::invalid_argument("Missing staging configuration"));
+        };
+        let Some(finalize) = req.finalize else {
+            return Err(Status::invalid_argument("Missing finalize configuration"));
+        };
+
+        let data_store_path = self.agent_config.datastore_path().to_owned();
+        let logstream = self.logstream.clone();
+        let tracestream = self.tracestream.clone();
+
+        self.servicing_request("install", reboot_allowed(&finalize), move || {
+            let mut trident = Trident::new(
+                Some(HostConfigurationSource::RawString(staging.config)),
+                &data_store_path,
+                logstream,
+                tracestream,
+            )
+            .message("Failed to initialize Trident")?;
+
+            let mut datastore =
+                DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
+
+            trident.install(&mut datastore, Operations::all(), false, None)
+        })
+    }
+
+    #[cfg(feature = "grpc-preview")]
+    type InstallStageStream = ServicingResponseStream;
+    #[cfg(feature = "grpc-preview")]
+    async fn install_stage(
+        &self,
+        request: Request<StageRequest>,
+    ) -> Result<Response<Self::InstallStageStream>, Status> {
+        let req = request.into_inner();
+
+        let data_store_path = self.agent_config.datastore_path().to_owned();
+        let logstream = self.logstream.clone();
+        let tracestream = self.tracestream.clone();
+
+        self.servicing_request("install_stage", RebootDecision::Error, move || {
+            let mut trident = Trident::new(
+                Some(HostConfigurationSource::RawString(req.config)),
+                &data_store_path,
+                logstream,
+                tracestream,
+            )
+            .message("Failed to initialize Trident")?;
+
+            let mut datastore =
+                DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
+
+            trident.install(&mut datastore, Operation::Stage.into(), false, None)
+        })
+    }
+
+    #[cfg(feature = "grpc-preview")]
+    type InstallFinalizeStream = ServicingResponseStream;
+    #[cfg(feature = "grpc-preview")]
+    async fn install_finalize(
+        &self,
+        request: Request<FinalizeRequest>,
+    ) -> Result<Response<Self::InstallFinalizeStream>, Status> {
+        let finalize = request.into_inner();
+
+        let data_store_path = self.agent_config.datastore_path().to_owned();
+        let logstream = self.logstream.clone();
+        let tracestream = self.tracestream.clone();
+
+        self.servicing_request("install_finalize", reboot_allowed(&finalize), move || {
+            let mut trident = Trident::new(None, &data_store_path, logstream, tracestream)
+                .message("Failed to initialize Trident")?;
+
+            let mut datastore =
+                DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
+
+            trident.install(&mut datastore, Operation::Finalize.into(), false, None)
+        })
+    }
+
+    #[cfg(feature = "grpc-preview")]
+    type UpdateStream = ServicingResponseStream;
+    #[cfg(feature = "grpc-preview")]
+    async fn update(
+        &self,
+        request: Request<ServicingRequest>,
+    ) -> Result<Response<Self::UpdateStream>, Status> {
+        let req = request.into_inner();
+        let Some(staging) = req.stage else {
+            return Err(Status::invalid_argument("Missing staging configuration"));
+        };
+        let Some(finalize) = req.finalize else {
+            return Err(Status::invalid_argument("Missing finalize configuration"));
+        };
+
+        let data_store_path = self.agent_config.datastore_path().to_owned();
+        let logstream = self.logstream.clone();
+        let tracestream = self.tracestream.clone();
+
+        self.servicing_request("update", reboot_allowed(&finalize), move || {
+            let mut trident = Trident::new(
+                Some(HostConfigurationSource::RawString(staging.config)),
+                &data_store_path,
+                logstream,
+                tracestream,
+            )
+            .message("Failed to initialize Trident")?;
+
+            let mut datastore =
+                DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
+
+            trident.update(&mut datastore, Operations::all())
+        })
+    }
+
+    #[cfg(feature = "grpc-preview")]
+    type UpdateStageStream = ServicingResponseStream;
+    #[cfg(feature = "grpc-preview")]
+    async fn update_stage(
+        &self,
+        request: Request<StageRequest>,
+    ) -> Result<Response<Self::UpdateStageStream>, Status> {
+        let req = request.into_inner();
+
+        let data_store_path = self.agent_config.datastore_path().to_owned();
+        let logstream = self.logstream.clone();
+        let tracestream = self.tracestream.clone();
+
+        self.servicing_request("update_stage", RebootDecision::Error, move || {
+            let mut trident = Trident::new(
+                Some(HostConfigurationSource::RawString(req.config)),
+                &data_store_path,
+                logstream,
+                tracestream,
+            )
+            .message("Failed to initialize Trident")?;
+
+            let mut datastore =
+                DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
+
+            trident.update(&mut datastore, Operation::Stage.into())
+        })
+    }
+
+    #[cfg(feature = "grpc-preview")]
+    type UpdateFinalizeStream = ServicingResponseStream;
+    #[cfg(feature = "grpc-preview")]
+    async fn update_finalize(
+        &self,
+        request: Request<FinalizeRequest>,
+    ) -> Result<Response<Self::UpdateFinalizeStream>, Status> {
+        let finalize = request.into_inner();
+
+        let data_store_path = self.agent_config.datastore_path().to_owned();
+        let logstream = self.logstream.clone();
+        let tracestream = self.tracestream.clone();
+
+        self.servicing_request("update_finalize", reboot_allowed(&finalize), move || {
+            let mut trident = Trident::new(None, &data_store_path, logstream, tracestream)
+                .message("Failed to initialize Trident")?;
+
+            let mut datastore =
+                DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
+
+            trident.update(&mut datastore, Operation::Finalize.into())
+        })
+    }
+
+    #[cfg(feature = "grpc-preview")]
+    type CheckRootStream = ServicingResponseStream;
+    #[cfg(feature = "grpc-preview")]
+    async fn check_root(
+        &self,
+        _request: Request<CheckRootRequest>,
+    ) -> Result<Response<Self::CheckRootStream>, Status> {
+        self.servicing_request("check_root", RebootDecision::Error, || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: check_root",
+            )))
+        })
+    }
+
+    #[cfg(feature = "grpc-preview")]
+    type CommitStream = ServicingResponseStream;
+    #[cfg(feature = "grpc-preview")]
+    async fn commit(
+        &self,
+        _request: Request<CommitRequest>,
+    ) -> Result<Response<Self::CommitStream>, Status> {
+        let data_store_path = self.agent_config.datastore_path().to_owned();
+        let logstream = self.logstream.clone();
+        let tracestream = self.tracestream.clone();
+
+        self.servicing_request("commit", RebootDecision::Error, move || {
+            let mut trident = Trident::new(None, &data_store_path, logstream, tracestream)
+                .message("Failed to initialize Trident")?;
+
+            let mut datastore =
+                DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
+
+            trident.commit(&mut datastore)
+        })
+    }
+
+    #[cfg(feature = "grpc-preview")]
     type RebuildRaidStream = ServicingResponseStream;
+    #[cfg(feature = "grpc-preview")]
     async fn rebuild_raid(
         &self,
         _request: Request<RebuildRaidRequest>,
@@ -301,6 +334,7 @@ impl TridentService for TridentHarpoonServer {
         })
     }
 
+    #[cfg(feature = "grpc-preview")]
     async fn validate_host_configuration(
         &self,
         request: Request<ValidateHostConfigurationRequest>,
@@ -318,6 +352,7 @@ impl TridentService for TridentHarpoonServer {
         }))
     }
 
+    #[cfg(feature = "grpc-preview")]
     async fn get_required_servicing_type(
         &self,
         _request: Request<GetRequiredServicingTypeRequest>,
@@ -330,6 +365,7 @@ impl TridentService for TridentHarpoonServer {
         .await
     }
 
+    #[cfg(feature = "grpc-preview")]
     async fn get_provisioned_config(
         &self,
         _request: Request<GetConfigRequest>,
@@ -342,6 +378,7 @@ impl TridentService for TridentHarpoonServer {
         .await
     }
 
+    #[cfg(feature = "grpc-preview")]
     async fn get_servicing_config(
         &self,
         _request: Request<GetConfigRequest>,
@@ -354,6 +391,7 @@ impl TridentService for TridentHarpoonServer {
         .await
     }
 
+    #[cfg(feature = "grpc-preview")]
     async fn get_last_error(
         &self,
         _request: Request<GetLastErrorRequest>,
@@ -366,6 +404,7 @@ impl TridentService for TridentHarpoonServer {
         .await
     }
 
+    #[cfg(feature = "grpc-preview")]
     async fn get_servicing_state(
         &self,
         _request: Request<GetServicingStateRequest>,
@@ -382,6 +421,7 @@ impl TridentService for TridentHarpoonServer {
         .await
     }
 
+    #[cfg(feature = "grpc-preview")]
     async fn get_active_volume(
         &self,
         _request: Request<GetActiveVolumeRequest>,
@@ -403,6 +443,7 @@ impl TridentService for TridentHarpoonServer {
         .await
     }
 
+    #[cfg(feature = "grpc-preview")]
     async fn check_rollback(
         &self,
         _request: Request<CheckRollbackRequest>,
@@ -415,7 +456,9 @@ impl TridentService for TridentHarpoonServer {
         .await
     }
 
+    #[cfg(feature = "grpc-preview")]
     type RollbackStream = ServicingResponseStream;
+    #[cfg(feature = "grpc-preview")]
     async fn rollback(
         &self,
         _request: Request<RollbackRequest>,
@@ -427,7 +470,9 @@ impl TridentService for TridentHarpoonServer {
         })
     }
 
+    #[cfg(feature = "grpc-preview")]
     type RollbackStageStream = ServicingResponseStream;
+    #[cfg(feature = "grpc-preview")]
     async fn rollback_stage(
         &self,
         _request: Request<RollbackStageRequest>,
@@ -439,7 +484,9 @@ impl TridentService for TridentHarpoonServer {
         })
     }
 
+    #[cfg(feature = "grpc-preview")]
     type RollbackFinalizeStream = ServicingResponseStream;
+    #[cfg(feature = "grpc-preview")]
     async fn rollback_finalize(
         &self,
         _request: Request<RollbackFinalizeRequest>,
@@ -451,6 +498,7 @@ impl TridentService for TridentHarpoonServer {
         })
     }
 
+    #[cfg(feature = "grpc-preview")]
     async fn get_rollback_chain(
         &self,
         _request: Request<GetRollbackChainRequest>,
@@ -463,6 +511,7 @@ impl TridentService for TridentHarpoonServer {
         .await
     }
 
+    #[cfg(feature = "grpc-preview")]
     async fn get_rollback_target(
         &self,
         _request: Request<GetRollbackTargetRequest>,

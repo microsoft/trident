@@ -232,25 +232,6 @@ pub enum Commands {
     },
 
     #[clap(hide(true))]
-    StreamImage {
-        /// URL of the image to stream
-        #[clap(index = 1)]
-        image: url::Url,
-
-        /// Hash of the image manifest
-        #[clap(long)]
-        hash: String,
-
-        /// Path to save the resulting HostStatus
-        #[clap(short, long)]
-        status: Option<PathBuf>,
-
-        /// Path to save an eventual fatal error
-        #[clap(short, long)]
-        error: Option<PathBuf>,
-    },
-
-    #[clap(hide(true))]
     Daemon {
         /// Inactivity timeout. The server will shut down automatically after
         /// being inactive for this duration. Supports human-readable durations,
@@ -279,7 +260,6 @@ impl Commands {
             #[cfg(feature = "pytest-generator")]
             Commands::Pytest => "pytest",
             Commands::OfflineInitialize { .. } => "offline-initialize",
-            Commands::StreamImage { .. } => "stream-image",
             Commands::Daemon { .. } => "daemon",
             Commands::Rollback { .. } => "rollback",
         }
