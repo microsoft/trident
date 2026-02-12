@@ -1171,9 +1171,9 @@ imagecustomizer-dev-arm64:
 artifacts/ubuntu_amd64.vhdx:
 	curl -LO https://cloud-images.ubuntu.com/releases/server/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img
 	qemu-img convert -O vhdx ubuntu-22.04-server-cloudimg-amd64.img artifacts/ubuntu_amd64.vhdx
-	rm -rf ubuntu-22.04-server-cloudimg-amd64.img
+	rm -f ubuntu-22.04-server-cloudimg-amd64.img
 
 artifacts/ubuntu_arm64.vhdx:
 	curl -LO https://cloud-images.ubuntu.com/releases/server/22.04/release/ubuntu-22.04-server-cloudimg-arm64.img
 	qemu-img convert -O vhdx ubuntu-22.04-server-cloudimg-arm64.img artifacts/ubuntu_arm64.vhdx
-	rm -rf ubuntu-22.04-server-cloudimg-arm64.img
+	rm -f ubuntu-22.04-server-cloudimg-arm64.img
