@@ -321,20 +321,25 @@ fn setup_tracing(args: &Cli) -> Result<TraceStream, Error> {
             // only be enabled for the Daemon command. Until then, keep it enabled
             // for all commands to ensure we have tracing info in journald for all
             // commands.
-            tracing::subscriber::set_global_default(
-                tracing_subscriber::Registry::default()
-                    .with(
-                        tracestream
-                            .make_trace_sender()
-                            .with_filter(filter::LevelFilter::INFO),
-                    )
-                    .with(
-                        tracing_journald::layer()?
+            let baseline_tracing = tracing_subscriber::Registry::default().with(
+                tracestream
+                    .make_trace_sender()
+                    .with_filter(filter::LevelFilter::INFO),
+            );
+            if let Ok(journald_layer) = tracing_journald::layer() {
+                tracing::subscriber::set_global_default(
+                    baseline_tracing.with(
+                        journald_layer
                             .with_syslog_identifier("trident-tracing".to_string())
                             .with_filter(filter::LevelFilter::INFO),
                     ),
-            )
-            .context("Failed to set global default subscriber")?;
+                )
+                .context("Failed to set global default subscriber")?;
+            } else {
+                eprintln!("Failed to connect to journald, falling back to tracing without journald support");
+                tracing::subscriber::set_global_default(baseline_tracing)
+                    .context("Failed to set global default subscriber")?;
+            }
         }
         _ => {
             // no op
