@@ -21,6 +21,8 @@ class BaseImage(Enum):
     MINIMAL_AARCH64 = BaseImageData(
         "minimal_aarch64", Path("artifacts/minimal_aarch64.vhdx")
     )
+    UBUNTU_AMD64 = BaseImageData("ubuntu_amd64", Path("artifacts/ubuntu_amd64.vhdx"))
+    UBUNTU_ARM64 = BaseImageData("ubuntu_arm64", Path("artifacts/ubuntu_arm64.vhdx"))
 
     @property
     def path(self) -> Path:
@@ -46,6 +48,7 @@ class BaseImageManifest:
 
 
 class OutputFormat(Enum):
+    BAREMETAL_IMAGE = "baremetal-image"
     COSI = "cosi"
     VHDX = "vhdx"
     RAW = "raw"
@@ -62,6 +65,8 @@ class OutputFormat(Enum):
         """Return the file extension for this format."""
         if self == OutputFormat.VHD_FIXED:
             return "vhd"
+        elif self == OutputFormat.BAREMETAL_IMAGE:
+            return "cosi"
         return self.value
 
 

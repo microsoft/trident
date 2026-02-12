@@ -1158,43 +1158,6 @@ artifacts/trident-vm-grub-verity-azure-testimage.vhd: \
 			--output-image-format vhd-fixed \
 			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-grub-verity-azure.yaml
 
-artifacts/empty-direct-streaming-ic.config:
-	echo "output:" > artifacts/empty-direct-streaming-ic.config # specify everything in cmdline
-
-artifacts/azurelinux-direct-streaming-testimage-arm64.cosi: \
-	artifacts/trident-rawcosi-testimage-arm64.vhdx \
-	artifacts/empty-direct-streaming-ic.config
-	docker run \
-		--rm \
-		--privileged \
-		-v ".:/repo:z" \
-		-v "/dev:/dev" \
-		${MIC_CONTAINER_IMAGE} \
-			--log-level=debug \
-			--build-dir ./build \
-			--image-file /repo/artifacts/trident-rawcosi-testimage-arm64.vhdx \
-			--output-image-file /repo/artifacts/azurelinux-direct-streaming-testimage-arm64.cosi \
-			--output-image-format baremetal-image \
-			--config-file /repo/artifacts/empty-direct-streaming-ic.config
-	rm -rf artifacts/empty-direct-streaming-ic.config
-
-artifacts/azurelinux-direct-streaming-testimage-amd64.cosi: \
-	artifacts/trident-rawcosi-testimage.vhdx \
-	artifacts/empty-direct-streaming-ic.config
-	docker run \
-		--rm \
-		--privileged \
-		-v ".:/repo:z" \
-		-v "/dev:/dev" \
-		${MIC_CONTAINER_IMAGE} \
-			--log-level=debug \
-			--build-dir ./build \
-			--image-file /repo/artifacts/trident-rawcosi-testimage.vhdx \
-			--output-image-file /repo/artifacts/azurelinux-direct-streaming-testimage-amd64.cosi \
-			--output-image-format baremetal-image \
-			--config-file /repo/artifacts/empty-direct-streaming-ic.config
-	rm -rf artifacts/empty-direct-streaming-ic.config
-
 .PHONY: imagecustomizer-dev-amd64
 imagecustomizer-dev-amd64:
 	make -C ../azure-linux-image-tools/toolkit go-imagecustomizer
@@ -1205,50 +1168,12 @@ imagecustomizer-dev-arm64:
 	make -C ../azure-linux-image-tools/toolkit go-imagecustomizer
 	../azure-linux-image-tools/toolkit/tools/imagecustomizer/container/build-container.sh -t imagecustomizer:dev -a arm64
 
-artifacts/ubuntu.vhdx:
+artifacts/ubuntu_amd64.vhdx:
 	curl -LO https://cloud-images.ubuntu.com/releases/server/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img
-	qemu-img convert -O vhdx ubuntu-22.04-server-cloudimg-amd64.img artifacts/ubuntu.vhdx
+	qemu-img convert -O vhdx ubuntu-22.04-server-cloudimg-amd64.img artifacts/ubuntu_amd64.vhdx
 	rm -rf ubuntu-22.04-server-cloudimg-amd64.img
 
 artifacts/ubuntu_arm64.vhdx:
 	curl -LO https://cloud-images.ubuntu.com/releases/server/22.04/release/ubuntu-22.04-server-cloudimg-arm64.img
 	qemu-img convert -O vhdx ubuntu-22.04-server-cloudimg-arm64.img artifacts/ubuntu_arm64.vhdx
 	rm -rf ubuntu-22.04-server-cloudimg-arm64.img
-
-artifacts/ubuntu2204-direct-streaming-ic.config:
-	echo "previewFeatures:" > artifacts/ubuntu2204-direct-streaming-ic.config
-	echo "  - ubuntu-22.04" >> artifacts/ubuntu2204-direct-streaming-ic.config
-
-artifacts/ubuntu-direct-streaming-testimage-arm64.cosi: \
-	artifacts/ubuntu_arm64.vhdx \
-	artifacts/ubuntu2204-direct-streaming-ic.config
-	docker run \
-		--rm \
-		--privileged \
-		-v ".:/repo:z" \
-		-v "/dev:/dev" \
-		${MIC_CONTAINER_IMAGE} \
-			--log-level=debug \
-			--build-dir ./build \
-			--image-file /repo/artifacts/ubuntu_arm64.vhdx \
-			--output-image-file /repo/artifacts/ubuntu-direct-streaming-testimage-arm64.cosi \
-			--output-image-format baremetal-image \
-			--config-file /repo/artifacts/ubuntu2204-direct-streaming-ic.config
-	rm -rf artifacts/ubuntu2204-direct-streaming-ic.config
-
-artifacts/ubuntu-direct-streaming-testimage-amd64.cosi: \
-	artifacts/ubuntu.vhdx \
-	artifacts/ubuntu2204-direct-streaming-ic.config
-	docker run \
-		--rm \
-		--privileged \
-		-v ".:/repo:z" \
-		-v "/dev:/dev" \
-		${MIC_CONTAINER_IMAGE} \
-			--log-level=debug \
-			--build-dir ./build \
-			--image-file /repo/artifacts/ubuntu.vhdx \
-			--output-image-file /repo/artifacts/ubuntu-direct-streaming-testimage-amd64.cosi \
-			--output-image-format baremetal-image \
-			--config-file /repo/artifacts/ubuntu2204-direct-streaming-ic.config
-	rm -rf artifacts/ubuntu2204-direct-streaming-ic.config
