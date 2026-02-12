@@ -153,6 +153,10 @@ steps:
           set -eux
           mkdir -p artifacts
           make artifacts/${{ baseimgType }}.vhdx
+          # Move the downloaded base image to the images directory consistent
+          # with how the azurelinux base images are stored.
+          mkdir -p $(Build.ArtifactStagingDirectory)/images
+          mv artifacts/${{ baseimgType }}.vhdx $(Build.ArtifactStagingDirectory)/images/
         displayName: "Download Ubuntu Base Image - ${{ baseimgType }}"
         
     - ${{ else }}:
