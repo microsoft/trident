@@ -2,7 +2,9 @@ package helpers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	stormsshclient "tridenttools/storm/utils/ssh/client"
@@ -56,7 +58,7 @@ func (h *CheckJournaldHelper) checkTraceFile(tc storm.TestCase) error {
 	for {
 		var logEntry map[string]interface{}
 		if err := scanner.Decode(&logEntry); err != nil {
-			if strings.Contains(err.Error(), "EOF") {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			return fmt.Errorf("failed to decode JSON from metric file: %w", err)
@@ -89,10 +91,25 @@ func (h *CheckJournaldHelper) checkJournald(tc storm.TestCase) error {
 	collectedLogs := tridentJournaldTraceLogs.Stdout
 	logrus.Infof("Journald logs for %s:\n%s\n", h.args.SyslogIdentifier, collectedLogs)
 
-	// Check if the expected metric is present in the journald logs
-	if !strings.Contains(collectedLogs, fmt.Sprintf("\"F_METRIC_NAME\" : \"%s\"", h.args.SyslogMetricToCheck)) {
-		tc.Fail(fmt.Sprintf("Expected metric '%s' not found in journald logs for syslog identifier '%s'", h.args.SyslogMetricToCheck, h.args.SyslogIdentifier))
+	// Read each line from the collectedLogs string, parse the line as JSON, and check if the expected metric_name is present
+	// If found, the test passes.
+	// If not found, the test fails.
+	lines := strings.Split(collectedLogs, "\n")
+	for _, line := range lines {
+		var logEntry map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &logEntry); err != nil {
+			logrus.Warnf("Failed to parse line as JSON: %s, error: %v", line, err)
+			continue
+		}
+
+		if logEntry["F_METRIC_NAME"] == h.args.SyslogMetricToCheck {
+			// Test passed
+			logrus.Infof("Found expected metric '%s' in journald logs with value: %v", h.args.SyslogMetricToCheck, logEntry["F_METRIC_VALUE"])
+			return nil
+		}
 	}
 
+	// Metric not found in journald logs, test failed
+	tc.Fail(fmt.Sprintf("Expected metric '%s' not found in journald logs for syslog identifier '%s'", h.args.SyslogMetricToCheck, h.args.SyslogIdentifier))
 	return nil
 }
