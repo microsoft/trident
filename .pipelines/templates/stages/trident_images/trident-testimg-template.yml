@@ -151,6 +151,7 @@ steps:
     - ${{ if contains(baseimgType, 'ubuntu') }}:
       - bash: |
           set -eux
+          mkdir -p artifacts
           make artifacts/${{ baseimgType }}.vhdx
         displayName: "Download Ubuntu Base Image - ${{ baseimgType }}"
         
