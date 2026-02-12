@@ -335,9 +335,6 @@ impl Os {
         if !self.confexts.is_empty() {
             tracing::info!(metric_name = "host_config_confexts", value = true);
         }
-        if !self.modules.is_empty() {
-            tracing::info!(metric_name = "host_config_modules", value = true);
-        }
         if !self.services.enable.is_empty() {
             tracing::info!(metric_name = "host_config_services_enabled", value = true);
         }
