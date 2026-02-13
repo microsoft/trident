@@ -57,6 +57,17 @@ fn run_trident(
                 .map(|()| ExitKind::Done);
         }
 
+        // Handle diagnose command
+        Commands::Diagnose {
+            output,
+            journal,
+            selinux,
+        } => {
+            return Trident::diagnose(output, *journal, *selinux)
+                .message("Failed to generate diagnostics")
+                .map(|()| ExitKind::Done);
+        }
+
         // Handle manual rollback check here so root is not required for --check
         Commands::Rollback {
             check: true,

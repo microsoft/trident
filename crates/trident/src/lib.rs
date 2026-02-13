@@ -31,6 +31,7 @@ use trident_api::{
 pub mod agentconfig;
 pub mod cli;
 mod datastore;
+mod diagnostics;
 mod engine;
 mod grpc_client;
 mod health;
@@ -101,7 +102,7 @@ pub const TRIDENT_METRICS_FILE_PATH: &str = "/var/log/trident-metrics.jsonl";
 const SAFETY_OVERRIDE_CHECK_PATH: &str = "/override-trident-safety-check";
 
 /// Temporary location of the datastore for multiboot install scenarios.
-const TEMPORARY_DATASTORE_PATH: &str = "/tmp/trident-datastore.sqlite";
+pub const TEMPORARY_DATASTORE_PATH: &str = "/tmp/trident-datastore.sqlite";
 
 #[must_use]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -797,5 +798,11 @@ impl Trident {
         }
 
         rollback_result
+    }
+
+    // Handle diagnose command
+    pub fn diagnose(output_path: &Path, full: bool, selinux: bool) -> Result<(), TridentError> {
+        diagnostics::generate_and_bundle(output_path, full, selinux)?;
+        Ok(())
     }
 }
