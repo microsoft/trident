@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
     collections::BTreeSet,
+    error::Error as StdError,
     fmt::{Debug, Write},
     panic::Location,
 };
@@ -941,37 +942,62 @@ impl Serialize for TridentError {
 
 impl Debug for TridentError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.0.kind {
-            ErrorKind::ExecutionEnvironmentMisconfiguration(_) => writeln!(
-                f,
+        let header = match self.0.kind {
+            ErrorKind::ExecutionEnvironmentMisconfiguration(_) => {
                 "Trident failed due to a misconfigured execution environment"
-            )?,
-            ErrorKind::HealthChecks(_) => writeln!(f, "Trident reported failed health checks")?,
-            ErrorKind::Initialization(_) => writeln!(f, "Trident failed to initialize")?,
-            ErrorKind::Internal(_) => writeln!(f, "Trident failed due to an internal error")?,
-            ErrorKind::InvalidInput(_) => writeln!(f, "Trident failed due to invalid input")?,
-            ErrorKind::Servicing(_) => writeln!(f, "Trident failed due to a servicing error")?,
-            ErrorKind::UnsupportedConfiguration(_) => {
-                writeln!(f, "Trident failed due to an unsupported configuration")?
             }
-        }
+            ErrorKind::HealthChecks(_) => "Trident reported failed health checks",
+            ErrorKind::Initialization(_) => "Trident failed to initialize",
+            ErrorKind::Internal(_) => "Trident failed due to an internal error",
+            ErrorKind::InvalidInput(_) => "Trident failed due to invalid input",
+            ErrorKind::Servicing(_) => "Trident failed due to a servicing error",
+            ErrorKind::UnsupportedConfiguration(_) => {
+                "Trident failed due to an unsupported configuration"
+            }
+        };
 
+        writeln!(f, "{header}")?;
         writeln!(f, "\nContext:")?;
-        writeln!(
-            f,
-            "    0: {} at {}:{}",
-            self.0.kind,
-            self.0.location.file(),
-            self.0.location.line()
-        )?;
 
-        let mut index = 1;
-        for (context, location) in self.0.context.iter() {
+        // Generate the error chain for the source error, if it exists, so that
+        // it can be printed after the context messages.
+        let source_error_chain = {
+            let mut acc = Vec::new();
+            if let Some(ref source) = self.0.source {
+                let mut source: Option<&dyn StdError> = Some(source.as_ref());
+                while let Some(e) = source {
+                    acc.push(e);
+                    source = e.source();
+                }
+            }
+            acc
+        };
+
+        // Calculate the max index that will be printed (the number of context
+        // messages + the length of the source error chain), and the number of
+        // digits needed to print that index, in order to determine the padding
+        // for the index column.
+        let digits_needed = (self.0.context.len() + source_error_chain.len())
+            .to_string()
+            .len();
+
+        let padding = digits_needed + 4;
+
+        // Padding to indent multiline messages: padding + 2 for the ": " after the index.
+        let multiline_padding = " ".repeat(padding + 2);
+
+        // Index of the error level being written.
+        let mut index = 0;
+
+        // Print context messages, starting with the most recent context and
+        // going back in time.
+        for (context, location) in self.0.context.iter().rev() {
             for (j, line) in context.split('\n').enumerate() {
                 if j == 0 {
-                    write!(f, "{index: >5}: ")?;
+                    write!(f, "{index: >padding$}: ")?;
                 } else {
-                    f.write_str("\n       ")?;
+                    f.write_char('\n')?;
+                    f.write_str(&multiline_padding)?;
                 }
                 f.write_str(line)?;
             }
@@ -979,21 +1005,30 @@ impl Debug for TridentError {
             index += 1;
         }
 
-        if let Some(ref source) = self.0.source {
-            let mut source: Option<&dyn std::error::Error> = Some(source.as_ref());
-            while let Some(e) = source {
-                for (i, line) in e.to_string().split('\n').enumerate() {
-                    if i == 0 {
-                        write!(f, "{index: >5}: ")?;
-                    } else {
-                        f.write_str("\n       ")?;
-                    }
-                    f.write_str(line)?;
+        // Print the main error message.
+        writeln!(
+            f,
+            "{: >padding$}: {} at {}:{}",
+            index,
+            self.0.kind,
+            self.0.location.file(),
+            self.0.location.line()
+        )?;
+        index += 1;
+
+        // Print the source error chain.
+        for e in source_error_chain {
+            for (i, line) in e.to_string().split('\n').enumerate() {
+                if i == 0 {
+                    write!(f, "{index: >padding$}: ")?;
+                } else {
+                    f.write_char('\n')?;
+                    f.write_str(&multiline_padding)?;
                 }
-                f.write_char('\n')?;
-                source = e.source();
-                index += 1;
+                f.write_str(line)?;
             }
+            f.write_char('\n')?;
+            index += 1;
         }
         Ok(())
     }
@@ -1053,6 +1088,7 @@ impl From<&ErrorKind> for HarpoonTridentErrorKind {
 #[cfg(test)]
 mod tests {
     use anyhow::Context;
+    use indoc::formatdoc;
     use serde_yaml::Value;
 
     use super::*;
@@ -1116,14 +1152,24 @@ mod tests {
         let error = Err::<(), _>(anyhow::anyhow!("z"))
             .context("x\ny")
             .structured(InternalError::Internal("w"))
+            .message("some message")
             .unwrap_err();
-        assert_eq!(
-            format!("{error:?}"),
-            format!(
-                "Trident failed due to an internal error\n\nContext:\n    0: Internal error: w at {}:{}\n    1: x\n       y\n    2: z\n",
-                error.0.location.file(),
-                error.0.location.line(),
-            ),
-        );
+
+        let expected = formatdoc! { r#"
+            Trident failed due to an internal error
+
+            Context:
+                0: some message at {msg_file}:{msg_line}
+                1: Internal error: w at {err_file}:{err_line}
+                2: x
+                   y
+                3: z
+            "#,
+                err_file = error.0.location.file(),
+                err_line = error.0.location.line(),
+                msg_file = error.0.context[0].1.file(),
+                msg_line = error.0.context[0].1.line(),
+        };
+        assert_eq!(format!("{error:?}"), expected);
     }
 }
