@@ -18,7 +18,8 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"tridenttools/pkg/harpoon"
-	"tridenttools/pkg/harpoon/harpoonpbv1"
+	"tridenttools/pkg/harpoon/tridentpbv1"
+	"tridenttools/pkg/harpoon/tridentpbv1preview"
 	"tridenttools/pkg/isopatcher"
 	"tridenttools/pkg/netfinder"
 	"tridenttools/pkg/phonehome"
@@ -434,13 +435,16 @@ func doGrpcInstall(ctx context.Context, conn net.Conn, hostConfiguration string)
 	}
 	defer harpoonClient.Close()
 
-	stream, err := harpoonClient.Install(ctx, &harpoonpbv1.ServicingRequest{
-		Stage: &harpoonpbv1.StageRequest{
-			Config: hostConfiguration,
+	stream, err := harpoonClient.Install(ctx, &tridentpbv1preview.InstallRequest{
+		Stage: &tridentpbv1preview.StageInstallRequest{
+			Config: &tridentpbv1preview.HostConfiguration{
+				Config: hostConfiguration,
+			},
 		},
-		Finalize: &harpoonpbv1.FinalizeRequest{
-			// Let Trident handle the reboot
-			OrchestratorHandlesReboot: false,
+		Finalize: &tridentpbv1preview.FinalizeInstallRequest{
+			Reboot: &tridentpbv1.RebootManagement{
+				Handling: tridentpbv1.RebootHandling_AUTO_REBOOT,
+			},
 		},
 	})
 	if err != nil {

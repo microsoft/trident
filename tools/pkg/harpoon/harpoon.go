@@ -1,13 +1,14 @@
 package harpoon
 
-// Generate the Go structs for the Harpoon protobuf located at ../../../proto/harpoon/v1preview/harpoon.proto
-//go:generate protoc -I ../../../proto/harpoon/v1preview --go_out=harpoonpbv1 --go_opt=paths=source_relative --go_opt=Mharpoon.proto=tridenttools/pkg/harpoon/harpoonpbv1 --go-grpc_out=harpoonpbv1 --go-grpc_opt=paths=source_relative --go-grpc_opt=Mharpoon.proto=tridenttools/pkg/harpoon/harpoonpbv1 harpoon.proto
+// Generate the Go structs for the Trident protobuf located at ../../../proto/trident
+//go:generate ./generate.py
 
 import (
 	"context"
 	"fmt"
 	"net"
-	"tridenttools/pkg/harpoon/harpoonpbv1"
+	"tridenttools/pkg/harpoon/tridentpbv1"
+	"tridenttools/pkg/harpoon/tridentpbv1preview"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -19,8 +20,14 @@ const (
 
 // HarpoonClient is a client for interacting with the Harpoon gRPC service.
 type HarpoonClient struct {
-	harpoonpbv1.TridentServiceClient
+	// Stable APIs
+	tridentpbv1.VersionServiceClient
+	tridentpbv1.StreamingServiceClient
 	grpcConn *grpc.ClientConn
+
+	// Preview APIs
+
+	tridentpbv1preview.InstallServiceClient
 }
 
 func (c *HarpoonClient) Close() error {
@@ -43,7 +50,8 @@ func NewHarpoonClientFromNetworkConnection(conn net.Conn) (*HarpoonClient, error
 	}
 
 	return &HarpoonClient{
-		TridentServiceClient: harpoonpbv1.NewTridentServiceClient(grpcConn),
-		grpcConn:             grpcConn,
+		VersionServiceClient:   tridentpbv1.NewVersionServiceClient(grpcConn),
+		StreamingServiceClient: tridentpbv1.NewStreamingServiceClient(grpcConn),
+		grpcConn:               grpcConn,
 	}, nil
 }
