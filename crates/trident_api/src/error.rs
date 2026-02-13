@@ -1,6 +1,5 @@
 use std::{
     borrow::Cow,
-    cmp,
     collections::BTreeSet,
     error::Error as StdError,
     fmt::{Debug, Write},
