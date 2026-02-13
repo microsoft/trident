@@ -973,7 +973,11 @@ impl Debug for TridentError {
             acc
         };
 
-        let digits_needed = (1 + self.0.context.len() + source_error_chain.len())
+        // Calculate the max index that will be printed (the number of context
+        // messages + the length of the source error chain), and the number of
+        // digits needed to print that index, in order to determine the padding
+        // for the index column.
+        let digits_needed = (self.0.context.len() + source_error_chain.len())
             .to_string()
             .len();
 
