@@ -5,10 +5,10 @@ use std::{fmt::Debug, panic, sync::Arc};
 use anyhow::anyhow;
 use log::error;
 use tokio::sync::{Mutex, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock};
-
-use harpoon::v1::{FinalStatus, StatusCode, TridentError as HarpoonTridentError};
 use tokio_util::sync::CancellationToken;
+
 use trident_api::error::{InternalError, TridentError};
+use trident_proto::v1::{FinalStatus, StatusCode, TridentError as HarpoonTridentError};
 
 use crate::{server::activitytracker::ActivityTracker, ExitKind};
 
@@ -215,10 +215,10 @@ mod tests {
 
     use std::time::Duration;
 
-    use harpoon::v1::TridentErrorKind;
     use tokio::time;
 
     use trident_api::error::InvalidInputError;
+    use trident_proto::v1::TridentErrorKind;
 
     #[tokio::test]
     async fn test_servicing_manager_new() {

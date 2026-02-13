@@ -19,11 +19,11 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 use tonic::{Response, Status};
 
-use harpoon::v1::{
+use trident_api::error::TridentError;
+use trident_proto::v1::{
     servicing_response::Response as ResponseType, FileLocation, Log, LogLevel, ServicingResponse,
     Start,
 };
-use trident_api::error::TridentError;
 
 use crate::{
     agentconfig::AgentConfig,

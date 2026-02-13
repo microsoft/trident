@@ -7,13 +7,13 @@ use tonic::{
 };
 use url::Url;
 
-use harpoon::v1::{
+use trident_proto::v1::{
     servicing_response::Response as ResponseBody, streaming_service_client::StreamingServiceClient,
     version_service_client::VersionServiceClient, LogLevel, RebootHandling as ProtoRebootHandling,
     RebootManagement, ServicingResponse, StatusCode, StreamDiskRequest, VersionRequest,
 };
 #[cfg(feature = "grpc-preview")]
-use harpoon::v1preview::{
+use trident_proto::v1preview::{
     commit_service_client::CommitServiceClient, install_service_client::InstallServiceClient,
     rebuild_raid_service_client::RebuildRaidServiceClient,
     rollback_service_client::RollbackServiceClient, status_service_client::StatusServiceClient,
@@ -147,8 +147,6 @@ impl TridentClient {
         host_configuration: impl Into<String>,
         reboot_handling: RebootHandling,
     ) -> Result<ExitKind, TridentClientError> {
-        use harpoon::v1::RebootManagement;
-
         let request = Request::new(InstallRequest {
             stage: Some(StageInstallRequest {
                 config: Some(HostConfiguration {

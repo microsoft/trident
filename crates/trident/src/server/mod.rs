@@ -17,12 +17,12 @@ use tokio_util::sync::CancellationToken;
 use tonic::transport::Server;
 use tonic_middleware::MiddlewareFor;
 
-use harpoon::v1::{
+use trident_proto::v1::{
     streaming_service_server::StreamingServiceServer, version_service_server::VersionServiceServer,
 };
 
 #[cfg(feature = "grpc-preview")]
-use harpoon::v1preview::{
+use trident_proto::v1preview::{
     commit_service_server::CommitServiceServer, install_service_server::InstallServiceServer,
     rebuild_raid_service_server::RebuildRaidServiceServer,
     rollback_service_server::RollbackServiceServer, status_service_server::StatusServiceServer,

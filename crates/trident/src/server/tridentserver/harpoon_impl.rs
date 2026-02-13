@@ -1,13 +1,13 @@
 //! Implements the gRPC TridentService for the TridentHarpoonServer struct.
 
 use tonic::{async_trait, Request, Response, Status};
+use url::Url;
 
-use harpoon::v1::{
+use trident_api::{constants::IMAGE_CHECKSUM_IGNORED, error::TridentResultExt};
+use trident_proto::v1::{
     streaming_service_server::StreamingService, version_service_server::VersionService,
     RebootHandling, RebootManagement, StreamDiskRequest, VersionRequest, VersionResponse,
 };
-use trident_api::{constants::IMAGE_CHECKSUM_IGNORED, error::TridentResultExt};
-use url::Url;
 
 use crate::{server::TridentHarpoonServer, DataStore, Trident, TRIDENT_VERSION};
 

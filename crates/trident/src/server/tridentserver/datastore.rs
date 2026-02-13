@@ -1,6 +1,5 @@
-use harpoon::v1preview::ServicingState as HarpoonServicingState;
-
 use trident_api::status::ServicingState;
+use trident_proto::v1preview::ServicingState as HarpoonServicingState;
 
 use crate::DataStore;
 

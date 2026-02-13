@@ -9,7 +9,7 @@ use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 use url::Url;
 
-use harpoon::v1::{
+use trident_proto::v1::{
     FileLocation, TridentError as HarpoonTridentError, TridentErrorKind as HarpoonTridentErrorKind,
 };
 
