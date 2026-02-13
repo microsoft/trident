@@ -46,12 +46,10 @@ Options:
 - [update](#update)
 - [commit](#commit)
 - [rebuild-raid](#rebuild-raid)
-- [start-network](#start-network)
 - [get](#get)
 - [validate](#validate)
 - [offline-initialize](#offline-initialize)
 - [rollback](#rollback)
-- [daemon](#daemon)
 - [help](#help)
 
 
@@ -286,46 +284,6 @@ Path to save the resulting HostStatus
 #### <span>--error &lt;ERROR&gt;</span>
 
 Path to save an eventual fatal error
-
-
-#### <span>--verbosity &lt;VERBOSITY&gt;</span>
-
-Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
-
-Default: `DEBUG`
-
-
-## start-network
-
-Configure OS networking based on Trident Configuration
-
-Usage:
-
-```
-trident start-network [OPTIONS] [CONFIG]
-```
-
-Argument summary:
-
-```
-Arguments:
-  [CONFIG]  The new configuration to apply [default:
-            /etc/trident/config.yaml]
-
-Options:
-  -v, --verbosity <VERBOSITY>
-          Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
-          [default: DEBUG]
-```
-
-
-### Argument Details
-
-#### <span>&lt;CONFIG&gt;</span>
-
-The new configuration to apply
-
-Default: `/etc/trident/config.yaml`
 
 
 #### <span>--verbosity &lt;VERBOSITY&gt;</span>
@@ -596,56 +554,6 @@ Path to save the resulting Host Status
 #### <span>--error &lt;ERROR&gt;</span>
 
 Path to save an eventual fatal error
-
-
-#### <span>--verbosity &lt;VERBOSITY&gt;</span>
-
-Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
-
-Default: `DEBUG`
-
-
-## daemon
-
-Usage:
-
-```
-trident daemon [OPTIONS]
-```
-
-Argument summary:
-
-```
-Options:
-      --inactivity-timeout <INACTIVITY_TIMEOUT>
-          Inactivity timeout. The server will shut down automatically
-          after being inactive for this duration. Supports
-          human-readable durations, e.g., "5m", "1h30m", "300s"
-          [default: 300s]
-  -v, --verbosity <VERBOSITY>
-          Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
-          [default: DEBUG]
-      --socket-path <SOCKET_PATH>
-          Path to the UNIX socket to listen on when not running in
-          systemd socket-activated mode [default:
-          /var/run/trident.sock]
-```
-
-
-### Argument Details
-
-#### <span>--inactivity_timeout &lt;INACTIVITY_TIMEOUT&gt;</span>
-
-Inactivity timeout. The server will shut down automatically after being inactive for this duration. Supports human-readable durations, e.g., "5m", "1h30m", "300s"
-
-Default: `300s`
-
-
-#### <span>--socket_path &lt;SOCKET_PATH&gt;</span>
-
-Path to the UNIX socket to listen on when not running in systemd socket-activated mode
-
-Default: `/var/run/trident.sock`
 
 
 #### <span>--verbosity &lt;VERBOSITY&gt;</span>
