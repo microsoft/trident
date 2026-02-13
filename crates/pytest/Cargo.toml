@@ -1,6 +1,6 @@
 [package]
 name = "pytest"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 publish = false
 license = "MIT"
@@ -11,8 +11,8 @@ name = "pytest"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-indoc = {workspace = true}
-inventory = {workspace = true}
-itertools = {workspace = true}
-serde = {workspace = true}
-serde_json = {workspace = true}
+indoc = { workspace = true }
+inventory = { workspace = true }
+itertools = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

@@ -21,7 +21,7 @@ def get_git_revision_short_hash() -> str:
 
 
 def get_version(file):
-    pattern = r'version\s*=\s*"(\d+\.\d+)(\.\d+)"'
+    pattern = r'package.version\s*=\s*"(\d+\.\d+)(\.\d+)"'
 
     match = re.search(pattern, file)
 
@@ -47,7 +47,7 @@ parser.add_argument(
 
 args = parser.parse_args()
 
-with open("crates/trident/Cargo.toml", "r") as file:
+with open("./Cargo.toml", "r") as file:
     content = file.read()
 version = get_version(content)
 

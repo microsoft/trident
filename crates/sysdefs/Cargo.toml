@@ -1,22 +1,22 @@
 [package]
 name = "sysdefs"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 publish = false
 license = "MIT"
 
 [dependencies]
-anyhow = {workspace = true}
-enumflags2 = {workspace = true}
-serde = {workspace = true}
-strum = {workspace = true}
-strum_macros = {workspace = true}
-uuid = {workspace = true}
-schemars = {workspace = true, optional = true}
+anyhow = { workspace = true }
+enumflags2 = { workspace = true }
+serde = { workspace = true }
+strum = { workspace = true }
+strum_macros = { workspace = true }
+uuid = { workspace = true }
+schemars = { workspace = true, optional = true }
 
 [features]
 schemars = ["dep:schemars"]
 
 
 [dev-dependencies]
-serde_json = {workspace = true}
+serde_json = { workspace = true }

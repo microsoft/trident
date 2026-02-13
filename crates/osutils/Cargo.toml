@@ -1,6 +1,6 @@
 [package]
 name = "osutils"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 publish = false
 license = "MIT"
@@ -8,34 +8,34 @@ license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = {workspace = true}
-configparser = {workspace = true}
-const_format = {workspace = true}
-duct = {workspace = true}
-enumflags2 = {workspace = true}
-hex = {workspace = true}
-hostname = {workspace = true}
-indoc = {workspace = true}
-inventory = {workspace = true}
-log = {workspace = true}
-netplan-types = {workspace = true}
-nix = {workspace = true, features = ["fs"]}
-once_cell = {workspace = true}
-openssl = {workspace = true}
-serde = {workspace = true}
-serde_json = {workspace = true}
-serde_yaml = {workspace = true}
-sha2 = {workspace = true}
-strum = {workspace = true}
-strum_macros = {workspace = true}
-sys-mount = {workspace = true}
-tempfile = {workspace = true}
-thiserror = {workspace = true}
-uuid = {workspace = true}
-which = {workspace = true}
-regex = {workspace = true}
+anyhow = { workspace = true }
+configparser = { workspace = true }
+const_format = { workspace = true }
+duct = { workspace = true }
+enumflags2 = { workspace = true }
+hex = { workspace = true }
+hostname = { workspace = true }
+indoc = { workspace = true }
+inventory = { workspace = true }
+log = { workspace = true }
+netplan-types = { workspace = true }
+nix = { workspace = true, features = ["fs"] }
+once_cell = { workspace = true }
+openssl = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+sha2 = { workspace = true }
+strum = { workspace = true }
+strum_macros = { workspace = true }
+sys-mount = { workspace = true }
+tempfile = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+which = { workspace = true }
+regex = { workspace = true }
 
-rand = {workspace = true, optional = true}
+rand = { workspace = true, optional = true }
 
 pytest_gen = { path = "../pytest_gen" }
 pytest = { path = "../pytest", optional = true }
@@ -43,9 +43,9 @@ trident_api = { path = "../trident_api" }
 sysdefs = { path = "../sysdefs" }
 
 [dev-dependencies]
-glob = {workspace = true}
-indoc = {workspace = true}
-rand = {workspace = true}
+glob = { workspace = true }
+indoc = { workspace = true }
+rand = { workspace = true }
 
 [features]
 functional-test = ["pytest", "test-utilities"]

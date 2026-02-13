@@ -1,6 +1,6 @@
 [package]
 name = "pytest_gen"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 publish = false
 license = "MIT"
@@ -12,10 +12,10 @@ proc-macro = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-indoc = {workspace = true}
-inventory = {workspace = true}
-proc-macro2 = {workspace = true}
-quote = {workspace = true}
-syn = {workspace = true}
+indoc = { workspace = true }
+inventory = { workspace = true }
+proc-macro2 = { workspace = true }
+quote = { workspace = true }
+syn = { workspace = true }
 
 pytest = { path = "../pytest" }

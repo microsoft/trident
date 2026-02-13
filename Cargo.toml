@@ -2,6 +2,9 @@
 resolver = "2"
 default-members = ["crates/trident"]
 
+# Shared version for all workspace members
+package.version = "0.21.0"
+
 members = [
     "crates/trident",
     "crates/trident_api",

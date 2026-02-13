@@ -1,6 +1,6 @@
 [package]
 name = "trident"
-version = "0.21.0"
+version.workspace = true
 edition = "2024"
 publish = false
 rust-version = "1.85.0"
