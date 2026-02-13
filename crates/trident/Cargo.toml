@@ -70,7 +70,7 @@ tonic-middleware = { workspace = true }
 sysdefs = { path = "../sysdefs" }
 osutils = { path = "../osutils" }
 trident_api = { path = "../trident_api" }
-harpoon = { path = "../harpoon" }
+harpoon = { path = "../harpoon", features = ["server"] }
 
 # Optional dependencies used by functional tests
 indoc = { workspace = true, optional = true }

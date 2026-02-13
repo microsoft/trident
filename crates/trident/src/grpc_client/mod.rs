@@ -61,7 +61,7 @@ async fn run_client(args: &ClientArgs) -> Result<ExitKind, Error> {
 
         ClientCommands::StreamImage { image, hash } => {
             return client
-                .stream_image(image, hash, RebootHandling::Trident)
+                .stream_disk(image, hash.as_ref(), RebootHandling::Trident)
                 .await
                 .context("Trident failed to stream image");
         }

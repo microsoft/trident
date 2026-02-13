@@ -9,7 +9,7 @@ use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 use url::Url;
 
-use harpoon::{
+use harpoon::v1::{
     FileLocation, TridentError as HarpoonTridentError, TridentErrorKind as HarpoonTridentErrorKind,
 };
 
@@ -1022,8 +1022,8 @@ impl From<&TridentError> for HarpoonTridentError {
         HarpoonTridentError {
             kind: HarpoonTridentErrorKind::from(e.kind()) as i32,
             subkind: e.subkind().unwrap_or("unknown").to_string(),
-            message: e.0.kind.to_string(),
-            full_body: format!("{:?}", e),
+            message: format!("{:?}", e),
+            error_message: e.0.kind.to_string(),
             location: Some(FileLocation {
                 path: e.0.location.file().to_string(),
                 line: e.0.location.line(),

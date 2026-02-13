@@ -1,0 +1,37 @@
+// Proto file defining the InstallService.
+
+syntax = "proto3";
+
+package trident.v1preview;
+
+import "trident/v1/servicing.proto";
+import "trident/v1preview/host_config.proto";
+
+// InstallService provides methods for performing OS installations.
+service InstallService {
+  // Install performs an OS installation.
+  rpc Install(InstallRequest) returns (stream trident.v1.ServicingResponse);
+
+  // InstallStage performs the stage operation of an OS installation.
+  rpc InstallStage(StageInstallRequest) returns (stream trident.v1.ServicingResponse);
+
+  // InstallFinalize performs the finalize operation of an OS installation.
+  rpc InstallFinalize(FinalizeInstallRequest) returns (stream trident.v1.ServicingResponse);
+}
+
+message InstallRequest {
+  // The staging parameters for the servicing operation.
+  StageInstallRequest stage = 1;
+  // The finalize parameters for the servicing operation.
+  FinalizeInstallRequest finalize = 2;
+}
+
+message StageInstallRequest {
+  // The target Host Configuration.
+  HostConfiguration config = 1;
+}
+
+message FinalizeInstallRequest {
+  // Reboot handling configuration.
+  trident.v1.RebootManagement reboot = 1;
+}

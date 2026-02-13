@@ -15,4 +15,5 @@ tonic-prost-build = { workspace = true }
 
 
 [features]
+server = []
 grpc-preview = []

@@ -19,7 +19,7 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 use tonic::{Response, Status};
 
-use harpoon::{
+use harpoon::v1::{
     servicing_response::Response as ResponseType, FileLocation, Log, LogLevel, ServicingResponse,
     Start,
 };

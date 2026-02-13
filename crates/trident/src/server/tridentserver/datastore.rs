@@ -1,4 +1,4 @@
-use harpoon::ServicingState as HarpoonServicingState;
+use harpoon::v1preview::ServicingState as HarpoonServicingState;
 
 use trident_api::status::ServicingState;
 

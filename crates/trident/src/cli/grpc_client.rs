@@ -152,7 +152,7 @@ pub enum ClientCommands {
 
         /// Hash of the image manifest
         #[clap(long)]
-        hash: String,
+        hash: Option<String>,
     },
 
     Version,

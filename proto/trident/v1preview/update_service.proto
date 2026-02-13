@@ -1,0 +1,37 @@
+// Proto file defining the UpdateService.
+
+syntax = "proto3";
+
+package trident.v1preview;
+
+import "trident/v1/servicing.proto";
+import "trident/v1preview/host_config.proto";
+
+// UpdateService provides methods for performing OS updates.
+service UpdateService {
+  // Update performs an OS update.
+  rpc Update(UpdateRequest) returns (stream trident.v1.ServicingResponse);
+
+  // UpdateStage performs the stage operation of an OS update.
+  rpc UpdateStage(StageUpdateRequest) returns (stream trident.v1.ServicingResponse);
+
+  // UpdateFinalize performs the finalize operation of an OS update.
+  rpc UpdateFinalize(FinalizeUpdateRequest) returns (stream trident.v1.ServicingResponse);
+}
+
+message UpdateRequest {
+  // The staging parameters for the servicing operation.
+  StageUpdateRequest stage = 1;
+  // The finalize parameters for the servicing operation.
+  FinalizeUpdateRequest finalize = 2;
+}
+
+message StageUpdateRequest {
+  // The target Host Configuration.
+  HostConfiguration config = 1;
+}
+
+message FinalizeUpdateRequest {
+  // Reboot handling configuration.
+  trident.v1.RebootManagement reboot = 1;
+}

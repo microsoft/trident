@@ -6,7 +6,7 @@ use anyhow::anyhow;
 use log::error;
 use tokio::sync::{Mutex, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock};
 
-use harpoon::{FinalStatus, StatusCode, TridentError as HarpoonTridentError};
+use harpoon::v1::{FinalStatus, StatusCode, TridentError as HarpoonTridentError};
 use tokio_util::sync::CancellationToken;
 use trident_api::error::{InternalError, TridentError};
 
@@ -130,7 +130,7 @@ impl ServicingManager {
                         status: StatusCode::Failure.into(),
                         error: Some(HarpoonTridentError::from(&e)),
                         reboot_required: false,
-                        reboot_enqueued: false,
+                        reboot_started: false,
                     }
                 }
             },
@@ -143,12 +143,12 @@ impl ServicingManager {
                         anyhow!(e),
                     ))),
                     reboot_required: false,
-                    reboot_enqueued: false,
+                    reboot_started: false,
                 };
             }
         };
 
-        let (reboot_required, reboot_enqueued) = match (exit_kind, reboot_decision) {
+        let (reboot_required, reboot_started) = match (exit_kind, reboot_decision) {
             // Notify the caller that a reboot is required.
             (ExitKind::NeedsReboot, RebootDecision::Defer) => (true, false),
 
@@ -172,7 +172,7 @@ impl ServicingManager {
                         InternalError::Internal("The servicing task requested a reboot, but this task type should not cause reboots."),
                     ))),
                     reboot_required: false,
-                    reboot_enqueued: false,
+                    reboot_started: false,
                 };
             }
 
@@ -184,7 +184,7 @@ impl ServicingManager {
             status: StatusCode::Success.into(),
             error: None,
             reboot_required,
-            reboot_enqueued,
+            reboot_started,
         }
     }
 
@@ -215,7 +215,7 @@ mod tests {
 
     use std::time::Duration;
 
-    use harpoon::TridentErrorKind;
+    use harpoon::v1::TridentErrorKind;
     use tokio::time;
 
     use trident_api::error::InvalidInputError;
@@ -359,7 +359,7 @@ mod tests {
 
         assert_eq!(result.status, StatusCode::Success as i32);
         assert!(result.reboot_required);
-        assert!(!result.reboot_enqueued);
+        assert!(!result.reboot_started);
         assert!(result.error.is_none());
     }
 
@@ -387,7 +387,7 @@ mod tests {
 
         assert_eq!(result.status, StatusCode::Success as i32);
         assert!(!result.reboot_required);
-        assert!(result.reboot_enqueued);
+        assert!(result.reboot_started);
         assert!(result.error.is_none());
     }
 
@@ -415,7 +415,7 @@ mod tests {
 
         assert_eq!(result.status, StatusCode::Failure as i32);
         assert!(!result.reboot_required);
-        assert!(!result.reboot_enqueued);
+        assert!(!result.reboot_started);
 
         let err = result.error.expect("Error should be present");
         assert_eq!(
@@ -534,7 +534,7 @@ mod tests {
                 .await;
             assert_eq!(result.status, StatusCode::Success as i32);
             assert!(!result.reboot_required);
-            assert!(result.reboot_enqueued);
+            assert!(result.reboot_started);
         }
     }
 }
