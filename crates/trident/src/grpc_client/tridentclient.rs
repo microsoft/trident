@@ -1,7 +1,10 @@
 use std::ops::ControlFlow;
 
 use log::{info, log, Level};
-use tonic::{transport::Channel, Request, Streaming};
+use tonic::{
+    transport::{Channel, Endpoint},
+    Request, Streaming,
+};
 use url::Url;
 
 use harpoon::v1::{
@@ -26,7 +29,6 @@ use super::error::TridentClientError;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RebootHandling {
     /// The orchestrator is responsible for handling reboots.
-    #[expect(dead_code)]
     Orchestrator,
 
     /// Trident is responsible for handling reboots.
@@ -77,7 +79,20 @@ pub struct TridentClient {
 impl TridentClient {
     /// Create a new TridentClient connected to the specified server address.
     pub async fn connect(server_address: impl AsRef<str>) -> Result<Self, TridentClientError> {
-        let channel = Channel::from_shared(server_address.as_ref().to_string())
+        // let channel = Channel::from_shared(server_address.as_ref().to_string())
+        //     .map_err(|e| {
+        //         TridentClientError::InvalidServerAddress(
+        //             server_address.as_ref().to_string(),
+        //             e.to_string(),
+        //         )
+        //     })?
+        //     .connect()
+        //     .await
+        //     .map_err(|e| {
+        //         TridentClientError::ConnectionError(server_address.as_ref().to_string(), e)
+        //     })?;
+
+        let channel = Endpoint::new(server_address.as_ref().to_string())
             .map_err(|e| {
                 TridentClientError::InvalidServerAddress(
                     server_address.as_ref().to_string(),

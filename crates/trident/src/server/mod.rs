@@ -204,15 +204,15 @@ async fn server_main_inner(
     // Set up the gRPC server with all services, wrapping each in the activity
     // tracker middleware to ensure that any activity on the service resets the
     // inactivity timer.
-    let mut router = Server::builder()
-        .add_service(MiddlewareFor::new(
-            VersionServiceServer::from_arc(harpoon_server.clone()),
-            activity_tracker.middleware(),
-        ))
-        .add_service(MiddlewareFor::new(
-            StreamingServiceServer::from_arc(harpoon_server.clone()),
-            activity_tracker.middleware(),
-        ));
+    let mut router = Server::builder().add_service(MiddlewareFor::new(
+        VersionServiceServer::from_arc(harpoon_server.clone()),
+        activity_tracker.middleware(),
+    ));
+
+    router = router.add_service(MiddlewareFor::new(
+        StreamingServiceServer::from_arc(harpoon_server.clone()),
+        activity_tracker.middleware(),
+    ));
 
     #[cfg(feature = "grpc-preview")]
     {

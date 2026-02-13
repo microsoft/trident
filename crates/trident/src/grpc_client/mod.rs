@@ -59,7 +59,7 @@ async fn run_client(args: &ClientArgs) -> Result<ExitKind, Error> {
             println!("daemon: {}", version);
         }
 
-        ClientCommands::StreamImage { image, hash } => {
+        ClientCommands::StreamDisk { image, hash } => {
             return client
                 .stream_disk(image, hash.as_ref(), RebootHandling::Trident)
                 .await

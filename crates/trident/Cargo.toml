@@ -5,6 +5,7 @@ edition = "2024"
 publish = false
 rust-version = "1.85.0"
 license = "MIT"
+default-run = "trident"
 
 [[bin]]
 name = "cosi-reader"
