@@ -36,10 +36,11 @@ message ServicingResponse {
 // RebootManagement defines the reboot management parameters for a servicing
 // operation.
 message RebootManagement {
-  // Informs trident about how a reboot required for the servicing operation
-  // should be handled. This allows the caller to choose whether they want to
-  // handle the reboot themselves, or have Trident handle it automatically. When
-  // not present, Trident will default to handling reboots automatically.
+  // Specifies how reboots required for the servicing operation should be
+  // handled. This allows the caller to choose whether they want to handle the
+  // reboot themselves, or have Trident handle it automatically. When not
+  // present or unspecified, Trident will default to handling reboots
+  // automatically.
   RebootHandling handling = 1;
 }
 
@@ -60,7 +61,8 @@ message FinalStatus {
   // Final status of the servicing operation.
   StatusCode status = 1;
 
-  // Message associated with the final status.
+  // Error details if the servicing operation failed. Only present when status
+  // is not STATUS_CODE_SUCCESS.
   optional TridentError error = 2;
 
   // Whether a reboot is required to complete the servicing operation. If true,
@@ -68,10 +70,10 @@ message FinalStatus {
   // immediately upon receiving this status.
   bool reboot_required = 3;
 
-  // Whether Trident operation started a reboot. If true, the system is expected
-  // to reboot automatically shortly after this message is received to finalize
-  // the servicing. No further action from the caller is needed. This field can
-  // be true only if reboot_required is false.
+  // Whether Trident started a reboot. If true, the system is expected to reboot
+  // automatically shortly after this message is received to finalize the
+  // servicing. No further action from the caller is needed. This field can be
+  // true only if reboot_required is false.
   bool reboot_started = 4;
 }
 

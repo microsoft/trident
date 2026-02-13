@@ -1,4 +1,4 @@
-// Proto file defining the StreamingDiskService and related messages.
+// Proto file defining the StreamingService and related messages.
 
 syntax = "proto3";
 
