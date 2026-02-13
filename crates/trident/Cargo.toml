@@ -71,7 +71,7 @@ tonic-middleware = { workspace = true }
 sysdefs = { path = "../sysdefs" }
 osutils = { path = "../osutils" }
 trident_api = { path = "../trident_api" }
-harpoon = { path = "../harpoon", features = ["server"] }
+trident_proto = { path = "../trident_proto", features = ["server"] }
 
 # Optional dependencies used by functional tests
 indoc = { workspace = true, optional = true }
@@ -104,4 +104,4 @@ functional-test = [
     "inventory",
 ]
 pytest-generator = ["pytest", "osutils/pytest-generator"]
-grpc-preview = ["harpoon/grpc-preview"]
+grpc-preview = ["trident_proto/grpc-preview"]

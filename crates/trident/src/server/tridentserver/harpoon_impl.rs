@@ -19,7 +19,13 @@ use super::{RebootDecision, ServicingResponseStream};
 use log::info;
 
 #[cfg(feature = "grpc-preview")]
-use harpoon::{
+use trident_api::{
+    config::{HostConfigurationSource, Operation, Operations},
+    error::{InternalError, TridentError},
+    status::AbVolumeSelection,
+};
+#[cfg(feature = "grpc-preview")]
+use trident_proto::{
     v1::TridentError as HarpoonTridentError,
     v1preview::{
         commit_service_server::CommitService, install_service_server::InstallService,
@@ -36,12 +42,6 @@ use harpoon::{
         StageUpdateRequest, UpdateRequest, ValidateHostConfigurationRequest,
         ValidateHostConfigurationResponse,
     },
-};
-#[cfg(feature = "grpc-preview")]
-use trident_api::{
-    config::{HostConfigurationSource, Operation, Operations},
-    error::{InternalError, TridentError},
-    status::AbVolumeSelection,
 };
 
 #[cfg(feature = "grpc-preview")]
