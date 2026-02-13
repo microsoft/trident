@@ -131,7 +131,7 @@ stages:
             parameters:
               updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
               verboseLogging: ${{ parameters.verboseLogging }}
-              platform: qemuskipExtensionTesting
+              platform: qemu
               flavor: qemu
               # For qemu w/ root-verity, only test rollback of A/B update because:
               #   * extensions cannot be added to qcow2; IC cannot modify verity volume
