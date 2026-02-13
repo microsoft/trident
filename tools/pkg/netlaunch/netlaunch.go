@@ -141,17 +141,21 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 			trident["trident"].(map[interface{}]interface{})["logstream"] = logstreamAddress
 		}
 
-		tridentConfig, err := yaml.Marshal(trident)
-		if err != nil {
-			return fmt.Errorf("failed to marshal Trident config: %w", err)
-		}
+		// Patch the ISO Host Configuration file unless this is a stream-image test, where
+		// the Host Configuration file is not expected to be present.
+		if config.Rcp == nil || !config.Rcp.UseStreamImage {
+			tridentConfig, err := yaml.Marshal(trident)
+			if err != nil {
+				return fmt.Errorf("failed to marshal Trident config: %w", err)
+			}
 
-		// Store the modified trident config for later use
-		finalHostConfigurationYaml = string(tridentConfig)
+			// Store the modified trident config for later use
+			finalHostConfigurationYaml = string(tridentConfig)
 
-		err = isopatcher.PatchFile(iso, "/etc/trident/config.yaml", tridentConfig)
-		if err != nil {
-			return fmt.Errorf("failed to patch Trident config into ISO: %w", err)
+			err = isopatcher.PatchFile(iso, "/etc/trident/config.yaml", tridentConfig)
+			if err != nil {
+				return fmt.Errorf("failed to patch Trident config into ISO: %w", err)
+			}
 		}
 
 		if config.Rcp != nil {

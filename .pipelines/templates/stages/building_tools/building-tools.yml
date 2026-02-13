@@ -23,26 +23,56 @@ parameters:
     type: boolean
     default: true
 
+  - name: buildRcpAgent
+    type: boolean
+    default: true
+
+  - name: architecture
+    displayName: System Architecture
+    type: string
+    values:
+      - arm64
+      - amd64
+    default: amd64
+
+  - name: stageName
+    type: string
+    default: BuildingTools
+
 stages:
-  - stage: BuildingTools
-    displayName: Building Tools
+  - stage: ${{ parameters.stageName }}
+    displayName: Building Tools for ${{ parameters.architecture }}
 
     jobs:
-      - job: BuildGoTools
-        displayName: Build Go Tools
-        timeoutInMinutes: 60
+      - job: BuildGoTools_${{ parameters.architecture }}
+        displayName: Build Go Tools for ${{ parameters.architecture }}
+        timeoutInMinutes: 10
         pool:
-          type: linux
-          name: trident-ubuntu-1es-pool-eastus2
-          hostArchitecture: amd64
+          ${{ if eq(parameters.architecture, 'amd64') }}:
+            type: linux
+            name: trident-ubuntu-1es-pool-eastus2
+            hostArchitecture: amd64
+          ${{ if eq(parameters.architecture, 'arm64') }}:
+            type: linux
+            name: azl3-hci-ARM64-1es-pool-westcentralus
+            hostArchitecture: arm64
 
         variables:
-          ob_outputDirectory: $(Build.SourcesDirectory)/go-tools
-          ob_artifactBaseName: go-tools
+          ${{ if eq(parameters.architecture, 'arm64') }}:
+            artifactName: go-tools-arm64
+          ${{ if eq(parameters.architecture, 'amd64') }}:
+            artifactName: go-tools
+          ob_outputDirectory: $(Build.SourcesDirectory)/$(artifactName)
+          ob_artifactBaseName: $(artifactName)
 
         steps:
           - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../common_tasks/update-protoc.yml
+            parameters:
+              ${{ if eq(parameters.architecture, 'arm64') }}:
+                protocArch: aarch_64
+              ${{ if eq(parameters.architecture, 'amd64') }}:
+                protocArch: x86_64
           - bash: |
               set -eux
               go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
@@ -104,3 +134,14 @@ stages:
                   mkdir -p $(ob_outputDirectory)
                   mv bin/virtdeploy $(ob_outputDirectory)
                 workingDirectory: $(Build.SourcesDirectory)
+                displayName: "Building virtdeploy"
+
+          - ${{ if eq(parameters.buildRcpAgent, true) }}:
+              - bash: |
+                  set -eux
+                  make bin/rcp-agent
+                  mkdir -p $(ob_outputDirectory)
+                  mv bin/rcp-agent $(ob_outputDirectory)
+                workingDirectory: $(Build.SourcesDirectory)
+                displayName: "Building rcp-agent"
+

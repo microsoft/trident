@@ -9,6 +9,8 @@ parameters:
     #   - trident-installer
     #   - trident-split-installer
     #   - trident-container-installer
+    #   - trident-direct-streaming-installer-amd64
+    #   - trident-direct-streaming-installer-arm64
 
   - name: tridentTestImage
     displayName: "Image used in the target OS, source of Trident (container vs host)"
@@ -17,6 +19,10 @@ parameters:
     values:
       - trident-container-testimage
       - trident-testimage
+      - azurelinux-direct-streaming-testimage-amd64
+      - azurelinux-direct-streaming-testimage-arm64
+      - ubuntu-direct-streaming-testimage-amd64
+      - ubuntu-direct-streaming-testimage-arm64
 
   - name: tridentTestImageVerity
     displayName: "Image used in the root-verity target OS, source of Trident (container vs host)"
@@ -25,6 +31,7 @@ parameters:
     values:
       - trident-verity-testimage
       - trident-container-verity-testimage
+      - skip
 
   - name: tridentTestImageUsrVerity
     displayName: "Image used in the usr-verity target OS, source of Trident (container vs host)"
@@ -33,6 +40,7 @@ parameters:
     values:
       - trident-usrverity-testimage
       - trident-container-usrverity-testimage
+      - skip
 
   - name: downloadTridentContainer
     displayName: "Download Trident container"
@@ -63,6 +71,13 @@ parameters:
     type: string
     default: "$(System.ArtifactsDirectory)/usrverity-testimage"
 
+  - name: goToolsArtifactName
+    type: string
+    default: go-tools
+    values:
+      - go-tools
+      - go-tools-arm64
+
 steps:
   - bash: |
       set -eux
@@ -71,11 +86,11 @@ steps:
       # So, do validation here.
       #
       case "${{ parameters.installerISO }}" in
-          trident-installer|trident-split-installer|trident-container-installer)
+          trident-installer|trident-split-installer|trident-container-installer|trident-direct-streaming-installer-amd64|trident-direct-streaming-installer-arm64)
               # Valid image_type, do nothing
               ;;
           *)
-              echo "installerISO should be either 'trident-installer', 'trident-split-installer', or 'trident-container-installer'."
+              echo "installerISO should be either 'trident-installer', 'trident-split-installer', 'trident-container-installer', 'trident-direct-streaming-installer-amd64', or 'trident-direct-streaming-installer-arm64'."
               exit 1
               ;;
       esac
@@ -105,25 +120,27 @@ steps:
       artifactName: "${{ parameters.tridentTestImage }}"
       targetPath: "${{ parameters.testImageDir }}"
 
-  - task: DownloadPipelineArtifact@2
-    displayName: "Download ${{ parameters.tridentTestImageVerity }}"
-    inputs:
-      buildType: current
-      artifactName: "${{ parameters.tridentTestImageVerity }}"
-      targetPath: "${{ parameters.testImageDirVerity }}"
+  - ${{ if ne(parameters.tridentTestImageVerity, 'skip') }}:
+    - task: DownloadPipelineArtifact@2
+      displayName: "Download ${{ parameters.tridentTestImageVerity }}"
+      inputs:
+        buildType: current
+        artifactName: "${{ parameters.tridentTestImageVerity }}"
+        targetPath: "${{ parameters.testImageDirVerity }}"
+
+  - ${{ if ne(parameters.tridentTestImageUsrVerity, 'skip') }}:
+    - task: DownloadPipelineArtifact@2
+      displayName: "Download ${{ parameters.tridentTestImageUsrVerity }}"
+      inputs:
+        buildType: current
+        artifactName: "${{ parameters.tridentTestImageUsrVerity }}"
+        targetPath: "${{ parameters.testImageDirUsrVerity }}"
 
   - task: DownloadPipelineArtifact@2
-    displayName: "Download ${{ parameters.tridentTestImageUsrVerity }}"
+    displayName: "Download ${{ parameters.goToolsArtifactName }}"
     inputs:
       buildType: current
-      artifactName: "${{ parameters.tridentTestImageUsrVerity }}"
-      targetPath: "${{ parameters.testImageDirUsrVerity }}"
-
-  - task: DownloadPipelineArtifact@2
-    displayName: "Download go-tools"
-    inputs:
-      buildType: current
-      artifactName: "go-tools"
+      artifactName: ${{ parameters.goToolsArtifactName }}
       patterns: |
         netlaunch
         netlisten
@@ -137,9 +154,11 @@ steps:
       echo "REGULAR IMAGES:"
       ls -alh "${{ parameters.testImageDir }}"
 
-      echo ""
-      echo "VERITY IMAGES:"
-      ls -alh "${{ parameters.testImageDirVerity }}"
+      if [ "${{ parameters.tridentTestImageVerity }}" != "skip" ]; then
+        echo ""
+        echo "VERITY IMAGES:"
+        ls -alh "${{ parameters.testImageDirVerity }}"
+      fi
 
       set -eux
 

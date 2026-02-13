@@ -138,7 +138,7 @@ func (vm *LibvirtVm) Disconnect() {
 	}
 }
 
-// CaptureScreenshot captures a screenshot of the specified VM and saves it as a PNG file.
+// CaptureScreenshot captures a screenshot of the specified VM and saves it as both PPM and PNG files.
 // It creates a temporary PPM file, captures the screenshot using virsh, converts it to PNG
 // using ImageMagick, and saves it to the specified artifacts folder.
 //
@@ -149,26 +149,22 @@ func (vm *LibvirtVm) Disconnect() {
 //
 // Returns an error if screenshot capture, conversion, or file operations fail.
 func CaptureScreenshot(vmName string, artifactsFolder string, screenshotFilename string) error {
-	ppmFilename, err := os.CreateTemp("", "ppm")
-	if err != nil {
-		return fmt.Errorf("failed to create temporary file: %w", err)
-	}
-	ppmFilename.Close()
-	defer os.Remove(ppmFilename.Name())
-
-	err = capturePpmScreenshot(vmName, ppmFilename.Name())
-	if err != nil {
-		return fmt.Errorf("failed to create PPM screenshot: %w", err)
-	}
-
-	err = os.MkdirAll(artifactsFolder, 0755)
+	err := os.MkdirAll(artifactsFolder, 0755)
 	if err != nil {
 		return fmt.Errorf("failed to create artifacts folder: %w", err)
 	}
 
+	ppmPath := filepath.Join(artifactsFolder, fmt.Sprintf("%s.ppm", screenshotFilename))
+	err = capturePpmScreenshot(vmName, ppmPath)
+	if err != nil {
+		return fmt.Errorf("failed to create PPM screenshot: %w", err)
+	}
+
 	pngPath := filepath.Join(artifactsFolder, screenshotFilename)
-	if err := convertPpmToPng(ppmFilename.Name(), pngPath); err != nil {
-		return fmt.Errorf("failed to convert PPM to PNG: %w", err)
+	if err := convertPpmToPng(ppmPath, pngPath); err != nil {
+		// As long as PPM succeeded, the image has been captured, so log
+		// any error, but do not fail the helper.
+		logrus.Warnf("Failed to convert PPM to PNG: %v", err)
 	}
 	return nil
 }
