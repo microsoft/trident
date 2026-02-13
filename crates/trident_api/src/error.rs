@@ -980,7 +980,7 @@ impl Debug for TridentError {
         let digits_needed = cmp::max(min.to_string().len(), max.to_string().len());
         let padding = digits_needed + 4;
 
-        // Padding to indent multiline messages: padding + 2 fo the ": " after the index.
+        // Padding to indent multiline messages: padding + 2 for the ": " after the index.
         let multiline_padding = " ".repeat(padding + 2);
 
         // Index of the error level being written.
