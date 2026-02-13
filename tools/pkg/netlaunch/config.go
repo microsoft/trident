@@ -27,6 +27,11 @@ type NetLaunchConfig struct {
 	// Configuration common to both netlaunch and netlisten.
 	NetCommonConfig `yaml:",inline"`
 
+	// Configuration for the netlaunch reverse-connect proxy. When omitted,
+	// netlaunch will not configure the in-image rcp-agent service, and will
+	// default to legacy Host Config injection.
+	Rcp *RcpConfiguration `yaml:"rcp,omitempty"`
+
 	// Configuration about how to launch hosts, VM or baremetal.
 	Netlaunch HostConnectionConfiguration `yaml:"netlaunch"`
 
@@ -59,6 +64,35 @@ type NetLaunchConfig struct {
 	WaitForProvisioning bool `yaml:"waitForProvisioning,omitempty"`
 }
 
+// Configuration for netlaunch reverse-connect proxy.
+type RcpConfiguration struct {
+	// Run netlaunch in gRPC mode. When true, netlaunch will use the
+	// reverse-connect proxy to communicate with Trident using gRPC. When false,
+	// netlaunch will use the reverse-connect proxy to download the Host
+	// Configuration file and start the legacy installation service.
+	//
+	// If omitted, defaults to false.
+	GrpcMode bool `yaml:"grpcMode,omitempty"`
+
+	// Port number to listen on for incoming connections from the
+	// reverse-connect proxy.
+	//
+	// If omitted or set to 0, a random port will be chosen.
+	ListenPort *uint16 `yaml:"listenPort,omitempty"`
+
+	// An optional path to a local trident binary to copy into the remote host.
+	// If not specified, no Trident binary will be copied.
+	LocalTridentPath *string `yaml:"localTridentPath,omitempty"`
+
+	// An optional path to a local osmodifier binary to copy into the remote host.
+	// If not specified, no Osmodifier binary will be copied.
+	LocalOsmodifierPath *string `yaml:"localOsmodifierPath,omitempty"`
+
+	// Replace the execution for trident-install to use stream image instead of
+	// the default installation method.
+	UseStreamImage bool `yaml:"useStreamImage,omitempty"`
+}
+
 type HostConnectionConfiguration struct {
 	// Configuration for physical/emulated BMCs.
 
@@ -88,8 +122,14 @@ type HostConnectionConfiguration struct {
 }
 
 type IsoConfig struct {
-	PreTridentScript *string `yaml:"preTridentScript,omitempty"`
-	ServiceOverride  *string `yaml:"serviceOverride,omitempty"`
+	PreTridentScript *string          `yaml:"preTridentScript,omitempty"`
+	ServiceOverride  *string          `yaml:"serviceOverride,omitempty"`
+	DirectStreaming  *DirectStreaming `yaml:"directStreaming,omitempty"`
+}
+
+type DirectStreaming struct {
+	Image string `yaml:"image,omitempty"`
+	Hash  string `yaml:"hash,omitempty"`
 }
 
 type NetListenConfig struct {
@@ -100,4 +140,8 @@ type NetListenConfig struct {
 	Netlisten struct {
 		Bmc *bmc.Bmc `yaml:"bmc,omitempty"`
 	}
+}
+
+func (c *NetLaunchConfig) IsGrpcMode() bool {
+	return c.Rcp != nil && c.Rcp.GrpcMode
 }

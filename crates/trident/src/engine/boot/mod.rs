@@ -4,7 +4,10 @@ use log::debug;
 use strum::IntoEnumIterator;
 
 use trident_api::{
-    constants::{AB_VOLUME_A_NAME, AB_VOLUME_B_NAME, AZURE_LINUX_INSTALL_ID_PREFIX, VAR_TMP_PATH},
+    constants::{
+        internal_params::RAW_COSI_STORAGE, AB_VOLUME_A_NAME, AB_VOLUME_B_NAME,
+        AZURE_LINUX_INSTALL_ID_PREFIX, VAR_TMP_PATH,
+    },
     error::{ReportError, ServicingError, TridentError},
     status::AbVolumeSelection,
 };
@@ -29,6 +32,11 @@ impl Subsystem for BootSubsystem {
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
         if ctx.is_uki()? {
             debug!("Skipping grub configuration because UKI is in use");
+            return Ok(());
+        }
+
+        if ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
+            debug!("Skipping bootloader configuration because raw COSI storage mode is in use");
             return Ok(());
         }
 

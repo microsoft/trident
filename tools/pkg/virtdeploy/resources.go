@@ -9,13 +9,18 @@ import (
 	"github.com/digitalocean/go-libvirt"
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
+	"libvirt.org/go/libvirtxml"
 )
 
 const (
-	FIRMWARE_LOADER_PATH            = "/usr/share/OVMF/OVMF_CODE_4M.fd"
-	FIRMWARE_LOADER_SECUREBOOT_PATH = "/usr/share/OVMF/OVMF_CODE_4M.ms.fd"
-	FIRMWARE_VARS_PATH              = "/usr/share/OVMF/OVMF_VARS_4M.fd"
-	FIRMWARE_VARS_SECUREBOOT_PATH   = "/usr/share/OVMF/OVMF_VARS_4M.ms.fd"
+	FIRMWARE_LOADER_PATH                  = "/usr/share/OVMF/OVMF_CODE_4M.fd"
+	FIRMWARE_LOADER_ARM64_PATH            = "/usr/share/AAVMF/AAVMF_CODE.fd"
+	FIRMWARE_LOADER_SECUREBOOT_PATH       = "/usr/share/OVMF/OVMF_CODE_4M.ms.fd"
+	FIRMWARE_LOADER_ARM64_SECUREBOOT_PATH = "/usr/share/AAVMF/AAVMF_CODE.ms.fd"
+	FIRMWARE_VARS_PATH                    = "/usr/share/OVMF/OVMF_VARS_4M.fd"
+	FIRMWARE_VARS_ARM64_PATH              = "/usr/share/AAVMF/AAVMF_VARS.fd"
+	FIRMWARE_VARS_SECUREBOOT_PATH         = "/usr/share/OVMF/OVMF_VARS_4M.ms.fd"
+	FIRMWARE_VARS_ARM64_SECUREBOOT_PATH   = "/usr/share/AAVMF/AAVMF_VARS.ms.fd"
 )
 
 type virtDeployResourceConfig struct {
@@ -76,11 +81,21 @@ func newVirtDeployResourceConfig(config VirtDeployConfig) (*virtDeployResourceCo
 		vm.nvramFile = fmt.Sprintf("%s_VARS.fd", vm.name)
 
 		if vm.SecureBoot {
-			vm.firmwareLoaderPath = FIRMWARE_LOADER_SECUREBOOT_PATH
-			vm.firmwareVarsTemplatePath = FIRMWARE_VARS_SECUREBOOT_PATH
+			if vm.isArm64() {
+				vm.firmwareLoaderPath = FIRMWARE_LOADER_ARM64_SECUREBOOT_PATH
+				vm.firmwareVarsTemplatePath = FIRMWARE_VARS_ARM64_SECUREBOOT_PATH
+			} else {
+				vm.firmwareLoaderPath = FIRMWARE_LOADER_SECUREBOOT_PATH
+				vm.firmwareVarsTemplatePath = FIRMWARE_VARS_SECUREBOOT_PATH
+			}
 		} else {
-			vm.firmwareLoaderPath = FIRMWARE_LOADER_PATH
-			vm.firmwareVarsTemplatePath = FIRMWARE_VARS_PATH
+			if vm.isArm64() {
+				vm.firmwareLoaderPath = FIRMWARE_LOADER_ARM64_PATH
+				vm.firmwareVarsTemplatePath = FIRMWARE_VARS_ARM64_PATH
+			} else {
+				vm.firmwareLoaderPath = FIRMWARE_LOADER_PATH
+				vm.firmwareVarsTemplatePath = FIRMWARE_VARS_PATH
+			}
 		}
 
 		// Set up volume configurations for the VM
@@ -236,6 +251,8 @@ func (rc *virtDeployResourceConfig) construct() (*VirtDeployStatus, error) {
 			MACAddress: vm.mac.String(),
 			Uuid:       uuid.UUID(vm.domain.UUID),
 			NvramPath:  vm.nvramPath,
+			Definition: vm.domainDefinition,
+			Domain:     vm.domain,
 		}
 	}
 
@@ -484,7 +501,11 @@ func (rc *virtDeployResourceConfig) setupVm(vm *VirtDeployVM) error {
 
 	for i := range vm.volumes {
 		vol := &vm.volumes[i]
-		vol.device = fmt.Sprintf("sd%c", 'a'+i) // /dev/sda, /dev/sdb, etc.
+		diskDevicePrefix := "sd"
+		if vm.isArm64() {
+			diskDevicePrefix = "vd"
+		}
+		vol.device = fmt.Sprintf("%s%c", diskDevicePrefix, 'a'+i) // /dev/sda, /dev/sdb, etc.
 		err := rc.setupVolume(vol, rc.pool)
 		if err != nil {
 			return fmt.Errorf("setup volume for disk #%d: %w", i+1, err)
@@ -551,10 +572,10 @@ func (rc *virtDeployResourceConfig) setupVm(vm *VirtDeployVM) error {
 		vm.cdroms[i].device = fmt.Sprintf("sd%c", 'z'-i) // /dev/sdz, /dev/sdy, etc.
 	}
 
-	// Turn the configuration into XML
+	// Generate the final domain definition, and store it in the VM struct
 	domainXML, err := vm.asXml(rc.network, rc.nvramPool)
 	if err != nil {
-		return fmt.Errorf("generate domain XML: %w", err)
+		return fmt.Errorf("failed to produce domain XML: %w", err)
 	}
 
 	log.Tracef("Defining domain with XML:\n%s", domainXML)
@@ -563,6 +584,23 @@ func (rc *virtDeployResourceConfig) setupVm(vm *VirtDeployVM) error {
 	vm.domain, err = rc.lv.DomainDefineXMLFlags(domainXML, libvirt.DomainDefineValidate)
 	if err != nil {
 		return fmt.Errorf("define domain: %w", err)
+	}
+
+	// Get the full domain XML definition from libvirt to store in the VM struct
+	// for status reporting. This ensures we have the final definition as
+	// libvirt sees it. We use the DomainGetXMLDesc method with 0 flags to get
+	// the full XML. The previous domainXML variable may not include all
+	// auto-generated fields.
+	finalDomainXml, err := rc.lv.DomainGetXMLDesc(vm.domain, 0)
+	if err != nil {
+		return fmt.Errorf("get domain XML description: %w", err)
+	}
+
+	// Initialize empty struct and unmarshal the XML into it
+	vm.domainDefinition = &libvirtxml.Domain{}
+	err = vm.domainDefinition.Unmarshal(finalDomainXml)
+	if err != nil {
+		return fmt.Errorf("unmarshal domain XML description: %w", err)
 	}
 
 	log.Infof("Created domain '%s'", vm.name)

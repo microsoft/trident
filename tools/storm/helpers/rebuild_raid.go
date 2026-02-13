@@ -9,10 +9,10 @@ import (
 	"time"
 
 	stormutils "tridenttools/storm/utils"
-	stormenv "tridenttools/storm/utils/env"
 	stormsshcheck "tridenttools/storm/utils/ssh/check"
 	stormsshclient "tridenttools/storm/utils/ssh/client"
 	stormsshconfig "tridenttools/storm/utils/ssh/config"
+	"tridenttools/storm/utils/trident"
 	stormtrident "tridenttools/storm/utils/trident"
 
 	"github.com/microsoft/storm"
@@ -25,7 +25,7 @@ import (
 type RebuildRaidHelper struct {
 	args struct {
 		stormsshconfig.SshCliSettings `embed:""`
-		stormenv.EnvCliSettings       `embed:""`
+		trident.RuntimeCliSettings    `embed:""`
 		TridentConfigPath             string `help:"Path to the Trident configuration file." type:"string"`
 		DeploymentEnvironment         string `help:"Deployment environment (e.g., bareMetal, virtualMachine)." type:"string" default:"virtualMachine"`
 		VmName                        string `help:"Name of VM." type:"string" default:"virtdeploy-vm-0"`
@@ -395,7 +395,7 @@ func (h *RebuildRaidHelper) checkTridentServiceWithSsh(tc storm.TestCase) error 
 	}
 	err := stormsshcheck.CheckTridentService(
 		h.args.SshCliSettings,
-		h.args.EnvCliSettings,
+		h.args.TridentRuntimeType,
 		true,
 		h.args.TimeoutDuration(),
 		tc,
@@ -427,7 +427,7 @@ func (h *RebuildRaidHelper) checkFileExists(client *ssh.Client, filePath string)
 
 // Runs "trident rebuild-raid" to trigger rebuilding RAID and checks if RAID was rebuilt successfully.
 func (h *RebuildRaidHelper) tridentRebuildRaid(client *ssh.Client) error {
-	output, err := stormtrident.InvokeTrident(h.args.Env, client, []string{}, "rebuild-raid -v trace")
+	output, err := stormtrident.InvokeTrident(h.args.TridentRuntimeType, client, []string{}, "rebuild-raid -v trace")
 	if err != nil {
 		logrus.Errorf("Failed to invoke Trident: %v", err)
 		return err

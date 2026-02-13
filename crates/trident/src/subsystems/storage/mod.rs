@@ -8,7 +8,9 @@ use log::{debug, error, warn};
 use osutils::lsblk;
 use trident_api::{
     config::HostConfigurationDynamicValidationError,
-    constants::internal_params::{ALLOW_HC_STORAGE_CHANGE, RELAXED_COSI_VALIDATION},
+    constants::internal_params::{
+        ALLOW_HC_STORAGE_CHANGE, RAW_COSI_STORAGE, RELAXED_COSI_VALIDATION,
+    },
     error::{
         InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt,
         UnsupportedConfigurationError,
@@ -178,6 +180,11 @@ impl Subsystem for StorageSubsystem {
             return Ok(());
         }
 
+        if ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
+            debug!("Skipping storage configuration because raw COSI storage mode is enabled");
+            return Ok(());
+        }
+
         fstab::generate_fstab(ctx, Path::new(fstab::DEFAULT_FSTAB_PATH)).structured(
             ServicingError::GenerateFstab {
                 fstab_path: fstab::DEFAULT_FSTAB_PATH.to_string(),
@@ -259,36 +266,50 @@ mod tests {
                                 id: "part1".to_owned(),
                                 partition_type: PartitionType::Esp,
                                 size: PartitionSize::from_str("1M").unwrap(),
+                                uuid: None,
+                                label: None,
                             },
                             PartitionConfig {
                                 id: "part2".to_owned(),
                                 partition_type: PartitionType::Root,
                                 size: PartitionSize::from_str("1G").unwrap(),
+                                uuid: None,
+                                label: None,
                             },
                             PartitionConfig {
                                 id: "part3".to_owned(),
                                 partition_type: PartitionType::Root,
                                 size: PartitionSize::from_str("1G").unwrap(),
+                                uuid: None,
+                                label: None,
                             },
                             PartitionConfig {
                                 id: "part4".to_owned(),
                                 partition_type: PartitionType::Root,
                                 size: PartitionSize::from_str("1G").unwrap(),
+                                uuid: None,
+                                label: None,
                             },
                             PartitionConfig {
                                 id: "part5".to_owned(),
                                 partition_type: PartitionType::Srv,
                                 size: PartitionSize::from_str("1G").unwrap(),
+                                uuid: None,
+                                label: None,
                             },
                             PartitionConfig {
                                 id: "data".to_owned(),
                                 partition_type: PartitionType::LinuxGeneric,
                                 size: PartitionSize::from_str("1M").unwrap(),
+                                uuid: None,
+                                label: None,
                             },
                             PartitionConfig {
                                 id: "hash".to_owned(),
                                 partition_type: PartitionType::LinuxGeneric,
                                 size: PartitionSize::from_str("1M").unwrap(),
+                                uuid: None,
+                                label: None,
                             },
                         ],
                         ..Default::default()

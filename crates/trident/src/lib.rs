@@ -5,15 +5,20 @@ use std::{
 };
 
 use cli::GetKind;
-use engine::{bootentries, EngineContext};
 use log::{debug, error, info, warn};
 use nix::unistd::Uid;
+use semver::Version;
+use url::Url;
 
+use engine::{bootentries, EngineContext};
 use osutils::{block_devices, container, dependencies::Dependency};
 use trident_api::{
-    config::{HostConfiguration, HostConfigurationSource, Operations},
+    config::{
+        HostConfiguration, HostConfigurationSource, ImageSha384, Operations,
+        OsImage as ConfigOsImage,
+    },
     constants::internal_params::{
-        HTTP_CONNECTION_TIMEOUT_SECONDS, ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS,
+        HTTP_CONNECTION_TIMEOUT_SECONDS, ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS, RAW_COSI_STORAGE,
         WAIT_FOR_SYSTEMD_NETWORKD,
     },
     error::{
@@ -23,10 +28,12 @@ use trident_api::{
     status::{ServicingState, ServicingType},
 };
 
+pub mod agentconfig;
 pub mod cli;
 mod datastore;
 mod diagnostics;
 mod engine;
+mod grpc_client;
 mod health;
 mod io_utils;
 mod logging;
@@ -34,6 +41,7 @@ mod monitor_metrics;
 pub mod offline_init;
 mod orchestrate;
 pub mod osimage;
+mod reboot;
 mod server;
 pub mod stream;
 mod subsystems;
@@ -41,18 +49,25 @@ pub mod validation;
 
 pub use crate::{
     datastore::DataStore,
-    engine::{provisioning_network, reboot},
+    engine::{
+        manual_rollback::{self, utils::ManualRollbackRequestKind},
+        provisioning_network,
+    },
+    grpc_client::client_main,
     logging::{
-        background_log::BackgroundLog, filter::LogFilter, logfwd::LogForwarder,
-        logstream::Logstream, multilog::MultiLogger, tracestream::TraceStream,
+        background_log::BackgroundLog, background_uploader::BackgroundUploader, filter::LogFilter,
+        logfwd::LogForwarder, logstream::Logstream, multilog::MultiLogger,
+        tracestream::TraceStream,
     },
     orchestrate::OrchestratorConnection,
+    reboot::request_reboot_with_wait,
     server::server_main,
 };
 
 use crate::{
     engine::{ab_update, rollback, runtime_update, storage::rebuild, SUBSYSTEMS},
     osimage::OsImage,
+    stream::DiskSelectionStrategy,
 };
 
 /// Trident version as provided by environment variables at build time
@@ -60,6 +75,11 @@ pub const TRIDENT_VERSION: &str = match option_env!("TRIDENT_VERSION") {
     Some(v) => v,
     None => env!("CARGO_PKG_VERSION"),
 };
+lazy_static::lazy_static! {
+    /// Trident version parsed as a semver::Version
+    pub static ref TRIDENT_SEMVER_VERSION: Version = Version::parse(TRIDENT_VERSION)
+        .expect("Failed to parse TRIDENT_VERSION as semver::Version");
+}
 
 /// Trident binary path.
 const TRIDENT_BINARY_PATH: &str = "/usr/bin/trident";
@@ -85,6 +105,7 @@ const SAFETY_OVERRIDE_CHECK_PATH: &str = "/override-trident-safety-check";
 pub const TEMPORARY_DATASTORE_PATH: &str = "/tmp/trident-datastore.sqlite";
 
 #[must_use]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ExitKind {
     /// Requested operation completed successfully.
     Done,
@@ -217,6 +238,13 @@ impl Trident {
                 )?;
 
                 validation::parse_host_config(&contents, Some(path))?
+            }
+
+            // Load the Host Configuration from a raw string.
+            HostConfigurationSource::RawString(contents) => {
+                info!("Loading Host Configuration from raw string");
+
+                validation::parse_host_config(contents, None::<&Path>)?
             }
 
             // Use the embedded Host Configuration.
@@ -382,6 +410,7 @@ impl Trident {
         datastore: &mut DataStore,
         allowed_operations: Operations,
         multiboot: bool,
+        prefetched_image: Option<OsImage>,
     ) -> Result<ExitKind, TridentError> {
         let mut host_config = self
             .host_config
@@ -433,7 +462,12 @@ impl Trident {
                 }
             }
 
-            let image = Self::get_cosi_image(&mut host_config)?;
+            // Use a prefetched image if provided, otherwise load the image
+            // specified in the Host Configuration.
+            let image = match prefetched_image {
+                Some(image) => image,
+                None => Self::get_cosi_image(&mut host_config)?,
+            };
 
             if datastore.host_status().spec != host_config {
                 debug!("Host Configuration has been updated");
@@ -591,6 +625,53 @@ impl Trident {
         })
     }
 
+    pub fn stream_image(
+        &mut self,
+        datastore: &mut DataStore,
+        image_url: &Url,
+        hash: &str,
+    ) -> Result<ExitKind, TridentError> {
+        let mut image_source = ConfigOsImage {
+            url: image_url.clone(),
+            sha384: ImageSha384::new(hash)?,
+        };
+
+        let mut image = OsImage::load(&mut image_source, Duration::from_secs(10))
+            .message("Failed to download OS image")?;
+
+        let original_disk_size = image
+            .original_disk_size()
+            .structured(InvalidInputError::DeriveHostConfiguration)
+            .message(
+                "Image does not contain disk metadata; streaming requires a COSI v1.2 or newer image with disk information.",
+            )?;
+
+        let mut config = image
+            .derive_host_configuration("/dev/sda") // Use /dev/sda as a placeholder.
+            .structured(InvalidInputError::DeriveHostConfiguration)
+            .message("Host Configuration cannot be derived from this OS image.")?
+            .structured(InvalidInputError::DeriveHostConfiguration)?;
+
+        // Sanity check the derived Host Configuration
+        config
+            .validate()
+            .map_err(|e| TridentError::new(InternalError::from(e)))?;
+
+        // Set RAW_COSI_STORAGE internal parameter to true to indicate
+        // that the Host Configuration was derived from a raw COSI image.
+        config.internal_params.set_flag(RAW_COSI_STORAGE);
+
+        stream::update_target_disk_path(
+            &mut config,
+            original_disk_size,
+            DiskSelectionStrategy::SmallestThatWillFit,
+        )?;
+
+        self.host_config = Some(config);
+
+        self.install(datastore, Operations::all(), false, Some(image))
+    }
+
     pub fn commit(&mut self, datastore: &mut DataStore) -> Result<ExitKind, TridentError> {
         // If host's servicing state is *Finalized or *HealthCheckFailed, need to
         // re-evaluate the current state of the host.
@@ -599,8 +680,12 @@ impl Trident {
             ServicingState::CleanInstallFinalized
                 | ServicingState::AbUpdateFinalized
                 | ServicingState::AbUpdateHealthCheckFailed
+                | ServicingState::ManualRollbackAbFinalized
         ) {
-            info!("No servicing in progress, skipping commit");
+            info!(
+                "No servicing in progress ({:?}), skipping commit",
+                datastore.host_status().servicing_state
+            );
             return Ok(ExitKind::Done);
         }
 
@@ -637,10 +722,8 @@ impl Trident {
         output_path: &Option<PathBuf>,
         kind: GetKind,
     ) -> Result<(), TridentError> {
-        let host_status = DataStore::open(datastore_path)
-            .message("Failed to open datastore")?
-            .host_status()
-            .clone();
+        let datastore = DataStore::open(datastore_path).message("Failed to open datastore")?;
+        let host_status = datastore.host_status().clone();
 
         let yaml = match kind {
             GetKind::Configuration => serde_yaml::to_string(&host_status.spec)
@@ -649,6 +732,9 @@ impl Trident {
                 .structured(InternalError::SerializeHostStatus)?,
             GetKind::LastError => serde_yaml::to_string(&host_status.last_error)
                 .structured(InternalError::SerializeError)?,
+            GetKind::RollbackTarget | GetKind::RollbackChain => {
+                manual_rollback::get_rollback_info(&datastore, kind)?
+            }
         };
 
         match output_path {
@@ -666,6 +752,55 @@ impl Trident {
         Ok(())
     }
 
+    /// Handle a manual rollback request. Either print information about
+    /// available rollbacks, or execute a rollback.
+    pub fn rollback(
+        &mut self,
+        datastore: &mut DataStore,
+        invoke_if_next_is_runtime: bool,
+        invoke_available_ab: bool,
+        allowed_operations: Operations,
+    ) -> Result<ExitKind, TridentError> {
+        // If host's servicing state is not in Provisioned or ManualRollback*, cannot
+        // execute a rollback.
+        if !matches!(
+            datastore.host_status().servicing_state,
+            ServicingState::Provisioned
+                | ServicingState::ManualRollbackAbStaged
+                | ServicingState::ManualRollbackRuntimeStaged
+        ) {
+            info!(
+                "Cannot trigger rollback from current state ({:?})",
+                datastore.host_status().servicing_state
+            );
+            return Ok(ExitKind::Done);
+        }
+
+        let rollback_result = self.execute_and_record_error(datastore, |datastore| {
+            manual_rollback::execute_rollback(
+                datastore,
+                ManualRollbackRequestKind::from_flags(
+                    invoke_if_next_is_runtime,
+                    invoke_available_ab,
+                )?,
+                &allowed_operations,
+            )
+            .message("Failed to rollback")
+        });
+
+        if rollback_result.is_ok() {
+            if let Some(ref orchestrator) = self.orchestrator {
+                orchestrator.report_success(Some(
+                    serde_yaml::to_string(&datastore.host_status())
+                        .unwrap_or("Failed to serialize Host Status".into()),
+                ))
+            }
+        }
+
+        rollback_result
+    }
+
+    // Handle diagnose command
     pub fn diagnose(output_path: &Path, full: bool, selinux: bool) -> Result<(), TridentError> {
         diagnostics::generate_and_bundle(output_path, full, selinux)?;
         Ok(())

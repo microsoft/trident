@@ -18,20 +18,29 @@ import (
 )
 
 var (
-	netlaunchConfigFile string
-	tridentConfigFile   string
-	iso                 string
-	logstream           bool
-	listenPort          uint16
-	remoteAddressFile   string
-	serveFolder         string
-	maxFailures         uint
-	traceFile           string
-	forceColor          bool
-	waitForProvisioned  bool
-	onlyPrintExitCode   bool
-	secureBoot          bool
-	signingCert         string
+	netlaunchConfigFile  string
+	tridentConfigFile    string
+	iso                  string
+	logstream            bool
+	listenPort           uint16
+	remoteAddressFile    string
+	serveFolder          string
+	maxFailures          uint
+	traceFile            string
+	forceColor           bool
+	waitForProvisioned   bool
+	onlyPrintExitCode    bool
+	secureBoot           bool
+	signingCert          string
+	rcpMode              string
+	tridentBinaryPath    string
+	osmodifierBinaryPath string
+	streamImage          bool
+)
+
+const (
+	rcpModeLegacy = "cli"
+	rcpModeGrpc   = "grpc"
 )
 
 var backgroundLogstreamFull string
@@ -63,6 +72,23 @@ var rootCmd = &cobra.Command{
 			color.NoColor = false
 		}
 
+		if rcpMode != "" {
+			log.Infof("Using RCP mode: %s", rcpMode)
+			if rcpMode != rcpModeGrpc && rcpMode != rcpModeLegacy {
+				log.Fatalf("Invalid RCP mode, must be: %s or %s, got: %s", rcpModeLegacy, rcpModeGrpc, rcpMode)
+			}
+		} else {
+			if tridentBinaryPath != "" {
+				log.Fatal("Trident binary path specified without RCP mode")
+			}
+			if osmodifierBinaryPath != "" {
+				log.Fatal("Osmodifier binary path specified without RCP mode")
+			}
+			if streamImage {
+				log.Fatal("Stream image specified without RCP mode")
+			}
+		}
+
 		// Set log level
 		log.SetLevel(log.DebugLevel)
 	},
@@ -90,6 +116,22 @@ var rootCmd = &cobra.Command{
 		config.EnableSecureBoot = secureBoot
 		config.WaitForProvisioning = waitForProvisioned
 		config.MaxPhonehomeFailures = maxFailures
+
+		if rcpMode != "" {
+			config.Rcp = &netlaunch.RcpConfiguration{
+				GrpcMode: rcpMode == rcpModeGrpc,
+			}
+
+			if tridentBinaryPath != "" {
+				config.Rcp.LocalTridentPath = &tridentBinaryPath
+			}
+
+			if osmodifierBinaryPath != "" {
+				config.Rcp.LocalOsmodifierPath = &osmodifierBinaryPath
+			}
+
+			config.Rcp.UseStreamImage = streamImage
+		}
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -124,6 +166,10 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&forceColor, "force-color", "", false, "Force colored output")
 	rootCmd.PersistentFlags().BoolVarP(&secureBoot, "secure-boot", "", false, "Enable SecureBoot")
 	rootCmd.PersistentFlags().StringVarP(&signingCert, "signing-cert", "", "", "Path to signing certificate")
+	rootCmd.PersistentFlags().StringVarP(&rcpMode, "rcp-agent-mode", "", "", "RCP agent mode to use (grpc|cli). If not specified, the rcp-agent is not used.")
+	rootCmd.PersistentFlags().StringVarP(&tridentBinaryPath, "trident-binary", "", "", "Optional path to Trident binary to be copied into the VM, requires RCP mode.")
+	rootCmd.PersistentFlags().StringVarP(&osmodifierBinaryPath, "osmodifier-binary", "", "", "Optional path to Osmodifier binary to be copied into the VM, requires RCP mode.")
+	rootCmd.PersistentFlags().BoolVarP(&streamImage, "stream-image", "", false, "Use stream image for installation instead of the default method, requires RCP mode.")
 	rootCmd.Flags().StringVarP(&iso, "iso", "i", "", "ISO for Netlaunch testing")
 	rootCmd.MarkFlagRequired("iso-template")
 }

@@ -568,6 +568,8 @@ mod tests {
                 id: part_id.clone(),
                 size: PartitionSize::from_str("1G").unwrap(),
                 partition_type: Default::default(),
+                uuid: None,
+                label: None,
             });
             part_id
         };
@@ -659,6 +661,7 @@ mod tests {
                 },
             ],
             is_uki: false,
+            partitioning_info: None,
         };
         let os_image = OsImage::mock(mock_image.clone());
         let mut ctx = EngineContext {
@@ -709,6 +712,7 @@ mod tests {
                     },
                 ],
                 is_uki: false,
+                partitioning_info: None,
             })
             .with_spec(HostConfiguration {
                 storage: Storage {
@@ -719,6 +723,8 @@ mod tests {
                             id: "part1".to_owned(),
                             size: 4096.into(),
                             partition_type: Default::default(),
+                            uuid: None,
+                            label: None,
                         }],
                         ..Default::default()
                     }],
@@ -763,6 +769,7 @@ mod tests {
                 },
             ],
             is_uki: false,
+            partitioning_info: None,
         });
 
         // Expect validation to fail
@@ -788,6 +795,7 @@ mod tests {
                 verity: None,
             }],
             is_uki: false,
+            partitioning_info: None,
         };
 
         // Expect validation to fail
@@ -824,11 +832,15 @@ mod tests {
                         id: "data".into(),
                         partition_type: Default::default(),
                         size: PartitionSize::from_str("1G").unwrap(),
+                        uuid: None,
+                        label: None,
                     },
                     Partition {
                         id: "hash".into(),
                         partition_type: Default::default(),
                         size: PartitionSize::from_str("1G").unwrap(),
+                        uuid: None,
+                        label: None,
                     },
                 ],
                 ..Default::default()
@@ -864,11 +876,15 @@ mod tests {
                         id: "data".into(),
                         partition_type: Default::default(),
                         size: PartitionSize::from_str("1G").unwrap(),
+                        uuid: None,
+                        label: None,
                     },
                     Partition {
                         id: "hash".into(),
                         partition_type: Default::default(),
                         size: PartitionSize::from_str("1G").unwrap(),
+                        uuid: None,
+                        label: None,
                     },
                 ],
                 ..Default::default()
@@ -911,11 +927,15 @@ mod tests {
                         id: "data".into(),
                         partition_type: Default::default(),
                         size: PartitionSize::from_str("1G").unwrap(),
+                        uuid: None,
+                        label: None,
                     },
                     Partition {
                         id: "hash".into(),
                         partition_type: Default::default(),
                         size: PartitionSize::from_str("1G").unwrap(),
+                        uuid: None,
+                        label: None,
                     },
                 ],
                 ..Default::default()
@@ -966,11 +986,15 @@ mod tests {
                         id: "data".into(),
                         partition_type: Default::default(),
                         size: PartitionSize::from_str("1G").unwrap(),
+                        uuid: None,
+                        label: None,
                     },
                     Partition {
                         id: "hash".into(),
                         partition_type: Default::default(),
                         size: PartitionSize::from_str("1G").unwrap(),
+                        uuid: None,
+                        label: None,
                     },
                 ],
                 ..Default::default()
@@ -1145,11 +1169,15 @@ mod tests {
                         id: "data".into(),
                         partition_type: Default::default(),
                         size: required_partition_size,
+                        uuid: None,
+                        label: None,
                     },
                     Partition {
                         id: "hash".into(),
                         partition_type: Default::default(),
                         size: required_partition_size,
+                        uuid: None,
+                        label: None,
                     },
                 ],
                 ..Default::default()
@@ -1253,6 +1281,7 @@ mod functional_test {
                 part_type: DiscoverablePartitionType::Root,
                 verity: None,
             }],
+            partitioning_info: None,
         };
         let os_image = OsImage::mock(mock_image.clone());
         let mut ctx = EngineContext {

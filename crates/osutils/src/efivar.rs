@@ -136,7 +136,7 @@ pub fn read_current_var() -> Result<String, TridentError> {
     Ok(decode_utf16le(&data))
 }
 
-/// Sets the LoaderEntryDefault EFI variable to the current boot entry
+/// Sets the LoaderEntryDefault EFI variable to the current boot entry.
 pub fn set_default_to_current() -> Result<(), TridentError> {
     let current = read_efi_variable(BOOTLOADER_INTERFACE_GUID, LOADER_ENTRY_SELECTED)?;
     debug!(

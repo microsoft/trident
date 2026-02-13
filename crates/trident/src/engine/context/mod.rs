@@ -83,16 +83,24 @@ impl EngineContext {
         match self.servicing_type {
             // If there is no servicing in progress, update volume is None.
             ServicingType::NoActiveServicing => None,
+            // If host is executing a manual rollback for a runtime update, active and update
+            // volumes are the same.
+            ServicingType::ManualRollbackRuntime
             // If host is executing a runtime update, active and update volumes are the same.
-            ServicingType::RuntimeUpdate => self.ab_active_volume,
+            | ServicingType::RuntimeUpdate => self.ab_active_volume,
+
+            // If host is executing a manual rollback for an A/B update, update volume
+            // is the opposite of the active volume.
+            ServicingType::ManualRollbackAb
             // If host is executing an A/B update, update volume is the opposite of active volume.
-            ServicingType::AbUpdate => {
+            | ServicingType::AbUpdate => {
                 if self.ab_active_volume == Some(AbVolumeSelection::VolumeA) {
                     Some(AbVolumeSelection::VolumeB)
                 } else {
                     Some(AbVolumeSelection::VolumeA)
                 }
             }
+
             // If host is executing a clean install, update volume is always A.
             ServicingType::CleanInstall => Some(AbVolumeSelection::VolumeA),
         }
@@ -296,6 +304,15 @@ impl EngineContext {
             "is_uki() called without it being set",
         ))
     }
+
+    /// Returns the zstd max window log required for decompression of files
+    /// coming from the OS image, if available.
+    pub(crate) fn image_zstd_max_window_log(&self) -> Option<u32> {
+        self.image
+            .as_ref()?
+            .zstd_decompression_parameters()
+            .and_then(|p| p.max_window_log)
+    }
 }
 
 #[cfg(test)]
@@ -328,11 +345,15 @@ mod tests {
                                 id: "boot".to_owned(),
                                 size: 2.into(),
                                 partition_type: PartitionType::Esp,
+                                uuid: None,
+                                label: None,
                             },
                             Partition {
                                 id: "root".to_owned(),
                                 size: 7.into(),
                                 partition_type: PartitionType::Root,
+                                uuid: None,
+                                label: None,
                             },
                         ],
                         ..Default::default()
@@ -389,16 +410,22 @@ mod tests {
                                     id: "efi".to_owned(),
                                     size: 100.into(),
                                     partition_type: PartitionType::Esp,
+                                    uuid: None,
+                                    label: None,
                                 },
                                 Partition {
                                     id: "root".to_owned(),
                                     size: 900.into(),
                                     partition_type: PartitionType::Root,
+                                    uuid: None,
+                                    label: None,
                                 },
                                 Partition {
                                     id: "rootb".to_owned(),
                                     size: 9000.into(),
                                     partition_type: PartitionType::Root,
+                                    uuid: None,
+                                    label: None,
                                 },
                             ],
                             ..Default::default()
@@ -623,6 +650,8 @@ mod tests {
                         id: "part1".to_owned(),
                         size: 4096.into(),
                         partition_type: PartitionType::Root,
+                        uuid: None,
+                        label: None,
                     }],
                     ..Default::default()
                 }],
@@ -655,16 +684,22 @@ mod tests {
                                 id: "esp".to_owned(),
                                 partition_type: PartitionType::Esp,
                                 size: PartitionSize::from_str("1G").unwrap(),
+                                uuid: None,
+                                label: None,
                             },
                             Partition {
                                 id: "root".to_owned(),
                                 partition_type: PartitionType::Root,
                                 size: PartitionSize::from_str("8G").unwrap(),
+                                uuid: None,
+                                label: None,
                             },
                             Partition {
                                 id: "rootb".to_owned(),
                                 partition_type: PartitionType::Root,
                                 size: PartitionSize::from_str("8G").unwrap(),
+                                uuid: None,
+                                label: None,
                             },
                         ],
                         ..Default::default()

@@ -1,0 +1,126 @@
+parameters:
+  - name: label
+    type: string
+    displayName: "Label for the image"
+    default: ""
+
+  - name: labelPrefix
+    type: string
+    displayName: "Prefix for the image label"
+    default: "image-"
+
+  - name: makeTarget
+    type: string
+    displayName: "Make target for the image"
+    default: ""
+
+  - name: baseimgType
+    type: string
+    displayName: "Base image type"
+
+  - name: baseimgAzlVersion
+    displayName: Base Image AZL version
+    type: string
+    default: "3.0"
+
+  - name: micBuildType
+    displayName: MIC Build Type
+    type: string
+    values:
+    - dev
+    - preview
+    - release
+    default: release
+
+  - name: micVersion
+    displayName: MIC Version
+    type: string
+    default: "*.*.*"
+
+  - name: useStagedSshKeys
+    displayName: "Use staged SSH keys"
+    type: boolean
+    default: false
+
+  - name: architecture
+    displayName: Architecture for MIC
+    type: string
+    values:
+      - arm64
+      - amd64
+    default: "amd64"
+
+  - name: downloadGoTools
+    displayName: "Download Go Tools"
+    type: boolean
+    default: false
+
+
+jobs:
+  - job: PrepareImage_${{ replace(parameters.label, '-', '_') }}
+    displayName: Prepare Image ${{ parameters.label }}
+    timeoutInMinutes: 20
+    pool:
+      ${{ if eq(parameters.architecture, 'arm64') }}:
+        type: linux
+        name: azl3-hci-ARM64-1es-pool-westcentralus
+        hostArchitecture: arm64
+      ${{ if eq(parameters.architecture, 'amd64') }}:
+        type: linux
+
+    variables:
+      ob_outputDirectory: $(Build.SourcesDirectory)/out
+      ob_artifactBaseName: "${{ parameters.labelPrefix }}${{ parameters.label }}"
+      ${{ if eq(parameters.architecture, 'amd64') }}:
+        tridentArtifactName: trident-binaries
+        goToolsArtifactName: go-tools
+      ${{ if eq(parameters.architecture, 'arm64') }}:
+        tridentArtifactName: trident-binaries-arm64
+        goToolsArtifactName: go-tools-arm64
+
+    steps:
+      - template: ../common_tasks/avoid-pypi-usage.yml
+
+      - task: DownloadPipelineArtifact@2
+        inputs:
+          buildType: current
+          artifactName: $(tridentArtifactName)
+          targetPath: "$(Build.ArtifactStagingDirectory)/trident"
+        displayName: Download Trident RPMs
+
+      - ${{ if parameters.downloadGoTools }}:
+        - task: DownloadPipelineArtifact@2
+          displayName: "Download $(goToolsArtifactName)"
+          inputs:
+            buildType: current
+            artifactName: $(goToolsArtifactName)
+            targetPath: "$(Build.SourcesDirectory)/bin"
+        - bash: |
+            set -eux
+            chmod +x $(Build.SourcesDirectory)/bin/*
+          displayName: "Make go tools executable"
+
+      - task: DownloadPipelineArtifact@2
+        inputs:
+          buildType: current
+          artifactName: ssh-keys
+          targetPath: "$(Build.ArtifactStagingDirectory)/ssh"
+        displayName: Download SSH Keys
+
+      - template: ../common_tasks/find-base-image-version.yml
+        parameters:
+          architecture: ${{ parameters.architecture }}
+      - template: ./trident-testimg-template.yml
+        parameters:
+          target: ${{ parameters.makeTarget }}
+          outputDirectory: "$(ob_outputDirectory)"
+          micBuildType: ${{ parameters.micBuildType }}
+          micVersion: ${{ parameters.micVersion }}
+          micArchitecture: ${{ parameters.architecture }}
+          tridentArtifactName: $(tridentArtifactName)
+          baseimgBuildType: $(BASEIMG_BUILD_TYPE)
+          baseimgVersion: $(BASEIMG_VERSION)
+          baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
+          baseimgTypes: 
+            - ${{ parameters.baseimgType }}
+          useStagedSshKeys: ${{ parameters.useStagedSshKeys }}

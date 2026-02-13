@@ -18,9 +18,13 @@ type TraceEntry struct {
 	PlatformInfo     map[string]interface{} `json:"platform_info"`
 }
 
-func SetupTraceStream(filepath string) (*os.File, error) {
+func SetupTraceStream(mux *http.ServeMux, filepath string) (*os.File, error) {
 	if filepath == "" {
 		return nil, nil
+	}
+
+	if mux == nil {
+		mux = http.DefaultServeMux
 	}
 
 	// Setup a file to store the trace data
@@ -32,7 +36,7 @@ func SetupTraceStream(filepath string) (*os.File, error) {
 	// Generate a UUID to group events coming in from the same Trident run
 	traceID := uuid.New().String()
 
-	http.HandleFunc("/tracestream", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/tracestream", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(201)
 		w.Write([]byte("OK"))
 

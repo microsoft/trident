@@ -1,0 +1,148 @@
+// Proto file defining the TridentService and related messages.
+
+syntax = "proto3";
+
+package harpoon.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// TridentService provides methods for managing Trident servicing operations
+service TridentService {
+  // StreamImage streams an OS image to the target device.
+  rpc StreamImage(StreamImageRequest) returns (stream ServicingResponse);
+
+  // Version returns the Trident version.
+  rpc Version(VersionRequest) returns (VersionResponse);
+}
+
+message FinalizeRequest {
+  // Indicates whether the orchestrator will handle any required reboots of the
+  // system. When set to false, Trident will perform any necessary reboots
+  // itself. When set to true, Trident will complete the servicing operation
+  // without rebooting, and will expect the orchestrator to reboot the system
+  // immediately after finalization, when requested.
+  bool orchestrator_handles_reboot = 1;
+}
+
+// Rust log levels
+enum LogLevel {
+  LOG_LEVEL_UNSPECIFIED = 0;
+  LOG_LEVEL_ERROR       = 1;
+  LOG_LEVEL_WARN        = 2;
+  LOG_LEVEL_INFO        = 3;
+  LOG_LEVEL_DEBUG       = 4;
+  LOG_LEVEL_TRACE       = 5;
+}
+
+message Log {
+  // Level of the log message.
+  LogLevel level = 1;
+  // Body of the log message.
+  string message = 2;
+  // Target of the log message.
+  string target = 3;
+  // Module where the log message originated.
+  string module = 4;
+  // Location where the log message was generated.
+  FileLocation location = 5;
+}
+
+// Represents the final status of a servicing operation.
+enum StatusCode {
+  STATUS_CODE_UNSPECIFIED = 0;
+  STATUS_CODE_SUCCESS     = 1;
+  STATUS_CODE_FAILURE     = 2;
+}
+
+message FinalStatus {
+  // Final status of the servicing operation.
+  StatusCode status = 1;
+  // Message associated with the final status.
+  optional TridentError error = 2;
+  // Whether a reboot is required to complete the servicing operation. If true,
+  // the caller is expected to reboot the system to finalize the servicing
+  // immediately upon receiving this status.
+  bool reboot_required = 3;
+  // Whether the servicing operation enqueued a reboot. If true, the system is
+  // expected to reboot automatically to finalize the servicing. No further
+  // action from the caller is needed. This field can be true only if
+  // reboot_required is false.
+  bool reboot_enqueued = 4;
+}
+
+message Start {}
+
+message ServicingResponse {
+  // Timestamp of the response message.
+  google.protobuf.Timestamp timestamp = 1;
+  // Body of the response message.
+  oneof response {
+    // A start message indicating the beginning of the servicing operation.
+    Start start = 2;
+    // A log message from the servicing operation.
+    Log log = 3;
+    // A final status message from the servicing operation.
+    FinalStatus final_status = 4;
+  }
+}
+
+
+message StreamImageRequest {
+  // Path to the image file to be streamed.
+  string image_path = 1;
+  // Hash of the image file for integrity verification.
+  string image_hash = 2;
+  // The finalize parameters for the servicing operation.
+  FinalizeRequest finalize = 3;
+}
+
+message TridentError {
+  // Error kind.
+  TridentErrorKind kind = 1;
+  // Error subkind.
+  string subkind = 2;
+  // Specific error message.
+  string message = 3;
+  // Full formatted body of the error, including context and source.
+  string full_body = 4;
+  // Location in the file where the error occurred.
+  FileLocation location = 5;
+}
+
+// Major kinds of Trident errors.
+enum TridentErrorKind {
+  TRIDENT_ERROR_KIND_UNSPECIFIED = 0;
+  // Identifies errors that occur when the execution environment is
+  // misconfigured.
+  EXECUTION_ENVIRONMENT_MISCONFIGURATION_ERROR = 1;
+  // Identifies errors that are related to health checks.
+  HEALTH_CHECKS_ERROR = 2;
+  // Identifies errors that occur when Trident fails to initialize.
+  INITIALIZATION_ERROR = 3;
+  // Identifies errors that occur due to an internal bug or failure in Trident.
+  INTERNAL_ERROR = 4;
+  // Identifies errors that occur when the user provides invalid input.
+  INVALID_INPUT_ERROR = 5;
+  // Identifies errors that occur during servicing and require further user
+  // investigation, to determine whether the error occurred due to an internal
+  // failure in Trident, a failure in one of its dependencies, or a system
+  // misconfiguration.
+  SERVICING_ERROR = 6;
+  // Identifies errors that occur when clean install or update fail due to the
+  // current configuration of the host.
+  UNSUPPORTED_CONFIGURATION_ERROR = 7;
+}
+
+message FileLocation {
+  // Path to the file.
+  string path = 1;
+  // Line number in the file.
+  uint32 line = 2;
+}
+
+message VersionRequest {}
+
+message VersionResponse {
+  // Trident version string.
+  string version = 1;
+}

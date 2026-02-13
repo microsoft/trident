@@ -13,6 +13,9 @@ OVERRIDE_RUST_FEED ?= true
 
 SERVER_PORT ?= 8133
 
+# Azl3 builder docker image name
+AZL3_BUILDER_IMAGE := azl3/trident-builder:latest
+
 .PHONY: all
 all: format check test build-api-docs bin/trident-rpms.tar.gz docker-build build-functional-test coverage validate-configs
 
@@ -75,7 +78,7 @@ build: .cargo/config version-vars
 		OPENSSL_LIB_DIR=$(shell dirname `whereis libssl.a | cut -d" " -f2`) \
 		OPENSSL_INCLUDE_DIR=/usr/include/openssl \
 		TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
-		cargo build --release --features dangerous-options
+		cargo build --release --features dangerous-options,grpc-preview
 	@mkdir -p bin
 
 .PHONY: format
@@ -150,23 +153,51 @@ bin/trident: build
 	@mkdir -p bin
 	@cp -u target/release/trident bin/
 
+.PHONY: azl3-builder-image clean-azl3-builder-image build-azl3
+azl3-builder-image:
+	@echo "Checking for local image $(AZL3_BUILDER_IMAGE)..."
+	@if docker image inspect $(AZL3_BUILDER_IMAGE) >/dev/null 2>&1 ; then \
+		echo "Image $(AZL3_BUILDER_IMAGE) found locally." ; \
+	else \
+		echo "Image $(AZL3_BUILDER_IMAGE) not found locally. Building..." ; \
+		docker build -t $(AZL3_BUILDER_IMAGE) -f packaging/docker/Dockerfile.azl3-builder . ; \
+	fi
+
+clean-azl3-builder-image:
+	@echo "Removing local image $(AZL3_BUILDER_IMAGE)..."
+	@docker rmi $(AZL3_BUILDER_IMAGE) || echo "Image $(AZL3_BUILDER_IMAGE) not found locally."
+
+build-azl3: azl3-builder-image version-vars
+	@mkdir -p bin/
+	@mkdir -p target/azl3/
+	@echo "Building Trident for Azure Linux 3 using Docker image $(AZL3_BUILDER_IMAGE)..."
+	@docker run --rm \
+		-e TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
+		-v $(PWD):/work -w /work $(AZL3_BUILDER_IMAGE) \
+		cargo build --color always --target-dir target/azl3 --release --features dangerous-options,grpc-preview
+
+bin/trident-azl3: build-azl3
+	@cp -u target/azl3/release/trident bin/trident-azl3
+
 # This will do a proper build on azl3, exactly as the pipelines would, with the custom registry and all.
 bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full packaging/systemd/*.service packaging/rpm/trident.spec artifacts/osmodifier packaging/selinux-policy-trident/* version-vars
 	$(eval CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN := $(shell az account get-access-token --query "join(' ', ['Bearer', accessToken])" --output tsv))
 	
-	@export CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN="$(CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN)" &&\
-		docker build -t trident/trident-build:latest \
+	@mkdir -p bin/
+	@tmpdir=$$(mktemp -d) && \
+		export CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN="$(CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN)" &&\
+		docker buildx build \
 			--secret id=registry_token,env=CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN \
 			--build-arg CARGO_REGISTRIES_FROM_ENV="true" \
 			--build-arg TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
 			--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)" \
 			--build-arg RPM_REL="dev.$(GIT_COMMIT)" \
+			--target artifact \
+			--output type=local,dest=$$tmpdir \
 			-f packaging/docker/Dockerfile.full \
-			.
-	@mkdir -p bin/
-	@id=$$(docker create trident/trident-build:latest) && \
-	    docker cp -q $$id:/work/trident-rpms.tar.gz $@ || \
-	    docker rm -v $$id
+			. && \
+		mv $$tmpdir/trident-rpms.tar.gz $@ && \
+		rm -rf $$tmpdir
 	@rm -rf bin/RPMS/
 	@tar xf $@ -C bin/
 
@@ -399,8 +430,10 @@ go.sum: go.mod
 .PHONY: go-tools
 go-tools: bin/netlaunch bin/netlisten bin/miniproxy bin/virtdeploy bin/isopatch
 
-bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/*
+bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/* tools/pkg/netlaunch/*
 	@mkdir -p bin
+	cd tools && go generate pkg/rcp/tlscerts/certs.go
+	cd tools && go generate pkg/harpoon/harpoon.go
 	cd tools && go build -o ../bin/netlaunch ./cmd/netlaunch
 
 bin/netlisten: tools/cmd/netlisten/* tools/go.sum tools/pkg/*
@@ -430,6 +463,22 @@ bin/storm-trident: tools/cmd/storm-trident/main.go tools/storm/**/*
 bin/virtdeploy: tools/cmd/virtdeploy/* tools/go.sum tools/pkg/* tools/pkg/virtdeploy/*
 	@mkdir -p bin
 	cd tools && go build -o ../bin/virtdeploy ./cmd/virtdeploy
+
+bin/rcp-agent: tools/cmd/rcp-agent/* tools/go.sum tools/pkg/rcp/* tools/pkg/rcp/proxy/* tools/pkg/rcp/agent/*
+	@mkdir -p bin
+	cd tools && go generate pkg/rcp/tlscerts/certs.go
+	cd tools && go build -o ../bin/rcp-agent ./cmd/rcp-agent/main.go
+
+# Clean generated RCP TLS certificates
+.PHONY: clean-rcp-certs
+clean-rcp-certs:
+	cd tools/pkg/rcp/tlscerts && go run generate.go clean
+
+# An empty target to force rebuilds of anything that depends on it. Useful for
+# tools that are smarter than Make and only rebuild when source files change.
+# (eg. go build)
+.PHONY: FORCE
+FORCE:
 
 # Installer tools
 
@@ -494,12 +543,26 @@ input/netlaunch.yaml: tools/vm-netlaunch.yaml
 	@mkdir -p input
 	ln -vsf "$$(realpath "$<")" $@
 
-.PHONY: run-netlaunch
-run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch validate artifacts/osmodifier
+# Dynamically determine which netlaunch binary to use based on host OS version.
+OS_RELEASE_FILE ?= /etc/os-release
+OS_ID := $(shell . $(OS_RELEASE_FILE) 2>/dev/null && echo $$ID)
+OS_VERSION_ID := $(shell . $(OS_RELEASE_FILE) 2>/dev/null && echo $$VERSION_ID)
+IS_UBUNTU_24_OR_NEWER := $(shell \
+	. $(OS_RELEASE_FILE) 2>/dev/null && \
+	[ "$$ID" = "ubuntu" ] && [ "$${VERSION_ID%%.*}" -ge 24 ] && echo yes)
+
+RUN_NETLAUNCH_TRIDENT_BIN ?= $(if $(filter yes,$(IS_UBUNTU_24_OR_NEWER)),bin/trident-azl3,bin/trident)
+
+.PHONY: run-netlaunch run-netlaunch-stream
+run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch validate artifacts/osmodifier $(RUN_NETLAUNCH_TRIDENT_BIN)
+	@echo "Using trident binary: $(RUN_NETLAUNCH_TRIDENT_BIN)"
 	@mkdir -p artifacts/test-image
-	@cp bin/trident artifacts/test-image/
+	@cp $(RUN_NETLAUNCH_TRIDENT_BIN) artifacts/test-image/trident
 	@cp artifacts/osmodifier artifacts/test-image/
 	@bin/netlaunch \
+	    --trident-binary $(RUN_NETLAUNCH_TRIDENT_BIN) \
+		--osmodifier-binary artifacts/osmodifier \
+		--rcp-agent-mode cli \
 	 	--iso $(NETLAUNCH_ISO) \
 		$(if $(NETLAUNCH_PORT),--port $(NETLAUNCH_PORT)) \
 		--config $(NETLAUNCH_CONFIG) \
@@ -510,6 +573,25 @@ run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlau
 		--trace-file trident-metrics.jsonl \
 		$(if $(LOG_TRACE),--log-trace)
 
+run-netlaunch-stream: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch artifacts/osmodifier $(RUN_NETLAUNCH_TRIDENT_BIN)
+	@echo "Using trident binary: $(RUN_NETLAUNCH_TRIDENT_BIN)"
+	@mkdir -p artifacts/test-image
+	@cp $(RUN_NETLAUNCH_TRIDENT_BIN) artifacts/test-image/trident
+	@cp artifacts/osmodifier artifacts/test-image/
+	@bin/netlaunch \
+	    --stream-image \
+	    --trident-binary $(RUN_NETLAUNCH_TRIDENT_BIN) \
+		--osmodifier-binary artifacts/osmodifier \
+		--rcp-agent-mode cli \
+	 	--iso $(NETLAUNCH_ISO) \
+		$(if $(NETLAUNCH_PORT),--port $(NETLAUNCH_PORT)) \
+		--config $(NETLAUNCH_CONFIG) \
+		--trident $(TRIDENT_CONFIG) \
+		--logstream \
+		--remoteaddress remote-addr \
+		--servefolder artifacts/test-image \
+		--trace-file trident-metrics.jsonl \
+		$(if $(LOG_TRACE),--log-trace)
 
 #  To run this, VM requires at least 11 GiB of memory (virt-deploy create --mem 11).
 .PHONY: run-netlaunch-container-images
@@ -750,7 +832,10 @@ bin/trident-mos.iso: \
 	tests/images/trident-mos/iso.yaml \
 	tests/images/trident-mos/files/* \
 	tests/images/trident-mos/post-install.sh \
-	packaging/selinux-policy-trident/*
+	packaging/selinux-policy-trident/* \
+	tools/cmd/rcp-agent/rcp-agent.service \
+	bin/rcp-agent
+	@echo "Rebuilding Trident MOS ISO: $@ from $< because of: $?"
 	@mkdir -p bin
 	BUILD_DIR=`mktemp -d` && \
 		trap 'sudo rm -rf $$BUILD_DIR' EXIT; \
@@ -822,9 +907,10 @@ validate-pipeline-website-artifact:
 		npm install && \
 			npm run serve -- --port $(SERVER_PORT)
 
-# Test images
-
-COSI_TARGETS = $(shell ./tests/images/testimages.py list)
+#
+# Generic COSI image build target pattern
+#
+COSI_TARGETS = $(shell ./tests/images/testimages.py list --filter-type cosi)
 
 .PHONY: $(COSI_TARGETS)
 $(COSI_TARGETS): %: artifacts/%.cosi
@@ -833,15 +919,21 @@ $(COSI_TARGETS): %: artifacts/%.cosi
 all-cosi: $(COSI_TARGETS)
 
 #
-# Generic COSI image build target pattern
+# Generic ISO image build target pattern
 #
+ISO_TARGETS = $(shell ./tests/images/testimages.py list --filter-type iso)
+
+.PHONY: $(ISO_TARGETS)
+$(ISO_TARGETS): %: artifacts/%.iso
+
+.PHONY: all-iso
+all-iso: $(ISO_TARGETS)
 
 # Fun trick to use the stem of the target (%) as a variable ($*) in the
 # prerequisites so that we can use find to get all the files in the directory.
 # https://www.gnu.org/software/make/manual/make.html#Secondary-Expansion
 .SECONDEXPANSION:
-
-artifacts/%.cosi: $$(shell ./tests/images/testimages.py dependencies $$*)
+artifacts/%.cosi artifacts/%.iso artifacts/%.vhdx: $$(shell ./tests/images/testimages.py dependencies $$*)
 	@echo "Building '$*' [$@] from $<"
 	@echo "Prerequisites:"
 	@echo "$^" | tr ' ' '\n' | sed 's/^/    /'
@@ -1066,3 +1158,22 @@ artifacts/trident-vm-grub-verity-azure-testimage.vhd: \
 			--output-image-format vhd-fixed \
 			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-grub-verity-azure.yaml
 
+.PHONY: imagecustomizer-dev-amd64
+imagecustomizer-dev-amd64:
+	make -C ../azure-linux-image-tools/toolkit go-imagecustomizer
+	../azure-linux-image-tools/toolkit/tools/imagecustomizer/container/build-container.sh -t imagecustomizer:dev -a amd64
+
+.PHONY: imagecustomizer-dev-arm64
+imagecustomizer-dev-arm64:
+	make -C ../azure-linux-image-tools/toolkit go-imagecustomizer
+	../azure-linux-image-tools/toolkit/tools/imagecustomizer/container/build-container.sh -t imagecustomizer:dev -a arm64
+
+artifacts/ubuntu_amd64.vhdx:
+	curl -LO https://cloud-images.ubuntu.com/releases/server/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img
+	qemu-img convert -O vhdx ubuntu-22.04-server-cloudimg-amd64.img artifacts/ubuntu_amd64.vhdx
+	rm -f ubuntu-22.04-server-cloudimg-amd64.img
+
+artifacts/ubuntu_arm64.vhdx:
+	curl -LO https://cloud-images.ubuntu.com/releases/server/22.04/release/ubuntu-22.04-server-cloudimg-arm64.img
+	qemu-img convert -O vhdx ubuntu-22.04-server-cloudimg-arm64.img artifacts/ubuntu_arm64.vhdx
+	rm -f ubuntu-22.04-server-cloudimg-arm64.img

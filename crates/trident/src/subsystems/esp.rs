@@ -1,6 +1,7 @@
 use std::{
     fs,
     io::Read,
+    ops::ControlFlow,
     path::{Path, PathBuf},
 };
 
@@ -22,7 +23,7 @@ use trident_api::{
         EFI_DEFAULT_BIN_DIRECTORY, EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY,
         ESP_RELATIVE_MOUNT_POINT_PATH, GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
     },
-    error::{ReportError, ServicingError, TridentError, TridentResultExt},
+    error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, ServicingState, ServicingType},
 };
 
@@ -50,7 +51,7 @@ impl Subsystem for EspSubsystem {
         // mounted and initialized.
 
         if !ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
-            deploy_esp(ctx, mount_path).structured(ServicingError::DeployESPImages)?;
+            deploy_esp(ctx, mount_path)?;
         }
 
         Ok(())
@@ -96,22 +97,19 @@ pub fn set_uefi_fallback_contents(
 }
 
 /// Performs file-based deployment of ESP images from the OS image.
-fn deploy_esp(ctx: &EngineContext, mount_point: &Path) -> Result<(), Error> {
+fn deploy_esp(ctx: &EngineContext, mount_point: &Path) -> Result<(), TridentError> {
     trace!("Deploying ESP from OS image");
 
     let os_image = ctx
         .image
         .as_ref()
-        .context("OS image is required to deploy ESP from OS image")?;
+        .structured(ServicingError::DeployESPImages)
+        .message("OS image is required to deploy ESP from OS image")?;
 
     let esp_img = os_image
         .esp_filesystem()
-        .context("Failed to get ESP image from OS image")?;
-
-    let stream = esp_img
-        .image_file
-        .reader()
-        .context("Failed to get reader for ESP image from OS image")?;
+        .structured(ServicingError::DeployESPImages)
+        .message("Failed to get ESP image from OS image")?;
 
     // Extract the ESP image to a temporary file in
     // `<newroot>/ESP_EXTRACTION_DIRECTORY`. This location is generally
@@ -119,23 +117,52 @@ fn deploy_esp(ctx: &EngineContext, mount_point: &Path) -> Result<(), Error> {
     // have to store a potentially large ESP image in memory.
     let esp_extraction_dir = path::join_relative(mount_point, ESP_EXTRACTION_DIRECTORY);
 
-    let (temp_file, computed_sha384) = load_raw_image(
-        &esp_extraction_dir,
-        os_image.source(),
-        HashingReader384::new(stream),
-    )
-    .context("Failed to load raw image")?;
+    let mut found_esp = false;
+    os_image.read_images(|path, stream| {
+        if path != esp_img.image_file.path {
+            return ControlFlow::Continue(());
+        }
 
-    if esp_img.image_file.sha384 != computed_sha384 {
-        bail!(
-            "SHA384 mismatch for disk image {}: expected {}, got {}",
+        found_esp = true;
+        let (temp_file, computed_sha384) = match load_raw_image(
+            ctx,
+            &esp_extraction_dir,
             os_image.source(),
-            esp_img.image_file.sha384,
-            computed_sha384
-        );
+            HashingReader384::new(stream),
+        ) {
+            Ok(r) => r,
+            Err(e) => {
+                return ControlFlow::Break(
+                    Err(e)
+                        .structured(ServicingError::DeployESPImages)
+                        .message("Failed to load raw image"),
+                )
+            }
+        };
+        if esp_img.image_file.sha384 != computed_sha384 {
+            return ControlFlow::Break(
+                Err(TridentError::new(ServicingError::DeployESPImages)).message(format!(
+                    "SHA384 mismatch for disk image {}: expected {}, got {}",
+                    os_image.source(),
+                    esp_img.image_file.sha384,
+                    computed_sha384
+                )),
+            );
+        }
+
+        ControlFlow::Break(
+            copy_file_artifacts(temp_file.path(), ctx, mount_point)
+                .structured(ServicingError::DeployESPImages)
+                .message("Failed to load raw image"),
+        )
+    })?;
+
+    if !found_esp {
+        return Err(TridentError::new(InvalidInputError::CorruptOsImage))
+            .message("ESP filesystem listed in OS image but not present");
     }
 
-    copy_file_artifacts(temp_file.path(), ctx, mount_point)
+    Ok(())
 }
 
 /// Takes in a reader to the raw zstd-compressed ESP image and decompresses it
@@ -145,6 +172,7 @@ fn deploy_esp(ctx: &EngineContext, mount_point: &Path) -> Result<(), Error> {
 ///
 /// It also takes in the URL of the image to be shown in case of errors.
 fn load_raw_image<R>(
+    ctx: &EngineContext,
     esp_extraction_dir: &Path,
     source: &Url,
     reader: R,
@@ -165,8 +193,12 @@ where
     debug!("Extracting ESP image to {}", temp_image_path.display());
 
     // Stream image to the temporary file.
-    let computed_hash = image_streamer::stream_zstd_and_hash(reader, &temp_image_path)
-        .context(format!("Failed to stream ESP image from {source}"))?;
+    let computed_hash = image_streamer::stream_zstd_and_hash(
+        reader,
+        &temp_image_path,
+        ctx.image_zstd_max_window_log(),
+    )
+    .context(format!("Failed to stream ESP image from {source}"))?;
 
     Ok((temp_image, computed_hash))
 }
@@ -264,6 +296,8 @@ fn copy_file_artifacts(
 ///  * For A/B update
 ///    - 'optimistic': use the opposite of the active volume
 ///    - 'conservative': use the active volume (this may be a redundant copy)
+///  * For manual rollback (this should only be called during manual rollback of an A/B update)
+///    - use the opposite of the active volume
 /// 2. During commit, after the target OS boot has been verified, the target OS boot files
 ///    are copied to the UEFI fallback folder.
 ///  * For clean install, no copy is needed as it was done during finalize
@@ -311,6 +345,18 @@ fn find_uefi_fallback_source_dir_name(
                     Some(AbVolumeSelection::VolumeB) => AbVolumeSelection::VolumeB,
                 },
             )),
+            _ => None,
+        },
+        ServicingState::ManualRollbackAbStaged => match ctx.spec.os.uefi_fallback {
+            UefiFallbackMode::Conservative | UefiFallbackMode::Optimistic => {
+                Some(boot::make_esp_dir_name(
+                    ctx.install_index,
+                    match ctx.ab_active_volume {
+                        None | Some(AbVolumeSelection::VolumeB) => AbVolumeSelection::VolumeA,
+                        Some(AbVolumeSelection::VolumeA) => AbVolumeSelection::VolumeB,
+                    },
+                ))
+            }
             _ => None,
         },
         _ => None,
@@ -375,7 +421,7 @@ fn copy_boot_files_for_uefi_fallback(
         source_esp_dir_path.display(),
         uefi_fallback_path.display()
     );
-    simple_copy_boot_files(&source_esp_dir_path, &uefi_fallback_path).context(format!(
+    replace_boot_files(&source_esp_dir_path, &uefi_fallback_path).context(format!(
         "Failed to copy boot files from directory '{}' to directory '{}'",
         source_esp_dir_path.display(),
         uefi_fallback_path.display()
@@ -384,7 +430,7 @@ fn copy_boot_files_for_uefi_fallback(
 }
 
 /// Copies boot files from one folder to another.
-fn simple_copy_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
+pub fn replace_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
     trace!(
         "Copying boot files from '{}' to '{}'",
         from_dir.display(),
@@ -415,24 +461,50 @@ fn simple_copy_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
         })
         .context("Failed to copy files")?;
 
+    // Rename all pre-existing files from to_dir/<filename> to to_dir/<filename>.old
+    fs::read_dir(to_dir)?
+        .collect::<Result<Vec<_>, _>>()?
+        .iter()
+        .try_for_each(|orig_path| {
+            let orig_file_name = orig_path.file_name();
+            let orig_file_name_string = orig_file_name.to_string_lossy();
+            // Skip files that end with .new
+            if !orig_file_name_string.ends_with(".new") {
+                let new_file_name = format!("{orig_file_name_string}.old");
+                let to_path = to_dir.join(new_file_name);
+                fs::rename(orig_path.path(), &to_path).context(format!(
+                    "Failed to rename pre-existing file '{}' to '{}'",
+                    orig_path.path().display(),
+                    to_path.display()
+                ))?;
+                trace!(
+                    "Renamed pre-existing file '{}' to '{}'",
+                    orig_path.path().display(),
+                    to_path.display()
+                );
+            }
+            Ok::<(), Error>(())
+        })
+        .context("Failed to rename pre-existing files")?;
+
     // Rename all copied files from to_dir/<filename>.new to to_dir/<filename>
     fs::read_dir(to_dir)?
         .collect::<Result<Vec<_>, _>>()?
         .iter()
         .try_for_each(|orig_path| {
             let orig_file_name = orig_path.file_name();
+            let orig_file_name_string = orig_file_name.to_string_lossy();
             // Skip files that do not end with .new
-            if orig_file_name.to_string_lossy().ends_with(".new") {
-                let orig_file_name_string = orig_file_name.to_string_lossy();
+            if orig_file_name_string.ends_with(".new") {
                 let new_file_name = orig_file_name_string.trim_end_matches(".new");
                 let to_path = to_dir.join(new_file_name);
                 fs::rename(orig_path.path(), &to_path).context(format!(
-                    "Failed to rename file '{}' to '{}'",
+                    "Failed to rename copied file '{}' to '{}'",
                     orig_path.path().display(),
                     to_path.display()
                 ))?;
                 trace!(
-                    "Renamed file '{}' to '{}'",
+                    "Renamed copied file '{}' to '{}'",
                     orig_path.path().display(),
                     to_path.display()
                 );
@@ -440,6 +512,24 @@ fn simple_copy_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
             Ok::<(), Error>(())
         })
         .context("Failed to rename copied files")?;
+
+    // Remove all preexisting files <filename>.old
+    fs::read_dir(to_dir)?
+        .collect::<Result<Vec<_>, _>>()?
+        .iter()
+        .try_for_each(|orig_path| {
+            let orig_file_name = orig_path.file_name();
+            // Skip files that do not end with .old
+            if orig_file_name.to_string_lossy().ends_with(".old") {
+                fs::remove_file(orig_path.path()).context(format!(
+                    "Failed to remove pre-existing file '{}'",
+                    orig_path.path().display()
+                ))?;
+                trace!("Removed pre-existing file '{}'", orig_path.path().display());
+            }
+            Ok::<(), Error>(())
+        })
+        .context("Failed to remove pre-existing files")?;
     Ok(())
 }
 
@@ -925,6 +1015,30 @@ mod tests {
                 None::<String>, // with Disabled, we do not copy anything
                 "Validate AbUpdateFinalized + Disabled + active volume A ==> None",
             ),
+            (
+                ServicingState::ManualRollbackAbStaged,
+                UefiFallbackMode::Conservative,
+                Some(AbVolumeSelection::VolumeA),
+                ServicingType::ManualRollbackAb,
+                Some("AZLB".to_string()), // in ManualRollbackAbStaged, with 'conservative', copy from inactive volume
+                "Validate ManualRollbackAbStaged + Conservative + active volume A ==> AZLB",
+            ),
+            (
+                ServicingState::ManualRollbackAbStaged,
+                UefiFallbackMode::Optimistic,
+                Some(AbVolumeSelection::VolumeA),
+                ServicingType::ManualRollbackAb,
+                Some("AZLB".to_string()), // in ManualRollbackAbStaged, with 'optimistic', copy from inactive volume
+                "Validate ManualRollbackAbStaged + Optimistic + active volume A ==> AZLB",
+            ),
+            (
+                ServicingState::ManualRollbackAbStaged,
+                UefiFallbackMode::Disabled,
+                Some(AbVolumeSelection::VolumeA),
+                ServicingType::ManualRollbackAb,
+                None::<String>, // with Disabled, we do not copy anything
+                "Validate ManualRollbackAbStaged + Disabled + active volume A ==> None",
+            ),
         ];
         for test_case in test_cases {
             ctx.spec.os.uefi_fallback = test_case.1;
@@ -1066,7 +1180,7 @@ mod tests {
     }
 
     #[test]
-    fn test_simple_copy_boot_files() {
+    fn test_replace_boot_files() {
         let from_dir = TempDir::new().unwrap();
         let to_dir = TempDir::new().unwrap();
 
@@ -1096,7 +1210,7 @@ mod tests {
         }
 
         // Call the function to copy files
-        simple_copy_boot_files(from_dir.path(), to_dir.path()).unwrap();
+        replace_boot_files(from_dir.path(), to_dir.path()).unwrap();
 
         // Verify that files have been copied and renamed correctly
         for (file_name, _content) in &file_infos {
@@ -1111,19 +1225,10 @@ mod tests {
             );
         }
 
-        // Verify that existing files that were not in from_dir are unchanged
-        for (file_name, content) in &existing_file_infos {
+        // Verify that existing files that were not in from_dir are removed
+        for (file_name, _) in &existing_file_infos {
             if !file_infos.iter().any(|(f, _)| f == file_name) {
-                let mut file_content = String::new();
-                File::open(to_dir.path().join(file_name))
-                    .unwrap()
-                    .read_to_string(&mut file_content)
-                    .unwrap();
-                assert_eq!(
-                    file_content.trim(),
-                    *content,
-                    "Content of existing file {file_name} does not match"
-                );
+                assert!(!to_dir.path().join(file_name).exists());
             }
         }
     }

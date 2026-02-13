@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"runtime"
 	"tridenttools/pkg/netlaunch"
 	"tridenttools/pkg/ref"
 	"tridenttools/pkg/virtdeploy"
@@ -107,6 +108,7 @@ func (c *CreateOneCmd) Run() error {
 				EmulatedTPM: !c.NoTpm,
 				OsDiskPath:  c.OsDisk,
 				CloudInit:   cloudInitConfig,
+				Arch:        runtime.GOARCH,
 			},
 		},
 	})

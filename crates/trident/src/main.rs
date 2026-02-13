@@ -1,39 +1,20 @@
-use std::{fs, iter, panic, path::PathBuf, process::ExitCode};
+use std::{fs, iter, panic, process::ExitCode};
 
 use anyhow::{Context, Error};
 use clap::Parser;
 use log::{error, info, LevelFilter, Log};
 
 use trident::{
-    cli::{self, Cli, Commands, GetKind},
-    offline_init, validation, BackgroundLog, DataStore, ExitKind, LogFilter, LogForwarder,
-    Logstream, MultiLogger, TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
+    agentconfig::AgentConfig,
+    cli::{self, Cli, Commands, GetKind, TridentExitCodes},
+    manual_rollback::{self, utils::ManualRollbackRequestKind},
+    offline_init, validation, BackgroundLog, BackgroundUploader, DataStore, ExitKind, LogFilter,
+    LogForwarder, Logstream, MultiLogger, TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
 };
 use trident_api::{
     config::HostConfigurationSource,
-    constants::{AGENT_CONFIG_PATH, TRIDENT_DATASTORE_PATH_DEFAULT},
     error::{InternalError, InvalidInputError, TridentError, TridentResultExt},
 };
-
-struct AgentConfig {
-    datastore: PathBuf,
-}
-
-fn load_agent_config() -> Result<AgentConfig, TridentError> {
-    let mut config = AgentConfig {
-        datastore: TRIDENT_DATASTORE_PATH_DEFAULT.into(),
-    };
-
-    if let Ok(contents) = std::fs::read_to_string(AGENT_CONFIG_PATH) {
-        for line in contents.lines() {
-            if let Some(path) = line.strip_prefix("DatastorePath=") {
-                config.datastore = path.trim().into();
-            }
-        }
-    }
-
-    Ok(config)
-}
 
 fn run_trident(
     mut logstream: Logstream,
@@ -71,11 +52,12 @@ fn run_trident(
         }
 
         Commands::Get { kind, outfile } => {
-            return Trident::get(&load_agent_config()?.datastore, outfile, *kind)
+            return Trident::get(AgentConfig::load()?.datastore_path(), outfile, *kind)
                 .message("Failed to retrieve Host Status")
                 .map(|()| ExitKind::Done);
         }
 
+        // Handle diagnose command
         Commands::Diagnose {
             output,
             journal,
@@ -84,6 +66,23 @@ fn run_trident(
             return Trident::diagnose(output, *journal, *selinux)
                 .message("Failed to generate diagnostics")
                 .map(|()| ExitKind::Done);
+        }
+
+        // Handle manual rollback check here so root is not required for --check
+        Commands::Rollback {
+            check: true,
+            ab,
+            runtime,
+            ..
+        } => {
+            let datastore = DataStore::open_or_create(AgentConfig::load()?.datastore_path())
+                .message("Failed to open datastore")?;
+            return manual_rollback::check_rollback(
+                &datastore,
+                ManualRollbackRequestKind::from_flags(*runtime, *ab)?,
+            )
+            .message("Failed to check manual rollback availability")
+            .map(|()| ExitKind::Done);
         }
 
         Commands::StartNetwork { config } => {
@@ -96,50 +95,6 @@ fn run_trident(
                 .map(|()| ExitKind::Done);
         }
 
-        #[cfg(feature = "dangerous-options")]
-        Commands::StreamImage {
-            image,
-            hash,
-            status,
-            error,
-            ..
-        } => {
-            use std::io::Write;
-            use trident_api::error::ReportError;
-
-            let config = trident::stream::config_from_image_url(image.clone(), hash)
-                .message("Failed to generate Host Configuration from image URL")?;
-
-            // Write config to a temporary file
-            let file = tempfile::NamedTempFile::new()
-                .structured(InternalError::Internal("serialize host config"))?;
-            file.as_file()
-                .write_all(
-                    serde_yaml::to_string(&config)
-                        .structured(InternalError::Internal("serialize host config"))?
-                        .as_bytes(),
-                )
-                .structured(InternalError::Internal("serialize host config"))?;
-
-            return run_trident(
-                logstream,
-                tracestream,
-                &Cli {
-                    command: Commands::Install {
-                        config: file.path().to_path_buf(),
-                        allowed_operations: vec![
-                            trident::cli::AllowedOperation::Stage,
-                            trident::cli::AllowedOperation::Finalize,
-                        ],
-                        status: status.clone(),
-                        error: error.clone(),
-                        multiboot: false,
-                    },
-                    verbosity: args.verbosity,
-                },
-            );
-        }
-
         _ => (),
     }
 
@@ -148,7 +103,8 @@ fn run_trident(
             Commands::Install { status, error, .. }
             | Commands::Update { status, error, .. }
             | Commands::Commit { status, error }
-            | Commands::RebuildRaid { status, error, .. } => {
+            | Commands::RebuildRaid { status, error, .. }
+            | Commands::Rollback { status, error, .. } => {
                 let config_path = match &args.command {
                     Commands::Update { config, .. } | Commands::Install { config, .. } => {
                         Some(config.clone())
@@ -166,10 +122,10 @@ fn run_trident(
                     }
                 }
 
-                let agent_config = load_agent_config()?;
+                let agent_config = AgentConfig::load()?;
                 // For non-install commands, we expect the datastore to exist
                 if !matches!(args.command, Commands::Install { .. })
-                    && !agent_config.datastore.exists()
+                    && !agent_config.datastore_path().exists()
                 {
                     return Err(TridentError::new(InvalidInputError::HostNotProvisioned))
                         .message("Datastore file does not exist");
@@ -177,7 +133,7 @@ fn run_trident(
 
                 let mut trident = Trident::new(
                     config_path.map(HostConfigurationSource::File),
-                    &agent_config.datastore,
+                    agent_config.datastore_path(),
                     logstream,
                     tracestream,
                 )
@@ -187,7 +143,7 @@ fn run_trident(
                 // measuring Trident reboot times
                 tracing::info!(metric_name = "trident_start");
 
-                let mut datastore = DataStore::open_or_create(&agent_config.datastore)
+                let mut datastore = DataStore::open_or_create(agent_config.datastore_path())
                     .message("Failed to open datastore")?;
 
                 // Execute the command
@@ -200,12 +156,24 @@ fn run_trident(
                         &mut datastore,
                         cli::to_operations(allowed_operations),
                         multiboot,
+                        None,
                     ),
                     Commands::Update {
                         ref allowed_operations,
                         ..
                     } => trident.update(&mut datastore, cli::to_operations(allowed_operations)),
                     Commands::Commit { .. } => trident.commit(&mut datastore),
+                    Commands::Rollback {
+                        runtime,
+                        ab,
+                        ref allowed_operations,
+                        ..
+                    } => trident.rollback(
+                        &mut datastore,
+                        runtime,
+                        ab,
+                        cli::to_operations(allowed_operations),
+                    ),
                     Commands::RebuildRaid { .. } => trident
                         .rebuild_raid(&mut datastore)
                         .map(|()| ExitKind::Done),
@@ -214,8 +182,9 @@ fn run_trident(
 
                 // Return Host Status if requested
                 if status.is_some() {
-                    if let Err(e) = Trident::get(&agent_config.datastore, status, GetKind::Status)
-                        .message("Failed to retrieve Host Status")
+                    if let Err(e) =
+                        Trident::get(agent_config.datastore_path(), status, GetKind::Status)
+                            .message("Failed to retrieve Host Status")
                     {
                         error!("{e:?}");
                     }
@@ -246,9 +215,10 @@ fn run_trident(
 
 fn setup_logging(
     args: &Cli,
+    uploader: &BackgroundUploader,
     additional_loggers: impl Iterator<Item = Box<dyn Log>>,
 ) -> Result<Logstream, Error> {
-    let logstream = Logstream::create();
+    let logstream = Logstream::create(uploader.get_handle().context("Uploader is closed")?);
 
     // Set up the multilogger
     let mut multilogger = MultiLogger::new()
@@ -258,7 +228,9 @@ fn setup_logging(
         .with_global_filter("reqwest", LevelFilter::Debug)
         // Filter out debug logs from h2, some of which have target "tracing::span"
         .with_global_filter("tracing::span", LevelFilter::Error)
-        .with_global_filter("h2", LevelFilter::Error);
+        .with_global_filter("h2", LevelFilter::Error)
+        // Filter out this very noisy module that logs a lot when logstream is active.
+        .with_global_filter("hyper_util::client", LevelFilter::Info);
 
     // Attempt to use the systemd journal if stderr is directly connected to it, and otherwise fall
     // back to env_logger.
@@ -284,6 +256,7 @@ fn setup_logging(
             | Commands::Update { .. }
             | Commands::Commit { .. }
             | Commands::RebuildRaid { .. }
+            | Commands::Rollback { .. }
     ) {
         multilogger.add_logger(BackgroundLog::new(TRIDENT_BACKGROUND_LOG_PATH).into_logger());
     }
@@ -308,6 +281,7 @@ fn setup_tracing(args: &Cli) -> Result<TraceStream, Error> {
             | Commands::Update { .. }
             | Commands::Commit { .. }
             | Commands::RebuildRaid { .. }
+            | Commands::Rollback { .. }
     ) {
         // Set up the trace sender
         let trace_sender = tracestream
@@ -327,11 +301,21 @@ fn main() -> ExitCode {
     // Parse args
     let args = Cli::parse();
 
+    let bg_uploader = match BackgroundUploader::new() {
+        Ok(uploader) => uploader,
+        Err(e) => {
+            // Defer to stderr since logging is not yet initialized.
+            eprintln!("Failed to initialize background uploader: {e:?}");
+            return TridentExitCodes::SetupFailed.into();
+        }
+    };
+
     // Initialize the telemetry flow
     let tracestream = setup_tracing(&args);
     if let Err(e) = tracestream {
-        error!("Failed to initialize tracing: {e:?}");
-        return ExitCode::from(1);
+        // Defer to stderr since logging is not yet initialized.
+        eprintln!("Failed to initialize tracing: {e:?}");
+        return TridentExitCodes::SetupFailed.into();
     }
 
     if let Commands::Daemon {
@@ -343,6 +327,7 @@ fn main() -> ExitCode {
         // Initialize the loggers
         let logstream = setup_logging(
             &args,
+            &bg_uploader,
             [LogFilter::new(log_forwarder.new_logger())
                 .with_global_filter("trident::server", LevelFilter::Off)
                 .with_global_filter("tonic", LevelFilter::Error)
@@ -352,16 +337,38 @@ fn main() -> ExitCode {
         );
         if let Err(e) = logstream {
             error!("Failed to initialize logging: {e:?}");
-            return ExitCode::from(1);
+            return TridentExitCodes::SetupFailed.into();
         }
 
-        trident::server_main(log_forwarder, *inactivity_timeout, socket_path)
-    } else {
-        // Initialize the loggers
-        let logstream = setup_logging(&args, iter::empty());
+        // Log version on startup
+        info!("Trident version: {}", trident::TRIDENT_VERSION);
+
+        trident::server_main(
+            log_forwarder,
+            *inactivity_timeout,
+            socket_path,
+            logstream.unwrap(),
+            tracestream.unwrap(),
+        )
+    } else if let Commands::GrpcClient(client_args) = &args.command {
+        let logstream = setup_logging(&args, &bg_uploader, iter::empty());
         if let Err(e) = logstream {
             error!("Failed to initialize logging: {e:?}");
-            return ExitCode::from(1);
+            return TridentExitCodes::SetupFailed.into();
+        }
+
+        if let Err(e) = logstream.unwrap().try_initialize_from_env() {
+            error!("Failed to initialize logstream from environment: {e:?}");
+        }
+
+        // Run the client command
+        trident::client_main(client_args)
+    } else {
+        // Initialize the loggers
+        let logstream = setup_logging(&args, &bg_uploader, iter::empty());
+        if let Err(e) = logstream {
+            error!("Failed to initialize logging: {e:?}");
+            return TridentExitCodes::SetupFailed.into();
         }
 
         // Invoke Trident
@@ -369,15 +376,16 @@ fn main() -> ExitCode {
             Ok(ExitKind::Done) => {}
             Err(e) => {
                 error!("{e:?}");
-                return ExitCode::from(2);
+                return TridentExitCodes::Failed.into();
             }
             Ok(ExitKind::NeedsReboot) => {
-                if let Err(e) = trident::reboot() {
+                if let Err(e) = trident::request_reboot_with_wait() {
                     error!("Failed to reboot: {e:?}");
-                    return ExitCode::from(3);
+                    return TridentExitCodes::RebootUnsuccessful.into();
                 }
             }
         }
-        ExitCode::SUCCESS
+
+        TridentExitCodes::Success.into()
     }
 }

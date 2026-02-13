@@ -394,6 +394,7 @@ mod functional_test {
                 id: "1".to_string(),
                 partition_type: DiscoverablePartitionType::Root,
                 label: Some("encrypted_partition".to_string()),
+                uuid: None,
                 size_min_bytes: Some(50 * 1048576),
                 size_max_bytes: Some(100 * 1048576),
             }]);
@@ -520,6 +521,7 @@ mod functional_test {
                 id: "1".to_string(),
                 partition_type: DiscoverablePartitionType::Root,
                 label: Some("encrypted_partition".to_string()),
+                uuid: None,
                 size_min_bytes: Some(50 * 1048576),  // 50 MiB
                 size_max_bytes: Some(100 * 1048576), // 100 MiB
             }]);

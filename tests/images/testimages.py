@@ -25,9 +25,37 @@ DEFAULT_IMAGE_CUSTOMIZER_VERSION = "0.19"
 
 DEFINED_IMAGES: List[ImageConfig] = [
     ImageConfig(
+        "trident-direct-streaming-installer-amd64",
+        config="trident-installer",
+        config_file="base/baseimg-direct-streaming.yaml",
+        output_format=OutputFormat.ISO,
+    ),
+    ImageConfig(
+        "trident-direct-streaming-installer-arm64",
+        config="trident-installer",
+        config_file="base/baseimg-direct-streaming.yaml",
+        output_format=OutputFormat.ISO,
+        base_image=BaseImage.CORE_ARM64,
+        architecture=SystemArchitecture.ARM64,
+    ),
+    ImageConfig(
         "trident-functest",
         output_format=OutputFormat.QCOW2,
         requires_trident=False,
+    ),
+    ImageConfig(
+        "azurelinux-direct-streaming-testimage-amd64",
+        config="azurelinux-direct-streaming-testimage",
+        config_file="base/baseimg.yaml",
+        output_format=OutputFormat.BAREMETAL_IMAGE,
+    ),
+    ImageConfig(
+        "azurelinux-direct-streaming-testimage-arm64",
+        config="azurelinux-direct-streaming-testimage",
+        config_file="base/baseimg.yaml",
+        output_format=OutputFormat.BAREMETAL_IMAGE,
+        base_image=BaseImage.CORE_ARM64,
+        architecture=SystemArchitecture.ARM64,
     ),
     ImageConfig(
         "azl-installer",
@@ -91,6 +119,21 @@ DEFINED_IMAGES: List[ImageConfig] = [
         ssh_key="files/id_rsa.pub",
         architecture=SystemArchitecture.ARM64,
     ),
+    ImageConfig(
+        "ubuntu-direct-streaming-testimage-amd64",
+        config="ubuntu-direct-streaming-testimage",
+        config_file="base/baseimg.yaml",
+        base_image=BaseImage.UBUNTU_AMD64,
+        output_format=OutputFormat.BAREMETAL_IMAGE,
+    ),
+    ImageConfig(
+        "ubuntu-direct-streaming-testimage-arm64",
+        config="ubuntu-direct-streaming-testimage",
+        config_file="base/baseimg.yaml",
+        base_image=BaseImage.UBUNTU_ARM64,
+        output_format=OutputFormat.BAREMETAL_IMAGE,
+        architecture=SystemArchitecture.ARM64,
+    ),
 ]
 
 ARTIFACTS = ArtifactManifest(
@@ -100,6 +143,11 @@ ARTIFACTS = ArtifactManifest(
         BaseImageManifest(
             image=BaseImage.BAREMETAL,
             package_name="baremetal_vhdx-3.0-stable",
+            version="*",
+        ),
+        BaseImageManifest(
+            image=BaseImage.CORE_ARM64,
+            package_name="core_vhdx-arm64-3.0-stable",
             version="*",
         ),
         BaseImageManifest(

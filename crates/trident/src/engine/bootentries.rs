@@ -114,7 +114,10 @@ pub fn create_and_update_boot_variables(
     set_boot_next_and_update_boot_order(ctx, added_entry_numbers)?;
 
     if uki::is_staged(esp_path) {
-        let oneshot = ctx.servicing_type != ServicingType::CleanInstall;
+        let oneshot = !matches!(
+            ctx.servicing_type,
+            ServicingType::CleanInstall | ServicingType::ManualRollbackAb
+        );
         uki::update_uki_boot_order(ctx, esp_path, oneshot)?;
     }
 
@@ -166,8 +169,12 @@ pub fn set_boot_next_and_update_boot_order(
             // have boot entries start disappearing again.
             update_boot_order(entry_numbers, &BootOrderPosition::Last)
                 .structured(ServicingError::UpdateBootOrder)?;
-        } else if ctx.servicing_type == ServicingType::CleanInstall && !use_virtdeploy_workaround {
-            // During clean install, immediately set the bootorder to use the new entry.
+        } else if matches!(
+            ctx.servicing_type,
+            ServicingType::CleanInstall | ServicingType::ManualRollbackAb
+        ) && !use_virtdeploy_workaround
+        {
+            // During clean install or manual rollback, immediately set the bootorder to use the new entry.
             update_boot_order(entry_numbers, &BootOrderPosition::First)
                 .structured(ServicingError::UpdateBootOrder)?;
         }
@@ -849,11 +856,15 @@ mod tests {
                                 id: "esp1".into(),
                                 size: PartitionSize::from_str("512M").unwrap(),
                                 partition_type: PartitionType::Esp,
+                                uuid: None,
+                                label: None,
                             },
                             Partition {
                                 id: "esp2".into(),
                                 size: PartitionSize::from_str("512M").unwrap(),
                                 partition_type: PartitionType::Esp,
+                                uuid: None,
+                                label: None,
                             },
                         ],
                         ..Default::default()
@@ -899,6 +910,8 @@ mod tests {
                             id: "esp".into(),
                             size: PartitionSize::from_str("512M").unwrap(),
                             partition_type: PartitionType::Esp,
+                            uuid: None,
+                            label: None,
                         }],
                         ..Default::default()
                     }],
@@ -1409,6 +1422,8 @@ mod functional_test {
                                 id: "esp1".into(),
                                 size: PartitionSize::from_str("512M").unwrap(),
                                 partition_type: PartitionType::Esp,
+                                uuid: None,
+                                label: None,
                             }],
                             ..Default::default()
                         },
@@ -1419,6 +1434,8 @@ mod functional_test {
                                 id: "esp2".into(),
                                 size: PartitionSize::from_str("512M").unwrap(),
                                 partition_type: PartitionType::Esp,
+                                uuid: None,
+                                label: None,
                             }],
                             ..Default::default()
                         },

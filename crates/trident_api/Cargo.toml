@@ -39,9 +39,6 @@ indoc = { workspace = true }
 maplit = { workspace = true }
 
 [features]
-# Enables sysupdate-specific configurations
-sysupdate = []
-
 # Enables dangerous options such as plaintext passwords
 dangerous-options = []
 

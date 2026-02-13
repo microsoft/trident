@@ -482,11 +482,15 @@ mod tests {
                         id: "root-data".into(),
                         partition_type: PartitionType::Root,
                         size: PartitionSize::from_str("1G").unwrap(),
+                        uuid: None,
+                        label: None,
                     },
                     Partition {
                         id: "root-hash".into(),
                         partition_type: PartitionType::RootVerity,
                         size: PartitionSize::from_str("512M").unwrap(),
+                        uuid: None,
+                        label: None,
                     },
                 ],
                 ..Default::default()

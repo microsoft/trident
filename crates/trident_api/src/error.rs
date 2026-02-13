@@ -142,6 +142,12 @@ pub enum InternalError {
 
     #[error("Failed to wait for 'systemd-networkd'")]
     WaitForSystemdNetworkd,
+
+    #[error("Derived Host Configuration is invalid: {inner}")]
+    DerivedHostConfigurationInvalid {
+        #[from]
+        inner: HostConfigurationStaticValidationError,
+    },
 }
 
 /// Identifies errors that occur when the user provides an invalid input.
@@ -156,6 +162,9 @@ pub enum InvalidInputError {
         install was intended, re-run with the --multiboot flag"
     )]
     CleanInstallOnProvisionedHost,
+
+    #[error("The provided OS image file is corrupt")]
+    CorruptOsImage,
 
     #[error(
         "Filesystem mounted at '{mount_point}' requires at least {} [{fs_size} bytes] of storage. \
@@ -187,6 +196,9 @@ pub enum InvalidInputError {
     #[error("Image contains invalid agent configuration")]
     ImageBadAgentConfiguration,
 
+    #[error("Invalid boot configuration")]
+    InvalidBootConfiguration,
+
     #[error("Host Configuration failed dynamic validation: {inner}")]
     InvalidHostConfigurationDynamic {
         #[from]
@@ -205,8 +217,17 @@ pub enum InvalidInputError {
     #[error("Invalid --lazy-partitions provided")]
     InvalidLazyPartition,
 
+    #[error("Invalid rollback expectation: '{reason}'")]
+    InvalidRollbackExpectation { reason: String },
+
+    #[error("Invalid state for rollback: '{reason}'")]
+    InvalidRollbackState { reason: String },
+
     #[error("Failed to load COSI file from '{url}'")]
     LoadCosi { url: Url },
+
+    #[error("Failed to derive Host Configuration from OS image")]
+    DeriveHostConfiguration,
 
     #[error("Failed to load Host Configuration file from '{path}'")]
     LoadHostConfigurationFile { path: String },
@@ -239,7 +260,7 @@ pub enum InvalidInputError {
     MissingOsImageFilesystem { mount_point: String },
 
     #[error(
-        "A multiboot install was requested, but the provided Host Configuration does not include 
+        "A multiboot install was requested, but the provided Host Configuration does not include
         any adopted partitions."
     )]
     MultibootWithoutAdoptedPartitions,
@@ -530,6 +551,15 @@ pub enum ServicingError {
     #[error("Failed to list boot entries via efibootmgr or parse them")]
     ListAndParseBootEntries,
 
+    #[error(
+        "Manual rollback failed as host booted from '{root_device_path}' instead of the expected device \
+        '{expected_device_path}'"
+    )]
+    ManualRollbackRebootCheck {
+        root_device_path: String,
+        expected_device_path: String,
+    },
+
     #[error("Failed to mount execroot binary")]
     MountExecrootBinary,
 
@@ -580,6 +610,9 @@ pub enum ServicingError {
 
     #[error("Failed to remove the pre-existing pcrlock policy")]
     RemovePcrlockPolicy,
+
+    #[error("Failed to execute rollback: {message}")]
+    ManualRollback { message: &'static str },
 
     #[error(
         "Failed to match current root device path '{root_device_path}' to either root volume A \
@@ -675,6 +708,9 @@ pub enum DatastoreError {
     #[error("Failed to open new datastore")]
     OpenDatastore,
 
+    #[error("Failed to read from datastore")]
+    ReadDatastore,
+
     #[error("Failed to write to datastore as it is closed")]
     WriteToClosedDatastore,
 
@@ -709,6 +745,9 @@ pub enum UnsupportedConfigurationError {
 
     #[error("Disk partition(s) no longer exist on system: {partition_ids:?}")]
     PartitionsRemoved { partition_ids: Vec<String> },
+
+    #[error("No suitable disk found for installation")]
+    NoSuitableDisk,
 }
 
 /// Describes different categories of structured errors that can occur in Trident.
@@ -1000,15 +1039,15 @@ impl From<&ErrorKind> for HarpoonTridentErrorKind {
     fn from(kind: &ErrorKind) -> Self {
         match kind {
             ErrorKind::ExecutionEnvironmentMisconfiguration(_) => {
-                HarpoonTridentErrorKind::ExecutionEnvironmentMisconfiguration
+                HarpoonTridentErrorKind::ExecutionEnvironmentMisconfigurationError
             }
-            ErrorKind::HealthChecks(_) => HarpoonTridentErrorKind::HealthChecks,
-            ErrorKind::Initialization(_) => HarpoonTridentErrorKind::Initialization,
-            ErrorKind::Internal(_) => HarpoonTridentErrorKind::Internal,
-            ErrorKind::InvalidInput(_) => HarpoonTridentErrorKind::InvalidInput,
-            ErrorKind::Servicing(_) => HarpoonTridentErrorKind::Servicing,
+            ErrorKind::HealthChecks(_) => HarpoonTridentErrorKind::HealthChecksError,
+            ErrorKind::Initialization(_) => HarpoonTridentErrorKind::InitializationError,
+            ErrorKind::Internal(_) => HarpoonTridentErrorKind::InternalError,
+            ErrorKind::InvalidInput(_) => HarpoonTridentErrorKind::InvalidInputError,
+            ErrorKind::Servicing(_) => HarpoonTridentErrorKind::ServicingError,
             ErrorKind::UnsupportedConfiguration(_) => {
-                HarpoonTridentErrorKind::UnsupportedConfiguration
+                HarpoonTridentErrorKind::UnsupportedConfigurationError
             }
         }
     }

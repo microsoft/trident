@@ -4,45 +4,61 @@ go 1.24.0
 
 toolchain go1.24.2
 
-// Deal with CVE-2024-45338, CVE-2025-22870, CVE-2025-22872
-replace golang.org/x/net => golang.org/x/net v0.39.0
-
 require (
 	github.com/bmc-toolbox/bmclib/v2 v2.0.1-0.20230530141715-da28e42c453f
 	github.com/digitalocean/go-libvirt v0.0.0-20250512231903-57024326652b
 	github.com/dustin/go-humanize v1.0.1
 	github.com/fatih/color v1.18.0
 	github.com/google/uuid v1.6.0
-	github.com/microsoft/storm v0.3.0
+	github.com/knqyf263/go-rpmdb v0.1.1
+	github.com/microsoft/storm v0.4.0-alpha1
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/sftp v1.13.9
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/viper v1.19.0
+	google.golang.org/grpc v1.78.0
+	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v2 v2.4.0
 	libvirt.org/go/libvirtxml v1.11007.0
 	libvirt.org/libvirt-go-xml v7.4.0+incompatible
+	modernc.org/sqlite v1.20.3
 	oras.land/oras-go/v2 v2.6.0
 )
 
 require (
 	github.com/jstemmer/go-junit-report/v2 v2.1.0 // indirect
+	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
+	github.com/remyoudompheng/bigfft v0.0.0-20230126093431-47fa9a501578 // indirect
 	github.com/rogpeppe/go-internal v1.12.0 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
+	golang.org/x/mod v0.29.0 // indirect
 	golang.org/x/sync v0.18.0 // indirect
+	golang.org/x/tools v0.38.0 // indirect
+	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20251029180050-ab9386a59fda // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
+	lukechampine.com/uint128 v1.2.0 // indirect
+	modernc.org/cc/v3 v3.40.0 // indirect
+	modernc.org/ccgo/v3 v3.16.13 // indirect
+	modernc.org/libc v1.22.2 // indirect
+	modernc.org/mathutil v1.5.0 // indirect
+	modernc.org/memory v1.5.0 // indirect
+	modernc.org/opt v0.1.3 // indirect
+	modernc.org/strutil v1.1.3 // indirect
+	modernc.org/token v1.0.1 // indirect
 )
 
 require (
 	github.com/Jeffail/gabs/v2 v2.7.0
 	github.com/VictorLowther/simplexml v0.0.0-20180716164440-0bff93621230 // indirect
 	github.com/VictorLowther/soap v0.0.0-20150314151524-8e36fca84b22 // indirect
-	github.com/alecthomas/kong v1.8.1
+	github.com/alecthomas/kong v1.12.1
 	github.com/bmc-toolbox/common v0.0.0-20240806132831-ba8adc6a35e3 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
-	github.com/go-logr/logr v1.4.2 // indirect
+	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect

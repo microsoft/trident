@@ -3,10 +3,10 @@ package check
 import (
 	"time"
 
-	stormenv "tridenttools/storm/utils/env"
 	stormretry "tridenttools/storm/utils/retry"
 	stormsshclient "tridenttools/storm/utils/ssh/client"
 	stormsshconfig "tridenttools/storm/utils/ssh/config"
+	"tridenttools/storm/utils/trident"
 	stormtrident "tridenttools/storm/utils/trident"
 
 	"github.com/microsoft/storm"
@@ -15,7 +15,7 @@ import (
 
 func CheckTridentService(
 	sshClientArgs stormsshconfig.SshCliSettings,
-	envArgs stormenv.EnvCliSettings,
+	runtime trident.RuntimeType,
 	expectSuccessfulCommit bool,
 	timeout time.Duration,
 	tc storm.TestCase) error {
@@ -40,7 +40,7 @@ func CheckTridentService(
 
 			// Enable tests to handle success and failure of commit service
 			// depending on configuration
-			err = stormtrident.CheckTridentService(client, envArgs.Env, time.Until(endTime), expectSuccessfulCommit)
+			err = stormtrident.CheckTridentService(client, runtime, time.Until(endTime), expectSuccessfulCommit)
 			if err != nil {
 				logrus.Warnf("Trident service is not in expected state: %s", err)
 				return nil, err

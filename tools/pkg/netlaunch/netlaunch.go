@@ -10,16 +10,21 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"tridenttools/pkg/isopatcher"
-	"tridenttools/pkg/netfinder"
-	"tridenttools/pkg/phonehome"
-	stormutils "tridenttools/storm/utils"
 
 	"github.com/bmc-toolbox/bmclib/v2"
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 	"github.com/stmcginnis/gofish/redfish"
 	"gopkg.in/yaml.v2"
+
+	"tridenttools/pkg/harpoon"
+	"tridenttools/pkg/harpoon/harpoonpbv1"
+	"tridenttools/pkg/isopatcher"
+	"tridenttools/pkg/netfinder"
+	"tridenttools/pkg/phonehome"
+	rcpclient "tridenttools/pkg/rcp/client"
+	"tridenttools/pkg/rcp/tlscerts"
+	stormutils "tridenttools/storm/utils"
 )
 
 func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
@@ -34,6 +39,7 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 	if err != nil {
 		return fmt.Errorf("failed to open port listening on '%s': %v", localListenAddress, err)
 	}
+	defer listen.Close()
 
 	// Find the port we're listening on
 	var announcePort string
@@ -43,12 +49,29 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 		announcePort = strings.Split(listen.Addr().String(), ":")[1]
 	}
 
+	// When enabled, set up RCP listener.
+	var rcpListener *rcpclient.RcpListener
+	if config.Rcp != nil && config.Rcp.GrpcMode {
+		port := uint16(0)
+		if config.Rcp.ListenPort != nil {
+			port = *config.Rcp.ListenPort
+		}
+
+		rcpListener, err = rcpclient.ListenAndAccept(ctx, tlscerts.ServerCertProvider, port)
+		if err != nil {
+			return fmt.Errorf("failed to start RCP listener: %w", err)
+		}
+		defer rcpListener.Close()
+		log.WithField("port", rcpListener.Port).Info("RCP listener started")
+	}
+
 	// Do we expect Trident to reach back? If so we need to listen to it.
 	// If we have a specified port, we assume that the intent is that Trident will reach back.
 	enable_phonehome_listening := config.ListenPort != 0
 
 	result := make(chan phonehome.PhoneHomeResult)
-	server := &http.Server{}
+	mux := http.NewServeMux()
+	server := &http.Server{Handler: mux}
 
 	// Create the final address that will be announced to the BMC and Trident.
 	var announceIp string
@@ -88,6 +111,8 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 	terminateCtx, terminateFunc := context.WithCancel(ctx)
 	defer terminateFunc()
 
+	var finalHostConfigurationYaml string
+
 	// If we have a Trident config file, we need to patch it into the ISO.
 	if len(config.HostConfigFile) != 0 {
 		log.Info("Using Trident config file: ", config.HostConfigFile)
@@ -105,20 +130,51 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 			return fmt.Errorf("failed to unmarshal Trident config: %w", err)
 		}
 
-		if _, ok := trident["trident"]; !ok {
-			trident["trident"] = make(map[interface{}]interface{})
-		}
-		trident["trident"].(map[interface{}]interface{})["phonehome"] = fmt.Sprintf("http://%s/phonehome", announceAddress)
-		trident["trident"].(map[interface{}]interface{})["logstream"] = fmt.Sprintf("http://%s/logstream", announceAddress)
+		logstreamAddress := fmt.Sprintf("http://%s/logstream", announceAddress)
 
-		tridentConfig, err := yaml.Marshal(trident)
-		if err != nil {
-			return fmt.Errorf("failed to marshal Trident config: %w", err)
+		// Add phonehome & logstream config ONLY when NOT in gRPC RCP mode
+		if !config.IsGrpcMode() {
+			if _, ok := trident["trident"]; !ok {
+				trident["trident"] = make(map[interface{}]interface{})
+			}
+			trident["trident"].(map[interface{}]interface{})["phonehome"] = fmt.Sprintf("http://%s/phonehome", announceAddress)
+			trident["trident"].(map[interface{}]interface{})["logstream"] = logstreamAddress
 		}
 
-		err = isopatcher.PatchFile(iso, "/etc/trident/config.yaml", tridentConfig)
-		if err != nil {
-			return fmt.Errorf("failed to patch Trident config into ISO: %w", err)
+		// Patch the ISO Host Configuration file unless this is a stream-image test, where
+		// the Host Configuration file is not expected to be present.
+		if config.Rcp == nil || !config.Rcp.UseStreamImage {
+			tridentConfig, err := yaml.Marshal(trident)
+			if err != nil {
+				return fmt.Errorf("failed to marshal Trident config: %w", err)
+			}
+
+			// Store the modified trident config for later use
+			finalHostConfigurationYaml = string(tridentConfig)
+
+			err = isopatcher.PatchFile(iso, "/etc/trident/config.yaml", tridentConfig)
+			if err != nil {
+				return fmt.Errorf("failed to patch Trident config into ISO: %w", err)
+			}
+		}
+
+		if config.Rcp != nil {
+			var extraRcpAgentFiles []rcpAgentFileDownload
+			if config.Rcp.UseStreamImage {
+				overrideFile, err := makeStreamImageOverrideFileDownload(trident, logstreamAddress)
+				if err != nil {
+					return fmt.Errorf("failed to create stream image override file download: %w", err)
+				}
+
+				extraRcpAgentFiles = append(extraRcpAgentFiles, overrideFile)
+			}
+			// Populate RCP agent config into the ISO. This handles both CLI and
+			// GRPC modes, where rcpListener == nil and rcpListener != nil
+			// respectively.
+			err = injectRcpAgentConfig(mux, announceIp, announceAddress, iso, rcpListener, *config.Rcp, extraRcpAgentFiles...)
+			if err != nil {
+				return fmt.Errorf("failed to inject RCP agent config into ISO: %w", err)
+			}
 		}
 
 		if config.Iso.PreTridentScript != nil {
@@ -137,7 +193,7 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 			}
 		}
 
-		http.HandleFunc("/provision.iso", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/provision.iso", func(w http.ResponseWriter, r *http.Request) {
 			isoLogFunc(r.RemoteAddr)
 			http.ServeContent(w, r, "provision.iso", time.Now(), bytes.NewReader(iso))
 		})
@@ -146,7 +202,7 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 		enable_phonehome_listening = true
 	} else {
 		// Otherwise, serve the iso as-is
-		http.HandleFunc("/provision.iso", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/provision.iso", func(w http.ResponseWriter, r *http.Request) {
 			isoLogFunc(r.RemoteAddr)
 			http.ServeContent(w, r, "provision.iso", time.Now(), bytes.NewReader(iso))
 			terminateFunc()
@@ -156,17 +212,17 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 	// If we're expecting Trident to reach back, we need to listen for it.
 	if enable_phonehome_listening {
 		// Set up listening for phonehome
-		phonehome.SetupPhoneHomeServer(result, config.RemoteAddressFile)
+		phonehome.SetupPhoneHomeServer(mux, result, config.RemoteAddressFile)
 
 		// Set up listening for logstream
-		logstreamFull, err := phonehome.SetupLogstream(config.LogstreamFile)
+		logstreamFull, err := phonehome.SetupLogstream(mux, config.LogstreamFile)
 		if err != nil {
 			return fmt.Errorf("failed to setup logstream: %w", err)
 		}
 		defer logstreamFull.Close()
 
 		// Set up listening for tracestream
-		traceFile, err := phonehome.SetupTraceStream(config.TracestreamFile)
+		traceFile, err := phonehome.SetupTraceStream(mux, config.TracestreamFile)
 		if err != nil {
 			return fmt.Errorf("failed to setup tracestream: %w", err)
 		}
@@ -175,7 +231,7 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 	}
 
 	if len(config.ServeDirectory) != 0 {
-		http.Handle("/files/", http.StripPrefix("/files/", http.FileServer(http.Dir(config.ServeDirectory))))
+		mux.Handle("/files/", http.StripPrefix("/files/", http.FileServer(http.Dir(config.ServeDirectory))))
 	}
 
 	// Start the HTTP server
@@ -256,17 +312,45 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 		log.Info("Waiting for phone home...")
 	}
 
-	// Wait for something to happen
-	exitError := phonehome.ListenLoop(terminateCtx, result, config.WaitForProvisioning, config.MaxPhonehomeFailures)
+	if rcpListener != nil {
+		log.Info("Waiting for RCP connection...")
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case conn, ok := <-rcpListener.ConnChan:
+			if !ok {
+				return fmt.Errorf("RCP listener channel closed")
+			}
 
-	err = server.Shutdown(ctx)
-	if err != nil {
-		log.WithError(err).Errorln("failed to shutdown server")
-	}
+			log.Infof("Accepted RCP connection from %s", conn.RemoteAddr())
+			installCtx, installCancel := context.WithTimeout(ctx, time.Minute*10)
+			defer installCancel()
 
-	if exitError != nil {
-		log.WithError(exitError).Errorln("phonehome returned an error")
-		return exitError
+			func() {
+				// Defer termination of the phonehome listener
+				defer terminateFunc()
+				defer conn.Close()
+
+				err := doGrpcInstall(installCtx, conn, finalHostConfigurationYaml)
+				if err != nil {
+					log.WithError(err).Errorln("gRPC installation failed")
+					return
+				}
+			}()
+		}
+	} else {
+		// Wait for something to happen
+		exitError := phonehome.ListenLoop(terminateCtx, result, config.WaitForProvisioning, config.MaxPhonehomeFailures)
+
+		err = server.Shutdown(ctx)
+		if err != nil {
+			log.WithError(err).Errorln("failed to shutdown server")
+		}
+
+		if exitError != nil {
+			log.WithError(exitError).Errorln("phonehome returned an error")
+			return exitError
+		}
 	}
 
 	return nil
@@ -293,6 +377,83 @@ func startLocalVm(localVmUuidStr string, isoLocation string, secureBoot bool, si
 
 	if err = vm.Start(); err != nil {
 		return fmt.Errorf("failed to start VM: %w", err)
+	}
+
+	return nil
+}
+
+func injectRcpAgentConfig(
+	mux *http.ServeMux,
+	announceIp string,
+	announceHttpAddress string,
+	iso []byte,
+	rcpListener *rcpclient.RcpListener,
+	localRcpConf RcpConfiguration,
+	extraFiles ...rcpAgentFileDownload,
+) error {
+	// Create an empty RcpAgentConfiguration
+	rcpAgentConfBuilder := newRcpAgentConfigBuilder(mux, announceIp, announceHttpAddress, rcpListener)
+
+	// If we have a local trident path, serve that file via HTTP and set the download URL.
+	if localRcpConf.LocalTridentPath != nil {
+		data, err := os.ReadFile(*localRcpConf.LocalTridentPath)
+		if err != nil {
+			return fmt.Errorf("failed to read local Trident binary from '%s': %w", *localRcpConf.LocalTridentPath, err)
+		}
+
+		rcpAgentConfBuilder.registerRcpFile(newRcpAgentFileDownload("trident", "/usr/bin/trident", 0755, data))
+	}
+
+	// If we have a local osmodifier path, serve that file via HTTP and set the download URL.
+	if localRcpConf.LocalOsmodifierPath != nil {
+		data, err := os.ReadFile(*localRcpConf.LocalOsmodifierPath)
+		if err != nil {
+			return fmt.Errorf("failed to read local Osmodifier binary from '%s': %w", *localRcpConf.LocalOsmodifierPath, err)
+		}
+
+		rcpAgentConfBuilder.registerRcpFile(newRcpAgentFileDownload("osmodifier", "/usr/bin/osmodifier", 0755, data))
+	}
+
+	for _, extraFile := range extraFiles {
+		rcpAgentConfBuilder.registerRcpFile(extraFile)
+	}
+
+	encoded, err := yaml.Marshal(rcpAgentConfBuilder.build())
+	if err != nil {
+		return fmt.Errorf("failed to marshal RCP agent config to YAML: %w", err)
+	}
+
+	err = isopatcher.PatchFile(iso, "/trident_cdrom/rcp-agent.yaml", encoded)
+	if err != nil {
+		return fmt.Errorf("failed to patch RCP agent config into ISO: %w", err)
+	}
+
+	return nil
+}
+
+func doGrpcInstall(ctx context.Context, conn net.Conn, hostConfiguration string) error {
+	harpoonClient, err := harpoon.NewHarpoonClientFromNetworkConnection(conn)
+	if err != nil {
+		return fmt.Errorf("failed to create Harpoon client from RCP connection: %w", err)
+	}
+	defer harpoonClient.Close()
+
+	stream, err := harpoonClient.Install(ctx, &harpoonpbv1.ServicingRequest{
+		Stage: &harpoonpbv1.StageRequest{
+			Config: hostConfiguration,
+		},
+		Finalize: &harpoonpbv1.FinalizeRequest{
+			// Let Trident handle the reboot
+			OrchestratorHandlesReboot: false,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to start installation via Harpoon: %w", err)
+	}
+
+	err = handleServicingResponseStream(stream)
+	if err != nil {
+		return fmt.Errorf("error during installation via Harpoon: %w", err)
 	}
 
 	return nil

@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, fmt::Display, path::PathBuf};
+use std::{cmp::Ordering, fmt::Display, iter, path::PathBuf};
 
 use anyhow::{ensure, Error};
 use log::trace;
@@ -16,9 +16,8 @@ use trident_api::primitives::hash::Sha384Hash;
 
 use crate::osimage::OsImageFileSystemType;
 
-use super::CosiEntry;
-
 /// Enum of known COSI metadata versions up to the current implementation.
+#[derive(Debug, Eq, PartialEq)]
 pub(super) enum KnownMetadataVersion {
     /// Base version of the COSI metadata specification.
     #[allow(dead_code)]
@@ -28,14 +27,26 @@ pub(super) enum KnownMetadataVersion {
     ///
     /// Introduces bootloader metadata.
     V1_1,
+
+    /// COSI metadata specification version 1.2.
+    ///
+    /// Introduces partition metadata.
+    V1_2,
 }
 
 impl KnownMetadataVersion {
     pub(super) fn as_version(&self) -> MetadataVersion {
         match self {
-            KnownMetadataVersion::V1_0 => MetadataVersion { major: 1, minor: 0 },
-            KnownMetadataVersion::V1_1 => MetadataVersion { major: 1, minor: 1 },
+            Self::V1_0 => MetadataVersion { major: 1, minor: 0 },
+            Self::V1_1 => MetadataVersion { major: 1, minor: 1 },
+            Self::V1_2 => MetadataVersion { major: 1, minor: 2 },
         }
+    }
+}
+
+impl Display for KnownMetadataVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.as_version().fmt(f)
     }
 }
 
@@ -88,9 +99,13 @@ pub(crate) struct CosiMetadata {
     #[serde(default)]
     pub bootloader: Option<Bootloader>,
 
-    /// Template for a host configuration embedded within the image.
+    /// Original disk metadata.
     #[serde(default)]
-    pub host_configuration_template: Option<String>,
+    pub disk: Option<DiskInfo>,
+
+    /// Compression information.
+    #[serde(default)]
+    pub compression: Option<CompressionInfo>,
 }
 
 impl CosiMetadata {
@@ -142,6 +157,19 @@ impl CosiMetadata {
     pub(super) fn get_regular_filesystems(&self) -> impl Iterator<Item = &Image> {
         self.images.iter().filter(|image| !image.is_esp())
     }
+
+    /// Returns an iterator over all *filesystem* image files in the COSI
+    /// metadata, including verity files if present.
+    pub(super) fn filesystem_image_files(&self) -> impl Iterator<Item = &ImageFile> {
+        self.images
+            // Iterate over all images
+            .iter()
+            // Get a flattened iterator over the image files and their verity files
+            // (if any)
+            .flat_map(|fs| {
+                iter::once(&fs.file).chain(fs.verity.as_ref().map(|verity| &verity.file))
+            })
+    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -168,6 +196,30 @@ impl Ord for MetadataVersion {
 impl Display for MetadataVersion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}.{}", self.major, self.minor)
+    }
+}
+
+impl PartialEq<MetadataVersion> for KnownMetadataVersion {
+    fn eq(&self, other: &MetadataVersion) -> bool {
+        self.as_version() == *other
+    }
+}
+
+impl PartialOrd<MetadataVersion> for KnownMetadataVersion {
+    fn partial_cmp(&self, other: &MetadataVersion) -> Option<Ordering> {
+        Some(self.as_version().cmp(other))
+    }
+}
+
+impl PartialEq<KnownMetadataVersion> for MetadataVersion {
+    fn eq(&self, other: &KnownMetadataVersion) -> bool {
+        *self == other.as_version()
+    }
+}
+
+impl PartialOrd<KnownMetadataVersion> for MetadataVersion {
+    fn partial_cmp(&self, other: &KnownMetadataVersion) -> Option<Ordering> {
+        Some(self.cmp(&other.as_version()))
     }
 }
 
@@ -205,9 +257,6 @@ pub(crate) struct ImageFile {
     pub uncompressed_size: u64,
 
     pub sha384: Sha384Hash,
-
-    #[serde(skip)]
-    pub(super) entry: CosiEntry,
 }
 
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
@@ -332,6 +381,73 @@ pub(crate) enum SystemdBootloaderType {
     Unknown(String),
 }
 
+#[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DiskInfo {
+    /// Size of the disk in bytes.
+    pub size: u64,
+
+    /// Sector size of the disk in bytes.
+    pub lba_size: u32,
+
+    /// Type of partition table on the disk.
+    #[serde(rename = "type")]
+    pub partition_table_type: PartitionTableType,
+
+    /// GPT region data, if applicable.
+    #[serde(default)]
+    pub gpt_regions: Vec<GptDiskRegion>,
+}
+
+#[derive(Debug, Deserialize, Clone, Eq, PartialEq, Display)]
+pub(crate) enum PartitionTableType {
+    #[serde(rename = "gpt")]
+    #[strum(to_string = "gpt")]
+    Gpt,
+
+    #[serde(untagged)]
+    #[strum(to_string = "{0}")]
+    Unknown(String),
+}
+
+#[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct GptDiskRegion {
+    /// Details of the image file in the COSI tar.
+    pub image: ImageFile,
+
+    /// The type of region this image represents.
+    #[serde(flatten)]
+    pub region_type: GptRegionType,
+}
+
+#[derive(Debug, Deserialize, Clone, Eq, PartialEq, Display)]
+#[serde(rename_all = "kebab-case", tag = "type")]
+#[strum(serialize_all = "kebab-case")]
+pub(crate) enum GptRegionType {
+    /// Everything from offset 0 to the end of the primary GPT header and
+    /// entries, including the protective MBR.
+    PrimaryGpt,
+
+    /// A partition as defined in the GPT partition entries.
+    Partition {
+        /// The partition number as defined by GPT (1-based index).
+        number: u32,
+    },
+
+    #[serde(other)]
+    Other,
+}
+
+#[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CompressionInfo {
+    /// The power of 2 representing the window size used for ZSTD compression.
+    /// The client will use this to determine the maximum window size for
+    /// decompression.
+    pub max_window_log: u32,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -371,21 +487,21 @@ mod tests {
             compressed_size: 50,
             uncompressed_size: 100,
             sha384: Sha384Hash::from("sample_sha384"),
-            entry: CosiEntry::default(),
         }
     }
 
     #[test]
     fn test_get_esp_filesystem() {
         let mut metadata = CosiMetadata {
-            version: MetadataVersion { major: 1, minor: 0 },
+            version: KnownMetadataVersion::V1_0.as_version(),
             os_arch: SystemArchitecture::Amd64,
             os_release: OsRelease::default(),
             images: vec![], // Empty images
             os_packages: None,
             id: None,
             bootloader: None,
-            host_configuration_template: None,
+            disk: None,
+            compression: Default::default(),
         };
 
         // No images
@@ -449,14 +565,15 @@ mod tests {
     #[test]
     fn test_get_regular_filesystems() {
         let mut metadata = CosiMetadata {
-            version: MetadataVersion { major: 1, minor: 0 },
+            version: KnownMetadataVersion::V1_0.as_version(),
             os_arch: SystemArchitecture::Amd64,
             os_release: OsRelease::default(),
             images: vec![], // Empty images
             os_packages: None,
             id: None,
             bootloader: None,
-            host_configuration_template: None,
+            disk: None,
+            compression: Default::default(),
         };
 
         // No images

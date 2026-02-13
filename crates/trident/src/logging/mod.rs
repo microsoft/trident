@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 pub(super) mod background_log;
+pub(super) mod background_uploader;
 pub(super) mod filter;
 pub(super) mod logfwd;
 pub(super) mod logstream;

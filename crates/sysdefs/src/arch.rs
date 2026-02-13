@@ -49,8 +49,25 @@ impl<'de> Deserialize<'de> for SystemArchitecture {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub enum PackageArchitecture {
     /// NoArch
-    #[serde(alias = "noarch")]
-    #[serde(alias = "(none)")]
+    #[serde(
+        // noarch variants
+        alias = "noarch",
+        alias = "NoArch",
+        alias = "NOARCH",
+        // none variants
+        alias = "none",
+        alias = "None",
+        alias = "NONE",
+        alias = "(none)",
+        alias = "(None)",
+        alias = "(NONE)",
+        // all variants
+        alias = "all",
+        alias = "All",
+        alias = "ALL",
+        // Empty string variants
+        alias = "",
+    )]
     NoArch,
 
     #[serde(untagged)]
@@ -89,7 +106,12 @@ mod tests {
 
     #[test]
     fn test_deserialize_package_architecture_noarch() {
-        let variants = vec!["noarch", "(none)", "NoArch"];
+        let variants = [
+            "noarch", "NoArch", "NOARCH", // "noarch" variants
+            "none", "None", "NONE", "(none)", "(None)", "(NONE)", // "none" variants
+            "all", "All", "ALL", // "all" variants
+            "",    // Empty string
+        ];
         for arch in variants {
             let deser: PackageArchitecture = serde_json::from_str(&format!("\"{arch}\"")).unwrap();
             assert_eq!(deser, PackageArchitecture::NoArch);

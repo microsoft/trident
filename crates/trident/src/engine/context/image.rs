@@ -89,21 +89,29 @@ mod tests {
                             id: "esp".to_string(),
                             partition_type: PartitionType::Esp,
                             size: 100.into(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "root-a".to_string(),
                             partition_type: PartitionType::Root,
                             size: 100.into(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "root-b".to_string(),
                             partition_type: PartitionType::Root,
                             size: 100.into(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "trident".to_string(),
                             partition_type: PartitionType::LinuxGeneric,
                             size: 100.into(),
+                            uuid: None,
+                            label: None,
                         },
                     ],
                     ..Default::default()
@@ -156,6 +164,7 @@ mod tests {
             os_arch: SystemArchitecture::Amd64,
             os_release: OsRelease::default(),
             is_uki: false,
+            partitioning_info: None,
             images: mock_entries
                 .clone()
                 .map(|(path, fs_type)| MockImage {

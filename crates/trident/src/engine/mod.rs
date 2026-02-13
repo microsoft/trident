@@ -2,18 +2,16 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::Mutex,
-    thread,
-    time::Duration,
 };
 
 use chrono::Utc;
-use log::{debug, error, info, trace, warn};
+use log::{debug, info, trace, warn};
 
-use osutils::{dependencies::Dependency, path::join_relative};
+use osutils::path::join_relative;
 use trident_api::{
     config::Storage,
     constants,
-    error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
+    error::{InternalError, TridentError, TridentResultExt},
     is_default,
     status::{ServicingState, ServicingType},
     storage_graph::graph::StorageGraph,
@@ -41,6 +39,7 @@ pub mod bootentries;
 mod clean_install;
 mod context;
 mod kexec;
+pub mod manual_rollback;
 mod newroot;
 pub mod provisioning_network;
 pub mod rollback;
@@ -455,28 +454,6 @@ fn clean_up(subsystems: &[Box<dyn Subsystem>], ctx: &EngineContext) -> Result<()
     }
     debug!("Finished step 'Clean Up'");
     Ok(())
-}
-
-pub fn reboot() -> Result<(), TridentError> {
-    // Sync all writes to the filesystem.
-    info!("Syncing filesystem");
-    nix::unistd::sync();
-
-    // This trace event will be used with the trident_start event to track the
-    // total time taken for the reboot
-    tracing::info!(metric_name = "trident_system_reboot");
-    info!("Rebooting system");
-    Dependency::Systemctl
-        .cmd()
-        .env("SYSTEMD_IGNORE_CHROOT", "true")
-        .arg("reboot")
-        .run_and_check()
-        .structured(ServicingError::Reboot)?;
-
-    thread::sleep(Duration::from_secs(600));
-
-    error!("Waited for reboot for 10 minutes, but nothing happened, aborting");
-    Err(TridentError::new(ServicingError::RebootTimeout))
 }
 
 /// Builds the storage graph for the given storage configuration. Since graph v2 is still in its

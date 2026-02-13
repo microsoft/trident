@@ -8,7 +8,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 
-	stormenv "tridenttools/storm/utils/env"
 	stormretry "tridenttools/storm/utils/retry"
 	stormsshclient "tridenttools/storm/utils/ssh/client"
 	stormsshconfig "tridenttools/storm/utils/ssh/config"
@@ -22,6 +21,10 @@ const (
 		"-v /etc/pki:/etc/pki:ro --pid host --ipc host "
 	TRIDENT_CONTAINER = "trident/trident:latest"
 	DOCKER_IMAGE_PATH = "/var/lib/trident/trident-container.tar.gz"
+
+	// MESSAGE logged by Trident before requesting a system reboot.
+	// Must match the message in crates/trident/src/reboot.rs
+	REBOOTING_LOG_MESSAGE = "Requesting reboot"
 )
 
 func BuildTridentContainerCommand(envVars []string) string {
@@ -45,17 +48,17 @@ func BuildTridentContainerCommand(envVars []string) string {
 // - The SSH session cannot be created
 // - There was an error starting the command.
 // - Some IO error occurred while reading stdout or stderr.
-func InvokeTrident(env stormenv.TridentEnvironment, client *ssh.Client, envVars []string, arguments string) (*stormsshconfig.SshCmdOutput, error) {
+func InvokeTrident(runtime RuntimeType, client *ssh.Client, envVars []string, arguments string) (*stormsshconfig.SshCmdOutput, error) {
 	var cmd string
-	switch env {
-	case stormenv.TridentEnvironmentHost:
+	switch runtime {
+	case RuntimeTypeHost:
 		cmd = TRIDENT_BINARY
-	case stormenv.TridentEnvironmentContainer:
+	case RuntimeTypeContainer:
 		cmd = BuildTridentContainerCommand(envVars)
-	case stormenv.TridentEnvironmentNone:
+	case RuntimeTypeNone:
 		return nil, fmt.Errorf("trident service is not running")
 	default:
-		return nil, fmt.Errorf("invalid environment: %s", env)
+		return nil, fmt.Errorf("invalid environment: %s", runtime)
 	}
 
 	var cmdPrefix string
@@ -111,19 +114,19 @@ func LoadTridentContainer(client *ssh.Client) error {
 	return nil
 }
 
-func CheckTridentService(client *ssh.Client, env stormenv.TridentEnvironment, timeout time.Duration, expectSuccessfulCommit bool) error {
+func CheckTridentService(client *ssh.Client, runtime RuntimeType, timeout time.Duration, expectSuccessfulCommit bool) error {
 	if client == nil {
 		return fmt.Errorf("SSH client is nil")
 	}
 
 	var serviceName string
-	switch env {
-	case stormenv.TridentEnvironmentHost:
+	switch runtime {
+	case RuntimeTypeHost:
 		serviceName = "trident.service"
-	case stormenv.TridentEnvironmentContainer:
+	case RuntimeTypeContainer:
 		serviceName = "trident-container.service"
 	default:
-		return fmt.Errorf("unsupported environment: %s", env)
+		return fmt.Errorf("unsupported environment: %s", runtime)
 	}
 
 	reconnectNeeded, err := stormretry.Retry(

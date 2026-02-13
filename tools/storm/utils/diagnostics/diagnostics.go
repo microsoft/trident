@@ -13,8 +13,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 
-	stormenv "tridenttools/storm/utils/env"
 	stormsshclient "tridenttools/storm/utils/ssh/client"
+	"tridenttools/storm/utils/trident"
 	stormtrident "tridenttools/storm/utils/trident"
 )
 
@@ -112,15 +112,15 @@ func VerifyBundleContents(bundlePath string) error {
 }
 
 // CheckDiagnostics runs trident diagnostics, copies the bundle locally, and verifies its contents
-func CheckDiagnostics(client *ssh.Client, env stormenv.TridentEnvironment, envVars []string) error {
+func CheckDiagnostics(client *ssh.Client, runtime trident.RuntimeType, envVars []string) error {
 	// When running in container, write to /host/tmp so it persists on the host
 	bundlePath := "/tmp/bundle"
-	if env == stormenv.TridentEnvironmentContainer {
+	if runtime == trident.RuntimeTypeContainer {
 		bundlePath = "/host/tmp/bundle"
 	}
 
 	logrus.Infof("Running trident diagnostics with output file: %s", bundlePath)
-	out, err := stormtrident.InvokeTrident(env, client, envVars, fmt.Sprintf("diagnose --output %s --journal --selinux", bundlePath))
+	out, err := stormtrident.InvokeTrident(runtime, client, envVars, fmt.Sprintf("diagnose --output %s --journal --selinux", bundlePath))
 	if err != nil {
 		return fmt.Errorf("failed to invoke trident diagnostics: %w", err)
 	}

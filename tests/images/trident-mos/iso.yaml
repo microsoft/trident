@@ -75,8 +75,6 @@ os:
       destination: /root/.profile
     - source: ../../../packaging/systemd/trident-install.service
       destination: /usr/lib/systemd/system/trident-install.service
-    - source: files/download-trident.service
-      destination: /usr/lib/systemd/system/download-trident.service
     - source: ../../../packaging/selinux-policy-trident/trident.if
       destination: /usr/share/selinux/packages/trident/trident.if
     - source: ../../../packaging/selinux-policy-trident/trident.fc
@@ -84,10 +82,24 @@ os:
     - source: ../../../packaging/selinux-policy-trident/trident.te
       destination: /usr/share/selinux/packages/trident/trident.te
 
+    # Trident daemon service files
+    - source: ../../../packaging/systemd/tridentd.socket
+      destination: /usr/lib/systemd/system/tridentd.socket
+    - source: ../../../packaging/systemd/tridentd.service
+      destination: /usr/lib/systemd/system/tridentd.service
+
+    # Netlaunch RCP files
+    - source: ../../../bin/rcp-agent
+      destination: /usr/bin/rcp-agent
+    - source: ../../../tools/cmd/rcp-agent/rcp-agent.service
+      destination: /usr/lib/systemd/system/rcp-agent.service
+
   services:
     enable:
+      - rcp-agent
+      - tridentd.socket
+    disable:
       - trident-install
-      - download-trident
 
 scripts:
   postCustomization:
@@ -95,10 +107,16 @@ scripts:
 
 iso:
   additionalFiles:
+    # Add placeholder config for Trident
     - source: files/config-placeholder.yaml
       destination: /trident-config.yaml
+    # Add pre-trident script to be run early by rcp-agent
     - source: files/pre-trident-script.sh
       destination: /pre-trident-script.sh
+    # Add overridable default config for rcp-agent
+    - source: files/rcp-agent.yaml
+      destination: /rcp-agent.yaml
+
   kernelCommandLine:
     extraCommandLine:
       - console=tty0

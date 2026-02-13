@@ -1,9 +1,12 @@
 use std::{
-    io::Cursor,
+    io::{Cursor, Read},
+    ops::ControlFlow,
     path::{Path, PathBuf},
 };
 
 use anyhow::Error;
+use gpt::GptDisk;
+use gpt::{disk::LogicalBlockSize, mbr::ProtectiveMBR, GptConfig};
 use serde::Deserialize;
 use url::Url;
 use uuid::Uuid;
@@ -12,7 +15,7 @@ use osutils::osrelease::OsRelease;
 use sysdefs::{
     arch::SystemArchitecture, osuuid::OsUuid, partition_types::DiscoverablePartitionType,
 };
-use trident_api::primitives::hash::Sha384Hash;
+use trident_api::{error::TridentError, primitives::hash::Sha384Hash};
 
 use super::{OsImageFile, OsImageFileSystem, OsImageFileSystemType, OsImageVerityHash};
 
@@ -35,6 +38,45 @@ pub struct MockOsImage {
     pub images: Vec<MockImage>,
 
     pub is_uki: bool,
+
+    #[serde(skip)]
+    pub partitioning_info: Option<MockPartitioningInfo>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MockPartitioningInfo {
+    pub lba0: [u8; 512],
+    pub gpt: GptDisk<Cursor<Vec<u8>>>,
+}
+
+impl MockPartitioningInfo {
+    /// Creates a new `MockPartitioningInfo` with a protective MBR and GPT
+    /// header with no partitions.
+    pub fn new_protective_mbr_and_gpt() -> Result<Self, Error> {
+        let fake_disk_size = 10u64 * 1024 * 1024 * 1024; // 10 GiB
+        let lba_size = 512;
+
+        // Protective MBR bytes.
+        let protective_mbr =
+            ProtectiveMBR::with_lb_size((fake_disk_size / lba_size - 1) as u32).to_bytes();
+
+        // lba0 + GPT header + partition entries
+        let mut mock_gpt_area = vec![0; lba_size as usize * 34];
+
+        // Set the first 512 bytes to the protective MBR.
+        mock_gpt_area[..lba_size as usize].copy_from_slice(&protective_mbr);
+
+        let disk = GptConfig::new()
+            .change_partition_count(true)
+            .writable(true)
+            .logical_block_size(LogicalBlockSize::Lb512)
+            .create_from_device(Cursor::new(mock_gpt_area), None)?;
+
+        Ok(Self {
+            lba0: protective_mbr,
+            gpt: disk,
+        })
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -57,16 +99,12 @@ pub struct MockVerity {
     pub roothash: String,
 }
 
-fn mock_os_image_file() -> OsImageFile<'static> {
+fn mock_os_image_file() -> OsImageFile {
     OsImageFile {
         compressed_size: 0,
         sha384: Sha384Hash::from("mock-sha384"),
         uncompressed_size: 0,
-        reader: Box::new(|| {
-            Ok(Box::new(Cursor::new(
-                MOCK_OS_IMAGE_CONTENT.as_bytes().to_vec(),
-            )))
-        }),
+        path: "/img.raw.zstd".into(),
     }
 }
 
@@ -79,6 +117,7 @@ impl MockOsImage {
             os_release: OsRelease::default(),
             is_uki: false,
             images: vec![],
+            partitioning_info: None,
         }
     }
 
@@ -94,6 +133,11 @@ impl MockOsImage {
         self
     }
 
+    pub fn with_partitioning_info(mut self, info: MockPartitioningInfo) -> Self {
+        self.partitioning_info = Some(info);
+        self
+    }
+
     /// Returns an iterator of available mount points in the COSI file.
     pub(super) fn available_mount_points(&self) -> impl Iterator<Item = &Path> {
         self.images
@@ -103,7 +147,7 @@ impl MockOsImage {
     }
 
     /// Returns the ESP filesystem image.
-    pub fn esp_filesystem(&self) -> Result<OsImageFileSystem<'_>, Error> {
+    pub fn esp_filesystem(&self) -> Result<OsImageFileSystem, Error> {
         if let Some(esp_img) = self
             .images
             .iter()
@@ -126,7 +170,7 @@ impl MockOsImage {
     }
 
     /// Returns non-ESP filesystems.
-    pub fn filesystems(&self) -> impl Iterator<Item = OsImageFileSystem<'_>> {
+    pub fn filesystems(&self) -> impl Iterator<Item = OsImageFileSystem> {
         self.images
             .iter()
             .filter(|fs| fs.part_type != DiscoverablePartitionType::Esp)
@@ -150,6 +194,19 @@ impl MockOsImage {
 
     pub fn metadata_sha384(&self) -> Sha384Hash {
         Sha384Hash::from("0".repeat(96))
+    }
+
+    pub(super) fn read_images<F>(&self, mut f: F) -> Result<(), TridentError>
+    where
+        F: FnMut(&Path, Box<dyn Read>) -> ControlFlow<Result<(), TridentError>>,
+    {
+        match f(
+            Path::new("/img.raw.zstd"),
+            Box::new(MOCK_OS_IMAGE_CONTENT.as_bytes()),
+        ) {
+            ControlFlow::Continue(()) => Ok(()),
+            ControlFlow::Break(b) => b,
+        }
     }
 }
 

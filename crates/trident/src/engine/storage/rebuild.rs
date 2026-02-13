@@ -174,19 +174,19 @@ pub(crate) fn validate_rebuild_raid(
         .context("Failed to validate Host Configuration delta for rebuild-raid operation")?;
 
     match host_status.servicing_state {
-        ServicingState::NotProvisioned
-        | ServicingState::CleanInstallStaged
-        | ServicingState::CleanInstallFinalized => {
+        ServicingState::Provisioned
+        | ServicingState::RuntimeUpdateStaged
+        | ServicingState::AbUpdateStaged
+        | ServicingState::AbUpdateFinalized => {
+            // Allowed states for rebuild-raid
+        }
+
+        _ => {
             bail!(
                 "rebuild-raid command is not allowed when servicing state is {:?}",
                 host_status.servicing_state
             );
         }
-        ServicingState::Provisioned
-        | ServicingState::RuntimeUpdateStaged
-        | ServicingState::AbUpdateStaged
-        | ServicingState::AbUpdateFinalized
-        | ServicingState::AbUpdateHealthCheckFailed => {}
     }
 
     validate_raid_recovery(host_config, disks_to_rebuild)
@@ -278,8 +278,7 @@ pub(crate) fn rebuild_raid(
             .context(format!("Failed to find resolved disk for disk '{disk}'"))?;
 
         // Create Partitions on the new disk
-        partitioning::create_partitions_on_disk(
-            host_config,
+        partitioning::repart_mode::create_partitions_on_disk(
             resolved_disk,
             &mut host_status.partition_paths,
             &mut host_status.disk_uuids,
@@ -446,11 +445,15 @@ mod tests {
                                 id: "disk1part1".to_string(),
                                 partition_type: PartitionType::Root,
                                 size: PartitionSize::from_str("1M").unwrap(),
+                                uuid: None,
+                                label: None,
                             },
                             Partition {
                                 id: "disk1part2".to_string(),
                                 partition_type: PartitionType::Swap,
                                 size: PartitionSize::from_str("2M").unwrap(),
+                                uuid: None,
+                                label: None,
                             },
                         ],
                         ..Default::default()
@@ -463,11 +466,15 @@ mod tests {
                                 id: "disk2part1".to_string(),
                                 partition_type: PartitionType::Root,
                                 size: PartitionSize::from_str("1M").unwrap(),
+                                uuid: None,
+                                label: None,
                             },
                             Partition {
                                 id: "disk2part2".to_string(),
                                 partition_type: PartitionType::Swap,
                                 size: PartitionSize::from_str("2M").unwrap(),
+                                uuid: None,
+                                label: None,
                             },
                         ],
                         ..Default::default()
@@ -517,11 +524,15 @@ mod tests {
                     id: "disk3part1".to_string(),
                     partition_type: PartitionType::Root,
                     size: PartitionSize::from_str("1M").unwrap(),
+                    uuid: None,
+                    label: None,
                 },
                 Partition {
                     id: "disk3part2".to_string(),
                     partition_type: PartitionType::Swap,
                     size: PartitionSize::from_str("2M").unwrap(),
+                    uuid: None,
+                    label: None,
                 },
             ],
             ..Default::default()
@@ -553,11 +564,15 @@ mod tests {
                     id: "disk3part1".to_string(),
                     partition_type: PartitionType::Root,
                     size: PartitionSize::from_str("1M").unwrap(),
+                    uuid: None,
+                    label: None,
                 },
                 Partition {
                     id: "disk3part2".to_string(),
                     partition_type: PartitionType::Swap,
                     size: PartitionSize::from_str("2M").unwrap(),
+                    uuid: None,
+                    label: None,
                 },
             ],
             ..Default::default()
@@ -657,11 +672,15 @@ mod tests {
                             id: "disk1part1".to_string(),
                             partition_type: PartitionType::Root,
                             size: PartitionSize::from_str("1M").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "disk1part2".to_string(),
                             partition_type: PartitionType::Swap,
                             size: PartitionSize::from_str("2M").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                     ],
                     ..Default::default()
@@ -714,11 +733,15 @@ mod tests {
                     id: "disk3part1".to_string(),
                     partition_type: PartitionType::Root,
                     size: PartitionSize::from_str("1M").unwrap(),
+                    uuid: None,
+                    label: None,
                 },
                 Partition {
                     id: "disk3part2".to_string(),
                     partition_type: PartitionType::Swap,
                     size: PartitionSize::from_str("2M").unwrap(),
+                    uuid: None,
+                    label: None,
                 },
             ],
             ..Default::default()
@@ -820,6 +843,8 @@ mod tests {
             id: "disk2part3".to_string(),
             partition_type: PartitionType::Esp,
             size: PartitionSize::from_str("1M").unwrap(),
+            uuid: None,
+            label: None,
         });
 
         host_config
@@ -893,6 +918,8 @@ mod functional_test {
                             id: "raidpart1".to_string(),
                             partition_type: PartitionType::Root,
                             size: PartitionSize::from_str("1G").unwrap(),
+                            uuid: None,
+                            label: None,
                         }],
                         partition_table_type: PartitionTableType::Gpt,
                         adopted_partitions: vec![
@@ -930,6 +957,8 @@ mod functional_test {
                             id: "raidpart2".to_string(),
                             partition_type: PartitionType::Root,
                             size: PartitionSize::from_str("1G").unwrap(),
+                            uuid: None,
+                            label: None,
                         }],
                         ..Default::default()
                     },
@@ -1022,7 +1051,7 @@ mod functional_test {
         // Disks to rebuild is empty as 2 disks UUIDs are already present in Host Status.
         rebuild_raid(&host_config, &mut host_status).unwrap();
 
-        // Verify that the RAID array hasnt been rebuilt as disks to rebuild is empty.
+        // Verify that the RAID array hasn't been rebuilt as disks to rebuild is empty.
         let raid_devices = mdadm::detail(raid_path.as_ref()).unwrap();
         // Check if the RAID array has only 1 device.
         assert_eq!(raid_devices.devices.len(), 1);
@@ -1078,11 +1107,15 @@ mod functional_test {
             id: "disk2part2".to_string(),
             partition_type: PartitionType::Root,
             size: PartitionSize::from_str("1G").unwrap(),
+            uuid: None,
+            label: None,
         });
         host_config.storage.disks[1].partitions.push(Partition {
             id: "disk2part3".to_string(),
             partition_type: PartitionType::Root,
             size: PartitionSize::from_str("1G").unwrap(),
+            uuid: None,
+            label: None,
         });
         host_config
             .storage

@@ -1,11 +1,13 @@
 use std::{
     fmt::{Display, Formatter},
-    io::{Error as IoError, Read},
+    io::Read,
+    ops::ControlFlow,
     path::{Path, PathBuf},
     time::Duration,
 };
 
 use anyhow::Error;
+use gpt::{DiskDevice, GptDisk};
 use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -15,7 +17,7 @@ use sysdefs::{
     partition_types::DiscoverablePartitionType,
 };
 use trident_api::{
-    config::{self, ImageSha384},
+    config::{self, HostConfiguration, ImageSha384},
     constants::ROOT_MOUNT_POINT_PATH,
     error::{InvalidInputError, ReportError, TridentError},
     primitives::hash::Sha384Hash,
@@ -64,7 +66,7 @@ impl OsImage {
 
     /// Load the OS given the image source from the Host Configuration and either validate or
     /// populate the associated metadata sha384 checksum.
-    pub(crate) fn load(
+    pub fn load(
         image_source: &mut config::OsImage,
         timeout: Duration,
     ) -> Result<Self, TridentError> {
@@ -133,7 +135,7 @@ impl OsImage {
     }
 
     /// Find the mount point which contains the given path.
-    pub(crate) fn path_to_filesystem(&self, path: &Path) -> Option<OsImageFileSystem<'_>> {
+    pub(crate) fn path_to_filesystem(&self, path: &Path) -> Option<OsImageFileSystem> {
         self.filesystems()
             .filter(|fs| path.starts_with(&fs.mount_point))
             .max_by_key(|fs| fs.mount_point.components().count())
@@ -149,7 +151,7 @@ impl OsImage {
     }
 
     /// Returns the ESP filesystem image.
-    pub(crate) fn esp_filesystem(&self) -> Result<OsImageFileSystem<'_>, Error> {
+    pub(crate) fn esp_filesystem(&self) -> Result<OsImageFileSystem, Error> {
         match &self.0 {
             OsImageInner::Cosi(cosi) => cosi.esp_filesystem(),
             #[cfg(test)]
@@ -158,7 +160,7 @@ impl OsImage {
     }
 
     /// Returns an iterator over all images that are NOT the ESP filesystem image.
-    pub(crate) fn filesystems(&self) -> Box<dyn Iterator<Item = OsImageFileSystem<'_>> + '_> {
+    pub(crate) fn filesystems(&self) -> Box<dyn Iterator<Item = OsImageFileSystem> + '_> {
         match &self.0 {
             OsImageInner::Cosi(cosi) => Box::new(cosi.filesystems()),
             #[cfg(test)]
@@ -167,12 +169,12 @@ impl OsImage {
     }
 
     /// Returns the root filesystem image.
-    pub(crate) fn root_filesystem(&self) -> Option<OsImageFileSystem<'_>> {
+    pub(crate) fn root_filesystem(&self) -> Option<OsImageFileSystem> {
         self.filesystems()
             .find(|fs| fs.mount_point == Path::new(ROOT_MOUNT_POINT_PATH))
     }
 
-    pub(crate) fn metadata_sha384(&self) -> Sha384Hash {
+    pub fn metadata_sha384(&self) -> Sha384Hash {
         match &self.0 {
             OsImageInner::Cosi(cosi) => cosi.metadata_sha384.clone(),
             #[cfg(test)]
@@ -180,50 +182,110 @@ impl OsImage {
         }
     }
 
-    pub(crate) fn host_configuration_template(&self) -> Option<&str> {
-        match &self.0 {
-            OsImageInner::Cosi(cosi) => cosi.metadata.host_configuration_template.as_deref(),
+    /// Derives a host configuration from the OS image, if supported.
+    pub(crate) fn derive_host_configuration(
+        &mut self,
+        target_disk: impl AsRef<Path>,
+    ) -> Option<Result<HostConfiguration, Error>> {
+        match &mut self.0 {
+            OsImageInner::Cosi(cosi) => Some(cosi.derive_host_configuration(target_disk)),
             #[cfg(test)]
-            OsImageInner::Mock(_) => None,
+            OsImageInner::Mock(_mock) => None,
+        }
+    }
+
+    pub(crate) fn read_images<F>(&self, f: F) -> Result<(), TridentError>
+    where
+        F: FnMut(&Path, Box<dyn Read>) -> ControlFlow<Result<(), TridentError>>,
+    {
+        match &self.0 {
+            OsImageInner::Cosi(cosi) => cosi.read_images(f),
+            #[cfg(test)]
+            OsImageInner::Mock(m) => m.read_images(f),
+        }
+    }
+
+    /// Returns the GPT disk if it is present in the OS Image.
+    pub fn partitioning_info<'a>(
+        &'a mut self,
+    ) -> Result<Option<PartitioningInfo<'a, impl DiskDevice>>, Error> {
+        match &mut self.0 {
+            OsImageInner::Cosi(cosi) => {
+                Ok(cosi.partitioning_info()?.map(|gpt_data| PartitioningInfo {
+                    lba0: &gpt_data.lba0,
+                    gpt: &gpt_data.gpt_disk,
+                }))
+            }
+            #[cfg(test)]
+            OsImageInner::Mock(mock) => {
+                Ok(mock
+                    .partitioning_info
+                    .as_ref()
+                    .map(|gpt_data| PartitioningInfo {
+                        lba0: &gpt_data.lba0,
+                        gpt: &gpt_data.gpt,
+                    }))
+            }
+        }
+    }
+
+    /// Returns the size in bytes of the full original disk the image
+    /// represents, when available.
+    pub fn original_disk_size(&self) -> Option<u64> {
+        match &self.0 {
+            OsImageInner::Cosi(cosi) => cosi.original_disk_size(),
+            #[cfg(test)]
+            OsImageInner::Mock(_mock) => None,
+        }
+    }
+
+    /// Returns decompression parameters for images with zstd compressed files, if available.
+    pub(crate) fn zstd_decompression_parameters(&self) -> Option<ZstdDecompressionParameters> {
+        match &self.0 {
+            OsImageInner::Cosi(cosi) => Some(ZstdDecompressionParameters {
+                max_window_log: cosi.metadata.compression.as_ref().map(|c| c.max_window_log),
+            }),
+            #[cfg(test)]
+            OsImageInner::Mock(_mock) => None,
         }
     }
 }
 
+pub struct PartitioningInfo<'a, T: DiskDevice> {
+    pub lba0: &'a [u8],
+    pub gpt: &'a GptDisk<T>,
+}
+
 #[derive(Debug)]
-pub struct OsImageFileSystem<'a> {
+pub struct OsImageFileSystem {
     pub mount_point: PathBuf,
     pub fs_type: OsImageFileSystemType,
     pub fs_uuid: OsUuid,
     pub part_type: DiscoverablePartitionType,
-    pub image_file: OsImageFile<'a>,
-    pub verity: Option<OsImageVerityHash<'a>>,
+    pub image_file: OsImageFile,
+    pub verity: Option<OsImageVerityHash>,
 }
 
-impl OsImageFileSystem<'_> {
+impl OsImageFileSystem {
     /// Returns whether the image has a verity hash.
     pub fn has_verity(&self) -> bool {
         self.verity.is_some()
     }
 }
 
-pub struct OsImageFile<'a> {
+pub struct OsImageFile {
     pub compressed_size: u64,
     pub sha384: Sha384Hash,
     pub uncompressed_size: u64,
-    reader: Box<dyn Fn() -> Result<Box<dyn Read>, IoError> + 'a>,
-}
 
-impl OsImageFile<'_> {
-    /// Returns a reader for the image file.
-    pub fn reader(&self) -> Result<Box<dyn Read>, IoError> {
-        (self.reader)()
-    }
+    /// Path of the partition image within the COSI.
+    pub path: PathBuf,
 }
 
 #[derive(Debug)]
-pub struct OsImageVerityHash<'a> {
+pub struct OsImageVerityHash {
     pub roothash: String,
-    pub hash_image_file: OsImageFile<'a>,
+    pub hash_image_file: OsImageFile,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Eq, PartialEq)]
@@ -297,7 +359,7 @@ impl From<OsImageFileSystemType> for RealFilesystemType {
     }
 }
 
-impl std::fmt::Debug for OsImageFile<'_> {
+impl std::fmt::Debug for OsImageFile {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OsImageFile")
             .field("compressed_size", &self.compressed_size)
@@ -305,6 +367,13 @@ impl std::fmt::Debug for OsImageFile<'_> {
             .field("uncompressed_size", &self.uncompressed_size)
             .finish()
     }
+}
+
+/// Contains information about how to decompress an image
+pub(crate) struct ZstdDecompressionParameters {
+    /// The max window log parameter needed to decompress the image, if it is
+    /// present.
+    pub max_window_log: Option<u32>,
 }
 
 #[cfg(test)]
@@ -315,7 +384,7 @@ mod tests {
 
     use osutils::osrelease::OsRelease;
 
-    use mock::{MockImage, MOCK_OS_IMAGE_CONTENT};
+    use mock::MockImage;
     use uuid::Uuid;
 
     #[test]
@@ -335,6 +404,7 @@ mod tests {
             os_arch: arch,
             os_release: os_release.clone(),
             is_uki: false,
+            partitioning_info: None,
             images: vec![
                 MockImage::new(
                     "/boot/efi",
@@ -441,23 +511,5 @@ mod tests {
             root_fs.verity.as_ref().unwrap().roothash,
             expected.2.to_string()
         );
-    }
-
-    #[test]
-    fn test_reader() {
-        let mock = OsImage::mock(MockOsImage::new().with_images(vec![MockImage::new(
-            "/boot",
-            OsImageFileSystemType::Ext4,
-            DiscoverablePartitionType::LinuxGeneric,
-            Some("some-verity-hash"),
-        )]));
-
-        let fs = mock.filesystems().next().unwrap();
-        let mut reader = fs.image_file.reader().unwrap();
-
-        let mut buf = String::new();
-        reader.read_to_string(&mut buf).unwrap();
-
-        assert_eq!(buf, MOCK_OS_IMAGE_CONTENT);
     }
 }

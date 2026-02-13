@@ -1,13 +1,13 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Error};
+use anyhow::{Context, Error};
 use log::trace;
 
 use osutils::{
     filesystems::TabFileSystemType,
     tabfile::{TabFile, TabFileEntry},
 };
-use trident_api::{config::Swap, constants::internal_params::RAW_COSI_STORAGE, BlockDeviceId};
+use trident_api::{config::Swap, BlockDeviceId};
 
 use crate::engine::{filesystem::FileSystemData, EngineContext};
 
@@ -70,13 +70,9 @@ pub(super) fn generate_fstab(ctx: &EngineContext, output_path: &Path) -> Result<
 
     let fstab = TabFile { entries };
 
-    if ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
-        bail!("Regenerate fstab is not yet supported with raw COSI storage");
-    } else {
-        fstab
-            .write(output_path)
-            .context(format!("Failed to write {}", output_path.display()))?;
-    }
+    fstab
+        .write(output_path)
+        .context(format!("Failed to write {}", output_path.display()))?;
 
     trace!("Wrote '{}', contents: '{:?}'", output_path.display(), fstab);
 
@@ -470,26 +466,36 @@ mod tests {
                             id: "efi".to_owned(),
                             partition_type: PartitionType::Esp,
                             size: PartitionSize::from_str("100M").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "root-data".to_owned(),
                             partition_type: PartitionType::Root,
                             size: PartitionSize::from_str("1G").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "root-hash".to_owned(),
                             partition_type: PartitionType::RootVerity,
                             size: PartitionSize::from_str("1G").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "home".to_owned(),
                             partition_type: PartitionType::Home,
                             size: PartitionSize::from_str("10G").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                         Partition {
                             id: "swap".to_owned(),
                             partition_type: PartitionType::Swap,
                             size: PartitionSize::from_str("1G").unwrap(),
+                            uuid: None,
+                            label: None,
                         },
                     ],
                     ..Default::default()
@@ -615,26 +621,36 @@ mod tests {
                                 id: "efi".to_owned(),
                                 partition_type: PartitionType::Esp,
                                 size: PartitionSize::from_str("100M").unwrap(),
+                                uuid: None,
+                                label: None,
                             },
                             Partition {
                                 id: "root".to_owned(),
                                 partition_type: PartitionType::Home,
                                 size: PartitionSize::from_str("10G").unwrap(),
+                                uuid: None,
+                                label: None,
                             },
                             Partition {
                                 id: "usr-data".to_owned(),
                                 partition_type: PartitionType::Root,
                                 size: PartitionSize::from_str("1G").unwrap(),
+                                uuid: None,
+                                label: None,
                             },
                             Partition {
                                 id: "usr-hash".to_owned(),
                                 partition_type: PartitionType::RootVerity,
                                 size: PartitionSize::from_str("1G").unwrap(),
+                                uuid: None,
+                                label: None,
                             },
                             Partition {
                                 id: "swap".to_owned(),
                                 partition_type: PartitionType::Swap,
                                 size: PartitionSize::from_str("1G").unwrap(),
+                                uuid: None,
+                                label: None,
                             },
                         ],
                         ..Default::default()

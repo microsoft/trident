@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use sysdefs::partition_types::DiscoverablePartitionType;
 
-use crate::dependencies::Dependency;
+use crate::{block_devices, dependencies::Dependency};
 
 /// Representation of a partition created by `systemd-repart`.
 #[derive(Debug, Deserialize)]
@@ -72,7 +72,7 @@ impl RepartPartition {
     }
 
     pub fn path_by_uuid(&self) -> PathBuf {
-        Path::new("/dev/disk/by-partuuid").join(self.uuid.hyphenated().to_string())
+        block_devices::part_uuid_path(self.uuid)
     }
 }
 
@@ -87,6 +87,9 @@ pub struct RepartPartitionEntry {
 
     /// Label of the partition to be passed to `systemd-repart`.
     pub label: Option<String>,
+
+    /// UUID of the partition to be passed to `systemd-repart`.
+    pub uuid: Option<Uuid>,
 
     /// Minimum size of the partition in bytes to be passed to `systemd-repart`.
     pub size_min_bytes: Option<u64>,
@@ -104,7 +107,7 @@ impl RepartPartitionEntry {
         repart_config.set(
             repart_partition_section,
             "Type",
-            Some(self.partition_type.to_str().into()),
+            Some(self.partition_type.to_name_or_uuid()),
         );
 
         // While set() accepts an Option<String>, we don't want to pass it on directly, because when
@@ -112,6 +115,14 @@ impl RepartPartitionEntry {
         // doesn't like. Instead, we only set the value if it's Some.
         if self.label.is_some() {
             repart_config.set(repart_partition_section, "Label", self.label.clone());
+        }
+
+        if let Some(uuid) = self.uuid {
+            repart_config.set(
+                repart_partition_section,
+                "UUID",
+                Some(uuid.hyphenated().to_string()),
+            );
         }
 
         if let Some(size_min_bytes) = self.size_min_bytes {
@@ -327,7 +338,7 @@ impl SystemdRepartInvoker {
                             "Failed to write systemd-repart config ({}) for partition #{} of type {}",
                             path.display(),
                             index,
-                            partition_entry.partition_type.to_str()
+                            partition_entry.partition_type.to_name_or_uuid()
                         )
                     })?;
 
@@ -462,6 +473,7 @@ mod tests {
             label: None,
             size_min_bytes: Some(1048576),
             size_max_bytes: Some(1048576),
+            uuid: None,
         };
 
         // If partlabel passed into the func is None, set PARTLABEL to
@@ -472,7 +484,7 @@ mod tests {
             "esp".to_owned()
         );
 
-        assert!(repart_config.get("Partition", "Label").is_none());
+        assert_eq!(repart_config.get("Partition", "Label"), None);
 
         assert_eq!(
             repart_config.get("Partition", "SizeMinBytes").unwrap(),
@@ -511,6 +523,15 @@ mod tests {
                 .unwrap(),
             "1048576".to_owned()
         );
+
+        // If uuid is set, ensure that it's written correctly
+        let test_uuid = Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap();
+        partition.uuid = Some(test_uuid);
+        let repart_config_uuid = partition.generate_repart_config();
+        assert_eq!(
+            repart_config_uuid.get("Partition", "UUID"),
+            Some("123e4567-e89b-12d3-a456-426614174000".to_owned())
+        );
     }
 
     #[test]
@@ -519,6 +540,7 @@ mod tests {
             id: "test".to_owned(),
             partition_type: DiscoverablePartitionType::LinuxGeneric,
             label: None,
+            uuid: None,
             size_min_bytes: None,
             size_max_bytes: None,
         };
@@ -543,6 +565,7 @@ mod tests {
                 id: "test1".to_owned(),
                 partition_type: DiscoverablePartitionType::Esp,
                 label: None,
+                uuid: None,
                 size_min_bytes: Some(8388608), // 8 MiB
                 size_max_bytes: Some(8388608),
             },
@@ -550,6 +573,7 @@ mod tests {
                 id: "test2".to_owned(),
                 partition_type: DiscoverablePartitionType::Esp,
                 label: None,
+                uuid: None,
                 size_min_bytes: Some(10737418240), // 10 GiB
                 size_max_bytes: Some(10737418240),
             },
@@ -557,6 +581,10 @@ mod tests {
                 id: "test3".to_owned(),
                 partition_type: DiscoverablePartitionType::LinuxGeneric,
                 label: Some("testpart".into()),
+                uuid: Some(
+                    Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000")
+                        .expect("Failed to parse UUID"),
+                ),
                 size_min_bytes: None,
                 size_max_bytes: None,
             },
@@ -602,7 +630,7 @@ mod tests {
 
                 assert_eq!(
                     ini.get("Partition", "Type").unwrap(),
-                    partition.partition_type.to_str(),
+                    partition.partition_type.to_name_or_uuid(),
                     "Type mismatch in {}",
                     filename.to_string_lossy()
                 );
@@ -624,6 +652,21 @@ mod tests {
                 }
 
                 assert_eq!(
+                    ini.get("Partition", "UUID"),
+                    partition.uuid.map(|v| v.hyphenated().to_string()),
+                    "UUID mismatch in {}",
+                    filename.to_string_lossy()
+                );
+
+                if partition.uuid.is_none() {
+                    assert!(
+                        !contents.contains("\nUUID"),
+                        "UUID field found in {}",
+                        filename.to_string_lossy()
+                    );
+                }
+
+                assert_eq!(
                     ini.get("Partition", "SizeMinBytes"),
                     partition.size_min_bytes.map(|v| v.to_string()),
                     "SizeMinBytes mismatch in {}",
@@ -634,7 +677,7 @@ mod tests {
                 if partition.size_min_bytes.is_none() {
                     assert!(
                         !contents.contains("\nSizeMinBytes"),
-                        "Label field found in {}",
+                        "SizeMinBytes field found in {}",
                         filename.to_string_lossy()
                     );
                 }
@@ -650,7 +693,7 @@ mod tests {
                 if partition.size_max_bytes.is_none() {
                     assert!(
                         !contents.contains("\nSizeMaxBytes"),
-                        "Label field found in {}",
+                        "SizeMaxBytes field found in {}",
                         filename.to_string_lossy()
                     );
                 }
@@ -666,6 +709,7 @@ mod tests {
                 id: "test".to_owned(),
                 partition_type: DiscoverablePartitionType::Esp,
                 label: None,
+                uuid: None,
                 size_min_bytes: Some(8388608), // 8 MiB
                 size_max_bytes: Some(8388608),
             });
@@ -710,7 +754,10 @@ mod functional_test {
         let unchanged_disk_bus_path = PathBuf::from(OS_DISK_DEVICE_PATH);
         let unchanged_block_device_list = lsblk::get(&unchanged_disk_bus_path).unwrap();
 
-        let partition_definition = repart::generate_partition_definition_esp_generic();
+        let esp_partition_uuid = Uuid::parse_str("11111111-2222-3333-4444-555555555555")
+            .expect("Failed to parse UUID for ESP partition");
+        let mut partition_definition = repart::generate_partition_definition_esp_generic();
+        partition_definition[0].uuid = Some(esp_partition_uuid);
 
         let disk_bus_path = PathBuf::from(TEST_DISK_DEVICE_PATH);
 
@@ -732,6 +779,18 @@ mod functional_test {
             part2.size,
             16 * 1024 * 1024 * 1024 - part1_start - PART1_SIZE - 20 * 1024 // 16 GiB disk - 1 MiB prefix - 50 MiB ESP - 20 KiB (rounding?)
         );
+
+        assert_eq!(part1.activity, RepartActivity::Create);
+        assert_eq!(part2.activity, RepartActivity::Create);
+
+        assert_eq!(part1.partition_type, DiscoverablePartitionType::Esp);
+        assert_eq!(
+            part2.partition_type,
+            DiscoverablePartitionType::LinuxGeneric
+        );
+
+        // Check that the UUIDs match what we set
+        assert_eq!(part1.uuid, esp_partition_uuid);
 
         udevadm::settle().unwrap();
 

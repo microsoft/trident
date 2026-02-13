@@ -7,6 +7,7 @@ use std::{
 
 use anyhow::{bail, Context, Error};
 use log::{debug, trace};
+use zstd::stream::read::Decoder;
 
 use trident_api::primitives::bytes::ByteCount;
 
@@ -16,12 +17,25 @@ use crate::io_utils::hashing_reader::HashingReader;
 /// to the specified destination path.
 ///
 /// Returns the hash of the compressed input stream.
-pub fn stream_zstd_and_hash<R>(mut reader: R, destination_path: &Path) -> Result<String, Error>
+pub fn stream_zstd_and_hash<R>(
+    mut reader: R,
+    destination_path: &Path,
+    max_window_log: Option<u32>,
+) -> Result<String, Error>
 where
     R: Read + HashingReader,
 {
     // Instantiate decoder for ZSTD stream
-    let mut decoder = zstd::stream::read::Decoder::new(BufReader::new(&mut reader))?;
+    let mut decoder = Decoder::new(BufReader::new(&mut reader))?;
+
+    if let Some(max_window_log) = max_window_log {
+        decoder.window_log_max(max_window_log).with_context(|| {
+            format!(
+                "Failed to set max window log to {} for ZSTD decoder",
+                max_window_log
+            )
+        })?;
+    }
 
     write_to_path(&mut decoder, destination_path)?;
 

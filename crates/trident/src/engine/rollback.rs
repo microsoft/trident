@@ -48,9 +48,9 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
     let current_servicing_state = datastore.host_status().servicing_state;
     let ab_active_volume = match current_servicing_state {
         // For *Finalized, use the active volume set in Host Status
-        ServicingState::AbUpdateFinalized | ServicingState::CleanInstallFinalized => {
-            datastore.host_status().ab_active_volume
-        }
+        ServicingState::AbUpdateFinalized
+        | ServicingState::CleanInstallFinalized
+        | ServicingState::ManualRollbackAbFinalized => datastore.host_status().ab_active_volume,
         // For AbUpdateHealthCheckFailed, use the opposite active volume of the one
         // set in Host Status
         ServicingState::AbUpdateHealthCheckFailed => {
@@ -73,6 +73,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
             ServicingType::AbUpdate
         }
         ServicingState::CleanInstallFinalized => ServicingType::CleanInstall,
+        ServicingState::ManualRollbackAbFinalized => ServicingType::ManualRollbackAb,
         _ => ServicingType::NoActiveServicing,
     };
 
@@ -106,10 +107,11 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
 
     match (booted_to_expected_root, current_servicing_state) {
         (true, ServicingState::CleanInstallFinalized)
-        | (true, ServicingState::AbUpdateFinalized) => {
+        | (true, ServicingState::AbUpdateFinalized)
+        | (true, ServicingState::ManualRollbackAbFinalized) => {
             // For *Finalized states, when booting from the expected
             // root, finish the commit process
-            info!("Host successfully booted from updated target OS image");
+            info!("Host successfully booted from target OS image");
             return commit_finalized_on_expected_root(
                 &ctx,
                 datastore,
@@ -175,6 +177,23 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
                 expected_device_path: expected_root_path.to_string_lossy().to_string(),
             }));
         }
+        (false, ServicingState::ManualRollbackAbFinalized) => {
+            // ManualRollbackAbFinalize, when booting from incorrect root (the servicing OS), mark host status
+            // state as Provisioned
+            error!("Update host status from {current_servicing_state:?} to Provisioned");
+            datastore.with_host_status(|host_status| {
+                host_status.spec = host_status.spec_old.clone();
+                host_status.spec_old = Default::default();
+                host_status.servicing_state = ServicingState::Provisioned;
+            })?;
+
+            return Err(TridentError::new(
+                ServicingError::ManualRollbackRebootCheck {
+                    root_device_path: current_root_path.to_string_lossy().to_string(),
+                    expected_device_path: expected_root_path.to_string_lossy().to_string(),
+                },
+            ));
+        }
         (_, state) => {
             // No other states should happen, return error
             error!("Unexpected status: {current_servicing_state:?}");
@@ -195,73 +214,82 @@ fn commit_finalized_on_expected_root(
     current_servicing_state: ServicingState,
     servicing_type: ServicingType,
 ) -> Result<BootValidationResult, TridentError> {
-    // Run health checks to ensure the system is in the desired state
-    let health_check_status =
-        run_health_checks(ctx, datastore, current_servicing_state, servicing_type)?;
-    if let BootValidationResult::ValidBootHealthCheckFailed(err) = health_check_status {
-        if servicing_type == ServicingType::AbUpdate {
-            return Ok(BootValidationResult::ValidBootHealthCheckFailed(err));
-        } else {
-            // Only CleanInstall is possible here; return the error.
-            return Err(err);
+    if matches!(
+        servicing_type,
+        ServicingType::CleanInstall | ServicingType::AbUpdate | ServicingType::ManualRollbackAb
+    ) {
+        // Run health checks to ensure the system is in the desired state
+        let health_check_status =
+            run_health_checks(ctx, datastore, current_servicing_state, servicing_type)?;
+        if let BootValidationResult::ValidBootHealthCheckFailed(err) = health_check_status {
+            if servicing_type == ServicingType::AbUpdate {
+                return Ok(BootValidationResult::ValidBootHealthCheckFailed(err));
+            } else {
+                // Only CleanInstall is possible here; return the error.
+                return Err(err);
+            }
         }
-    }
 
-    // If it's virtdeploy, after confirming that we have booted into the correct image, we need
-    // to update the `BootOrder` to boot from the correct image next time.
-    let use_virtdeploy_workaround = virt::is_virtdeploy()
-        || ctx
-            .spec
-            .internal_params
-            .get_flag(VIRTDEPLOY_BOOT_ORDER_WORKAROUND);
+        // If it's virtdeploy, after confirming that we have booted into the correct image, we need
+        // to update the `BootOrder` to boot from the correct image next time.
+        let use_virtdeploy_workaround = virt::is_virtdeploy()
+            || ctx
+                .spec
+                .internal_params
+                .get_flag(VIRTDEPLOY_BOOT_ORDER_WORKAROUND);
 
-    // Persist the boot order change
-    if current_servicing_state == ServicingState::AbUpdateFinalized || use_virtdeploy_workaround {
-        bootentries::persist_boot_order().message("Failed to persist boot order after reboot")?;
-    }
+        // Persist the boot order change
+        if current_servicing_state == ServicingState::AbUpdateFinalized || use_virtdeploy_workaround
+        {
+            bootentries::persist_boot_order()
+                .message("Failed to persist boot order after reboot")?;
+        }
 
-    // In UKI mode, set systemd-boot's default boot option to the currently running one.
-    if ctx.is_uki()? {
-        efivar::set_default_to_current().message("Failed to set default boot entry to current")?;
-    }
-
-    // Commit must finish configuring UEFI fallback as configured
-    let root_path = if container::is_running_in_container()
-        .message("Failed to check if Trident is running in a container")?
-    {
-        container::get_host_root_path().message("Failed to get host root path")?
-    } else {
-        PathBuf::from(ROOT_MOUNT_POINT_PATH)
-    };
-    esp::set_uefi_fallback_contents(ctx, current_servicing_state, &root_path)
-        .structured(ServicingError::SetUpUefiFallback)?;
-
-    // If this is a UKI image, then we need to re-generate pcrlock policy to include the PCRs
-    // selected by the user for the current boot only.
-    if let Some(ref encryption) = ctx.spec.storage.encryption {
+        // In UKI mode, set systemd-boot's default boot option to the currently running one.
         if ctx.is_uki()? {
-            debug!("Regenerating pcrlock policy for current boot");
+            efivar::set_default_to_current()
+                .message("Failed to set default boot entry to current")?;
+        }
 
-            // Get the PCRs from Host Configuration
-            let pcrs = encryption
-                .pcrs
-                .iter()
-                .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr));
-
-            // Get UKI and bootloader binaries for .pcrlock file generation
-            let (uki_binaries, bootloader_binaries) =
-                encryption::get_binary_paths_pcrlock(ctx, pcrs, None)
-                    .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
-
-            // Generate a pcrlock policy
-            pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
+        // Commit must finish configuring UEFI fallback as configured
+        let root_path = if container::is_running_in_container()
+            .message("Failed to check if Trident is running in a container")?
+        {
+            container::get_host_root_path().message("Failed to get host root path")?
         } else {
-            debug!(
-                "Target OS image is a grub image, \
+            PathBuf::from(ROOT_MOUNT_POINT_PATH)
+        };
+        esp::set_uefi_fallback_contents(ctx, current_servicing_state, &root_path)
+            .structured(ServicingError::SetUpUefiFallback)?;
+
+        // If we have encrypted volumes and this is a UKI image, then we need to re-generate pcrlock
+        // policy for the current boot only.
+        if let Some(ref encryption) = ctx.spec.storage.encryption {
+            if ctx.is_uki()? {
+                debug!("Regenerating pcrlock policy for current boot");
+
+                // Get the PCRs from Host Configuration
+                let pcrs = encryption
+                    .pcrs
+                    .iter()
+                    .fold(BitFlags::empty(), |acc, &pcr| acc | BitFlags::from(pcr));
+
+                // Get UKI and bootloader binaries for .pcrlock file generation
+                let (uki_binaries, bootloader_binaries) =
+                    encryption::get_binary_paths_pcrlock(ctx, pcrs, None, false)
+                        .structured(ServicingError::GetBinaryPathsForPcrlockEncryption)?;
+
+                // Generate a pcrlock policy
+                pcrlock::generate_pcrlock_policy(pcrs, uki_binaries, bootloader_binaries)?;
+            } else {
+                debug!(
+                    "Target OS image is a grub image, \
                 so skipping re-generating pcrlock policy for current boot"
-            );
+                );
+            }
         }
     }
+
     match datastore.host_status().servicing_state {
         ServicingState::CleanInstallFinalized => {
             info!("Clean install of target OS succeeded");
@@ -270,6 +298,10 @@ fn commit_finalized_on_expected_root(
         ServicingState::AbUpdateFinalized => {
             info!("A/B update succeeded");
             tracing::info!(metric_name = "ab_update_success", value = true);
+        }
+        ServicingState::ManualRollbackAbFinalized => {
+            info!("Manual rollback succeeded");
+            tracing::info!(metric_name = "manual_rollback_success", value = true);
         }
         // Because the boot validation logic is currently called only on clean install and A/B
         // update, this should be unreachable.
@@ -746,16 +778,22 @@ mod tests {
                     id: "esp".to_owned(),
                     size: 100.into(),
                     partition_type: PartitionType::Esp,
+                    uuid: None,
+                    label: None,
                 },
                 Partition {
                     id: "root-a".to_owned(),
                     size: 900.into(),
                     partition_type: PartitionType::Root,
+                    uuid: None,
+                    label: None,
                 },
                 Partition {
                     id: "root-b".to_owned(),
                     size: 9000.into(),
                     partition_type: PartitionType::Root,
+                    uuid: None,
+                    label: None,
                 },
             ],
             ..Default::default()
@@ -833,36 +871,50 @@ mod tests {
                     id: "esp".to_owned(),
                     size: 4096.into(),
                     partition_type: PartitionType::Esp,
+                    uuid: None,
+                    label: None,
                 },
                 Partition {
                     id: "root-data-a".to_owned(),
                     size: 4096.into(),
                     partition_type: PartitionType::Root,
+                    uuid: None,
+                    label: None,
                 },
                 Partition {
                     id: "root-data-b".to_owned(),
                     size: 4096.into(),
                     partition_type: PartitionType::Root,
+                    uuid: None,
+                    label: None,
                 },
                 Partition {
                     id: "root-hash-a".to_owned(),
                     size: 4096.into(),
                     partition_type: PartitionType::RootVerity,
+                    uuid: None,
+                    label: None,
                 },
                 Partition {
                     id: "root-hash-b".to_owned(),
                     size: 4096.into(),
                     partition_type: PartitionType::RootVerity,
+                    uuid: None,
+                    label: None,
                 },
                 Partition {
                     id: "trident-overlay-a".to_owned(),
                     size: 4096.into(),
                     partition_type: PartitionType::LinuxGeneric,
+                    uuid: None,
+                    label: None,
                 },
                 Partition {
                     id: "trident-overlay-b".to_owned(),
                     size: 4096.into(),
                     partition_type: PartitionType::LinuxGeneric,
+                    uuid: None,
+                    label: None,
                 },
             ],
             ..Default::default()
@@ -1190,36 +1242,50 @@ mod functional_test {
                     id: "esp".to_owned(),
                     size: 4096.into(),
                     partition_type: PartitionType::Esp,
+                    uuid: None,
+                    label: None,
                 },
                 Partition {
                     id: "root-data-a".to_owned(),
                     size: 4096.into(),
                     partition_type: PartitionType::Root,
+                    uuid: None,
+                    label: None,
                 },
                 Partition {
                     id: "root-data-b".to_owned(),
                     size: 4096.into(),
                     partition_type: PartitionType::Root,
+                    uuid: None,
+                    label: None,
                 },
                 Partition {
                     id: "root-hash-a".to_owned(),
                     size: 4096.into(),
                     partition_type: PartitionType::RootVerity,
+                    uuid: None,
+                    label: None,
                 },
                 Partition {
                     id: "root-hash-b".to_owned(),
                     size: 4096.into(),
                     partition_type: PartitionType::RootVerity,
+                    uuid: None,
+                    label: None,
                 },
                 Partition {
                     id: "trident-overlay-a".to_owned(),
                     size: 4096.into(),
                     partition_type: PartitionType::LinuxGeneric,
+                    uuid: None,
+                    label: None,
                 },
                 Partition {
                     id: "trident-overlay-b".to_owned(),
                     size: 4096.into(),
                     partition_type: PartitionType::LinuxGeneric,
+                    uuid: None,
+                    label: None,
                 },
             ],
             ..Default::default()
@@ -1323,21 +1389,29 @@ mod functional_test {
                     id: "root-data-a".to_owned(),
                     partition_type: PartitionType::Root,
                     size: 100.into(),
+                    uuid: None,
+                    label: None,
                 },
                 Partition {
                     id: "root-data-b".to_owned(),
                     partition_type: PartitionType::Root,
                     size: 100.into(),
+                    uuid: None,
+                    label: None,
                 },
                 Partition {
                     id: "root-hash-a".to_owned(),
                     partition_type: PartitionType::Root,
                     size: 100.into(),
+                    uuid: None,
+                    label: None,
                 },
                 Partition {
                     id: "root-hash-b".to_owned(),
                     partition_type: PartitionType::Root,
                     size: 100.into(),
+                    uuid: None,
+                    label: None,
                 },
             ],
         }];

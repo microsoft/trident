@@ -6,6 +6,9 @@ publish = false
 rust-version = "1.85.0"
 license = "MIT"
 
+[[bin]]
+name = "cosi-reader"
+path = "bin/cosi_reader.rs"
 
 [dependencies]
 anyhow = { workspace = true }
@@ -19,6 +22,7 @@ duct = { workspace = true }
 enumflags2 = { workspace = true }
 env_logger = { workspace = true }
 glob = { workspace = true }
+gpt = { workspace = true }
 humantime = { workspace = true }
 lazy_static = { workspace = true }
 libc = { workspace = true }
@@ -31,9 +35,11 @@ procfs = { workspace = true }
 rayon = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true }
+semver = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
+signal-hook = { workspace = true }
 sha2 = { workspace = true }
 sqlite = { workspace = true }
 strum = { workspace = true }
@@ -83,12 +89,12 @@ maplit = { workspace = true }
 mockito = { workspace = true }
 sha2 = { workspace = true }
 tower = { workspace = true }
+itertools = { workspace = true }
 
 osutils = { path = "../osutils", features = ["test-utilities"] }
 
 [features]
 dangerous-options = ["trident_api/dangerous-options", "docker_credential"]
-sysupdate = ["trident_api/sysupdate"]
 functional-test = [
     "pytest",
     "pytest_gen",
@@ -97,3 +103,4 @@ functional-test = [
     "inventory",
 ]
 pytest-generator = ["pytest", "osutils/pytest-generator"]
+grpc-preview = ["harpoon/grpc-preview"]
