@@ -957,7 +957,7 @@ impl Debug for TridentError {
             }
         };
 
-        writeln!(f, "{header}: {}", self.0.kind)?;
+        writeln!(f, "{header}")?;
         writeln!(f, "\nContext:")?;
 
         // Generate the error chain for the source error, if it exists, so that
@@ -974,17 +974,17 @@ impl Debug for TridentError {
             acc
         };
 
-        let min = -(self.0.context.len() as i32);
-        let max = source_error_chain.len() as i32;
+        let digits_needed = (1 + self.0.context.len() + source_error_chain.len())
+            .to_string()
+            .len();
 
-        let digits_needed = cmp::max(min.to_string().len(), max.to_string().len());
         let padding = digits_needed + 4;
 
         // Padding to indent multiline messages: padding + 2 fo the ": " after the index.
         let multiline_padding = " ".repeat(padding + 2);
 
         // Index of the error level being written.
-        let mut index = min;
+        let mut index = 0;
 
         // Print context messages, starting with the most recent context and
         // going back in time.
@@ -1153,14 +1153,14 @@ mod tests {
             .unwrap_err();
 
         let expected = formatdoc! { r#"
-            Trident failed due to an internal error: Internal error: w
+            Trident failed due to an internal error
 
             Context:
-                -1: some message at {msg_file}:{msg_line}
-                 0: Internal error: w at {err_file}:{err_line}
-                 1: x
-                    y
-                 2: z
+                0: some message at {msg_file}:{msg_line}
+                1: Internal error: w at {err_file}:{err_line}
+                2: x
+                   y
+                3: z
             "#,
                 err_file = error.0.location.file(),
                 err_line = error.0.location.line(),
