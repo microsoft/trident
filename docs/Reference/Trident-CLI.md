@@ -44,6 +44,7 @@ Options:
 
 # Subcommands
 
+- [grpc-client](#grpc-client)
 - [install](#install)
 - [update](#update)
 - [commit](#commit)
@@ -56,6 +57,60 @@ Options:
 - [rollback](#rollback)
 - [daemon](#daemon)
 - [help](#help)
+
+
+## grpc-client
+
+Run the gRPC client
+
+Usage:
+
+```
+trident grpc-client [OPTIONS] <COMMAND>
+```
+
+Argument summary:
+
+```
+Commands:
+  install       Initiate an install of Azure Linux
+  update        Start or continue an A/B update from an existing
+                    install
+  commit        Detect whether an install or update succeeded, and
+                    update the boot order accordingly
+  rebuild-raid  Rebuild software RAID arrays managed by Trident
+  get           Query the current state of the system
+  validate      Validate the provided Host Configuration
+  rollback      Trigger manual rollback to previous state
+  stream-image  
+  version       
+  help          Print this message or the help of the given
+                    subcommand(s)
+
+Options:
+  -s, --server <SERVER>
+          The server address to connect to [default:
+          unix:///run/trident/trident.sock]
+  -v, --verbosity <VERBOSITY>
+          Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
+          [default: DEBUG]
+```
+
+
+### Argument Details
+
+#### <span>--server &lt;SERVER&gt;</span>
+
+The server address to connect to
+
+Default: `unix:///run/trident/trident.sock`
+
+
+#### <span>--verbosity &lt;VERBOSITY&gt;</span>
+
+Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
+
+Default: `DEBUG`
 
 
 ## install
@@ -681,7 +736,7 @@ Options:
       --socket-path <SOCKET_PATH>
           Path to the UNIX socket to listen on when not running in
           systemd socket-activated mode [default:
-          /var/run/trident.sock]
+          /run/trident/trident.sock]
 ```
 
 
@@ -698,7 +753,7 @@ Default: `300s`
 
 Path to the UNIX socket to listen on when not running in systemd socket-activated mode
 
-Default: `/var/run/trident.sock`
+Default: `/run/trident/trident.sock`
 
 
 #### <span>--verbosity &lt;VERBOSITY&gt;</span>
