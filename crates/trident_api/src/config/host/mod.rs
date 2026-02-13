@@ -148,7 +148,7 @@ impl HostConfiguration {
         });
 
         self.internal_params
-            .get_flags()
+            .get_set_params()
             .into_iter()
             .for_each(|key| {
                 tracing::info!(
