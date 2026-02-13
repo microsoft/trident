@@ -1,0 +1,13 @@
+// Proto file defining file location messages.
+
+syntax = "proto3";
+
+package trident.v1;
+
+// FileLocation represents a specific location in a source file.
+message FileLocation {
+  // Path to the file.
+  string path = 1;
+  // Line number in the file.
+  uint32 line = 2;
+}

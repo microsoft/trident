@@ -1,0 +1,46 @@
+// Proto file defining Trident error types.
+
+syntax = "proto3";
+
+package trident.v1;
+
+import "trident/v1/file_location.proto";
+
+// TridentError represents an error that occurred during a Trident operation.
+message TridentError {
+  // Error kind.
+  TridentErrorKind kind = 1;
+  // Error subkind.
+  string subkind = 2;
+  // Full formatted body of the error, including context and source, suitable
+  // for display in logs and user interfaces.
+  string message = 3;
+  // The specific error message that was generated.
+  string error_message = 4;
+  // Location in the file where the error occurred.
+  FileLocation location = 5;
+}
+
+// Major kinds of Trident errors.
+enum TridentErrorKind {
+  TRIDENT_ERROR_KIND_UNSPECIFIED = 0;
+  // Identifies errors that occur when the execution environment is
+  // misconfigured.
+  EXECUTION_ENVIRONMENT_MISCONFIGURATION_ERROR = 1;
+  // Identifies errors that are related to health checks.
+  HEALTH_CHECKS_ERROR = 2;
+  // Identifies errors that occur when Trident fails to initialize.
+  INITIALIZATION_ERROR = 3;
+  // Identifies errors that occur due to an internal bug or failure in Trident.
+  INTERNAL_ERROR = 4;
+  // Identifies errors that occur when the user provides invalid input.
+  INVALID_INPUT_ERROR = 5;
+  // Identifies errors that occur during servicing and require further user
+  // investigation, to determine whether the error occurred due to an internal
+  // failure in Trident, a failure in one of its dependencies, or a system
+  // misconfiguration.
+  SERVICING_ERROR = 6;
+  // Identifies errors that occur when clean install or update fail due to the
+  // current configuration of the host.
+  UNSUPPORTED_CONFIGURATION_ERROR = 7;
+}

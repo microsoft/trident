@@ -1,0 +1,19 @@
+// Proto file defining the VersionService and related messages.
+
+syntax = "proto3";
+
+package trident.v1;
+
+// VersionService defines the gRPC service for retrieving the Trident version
+// information.
+service VersionService {
+  // Version returns the Trident version.
+  rpc Version(VersionRequest) returns (VersionResponse);
+}
+
+message VersionRequest {}
+
+message VersionResponse {
+  // Trident version string.
+  string version = 1;
+}
