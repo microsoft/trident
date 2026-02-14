@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{ensure, Context, Error};
+use anyhow::{anyhow, ensure, Context, Error};
 use const_format::formatcp;
 use log::{debug, trace};
 use procfs::sys::kernel::Version;
@@ -23,6 +23,9 @@ use crate::engine::EngineContext;
 /// Temporary name for the UKI file before renaming.
 pub const TMP_UKI_NAME: &str = "vmlinuz-0.efi.staged";
 pub const UKI_DIRECTORY: &str = formatcp!("{ESP_EFI_DIRECTORY}/Linux");
+const TMP_UKI_ADDON_DIR_NAME: &str = formatcp!("{}{}", TMP_UKI_NAME, UKI_ADDON_DIR_SUFFIX);
+const UKI_ADDON_DIR_SUFFIX: &str = ".extra.d";
+const UKI_ADDON_FILE_SUFFIX: &str = ".addon.efi";
 
 /// Returns the UKI file suffix, given the current active volume and install index.
 fn uki_suffix(ctx: &EngineContext) -> String {
@@ -46,17 +49,86 @@ pub fn stage_uki_on_esp(temp_mount_dir: &Path, mount_point: &Path) -> Result<(),
         .collect::<Result<Vec<_>, _>>()
         .context("Failed while reading UKI directory")?
         .into_iter()
-        .map(|entry| entry.path())
+        // Only consider files (ignore subdirectories, etc.)
+        .filter_map(|entry| entry.path().is_file().then_some(entry.path()))
+        .inspect(|path| trace!("Found file in UKI source dir: {}", path.display()))
         .collect();
 
     ensure!(!ukis.is_empty(), "No UKI files found within the image");
     ensure!(ukis.len() == 1, "Multiple UKI files found within the image");
 
-    let dest_path = join_relative(mount_point, ESP_MOUNT_POINT_PATH)
-        .join(UKI_DIRECTORY)
-        .join(TMP_UKI_NAME);
+    // Path to stage the UKI file on the ESP, e.g. <mount_point>/EFI/Linux/vmlinuz-0.efi.staged
+    let staging_uki_path = join_relative(mount_point, ESP_MOUNT_POINT_PATH).join(UKI_DIRECTORY);
+
+    let dest_path = staging_uki_path.join(TMP_UKI_NAME);
     debug!("Staging UKI file at '{}'", dest_path.display());
     fs::copy(&ukis[0], dest_path).context("Failed to copy UKI to the ESP")?;
+
+    // Check if there is an addon directory associated with the UKI and copy it
+    // if it exists. It should be named `<UKI_filename>.extra.d/`
+    let addon_dir = {
+        let mut uki_filename = ukis[0]
+            .file_name()
+            .context("Failed to get UKI filename")?
+            .to_os_string();
+        uki_filename.push(UKI_ADDON_DIR_SUFFIX);
+        uki_source_dir.join(uki_filename)
+    };
+
+    if !addon_dir.exists() {
+        // No addon directory, so we're done.
+        trace!(
+            "No addon directory found at '{}', skipping addon staging",
+            addon_dir.display()
+        );
+        return Ok(());
+    }
+
+    ensure!(
+        addon_dir.is_dir(),
+        format!(
+            "Expected addon directory '{}' to be a directory",
+            addon_dir.display()
+        )
+    );
+
+    let dest_addon_dir = staging_uki_path.join(TMP_UKI_ADDON_DIR_NAME);
+    debug!(
+        "Found UKI addon directory at '{}', staging to '{}'",
+        addon_dir.display(),
+        dest_addon_dir.display()
+    );
+    fs::create_dir_all(&dest_addon_dir).context("Failed to create destination addon directory")?;
+
+    for entry in fs::read_dir(&addon_dir).context("Failed to read addon directory")? {
+        let entry = entry.context("Failed to read entry in addon directory")?;
+        let path = entry.path();
+        if !path.is_file() {
+            trace!(
+                "Ignoring non-file entry '{}' in addon directory",
+                path.display()
+            );
+            continue;
+        }
+
+        if !path.ends_with(UKI_ADDON_FILE_SUFFIX) {
+            trace!(
+                "Ignoring file '{}' in addon directory that does not match expected naming scheme",
+                path.display()
+            );
+            continue;
+        }
+
+        let dest_addon_file =
+            dest_addon_dir.join(path.file_name().context("Failed to get addon file name")?);
+
+        debug!(
+            "Staging UKI addon file from '{}' to '{}'",
+            path.display(),
+            dest_addon_file.display()
+        );
+        fs::copy(&path, &dest_addon_file).context("Failed to copy addon file")?;
+    }
 
     Ok(())
 }
@@ -134,17 +206,43 @@ pub fn update_uki_boot_order(
         }
     }
 
-    let dest_path = esp_uki_directory.join(format!("vmlinuz-{}-{uki_suffix}", max_index + 1));
-    let entry_name = dest_path
+    let uki_dest_path = esp_uki_directory.join(format!("vmlinuz-{}-{uki_suffix}", max_index + 1));
+    let entry_name = uki_dest_path
         .file_name() // TODO: should be `file_stem` but systemd-boot doesn't seem to be following the spec.
         .structured(InternalError::Internal("Failed to get file stem"))?
         .to_str()
         .structured(InternalError::Internal("Boot entry name isn't valid UTF-8"))?;
 
-    debug!("Renaming UKI file to '{}'", dest_path.display());
-    fs::rename(esp_uki_directory.join(TMP_UKI_NAME), &dest_path)
+    debug!("Renaming staged UKI file to '{}'", uki_dest_path.display());
+    fs::rename(esp_uki_directory.join(TMP_UKI_NAME), &uki_dest_path)
         .structured(ServicingError::UpdateUki)
         .message("Failed to rename staged UKI")?;
+
+    // If there is a staged UKI addon directory, rename it as well to match the new UKI filename.
+    let staging_addon_dir = esp_uki_directory.join(TMP_UKI_ADDON_DIR_NAME);
+    if staging_addon_dir.exists() {
+        if !staging_addon_dir.is_dir() {
+            return Err(anyhow!(
+                "Expected addon directory '{}' to be a directory",
+                staging_addon_dir.display()
+            ))
+            .structured(ServicingError::UpdateUki);
+        }
+
+        let uki_addons_dest_path = {
+            let mut path = uki_dest_path.clone();
+            path.push(TMP_UKI_ADDON_DIR_NAME);
+            path
+        };
+
+        debug!(
+            "Renaming staged UKI addon directory to '{}'",
+            uki_addons_dest_path.display()
+        );
+        fs::rename(staging_addon_dir, uki_addons_dest_path)
+            .context("Failed to rename staged UKI addon directory")
+            .structured(ServicingError::UpdateUki)?;
+    }
 
     if oneshot {
         debug!("Setting oneshot boot entry to '{entry_name}'");
