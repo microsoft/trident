@@ -51,7 +51,7 @@ pub fn stage_uki_on_esp(temp_mount_dir: &Path, mount_point: &Path) -> Result<(),
         .into_iter()
         // Only consider files (ignore subdirectories, etc.)
         .filter_map(|entry| entry.path().is_file().then_some(entry.path()))
-        .inspect(|path| trace!("Found file in UKI source dir: {}", path.display()))
+        .inspect(|path| trace!("Found file in UKI source dir '{}'", path.display()))
         .collect();
 
     ensure!(!ukis.is_empty(), "No UKI files found within the image");
@@ -111,10 +111,14 @@ pub fn stage_uki_on_esp(temp_mount_dir: &Path, mount_point: &Path) -> Result<(),
             continue;
         }
 
-        if !path.ends_with(UKI_ADDON_FILE_SUFFIX) {
+        if !path
+            .as_os_str()
+            .as_encoded_bytes()
+            .ends_with(UKI_ADDON_FILE_SUFFIX.as_bytes())
+        {
             trace!(
-                "Ignoring file '{}' in addon directory that does not match expected naming scheme",
-                path.display()
+                "Ignoring file '{}' in addon directory that does not end with expected suffix '{UKI_ADDON_FILE_SUFFIX}'",
+                path.display(),
             );
             continue;
         }
@@ -161,6 +165,14 @@ fn enumerate_trident_managed_ukis(
         esp_uki_directory.display()
     ))? {
         let entry = entry.context("Failed to read entry")?;
+        if entry.path().is_dir() {
+            trace!(
+                "Ignoring entry '{}' in UKI directory because it is a directory",
+                entry.path().display()
+            );
+            continue;
+        }
+
         let filename = entry.file_name();
 
         if let Some((index, suffix)) = filename
@@ -230,9 +242,9 @@ pub fn update_uki_boot_order(
         }
 
         let uki_addons_dest_path = {
-            let mut path = uki_dest_path.clone();
-            path.push(TMP_UKI_ADDON_DIR_NAME);
-            path
+            let mut path = uki_dest_path.clone().into_os_string();
+            path.push(UKI_ADDON_DIR_SUFFIX);
+            PathBuf::from(path)
         };
 
         debug!(
