@@ -169,7 +169,7 @@ os:
     enable:
       - trident
   uki:
-    kernels: auto
+    mode: create
 
 previewFeatures:
   - uki
