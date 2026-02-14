@@ -3454,7 +3454,7 @@ dependencies = [
 
 [[package]]
 name = "trident_proto"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "prost",
  "prost-types",
