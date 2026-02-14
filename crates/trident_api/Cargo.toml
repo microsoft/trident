@@ -38,6 +38,7 @@ harpoon = { path = "../harpoon" }
 [dev-dependencies]
 indoc = { workspace = true }
 maplit = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [features]
 # Enables dangerous options such as plaintext passwords

@@ -110,52 +110,50 @@ impl HostConfiguration {
     /// Trace feature usage based on the Host Configuration.
     pub fn feature_tracing(&self) {
         self.os.feature_tracing();
-        if !self.scripts.post_configure.is_empty() {
-            tracing::info!(
-                metric_name = "host_config_post_configure_scripts",
-                value = true
-            );
-        }
-        if !self.scripts.pre_servicing.is_empty() {
-            tracing::info!(
-                metric_name = "host_config_pre_servicing_scripts",
-                value = true
-            );
-        }
-        if !self.scripts.post_provision.is_empty() {
-            tracing::info!(
-                metric_name = "host_config_post_provision_scripts",
-                value = true
-            );
-        }
-        if let Some(encryption) = &self.storage.encryption {
-            let pcrs = encryption
-                .pcrs
-                .iter()
-                .map(|pcr| pcr.to_num().to_string())
-                .collect::<Vec<_>>()
-                .join(",");
-            tracing::info!(metric_name = "host_config_encryption", value = pcrs);
-        }
-        if self.storage.ab_update.is_some() {
-            tracing::info!(metric_name = "host_config_ab_update", value = true);
-        }
-        if !self.storage.raid.software.is_empty() {
-            tracing::info!(metric_name = "host_config_software_raid", value = true);
-        }
-        self.storage.verity.iter().for_each(|verity| {
-            tracing::info!(metric_name = "host_config_verity", value = verity.name);
-        });
-
-        self.internal_params
-            .get_set_params()
-            .into_iter()
-            .for_each(|key| {
-                tracing::info!(
-                    metric_name = "host_config_internal_param",
-                    value = key.as_str(),
-                );
-            });
+        tracing::info!(
+            metric_name = "host_config_post_configure_scripts",
+            value = !self.scripts.post_configure.is_empty()
+        );
+        tracing::info!(
+            metric_name = "host_config_pre_servicing_scripts",
+            value = !self.scripts.pre_servicing.is_empty()
+        );
+        tracing::info!(
+            metric_name = "host_config_post_provision_scripts",
+            value = !self.scripts.post_provision.is_empty()
+        );
+        tracing::info!(
+            metric_name = "host_config_encryption",
+            value = match &self.storage.encryption {
+                Some(encryption) => encryption
+                    .pcrs
+                    .iter()
+                    .map(|pcr| pcr.to_num().to_string())
+                    .collect::<Vec<_>>()
+                    .join(","),
+                _ => "".to_string(),
+            }
+        );
+        tracing::info!(
+            metric_name = "host_config_ab_update",
+            value = self.storage.ab_update.is_some()
+        );
+        tracing::info!(
+            metric_name = "host_config_software_raid",
+            value = !self.storage.raid.software.is_empty()
+        );
+        tracing::info!(
+            metric_name = "host_config_usr_verity",
+            value = self.storage.verity.iter().any(|v| v.name == "usr")
+        );
+        tracing::info!(
+            metric_name = "host_config_root_verity",
+            value = self.storage.verity.iter().any(|v| v.name == "root")
+        );
+        tracing::info!(
+            metric_name = "host_config_internal_params",
+            value = self.internal_params.get_set_params().join(","),
+        );
     }
 
     /// Performs extra checks required when using root-verity.
@@ -313,15 +311,24 @@ impl HostConfiguration {
 mod tests {
     use super::*;
 
+    use std::collections::BTreeMap;
     use std::path::{Path, PathBuf};
+    use std::sync::{Arc, Mutex};
 
+    use netplan_types::NetworkConfig;
+    use tracing::{field::Visit, Event, Subscriber};
+    use tracing_subscriber::{
+        layer::{Context, SubscriberExt},
+        registry::LookupSpan,
+        Layer, Registry,
+    };
     use url::Url;
 
     use crate::{
         config::{
-            AbUpdate, AbVolumePair, Disk, Extension, FileSystem, FileSystemSource, MountOptions,
-            MountPoint, NewFileSystemType, Partition, PartitionTableType, PartitionType,
-            VerityDevice,
+            AbUpdate, AbVolumePair, Disk, Encryption, Extension, FileSystem, FileSystemSource,
+            MountOptions, MountPoint, NewFileSystemType, Partition, PartitionTableType,
+            PartitionType, Raid, RaidLevel, Script, SoftwareRaidArray, VerityDevice,
         },
         constants::{
             internal_params::SELF_UPGRADE_TRIDENT, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH,
@@ -329,6 +336,74 @@ mod tests {
         },
         primitives::hash::Sha384Hash,
     };
+    use sysdefs::tpm2::Pcr;
+
+    #[derive(Default)]
+    struct MetricVisitor {
+        metric_name: Option<String>,
+        value: Option<String>,
+    }
+
+    impl Visit for MetricVisitor {
+        fn record_bool(&mut self, field: &tracing::field::Field, value: bool) {
+            if field.name() == "value" {
+                self.value = Some(value.to_string());
+            }
+        }
+
+        fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+            match field.name() {
+                "metric_name" => self.metric_name = Some(value.to_string()),
+                "value" => self.value = Some(value.to_string()),
+                _ => {}
+            }
+        }
+
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+            if field.name() == "value" {
+                self.value = Some(format!("{value:?}"));
+            }
+        }
+    }
+
+    #[derive(Clone, Default)]
+    struct MetricsCaptureLayer {
+        events: Arc<Mutex<Vec<(String, String)>>>,
+    }
+
+    impl<S> Layer<S> for MetricsCaptureLayer
+    where
+        S: Subscriber + for<'a> LookupSpan<'a>,
+    {
+        fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
+            let mut visitor = MetricVisitor::default();
+            event.record(&mut visitor);
+            if let Some(metric_name) = visitor.metric_name {
+                self.events
+                    .lock()
+                    .expect("metric events mutex should not be poisoned")
+                    .push((metric_name, visitor.value.unwrap_or_default()));
+            }
+        }
+    }
+
+    fn trace_feature_metrics(execute: impl FnOnce()) -> BTreeMap<String, String> {
+        let layer = MetricsCaptureLayer::default();
+        let events = Arc::clone(&layer.events);
+        let subscriber = Registry::default().with(layer);
+
+        tracing::subscriber::with_default(subscriber, || {
+            execute();
+        });
+
+        let metrics = events
+            .lock()
+            .expect("metric events mutex should not be poisoned")
+            .iter()
+            .cloned()
+            .collect();
+        metrics
+    }
 
     #[test]
     fn test_validate_extension_image_location_success() {
@@ -746,5 +821,184 @@ mod tests {
             .internal_params
             .set_flag_false(SELF_UPGRADE_TRIDENT.into());
         host_config.validate_root_verity_config(&graph).unwrap();
+    }
+
+    #[test]
+    fn test_feature_tracing_defaults() {
+        let config = HostConfiguration::default();
+        let metrics = trace_feature_metrics(|| config.feature_tracing());
+
+        let expected = BTreeMap::from([
+            ("host_config_ab_update".to_string(), "false".to_string()),
+            ("host_config_confexts".to_string(), "false".to_string()),
+            ("host_config_encryption".to_string(), "".to_string()),
+            ("host_config_internal_params".to_string(), "".to_string()),
+            (
+                "host_config_kernel_command_line_options".to_string(),
+                "false".to_string(),
+            ),
+            ("host_config_modules".to_string(), "false".to_string()),
+            ("host_config_netplan".to_string(), "false".to_string()),
+            (
+                "host_config_post_configure_scripts".to_string(),
+                "false".to_string(),
+            ),
+            (
+                "host_config_post_provision_scripts".to_string(),
+                "false".to_string(),
+            ),
+            (
+                "host_config_pre_servicing_scripts".to_string(),
+                "false".to_string(),
+            ),
+            ("host_config_root_verity".to_string(), "false".to_string()),
+            ("host_config_selinux".to_string(), "none".to_string()),
+            (
+                "host_config_services_disabled".to_string(),
+                "false".to_string(),
+            ),
+            (
+                "host_config_services_enabled".to_string(),
+                "false".to_string(),
+            ),
+            ("host_config_software_raid".to_string(), "false".to_string()),
+            ("host_config_sysexts".to_string(), "false".to_string()),
+            (
+                "host_config_uefi_fallback_mode".to_string(),
+                "conservative".to_string(),
+            ),
+            ("host_config_usr_verity".to_string(), "false".to_string()),
+        ]);
+
+        assert_eq!(metrics, expected);
+    }
+
+    #[test]
+    fn test_feature_tracing_non_defaults() {
+        let mut config = HostConfiguration {
+            os: Os {
+                selinux: os::Selinux {
+                    mode: Some(SelinuxMode::Enforcing),
+                },
+                modules: vec![os::modules::Module {
+                    name: "loop".to_string(),
+                    ..Default::default()
+                }],
+                services: os::services::Services {
+                    enable: vec!["sshd".to_string()],
+                    disable: vec!["debug-shell".to_string()],
+                },
+                kernel_command_line: os::KernelCommandLine {
+                    extra_command_line: vec!["console=ttyS0".to_string()],
+                },
+                uefi_fallback: os::UefiFallbackMode::Disabled,
+                sysexts: vec![Extension {
+                    url: Url::parse("http://example.com/ext1.raw").unwrap(),
+                    sha384: Sha384Hash::from("a".repeat(96)),
+                    path: None,
+                }],
+                confexts: vec![Extension {
+                    url: Url::parse("http://example.com/ext2.raw").unwrap(),
+                    sha384: Sha384Hash::from("b".repeat(96)),
+                    path: None,
+                }],
+                netplan: Some(NetworkConfig {
+                    version: 2,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            scripts: Scripts {
+                pre_servicing: vec![Script::default()],
+                post_provision: vec![Script::default()],
+                post_configure: vec![Script::default()],
+            },
+            storage: Storage {
+                encryption: Some(Encryption {
+                    pcrs: vec![Pcr::Pcr7, Pcr::Pcr11],
+                    ..Default::default()
+                }),
+                ab_update: Some(AbUpdate {
+                    volume_pairs: vec![],
+                }),
+                raid: Raid {
+                    software: vec![SoftwareRaidArray {
+                        id: "raid0".into(),
+                        name: "md0".to_string(),
+                        level: RaidLevel::Raid1,
+                        devices: vec!["disk-a".into(), "disk-b".into()],
+                    }],
+                    sync_timeout: None,
+                },
+                verity: vec![
+                    VerityDevice {
+                        id: "usr".into(),
+                        name: "usr".to_string(),
+                        data_device_id: "usr-data".into(),
+                        hash_device_id: "usr-hash".into(),
+                        ..Default::default()
+                    },
+                    VerityDevice {
+                        id: "root".into(),
+                        name: "root".to_string(),
+                        data_device_id: "root-data".into(),
+                        hash_device_id: "root-hash".into(),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        config.internal_params.set_flag("preview-feature-flag");
+
+        let metrics = trace_feature_metrics(|| config.feature_tracing());
+
+        let expected = BTreeMap::from([
+            ("host_config_ab_update".to_string(), "true".to_string()),
+            ("host_config_confexts".to_string(), "true".to_string()),
+            ("host_config_encryption".to_string(), "7,11".to_string()),
+            (
+                "host_config_internal_params".to_string(),
+                "preview-feature-flag".to_string(),
+            ),
+            (
+                "host_config_kernel_command_line_options".to_string(),
+                "true".to_string(),
+            ),
+            ("host_config_modules".to_string(), "true".to_string()),
+            ("host_config_netplan".to_string(), "true".to_string()),
+            (
+                "host_config_post_configure_scripts".to_string(),
+                "true".to_string(),
+            ),
+            (
+                "host_config_post_provision_scripts".to_string(),
+                "true".to_string(),
+            ),
+            (
+                "host_config_pre_servicing_scripts".to_string(),
+                "true".to_string(),
+            ),
+            ("host_config_root_verity".to_string(), "true".to_string()),
+            ("host_config_selinux".to_string(), "enforcing".to_string()),
+            (
+                "host_config_services_disabled".to_string(),
+                "true".to_string(),
+            ),
+            (
+                "host_config_services_enabled".to_string(),
+                "true".to_string(),
+            ),
+            ("host_config_software_raid".to_string(), "true".to_string()),
+            ("host_config_sysexts".to_string(), "true".to_string()),
+            (
+                "host_config_uefi_fallback_mode".to_string(),
+                "disabled".to_string(),
+            ),
+            ("host_config_usr_verity".to_string(), "true".to_string()),
+        ]);
+
+        assert_eq!(metrics, expected);
     }
 }
