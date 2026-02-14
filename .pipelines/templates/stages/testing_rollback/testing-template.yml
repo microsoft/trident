@@ -53,6 +53,20 @@ parameters:
     type: string
     default: "false"
 
+  - name: micBuildType
+    displayName: MIC Build Type
+    type: string
+    values:
+      - dev
+      - preview
+      - release
+    default: release
+
+  - name: micVersion
+    displayName: MIC Version
+    type: string
+    default: "*.*.*"
+
 jobs:
   - job: RollbackTesting_${{ replace(parameters.flavor, '-', '_') }}
     displayName: Rollback Testing - ${{ parameters.flavor }}
@@ -118,6 +132,18 @@ jobs:
           find $(Build.ArtifactStagingDirectory)
         displayName: "Create extensions for test"
 
+      - template: common/mic-download-template.yaml@platform-pipelines
+        parameters:
+          buildType: ${{ parameters.micBuildType }}
+          arch: ${{ parameters.micArchitecture }}
+          micVersion: ${{ parameters.micVersion }}
+
+      - template: common/mic-download-template.yaml@platform-pipelines
+        parameters:
+          buildType: ${{ parameters.micBuildType }}
+          arch: ${{ parameters.micArchitecture }}
+          micVersion: ${{ parameters.micVersion }}
+
       - bash: |
           set -eux
 
@@ -143,6 +169,9 @@ jobs:
           if [ "${{ parameters.skipNetplanRuntimeTesting }}" == "true" ]; then
             # skip netplan runtime testing
             STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --skip-netplan-runtime-testing"
+          fi
+          if [[ "${{ parameters.micBuildType }}" == "dev" ]]; then
+            STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --image-customizer-image imagecustomizer:dev"
           fi
 
           sudo ./bin/storm-trident run rollback -a $STORM_DYNAMIC_FLAGS \

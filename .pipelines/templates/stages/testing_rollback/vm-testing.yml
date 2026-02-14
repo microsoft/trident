@@ -118,6 +118,8 @@ stages:
               verboseLogging: ${{ parameters.verboseLogging }}
               platform: qemu
               flavor: qemu-grub
+              micBuildType: ${{ parameters.micBuildType }}
+              micVersion: ${{ parameters.micVersion }}
       - ${{ if eq(parameters.includeQemu, true) }}:
           - template: testing-template.yml
             parameters:
@@ -132,6 +134,8 @@ stages:
               skipExtensionTesting: true
               skipRuntimeUpdateTesting: true
               skipNetplanRuntimeTesting: true
+              micBuildType: ${{ parameters.micBuildType }}
+              micVersion: ${{ parameters.micVersion }}
       - ${{ if eq(parameters.includeUKI, true) }}:
           - template: testing-template.yml
             parameters:
@@ -139,3 +143,5 @@ stages:
               verboseLogging: ${{ parameters.verboseLogging }}
               platform: qemu
               flavor: uki
+              micBuildType: ${{ parameters.micBuildType }}
+              micVersion: ${{ parameters.micVersion }}
