@@ -23,7 +23,7 @@ use crate::engine::EngineContext;
 /// Temporary name for the UKI file before renaming.
 pub const TMP_UKI_NAME: &str = "vmlinuz-0.efi.staged";
 pub const UKI_DIRECTORY: &str = formatcp!("{ESP_EFI_DIRECTORY}/Linux");
-const TMP_UKI_ADDON_DIR_NAME: &str = formatcp!("{}{}", TMP_UKI_NAME, UKI_ADDON_DIR_SUFFIX);
+const TMP_UKI_ADDON_DIR_NAME: &str = formatcp!("{TMP_UKI_NAME}{UKI_ADDON_DIR_SUFFIX}");
 const UKI_ADDON_DIR_SUFFIX: &str = ".extra.d";
 const UKI_ADDON_FILE_SUFFIX: &str = ".addon.efi";
 
@@ -33,6 +33,16 @@ fn uki_suffix(ctx: &EngineContext) -> String {
         Some(AbVolumeSelection::VolumeA) => format!("azlb{}.efi", ctx.install_index),
         None | Some(AbVolumeSelection::VolumeB) => format!("azla{}.efi", ctx.install_index),
     }
+}
+
+/// Returns the path to the addon directory associated with the given UKI file,
+/// which is expected to be named `<UKI_filename>.extra.d/`. For example, if the
+/// UKI file is `vmlinuz-1-azla1.efi`, the associated addon directory would be
+/// `vmlinuz-1-azla1.efi.extra.d/` in the same directory as the UKI file.
+fn uki_addon_dir(uki_path: &Path) -> PathBuf {
+    let mut addon_dir = uki_path.to_path_buf().into_os_string();
+    addon_dir.push(UKI_ADDON_DIR_SUFFIX);
+    PathBuf::from(addon_dir)
 }
 
 /// Return whether there is a staged UKI file on the ESP.
@@ -66,14 +76,7 @@ pub fn stage_uki_on_esp(temp_mount_dir: &Path, mount_point: &Path) -> Result<(),
 
     // Check if there is an addon directory associated with the UKI and copy it
     // if it exists. It should be named `<UKI_filename>.extra.d/`
-    let addon_dir = {
-        let mut uki_filename = ukis[0]
-            .file_name()
-            .context("Failed to get UKI filename")?
-            .to_os_string();
-        uki_filename.push(UKI_ADDON_DIR_SUFFIX);
-        uki_source_dir.join(uki_filename)
-    };
+    let addon_dir = uki_addon_dir(&ukis[0]);
 
     if !addon_dir.exists() {
         // No addon directory, so we're done.
@@ -98,8 +101,20 @@ pub fn stage_uki_on_esp(temp_mount_dir: &Path, mount_point: &Path) -> Result<(),
         addon_dir.display(),
         dest_addon_dir.display()
     );
+
+    // As a sanity check, cleanup the addon staging dir if it already exists
+    // from a previous failed staging attempt, to avoid accidentally copying
+    // files from a previous addon staging.
+    if dest_addon_dir.exists() {
+        fs::remove_dir_all(&dest_addon_dir)
+            .context("Failed to clean up existing staged addon directory")?;
+    }
+
+    // Now create it in a clean state.
     fs::create_dir_all(&dest_addon_dir).context("Failed to create destination addon directory")?;
 
+    // Copy all files from the source addon directory to the destination addon
+    // directory. We expect these to be files with names ending in `.addon.efi`.
     for entry in fs::read_dir(&addon_dir).context("Failed to read addon directory")? {
         let entry = entry.context("Failed to read entry in addon directory")?;
         let path = entry.path();
@@ -202,6 +217,27 @@ pub fn update_uki_boot_order(
     esp_dir_path: &Path,
     oneshot: bool,
 ) -> Result<(), TridentError> {
+    let entry_name =
+        update_uki_boot_files(ctx, esp_dir_path).message("Failed to update UKI boot files")?;
+
+    if oneshot {
+        debug!("Setting oneshot boot entry to '{entry_name}'");
+        efivar::set_oneshot(&entry_name)?;
+    } else {
+        debug!("Setting default boot entry to '{entry_name}'");
+        efivar::set_default(&entry_name)?;
+    }
+
+    Ok(())
+}
+
+/// Helper function to update the UKI boot files on the ESP and return the new
+/// boot entry name. This is used by `update_uki_boot_order`, but separate so
+/// it's easier to test.
+pub fn update_uki_boot_files(
+    ctx: &EngineContext,
+    esp_dir_path: &Path,
+) -> Result<String, TridentError> {
     let esp_uki_directory = esp_dir_path.join(UKI_DIRECTORY);
     let existing_ukis = enumerate_trident_managed_ukis(&esp_uki_directory)
         .structured(ServicingError::EnumerateUkis)?;
@@ -211,8 +247,18 @@ pub fn update_uki_boot_order(
     for (index, suffix, path) in existing_ukis {
         if suffix == uki_suffix {
             fs::remove_file(&path)
-                .structured(ServicingError::UpdateUki)
-                .message(format!("Failed to remove file '{}'", path.display()))?;
+                .with_context(|| format!("Failed to remove existing UKI file '{}'", path.display()))
+                .structured(ServicingError::UpdateUki)?;
+
+            // Remove any related addon directory as well if it exists.
+            let addon_dir = uki_addon_dir(&path);
+            if addon_dir.exists() && addon_dir.is_dir() {
+                fs::remove_dir_all(&addon_dir)
+                    .with_context(|| {
+                        format!("Failed to remove addon directory '{}'", addon_dir.display())
+                    })
+                    .structured(ServicingError::UpdateUki)?;
+            }
         } else {
             max_index = max_index.max(index);
         }
@@ -223,7 +269,8 @@ pub fn update_uki_boot_order(
         .file_name() // TODO: should be `file_stem` but systemd-boot doesn't seem to be following the spec.
         .structured(InternalError::Internal("Failed to get file stem"))?
         .to_str()
-        .structured(InternalError::Internal("Boot entry name isn't valid UTF-8"))?;
+        .structured(InternalError::Internal("Boot entry name isn't valid UTF-8"))?
+        .to_string();
 
     debug!("Renaming staged UKI file to '{}'", uki_dest_path.display());
     fs::rename(esp_uki_directory.join(TMP_UKI_NAME), &uki_dest_path)
@@ -241,11 +288,7 @@ pub fn update_uki_boot_order(
             .structured(ServicingError::UpdateUki);
         }
 
-        let uki_addons_dest_path = {
-            let mut path = uki_dest_path.clone().into_os_string();
-            path.push(UKI_ADDON_DIR_SUFFIX);
-            PathBuf::from(path)
-        };
+        let uki_addons_dest_path = uki_addon_dir(&uki_dest_path);
 
         debug!(
             "Renaming staged UKI addon directory to '{}'",
@@ -256,14 +299,7 @@ pub fn update_uki_boot_order(
             .structured(ServicingError::UpdateUki)?;
     }
 
-    if oneshot {
-        debug!("Setting oneshot boot entry to '{entry_name}'");
-        efivar::set_oneshot(entry_name)?;
-    } else {
-        debug!("Setting default boot entry to '{entry_name}'");
-        efivar::set_default(entry_name)?;
-    }
-    Ok(())
+    Ok(entry_name)
 }
 
 /// Enumerates preexisting UKIs unmanaged by Trident (defined by naming convention: vmlinuz-6.6.117.1-1.azl3.efi)
@@ -279,6 +315,14 @@ fn enumerate_non_trident_managed_ukis(
     ))? {
         let entry = entry.context("Failed to read entry")?;
         let filename = entry.file_name();
+
+        if !entry.path().is_file() {
+            trace!(
+                "Ignoring entry '{}' in UKI directory because it is not a file",
+                entry.path().display()
+            );
+            continue;
+        }
 
         if let Some(version) = filename
             .to_str()
@@ -381,6 +425,8 @@ mod tests {
     use std::fs::File;
     use tempfile::tempdir;
 
+    /// Validates that `uki_suffix` produces the correct A/B suffix based on
+    /// the active volume and install index.
     #[test]
     fn test_uki_suffix() {
         use trident_api::status::AbVolumeSelection;
@@ -401,6 +447,17 @@ mod tests {
         assert_eq!(uki_suffix(&ctx), "azla3.efi");
     }
 
+    /// Validates that `uki_addon_dir` appends the `.extra.d` suffix to the
+    /// UKI file path to form the addon directory path.
+    #[test]
+    fn test_uki_addon_dir() {
+        let uki_path = PathBuf::from("/some/path/vmlinuz-1-azla1.efi");
+        let expected_addon_dir = PathBuf::from("/some/path/vmlinuz-1-azla1.efi.extra.d");
+        assert_eq!(uki_addon_dir(&uki_path), expected_addon_dir);
+    }
+
+    /// Validates that `is_staged` returns false when no staged UKI exists
+    /// and true after a staged UKI file is written.
     #[test]
     fn test_is_staged() {
         let mock_esp = tempdir().unwrap();
@@ -412,6 +469,8 @@ mod tests {
         assert!(is_staged(mock_esp.path()));
     }
 
+    /// Validates that `stage_uki_on_esp` copies exactly one UKI file to the
+    /// ESP staging path, and fails when multiple UKI files are present.
     #[test]
     fn test_copy_uki_to_esp() {
         // Create source EFI/Linux directory and a dummy UKI file
@@ -438,6 +497,61 @@ mod tests {
         stage_uki_on_esp(temp_mount.path(), mount_point.path()).unwrap_err();
     }
 
+    /// Validates that `stage_uki_on_esp` copies both the UKI file and its
+    /// associated addon directory. Only files ending in `.addon.efi` are
+    /// copied; other files in the addon directory are ignored.
+    #[test]
+    fn test_copy_uki_to_esp_with_addon() {
+        // Create source EFI/Linux directory and a dummy UKI file
+        let temp_mount = tempdir().unwrap();
+        let src_uki_dir = temp_mount.path().join("EFI/Linux");
+        fs::create_dir_all(&src_uki_dir).unwrap();
+        let mock_uki_file = src_uki_dir.join("dummy-uki.efi");
+        fs::write(&mock_uki_file, b"uki-content").unwrap();
+
+        // Create an addon directory with addon files
+        let addon_dir = uki_addon_dir(&mock_uki_file);
+        fs::create_dir_all(&addon_dir).unwrap();
+        fs::write(addon_dir.join("addon1.addon.efi"), b"addon1").unwrap();
+        fs::write(addon_dir.join("addon2.addon.efi"), b"addon2").unwrap();
+        // Files without the .addon.efi suffix should be ignored
+        fs::write(addon_dir.join("not-an-addon.txt"), b"ignored").unwrap();
+        fs::write(addon_dir.join("sneaky.efi"), b"ignored").unwrap();
+        fs::write(addon_dir.join("README"), b"ignored").unwrap();
+
+        let mount_point = tempdir().unwrap();
+        prepare_esp_for_uki(mount_point.path()).unwrap();
+
+        // Should succeed when exactly one UKI file is present
+        stage_uki_on_esp(temp_mount.path(), mount_point.path()).unwrap();
+
+        // Check that the UKI file was copied to the correct destination
+        let dest_uki_file = join_relative(mount_point.path(), ESP_MOUNT_POINT_PATH)
+            .join(UKI_DIRECTORY)
+            .join(TMP_UKI_NAME);
+        assert_eq!(fs::read(&dest_uki_file).unwrap(), b"uki-content");
+
+        // Check that the addon files were copied to the correct destination
+        let dest_addon_dir = join_relative(mount_point.path(), ESP_MOUNT_POINT_PATH)
+            .join(UKI_DIRECTORY)
+            .join(TMP_UKI_ADDON_DIR_NAME);
+        assert_eq!(
+            fs::read(dest_addon_dir.join("addon1.addon.efi")).unwrap(),
+            b"addon1"
+        );
+        assert_eq!(
+            fs::read(dest_addon_dir.join("addon2.addon.efi")).unwrap(),
+            b"addon2"
+        );
+
+        // Verify files without the .addon.efi suffix were NOT copied
+        assert!(!dest_addon_dir.join("not-an-addon.txt").exists());
+        assert!(!dest_addon_dir.join("sneaky.efi").exists());
+        assert!(!dest_addon_dir.join("README").exists());
+    }
+
+    /// Validates that `prepare_esp_for_uki` creates the required ESP
+    /// directory structure (`EFI/Linux`, `loader/`) and writes `entries.srel`.
     #[test]
     fn test_prepare_esp_for_uki() {
         let root_mount = tempdir().unwrap();
@@ -451,6 +565,7 @@ mod tests {
         assert_eq!(content, "type1\n");
     }
 
+    /// Validates that enumerating an empty directory returns no UKI entries.
     #[test]
     fn test_enumerate_trident_managed_ukis_empty_directory() {
         let dir = tempdir().unwrap();
@@ -458,6 +573,8 @@ mod tests {
         assert!(entries.is_empty());
     }
 
+    /// Validates that a single file matching the Trident naming convention
+    /// is correctly parsed into its index, suffix, and path.
     #[test]
     fn test_enumerate_trident_managed_ukis_single_valid_entry() {
         let dir = tempdir().unwrap();
@@ -469,6 +586,8 @@ mod tests {
         assert_eq!(entries[0], (1, "azla1.efi".to_string(), uki_path));
     }
 
+    /// Validates that multiple valid Trident-managed UKI files are all
+    /// enumerated and correctly parsed.
     #[test]
     fn test_enumerate_trident_managed_ukis_multiple_valid_entries() {
         let dir = tempdir().unwrap();
@@ -485,6 +604,8 @@ mod tests {
         assert_eq!(entries[1], (2, "azlb2.efi".to_string(), uki_path2));
     }
 
+    /// Validates that files not matching the `vmlinuz-<index>-azl{a|b}` naming
+    /// convention are ignored during enumeration.
     #[test]
     fn test_enumerate_trident_managed_ukis_ignores_invalid_entries() {
         let dir = tempdir().unwrap();
@@ -500,6 +621,7 @@ mod tests {
         assert_eq!(entries[0], (3, "azla3.efi".to_string(), valid_uki));
     }
 
+    /// Validates that a UKI file with a non-numeric index is ignored.
     #[test]
     fn test_enumerate_trident_managed_ukis_non_numeric_index() {
         let dir = tempdir().unwrap();
@@ -510,6 +632,9 @@ mod tests {
         assert!(entries.is_empty());
     }
 
+    /// Validates rollback UKI selection: errors when fewer than 2 entries
+    /// exist, and returns the second-most-recent entry when 2 or more are
+    /// present. Entries are incrementally added to check each threshold.
     #[test]
     fn test_find_previous_uki() {
         let dir = tempdir().unwrap();
@@ -535,6 +660,9 @@ mod tests {
         assert_eq!(find_previous_uki(dir.path()).unwrap(), uki_path2);
     }
 
+    /// Validates the offline-init rollback scenario where a pre-existing
+    /// (non-Trident-managed) UKI is used as the fallback when only one
+    /// Trident-managed UKI exists.
     #[test]
     fn test_find_previous_uki_offline_init() {
         let dir = tempdir().unwrap();
@@ -559,5 +687,166 @@ mod tests {
         File::create(&uki_path2).unwrap();
         // 2 UKI file in directory, should return uki_path1
         assert_eq!(find_previous_uki(dir.path()).unwrap(), uki_path1);
+    }
+
+    /// Validates that `stage_uki_on_esp` only considers regular files when
+    /// building the UKI list. Subdirectories and symlinks are ignored,
+    /// causing a "No UKI files found" error when no regular files exist.
+    #[test]
+    fn test_stage_uki_on_esp_ignores_non_files() {
+        let temp_mount = tempdir().unwrap();
+        let src_uki_dir = temp_mount.path().join("EFI/Linux");
+        fs::create_dir_all(&src_uki_dir).unwrap();
+
+        // Create a subdirectory (e.g. an addon dir) that should be ignored
+        fs::create_dir_all(src_uki_dir.join("some-uki.efi.extra.d")).unwrap();
+
+        // Create a symlink to a directory — also not a regular file
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(
+            src_uki_dir.join("some-uki.efi.extra.d"),
+            src_uki_dir.join("symlink-to-dir"),
+        )
+        .unwrap();
+
+        // With no regular files present, staging should fail with "No UKI files found"
+        let mount_point = tempdir().unwrap();
+        prepare_esp_for_uki(mount_point.path()).unwrap();
+        let err = stage_uki_on_esp(temp_mount.path(), mount_point.path()).unwrap_err();
+        assert!(
+            err.to_string().contains("No UKI files found"),
+            "Expected 'No UKI files found' error, got: {err}"
+        );
+
+        // Now add exactly one regular file — staging should succeed
+        fs::write(src_uki_dir.join("real-uki.efi"), b"uki-content").unwrap();
+        stage_uki_on_esp(temp_mount.path(), mount_point.path()).unwrap();
+
+        let dest_uki_file = join_relative(mount_point.path(), ESP_MOUNT_POINT_PATH)
+            .join(UKI_DIRECTORY)
+            .join(TMP_UKI_NAME);
+        assert_eq!(fs::read(&dest_uki_file).unwrap(), b"uki-content");
+    }
+
+    /// Helper to create a mock ESP with the UKI directory structure and a
+    /// staged UKI file ready for `update_uki_boot_files`.
+    fn setup_esp_with_staged_uki() -> (tempfile::TempDir, PathBuf) {
+        let esp = tempdir().unwrap();
+        let uki_dir = esp.path().join(UKI_DIRECTORY);
+        fs::create_dir_all(&uki_dir).unwrap();
+        fs::write(uki_dir.join(TMP_UKI_NAME), b"new-uki").unwrap();
+        (esp, uki_dir)
+    }
+
+    fn make_ctx(volume: Option<AbVolumeSelection>, index: usize) -> EngineContext {
+        EngineContext {
+            ab_active_volume: volume,
+            install_index: index,
+            ..Default::default()
+        }
+    }
+
+    /// Validates the basic case: a staged UKI with no prior UKI entries is
+    /// renamed to index 100 (default max_index 99 + 1) and the correct boot
+    /// entry name is returned.
+    #[test]
+    fn test_update_uki_boot_files_basic() {
+        let (esp, uki_dir) = setup_esp_with_staged_uki();
+        let ctx = make_ctx(Some(AbVolumeSelection::VolumeB), 1);
+
+        let entry_name = update_uki_boot_files(&ctx, esp.path()).unwrap();
+
+        assert_eq!(entry_name, "vmlinuz-100-azla1.efi");
+        assert!(uki_dir.join("vmlinuz-100-azla1.efi").exists());
+        assert!(!uki_dir.join(TMP_UKI_NAME).exists());
+    }
+
+    /// Validates that an existing UKI with the same A/B suffix is removed
+    /// before the staged UKI is renamed, and that the new index is computed
+    /// from other (non-matching) entries.
+    #[test]
+    fn test_update_uki_boot_files_removes_conflicting_suffix() {
+        let (esp, uki_dir) = setup_esp_with_staged_uki();
+        let ctx = make_ctx(Some(AbVolumeSelection::VolumeB), 1);
+        // suffix will be "azla1.efi"
+
+        // Create a pre-existing UKI with the same suffix (should be removed)
+        fs::write(uki_dir.join("vmlinuz-100-azla1.efi"), b"old").unwrap();
+        // Create a UKI with a different suffix (should be kept, drives max_index)
+        fs::write(uki_dir.join("vmlinuz-105-azlb2.efi"), b"other").unwrap();
+
+        let entry_name = update_uki_boot_files(&ctx, esp.path()).unwrap();
+
+        // Conflicting UKI removed
+        assert!(!uki_dir.join("vmlinuz-100-azla1.efi").exists());
+        // Other UKI kept
+        assert!(uki_dir.join("vmlinuz-105-azlb2.efi").exists());
+        // New index = max(99, 105) + 1 = 106
+        assert_eq!(entry_name, "vmlinuz-106-azla1.efi");
+        assert!(uki_dir.join("vmlinuz-106-azla1.efi").exists());
+    }
+
+    /// Validates that when a conflicting UKI has an associated addon directory,
+    /// both the UKI file and its addon directory are removed.
+    #[test]
+    fn test_update_uki_boot_files_removes_conflicting_addon_dir() {
+        let (esp, uki_dir) = setup_esp_with_staged_uki();
+        let ctx = make_ctx(Some(AbVolumeSelection::VolumeB), 1);
+
+        let conflicting_uki = uki_dir.join("vmlinuz-105-azla1.efi");
+        fs::write(&conflicting_uki, b"old").unwrap();
+        let conflicting_addon = uki_addon_dir(&conflicting_uki);
+        fs::create_dir_all(&conflicting_addon).unwrap();
+        fs::write(conflicting_addon.join("cmdline.addon.efi"), b"addon").unwrap();
+
+        update_uki_boot_files(&ctx, esp.path()).unwrap();
+
+        // The conflicting UKI and its addon dir (index 105) should be removed.
+        assert!(!conflicting_uki.exists());
+        assert!(!conflicting_addon.exists());
+        // The new UKI gets index 100 (default max_index 99 + 1).
+        assert!(uki_dir.join("vmlinuz-100-azla1.efi").exists());
+    }
+
+    /// Validates that a staged addon directory is renamed alongside the staged
+    /// UKI to match the new filename.
+    #[test]
+    fn test_update_uki_boot_files_renames_staged_addon_dir() {
+        let (esp, uki_dir) = setup_esp_with_staged_uki();
+        let ctx = make_ctx(Some(AbVolumeSelection::VolumeA), 1);
+        // suffix will be "azlb1.efi"
+
+        // Create a staged addon directory
+        let staged_addon_dir = uki_dir.join(TMP_UKI_ADDON_DIR_NAME);
+        fs::create_dir_all(&staged_addon_dir).unwrap();
+        fs::write(staged_addon_dir.join("cmdline.addon.efi"), b"addon-data").unwrap();
+
+        let entry_name = update_uki_boot_files(&ctx, esp.path()).unwrap();
+
+        assert_eq!(entry_name, "vmlinuz-100-azlb1.efi");
+        // Staged addon dir should be gone
+        assert!(!staged_addon_dir.exists());
+        // New addon dir should exist with correct name and contents
+        let new_addon_dir = uki_dir.join("vmlinuz-100-azlb1.efi.extra.d");
+        assert!(new_addon_dir.exists());
+        assert_eq!(
+            fs::read(new_addon_dir.join("cmdline.addon.efi")).unwrap(),
+            b"addon-data"
+        );
+    }
+
+    /// Validates that `update_uki_boot_files` succeeds without an addon
+    /// directory, and no addon directory is created on the destination.
+    #[test]
+    fn test_update_uki_boot_files_no_addon_dir() {
+        let (esp, uki_dir) = setup_esp_with_staged_uki();
+        let ctx = make_ctx(None, 2);
+        // suffix will be "azla2.efi"
+
+        let entry_name = update_uki_boot_files(&ctx, esp.path()).unwrap();
+
+        assert_eq!(entry_name, "vmlinuz-100-azla2.efi");
+        assert!(uki_dir.join("vmlinuz-100-azla2.efi").exists());
+        assert!(!uki_dir.join("vmlinuz-100-azla2.efi.extra.d").exists());
     }
 }
