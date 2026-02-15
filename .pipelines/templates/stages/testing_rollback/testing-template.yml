@@ -135,13 +135,7 @@ jobs:
       - template: common/mic-download-template.yaml@platform-pipelines
         parameters:
           buildType: ${{ parameters.micBuildType }}
-          arch: ${{ parameters.micArchitecture }}
-          micVersion: ${{ parameters.micVersion }}
-
-      - template: common/mic-download-template.yaml@platform-pipelines
-        parameters:
-          buildType: ${{ parameters.micBuildType }}
-          arch: ${{ parameters.micArchitecture }}
+          arch: amd64
           micVersion: ${{ parameters.micVersion }}
 
       - bash: |
