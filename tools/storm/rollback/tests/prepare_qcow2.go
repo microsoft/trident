@@ -16,6 +16,7 @@ import (
 const IMAGE_CUSTOMIZER_CONFIG_TEMPLATE = `# config.yaml
 previewFeatures:
 - reinitialize-verity
+%s
 os:
   additionalFiles:
   - source: %s
@@ -24,9 +25,10 @@ os:
   services:
     enable:
     - systemd-sysext
+%s
 `
 
-const IMAGE_CUSTOMIZER_UKI_CONFIG_TEMPLATE = IMAGE_CUSTOMIZER_CONFIG_TEMPLATE + `
+const IMAGE_CUSTOMIZER_UKI_CONFIG_TEMPLATE_PART = `
   uki:
     mode: passthrough
 `
@@ -62,14 +64,19 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 	// Create Image Customizer config
 	customizerConfigFile := "image-customizer-config.yaml"
 	customizerConfigPath := filepath.Join(testConfig.ArtifactsDir, customizerConfigFile)
-	customizerConfigTemplate := IMAGE_CUSTOMIZER_CONFIG_TEMPLATE
+
+	ukiPreviewFeatureFlag := ""
+	osUkiConfig := ""
 	if testConfig.Uki {
-		customizerConfigTemplate = IMAGE_CUSTOMIZER_UKI_CONFIG_TEMPLATE
+		ukiPreviewFeatureFlag = "- uki"
+		osUkiConfig = IMAGE_CUSTOMIZER_UKI_CONFIG_TEMPLATE_PART
 	}
 	customizerConfigContent := fmt.Sprintf(
-		customizerConfigTemplate,
+		IMAGE_CUSTOMIZER_CONFIG_TEMPLATE,
+		ukiPreviewFeatureFlag,
 		filepath.Join("/artifacts", extensionFileName),
 		extensionFileName,
+		osUkiConfig,
 	)
 	logrus.Tracef("Creating Image Customizer config file: %s", customizerConfigPath)
 	logrus.Tracef("Image customizer config content:\n%s", customizerConfigContent)
