@@ -69,15 +69,23 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 	}
 	logrus.Tracef("Wrote Image Customizer config file: %s", customizerConfigPath)
 
-	// Pull Image Customizer image
-	pullArgs := []string{"pull", testConfig.ImageCustomizerImage}
-	logrus.Tracef("Pulling Image Customizer image: %v", pullArgs)
-	pullOutput, err := exec.Command("docker", pullArgs...).CombinedOutput()
-	logrus.Tracef("Pull Image Customizer (%v):\n%s", err, string(pullOutput))
-	if err != nil {
-		return fmt.Errorf("failed to pull Image Customizer image: %w", err)
+	// Check for Image Customizer image
+	queryImageArgs := []string{"images", "-q", testConfig.ImageCustomizerImage}
+	logrus.Tracef("Checking for Image Customizer image: %v", queryImageArgs)
+	queryImageOutput, err := exec.Command("docker", queryImageArgs...).Output()
+	logrus.Tracef("Check for Image Customizer image (%v):\n%s", err, string(queryImageOutput))
+	if err != nil || len(queryImageOutput) == 0 {
+		logrus.Tracef("Image Customizer image not found locally: %s", testConfig.ImageCustomizerImage)
+		// Pull Image Customizer image
+		pullArgs := []string{"pull", testConfig.ImageCustomizerImage}
+		logrus.Tracef("Pulling Image Customizer image: %v", pullArgs)
+		pullOutput, err := exec.Command("docker", pullArgs...).CombinedOutput()
+		logrus.Tracef("Pull Image Customizer (%v):\n%s", err, string(pullOutput))
+		if err != nil {
+			return fmt.Errorf("failed to pull Image Customizer image: %w", err)
+		}
+		logrus.Tracef("Pulled Image Customizer image: %s", testConfig.ImageCustomizerImage)
 	}
-	logrus.Tracef("Pulled Image Customizer image: %s", testConfig.ImageCustomizerImage)
 
 	// Run Image Customizer
 	customizedImageFileName := "tmp-adjusted-rollback-testimage.qcow2"
