@@ -67,6 +67,11 @@ parameters:
     type: string
     default: "*.*.*"
 
+  - name: isUki
+    displayName: "Is the image UKI or not"
+    type: string
+    default: "false"
+
 jobs:
   - job: RollbackTesting_${{ replace(parameters.flavor, '-', '_') }}
     displayName: Rollback Testing - ${{ parameters.flavor }}
@@ -166,6 +171,9 @@ jobs:
           fi
           if [[ "${{ parameters.micBuildType }}" == "dev" ]]; then
             STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --image-customizer-image imagecustomizer:dev"
+          fi
+          if [[ "${{ parameters.isUki }}" == "true" ]]; then
+            STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --uki"
           fi
 
           sudo ./bin/storm-trident run rollback -a $STORM_DYNAMIC_FLAGS \

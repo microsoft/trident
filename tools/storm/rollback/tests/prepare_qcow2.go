@@ -26,6 +26,11 @@ os:
     - systemd-sysext
 `
 
+const IMAGE_CUSTOMIZER_UKI_CONFIG_TEMPLATE = IMAGE_CUSTOMIZER_CONFIG_TEMPLATE + `
+  uki:
+    mode: passthrough
+`
+
 // Use Image Customizer to prepare the qcow2 image for rollback testing
 // by injecting the extension v1.0.0
 func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig) error {
@@ -57,8 +62,12 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 	// Create Image Customizer config
 	customizerConfigFile := "image-customizer-config.yaml"
 	customizerConfigPath := filepath.Join(testConfig.ArtifactsDir, customizerConfigFile)
+	customizerConfigTemplate := IMAGE_CUSTOMIZER_CONFIG_TEMPLATE
+	if testConfig.Uki {
+		customizerConfigTemplate = IMAGE_CUSTOMIZER_UKI_CONFIG_TEMPLATE
+	}
 	customizerConfigContent := fmt.Sprintf(
-		IMAGE_CUSTOMIZER_CONFIG_TEMPLATE,
+		customizerConfigTemplate,
 		filepath.Join("/artifacts", extensionFileName),
 		extensionFileName,
 	)
