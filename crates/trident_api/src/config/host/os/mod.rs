@@ -314,49 +314,6 @@ impl Os {
 
         Ok(())
     }
-
-    // Emit tracing info about what features of the Host Configuration are being used
-    pub fn feature_tracing(&self) {
-        tracing::info!(
-            metric_name = "host_config_netplan",
-            value = self.netplan.is_some()
-        );
-        tracing::info!(
-            metric_name = "host_config_selinux",
-            value = match self.selinux.mode {
-                Some(mode) => mode.to_string(),
-                _ => "none".to_string(),
-            }
-        );
-        tracing::info!(
-            metric_name = "host_config_modules",
-            value = !self.modules.is_empty()
-        );
-        tracing::info!(
-            metric_name = "host_config_sysexts",
-            value = !self.sysexts.is_empty()
-        );
-        tracing::info!(
-            metric_name = "host_config_confexts",
-            value = !self.confexts.is_empty()
-        );
-        tracing::info!(
-            metric_name = "host_config_services_enabled",
-            value = !self.services.enable.is_empty()
-        );
-        tracing::info!(
-            metric_name = "host_config_services_disabled",
-            value = !self.services.disable.is_empty()
-        );
-        tracing::info!(
-            metric_name = "host_config_kernel_command_line_options",
-            value = !self.kernel_command_line.extra_command_line.is_empty()
-        );
-        tracing::info!(
-            metric_name = "host_config_uefi_fallback_mode",
-            value = self.uefi_fallback.to_string()
-        );
-    }
 }
 
 impl ManagementOs {

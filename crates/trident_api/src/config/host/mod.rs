@@ -109,22 +109,24 @@ impl HostConfiguration {
 
     /// Trace feature usage based on the Host Configuration.
     pub fn feature_tracing(&self) {
-        self.os.feature_tracing();
         tracing::info!(
-            metric_name = "host_config_post_configure_scripts",
-            value = !self.scripts.post_configure.is_empty()
-        );
-        tracing::info!(
-            metric_name = "host_config_pre_servicing_scripts",
-            value = !self.scripts.pre_servicing.is_empty()
-        );
-        tracing::info!(
-            metric_name = "host_config_post_provision_scripts",
-            value = !self.scripts.post_provision.is_empty()
-        );
-        tracing::info!(
-            metric_name = "host_config_encryption",
-            value = match &self.storage.encryption {
+            netplan = self.os.netplan.is_some(),
+            selinux = match self.os.selinux.mode {
+                Some(mode) => mode.to_string(),
+                _ => "none".to_string(),
+            },
+            modules = !self.os.modules.is_empty(),
+            sysexts = !self.os.sysexts.is_empty(),
+            confexts = !self.os.confexts.is_empty(),
+            services_enabled = !self.os.services.enable.is_empty(),
+            services_disabled = !self.os.services.disable.is_empty(),
+            kernel_command_line_options =
+                !self.os.kernel_command_line.extra_command_line.is_empty(),
+            uefi_fallback_mode = self.os.uefi_fallback.to_string(),
+            post_configure_scripts = !self.scripts.post_configure.is_empty(),
+            pre_servicing_scripts = !self.scripts.pre_servicing.is_empty(),
+            post_provision_scripts = !self.scripts.post_provision.is_empty(),
+            encryption = match &self.storage.encryption {
                 Some(encryption) => encryption
                     .pcrs
                     .iter()
@@ -132,27 +134,13 @@ impl HostConfiguration {
                     .collect::<Vec<_>>()
                     .join(","),
                 _ => "".to_string(),
-            }
-        );
-        tracing::info!(
-            metric_name = "host_config_ab_update",
-            value = self.storage.ab_update.is_some()
-        );
-        tracing::info!(
-            metric_name = "host_config_software_raid",
-            value = !self.storage.raid.software.is_empty()
-        );
-        tracing::info!(
-            metric_name = "host_config_usr_verity",
-            value = self.storage.verity.iter().any(|v| v.name == "usr")
-        );
-        tracing::info!(
-            metric_name = "host_config_root_verity",
-            value = self.storage.verity.iter().any(|v| v.name == "root")
-        );
-        tracing::info!(
-            metric_name = "host_config_internal_params",
-            value = self.internal_params.get_set_params().join(","),
+            },
+            ab_update = self.storage.ab_update.is_some(),
+            software_raid = !self.storage.raid.software.is_empty(),
+            usr_verity = self.storage.verity.iter().any(|v| v.name == "usr"),
+            root_verity = self.storage.verity.iter().any(|v| v.name == "root"),
+            internal_params = self.internal_params.get_set_params().join(","),
+            "Host Configuration feature usage",
         );
     }
 
@@ -340,35 +328,38 @@ mod tests {
 
     #[derive(Default)]
     struct MetricVisitor {
-        metric_name: Option<String>,
-        value: Option<String>,
+        fields: BTreeMap<String, String>,
     }
 
     impl Visit for MetricVisitor {
         fn record_bool(&mut self, field: &tracing::field::Field, value: bool) {
-            if field.name() == "value" {
-                self.value = Some(value.to_string());
+            // Skip the message field
+            if field.name() != "message" {
+                self.fields
+                    .insert(field.name().to_string(), value.to_string());
             }
         }
 
         fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
-            match field.name() {
-                "metric_name" => self.metric_name = Some(value.to_string()),
-                "value" => self.value = Some(value.to_string()),
-                _ => {}
+            // Skip the message field
+            if field.name() != "message" {
+                self.fields
+                    .insert(field.name().to_string(), value.to_string());
             }
         }
 
         fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
-            if field.name() == "value" {
-                self.value = Some(format!("{value:?}"));
+            // Skip the message field
+            if field.name() != "message" {
+                self.fields
+                    .insert(field.name().to_string(), format!("{value:?}"));
             }
         }
     }
 
     #[derive(Clone, Default)]
     struct MetricsCaptureLayer {
-        events: Arc<Mutex<Vec<(String, String)>>>,
+        events: Arc<Mutex<BTreeMap<String, String>>>,
     }
 
     impl<S> Layer<S> for MetricsCaptureLayer
@@ -378,11 +369,15 @@ mod tests {
         fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
             let mut visitor = MetricVisitor::default();
             event.record(&mut visitor);
-            if let Some(metric_name) = visitor.metric_name {
-                self.events
-                    .lock()
-                    .expect("metric events mutex should not be poisoned")
-                    .push((metric_name, visitor.value.unwrap_or_default()));
+
+            let mut events = self
+                .events
+                .lock()
+                .expect("metric events mutex should not be poisoned");
+
+            // Add "host_config_" prefix to each field name to match expected test format
+            for (key, value) in visitor.fields {
+                events.insert(key, value);
             }
         }
     }
@@ -390,19 +385,19 @@ mod tests {
     fn trace_feature_metrics(execute: impl FnOnce()) -> BTreeMap<String, String> {
         let layer = MetricsCaptureLayer::default();
         let events = Arc::clone(&layer.events);
-        let subscriber = Registry::default().with(layer);
 
-        tracing::subscriber::with_default(subscriber, || {
-            execute();
-        });
+        {
+            let subscriber = Registry::default().with(layer);
+            tracing::subscriber::with_default(subscriber, || {
+                execute();
+            });
+        }
 
-        let metrics = events
+        let result = events
             .lock()
             .expect("metric events mutex should not be poisoned")
-            .iter()
-            .cloned()
-            .collect();
-        metrics
+            .clone();
+        result
     }
 
     #[test]
@@ -829,45 +824,27 @@ mod tests {
         let metrics = trace_feature_metrics(|| config.feature_tracing());
 
         let expected = BTreeMap::from([
-            ("host_config_ab_update".to_string(), "false".to_string()),
-            ("host_config_confexts".to_string(), "false".to_string()),
-            ("host_config_encryption".to_string(), "".to_string()),
-            ("host_config_internal_params".to_string(), "".to_string()),
+            ("ab_update".to_string(), "false".to_string()),
+            ("confexts".to_string(), "false".to_string()),
+            ("encryption".to_string(), "".to_string()),
+            ("internal_params".to_string(), "".to_string()),
             (
-                "host_config_kernel_command_line_options".to_string(),
+                "kernel_command_line_options".to_string(),
                 "false".to_string(),
             ),
-            ("host_config_modules".to_string(), "false".to_string()),
-            ("host_config_netplan".to_string(), "false".to_string()),
-            (
-                "host_config_post_configure_scripts".to_string(),
-                "false".to_string(),
-            ),
-            (
-                "host_config_post_provision_scripts".to_string(),
-                "false".to_string(),
-            ),
-            (
-                "host_config_pre_servicing_scripts".to_string(),
-                "false".to_string(),
-            ),
-            ("host_config_root_verity".to_string(), "false".to_string()),
-            ("host_config_selinux".to_string(), "none".to_string()),
-            (
-                "host_config_services_disabled".to_string(),
-                "false".to_string(),
-            ),
-            (
-                "host_config_services_enabled".to_string(),
-                "false".to_string(),
-            ),
-            ("host_config_software_raid".to_string(), "false".to_string()),
-            ("host_config_sysexts".to_string(), "false".to_string()),
-            (
-                "host_config_uefi_fallback_mode".to_string(),
-                "conservative".to_string(),
-            ),
-            ("host_config_usr_verity".to_string(), "false".to_string()),
+            ("modules".to_string(), "false".to_string()),
+            ("netplan".to_string(), "false".to_string()),
+            ("post_configure_scripts".to_string(), "false".to_string()),
+            ("post_provision_scripts".to_string(), "false".to_string()),
+            ("pre_servicing_scripts".to_string(), "false".to_string()),
+            ("root_verity".to_string(), "false".to_string()),
+            ("selinux".to_string(), "none".to_string()),
+            ("services_disabled".to_string(), "false".to_string()),
+            ("services_enabled".to_string(), "false".to_string()),
+            ("software_raid".to_string(), "false".to_string()),
+            ("sysexts".to_string(), "false".to_string()),
+            ("uefi_fallback_mode".to_string(), "conservative".to_string()),
+            ("usr_verity".to_string(), "false".to_string()),
         ]);
 
         assert_eq!(metrics, expected);
@@ -955,48 +932,30 @@ mod tests {
         let metrics = trace_feature_metrics(|| config.feature_tracing());
 
         let expected = BTreeMap::from([
-            ("host_config_ab_update".to_string(), "true".to_string()),
-            ("host_config_confexts".to_string(), "true".to_string()),
-            ("host_config_encryption".to_string(), "7,11".to_string()),
+            ("ab_update".to_string(), "true".to_string()),
+            ("confexts".to_string(), "true".to_string()),
+            ("encryption".to_string(), "7,11".to_string()),
             (
-                "host_config_internal_params".to_string(),
+                "internal_params".to_string(),
                 "preview-feature-flag".to_string(),
             ),
             (
-                "host_config_kernel_command_line_options".to_string(),
+                "kernel_command_line_options".to_string(),
                 "true".to_string(),
             ),
-            ("host_config_modules".to_string(), "true".to_string()),
-            ("host_config_netplan".to_string(), "true".to_string()),
-            (
-                "host_config_post_configure_scripts".to_string(),
-                "true".to_string(),
-            ),
-            (
-                "host_config_post_provision_scripts".to_string(),
-                "true".to_string(),
-            ),
-            (
-                "host_config_pre_servicing_scripts".to_string(),
-                "true".to_string(),
-            ),
-            ("host_config_root_verity".to_string(), "true".to_string()),
-            ("host_config_selinux".to_string(), "enforcing".to_string()),
-            (
-                "host_config_services_disabled".to_string(),
-                "true".to_string(),
-            ),
-            (
-                "host_config_services_enabled".to_string(),
-                "true".to_string(),
-            ),
-            ("host_config_software_raid".to_string(), "true".to_string()),
-            ("host_config_sysexts".to_string(), "true".to_string()),
-            (
-                "host_config_uefi_fallback_mode".to_string(),
-                "disabled".to_string(),
-            ),
-            ("host_config_usr_verity".to_string(), "true".to_string()),
+            ("modules".to_string(), "true".to_string()),
+            ("netplan".to_string(), "true".to_string()),
+            ("post_configure_scripts".to_string(), "true".to_string()),
+            ("post_provision_scripts".to_string(), "true".to_string()),
+            ("pre_servicing_scripts".to_string(), "true".to_string()),
+            ("root_verity".to_string(), "true".to_string()),
+            ("selinux".to_string(), "enforcing".to_string()),
+            ("services_disabled".to_string(), "true".to_string()),
+            ("services_enabled".to_string(), "true".to_string()),
+            ("software_raid".to_string(), "true".to_string()),
+            ("sysexts".to_string(), "true".to_string()),
+            ("uefi_fallback_mode".to_string(), "disabled".to_string()),
+            ("usr_verity".to_string(), "true".to_string()),
         ]);
 
         assert_eq!(metrics, expected);
