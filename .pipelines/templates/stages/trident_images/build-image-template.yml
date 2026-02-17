@@ -139,16 +139,11 @@ steps:
   - bash: |
       set -ex
 
-      EXTRA_ARGS=""
-
-      if [[ "${{ parameters.micBuildType }}" == "dev" ]]; then
-        EXTRA_ARGS+=" --container imagecustomizer:dev"
-      fi
-
       python3  ./tests/images/testimages.py build \
           "${{ parameters.imageName }}" $EXTRA_ARGS \
           --output-dir $(ob_outputDirectory) \
           --no-download \
           --clones ${{ parameters.clones }}
+          --container imagecustomizer:local
     displayName: "Build ${{ parameters.imageName }}"
     workingDirectory: $(Build.SourcesDirectory)

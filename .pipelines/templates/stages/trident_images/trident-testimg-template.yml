@@ -220,9 +220,7 @@ steps:
 
       set -ex
 
-      if [[ "${{ parameters.micBuildType }}" == "dev" ]]; then
-        export MIC_CONTAINER_IMAGE="imagecustomizer:dev"
-      fi
+      export MIC_CONTAINER_IMAGE="imagecustomizer:local"
 
       if [[ "${{ parameters.clones }}" -gt 1 ]]; then
         export IMAGE_CLONES="${{ parameters.clones }}"
