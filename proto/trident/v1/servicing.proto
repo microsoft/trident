@@ -25,11 +25,12 @@ message ServicingResponse {
   // Body of the response message.
   oneof response {
     // A start message indicating the beginning of the servicing operation.
-    Start start = 2;
+    Started started = 2;
     // A log message from the servicing operation.
     Log log = 3;
-    // A final status message from the servicing operation.
-    FinalStatus final_status = 4;
+    // The complete message indicating the completion of the servicing
+    // operation, including the final status and whether a reboot is required.
+    Completed completed = 4;
   }
 }
 
@@ -49,15 +50,15 @@ message RebootManagement {
 enum RebootHandling {
   REBOOT_HANDLING_UNSPECIFIED = 0;
   // Trident will handle any required reboots of the system.
-  AUTO_REBOOT = 1;
+  TRIDENT_HANDLES_REBOOT = 1;
   // The caller will handle any required reboots of the system.
   CALLER_HANDLES_REBOOT = 2;
 }
 
-// FinalStatus represents the final status of a servicing operation, including
+// Completed represents the final status of a servicing operation, including
 // whether the operation was successful, and whether a reboot is required to
 // finalize the servicing.
-message FinalStatus {
+message Completed {
   // Final status of the servicing operation.
   StatusCode status = 1;
 
@@ -65,16 +66,10 @@ message FinalStatus {
   // is not STATUS_CODE_SUCCESS.
   optional TridentError error = 2;
 
-  // Whether a reboot is required to complete the servicing operation. If true,
-  // the caller is expected to reboot the system to finalize the servicing
-  // immediately upon receiving this status.
-  bool reboot_required = 3;
-
-  // Whether Trident started a reboot. If true, the system is expected to reboot
-  // automatically shortly after this message is received to finalize the
-  // servicing. No further action from the caller is needed. This field can be
-  // true only if reboot_required is false.
-  bool reboot_started = 4;
+  // The reboot status of the system after the servicing operation. This field
+  // indicates whether a reboot is required, not required, or has been started
+  // automatically by Trident.
+  RebootStatus reboot_status = 3;
 }
 
 // Represents the final status of a servicing operation.
@@ -84,4 +79,23 @@ enum StatusCode {
   STATUS_CODE_FAILURE     = 2;
 }
 
-message Start {}
+message Started {}
+
+// RebootStatus represents the reboot status of the system after servicing. This
+// indicates whether a reboot is required to finalize the servicing, and if so,
+// whether the reboot has been started automatically by Trident or is expected
+// to be handled by the caller.
+enum RebootStatus {
+    REBOOT_STATUS_UNSPECIFIED = 0;
+
+    // The servicing operation completed and no reboot is required.
+    REBOOT_NOT_REQUIRED = 1;
+
+    // The servicing operation completed successfully and the caller is expected
+    // to reboot the system immediately to finalize the servicing.
+    REBOOT_REQUIRED = 2;
+
+    // The servicing operation completed successfully and Trident has started
+    // the reboot process automatically.
+    REBOOT_STARTED = 3;
+}
