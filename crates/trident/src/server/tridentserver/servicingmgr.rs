@@ -8,7 +8,7 @@ use tokio::sync::{Mutex, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock};
 use tokio_util::sync::CancellationToken;
 
 use trident_api::error::{InternalError, TridentError};
-use trident_proto::v1::{Completed, RebootStatus, StatusCode, TridentError as HarpoonTridentError};
+use trident_proto::v1::{Completed, RebootStatus, StatusCode, TridentError as ProtoTridentError};
 
 use crate::{server::activitytracker::ActivityTracker, ExitKind};
 
@@ -128,7 +128,7 @@ impl ServicingManager {
                 Err(e) => {
                     return Completed {
                         status: StatusCode::Failure.into(),
-                        error: Some(HarpoonTridentError::from(&e)),
+                        error: Some(ProtoTridentError::from(&e)),
                         reboot_status: RebootStatus::RebootNotRequired.into(),
                     }
                 }
@@ -137,7 +137,7 @@ impl ServicingManager {
                 error!("Servicing task join error: {:?}", e);
                 return Completed {
                     status: StatusCode::Failure.into(),
-                    error: Some(HarpoonTridentError::from(&TridentError::with_source(
+                    error: Some(ProtoTridentError::from(&TridentError::with_source(
                         InternalError::Internal("Servicing task panicked or was cancelled"),
                         anyhow!(e),
                     ))),
@@ -169,7 +169,7 @@ impl ServicingManager {
             (ExitKind::NeedsReboot, RebootDecision::Error) => {
                 return Completed {
                     status: StatusCode::Failure.into(),
-                    error: Some(HarpoonTridentError::from(&TridentError::new(
+                    error: Some(ProtoTridentError::from(&TridentError::new(
                         InternalError::Internal("The servicing task requested a reboot, but this task type should not cause reboots."),
                     ))),
                     reboot_status: RebootStatus::RebootNotRequired.into(),

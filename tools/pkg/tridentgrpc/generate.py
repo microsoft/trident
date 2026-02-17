@@ -6,7 +6,7 @@ This script discovers all .proto files under proto/trident/{v1,v1preview},
 computes the --go_opt=M mappings so each file is routed to the correct Go
 package, and invokes protoc once per package.
 
-Usage (called by go:generate in harpoon.go):
+Usage (called by go:generate in grpc.go):
     ./generate.py
 """
 
@@ -22,7 +22,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 PROTO_ROOT = SCRIPT_DIR / ".." / ".." / ".." / "proto"
 PROTO_ROOT = PROTO_ROOT.resolve()
 
-GO_MODULE = "tridenttools/pkg/harpoon"
+GO_MODULE = "tridenttools/pkg/tridentgrpc"
 
 # Map each proto subdirectory to its Go output package name.
 PACKAGES = {

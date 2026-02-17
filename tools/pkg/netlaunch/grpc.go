@@ -19,12 +19,12 @@ func handleServicingResponseStream(stream grpc.ServerStreamingClient[tridentpbv1
 			log.Info("Install stream ended")
 			break
 		} else if err != nil {
-			return fmt.Errorf("failed to receive installation response via Harpoon: %w", err)
+			return fmt.Errorf("failed to receive installation response via gRPC: %w", err)
 		}
 
 		err = handleServicingResponse(resp)
 		if err != nil {
-			return fmt.Errorf("failed to handle installation response via Harpoon: %w", err)
+			return fmt.Errorf("failed to handle installation response via gRPC: %w", err)
 		}
 	}
 
@@ -85,7 +85,7 @@ func handleServicingResponse(resp *tridentpbv1.ServicingResponse) (err error) {
 			errStr,
 		))
 	default:
-		log.Warnf("Received unknown response type from Harpoon: %T", payload)
+		log.Warnf("Received unknown response type from Trident: %T", payload)
 	}
 
 	return

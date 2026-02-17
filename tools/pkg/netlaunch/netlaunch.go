@@ -429,13 +429,13 @@ func injectRcpAgentConfig(
 }
 
 func doGrpcInstall(ctx context.Context, conn net.Conn, hostConfiguration string) error {
-	harpoonClient, err := tridentgrpc.NewHarpoonClientFromNetworkConnection(conn)
+	tridentClient, err := tridentgrpc.NewTridentClientFromNetworkConnection(conn)
 	if err != nil {
-		return fmt.Errorf("failed to create Harpoon client from RCP connection: %w", err)
+		return fmt.Errorf("failed to create Trident gRPC client from RCP connection: %w", err)
 	}
-	defer harpoonClient.Close()
+	defer tridentClient.Close()
 
-	stream, err := harpoonClient.Install(ctx, &tridentpbv1preview.InstallRequest{
+	stream, err := tridentClient.Install(ctx, &tridentpbv1preview.InstallRequest{
 		Stage: &tridentpbv1preview.StageInstallRequest{
 			Config: &tridentpbv1preview.HostConfiguration{
 				Config: hostConfiguration,
@@ -448,12 +448,12 @@ func doGrpcInstall(ctx context.Context, conn net.Conn, hostConfiguration string)
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("failed to start installation via Harpoon: %w", err)
+		return fmt.Errorf("failed to start installation via gRPC: %w", err)
 	}
 
 	err = handleServicingResponseStream(stream)
 	if err != nil {
-		return fmt.Errorf("error during installation via Harpoon: %w", err)
+		return fmt.Errorf("error during installation via gRPC: %w", err)
 	}
 
 	return nil

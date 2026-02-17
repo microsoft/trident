@@ -46,7 +46,7 @@ use support::{
     fds::{self, UnixSocketCleanup},
     signals::ShutdownSignals,
 };
-use tridentserver::{ServicingManager, TridentHarpoonServer};
+use tridentserver::{ServicingManager, TridentServer};
 
 /// Default path for the Trident Unix domain socket. This is used when Trident
 /// itself creates the socket when invoked directly, and not as part of a
@@ -192,7 +192,7 @@ async fn server_main_inner(
     // The gRPC server implementation for all Trident services. This is wrapped
     // in an Arc since it needs to be shared across the multiple service
     // handlers.
-    let harpoon_server = Arc::new(TridentHarpoonServer::new(
+    let trident_server = Arc::new(TridentServer::new(
         servicing_manager.clone(),
         log_fwd,
         activity_tracker.clone(),
@@ -205,12 +205,12 @@ async fn server_main_inner(
     // tracker middleware to ensure that any activity on the service resets the
     // inactivity timer.
     let mut router = Server::builder().add_service(MiddlewareFor::new(
-        VersionServiceServer::from_arc(harpoon_server.clone()),
+        VersionServiceServer::from_arc(trident_server.clone()),
         activity_tracker.middleware(),
     ));
 
     router = router.add_service(MiddlewareFor::new(
-        StreamingServiceServer::from_arc(harpoon_server.clone()),
+        StreamingServiceServer::from_arc(trident_server.clone()),
         activity_tracker.middleware(),
     ));
 
@@ -218,31 +218,31 @@ async fn server_main_inner(
     {
         router = router
             .add_service(MiddlewareFor::new(
-                CommitServiceServer::from_arc(harpoon_server.clone()),
+                CommitServiceServer::from_arc(trident_server.clone()),
                 activity_tracker.middleware(),
             ))
             .add_service(MiddlewareFor::new(
-                InstallServiceServer::from_arc(harpoon_server.clone()),
+                InstallServiceServer::from_arc(trident_server.clone()),
                 activity_tracker.middleware(),
             ))
             .add_service(MiddlewareFor::new(
-                RollbackServiceServer::from_arc(harpoon_server.clone()),
+                RollbackServiceServer::from_arc(trident_server.clone()),
                 activity_tracker.middleware(),
             ))
             .add_service(MiddlewareFor::new(
-                StatusServiceServer::from_arc(harpoon_server.clone()),
+                StatusServiceServer::from_arc(trident_server.clone()),
                 activity_tracker.middleware(),
             ))
             .add_service(MiddlewareFor::new(
-                UpdateServiceServer::from_arc(harpoon_server.clone()),
+                UpdateServiceServer::from_arc(trident_server.clone()),
                 activity_tracker.middleware(),
             ))
             .add_service(MiddlewareFor::new(
-                ValidationServiceServer::from_arc(harpoon_server.clone()),
+                ValidationServiceServer::from_arc(trident_server.clone()),
                 activity_tracker.middleware(),
             ))
             .add_service(MiddlewareFor::new(
-                RebuildRaidServiceServer::from_arc(harpoon_server.clone()),
+                RebuildRaidServiceServer::from_arc(trident_server.clone()),
                 activity_tracker.middleware(),
             ));
     }

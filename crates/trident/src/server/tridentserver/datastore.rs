@@ -1,28 +1,24 @@
 use trident_api::status::ServicingState;
-use trident_proto::v1preview::ServicingState as HarpoonServicingState;
+use trident_proto::v1preview::ServicingState as ProtoServicingState;
 
 use crate::DataStore;
 
-/// Maps the servicing state from the internal datastore representation to the Harpoon API representation.
-pub(super) fn servicing_state_from_datastore(datastore: &DataStore) -> HarpoonServicingState {
+/// Maps the servicing state from the internal datastore representation to the Proto API representation.
+pub(super) fn servicing_state_from_datastore(datastore: &DataStore) -> ProtoServicingState {
     match datastore.host_status().servicing_state {
-        ServicingState::NotProvisioned => HarpoonServicingState::NotProvisioned,
-        ServicingState::CleanInstallStaged => HarpoonServicingState::InstallStaged,
-        ServicingState::AbUpdateStaged => HarpoonServicingState::UpdateAbStaged,
-        ServicingState::ManualRollbackAbStaged => HarpoonServicingState::ManualRollbackAbStaged,
+        ServicingState::NotProvisioned => ProtoServicingState::NotProvisioned,
+        ServicingState::CleanInstallStaged => ProtoServicingState::InstallStaged,
+        ServicingState::AbUpdateStaged => ProtoServicingState::UpdateAbStaged,
+        ServicingState::ManualRollbackAbStaged => ProtoServicingState::ManualRollbackAbStaged,
         ServicingState::ManualRollbackRuntimeStaged => {
-            HarpoonServicingState::ManualRollbackRuntimeStaged
+            ProtoServicingState::ManualRollbackRuntimeStaged
         }
-        ServicingState::RuntimeUpdateStaged => HarpoonServicingState::UpdateRuntimeStaged,
-        ServicingState::CleanInstallFinalized => HarpoonServicingState::InstallFinalized,
-        ServicingState::AbUpdateFinalized => HarpoonServicingState::UpdateAbFinalized,
-        ServicingState::ManualRollbackAbFinalized => {
-            HarpoonServicingState::ManualRollbackAbFinalized
-        }
-        ServicingState::Provisioned => HarpoonServicingState::Provisioned,
-        ServicingState::AbUpdateHealthCheckFailed => {
-            HarpoonServicingState::UpdateAbHealthCheckFailed
-        }
+        ServicingState::RuntimeUpdateStaged => ProtoServicingState::UpdateRuntimeStaged,
+        ServicingState::CleanInstallFinalized => ProtoServicingState::InstallFinalized,
+        ServicingState::AbUpdateFinalized => ProtoServicingState::UpdateAbFinalized,
+        ServicingState::ManualRollbackAbFinalized => ProtoServicingState::ManualRollbackAbFinalized,
+        ServicingState::Provisioned => ProtoServicingState::Provisioned,
+        ServicingState::AbUpdateHealthCheckFailed => ProtoServicingState::UpdateAbHealthCheckFailed,
     }
 }
 
@@ -43,47 +39,47 @@ mod tests {
         let test_cases = vec![
             (
                 ServicingState::NotProvisioned,
-                HarpoonServicingState::NotProvisioned,
+                ProtoServicingState::NotProvisioned,
             ),
             (
                 ServicingState::CleanInstallStaged,
-                HarpoonServicingState::InstallStaged,
+                ProtoServicingState::InstallStaged,
             ),
             (
                 ServicingState::AbUpdateStaged,
-                HarpoonServicingState::UpdateAbStaged,
+                ProtoServicingState::UpdateAbStaged,
             ),
             (
                 ServicingState::ManualRollbackAbStaged,
-                HarpoonServicingState::ManualRollbackAbStaged,
+                ProtoServicingState::ManualRollbackAbStaged,
             ),
             (
                 ServicingState::ManualRollbackRuntimeStaged,
-                HarpoonServicingState::ManualRollbackRuntimeStaged,
+                ProtoServicingState::ManualRollbackRuntimeStaged,
             ),
             (
                 ServicingState::RuntimeUpdateStaged,
-                HarpoonServicingState::UpdateRuntimeStaged,
+                ProtoServicingState::UpdateRuntimeStaged,
             ),
             (
                 ServicingState::CleanInstallFinalized,
-                HarpoonServicingState::InstallFinalized,
+                ProtoServicingState::InstallFinalized,
             ),
             (
                 ServicingState::AbUpdateFinalized,
-                HarpoonServicingState::UpdateAbFinalized,
+                ProtoServicingState::UpdateAbFinalized,
             ),
             (
                 ServicingState::ManualRollbackAbFinalized,
-                HarpoonServicingState::ManualRollbackAbFinalized,
+                ProtoServicingState::ManualRollbackAbFinalized,
             ),
             (
                 ServicingState::Provisioned,
-                HarpoonServicingState::Provisioned,
+                ProtoServicingState::Provisioned,
             ),
             (
                 ServicingState::AbUpdateHealthCheckFailed,
-                HarpoonServicingState::UpdateAbHealthCheckFailed,
+                ProtoServicingState::UpdateAbHealthCheckFailed,
             ),
         ];
 

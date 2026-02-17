@@ -18,8 +18,8 @@ const (
 	DefaultTridentSocketPath = "/run/trident/trident.sock"
 )
 
-// TridentGrpcClient is a client for interacting with the Harpoon gRPC service.
-type TridentGrpcClient struct {
+// TridentClient is a client for interacting with the Trident gRPC service.
+type TridentClient struct {
 	// Stable APIs
 	tridentpbv1.VersionServiceClient
 	tridentpbv1.StreamingServiceClient
@@ -30,13 +30,13 @@ type TridentGrpcClient struct {
 	tridentpbv1preview.InstallServiceClient
 }
 
-func (c *TridentGrpcClient) Close() error {
+func (c *TridentClient) Close() error {
 	return c.grpcConn.Close()
 }
 
-// NewHarpoonClientFromNetworkConnection creates a new Harpoon gRPC client using
+// NewTridentClientFromNetworkConnection creates a new Trident gRPC client using
 // the provided network connection.
-func NewHarpoonClientFromNetworkConnection(conn net.Conn) (*TridentGrpcClient, error) {
+func NewTridentClientFromNetworkConnection(conn net.Conn) (*TridentClient, error) {
 	grpcConn, err := grpc.NewClient(
 		"passthrough:target",
 		// Not really insecure, we are using a pre-established TLS connection
@@ -49,7 +49,7 @@ func NewHarpoonClientFromNetworkConnection(conn net.Conn) (*TridentGrpcClient, e
 		return nil, fmt.Errorf("failed to create gRPC client: %w", err)
 	}
 
-	return &TridentGrpcClient{
+	return &TridentClient{
 		VersionServiceClient:   tridentpbv1.NewVersionServiceClient(grpcConn),
 		StreamingServiceClient: tridentpbv1.NewStreamingServiceClient(grpcConn),
 		grpcConn:               grpcConn,

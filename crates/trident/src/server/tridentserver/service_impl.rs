@@ -1,4 +1,4 @@
-//! Implements the gRPC TridentService for the TridentHarpoonServer struct.
+//! Implements the gRPC Services for the TridentServer struct.
 
 use tonic::{async_trait, Request, Response, Status};
 use url::Url;
@@ -9,7 +9,7 @@ use trident_proto::v1::{
     RebootHandling, RebootManagement, StreamDiskRequest, VersionRequest, VersionResponse,
 };
 
-use crate::{server::TridentHarpoonServer, DataStore, Trident, TRIDENT_VERSION};
+use crate::{server::TridentServer, DataStore, Trident, TRIDENT_VERSION};
 
 use super::{RebootDecision, ServicingResponseStream};
 
@@ -26,7 +26,7 @@ use trident_api::{
 };
 #[cfg(feature = "grpc-preview")]
 use trident_proto::{
-    v1::TridentError as HarpoonTridentError,
+    v1::TridentError as ProtoTridentError,
     v1preview::{
         commit_service_server::CommitService, install_service_server::InstallService,
         rebuild_raid_service_server::RebuildRaidService, rollback_service_server::RollbackService,
@@ -74,9 +74,8 @@ fn reboot_allowed(reboot_opt: &Option<RebootManagement>) -> RebootDecision {
     }
 }
 
-/// Implements the gRPC TridentService for the TridentHarpoonServer struct.
 #[async_trait]
-impl VersionService for TridentHarpoonServer {
+impl VersionService for TridentServer {
     async fn version(
         &self,
         _request: Request<VersionRequest>,
@@ -88,7 +87,7 @@ impl VersionService for TridentHarpoonServer {
 }
 
 #[async_trait]
-impl StreamingService for TridentHarpoonServer {
+impl StreamingService for TridentServer {
     type StreamDiskStream = ServicingResponseStream;
     async fn stream_disk(
         &self,
@@ -125,7 +124,7 @@ impl StreamingService for TridentHarpoonServer {
 
 #[cfg(feature = "grpc-preview")]
 #[async_trait]
-impl InstallService for TridentHarpoonServer {
+impl InstallService for TridentServer {
     type InstallStream = ServicingResponseStream;
     #[cfg(feature = "grpc-preview")]
     async fn install(
@@ -229,7 +228,7 @@ impl InstallService for TridentHarpoonServer {
 
 #[cfg(feature = "grpc-preview")]
 #[async_trait]
-impl UpdateService for TridentHarpoonServer {
+impl UpdateService for TridentServer {
     type UpdateStream = ServicingResponseStream;
     async fn update(
         &self,
@@ -332,7 +331,7 @@ impl UpdateService for TridentHarpoonServer {
 
 #[cfg(feature = "grpc-preview")]
 #[async_trait]
-impl CommitService for TridentHarpoonServer {
+impl CommitService for TridentServer {
     type CheckRootStream = ServicingResponseStream;
     async fn check_root(
         &self,
@@ -370,7 +369,7 @@ impl CommitService for TridentHarpoonServer {
 
 #[cfg(feature = "grpc-preview")]
 #[async_trait]
-impl ValidationService for TridentHarpoonServer {
+impl ValidationService for TridentServer {
     async fn validate_host_configuration(
         &self,
         request: Request<ValidateHostConfigurationRequest>,
@@ -387,7 +386,7 @@ impl ValidationService for TridentHarpoonServer {
 
         let error = validation::validate_host_config_string(&host_config.config)
             .err()
-            .map(HarpoonTridentError::from);
+            .map(ProtoTridentError::from);
         Ok(Response::new(ValidateHostConfigurationResponse {
             ok: error.is_none(),
             error,
@@ -409,7 +408,7 @@ impl ValidationService for TridentHarpoonServer {
 
 #[cfg(feature = "grpc-preview")]
 #[async_trait]
-impl StatusService for TridentHarpoonServer {
+impl StatusService for TridentServer {
     async fn get_provisioned_config(
         &self,
         _request: Request<GetConfigRequest>,
@@ -486,7 +485,7 @@ impl StatusService for TridentHarpoonServer {
 
 #[cfg(feature = "grpc-preview")]
 #[async_trait]
-impl RollbackService for TridentHarpoonServer {
+impl RollbackService for TridentServer {
     async fn check_rollback(
         &self,
         _request: Request<CheckRollbackRequest>,
@@ -562,7 +561,7 @@ impl RollbackService for TridentHarpoonServer {
 
 #[cfg(feature = "grpc-preview")]
 #[async_trait]
-impl RebuildRaidService for TridentHarpoonServer {
+impl RebuildRaidService for TridentServer {
     type RebuildRaidStream = ServicingResponseStream;
     async fn rebuild_raid(
         &self,

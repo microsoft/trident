@@ -428,12 +428,12 @@ go.sum: go.mod
 	go mod tidy
 
 .PHONY: go-tools
-go-tools: bin/netlaunch bin/netlisten bin/miniproxy bin/virtdeploy bin/isopatch
+go-tools: bin/netlaunch bin/netlisten bin/miniproxy bin/virtdeploy bin/isopatch bin/mkcosi bin/storm-trident bin/rcp-agent
 
 bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/* tools/pkg/netlaunch/*
 	@mkdir -p bin
 	cd tools && go generate pkg/rcp/tlscerts/certs.go
-	cd tools && go generate pkg/harpoon/harpoon.go
+	cd tools && go generate pkg/tridentgrpc/grpc.go
 	cd tools && go build -o ../bin/netlaunch ./cmd/netlaunch
 
 bin/netlisten: tools/cmd/netlisten/* tools/go.sum tools/pkg/*
