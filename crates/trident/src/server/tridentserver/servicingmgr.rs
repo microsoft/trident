@@ -146,7 +146,7 @@ impl ServicingManager {
             }
         };
 
-        // FIgure out the reboot status based on the exit kind and reboot
+        // Figure out the reboot status based on the exit kind and reboot
         // decision.
         let reboot_status = match (exit_kind, reboot_decision) {
             // Notify the caller that a reboot is required.
