@@ -140,7 +140,7 @@ impl HostConfiguration {
             usr_verity = self.storage.verity.iter().any(|v| v.name == "usr"),
             root_verity = self.storage.verity.iter().any(|v| v.name == "root"),
             internal_params = self.internal_params.get_set_params().join(","),
-            "Host Configuration feature usage",
+            metric_name = "host_config_feature_usage",
         );
     }
 

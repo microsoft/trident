@@ -22,7 +22,7 @@ type CheckJournaldHelper struct {
 		SyslogIdentifier              string `help:"Syslog identifier to check for in journald logs." default:"trident-tracing"`
 		SyslogMetricToCheck           string `help:"Name of the metric to check for in journald logs. Note this metric is queried after target OS runs commit, so the metric must be emitted by commit." default:"trident_start"`
 		MetricFile                    string `help:"Path to the file containing the expected metric value." default:""`
-		FileMetricToCheck             string `help:"Name of the metric to check for in the metric file, which is collected throughout servicing." default:"host_config_uefi_fallback_mode"`
+		FeatureUsageMetric            string `help:"Name of the metric to check for in the metric file, which is collected throughout servicing." default:"host_config_feature_usage"`
 	}
 }
 
@@ -64,15 +64,15 @@ func (h *CheckJournaldHelper) checkTraceFile(tc storm.TestCase) error {
 			return fmt.Errorf("failed to decode JSON from metric file: %w", err)
 		}
 
-		if logEntry["metric_name"] == h.args.FileMetricToCheck {
+		if logEntry["metric_name"] == h.args.FeatureUsageMetric {
 			// Test passed
-			logrus.Infof("Found expected metric '%s' in trace file with value: %v", h.args.FileMetricToCheck, logEntry["value"])
+			logrus.Infof("Found expected metric '%s' in trace file with value: %v", h.args.FeatureUsageMetric, logEntry["value"])
 			return nil
 		}
 	}
 
 	// Test failed
-	tc.Fail(fmt.Sprintf("Expected metric '%s' not found in trace file '%s'", h.args.FileMetricToCheck, h.args.MetricFile))
+	tc.Fail(fmt.Sprintf("Expected metric '%s' not found in trace file '%s'", h.args.FeatureUsageMetric, h.args.MetricFile))
 	return nil
 }
 
