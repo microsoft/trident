@@ -145,7 +145,7 @@ steps:
     displayName: "Install native dependencies"
     retryCountOnTaskFailure: 3
 
-  - template: common/mic-download-template.yaml@platform-pipelines
+  - template: ./get-imagecustomizer-container.yml
     parameters:
       buildType: ${{ parameters.micBuildType }}
       arch: ${{ parameters.micArchitecture }}

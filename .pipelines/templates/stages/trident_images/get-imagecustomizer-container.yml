@@ -1,0 +1,69 @@
+parameters:
+- name: buildType
+  displayName: Build Type
+  type: string
+  values:
+  - dev
+  - preview
+  - release
+
+- name: micVersion
+  type: string
+  default: ""
+
+- name: arch
+  displayName: Image customizer architecture
+  type: string
+  default: amd64
+  values:
+  - amd64
+  - arm64
+
+- name: releaseContainerName
+  type: string
+  default: "mcr.microsoft.com/azurelinux/imagecustomizer"
+
+- name: localContainer
+  type: string
+  default: "imagecustomizer:local"
+
+steps:
+- ${{ if eq(parameters.buildType, 'dev') }}:
+  - script: |
+      set -eux
+      echo "Building mic from dev branch"
+      dev_branch="main"
+      if [ "${{ parameters.micVersion }}" != "*.*.*" ]; then
+          dev_branch="${{ parameters.micVersion }}"
+      fi
+
+      git_directory="/tmp/azure-linux-image-tools"
+      toolkit_directory=$git_directory/toolkit
+
+      echo "Cloning azurelinux repo $dev_branch branch..."
+      git clone --depth 1 --branch $dev_branch https://github.com/microsoft/azure-linux-image-tools.git $git_directory
+
+      git -C $git_directory log -1
+
+      # Do not use make for a faster build
+      echo "Building mic..."
+      make go-imagecustomizer REBUILD_TOOLS=y -C $toolkit_directory
+      $toolkit_directory/tools/imagecustomizer/container/build-container.sh -t ${{ parameters.localContainer }} -a "${{ parameters.arch }}"
+    displayName: 'Create MIC container from dev build'
+- ${{ if eq(parameters.buildType, 'preview') }}:
+  - script: |
+      set -eux
+      echo "Unclear what preview means..."
+      exit 1
+    displayName: 'Pull MIC container from preview build'
+- ${{ if eq(parameters.buildType, 'release') }}:
+  - script: |
+      set -eux
+      VERSION=${{ parameters.micVersion }}
+      if [ "$VERSION" = "*.*.*" ]; then
+        echo "MIC version not specified, pulling latest container"
+        VERSION=latest
+      fi
+      docker pull ${{ parameters.releaseContainerName }}:$VERSION
+      docker tag ${{ parameters.releaseContainerName }}:$VERSION ${{ parameters.localContainer }}
+    displayName: 'Pull MIC container from ${{ parameters.releaseContainerName }}'

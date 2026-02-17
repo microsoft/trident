@@ -83,7 +83,7 @@ steps:
       env | sort
     displayName: "Show defined variables"
 
-  - template: common/mic-download-template.yaml@platform-pipelines
+  - template: ./get-imagecustomizer-container.yml
     parameters:
       buildType: ${{ parameters.micBuildType }}
       arch: ${{ parameters.architecture }}
