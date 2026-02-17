@@ -64,10 +64,16 @@ parameters:
     type: number
     default: 1
 
+  - name: dependsOnStage
+    type: string
+    default: ''
+
 jobs:
   - job: PrepareImage_${{ replace(parameters.label, '-', '_') }}
     displayName: Prepare Image ${{ parameters.label }}
     dependsOn:
+      - ${{ if ne(parameters.dependsOnStage, '') }}:
+        - ${{ parameters.dependsOnStage }}
       - ${{ if parameters.dependsOnTrident }}:
         - GetTridentBinaries_rpms_amd64
       - ${{ if parameters.downloadGoTools }}:
