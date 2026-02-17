@@ -130,7 +130,7 @@ var rootCmd = &cobra.Command{
 				config.Rcp.LocalOsmodifierPath = &osmodifierBinaryPath
 			}
 
-			config.Rcp.Scenario = scenario
+			config.Rcp.Scenario = netlaunch.RcpScenario(scenario)
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
