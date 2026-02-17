@@ -17,14 +17,14 @@ import (
 	"github.com/stmcginnis/gofish/redfish"
 	"gopkg.in/yaml.v2"
 
-	"tridenttools/pkg/harpoon"
-	"tridenttools/pkg/harpoon/tridentpbv1"
-	"tridenttools/pkg/harpoon/tridentpbv1preview"
 	"tridenttools/pkg/isopatcher"
 	"tridenttools/pkg/netfinder"
 	"tridenttools/pkg/phonehome"
 	rcpclient "tridenttools/pkg/rcp/client"
 	"tridenttools/pkg/rcp/tlscerts"
+	"tridenttools/pkg/tridentgrpc"
+	"tridenttools/pkg/tridentgrpc/tridentpbv1"
+	"tridenttools/pkg/tridentgrpc/tridentpbv1preview"
 	stormutils "tridenttools/storm/utils"
 )
 
@@ -429,7 +429,7 @@ func injectRcpAgentConfig(
 }
 
 func doGrpcInstall(ctx context.Context, conn net.Conn, hostConfiguration string) error {
-	harpoonClient, err := harpoon.NewHarpoonClientFromNetworkConnection(conn)
+	harpoonClient, err := tridentgrpc.NewHarpoonClientFromNetworkConnection(conn)
 	if err != nil {
 		return fmt.Errorf("failed to create Harpoon client from RCP connection: %w", err)
 	}

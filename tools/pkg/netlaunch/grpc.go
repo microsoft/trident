@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"tridenttools/pkg/harpoon/tridentpbv1"
+	"tridenttools/pkg/tridentgrpc/tridentpbv1"
 
 	"github.com/fatih/color"
 	"github.com/sirupsen/logrus"
