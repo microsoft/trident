@@ -107,7 +107,7 @@ os:
     mode: disabled
 
   uki:
-    mode: create
+    kernels: auto
   kernelCommandLine:
     # Replicates BM base image settings, that would otherwise be lost
     extraCommandLine:

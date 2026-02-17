@@ -2,15 +2,17 @@
 # Bootloader Configuration
 
 For installation and updating, Trident creates and modifies the bootloader of
-the target OS. Both [`GRUB`](https://www.unixtutorial.org/reference/grub-bootloader/)
-and [`systemd-boot`](https://www.freedesktop.org/software/systemd/man/latest/systemd-boot.html)
+the target OS. Both
+[`GRUB`](https://www.unixtutorial.org/reference/grub-bootloader/) and
+[`systemd-boot`](https://www.freedesktop.org/software/systemd/man/latest/systemd-boot.html)
 are supported.
 
 The bootloader type is determined by the `COSI` file referenced in the
 [Host Configuration](../Reference/Host-Configuration/API-Reference/HostConfiguration.md).
 
 :::note
-For [Unified Kernel Image (UKI)](https://uapi-group.org/specifications/specs/unified_kernel_image/),
+For
+[Unified Kernel Image (UKI)](https://uapi-group.org/specifications/specs/unified_kernel_image/),
 Trident only supports using `systemd-boot`.
 :::
 
@@ -27,8 +29,8 @@ bootloader.
 
 By default, Image Customizer creates `GRUB` based COSI files.
 
-To create a systemd-boot COSI file, create a UKI-based
-COSI file by ensuring that these settings are included in the
+To create a systemd-boot COSI file, create a UKI-based COSI file by ensuring
+that these settings are included in the
 [COSI configuration file](https://microsoft.github.io/azure-linux-image-tools/imagecustomizer/api/configuration/uki.html#uki-type):
 
 ``` yaml
@@ -36,7 +38,7 @@ os:
   bootLoader:
     resetType: hard-reset
   uki:
-    mode: create
+    kernels: auto
 previewFeatures:
 - uki
 ```
@@ -62,11 +64,11 @@ As the target OS ESP partition is not an A/B volume pair, Trident will manage
 this single partition so that it boots the active OS from the correct A/B OS
 partitions.
 
-At a high level, Trident will use the ESP partition from the COSI file as the basis
-for the target OS's ESP partition. However, the layout and some file names
+At a high level, Trident will use the ESP partition from the COSI file as the
+basis for the target OS's ESP partition. However, the layout and some file names
 will differ slightly between the COSI ESP image and the target OS ESP. These
-changes help Trident track multiple installs and A/B updates while ensuring
-that the bootloader starts the correct OS.
+changes help Trident track multiple installs and A/B updates while ensuring that
+the bootloader starts the correct OS.
 
 To handle A/B updates, Trident will assume two bootloader paths, an `A` and a
 `B` path.
@@ -82,8 +84,8 @@ and `grub<ARCH>.efi`) and the `grub.cfg` from the COSI ESP image.
 
 ### systemd-boot Bootloader
 
-Trident will copy and rename the UKI EFI file from the COSI ESP image, where
-it is versioned with the kernel version (for example
+Trident will copy and rename the UKI EFI file from the COSI ESP image, where it
+is versioned with the kernel version (for example
 `/boot/efi/EFI/Linux/vmlinuz-6.6.96.2-2.azl3.efi`), to
 [`/boot/efi/EFI/Linux`](https://uapi-group.org/specifications/specs/boot_loader_specification/#locating-boot-entries)
 on the target OS. Trident will rename the UKI EFI file to ensure that the
@@ -100,8 +102,7 @@ Where:
 * `[SERVICING_INDEX]` is incremented for each servicing operation (install or
   update). The index is started at 100 to avoid conflicts with the standard
   kernel-version-based naming.
-* `[ACTIVE_PARTITION]` is either `a` or `b` reflecting the active boot
-  partition
+* `[ACTIVE_PARTITION]` is either `a` or `b` reflecting the active boot partition
 * `[OS_INDEX]` is the 0-based index of the operating system being booted
 
 For example, the first install of a single OS would create
