@@ -443,7 +443,7 @@ func doGrpcInstall(ctx context.Context, conn net.Conn, hostConfiguration string)
 		},
 		Finalize: &tridentpbv1preview.FinalizeInstallRequest{
 			Reboot: &tridentpbv1.RebootManagement{
-				Handling: tridentpbv1.RebootHandling_AUTO_REBOOT,
+				Handling: tridentpbv1.RebootHandling_TRIDENT_HANDLES_REBOOT,
 			},
 		},
 	})

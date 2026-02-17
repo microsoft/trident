@@ -35,7 +35,7 @@ var grpcHeader = color.New(color.FgGreen).SprintfFunc()("|GRPC|")
 
 func handleServicingResponse(resp *tridentpbv1.ServicingResponse) (err error) {
 	switch payload := resp.Response.(type) {
-	case *tridentpbv1.ServicingResponse_Start:
+	case *tridentpbv1.ServicingResponse_Started:
 		log.Infof("%s%s", grpcHeader, color.GreenString("[START]"))
 	case *tridentpbv1.ServicingResponse_Log:
 		logEntry := payload.Log
@@ -68,10 +68,10 @@ func handleServicingResponse(resp *tridentpbv1.ServicingResponse) (err error) {
 
 			record.Log(outLevel, text)
 		}
-	case *tridentpbv1.ServicingResponse_FinalStatus:
+	case *tridentpbv1.ServicingResponse_Completed:
 		var errStr string
 		level := logrus.InfoLevel
-		if tridentError := payload.FinalStatus.GetError(); tridentError != nil {
+		if tridentError := payload.Completed.GetError(); tridentError != nil {
 			level = logrus.ErrorLevel
 			errStr = fmt.Sprintf("\n%s", tridentError.Message)
 			err = fmt.Errorf("operation failed with error kind %s:%s: %s", tridentError.Kind, tridentError.Subkind, tridentError.Message)
@@ -81,7 +81,7 @@ func handleServicingResponse(resp *tridentpbv1.ServicingResponse) (err error) {
 			"%s%s %s%s",
 			grpcHeader,
 			color.MagentaString("[STATUS]"),
-			payload.FinalStatus.Status.String(),
+			payload.Completed.Status.String(),
 			errStr,
 		))
 	default:
