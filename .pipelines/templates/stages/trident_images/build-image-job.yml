@@ -127,7 +127,7 @@ jobs:
           displayName: "Set Image Info from testimages.py"
       - bash: |
           set -eux
-          echo "baseimgType: $(baseimgType)"
+          echo "baseimgType: $(baseImageType)"
         displayName: "Show Base Image Type"
 
       - template: ../common_tasks/find-base-image-version.yml
@@ -146,6 +146,6 @@ jobs:
           baseimgVersion: $(BASEIMG_VERSION)
           baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
           baseimgTypes: 
-            - $(baseimgType)
+            - $(baseImageType)
           useStagedSshKeys: ${{ parameters.useStagedSshKeys }}
           clones: ${{ parameters.clones }}
