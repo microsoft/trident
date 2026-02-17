@@ -87,6 +87,7 @@ stages:
               - template: ../trident_images/build-image.yml
                 parameters:
                   label: "qemu-base"
+                  labelPrefix: "image-"
                   makeTarget: "artifacts/trident-vm-grub-verity-testimage.qcow2"
                   baseimgType: qemu_guest
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
@@ -97,6 +98,7 @@ stages:
               - template: ../trident_images/build-image.yml
                 parameters:
                   label: "qemu-update-a"
+                  labelPrefix: "image-"
                   makeTarget: "artifacts/trident-vm-grub-verity-testimage.cosi"
                   baseimgType: qemu_guest
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
@@ -107,6 +109,7 @@ stages:
               - template: ../trident_images/build-image.yml
                 parameters:
                   label: "qemu-update-b"
+                  labelPrefix: "image-"
                   makeTarget: "artifacts/trident-vm-grub-verity-testimage.cosi"
                   baseimgType: qemu_guest
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
@@ -127,6 +130,7 @@ stages:
               - template: ../trident_images/build-image.yml
                 parameters:
                   label: "azure-base"
+                  labelPrefix: "image-"
                   makeTarget: "artifacts/trident-vm-grub-verity-azure-testimage.vhd"
                   baseimgType: core_selinux
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
@@ -136,6 +140,7 @@ stages:
               - template: ../trident_images/build-image.yml
                 parameters:
                   label: "azure-update-a"
+                  labelPrefix: "image-"
                   makeTarget: "artifacts/trident-vm-grub-verity-azure-testimage.cosi"
                   baseimgType: core_selinux
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
@@ -145,6 +150,7 @@ stages:
               - template: ../trident_images/build-image.yml
                 parameters:
                   label: "azure-update-b"
+                  labelPrefix: "image-"
                   makeTarget: "artifacts/trident-vm-grub-verity-azure-testimage.cosi"
                   baseimgType: core_selinux
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
@@ -164,6 +170,7 @@ stages:
               - template: ../trident_images/build-image.yml
                 parameters:
                   label: "uki-base"
+                  labelPrefix: "image-"
                   makeTarget: "artifacts/trident-vm-usr-verity-testimage.qcow2"
                   baseimgType: qemu_guest
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
@@ -174,6 +181,7 @@ stages:
               - template: ../trident_images/build-image.yml
                 parameters:
                   label: "uki-update-a"
+                  labelPrefix: "image-"
                   makeTarget: "artifacts/trident-vm-usr-verity-testimage.cosi"
                   baseimgType: qemu_guest
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
@@ -184,6 +192,7 @@ stages:
               - template: ../trident_images/build-image.yml
                 parameters:
                   label: "uki-update-b"
+                  labelPrefix: "image-"
                   makeTarget: "artifacts/trident-vm-usr-verity-testimage.cosi"
                   baseimgType: qemu_guest
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}

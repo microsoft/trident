@@ -110,14 +110,6 @@ stages:
           - group: trident_e2e_params
 
         steps:
-          - bash: |
-              if [ ${{ variables['tridentConfigurationName'] }} == 'split' ]; then
-                splitInstallerIsoName="trident-split-installer"
-                echo "setting variable.installerISOName to $splitInstallerIsoName"
-                echo "##vso[task.setvariable variable=installerISOName]$splitInstallerIsoName"
-              fi
-            displayName: Special handle for split test
-
           # Download all test images
           - template: ../testing_common/download-test-images.yml
             parameters:
@@ -213,6 +205,11 @@ stages:
                 HANDLE_PROVISIONED_STATE_ARG="--only-print-exit-code"
               fi
 
+              SCENARIO_ARG=""
+              if [ ${{ variables['tridentConfigurationName'] }} == 'split' ]; then
+                SCENARIO_ARG="--scenario split"
+              fi
+
               ./bin/netlaunch \
                   --iso ./artifacts/iso/$(installerISOName).iso \
                   --config $(tridentSourceDirectory)/tools/vm-netlaunch.yaml \
@@ -226,6 +223,7 @@ stages:
                   $HANDLE_PROVISIONED_STATE_ARG \
                   $SECURE_BOOT \
                   $SIGNING_CERT \
+                  $SCENARIO_ARG \
                   --port ${{variables.netlaunchPort}} 2>&1 | tee ./clean-install-deployment.log
             workingDirectory: $(tridentSourceDirectory)
             displayName: "🚀 Run netlaunch for testing"

@@ -2,12 +2,11 @@ parameters:
   - name: label
     type: string
     displayName: "Label for the image"
-    default: ""
 
   - name: labelPrefix
     type: string
     displayName: "Prefix for the image label"
-    default: "image-"
+    default: ""
 
   - name: makeTarget
     type: string
@@ -55,10 +54,28 @@ parameters:
     type: boolean
     default: false
 
+  - name: dependsOnTrident
+    displayName: "Requires Trident binaries"
+    type: boolean
+    default: true
+
+  - name: clones
+    displayName: "Number of clones to generate"
+    type: number
+    default: 1
 
 jobs:
   - job: PrepareImage_${{ replace(parameters.label, '-', '_') }}
     displayName: Prepare Image ${{ parameters.label }}
+    dependsOn:
+      - ${{ if parameters.dependsOnTrident }}:
+        - GetTridentBinaries_rpms_amd64
+      - ${{ if parameters.downloadGoTools }}:
+        - ${{ if eq(parameters.architecture, 'arm64') }}:
+          - BuildingTools_arm64
+        - ${{ if eq(parameters.architecture, 'amd64') }}:
+          - BuildingTools
+      - PrepareSSHKeys
     timeoutInMinutes: 20
     pool:
       ${{ if eq(parameters.architecture, 'arm64') }}:
@@ -81,12 +98,13 @@ jobs:
     steps:
       - template: ../common_tasks/avoid-pypi-usage.yml
 
-      - task: DownloadPipelineArtifact@2
-        inputs:
-          buildType: current
-          artifactName: $(tridentArtifactName)
-          targetPath: "$(Build.ArtifactStagingDirectory)/trident"
-        displayName: Download Trident RPMs
+      - ${{ if parameters.dependsOnTrident }}:
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            buildType: current
+            artifactName: $(tridentArtifactName)
+            targetPath: "$(Build.ArtifactStagingDirectory)/trident"
+          displayName: Download Trident RPMs
 
       - ${{ if parameters.downloadGoTools }}:
         - task: DownloadPipelineArtifact@2
@@ -124,3 +142,4 @@ jobs:
           baseimgTypes: 
             - ${{ parameters.baseimgType }}
           useStagedSshKeys: ${{ parameters.useStagedSshKeys }}
+          clones: ${{ parameters.clones }}

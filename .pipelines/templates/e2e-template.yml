@@ -103,96 +103,96 @@ stages:
   # Build FT base Image, only for CI or if forceFunctionalTestImageRebuild is true
   - ${{ if or(eq(parameters.stageType, 'ci'), eq(parameters.forceFunctionalTestImageRebuild, true)) }}:
       # Build Trident installer ISO (host)
-      - template: stages/build_image/build-image.yml
+      - template: stages/trident_images/build-image.yml
         parameters:
-          imageName: trident-functest
+          label: trident-functest
+          makeTarget: trident-functest
           dependsOnTrident: false
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
-          clones: 1
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # Build Trident container image (depends on GetTridentBinaries_rpms_amd64)
   - template: stages/build_docker_image/trident-container.yml
 
   # Build Trident installer ISO (host)
-  - template: stages/build_image/build-image.yml
+  - template: stages/trident_images/build-image.yml
     parameters:
-      imageName: trident-installer
+      label: trident-installer
+      makeTarget: trident-installer
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
-      clones: 1
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-
-  # Build Trident split (stage and finalize separated) installer ISO (host)
-  - template: stages/build_image/build-image.yml
-    parameters:
-      imageName: trident-split-installer
-      micBuildType: ${{ parameters.micBuildType }}
-      micVersion: ${{ parameters.micVersion }}
-      clones: 1
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # Build Trident installer ISO (container)
-  - template: stages/build_image/build-image.yml
+  - template: stages/trident_images/build-image.yml
     parameters:
-      imageName: trident-container-installer
+      label: trident-container-installer
+      makeTarget: trident-container-installer
       runtimeEnv: "container"
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
-      clones: 1
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # Build Trident test image (regular)
-  - template: stages/build_image/build-image.yml
+  - template: stages/trident_images/build-image.yml
     parameters:
-      imageName: trident-testimage
+      label: trident-testimage
+      makeTarget: trident-testimage
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      clones: 2
 
   # Build Trident test image (container)
-  - template: stages/build_image/build-image.yml
+  - template: stages/trident_images/build-image.yml
     parameters:
-      imageName: trident-container-testimage
-      runtimeEnv: "container"
+      label: trident-container-testimage
+      makeTarget: trident-container-testimage
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      clones: 2
 
   # Build Trident test image for root-verity (host)
-  - template: stages/build_image/build-image.yml
+  - template: stages/trident_images/build-image.yml
     parameters:
-      imageName: trident-verity-testimage
+      label: trident-verity-testimage
+      makeTarget: trident-verity-testimage
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      clones: 2
 
   # Build Trident test image for root-verity (container)
-  - template: stages/build_image/build-image.yml
+  - template: stages/trident_images/build-image.yml
     parameters:
-      imageName: trident-container-verity-testimage
-      runtimeEnv: "container"
+      label: trident-container-verity-testimage
+      makeTarget: trident-container-verity-testimage
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      clones: 2
 
   # Build Trident test image for usr-verity (host)
-  - template: stages/build_image/build-image.yml
+  - template: stages/trident_images/build-image.yml
     parameters:
-      imageName: trident-usrverity-testimage
+      label: trident-usrverity-testimage
+      makeTarget: trident-usrverity-testimage
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      clones: 2
 
   # Build Trident test image for usr-verity (container)
-  - template: stages/build_image/build-image.yml
+  - template: stages/trident_images/build-image.yml
     parameters:
-      imageName: trident-container-usrverity-testimage
-      runtimeEnv: "container"
+      label: trident-container-usrverity-testimage
+      makeTarget: trident-container-usrverity-testimage
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      clones: 2
 
   # Build AzL installer ISO (attended and unattended)
   - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
@@ -201,12 +201,6 @@ stages:
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-
-  # dom0 is failing for not known reasons ... comment out for now to unblock, longterm this may
-  # be removed from Trident pipelines alltogether in favor of being only test-images
-  # - ${{ if or(eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e')) }}:
-  #   # Build Trident test image (dom0: mshv+ch)
-  #   - template: stages/build_image/trident-mshvch-dom0-testimg.yml
 
   # Test Runtime Updates and Rollback on VMs
   - template: stages/testing_rollback/vm-testing.yml

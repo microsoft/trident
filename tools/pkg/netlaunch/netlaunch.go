@@ -143,7 +143,7 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 
 		// Patch the ISO Host Configuration file unless this is a stream-image test, where
 		// the Host Configuration file is not expected to be present.
-		if config.Rcp == nil || !config.Rcp.UseStreamImage {
+		if config.Rcp == nil || config.Rcp.Scenario != RcpScenarioStreamImage {
 			tridentConfig, err := yaml.Marshal(trident)
 			if err != nil {
 				return fmt.Errorf("failed to marshal Trident config: %w", err)
@@ -160,12 +160,18 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 
 		if config.Rcp != nil {
 			var extraRcpAgentFiles []rcpAgentFileDownload
-			if config.Rcp.UseStreamImage {
+			switch config.Rcp.Scenario {
+			case RcpScenarioSplit:
+				overrideFile, err := makeSplitOverrideFileDownload(trident, logstreamAddress)
+				if err != nil {
+					return fmt.Errorf("failed to create split override file download: %w", err)
+				}
+				extraRcpAgentFiles = append(extraRcpAgentFiles, overrideFile)
+			case RcpScenarioStreamImage:
 				overrideFile, err := makeStreamImageOverrideFileDownload(trident, logstreamAddress)
 				if err != nil {
 					return fmt.Errorf("failed to create stream image override file download: %w", err)
 				}
-
 				extraRcpAgentFiles = append(extraRcpAgentFiles, overrideFile)
 			}
 			// Populate RCP agent config into the ISO. This handles both CLI and

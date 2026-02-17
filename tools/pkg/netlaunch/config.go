@@ -64,6 +64,14 @@ type NetLaunchConfig struct {
 	WaitForProvisioning bool `yaml:"waitForProvisioning,omitempty"`
 }
 
+// Netlaunch Rcp Scenarios
+type RcpScenario string
+
+const (
+	RcpScenarioSplit       RcpScenario = "split"
+	RcpScenarioStreamImage RcpScenario = "stream-image"
+)
+
 // Configuration for netlaunch reverse-connect proxy.
 type RcpConfiguration struct {
 	// Run netlaunch in gRPC mode. When true, netlaunch will use the
@@ -88,9 +96,9 @@ type RcpConfiguration struct {
 	// If not specified, no Osmodifier binary will be copied.
 	LocalOsmodifierPath *string `yaml:"localOsmodifierPath,omitempty"`
 
-	// Replace the execution for trident-install to use stream image instead of
-	// the default installation method.
-	UseStreamImage bool `yaml:"useStreamImage,omitempty"`
+	// Handle special scenarios (split, stream-image) that require specific service
+	// overrides.
+	Scenario RcpScenario `yaml:"scenario,omitempty"`
 }
 
 type HostConnectionConfiguration struct {

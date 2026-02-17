@@ -156,8 +156,8 @@ func (h *DirectStreamingHelper) createNetlaunchConfig(hostConfig string) (*netla
 	netlaunchConfig.LogstreamFile = "/tmp/netlaunch.log"
 	netlaunchConfig.TracestreamFile = "/tmp/netlaunch-trace.jsonl"
 	netlaunchConfig.Rcp = &netlaunch.RcpConfiguration{
-		GrpcMode:       false,
-		UseStreamImage: true,
+		GrpcMode: false,
+		Scenario: netlaunch.RcpScenarioStreamImage,
 	}
 
 	return &netlaunchConfig, nil

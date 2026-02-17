@@ -83,7 +83,7 @@ stages:
 
           - template: ../common_tasks/find-base-image-version.yml
           
-          - template: ../build_image/build-image-template.yml
+          - template: ../trident_images/build-image.yml
             parameters:
               imageName: azl-installer
               baseimgBuildType: $(BASEIMG_BUILD_TYPE)

@@ -28,7 +28,6 @@ stages:
         # Build Trident direct streaming installer ISO
         - template: stages/trident_images/build-image.yml
           parameters:
-            labelPrefix: "" # No prefix for this image
             architecture: ${{ parameters.architecture }}
             label: "trident-direct-streaming-installer-${{ parameters.architecture }}"
             makeTarget: "artifacts/trident-direct-streaming-installer-${{ parameters.architecture }}.iso"
@@ -54,7 +53,6 @@ stages:
         # Build direct streaming COSI VHD
         - template: stages/trident_images/build-image.yml
           parameters:
-            labelPrefix: "" # No prefix for this image
             architecture: ${{ parameters.architecture }}
             # TODO: when IC next releases, no longer needs dev image
             micBuildType: dev
@@ -87,7 +85,6 @@ stages:
         # Build direct streaming COSI VHD
         - template: stages/trident_images/build-image.yml
           parameters:
-            labelPrefix: "" # No prefix for this image
             architecture: ${{ parameters.architecture }}
             # TODO: when IC next releases, no longer needs dev image
             micBuildType: dev

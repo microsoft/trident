@@ -90,6 +90,10 @@ parameters:
     type: boolean
     default: false
 
+  - name: clones
+    type: number
+    default: 1
+
 steps:
   - task: PipAuthenticate@1
     displayName: Provision - Authenticate Pip
@@ -220,6 +224,10 @@ steps:
         export MIC_CONTAINER_IMAGE="imagecustomizer:dev"
       fi
 
+      if [[ "${{ parameters.clones }}" -gt 1 ]]; then
+        export IMAGE_CLONES="${{ parameters.clones }}"
+      fi
+
       # Compress the full image & delete the uncompressed image
       make ${{ parameters.target }}
     workingDirectory: $(Build.SourcesDirectory)
@@ -232,6 +240,9 @@ steps:
       # images that have build/**/ format are expected to have multiple output files
       if [ -d "build/${{ parameters.target }}" ]; then
         sudo mv -v build/${{ parameters.target }}/* "${{ parameters.outputDirectory }}/"
+      elif ls artifacts/${{ parameters.target }}*; then
+        # Everything else is a file
+        sudo mv -v artifacts/${{ parameters.target }}* "${{ parameters.outputDirectory }}/"
       else
         # Everything else is a file
         sudo mv -v "${{ parameters.target }}" "${{ parameters.outputDirectory }}/"

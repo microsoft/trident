@@ -7,7 +7,6 @@ parameters:
     # So, do validation in task below rather than specifying this here:
     # values:
     #   - trident-installer
-    #   - trident-split-installer
     #   - trident-container-installer
     #   - trident-direct-streaming-installer-amd64
     #   - trident-direct-streaming-installer-arm64
@@ -86,11 +85,11 @@ steps:
       # So, do validation here.
       #
       case "${{ parameters.installerISO }}" in
-          trident-installer|trident-split-installer|trident-container-installer|trident-direct-streaming-installer-amd64|trident-direct-streaming-installer-arm64)
+          trident-installer|trident-container-installer|trident-direct-streaming-installer-amd64|trident-direct-streaming-installer-arm64)
               # Valid image_type, do nothing
               ;;
           *)
-              echo "installerISO should be either 'trident-installer', 'trident-split-installer', 'trident-container-installer', 'trident-direct-streaming-installer-amd64', or 'trident-direct-streaming-installer-arm64'."
+              echo "installerISO should be either 'trident-installer', 'trident-container-installer', 'trident-direct-streaming-installer-amd64', or 'trident-direct-streaming-installer-arm64'."
               exit 1
               ;;
       esac
