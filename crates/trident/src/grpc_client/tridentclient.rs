@@ -80,19 +80,6 @@ pub struct TridentClient {
 impl TridentClient {
     /// Create a new TridentClient connected to the specified server address.
     pub async fn connect(server_address: impl AsRef<str>) -> Result<Self, TridentClientError> {
-        // let channel = Channel::from_shared(server_address.as_ref().to_string())
-        //     .map_err(|e| {
-        //         TridentClientError::InvalidServerAddress(
-        //             server_address.as_ref().to_string(),
-        //             e.to_string(),
-        //         )
-        //     })?
-        //     .connect()
-        //     .await
-        //     .map_err(|e| {
-        //         TridentClientError::ConnectionError(server_address.as_ref().to_string(), e)
-        //     })?;
-
         let channel = Endpoint::new(server_address.as_ref().to_string())
             .map_err(|e| {
                 TridentClientError::InvalidServerAddress(
