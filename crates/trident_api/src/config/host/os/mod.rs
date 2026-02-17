@@ -388,4 +388,78 @@ mod tests {
         });
         config.validate().unwrap();
     }
+
+    #[test]
+    fn test_validate_extensions_fail_duplicate_hash() {
+        let mut config = Os::default();
+        let duplicate_hash = Sha384Hash::from("a".repeat(96));
+        config.sysexts.push(Extension {
+            url: Url::parse("http://example.com/ext1.raw").unwrap(),
+            sha384: duplicate_hash.clone(),
+            path: Some(PathBuf::from("/var/lib/extensions/ext1.raw")),
+        });
+        config.sysexts.push(Extension {
+            url: Url::parse("http://example.com/ext2.raw").unwrap(),
+            sha384: duplicate_hash.clone(),
+            path: Some(PathBuf::from("/var/lib/extensions/ext2.raw")),
+        });
+
+        assert_eq!(
+            config.validate().unwrap_err(),
+            HostConfigurationStaticValidationError::DuplicateExtensionImage {
+                hash: duplicate_hash.to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_validate_extensions_fail_duplicate_path() {
+        let mut config = Os::default();
+        let duplicate_path = PathBuf::from("/var/lib/extensions/ext.raw");
+        config.sysexts.push(Extension {
+            url: Url::parse("http://example.com/ext1.raw").unwrap(),
+            sha384: Sha384Hash::from("a".repeat(96)),
+            path: Some(duplicate_path.clone()),
+        });
+        config.sysexts.push(Extension {
+            url: Url::parse("http://example.com/ext2.raw").unwrap(),
+            sha384: Sha384Hash::from("b".repeat(96)),
+            path: Some(duplicate_path.clone()),
+        });
+
+        assert_eq!(
+            config.validate().unwrap_err(),
+            HostConfigurationStaticValidationError::DuplicateExtensionImagePath {
+                path: duplicate_path.display().to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_serde_uefi_fallback_mode() {
+        let yaml_without_fallback = "";
+        let deserialized = serde_yaml::from_str::<Os>(yaml_without_fallback).unwrap();
+        assert_eq!(deserialized.uefi_fallback, UefiFallbackMode::Conservative);
+
+        let mut config = Os {
+            uefi_fallback: UefiFallbackMode::Disabled,
+            ..Default::default()
+        };
+        let serialized = serde_yaml::to_string(&config).unwrap();
+        assert!(serialized.contains("uefiFallback: disabled"));
+        let deserialized = serde_yaml::from_str::<Os>(&serialized).unwrap();
+        assert_eq!(deserialized.uefi_fallback, UefiFallbackMode::Disabled);
+
+        config.uefi_fallback = UefiFallbackMode::Conservative;
+        let serialized = serde_yaml::to_string(&config).unwrap();
+        assert!(serialized.contains("uefiFallback: conservative"));
+        let deserialized = serde_yaml::from_str::<Os>(&serialized).unwrap();
+        assert_eq!(deserialized.uefi_fallback, UefiFallbackMode::Conservative);
+
+        config.uefi_fallback = UefiFallbackMode::Optimistic;
+        let serialized = serde_yaml::to_string(&config).unwrap();
+        assert!(serialized.contains("uefiFallback: optimistic"));
+        let deserialized = serde_yaml::from_str::<Os>(&serialized).unwrap();
+        assert_eq!(deserialized.uefi_fallback, UefiFallbackMode::Optimistic);
+    }
 }
