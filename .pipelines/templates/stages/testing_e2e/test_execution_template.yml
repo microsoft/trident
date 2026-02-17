@@ -87,14 +87,6 @@ stages:
                 value: false
 
         steps:
-          - bash: |
-              if [ ${{ variables['tridentConfigurationName'] }} == 'split' ]; then
-                splitInstallerIsoName="trident-split-installer"
-                echo "setting variable.installerISOName to $splitInstallerIsoName"
-                echo "##vso[task.setvariable variable=installerISOName]$splitInstallerIsoName"
-              fi
-            displayName: Special handle for split test
-
           # Download all test images
           - template: ../testing_common/download-test-images.yml
             parameters:
@@ -105,6 +97,11 @@ stages:
               tridentTestImageUsrVerity: ${{ variables.usrVerityTestImageName }}
           - bash: |
               set -eux
+
+              SPLIT_ARG=""
+              if [ ${{ variables['tridentConfigurationName'] }} == 'split' ]; then
+                # TODO: communicate split configuration to netlaunch somehow?
+              fi
 
               mkdir -p $(ob_outputDirectory)
 
