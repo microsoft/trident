@@ -61,7 +61,7 @@ fn reboot_allowed(reboot_opt: &Option<RebootManagement>) -> RebootDecision {
 
             // The caller explicitly specified that Trident can handle reboots,
             // so we allow it.
-            RebootHandling::AutoReboot => RebootDecision::Handle,
+            RebootHandling::TridentHandlesReboot => RebootDecision::Handle,
 
             // The caller explicitly specified that they will handle reboots, so
             // we defer to them.

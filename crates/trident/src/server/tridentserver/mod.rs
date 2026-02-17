@@ -22,7 +22,7 @@ use tonic::{Response, Status};
 use trident_api::error::TridentError;
 use trident_proto::v1::{
     servicing_response::Response as ResponseType, FileLocation, Log, LogLevel, ServicingResponse,
-    Start,
+    Started,
 };
 
 use crate::{
@@ -237,7 +237,7 @@ impl TridentHarpoonServer {
         // All prerequisites are met, send start response
         if let Err(err) = tx.send(Ok(ServicingResponse {
             timestamp: Some(Timestamp::from(SystemTime::now())),
-            response: Some(ResponseType::Start(Start {})),
+            response: Some(ResponseType::Started(Started {})),
         })) {
             error!("Failed to send start response: {}", err);
             return Err(Status::internal("Failed to start processing"));
@@ -253,7 +253,7 @@ impl TridentHarpoonServer {
         // Spawn the servicing task
         tokio::spawn(async move {
             // Spawn the servicing task and await its completion
-            let final_status = manager
+            let completed_message = manager
                 .spawn_servicing_task(reboot_decision, servicing_guard, tracker_clone, f)
                 .await;
 
@@ -265,7 +265,7 @@ impl TridentHarpoonServer {
                 error!("Failed to clear tracestream server: {}", e);
             }
 
-            if let Some(ref err) = final_status.error {
+            if let Some(ref err) = completed_message.error {
                 error!("Servicing request '{}' failed: {}", name, err.message);
             } else {
                 info!("Servicing request '{}' completed successfully", name);
@@ -283,7 +283,7 @@ impl TridentHarpoonServer {
             // Send the final status response
             if let Err(err) = tx.send(Ok(ServicingResponse {
                 timestamp: Some(Timestamp::from(SystemTime::now())),
-                response: Some(ResponseType::FinalStatus(final_status)),
+                response: Some(ResponseType::Completed(completed_message)),
             })) {
                 error!("Failed to send control response: {}", err);
             }

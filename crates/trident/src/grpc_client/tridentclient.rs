@@ -10,7 +10,8 @@ use url::Url;
 use trident_proto::v1::{
     servicing_response::Response as ResponseBody, streaming_service_client::StreamingServiceClient,
     version_service_client::VersionServiceClient, LogLevel, RebootHandling as ProtoRebootHandling,
-    RebootManagement, ServicingResponse, StatusCode, StreamDiskRequest, VersionRequest,
+    RebootManagement, RebootStatus, ServicingResponse, StatusCode, StreamDiskRequest,
+    VersionRequest,
 };
 #[cfg(feature = "grpc-preview")]
 use trident_proto::v1preview::{
@@ -39,7 +40,7 @@ impl From<RebootHandling> for ProtoRebootHandling {
     fn from(handler: RebootHandling) -> Self {
         match handler {
             RebootHandling::Orchestrator => Self::CallerHandlesReboot,
-            RebootHandling::Trident => Self::AutoReboot,
+            RebootHandling::Trident => Self::TridentHandlesReboot,
         }
     }
 }
@@ -241,7 +242,7 @@ async fn handle_servicing_response(
     };
 
     match body {
-        ResponseBody::Start(_) => info!("Servicing started"),
+        ResponseBody::Started(_) => info!("Servicing started"),
         ResponseBody::Log(log_entry) => {
             let log_level = match log_entry.level() {
                 LogLevel::Unspecified => Level::Info,
@@ -256,8 +257,8 @@ async fn handle_servicing_response(
 
             log!(target: &target, log_level, "{}", log_entry.message);
         }
-        ResponseBody::FinalStatus(final_status) => {
-            match (final_status.status(), final_status.error) {
+        ResponseBody::Completed(status) => {
+            match (status.status(), status.error.as_ref()) {
                 (StatusCode::Unspecified, Some(err)) => {
                     return Err(TridentClientError::InvalidResponse(format!(
                         "Unspecified final status with error: {}:{}: {}",
@@ -289,13 +290,20 @@ async fn handle_servicing_response(
 
             info!("Servicing completed successfully");
 
-            if final_status.reboot_started {
-                info!("A reboot has been started by Trident");
-            }
-
-            if final_status.reboot_required {
-                info!("A reboot is required to complete the operation");
-                return Ok(ControlFlow::Break(ExitKind::NeedsReboot));
+            match status.reboot_status() {
+                RebootStatus::RebootStarted => info!("A reboot has been started by Trident"),
+                RebootStatus::RebootRequired => {
+                    info!("A reboot is required to complete the operation");
+                    return Ok(ControlFlow::Break(ExitKind::NeedsReboot));
+                }
+                RebootStatus::RebootNotRequired => {
+                    info!("No reboot is required to complete the operation")
+                }
+                RebootStatus::Unspecified => {
+                    return Err(TridentClientError::InvalidResponse(
+                        "Unspecified reboot status in final response".to_string(),
+                    ));
+                }
             }
 
             return Ok(ControlFlow::Break(ExitKind::Done));
