@@ -26,7 +26,7 @@ stages:
         - PrepareSSHKeys
       jobs:
         # Build Trident direct streaming installer ISO
-        - template: stages/trident_images/build-image.yml
+        - template: stages/trident_images/build-image-job.yml
           parameters:
             architecture: ${{ parameters.architecture }}
             label: "trident-direct-streaming-installer-${{ parameters.architecture }}"
@@ -51,7 +51,7 @@ stages:
         - PrepareSSHKeys
       jobs:
         # Build direct streaming COSI VHD
-        - template: stages/trident_images/build-image.yml
+        - template: stages/trident_images/build-image-job.yml
           parameters:
             architecture: ${{ parameters.architecture }}
             # TODO: when IC next releases, no longer needs dev image
@@ -83,7 +83,7 @@ stages:
         - PrepareSSHKeys
       jobs:
         # Build direct streaming COSI VHD
-        - template: stages/trident_images/build-image.yml
+        - template: stages/trident_images/build-image-job.yml
           parameters:
             architecture: ${{ parameters.architecture }}
             # TODO: when IC next releases, no longer needs dev image

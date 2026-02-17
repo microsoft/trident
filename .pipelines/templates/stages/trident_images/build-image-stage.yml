@@ -1,0 +1,84 @@
+parameters:
+  - name: label
+    type: string
+    displayName: "Label for the image"
+
+  - name: labelPrefix
+    type: string
+    displayName: "Prefix for the image label"
+    default: ""
+
+  - name: makeTarget
+    type: string
+    displayName: "Make target for the image"
+    default: ""
+
+  - name: baseimgType
+    type: string
+    displayName: "Base image type"
+
+  - name: baseimgAzlVersion
+    displayName: Base Image AZL version
+    type: string
+    default: "3.0"
+
+  - name: micBuildType
+    displayName: MIC Build Type
+    type: string
+    values:
+    - dev
+    - preview
+    - release
+    default: release
+
+  - name: micVersion
+    displayName: MIC Version
+    type: string
+    default: "*.*.*"
+
+  - name: useStagedSshKeys
+    displayName: "Use staged SSH keys"
+    type: boolean
+    default: false
+
+  - name: architecture
+    displayName: Architecture for MIC
+    type: string
+    values:
+      - arm64
+      - amd64
+    default: "amd64"
+
+  - name: downloadGoTools
+    displayName: "Download Go Tools"
+    type: boolean
+    default: false
+
+  - name: dependsOnTrident
+    displayName: "Requires Trident binaries"
+    type: boolean
+    default: true
+
+  - name: clones
+    displayName: "Number of clones to generate"
+    type: number
+    default: 1
+
+stages:
+  - stage: TridentTestImg_${{ replace(paramters.makeTarget, '-', '_') }}
+    displayName: "Build Image: ${{ paramters.makeTarget }}"    
+    jobs:
+      - template: ./build-image-job.yml
+        parameters:
+          label: ${{ parameters.label }}
+          labelPrefix: ${{ parameters.labelPrefix }}
+          makeTarget: ${{ parameters.makeTarget }}
+          baseimgType: ${{ parameters.baseimgType }}
+          baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+          micBuildType: ${{ parameters.micBuildType }}
+          micVersion: ${{ parameters.micVersion }}
+          useStagedSshKeys: ${{ parameters.useStagedSshKeys }}
+          architecture: ${{ parameters.architecture }}
+          downloadGoTools: ${{ parameters.downloadGoTools }}
+          dependsOnTrident: ${{ parameters.dependsOnTrident }}
+          clones: ${{ parameters.clones }}

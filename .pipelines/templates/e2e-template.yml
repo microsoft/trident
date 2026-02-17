@@ -103,7 +103,7 @@ stages:
   # Build FT base Image, only for CI or if forceFunctionalTestImageRebuild is true
   - ${{ if or(eq(parameters.stageType, 'ci'), eq(parameters.forceFunctionalTestImageRebuild, true)) }}:
       # Build Trident installer ISO (host)
-      - template: stages/trident_images/build-image.yml
+      - template: stages/trident_images/build-image-stage.yml
         parameters:
           label: trident-functest
           makeTarget: trident-functest
@@ -116,7 +116,7 @@ stages:
   - template: stages/build_docker_image/trident-container.yml
 
   # Build Trident installer ISO (host)
-  - template: stages/trident_images/build-image.yml
+  - template: stages/trident_images/build-image-stage.yml
     parameters:
       label: trident-installer
       makeTarget: trident-installer
@@ -125,7 +125,7 @@ stages:
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # Build Trident installer ISO (container)
-  - template: stages/trident_images/build-image.yml
+  - template: stages/trident_images/build-image-stage.yml
     parameters:
       label: trident-container-installer
       makeTarget: trident-container-installer
@@ -135,7 +135,7 @@ stages:
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # Build Trident test image (regular)
-  - template: stages/trident_images/build-image.yml
+  - template: stages/trident_images/build-image-stage.yml
     parameters:
       label: trident-testimage
       makeTarget: trident-testimage
@@ -145,7 +145,7 @@ stages:
       clones: 2
 
   # Build Trident test image (container)
-  - template: stages/trident_images/build-image.yml
+  - template: stages/trident_images/build-image-stage.yml
     parameters:
       label: trident-container-testimage
       makeTarget: trident-container-testimage
@@ -155,7 +155,7 @@ stages:
       clones: 2
 
   # Build Trident test image for root-verity (host)
-  - template: stages/trident_images/build-image.yml
+  - template: stages/trident_images/build-image-stage.yml
     parameters:
       label: trident-verity-testimage
       makeTarget: trident-verity-testimage
@@ -165,7 +165,7 @@ stages:
       clones: 2
 
   # Build Trident test image for root-verity (container)
-  - template: stages/trident_images/build-image.yml
+  - template: stages/trident_images/build-image-stage.yml
     parameters:
       label: trident-container-verity-testimage
       makeTarget: trident-container-verity-testimage
@@ -175,7 +175,7 @@ stages:
       clones: 2
 
   # Build Trident test image for usr-verity (host)
-  - template: stages/trident_images/build-image.yml
+  - template: stages/trident_images/build-image-stage.yml
     parameters:
       label: trident-usrverity-testimage
       makeTarget: trident-usrverity-testimage
@@ -185,7 +185,7 @@ stages:
       clones: 2
 
   # Build Trident test image for usr-verity (container)
-  - template: stages/trident_images/build-image.yml
+  - template: stages/trident_images/build-image-stage.yml
     parameters:
       label: trident-container-usrverity-testimage
       makeTarget: trident-container-usrverity-testimage
