@@ -39,9 +39,9 @@ message ServicingResponse {
 message RebootManagement {
   // Specifies how reboots required for the servicing operation should be
   // handled. This allows the caller to choose whether they want to handle the
-  // reboot themselves, or have Trident handle it automatically. When not
-  // present or unspecified, Trident will default to handling reboots
-  // automatically.
+  // reboot themselves, or have Trident handle it automatically. When this
+  // field is REBOOT_HANDLING_UNSPECIFIED, or when this message is omitted,
+  // Trident will default to handling reboots automatically.
   RebootHandling handling = 1;
 }
 
