@@ -13,10 +13,6 @@ parameters:
     displayName: "Make target for the image"
     default: ""
 
-  - name: baseimgType
-    type: string
-    displayName: "Base image type"
-
   - name: baseimgAzlVersion
     displayName: Base Image AZL version
     type: string
@@ -77,7 +73,6 @@ stages:
           label: ${{ parameters.label }}
           labelPrefix: ${{ parameters.labelPrefix }}
           makeTarget: ${{ parameters.makeTarget }}
-          baseimgType: ${{ parameters.baseimgType }}
           baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}

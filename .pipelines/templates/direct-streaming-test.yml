@@ -31,10 +31,6 @@ stages:
             architecture: ${{ parameters.architecture }}
             label: "trident-direct-streaming-installer-${{ parameters.architecture }}"
             makeTarget: "artifacts/trident-direct-streaming-installer-${{ parameters.architecture }}.iso"
-            ${{ if eq(parameters.architecture, 'arm64') }}:
-              baseimgType: core_arm64
-            ${{ if eq(parameters.architecture, 'amd64') }}:
-              baseimgType: baremetal
             # Need rcp-agent from go tools
             downloadGoTools: true
 
@@ -59,10 +55,6 @@ stages:
             micVersion: "main"
             label: "azurelinux-direct-streaming-testimage-${{ parameters.architecture }}"
             makeTarget: "artifacts/azurelinux-direct-streaming-testimage-${{ parameters.architecture }}.cosi"
-            ${{ if eq(parameters.architecture, 'arm64') }}:
-              baseimgType: core_arm64
-            ${{ if eq(parameters.architecture, 'amd64') }}:
-              baseimgType: baremetal
 
     # Run netlaunch test to validate direct streaming installer
     - template: stages/direct-streaming/netlaunch-testing.yml
@@ -91,7 +83,6 @@ stages:
             micVersion: "main"
             label: "ubuntu-direct-streaming-testimage-${{ parameters.architecture }}"
             makeTarget: "artifacts/ubuntu-direct-streaming-testimage-${{ parameters.architecture }}.cosi"
-            baseimgType: ubuntu_${{ parameters.architecture }}
 
     # Run netlaunch test to validate direct streaming installer
     - template: stages/direct-streaming/netlaunch-testing.yml

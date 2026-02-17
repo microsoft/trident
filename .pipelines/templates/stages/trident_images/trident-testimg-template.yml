@@ -53,14 +53,14 @@ parameters:
   - name: baseimgTypes
     displayName: Base Image Types
     type: object
-    values:
-      - baremetal
-      - core_arm64
-      - core_selinux
-      - minimal
-      - qemu_guest
-      - ubuntu_amd64
-      - ubuntu_arm64
+    # values:
+    #   - baremetal
+    #   - core_arm64
+    #   - core_selinux
+    #   - minimal
+    #   - qemu_guest
+    #   - ubuntu_amd64
+    #   - ubuntu_arm64
     default: 
       - baremetal
 

@@ -13,10 +13,6 @@ parameters:
     displayName: "Make target for the image"
     default: ""
 
-  - name: baseimgType
-    type: string
-    displayName: "Base image type"
-
   - name: baseimgAzlVersion
     displayName: Base Image AZL version
     type: string
@@ -131,9 +127,14 @@ jobs:
           targetPath: "$(Build.ArtifactStagingDirectory)/ssh"
         displayName: Download SSH Keys
 
+      - bash: |
+          ./tests/images/testimages.py show-image ${{ parameters.makeTarget }} base-image --devops-var baseImageType
+        displayName: "Get Image Info"
+
       - template: ../common_tasks/find-base-image-version.yml
         parameters:
           architecture: ${{ parameters.architecture }}
+
       - template: ./trident-testimg-template.yml
         parameters:
           target: ${{ parameters.makeTarget }}
@@ -146,6 +147,6 @@ jobs:
           baseimgVersion: $(BASEIMG_VERSION)
           baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
           baseimgTypes: 
-            - ${{ parameters.baseimgType }}
+            - $(baseimgType)
           useStagedSshKeys: ${{ parameters.useStagedSshKeys }}
           clones: ${{ parameters.clones }}
