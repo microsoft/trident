@@ -18,6 +18,11 @@ parameters:
     type: string
     default: "3.0"
 
+  - name: baseimgType
+    displayName: Base Image Type
+    type: string
+    default: ""
+
   - name: micBuildType
     displayName: MIC Build Type
     type: string
@@ -112,9 +117,15 @@ jobs:
           targetPath: "$(Build.ArtifactStagingDirectory)/ssh"
         displayName: Download SSH Keys
 
-      - bash: |
-          ./tests/images/testimages.py show-image ${{ parameters.makeTarget }} base-image --devops-var baseImageType
-        displayName: "Get Image Info"
+      - ${{ if ne(parameters.baseimgType, '') }}:
+          - bash: |
+              set -eux
+              echo "##vso[task.setvariable variable=baseimgType]${{ parameters.baseimgType }}"
+            displayName: "Set Base Image Type from parameter"
+      - ${{ else }}:
+        - bash: |
+            ./tests/images/testimages.py show-image ${{ parameters.makeTarget }} base-image --devops-var baseImageType
+          displayName: "Set Image Info from testimages.py"
 
       - template: ../common_tasks/find-base-image-version.yml
         parameters:
