@@ -129,7 +129,6 @@ stages:
     parameters:
       label: trident-container-installer
       makeTarget: trident-container-installer
-      runtimeEnv: "container"
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
