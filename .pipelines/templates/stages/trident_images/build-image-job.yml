@@ -60,24 +60,9 @@ parameters:
     type: number
     default: 1
 
-  - name: dependsOnStage
-    type: string
-    default: ''
-
 jobs:
   - job: PrepareImage_${{ replace(parameters.label, '-', '_') }}
     displayName: Prepare Image ${{ parameters.label }}
-    dependsOn:
-      - ${{ if ne(parameters.dependsOnStage, '') }}:
-        - ${{ parameters.dependsOnStage }}
-      - ${{ if parameters.dependsOnTrident }}:
-        - GetTridentBinaries_rpms_amd64
-      - ${{ if parameters.downloadGoTools }}:
-        - ${{ if eq(parameters.architecture, 'arm64') }}:
-          - BuildingTools_arm64
-        - ${{ if eq(parameters.architecture, 'amd64') }}:
-          - BuildingTools
-      - PrepareSSHKeys
     timeoutInMinutes: 20
     pool:
       ${{ if eq(parameters.architecture, 'arm64') }}:

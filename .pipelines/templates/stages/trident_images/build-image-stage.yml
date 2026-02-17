@@ -67,6 +67,17 @@ parameters:
 stages:
   - stage: TridentTestImg_${{ replace(parameters.makeTarget, '-', '_') }}
     displayName: "Build Image: ${{ parameters.makeTarget }}"    
+    dependsOn:
+      - ${{ if ne(parameters.dependsOnStage, '') }}:
+        - ${{ parameters.dependsOnStage }}
+      - ${{ if parameters.dependsOnTrident }}:
+        - GetTridentBinaries_rpms_amd64
+      - ${{ if parameters.downloadGoTools }}:
+        - ${{ if eq(parameters.architecture, 'arm64') }}:
+          - BuildingTools_arm64
+        - ${{ if eq(parameters.architecture, 'amd64') }}:
+          - BuildingTools
+      - PrepareSSHKeys
     jobs:
       - template: ./build-image-job.yml
         parameters:
@@ -81,4 +92,3 @@ stages:
           downloadGoTools: ${{ parameters.downloadGoTools }}
           dependsOnTrident: ${{ parameters.dependsOnTrident }}
           clones: ${{ parameters.clones }}
-          dependsOnStage: ${{ parameters.dependsOnStage }}
