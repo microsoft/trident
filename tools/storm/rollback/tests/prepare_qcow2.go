@@ -11,6 +11,7 @@ import (
 	stormvmconfig "tridenttools/storm/utils/vm/config"
 
 	"github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v2"
 )
 
 const IMAGE_CUSTOMIZER_CONFIG_TEMPLATE = `# config.yaml
@@ -64,23 +65,36 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 	// Create Image Customizer config
 	customizerConfigFile := "image-customizer-config.yaml"
 	customizerConfigPath := filepath.Join(testConfig.ArtifactsDir, customizerConfigFile)
-
-	ukiPreviewFeatureFlag := ""
-	osUkiConfig := ""
-	if testConfig.Uki {
-		ukiPreviewFeatureFlag = "- uki"
-		osUkiConfig = IMAGE_CUSTOMIZER_UKI_CONFIG_TEMPLATE_PART
+	customizerConfig := map[string]interface{}{
+		"previewFeatures": []string{
+			"reinitialize-verity",
+		},
+		"os": map[string]interface{}{
+			"additionalFiles": []map[string]string{
+				{
+					"source":      fmt.Sprintf("/artifacts/%s", extensionFileName),
+					"destination": fmt.Sprintf("/var/lib/extensions/%s", extensionFileName),
+				},
+			},
+			"services": map[string]interface{}{
+				"enable": []string{
+					"systemd-sysext",
+				},
+			},
+		},
 	}
-	customizerConfigContent := fmt.Sprintf(
-		IMAGE_CUSTOMIZER_CONFIG_TEMPLATE,
-		ukiPreviewFeatureFlag,
-		filepath.Join("/artifacts", extensionFileName),
-		extensionFileName,
-		osUkiConfig,
-	)
-	logrus.Tracef("Creating Image Customizer config file: %s", customizerConfigPath)
-	logrus.Tracef("Image customizer config content:\n%s", customizerConfigContent)
-	if err := os.WriteFile(customizerConfigPath, []byte(customizerConfigContent), 0644); err != nil {
+	if testConfig.Uki {
+		customizerConfig["os"].(map[string]interface{})["uki"] = map[string]interface{}{
+			"mode": "passthrough",
+		}
+		customizerConfig["previewFeatures"] = append(customizerConfig["previewFeatures"].([]string), "uki")
+	}
+	customizerConfigContent, err := yaml.Marshal(customizerConfig)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Image Customizer config: %w", err)
+	}
+	logrus.Tracef("Image customizer config content:\n%s", string(customizerConfigContent))
+	if err := os.WriteFile(customizerConfigPath, customizerConfigContent, 0644); err != nil {
 		return fmt.Errorf("failed to write Image Customizer config file: %w", err)
 	}
 	logrus.Tracef("Wrote Image Customizer config file: %s", customizerConfigPath)
