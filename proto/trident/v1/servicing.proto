@@ -86,16 +86,16 @@ message Started {}
 // whether the reboot has been started automatically by Trident or is expected
 // to be handled by the caller.
 enum RebootStatus {
-    REBOOT_STATUS_UNSPECIFIED = 0;
+  REBOOT_STATUS_UNSPECIFIED = 0;
 
-    // The servicing operation completed and no reboot is required.
-    REBOOT_NOT_REQUIRED = 1;
+  // The servicing operation completed and no reboot is required.
+  REBOOT_NOT_REQUIRED = 1;
 
-    // The servicing operation completed successfully and the caller is expected
-    // to reboot the system immediately to finalize the servicing.
-    REBOOT_REQUIRED = 2;
+  // The servicing operation completed successfully and the caller is expected
+  // to reboot the system immediately to finalize the servicing.
+  REBOOT_REQUIRED = 2;
 
-    // The servicing operation completed successfully and Trident has started
-    // the reboot process automatically.
-    REBOOT_STARTED = 3;
+  // The servicing operation completed successfully and Trident has started the
+  // reboot process automatically.
+  REBOOT_STARTED = 3;
 }
