@@ -1,0 +1,102 @@
+os:
+  additionalFiles:
+  - destination: /etc/sudoers.d/wheel
+    source: files/sudoers-wheel
+  - destination: /usr/lib/dracut/dracut.conf.d/nohostonly.conf
+    source: files/dracut-nohostonly.conf
+  bootloader:
+    resetType: hard-reset
+  hostname: trident-usrverity-testimg
+  kernelCommandLine:
+    extraCommandLine:
+    - console=tty0
+    - console=ttyS0
+    - rd.info
+    - log_buf_len=1M
+    - rd.hostonly=0
+  packages:
+    install:
+    - binutils
+    - curl
+    - device-mapper
+    - efibootmgr
+    - iproute
+    - iptables
+    - lvm2
+    - mdadm
+    - netplan
+    - openssh-server
+    - systemd-udev
+    - tpm2-tools
+    - trident-service
+    - trident-static-pcrlock-files
+    - veritysetup
+    - vim
+    - systemd-ukify
+    - systemd-boot
+    - efibootmgr
+    - audit
+    - selinux-policy-devel
+    remove:
+    - grub2-efi-binary
+  selinux:
+    mode: disabled
+  services:
+    enable:
+    - trident
+  uki:
+    kernels: auto
+output:
+  artifacts:
+    items:
+    - ukis
+    path: ./.trident-usrverity-testimage-oxiry4v7
+previewFeatures:
+- uki
+- output-artifacts
+storage:
+  bootType: efi
+  disks:
+  - maxSize: 5G
+    partitionTableType: gpt
+    partitions:
+    - id: esp
+      label: esp
+      size: 500M
+      type: esp
+    - id: boot
+      size: 150M
+    - id: root
+      size: 2G
+    - id: usr-data
+      label: usr
+      size: 1G
+    - id: usr-hash
+      label: usr-hash
+      size: 128M
+  filesystems:
+  - deviceId: esp
+    mountPoint:
+      options: umask=0077
+      path: /boot/efi
+    type: fat32
+  - deviceId: boot
+    mountPoint:
+      path: /boot
+    type: ext4
+  - deviceId: root
+    mountPoint:
+      path: /
+    type: ext4
+  - deviceId: usr
+    mountPoint:
+      options: defaults,ro
+      path: /usr
+    type: ext4
+  verity:
+  - dataDeviceId: usr-data
+    dataDeviceMountIdType: uuid
+    hashDeviceId: usr-hash
+    hashDeviceMountIdType: uuid
+    id: usr
+    name: usr

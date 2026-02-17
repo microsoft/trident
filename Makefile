@@ -744,31 +744,31 @@ endif
 		--path artifacts/ \
 		--artifact-name 'trident-installer'
 
-.PHONY: download-trident-container-installer-iso
-download-trident-container-installer-iso:
-	$(eval BRANCH ?= main)
-	$(eval RUN_ID ?= $(shell az pipelines runs list \
-		--org "https://dev.azure.com/mariner-org" \
-		--project "ECF" \
-		--pipeline-ids 5067 \
-		--branch $(BRANCH) \
-		--query-order QueueTimeDesc \
-		--result succeeded \
-		--reason triggered \
-		--top 1 \
-		--query '[0].id'))
-	@echo PIPELINE RUN ID: $(RUN_ID)
-	mkdir -p ./artifacts
-	az pipelines runs artifact download \
-		--org 'https://dev.azure.com/mariner-org' \
-		--project "ECF" \
-		--run-id $(RUN_ID) \
-		--path artifacts/ \
-		--artifact-name 'trident-container-installer'
+# .PHONY: download-trident-container-installer-iso
+# download-trident-container-installer-iso:
+# 	$(eval BRANCH ?= main)
+# 	$(eval RUN_ID ?= $(shell az pipelines runs list \
+# 		--org "https://dev.azure.com/mariner-org" \
+# 		--project "ECF" \
+# 		--pipeline-ids 5067 \
+# 		--branch $(BRANCH) \
+# 		--query-order QueueTimeDesc \
+# 		--result succeeded \
+# 		--reason triggered \
+# 		--top 1 \
+# 		--query '[0].id'))
+# 	@echo PIPELINE RUN ID: $(RUN_ID)
+# 	mkdir -p ./artifacts
+# 	az pipelines runs artifact download \
+# 		--org 'https://dev.azure.com/mariner-org' \
+# 		--project "ECF" \
+# 		--run-id $(RUN_ID) \
+# 		--path artifacts/ \
+# 		--artifact-name 'trident-container-installer'
 
-artifacts/trident-container-installer.iso:
-	$(MAKE) download-trident-container-installer-iso; \
-	ls -l artifacts/trident-container-installer.iso
+# artifacts/trident-container-installer.iso:
+# 	$(MAKE) download-trident-container-installer-iso; \
+# 	ls -l artifacts/trident-container-installer.iso
 
 # Copies locally built runtime images from ../test-images/build to ./artifacts/test-image.
 # Expects that both the regular and verity Trident test images have been built.

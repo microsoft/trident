@@ -1,0 +1,130 @@
+storage:
+  disks:
+    - partitionTableType: gpt
+      maxSize: 5G
+      partitions:
+        - id: esp
+          type: esp
+          size: 500M
+          label: esp
+
+        - id: boot
+          size: 150M
+
+        - id: root
+          size: 2G
+
+        - id: usr-data
+          label: usr
+          size: 1G
+
+        - id: usr-hash
+          label: usr-hash
+          size: 128M
+
+  bootType: efi
+
+  verity:
+    - id: usr
+      name: usr
+      dataDeviceId: usr-data
+      hashDeviceId: usr-hash
+      dataDeviceMountIdType: uuid
+      hashDeviceMountIdType: uuid
+
+  filesystems:
+    - deviceId: esp
+      type: fat32
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+
+    - deviceId: boot
+      type: ext4
+      mountPoint:
+        path: /boot
+
+    - deviceId: root
+      type: ext4
+      mountPoint:
+        path: /
+
+    - deviceId: usr
+      type: ext4
+      mountPoint:
+        path: /usr
+        options: defaults,ro
+
+os:
+  bootloader:
+    resetType: hard-reset
+  hostname: trident-container-usrverity-testimg
+
+  selinux:
+    mode: disabled
+
+  kernelCommandLine:
+    # Replicates BM base image settings, that would otherwise be lost
+    extraCommandLine:
+      - console=tty0
+      - console=ttyS0
+      - rd.info
+      - log_buf_len=1M
+      - rd.hostonly=0
+
+  packages:
+    remove:
+      - grub2-efi-binary
+
+    install:
+      - curl
+      - device-mapper
+      - docker-cli
+      - efibootmgr
+      - iproute
+      - iptables
+      - lvm2
+      - mdadm
+      - moby-engine
+      - netplan
+      - openssh-server
+      - systemd-udev
+      - tpm2-tools
+      - veritysetup
+      - vim
+      - systemd-ukify
+      - systemd-boot
+      - efibootmgr
+      - squashfs-tools
+      - tar
+
+  services:
+    enable:
+      - trident-container
+      - sshd
+
+  uki:
+    kernels: auto
+
+  additionalFiles:
+    # Add mdraid dracut module, this will enable installation on raid devices
+    - source: files/dracut-nohostonly.conf
+      destination: /usr/lib/dracut/dracut.conf.d/nohostonly.conf
+    - source: files/sudoers-wheel
+      destination: /etc/sudoers.d/wheel
+    - source: files/trident-container.service
+      destination: /usr/lib/systemd/system/trident-container.service
+
+output:
+  # Specifies config for output dir containining generated artifacts. This is
+  # required for later running inject-files command, so that the final image
+  # built via imagecustomizer is signed and SecureBoot can be enabled in E2E
+  # tests where UKI ROS is used.
+  artifacts:
+    items:
+      - ukis
+    path: ./output
+
+previewFeatures:
+  - uki
+  - output-artifacts

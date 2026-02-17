@@ -1,0 +1,146 @@
+storage:
+  disks:
+  - partitionTableType: gpt
+    maxSize: 5G
+    partitions:
+    - id: esp
+      type: esp
+      size: 8M
+
+    - id: boot
+      size: 1G
+
+    - label: root
+      id: root
+      size: 2G
+
+    - label: root-hash
+      id: verityhash
+      size: 128M
+
+    - id: sysexts
+      size: 1G
+
+    - id: confexts
+      size: 200M
+
+    - id: var
+      size: grow
+
+  bootType: efi
+
+  verity:
+  - id: rootverity
+    name: root
+    dataDeviceId: root
+    hashDeviceId: verityhash
+    dataDeviceMountIdType: part-label
+    hashDeviceMountIdType: part-label
+
+  filesystems:
+  - deviceId: esp
+    type: fat32
+    mountPoint:
+      path: /boot/efi
+      options: umask=0077
+
+  - deviceId: boot
+    type: ext4
+    mountPoint:
+      path: /boot
+
+  - deviceId: rootverity
+    type: ext4
+    mountPoint:
+      path: /
+      options: defaults,ro
+
+  - deviceId: sysexts
+    type: ext4
+    mountPoint:
+      path: /var/lib/extensions
+
+  - deviceId: confexts
+    type: ext4
+    mountPoint:
+      path: /var/lib/confexts
+
+  - deviceId: var
+    type: ext4
+    mountPoint:
+      path: /var
+
+os:
+  bootloader:
+    resetType: hard-reset
+  hostname: trident-container-verity-testimg
+
+  selinux:
+    mode: disabled
+
+  kernelCommandLine:
+    # Replicates BM base image settings, that would otherwise be lost
+    extraCommandLine:
+    - console=tty0
+    - console=ttyS0
+    - rd.info
+    - log_buf_len=1M
+
+  packages:
+    remove:
+      - grub2-efi-binary
+
+    # Package list carried over from base image.
+    install:
+      # replace grub2-efi-binary with grub2-efi-binary-noprefix
+      - grub2-efi-binary-noprefix
+      - curl
+      - device-mapper
+      - dnf
+      - docker-cli
+      # Required to create vfat filesystems, which at the moment is not needed
+      # from the runtime image; included here to unblock functional tests
+      - dosfstools
+      # Required to boot from the overlay supplied on the kernel command line
+      - dracut-overlayfs
+      - efibootmgr
+      - iproute
+      - iptables
+      - lsof
+      - lvm2
+      - mdadm
+      - moby-engine
+      - netplan
+      - openssh-server
+      - systemd-udev
+      - tpm2-tools
+      - veritysetup
+      - squashfs-tools
+      - tar
+      - vim
+
+  additionalFiles:
+    # Early boot one shot service to activate secondary rw /etc overlay
+  - source: etc-mount.service
+    destination: /etc/systemd/system/etc-mount.service
+    # Script invoked by the service above to mount the /etc rw overlay
+  - source: etc-mount.sh
+    destination: /usr/local/bin/etc-mount.sh
+  # SSH user needs sudo access for tests, and scripts cannot modify /etc
+  # directly, so modifying the wheel group as part of the image creation (note
+  # scripts could mount the rw etc from below instead)
+  - source: sudoers-wheel
+    destination: /etc/sudoers.d/wheel
+  - source: files/trident-container.service
+    destination: /usr/lib/systemd/system/trident-container.service
+
+  services:
+    enable:
+    - etc-mount
+    - trident-container
+    - sshd
+
+scripts:
+  postCustomization:
+  # Script to create the /web directory
+  - path: create-web-dir.sh

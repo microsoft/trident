@@ -123,6 +123,7 @@ stages:
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      downloadGoTools: true
 
   # Build Trident installer ISO (container)
   - template: stages/trident_images/build-image-stage.yml
