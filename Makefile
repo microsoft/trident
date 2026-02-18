@@ -34,11 +34,14 @@ check-pipelines:
 ifdef BRANCH
 	$(eval BRANCH_FLAG := -b $(BRANCH))
 endif
-	./scripts/test-pipeline --parallel -q $(BRANCH_FLAG) \
+ifndef NO_PARALLEL
+	$(eval PARALLEL_FLAG := --parallel)
+endif
+	# Note: the az-cli version in pipelines does not like --parallel, so run sequentially.
+	./scripts/test-pipeline $(PARALLEL_FLAG) -q $(BRANCH_FLAG) \
 		prism-cicd \
 		azl-cicd \
 		pr \
-		pr-e2e \
 		pr-e2e \
 		ci \
 		pre \
@@ -46,7 +49,7 @@ endif
 		testing \
 		tester \
 		scale-official \
-		full-validation \
+		full-validation
 
 .PHONY: check-sh
 check-sh:

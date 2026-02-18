@@ -29,7 +29,7 @@ stages:
           - script: |
               set -eux
 
-              make check-pipelines BRANCH=$(Build.SourceBranch)
+              make check-pipelines BRANCH=$(Build.SourceBranch) NO_PARALLEL=true
             displayName: "Validating pipeline templates work"
             workingDirectory: $(Build.SourcesDirectory)
             env:
