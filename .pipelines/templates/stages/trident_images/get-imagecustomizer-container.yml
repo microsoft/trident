@@ -28,42 +28,71 @@ parameters:
   default: "imagecustomizer:local"
 
 steps:
-- ${{ if eq(parameters.buildType, 'dev') }}:
-  - script: |
-      set -eux
-      echo "Building mic from dev branch"
-      dev_branch="main"
-      if [ "${{ parameters.micVersion }}" != "*.*.*" ]; then
-          dev_branch="${{ parameters.micVersion }}"
-      fi
+  - ${{ if eq(parameters.buildType, 'dev') }}:
+    - bash: |
+        set -ex
+        if command -v tdnf; then
+          # Use msft-golang since it has latest versions supported
+          sudo tdnf remove golang -y
+          export GO_PACKAGE_NAME=msft-golang
+          if cat /etc/os-release | grep -i azurelinux; then
+          export GO_PACKAGE_NAME=golang
+          fi
+          sudo tdnf install $GO_PACKAGE_NAME-${{ parameters.goVersion }} -y
+        else 
+          sudo apt-get purge 'golang-*-go' golang-go gccgo-go
+          sudo rm -f /usr/bin/go /usr/bin/gofmt
 
-      git_directory="/tmp/azure-linux-image-tools"
-      toolkit_directory=$git_directory/toolkit
+          wget https://golang.org/dl/go${{ parameters.goVersion }}.linux-${{ parameters.arch }}.tar.gz
+          sudo tar -C /usr/local -xvf go${{ parameters.goVersion }}.linux-${{ parameters.arch }}.tar.gz
 
-      echo "Cloning azurelinux repo $dev_branch branch..."
-      git clone --depth 1 --branch $dev_branch https://github.com/microsoft/azure-linux-image-tools.git $git_directory
+          sudo ln -sr /usr/local/go/bin/go /usr/local/bin/go
+          sudo ln -sr /usr/local/go/bin/gofmt /usr/local/bin/gofmt
+        fi
+        command -v go
+        go version
 
-      git -C $git_directory log -1
+        # ARM64 pool requires docker to be started manually.
+        sudo systemctl start docker
+      displayName: "Install golang to build Image Customizer"
+      condition: and(succeeded(), ${{ eq(parameters.buildType, 'dev') }})
+      retryCountOnTaskFailure: 3
 
-      # Do not use make for a faster build
-      echo "Building mic..."
-      make go-imagecustomizer REBUILD_TOOLS=y -C $toolkit_directory
-      $toolkit_directory/tools/imagecustomizer/container/build-container.sh -t ${{ parameters.localContainer }} -a "${{ parameters.arch }}"
-    displayName: 'Create MIC container from dev build'
-- ${{ if eq(parameters.buildType, 'preview') }}:
-  - script: |
-      set -eux
-      echo "Unclear what preview means..."
-      exit 1
-    displayName: 'Pull MIC container from preview build'
-- ${{ if eq(parameters.buildType, 'release') }}:
-  - script: |
-      set -eux
-      VERSION=${{ parameters.micVersion }}
-      if [ "$VERSION" = "*.*.*" ]; then
-        echo "MIC version not specified, pulling latest container"
-        VERSION=latest
-      fi
-      docker pull ${{ parameters.releaseContainerName }}:$VERSION
-      docker tag ${{ parameters.releaseContainerName }}:$VERSION ${{ parameters.localContainer }}
-    displayName: 'Pull MIC container from ${{ parameters.releaseContainerName }}'
+    - script: |
+        set -eux
+        echo "Building mic from dev branch"
+        dev_branch="main"
+        if [ "${{ parameters.micVersion }}" != "*.*.*" ]; then
+            dev_branch="${{ parameters.micVersion }}"
+        fi
+
+        git_directory="/tmp/azure-linux-image-tools"
+        toolkit_directory=$git_directory/toolkit
+
+        echo "Cloning azurelinux repo $dev_branch branch..."
+        git clone --depth 1 --branch $dev_branch https://github.com/microsoft/azure-linux-image-tools.git $git_directory
+
+        git -C $git_directory log -1
+
+        # Do not use make for a faster build
+        echo "Building mic..."
+        make go-imagecustomizer REBUILD_TOOLS=y -C $toolkit_directory
+        $toolkit_directory/tools/imagecustomizer/container/build-container.sh -t ${{ parameters.localContainer }} -a "${{ parameters.arch }}"
+      displayName: 'Create MIC container from dev build'
+  - ${{ if eq(parameters.buildType, 'preview') }}:
+    - script: |
+        set -eux
+        echo "Unclear what preview means..."
+        exit 1
+      displayName: 'Pull MIC container from preview build'
+  - ${{ if eq(parameters.buildType, 'release') }}:
+    - script: |
+        set -eux
+        VERSION=${{ parameters.micVersion }}
+        if [ "$VERSION" = "*.*.*" ]; then
+          echo "MIC version not specified, pulling latest container"
+          VERSION=latest
+        fi
+        docker pull ${{ parameters.releaseContainerName }}:$VERSION
+        docker tag ${{ parameters.releaseContainerName }}:$VERSION ${{ parameters.localContainer }}
+      displayName: 'Pull MIC container from ${{ parameters.releaseContainerName }}'
