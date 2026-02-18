@@ -44,8 +44,5 @@ steps:
           "${{ parameters.rpmsPipelineBuildId }}" \
           "${{ parameters.rpmsArm64PipelineBuildId }}" \
           "${{ parameters.outputDirectory }}"
-
-      ls -l "${{ parameters.outputDirectory }}"
-      cat "${{ parameters.outputDirectory }}/base-image-config.json"
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Create Base Image Config artifact"
