@@ -19,6 +19,10 @@ parameters:
   - amd64
   - arm64
 
+- name: goVersion
+  type: string
+  default: 1.24.1
+
 - name: releaseContainerName
   type: string
   default: "mcr.microsoft.com/azurelinux/imagecustomizer"
