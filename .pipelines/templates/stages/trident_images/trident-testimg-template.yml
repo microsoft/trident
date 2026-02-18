@@ -167,7 +167,7 @@ steps:
       - template: common/base-images-download-template.yaml@platform-pipelines
         parameters:
           buildType: ${{ parameters.baseimgBuildType }}
-          baseImageType: ${{ baseimgType }}
+          baseImageType: ${{ parameters.baseimgType }}
           imageVersion: ${{ parameters.baseimgVersion }}
           azureLinuxVersion: ${{ parameters.baseimgAzureLinuxVersion }}
 
