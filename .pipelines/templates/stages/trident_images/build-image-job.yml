@@ -117,20 +117,6 @@ jobs:
           targetPath: "$(Build.ArtifactStagingDirectory)/ssh"
         displayName: Download SSH Keys
 
-      - ${{ if ne(parameters.baseimgType, '') }}:
-          - bash: |
-              echo "##vso[task.setvariable variable=BASEIMG_TYPE]${{ parameters.baseimgType }}"
-            displayName: "Set Base Image Type from parameter"
-      - ${{ else }}:
-          - bash: |
-              ./tests/images/testimages.py show-image ${{ parameters.makeTarget }} base-image --devops-var BASEIMG_TYPE
-            displayName: "Set Image Info from testimages.py"
-      - bash: |
-          echo "Image type: $(BASEIMG_TYPE)"
-          echo "Defined variables:"
-          env | sort
-        displayName: "Show defined variables"
-
       - template: ../common_tasks/find-base-image-version.yml
         parameters:
           architecture: ${{ parameters.architecture }}
@@ -146,6 +132,6 @@ jobs:
           baseimgBuildType: $(BASEIMG_BUILD_TYPE)
           baseimgVersion: $(BASEIMG_VERSION)
           baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
-          baseimgType: $(BASEIMG_TYPE)
+          baseimgType: ${{ parameters.baseimgType }}
           useStagedSshKeys: ${{ parameters.useStagedSshKeys }}
           clones: ${{ parameters.clones }}

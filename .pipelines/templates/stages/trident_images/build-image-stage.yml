@@ -13,6 +13,11 @@ parameters:
     displayName: "Make target for the image"
     default: ""
 
+  - name: baseimgType
+    displayName: Base Image Type
+    type: string
+    default: "baremetal"
+
   - name: baseimgAzlVersion
     displayName: Base Image AZL version
     type: string
@@ -22,9 +27,9 @@ parameters:
     displayName: MIC Build Type
     type: string
     values:
-    - dev
-    - preview
-    - release
+      - dev
+      - preview
+      - release
     default: release
 
   - name: micVersion
@@ -62,21 +67,21 @@ parameters:
 
   - name: dependsOnStage
     type: string
-    default: ''
+    default: ""
 
 stages:
   - stage: TridentTestImg_${{ replace(parameters.makeTarget, '-', '_') }}
-    displayName: "Build Image: ${{ parameters.makeTarget }}"    
+    displayName: "Build Image: ${{ parameters.makeTarget }}"
     dependsOn:
       - ${{ if ne(parameters.dependsOnStage, '') }}:
-        - ${{ parameters.dependsOnStage }}
+          - ${{ parameters.dependsOnStage }}
       - ${{ if parameters.dependsOnTrident }}:
-        - GetTridentBinaries_rpms_amd64
+          - GetTridentBinaries_rpms_amd64
       - ${{ if parameters.downloadGoTools }}:
-        - ${{ if eq(parameters.architecture, 'arm64') }}:
-          - BuildingTools_arm64
-        - ${{ if eq(parameters.architecture, 'amd64') }}:
-          - BuildingTools
+          - ${{ if eq(parameters.architecture, 'arm64') }}:
+              - BuildingTools_arm64
+          - ${{ if eq(parameters.architecture, 'amd64') }}:
+              - BuildingTools
       - PrepareSSHKeys
     jobs:
       - template: ./build-image-job.yml
@@ -84,6 +89,7 @@ stages:
           label: ${{ parameters.label }}
           labelPrefix: ${{ parameters.labelPrefix }}
           makeTarget: ${{ parameters.makeTarget }}
+          baseimgType: ${{ parameters.baseimgType }}
           baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
