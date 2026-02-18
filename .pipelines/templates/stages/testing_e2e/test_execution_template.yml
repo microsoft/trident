@@ -97,10 +97,10 @@ stages:
           - bash: |
               set -eux
 
-              SPLIT_ARG=""
-              if [ ${{ variables['tridentConfigurationName'] }} == 'split' ]; then
-                # TODO: communicate split configuration to netlaunch somehow?
-              fi
+              #SPLIT_ARG=""
+              #if [ ${{ variables['tridentConfigurationName'] }} == 'split' ]; then
+              #  # TODO: communicate split configuration to netlaunch somehow?
+              #fi
 
               mkdir -p $(ob_outputDirectory)
 
