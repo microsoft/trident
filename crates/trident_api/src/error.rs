@@ -10,8 +10,8 @@ use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 use url::Url;
 
-use harpoon::{
-    FileLocation, TridentError as HarpoonTridentError, TridentErrorKind as HarpoonTridentErrorKind,
+use trident_proto::v1::{
+    FileLocation, TridentError as ProtoTridentError, TridentErrorKind as ProtoTridentErrorKind,
 };
 
 use crate::{
@@ -1049,19 +1049,19 @@ fn stringify_iterable(iterable: impl Iterator<Item = impl AsRef<str>>) -> String
         .join(", ")
 }
 
-impl From<TridentError> for HarpoonTridentError {
+impl From<TridentError> for ProtoTridentError {
     fn from(e: TridentError) -> Self {
-        HarpoonTridentError::from(&e)
+        ProtoTridentError::from(&e)
     }
 }
 
-impl From<&TridentError> for HarpoonTridentError {
+impl From<&TridentError> for ProtoTridentError {
     fn from(e: &TridentError) -> Self {
-        HarpoonTridentError {
-            kind: HarpoonTridentErrorKind::from(e.kind()) as i32,
+        ProtoTridentError {
+            kind: ProtoTridentErrorKind::from(e.kind()) as i32,
             subkind: e.subkind().unwrap_or("unknown").to_string(),
-            message: e.0.kind.to_string(),
-            full_body: format!("{:?}", e),
+            message: format!("{:?}", e),
+            error_message: e.0.kind.to_string(),
             location: Some(FileLocation {
                 path: e.0.location.file().to_string(),
                 line: e.0.location.line(),
@@ -1070,19 +1070,19 @@ impl From<&TridentError> for HarpoonTridentError {
     }
 }
 
-impl From<&ErrorKind> for HarpoonTridentErrorKind {
+impl From<&ErrorKind> for ProtoTridentErrorKind {
     fn from(kind: &ErrorKind) -> Self {
         match kind {
             ErrorKind::ExecutionEnvironmentMisconfiguration(_) => {
-                HarpoonTridentErrorKind::ExecutionEnvironmentMisconfigurationError
+                ProtoTridentErrorKind::ExecutionEnvironmentMisconfigurationError
             }
-            ErrorKind::HealthChecks(_) => HarpoonTridentErrorKind::HealthChecksError,
-            ErrorKind::Initialization(_) => HarpoonTridentErrorKind::InitializationError,
-            ErrorKind::Internal(_) => HarpoonTridentErrorKind::InternalError,
-            ErrorKind::InvalidInput(_) => HarpoonTridentErrorKind::InvalidInputError,
-            ErrorKind::Servicing(_) => HarpoonTridentErrorKind::ServicingError,
+            ErrorKind::HealthChecks(_) => ProtoTridentErrorKind::HealthChecksError,
+            ErrorKind::Initialization(_) => ProtoTridentErrorKind::InitializationError,
+            ErrorKind::Internal(_) => ProtoTridentErrorKind::InternalError,
+            ErrorKind::InvalidInput(_) => ProtoTridentErrorKind::InvalidInputError,
+            ErrorKind::Servicing(_) => ProtoTridentErrorKind::ServicingError,
             ErrorKind::UnsupportedConfiguration(_) => {
-                HarpoonTridentErrorKind::UnsupportedConfigurationError
+                ProtoTridentErrorKind::UnsupportedConfigurationError
             }
         }
     }

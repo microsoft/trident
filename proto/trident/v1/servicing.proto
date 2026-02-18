@@ -1,0 +1,101 @@
+// Proto file defining the shared servicing response types.
+
+syntax = "proto3";
+
+package trident.v1;
+
+import "google/protobuf/timestamp.proto";
+
+import "trident/v1/error.proto";
+import "trident/v1/log.proto";
+
+// ServicingResponse defines the messages that are streamed back to the caller
+// when performing a servicing task. The response messages can be of three
+// types:
+//
+// - A start message indicating the beginning of the servicing operation,
+// - Log messages generated during the servicing operation, and
+// - A final status message indicating the completion of the servicing
+//   operation. The final status message includes information about whether the
+//   servicing operation was successful or not, and whether a reboot is required
+//   to finalize the servicing.
+message ServicingResponse {
+  // Timestamp of the response message.
+  google.protobuf.Timestamp timestamp = 1;
+  // Body of the response message.
+  oneof response {
+    // A start message indicating the beginning of the servicing operation.
+    Started started = 2;
+    // A log message from the servicing operation.
+    Log log = 3;
+    // The complete message indicating the completion of the servicing
+    // operation, including the final status and whether a reboot is required.
+    Completed completed = 4;
+  }
+}
+
+// RebootManagement defines the reboot management parameters for a servicing
+// operation.
+message RebootManagement {
+  // Specifies how reboots required for the servicing operation should be
+  // handled. This allows the caller to choose whether they want to handle the
+  // reboot themselves, or have Trident handle it automatically. When not
+  // present or unspecified, Trident will default to handling reboots
+  // automatically.
+  RebootHandling handling = 1;
+}
+
+// RebootHandling defines how reboots required for a servicing operation should
+// be handled.
+enum RebootHandling {
+  REBOOT_HANDLING_UNSPECIFIED = 0;
+  // Trident will handle any required reboots of the system.
+  TRIDENT_HANDLES_REBOOT = 1;
+  // The caller will handle any required reboots of the system.
+  CALLER_HANDLES_REBOOT = 2;
+}
+
+// Completed represents the final status of a servicing operation, including
+// whether the operation was successful, and whether a reboot is required to
+// finalize the servicing.
+message Completed {
+  // Final status of the servicing operation.
+  StatusCode status = 1;
+
+  // Error details if the servicing operation failed. Only present when status
+  // is not STATUS_CODE_SUCCESS.
+  optional TridentError error = 2;
+
+  // The reboot status of the system after the servicing operation. This field
+  // indicates whether a reboot is required, not required, or has been started
+  // automatically by Trident.
+  RebootStatus reboot_status = 3;
+}
+
+// Represents the final status of a servicing operation.
+enum StatusCode {
+  STATUS_CODE_UNSPECIFIED = 0;
+  STATUS_CODE_SUCCESS     = 1;
+  STATUS_CODE_FAILURE     = 2;
+}
+
+message Started {}
+
+// RebootStatus represents the reboot status of the system after servicing. This
+// indicates whether a reboot is required to finalize the servicing, and if so,
+// whether the reboot has been started automatically by Trident or is expected
+// to be handled by the caller.
+enum RebootStatus {
+  REBOOT_STATUS_UNSPECIFIED = 0;
+
+  // The servicing operation completed and no reboot is required.
+  REBOOT_NOT_REQUIRED = 1;
+
+  // The servicing operation completed successfully and the caller is expected
+  // to reboot the system immediately to finalize the servicing.
+  REBOOT_REQUIRED = 2;
+
+  // The servicing operation completed successfully and Trident has started the
+  // reboot process automatically.
+  REBOOT_STARTED = 3;
+}

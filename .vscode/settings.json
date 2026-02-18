@@ -21,4 +21,9 @@
     "protobuf.externalLinter.enabled": true,
     "protobuf.externalLinter.linter": "buf",
     "go.buildTags": "tls_server,tls_client",
+    "protobuf.diagnostics.unusedSymbols": true,
+    "protobuf.protoSrcsDir": "proto/",
+    "protobuf.includes": [
+        "${workspaceFolder}/proto"
+    ],
 }

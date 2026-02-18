@@ -1,0 +1,16 @@
+// Proto file defining the RebuildRaidService and related messages.
+
+syntax = "proto3";
+
+package trident.v1preview;
+
+import "trident/v1/servicing.proto";
+
+// RebuildRaidService provides methods for performing RAID rebuild operations.
+service RebuildRaidService {
+  // RebuildRaid performs a RAID rebuild operation to restore a degraded RAID
+  // array on new disks.
+  rpc RebuildRaid(RebuildRaidRequest) returns (stream trident.v1.ServicingResponse);
+}
+
+message RebuildRaidRequest {}

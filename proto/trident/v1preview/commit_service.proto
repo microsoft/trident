@@ -1,0 +1,21 @@
+// Proto file defining the CommitService and related messages.
+
+syntax = "proto3";
+
+package trident.v1preview;
+
+import "trident/v1/servicing.proto";
+
+// CommitService provides methods for performing OS commit operations.
+service CommitService {
+  // CheckRoot validates that the host booted using the expected root
+  // filesystem.
+  rpc CheckRoot(CheckRootRequest) returns (stream trident.v1.ServicingResponse);
+
+  // Commit attempts the commit operation to finalize a servicing.
+  rpc Commit(CommitRequest) returns (stream trident.v1.ServicingResponse);
+}
+
+message CheckRootRequest {}
+
+message CommitRequest {}

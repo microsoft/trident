@@ -12,7 +12,9 @@ use serde_yaml::Value;
 use strum_macros::EnumIter;
 use uuid::Uuid;
 
-use crate::{config::HostConfiguration, is_default, BlockDeviceId};
+use crate::{
+    config::HostConfiguration, constants::IMAGE_CHECKSUM_IGNORED, is_default, BlockDeviceId,
+};
 
 /// HostStatus is the status of a host. Reflects the current state of the host and any encountered
 /// errors.
@@ -161,7 +163,10 @@ fn fix_host_config(yaml: &mut Value) -> Result<(), anyhow::Error> {
     if let Some(Value::Mapping(mut e)) = m.remove("osImage") {
         debug!("Converting 'osImage' host status section to 'image'");
         e.remove("type");
-        e.insert("sha384".into(), Value::String("ignored".into()));
+        e.insert(
+            "sha384".into(),
+            Value::String(IMAGE_CHECKSUM_IGNORED.into()),
+        );
         m.insert("image".into(), e.into());
     }
 

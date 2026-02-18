@@ -1,6 +1,6 @@
 [package]
-name = "harpoon"
-version = "0.1.0"
+name = "trident_proto"
+version = "1.0.0"
 edition = "2024"
 license = "MIT"
 
@@ -15,4 +15,5 @@ tonic-prost-build = { workspace = true }
 
 
 [features]
+server = []
 grpc-preview = []

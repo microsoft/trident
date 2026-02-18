@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"os"
 	"time"
-	"tridenttools/pkg/harpoon"
 	rcpagent "tridenttools/pkg/rcp/agent"
 	rcpclient "tridenttools/pkg/rcp/client"
 	"tridenttools/pkg/rcp/tlscerts"
+	"tridenttools/pkg/tridentgrpc"
 
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
@@ -70,7 +70,7 @@ func (b *rcpAgentConfigBuilder) registerRcpFile(file rcpAgentFileDownload) {
 func (b *rcpAgentConfigBuilder) build() *rcpagent.RcpAgentConfiguration {
 	if b.rcpListener != nil {
 		b.rcpConf.ClientAddress = fmt.Sprintf("%s:%d", b.AnnounceIp, b.rcpListener.Port)
-		b.rcpConf.ServerAddress = harpoon.DefaultTridentSocketPath
+		b.rcpConf.ServerAddress = tridentgrpc.DefaultTridentSocketPath
 
 		// Populate TLS certs for mutual authentication
 		clientCert, clientKey, serverCert := tlscerts.ClientTlsData()

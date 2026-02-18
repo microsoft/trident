@@ -6,6 +6,7 @@ use url::Url;
 #[cfg(feature = "schemars")]
 use crate::schema_helpers::unit_enum_with_untagged_variant;
 use crate::{
+    constants::IMAGE_CHECKSUM_IGNORED,
     error::{InvalidInputError, TridentError},
     primitives::hash::Sha384Hash,
 };
@@ -50,7 +51,7 @@ pub enum ImageSha384 {
 
 impl ImageSha384 {
     pub fn new(hash: &str) -> Result<Self, TridentError> {
-        if hash == "ignored" {
+        if hash == IMAGE_CHECKSUM_IGNORED {
             Ok(ImageSha384::Ignored)
         } else if let Some(hash) = hash.strip_prefix("sha384:") {
             Ok(ImageSha384::Checksum(Sha384Hash::from(hash)))
@@ -65,7 +66,7 @@ impl ImageSha384 {
 impl std::fmt::Display for ImageSha384 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ImageSha384::Ignored => write!(f, "ignored"),
+            ImageSha384::Ignored => write!(f, "{}", IMAGE_CHECKSUM_IGNORED),
             ImageSha384::Checksum(hash) => write!(f, "{hash}"),
         }
     }

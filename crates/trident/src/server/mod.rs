@@ -4,6 +4,7 @@ use std::{
     os::{fd::AsRawFd, unix::net::UnixListener as StdUnixListener},
     path::Path,
     process::ExitCode,
+    sync::Arc,
     time::Duration,
 };
 
@@ -16,7 +17,17 @@ use tokio_util::sync::CancellationToken;
 use tonic::transport::Server;
 use tonic_middleware::MiddlewareFor;
 
-use harpoon::trident_service_server::TridentServiceServer;
+use trident_proto::v1::{
+    streaming_service_server::StreamingServiceServer, version_service_server::VersionServiceServer,
+};
+
+#[cfg(feature = "grpc-preview")]
+use trident_proto::v1preview::{
+    commit_service_server::CommitServiceServer, install_service_server::InstallServiceServer,
+    rebuild_raid_service_server::RebuildRaidServiceServer,
+    rollback_service_server::RollbackServiceServer, status_service_server::StatusServiceServer,
+    update_service_server::UpdateServiceServer, validation_service_server::ValidationServiceServer,
+};
 
 use crate::{
     agentconfig::AgentConfig,
@@ -35,7 +46,7 @@ use support::{
     fds::{self, UnixSocketCleanup},
     signals::ShutdownSignals,
 };
-use tridentserver::{ServicingManager, TridentHarpoonServer};
+use tridentserver::{ServicingManager, TridentServer};
 
 /// Default path for the Trident Unix domain socket. This is used when Trident
 /// itself creates the socket when invoked directly, and not as part of a
@@ -178,22 +189,69 @@ async fn server_main_inner(
 
     let (servicing_manager, exit_token) = ServicingManager::new();
 
+    // The gRPC server implementation for all Trident services. This is wrapped
+    // in an Arc since it needs to be shared across the multiple service
+    // handlers.
+    let trident_server = Arc::new(TridentServer::new(
+        servicing_manager.clone(),
+        log_fwd,
+        activity_tracker.clone(),
+        agent_config,
+        logstream,
+        tracestream,
+    ));
+
+    // Set up the gRPC server with all services, wrapping each in the activity
+    // tracker middleware to ensure that any activity on the service resets the
+    // inactivity timer.
+    let mut router = Server::builder().add_service(MiddlewareFor::new(
+        VersionServiceServer::from_arc(trident_server.clone()),
+        activity_tracker.middleware(),
+    ));
+
+    router = router.add_service(MiddlewareFor::new(
+        StreamingServiceServer::from_arc(trident_server.clone()),
+        activity_tracker.middleware(),
+    ));
+
+    #[cfg(feature = "grpc-preview")]
+    {
+        router = router
+            .add_service(MiddlewareFor::new(
+                CommitServiceServer::from_arc(trident_server.clone()),
+                activity_tracker.middleware(),
+            ))
+            .add_service(MiddlewareFor::new(
+                InstallServiceServer::from_arc(trident_server.clone()),
+                activity_tracker.middleware(),
+            ))
+            .add_service(MiddlewareFor::new(
+                RollbackServiceServer::from_arc(trident_server.clone()),
+                activity_tracker.middleware(),
+            ))
+            .add_service(MiddlewareFor::new(
+                StatusServiceServer::from_arc(trident_server.clone()),
+                activity_tracker.middleware(),
+            ))
+            .add_service(MiddlewareFor::new(
+                UpdateServiceServer::from_arc(trident_server.clone()),
+                activity_tracker.middleware(),
+            ))
+            .add_service(MiddlewareFor::new(
+                ValidationServiceServer::from_arc(trident_server.clone()),
+                activity_tracker.middleware(),
+            ))
+            .add_service(MiddlewareFor::new(
+                RebuildRaidServiceServer::from_arc(trident_server.clone()),
+                activity_tracker.middleware(),
+            ));
+    }
+
     info!(
         "Starting gRPC server listening on: {:?}",
         listener.local_addr()?
     );
-    Server::builder()
-        .add_service(MiddlewareFor::new(
-            TridentServiceServer::new(TridentHarpoonServer::new(
-                servicing_manager.clone(),
-                log_fwd,
-                activity_tracker.clone(),
-                agent_config,
-                logstream,
-                tracestream,
-            )),
-            activity_tracker.middleware(),
-        ))
+    router
         .serve_with_incoming_shutdown(UnixListenerStream::new(listener), async {
             tokio::select! {
                 _ = shutdown_rx.recv() => {

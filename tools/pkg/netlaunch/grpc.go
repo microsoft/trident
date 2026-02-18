@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"tridenttools/pkg/harpoon/harpoonpbv1"
+	"tridenttools/pkg/tridentgrpc/tridentpbv1"
 
 	"github.com/fatih/color"
 	"github.com/sirupsen/logrus"
@@ -12,19 +12,19 @@ import (
 	"google.golang.org/grpc"
 )
 
-func handleServicingResponseStream(stream grpc.ServerStreamingClient[harpoonpbv1.ServicingResponse]) error {
+func handleServicingResponseStream(stream grpc.ServerStreamingClient[tridentpbv1.ServicingResponse]) error {
 	for {
 		resp, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
 			log.Info("Install stream ended")
 			break
 		} else if err != nil {
-			return fmt.Errorf("failed to receive installation response via Harpoon: %w", err)
+			return fmt.Errorf("failed to receive installation response via gRPC: %w", err)
 		}
 
 		err = handleServicingResponse(resp)
 		if err != nil {
-			return fmt.Errorf("failed to handle installation response via Harpoon: %w", err)
+			return fmt.Errorf("failed to handle installation response via gRPC: %w", err)
 		}
 	}
 
@@ -33,24 +33,24 @@ func handleServicingResponseStream(stream grpc.ServerStreamingClient[harpoonpbv1
 
 var grpcHeader = color.New(color.FgGreen).SprintfFunc()("|GRPC|")
 
-func handleServicingResponse(resp *harpoonpbv1.ServicingResponse) (err error) {
+func handleServicingResponse(resp *tridentpbv1.ServicingResponse) (err error) {
 	switch payload := resp.Response.(type) {
-	case *harpoonpbv1.ServicingResponse_Start:
+	case *tridentpbv1.ServicingResponse_Started:
 		log.Infof("%s%s", grpcHeader, color.GreenString("[START]"))
-	case *harpoonpbv1.ServicingResponse_Log:
+	case *tridentpbv1.ServicingResponse_Log:
 		logEntry := payload.Log
 
 		outLevel := logrus.InfoLevel
 		switch logEntry.Level {
-		case harpoonpbv1.LogLevel_LOG_LEVEL_TRACE:
+		case tridentpbv1.LogLevel_LOG_LEVEL_TRACE:
 			outLevel = logrus.TraceLevel
-		case harpoonpbv1.LogLevel_LOG_LEVEL_DEBUG:
+		case tridentpbv1.LogLevel_LOG_LEVEL_DEBUG:
 			outLevel = logrus.DebugLevel
-		case harpoonpbv1.LogLevel_LOG_LEVEL_INFO:
+		case tridentpbv1.LogLevel_LOG_LEVEL_INFO:
 			outLevel = logrus.InfoLevel
-		case harpoonpbv1.LogLevel_LOG_LEVEL_WARN:
+		case tridentpbv1.LogLevel_LOG_LEVEL_WARN:
 			outLevel = logrus.WarnLevel
-		case harpoonpbv1.LogLevel_LOG_LEVEL_ERROR:
+		case tridentpbv1.LogLevel_LOG_LEVEL_ERROR:
 			outLevel = logrus.ErrorLevel
 		}
 
@@ -68,24 +68,24 @@ func handleServicingResponse(resp *harpoonpbv1.ServicingResponse) (err error) {
 
 			record.Log(outLevel, text)
 		}
-	case *harpoonpbv1.ServicingResponse_FinalStatus:
+	case *tridentpbv1.ServicingResponse_Completed:
 		var errStr string
 		level := logrus.InfoLevel
-		if tridentError := payload.FinalStatus.GetError(); tridentError != nil {
+		if tridentError := payload.Completed.GetError(); tridentError != nil {
 			level = logrus.ErrorLevel
-			errStr = fmt.Sprintf("\n%s", tridentError.FullBody)
-			err = fmt.Errorf("operation failed with error kind %s:%s: %s", tridentError.Kind, tridentError.Subkind, tridentError.FullBody)
+			errStr = fmt.Sprintf("\n%s", tridentError.Message)
+			err = fmt.Errorf("operation failed with error kind %s:%s: %s", tridentError.Kind, tridentError.Subkind, tridentError.Message)
 		}
 
 		log.StandardLogger().Log(level, fmt.Sprintf(
 			"%s%s %s%s",
 			grpcHeader,
 			color.MagentaString("[STATUS]"),
-			payload.FinalStatus.Status.String(),
+			payload.Completed.Status.String(),
 			errStr,
 		))
 	default:
-		log.Warnf("Received unknown response type from Harpoon: %T", payload)
+		log.Warnf("Received unknown response type from Trident: %T", payload)
 	}
 
 	return

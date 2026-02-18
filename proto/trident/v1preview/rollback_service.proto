@@ -1,0 +1,90 @@
+// Proto file defining the RollbackService and related messages.
+
+syntax = "proto3";
+
+package trident.v1preview;
+
+import "trident/v1/servicing.proto";
+
+// RollbackService provides methods for performing OS rollbacks.
+service RollbackService {
+  // CheckRollback checks what type of rollback would be performed.
+  rpc CheckRollback(CheckRollbackRequest) returns (CheckRollbackResponse);
+
+  // Rollback performs a rollback.
+  rpc Rollback(RollbackRequest) returns (stream trident.v1.ServicingResponse);
+
+  // RollbackStage performs the stage operation of a rollback.
+  rpc RollbackStage(RollbackStageRequest) returns (stream trident.v1.ServicingResponse);
+
+  // RollbackFinalize performs the finalize operation of a rollback.
+  rpc RollbackFinalize(RollbackFinalizeRequest) returns (stream trident.v1.ServicingResponse);
+
+  // GetRollbackChain returns list of available rollbacks.
+  rpc GetRollbackChain(GetRollbackChainRequest) returns (GetRollbackChainResponse);
+
+  // GetRollbackTarget returns the next rollback target OS Host Configuration.
+  rpc GetRollbackTarget(GetRollbackTargetRequest) returns (GetRollbackTargetResponse);
+}
+
+enum ManualRollbackKind {
+  MANUAL_ROLLBACK_KIND_UNSPECIFIED = 0;
+  // No specific rollback kind was requested
+  ANY_ROLLBACK_REQUESTED = 1;
+  // Rollback of an A/B update was requested
+  AB_ROLLBACK_REQUESTED = 2;
+  // Rollback of a runtime update was requested
+  RUNTIME_ROLLBACK_REQUESTED = 3;
+}
+
+message CheckRollbackRequest {
+  // The rollback kind parameter for the servicing operation.
+  ManualRollbackKind kind = 1;
+}
+
+enum CheckRollbackKind {
+  CHECK_ROLLBACK_KIND_UNSPECIFIED = 0;
+  // No rollbacks are available
+  NO_ROLLBACK_AVAILABLE = 1;
+  // Rollback of an A/B update is expected
+  AB_ROLLBACK_EXPECTED = 2;
+  // Rollback of a runtime update is expected
+  RUNTIME_ROLLBACK_EXPECTED = 3;
+}
+
+message CheckRollbackResponse {
+  // The rollback kind as a string.
+  CheckRollbackKind kind = 1;
+}
+
+message RollbackRequest {
+  // The rollback kind parameter for the servicing operation.
+  ManualRollbackKind kind = 1;
+
+  // Reboot management configuration for the rollback operation.
+  RollbackFinalizeRequest finalize = 2;
+}
+
+message RollbackStageRequest {
+  // The rollback kind parameter for the servicing operation.
+  ManualRollbackKind kind = 1;
+}
+
+message RollbackFinalizeRequest {
+  // Reboot management configuration for the rollback operation.
+  trident.v1.RebootManagement reboot = 1;
+}
+
+message GetRollbackChainRequest {}
+
+message GetRollbackChainResponse {
+  // The rollback list content as a list of strings.
+  repeated string rollback_chain = 1;
+}
+
+message GetRollbackTargetRequest {}
+
+message GetRollbackTargetResponse {
+  // The rollback target Host Configuration content as a string.
+  optional string rollback_target = 1;
+}

@@ -1,0 +1,10 @@
+// Proto file defining the Host Configuration message.
+
+syntax = "proto3";
+
+package trident.v1preview;
+
+message HostConfiguration {
+  // The Host Configuration YAML.
+  string config = 1;
+}
