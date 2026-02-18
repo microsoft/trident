@@ -96,6 +96,9 @@ scripts:
 
 iso:
   additionalFiles:
+    # Add placeholder config for Trident
+    - source: files/config-placeholder.yaml
+      destination: /trident-config.yaml
     # Add pre-trident script to be run early by rcp-agent
     - source: files/pre-trident-script.sh
       destination: /pre-trident-script.sh

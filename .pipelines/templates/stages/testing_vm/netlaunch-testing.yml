@@ -204,9 +204,12 @@ stages:
                 HANDLE_PROVISIONED_STATE_ARG="--only-print-exit-code"
               fi
 
-              SCENARIO_ARG=""
-              if [ ${{ variables['tridentConfigurationName'] }} == 'split' ]; then
-                SCENARIO_ARG="--scenario split"
+              INSTALLER_RCP_AGENT_ARGS=""
+              if [ "${{ parameters.runtimeEnv }}" != "container" ]; then
+                INSTALLER_RCP_AGENT_ARGS="--rcp-agent-mode cli"
+                if [ ${{ variables['tridentConfigurationName'] }} == 'split' ]; then
+                  INSTALLER_RCP_AGENT_ARGS="$INSTALLER_RCP_AGENT_ARGS --scenario split"
+                fi
               fi
 
               ./bin/netlaunch \
@@ -222,7 +225,7 @@ stages:
                   $HANDLE_PROVISIONED_STATE_ARG \
                   $SECURE_BOOT \
                   $SIGNING_CERT \
-                  $SCENARIO_ARG \
+                  $INSTALLER_RCP_AGENT_ARGS \
                   --port ${{variables.netlaunchPort}} 2>&1 | tee ./clean-install-deployment.log
             workingDirectory: $(tridentSourceDirectory)
             displayName: "🚀 Run netlaunch for testing"
