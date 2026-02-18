@@ -146,6 +146,6 @@ jobs:
           baseimgBuildType: $(BASEIMG_BUILD_TYPE)
           baseimgVersion: $(BASEIMG_VERSION)
           baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
-          baseimgType: $(baseImageType)
+          baseimgType: $(BASEIMG_TYPE)
           useStagedSshKeys: ${{ parameters.useStagedSshKeys }}
           clones: ${{ parameters.clones }}

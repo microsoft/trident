@@ -73,12 +73,12 @@ steps:
     retryCountOnTaskFailure: 3
 
   - bash: |
-      ./tests/images/testimages.py show-image ${{ parameters.imageName }} base-image --devops-var baseImageType
+      ./tests/images/testimages.py show-image ${{ parameters.imageName }} base-image --devops-var BASEIMG_TYPE
     displayName: "Get Image Info"
     workingDirectory: $(Build.SourcesDirectory)
 
   - bash: |
-      echo "Image type: $(baseImageType)"
+      echo "Image type: $(BASEIMG_TYPE)"
       echo "Defined variables:"
       env | sort
     displayName: "Show defined variables"
@@ -88,14 +88,14 @@ steps:
       buildType: ${{ parameters.micBuildType }}
       arch: ${{ parameters.architecture }}
       micVersion: ${{ parameters.micVersion }}
-  
-# Note: DHCP packages are not being installed in this image template.
-# If needed use template download-dhcp.yml on test-images.
+
+  # Note: DHCP packages are not being installed in this image template.
+  # If needed use template download-dhcp.yml on test-images.
 
   - template: common/base-images-download-template.yaml@platform-pipelines
     parameters:
       buildType: ${{ parameters.baseimgBuildType }}
-      baseImageType: $(baseImageType)
+      baseImageType: $(BASEIMG_TYPE)
       imageVersion: ${{ parameters.baseimgVersion }}
       azureLinuxVersion: ${{ parameters.azureLinuxVersion }}
 
