@@ -14,26 +14,6 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-const IMAGE_CUSTOMIZER_CONFIG_TEMPLATE = `# config.yaml
-previewFeatures:
-- reinitialize-verity
-%s
-os:
-  additionalFiles:
-  - source: %s
-    destination: /var/lib/extensions/%s
-
-  services:
-    enable:
-    - systemd-sysext
-%s
-`
-
-const IMAGE_CUSTOMIZER_UKI_CONFIG_TEMPLATE_PART = `
-  uki:
-    mode: passthrough
-`
-
 // Use Image Customizer to prepare the qcow2 image for rollback testing
 // by injecting the extension v1.0.0
 func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig) error {
