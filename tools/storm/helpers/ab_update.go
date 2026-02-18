@@ -18,6 +18,7 @@ import (
 	"oras.land/oras-go/v2/content/file"
 	"oras.land/oras-go/v2/registry/remote"
 
+	stormdiagnostics "tridenttools/storm/utils/diagnostics"
 	stormsha384 "tridenttools/storm/utils/sha384"
 	stormsshcheck "tridenttools/storm/utils/ssh/check"
 	stormsshclient "tridenttools/storm/utils/ssh/client"
@@ -57,6 +58,7 @@ func (h *AbUpdateHelper) RegisterTestCases(r storm.TestRegistrar) error {
 	r.RegisterTestCase("update-hc", h.updateHostConfig)
 	r.RegisterTestCase("trigger-update", h.triggerTridentUpdate)
 	r.RegisterTestCase("check-trident-service", h.checkTridentService)
+	r.RegisterTestCase("check-diagnostics", h.checkDiagnostics)
 	return nil
 }
 
@@ -378,6 +380,21 @@ func (h *AbUpdateHelper) checkTridentService(tc storm.TestCase) error {
 		tc.FailFromError(err)
 	}
 	return nil
+}
+
+func (h *AbUpdateHelper) checkDiagnostics(tc storm.TestCase) error {
+	if h.args.TridentRuntimeType == trident.RuntimeTypeNone {
+		tc.Skip("No Trident environment specified")
+	}
+
+	var err error
+	h.client, err = stormsshclient.OpenSshClient(h.args.SshCliSettings)
+	if err != nil {
+		return fmt.Errorf("failed to open SSH client: %w", err)
+	}
+	defer h.client.Close()
+
+	return stormdiagnostics.CheckDiagnostics(h.client, h.args.TridentRuntimeType, h.args.EnvVars)
 }
 
 func checkUrlIsAccessible(url string) error {

@@ -1,0 +1,128 @@
+parameters:
+  - name: testingRun
+    displayName: "Download prebuilt test artifacts"
+    type: boolean
+    default: false
+
+  - name: architecture
+    displayName: Architecture
+    type: string
+    values:
+      - arm64
+      - amd64
+    default: amd64
+
+  - name: streamingImageDistro
+    type: string
+    values:
+      - ubuntu
+      - azurelinux
+    default: azurelinux
+
+stages:
+  - stage: DirectStreaming_DeploymentTesting_${{ parameters.streamingImageDistro }}_${{ parameters.architecture }}
+    displayName: Direct Streaming Deployment VM ${{ parameters.streamingImageDistro }} ${{ parameters.architecture }} Testing
+    dependsOn:
+      - ${{ if eq(parameters.testingRun, true) }}:
+          - DownloadTestingElements
+      - ${{ else }}:
+          - ${{ if eq(parameters.architecture, 'arm64') }}:
+              - BuildingTools_arm64
+          - ${{ if eq(parameters.architecture, 'amd64') }}:
+              - BuildingTools
+          - BuildImagesForDirectStreaming_${{ parameters.streamingImageDistro }}_${{ parameters.architecture }}
+          - BuildInstallerForDirectStreaming_${{ parameters.architecture }}
+
+    jobs:
+      - job: DirectStreamingTesting_${{ parameters.streamingImageDistro }}_${{ parameters.architecture }}
+        displayName: Direct Streaming Deployment Testing for ${{ parameters.streamingImageDistro }} ${{ parameters.architecture }}
+        timeoutInMinutes: 50
+        pool:
+          ${{ if eq(parameters.architecture, 'amd64') }}:
+            type: linux
+            name: trident-ubuntu-1es-pool-eastus2
+            hostArchitecture: amd64
+          ${{ if eq(parameters.architecture, 'arm64') }}:
+            type: linux
+            name: trident-ubuntu-ARM64-1es-pool-westus2
+            hostArchitecture: arm64
+
+        variables:
+          - name: tridentSourceDirectory
+            value: $(Build.SourcesDirectory)
+          - name: testImageName
+            value: ${{ parameters.streamingImageDistro }}-direct-streaming-testimage-${{ parameters.architecture }}
+          - name: installerISOName
+            value: trident-direct-streaming-installer-${{ parameters.architecture }}
+          - name: ob_outputDirectory
+            value: $(tridentSourceDirectory)/deployment_logs
+          - name: ob_artifactBaseName
+            value: direct_streaming_${{ parameters.streamingImageDistro }}_${{ parameters.architecture }}_log_$(System.JobAttempt)
+          - name: netlaunchPort
+            value: 4000
+
+        steps:
+          # Download all test images
+          - template: ../testing_common/download-test-images.yml
+            parameters:
+              installerISO: $(installerISOName)
+              tridentTestImage: ${{ variables.testImageName }}
+              tridentTestImageVerity: skip
+              tridentTestImageUsrVerity: skip
+              downloadTridentContainer: false
+              ${{ if eq(parameters.architecture, 'arm64') }}:
+                goToolsArtifactName: go-tools-arm64
+              ${{ if eq(parameters.architecture, 'amd64') }}:
+                goToolsArtifactName: go-tools
+
+          - bash: |
+              set -ex
+              sudo apt update -y
+              sudo apt install -y python3 python3-pip seabios
+
+              sudo snap install yq
+
+            displayName: "Install pip and yq"
+            retryCountOnTaskFailure: 3
+
+          - template: ../testing_vm/netlaunch-prep.yml
+
+          - bash: |
+              set -eux
+
+              # Disable virtlogd rollover by setting max_size to 0
+              cat /etc/libvirt/virtlogd.conf
+              echo "max_size = 0" | sudo tee -a /etc/libvirt/virtlogd.conf
+              cat /etc/libvirt/virtlogd.conf
+              sudo systemctl restart virtlogd.socket
+
+              ./tools/virt-deploy create --mem 12 --disks 32,32
+            workingDirectory: $(tridentSourceDirectory)
+            displayName: "Creating virt-deploy VM"
+
+          - bash: |
+              set -euxo pipefail
+              ISO_FILE=./artifacts/iso/$(installerISOName).iso
+              COSI_FILE=./artifacts/test-image/regular.cosi
+              HASH=$(./scripts/cosi-sha384.py $COSI_FILE)
+              sudo ./bin/storm-trident helper direct-streaming -a \
+                  --log-dir $(ob_outputDirectory) \
+                  --netlaunch-config-file ./tools/vm-netlaunch.yaml \
+                  --cosi-file $COSI_FILE \
+                  --cosi-metadata-sha384 $HASH \
+                  --iso-file $ISO_FILE \
+                  --port ${{variables.netlaunchPort}} \
+                  --enable-secure-boot \
+                  --timeout-in-seconds 2400
+
+            workingDirectory: $(tridentSourceDirectory)
+            displayName: "🚀 Deploy direct streaming ISO and validate stream-image for ${{ parameters.streamingImageDistro }} ${{ parameters.architecture }}"
+            timeoutInMinutes: 40
+
+          - bash: |
+              set -eux
+              ./bin/storm-trident script capture-screenshot \
+                  --screenshot-filename "direct-streaming.png" \
+                  --artifacts-folder "$(ob_outputDirectory)"
+            displayName: "📷 Capture screenshot: direct streaming"
+            condition: succeededOrFailed()

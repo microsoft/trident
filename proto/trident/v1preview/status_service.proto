@@ -1,0 +1,99 @@
+// Proto file defining the StatusService and related messages.
+
+syntax = "proto3";
+
+package trident.v1preview;
+
+import "trident/v1/error.proto";
+import "trident/v1/servicing.proto";
+import "trident/v1preview/host_config.proto";
+
+// StatusService provides methods for retrieving the status of the host and
+// various operations.
+service StatusService {
+  // GetProvisionedConfig returns the currently provisioned configuration, if any.
+  rpc GetProvisionedConfig(GetConfigRequest) returns (GetConfigResponse);
+
+  // GetServicingConfig returns the active servicing configuration, if any.
+  rpc GetServicingConfig(GetConfigRequest) returns (GetConfigResponse);
+
+  // GetLastError returns the last error encountered during the last servicing,
+  // if any.
+  rpc GetLastError(GetLastErrorRequest) returns (GetLastErrorResponse);
+
+  // GetServicingState returns the current servicing state.
+  rpc GetServicingState(GetServicingStateRequest) returns (GetServicingStateResponse);
+
+  // GetActiveVolume returns the currently active volume (A or B).
+  rpc GetActiveVolume(GetActiveVolumeRequest) returns (GetActiveVolumeResponse);
+}
+
+message GetConfigRequest {}
+
+message GetConfigResponse {
+  // The Host Configuration content as a string.
+  HostConfiguration config = 1;
+}
+
+message GetLastErrorRequest {}
+
+message GetLastErrorResponse {
+  // The last error encountered during servicing.
+  optional trident.v1.TridentError error = 1;
+}
+
+message GetServicingStateRequest {}
+
+// Mapped to existing Trident servicing states
+enum ServicingState {
+  // Unspecified servicing state.
+  SERVICING_STATE_UNSPECIFIED = 0;
+  // The host is running from the provisioning OS and has not yet been
+  // provisioned by Trident.
+  NOT_PROVISIONED = 1;
+  // Install has been staged, i.e., the initial target OS images have been
+  // deployed onto block devices.
+  INSTALL_STAGED = 2;
+  // A/B update has been staged. The new target OS images have been deployed
+  // onto block devices.
+  UPDATE_AB_STAGED = 3;
+  // Manual rollback for an AbUpdate has been staged.
+  MANUAL_ROLLBACK_AB_STAGED = 4;
+  // Manual rollback for a RuntimeUpdate has been staged.
+  MANUAL_ROLLBACK_RUNTIME_STAGED = 5;
+  // Runtime update has been staged.
+  UPDATE_RUNTIME_STAGED = 6;
+  // Install has been finalized, i.e., UEFI variables have been set, so that
+  // firmware boots from the target OS image after reboot.
+  INSTALL_FINALIZED = 7;
+  // A/B update has been finalized. For the next boot, the firmware will boot
+  // from the updated target OS image.
+  UPDATE_AB_FINALIZED = 8;
+  // Manual rollback for an AbUpdate has been finalized.
+  MANUAL_ROLLBACK_AB_FINALIZED = 9;
+  // Servicing has been completed, and the host successfully booted from the
+  // updated target OS image. Trident is ready to begin a new servicing.
+  PROVISIONED = 10;
+  // A/B update has been completed, the host booted into the target OS but the
+  // health checks failed.
+  UPDATE_AB_HEALTH_CHECK_FAILED = 11;
+}
+
+message GetServicingStateResponse {
+  // The current servicing state of Trident.
+  ServicingState state = 1;
+}
+
+message GetActiveVolumeRequest {}
+
+// Represents the active volume in a dual-volume setup.
+enum ABVolumeState {
+  AB_VOLUME_STATE_UNSPECIFIED = 0;
+  NO_VOLUME                   = 1;
+  VOLUME_A                    = 2;
+  VOLUME_B                    = 3;
+}
+
+message GetActiveVolumeResponse {
+  ABVolumeState active_volume = 1;
+}

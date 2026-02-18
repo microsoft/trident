@@ -1,0 +1,24 @@
+// Proto file defining the StreamingService and related messages.
+
+syntax = "proto3";
+
+package trident.v1;
+
+import "trident/v1/servicing.proto";
+
+// StreamingService defines the gRPC service for streaming disk images to a
+// host.
+service StreamingService {
+  // StreamDisk streams an OS image to the target device.
+  rpc StreamDisk(StreamDiskRequest) returns (stream ServicingResponse);
+}
+
+message StreamDiskRequest {
+  // URL to the image file to be streamed.
+  string image_url = 1;
+  // Hash of the image file for integrity verification. When not present,
+  // Trident will not enforce integrity verification of the streamed image.
+  optional string image_hash = 2;
+  // The reboot management parameters for the servicing operation.
+  RebootManagement reboot = 3;
+}

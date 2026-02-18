@@ -17,13 +17,14 @@ import (
 	"github.com/stmcginnis/gofish/redfish"
 	"gopkg.in/yaml.v2"
 
-	"tridenttools/pkg/harpoon"
-	"tridenttools/pkg/harpoon/harpoonpbv1"
 	"tridenttools/pkg/isopatcher"
 	"tridenttools/pkg/netfinder"
 	"tridenttools/pkg/phonehome"
 	rcpclient "tridenttools/pkg/rcp/client"
 	"tridenttools/pkg/rcp/tlscerts"
+	"tridenttools/pkg/tridentgrpc"
+	"tridenttools/pkg/tridentgrpc/tridentpbv1"
+	"tridenttools/pkg/tridentgrpc/tridentpbv1preview"
 	stormutils "tridenttools/storm/utils"
 )
 
@@ -141,17 +142,21 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 			trident["trident"].(map[interface{}]interface{})["logstream"] = logstreamAddress
 		}
 
-		tridentConfig, err := yaml.Marshal(trident)
-		if err != nil {
-			return fmt.Errorf("failed to marshal Trident config: %w", err)
-		}
+		// Patch the ISO Host Configuration file unless this is a stream-image test, where
+		// the Host Configuration file is not expected to be present.
+		if config.Rcp == nil || !config.Rcp.UseStreamImage {
+			tridentConfig, err := yaml.Marshal(trident)
+			if err != nil {
+				return fmt.Errorf("failed to marshal Trident config: %w", err)
+			}
 
-		// Store the modified trident config for later use
-		finalHostConfigurationYaml = string(tridentConfig)
+			// Store the modified trident config for later use
+			finalHostConfigurationYaml = string(tridentConfig)
 
-		err = isopatcher.PatchFile(iso, "/etc/trident/config.yaml", tridentConfig)
-		if err != nil {
-			return fmt.Errorf("failed to patch Trident config into ISO: %w", err)
+			err = isopatcher.PatchFile(iso, "/etc/trident/config.yaml", tridentConfig)
+			if err != nil {
+				return fmt.Errorf("failed to patch Trident config into ISO: %w", err)
+			}
 		}
 
 		if config.Rcp != nil {
@@ -428,28 +433,31 @@ func injectRcpAgentConfig(
 }
 
 func doGrpcInstall(ctx context.Context, conn net.Conn, hostConfiguration string) error {
-	harpoonClient, err := harpoon.NewHarpoonClientFromNetworkConnection(conn)
+	tridentClient, err := tridentgrpc.NewTridentClientFromNetworkConnection(conn)
 	if err != nil {
-		return fmt.Errorf("failed to create Harpoon client from RCP connection: %w", err)
+		return fmt.Errorf("failed to create Trident gRPC client from RCP connection: %w", err)
 	}
-	defer harpoonClient.Close()
+	defer tridentClient.Close()
 
-	stream, err := harpoonClient.Install(ctx, &harpoonpbv1.ServicingRequest{
-		Stage: &harpoonpbv1.StageRequest{
-			Config: hostConfiguration,
+	stream, err := tridentClient.Install(ctx, &tridentpbv1preview.InstallRequest{
+		Stage: &tridentpbv1preview.StageInstallRequest{
+			Config: &tridentpbv1preview.HostConfiguration{
+				Config: hostConfiguration,
+			},
 		},
-		Finalize: &harpoonpbv1.FinalizeRequest{
-			// Let Trident handle the reboot
-			OrchestratorHandlesReboot: false,
+		Finalize: &tridentpbv1preview.FinalizeInstallRequest{
+			Reboot: &tridentpbv1.RebootManagement{
+				Handling: tridentpbv1.RebootHandling_TRIDENT_HANDLES_REBOOT,
+			},
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("failed to start installation via Harpoon: %w", err)
+		return fmt.Errorf("failed to start installation via gRPC: %w", err)
 	}
 
 	err = handleServicingResponseStream(stream)
 	if err != nil {
-		return fmt.Errorf("error during installation via Harpoon: %w", err)
+		return fmt.Errorf("error during installation via gRPC: %w", err)
 	}
 
 	return nil

@@ -1,0 +1,19 @@
+[package]
+name = "trident_proto"
+version = "1.0.0"
+edition = "2024"
+license = "MIT"
+
+[dependencies]
+prost = { workspace = true }
+prost-types = { workspace = true }
+tonic = { workspace = true }
+tonic-prost = { workspace = true }
+
+[build-dependencies]
+tonic-prost-build = { workspace = true }
+
+
+[features]
+server = []
+grpc-preview = []

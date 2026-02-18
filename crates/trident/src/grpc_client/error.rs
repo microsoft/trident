@@ -3,6 +3,9 @@ use tonic::{transport::Error, Status};
 
 #[derive(ThisError, Debug)]
 pub enum TridentClientError {
+    #[error("Failed to parse server address '{0}': {1}")]
+    InvalidServerAddress(String, String),
+
     #[error("Failed to connect to Trident server at {0}: {1}")]
     ConnectionError(String, #[source] Error),
 

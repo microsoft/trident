@@ -5,6 +5,7 @@ edition = "2024"
 publish = false
 rust-version = "1.85.0"
 license = "MIT"
+default-run = "trident"
 
 [[bin]]
 name = "cosi-reader"
@@ -71,7 +72,7 @@ tonic-middleware = { workspace = true }
 sysdefs = { path = "../sysdefs" }
 osutils = { path = "../osutils" }
 trident_api = { path = "../trident_api" }
-harpoon = { path = "../harpoon" }
+trident_proto = { path = "../trident_proto", features = ["server"] }
 
 # Optional dependencies used by functional tests
 indoc = { workspace = true, optional = true }
@@ -104,3 +105,4 @@ functional-test = [
     "inventory",
 ]
 pytest-generator = ["pytest", "osutils/pytest-generator"]
+grpc-preview = ["trident_proto/grpc-preview"]

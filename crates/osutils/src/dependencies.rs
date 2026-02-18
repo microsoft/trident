@@ -99,6 +99,7 @@ pub enum Dependency {
     Eject,
     Findmnt,
     Iptables,
+    Journalctl,
     Losetup,
     Lsblk,
     Lsof,

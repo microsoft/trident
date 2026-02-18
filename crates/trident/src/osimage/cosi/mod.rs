@@ -355,11 +355,15 @@ impl Cosi {
             .get_file_data(&gpt_image)
             .context("Failed to read GPT image data from COSI file")?;
 
+        // The protective MBR is 512 bytes, and the GPT header is at least one
+        // logical block, so we need at least 2 LBAs of data to have both.
+        let min_expected_size = lba_size * 2;
+
         ensure!(
-            raw_gpt_data.len() > lba_size as usize,
-            "Raw GPT data is too small to contain protective MBR and GPT header, data size: {}, LBA size: {}",
+            raw_gpt_data.len() > min_expected_size as usize,
+            "Raw GPT data is too small to contain protective MBR and GPT header, data size: {}, expected at least: {}",
             raw_gpt_data.len(),
-            lba_size,
+            min_expected_size,
         );
 
         // Extract a copy of the protective MBR (LBA 0) from the raw GPT data.

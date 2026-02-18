@@ -1011,17 +1011,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "harpoon"
-version = "0.1.0"
-dependencies = [
- "prost",
- "prost-types",
- "tonic",
- "tonic-prost",
- "tonic-prost-build",
-]
-
-[[package]]
 name = "hashbrown"
 version = "0.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3391,7 +3380,6 @@ dependencies = [
  "env_logger 0.11.5",
  "glob",
  "gpt",
- "harpoon",
  "humantime",
  "hyper",
  "indoc",
@@ -3440,6 +3428,7 @@ dependencies = [
  "tracing-journald",
  "tracing-subscriber",
  "trident_api",
+ "trident_proto",
  "url",
  "uuid",
  "zstd",
@@ -3453,7 +3442,6 @@ dependencies = [
  "bitflags",
  "const_format",
  "documented",
- "harpoon",
  "indoc",
  "lazy_static",
  "log",
@@ -3473,8 +3461,20 @@ dependencies = [
  "thiserror 1.0.69",
  "tracing",
  "tracing-subscriber",
+ "trident_proto",
  "url",
  "uuid",
+]
+
+[[package]]
+name = "trident_proto"
+version = "1.0.0"
+dependencies = [
+ "prost",
+ "prost-types",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
 ]
 
 [[package]]

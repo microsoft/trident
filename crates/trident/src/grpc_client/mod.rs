@@ -2,12 +2,18 @@ use std::process::ExitCode;
 
 use anyhow::{bail, Context, Error};
 use log::error;
-use tokio::{fs, runtime::Builder};
+use tokio::runtime::Builder;
 
 use crate::{
-    cli::{self, ClientArgs, ClientCommands, TridentExitCodes},
+    cli::{ClientArgs, ClientCommands, TridentExitCodes},
     ExitKind, TRIDENT_VERSION,
 };
+
+#[cfg(feature = "grpc-preview")]
+use tokio::fs;
+
+#[cfg(feature = "grpc-preview")]
+use crate::cli;
 
 mod error;
 mod tridentclient;
@@ -53,6 +59,14 @@ async fn run_client(args: &ClientArgs) -> Result<ExitKind, Error> {
             println!("daemon: {}", version);
         }
 
+        ClientCommands::StreamDisk { image, hash } => {
+            return client
+                .stream_disk(image, hash.as_ref(), RebootHandling::Trident)
+                .await
+                .context("Trident failed to stream image");
+        }
+
+        #[cfg(feature = "grpc-preview")]
         ClientCommands::Install {
             config,
             allowed_operations,
@@ -82,13 +96,7 @@ async fn run_client(args: &ClientArgs) -> Result<ExitKind, Error> {
             }
         }
 
-        ClientCommands::StreamImage { image, hash } => {
-            return client
-                .stream_image(image, hash, RebootHandling::Trident)
-                .await
-                .context("Trident failed to stream image");
-        }
-
+        #[cfg(feature = "grpc-preview")]
         ClientCommands::Commit => {
             return client
                 .commit()

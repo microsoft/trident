@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trident Log Explorer</title>
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --surface-hover: #1c2129;
+            --border: #30363d;
+            --text: #e6edf3;
+            --text-muted: #8b949e;
+            --accent: #58a6ff;
+            --error: #f85149;
+            --warn: #d29922;
+            --info: #3fb950;
+            --debug: #39d2c0;
+            --trace: #bc8cff;
+            --scrollbar-bg: #161b22;
+            --scrollbar-thumb: #30363d;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--scrollbar-bg);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--scrollbar-thumb);
+            border-radius: 4px;
+        }
+
+        /* Header / Toolbar */
+        .toolbar {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 12px 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .toolbar-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text);
+            margin-right: 8px;
+            white-space: nowrap;
+        }
+
+        .toolbar input[type="text"],
+        .toolbar input[type="file"] {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 13px;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+
+        .toolbar input[type="text"]:focus {
+            border-color: var(--accent);
+        }
+
+        .toolbar input[type="text"]::placeholder {
+            color: var(--text-muted);
+        }
+
+        #search-input {
+            width: 240px;
+        }
+
+        #commit-input {
+            width: 320px;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+            font-size: 12px;
+        }
+
+        .file-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #f0883e;
+            color: #0d1117;
+            border: none;
+            border-radius: 6px;
+            padding: 6px 14px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.15s;
+            white-space: nowrap;
+        }
+
+        .file-label:hover {
+            opacity: 0.85;
+        }
+
+        .file-label input {
+            display: none;
+        }
+
+        .level-filters {
+            display: flex;
+            gap: 2px;
+            background: var(--bg);
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+
+        .level-filters label {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 5px 10px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s;
+            user-select: none;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        .level-filters label:hover {
+            background: var(--surface-hover);
+        }
+
+        .level-filters label input {
+            display: none;
+        }
+
+        .level-filters label.active {
+            background: var(--surface-hover);
+        }
+
+        .level-filters label[data-level="error"] {
+            color: var(--error);
+        }
+
+        .level-filters label[data-level="warn"] {
+            color: var(--warn);
+        }
+
+        .level-filters label[data-level="info"] {
+            color: var(--info);
+        }
+
+        .level-filters label[data-level="debug"] {
+            color: var(--debug);
+        }
+
+        .level-filters label[data-level="trace"] {
+            color: var(--trace);
+        }
+
+        .level-filters label .check-icon {
+            width: 14px;
+            height: 14px;
+            border: 1.5px solid currentColor;
+            border-radius: 3px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            flex-shrink: 0;
+        }
+
+        .level-filters label.active .check-icon::after {
+            content: "✓";
+        }
+
+        .stats {
+            margin-left: auto;
+            font-size: 12px;
+            color: var(--text-muted);
+            white-space: nowrap;
+        }
+
+        /* Drop zone */
+        .drop-zone {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            color: var(--text-muted);
+            font-size: 15px;
+            transition: background 0.2s;
+        }
+
+        .drop-zone.drag-over {
+            background: rgba(88, 166, 255, 0.06);
+        }
+
+        .drop-zone-icon {
+            font-size: 48px;
+            opacity: 0.4;
+        }
+
+        /* Log list */
+        .log-container {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+
+        .log-entry {
+            border-bottom: 1px solid var(--border);
+            cursor: pointer;
+            transition: background 0.1s;
+        }
+
+        .log-entry:hover {
+            background: var(--surface-hover);
+        }
+
+        .log-entry.bookmarked {
+            background: rgba(240, 136, 62, 0.08);
+        }
+
+        .log-entry.bookmarked:hover {
+            background: rgba(240, 136, 62, 0.13);
+        }
+
+        .log-bookmark {
+            flex-shrink: 0;
+            width: 16px;
+            height: 16px;
+            accent-color: #f0883e;
+            cursor: pointer;
+            opacity: 0.4;
+            transition: opacity 0.15s;
+        }
+
+        .log-entry:hover .log-bookmark,
+        .log-entry.bookmarked .log-bookmark {
+            opacity: 1;
+        }
+
+        .log-summary {
+            display: flex;
+            align-items: center;
+            padding: 6px 20px;
+            gap: 12px;
+            min-height: 36px;
+        }
+
+        .log-level {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            width: 48px;
+            text-align: center;
+            flex-shrink: 0;
+            padding: 2px 0;
+            border-radius: 3px;
+        }
+
+        .log-level.error {
+            color: var(--error);
+            background: rgba(248, 81, 73, 0.1);
+        }
+
+        .log-level.warn {
+            color: var(--warn);
+            background: rgba(210, 153, 34, 0.1);
+        }
+
+        .log-level.info {
+            color: var(--info);
+            background: rgba(63, 185, 80, 0.1);
+        }
+
+        .log-level.debug {
+            color: var(--debug);
+            background: rgba(57, 210, 192, 0.1);
+        }
+
+        .log-level.trace {
+            color: var(--trace);
+            background: rgba(188, 140, 255, 0.1);
+        }
+
+        .log-timestamp {
+            font-size: 12px;
+            color: var(--text-muted);
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+            flex-shrink: 0;
+            width: 200px;
+        }
+
+        .log-target {
+            font-size: 12px;
+            color: var(--accent);
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+            flex-shrink: 0;
+            max-width: 240px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .log-message-preview {
+            font-size: 13px;
+            color: var(--text);
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            min-width: 0;
+        }
+
+        .log-expand-icon {
+            flex-shrink: 0;
+            color: var(--text-muted);
+            font-size: 12px;
+            transition: transform 0.15s;
+            width: 16px;
+            text-align: center;
+        }
+
+        .log-entry.expanded .log-expand-icon {
+            transform: rotate(90deg);
+        }
+
+        .log-details {
+            display: none;
+            padding: 0 20px 12px 20px;
+            margin-left: 80px;
+        }
+
+        .log-entry.expanded .log-details {
+            display: block;
+        }
+
+        .log-details-inner {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 12px 16px;
+            font-size: 13px;
+        }
+
+        .log-detail-row {
+            display: flex;
+            gap: 12px;
+            padding: 3px 0;
+        }
+
+        .log-detail-label {
+            color: var(--text-muted);
+            font-size: 12px;
+            width: 70px;
+            flex-shrink: 0;
+            text-align: right;
+        }
+
+        .log-detail-value {
+            color: var(--text);
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            word-break: break-word;
+            line-height: 1.6;
+        }
+
+        .log-detail-value a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .log-detail-value a:hover {
+            text-decoration: underline;
+        }
+
+        .log-detail-separator {
+            border-top: 1px solid var(--border);
+            margin: 6px 0;
+        }
+
+        .search-match {
+            color: #f0883e;
+            background: rgba(240, 136, 62, 0.15);
+            border-radius: 2px;
+        }
+
+        /* Empty filter result */
+        .no-results {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        /* Minimap */
+        .log-wrapper {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            display: none;
+        }
+
+        .log-wrapper .log-container {
+            flex: 1;
+            padding-right: 14px;
+        }
+
+        #minimap {
+            position: absolute;
+            right: 8px;
+            top: 0;
+            bottom: 0;
+            width: 14px;
+            height: 100%;
+            cursor: pointer;
+            z-index: 10;
+            background: var(--surface);
+            border-left: 1px solid var(--border);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="toolbar">
+        <span class="toolbar-title">Trident Log Explorer</span>
+
+        <label class="file-label">
+            <span>📂 Open Log File</span>
+            <input type="file" id="file-input" accept=".log,.jsonl,.json,.txt">
+        </label>
+
+        <input type="text" id="search-input" placeholder="Search logs…" disabled>
+
+        <div class="level-filters" id="level-filters">
+            <label data-level="error" class="active"><span class="check-icon"></span>Error<input type="checkbox"
+                    checked></label>
+            <label data-level="warn" class="active"><span class="check-icon"></span>Warn<input type="checkbox"
+                    checked></label>
+            <label data-level="info" class="active"><span class="check-icon"></span>Info<input type="checkbox"
+                    checked></label>
+            <label data-level="debug" class="active"><span class="check-icon"></span>Debug<input type="checkbox"
+                    checked></label>
+            <label data-level="trace" class="active"><span class="check-icon"></span>Trace<input type="checkbox"
+                    checked></label>
+        </div>
+
+        <input type="text" id="commit-input" placeholder="Commit SHA (enables source links)" disabled>
+
+        <span class="stats" id="stats"></span>
+    </div>
+
+    <div class="drop-zone" id="drop-zone">
+        <div class="drop-zone-icon">📄</div>
+        <div>Drop a <strong>.jsonl</strong> log file here or click <strong>Open Log File</strong></div>
+    </div>
+
+    <div class="log-wrapper" id="log-wrapper">
+        <div class="log-container" id="log-container"></div>
+        <canvas id="minimap"></canvas>
+    </div>
+
+    <script>
+        (() => {
+            "use strict";
+
+            const LEVELS = ["error", "warn", "info", "debug", "trace"];
+            const LEVEL_PRIORITY = { error: 1, warn: 2, info: 3, debug: 4, trace: 5 };
+
+            let allEntries = [];
+            let filteredEntries = [];
+            const bookmarkedSet = new Set();
+
+            const dropZone = document.getElementById("drop-zone");
+            const logWrapper = document.getElementById("log-wrapper");
+            const logContainer = document.getElementById("log-container");
+            const minimap = document.getElementById("minimap");
+            const fileInput = document.getElementById("file-input");
+            const searchInput = document.getElementById("search-input");
+            const commitInput = document.getElementById("commit-input");
+            const statsEl = document.getElementById("stats");
+            const levelFilters = document.getElementById("level-filters");
+
+            // --- File loading ---
+
+            fileInput.addEventListener("change", (e) => {
+                if (e.target.files.length) loadFile(e.target.files[0]);
+            });
+
+            // Drag and drop
+            document.body.addEventListener("dragover", (e) => {
+                e.preventDefault();
+                dropZone.classList.add("drag-over");
+            });
+
+            document.body.addEventListener("dragleave", (e) => {
+                if (!e.relatedTarget || !document.body.contains(e.relatedTarget)) {
+                    dropZone.classList.remove("drag-over");
+                }
+            });
+
+            document.body.addEventListener("drop", (e) => {
+                e.preventDefault();
+                dropZone.classList.remove("drag-over");
+                if (e.dataTransfer.files.length) loadFile(e.dataTransfer.files[0]);
+            });
+
+            function loadFile(file) {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    parseLog(reader.result);
+                };
+                reader.readAsText(file);
+            }
+
+            function parseLog(text) {
+                const lines = text.split("\n");
+                allEntries = [];
+                let parseErrors = 0;
+
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (!trimmed) continue;
+                    try {
+                        const entry = JSON.parse(trimmed);
+                        // Normalize level to lowercase
+                        if (entry.level) entry.level = entry.level.toLowerCase();
+                        entry._idx = allEntries.length;
+                        allEntries.push(entry);
+                    } catch {
+                        parseErrors++;
+                    }
+                }
+
+                // Auto-detect commit hash from version message
+                if (!commitInput.value.trim() && allEntries.length > 0) {
+                    const firstMsg = allEntries[0].message || "";
+                    const versionMatch = firstMsg.match(/Trident version:.*-v([0-9a-fA-F]+)/);
+                    if (versionMatch) {
+                        commitInput.value = versionMatch[1];
+                    }
+                }
+
+                searchInput.disabled = false;
+                commitInput.disabled = false;
+
+                dropZone.style.display = "none";
+                logWrapper.style.display = "flex";
+
+                applyFilters();
+            }
+
+            // --- Filtering ---
+
+            function getActiveLevels() {
+                const active = new Set();
+                levelFilters.querySelectorAll("label").forEach((label) => {
+                    if (label.classList.contains("active")) {
+                        active.add(label.dataset.level);
+                    }
+                });
+                return active;
+            }
+
+            function applyFilters() {
+                const activeLevels = getActiveLevels();
+                const query = searchInput.value.trim().toLowerCase();
+
+                filteredEntries = allEntries.filter((entry) => {
+                    if (!activeLevels.has(entry.level)) return false;
+                    if (query) {
+                        const haystack = (
+                            (entry.message || "") + " " +
+                            (entry.target || "") + " " +
+                            (entry.module || "") + " " +
+                            (entry.file || "")
+                        ).toLowerCase();
+                        if (!haystack.includes(query)) return false;
+                    }
+                    return true;
+                });
+
+                statsEl.textContent = `${filteredEntries.length} / ${allEntries.length} entries`;
+                renderEntries();
+            }
+
+            // Level filter toggles
+            levelFilters.addEventListener("click", (e) => {
+                const label = e.target.closest("label");
+                if (!label) return;
+                e.preventDefault();
+                const cb = label.querySelector("input");
+                cb.checked = !cb.checked;
+                label.classList.toggle("active", cb.checked);
+                applyFilters();
+            });
+
+            // Search (debounced)
+            let searchTimer;
+            searchInput.addEventListener("input", () => {
+                clearTimeout(searchTimer);
+                searchTimer = setTimeout(applyFilters, 150);
+            });
+
+            // Commit input triggers re-render for links
+            commitInput.addEventListener("input", () => {
+                clearTimeout(commitInput._timer);
+                commitInput._timer = setTimeout(renderEntries, 300);
+            });
+
+            // --- Rendering ---
+
+            function escapeHtml(str) {
+                const div = document.createElement("div");
+                div.textContent = str;
+                return div.innerHTML;
+            }
+
+            function highlightText(escaped, query) {
+                if (!query) return escaped;
+                const escapedQuery = escapeHtml(query);
+                const regex = new RegExp('(' + escapedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+                return escaped.replace(regex, '<span class="search-match">$1</span>');
+            }
+
+            function formatTimestamp(ts) {
+                if (!ts) return "";
+                try {
+                    const d = new Date(ts);
+                    return d.toISOString().replace("T", " ").replace("Z", " UTC");
+                } catch {
+                    return String(ts);
+                }
+            }
+
+            function firstLine(str) {
+                if (!str) return "";
+                const idx = str.indexOf("\n");
+                return idx === -1 ? str : str.substring(0, idx);
+            }
+
+            function makeFileLink(file, line) {
+                const commit = commitInput.value.trim();
+                const text = escapeHtml(file + ":" + line);
+                if (commit) {
+                    const url = `https://github.com/microsoft/trident/blob/${encodeURIComponent(commit)}/${encodeURIComponent(file)}#L${line}`;
+                    return `<a href="${url}" target="_blank" rel="noopener">${text}</a>`;
+                }
+                return text;
+            }
+
+            function renderEntries() {
+                // Remember which indices were expanded
+                const expandedSet = new Set();
+                logContainer.querySelectorAll(".log-entry.expanded").forEach((el) => {
+                    expandedSet.add(parseInt(el.dataset.index, 10));
+                });
+
+                const query = searchInput.value.trim().toLowerCase();
+                const fragment = document.createDocumentFragment();
+
+                for (let i = 0; i < filteredEntries.length; i++) {
+                    const entry = filteredEntries[i];
+                    const level = entry.level || "info";
+                    const isExpanded = expandedSet.has(i);
+
+                    const isBookmarked = bookmarkedSet.has(entry._idx);
+
+                    const el = document.createElement("div");
+                    el.className = "log-entry" + (isExpanded ? " expanded" : "") + (isBookmarked ? " bookmarked" : "");
+                    el.dataset.index = i;
+
+                    el.innerHTML = `
+            <div class="log-summary">
+              <span class="log-expand-icon">▶</span>
+              <span class="log-level ${level}">${escapeHtml(level)}</span>
+              <span class="log-timestamp">${escapeHtml(formatTimestamp(entry.timestamp))}</span>
+              <span class="log-target" title="${escapeHtml(entry.target || "")}">${highlightText(escapeHtml(entry.target || ""), query)}</span>
+              <span class="log-message-preview">${highlightText(escapeHtml(firstLine(entry.message || "")), query)}</span>
+              <input type="checkbox" class="log-bookmark" title="Bookmark this entry" ${isBookmarked ? "checked" : ""}>
+            </div>
+            <div class="log-details">
+              <div class="log-details-inner">
+                <div class="log-detail-row">
+                  <span class="log-detail-label">Message</span>
+                  <span class="log-detail-value">${highlightText(escapeHtml(entry.message || ""), query)}</span>
+                </div>
+                <div class="log-detail-separator"></div>
+                <div class="log-detail-row">
+                  <span class="log-detail-label">Target</span>
+                  <span class="log-detail-value">${highlightText(escapeHtml(entry.target || ""), query)}</span>
+                </div>
+                <div class="log-detail-row">
+                  <span class="log-detail-label">Module</span>
+                  <span class="log-detail-value">${highlightText(escapeHtml(entry.module || ""), query)}</span>
+                </div>
+                <div class="log-detail-row">
+                  <span class="log-detail-label">Source</span>
+                  <span class="log-detail-value">${makeFileLink(entry.file || "", entry.line || 0)}</span>
+                </div>
+              </div>
+            </div>
+          `;
+
+                    el.querySelector(".log-summary").addEventListener("click", (e) => {
+                        if (e.target.classList.contains("log-bookmark")) return;
+                        el.classList.toggle("expanded");
+                    });
+
+                    el.querySelector(".log-bookmark").addEventListener("change", (e) => {
+                        if (e.target.checked) {
+                            bookmarkedSet.add(entry._idx);
+                            el.classList.add("bookmarked");
+                        } else {
+                            bookmarkedSet.delete(entry._idx);
+                            el.classList.remove("bookmarked");
+                        }
+                    });
+
+                    fragment.appendChild(el);
+                }
+
+                logContainer.innerHTML = "";
+
+                if (filteredEntries.length === 0 && allEntries.length > 0) {
+                    logContainer.innerHTML = '<div class="no-results">No log entries match the current filters.</div>';
+                } else {
+                    logContainer.appendChild(fragment);
+                }
+
+                renderMinimap();
+            }
+
+            // --- Minimap ---
+
+            const LEVEL_COLORS = {
+                error: "#f85149",
+                warn: "#d29922",
+                info: "#3fb950",
+                debug: "#39d2c0",
+                trace: "#bc8cff",
+            };
+
+            function renderMinimap() {
+                const rect = minimap.getBoundingClientRect();
+                const dpr = window.devicePixelRatio || 1;
+                const w = Math.round(rect.width * dpr);
+                const h = Math.round(rect.height * dpr);
+                if (w === 0 || h === 0) return;
+
+                minimap.width = w;
+                minimap.height = h;
+                const ctx = minimap.getContext("2d");
+                ctx.clearRect(0, 0, w, h);
+
+                const total = filteredEntries.length;
+                if (total === 0) return;
+
+                // Draw level markers — error/warn get thicker, more opaque lines
+                for (let i = 0; i < total; i++) {
+                    const entry = filteredEntries[i];
+                    const level = entry.level || "info";
+                    const y = Math.round((i / total) * h);
+                    const color = LEVEL_COLORS[level] || LEVEL_COLORS.info;
+
+                    ctx.fillStyle = color;
+                    if (level === "error" || level === "warn") {
+                        // Prominent: thicker mark, full width, higher opacity
+                        ctx.globalAlpha = 1.0;
+                        ctx.fillRect(0, y, w, Math.max(3 * dpr, 2));
+                    } else {
+                        ctx.globalAlpha = 0.6;
+                        ctx.fillRect(Math.round(w * 0.2), y, Math.round(w * 0.6), Math.max(dpr, 1));
+                    }
+                }
+
+                // Draw viewport indicator
+                ctx.globalAlpha = 1.0;
+                const scrollH = logContainer.scrollHeight;
+                if (scrollH > 0) {
+                    const viewTop = logContainer.scrollTop / scrollH * h;
+                    const viewH = Math.max((logContainer.clientHeight / scrollH) * h, 8 * dpr);
+                    ctx.strokeStyle = "rgba(230,237,243,0.25)";
+                    ctx.lineWidth = 1 * dpr;
+                    ctx.strokeRect(0.5, Math.round(viewTop) + 0.5, w - 1, Math.round(viewH));
+                }
+            }
+
+            // Update viewport indicator on scroll
+            logContainer.addEventListener("scroll", () => {
+                requestAnimationFrame(renderMinimap);
+            });
+
+            // Click on minimap to scroll
+            minimap.addEventListener("click", (e) => {
+                const rect = minimap.getBoundingClientRect();
+                const ratio = (e.clientY - rect.top) / rect.height;
+                const target = ratio * logContainer.scrollHeight - logContainer.clientHeight / 2;
+                logContainer.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
+            });
+
+            // Drag on minimap to scroll
+            minimap.addEventListener("mousedown", (e) => {
+                e.preventDefault();
+                const onMove = (ev) => {
+                    const rect = minimap.getBoundingClientRect();
+                    const ratio = (ev.clientY - rect.top) / rect.height;
+                    const target = ratio * logContainer.scrollHeight - logContainer.clientHeight / 2;
+                    logContainer.scrollTo({ top: Math.max(0, target) });
+                };
+                const onUp = () => {
+                    window.removeEventListener("mousemove", onMove);
+                    window.removeEventListener("mouseup", onUp);
+                };
+                window.addEventListener("mousemove", onMove);
+                window.addEventListener("mouseup", onUp);
+            });
+
+            // Resize observer to redraw minimap
+            new ResizeObserver(() => renderMinimap()).observe(logContainer);
+        })();
+    </script>
+</body>
+
+</html>

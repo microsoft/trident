@@ -10,7 +10,7 @@ members = [
     "crates/pytest",
     "crates/pytest_gen",
     "crates/sysdefs",
-    "crates/harpoon",
+    "crates/trident_proto",
 ]
 
 [workspace.dependencies]

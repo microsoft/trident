@@ -24,6 +24,8 @@ Commands:
   rebuild-raid        Rebuild software RAID arrays managed by
                           Trident
   get                 Query the current state of the system
+  diagnose            Generate diagnostic information and create a
+                          support bundle
   validate            Validate the provided Host Configuration
   offline-initialize  Initialize for a system that wasn't
                           installed by Trident
@@ -46,12 +48,11 @@ Options:
 - [update](#update)
 - [commit](#commit)
 - [rebuild-raid](#rebuild-raid)
-- [start-network](#start-network)
 - [get](#get)
+- [diagnose](#diagnose)
 - [validate](#validate)
 - [offline-initialize](#offline-initialize)
 - [rollback](#rollback)
-- [daemon](#daemon)
 - [help](#help)
 
 
@@ -295,46 +296,6 @@ Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
 Default: `DEBUG`
 
 
-## start-network
-
-Configure OS networking based on Trident Configuration
-
-Usage:
-
-```
-trident start-network [OPTIONS] [CONFIG]
-```
-
-Argument summary:
-
-```
-Arguments:
-  [CONFIG]  The new configuration to apply [default:
-            /etc/trident/config.yaml]
-
-Options:
-  -v, --verbosity <VERBOSITY>
-          Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
-          [default: DEBUG]
-```
-
-
-### Argument Details
-
-#### <span>&lt;CONFIG&gt;</span>
-
-The new configuration to apply
-
-Default: `/etc/trident/config.yaml`
-
-
-#### <span>--verbosity &lt;VERBOSITY&gt;</span>
-
-Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
-
-Default: `DEBUG`
-
-
 ## get
 
 Query the current state of the system
@@ -382,6 +343,56 @@ Default: `status`
 #### <span>--outfile &lt;OUTFILE&gt;</span>
 
 Path to save the resulting output
+
+
+#### <span>--verbosity &lt;VERBOSITY&gt;</span>
+
+Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
+
+Default: `DEBUG`
+
+
+## diagnose
+
+Generate diagnostic information and create a support bundle
+
+Usage:
+
+```
+trident diagnose [OPTIONS] --output <OUTPUT>
+```
+
+Argument summary:
+
+```
+Options:
+  -o, --output <OUTPUT>
+          Path where the support bundle will be saved
+  -v, --verbosity <VERBOSITY>
+          Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
+          [default: DEBUG]
+      --journal
+          Whether to include full system journal and dmesg output
+      --selinux
+          Whether to include SELinux audit log
+```
+
+
+### Argument Details
+
+#### <span>--output &lt;OUTPUT&gt;</span> (REQUIRED)
+
+Path where the support bundle will be saved
+
+
+#### <span>--journal &lt;JOURNAL&gt;</span>
+
+Whether to include full system journal and dmesg output
+
+
+#### <span>--selinux &lt;SELINUX&gt;</span>
+
+Whether to include SELinux audit log
 
 
 #### <span>--verbosity &lt;VERBOSITY&gt;</span>
@@ -605,56 +616,6 @@ Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
 Default: `DEBUG`
 
 
-## daemon
-
-Usage:
-
-```
-trident daemon [OPTIONS]
-```
-
-Argument summary:
-
-```
-Options:
-      --inactivity-timeout <INACTIVITY_TIMEOUT>
-          Inactivity timeout. The server will shut down automatically
-          after being inactive for this duration. Supports
-          human-readable durations, e.g., "5m", "1h30m", "300s"
-          [default: 300s]
-  -v, --verbosity <VERBOSITY>
-          Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
-          [default: DEBUG]
-      --socket-path <SOCKET_PATH>
-          Path to the UNIX socket to listen on when not running in
-          systemd socket-activated mode [default:
-          /var/run/trident.sock]
-```
-
-
-### Argument Details
-
-#### <span>--inactivity_timeout &lt;INACTIVITY_TIMEOUT&gt;</span>
-
-Inactivity timeout. The server will shut down automatically after being inactive for this duration. Supports human-readable durations, e.g., "5m", "1h30m", "300s"
-
-Default: `300s`
-
-
-#### <span>--socket_path &lt;SOCKET_PATH&gt;</span>
-
-Path to the UNIX socket to listen on when not running in systemd socket-activated mode
-
-Default: `/var/run/trident.sock`
-
-
-#### <span>--verbosity &lt;VERBOSITY&gt;</span>
-
-Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
-
-Default: `DEBUG`
-
-
 ## help
 
 Print this message or the help of the given subcommand(s)
@@ -678,6 +639,8 @@ Commands:
   rebuild-raid        Rebuild software RAID arrays managed by
                           Trident
   get                 Query the current state of the system
+  diagnose            Generate diagnostic information and create a
+                          support bundle
   validate            Validate the provided Host Configuration
   offline-initialize  Initialize for a system that wasn't
                           installed by Trident

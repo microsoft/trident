@@ -5,10 +5,10 @@ use std::{fmt::Debug, panic, sync::Arc};
 use anyhow::anyhow;
 use log::error;
 use tokio::sync::{Mutex, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock};
-
-use harpoon::{FinalStatus, StatusCode, TridentError as HarpoonTridentError};
 use tokio_util::sync::CancellationToken;
+
 use trident_api::error::{InternalError, TridentError};
+use trident_proto::v1::{Completed, RebootStatus, StatusCode, TridentError as ProtoTridentError};
 
 use crate::{server::activitytracker::ActivityTracker, ExitKind};
 
@@ -24,6 +24,7 @@ type ServicingLockGuard = OwnedRwLockWriteGuard<()>;
 /// simultaneously with servicing actions. It is implemented as the read lock of
 /// a RwLock, so that multiple read operations can occur simultaneously, but
 /// they will block if a servicing action is in progress.
+#[allow(dead_code)]
 type ServicingReadGuard = OwnedRwLockReadGuard<()>;
 
 /// Enum to specify how reboot requests from servicing tasks should be handled.
@@ -37,6 +38,7 @@ pub(super) enum RebootDecision {
 
     /// A reboot request is not allowed during this operation and will result in
     /// an error if one is requested.
+    #[allow(dead_code)]
     Error,
 }
 
@@ -90,6 +92,7 @@ impl ServicingManager {
     /// Attempts to acquire the reading (read) lock. Returns
     /// `Some(ServicingReadGuard)` if the lock was successfully acquired, or
     /// `None` if a servicing lock is held.
+    #[allow(dead_code)]
     pub(super) fn try_lock_reading(&self) -> Option<ServicingReadGuard> {
         self.servicing_lock.clone().try_read_owned().ok()
     }
@@ -104,7 +107,7 @@ impl ServicingManager {
         _guard: ServicingLockGuard,
         tracker: ActivityTracker,
         f: F,
-    ) -> FinalStatus
+    ) -> Completed
     where
         F: FnOnce() -> Result<ExitKind, TridentError> + Send + panic::UnwindSafe + 'static,
     {
@@ -123,31 +126,31 @@ impl ServicingManager {
             Ok(r) => match r {
                 Ok(exit_kind) => exit_kind,
                 Err(e) => {
-                    return FinalStatus {
+                    return Completed {
                         status: StatusCode::Failure.into(),
-                        error: Some(HarpoonTridentError::from(&e)),
-                        reboot_required: false,
-                        reboot_enqueued: false,
+                        error: Some(ProtoTridentError::from(&e)),
+                        reboot_status: RebootStatus::RebootNotRequired.into(),
                     }
                 }
             },
             Err(e) => {
                 error!("Servicing task join error: {:?}", e);
-                return FinalStatus {
+                return Completed {
                     status: StatusCode::Failure.into(),
-                    error: Some(HarpoonTridentError::from(&TridentError::with_source(
+                    error: Some(ProtoTridentError::from(&TridentError::with_source(
                         InternalError::Internal("Servicing task panicked or was cancelled"),
                         anyhow!(e),
                     ))),
-                    reboot_required: false,
-                    reboot_enqueued: false,
+                    reboot_status: RebootStatus::RebootNotRequired.into(),
                 };
             }
         };
 
-        let (reboot_required, reboot_enqueued) = match (exit_kind, reboot_decision) {
+        // Figure out the reboot status based on the exit kind and reboot
+        // decision.
+        let reboot_status = match (exit_kind, reboot_decision) {
             // Notify the caller that a reboot is required.
-            (ExitKind::NeedsReboot, RebootDecision::Defer) => (true, false),
+            (ExitKind::NeedsReboot, RebootDecision::Defer) => RebootStatus::RebootRequired,
 
             // Trident is allowed to request a reboot directly.
             (ExitKind::NeedsReboot, RebootDecision::Handle) => {
@@ -158,36 +161,36 @@ impl ServicingManager {
                 // Request a cancellation to signal shut down the server gracefully.
                 self.cancellation_token.cancel();
 
-                (false, true)
+                // Notify the caller that a reboot has been started.
+                RebootStatus::RebootStarted
             }
 
             // Error if a reboot was requested but forbidden.
             (ExitKind::NeedsReboot, RebootDecision::Error) => {
-                return FinalStatus {
+                return Completed {
                     status: StatusCode::Failure.into(),
-                    error: Some(HarpoonTridentError::from(&TridentError::new(
+                    error: Some(ProtoTridentError::from(&TridentError::new(
                         InternalError::Internal("The servicing task requested a reboot, but this task type should not cause reboots."),
                     ))),
-                    reboot_required: false,
-                    reboot_enqueued: false,
+                    reboot_status: RebootStatus::RebootNotRequired.into(),
                 };
             }
 
             // Nothing to do, no reboot needed.
-            (ExitKind::Done, _) => (false, false),
+            (ExitKind::Done, _) => RebootStatus::RebootNotRequired,
         };
 
-        FinalStatus {
+        Completed {
             status: StatusCode::Success.into(),
             error: None,
-            reboot_required,
-            reboot_enqueued,
+            reboot_status: reboot_status.into(),
         }
     }
 
     /// Spawns a reading task that runs the provided function `f` in a
     /// blocking task. The `ServicingReadGuard` must be provided to ensure that
     /// no servicing operation is running concurrently.
+    #[allow(dead_code)]
     pub(super) async fn spawn_reading_task<F, T>(
         _guard: ServicingReadGuard,
         f: F,
@@ -211,10 +214,10 @@ mod tests {
 
     use std::time::Duration;
 
-    use harpoon::TridentErrorKind;
     use tokio::time;
 
     use trident_api::error::InvalidInputError;
+    use trident_proto::v1::TridentErrorKind;
 
     #[tokio::test]
     async fn test_servicing_manager_new() {
@@ -326,8 +329,8 @@ mod tests {
             })
             .await;
 
-        assert_eq!(result.status, StatusCode::Success as i32);
-        assert!(!result.reboot_required);
+        assert_eq!(result.status(), StatusCode::Success);
+        assert_eq!(result.reboot_status(), RebootStatus::RebootNotRequired);
         assert!(result.error.is_none());
     }
 
@@ -353,9 +356,8 @@ mod tests {
             "Exit kind should be Done"
         );
 
-        assert_eq!(result.status, StatusCode::Success as i32);
-        assert!(result.reboot_required);
-        assert!(!result.reboot_enqueued);
+        assert_eq!(result.status(), StatusCode::Success);
+        assert_eq!(result.reboot_status(), RebootStatus::RebootRequired);
         assert!(result.error.is_none());
     }
 
@@ -381,9 +383,8 @@ mod tests {
             "Exit kind should be NeedsReboot"
         );
 
-        assert_eq!(result.status, StatusCode::Success as i32);
-        assert!(!result.reboot_required);
-        assert!(result.reboot_enqueued);
+        assert_eq!(result.status(), StatusCode::Success);
+        assert_eq!(result.reboot_status(), RebootStatus::RebootStarted);
         assert!(result.error.is_none());
     }
 
@@ -409,9 +410,8 @@ mod tests {
             "Exit kind should be Done"
         );
 
-        assert_eq!(result.status, StatusCode::Failure as i32);
-        assert!(!result.reboot_required);
-        assert!(!result.reboot_enqueued);
+        assert_eq!(result.status(), StatusCode::Failure);
+        assert_eq!(result.reboot_status(), RebootStatus::RebootNotRequired);
 
         let err = result.error.expect("Error should be present");
         assert_eq!(
@@ -435,8 +435,8 @@ mod tests {
             })
             .await;
 
-        assert_eq!(result.status, StatusCode::Failure as i32);
-        assert!(!result.reboot_required);
+        assert_eq!(result.status(), StatusCode::Failure);
+        assert_eq!(result.reboot_status(), RebootStatus::RebootNotRequired);
     }
 
     #[tokio::test]
@@ -483,8 +483,8 @@ mod tests {
             .await;
 
         // Panic in spawn_blocking is caught and returns JoinError
-        assert_eq!(result.status, StatusCode::Failure as i32);
-        assert!(!result.reboot_required);
+        assert_eq!(result.status(), StatusCode::Failure);
+        assert_eq!(result.reboot_status(), RebootStatus::RebootNotRequired);
     }
 
     #[tokio::test]
@@ -515,7 +515,7 @@ mod tests {
                     Ok(ExitKind::Done)
                 })
                 .await;
-            assert_eq!(result.status, StatusCode::Success as i32);
+            assert_eq!(result.status(), StatusCode::Success);
         }
 
         // Second task should be able to acquire lock
@@ -528,9 +528,8 @@ mod tests {
                     Ok(ExitKind::NeedsReboot)
                 })
                 .await;
-            assert_eq!(result.status, StatusCode::Success as i32);
-            assert!(!result.reboot_required);
-            assert!(result.reboot_enqueued);
+            assert_eq!(result.status(), StatusCode::Success);
+            assert_eq!(result.reboot_status(), RebootStatus::RebootStarted);
         }
     }
 }

@@ -33,7 +33,7 @@ schemars = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 
 sysdefs = { path = "../sysdefs" }
-harpoon = { path = "../harpoon" }
+trident_proto = { path = "../trident_proto" }
 
 [dev-dependencies]
 indoc = { workspace = true }

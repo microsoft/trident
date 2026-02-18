@@ -145,14 +145,15 @@ pub enum ClientCommands {
         error: Option<PathBuf>,
     },
 
-    StreamImage {
+    #[clap(alias = "stream-image")]
+    StreamDisk {
         /// URL of the image to stream
         #[clap(index = 1)]
         image: url::Url,
 
         /// Hash of the image manifest
         #[clap(long)]
-        hash: String,
+        hash: Option<String>,
     },
 
     Version,
@@ -171,7 +172,7 @@ impl ClientCommands {
             Self::StartNetwork { .. } => "client-start-network",
             Self::Get { .. } => "client-get",
             Self::Validate { .. } => "client-validate",
-            Self::StreamImage { .. } => "client-stream-image",
+            Self::StreamDisk { .. } => "client-stream-disk",
             Self::Version => "client-version",
         }
     }

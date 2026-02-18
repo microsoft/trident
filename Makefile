@@ -78,7 +78,7 @@ build: .cargo/config version-vars
 		OPENSSL_LIB_DIR=$(shell dirname `whereis libssl.a | cut -d" " -f2`) \
 		OPENSSL_INCLUDE_DIR=/usr/include/openssl \
 		TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
-		cargo build --release --features dangerous-options
+		cargo build --release --features dangerous-options,grpc-preview
 	@mkdir -p bin
 
 .PHONY: format
@@ -174,7 +174,7 @@ build-azl3: azl3-builder-image version-vars
 	@docker run --rm \
 		-e TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
 		-v $(PWD):/work -w /work $(AZL3_BUILDER_IMAGE) \
-		cargo build --color always --target-dir target/azl3 --release --features dangerous-options
+		cargo build --color always --target-dir target/azl3 --release --features dangerous-options,grpc-preview
 
 bin/trident-azl3: build-azl3
 	@cp -u target/azl3/release/trident bin/trident-azl3
@@ -428,12 +428,12 @@ go.sum: go.mod
 	go mod tidy
 
 .PHONY: go-tools
-go-tools: bin/netlaunch bin/netlisten bin/miniproxy bin/virtdeploy bin/isopatch
+go-tools: bin/netlaunch bin/netlisten bin/miniproxy bin/virtdeploy bin/isopatch bin/mkcosi bin/storm-trident bin/rcp-agent
 
 bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/* tools/pkg/netlaunch/*
 	@mkdir -p bin
 	cd tools && go generate pkg/rcp/tlscerts/certs.go
-	cd tools && go generate pkg/harpoon/harpoon.go
+	cd tools && go generate pkg/tridentgrpc/grpc.go
 	cd tools && go build -o ../bin/netlaunch ./cmd/netlaunch
 
 bin/netlisten: tools/cmd/netlisten/* tools/go.sum tools/pkg/*
@@ -907,9 +907,10 @@ validate-pipeline-website-artifact:
 		npm install && \
 			npm run serve -- --port $(SERVER_PORT)
 
-# Test images
-
-COSI_TARGETS = $(shell ./tests/images/testimages.py list)
+#
+# Generic COSI image build target pattern
+#
+COSI_TARGETS = $(shell ./tests/images/testimages.py list --filter-type cosi)
 
 .PHONY: $(COSI_TARGETS)
 $(COSI_TARGETS): %: artifacts/%.cosi
@@ -918,15 +919,21 @@ $(COSI_TARGETS): %: artifacts/%.cosi
 all-cosi: $(COSI_TARGETS)
 
 #
-# Generic COSI image build target pattern
+# Generic ISO image build target pattern
 #
+ISO_TARGETS = $(shell ./tests/images/testimages.py list --filter-type iso)
+
+.PHONY: $(ISO_TARGETS)
+$(ISO_TARGETS): %: artifacts/%.iso
+
+.PHONY: all-iso
+all-iso: $(ISO_TARGETS)
 
 # Fun trick to use the stem of the target (%) as a variable ($*) in the
 # prerequisites so that we can use find to get all the files in the directory.
 # https://www.gnu.org/software/make/manual/make.html#Secondary-Expansion
 .SECONDEXPANSION:
-
-artifacts/%.cosi: $$(shell ./tests/images/testimages.py dependencies $$*)
+artifacts/%.cosi artifacts/%.iso artifacts/%.vhdx: $$(shell ./tests/images/testimages.py dependencies $$*)
 	@echo "Building '$*' [$@] from $<"
 	@echo "Prerequisites:"
 	@echo "$^" | tr ' ' '\n' | sed 's/^/    /'
@@ -1151,3 +1158,22 @@ artifacts/trident-vm-grub-verity-azure-testimage.vhd: \
 			--output-image-format vhd-fixed \
 			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-grub-verity-azure.yaml
 
+.PHONY: imagecustomizer-dev-amd64
+imagecustomizer-dev-amd64:
+	make -C ../azure-linux-image-tools/toolkit go-imagecustomizer
+	../azure-linux-image-tools/toolkit/tools/imagecustomizer/container/build-container.sh -t imagecustomizer:dev -a amd64
+
+.PHONY: imagecustomizer-dev-arm64
+imagecustomizer-dev-arm64:
+	make -C ../azure-linux-image-tools/toolkit go-imagecustomizer
+	../azure-linux-image-tools/toolkit/tools/imagecustomizer/container/build-container.sh -t imagecustomizer:dev -a arm64
+
+artifacts/ubuntu_amd64.vhdx:
+	curl -LO https://cloud-images.ubuntu.com/releases/server/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img
+	qemu-img convert -O vhdx ubuntu-22.04-server-cloudimg-amd64.img artifacts/ubuntu_amd64.vhdx
+	rm -f ubuntu-22.04-server-cloudimg-amd64.img
+
+artifacts/ubuntu_arm64.vhdx:
+	curl -LO https://cloud-images.ubuntu.com/releases/server/22.04/release/ubuntu-22.04-server-cloudimg-arm64.img
+	qemu-img convert -O vhdx ubuntu-22.04-server-cloudimg-arm64.img artifacts/ubuntu_arm64.vhdx
+	rm -f ubuntu-22.04-server-cloudimg-arm64.img

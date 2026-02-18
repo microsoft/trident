@@ -165,6 +165,25 @@ pub enum Commands {
         outfile: Option<PathBuf>,
     },
 
+    /// Generate diagnostic information and create a support bundle.
+    ///
+    /// This command collects diagnostic information including logs, and
+    ///  system information. The output is packaged as a compressed tarball
+    ///  that can be shared for troubleshooting.
+    Diagnose {
+        /// Path where the support bundle will be saved
+        #[clap(short, long)]
+        output: PathBuf,
+
+        /// Whether to include full system journal and dmesg output
+        #[clap(long)]
+        journal: bool,
+
+        /// Whether to include SELinux audit log
+        #[clap(long)]
+        selinux: bool,
+    },
+
     /// Validate the provided Host Configuration
     ///
     /// When no options are provided, the default Trident Configuration is
@@ -232,25 +251,6 @@ pub enum Commands {
     },
 
     #[clap(hide(true))]
-    StreamImage {
-        /// URL of the image to stream
-        #[clap(index = 1)]
-        image: url::Url,
-
-        /// Hash of the image manifest
-        #[clap(long)]
-        hash: String,
-
-        /// Path to save the resulting HostStatus
-        #[clap(short, long)]
-        status: Option<PathBuf>,
-
-        /// Path to save an eventual fatal error
-        #[clap(short, long)]
-        error: Option<PathBuf>,
-    },
-
-    #[clap(hide(true))]
     Daemon {
         /// Inactivity timeout. The server will shut down automatically after
         /// being inactive for this duration. Supports human-readable durations,
@@ -275,11 +275,11 @@ impl Commands {
             Commands::RebuildRaid { .. } => "rebuild-raid",
             Commands::StartNetwork { .. } => "start-network",
             Commands::Get { .. } => "get",
+            Commands::Diagnose { .. } => "diagnose",
             Commands::Validate { .. } => "validate",
             #[cfg(feature = "pytest-generator")]
             Commands::Pytest => "pytest",
             Commands::OfflineInitialize { .. } => "offline-initialize",
-            Commands::StreamImage { .. } => "stream-image",
             Commands::Daemon { .. } => "daemon",
             Commands::Rollback { .. } => "rollback",
         }

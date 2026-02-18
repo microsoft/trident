@@ -57,6 +57,17 @@ fn run_trident(
                 .map(|()| ExitKind::Done);
         }
 
+        // Handle diagnose command
+        Commands::Diagnose {
+            output,
+            journal,
+            selinux,
+        } => {
+            return Trident::diagnose(output, *journal, *selinux)
+                .message("Failed to generate diagnostics")
+                .map(|()| ExitKind::Done);
+        }
+
         // Handle manual rollback check here so root is not required for --check
         Commands::Rollback {
             check: true,
@@ -89,51 +100,6 @@ fn run_trident(
 
     let res = panic::catch_unwind(move || {
         match &args.command {
-            Commands::StreamImage {
-                image,
-                hash,
-                status,
-                error,
-            } => {
-                let agent_config = AgentConfig::load()?;
-                let mut trident =
-                    Trident::new(None, agent_config.datastore_path(), logstream, tracestream)
-                        .message("Failed to initialize Trident")?;
-                // After initialization, create a trace event for the purpose of
-                // measuring Trident reboot times
-                tracing::info!(metric_name = "trident_start");
-
-                let mut datastore = DataStore::open_or_create(agent_config.datastore_path())
-                    .message("Failed to open datastore")?;
-
-                let res = trident
-                    .stream_image(&mut datastore, image, hash)
-                    .message("Failed to stream image");
-
-                // Return Host Status if requested
-                if status.is_some() {
-                    if let Err(e) =
-                        Trident::get(agent_config.datastore_path(), status, GetKind::Status)
-                            .message("Failed to retrieve Host Status")
-                    {
-                        error!("{e:?}");
-                    }
-                }
-
-                // Return error if requested
-                if let Some(error_path) = error.as_ref() {
-                    if let Err(e) = &res {
-                        if let Err(e2) =
-                            fs::write(error_path, serde_yaml::to_string(&e).unwrap_or("".into()))
-                        {
-                            error!("Failed to write error to file: {e2}");
-                        }
-                    }
-                }
-
-                res.message(format!("Failed to execute '{}' command", args.command))
-            }
-
             Commands::Install { status, error, .. }
             | Commands::Update { status, error, .. }
             | Commands::Commit { status, error }

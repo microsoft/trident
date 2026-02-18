@@ -4,6 +4,11 @@ parameters:
     displayName: "Label for the image"
     default: ""
 
+  - name: labelPrefix
+    type: string
+    displayName: "Prefix for the image label"
+    default: "image-"
+
   - name: makeTarget
     type: string
     displayName: "Make target for the image"
@@ -37,16 +42,41 @@ parameters:
     type: boolean
     default: false
 
+  - name: architecture
+    displayName: Architecture for MIC
+    type: string
+    values:
+      - arm64
+      - amd64
+    default: "amd64"
+
+  - name: downloadGoTools
+    displayName: "Download Go Tools"
+    type: boolean
+    default: false
+
+
 jobs:
   - job: PrepareImage_${{ replace(parameters.label, '-', '_') }}
     displayName: Prepare Image ${{ parameters.label }}
     timeoutInMinutes: 20
     pool:
-      type: linux
+      ${{ if eq(parameters.architecture, 'arm64') }}:
+        type: linux
+        name: azl3-hci-ARM64-1es-pool-westcentralus
+        hostArchitecture: arm64
+      ${{ if eq(parameters.architecture, 'amd64') }}:
+        type: linux
 
     variables:
       ob_outputDirectory: $(Build.SourcesDirectory)/out
-      ob_artifactBaseName: "image-${{ parameters.label }}"
+      ob_artifactBaseName: "${{ parameters.labelPrefix }}${{ parameters.label }}"
+      ${{ if eq(parameters.architecture, 'amd64') }}:
+        tridentArtifactName: trident-binaries
+        goToolsArtifactName: go-tools
+      ${{ if eq(parameters.architecture, 'arm64') }}:
+        tridentArtifactName: trident-binaries-arm64
+        goToolsArtifactName: go-tools-arm64
 
     steps:
       - template: ../common_tasks/avoid-pypi-usage.yml
@@ -54,9 +84,21 @@ jobs:
       - task: DownloadPipelineArtifact@2
         inputs:
           buildType: current
-          artifactName: trident-binaries
+          artifactName: $(tridentArtifactName)
           targetPath: "$(Build.ArtifactStagingDirectory)/trident"
         displayName: Download Trident RPMs
+
+      - ${{ if parameters.downloadGoTools }}:
+        - task: DownloadPipelineArtifact@2
+          displayName: "Download $(goToolsArtifactName)"
+          inputs:
+            buildType: current
+            artifactName: $(goToolsArtifactName)
+            targetPath: "$(Build.SourcesDirectory)/bin"
+        - bash: |
+            set -eux
+            chmod +x $(Build.SourcesDirectory)/bin/*
+          displayName: "Make go tools executable"
 
       - task: DownloadPipelineArtifact@2
         inputs:
@@ -66,13 +108,16 @@ jobs:
         displayName: Download SSH Keys
 
       - template: ../common_tasks/find-base-image-version.yml
-      - template: ../test_images/trident-testimg-template.yml
+        parameters:
+          architecture: ${{ parameters.architecture }}
+      - template: ./trident-testimg-template.yml
         parameters:
           target: ${{ parameters.makeTarget }}
           outputDirectory: "$(ob_outputDirectory)"
-          testImagesRepo: test-images
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
+          micArchitecture: ${{ parameters.architecture }}
+          tridentArtifactName: $(tridentArtifactName)
           baseimgBuildType: $(BASEIMG_BUILD_TYPE)
           baseimgVersion: $(BASEIMG_VERSION)
           baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}

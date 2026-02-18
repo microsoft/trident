@@ -54,7 +54,11 @@ impl CommandModel {
                 .filter(|v| v.name != "help")
                 .collect(),
 
-            subcommands: cmd.get_subcommands().map(CommandModel::from).collect(),
+            subcommands: cmd
+                .get_subcommands()
+                .filter(|sc| !sc.is_hide_set())
+                .map(CommandModel::from)
+                .collect(),
         }
     }
 }

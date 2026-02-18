@@ -269,6 +269,10 @@ stages:
           buildPurpose: "daily"
           runtimeEnv: "container"
 
+      - template: direct-streaming-test.yml
+        parameters:
+          architecture: amd64
+
   # TESTING stages for full validation matrix host/container and bm/bm
   - ${{ if eq(parameters.stageType, 'full-validation') }}:
       # Functional Testing
@@ -289,6 +293,10 @@ stages:
         parameters:
           buildPurpose: "weekly"
           runtimeEnv: "container"
+
+      - template: direct-streaming-test.yml
+        parameters:
+          architecture: amd64
 
       - ${{ if parameters.baremetalTestsEnabled }}:
           # BM Testing (host, weekly)
@@ -325,6 +333,10 @@ stages:
           buildPurpose: "post_merge"
           runtimeEnv: "container"
 
+      - template: direct-streaming-test.yml
+        parameters:
+          architecture: amd64
+
   # TESTING stages for PR-E2E
   - ${{ if eq(parameters.stageType, 'pr-e2e') }}:
       # Functional Testing (short version)
@@ -346,6 +358,11 @@ stages:
         parameters:
           buildPurpose: "pullrequest"
           runtimeEnv: "container"
+
+      # Run direct streaming tests for amd64 with streaming images
+      - template: direct-streaming-test.yml
+        parameters:
+          architecture: amd64
 
   # PUBLISHING
   #

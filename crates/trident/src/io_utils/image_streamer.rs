@@ -7,6 +7,7 @@ use std::{
 
 use anyhow::{bail, Context, Error};
 use log::{debug, trace};
+use zstd::stream::read::Decoder;
 
 use trident_api::primitives::bytes::ByteCount;
 
@@ -25,7 +26,7 @@ where
     R: Read + HashingReader,
 {
     // Instantiate decoder for ZSTD stream
-    let mut decoder = zstd::stream::read::Decoder::new(BufReader::new(&mut reader))?;
+    let mut decoder = Decoder::new(BufReader::new(&mut reader))?;
 
     if let Some(max_window_log) = max_window_log {
         decoder.window_log_max(max_window_log).with_context(|| {

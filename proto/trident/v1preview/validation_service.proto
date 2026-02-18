@@ -1,0 +1,53 @@
+// Proto file defining the ValidationService and related messages.
+
+syntax = "proto3";
+
+package trident.v1preview;
+
+import "trident/v1/error.proto";
+import "trident/v1/servicing.proto";
+import "trident/v1preview/host_config.proto";
+
+// ValidationService provides methods for performing configuration validations.
+service ValidationService {
+  // ValidateHostConfiguration performs static validation of a Host Configuration.
+  rpc ValidateHostConfiguration(ValidateHostConfigurationRequest) returns (ValidateHostConfigurationResponse);
+
+  // GetRequiredServicingType returns the servicing type that would be required to apply
+  // the given Host Configuration.
+  rpc GetRequiredServicingType(GetRequiredServicingTypeRequest) returns (GetRequiredServicingTypeResponse);
+}
+
+message ValidateHostConfigurationRequest {
+  // The Host Configuration to be validated.
+  HostConfiguration config = 1;
+}
+
+message ValidateHostConfigurationResponse {
+  // Whether the configuration is valid.
+  bool ok = 1;
+  // Validation error, if any. Nil if the configuration is valid.
+  optional trident.v1.TridentError error = 2;
+}
+
+enum ServicingType {
+  SERVICING_TYPE_UNSPECIFIED = 0;
+  // No servicing is currently in progress or not required.
+  NO_ACTIVE_SERVICING = 1;
+  // Update that can be applied without necessitating a reboot.
+  RUNTIME_UPDATE = 2;
+  // Update that requires switching to a different root partition and rebooting.
+  AB_UPDATE = 3;
+  // Clean install of the target OS.
+  CLEAN_INSTALL = 4;
+}
+
+message GetRequiredServicingTypeRequest {
+  // The target Host Configuration.
+  HostConfiguration config = 1;
+}
+
+message GetRequiredServicingTypeResponse {
+  // The type of servicing required.
+  ServicingType servicing_type = 1;
+}
