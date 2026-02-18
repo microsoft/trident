@@ -66,7 +66,7 @@ parameters:
       - qemu_guest
       - ubuntu_amd64
       - ubuntu_arm64
-    default: 
+    default:
       - baremetal
 
   - name: downloadTrident
@@ -155,24 +155,24 @@ steps:
       micVersion: ${{ parameters.micVersion }}
 
   - ${{ each baseimgType in parameters.baseimgTypes }}:
-    - ${{ if contains(baseimgType, 'ubuntu') }}:
-      - bash: |
-          set -eux
-          mkdir -p artifacts
-          make artifacts/${{ baseimgType }}.vhdx
-          # Move the downloaded base image to the images directory consistent
-          # with how the azurelinux base images are stored.
-          mkdir -p $(Build.ArtifactStagingDirectory)/images
-          mv artifacts/${{ baseimgType }}.vhdx $(Build.ArtifactStagingDirectory)/images/
-        displayName: "Download Ubuntu Base Image - ${{ baseimgType }}"
-        
-    - ${{ else }}:
-      - template: common/base-images-download-template.yaml@platform-pipelines
-        parameters:
-          buildType: ${{ parameters.baseimgBuildType }}
-          baseImageType: ${{ baseimgType }}
-          imageVersion: ${{ parameters.baseimgVersion }}
-          azureLinuxVersion: ${{ parameters.baseimgAzureLinuxVersion }}
+      - ${{ if contains(baseimgType, 'ubuntu') }}:
+          - bash: |
+              set -eux
+              mkdir -p artifacts
+              make artifacts/${{ baseimgType }}.vhdx
+              # Move the downloaded base image to the images directory consistent
+              # with how the azurelinux base images are stored.
+              mkdir -p $(Build.ArtifactStagingDirectory)/images
+              mv artifacts/${{ baseimgType }}.vhdx $(Build.ArtifactStagingDirectory)/images/
+            displayName: "Download Ubuntu Base Image - ${{ baseimgType }}"
+
+      - ${{ else }}:
+          - template: common/base-images-download-template.yaml@platform-pipelines
+            parameters:
+              buildType: ${{ parameters.baseimgBuildType }}
+              baseImageType: ${{ baseimgType }}
+              imageVersion: ${{ parameters.baseimgVersion }}
+              azureLinuxVersion: ${{ parameters.baseimgAzureLinuxVersion }}
 
   # For dev builds, the RPMs are not neccessarily published, so download them here. The
   # parameter is set based on a runtime variable, so we cannot use ${{ if }}, so the
@@ -237,7 +237,7 @@ steps:
   - script: |
       set -ex
       mkdir -p "${{ parameters.outputDirectory }}"
-      
+
       # images that have build/**/ format are expected to have multiple output files
       if [ -d "build/${{ parameters.target }}" ]; then
         sudo mv -v build/${{ parameters.target }}/* "${{ parameters.outputDirectory }}/"

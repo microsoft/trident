@@ -27,9 +27,9 @@ parameters:
     displayName: MIC Build Type
     type: string
     values:
-    - dev
-    - preview
-    - release
+      - dev
+      - preview
+      - release
     default: release
 
   - name: micVersion
@@ -54,7 +54,6 @@ parameters:
     displayName: "Download Go Tools"
     type: boolean
     default: false
-
 
 jobs:
   - job: PrepareImage_${{ replace(parameters.label, '-', '_') }}
@@ -82,24 +81,17 @@ jobs:
       - template: ../common_tasks/checkout_trident.yml
       - template: ../common_tasks/avoid-pypi-usage.yml
 
-      - task: DownloadPipelineArtifact@2
-        inputs:
-          buildType: current
-          artifactName: $(tridentArtifactName)
-          targetPath: "$(Build.ArtifactStagingDirectory)/trident"
-        displayName: Download Trident RPMs
-
       - ${{ if parameters.downloadGoTools }}:
-        - task: DownloadPipelineArtifact@2
-          displayName: "Download $(goToolsArtifactName)"
-          inputs:
-            buildType: current
-            artifactName: $(goToolsArtifactName)
-            targetPath: "$(Build.SourcesDirectory)/bin"
-        - bash: |
-            set -eux
-            chmod +x $(Build.SourcesDirectory)/bin/*
-          displayName: "Make go tools executable"
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download $(goToolsArtifactName)"
+            inputs:
+              buildType: current
+              artifactName: $(goToolsArtifactName)
+              targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
+          - bash: |
+              set -eux
+              chmod +x $(TRIDENT_SOURCE_DIR)/bin/*
+            displayName: "Make go tools executable"
 
       - task: DownloadPipelineArtifact@2
         inputs:
@@ -122,6 +114,6 @@ jobs:
           baseimgBuildType: $(BASEIMG_BUILD_TYPE)
           baseimgVersion: $(BASEIMG_VERSION)
           baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
-          baseimgTypes: 
+          baseimgTypes:
             - ${{ parameters.baseimgType }}
           useStagedSshKeys: ${{ parameters.useStagedSshKeys }}
