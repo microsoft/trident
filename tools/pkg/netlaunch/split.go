@@ -2,6 +2,8 @@ package netlaunch
 
 import (
 	"fmt"
+
+	log "github.com/sirupsen/logrus"
 )
 
 const systemdSplitServiceExecOverrideTemplate = `
@@ -19,6 +21,8 @@ func makeSplitOverrideFileDownload(tridentConfig map[string]any, logstreamAddres
 		systemdSplitServiceExecOverrideTemplate,
 		logstreamAddress,
 	)
+
+	log.Infof("Generated split override file content:\n%s", fileContent)
 
 	return newRcpAgentFileDownload(
 		"trident-split-override",

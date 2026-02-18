@@ -162,12 +162,14 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 			var extraRcpAgentFiles []rcpAgentFileDownload
 			switch config.Rcp.Scenario {
 			case RcpScenarioSplit:
+				log.Info("Using RCP split scenario, deploying split override to ISO")
 				overrideFile, err := makeSplitOverrideFileDownload(trident, logstreamAddress)
 				if err != nil {
 					return fmt.Errorf("failed to create split override file download: %w", err)
 				}
 				extraRcpAgentFiles = append(extraRcpAgentFiles, overrideFile)
 			case RcpScenarioStreamImage:
+				log.Info("Using RCP stream image scenario, deploying stream image override to ISO")
 				overrideFile, err := makeStreamImageOverrideFileDownload(trident, logstreamAddress)
 				if err != nil {
 					return fmt.Errorf("failed to create stream image override file download: %w", err)

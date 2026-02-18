@@ -2,6 +2,8 @@ package netlaunch
 
 import (
 	"fmt"
+
+	log "github.com/sirupsen/logrus"
 )
 
 const systemdServiceExecOverrideTemplate = `
@@ -41,6 +43,8 @@ func makeStreamImageOverrideFileDownload(tridentConfig map[string]any, logstream
 		fmt.Sprintf("/usr/bin/trident grpc-client stream-image %s --hash %s", imgUrl, imgSha384),
 		logstreamAddress,
 	)
+
+	log.Infof("Generated stream image override file content:\n%s", fileContent)
 
 	return newRcpAgentFileDownload(
 		"trident-stream-image-override",
