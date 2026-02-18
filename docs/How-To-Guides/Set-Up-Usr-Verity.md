@@ -205,8 +205,8 @@ popd
 
 Create a Trident Host Configuration file that aligns to the Image Customizer
 COSI that was created in step 4. The `esp`, `boot`, `root`, `usr`, and
-`usr-hash` partitions/filesystems should reflect what was specified in the Image
-Customizer configuration.
+`usr-hash` partitions/filesystems should reflect what was specified in the
+Image Customizer configuration.
 
 Some things to note that are defined in the Host Configuration below:
 
