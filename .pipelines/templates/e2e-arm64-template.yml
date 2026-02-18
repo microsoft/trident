@@ -35,7 +35,21 @@ parameters:
 
   - name: baseImageArtifactStage
     type: string
-    default: ''
+    default: ""
+
+  - name: micBuildType
+    displayName: MIC Build Type
+    type: string
+    values:
+      - dev
+      - preview
+      - release
+    default: release
+
+  - name: micVersion
+    displayName: MIC Version
+    type: string
+    default: "*.*.*"
 
 stages:
   # Trident Build/Download
@@ -50,13 +64,15 @@ stages:
       targetArchitecture: arm64
 
   - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pre'), eq(parameters.stageType, 'full-validation')) }}:
-    # Build tools (Go stuff)
-    - template: stages/building_tools/building-tools.yml
-      parameters:
-        architecture: arm64
-        stageName: BuildingTools_arm64
+      # Build tools (Go stuff)
+      - template: stages/building_tools/building-tools.yml
+        parameters:
+          architecture: arm64
+          stageName: BuildingTools_arm64
 
-    # Run direct streaming tests for arm64 with streaming images
-    - template: direct-streaming-test.yml
-      parameters:
-        architecture: arm64
+      # Run direct streaming tests for arm64 with streaming images
+      - template: direct-streaming-test.yml
+        parameters:
+          architecture: arm64
+          micBuildType: ${{ parameters.micBuildType }}
+          micVersion: ${{ parameters.micVersion }}
