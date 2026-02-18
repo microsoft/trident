@@ -941,7 +941,7 @@ artifacts/%.cosi artifacts/%.iso artifacts/%.vhdx: $$(shell ./tests/images/testi
 	sudo ./tests/images/testimages.py build \
 		$* \
 		--output-dir ./artifacts \
-		$(if $(strip $(IMAGE_CLONES)),--clones $(IMAGE_CLONES))
+		$(if $(strip $(IMAGE_CLONES)),--clones $(IMAGE_CLONES)) \
 		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE))
 
 MIC_CONTAINER_IMAGE ?= $(shell ./tests/images/testimages.py show-artifact customizer-container-full)
