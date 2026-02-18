@@ -824,6 +824,10 @@ mod tests {
         let metrics = trace_feature_metrics(|| config.feature_tracing());
 
         let expected = BTreeMap::from([
+            (
+                "metric_name".to_string(),
+                "host_config_feature_usage".to_string(),
+            ),
             ("ab_update".to_string(), "false".to_string()),
             ("confexts".to_string(), "false".to_string()),
             ("encryption".to_string(), "".to_string()),
@@ -932,6 +936,10 @@ mod tests {
         let metrics = trace_feature_metrics(|| config.feature_tracing());
 
         let expected = BTreeMap::from([
+            (
+                "metric_name".to_string(),
+                "host_config_feature_usage".to_string(),
+            ),
             ("ab_update".to_string(), "true".to_string()),
             ("confexts".to_string(), "true".to_string()),
             ("encryption".to_string(), "7,11".to_string()),
