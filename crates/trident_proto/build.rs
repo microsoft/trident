@@ -5,10 +5,10 @@ use std::{
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let include_dir = PathBuf::from("../../proto");
+    let include_dir = PathBuf::from("./proto");
     let mut proto_files = Vec::new();
-    add_protos(&mut proto_files, "../../proto/trident/v1")?;
-    add_protos(&mut proto_files, "../../proto/trident/v1preview")?;
+    add_protos(&mut proto_files, "./proto/trident/v1")?;
+    add_protos(&mut proto_files, "./proto/trident/v1preview")?;
 
     tonic_prost_build::configure()
         .server_mod_attribute(".", "#[cfg(feature = \"server\")]")
