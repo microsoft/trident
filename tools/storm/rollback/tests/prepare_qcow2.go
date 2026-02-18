@@ -11,20 +11,8 @@ import (
 	stormvmconfig "tridenttools/storm/utils/vm/config"
 
 	"github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v2"
 )
-
-const IMAGE_CUSTOMIZER_CONFIG_TEMPLATE = `# config.yaml
-previewFeatures:
-- reinitialize-verity
-os:
-  additionalFiles:
-  - source: %s
-    destination: /var/lib/extensions/%s
-
-  services:
-    enable:
-    - systemd-sysext
-`
 
 // Use Image Customizer to prepare the qcow2 image for rollback testing
 // by injecting the extension v1.0.0
@@ -57,27 +45,54 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 	// Create Image Customizer config
 	customizerConfigFile := "image-customizer-config.yaml"
 	customizerConfigPath := filepath.Join(testConfig.ArtifactsDir, customizerConfigFile)
-	customizerConfigContent := fmt.Sprintf(
-		IMAGE_CUSTOMIZER_CONFIG_TEMPLATE,
-		filepath.Join("/artifacts", extensionFileName),
-		extensionFileName,
-	)
-	logrus.Tracef("Creating Image Customizer config file: %s", customizerConfigPath)
-	logrus.Tracef("Image customizer config content:\n%s", customizerConfigContent)
-	if err := os.WriteFile(customizerConfigPath, []byte(customizerConfigContent), 0644); err != nil {
+	customizerConfig := map[string]interface{}{
+		"previewFeatures": []string{
+			"reinitialize-verity",
+		},
+		"os": map[string]interface{}{
+			"additionalFiles": []map[string]string{
+				{
+					"source":      fmt.Sprintf("/artifacts/%s", extensionFileName),
+					"destination": fmt.Sprintf("/var/lib/extensions/%s", extensionFileName),
+				},
+			},
+			"services": map[string]interface{}{
+				"enable": []string{
+					"systemd-sysext",
+				},
+			},
+		},
+	}
+	if testConfig.Uki {
+		customizerConfig["previewFeatures"] = append(customizerConfig["previewFeatures"].([]string), "uki")
+	}
+	customizerConfigContent, err := yaml.Marshal(customizerConfig)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Image Customizer config: %w", err)
+	}
+	logrus.Tracef("Image customizer config content:\n%s", string(customizerConfigContent))
+	if err := os.WriteFile(customizerConfigPath, customizerConfigContent, 0644); err != nil {
 		return fmt.Errorf("failed to write Image Customizer config file: %w", err)
 	}
 	logrus.Tracef("Wrote Image Customizer config file: %s", customizerConfigPath)
 
-	// Pull Image Customizer image
-	pullArgs := []string{"pull", testConfig.ImageCustomizerImage}
-	logrus.Tracef("Pulling Image Customizer image: %v", pullArgs)
-	pullOutput, err := exec.Command("docker", pullArgs...).CombinedOutput()
-	logrus.Tracef("Pull Image Customizer (%v):\n%s", err, string(pullOutput))
-	if err != nil {
-		return fmt.Errorf("failed to pull Image Customizer image: %w", err)
+	// Check for Image Customizer image
+	queryImageArgs := []string{"images", "-q", testConfig.ImageCustomizerImage}
+	logrus.Tracef("Checking for Image Customizer image: %v", queryImageArgs)
+	queryImageOutput, err := exec.Command("docker", queryImageArgs...).Output()
+	logrus.Tracef("Check for Image Customizer image (%v):\n%s", err, string(queryImageOutput))
+	if err != nil || len(queryImageOutput) == 0 {
+		logrus.Tracef("Image Customizer image not found locally: %s", testConfig.ImageCustomizerImage)
+		// Pull Image Customizer image
+		pullArgs := []string{"pull", testConfig.ImageCustomizerImage}
+		logrus.Tracef("Pulling Image Customizer image: %v", pullArgs)
+		pullOutput, err := exec.Command("docker", pullArgs...).CombinedOutput()
+		logrus.Tracef("Pull Image Customizer (%v):\n%s", err, string(pullOutput))
+		if err != nil {
+			return fmt.Errorf("failed to pull Image Customizer image: %w", err)
+		}
+		logrus.Tracef("Pulled Image Customizer image: %s", testConfig.ImageCustomizerImage)
 	}
-	logrus.Tracef("Pulled Image Customizer image: %s", testConfig.ImageCustomizerImage)
 
 	// Run Image Customizer
 	customizedImageFileName := "tmp-adjusted-rollback-testimage.qcow2"
