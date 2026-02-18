@@ -135,7 +135,9 @@ steps:
       set -eux
 
       if which tdnf; then
-        sudo tdnf install -y veritysetup squashfs-tools lsof
+        # nss-tools provides certutil while pesign provides efikeygen & pesign,
+        # which are required for producing a signed image to enable SecureBoot
+        sudo tdnf install -y veritysetup squashfs-tools lsof nss-tools pesign
         sudo systemctl start docker
       else
         # Ubuntu is used for building and testing of VM images suitable for
