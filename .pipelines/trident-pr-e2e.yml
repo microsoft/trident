@@ -19,12 +19,12 @@ resources:
     - repository: test-images
       type: git
       name: test-images
-      ref: refs/heads/usr/bfjelds/azl-rpm-test
+      ref: refs/heads/user/bfjelds/azl-rpm-test
 
     - repository: platform-pipelines
       type: git
       name: platform-pipelines
-      ref: refs/heads/usr/bfjelds/azl-rpm-test
+      ref: refs/heads/user/bfjelds/azl-rpm-test
 
     - repository: platform-telemetry
       name: platform-telemetry
