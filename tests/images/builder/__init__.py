@@ -217,12 +217,6 @@ class ImageConfig:
             raise ValueError("output.artifacts.path cannot be empty")
         return path
 
-    def get_items_to_sign(self) -> List[str]:
-        """Return the list of items to sign from the image configuration YAML."""
-        return (
-            self.base_ic_config.get("output", {}).get("artifacts", {}).get("items", [])
-        )
-
 
 # IMPORTANT: THESE NAMES ARE EXPOSED IN THE CLI, MAKE SURE TO UPDATE ALL
 # REFERENCES IF YOU CHANGE THEM!
