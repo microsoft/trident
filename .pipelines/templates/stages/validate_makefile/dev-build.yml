@@ -14,6 +14,48 @@ stages:
       dependsOn: ${{ parameters.dependsOnStage }}
 
     jobs:
+      - job: Make_Pipelines
+        displayName: Validate Pipelines
+        timeoutInMinutes: 30
+        pool:
+          type: linux
+          name: trident-ubuntu-1es-pool-eastus2
+          hostArchitecture: amd64
+        variables:
+          ob_outputDirectory: $(Build.SourcesDirectory)/build
+        steps:
+          - template: ../common_tasks/avoid-pypi-usage.yml
+
+          - script: |
+              set -eux
+
+              make check-pipelines BRANCH=$(Build.SourceBranch)
+            displayName: "Validating pipeline templates work"
+            workingDirectory: $(Build.SourcesDirectory)
+            env:
+              AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
+              OVERRIDE_RUST_FEED: false
+
+      - job: Check_Licenses
+        displayName: Check Licenses
+        timeoutInMinutes: 30
+        pool:
+          type: linux
+          name: trident-ubuntu-1es-pool-eastus2
+          hostArchitecture: amd64
+        variables:
+          ob_outputDirectory: $(Build.SourcesDirectory)/build
+        steps:
+          - template: ../common_tasks/avoid-pypi-usage.yml
+          - template: ../common_tasks/rustup.yml
+          - template: ../common_tasks/cargo-auth.yml
+
+          - script: cargo install --locked cargo-deny@0.16.2
+            displayName: Install cargo-deny
+
+          - script: cargo deny --all-features --workspace check licenses
+            displayName: Check licenses
+
       - job: Make
         displayName: make
         timeoutInMinutes: 30
@@ -71,19 +113,3 @@ stages:
             workingDirectory: $(Build.SourcesDirectory)
             env:
               OVERRIDE_RUST_FEED: false
-
-          - script: |
-              set -eux
-
-              make check-pipelines BRANCH=$(Build.SourceBranch)
-            displayName: "Validating pipeline templates work"
-            workingDirectory: $(Build.SourcesDirectory)
-            env:
-              AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
-              OVERRIDE_RUST_FEED: false
-
-          - script: cargo install --locked cargo-deny@0.16.2
-            displayName: Install cargo-deny
-
-          - script: cargo deny --all-features --workspace check licenses
-            displayName: Check licenses
