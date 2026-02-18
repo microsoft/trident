@@ -50,9 +50,9 @@ parameters:
       - "3.0"
     default: "3.0"
 
-  - name: baseimgTypes
-    displayName: Base Image Types
-    type: object
+  - name: baseimgType
+    displayName: Base Image Type
+    type: string
     # values:
     #   - baremetal
     #   - core_arm64
@@ -61,8 +61,7 @@ parameters:
     #   - qemu_guest
     #   - ubuntu_amd64
     #   - ubuntu_arm64
-    default: 
-      - baremetal
+    # default: baremetal
 
   - name: downloadTrident
     type: boolean
@@ -153,19 +152,18 @@ steps:
       arch: ${{ parameters.micArchitecture }}
       micVersion: ${{ parameters.micVersion }}
 
-  - ${{ each baseimgType in parameters.baseimgTypes }}:
-    - ${{ if contains(baseimgType, 'ubuntu') }}:
+  - ${{ if contains(parameters.baseimgType, 'ubuntu') }}:
       - bash: |
           set -eux
           mkdir -p artifacts
-          make artifacts/${{ baseimgType }}.vhdx
+          make artifacts/${{ parameters.baseimgType }}.vhdx
           # Move the downloaded base image to the images directory consistent
           # with how the azurelinux base images are stored.
           mkdir -p $(Build.ArtifactStagingDirectory)/images
-          mv artifacts/${{ baseimgType }}.vhdx $(Build.ArtifactStagingDirectory)/images/
-        displayName: "Download Ubuntu Base Image - ${{ baseimgType }}"
-        
-    - ${{ else }}:
+          mv artifacts/${{ parameters.baseimgType }}.vhdx $(Build.ArtifactStagingDirectory)/images/
+        displayName: "Download Ubuntu Base Image - ${{ parameters.baseimgType }}"
+
+  - ${{ else }}:
       - template: common/base-images-download-template.yaml@platform-pipelines
         parameters:
           buildType: ${{ parameters.baseimgBuildType }}
@@ -236,7 +234,7 @@ steps:
   - script: |
       set -ex
       mkdir -p "${{ parameters.outputDirectory }}"
-      
+
       # images that have build/**/ format are expected to have multiple output files
       if [ -d "build/${{ parameters.target }}" ]; then
         sudo mv -v build/${{ parameters.target }}/* "${{ parameters.outputDirectory }}/"

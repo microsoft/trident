@@ -22,9 +22,9 @@ parameters:
     displayName: MIC Build Type
     type: string
     values:
-    - dev
-    - preview
-    - release
+      - dev
+      - preview
+      - release
     default: release
 
   - name: micVersion
@@ -78,7 +78,6 @@ jobs:
           baseimgBuildType: $(BASEIMG_BUILD_TYPE)
           baseimgVersion: $(BASEIMG_VERSION)
           baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
-          baseimgTypes: 
-            - ${{ parameters.baseimgType }}
+          baseimgType: ${{ parameters.baseimgType }}
           useStagedSshKeys: ${{ parameters.useStagedSshKeys }}
           micArchitecture: arm64

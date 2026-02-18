@@ -27,9 +27,9 @@ parameters:
     displayName: MIC Build Type
     type: string
     values:
-    - dev
-    - preview
-    - release
+      - dev
+      - preview
+      - release
     default: release
 
   - name: micVersion
@@ -91,24 +91,24 @@ jobs:
       - template: ../common_tasks/avoid-pypi-usage.yml
 
       - ${{ if parameters.dependsOnTrident }}:
-        - task: DownloadPipelineArtifact@2
-          inputs:
-            buildType: current
-            artifactName: $(tridentArtifactName)
-            targetPath: "$(Build.ArtifactStagingDirectory)/trident"
-          displayName: Download Trident RPMs
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              buildType: current
+              artifactName: $(tridentArtifactName)
+              targetPath: "$(Build.ArtifactStagingDirectory)/trident"
+            displayName: Download Trident RPMs
 
       - ${{ if parameters.downloadGoTools }}:
-        - task: DownloadPipelineArtifact@2
-          displayName: "Download $(goToolsArtifactName)"
-          inputs:
-            buildType: current
-            artifactName: $(goToolsArtifactName)
-            targetPath: "$(Build.SourcesDirectory)/bin"
-        - bash: |
-            set -eux
-            chmod +x $(Build.SourcesDirectory)/bin/*
-          displayName: "Make go tools executable"
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download $(goToolsArtifactName)"
+            inputs:
+              buildType: current
+              artifactName: $(goToolsArtifactName)
+              targetPath: "$(Build.SourcesDirectory)/bin"
+          - bash: |
+              set -eux
+              chmod +x $(Build.SourcesDirectory)/bin/*
+            displayName: "Make go tools executable"
 
       - task: DownloadPipelineArtifact@2
         inputs:
@@ -119,14 +119,14 @@ jobs:
 
       - ${{ if ne(parameters.baseimgType, '') }}:
           - bash: |
-              echo "##vso[task.setvariable variable=baseImageType]${{ parameters.baseimgType }}"
+              echo "##vso[task.setvariable variable=BASEIMG_TYPE]${{ parameters.baseimgType }}"
             displayName: "Set Base Image Type from parameter"
       - ${{ else }}:
-        - bash: |
-            ./tests/images/testimages.py show-image ${{ parameters.makeTarget }} base-image --devops-var baseImageType
-          displayName: "Set Image Info from testimages.py"
+          - bash: |
+              ./tests/images/testimages.py show-image ${{ parameters.makeTarget }} base-image --devops-var BASEIMG_TYPE
+            displayName: "Set Image Info from testimages.py"
       - bash: |
-          echo "Image type: $(baseImageType)"
+          echo "Image type: $(BASEIMG_TYPE)"
           echo "Defined variables:"
           env | sort
         displayName: "Show defined variables"
@@ -146,7 +146,6 @@ jobs:
           baseimgBuildType: $(BASEIMG_BUILD_TYPE)
           baseimgVersion: $(BASEIMG_VERSION)
           baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
-          baseimgTypes: 
-            - $(baseImageType)
+          baseimgType: $(baseImageType)
           useStagedSshKeys: ${{ parameters.useStagedSshKeys }}
           clones: ${{ parameters.clones }}
