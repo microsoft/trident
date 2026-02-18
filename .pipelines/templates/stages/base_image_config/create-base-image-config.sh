@@ -12,7 +12,7 @@ cat << EOF > $OUTPUT_DIRECTORY/baseimage.json
 {
     "baseimgBuildType": "$BASEIMG_BUILD_TYPE",
     "baseImagePipelineBuildId": "$BASE_IMAGE_PIPELINE_BUILD_ID",
-    "baseImageArm64PipelineBuildId": "$BASE_IMAGE_ARM64_PIPELINE_BUILD_ID"
+    "baseImageArm64PipelineBuildId": "$BASE_IMAGE_ARM64_PIPELINE_BUILD_ID",
     "rpmsPipelineBuildId": "$RPMS_PIPELINE_BUILD_ID",
     "rpmsArm64PipelineBuildId": "$RPMS_ARM64_PIPELINE_BUILD_ID"
 }
