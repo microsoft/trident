@@ -119,16 +119,17 @@ jobs:
 
       - ${{ if ne(parameters.baseimgType, '') }}:
           - bash: |
-              echo "##vso[task.setvariable variable=baseimgType]${{ parameters.baseimgType }}"
+              echo "##vso[task.setvariable variable=baseImageType]${{ parameters.baseimgType }}"
             displayName: "Set Base Image Type from parameter"
       - ${{ else }}:
         - bash: |
             ./tests/images/testimages.py show-image ${{ parameters.makeTarget }} base-image --devops-var baseImageType
           displayName: "Set Image Info from testimages.py"
       - bash: |
-          set -eux
-          echo "baseimgType: $(baseImageType)"
-        displayName: "Show Base Image Type"
+          echo "Image type: $(baseImageType)"
+          echo "Defined variables:"
+          env | sort
+        displayName: "Show defined variables"
 
       - template: ../common_tasks/find-base-image-version.yml
         parameters:
