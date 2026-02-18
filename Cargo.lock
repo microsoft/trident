@@ -3427,11 +3427,22 @@ dependencies = [
  "tracing",
  "tracing-journald",
  "tracing-subscriber",
+ "trident-proto",
  "trident_api",
- "trident_proto",
  "url",
  "uuid",
  "zstd",
+]
+
+[[package]]
+name = "trident-proto"
+version = "1.0.0"
+dependencies = [
+ "prost",
+ "prost-types",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
 ]
 
 [[package]]
@@ -3461,20 +3472,9 @@ dependencies = [
  "thiserror 1.0.69",
  "tracing",
  "tracing-subscriber",
- "trident_proto",
+ "trident-proto",
  "url",
  "uuid",
-]
-
-[[package]]
-name = "trident_proto"
-version = "1.0.0"
-dependencies = [
- "prost",
- "prost-types",
- "tonic",
- "tonic-prost",
- "tonic-prost-build",
 ]
 
 [[package]]
