@@ -83,6 +83,7 @@ stages:
             micVersion: "main"
             label: "ubuntu-direct-streaming-testimage-${{ parameters.architecture }}"
             makeTarget: "ubuntu-direct-streaming-testimage-${{ parameters.architecture }}"
+            baseimgType: ubuntu_${{ parameters.architecture }}
 
     # Run netlaunch test to validate direct streaming installer
     - template: stages/direct-streaming/netlaunch-testing.yml
