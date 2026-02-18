@@ -43,6 +43,7 @@ endif
 		azl-cicd \
 		pr \
 		pr-e2e \
+		pr-e2e-azure \
 		ci \
 		pre \
 		rel \
