@@ -1,10 +1,10 @@
 steps:
-  - ${{ if eq(variables['Build.Repository.Name'], 'trident')}}:
-      - checkout: self
+  - ${{ if ne(variables['Build.Repository.Name'], 'trident')}}:
+      - checkout: trident
         fetchDepth: 1
         path: s/trident
   - ${{ else }}:
-      - checkout: trident
+      - checkout: self
         fetchDepth: 1
         path: s/trident
   - bash: |
