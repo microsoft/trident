@@ -2,14 +2,16 @@ package helpers
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 	"tridenttools/pkg/netlaunch"
-	stormutils "tridenttools/storm/utils"
+	"tridenttools/storm/utils/libvirtutils"
 
 	"github.com/microsoft/storm"
 	"github.com/sirupsen/logrus"
@@ -44,8 +46,6 @@ func (h *DirectStreamingHelper) RegisterTestCases(r storm.TestRegistrar) error {
 }
 
 func (h *DirectStreamingHelper) directStreaming(tc storm.TestCase) error {
-	startTime := time.Now()
-
 	// Create Host Configuration with image information for direct streaming test
 	hostConfig, err := h.createTempHostConfig()
 	if err != nil {
@@ -79,32 +79,61 @@ func (h *DirectStreamingHelper) directStreaming(tc storm.TestCase) error {
 	}
 	defer tc.ArtifactBroker().PublishLogFile("vm-serial.log", vmSerialLog)
 
-	// Start netlaunch in background because the VM will not connect back to
-	// netlaunch and we need the file server to continue running until the image
-	// has been pulled and deployed. Netlaunch is intended to run until the test
-	// ends.
-	netlaunchContext := context.Background()
+	bootCtx, bootCtxCancel := context.WithTimeout(tc.Context(), time.Duration(h.args.TimeoutInSeconds)*time.Second)
+	defer bootCtxCancel()
+
+	// Run netlaunch in a separate goroutine since it is a blocking call. It
+	// will not exit regularly from a success/failure signal from Trident, but
+	// it needs to keep running to ensure the file server is up for Trident to
+	// pull the image from. It will be forcefully stopped when the test finishes.
 	go func() {
 		logrus.Info("Starting netlaunch...")
-		netlaunchErr := netlaunch.RunNetlaunch(netlaunchContext, netlaunchConfig)
-		logrus.Info("netlaunch stopped.")
-		if netlaunchErr != nil {
-			tc.FailFromError(netlaunchErr)
+		netlaunchErr := netlaunch.RunNetlaunch(tc.Context(), netlaunchConfig)
+		if netlaunchErr != nil && !errors.Is(netlaunchErr, context.Canceled) {
+			// If we got here, netlaunch failed from an internal error, not from
+			// the test finishing and canceling the context.
+			logrus.Errorf("netlaunch returned an error: %v", netlaunchErr)
+
+			// Cancel the boot context to signal the main test goroutine to stop
+			// monitoring the serial log, since netlaunch has stopped abnormally
+			// and the file server is no longer available.
+			bootCtxCancel()
 		}
 	}()
 
 	time.Sleep(10 * time.Second) // Give netlaunch some time to start
 
-	// Wait for login message in serial log
-	remainingTimeout := (time.Duration(h.args.TimeoutInSeconds) * time.Second) - time.Since(startTime)
-	err = stormutils.WaitForLoginMessageInSerialLog(vmSerialLog, true, 1, "/tmp/serial.log", remainingTimeout)
-	tc.ArtifactBroker().PublishLogFile("serial.log", "/tmp/serial.log")
+	lv, err := libvirtutils.Connect()
 	if err != nil {
-		logrus.Errorf("Failed to find login message in VM serial log: %v", err)
-		tc.FailFromError(err)
+		return fmt.Errorf("failed to connect to libvirt: %w", err)
+	}
+	defer lv.Disconnect()
+
+	domain, err := lv.DomainLookupByName(h.args.VmName)
+	if err != nil {
+		return fmt.Errorf("failed to find domain by name '%s': %w", h.args.VmName, err)
 	}
 
-	logrus.Info("Direct streaming test completed successfully")
+	logFile, err := os.CreateTemp("", "console.log")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file for console log: %w", err)
+	}
+	defer logFile.Close()
+	defer func() {
+		tc.ArtifactBroker().PublishLogFile("vm-serial.log", logFile.Name())
+	}()
+	defer os.Remove(logFile.Name())
+
+	err = libvirtutils.WaitForVmSerialLogLoginLibvirt(bootCtx, lv, domain, io.MultiWriter(logFile, os.Stdout))
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			tc.Fail("Login prompt not found within timeout")
+		}
+
+		return fmt.Errorf("error while monitoring VM serial log: %w", err)
+	}
+
+	logrus.Info("Successfully found login message in VM serial log")
 	return nil
 }
 
