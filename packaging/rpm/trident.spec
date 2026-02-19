@@ -277,14 +277,14 @@ install -D -p -m 0644 selinux/%{name}.if %{buildroot}%{_datadir}/selinux/devel/i
 
 mkdir -p %{buildroot}%{_unitdir}
 # Commit service
-install -D -m 644 systemd/%{name}.service %{buildroot}%{_unitdir}/%{name}.service
+install -D -m 644 packaging/systemd/%{name}.service %{buildroot}%{_unitdir}/%{name}.service
 # Auto-installation service
-install -D -m 644 systemd/%{name}-install.service %{buildroot}%{_unitdir}/%{name}-install.service
+install -D -m 644 packaging/systemd/%{name}-install.service %{buildroot}%{_unitdir}/%{name}-install.service
 # Network configuration service for provisioning OS
-install -D -m 644 systemd/%{name}-network.service %{buildroot}%{_unitdir}/%{name}-network.service
+install -D -m 644 packaging/systemd/%{name}-network.service %{buildroot}%{_unitdir}/%{name}-network.service
 # Daemon socket and service
-install -D -m 644 systemd/%{name}d.socket %{buildroot}%{_unitdir}/%{name}d.socket
-install -D -m 644 systemd/%{name}d.service %{buildroot}%{_unitdir}/%{name}d.service
+install -D -m 644 packaging/systemd/%{name}d.socket %{buildroot}%{_unitdir}/%{name}d.socket
+install -D -m 644 packaging/systemd/%{name}d.service %{buildroot}%{_unitdir}/%{name}d.service
 
 mkdir -p %{buildroot}/etc/%{name}
 
