@@ -1,4 +1,10 @@
 parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
   - name: updateIterationCount
     displayName: "Number of updates to test"
     type: number
@@ -64,6 +70,8 @@ jobs:
           ob_outputDirectory: $(Pipeline.Workspace)/s/trident/logs
         steps:
           - template: ../common_tasks/checkout_trident.yml
+            parameters:
+              tridentRepoName: ${{ parameters.tridentRepoName }}
           - task: DownloadPipelineArtifact@2
             displayName: "Download go-tools: storm"
             inputs:
@@ -128,6 +136,8 @@ jobs:
 
     steps:
       - template: ../common_tasks/checkout_trident.yml
+        parameters:
+          tridentRepoName: ${{ parameters.tridentRepoName }}
       - bash: |
           echo "##vso[task.setvariable variable=ob_artifactBaseName;]update-testing-${{ parameters.flavor }}-$(printf '%03d' $(System.JobPositionInPhase))"
           echo "##vso[task.setvariable variable=TEST_RESOURCE_GROUP;]trident-vm-servicing-validation-$(Build.BuildId)-$(printf '%03d' $(System.JobPositionInPhase))"
@@ -190,11 +200,11 @@ jobs:
         displayName: Set up SSH Keys and setup output directory
 
       - ${{ if eq(parameters.platform, 'qemu') }}:
-        - bash: |
-            set -eux
-            sudo apt update
-            sudo apt install -y imagemagick
-          displayName: "Install imagemagick for libvirt screenshot capture"
+          - bash: |
+              set -eux
+              sudo apt update
+              sudo apt install -y imagemagick
+            displayName: "Install imagemagick for libvirt screenshot capture"
 
       - bash: |
           echo "##vso[task.setvariable variable=STORM_SCENARIO_FINISHED;]false"

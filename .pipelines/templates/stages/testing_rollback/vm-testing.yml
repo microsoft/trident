@@ -1,4 +1,10 @@
 parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
   - name: testingRun
     displayName: "Download prebuilt test artifacts"
     type: boolean
@@ -126,6 +132,7 @@ stages:
               micBuildType: ${{ parameters.micBuildType }}
               micVersion: ${{ parameters.micVersion }}
               testSecureBoot: ${{ parameters.testSecureBoot }}
+              tridentRepoName: ${{ parameters.tridentRepoName }}
       - ${{ if eq(parameters.includeQemu, true) }}:
           - template: testing-template.yml
             parameters:
@@ -144,6 +151,7 @@ stages:
               micVersion: ${{ parameters.micVersion }}
               isUki: true
               testSecureBoot: ${{ parameters.testSecureBoot }}
+              tridentRepoName: ${{ parameters.tridentRepoName }}
       - ${{ if eq(parameters.includeUKI, true) }}:
           - template: testing-template.yml
             parameters:
@@ -155,3 +163,4 @@ stages:
               micVersion: ${{ parameters.micVersion }}
               isUki: true
               testSecureBoot: ${{ parameters.testSecureBoot }}
+              tridentRepoName: ${{ parameters.tridentRepoName }}

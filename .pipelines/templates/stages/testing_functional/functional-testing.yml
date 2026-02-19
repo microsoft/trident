@@ -1,4 +1,10 @@
 parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
   - name: downloadPrebuiltImage
     displayName: "Download prebuilt base image"
     type: boolean
@@ -49,6 +55,8 @@ stages:
 
         steps:
           - template: ../common_tasks/checkout_trident.yml
+            parameters:
+              tridentRepoName: ${{ parameters.tridentRepoName }}
           - checkout: platform-tests
             fetchDepth: 1
 

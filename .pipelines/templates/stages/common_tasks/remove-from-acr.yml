@@ -1,4 +1,11 @@
 parameters:
+  - name: acrSubscriptionConnection
+    type: string
+    default: trident-dev-acr-write-umi-ECF
+    values:
+      - maritimus-dev-acr-write-umi
+      - trident-dev-acr-write-umi-ECF
+
   - name: "repository"
     displayName: "Repository containing COSI images"
     type: string
@@ -19,7 +26,7 @@ parameters:
 steps:
   - task: AzureCLI@2
     inputs:
-      azureSubscription: maritimus-dev-acr-write-umi
+      azureSubscription: ${{ parameters.acrSubscriptionConnection }}
       scriptType: bash
       scriptLocation: inlineScript
       inlineScript: |

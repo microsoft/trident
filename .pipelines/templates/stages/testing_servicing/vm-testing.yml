@@ -1,4 +1,10 @@
 parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
   - name: testingRun
     displayName: "Download prebuilt test artifacts"
     type: boolean
@@ -231,6 +237,7 @@ stages:
               platform: qemu
               flavor: qemu
               testSecureBoot: ${{ parameters.testSecureBoot }}
+              tridentRepoName: ${{ parameters.tridentRepoName }}
 
       - ${{ if eq(parameters.includeAzure, true) }}:
           - template: testing-template.yml
@@ -244,6 +251,7 @@ stages:
               flavor: azure
               pool: trident-ubuntu-official-1es-pool-eastus2
               testSecureBoot: ${{ parameters.testSecureBoot }}
+              tridentRepoName: ${{ parameters.tridentRepoName }}
 
       - ${{ if eq(parameters.includeUKI, true) }}:
           - template: testing-template.yml
@@ -256,3 +264,4 @@ stages:
               platform: qemu
               flavor: uki
               testSecureBoot: ${{ parameters.testSecureBoot }}
+              tridentRepoName: ${{ parameters.tridentRepoName }}

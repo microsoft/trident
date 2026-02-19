@@ -1,4 +1,10 @@
 parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
   - name: updateCheckTimeoutInMinutes
     displayName: "Timeout for checking target OS deployment in minutes"
     type: number
@@ -93,6 +99,8 @@ jobs:
 
     steps:
       - template: ../common_tasks/checkout_trident.yml
+        parameters:
+          tridentRepoName: ${{ parameters.tridentRepoName }}
       - task: DownloadPipelineArtifact@2
         inputs:
           buildType: current

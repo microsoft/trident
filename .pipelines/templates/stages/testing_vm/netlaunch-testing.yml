@@ -1,4 +1,10 @@
 parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
   - name: buildPurpose
     type: string
     default: "post_merge"
@@ -36,6 +42,7 @@ stages:
           buildPurpose: ${{ parameters.buildPurpose }}
           deploymentEnvironment: virtualMachine
           runtimeEnv: ${{ parameters.runtimeEnv }}
+          tridentRepoName: ${{ parameters.tridentRepoName }}
 
   - stage: DeploymentTesting_${{ parameters.runtimeEnv }}
     displayName: Deployment VM ${{ parameters.runtimeEnv }} Testing
@@ -116,6 +123,8 @@ stages:
 
         steps:
           - template: ../common_tasks/checkout_trident.yml
+            parameters:
+              tridentRepoName: ${{ parameters.tridentRepoName }}
 
           - bash: |
               if [ ${{ variables['tridentConfigurationName'] }} == 'split' ]; then

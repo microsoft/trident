@@ -1,4 +1,10 @@
 parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
   - name: "stageType"
     displayName: "Pipeline configuration type"
     type: string
@@ -21,6 +27,8 @@ stages:
 
         steps:
           - template: ../common_tasks/checkout_trident.yml
+            parameters:
+              tridentRepoName: ${{ parameters.tridentRepoName }}
           - task: DownloadPipelineArtifact@2
             displayName: "Download go-tools"
             inputs:

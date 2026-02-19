@@ -1,4 +1,10 @@
 parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
   - name: "feed"
     displayName: "Target feed to publish to"
     type: string
@@ -46,6 +52,8 @@ stages:
 
         steps:
           - template: ../common_tasks/checkout_trident.yml
+            parameters:
+              tridentRepoName: ${{ parameters.tridentRepoName }}
           - script: echo $(Build.BuildNumber)
             displayName: "Print Trident Version"
 
@@ -84,4 +92,3 @@ stages:
               publishDirectory: "$(TRIDENT_SOURCE_DIR)/rpms"
               versionPublish: $(Build.BuildNumber)
               versionOption: custom
-

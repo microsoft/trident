@@ -1,4 +1,10 @@
 parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
   - name: buildLiveInstaller
     type: boolean
     default: true
@@ -30,6 +36,8 @@ stages:
 
         steps:
           - template: ../common_tasks/checkout_trident.yml
+            parameters:
+              tridentRepoName: ${{ parameters.tridentRepoName }}
           - template: ../common_tasks/avoid-pypi-usage.yml
 
           - ${{ if eq(parameters.buildLiveInstaller, true) }}:

@@ -1,4 +1,10 @@
 parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
   - name: jobName
     type: string
     default: trident_baremetal_tests
@@ -56,6 +62,7 @@ stages:
           buildPurpose: ${{ parameters.buildPurpose }}
           deploymentEnvironment: bareMetal
           runtimeEnv: ${{ parameters.runtimeEnv }}
+          tridentRepoName: ${{ parameters.tridentRepoName }}
 
       - job: ${{ parameters.jobName }}
         displayName: Run E2E Test
@@ -127,6 +134,8 @@ stages:
 
         steps:
           - template: ../common_tasks/checkout_trident.yml
+            parameters:
+              tridentRepoName: ${{ parameters.tridentRepoName }}
 
           - bash: |
               set -xe

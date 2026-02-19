@@ -1,4 +1,10 @@
 parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
   - name: tridentArtifactName
     type: string
 
@@ -60,6 +66,8 @@ stages:
 
             steps:
               - template: ../common_tasks/checkout_trident.yml
+                parameters:
+                  tridentRepoName: ${{ parameters.tridentRepoName }}
               - template: ../common_tasks/avoid-pypi-usage.yml
               # need newer rust for cargo-nextest, use rustup.yml to install
               - template: ../common_tasks/rustup.yml
@@ -85,6 +93,8 @@ stages:
 
             steps:
               - template: ../common_tasks/checkout_trident.yml
+                parameters:
+                  tridentRepoName: ${{ parameters.tridentRepoName }}
               - template: ../common_tasks/os-info.yml
               - template: ../common_tasks/avoid-pypi-usage.yml
               - template: ../common_tasks/cargo-auth.yml
@@ -116,6 +126,8 @@ stages:
 
             steps:
               - template: ../common_tasks/checkout_trident.yml
+                parameters:
+                  tridentRepoName: ${{ parameters.tridentRepoName }}
               - template: ../common_tasks/avoid-pypi-usage.yml
               - template: ../common_tasks/cargo-auth.yml
               - script: |

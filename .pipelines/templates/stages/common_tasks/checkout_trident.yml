@@ -1,10 +1,12 @@
+parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
 steps:
-  # - ${{ if ne(variables['Build.Repository.Name'], 'trident')}}:
-  #     - checkout: trident
-  #       fetchDepth: 1
-  #       path: s/trident
-  # - ${{ else }}:
-  - checkout: self
+  - checkout: ${{ parameters.tridentRepoName }}
     fetchDepth: 1
     path: s/trident
   - bash: |
