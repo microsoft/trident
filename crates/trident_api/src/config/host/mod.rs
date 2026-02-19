@@ -122,10 +122,7 @@ impl HostConfiguration {
             services_disabled = !self.os.services.disable.is_empty(),
             kernel_command_line_options =
                 !self.os.kernel_command_line.extra_command_line.is_empty(),
-            uefi_fallback_mode = {
-                let fallback_str: &str = self.os.uefi_fallback.into();
-                fallback_str
-            },
+            uefi_fallback_mode = Into::<&str>::into(self.os.uefi_fallback),
             post_configure_scripts = !self.scripts.post_configure.is_empty(),
             pre_servicing_scripts = !self.scripts.pre_servicing.is_empty(),
             post_provision_scripts = !self.scripts.post_provision.is_empty(),
