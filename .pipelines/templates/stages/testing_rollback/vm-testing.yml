@@ -87,6 +87,7 @@ stages:
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
                   useStagedSshKeys: true
+                  tridentRepoName: ${{ parameters.tridentRepoName }}
 
               - template: ../testing_servicing/build-image.yml
                 parameters:
@@ -97,6 +98,7 @@ stages:
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
                   useStagedSshKeys: true
+                  tridentRepoName: ${{ parameters.tridentRepoName }}
 
   - stage: RuntimeUpdateAndRollbackTesting
     displayName: Runtime Update and Rollback Testing
