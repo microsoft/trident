@@ -49,20 +49,24 @@ stages:
     parameters:
       hardwareType: "VM"
       runtimeType: "HOST"
+      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # - template: test_execution_template.yml
   #   parameters:
   #     hardwareType: "VM"
   #     runtimeType: "CONTAINER"
+  #     tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # - template: test_execution_template.yml
   #   parameters:
   #     hardwareType: "BM"
   #     runtimeType: "HOST"
   #     maxParallel: 1
+  #     tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # - template: test_execution_template.yml
   #   parameters:
   #     hardwareType: "BM"
   #     runtimeType: "CONTAINER"
   #     maxParallel: 1
+  #     tridentRepoName: ${{ parameters.tridentRepoName }}
