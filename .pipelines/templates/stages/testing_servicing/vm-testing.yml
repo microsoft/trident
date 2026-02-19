@@ -104,6 +104,7 @@ stages:
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
                   useStagedSshKeys: true
+                  tridentRepoName: ${{ parameters.tridentRepoName }}
 
               - template: ../trident_images/build-image.yml
                 parameters:
@@ -114,6 +115,7 @@ stages:
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
                   useStagedSshKeys: true
+                  tridentRepoName: ${{ parameters.tridentRepoName }}
 
               - template: ../trident_images/build-image.yml
                 parameters:
@@ -124,6 +126,7 @@ stages:
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
                   useStagedSshKeys: true
+                  tridentRepoName: ${{ parameters.tridentRepoName }}
 
       - ${{ if eq(parameters.includeAzure, true) }}:
           - stage: BuildImagesAzure
@@ -143,6 +146,7 @@ stages:
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
+                  tridentRepoName: ${{ parameters.tridentRepoName }}
 
               - template: ../trident_images/build-image.yml
                 parameters:
@@ -152,6 +156,7 @@ stages:
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
+                  tridentRepoName: ${{ parameters.tridentRepoName }}
 
               - template: ../trident_images/build-image.yml
                 parameters:
@@ -161,6 +166,7 @@ stages:
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
+                  tridentRepoName: ${{ parameters.tridentRepoName }}
 
       - ${{ if eq(parameters.includeUKI, true) }}:
           - stage: BuildImagesUKI
@@ -181,6 +187,7 @@ stages:
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
                   useStagedSshKeys: true
+                  tridentRepoName: ${{ parameters.tridentRepoName }}
 
               - template: ../trident_images/build-image.yml
                 parameters:
@@ -191,6 +198,7 @@ stages:
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
                   useStagedSshKeys: true
+                  tridentRepoName: ${{ parameters.tridentRepoName }}
 
               - template: ../trident_images/build-image.yml
                 parameters:
@@ -201,6 +209,7 @@ stages:
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
                   useStagedSshKeys: true
+                  tridentRepoName: ${{ parameters.tridentRepoName }}
 
   - stage: ServicingTesting
     displayName: Servicing Testing
