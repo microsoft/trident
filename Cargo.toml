@@ -95,6 +95,7 @@ tonic-prost = "0.14.2"
 tonic-prost-build = "0.14.2"
 tower = "0.5.2"
 tracing = "0.1.41"
+tracing-journald = "0.3.0"
 tracing-subscriber = { version = "0.3.19", features = ["json"] }
 url = { version = "2.5.4", features = ["serde"] }
 uuid = { version = "1.11.0", features = ["serde", "v4"] }
