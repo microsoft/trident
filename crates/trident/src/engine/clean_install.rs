@@ -342,11 +342,13 @@ pub(crate) fn finalize_clean_install(
     }
 
     // Persist the Trident background log and metrics file to the new root
-    engine::persist_background_log_and_metrics(
-        &state.host_status().spec.trident.datastore_path,
-        Some(new_root.path()),
-        state.host_status().servicing_state,
-    );
+    if !ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
+        engine::persist_background_log_and_metrics(
+            &state.host_status().spec.trident.datastore_path,
+            Some(new_root.path()),
+            state.host_status().servicing_state,
+        );
+    }
 
     if let Err(e) = new_root.unmount_all() {
         error!("Failed to unmount new root: {e:?}");
