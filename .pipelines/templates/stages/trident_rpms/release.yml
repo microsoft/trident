@@ -5,6 +5,8 @@ parameters:
     values:
       - arm64
       - amd64
+  - name: tridentRepoDirectory
+    type: string
 
 steps:
   - script: |
@@ -12,6 +14,7 @@ steps:
       TRIDENT_VERSION=$(python3 ./scripts/get-version.py "$(Build.BuildNumber)" --commit)
       echo "##vso[task.setvariable variable=trident_version]$TRIDENT_VERSION"
     displayName: "Setting Trident version"
+    workingDirectory: ${{ parameters.tridentRepoDirectory }}
 
   - task: onebranch.pipeline.version@1
     displayName: "Set build number"

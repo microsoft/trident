@@ -110,6 +110,7 @@ stages:
               - template: release.yml
                 parameters:
                   targetArchitecture: ${{ parameters.targetArchitecture }}
+                  tridentRepoDirectory: $(TRIDENT_SOURCE_DIR)
 
       - ${{ elseif eq( parameters.targetArchitecture, 'arm64' ) }}:
           - job: BuildTrident_${{ parameters.targetArchitecture }}
@@ -148,3 +149,4 @@ stages:
               - template: release.yml
                 parameters:
                   targetArchitecture: ${{ parameters.targetArchitecture }}
+                  tridentRepoDirectory: $(TRIDENT_SOURCE_DIR)
