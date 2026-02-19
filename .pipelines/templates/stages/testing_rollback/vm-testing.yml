@@ -1,4 +1,10 @@
 parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
   - name: testingRun
     displayName: "Download prebuilt test artifacts"
     type: boolean
@@ -124,6 +130,7 @@ stages:
               platform: qemu
               flavor: qemu-grub
               testSecureBoot: ${{ parameters.testSecureBoot }}
+              tridentRepoName: ${{ parameters.tridentRepoName }}
       - ${{ if eq(parameters.includeQemu, true) }}:
           - template: testing-template.yml
             parameters:
@@ -139,6 +146,7 @@ stages:
               skipRuntimeUpdateTesting: true
               skipNetplanRuntimeTesting: true
               testSecureBoot: ${{ parameters.testSecureBoot }}
+              tridentRepoName: ${{ parameters.tridentRepoName }}
       - ${{ if eq(parameters.includeUKI, true) }}:
           - template: testing-template.yml
             parameters:
@@ -147,3 +155,4 @@ stages:
               platform: qemu
               flavor: uki
               testSecureBoot: ${{ parameters.testSecureBoot }}
+              tridentRepoName: ${{ parameters.tridentRepoName }}

@@ -1,4 +1,10 @@
 parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
   - name: buildPurpose
     type: string
     default: "post_merge"
@@ -36,6 +42,8 @@ jobs:
 
     steps:
       - template: ../common_tasks/checkout_trident.yml
+        parameters:
+          tridentRepoName: ${{ parameters.tridentRepoName }}
       - template: ../common_tasks/avoid-pypi-usage.yml
       - bash: |
           python3 ./tests/e2e_tests/helpers/read_target_configurations.py \

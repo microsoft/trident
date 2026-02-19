@@ -1,4 +1,10 @@
 parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
   - name: label
     type: string
     displayName: "Label for the image"
@@ -79,6 +85,8 @@ jobs:
 
     steps:
       - template: ../common_tasks/checkout_trident.yml
+        parameters:
+          tridentRepoName: ${{ parameters.tridentRepoName }}
       - template: ../common_tasks/avoid-pypi-usage.yml
 
       - ${{ if parameters.downloadGoTools }}:

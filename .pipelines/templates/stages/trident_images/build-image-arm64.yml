@@ -1,4 +1,10 @@
 parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
   - name: label
     type: string
     displayName: "Label for the image"
@@ -22,9 +28,9 @@ parameters:
     displayName: MIC Build Type
     type: string
     values:
-    - dev
-    - preview
-    - release
+      - dev
+      - preview
+      - release
     default: release
 
   - name: micVersion
@@ -50,6 +56,8 @@ jobs:
 
     steps:
       - template: ../common_tasks/checkout_trident.yml
+        parameters:
+          tridentRepoName: ${{ parameters.tridentRepoName }}
       - template: ../common_tasks/avoid-pypi-usage.yml
 
       - task: DownloadPipelineArtifact@2
@@ -81,7 +89,7 @@ jobs:
           # Use same build id for baseimg and rpms
           rpmsVersion: $(BASEIMG_VERSION)
           baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
-          baseimgTypes: 
+          baseimgTypes:
             - ${{ parameters.baseimgType }}
           useStagedSshKeys: ${{ parameters.useStagedSshKeys }}
           micArchitecture: arm64

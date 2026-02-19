@@ -41,7 +41,9 @@ parameters:
 
   - name: tridentRepoName
     type: string
-    default: self
+    values:
+      - self
+      - trident
 
 stages:
   - stage: ${{ parameters.stageName }}
@@ -71,6 +73,8 @@ stages:
 
         steps:
           - template: ../common_tasks/checkout_trident.yml
+            parameters:
+              tridentRepoName: ${{ parameters.tridentRepoName }}
           - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../common_tasks/update-protoc.yml
             parameters:

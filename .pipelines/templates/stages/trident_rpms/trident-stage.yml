@@ -1,4 +1,10 @@
 parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
   - name: "stageType"
     displayName: "Pipeline configuration type"
     type: string
@@ -43,7 +49,7 @@ parameters:
 stages:
   # Build the trident rpms if forceTridentRebuild is true, or if the stage type is
   # one that requires a build (pr, pr-e2e, ci).
-  # 
+  #
   # We do not currently stage arm64 binaries, so always build them for now.
   - ${{ if or(eq(parameters.tridentBuildOptions, 'forceBuild'), eq(parameters.targetArchitecture, 'arm64'), eq(parameters.stageType, 'pr'), eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
       - template: build-source.yml
@@ -58,6 +64,7 @@ stages:
             osModifierBuildType: dev
           ${{ else }}:
             osModifierBuildType: preview
+          tridentRepoName: ${{ parameters.tridentRepoName }}
 
   - ${{ elseif and(ne(parameters.tridentBuildOptions, 'prebuilt'), eq(parameters.targetArchitecture, 'amd64')) }}:
       - template: ../download_staged/download-staged.yml
