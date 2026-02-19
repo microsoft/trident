@@ -109,3 +109,4 @@ stages:
       includeAzure: ${{ parameters.includeAzure }}
       includeUKI: ${{ parameters.includeUKI }}
       dependsOnStage: CreateBaseImageConfig
+      tridentRepoName: self

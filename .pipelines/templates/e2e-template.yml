@@ -265,6 +265,7 @@ stages:
       # fails in pipeline to reconnect to VM after first A/B update,
       # so default to false for now
       includeQemuGrub: false
+      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # Test Servicing on VMs
   - template: stages/testing_servicing/vm-testing.yml
@@ -278,6 +279,7 @@ stages:
       updateIterationCount: ${{ parameters.numberOfUpdateIterations }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
       testSecureBoot: ${{ parameters.testSecureBoot }}
+      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # TESTING stages for PRERELEASE
   - ${{ if eq(parameters.stageType, 'pre') }}:
