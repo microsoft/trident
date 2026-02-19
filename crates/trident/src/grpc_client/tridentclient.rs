@@ -1,6 +1,6 @@
 use std::ops::ControlFlow;
 
-use log::{info, log, Level};
+use log::info;
 use tonic::{
     transport::{Channel, Endpoint},
     Request, Streaming,
@@ -9,7 +9,7 @@ use url::Url;
 
 use trident_proto::v1::{
     servicing_response::Response as ResponseBody, streaming_service_client::StreamingServiceClient,
-    version_service_client::VersionServiceClient, LogLevel, RebootHandling as ProtoRebootHandling,
+    version_service_client::VersionServiceClient, RebootHandling as ProtoRebootHandling,
     RebootManagement, RebootStatus, ServicingResponse, StatusCode, StreamDiskRequest,
     VersionRequest,
 };
@@ -231,18 +231,7 @@ async fn handle_servicing_response(
     match body {
         ResponseBody::Started(_) => info!("Servicing started"),
         ResponseBody::Log(log_entry) => {
-            let log_level = match log_entry.level() {
-                LogLevel::Unspecified => Level::Info,
-                LogLevel::Trace => Level::Trace,
-                LogLevel::Debug => Level::Debug,
-                LogLevel::Info => Level::Info,
-                LogLevel::Warn => Level::Warn,
-                LogLevel::Error => Level::Error,
-            };
-
-            let target = format!("DAEMON::{}", log_entry.target);
-
-            log!(target: &target, log_level, "{}", log_entry.message);
+            log_entry.log(Some("DAEMON"));
         }
         ResponseBody::Completed(status) => {
             match (status.status(), status.error.as_ref()) {

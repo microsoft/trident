@@ -5,6 +5,8 @@ use chrono::{DateTime, Utc};
 use log::{Level, Log};
 use tokio::sync::mpsc::UnboundedSender;
 
+use trident_proto::v1::{FileLocation, Log as ProtoLog, LogLevel};
+
 #[derive(Default, Clone)]
 pub struct LogForwarder {
     sender: Arc<RwLock<Option<UnboundedSender<ForwardedLogRecord>>>>,
@@ -85,6 +87,21 @@ impl From<&log::Record<'_>> for ForwardedLogRecord {
             file: value.file().unwrap_or_default().to_string(),
             line: value.line().unwrap_or_default(),
             timestamp: Utc::now(),
+        }
+    }
+}
+
+impl From<ForwardedLogRecord> for ProtoLog {
+    fn from(value: ForwardedLogRecord) -> Self {
+        Self {
+            message: value.message,
+            level: LogLevel::from(value.level) as i32,
+            target: value.target,
+            module: value.module,
+            location: Some(FileLocation {
+                path: value.file,
+                line: value.line,
+            }),
         }
     }
 }
