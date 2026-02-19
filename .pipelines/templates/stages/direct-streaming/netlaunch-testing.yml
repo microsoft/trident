@@ -54,6 +54,8 @@ stages:
             hostArchitecture: arm64
 
         variables:
+          - name: tridentSourceDirectory
+            value: $(Pipeline.Workspace)/s/trident
           - name: testImageName
             value: ${{ parameters.streamingImageDistro }}-direct-streaming-testimage-${{ parameters.architecture }}
           - name: installerISOName

@@ -95,7 +95,7 @@ stages:
             value: $(TRIDENT_CONFIG_PATH)/test-selection.yaml
 
           - name: ob_outputDirectory
-            value: $(Pipeline.Workspace)/s/trident/deployment_logs
+            value: $(TRIDENT_SOURCE_DIR)/deployment_logs
 
           - name: ob_artifactBaseName
             value: $(TRIDENT_CONFIGURATION_NAME)_baremetal_${{ parameters.runtimeEnv }}_deployment_log_$(System.JobAttempt)
