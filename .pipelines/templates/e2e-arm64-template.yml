@@ -73,3 +73,4 @@ stages:
       - template: direct-streaming-test.yml
         parameters:
           architecture: arm64
+          tridentRepoName: ${{ parameters.tridentRepoName }}
