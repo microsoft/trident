@@ -3438,11 +3438,13 @@ dependencies = [
 name = "trident-proto"
 version = "1.0.0"
 dependencies = [
+ "log",
  "prost",
  "prost-types",
  "tonic",
  "tonic-prost",
  "tonic-prost-build",
+ "tracing",
 ]
 
 [[package]]

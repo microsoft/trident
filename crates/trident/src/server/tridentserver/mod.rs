@@ -6,7 +6,7 @@
 
 use std::{panic, sync::Arc, time::SystemTime};
 
-use log::{error, info, warn, Level};
+use log::{error, info, warn};
 use prost_types::Timestamp;
 use tokio::{
     sync::{
@@ -19,10 +19,7 @@ use tokio_util::sync::CancellationToken;
 use tonic::{Response, Status};
 
 use trident_api::error::TridentError;
-use trident_proto::v1::{
-    servicing_response::Response as ResponseType, FileLocation, Log, LogLevel, ServicingResponse,
-    Started,
-};
+use trident_proto::v1::{servicing_response::Response as ResponseType, ServicingResponse, Started};
 
 use crate::{
     agentconfig::AgentConfig,
@@ -138,26 +135,9 @@ impl TridentServer {
                             break;
                         };
 
-                        let level = match log_record.level {
-                            Level::Error => LogLevel::Error,
-                            Level::Warn => LogLevel::Warn,
-                            Level::Info => LogLevel::Info,
-                            Level::Debug => LogLevel::Debug,
-                            Level::Trace => LogLevel::Trace,
-                        };
-
                         if let Err(err) = grpc_log_tx.send(Ok(ServicingResponse {
                             timestamp: Some(Timestamp::from(SystemTime::now())),
-                            response: Some(ResponseType::Log(Log {
-                                message: log_record.message,
-                                level: level as i32,
-                                target: log_record.target,
-                                module: log_record.module,
-                                location: Some(FileLocation {
-                                    path: log_record.file,
-                                    line: log_record.line,
-                                }),
-                            })),
+                            response: Some(ResponseType::Log(log_record.into())),
                         })) {
                             error!("Failed to send log message in streaming response: {}", err);
                             break;

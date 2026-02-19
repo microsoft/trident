@@ -5,12 +5,14 @@ use std::{
 
 use clap::{Args, Subcommand};
 
-use super::{AllowedOperation, GetKind};
+use trident_proto::TRIDENT_DEFAULT_SOCKET_URI;
+
+use super::{AllowedOperation, GetKind, DEFAULT_HOST_CONFIG_PATH};
 
 #[derive(Args, Debug)]
 pub struct ClientArgs {
     /// The server address to connect to
-    #[clap(short, long, default_value = "unix:///run/trident/trident.sock")]
+    #[clap(short, long, default_value = TRIDENT_DEFAULT_SOCKET_URI)]
     pub server: String,
 
     #[clap(subcommand)]
@@ -22,7 +24,7 @@ pub enum ClientCommands {
     /// Initiate an install of Azure Linux
     Install {
         /// The new configuration to apply
-        #[clap(index = 1, default_value = "/etc/trident/config.yaml")]
+        #[clap(index = 1, default_value = DEFAULT_HOST_CONFIG_PATH)]
         config: PathBuf,
 
         /// Comma-separated list of operations that Trident will be allowed to perform
@@ -37,7 +39,7 @@ pub enum ClientCommands {
     /// Start or continue an A/B update from an existing install
     Update {
         /// The new configuration to apply
-        #[clap(index = 1, default_value = "/etc/trident/config.yaml")]
+        #[clap(index = 1, default_value = DEFAULT_HOST_CONFIG_PATH)]
         config: PathBuf,
 
         /// Comma-separated list of operations that Trident will be allowed to perform
@@ -87,7 +89,7 @@ pub enum ClientCommands {
     #[clap(name = "start-network", hide(true))]
     StartNetwork {
         /// The new configuration to apply
-        #[clap(index = 1, default_value = "/etc/trident/config.yaml")]
+        #[clap(index = 1, default_value = DEFAULT_HOST_CONFIG_PATH)]
         config: PathBuf,
     },
 
@@ -109,7 +111,7 @@ pub enum ClientCommands {
     /// validated.
     Validate {
         /// Path to a Host Configuration file
-        #[clap(index = 1, default_value = "/etc/trident/config.yaml")]
+        #[clap(index = 1, default_value = DEFAULT_HOST_CONFIG_PATH)]
         config: PathBuf,
     },
 

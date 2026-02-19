@@ -12,6 +12,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     tonic_prost_build::configure()
         .server_mod_attribute(".", "#[cfg(feature = \"server\")]")
+        .skip_debug(["trident.v1.Log"])
         .compile_protos(&proto_files, &[include_dir])?;
 
     Ok(())

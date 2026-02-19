@@ -72,7 +72,7 @@ tonic-middleware = { workspace = true }
 sysdefs = { path = "../sysdefs" }
 osutils = { path = "../osutils" }
 trident_api = { path = "../trident_api" }
-trident-proto = { path = "../trident-proto", features = ["server"] }
+trident-proto = { path = "../trident-proto", features = ["server", "log"] }
 
 # Optional dependencies used by functional tests
 indoc = { workspace = true, optional = true }
