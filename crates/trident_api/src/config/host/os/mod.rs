@@ -7,6 +7,7 @@ use std::{
 use log::warn;
 use netplan_types::NetworkConfig;
 use serde::{Deserialize, Serialize};
+use strum_macros::IntoStaticStr;
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
@@ -168,9 +169,10 @@ impl FromStr for SelinuxMode {
 /// This configuration option allows specifying how Trident should
 /// populate the UEFI fallback boot files during OS installation or
 /// update.
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq, Copy)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq, Copy, IntoStaticStr)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
+#[strum(serialize_all = "kebab-case")]
 pub enum UefiFallbackMode {
     /// # Conservative
     ///
@@ -197,17 +199,6 @@ pub enum UefiFallbackMode {
     ///
     /// No UEFI fallback boot files are installed.
     Disabled,
-}
-
-impl Display for UefiFallbackMode {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        let mode_str = match self {
-            UefiFallbackMode::Conservative => "conservative",
-            UefiFallbackMode::Optimistic => "optimistic",
-            UefiFallbackMode::Disabled => "disabled",
-        };
-        write!(f, "{mode_str}")
-    }
 }
 
 /// Configuration for the management OS.
