@@ -78,6 +78,7 @@ stages:
                 parameters:
                   codeCoverage: ${{ parameters.codeCoverage }}
                   unitTestCoverageBaseline: 70 # Unit tests
+                  tridentRepoDirectory: $(TRIDENT_SOURCE_DIR)
 
           - job: BuildTrident_${{ parameters.targetArchitecture }}
             displayName: Build Trident 3.0 ${{ parameters.targetArchitecture }} RPMs
