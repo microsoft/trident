@@ -1,4 +1,10 @@
 parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
   - name: testingRun
     displayName: "Download prebuilt test artifacts"
     type: boolean
@@ -48,8 +54,6 @@ stages:
             hostArchitecture: arm64
 
         variables:
-          - name: tridentSourceDirectory
-            value: $(Build.SourcesDirectory)
           - name: testImageName
             value: ${{ parameters.streamingImageDistro }}-direct-streaming-testimage-${{ parameters.architecture }}
           - name: installerISOName
@@ -62,6 +66,10 @@ stages:
             value: 4000
 
         steps:
+          - template: ../common_tasks/checkout_trident.yml
+            parameters:
+              tridentRepoName: ${{ parameters.tridentRepoName }}
+
           # Download all test images
           - template: ../testing_common/download-test-images.yml
             parameters:
@@ -97,7 +105,7 @@ stages:
               sudo systemctl restart virtlogd.socket
 
               ./tools/virt-deploy create --mem 12 --disks 32,32
-            workingDirectory: $(tridentSourceDirectory)
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: "Creating virt-deploy VM"
 
           - bash: |
@@ -115,7 +123,7 @@ stages:
                   --enable-secure-boot \
                   --timeout-in-seconds 2400
 
-            workingDirectory: $(tridentSourceDirectory)
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: "🚀 Deploy direct streaming ISO and validate stream-image for ${{ parameters.streamingImageDistro }} ${{ parameters.architecture }}"
             timeoutInMinutes: 40
 
@@ -125,4 +133,5 @@ stages:
                   --screenshot-filename "direct-streaming.png" \
                   --artifacts-folder "$(ob_outputDirectory)"
             displayName: "📷 Capture screenshot: direct streaming"
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
             condition: succeededOrFailed()

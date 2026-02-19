@@ -79,6 +79,7 @@ stages:
         parameters:
           architecture: ${{ parameters.architecture }}
           streamingImageDistro: azurelinux
+          tridentRepoName: ${{ parameters.tridentRepoName }}
 
   - ${{ if parameters.testUbuntuStreamingImage }}:
       - stage: BuildImagesForDirectStreaming_ubuntu_${{ parameters.architecture }}
@@ -110,3 +111,4 @@ stages:
         parameters:
           architecture: ${{ parameters.architecture }}
           streamingImageDistro: ubuntu
+          tridentRepoName: ${{ parameters.tridentRepoName }}
