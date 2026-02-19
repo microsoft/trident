@@ -62,6 +62,8 @@ stages:
           - template: ../common_tasks/update-protoc.yml
           - template: ../common_tasks/rustup.yml
           - template: ../common_tasks/cargo-auth.yml
+            parameters:
+              cargoConfigPath: $(TRIDENT_SOURCE_DIR)/.cargo/config
 
           - bash: |
               set -eux

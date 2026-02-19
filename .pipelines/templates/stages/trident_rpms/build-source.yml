@@ -72,6 +72,8 @@ stages:
               # need newer rust for cargo-nextest, use rustup.yml to install
               - template: ../common_tasks/rustup.yml
               - template: ../common_tasks/cargo-auth.yml
+                parameters:
+                  cargoConfigPath: $(TRIDENT_SOURCE_DIR)/.cargo/config
               - template: unit-test.yml
                 parameters:
                   codeCoverage: ${{ parameters.codeCoverage }}
@@ -98,6 +100,8 @@ stages:
               - template: ../common_tasks/os-info.yml
               - template: ../common_tasks/avoid-pypi-usage.yml
               - template: ../common_tasks/cargo-auth.yml
+                parameters:
+                  cargoConfigPath: $(TRIDENT_SOURCE_DIR)/.cargo/config
               - template: ../common_tasks/download-osmodifier.yml
                 parameters:
                   targetArchitecture: ${{ parameters.targetArchitecture }}
@@ -130,6 +134,8 @@ stages:
                   tridentRepoName: ${{ parameters.tridentRepoName }}
               - template: ../common_tasks/avoid-pypi-usage.yml
               - template: ../common_tasks/cargo-auth.yml
+                parameters:
+                  cargoConfigPath: $(TRIDENT_SOURCE_DIR)/.cargo/config
               - script: |
                   set -eux
                   sudo systemctl start docker
