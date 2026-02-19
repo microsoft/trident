@@ -62,7 +62,7 @@ stages:
 
           - template: ../common_tasks/cargo-auth.yml
             parameters:
-              cargoConfigPath: $(TRIDENT_SOURCE_DIR)/.cargo/config
+              cargoConfigPath: $(TRIDENT_SOURCE_DIR)/.cargo/config.toml
 
           - template: ../testing_vm/netlaunch-prep.yml
 

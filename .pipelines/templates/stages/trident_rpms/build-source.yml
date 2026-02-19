@@ -73,7 +73,7 @@ stages:
               - template: ../common_tasks/rustup.yml
               - template: ../common_tasks/cargo-auth.yml
                 parameters:
-                  cargoConfigPath: $(TRIDENT_SOURCE_DIR)/.cargo/config
+                  cargoConfigPath: $(TRIDENT_SOURCE_DIR)/.cargo/config.toml
               - template: unit-test.yml
                 parameters:
                   codeCoverage: ${{ parameters.codeCoverage }}
@@ -101,7 +101,7 @@ stages:
               - template: ../common_tasks/avoid-pypi-usage.yml
               - template: ../common_tasks/cargo-auth.yml
                 parameters:
-                  cargoConfigPath: $(TRIDENT_SOURCE_DIR)/.cargo/config
+                  cargoConfigPath: $(TRIDENT_SOURCE_DIR)/.cargo/config.toml
               - template: ../common_tasks/download-osmodifier.yml
                 parameters:
                   targetArchitecture: ${{ parameters.targetArchitecture }}
@@ -135,7 +135,7 @@ stages:
               - template: ../common_tasks/avoid-pypi-usage.yml
               - template: ../common_tasks/cargo-auth.yml
                 parameters:
-                  cargoConfigPath: $(TRIDENT_SOURCE_DIR)/.cargo/config
+                  cargoConfigPath: $(TRIDENT_SOURCE_DIR)/.cargo/config.toml
               - script: |
                   set -eux
                   sudo systemctl start docker
