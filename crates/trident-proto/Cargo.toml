@@ -5,6 +5,7 @@ edition = "2024"
 license = "MIT"
 
 [dependencies]
+const_format.workspace = true
 log = { workspace = true, optional = true }
 prost.workspace = true
 prost-types.workspace = true

@@ -3438,6 +3438,7 @@ dependencies = [
 name = "trident-proto"
 version = "1.0.0"
 dependencies = [
+ "const_format",
  "log",
  "prost",
  "prost-types",
