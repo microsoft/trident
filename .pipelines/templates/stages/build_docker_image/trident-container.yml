@@ -1,10 +1,11 @@
-stages:
+parameters:
   - name: tridentRepoName
     type: string
     values:
       - self
       - trident
 
+stages:
   - stage: BuildTridentContainerImage
     displayName: Build Docker Image
     dependsOn:
