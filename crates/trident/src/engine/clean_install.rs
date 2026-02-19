@@ -324,23 +324,25 @@ pub(crate) fn finalize_clean_install(
         status.servicing_state = ServicingState::CleanInstallFinalized
     })?;
 
+    // Persist the datastore to the new root
     if !ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
-        // Persist the datastore to the new root
         state.persist(&join_relative(
             new_root.path(),
             &state.host_status().spec.trident.datastore_path,
         ))?;
         state.close();
+    }
 
-        // Metric for clean install provisioning time in seconds
-        if let Some(start_time) = clean_install_start_time {
-            tracing::info!(
-                metric_name = "clean_install_provisioning_secs",
-                value = start_time.elapsed().as_secs_f64()
-            );
-        }
+    // Metric for clean install provisioning time in seconds
+    if let Some(start_time) = clean_install_start_time {
+        tracing::info!(
+            metric_name = "clean_install_provisioning_secs",
+            value = start_time.elapsed().as_secs_f64()
+        );
+    }
 
-        // Persist the Trident background log and metrics file to the new root
+    // Persist the Trident background log and metrics file to the new root
+    if !ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
         engine::persist_background_log_and_metrics(
             &state.host_status().spec.trident.datastore_path,
             Some(new_root.path()),
