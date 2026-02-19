@@ -61,6 +61,8 @@ stages:
             fetchDepth: 1
 
           - template: ../common_tasks/cargo-auth.yml
+            parameters:
+              cargoConfigPath: $(TRIDENT_SOURCE_DIR)/.cargo/config
 
           - template: ../testing_vm/netlaunch-prep.yml
 
