@@ -165,6 +165,7 @@ steps:
               mkdir -p $(Build.ArtifactStagingDirectory)/images
               mv artifacts/${{ baseimgType }}.vhdx $(Build.ArtifactStagingDirectory)/images/
             displayName: "Download Ubuntu Base Image - ${{ baseimgType }}"
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
 
       - ${{ else }}:
           - template: common/base-images-download-template.yaml@platform-pipelines
