@@ -15,6 +15,7 @@ parameters:
       - "ci"
       - "pre"
       - "full-validation"
+      - "crate-publishing"
     displayName: "Stage to run"
 
   - name: blockPublishing
@@ -27,9 +28,21 @@ parameters:
     type: number
     default: 3
 
+  - name: cratePublishingDryRun
+    type: boolean
+    displayName: "crate-publishing: Perform a dry run without actually publishing the crates"
+    default: true
+
 stages:
   - ${{ if eq(parameters.targetStage, 'pr') }}:
       - template: pr-template.yml
+
+  - ${{ elseif eq(parameters.targetStage, 'crate-publishing') }}:
+      - template: stages/publish_crates/publish-trident-crates.yml
+        parameters:
+          dryRun: ${{ parameters.cratePublishingDryRun }}
+          cargoRegistry: TridentDev
+
   - ${{ else }}:
       - template: e2e-template.yml
         parameters:
