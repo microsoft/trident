@@ -56,4 +56,5 @@ extends:
     stages:
       - template: templates/stages/publish_crates/publish-trident-crates.yml
         parameters:
-          cargoRegistry: "TridentDev"
+          dryRun: ${{ parameters.dryRun }}
+          cargoRegistry: ${{ parameters.cargoRegistry }}
