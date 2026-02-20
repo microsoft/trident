@@ -61,6 +61,9 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 					"systemd-sysext",
 				},
 			},
+			"uki": map[string]interface{}{
+				"mode": "passthrough",
+			},
 		},
 	}
 	if testConfig.Uki {
