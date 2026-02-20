@@ -37,7 +37,7 @@ stages:
   - ${{ if eq(parameters.targetStage, 'pr') }}:
       - template: pr-template.yml
 
-  - ${{ elseif eq(parameters.targetStage, 'crate-publishing')}}:
+  - ${{ elseif eq(parameters.targetStage, 'crate-publishing') }}:
       - template: stages/publish_crates/publish-trident-crates.yml
         parameters:
           dryRun: ${{ parameters.cratePublishingDryRun }}

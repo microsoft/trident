@@ -31,7 +31,7 @@ stages:
           - script: |
               set -eux
 
-              if [ ${{ parameters.dryRun }} = true ]; then
+              if [ "${{ parameters.dryRun }}" = "True" ]; then
                 DRY_RUN_FLAG="--dry-run"
               else
                 DRY_RUN_FLAG=""
