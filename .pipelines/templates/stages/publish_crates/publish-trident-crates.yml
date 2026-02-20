@@ -24,6 +24,7 @@ stages:
           ob_outputDirectory: "$(Build.SourcesDirectory)/out"
 
         steps:
+          - template: ../common_tasks/update-protoc.yml
           - template: ../common_tasks/rustup.yml
           - template: ../common_tasks/cargo-auth.yml
 
