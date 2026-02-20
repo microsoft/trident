@@ -3,6 +3,9 @@ parameters:
     type: string
     displayName: "Cargo registry to publish to"
     default: "PolarCoreArtifacts"
+    values:
+      - "PolarCoreArtifacts"
+      - "TridentDev"
 
   - name: dryRun
     type: boolean

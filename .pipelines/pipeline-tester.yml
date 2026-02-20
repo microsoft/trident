@@ -12,7 +12,13 @@ parameters:
       - "pr-e2e"
       - "ci"
       - "pre"
+      - "crate-publishing"
     displayName: "Stage to run"
+
+  - name: cratePublishingDryRun
+    type: boolean
+    displayName: "crate-publishing: Perform a dry run without actually publishing the crates"
+    default: true
 
 trigger: none
 
@@ -77,3 +83,4 @@ extends:
         parameters:
           targetStage: ${{ parameters.targetStage }}
           blockPublishing: true
+          cratePublishingDryRun: ${{ parameters.cratePublishingDryRun }}
