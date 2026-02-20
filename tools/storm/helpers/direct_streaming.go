@@ -118,11 +118,11 @@ func (h *DirectStreamingHelper) directStreaming(tc storm.TestCase) error {
 	if err != nil {
 		return fmt.Errorf("failed to create temp file for console log: %w", err)
 	}
-	defer logFile.Close()
+	defer os.Remove(logFile.Name())
 	defer func() {
 		tc.ArtifactBroker().PublishLogFile("vm-serial.log", logFile.Name())
 	}()
-	defer os.Remove(logFile.Name())
+	defer logFile.Close()
 
 	err = libvirtutils.WaitForVmSerialLogLoginLibvirt(bootCtx, lv, domain, io.MultiWriter(logFile, os.Stdout))
 	if err != nil {
