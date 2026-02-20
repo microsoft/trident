@@ -16,13 +16,17 @@ stages:
       - job: PublishCrates
         displayName: Publish Rust Crates
         pool:
-          vmImage: "ubuntu-latest"
+          type: linux
+        variables:
+          ob_outputDirectory: "$(Build.SourcesDirectory)/out"
 
         steps:
           - template: ../common_tasks/rustup.yml
           - template: ../common_tasks/cargo-auth.yml
 
           - script: |
+              set -eux
+
               if [ ${{ parameters.dryRun }} = true ]; then
                 DRY_RUN_FLAG="--dry-run"
               else
