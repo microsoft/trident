@@ -28,11 +28,6 @@ resources:
       name: OneBranch.Pipelines/GovernedTemplates
       ref: refs/heads/main
 
-    - repository: platform-pipelines
-      type: git
-      name: platform-pipelines
-      ref: refs/heads/main
-
 extends:
   template: v2/OneBranch.Official.CrossPlat.yml@templates
   parameters:
