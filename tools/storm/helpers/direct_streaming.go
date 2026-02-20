@@ -114,7 +114,7 @@ func (h *DirectStreamingHelper) directStreaming(tc storm.TestCase) error {
 		return fmt.Errorf("failed to find domain by name '%s': %w", h.args.VmName, err)
 	}
 
-	logFile, err := os.CreateTemp("", "console.log")
+	logFile, err := os.CreateTemp("", "console-*.log")
 	if err != nil {
 		return fmt.Errorf("failed to create temp file for console log: %w", err)
 	}
