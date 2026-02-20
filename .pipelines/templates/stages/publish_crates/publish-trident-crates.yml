@@ -1,0 +1,36 @@
+parameters:
+  - name: cargoRegistry
+    type: string
+    displayName: "Cargo registry to publish to"
+    default: "PolarCoreArtifacts"
+
+  - name: dryRun
+    type: boolean
+    displayName: "Perform a dry run without actually publishing the crates"
+    default: false
+
+stages:
+  - stage: PublishCrates
+    displayName: Publish Rust Crates
+    jobs:
+      - job: PublishCrates
+        displayName: Publish Rust Crates
+        pool:
+          vmImage: "ubuntu-latest"
+
+        steps:
+          - template: ../common_tasks/rustup.yml
+          - template: ../common_tasks/cargo-auth.yml
+
+          - script: |
+              if [ ${{ parameters.dryRun }} = true ]; then
+                DRY_RUN_FLAG="--dry-run"
+              else
+                DRY_RUN_FLAG=""
+              fi
+
+              cargo publish $DRY_RUN_FLAG \
+                -p trident-proto \
+                --registry ${{ parameters.cargoRegistry }}
+
+            displayName: "Publish trident-proto crate"
