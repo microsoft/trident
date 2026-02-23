@@ -149,6 +149,9 @@ pub enum InternalError {
         #[from]
         inner: HostConfigurationStaticValidationError,
     },
+
+    #[error("Failed to find partition with UUID '{0}' in the derived Host Configuration")]
+    DerivedHostConfigurationPartitionNotFound(String),
 }
 
 /// Identifies errors that occur when the user provides an invalid input.
