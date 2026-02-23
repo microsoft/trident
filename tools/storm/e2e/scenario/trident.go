@@ -51,6 +51,10 @@ type TridentE2EScenario struct {
 	originalConfig hostconfig.HostConfig
 	// Parameters specific to this host configuration
 	configParams TridentE2EHostConfigParams
+	// Test tags derived from the test-selection.yaml configuration. These
+	// tags (e.g. "test:base", "test:encryption") control which validation
+	// test cases run for this scenario.
+	testTags []string
 
 	// Storm scenario arguments, populated when the scenario is executed.
 	args struct {
@@ -92,6 +96,7 @@ func NewTridentE2EScenario(
 	hardware HardwareType,
 	runtime trident.RuntimeType,
 	testRings testrings.TestRingSet,
+	testTags []string,
 ) (*TridentE2EScenario, error) {
 	configClone, err := config.Clone()
 	if err != nil {
@@ -107,6 +112,7 @@ func NewTridentE2EScenario(
 		runtime:        runtime,
 		testRings:      testRings,
 		config:         configClone,
+		testTags:       testTags,
 	}, nil
 }
 
@@ -162,6 +168,24 @@ func (s *TridentE2EScenario) HardwareType() HardwareType {
 
 func (s *TridentE2EScenario) RuntimeType() trident.RuntimeType {
 	return s.runtime
+}
+
+// TestTags returns the test selection tags for this scenario (e.g. "test:base",
+// "test:encryption"). These are derived from the configuration's
+// test-selection.yaml during discovery.
+func (s *TridentE2EScenario) TestTags() []string {
+	return s.testTags
+}
+
+// HasTestTag reports whether the scenario has the given test tag. The tag
+// should include the "test:" prefix (e.g. "test:base").
+func (s *TridentE2EScenario) HasTestTag(tag string) bool {
+	for _, t := range s.testTags {
+		if t == tag {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
