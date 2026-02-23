@@ -31,7 +31,7 @@ use crate::{
 pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
     // Depending on the type of servicing, get the list of filesystems and
     // partitions sourced from the OS image that we need to deploy.
-    let (fs_from_img, partitions_from_img) = if ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE)
+    let (fs_from_img, partitions_from_img) = if !ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE)
     {
         // For regular servicing, we only care about filesystems declared in the
         // Host Configuration.
@@ -54,7 +54,7 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
     // If there are no filesystems sourced from the image, we have nothing to deploy?
     if fs_from_img.is_empty() && partitions_from_img.is_empty() {
         return Err(TridentError::internal(
-            "Deployment in progress but no filesystems are sourced from the image",
+            "Deployment in progress but no filesystems nor partitions are sourced from the image",
         ));
     }
 
@@ -175,8 +175,12 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
     })?;
 
     if !combined_images.is_empty() {
-        return Err(TridentError::new(InvalidInputError::CorruptOsImage))
-            .message("Filesystem listed in COSI metadata but not present");
+        return Err(TridentError::new(InvalidInputError::CorruptOsImage(
+            format!(
+                "The following image files were expected to be deployed but were not found in the OS image: {}",
+                combined_images.keys().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", ")
+            )
+        )));
     }
 
     Ok(())

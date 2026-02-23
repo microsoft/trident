@@ -415,6 +415,12 @@ fn create_cosi_partitioning_info(
     // This is needed because the protective MBR is not part of the GPT disk
     // structure and needs to be written separately when deploying the GPT
     // to disk.
+    ensure!(
+        raw_gpt_data.len() >= 2 * (disk_info.lba_size as usize),
+        "Raw GPT data size ({} bytes) is smaller than 2 LBAs size (LBA size {} bytes)",
+        raw_gpt_data.len(),
+        disk_info.lba_size
+    );
     let lba0 = raw_gpt_data[0..disk_info.lba_size as usize].to_vec();
 
     // Now get a reader for the image that contains the GPT.
