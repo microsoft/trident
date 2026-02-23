@@ -36,11 +36,14 @@ var (
 	tridentBinaryPath    string
 	osmodifierBinaryPath string
 	streamImage          bool
+	localProxyPath       string
 )
 
 const (
-	rcpModeLegacy = "cli"
-	rcpModeGrpc   = "grpc"
+	rcpModeLegacy         = "cli"
+	rcpModeGrpcLocalProxy = "grpc-local-proxy"
+	rcpModeGrpcInstall    = "grpc-install"
+	rcpModeGrpcStream     = "grpc-stream"
 )
 
 var backgroundLogstreamFull string
@@ -74,8 +77,8 @@ var rootCmd = &cobra.Command{
 
 		if rcpMode != "" {
 			log.Infof("Using RCP mode: %s", rcpMode)
-			if rcpMode != rcpModeGrpc && rcpMode != rcpModeLegacy {
-				log.Fatalf("Invalid RCP mode, must be: %s or %s, got: %s", rcpModeLegacy, rcpModeGrpc, rcpMode)
+			if rcpMode != rcpModeGrpcLocalProxy && rcpMode != rcpModeGrpcInstall && rcpMode != rcpModeGrpcStream && rcpMode != rcpModeLegacy {
+				log.Fatalf("Invalid RCP mode, must be: %s, %s, %s or %s, got: %s", rcpModeLegacy, rcpModeGrpcLocalProxy, rcpModeGrpcInstall, rcpModeGrpcStream, rcpMode)
 			}
 		} else {
 			if tridentBinaryPath != "" {
@@ -118,8 +121,20 @@ var rootCmd = &cobra.Command{
 		config.MaxPhonehomeFailures = maxFailures
 
 		if rcpMode != "" {
-			config.Rcp = &netlaunch.RcpConfiguration{
-				GrpcMode: rcpMode == rcpModeGrpc,
+			config.Rcp = &netlaunch.RcpConfiguration{}
+
+			// Map the CLI RCP mode to the config GRPC mode.
+			switch rcpMode {
+			case rcpModeGrpcLocalProxy:
+				config.Rcp.GrpcMode = netlaunch.GrpcModeLocalProxy
+				config.Rcp.LocalProxySocket = localProxyPath
+				log.Infof("Using local proxy socket path: %s", localProxyPath)
+			case rcpModeGrpcInstall:
+				config.Rcp.GrpcMode = netlaunch.GrpcModeInstall
+			case rcpModeGrpcStream:
+				config.Rcp.GrpcMode = netlaunch.GrpcModeStream
+			case rcpModeLegacy:
+				config.Rcp.GrpcMode = netlaunch.GrpcModeDisabled
 			}
 
 			if tridentBinaryPath != "" {
@@ -170,6 +185,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&tridentBinaryPath, "trident-binary", "", "", "Optional path to Trident binary to be copied into the VM, requires RCP mode.")
 	rootCmd.PersistentFlags().StringVarP(&osmodifierBinaryPath, "osmodifier-binary", "", "", "Optional path to Osmodifier binary to be copied into the VM, requires RCP mode.")
 	rootCmd.PersistentFlags().BoolVarP(&streamImage, "stream-image", "", false, "Use stream image for installation instead of the default method, requires RCP mode.")
+	rootCmd.PersistentFlags().StringVarP(&localProxyPath, "local-proxy-socket", "", "/tmp/rcp_local_proxy.sock", "Path to the local proxy socket to use when RCP mode is grpc-local-proxy")
 	rootCmd.Flags().StringVarP(&iso, "iso", "i", "", "ISO for Netlaunch testing")
 	rootCmd.MarkFlagRequired("iso-template")
 }

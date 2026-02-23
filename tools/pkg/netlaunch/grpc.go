@@ -1,16 +1,77 @@
 package netlaunch
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"tridenttools/pkg/tridentgrpc"
 	"tridenttools/pkg/tridentgrpc/tridentpbv1"
+	"tridenttools/pkg/tridentgrpc/tridentpbv1preview"
 
 	"github.com/fatih/color"
 	"github.com/sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 )
+
+func doGrpcInstall(ctx context.Context, conn net.Conn, hostConfiguration string) error {
+	tridentClient, err := tridentgrpc.NewTridentClientFromNetworkConnection(conn)
+	if err != nil {
+		return fmt.Errorf("failed to create Trident gRPC client from RCP connection: %w", err)
+	}
+	defer tridentClient.Close()
+
+	stream, err := tridentClient.Install(ctx, &tridentpbv1preview.InstallRequest{
+		Stage: &tridentpbv1preview.StageInstallRequest{
+			Config: &tridentpbv1preview.HostConfiguration{
+				Config: hostConfiguration,
+			},
+		},
+		Finalize: &tridentpbv1preview.FinalizeInstallRequest{
+			Reboot: &tridentpbv1.RebootManagement{
+				Handling: tridentpbv1.RebootHandling_TRIDENT_HANDLES_REBOOT,
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to start installation via gRPC: %w", err)
+	}
+
+	err = handleServicingResponseStream(stream)
+	if err != nil {
+		return fmt.Errorf("error during installation via gRPC: %w", err)
+	}
+
+	return nil
+}
+
+func doGrpcStream(ctx context.Context, conn net.Conn, imageUrl string, imageHash string) error {
+	tridentClient, err := tridentgrpc.NewTridentClientFromNetworkConnection(conn)
+	if err != nil {
+		return fmt.Errorf("failed to create Trident gRPC client from RCP connection: %w", err)
+	}
+	defer tridentClient.Close()
+
+	stream, err := tridentClient.StreamingServiceClient.StreamDisk(ctx, &tridentpbv1.StreamDiskRequest{
+		ImageUrl:  imageUrl,
+		ImageHash: &imageHash,
+		Reboot: &tridentpbv1.RebootManagement{
+			Handling: tridentpbv1.RebootHandling_TRIDENT_HANDLES_REBOOT,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to start streaming via gRPC: %w", err)
+	}
+
+	err = handleServicingResponseStream(stream)
+	if err != nil {
+		return fmt.Errorf("error during streaming via gRPC: %w", err)
+	}
+
+	return nil
+}
 
 func handleServicingResponseStream(stream grpc.ServerStreamingClient[tridentpbv1.ServicingResponse]) error {
 	for {

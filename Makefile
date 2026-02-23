@@ -553,7 +553,7 @@ IS_UBUNTU_24_OR_NEWER := $(shell \
 
 RUN_NETLAUNCH_TRIDENT_BIN ?= $(if $(filter yes,$(IS_UBUNTU_24_OR_NEWER)),bin/trident-azl3,bin/trident)
 
-.PHONY: run-netlaunch run-netlaunch-stream
+.PHONY: run-netlaunch run-netlaunch-stream run-netlaunch-proxy
 run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch validate artifacts/osmodifier $(RUN_NETLAUNCH_TRIDENT_BIN)
 	@echo "Using trident binary: $(RUN_NETLAUNCH_TRIDENT_BIN)"
 	@mkdir -p artifacts/test-image
@@ -579,16 +579,31 @@ run-netlaunch-stream: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin
 	@cp $(RUN_NETLAUNCH_TRIDENT_BIN) artifacts/test-image/trident
 	@cp artifacts/osmodifier artifacts/test-image/
 	@bin/netlaunch \
-	    --stream-image \
 	    --trident-binary $(RUN_NETLAUNCH_TRIDENT_BIN) \
 		--osmodifier-binary artifacts/osmodifier \
-		--rcp-agent-mode cli \
+		--rcp-agent-mode grpc-stream \
 	 	--iso $(NETLAUNCH_ISO) \
 		$(if $(NETLAUNCH_PORT),--port $(NETLAUNCH_PORT)) \
 		--config $(NETLAUNCH_CONFIG) \
 		--trident $(TRIDENT_CONFIG) \
-		--logstream \
+
 		--remoteaddress remote-addr \
+		--servefolder artifacts/test-image \
+		--trace-file trident-metrics.jsonl \
+		$(if $(LOG_TRACE),--log-trace)
+
+run-netlaunch-proxy: $(NETLAUNCH_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch artifacts/osmodifier $(RUN_NETLAUNCH_TRIDENT_BIN)
+	@echo "Using trident binary: $(RUN_NETLAUNCH_TRIDENT_BIN)"
+	@mkdir -p artifacts/test-image
+	@cp $(RUN_NETLAUNCH_TRIDENT_BIN) artifacts/test-image/trident
+	@cp artifacts/osmodifier artifacts/test-image/
+	@bin/netlaunch \
+	    --trident-binary $(RUN_NETLAUNCH_TRIDENT_BIN) \
+		--osmodifier-binary artifacts/osmodifier \
+		--rcp-agent-mode grpc-local-proxy \
+	 	--iso $(NETLAUNCH_ISO) \
+		$(if $(NETLAUNCH_PORT),--port $(NETLAUNCH_PORT)) \
+		--config $(NETLAUNCH_CONFIG) \
 		--servefolder artifacts/test-image \
 		--trace-file trident-metrics.jsonl \
 		$(if $(LOG_TRACE),--log-trace)

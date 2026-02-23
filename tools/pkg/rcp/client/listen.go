@@ -95,18 +95,44 @@ func ListenAndAccept(ctx context.Context, certProvider tlscerts.CertProvider, po
 		defer listener.Close()
 		for {
 			conn, err := listener.Accept()
-			if err == nil {
-				logrus.Infof("RCP accepted connection from %s", conn.RemoteAddr().String())
-				acceptCancel() // Stop the listener-closure goroutine
-				connChan <- conn
-				return
-			} else if acceptCtx.Err() != nil {
-				// Context was cancelled
-				logrus.Debug("RCP listener context cancelled, stopping accept loop")
+			if err != nil {
+				if acceptCtx.Err() != nil {
+					// Context was cancelled
+					logrus.Debug("RCP listener context cancelled, stopping accept loop")
+					return
+				}
+
+				logrus.Errorf("Failed to accept connection: %v", err)
+			}
+
+			logrus.Debugf("RCP-client accepted connection from %s", conn.RemoteAddr())
+
+			// Wrap the connection in a trackedConnection to ensure it gets closed properly
+			trackingChan := make(chan struct{})
+			trackedConn := &trackedConnection{
+				Conn: conn,
+				done: trackingChan,
+			}
+
+			select {
+			case connChan <- trackedConn:
+				// Connection sent to channel successfully
+			case <-acceptCtx.Done():
+				// Context was cancelled while trying to send connection
+				logrus.Debug("RCP listener context cancelled while sending connection, closing accepted connection")
+				trackedConn.Close()
 				return
 			}
 
-			logrus.Errorf("Failed to accept connection: %v", err)
+			select {
+			case <-trackingChan:
+				// Connection was closed, continue accepting new connections
+				logrus.Debug("RCP-client connection closed, waiting for new connections")
+			case <-acceptCtx.Done():
+				// Context was cancelled while waiting for connection to close
+				logrus.Debug("RCP listener context cancelled while waiting for connection to close, stopping accept loop")
+				return
+			}
 		}
 	}()
 
@@ -115,4 +141,15 @@ func ListenAndAccept(ctx context.Context, certProvider tlscerts.CertProvider, po
 		Port:     port,
 		cancel:   acceptCancel,
 	}, nil
+}
+
+type trackedConnection struct {
+	net.Conn
+	done chan struct{}
+}
+
+func (tc *trackedConnection) Close() error {
+	err := tc.Conn.Close()
+	close(tc.done)
+	return err
 }
