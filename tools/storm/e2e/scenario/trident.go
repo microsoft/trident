@@ -216,6 +216,10 @@ func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 		r.RegisterTestCase("validate-extensions", s.validateExtensions)
 	}
 
+	if s.HasTestTag("test:rollback") {
+		r.RegisterTestCase("validate-rollback", s.validateRollback)
+	}
+
 	if s.originalConfig.HasABUpdate() {
 		s.addAbUpdateTests(r, "ab-update-1")
 		s.addSplitABUpdateTests(r, "ab-update-split")
