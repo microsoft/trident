@@ -345,12 +345,6 @@ impl<'de> Deserialize<'de> for DiscoverablePartitionType {
     }
 }
 
-impl From<Uuid> for DiscoverablePartitionType {
-    fn from(uuid: Uuid) -> Self {
-        DiscoverablePartitionType::from_uuid(&uuid)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use strum::IntoEnumIterator;
