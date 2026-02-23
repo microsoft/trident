@@ -200,6 +200,8 @@ func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 
 	if s.HasTestTag("test:base") {
 		r.RegisterTestCase("validate-partitions", s.validatePartitions)
+		r.RegisterTestCase("validate-users", s.validateUsers)
+		r.RegisterTestCase("validate-uefi-fallback", s.validateUefiFallback)
 	}
 
 	if s.originalConfig.HasABUpdate() {

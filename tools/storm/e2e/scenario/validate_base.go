@@ -322,3 +322,159 @@ func (s *TridentE2EScenario) validatePartitions(tc storm.TestCase) error {
 	logrus.Info("Partition validation passed")
 	return nil
 }
+
+// validateUsers validates that users and groups on the remote host match the
+// expected host configuration. Converted from base_test.py test_users.
+//
+// It reads /etc/passwd and /etc/group on the remote host, then checks:
+//   - Each expected user (from os.users) is present in /etc/passwd
+//   - Each expected group membership is present in /etc/group
+func (s *TridentE2EScenario) validateUsers(tc storm.TestCase) error {
+	if err := s.populateSshClient(tc.Context()); err != nil {
+		return fmt.Errorf("failed to populate SSH client: %w", err)
+	}
+
+	// --- 1. Build expected users and group memberships from host configuration ---
+	var expectedUsers []string
+	expectedGroups := make(map[string][]string) // group name → list of usernames
+
+	for _, user := range s.originalConfig.S("os", "users").Children() {
+		name, ok := user.S("name").Data().(string)
+		if !ok {
+			continue
+		}
+		expectedUsers = append(expectedUsers, name)
+
+		for _, group := range user.S("groups").Children() {
+			groupName, ok := group.Data().(string)
+			if !ok {
+				continue
+			}
+			expectedGroups[groupName] = append(expectedGroups[groupName], name)
+		}
+	}
+
+	logrus.Infof("Expected %d users and %d group memberships from host configuration",
+		len(expectedUsers), len(expectedGroups))
+
+	// --- 2. Read and parse /etc/passwd ---
+	passwdOut, err := runCommand(s.sshClient, "cat /etc/passwd")
+	if err != nil {
+		return fmt.Errorf("failed to read /etc/passwd: %w", err)
+	}
+
+	systemUsers := ParsePasswd(passwdOut)
+
+	// --- 3. Check that each expected user exists ---
+	for _, user := range expectedUsers {
+		if _, ok := systemUsers[user]; !ok {
+			tc.Fail(fmt.Sprintf("expected user %q not found in /etc/passwd", user))
+			return nil
+		}
+	}
+
+	// --- 4. Read and parse /etc/group ---
+	groupOut, err := runCommand(s.sshClient, "cat /etc/group")
+	if err != nil {
+		return fmt.Errorf("failed to read /etc/group: %w", err)
+	}
+
+	systemGroups := ParseGroup(groupOut)
+
+	// --- 5. Check that each expected group exists and contains expected members ---
+	for groupName, expectedMembers := range expectedGroups {
+		groupEntry, ok := systemGroups[groupName]
+		if !ok {
+			tc.Fail(fmt.Sprintf("expected group %q not found in /etc/group", groupName))
+			return nil
+		}
+
+		memberSet := make(map[string]bool)
+		for _, m := range groupEntry.Members {
+			memberSet[m] = true
+		}
+
+		for _, user := range expectedMembers {
+			if !memberSet[user] {
+				tc.Fail(fmt.Sprintf("expected user %q not found in group %q (members: %v)",
+					user, groupName, groupEntry.Members))
+				return nil
+			}
+		}
+	}
+
+	logrus.Info("User validation passed")
+	return nil
+}
+
+// validateUefiFallback validates the UEFI fallback boot configuration on the
+// remote host. Converted from base_test.py test_uefi_fallback.
+//
+// It checks the uefiFallback mode from the host configuration:
+//   - "disabled": verifies /efi/boot/EFI/BOOT is empty
+//   - "conservative" or "optimistic": verifies /efi/boot/EFI/BOOT/* matches
+//     /efi/azl/EFI/<current_boot_name>/* via diff
+func (s *TridentE2EScenario) validateUefiFallback(tc storm.TestCase) error {
+	if err := s.populateSshClient(tc.Context()); err != nil {
+		return fmt.Errorf("failed to populate SSH client: %w", err)
+	}
+
+	// --- 1. Determine the uefiFallback mode ---
+	mode := "conservative" // default
+	if modeVal, ok := s.originalConfig.S("os", "uefiFallback").Data().(string); ok {
+		mode = modeVal
+	}
+
+	logrus.Infof("UEFI fallback mode: %s", mode)
+
+	switch mode {
+	case "disabled":
+		// Verify /efi/boot/EFI/BOOT is empty: find should find no files
+		_, err := sudoCommand(s.sshClient, "find /efi/boot/EFI/BOOT/* && exit 1 || exit 0")
+		if err != nil {
+			tc.Fail(fmt.Sprintf("expected /efi/boot/EFI/BOOT to be empty, but find succeeded or errored: %v", err))
+			return nil
+		}
+
+	case "conservative", "optimistic":
+		// Get the current boot entry name via efibootmgr
+		efiOut, err := sudoCommand(s.sshClient, "efibootmgr")
+		if err != nil {
+			return fmt.Errorf("failed to run efibootmgr: %w", err)
+		}
+
+		efiInfo := ParseEfiBootMgr(efiOut)
+
+		if efiInfo.BootCurrent == "" {
+			tc.Fail("BootCurrent not found in efibootmgr output")
+			return nil
+		}
+
+		currentBootName := efiInfo.CurrentBootName()
+		if currentBootName == "" {
+			tc.Fail(fmt.Sprintf("could not determine boot name for BootCurrent %q", efiInfo.BootCurrent))
+			return nil
+		}
+
+		logrus.Infof("Current boot entry: %s, name: %s", efiInfo.BootCurrent, currentBootName)
+
+		// Compare /efi/boot/EFI/BOOT/* with /efi/azl/EFI/<currentBootName>/*
+		// Replicates the exact command from the Python test (base_test.py test_uefi_fallback).
+		diffCmd := fmt.Sprintf(
+			"diff /efi/boot/EFI/BOOT/* /efi/azl/EFI/%s/* && exit 1 || exit 0",
+			currentBootName,
+		)
+		_, err = sudoCommand(s.sshClient, diffCmd)
+		if err != nil {
+			tc.Fail(fmt.Sprintf("UEFI fallback diff check failed: %v", err))
+			return nil
+		}
+
+	default:
+		tc.Fail(fmt.Sprintf("unknown uefiFallback mode: %q", mode))
+		return nil
+	}
+
+	logrus.Info("UEFI fallback validation passed")
+	return nil
+}
