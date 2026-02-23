@@ -190,7 +190,7 @@ mod tests {
                 entries::CosiEntries,
                 metadata::{
                     CosiMetadata, DiskInfo, GptDiskRegion, GptRegionType, Image, ImageFile,
-                    PartitionTableType,
+                    PartitionTableType, VerityMetadata,
                 },
                 Cosi, KnownMetadataVersion,
             },
@@ -372,9 +372,9 @@ mod tests {
             "Should have 2 partitions"
         );
 
-        // Verify partitions have sequential IDs.
-        assert_eq!(hc.storage.disks[0].partitions[0].id, "partition-0");
-        assert_eq!(hc.storage.disks[0].partitions[1].id, "partition-1");
+        // Verify partitions have sequential IDs (starting at 1).
+        assert_eq!(hc.storage.disks[0].partitions[0].id, "partition-1");
+        assert_eq!(hc.storage.disks[0].partitions[1].id, "partition-2");
 
         // Verify partition labels from GPT.
         assert_eq!(
@@ -392,7 +392,7 @@ mod tests {
         // First filesystem (ESP).
         assert_eq!(
             hc.storage.filesystems[0].device_id,
-            Some("partition-0".to_string())
+            Some("partition-1".to_string())
         );
         assert_eq!(
             hc.storage.filesystems[0].mount_point,
@@ -403,7 +403,7 @@ mod tests {
         // Second filesystem (root).
         assert_eq!(
             hc.storage.filesystems[1].device_id,
-            Some("partition-1".to_string())
+            Some("partition-2".to_string())
         );
         assert_eq!(hc.storage.filesystems[1].mount_point, Some("/".into()));
         assert_eq!(hc.storage.filesystems[1].source, FileSystemSource::Image);
@@ -548,8 +548,9 @@ mod tests {
 
     /// Tests [`Cosi::derive_host_configuration_inner`] with missing GPT data.
     ///
-    /// Verifies that an appropriate error is returned when GPT data is not
-    /// available (this would be caught by joined_disk_info_and_gpt).
+    /// Verifies that when GPT data is not available, the partitioning info is
+    /// `None`. This would be caught by the caller before
+    /// `derive_host_configuration_inner` is invoked.
     #[test]
     fn test_derive_host_configuration_inner_missing_gpt() {
         let disk_info = DiskInfo {
@@ -576,6 +577,108 @@ mod tests {
 
         let cosi = create_test_cosi(metadata, None);
 
+        // When no GPT data is provided, partitioning_info should be None.
+        // The caller is responsible for checking this before invoking
+        // derive_host_configuration_inner.
+        assert!(
+            cosi.partitioning_info.is_none(),
+            "partitioning_info should be None without GPT data"
+        );
+    }
+
+    /// Tests [`derive_host_configuration_inner`] with verity-enabled filesystems.
+    ///
+    /// Creates a COSI setup with a root data partition, a root hash partition,
+    /// and a /usr data partition with its hash partition. Verifies that:
+    /// - Verity devices are created with correct names ("root" for /, "usr" for /usr).
+    /// - Verity devices reference the correct data and hash partition IDs.
+    /// - Filesystems are mounted on top of verity devices with read-only options.
+    /// - Non-verity partitions (ESP) are handled normally alongside verity ones.
+    #[test]
+    fn test_derive_host_configuration_inner_with_verity() {
+        let (raw_gpt, disk_size, lba_size) = create_mock_gpt_disk(&[
+            ("esp", 64 * 1024),
+            ("root", 256 * 1024),
+            ("root-hash", 32 * 1024),
+            ("usr", 256 * 1024),
+            ("usr-hash", 32 * 1024),
+        ]);
+
+        let disk_info = DiskInfo {
+            size: disk_size,
+            lba_size,
+            partition_table_type: PartitionTableType::Gpt,
+            gpt_regions: vec![
+                GptDiskRegion {
+                    image: sample_image_file("gpt_primary.zst"),
+                    region_type: GptRegionType::PrimaryGpt,
+                },
+                GptDiskRegion {
+                    image: sample_image_file("images/esp.img.zst"),
+                    region_type: GptRegionType::Partition { number: 1 },
+                },
+                GptDiskRegion {
+                    image: sample_image_file("images/root.img.zst"),
+                    region_type: GptRegionType::Partition { number: 2 },
+                },
+                GptDiskRegion {
+                    image: sample_image_file("images/root-hash.img.zst"),
+                    region_type: GptRegionType::Partition { number: 3 },
+                },
+                GptDiskRegion {
+                    image: sample_image_file("images/usr.img.zst"),
+                    region_type: GptRegionType::Partition { number: 4 },
+                },
+                GptDiskRegion {
+                    image: sample_image_file("images/usr-hash.img.zst"),
+                    region_type: GptRegionType::Partition { number: 5 },
+                },
+            ],
+        };
+
+        // Root filesystem with verity pointing to the root-hash partition.
+        let root_image = Image {
+            file: sample_image_file("images/root.img.zst"),
+            mount_point: PathBuf::from("/"),
+            fs_type: OsImageFileSystemType::Ext4,
+            fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+            part_type: DiscoverablePartitionType::LinuxGeneric,
+            verity: Some(VerityMetadata {
+                file: sample_image_file("images/root-hash.img.zst"),
+                roothash: "abcd1234".to_string(),
+            }),
+        };
+
+        // /usr filesystem with verity pointing to the usr-hash partition.
+        let usr_image = Image {
+            file: sample_image_file("images/usr.img.zst"),
+            mount_point: PathBuf::from("/usr"),
+            fs_type: OsImageFileSystemType::Ext4,
+            fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+            part_type: DiscoverablePartitionType::LinuxGeneric,
+            verity: Some(VerityMetadata {
+                file: sample_image_file("images/usr-hash.img.zst"),
+                roothash: "efgh5678".to_string(),
+            }),
+        };
+
+        let metadata = CosiMetadata {
+            version: KnownMetadataVersion::V1_2.as_version(),
+            id: Some(Uuid::new_v4()),
+            os_arch: SystemArchitecture::Amd64,
+            os_release: OsRelease::default(),
+            os_packages: None,
+            images: vec![
+                sample_image("images/esp.img.zst", "/boot/efi"),
+                root_image,
+                usr_image,
+            ],
+            bootloader: None,
+            disk: Some(disk_info),
+            compression: None,
+        };
+
+        let cosi = create_test_cosi(metadata, Some(raw_gpt));
         let result = derive_host_configuration_inner(
             &cosi.source,
             &cosi.metadata_sha384,
@@ -583,6 +686,145 @@ mod tests {
             &cosi.metadata.images,
             cosi.partitioning_info.as_ref().unwrap(),
         );
-        assert!(result.is_err(), "Should fail without GPT data");
+        assert!(
+            result.is_ok(),
+            "derive_host_configuration_inner with verity should succeed: {:?}",
+            result.err()
+        );
+
+        let hc = result.unwrap();
+
+        // 5 partitions: esp, root, root-hash, usr, usr-hash.
+        assert_eq!(
+            hc.storage.disks[0].partitions.len(),
+            5,
+            "Should have 5 partitions"
+        );
+
+        // 2 verity devices: root and usr.
+        assert_eq!(hc.storage.verity.len(), 2, "Should have 2 verity devices");
+
+        // Verify root verity device.
+        assert_eq!(hc.storage.verity[0].name, "root");
+        // Root data partition is partition-2, root hash partition is partition-3.
+        assert_eq!(hc.storage.verity[0].data_device_id, "partition-2");
+        assert_eq!(hc.storage.verity[0].hash_device_id, "partition-3");
+
+        // Verify usr verity device.
+        assert_eq!(hc.storage.verity[1].name, "usr");
+        // Usr data partition is partition-4, usr hash partition is partition-5.
+        assert_eq!(hc.storage.verity[1].data_device_id, "partition-4");
+        assert_eq!(hc.storage.verity[1].hash_device_id, "partition-5");
+
+        // 3 filesystems: ESP (on partition), root (on verity), usr (on verity).
+        assert_eq!(hc.storage.filesystems.len(), 3, "Should have 3 filesystems");
+
+        // ESP filesystem is on the partition directly.
+        assert_eq!(
+            hc.storage.filesystems[0].device_id,
+            Some("partition-1".to_string())
+        );
+        assert_eq!(
+            hc.storage.filesystems[0].mount_point,
+            Some("/boot/efi".into())
+        );
+
+        // Root filesystem is on the verity device.
+        assert_eq!(
+            hc.storage.filesystems[1].device_id,
+            Some(hc.storage.verity[0].id.clone())
+        );
+        let root_mp = hc.storage.filesystems[1].mount_point.as_ref().unwrap();
+        assert_eq!(root_mp.path, Path::new("/"));
+        assert!(
+            root_mp.options.contains("ro"),
+            "Root verity filesystem should be read-only"
+        );
+
+        // Usr filesystem is on the verity device.
+        assert_eq!(
+            hc.storage.filesystems[2].device_id,
+            Some(hc.storage.verity[1].id.clone())
+        );
+        let usr_mp = hc.storage.filesystems[2].mount_point.as_ref().unwrap();
+        assert_eq!(usr_mp.path, Path::new("/usr"));
+        assert!(
+            usr_mp.options.contains("ro"),
+            "Usr verity filesystem should be read-only"
+        );
+    }
+
+    /// Tests [`derive_host_configuration_inner`] with verity at unsupported mount point.
+    ///
+    /// Verifies that an error is returned when a verity-enabled filesystem has a
+    /// mount point other than "/" or "/usr".
+    #[test]
+    fn test_derive_host_configuration_inner_verity_unsupported_mount_point() {
+        let (raw_gpt, disk_size, lba_size) =
+            create_mock_gpt_disk(&[("var", 256 * 1024), ("var-hash", 32 * 1024)]);
+
+        let disk_info = DiskInfo {
+            size: disk_size,
+            lba_size,
+            partition_table_type: PartitionTableType::Gpt,
+            gpt_regions: vec![
+                GptDiskRegion {
+                    image: sample_image_file("gpt_primary.zst"),
+                    region_type: GptRegionType::PrimaryGpt,
+                },
+                GptDiskRegion {
+                    image: sample_image_file("images/var.img.zst"),
+                    region_type: GptRegionType::Partition { number: 1 },
+                },
+                GptDiskRegion {
+                    image: sample_image_file("images/var-hash.img.zst"),
+                    region_type: GptRegionType::Partition { number: 2 },
+                },
+            ],
+        };
+
+        let var_image = Image {
+            file: sample_image_file("images/var.img.zst"),
+            mount_point: PathBuf::from("/var"),
+            fs_type: OsImageFileSystemType::Ext4,
+            fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+            part_type: DiscoverablePartitionType::LinuxGeneric,
+            verity: Some(VerityMetadata {
+                file: sample_image_file("images/var-hash.img.zst"),
+                roothash: "badhash".to_string(),
+            }),
+        };
+
+        let metadata = CosiMetadata {
+            version: KnownMetadataVersion::V1_2.as_version(),
+            id: Some(Uuid::new_v4()),
+            os_arch: SystemArchitecture::Amd64,
+            os_release: OsRelease::default(),
+            os_packages: None,
+            images: vec![var_image],
+            bootloader: None,
+            disk: Some(disk_info),
+            compression: None,
+        };
+
+        let cosi = create_test_cosi(metadata, Some(raw_gpt));
+        let result = derive_host_configuration_inner(
+            &cosi.source,
+            &cosi.metadata_sha384,
+            "/dev/sda",
+            &cosi.metadata.images,
+            cosi.partitioning_info.as_ref().unwrap(),
+        );
+        assert!(
+            result.is_err(),
+            "Should fail with verity at unsupported mount point"
+        );
+
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("unsupported"),
+            "Error should mention unsupported verity path: {}",
+            err_msg
+        );
     }
 }

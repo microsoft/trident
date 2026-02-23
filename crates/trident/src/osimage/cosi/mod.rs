@@ -1862,15 +1862,29 @@ mod tests {
             sha384: Sha384Hash::from(compressed_hash),
         };
 
-        // Create disk info with GPT region.
+        // Create a partition image file descriptor (for the test partition).
+        let partition_image_file = ImageFile {
+            path: PathBuf::from("images/test_partition.img.zst"),
+            compressed_size: 1024,
+            uncompressed_size: 2048,
+            sha384: Sha384Hash::from("0".repeat(96)),
+        };
+
+        // Create disk info with GPT region and partition region.
         let disk_info = DiskInfo {
             size: disk_size,
             lba_size,
             partition_table_type: PartitionTableType::Gpt,
-            gpt_regions: vec![GptDiskRegion {
-                image: gpt_image_file,
-                region_type: GptRegionType::PrimaryGpt,
-            }],
+            gpt_regions: vec![
+                GptDiskRegion {
+                    image: gpt_image_file,
+                    region_type: GptRegionType::PrimaryGpt,
+                },
+                GptDiskRegion {
+                    image: partition_image_file,
+                    region_type: GptRegionType::Partition { number: 1 },
+                },
+            ],
         };
 
         // Create a COSI instance with disk metadata (version 1.2 to trigger GPT parsing).
@@ -2108,14 +2122,27 @@ mod tests {
             sha384: Sha384Hash::from(compressed_hash),
         };
 
+        let partition_image_file = ImageFile {
+            path: PathBuf::from("images/gpt_test_partition.img.zst"),
+            compressed_size: 1024,
+            uncompressed_size: 2048,
+            sha384: Sha384Hash::from("0".repeat(96)),
+        };
+
         let disk_info = DiskInfo {
             size: disk_size,
             lba_size,
             partition_table_type: PartitionTableType::Gpt,
-            gpt_regions: vec![GptDiskRegion {
-                image: gpt_image_file,
-                region_type: GptRegionType::PrimaryGpt,
-            }],
+            gpt_regions: vec![
+                GptDiskRegion {
+                    image: gpt_image_file,
+                    region_type: GptRegionType::PrimaryGpt,
+                },
+                GptDiskRegion {
+                    image: partition_image_file,
+                    region_type: GptRegionType::Partition { number: 1 },
+                },
+            ],
         };
 
         let mut cosi = Cosi {
@@ -2145,7 +2172,6 @@ mod tests {
 
         // First call to gpt() should load the GPT.
         let gpt_result = cosi.partitioning_info();
-        assert!(gpt_result.is_ok(), "gpt() should succeed for COSI >= 1.2");
 
         let gpt = gpt_result.unwrap();
         assert!(gpt.is_some(), "GPT should be present after gpt() call");
