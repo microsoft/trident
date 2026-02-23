@@ -204,6 +204,10 @@ func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 		r.RegisterTestCase("validate-uefi-fallback", s.validateUefiFallback)
 	}
 
+	if s.HasTestTag("test:encryption") {
+		r.RegisterTestCase("validate-encryption", s.validateEncryption)
+	}
+
 	if s.originalConfig.HasABUpdate() {
 		s.addAbUpdateTests(r, "ab-update-1")
 		s.addSplitABUpdateTests(r, "ab-update-split")
