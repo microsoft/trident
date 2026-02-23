@@ -208,6 +208,10 @@ func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 		r.RegisterTestCase("validate-encryption", s.validateEncryption)
 	}
 
+	if s.HasTestTag("test:root_verity") || s.HasTestTag("test:usr_verity") {
+		r.RegisterTestCase("validate-verity", s.validateVerity)
+	}
+
 	if s.originalConfig.HasABUpdate() {
 		s.addAbUpdateTests(r, "ab-update-1")
 		s.addSplitABUpdateTests(r, "ab-update-split")
