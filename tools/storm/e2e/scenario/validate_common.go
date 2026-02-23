@@ -495,6 +495,74 @@ func GetRaidNameFromDeviceName(client *ssh.Client, deviceName string) (string, e
 	return "", nil
 }
 
+// --- cryptsetup status parser ---
+
+// CryptsetupStatus holds parsed output from `cryptsetup status <name>`.
+type CryptsetupStatus struct {
+	Type        string
+	Cipher      string
+	Keysize     string
+	KeyLocation string
+	Device      string
+	SectorSize  string
+	Offset      string
+	Size        string
+	Mode        string
+	Properties  map[string]string
+}
+
+// ParseCryptsetupStatus parses the output of `cryptsetup status <name>`.
+func ParseCryptsetupStatus(stdout string) CryptsetupStatus {
+	kv := ParseKeyValueLines(stdout)
+	status := CryptsetupStatus{
+		Type:        kv["type"],
+		Cipher:      kv["cipher"],
+		Keysize:     kv["keysize"],
+		KeyLocation: kv["key location"],
+		Device:      kv["device"],
+		SectorSize:  kv["sector size"],
+		Offset:      kv["offset"],
+		Size:        kv["size"],
+		Mode:        kv["mode"],
+		Properties:  kv,
+	}
+	return status
+}
+
+// --- dmsetup info parser ---
+
+// DmsetupInfo holds parsed output from `dmsetup info <name>`.
+type DmsetupInfo struct {
+	Name           string
+	State          string
+	ReadAhead      string
+	TablesPresent  string
+	OpenCount      string
+	EventNumber    string
+	MajorMinor     string
+	NumberOfTargets string
+	UUID           string
+	Properties     map[string]string
+}
+
+// ParseDmsetupInfo parses the output of `dmsetup info <name>`.
+func ParseDmsetupInfo(stdout string) DmsetupInfo {
+	kv := ParseKeyValueLines(stdout)
+	info := DmsetupInfo{
+		Name:           kv["Name"],
+		State:          kv["State"],
+		ReadAhead:      kv["Read Ahead"],
+		TablesPresent:  kv["Tables present"],
+		OpenCount:      kv["Open count"],
+		EventNumber:    kv["Event number"],
+		MajorMinor:     kv["Major, minor"],
+		NumberOfTargets: kv["Number of targets"],
+		UUID:           kv["UUID"],
+		Properties:     kv,
+	}
+	return info
+}
+
 // --- veritysetup status parser ---
 
 // VerityStatus holds parsed veritysetup status output.

@@ -401,6 +401,161 @@ func TestParseDevMdListing_EmptyInput(t *testing.T) {
 
 // --- ParseVeritySetupStatus tests ---
 
+// --- ParseCryptsetupStatus tests ---
+
+func TestParseCryptsetupStatus_BasicOutput(t *testing.T) {
+	input := `  type:    n/a
+  cipher:  aes-xts-plain64
+  keysize: 512 bits
+  key location: keyring
+  device:  /dev/md127
+  sector size:  512
+  offset:  16384 sectors
+  size:    2080640 sectors
+  mode:    read/write`
+
+	status := ParseCryptsetupStatus(input)
+
+	if status.Cipher != "aes-xts-plain64" {
+		t.Errorf("Cipher: expected 'aes-xts-plain64', got %q", status.Cipher)
+	}
+	if status.Keysize != "512 bits" {
+		t.Errorf("Keysize: expected '512 bits', got %q", status.Keysize)
+	}
+	if status.KeyLocation != "keyring" {
+		t.Errorf("KeyLocation: expected 'keyring', got %q", status.KeyLocation)
+	}
+	if status.Device != "/dev/md127" {
+		t.Errorf("Device: expected '/dev/md127', got %q", status.Device)
+	}
+	if status.SectorSize != "512" {
+		t.Errorf("SectorSize: expected '512', got %q", status.SectorSize)
+	}
+	if status.Mode != "read/write" {
+		t.Errorf("Mode: expected 'read/write', got %q", status.Mode)
+	}
+}
+
+func TestParseCryptsetupStatus_EmptyInput(t *testing.T) {
+	status := ParseCryptsetupStatus("")
+	if status.Cipher != "" {
+		t.Errorf("expected empty Cipher, got %q", status.Cipher)
+	}
+	if status.Device != "" {
+		t.Errorf("expected empty Device, got %q", status.Device)
+	}
+	if len(status.Properties) != 0 {
+		t.Errorf("expected 0 properties, got %d", len(status.Properties))
+	}
+}
+
+func TestParseCryptsetupStatus_PlainDmCrypt(t *testing.T) {
+	input := `  type:    PLAIN
+  cipher:  aes-cbc-essiv:sha256
+  keysize: 256 bits
+  key location: dm-crypt
+  device:  /dev/sda2
+  sector size:  512
+  offset:  0 sectors
+  size:    41943040 sectors
+  mode:    read/write`
+
+	status := ParseCryptsetupStatus(input)
+
+	if status.Type != "PLAIN" {
+		t.Errorf("Type: expected 'PLAIN', got %q", status.Type)
+	}
+	if status.Cipher != "aes-cbc-essiv:sha256" {
+		t.Errorf("Cipher: expected 'aes-cbc-essiv:sha256', got %q", status.Cipher)
+	}
+	if status.KeyLocation != "dm-crypt" {
+		t.Errorf("KeyLocation: expected 'dm-crypt', got %q", status.KeyLocation)
+	}
+	if status.Offset != "0 sectors" {
+		t.Errorf("Offset: expected '0 sectors', got %q", status.Offset)
+	}
+}
+
+// --- ParseDmsetupInfo tests ---
+
+func TestParseDmsetupInfo_BasicOutput(t *testing.T) {
+	input := `Name:              web
+State:             ACTIVE
+Read Ahead:        256
+Tables present:    LIVE
+Open count:        0
+Event number:      0
+Major, minor:      254, 0
+Number of targets: 1
+UUID: CRYPT-LUKS2-475f03514bb749bbb9af1f53f94b91cb-web`
+
+	info := ParseDmsetupInfo(input)
+
+	if info.Name != "web" {
+		t.Errorf("Name: expected 'web', got %q", info.Name)
+	}
+	if info.State != "ACTIVE" {
+		t.Errorf("State: expected 'ACTIVE', got %q", info.State)
+	}
+	if info.ReadAhead != "256" {
+		t.Errorf("ReadAhead: expected '256', got %q", info.ReadAhead)
+	}
+	if info.TablesPresent != "LIVE" {
+		t.Errorf("TablesPresent: expected 'LIVE', got %q", info.TablesPresent)
+	}
+	if info.OpenCount != "0" {
+		t.Errorf("OpenCount: expected '0', got %q", info.OpenCount)
+	}
+	if info.MajorMinor != "254, 0" {
+		t.Errorf("MajorMinor: expected '254, 0', got %q", info.MajorMinor)
+	}
+	if info.NumberOfTargets != "1" {
+		t.Errorf("NumberOfTargets: expected '1', got %q", info.NumberOfTargets)
+	}
+	if info.UUID != "CRYPT-LUKS2-475f03514bb749bbb9af1f53f94b91cb-web" {
+		t.Errorf("UUID: expected 'CRYPT-LUKS2-...-web', got %q", info.UUID)
+	}
+}
+
+func TestParseDmsetupInfo_EmptyInput(t *testing.T) {
+	info := ParseDmsetupInfo("")
+	if info.Name != "" {
+		t.Errorf("expected empty Name, got %q", info.Name)
+	}
+	if info.State != "" {
+		t.Errorf("expected empty State, got %q", info.State)
+	}
+	if len(info.Properties) != 0 {
+		t.Errorf("expected 0 properties, got %d", len(info.Properties))
+	}
+}
+
+func TestParseDmsetupInfo_SuspendedDevice(t *testing.T) {
+	input := `Name:              root
+State:             SUSPENDED
+Read Ahead:        256
+Tables present:    LIVE
+Open count:        1
+Event number:      3
+Major, minor:      254, 1
+Number of targets: 1
+UUID: CRYPT-LUKS2-a1b2c3d4e5f6-root`
+
+	info := ParseDmsetupInfo(input)
+
+	if info.Name != "root" {
+		t.Errorf("Name: expected 'root', got %q", info.Name)
+	}
+	if info.State != "SUSPENDED" {
+		t.Errorf("State: expected 'SUSPENDED', got %q", info.State)
+	}
+	if info.OpenCount != "1" {
+		t.Errorf("OpenCount: expected '1', got %q", info.OpenCount)
+	}
+}
+
+// --- ParseVeritySetupStatus tests (continued) ---
+
 func TestParseVeritySetupStatus_BasicOutput(t *testing.T) {
 	input := `/dev/mapper/root is active and is in use.
   type:        VERITY
