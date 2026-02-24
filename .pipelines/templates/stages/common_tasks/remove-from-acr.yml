@@ -1,10 +1,10 @@
 parameters:
-  - name: adoProjectName
+  - name: acrServiceConnectionName
     type: string
-    default: ECF
+    default: trident-dev-acr-write-umi-ECF
     values:
-      - polar
-      - ECF
+      - maritimus-dev-acr-write-umi
+      - trident-dev-acr-write-umi-ECF
 
   - name: "repository"
     displayName: "Repository containing COSI images"
@@ -26,10 +26,7 @@ parameters:
 steps:
   - task: AzureCLI@2
     inputs:
-      ${{ if eq(parameters.adoProjectName, 'polar') }}:
-        azureSubscription: maritimus-dev-acr-write-umi
-      ${{ if eq(parameters.adoProjectName, 'ECF') }}:
-        azureSubscription: trident-dev-acr-write-umi-ECF
+      azureSubscription: ${{ parameters.acrServiceConnectionName }}
       scriptType: bash
       scriptLocation: inlineScript
       inlineScript: |

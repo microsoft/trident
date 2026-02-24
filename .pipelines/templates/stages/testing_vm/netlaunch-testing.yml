@@ -33,12 +33,12 @@ parameters:
     type: boolean
     default: true
 
-  - name: adoProjectName
+  - name: acrServiceConnectionName
     type: string
-    default: ECF
+    default: trident-dev-acr-write-umi-ECF
     values:
-      - polar
-      - ECF
+      - maritimus-dev-acr-write-umi
+      - trident-dev-acr-write-umi-ECF
 
 stages:
   - stage: DefineTests_VM_${{ parameters.runtimeEnv }}
@@ -158,7 +158,7 @@ stages:
               config: ${{ variables.tridentConfigurationName }}
               deploymentEnvironment: "virtualMachine"
               runtimeEnvironment: ${{ parameters.runtimeEnv }}
-              adoProjectName: ${{ parameters.adoProjectName }}
+              acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
           - template: netlaunch-prep.yml
 
@@ -358,7 +358,7 @@ stages:
               repository: ${{ variables.testImageName }}
               config: ${{ variables.tridentConfigurationName }}
               deploymentEnvironment: "virtualMachine"
-              adoProjectName: ${{ parameters.adoProjectName }}
+              acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
           - bash: |
               set -eux

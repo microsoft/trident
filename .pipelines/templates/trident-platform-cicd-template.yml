@@ -36,12 +36,12 @@ parameters:
     type: string
     default: "*.*.*"
 
-  - name: adoProjectName
+  - name: acrServiceConnectionName
     type: string
-    default: ECF
+    default: trident-dev-acr-write-umi-ECF
     values:
-      - polar
-      - ECF
+      - maritimus-dev-acr-write-umi
+      - trident-dev-acr-write-umi-ECF
 
   - name: tridentRepoName
     type: string
@@ -61,7 +61,7 @@ stages:
           testSecureBoot: ${{ parameters.testSecureBoot }}
           micBuildType: dev
           micVersion: ${{ parameters.micVersion }}
-          adoProjectName: ${{ parameters.adoProjectName }}
+          acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
           tridentRepoName: ${{ parameters.tridentRepoName }}
 
   - ${{ if eq( parameters.targetArchitecture, 'arm64') }}:
