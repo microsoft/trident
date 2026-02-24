@@ -604,38 +604,42 @@ fn generate_pcrlock_files(
                     let entry = entry.context("Failed to get entry in UKI addons directory")?;
                     let path = entry.path();
 
-                    // Only process addon files with the correct suffix.
-                    let addon_name = match path.file_name() {
-                        Some(name) => {
-                            if path.is_dir() {
-                                bail!(
-                                    "Expected a file but found a directory at path '{}' in UKI addons directory,.",
-                                    path.display()
-                                );
-                            }
-                            match name.to_str() {
-                                Some(name_str) => name_str
-                                        .strip_suffix(UKI_ADDON_FILE_SUFFIX)
-                                        .context("Failed to remove UKI addon suffix")?,
-                                _ => bail!(
-                                    "File '{}' in UKI addons directory does not end with expected suffix '{}'.",
-                                    name.to_string_lossy(),
-                                    UKI_ADDON_FILE_SUFFIX
-                                ),
-                            }
-                        }
-                        None => {
-                            bail!(
-                                "Failed to get file name for path '{}' in UKI addons directory, skipping",
-                                path.display()
-                            );
-                        }
-                    };
+                    // Skip directories, only process files in the UKI addons dir.
+                    if path.is_dir() {
+                        trace!(
+                            "Skipping path '{}' in UKI addons directory as it is a directory, expected files only",
+                            path.display()
+                        );
+                        continue;
+                    }
+                    // Only process files with correct suffix.
+                    if !path
+                        .as_os_str()
+                        .as_encoded_bytes()
+                        .ends_with(UKI_ADDON_FILE_SUFFIX.as_bytes())
+                    {
+                        trace!(
+                            "Skipping file '{}' in UKI addons directory as it does not end with expected suffix '{UKI_ADDON_FILE_SUFFIX}'",
+                            path.display()
+                        );
+                        continue;
+                    }
+
+                    // Get addon name
+                    let addon_name = path.file_name().with_context(|| format!(
+                        "Expected a file but found a directory at path '{}' in UKI addons directory.",
+                        path.display()
+                    ))?.to_str().with_context(|| format!(
+                        "Failed to get file name for path '{}' in UKI addons directory.",
+                        path.display()
+                    ))?.strip_suffix(UKI_ADDON_FILE_SUFFIX).with_context(|| format!(
+                        "File '{}' in UKI addons directory does not end with expected suffix '{UKI_ADDON_FILE_SUFFIX}'.",
+                        path.display(),
+                    ))?;
 
                     // Create pcrlock component name
                     let pcrlock_addon_name = format!(
-                        "{}{}{}",
-                        UKI_ADDONS_PCRLOCK_DIR_PREFIX, addon_name, UKI_ADDONS_PCRLOCK_DIR_SUFFIX
+                        "{UKI_ADDONS_PCRLOCK_DIR_PREFIX}{addon_name}{UKI_ADDONS_PCRLOCK_DIR_SUFFIX}"
                     );
                     // Generate .pcrlock file path for this addon
                     let addon_pcrlock_file =
