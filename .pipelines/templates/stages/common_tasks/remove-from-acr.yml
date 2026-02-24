@@ -1,7 +1,6 @@
 parameters:
   - name: adoProjectName
     type: string
-    default: ECF
     values:
       - polar
       - ECF
