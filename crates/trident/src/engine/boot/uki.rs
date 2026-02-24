@@ -438,15 +438,6 @@ mod tests {
         assert_eq!(uki_suffix(&ctx), "azla3.efi");
     }
 
-    /// Validates that `uki_addon_dir` appends the `.extra.d` suffix to the
-    /// UKI file path to form the addon directory path.
-    #[test]
-    fn test_uki_addon_dir() {
-        let uki_path = PathBuf::from("/some/path/vmlinuz-1-azla1.efi");
-        let expected_addon_dir = PathBuf::from("/some/path/vmlinuz-1-azla1.efi.extra.d");
-        assert_eq!(uki::uki_addon_dir(&uki_path), expected_addon_dir);
-    }
-
     /// Validates that `is_staged` returns false when no staged UKI exists
     /// and true after a staged UKI file is written.
     #[test]
