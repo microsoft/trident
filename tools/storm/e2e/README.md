@@ -10,6 +10,8 @@
   - [How This Works](#how-this-works)
     - [Test Rings](#test-rings)
     - [Discovery](#discovery)
+    - [Test Selection](#test-selection)
+    - [Validation Test Cases](#validation-test-cases)
     - [Matrix Generation in Pipelines](#matrix-generation-in-pipelines)
     - [Pipeline Execution](#pipeline-execution)
     - [E2E Test Code](#e2e-test-code)
@@ -97,20 +99,19 @@ Test rings are formally defined in
 
 The first step is discovery of all configured E2E scenarios. In short, this
 means looking at all existing Host Configurations and when they are supposed to
-run. To ultimate goal is to produce instances of the struct `TridentE2EScenario`
+run. The ultimate goal is to produce instances of the struct `TridentE2EScenario`
 (from [`scenario/trident.go`](scenario/trident.go)) representing each
 combination of parameters.
 
 All test discovery happens in [`discover.go`](discover.go). The key function is
-`DiscoverTridentE2EScenarios`, which returns a list of all discovered
+`DiscoverTridentScenarios`, which returns a list of all discovered
 `TridentE2EScenario` instances.
 
-[NOTE: IN DEVELOPMENT: Update once this changes.] While in development, all
-configurations are defined in `tests/e2e_tests/trident_configurations/`, and the
-configuration for when each is supposed to run is defined in
-`tests/e2e_tests/target-configurations.yaml`. To port these over into go, we use
-a combination of Go's generate directive, Go's embed package, and some custom
-code in [`invert.py`](invert.py):
+All configurations are defined in `tests/e2e_tests/trident_configurations/`, and
+the configuration for when each is supposed to run is defined in
+`tests/e2e_tests/target-configurations.yaml`. These are embedded into the Go
+binary at compile time using Go's `generate` directive, `embed` package, and
+[`invert.py`](invert.py):
 
 ```go
 //go:generate cp -r ../../../tests/e2e_tests/trident_configurations configurations
@@ -119,9 +120,9 @@ code in [`invert.py`](invert.py):
 var content embed.FS
 ```
 
-The python script includes more thorough documentation on itself, but in short
-it will produce the yaml file `configurations/configurations.yaml`, which has
-this structure:
+The `invert.py` script reads `target-configurations.yaml` and produces
+`configurations/configurations.yaml`, which maps each configuration to its
+pipeline ring assignments:
 
 ```yaml
 <config_name>:
@@ -137,17 +138,17 @@ base:
     host: pr-e2e
 ```
 
-The function `DiscoverTridentE2EScenarios` will go over this data structure and
+The function `DiscoverTridentScenarios` iterates over this data structure and
 all the Host Configuration files to produce instances of `TridentE2EScenario`.
 Each is configured to contain the Host Configuration, the target hardware type
 (`vm`/`bm`), the target runtime (`host`/`container`), and the lowest test ring
 it should be run in. If the specific combination is not configured to run in any
 ring, the instance is not created.
 
-The type type `configs` in [`discover.go`](discover.go) contains the expected
+The type `configs` in [`discover.go`](discover.go) contains the expected
 structure of the YAML configuration data.
 
-Some configuration have special behaviors, such as expected failures. For those
+Some configurations have special behaviors, such as expected failures. For those
 special cases, the config can be further customized with the YAML keys defined
 in the struct `TridentE2EHostConfigParams` in
 [`scenario/trident.go`](scenario/trident.go). These are keys directly under the
@@ -159,6 +160,138 @@ base:
   vm:
     host: pr-e2e
 ```
+
+### Test Selection
+
+Each configuration has a `test-selection.yaml` file
+(in `tests/e2e_tests/trident_configurations/<config>/test-selection.yaml`) that
+controls which validation test cases run for that configuration. The file is
+parsed by [`testselection.go`](testselection.go).
+
+#### Format
+
+```yaml
+# Base markers that this configuration supports.
+compatible:
+  - base
+  - encryption
+
+# Optional ring-level overrides. Each ring can add or remove markers
+# relative to the compatible set.
+weekly:
+  add:
+    - slow_validation
+  remove: []
+daily:
+  add: []
+  remove: []
+post_merge:
+  add: []
+  remove: []
+pullrequest:
+  add: []
+  remove: []
+validation:
+  add: []
+  remove: []
+```
+
+The `compatible` list is the base set of test markers. Ring-level overrides
+(keyed by ring name: `weekly`, `daily`, `post_merge`, `pullrequest`,
+`validation`) can `add` or `remove` markers for specific pipeline stages.
+
+#### Tag Mapping
+
+Each compatible marker is prefixed with `test:` to form a storm scenario tag.
+For example, a marker `encryption` becomes the tag `test:encryption`. These tags
+determine which validation test cases are registered for the scenario (see
+[Validation Test Cases](#validation-test-cases)).
+
+#### All 19 Configurations
+
+| Configuration | Compatible Markers |
+|---|---|
+| `base` | `base` |
+| `simple` | `base` |
+| `misc` | `base` |
+| `split` | `base` |
+| `raid-big` | `base` |
+| `raid-mirrored` | `base` |
+| `raid-resync-small` | `base` |
+| `raid-small` | `base` |
+| `combined` | `base`, `usr_verity`, `encryption`, `uki` |
+| `encrypted-partition` | `base`, `encryption` |
+| `encrypted-raid` | `base`, `encryption` |
+| `encrypted-swap` | `base`, `encryption` |
+| `extensions` | `base`, `extensions` |
+| `health-checks-install` | `rollback` |
+| `memory-constraint-combined` | `base`, `usr_verity`, `encryption`, `uki` |
+| `rerun` | `base`, `usr_verity`, `encryption`, `uki` |
+| `root-verity` | `base`, `root_verity`, `extensions` |
+| `usr-verity` | `base`, `usr_verity`, `uki` |
+| `usr-verity-raid` | `base`, `usr_verity`, `uki` |
+
+### Validation Test Cases
+
+All E2E validation is implemented in Go under [`scenario/`](scenario/).
+Test cases are conditionally registered based on the test tags derived from
+`test-selection.yaml`. The registration logic is in
+[`scenario/trident.go`](scenario/trident.go) (`RegisterTestCases`).
+
+#### Core Test Cases (always registered)
+
+These run for every scenario:
+
+| Test Case | Description |
+|---|---|
+| `install-vm-deps` | Install VM dependencies (VM scenarios only) |
+| `prepare-hc` | Prepare the host configuration |
+| `setup-test-host` | Set up the test host (VM or bare metal) |
+| `install-os` | Install the OS via Trident |
+| `check-trident-ssh` | Verify Trident via SSH after install |
+| `collect-install-boot-metrics` | Collect boot metrics after initial install |
+| `publish-logs` | Publish logs and artifacts at scenario end |
+
+#### Tag-Gated Validation Test Cases
+
+These are registered only when the scenario has the corresponding test tag:
+
+| Test Tag | Test Case | Source File | Description |
+|---|---|---|---|
+| `test:base` | `validate-partitions` | `validate_base.go` | Validate disk partitions match host config |
+| `test:base` | `validate-users` | `validate_base.go` | Validate user accounts are created correctly |
+| `test:base` | `validate-uefi-fallback` | `validate_base.go` | Validate UEFI fallback boot entry |
+| `test:encryption` | `validate-encryption` | `validate_encryption.go` | Validate LUKS2/TPM2 disk encryption |
+| `test:root_verity` / `test:usr_verity` | `validate-verity` | `validate_verity.go` | Validate dm-verity configuration |
+| `test:extensions` | `validate-extensions` | `validate_extensions.go` | Validate systemd-sysext/confext |
+| `test:rollback` | `validate-rollback` | `validate_rollback.go` | Validate health-check rollback behavior |
+
+#### A/B Update Test Cases
+
+For configurations that have A/B update support (`HasABUpdate()`), two sets of
+update tests are registered:
+
+**Standard A/B Update** (`ab-update-1-*`):
+
+| Test Case | Description |
+|---|---|
+| `ab-update-1-sync-hc` | Sync host configuration |
+| `ab-update-1-update-hc` | Update host configuration for A/B update |
+| `ab-update-1-upload-new-hc` | Upload updated config to test host |
+| `ab-update-1-ab-update` | Perform A/B update and reboot |
+| `ab-update-1-collect-boot-metrics` | Collect boot metrics after A/B update |
+
+**Split A/B Update** (`ab-update-split-*`, runs on `pre` ring and above):
+
+| Test Case | Description |
+|---|---|
+| `ab-update-split-sync-hc` | Sync host configuration |
+| `ab-update-split-update-hc` | Update host configuration for split update |
+| `ab-update-split-upload-new-hc` | Upload updated config to test host |
+| `ab-update-split-stage` | Stage the A/B update (without reboot) |
+| `ab-update-split-validate-staged` | Validate staging state |
+| `ab-update-split-finalize` | Finalize the staged update (reboot) |
+| `ab-update-split-collect-boot-metrics` | Collect boot metrics after finalize |
 
 ### Matrix Generation in Pipelines
 
