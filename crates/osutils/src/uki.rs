@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 
-/// Temporary name for the UKI file before renaming.
+/// UKI Addon directory suffix.
 pub const UKI_ADDON_DIR_SUFFIX: &str = ".extra.d";
+/// UKI Addon file suffix.
 pub const UKI_ADDON_FILE_SUFFIX: &str = ".addon.efi";
 
 /// Returns the path to the addon directory associated with the given UKI file,
