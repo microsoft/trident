@@ -31,11 +31,14 @@ steps:
   - script: make ut-coverage
     displayName: Collect code coverage
     condition: eq(${{ parameters.executeUnitTests }}, true)
+    workingDirectory: $(TRIDENT_SOURCE_DIR)
 
   - script: make coverage-report
     displayName: Generate code coverage report
+    workingDirectory: $(TRIDENT_SOURCE_DIR)
 
   - task: PublishCodeCoverageResults@2
+    workingDirectory: $(TRIDENT_SOURCE_DIR)
     inputs:
       summaryFileLocation: ./target/coverage/cobertura.xml
       #pathToSources: # string. Path to Source files.
@@ -52,3 +55,4 @@ steps:
         exit 1
       fi
     displayName: Assert coverage is above baseline
+    workingDirectory: $(TRIDENT_SOURCE_DIR)
