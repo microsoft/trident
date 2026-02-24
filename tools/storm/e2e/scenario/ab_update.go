@@ -34,6 +34,9 @@ func (s *TridentE2EScenario) addAbUpdateTests(r storm.TestRegistrar, prefix stri
 	r.RegisterTestCase(prefix+"-ab-update", func(tc storm.TestCase) error {
 		return s.abUpdateOs(tc, false)
 	})
+	r.RegisterTestCase(prefix+"-collect-boot-metrics", func(tc storm.TestCase) error {
+		return s.collectBootMetrics(tc, prefix)
+	})
 }
 
 // addSplitABUpdateTests adds the split A/B update test cases to the provided test registrar
@@ -64,6 +67,11 @@ func (s *TridentE2EScenario) addSplitABUpdateTests(r storm.TestRegistrar, prefix
 	})
 	r.RegisterTestCase(prefix+"-finalize", func(tc storm.TestCase) error {
 		return filterSplitTestForCurrentRing(s, tc, s.abFinalizeOs)
+	})
+	r.RegisterTestCase(prefix+"-collect-boot-metrics", func(tc storm.TestCase) error {
+		return filterSplitTestForCurrentRing(s, tc, func(tc storm.TestCase) error {
+			return s.collectBootMetrics(tc, prefix)
+		})
 	})
 }
 

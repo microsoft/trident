@@ -327,6 +327,13 @@ func TestRegisterTestCases_AllPhase3_FeatureParity(t *testing.T) {
 			check("validate-extensions", p.expectExtensions)
 			check("validate-rollback", p.expectRollback)
 			check("ab-update-split-validate-staged", p.expectAbStaged)
+
+			// Phase 4: metrics and log collection are always registered
+			check("collect-install-boot-metrics", true)
+			check("publish-logs", true)
+			// AB update boot metrics are registered when AB update is configured
+			check("ab-update-1-collect-boot-metrics", p.expectAbStaged)
+			check("ab-update-split-collect-boot-metrics", p.expectAbStaged)
 		})
 	}
 }

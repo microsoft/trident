@@ -197,6 +197,7 @@ func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 	r.RegisterTestCase("setup-test-host", s.setupTestHost)
 	r.RegisterTestCase("install-os", s.installOs)
 	r.RegisterTestCase("check-trident-ssh", s.checkTridentViaSshAfterInstall)
+	r.RegisterTestCase("collect-install-boot-metrics", s.collectInstallBootMetrics)
 
 	if s.HasTestTag("test:base") {
 		r.RegisterTestCase("validate-partitions", s.validatePartitions)
@@ -224,6 +225,8 @@ func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 		s.addAbUpdateTests(r, "ab-update-1")
 		s.addSplitABUpdateTests(r, "ab-update-split")
 	}
+
+	r.RegisterTestCase("publish-logs", s.publishLogs)
 	return nil
 }
 

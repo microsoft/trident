@@ -220,3 +220,19 @@ in the ADO test tab for each pipeline run.
 All actual E2E test code lives under [`scenario/`](scenario/). The main entry
 point is the file [`trident.go`](scenario/trident.go), which contains the
 `TridentE2EScenario` struct which implements the storm Scenario interface.
+
+#### Metrics and Log Collection
+
+The scenario automatically collects boot metrics and publishes log artifacts,
+eliminating the need for separate YAML pipeline steps:
+
+- **Boot metrics** (`metrics.go`): After the initial OS install and each A/B
+  update reboot, the scenario collects `systemd-analyze` boot timing data
+  (firmware, loader, kernel, initrd, userspace) via SSH and writes it to
+  `boot-metrics.jsonl`.
+- **Log publishing** (`logs.go`): At the end of the scenario, all generated log
+  and metrics files are published as artifacts via the storm ArtifactBroker:
+  - `logstream-full.log` (trident deployment log stream)
+  - `trident-clean-install-metrics.jsonl` (netlisten tracestream from install)
+  - `boot-metrics.jsonl` (systemd-analyze boot timings)
+  - `metrics-*.jsonl` (netlisten tracestream from A/B updates)
