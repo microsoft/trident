@@ -110,7 +110,15 @@ stages:
 
               ./bin/storm-trident run "$(SCENARIO)" \
                   -o $(ob_outputDirectory) \
+                  -j $(ob_outputDirectory)/$(SCENARIO)_$(System.JobAttempt).junit.xml \
                   -- \
                   --pipeline-run \
                   --iso "./artifacts/iso/$(installerISOName).iso"
             displayName: "🧪 Run E2E Test"
+
+          - template: ../junit/handle-junit-test-results.yml
+            parameters:
+              testRunName: "$(SCENARIO)_$(System.JobAttempt)"
+              junitTestFile: "$(ob_outputDirectory)/$(SCENARIO)_$(System.JobAttempt).junit.xml"
+              displayNameSpecifier: "$(SCENARIO)"
+              artifactName: "junit_$(SCENARIO)_$(System.JobAttempt)"

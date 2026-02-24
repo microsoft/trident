@@ -207,6 +207,14 @@ To run this in pipelines, we depend on two YAML templates:
   configuration combination. It consumes the matrix variable produced by the
   previous template and runs each scenario in it.
 
+#### JUnit XML Output
+
+The pipeline uses Storm's built-in `-j` flag to produce JUnit XML results for
+each scenario run. The JUnit XML file is written to the output directory as
+`<scenario>_<job-attempt>.junit.xml` and published to ADO via the
+`handle-junit-test-results.yml` template. This enables test result visibility
+in the ADO test tab for each pipeline run.
+
 ### E2E Test Code
 
 All actual E2E test code lives under [`scenario/`](scenario/). The main entry
