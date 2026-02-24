@@ -1,6 +1,9 @@
 package netlaunch
 
-import "tridenttools/pkg/bmc"
+import (
+	"os"
+	"tridenttools/pkg/bmc"
+)
 
 type NetCommonConfig struct {
 	// Port to serve the HTTP server on.
@@ -91,6 +94,32 @@ type RcpConfiguration struct {
 	// The local Unix socket netlaunch will listen on when gRPC mode is
 	// `local-proxy`.
 	LocalProxySocket string `yaml:"localProxySocket,omitempty"`
+
+	AdditionalFiles []RcpAdditionalFile `yaml:"-"`
+
+	// The address of the server the RCP agent should connect to. This is only
+	// used in gRPC modes.
+	//
+	// If not specified, the RCP agent will connect to Trident's default unix
+	// socket address.
+	RcpAgentServerAddress string `yaml:"rcpAgentServerAddress,omitempty"`
+
+	// The connection type to use when the RCP agent connects to the server.
+	// This is only used in gRPC modes.
+	//
+	// If not specified, the RCP agent will use "unix" as the default connection
+	// type, connecting to Trident's default unix socket address.
+	RcpAgentServerConnectionType string `yaml:"rcpAgentServerConnectionType,omitempty"`
+
+	// Systemd services to start via the RCP agent after file downloads.
+	StartServices []string `yaml:"-"`
+}
+
+type RcpAdditionalFile struct {
+	Name        string
+	Destination string
+	Mode        os.FileMode
+	Data        []byte
 }
 
 func (c *RcpConfiguration) GetGrpcMode() GrpcMode {

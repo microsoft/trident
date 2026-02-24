@@ -25,11 +25,19 @@ func openLocalProxy(ctx context.Context, socketPath string, rcpListener *rcpclie
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case conn := <-rcpListener.ConnChan:
+		case conn, ok := <-rcpListener.ConnChan:
+			if !ok || conn == nil {
+				return fmt.Errorf("RCP listener closed")
+			}
 			log.Infof("Accepted RCP connection from %s", conn.RemoteAddr())
 			err := runLocalProxy(ctx, socketPath, conn)
 			if err != nil {
 				log.Errorf("Error running local proxy: %v", err)
+			}
+
+			if ctx.Err() != nil {
+				// Don't retry if the context was cancelled.
+				return ctx.Err()
 			}
 		}
 	}

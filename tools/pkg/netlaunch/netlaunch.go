@@ -22,6 +22,7 @@ import (
 	"tridenttools/pkg/phonehome"
 	rcpclient "tridenttools/pkg/rcp/client"
 	"tridenttools/pkg/rcp/tlscerts"
+	"tridenttools/pkg/tridentgrpc"
 	stormutils "tridenttools/storm/utils"
 )
 
@@ -422,8 +423,28 @@ func injectRcpAgentConfig(
 	localRcpConf RcpConfiguration,
 	extraFiles ...rcpAgentFileDownload,
 ) error {
+	rcpServerAddress := tridentgrpc.DefaultTridentSocketPath
+	rcpServerConnectionType := "unix"
+
+	if localRcpConf.RcpAgentServerAddress != "" {
+		log.Warnf("Custom rcp-agent server: '%s'", localRcpConf.RcpAgentServerAddress)
+		rcpServerAddress = localRcpConf.RcpAgentServerAddress
+	}
+
+	if localRcpConf.RcpAgentServerConnectionType != "" {
+		log.Warnf("Custom rcp-agent server connection type: '%s'", localRcpConf.RcpAgentServerConnectionType)
+		rcpServerConnectionType = localRcpConf.RcpAgentServerConnectionType
+	}
+
 	// Create an empty RcpAgentConfiguration
-	rcpAgentConfBuilder := newRcpAgentConfigBuilder(mux, announceIp, announceHttpAddress, rcpListener)
+	rcpAgentConfBuilder := newRcpAgentConfigBuilder(
+		mux,
+		announceIp,
+		announceHttpAddress,
+		rcpListener,
+		rcpServerAddress,
+		rcpServerConnectionType,
+	)
 
 	// If we have a local trident path, serve that file via HTTP and set the download URL.
 	if localRcpConf.LocalTridentPath != nil {
@@ -447,6 +468,14 @@ func injectRcpAgentConfig(
 
 	for _, extraFile := range extraFiles {
 		rcpAgentConfBuilder.registerRcpFile(extraFile)
+	}
+
+	for _, file := range localRcpConf.AdditionalFiles {
+		rcpAgentConfBuilder.registerRcpFile(newRcpAgentFileDownload(file.Name, file.Destination, file.Mode, file.Data))
+	}
+
+	for _, service := range localRcpConf.StartServices {
+		rcpAgentConfBuilder.startService(service)
 	}
 
 	encoded, err := yaml.Marshal(rcpAgentConfBuilder.build())

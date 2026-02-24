@@ -77,15 +77,15 @@ func handleServicingResponseStream(stream grpc.ServerStreamingClient[tridentpbv1
 	for {
 		resp, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
-			log.Info("Install stream ended")
+			log.Info("Servicing stream ended")
 			break
 		} else if err != nil {
-			return fmt.Errorf("failed to receive installation response via gRPC: %w", err)
+			return fmt.Errorf("failed to receive servicing response via gRPC: %w", err)
 		}
 
 		err = handleServicingResponse(resp)
 		if err != nil {
-			return fmt.Errorf("failed to handle installation response via gRPC: %w", err)
+			return fmt.Errorf("failed to handle servicing response via gRPC: %w", err)
 		}
 	}
 
@@ -130,19 +130,37 @@ func handleServicingResponse(resp *tridentpbv1.ServicingResponse) (err error) {
 			record.Log(outLevel, text)
 		}
 	case *tridentpbv1.ServicingResponse_Completed:
+		var statusStr string
+		switch payload.Completed.Status {
+		case tridentpbv1.StatusCode_STATUS_CODE_SUCCESS:
+			statusStr = color.CyanString("SUCCESS")
+		case tridentpbv1.StatusCode_STATUS_CODE_FAILURE:
+			statusStr = color.RedString("FAILURE")
+		case tridentpbv1.StatusCode_STATUS_CODE_UNSPECIFIED:
+			statusStr = color.YellowString("UNSPECIFIED")
+		}
 		var errStr string
 		level := logrus.InfoLevel
 		if tridentError := payload.Completed.GetError(); tridentError != nil {
 			level = logrus.ErrorLevel
 			errStr = fmt.Sprintf("\n%s", tridentError.Message)
 			err = fmt.Errorf("operation failed with error kind %s:%s: %s", tridentError.Kind, tridentError.Subkind, tridentError.Message)
+		} else {
+			switch payload.Completed.RebootStatus {
+			case tridentpbv1.RebootStatus_REBOOT_NOT_REQUIRED:
+				errStr = " - Reboot: not required"
+			case tridentpbv1.RebootStatus_REBOOT_REQUIRED:
+				errStr = " - Reboot: required"
+			case tridentpbv1.RebootStatus_REBOOT_STARTED:
+				errStr = " - Reboot: started by trident"
+			}
 		}
 
 		log.StandardLogger().Log(level, fmt.Sprintf(
 			"%s%s %s%s",
 			grpcHeader,
-			color.MagentaString("[STATUS]"),
-			payload.Completed.Status.String(),
+			color.MagentaString("COMPLETED:"),
+			statusStr,
 			errStr,
 		))
 	default:

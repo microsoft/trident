@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"net"
+	"sync"
 
 	"tridenttools/pkg/rcp/tlscerts"
 
@@ -98,7 +99,6 @@ func ListenAndAccept(ctx context.Context, certProvider tlscerts.CertProvider, po
 			if err != nil {
 				if acceptCtx.Err() != nil {
 					// Context was cancelled
-					logrus.Debug("RCP listener context cancelled, stopping accept loop")
 					return
 				}
 
@@ -145,11 +145,20 @@ func ListenAndAccept(ctx context.Context, certProvider tlscerts.CertProvider, po
 
 type trackedConnection struct {
 	net.Conn
+	once sync.Once
 	done chan struct{}
 }
 
 func (tc *trackedConnection) Close() error {
+	// Close the underlying connection and then signal that the connection has
+	// been closed by closing the done channel.
 	err := tc.Conn.Close()
-	close(tc.done)
+
+	// Close the done channel exactly once to signal that the connection has
+	// been closed.
+	tc.once.Do(func() {
+		close(tc.done)
+	})
+
 	return err
 }

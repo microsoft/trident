@@ -10,7 +10,6 @@ import (
 	rcpagent "tridenttools/pkg/rcp/agent"
 	rcpclient "tridenttools/pkg/rcp/client"
 	"tridenttools/pkg/rcp/tlscerts"
-	"tridenttools/pkg/tridentgrpc"
 
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
@@ -33,20 +32,31 @@ func newRcpAgentFileDownload(name string, destination string, mode os.FileMode, 
 }
 
 type rcpAgentConfigBuilder struct {
-	rcpConf      *rcpagent.RcpAgentConfiguration
-	mux          *http.ServeMux
-	AnnounceIp   string
-	announceHttp string
-	rcpListener  *rcpclient.RcpListener
+	rcpConf              *rcpagent.RcpAgentConfiguration
+	mux                  *http.ServeMux
+	AnnounceIp           string
+	announceHttp         string
+	rcpListener          *rcpclient.RcpListener
+	serverAddress        string
+	serverConnectionType string
 }
 
-func newRcpAgentConfigBuilder(mux *http.ServeMux, announceIp string, announceHttpAddress string, rcpListener *rcpclient.RcpListener) *rcpAgentConfigBuilder {
+func newRcpAgentConfigBuilder(
+	mux *http.ServeMux,
+	announceIp string,
+	announceHttpAddress string,
+	rcpListener *rcpclient.RcpListener,
+	serverAddress string,
+	serverConnectionType string,
+) *rcpAgentConfigBuilder {
 	return &rcpAgentConfigBuilder{
-		rcpConf:      &rcpagent.RcpAgentConfiguration{},
-		mux:          mux,
-		AnnounceIp:   announceIp,
-		announceHttp: announceHttpAddress,
-		rcpListener:  rcpListener,
+		rcpConf:              &rcpagent.RcpAgentConfiguration{},
+		mux:                  mux,
+		AnnounceIp:           announceIp,
+		announceHttp:         announceHttpAddress,
+		rcpListener:          rcpListener,
+		serverAddress:        serverAddress,
+		serverConnectionType: serverConnectionType,
 	}
 }
 
@@ -67,10 +77,16 @@ func (b *rcpAgentConfigBuilder) registerRcpFile(file rcpAgentFileDownload) {
 	})
 }
 
+func (b *rcpAgentConfigBuilder) startService(serviceName string) {
+	log.Infof("Scheduling service '%s' to be started by RCP agent", serviceName)
+	b.rcpConf.Services.Start = append(b.rcpConf.Services.Start, serviceName)
+}
+
 func (b *rcpAgentConfigBuilder) build() *rcpagent.RcpAgentConfiguration {
 	if b.rcpListener != nil {
 		b.rcpConf.ClientAddress = fmt.Sprintf("%s:%d", b.AnnounceIp, b.rcpListener.Port)
-		b.rcpConf.ServerAddress = tridentgrpc.DefaultTridentSocketPath
+		b.rcpConf.ServerAddress = b.serverAddress
+		b.rcpConf.ServerConnectionType = b.serverConnectionType
 
 		// Populate TLS certs for mutual authentication
 		clientCert, clientKey, serverCert := tlscerts.ClientTlsData()
