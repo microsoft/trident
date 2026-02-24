@@ -443,6 +443,7 @@ stages:
           buildPurpose: "post_merge"
           runtimeEnv: "host"
           tridentRepoName: ${{ parameters.tridentRepoName }}
+          adoProjectName: ${{ parameters.adoProjectName }}
 
       # VM Testing (container, post_merge)
       - template: stages/testing_vm/netlaunch-testing.yml
@@ -450,6 +451,7 @@ stages:
           buildPurpose: "post_merge"
           runtimeEnv: "container"
           tridentRepoName: ${{ parameters.tridentRepoName }}
+          adoProjectName: ${{ parameters.adoProjectName }}
 
       - ${{ if parameters.baremetalTestsEnabled }}:
           # BM Testing (host, weekly)
