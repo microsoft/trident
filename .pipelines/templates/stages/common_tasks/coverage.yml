@@ -38,9 +38,8 @@ steps:
     workingDirectory: $(TRIDENT_SOURCE_DIR)
 
   - task: PublishCodeCoverageResults@2
-    workingDirectory: $(TRIDENT_SOURCE_DIR)
     inputs:
-      summaryFileLocation: ./target/coverage/cobertura.xml
+      summaryFileLocation: $(TRIDENT_SOURCE_DIR)/target/coverage/cobertura.xml
       #pathToSources: # string. Path to Source files.
       #reportDirectory: # string. Report directory.
       #additionalCodeCoverageFiles: # string. Additional files.
