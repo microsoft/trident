@@ -22,21 +22,39 @@ use trident_api::{
 use crate::{
     engine::{context::filesystem::FileSystemDataImage, EngineContext},
     io_utils::{hashing_reader::HashingReader384, image_streamer},
-    osimage::OsImageFile,
+    osimage::{OsImageFile, OsImagePartition},
 };
 
 /// Deploys all the filesystem images sourced from the OS Image to the
 /// corresponding block devices.
 #[tracing::instrument(name = "image_provision", skip_all)]
 pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
-    // Get the filesystems that are sourced from the OS image
-    let fs_from_img =
-        filesystems_from_image(ctx).message("Failed to get filesystems sourced from the image")?;
+    // Depending on the type of servicing, get the list of filesystems and
+    // partitions sourced from the OS image that we need to deploy.
+    let (fs_from_img, partitions_from_img) = if !ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE)
+    {
+        // For regular servicing, we only care about filesystems declared in the
+        // Host Configuration.
+        (
+            filesystems_from_image(ctx)
+                .message("Failed to get filesystems sourced from the image")?,
+            Vec::new(),
+        )
+    } else {
+        // For raw COSI storage mode, we care about all partitions in the image,
+        // and assume the Host Configuration is fully derived from it, so there
+        // is no real reason in reading it.
+        (
+            Vec::new(),
+            partitions_from_image(ctx)
+                .message("Failed to get partitions sourced from the image")?,
+        )
+    };
 
     // If there are no filesystems sourced from the image, we have nothing to deploy?
-    if fs_from_img.is_empty() {
+    if fs_from_img.is_empty() && partitions_from_img.is_empty() {
         return Err(TridentError::internal(
-            "Deployment in progress but no filesystems are sourced from the image",
+            "Deployment in progress but no filesystems nor partitions are sourced from the image",
         ));
     }
 
@@ -120,8 +138,24 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
         }
     }
 
+    // Now add any non-fs partitions that we may need to deploy on raw COSI storage mode
+    for (id, partition) in partitions_from_img.iter() {
+        combined_images.insert(
+            partition.image_file.path.clone(),
+            (
+                id.clone(),
+                &partition.image_file,
+                FileSystemResize::NoResize,
+            ),
+        );
+    }
+
     os_img.read_images(|path, reader| -> ControlFlow<Result<(), TridentError>> {
         let Some((id, image_file, resize)) = combined_images.remove(path) else {
+            debug!(
+                "Skipping non-image file at path '{}' from imaging",
+                path.display()
+            );
             return ControlFlow::Continue(());
         };
 
@@ -141,8 +175,12 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
     })?;
 
     if !combined_images.is_empty() {
-        return Err(TridentError::new(InvalidInputError::CorruptOsImage))
-            .message("Filesystem listed in COSI metadata but not present");
+        return Err(TridentError::new(InvalidInputError::CorruptOsImage(
+            format!(
+                "The following image files were expected to be deployed but were not found in the OS image: {}",
+                combined_images.keys().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", ")
+            )
+        )));
     }
 
     Ok(())
@@ -199,6 +237,41 @@ fn filesystems_from_image(
     }
 
     Ok(fs_list)
+}
+
+fn partitions_from_image(
+    ctx: &EngineContext,
+) -> Result<Vec<(BlockDeviceId, OsImagePartition)>, TridentError> {
+    let Some(os_img) = ctx.image.as_ref() else {
+        // No image, nothing to do!
+        return Ok(Vec::new());
+    };
+
+    // Build a map of partition UUID to BlockDeviceId from the Host
+    // Configuration.
+    let hc_partitions = ctx
+        .spec
+        .storage
+        .disks
+        .iter()
+        .flat_map(|d| d.partitions.iter())
+        .filter_map(|p| p.uuid.map(|uuid| (uuid, &p.id)))
+        .collect::<HashMap<_, _>>();
+
+    let mut part_list = Vec::new();
+
+    for partition in os_img.partitions().into_iter().flatten() {
+        let device_id = hc_partitions
+            .get(&partition.info.part_uuid)
+            .cloned()
+            .structured(InternalError::DerivedHostConfigurationPartitionNotFound(
+                partition.info.part_uuid.hyphenated().to_string(),
+            ))?;
+
+        part_list.push((device_id.clone(), partition));
+    }
+
+    Ok(part_list)
 }
 
 /// Resizes ext2/ext3/ext4 filesystem on the given block device to the maximum
@@ -263,6 +336,11 @@ fn deploy_os_image_file(
             image_file.sha384,
             computed_sha384
         )
+    }
+
+    if dev_info.size == image_file.uncompressed_size {
+        debug!("Block device '{id}' size matches image uncompressed size, skipping resizing");
+        return Ok(());
     }
 
     match fs_resize {

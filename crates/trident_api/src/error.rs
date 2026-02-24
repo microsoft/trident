@@ -149,6 +149,9 @@ pub enum InternalError {
         #[from]
         inner: HostConfigurationStaticValidationError,
     },
+
+    #[error("Failed to find partition with UUID '{0}' in the derived Host Configuration")]
+    DerivedHostConfigurationPartitionNotFound(String),
 }
 
 /// Identifies errors that occur when the user provides an invalid input.
@@ -164,8 +167,8 @@ pub enum InvalidInputError {
     )]
     CleanInstallOnProvisionedHost,
 
-    #[error("The provided OS image file is corrupt")]
-    CorruptOsImage,
+    #[error("The provided OS image file is corrupt: {0}")]
+    CorruptOsImage(String),
 
     #[error(
         "Filesystem mounted at '{mount_point}' requires at least {} [{fs_size} bytes] of storage. \

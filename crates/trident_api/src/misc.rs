@@ -13,6 +13,13 @@ impl IdGenerator {
         }
     }
 
+    pub fn new_with_start(name: impl Into<String>, start: u64) -> Self {
+        Self {
+            name: name.into(),
+            range: start..,
+        }
+    }
+
     pub fn next_id(&mut self) -> String {
         format!("{}-{}", self.name, self.range.next().unwrap())
     }

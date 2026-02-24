@@ -11,6 +11,7 @@ use gpt::{DiskDevice, GptDisk};
 use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use url::Url;
+use uuid::Uuid;
 
 use sysdefs::{
     arch::SystemArchitecture, filesystems::RealFilesystemType, osuuid::OsUuid,
@@ -36,6 +37,7 @@ mod cosi;
 pub(crate) mod mock;
 
 use cosi::Cosi;
+
 #[cfg(test)]
 use mock::MockOsImage;
 
@@ -182,6 +184,19 @@ impl OsImage {
         }
     }
 
+    /// Get an iterator over the partitions defined in the OS image, if available.
+    pub fn partitions(&self) -> Option<Box<dyn Iterator<Item = OsImagePartition> + '_>> {
+        match &self.0 {
+            OsImageInner::Cosi(cosi) => cosi
+                .partitions()
+                .map(|iter| Box::new(iter) as Box<dyn Iterator<Item = OsImagePartition> + '_>),
+            #[cfg(test)]
+            OsImageInner::Mock(mock) => mock
+                .partitions()
+                .map(|iter| Box::new(iter) as Box<dyn Iterator<Item = OsImagePartition> + '_>),
+        }
+    }
+
     /// Derives a host configuration from the OS image, if supported.
     pub(crate) fn derive_host_configuration(
         &mut self,
@@ -280,6 +295,32 @@ pub struct OsImageFile {
 
     /// Path of the partition image within the COSI.
     pub path: PathBuf,
+}
+
+#[derive(Debug)]
+pub struct OsImagePartition {
+    pub image_file: OsImageFile,
+    pub info: GptPartitionInfo,
+}
+
+#[derive(Debug, Clone)]
+pub struct GptPartitionInfo {
+    /// The number of the partition in the GPT (starting from 1).
+    pub partition_number: u32,
+    /// The size of the partition in bytes.
+    pub size: u64,
+    /// The type of the partition.
+    pub part_type: DiscoverablePartitionType,
+    /// The UUID of the partition.
+    pub part_uuid: Uuid,
+    /// First LBA of the partition.
+    pub first_lba: u64,
+    /// Last LBA of the partition.
+    pub last_lba: u64,
+    /// Partition flags.
+    pub flags: u64,
+    /// Partition name.
+    pub name: String,
 }
 
 #[derive(Debug)]

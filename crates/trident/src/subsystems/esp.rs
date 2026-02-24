@@ -158,8 +158,9 @@ fn deploy_esp(ctx: &EngineContext, mount_point: &Path) -> Result<(), TridentErro
     })?;
 
     if !found_esp {
-        return Err(TridentError::new(InvalidInputError::CorruptOsImage))
-            .message("ESP filesystem listed in OS image but not present");
+        return Err(TridentError::new(InvalidInputError::CorruptOsImage(
+            "ESP filesystem listed in OS image but not present".into(),
+        )));
     }
 
     Ok(())
