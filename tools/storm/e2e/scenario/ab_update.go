@@ -56,10 +56,14 @@ func (s *TridentE2EScenario) addSplitABUpdateTests(r storm.TestRegistrar, prefix
 	r.RegisterTestCase(prefix+"-upload-new-hc", func(tc storm.TestCase) error {
 		return filterSplitTestForCurrentRing(s, tc, s.uploadNewConfig)
 	})
-	r.RegisterTestCase(prefix+"-ab-update", func(tc storm.TestCase) error {
-		return filterSplitTestForCurrentRing(s, tc, func(tc storm.TestCase) error {
-			return s.abUpdateOs(tc, true)
-		})
+	r.RegisterTestCase(prefix+"-stage", func(tc storm.TestCase) error {
+		return filterSplitTestForCurrentRing(s, tc, s.abStageOs)
+	})
+	r.RegisterTestCase(prefix+"-validate-staged", func(tc storm.TestCase) error {
+		return filterSplitTestForCurrentRing(s, tc, s.validateAbStaged)
+	})
+	r.RegisterTestCase(prefix+"-finalize", func(tc storm.TestCase) error {
+		return filterSplitTestForCurrentRing(s, tc, s.abFinalizeOs)
 	})
 }
 
@@ -287,6 +291,118 @@ func (s *TridentE2EScenario) abUpdateOs(tc storm.TestCase, split bool) error {
 	// Longer timeout since the host will be rebooting while we wait.
 	conn_ctx, cancel := context.WithTimeout(tc.Context(), time.Minute*5)
 	defer cancel()
+	err = s.populateSshClient(conn_ctx)
+	if err != nil {
+		tc.FailFromError(err)
+		return nil
+	}
+
+	logrus.Info("Reacquired SSH connection to host after reboot.")
+
+	// Give it some extra time to ensure Trident is up after reboot.
+	err = trident.CheckTridentService(s.sshClient, s.runtime, time.Minute*2, true)
+	if err != nil {
+		tc.FailFromError(err)
+	}
+
+	return nil
+}
+
+// abStageOs stages an A/B update on the test host without finalizing.
+// This is used in the split A/B update flow where staging and finalization
+// are separate test steps with a validation check in between.
+func (s *TridentE2EScenario) abStageOs(tc storm.TestCase) error {
+	args := fmt.Sprintf(
+		"update -v trace %s",
+		path.Join(s.runtime.HostPath(), hostConfigRemotePath),
+	)
+
+	// Get the Host Config file to be used for the update, for debugging purposes
+	file, err := sshutils.CommandOutput(s.sshClient, fmt.Sprintf("sudo cat %s", hostConfigRemotePath))
+	if err != nil {
+		return fmt.Errorf("failed to read new Host Config file: %w", err)
+	}
+
+	logrus.Debugf("Trident HC file @ %s:\n%s", hostConfigRemotePath, file)
+
+	go netlisten.RunNetlisten(tc.Context(), &netlaunch.NetListenConfig{
+		NetCommonConfig: netlaunch.NetCommonConfig{
+			ListenPort:           defaultNetlaunchListenPort,
+			LogstreamFile:        s.args.LogstreamFile,
+			TracestreamFile:      fmt.Sprintf("metrics-%s.jsonl", tc.Name()),
+			ServeDirectory:       s.args.TestImageDir,
+			MaxPhonehomeFailures: s.configParams.MaxExpectedFailures,
+		},
+	})
+
+	logrus.Infof("Running split Trident A/B update (stage)...")
+	err = runTridentUpdate(tc, s.runtime, s.sshClient, args+" --allowed-operations stage")
+	if err != nil {
+		return fmt.Errorf("failed to run Trident A/B update (stage): %w", err)
+	}
+
+	return nil
+}
+
+// abFinalizeOs finalizes a previously staged A/B update, handling reboot
+// and SSH reconnection. This is used in the split A/B update flow.
+func (s *TridentE2EScenario) abFinalizeOs(tc storm.TestCase) error {
+	args := fmt.Sprintf(
+		"update -v trace %s",
+		path.Join(s.runtime.HostPath(), hostConfigRemotePath),
+	)
+
+	go netlisten.RunNetlisten(tc.Context(), &netlaunch.NetListenConfig{
+		NetCommonConfig: netlaunch.NetCommonConfig{
+			ListenPort:           defaultNetlaunchListenPort,
+			LogstreamFile:        s.args.LogstreamFile,
+			TracestreamFile:      fmt.Sprintf("metrics-%s.jsonl", tc.Name()),
+			ServeDirectory:       s.args.TestImageDir,
+			MaxPhonehomeFailures: s.configParams.MaxExpectedFailures,
+		},
+	})
+
+	monitorCtx, cancel := context.WithCancel(tc.Context())
+	defer cancel()
+
+	// Start VM serial monitor (only runs if hardware is VM)
+	monWaitChan, monErr := s.spawnVMSerialMonitor(monitorCtx, tc.ArtifactBroker().StreamArtifactData(tc.Name()+"/serial.log"))
+	if monErr != nil {
+		return fmt.Errorf("failed to start VM serial monitor: %w", monErr)
+	}
+
+	// On exit, give the monitor up to 1 minute to reach the login prompt and exit.
+	defer func() {
+		select {
+		case <-time.After(time.Minute):
+			logrus.Infof("Waited 1 minute for serial monitor to reach login prompt, cancelling monitor.")
+			cancel()
+		case <-monWaitChan:
+			// Monitor exited on its own
+		}
+	}()
+
+	logrus.Infof("Running split Trident A/B update (finalize)...")
+	err := runTridentUpdate(tc, s.runtime, s.sshClient, args+" --allowed-operations finalize")
+	if err != nil {
+		return fmt.Errorf("failed to run Trident A/B update (finalize): %w", err)
+	}
+
+	// Wait for SSH client to disconnect, meaning the host is rebooting, before
+	// trying to reconnect again.
+	logrus.Info("Waiting for SSH client to disconnect after Trident A/B update...")
+	disconnectCtx, disconnectCancel := context.WithTimeout(tc.Context(), time.Minute*2)
+	defer disconnectCancel()
+	err = s.waitForSshToDisconnect(disconnectCtx)
+	if err != nil {
+		tc.FailFromError(fmt.Errorf("failed to detect SSH disconnection after Trident A/B update: %w", err))
+	}
+
+	logrus.Info("SSH client disconnected, host is rebooting. Will attempt to reconnect...")
+
+	// Then, try to reconnect via SSH and check that Trident is running.
+	conn_ctx, connCancel := context.WithTimeout(tc.Context(), time.Minute*5)
+	defer connCancel()
 	err = s.populateSshClient(conn_ctx)
 	if err != nil {
 		tc.FailFromError(err)
