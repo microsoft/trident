@@ -53,6 +53,10 @@ const UKI_PCRLOCK_DIR: &str = "650-uki.pcrlock.d";
 /// section of the UKI binary, as recorded into PCR 4 following Microsoft's Authenticode hash spec,
 const BOOT_LOADER_CODE_UKI_PCRLOCK_DIR: &str = "660-boot-loader-code-uki.pcrlock.d";
 
+/// `/var/lib/pcrlock.d/670-uki-addons.pcrlock.d`, where `lock-uki` measures the UKI addons binaries, as recorded
+/// into PCR 4.
+const UKI_ADDONS_PCRLOCK_DIR: &str = "670-uki-addons.pcrlock.d";
+
 #[derive(Debug, Deserialize)]
 struct PcrValue {
     pcr: Pcr,
@@ -560,8 +564,10 @@ fn generate_pcrlock_files(
     }
 
     // Run 'lock-uki' when PCRs 4/11 are requested
+    let mut all_addons_count = 0;
     if !(pcrs & (Pcr::Pcr4 | Pcr::Pcr11)).is_empty() {
         for (index, uki_path) in uki_binaries.clone().into_iter().enumerate() {
+            // Generate .pcrlock file for the UKI binary, which covers both PCR 4 and PCR 11 measurements for that UKI binary
             let pcrlock_file = generate_pcrlock_output_path(UKI_PCRLOCK_DIR, index);
             let cmd = LockCommand::Uki {
                 path: uki_path.clone(),
@@ -580,6 +586,69 @@ fn generate_pcrlock_files(
                     pcrlock_file.display()
                 ))?
             );
+
+            // Check the UKI addon path (`uki_path` + 'extra.d') for existence, and if it exists, generate a .pcrlock file for it as well,
+            // to cover the case where firmware measures the UKI addons into PCR 4.
+            let uki_addon_path = format!(
+                "{}.extra.d",
+                uki_path.to_string_lossy() // TODO: should be `file_stem` but systemd-boot doesn't seem to be following the spec.
+            );
+            trace!(
+                "Checking for existence of UKI addon path at '{}'",
+                uki_addon_path
+            );
+
+            // For each *.addon.efi file in the UKI addons dir, generate a .pcrlock file to measure it as well.
+            if !Path::new(&uki_addon_path).exists() {
+                trace!(
+                    "UKI addon path '{}' does not exist, so skipping generating .pcrlock file to measure it",
+                    uki_addon_path
+                );
+            } else {
+                trace!(
+                    "UKI addon path '{}' exists, so generating .pcrlock file to measure it as well",
+                    uki_addon_path
+                );
+                for entry in
+                    fs::read_dir(&uki_addon_path).context("Failed to read UKI addons directory")?
+                {
+                    let entry = entry.context("Failed to get entry in UKI addons directory")?;
+                    let path = entry.path();
+
+                    if path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .map(|name| name.ends_with(".addon.efi"))
+                        .unwrap_or(false)
+                    {
+                        let addon_pcrlock_file =
+                            generate_pcrlock_output_path(UKI_ADDONS_PCRLOCK_DIR, all_addons_count);
+                        all_addons_count += 1;
+                        debug!(
+                            "Generating .pcrlock file at '{}' to measure UKI addon binary at '{}'",
+                            addon_pcrlock_file.display(),
+                            path.display()
+                        );
+                        let lock_addon_cmd = LockCommand::Pe {
+                            path: path.clone(),
+                            pcrlock_file: addon_pcrlock_file.clone(),
+                        };
+                        lock_addon_cmd.run().context(format!(
+                            "Failed to generate .pcrlock file via 'lock-uki' at '{}'",
+                            uki_path.display()
+                        ))?;
+
+                        trace!(
+                            "Contents of .pcrlock file at '{}':\n{}",
+                            addon_pcrlock_file.display(),
+                            fs::read_to_string(&addon_pcrlock_file).context(format!(
+                                "Failed to read .pcrlock file at {}",
+                                pcrlock_file.display()
+                            ))?
+                        );
+                    }
+                }
+            }
         }
     } else {
         debug!("Skipping running 'systemd-pcrlock lock-uki' as PCRs 4 and 11 are not requested");
