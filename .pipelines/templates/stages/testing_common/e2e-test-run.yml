@@ -66,12 +66,6 @@ parameters:
 steps:
   - bash: |
       set -eux
-      sudo pip3 install pytest
-      sudo pip3 install fabric
-    displayName: "Installing dependencies for E2E tests"
-
-  - bash: |
-      set -eux
       EXPECT_FAILURE_ARG=""
       if [ "${{ parameters.tridentConfigurationName }}" == "health-checks-install" ]; then
         # In health-checks-install, the Trident service will not return
