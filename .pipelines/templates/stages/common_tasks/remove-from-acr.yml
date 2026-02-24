@@ -24,78 +24,42 @@ parameters:
       - bareMetal
 
 steps:
-  - ${{ if eq(parameters.adoProjectName, 'polar') }}:
-      - task: AzureCLI@2
-        inputs:
-          azureSubscription: maritimus-dev-acr-write-umi
-          scriptType: bash
-          scriptLocation: inlineScript
-          inlineScript: |
-            set -eux
+  - task: AzureCLI@2
+    inputs:
+      ${{ if eq(parameters.adoProjectName, 'polar') }}:
+        azureSubscription: maritimus-dev-acr-write-umi
+      ${{ if eq(parameters.adoProjectName, 'ECF') }}:
+        azureSubscription: trident-dev-acr-write-umi-ECF
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        set -eux
 
-            cd $(TRIDENT_SOURCE_DIR)
-            if [ "${{ parameters.config }}" == 'misc' ]; then
-              # Remove COSI images
-              ./bin/storm-trident script acr-delete \
-                --config ${{ parameters.config }} \
-                --deployment-environment ${{ parameters.deploymentEnvironment }} \
-                --acr-name $(ACR_NAME) \
-                --repo-name ${{ parameters.repository }} \
-                --build-id $(Build.BuildId) \
-                --num-clones 4
+        cd $(TRIDENT_SOURCE_DIR)
+        if [ "${{ parameters.config }}" == 'misc' ]; then
+          # Remove COSI images
+          ./bin/storm-trident script acr-delete \
+            --config ${{ parameters.config }} \
+            --deployment-environment ${{ parameters.deploymentEnvironment }} \
+            --acr-name $(ACR_NAME) \
+            --repo-name ${{ parameters.repository }} \
+            --build-id $(Build.BuildId) \
+            --num-clones 4
 
-            elif [ "${{ parameters.config }}" == 'extensions' ]; then
-              ./bin/storm-trident script acr-delete \
-                --config ${{ parameters.config }} \
-                --deployment-environment ${{ parameters.deploymentEnvironment }} \
-                --acr-name $(ACR_NAME) \
-                 --repo-name $(SYSEXT_REPO) \
-                --build-id $(Build.BuildId) \
-                --num-clones 2
+        elif [ "${{ parameters.config }}" == 'extensions' ]; then
+          ./bin/storm-trident script acr-delete \
+            --config ${{ parameters.config }} \
+            --deployment-environment ${{ parameters.deploymentEnvironment }} \
+            --acr-name $(ACR_NAME) \
+            --repo-name $(SYSEXT_REPO) \
+            --build-id $(Build.BuildId) \
+            --num-clones 2
 
-            else
-              echo "Skipping step. Configuration is '${{ parameters.config }}'."
-              exit 0
-            fi
+        else
+          echo "Skipping step. Configuration is '${{ parameters.config }}'."
+          exit 0
+        fi
 
-        displayName: "Log into ACR and delete images by tag"
-        retryCountOnTaskFailure: 3
-        condition: always()
-
-  - ${{ if eq(parameters.adoProjectName, 'ECF') }}:
-      - task: AzureCLI@2
-        inputs:
-          azureSubscription: trident-dev-acr-write-umi-ECF
-          scriptType: bash
-          scriptLocation: inlineScript
-          inlineScript: |
-            set -eux
-
-            cd $(TRIDENT_SOURCE_DIR)
-            if [ "${{ parameters.config }}" == 'misc' ]; then
-              # Remove COSI images
-              ./bin/storm-trident script acr-delete \
-                --config ${{ parameters.config }} \
-                --deployment-environment ${{ parameters.deploymentEnvironment }} \
-                --acr-name $(ACR_NAME) \
-                --repo-name ${{ parameters.repository }} \
-                --build-id $(Build.BuildId) \
-                --num-clones 4
-
-            elif [ "${{ parameters.config }}" == 'extensions' ]; then
-              ./bin/storm-trident script acr-delete \
-                --config ${{ parameters.config }} \
-                --deployment-environment ${{ parameters.deploymentEnvironment }} \
-                --acr-name $(ACR_NAME) \
-                 --repo-name $(SYSEXT_REPO) \
-                --build-id $(Build.BuildId) \
-                --num-clones 2
-
-            else
-              echo "Skipping step. Configuration is '${{ parameters.config }}'."
-              exit 0
-            fi
-
-        displayName: "Log into ACR and delete images by tag"
-        retryCountOnTaskFailure: 3
-        condition: always()
+    displayName: "Log into ACR and delete images by tag"
+    retryCountOnTaskFailure: 3
+    condition: always()
