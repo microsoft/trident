@@ -8,8 +8,11 @@ use const_format::formatcp;
 use log::{debug, trace};
 use procfs::sys::kernel::Version;
 
-use osutils::efivar;
 use osutils::path::join_relative;
+use osutils::{
+    efivar,
+    uki::{self, UKI_ADDON_DIR_SUFFIX, UKI_ADDON_FILE_SUFFIX},
+};
 use trident_api::error::{
     InternalError, ReportError, ServicingError, TridentError, TridentResultExt,
 };
@@ -24,8 +27,6 @@ use crate::engine::EngineContext;
 pub const TMP_UKI_NAME: &str = "vmlinuz-0.efi.staged";
 pub const UKI_DIRECTORY: &str = formatcp!("{ESP_EFI_DIRECTORY}/Linux");
 const TMP_UKI_ADDON_DIR_NAME: &str = formatcp!("{TMP_UKI_NAME}{UKI_ADDON_DIR_SUFFIX}");
-const UKI_ADDON_DIR_SUFFIX: &str = ".extra.d";
-const UKI_ADDON_FILE_SUFFIX: &str = ".addon.efi";
 
 /// Returns the UKI file suffix, given the current active volume and install index.
 fn uki_suffix(ctx: &EngineContext) -> String {
@@ -33,16 +34,6 @@ fn uki_suffix(ctx: &EngineContext) -> String {
         Some(AbVolumeSelection::VolumeA) => format!("azlb{}.efi", ctx.install_index),
         None | Some(AbVolumeSelection::VolumeB) => format!("azla{}.efi", ctx.install_index),
     }
-}
-
-/// Returns the path to the addon directory associated with the given UKI file,
-/// which is expected to be named `<UKI_filename>.extra.d/`. For example, if the
-/// UKI file is `vmlinuz-1-azla1.efi`, the associated addon directory would be
-/// `vmlinuz-1-azla1.efi.extra.d/` in the same directory as the UKI file.
-fn uki_addon_dir(uki_path: &Path) -> PathBuf {
-    let mut addon_dir = uki_path.to_path_buf().into_os_string();
-    addon_dir.push(UKI_ADDON_DIR_SUFFIX);
-    PathBuf::from(addon_dir)
 }
 
 /// Return whether there is a staged UKI file on the ESP.
@@ -76,7 +67,7 @@ pub fn stage_uki_on_esp(temp_mount_dir: &Path, mount_point: &Path) -> Result<(),
 
     // Check if there is an addon directory associated with the UKI and copy it
     // if it exists. It should be named `<UKI_filename>.extra.d/`
-    let addon_dir = uki_addon_dir(&ukis[0]);
+    let addon_dir = uki::uki_addon_dir(&ukis[0]);
 
     if !addon_dir.exists() {
         // No addon directory, so we're done.
@@ -251,7 +242,7 @@ pub fn update_uki_boot_files(
                 .structured(ServicingError::UpdateUki)?;
 
             // Remove any related addon directory as well if it exists.
-            let addon_dir = uki_addon_dir(&path);
+            let addon_dir = uki::uki_addon_dir(&path);
             if addon_dir.exists() && addon_dir.is_dir() {
                 fs::remove_dir_all(&addon_dir)
                     .with_context(|| {
@@ -288,7 +279,7 @@ pub fn update_uki_boot_files(
             .structured(ServicingError::UpdateUki);
         }
 
-        let uki_addons_dest_path = uki_addon_dir(&uki_dest_path);
+        let uki_addons_dest_path = uki::uki_addon_dir(&uki_dest_path);
 
         debug!(
             "Renaming staged UKI addon directory to '{}'",
@@ -453,7 +444,7 @@ mod tests {
     fn test_uki_addon_dir() {
         let uki_path = PathBuf::from("/some/path/vmlinuz-1-azla1.efi");
         let expected_addon_dir = PathBuf::from("/some/path/vmlinuz-1-azla1.efi.extra.d");
-        assert_eq!(uki_addon_dir(&uki_path), expected_addon_dir);
+        assert_eq!(uki::uki_addon_dir(&uki_path), expected_addon_dir);
     }
 
     /// Validates that `is_staged` returns false when no staged UKI exists
@@ -510,7 +501,7 @@ mod tests {
         fs::write(&mock_uki_file, b"uki-content").unwrap();
 
         // Create an addon directory with addon files
-        let addon_dir = uki_addon_dir(&mock_uki_file);
+        let addon_dir = uki::uki_addon_dir(&mock_uki_file);
         fs::create_dir_all(&addon_dir).unwrap();
         fs::write(addon_dir.join("addon1.addon.efi"), b"addon1").unwrap();
         fs::write(addon_dir.join("addon2.addon.efi"), b"addon2").unwrap();
@@ -795,7 +786,7 @@ mod tests {
 
         let conflicting_uki = uki_dir.join("vmlinuz-105-azla1.efi");
         fs::write(&conflicting_uki, b"old").unwrap();
-        let conflicting_addon = uki_addon_dir(&conflicting_uki);
+        let conflicting_addon = uki::uki_addon_dir(&conflicting_uki);
         fs::create_dir_all(&conflicting_addon).unwrap();
         fs::write(conflicting_addon.join("cmdline.addon.efi"), b"addon").unwrap();
 

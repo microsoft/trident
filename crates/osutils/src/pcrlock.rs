@@ -23,6 +23,7 @@ use crate::{
     efivar,
     exe::RunAndCheck,
     path,
+    uki::{self, UKI_ADDON_FILE_SUFFIX},
 };
 
 /// Path to the pcrlock directory where .pcrlock files are located.
@@ -53,9 +54,10 @@ const UKI_PCRLOCK_DIR: &str = "650-uki.pcrlock.d";
 /// section of the UKI binary, as recorded into PCR 4 following Microsoft's Authenticode hash spec,
 const BOOT_LOADER_CODE_UKI_PCRLOCK_DIR: &str = "660-boot-loader-code-uki.pcrlock.d";
 
-/// `/var/lib/pcrlock.d/670-uki-addons.pcrlock.d`, where `lock-uki` measures the UKI addons binaries, as recorded
+/// `/var/lib/pcrlock.d/670-uki-addons-<name>.pcrlock.d`, where `lock-uki` measures the UKI addons binaries, as recorded
 /// into PCR 4.
-const UKI_ADDONS_PCRLOCK_DIR: &str = "670-uki-addons.pcrlock.d";
+const UKI_ADDONS_PCRLOCK_DIR_PREFIX: &str = "670-uki-addons-";
+const UKI_ADDONS_PCRLOCK_DIR_SUFFIX: &str = ".pcrlock.d";
 
 #[derive(Debug, Deserialize)]
 struct PcrValue {
@@ -564,7 +566,6 @@ fn generate_pcrlock_files(
     }
 
     // Run 'lock-uki' when PCRs 4/11 are requested
-    let mut all_addons_count = 0;
     if !(pcrs & (Pcr::Pcr4 | Pcr::Pcr11)).is_empty() {
         for (index, uki_path) in uki_binaries.clone().into_iter().enumerate() {
             // Generate .pcrlock file for the UKI binary, which covers both PCR 4 and PCR 11 measurements for that UKI binary
@@ -589,25 +590,13 @@ fn generate_pcrlock_files(
 
             // Check the UKI addon path (`uki_path` + 'extra.d') for existence, and if it exists, generate a .pcrlock file for it as well,
             // to cover the case where firmware measures the UKI addons into PCR 4.
-            let uki_addon_path = format!(
-                "{}.extra.d",
-                uki_path.to_string_lossy() // TODO: should be `file_stem` but systemd-boot doesn't seem to be following the spec.
-            );
-            trace!(
-                "Checking for existence of UKI addon path at '{}'",
-                uki_addon_path
-            );
+            let uki_addon_path = uki::uki_addon_dir(&uki_path);
 
             // For each *.addon.efi file in the UKI addons dir, generate a .pcrlock file to measure it as well.
-            if !Path::new(&uki_addon_path).exists() {
-                trace!(
-                    "UKI addon path '{}' does not exist, so skipping generating .pcrlock file to measure it",
-                    uki_addon_path
-                );
-            } else {
+            if uki_addon_path.exists() {
                 trace!(
                     "UKI addon path '{}' exists, so generating .pcrlock file to measure it as well",
-                    uki_addon_path
+                    uki_addon_path.display()
                 );
                 for entry in
                     fs::read_dir(&uki_addon_path).context("Failed to read UKI addons directory")?
@@ -615,38 +604,53 @@ fn generate_pcrlock_files(
                     let entry = entry.context("Failed to get entry in UKI addons directory")?;
                     let path = entry.path();
 
-                    if path
+                    let addon_pcrlock_file = if path
                         .file_name()
                         .and_then(|name| name.to_str())
-                        .map(|name| name.ends_with(".addon.efi"))
+                        .map(|name| name.ends_with(UKI_ADDON_FILE_SUFFIX))
                         .unwrap_or(false)
                     {
-                        let addon_pcrlock_file =
-                            generate_pcrlock_output_path(UKI_ADDONS_PCRLOCK_DIR, all_addons_count);
-                        all_addons_count += 1;
-                        debug!(
-                            "Generating .pcrlock file at '{}' to measure UKI addon binary at '{}'",
-                            addon_pcrlock_file.display(),
-                            path.display()
-                        );
-                        let lock_addon_cmd = LockCommand::Pe {
-                            path: path.clone(),
-                            pcrlock_file: addon_pcrlock_file.clone(),
-                        };
-                        lock_addon_cmd.run().context(format!(
-                            "Failed to generate .pcrlock file via 'lock-uki' at '{}'",
-                            uki_path.display()
-                        ))?;
+                        generate_pcrlock_output_path(
+                                path.file_stem()
+                                .and_then(|stem| stem.to_str())
+                                .map(|stem| {
+                                    format!(
+                                        "{}{}{}",
+                                        UKI_ADDONS_PCRLOCK_DIR_PREFIX, stem, UKI_ADDONS_PCRLOCK_DIR_SUFFIX
+                                    )
+                                })
+                                .map(PathBuf::from)
+                                .context("Failed to generate .pcrlock file name for UKI addon binary")?
+                                .to_str()
+                                .context("Failed to convert .pcrlock file name for UKI addon binary to string")?,
+                                index
+                            )
+                    } else {
+                        continue;
+                    };
 
-                        trace!(
-                            "Contents of .pcrlock file at '{}':\n{}",
-                            addon_pcrlock_file.display(),
-                            fs::read_to_string(&addon_pcrlock_file).context(format!(
-                                "Failed to read .pcrlock file at {}",
-                                pcrlock_file.display()
-                            ))?
-                        );
-                    }
+                    debug!(
+                        "Generating .pcrlock file at '{}' to measure UKI addon binary at '{}'",
+                        addon_pcrlock_file.display(),
+                        path.display()
+                    );
+                    let lock_addon_cmd = LockCommand::Pe {
+                        path: path.clone(),
+                        pcrlock_file: addon_pcrlock_file.clone(),
+                    };
+                    lock_addon_cmd.run().context(format!(
+                        "Failed to generate .pcrlock file via 'lock-uki' at '{}'",
+                        uki_path.display()
+                    ))?;
+
+                    trace!(
+                        "Contents of .pcrlock file at '{}':\n{}",
+                        addon_pcrlock_file.display(),
+                        fs::read_to_string(&addon_pcrlock_file).context(format!(
+                            "Failed to read .pcrlock file at {}",
+                            pcrlock_file.display()
+                        ))?
+                    );
                 }
             }
         }
