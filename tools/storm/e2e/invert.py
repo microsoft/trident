@@ -35,8 +35,9 @@ header = """\
 # Scenarios not listed in this file will not be run in any ring.
 """
 
-# While on development, only allow these configurations:
-ALLOWED_CONFIGS = ["base"]
+# VM host configurations are fully supported by storm-trident.
+# BM and container support is pending implementation (see setup.go).
+ALLOWED_CONFIGS = []  # Empty list means all configs are allowed
 ALLOWED_HARDWARES = ["vm"]
 ALLOWED_RUNTIMES = ["host"]
 
@@ -100,7 +101,7 @@ def main():
                             )
                         continue
 
-                    if name not in ALLOWED_CONFIGS:
+                    if ALLOWED_CONFIGS and name not in ALLOWED_CONFIGS:
                         continue
                     if hw_rename not in ALLOWED_HARDWARES:
                         continue
