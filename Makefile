@@ -586,7 +586,6 @@ run-netlaunch-stream: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin
 		$(if $(NETLAUNCH_PORT),--port $(NETLAUNCH_PORT)) \
 		--config $(NETLAUNCH_CONFIG) \
 		--trident $(TRIDENT_CONFIG) \
-
 		--remoteaddress remote-addr \
 		--servefolder artifacts/test-image \
 		--trace-file trident-metrics.jsonl \
