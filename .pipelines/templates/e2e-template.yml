@@ -19,12 +19,12 @@ parameters:
       - self
       - trident
 
-  - name: acrSubscriptionConnection
+  - name: adoProjectName
     type: string
-    default: trident-dev-acr-write-umi-ECF
+    default: ECF
     values:
-      - maritimus-dev-acr-write-umi
-      - trident-dev-acr-write-umi-ECF
+      - polar
+      - ECF
 
   - name: "stageType"
     displayName: "Pipeline configuration type"
@@ -305,7 +305,7 @@ stages:
               buildPurpose: "daily"
               runtimeEnv: "host"
               tridentRepoName: ${{ parameters.tridentRepoName }}
-              acrSubscriptionConnection: ${{ parameters.acrSubscriptionConnection }}
+              adoProjectName: ${{ parameters.adoProjectName }}
 
           # BM Testing (container, daily)
           - template: stages/testing_baremetal/baremetal-testing.yml
@@ -314,7 +314,7 @@ stages:
               runtimeEnv: "container"
               extraDependsOn: "BaremetalDeploymentTesting_host"
               tridentRepoName: ${{ parameters.tridentRepoName }}
-              acrSubscriptionConnection: ${{ parameters.acrSubscriptionConnection }}
+              adoProjectName: ${{ parameters.adoProjectName }}
 
       # VM Testing (container, daily)
       - template: stages/testing_vm/netlaunch-testing.yml
@@ -364,7 +364,7 @@ stages:
               buildPurpose: "weekly"
               runtimeEnv: "host"
               tridentRepoName: ${{ parameters.tridentRepoName }}
-              acrSubscriptionConnection: ${{ parameters.acrSubscriptionConnection }}
+              adoProjectName: ${{ parameters.adoProjectName }}
 
           # BM Testing (container, weekly)
           - template: stages/testing_baremetal/baremetal-testing.yml
@@ -373,7 +373,7 @@ stages:
               runtimeEnv: "container"
               extraDependsOn: "BaremetalDeploymentTesting_host"
               tridentRepoName: ${{ parameters.tridentRepoName }}
-              acrSubscriptionConnection: ${{ parameters.acrSubscriptionConnection }}
+              adoProjectName: ${{ parameters.adoProjectName }}
 
   # TESTING stages for CI
   - ${{ if eq(parameters.stageType, 'ci') }}:
@@ -458,7 +458,7 @@ stages:
               buildPurpose: "weekly"
               runtimeEnv: "host"
               tridentRepoName: ${{ parameters.tridentRepoName }}
-              acrSubscriptionConnection: ${{ parameters.acrSubscriptionConnection }}
+              adoProjectName: ${{ parameters.adoProjectName }}
 
           # BM Testing (container, weekly)
           - template: stages/testing_baremetal/baremetal-testing.yml
@@ -467,7 +467,7 @@ stages:
               runtimeEnv: "container"
               extraDependsOn: "BaremetalDeploymentTesting_host"
               tridentRepoName: ${{ parameters.tridentRepoName }}
-              acrSubscriptionConnection: ${{ parameters.acrSubscriptionConnection }}
+              adoProjectName: ${{ parameters.adoProjectName }}
 
       # Run direct streaming tests for amd64 with streaming images
       - template: direct-streaming-test.yml

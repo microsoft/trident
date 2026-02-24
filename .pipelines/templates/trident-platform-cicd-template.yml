@@ -36,12 +36,12 @@ parameters:
     type: string
     default: "*.*.*"
 
-  - name: acrSubscriptionConnection
+  - name: adoProjectName
     type: string
-    default: trident-dev-acr-write-umi-ECF
+    default: ECF
     values:
-      - maritimus-dev-acr-write-umi
-      - trident-dev-acr-write-umi-ECF
+      - polar
+      - ECF
 
 stages:
   - ${{ if eq( parameters.targetArchitecture, 'amd64') }}:
@@ -54,7 +54,7 @@ stages:
           testSecureBoot: ${{ parameters.testSecureBoot }}
           micBuildType: dev
           micVersion: ${{ parameters.micVersion }}
-          acrSubscriptionConnection: ${{ parameters.acrSubscriptionConnection }}
+          adoProjectName: ${{ parameters.adoProjectName }}
 
   - ${{ if eq( parameters.targetArchitecture, 'arm64') }}:
       - template: e2e-arm64-template.yml
