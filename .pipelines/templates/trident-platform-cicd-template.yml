@@ -43,6 +43,13 @@ parameters:
       - polar
       - ECF
 
+  - name: tridentRepoName
+    type: string
+    default: self
+    values:
+      - self
+      - trident
+
 stages:
   - ${{ if eq( parameters.targetArchitecture, 'amd64') }}:
       - template: e2e-template.yml
@@ -55,6 +62,7 @@ stages:
           micBuildType: dev
           micVersion: ${{ parameters.micVersion }}
           adoProjectName: ${{ parameters.adoProjectName }}
+          tridentRepoName: ${{ parameters.tridentRepoName }}
 
   - ${{ if eq( parameters.targetArchitecture, 'arm64') }}:
       - template: e2e-arm64-template.yml
@@ -62,3 +70,4 @@ stages:
           stageType: azl-validation
           tridentBuildOptions: ${{ parameters.tridentBuildOptions }}
           baseImageArtifactStage: ${{ parameters.baseImageArtifactStage }}
+          tridentRepoName: ${{ parameters.tridentRepoName }}
