@@ -394,7 +394,7 @@ steps:
   - template: ../junit/handle-junit-test-results.yml
     parameters:
       testRunName: "${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_trident_e2e_tests_${{ parameters.tridentConfigurationName }}_ab_update_A_$(System.JobAttempt)"
-      junitTestFile: "./tests/e2e_tests/${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_A_$(System.JobAttempt).junit.xml"
+      junitTestFile: "$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_${{ parameters.tridentConfigurationName }}_${{ parameters.jUnitXMLIdentifier }}_ab_update_A_$(System.JobAttempt).junit.xml"
       displayNameSpecifier: "A/B update into target OS A"
       artifactName: "junit_for_trident_ab_update_A"
 
