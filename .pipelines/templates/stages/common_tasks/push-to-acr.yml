@@ -64,7 +64,7 @@ steps:
     inputs:
       ${{ if eq(parameters.adoProjectName, 'polar') }}:
         azureSubscription: maritimus-dev-acr-write-umi
-      ${{ if eq(parameters.adoProjectName, 'ecf') }}:
+      ${{ if eq(parameters.adoProjectName, 'ECF') }}:
         azureSubscription: trident-dev-acr-write-umi-ECF
       scriptType: bash
       scriptLocation: inlineScript
