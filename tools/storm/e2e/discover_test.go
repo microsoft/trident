@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"testing"
+	"tridenttools/storm/e2e/testrings"
 
 	"github.com/sirupsen/logrus"
 )
@@ -100,6 +101,98 @@ func TestDiscoverTridentScenarios_KnownConfigTestTags(t *testing.T) {
 			}
 			break
 		}
+	}
+}
+
+// TestDiscoverTridentScenarios_All19Configs verifies that all 19 trident
+// configuration directories are represented in discovered scenarios.
+// 18 configs run as VM/HOST; raid-big is BM-only.
+func TestDiscoverTridentScenarios_All19Configs(t *testing.T) {
+	log := logrus.New()
+	scenarios, err := DiscoverTridentScenarios(log)
+	if err != nil {
+		t.Fatalf("DiscoverTridentScenarios failed: %v", err)
+	}
+
+	// All 19 configuration names that must be represented.
+	allConfigs := []string{
+		"base", "simple", "combined",
+		"encrypted-partition", "encrypted-raid", "encrypted-swap",
+		"extensions", "health-checks-install", "memory-constraint-combined",
+		"misc", "raid-big", "raid-mirrored", "raid-resync-small", "raid-small",
+		"rerun", "root-verity", "split", "usr-verity", "usr-verity-raid",
+	}
+
+	// 18 configs that must appear as VM/HOST scenarios.
+	vmHostConfigs := []string{
+		"base", "simple", "combined",
+		"encrypted-partition", "encrypted-raid", "encrypted-swap",
+		"extensions", "health-checks-install", "memory-constraint-combined",
+		"misc", "raid-mirrored", "raid-resync-small", "raid-small",
+		"rerun", "root-verity", "split", "usr-verity", "usr-verity-raid",
+	}
+
+	// Build a set of discovered scenario names.
+	scenarioNames := make(map[string]bool)
+	for _, s := range scenarios {
+		scenarioNames[s.Name()] = true
+	}
+
+	// Verify each VM/HOST config produces a scenario.
+	for _, name := range vmHostConfigs {
+		expected := name + "_vm-host"
+		if !scenarioNames[expected] {
+			t.Errorf("missing VM/HOST scenario for config %q (expected %q)", name, expected)
+		}
+	}
+
+	// Verify raid-big is NOT in the VM/HOST set (it's BM-only).
+	if scenarioNames["raid-big_vm-host"] {
+		t.Error("raid-big_vm-host should not be discovered (raid-big is BM-only)")
+	}
+
+	// Verify all 19 config directories exist in embedded data.
+	for _, name := range allConfigs {
+		configPath := getConfigPath(name)
+		if _, err := content.ReadFile(configPath); err != nil {
+			t.Errorf("config directory missing for %q: %v", name, err)
+		}
+	}
+}
+
+// TestDiscoverTridentScenarios_FullValidationRingCoverage verifies that the
+// full-validation ring includes all 18 VM/HOST configurations.
+func TestDiscoverTridentScenarios_FullValidationRingCoverage(t *testing.T) {
+	log := logrus.New()
+	scenarios, err := DiscoverTridentScenarios(log)
+	if err != nil {
+		t.Fatalf("DiscoverTridentScenarios failed: %v", err)
+	}
+
+	expectedVMHost := map[string]bool{
+		"base_vm-host": true, "simple_vm-host": true, "combined_vm-host": true,
+		"encrypted-partition_vm-host": true, "encrypted-raid_vm-host": true, "encrypted-swap_vm-host": true,
+		"extensions_vm-host": true, "health-checks-install_vm-host": true, "memory-constraint-combined_vm-host": true,
+		"misc_vm-host": true, "raid-mirrored_vm-host": true, "raid-resync-small_vm-host": true,
+		"raid-small_vm-host": true, "rerun_vm-host": true, "root-verity_vm-host": true,
+		"split_vm-host": true, "usr-verity_vm-host": true, "usr-verity-raid_vm-host": true,
+	}
+
+	// Count VM/HOST scenarios that include the full-validation ring.
+	fullValidationCount := 0
+	for _, s := range scenarios {
+		if !expectedVMHost[s.Name()] {
+			continue
+		}
+		if s.TestRings().Contains(testrings.TestRingFullValidation) {
+			fullValidationCount++
+		} else {
+			t.Errorf("scenario %q should include full-validation ring", s.Name())
+		}
+	}
+
+	if fullValidationCount != 18 {
+		t.Errorf("expected 18 VM/HOST scenarios in full-validation ring, got %d", fullValidationCount)
 	}
 }
 
