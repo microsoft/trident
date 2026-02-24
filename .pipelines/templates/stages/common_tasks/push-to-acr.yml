@@ -60,47 +60,88 @@ steps:
     displayName: "Install ORAS"
     retryCountOnTaskFailure: 3
 
-  - task: AzureCLI@2
-    inputs:
-      ${{ if eq(parameters.adoProjectName, 'polar') }}:
-        azureSubscription: maritimus-dev-acr-write-umi
-      ${{ if eq(parameters.adoProjectName, 'ECF') }}:
-        azureSubscription: trident-dev-acr-write-umi-ECF
-      scriptType: bash
-      scriptLocation: inlineScript
-      inlineScript: |
-        set -eux
+  - ${{ if eq(parameters.adoProjectName, 'polar') }}:
+      - task: AzureCLI@2
+        inputs:
+          azureSubscription: maritimus-dev-acr-write-umi
+          scriptType: bash
+          scriptLocation: inlineScript
+          inlineScript: |
+            set -eux
 
-        cd $(TRIDENT_SOURCE_DIR)
-        if [ "${{ parameters.config }}" == 'misc' ]; then
-          ./bin/storm-trident script acr-push \
-            --config ${{ parameters.config }} \
-            --deployment-environment ${{ parameters.deploymentEnvironment }} \
-            --acr-name $(ACR_NAME) \
-            --repo-name ${{ parameters.imageName }} \
-            --build-id $(Build.BuildId) \
-            --file-paths $(TRIDENT_SOURCE_DIR)/artifacts/test-image/regular.cosi \
-            --file-paths $(TRIDENT_SOURCE_DIR)/artifacts/test-image/regular_v2.cosi \
-            --file-paths $(TRIDENT_SOURCE_DIR)/artifacts/test-image/regular_v3.cosi \
-            --file-paths $(TRIDENT_SOURCE_DIR)/artifacts/test-image/regular_v4.cosi \
-            --tag-var-name TAG_BASE
+            cd $(TRIDENT_SOURCE_DIR)
+            if [ "${{ parameters.config }}" == 'misc' ]; then
+              ./bin/storm-trident script acr-push \
+                --config ${{ parameters.config }} \
+                --deployment-environment ${{ parameters.deploymentEnvironment }} \
+                --acr-name $(ACR_NAME) \
+                --repo-name ${{ parameters.imageName }} \
+                --build-id $(Build.BuildId) \
+                --file-paths $(TRIDENT_SOURCE_DIR)/artifacts/test-image/regular.cosi \
+                --file-paths $(TRIDENT_SOURCE_DIR)/artifacts/test-image/regular_v2.cosi \
+                --file-paths $(TRIDENT_SOURCE_DIR)/artifacts/test-image/regular_v3.cosi \
+                --file-paths $(TRIDENT_SOURCE_DIR)/artifacts/test-image/regular_v4.cosi \
+                --tag-var-name TAG_BASE
 
-        elif [ "${{ parameters.config }}" == 'extensions' ]; then
-          ./bin/storm-trident script acr-push \
-            --config ${{ parameters.config }} \
-            --deployment-environment ${{ parameters.deploymentEnvironment }} \
-            --acr-name $(ACR_NAME) \
-            --repo-name sysext-${{ parameters.runtimeEnvironment }} \
-            --build-id $(Build.BuildId) \
-            --file-paths $(TRIDENT_SOURCE_DIR)/test-sysext-1.raw \
-            --file-paths $(TRIDENT_SOURCE_DIR)/test-sysext-2.raw \
-            --tag-var-name TAG_BASE \
-            --repo-var-name SYSEXT_REPO
+            elif [ "${{ parameters.config }}" == 'extensions' ]; then
+              ./bin/storm-trident script acr-push \
+                --config ${{ parameters.config }} \
+                --deployment-environment ${{ parameters.deploymentEnvironment }} \
+                --acr-name $(ACR_NAME) \
+                --repo-name sysext-${{ parameters.runtimeEnvironment }} \
+                --build-id $(Build.BuildId) \
+                --file-paths $(TRIDENT_SOURCE_DIR)/test-sysext-1.raw \
+                --file-paths $(TRIDENT_SOURCE_DIR)/test-sysext-2.raw \
+                --tag-var-name TAG_BASE \
+                --repo-var-name SYSEXT_REPO
 
-        else
-          echo "Skipping step. Configuration is '${{ parameters.config }}'."
-          exit 0
-        fi
+            else
+              echo "Skipping step. Configuration is '${{ parameters.config }}'."
+              exit 0
+            fi
 
-    displayName: "Push to ACR"
-    retryCountOnTaskFailure: 3
+        displayName: "Push to ACR"
+        retryCountOnTaskFailure: 3
+
+  - ${{ if eq(parameters.adoProjectName, 'ECF') }}:
+      - task: AzureCLI@2
+        inputs:
+          azureSubscription: trident-dev-acr-write-umi-ECF
+          scriptType: bash
+          scriptLocation: inlineScript
+          inlineScript: |
+            set -eux
+
+            cd $(TRIDENT_SOURCE_DIR)
+            if [ "${{ parameters.config }}" == 'misc' ]; then
+              ./bin/storm-trident script acr-push \
+                --config ${{ parameters.config }} \
+                --deployment-environment ${{ parameters.deploymentEnvironment }} \
+                --acr-name $(ACR_NAME) \
+                --repo-name ${{ parameters.imageName }} \
+                --build-id $(Build.BuildId) \
+                --file-paths $(TRIDENT_SOURCE_DIR)/artifacts/test-image/regular.cosi \
+                --file-paths $(TRIDENT_SOURCE_DIR)/artifacts/test-image/regular_v2.cosi \
+                --file-paths $(TRIDENT_SOURCE_DIR)/artifacts/test-image/regular_v3.cosi \
+                --file-paths $(TRIDENT_SOURCE_DIR)/artifacts/test-image/regular_v4.cosi \
+                --tag-var-name TAG_BASE
+
+            elif [ "${{ parameters.config }}" == 'extensions' ]; then
+              ./bin/storm-trident script acr-push \
+                --config ${{ parameters.config }} \
+                --deployment-environment ${{ parameters.deploymentEnvironment }} \
+                --acr-name $(ACR_NAME) \
+                --repo-name sysext-${{ parameters.runtimeEnvironment }} \
+                --build-id $(Build.BuildId) \
+                --file-paths $(TRIDENT_SOURCE_DIR)/test-sysext-1.raw \
+                --file-paths $(TRIDENT_SOURCE_DIR)/test-sysext-2.raw \
+                --tag-var-name TAG_BASE \
+                --repo-var-name SYSEXT_REPO
+
+            else
+              echo "Skipping step. Configuration is '${{ parameters.config }}'."
+              exit 0
+            fi
+
+        displayName: "Push to ACR"
+        retryCountOnTaskFailure: 3
