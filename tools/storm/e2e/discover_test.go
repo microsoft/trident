@@ -102,3 +102,73 @@ func TestDiscoverTridentScenarios_KnownConfigTestTags(t *testing.T) {
 		}
 	}
 }
+
+// TestDiscoverTridentScenarios_Phase3TestTags verifies that Phase 3 test tags
+// (verity, extensions, rollback) are correctly discovered for configs present
+// in the generated configurations.yaml. Note: ALLOWED_CONFIGS in invert.py
+// controls which configs are available; full coverage is verified in the
+// unit-level TestRegisterTestCases_AllPhase3_FeatureParity test.
+func TestDiscoverTridentScenarios_Phase3TestTags(t *testing.T) {
+	log := logrus.New()
+	scenarios, err := DiscoverTridentScenarios(log)
+	if err != nil {
+		t.Fatalf("DiscoverTridentScenarios failed: %v", err)
+	}
+
+	// Build a map of scenario name → test tags.
+	scenarioMap := make(map[string][]string)
+	for _, s := range scenarios {
+		scenarioMap[s.Name()] = s.TestTags()
+	}
+
+	hasTag := func(tags []string, tag string) bool {
+		for _, t := range tags {
+			if t == tag {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Verify Phase 3 tags on discovered scenarios. The base config should NOT
+	// have verity, extensions, or rollback tags.
+	if tags, ok := scenarioMap["base_vm-host"]; ok {
+		if hasTag(tags, "test:root_verity") {
+			t.Error("base_vm-host: should NOT have test:root_verity")
+		}
+		if hasTag(tags, "test:usr_verity") {
+			t.Error("base_vm-host: should NOT have test:usr_verity")
+		}
+		if hasTag(tags, "test:extensions") {
+			t.Error("base_vm-host: should NOT have test:extensions")
+		}
+		if hasTag(tags, "test:rollback") {
+			t.Error("base_vm-host: should NOT have test:rollback")
+		}
+	}
+
+	// If additional configs are discovered (when ALLOWED_CONFIGS is expanded),
+	// verify their Phase 3 tags.
+	phase3Checks := []struct {
+		scenario string
+		tag      string
+		expected bool
+	}{
+		{"root-verity_vm-host", "test:root_verity", true},
+		{"usr-verity_vm-host", "test:usr_verity", true},
+		{"extensions_vm-host", "test:extensions", true},
+		{"health-checks-install_vm-host", "test:rollback", true},
+	}
+
+	for _, check := range phase3Checks {
+		tags, ok := scenarioMap[check.scenario]
+		if !ok {
+			// Config not yet in ALLOWED_CONFIGS; skip.
+			continue
+		}
+		if got := hasTag(tags, check.tag); got != check.expected {
+			t.Errorf("%s: HasTag(%q)=%v, want %v (tags=%v)",
+				check.scenario, check.tag, got, check.expected, tags)
+		}
+	}
+}
