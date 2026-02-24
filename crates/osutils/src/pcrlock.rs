@@ -651,7 +651,7 @@ fn generate_pcrlock_files(
                     };
                     lock_addon_cmd.run().context(format!(
                         "Failed to generate .pcrlock file via 'lock-pe' at '{}'",
-                        uki_path.display()
+                        path.display()
                     ))?;
                     trace!(
                         "Contents of .pcrlock file at '{}':\n{}",
