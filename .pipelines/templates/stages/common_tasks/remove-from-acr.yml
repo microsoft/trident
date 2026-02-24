@@ -30,7 +30,6 @@ steps:
         azureSubscription: maritimus-dev-acr-write-umi
       ${{ if eq(parameters.adoProjectName, 'ecf') }}:
         azureSubscription: trident-dev-acr-write-umi-ECF
-      azureSubscription: ${{ parameters.adoProjectName }}
       scriptType: bash
       scriptLocation: inlineScript
       inlineScript: |
