@@ -11,7 +11,7 @@ steps:
         fetchDepth: 1
         path: s/trident
   - ${{ else }}:
-      - checkout: test-images
+      - checkout: trident
         fetchDepth: 1
         path: s/trident
   # - checkout: ${{ parameters.tridentRepoName }}
