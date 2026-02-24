@@ -13,7 +13,7 @@ StandardError=journal+console
 Environment="LOGSTREAM_URL=%s"
 `
 
-func getUmageUrlAndHashFromTridentConfig(tridentConfig map[string]any) (string, string, error) {
+func getImageUrlAndHashFromTridentConfig(tridentConfig map[string]any) (string, string, error) {
 	imgConf, ok := tridentConfig["image"]
 	if !ok {
 		return "", "", fmt.Errorf("trident config does not contain an image section")
@@ -40,7 +40,7 @@ func getUmageUrlAndHashFromTridentConfig(tridentConfig map[string]any) (string, 
 }
 
 func makeStreamImageOverrideFileDownload(tridentConfig map[string]any, logstreamAddress string) (rcpAgentFileDownload, error) {
-	imgUrl, imgSha384, err := getUmageUrlAndHashFromTridentConfig(tridentConfig)
+	imgUrl, imgSha384, err := getImageUrlAndHashFromTridentConfig(tridentConfig)
 	if err != nil {
 		return rcpAgentFileDownload{}, fmt.Errorf("failed to get image URL and hash from Trident config: %w", err)
 	}
