@@ -321,18 +321,8 @@ stages:
               ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:
                 kustoTableName: dev
 
-          - template: ../testing_common/e2e-test-run.yml
-            parameters:
-              buildPurpose: ${{ parameters.buildPurpose }}
-              deploymentEnvironment: virtualMachine
-              tridentConfigurationName: $(tridentConfigurationName)
-              hostIp: $(jq -r '.virtualmachines[0].ip' $(tridentSourceDirectory)/tools/virt-deploy-metadata.json)
-              runtimeEnv: ${{ parameters.runtimeEnv }}
-              tridentConfigPath: $(tridentConfigPath)
-              sshKeyPath: $(tridentSourceDirectory)/tests/e2e_tests/helpers/key
-              userName: testing-user
-              artifactsDirectory: artifacts/test-image
-              netlistenPort: ${{variables.netlaunchPort}}
+          # E2E tests are now run via the storm_e2e stage using storm-trident.
+          # See .pipelines/templates/stages/testing_e2e/storm_e2e.yml
 
           - template: ../common_tasks/remove-from-acr.yml
             parameters:
