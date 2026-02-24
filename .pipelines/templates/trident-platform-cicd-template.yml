@@ -10,7 +10,7 @@ parameters:
 
   - name: baseImageArtifactStage
     type: string
-  
+
   - name: targetArchitecture
     type: string
     values:
@@ -36,21 +36,29 @@ parameters:
     type: string
     default: "*.*.*"
 
+  - name: acrSubscriptionConnection
+    type: string
+    default: trident-dev-acr-write-umi-ECF
+    values:
+      - maritimus-dev-acr-write-umi
+      - trident-dev-acr-write-umi-ECF
+
 stages:
   - ${{ if eq( parameters.targetArchitecture, 'amd64') }}:
-    - template: e2e-template.yml
-      parameters:
-        stageType: azl-validation
-        baremetalTestsEnabled: ${{ parameters.baremetalTestsEnabled }}
-        baseImageArtifactStage: ${{ parameters.baseImageArtifactStage }}
-        tridentBuildOptions: ${{ parameters.tridentBuildOptions }}
-        testSecureBoot: ${{ parameters.testSecureBoot }}
-        micBuildType: dev
-        micVersion: ${{ parameters.micVersion }}
+      - template: e2e-template.yml
+        parameters:
+          stageType: azl-validation
+          baremetalTestsEnabled: ${{ parameters.baremetalTestsEnabled }}
+          baseImageArtifactStage: ${{ parameters.baseImageArtifactStage }}
+          tridentBuildOptions: ${{ parameters.tridentBuildOptions }}
+          testSecureBoot: ${{ parameters.testSecureBoot }}
+          micBuildType: dev
+          micVersion: ${{ parameters.micVersion }}
+          acrSubscriptionConnection: ${{ parameters.acrSubscriptionConnection }}
 
   - ${{ if eq( parameters.targetArchitecture, 'arm64') }}:
-    - template: e2e-arm64-template.yml
-      parameters:
-        stageType: azl-validation
-        tridentBuildOptions: ${{ parameters.tridentBuildOptions }}
-        baseImageArtifactStage: ${{ parameters.baseImageArtifactStage }}
+      - template: e2e-arm64-template.yml
+        parameters:
+          stageType: azl-validation
+          tridentBuildOptions: ${{ parameters.tridentBuildOptions }}
+          baseImageArtifactStage: ${{ parameters.baseImageArtifactStage }}
