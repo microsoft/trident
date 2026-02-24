@@ -19,3 +19,5 @@ stages:
     parameters:
       tridentRepoName: self
   - template: stages/azl_installer/build-installer-tools.yml
+    parameters:
+      tridentRepoName: self
