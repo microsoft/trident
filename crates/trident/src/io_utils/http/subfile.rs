@@ -1,6 +1,7 @@
 use std::{
     io::{Read, Result as IoResult},
     ops::Not,
+    thread,
     time::Duration,
 };
 
@@ -165,7 +166,34 @@ impl HttpSubFile {
         if self.reader.as_ref().is_none_or(|r| r.exhausted()) {
             // Create a new partial response reader for the next range and
             // replace any existing reader.
-            self.reader = Some(self.new_partial_response_reader()?);
+            let mut received_empty_response = false;
+            let new_reader = loop {
+                let reader = self.new_partial_response_reader(received_empty_response)?;
+                if !reader.exhausted() {
+                    trace!(
+                        "Successfully populated PartialResponseReader for subfile '{}' at position {} with {} bytes available",
+                        self.url,
+                        self.position,
+                        reader.bytes_remaining,
+                    );
+
+                    break reader;
+                }
+
+                if !received_empty_response {
+                    received_empty_response = true;
+                    trace!(
+                        "Received empty response when populating reader for subfile '{}' at position {}, retrying silently...",
+                        self.url,
+                        self.position,
+                    );
+                }
+
+                // If we received an empty response, we retry after a short delay.
+                thread::sleep(Duration::from_millis(50));
+            };
+
+            self.reader = Some(new_reader);
         } else {
             #[cfg(test)]
             trace!(
@@ -182,7 +210,7 @@ impl HttpSubFile {
 
     /// Creates a new PartialResponseReader for the current position within
     /// the subfile.
-    fn new_partial_response_reader(&self) -> IoResult<PartialResponseReader> {
+    fn new_partial_response_reader(&self, silent: bool) -> IoResult<PartialResponseReader> {
         // Always attempt to read up to the end of the subfile.
         let range = HttpRangeRequest::new(
             Some(self.start + self.position),
@@ -193,12 +221,14 @@ impl HttpSubFile {
 
         // Perform the HTTP request with retries. This function guarantees that
         // the resulting response was successful.
-        trace!(
-            "Requesting HTTP range '{}' for subfile at position {}: {}",
-            range.to_header_value(),
-            self.position,
-            self.url,
-        );
+        if !silent {
+            trace!(
+                "Requesting HTTP range '{}' for subfile at position {}: {}",
+                range.to_header_value(),
+                self.position,
+                self.url,
+            );
+        }
 
         let response = super::retriable_request_sender(
             || {
