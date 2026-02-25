@@ -50,7 +50,9 @@ stages:
           - template: ../common_tasks/rustup.yml
           - template: ../common_tasks/cargo-auth.yml
 
-          - script: cargo install --locked cargo-deny@0.16.2
+          - script: |
+              # Use a lower optimization level to speed up cargo-deny installation.
+              CARGO_PROFILE_RELEASE_OPT_LEVEL=0 cargo install --locked cargo-deny@0.16.2
             displayName: Install cargo-deny
 
           - script: cargo deny --all-features --workspace check licenses
@@ -98,6 +100,11 @@ stages:
 
           - bash: |
               set -eux
+
+              # Use a lower optimization level to speed up the build, since
+              # we're only validating that the Makefile targets work.
+              export CARGO_PROFILE_RELEASE_OPT_LEVEL=0
+
               make validate-configs
               make bin/trident-rpms.tar.gz
               make docker-build
