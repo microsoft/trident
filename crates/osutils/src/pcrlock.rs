@@ -568,8 +568,13 @@ fn generate_pcrlock_files(
     if !(pcrs & (Pcr::Pcr4 | Pcr::Pcr11)).is_empty() {
         for (index, uki_path) in uki_binaries.clone().into_iter().enumerate() {
             // Generate .pcrlock file(s) for the UKI binary, which covers both PCR 4 and PCR 11 measurements for that UKI binary
-            generate_uki_pcrlock_files(uki_path, index)
-                .context("Failed to generate .pcrlock files for UKI binary")?;
+            generate_uki_pcrlock_files(
+                uki_path,
+                index,
+                invoke_lock_uki_for_uki_binary,
+                invoke_lock_pe_for_uki_addon,
+            )
+            .context("Failed to generate .pcrlock files for UKI binary")?;
         }
     } else {
         debug!("Skipping running 'systemd-pcrlock lock-uki' as PCRs 4 and 11 are not requested");
@@ -659,19 +664,16 @@ fn generate_pcrlock_files(
     Ok(())
 }
 
-/// Generates .pcrlock files for a UKI file and any addons.
-fn generate_uki_pcrlock_files(uki_path: PathBuf, index: usize) -> Result<(), Error> {
-    // Generate .pcrlock file for the UKI binary, which covers both PCR 4 and PCR 11 measurements for that UKI binary
-    let pcrlock_file = generate_pcrlock_output_path(UKI_PCRLOCK_DIR, index);
-    let cmd = LockCommand::Uki {
+/// Abstract call to lock-uki for generating .pcrlock files for UKI binaries, to allow for better testability.
+fn invoke_lock_uki_for_uki_binary(uki_path: PathBuf, pcrlock_file: PathBuf) -> Result<(), Error> {
+    let lock_uki_cmd = LockCommand::Uki {
         path: uki_path.clone(),
         pcrlock_file: pcrlock_file.clone(),
     };
-    cmd.run().context(format!(
+    lock_uki_cmd.run().context(format!(
         "Failed to generate .pcrlock file via 'lock-uki' at '{}'",
         uki_path.display()
     ))?;
-
     trace!(
         "Contents of .pcrlock file at '{}':\n{}",
         pcrlock_file.display(),
@@ -680,18 +682,66 @@ fn generate_uki_pcrlock_files(uki_path: PathBuf, index: usize) -> Result<(), Err
             pcrlock_file.display()
         ))?
     );
+    Ok(())
+}
+
+/// Abstract call to lock-pe for generating .pcrlock files for UKI addons, to allow for better testability.
+fn invoke_lock_pe_for_uki_addon(
+    addon_path: PathBuf,
+    addon_pcrlock_path: PathBuf,
+) -> Result<(), Error> {
+    let lock_addon_cmd = LockCommand::Pe {
+        path: addon_path.clone(),
+        pcrlock_file: addon_pcrlock_path.clone(),
+    };
+    lock_addon_cmd.run().context(format!(
+        "Failed to generate .pcrlock file via 'lock-pe' at '{}'",
+        addon_path.display()
+    ))?;
+    trace!(
+        "Contents of .pcrlock file at '{}':\n{}",
+        addon_pcrlock_path.display(),
+        fs::read_to_string(&addon_pcrlock_path).context(format!(
+            "Failed to read .pcrlock file at {}",
+            addon_pcrlock_path.display()
+        ))?
+    );
+    Ok(())
+}
+
+/// Generates .pcrlock files for a UKI file and any addons.
+fn generate_uki_pcrlock_files<F, G>(
+    uki_path: PathBuf,
+    index: usize,
+    mut lock_uki: F,
+    lock_pe: G,
+) -> Result<(), Error>
+where
+    F: FnMut(PathBuf, PathBuf) -> Result<(), Error>,
+    G: FnMut(PathBuf, PathBuf) -> Result<(), Error>,
+{
+    // Generate .pcrlock file for the UKI binary, which covers both PCR 4 and PCR 11 measurements for that UKI binary
+    let pcrlock_file = generate_pcrlock_output_path(UKI_PCRLOCK_DIR, index);
+    lock_uki(uki_path.clone(), pcrlock_file.clone())?;
 
     // Check the UKI addon path (`uki_path` + 'extra.d') for existence, and if it exists, generate a .pcrlock file for it as well,
     // to cover the case where firmware measures the UKI addons into PCR 4.
     let uki_addon_path = uki::uki_addon_dir(&uki_path);
     // Generate .pcrlock.d files for any addons found for this UKI binary.
-    generate_uki_addon_pcrlock_files(uki_addon_path, index)
+    generate_uki_addon_pcrlock_files(uki_addon_path, index, lock_pe)
         .context("Failed to generate .pcrlock files for UKI addon")?;
     Ok(())
 }
 
 /// Generates .pcrlock files for any UKI addons that exist.
-fn generate_uki_addon_pcrlock_files(uki_addon_path: PathBuf, index: usize) -> Result<(), Error> {
+fn generate_uki_addon_pcrlock_files<F>(
+    uki_addon_path: PathBuf,
+    index: usize,
+    mut lock_pe: F,
+) -> Result<(), Error>
+where
+    F: FnMut(PathBuf, PathBuf) -> Result<(), Error>,
+{
     // For each *.addon.efi file in the UKI addons dir, generate a .pcrlock file to measure it as well.
     if uki_addon_path.exists() && uki_addon_path.is_dir() {
         trace!(
@@ -721,22 +771,7 @@ fn generate_uki_addon_pcrlock_files(uki_addon_path: PathBuf, index: usize) -> Re
             // Generate .pcrlock file path for this addon
             let addon_pcrlock_file = generate_pcrlock_output_path(&pcrlock_addon_name, index);
             // Run lock-pe for this addon
-            let lock_addon_cmd = LockCommand::Pe {
-                path: path.clone(),
-                pcrlock_file: addon_pcrlock_file.clone(),
-            };
-            lock_addon_cmd.run().context(format!(
-                "Failed to generate .pcrlock file via 'lock-pe' at '{}'",
-                path.display()
-            ))?;
-            trace!(
-                "Contents of .pcrlock file at '{}':\n{}",
-                addon_pcrlock_file.display(),
-                fs::read_to_string(&addon_pcrlock_file).context(format!(
-                    "Failed to read .pcrlock file at {}",
-                    addon_pcrlock_file.display()
-                ))?
-            );
+            lock_pe(path.clone(), addon_pcrlock_file.clone())?;
         }
     }
     Ok(())
@@ -828,87 +863,6 @@ mod tests {
         use super::*;
         use tempfile::TempDir;
 
-        /// Test that generate_uki_addon_pcrlock_files handles valid UKI addon directories correctly
-        #[test]
-        fn test_generate_uki_addon_pcrlock_files_with_valid_addons() {
-            let temp_dir = TempDir::new().unwrap();
-            let addon_dir = temp_dir.path().join("test.efi.extra.d");
-            std::fs::create_dir_all(&addon_dir).unwrap();
-
-            // Create valid addon files
-            let addon_files = [
-                "driver1.addon.efi",
-                "driver2.addon.efi",
-                "complex-name_123.addon.efi",
-            ];
-            for addon_file in &addon_files {
-                let addon_path = addon_dir.join(addon_file);
-                std::fs::write(&addon_path, "mock addon binary").unwrap();
-            }
-
-            // Test parameter validation and path generation logic
-            let index = 0;
-
-            // Verify the function would attempt to process these files
-            // (actual execution will fail due to missing systemd-pcrlock, but we can validate parameters)
-            let result = generate_uki_addon_pcrlock_files(addon_dir.clone(), index);
-
-            // Expect failure due to systemd-pcrlock dependency, but this validates the function accepts the parameters
-            assert!(
-                result.is_err(),
-                "Function should fail due to missing systemd-pcrlock dependency"
-            );
-
-            // Verify the directory exists and contains the expected files
-            assert!(addon_dir.exists() && addon_dir.is_dir());
-
-            let entries: Vec<_> = std::fs::read_dir(&addon_dir)
-                .unwrap()
-                .filter_map(|entry| {
-                    let entry = entry.ok()?;
-                    let path = entry.path();
-                    if uki::is_uki_addon_file(&path) {
-                        Some(path)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
-            assert_eq!(entries.len(), 3, "Should find 3 valid addon files");
-
-            // Test addon name extraction and pcrlock path generation for each file
-            for entry in &entries {
-                let addon_name = uki::get_uki_name_from_addon_file(entry).unwrap();
-                assert!(
-                    addon_name == "driver1"
-                        || addon_name == "driver2"
-                        || addon_name == "complex-name_123",
-                    "Unexpected addon name: {}",
-                    addon_name
-                );
-
-                // Test pcrlock directory name generation
-                let pcrlock_addon_name = format!(
-                    "{}{}{}",
-                    UKI_ADDONS_PCRLOCK_DIR_PREFIX, addon_name, UKI_ADDONS_PCRLOCK_DIR_SUFFIX
-                );
-                assert!(pcrlock_addon_name.starts_with("670-uki-addons-"));
-                assert!(pcrlock_addon_name.ends_with(".pcrlock.d"));
-
-                // Test pcrlock file path generation
-                let addon_pcrlock_file = generate_pcrlock_output_path(&pcrlock_addon_name, index);
-                assert!(addon_pcrlock_file
-                    .to_str()
-                    .unwrap()
-                    .contains(&pcrlock_addon_name));
-                assert!(addon_pcrlock_file
-                    .to_str()
-                    .unwrap()
-                    .ends_with("generated-0.pcrlock"));
-            }
-        }
-
         /// Test that generate_uki_addon_pcrlock_files handles non-existent directories correctly
         #[test]
         fn test_generate_uki_addon_pcrlock_files_nonexistent_directory() {
@@ -916,7 +870,9 @@ mod tests {
             let non_existent_dir = temp_dir.path().join("nonexistent.efi.extra.d");
 
             // Should succeed without error when directory doesn't exist
-            let result = generate_uki_addon_pcrlock_files(non_existent_dir, 0);
+            let result = generate_uki_addon_pcrlock_files(non_existent_dir, 0, |_, _| {
+                panic!("lock_uki should not be called when directory doesn't exist");
+            });
             assert!(
                 result.is_ok(),
                 "Function should succeed when directory doesn't exist"
@@ -931,7 +887,9 @@ mod tests {
             std::fs::create_dir_all(&empty_dir).unwrap();
 
             // Should succeed without error when directory is empty
-            let result = generate_uki_addon_pcrlock_files(empty_dir, 0);
+            let result = generate_uki_addon_pcrlock_files(empty_dir, 0, |_, _| {
+                panic!("lock_pe should not be called when directory is empty");
+            });
             assert!(
                 result.is_ok(),
                 "Function should succeed when directory is empty"
@@ -943,7 +901,8 @@ mod tests {
         fn test_generate_uki_addon_pcrlock_files_invalid_files() {
             let temp_dir = TempDir::new().unwrap();
             let addon_dir = temp_dir.path().join("invalid.efi.extra.d");
-            std::fs::create_dir_all(&addon_dir).unwrap();
+            let addon_subdir = addon_dir.join("extra-dir");
+            std::fs::create_dir_all(&addon_subdir).unwrap();
 
             // Create invalid files that should be ignored
             std::fs::write(addon_dir.join("invalid.txt"), "text file").unwrap();
@@ -951,160 +910,12 @@ mod tests {
             std::fs::create_dir_all(addon_dir.join("subdir")).unwrap();
 
             // Should succeed without processing any files
-            let result = generate_uki_addon_pcrlock_files(addon_dir.clone(), 0);
+            let result = generate_uki_addon_pcrlock_files(addon_dir, 0, |_, _| {
+                panic!("lock_pe should not be called when directory does not contain valid addon files");
+            });
             assert!(
                 result.is_ok(),
                 "Function should succeed when no valid addon files exist"
-            );
-
-            // Verify that no valid addon files are found
-            let valid_entries: Vec<_> = std::fs::read_dir(&addon_dir)
-                .unwrap()
-                .filter_map(|entry| {
-                    let entry = entry.ok()?;
-                    let path = entry.path();
-                    if uki::is_uki_addon_file(&path) {
-                        Some(path)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            assert_eq!(valid_entries.len(), 0, "Should find no valid addon files");
-        }
-
-        /// Test addon name extraction and pcrlock path generation logic
-        #[test]
-        fn test_addon_name_and_path_generation() {
-            let temp_dir = TempDir::new().unwrap();
-            let addon_dir = temp_dir.path().join("test.extra.d");
-            std::fs::create_dir_all(&addon_dir).unwrap();
-
-            let test_cases = vec![
-                ("simple.addon.efi", "simple"),
-                ("complex-name_123.addon.efi", "complex-name_123"),
-                ("a.addon.efi", "a"),
-                ("with.dots.in.name.addon.efi", "with.dots.in.name"),
-            ];
-
-            for (file_name, expected_name) in test_cases {
-                let file_path = addon_dir.join(file_name);
-                std::fs::write(&file_path, "mock content").unwrap();
-
-                // Verify file is recognized as addon file
-                assert!(
-                    uki::is_uki_addon_file(&file_path),
-                    "File {} should be recognized as addon file",
-                    file_name
-                );
-
-                // Test name extraction
-                let extracted_name = uki::get_uki_name_from_addon_file(&file_path).unwrap();
-                assert_eq!(
-                    extracted_name, expected_name,
-                    "Name extraction failed for {}",
-                    file_name
-                );
-
-                // Test pcrlock directory name generation
-                let pcrlock_addon_name = format!(
-                    "{}{}{}",
-                    UKI_ADDONS_PCRLOCK_DIR_PREFIX, extracted_name, UKI_ADDONS_PCRLOCK_DIR_SUFFIX
-                );
-                assert!(pcrlock_addon_name.starts_with("670-uki-addons-"));
-                assert!(pcrlock_addon_name.ends_with(".pcrlock.d"));
-                assert!(pcrlock_addon_name.contains(extracted_name));
-
-                // Test pcrlock file path generation
-                let addon_pcrlock_file = generate_pcrlock_output_path(&pcrlock_addon_name, 0);
-                let path_str = addon_pcrlock_file.to_str().unwrap();
-                assert!(
-                    path_str.contains(&pcrlock_addon_name),
-                    "Path should contain pcrlock addon name"
-                );
-                assert!(
-                    path_str.ends_with("generated-0.pcrlock"),
-                    "Path should end with generated-0.pcrlock"
-                );
-                assert!(
-                    path_str.starts_with(PCRLOCK_DIR),
-                    "Path should start with pcrlock directory"
-                );
-            }
-        }
-
-        /// Test file filtering logic used by generate_uki_addon_pcrlock_files
-        #[test]
-        fn test_file_filtering_functionality() {
-            let temp_dir = TempDir::new().unwrap();
-            let addon_dir = temp_dir.path().join("test.extra.d");
-            std::fs::create_dir_all(&addon_dir).unwrap();
-
-            // Valid files that should be processed
-            let valid_files = ["valid1.addon.efi", "valid2.addon.efi"];
-            for file in &valid_files {
-                let path = addon_dir.join(file);
-                std::fs::write(&path, "mock content").unwrap();
-                assert!(
-                    uki::is_uki_addon_file(&path),
-                    "File {} should be recognized as valid addon file",
-                    file
-                );
-            }
-
-            // Invalid files that should be ignored
-            let invalid_files = [
-                "invalid.txt",
-                "wrong.efi",
-                "no_extension",
-                "addon.efi.wrong",
-            ];
-            for file in &invalid_files {
-                let path = addon_dir.join(file);
-                std::fs::write(&path, "mock content").unwrap();
-                assert!(
-                    !uki::is_uki_addon_file(&path),
-                    "File {} should NOT be recognized as addon file",
-                    file
-                );
-            }
-
-            // Directories should be ignored
-            let subdir = addon_dir.join("subdir");
-            std::fs::create_dir_all(&subdir).unwrap();
-            assert!(
-                !uki::is_uki_addon_file(&subdir),
-                "Directory should not be recognized as addon file"
-            );
-        }
-
-        /// Test error handling in generate_uki_addon_pcrlock_files
-        #[test]
-        fn test_generate_uki_addon_pcrlock_files_error_handling() {
-            let temp_dir = TempDir::new().unwrap();
-            let addon_dir = temp_dir.path().join("error_test.efi.extra.d");
-            std::fs::create_dir_all(&addon_dir).unwrap();
-
-            // Create a valid addon file
-            let addon_path = addon_dir.join("test_addon.addon.efi");
-            std::fs::write(&addon_path, "mock addon binary").unwrap();
-
-            // The function should fail when trying to execute systemd-pcrlock lock-pe
-            // but should get to that point, indicating the file was properly processed
-            let result = generate_uki_addon_pcrlock_files(addon_dir, 0);
-            assert!(
-                result.is_err(),
-                "Function should fail due to missing systemd-pcrlock"
-            );
-
-            // Verify the error is related to systemd-pcrlock execution, not file processing
-            let error_msg = result.unwrap_err().to_string();
-            assert!(
-                error_msg.contains("lock-pe")
-                    || error_msg.contains("systemd-pcrlock")
-                    || error_msg.contains("Failed to generate"),
-                "Error should be related to pcrlock execution: {}",
-                error_msg
             );
         }
 
@@ -1121,363 +932,27 @@ mod tests {
 
             // Test different index values
             for index in [0, 1, 5, 10] {
-                let result = generate_uki_addon_pcrlock_files(addon_dir.clone(), index);
-                assert!(
-                    result.is_err(),
-                    "Function should fail due to missing systemd-pcrlock for index {}",
-                    index
-                );
-
-                // Verify the generated path would include the correct index
-                let pcrlock_addon_name = format!(
-                    "{}{}{}",
-                    UKI_ADDONS_PCRLOCK_DIR_PREFIX, "test_addon", UKI_ADDONS_PCRLOCK_DIR_SUFFIX
-                );
-                let expected_path = generate_pcrlock_output_path(&pcrlock_addon_name, index);
-                let expected_filename = format!("generated-{}.pcrlock", index);
-                assert!(
-                    expected_path
-                        .to_str()
-                        .unwrap()
-                        .ends_with(&expected_filename),
-                    "Generated path should end with correct index: {}",
-                    expected_filename
-                );
-            }
-        }
-
-        /// Test directory path edge cases
-        #[test]
-        fn test_directory_path_edge_cases() {
-            let temp_dir = TempDir::new().unwrap();
-
-            // Test with file instead of directory
-            let file_path = temp_dir.path().join("not_a_directory.txt");
-            std::fs::write(&file_path, "file content").unwrap();
-            let result = generate_uki_addon_pcrlock_files(file_path, 0);
-            assert!(
-                result.is_ok(),
-                "Function should succeed when path is not a directory"
-            );
-
-            // Test with permission-denied scenario would require special setup
-            // but we can test that the function handles basic path validation correctly
-
-            // Test with empty path components
-            let weird_path = temp_dir.path().join("");
-            let result = generate_uki_addon_pcrlock_files(weird_path, 0);
-            assert!(
-                result.is_ok(),
-                "Function should handle empty path gracefully"
-            );
-        }
-    }
-
-    /// Tests for generate_uki_pcrlock_files function
-    mod generate_uki_pcrlock_files_tests {
-        use super::*;
-        use tempfile::TempDir;
-
-        /// Test that generate_uki_pcrlock_files handles path generation correctly
-        #[test]
-        fn test_generate_uki_pcrlock_files_path_generation() {
-            let temp_dir = TempDir::new().unwrap();
-            let uki_path = temp_dir.path().join("test.efi");
-            std::fs::write(&uki_path, "mock uki binary").unwrap();
-
-            // Test that the function would attempt to create correct paths
-            // (execution will fail due to missing systemd-pcrlock, but validates path logic)
-            let result = generate_uki_pcrlock_files(uki_path.clone(), 0);
-            assert!(
-                result.is_err(),
-                "Function should fail due to missing systemd-pcrlock dependency"
-            );
-
-            // Verify main UKI pcrlock path generation
-            let expected_uki_pcrlock_file = generate_pcrlock_output_path(UKI_PCRLOCK_DIR, 0);
-            let expected_path_str = expected_uki_pcrlock_file.to_str().unwrap();
-            assert!(
-                expected_path_str.contains("650-uki.pcrlock.d"),
-                "Path should contain UKI pcrlock directory"
-            );
-            assert!(
-                expected_path_str.ends_with("generated-0.pcrlock"),
-                "Path should end with generated-0.pcrlock"
-            );
-
-            // Verify UKI addon directory path generation
-            let expected_addon_dir = uki::uki_addon_dir(&uki_path);
-            let expected_addon_str = expected_addon_dir.to_str().unwrap();
-            assert!(
-                expected_addon_str.ends_with(".extra.d"),
-                "Addon directory should end with .extra.d"
-            );
-            assert!(
-                expected_addon_str.contains("test"),
-                "Addon directory should be derived from UKI name"
-            );
-        }
-
-        /// Test generate_uki_pcrlock_files with different UKI paths
-        #[test]
-        fn test_generate_uki_pcrlock_files_different_uki_paths() {
-            let temp_dir = TempDir::new().unwrap();
-
-            let test_cases = vec![
-                "simple.efi",
-                "complex-name_123.efi",
-                "with.dots.in.name.efi",
-                "UPPERCASE.EFI",
-                "mixed_Case-Name.efi",
-            ];
-
-            for uki_name in test_cases {
-                let uki_path = temp_dir.path().join(uki_name);
-                std::fs::write(&uki_path, "mock uki binary").unwrap();
-
-                // Function should fail at systemd-pcrlock execution, not path validation
-                let result = generate_uki_pcrlock_files(uki_path.clone(), 0);
-                assert!(
-                    result.is_err(),
-                    "Function should fail due to missing systemd-pcrlock for {}",
-                    uki_name
-                );
-
-                // Verify addon directory path is correctly derived
-                let addon_dir = uki::uki_addon_dir(&uki_path);
-                let addon_str = addon_dir.to_str().unwrap();
-                assert!(
-                    addon_str.ends_with(".extra.d"),
-                    "Addon directory for {} should end with .extra.d",
-                    uki_name
-                );
-                assert!(
-                    addon_str.contains(uki_path.parent().unwrap().to_str().unwrap()),
-                    "Addon directory should be in same parent directory as UKI"
-                );
-            }
-        }
-
-        /// Test generate_uki_pcrlock_files with different indices
-        #[test]
-        fn test_generate_uki_pcrlock_files_different_indices() {
-            let temp_dir = TempDir::new().unwrap();
-            let uki_path = temp_dir.path().join("test.efi");
-            std::fs::write(&uki_path, "mock uki binary").unwrap();
-
-            for index in [0, 1, 5, 10] {
-                let result = generate_uki_pcrlock_files(uki_path.clone(), index);
-                assert!(
-                    result.is_err(),
-                    "Function should fail due to missing systemd-pcrlock for index {}",
-                    index
-                );
-
-                // Verify the generated path includes the correct index
-                let expected_path = generate_pcrlock_output_path(UKI_PCRLOCK_DIR, index);
-                let expected_filename = format!("generated-{}.pcrlock", index);
-                assert!(
-                    expected_path
-                        .to_str()
-                        .unwrap()
-                        .ends_with(&expected_filename),
-                    "Generated path should end with correct index: {}",
-                    expected_filename
-                );
-            }
-        }
-
-        /// Test generate_uki_pcrlock_files integration with addon processing
-        #[test]
-        fn test_generate_uki_pcrlock_files_addon_integration() {
-            let temp_dir = TempDir::new().unwrap();
-            let uki_path = temp_dir.path().join("test.efi");
-            std::fs::write(&uki_path, "mock uki binary").unwrap();
-
-            // Create UKI addon directory and files
-            let addon_dir = uki::uki_addon_dir(&uki_path);
-            std::fs::create_dir_all(&addon_dir).unwrap();
-
-            let addon_files = ["addon1.addon.efi", "addon2.addon.efi"];
-            for addon_file in &addon_files {
-                let addon_path = addon_dir.join(addon_file);
-                std::fs::write(&addon_path, "mock addon binary").unwrap();
-            }
-
-            // Function should fail at systemd-pcrlock execution but reach addon processing
-            let result = generate_uki_pcrlock_files(uki_path.clone(), 0);
-            assert!(
-                result.is_err(),
-                "Function should fail due to missing systemd-pcrlock"
-            );
-
-            // Verify addon directory was created and contains expected files
-            assert!(addon_dir.exists() && addon_dir.is_dir());
-            let addon_entries: Vec<_> = std::fs::read_dir(&addon_dir)
-                .unwrap()
-                .filter_map(|entry| {
-                    let entry = entry.ok()?;
-                    let path = entry.path();
-                    if uki::is_uki_addon_file(&path) {
-                        Some(path)
-                    } else {
-                        None
-                    }
+                generate_uki_addon_pcrlock_files(addon_dir.clone(), index, |path, pcrlock_path| {
+                    // Validate that the correct paths are passed to lock_pe
+                    assert_eq!(
+                        path, addon_path,
+                        "lock_pe should be called with the correct addon path"
+                    );
+                    let expected_pcrlock_path = generate_pcrlock_output_path(
+                        &format!(
+                            "{}test_addon{}",
+                            UKI_ADDONS_PCRLOCK_DIR_PREFIX, UKI_ADDONS_PCRLOCK_DIR_SUFFIX
+                        ),
+                        index,
+                    );
+                    assert_eq!(
+                        pcrlock_path, expected_pcrlock_path,
+                        "lock_pe should be called with the correct pcrlock file path"
+                    );
+                    Ok(())
                 })
-                .collect();
-            assert_eq!(addon_entries.len(), 2, "Should find 2 valid addon files");
-        }
-
-        /// Test generate_uki_pcrlock_files with non-existent UKI file
-        #[test]
-        fn test_generate_uki_pcrlock_files_nonexistent_uki() {
-            let temp_dir = TempDir::new().unwrap();
-            let nonexistent_uki = temp_dir.path().join("nonexistent.efi");
-
-            // Function should fail when trying to process non-existent UKI
-            let result = generate_uki_pcrlock_files(nonexistent_uki, 0);
-            assert!(
-                result.is_err(),
-                "Function should fail when UKI file doesn't exist"
-            );
-        }
-
-        /// Test generate_uki_pcrlock_files error propagation from addon processing
-        #[test]
-        fn test_generate_uki_pcrlock_files_addon_error_propagation() {
-            let temp_dir = TempDir::new().unwrap();
-            let uki_path = temp_dir.path().join("test.efi");
-            std::fs::write(&uki_path, "mock uki binary").unwrap();
-
-            // Create addon directory with valid addon file
-            let addon_dir = uki::uki_addon_dir(&uki_path);
-            std::fs::create_dir_all(&addon_dir).unwrap();
-            let addon_path = addon_dir.join("test.addon.efi");
-            std::fs::write(&addon_path, "mock addon binary").unwrap();
-
-            // Function should fail and error should mention either UKI processing or addon processing
-            let result = generate_uki_pcrlock_files(uki_path, 0);
-            assert!(
-                result.is_err(),
-                "Function should fail due to systemd-pcrlock dependency"
-            );
-
-            let error_msg = result.unwrap_err().to_string();
-            assert!(
-                error_msg.contains("lock-uki")
-                    || error_msg.contains("lock-pe")
-                    || error_msg.contains("systemd-pcrlock")
-                    || error_msg.contains("Failed to generate"),
-                "Error should be related to pcrlock execution: {}",
-                error_msg
-            );
-        }
-
-        /// Test generate_uki_pcrlock_files without addon directory
-        #[test]
-        fn test_generate_uki_pcrlock_files_no_addon_directory() {
-            let temp_dir = TempDir::new().unwrap();
-            let uki_path = temp_dir.path().join("test.efi");
-            std::fs::write(&uki_path, "mock uki binary").unwrap();
-
-            // Don't create addon directory - function should still attempt UKI processing
-            let result = generate_uki_pcrlock_files(uki_path.clone(), 0);
-            assert!(
-                result.is_err(),
-                "Function should fail due to missing systemd-pcrlock"
-            );
-
-            // Verify addon directory path would be correct even if it doesn't exist
-            let addon_dir = uki::uki_addon_dir(&uki_path);
-            assert!(
-                !addon_dir.exists(),
-                "Addon directory should not exist in this test"
-            );
-            assert!(
-                addon_dir.to_str().unwrap().ends_with(".extra.d"),
-                "Addon directory path should still be correctly formed"
-            );
-        }
-
-        /// Test path validation and UKI name extraction logic used by generate_uki_pcrlock_files
-        #[test]
-        fn test_uki_path_processing_logic() {
-            let temp_dir = TempDir::new().unwrap();
-
-            let test_cases = vec![
-                ("simple.efi", "simple.efi.extra.d"),
-                ("complex-name_123.efi", "complex-name_123.efi.extra.d"),
-                ("path/to/nested.efi", "nested.efi.extra.d"),
-            ];
-
-            for (uki_file, expected_addon_suffix) in test_cases {
-                let path_parts: Vec<&str> = uki_file.split('/').collect();
-                let full_uki_path = if path_parts.len() > 1 {
-                    let nested_dir = temp_dir.path().join("path").join("to");
-                    std::fs::create_dir_all(&nested_dir).unwrap();
-                    nested_dir.join(path_parts.last().unwrap())
-                } else {
-                    temp_dir.path().join(uki_file)
-                };
-
-                std::fs::write(&full_uki_path, "mock uki binary").unwrap();
-
-                // Test addon directory path generation
-                let addon_dir = uki::uki_addon_dir(&full_uki_path);
-                let addon_str = addon_dir.to_str().unwrap();
-                assert!(
-                    addon_str.ends_with(expected_addon_suffix),
-                    "Addon directory for {} should end with {}, got: {}",
-                    uki_file,
-                    expected_addon_suffix,
-                    addon_str
-                );
-
-                // Test main UKI pcrlock path generation
-                let uki_pcrlock_path = generate_pcrlock_output_path(UKI_PCRLOCK_DIR, 0);
-                let uki_path_str = uki_pcrlock_path.to_str().unwrap();
-                assert!(
-                    uki_path_str.contains("650-uki.pcrlock.d"),
-                    "UKI pcrlock path should contain correct directory"
-                );
-                assert!(
-                    uki_path_str.ends_with("generated-0.pcrlock"),
-                    "UKI pcrlock path should have correct filename"
-                );
+                .unwrap();
             }
-        }
-
-        /// Test that generate_uki_pcrlock_files uses correct constants and paths
-        #[test]
-        fn test_generate_uki_pcrlock_files_constants_usage() {
-            let temp_dir = TempDir::new().unwrap();
-            let uki_path = temp_dir.path().join("test.efi");
-            std::fs::write(&uki_path, "mock uki binary").unwrap();
-
-            // Verify that the function would use the correct constants
-            // by testing the path generation functions it calls
-
-            // Test UKI_PCRLOCK_DIR usage
-            let uki_pcrlock_path = generate_pcrlock_output_path(UKI_PCRLOCK_DIR, 0);
-            assert_eq!(UKI_PCRLOCK_DIR, "650-uki.pcrlock.d");
-            assert!(
-                uki_pcrlock_path.to_str().unwrap().contains(UKI_PCRLOCK_DIR),
-                "UKI pcrlock path should use UKI_PCRLOCK_DIR constant"
-            );
-
-            // Test PCRLOCK_DIR usage
-            assert_eq!(PCRLOCK_DIR, "/var/lib/pcrlock.d");
-            assert!(
-                uki_pcrlock_path.to_str().unwrap().starts_with(PCRLOCK_DIR),
-                "UKI pcrlock path should start with PCRLOCK_DIR"
-            );
-
-            // Test that addon path generation would use correct suffixes
-            let addon_dir = uki::uki_addon_dir(&uki_path);
-            assert!(
-                addon_dir.to_str().unwrap().ends_with(".extra.d"),
-                "Addon directory should use .extra.d suffix"
-            );
         }
     }
 
@@ -1486,244 +961,100 @@ mod tests {
         use super::*;
         use tempfile::TempDir;
 
-        /// Test the integration between generate_uki_pcrlock_files and generate_uki_addon_pcrlock_files
-        #[test]
-        fn test_uki_and_addon_pcrlock_integration() {
-            let temp_dir = TempDir::new().unwrap();
-            let uki_path = temp_dir.path().join("integration_test.efi");
-            std::fs::write(&uki_path, "mock uki binary").unwrap();
+        use crate::uki::UKI_ADDON_FILE_SUFFIX;
 
-            // Create addon directory and files
-            let addon_dir = uki::uki_addon_dir(&uki_path);
-            std::fs::create_dir_all(&addon_dir).unwrap();
-
-            let addon_files = [
-                "driver1.addon.efi",
-                "driver2.addon.efi",
-                "complex-name_123.addon.efi",
-            ];
-            for addon_file in &addon_files {
-                let addon_path = addon_dir.join(addon_file);
-                std::fs::write(&addon_path, "mock addon binary").unwrap();
-            }
-
-            // Test that the main function processes both UKI and addons
-            let result = generate_uki_pcrlock_files(uki_path.clone(), 1);
-            assert!(
-                result.is_err(),
-                "Function should fail due to missing systemd-pcrlock"
-            );
-
-            // Verify all expected paths would be generated correctly
-
-            // Main UKI pcrlock path
-            let uki_pcrlock_path = generate_pcrlock_output_path(UKI_PCRLOCK_DIR, 1);
-            assert!(
-                uki_pcrlock_path
-                    .to_str()
-                    .unwrap()
-                    .ends_with("generated-1.pcrlock"),
-                "UKI pcrlock should use index 1"
-            );
-
-            // Addon pcrlock paths
-            for addon_file in &addon_files {
-                let addon_path = addon_dir.join(addon_file);
-                let addon_name = uki::get_uki_name_from_addon_file(&addon_path).unwrap();
-                let pcrlock_addon_name = format!(
-                    "{}{}{}",
-                    UKI_ADDONS_PCRLOCK_DIR_PREFIX, addon_name, UKI_ADDONS_PCRLOCK_DIR_SUFFIX
-                );
-                let addon_pcrlock_path = generate_pcrlock_output_path(&pcrlock_addon_name, 1);
-
-                assert!(
-                    addon_pcrlock_path.to_str().unwrap().contains(addon_name),
-                    "Addon pcrlock path should contain addon name for {}",
-                    addon_file
-                );
-                assert!(
-                    addon_pcrlock_path
-                        .to_str()
-                        .unwrap()
-                        .ends_with("generated-1.pcrlock"),
-                    "Addon pcrlock should use same index as main UKI"
-                );
-            }
+        // Test struct
+        struct PcrlockTest {
+            uki_path: PathBuf,
         }
+        impl PcrlockTest {
+            fn new(uki_file: &str, addon_files: Vec<String>) -> Self {
+                let temp_dir = TempDir::new().unwrap();
+                let uki_path = temp_dir.path().join(uki_file);
+                std::fs::write(&uki_path, "mock uki binary").unwrap();
 
-        /// Test error handling in the integration between UKI and addon processing
-        #[test]
-        fn test_integration_error_handling() {
-            let temp_dir = TempDir::new().unwrap();
-            let uki_path = temp_dir.path().join("error_test.efi");
-            std::fs::write(&uki_path, "mock uki binary").unwrap();
-
-            // Test cases with different addon directory states
-            let test_scenarios = vec![
-                ("no_addon_dir", false, false),   // No addon directory
-                ("empty_addon_dir", true, false), // Empty addon directory
-                ("with_addons", true, true),      // Directory with valid addons
-            ];
-
-            for (scenario, create_dir, create_files) in test_scenarios {
-                let scenario_uki_path = temp_dir.path().join(format!("{}.efi", scenario));
-                std::fs::write(&scenario_uki_path, "mock uki binary").unwrap();
-
-                if create_dir {
-                    let addon_dir = uki::uki_addon_dir(&scenario_uki_path);
+                if !addon_files.is_empty() {
+                    // Create addon directory and files
+                    let addon_dir = uki::uki_addon_dir(&uki_path);
                     std::fs::create_dir_all(&addon_dir).unwrap();
 
-                    if create_files {
-                        std::fs::write(addon_dir.join("test.addon.efi"), "mock addon").unwrap();
+                    for addon_file in &addon_files {
+                        let addon_path = addon_dir.join(addon_file);
+                        std::fs::write(&addon_path, "mock addon binary").unwrap();
                     }
                 }
-
-                // All scenarios should fail at systemd-pcrlock execution
-                let result = generate_uki_pcrlock_files(scenario_uki_path, 0);
-                assert!(
-                    result.is_err(),
-                    "Scenario '{}' should fail due to missing systemd-pcrlock",
-                    scenario
-                );
-
-                // Error should be related to command execution, not path processing
-                let error_msg = result.unwrap_err().to_string();
-                assert!(
-                    error_msg.contains("lock-")
-                        || error_msg.contains("systemd-pcrlock")
-                        || error_msg.contains("Failed to generate"),
-                    "Scenario '{}' should have pcrlock-related error: {}",
-                    scenario,
-                    error_msg
-                );
+                Self { uki_path }
             }
         }
 
-        /// Test path consistency between UKI and addon pcrlock file generation
+        /// Test the integration between generate_uki_pcrlock_files and generate_uki_addon_pcrlock_files
         #[test]
-        fn test_path_consistency() {
-            let temp_dir = TempDir::new().unwrap();
-            let uki_path = temp_dir.path().join("consistency_test.efi");
-            std::fs::write(&uki_path, "mock uki binary").unwrap();
+        fn test_uki_and_addon_pcrlock() {
+            let uki = "with_addons.efi";
+            let addon_names = ["driver1", "driver2", "complex-name_123"];
+            let test = PcrlockTest::new(
+                uki,
+                addon_names
+                    .iter()
+                    .map(|addon| format!("{addon}{UKI_ADDON_FILE_SUFFIX}"))
+                    .collect(),
+            );
 
-            // Test multiple indices to ensure consistency
-            for index in [0, 2, 5] {
-                // Main UKI path
-                let uki_pcrlock_path = generate_pcrlock_output_path(UKI_PCRLOCK_DIR, index);
-
-                // Addon paths
-                let test_addon_names = ["driver1", "driver2", "complex-name"];
-                for addon_name in &test_addon_names {
-                    let pcrlock_addon_name = format!(
-                        "{}{}{}",
-                        UKI_ADDONS_PCRLOCK_DIR_PREFIX, addon_name, UKI_ADDONS_PCRLOCK_DIR_SUFFIX
-                    );
-                    let addon_pcrlock_path =
-                        generate_pcrlock_output_path(&pcrlock_addon_name, index);
-
-                    // Both should use same base directory
+            // Test that the main function processes both UKI and addons
+            generate_uki_pcrlock_files(
+                test.uki_path.clone(),
+                1,
+                |path, pcrlock| {
+                    assert!(path.to_str().unwrap().contains(uki), "lock_uki should be called with the correct UKI path, but was called with '{}', which does not contain '{}'", path.display(), uki);
+                    assert!(pcrlock.to_str().unwrap().contains(UKI_PCRLOCK_DIR), "lock_uki should be called with the correct pcrlock path, but was called with '{}', which does not contain '{}'", pcrlock.display(), UKI_PCRLOCK_DIR);
+                    Ok(())
+                },
+                |path, pcrlock| {
+                    let addon_name = path
+                        .file_name()
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .strip_suffix(UKI_ADDON_FILE_SUFFIX)
+                        .unwrap();
                     assert!(
-                        uki_pcrlock_path.starts_with(PCRLOCK_DIR)
-                            && addon_pcrlock_path.starts_with(PCRLOCK_DIR),
-                        "Both UKI and addon paths should start with PCRLOCK_DIR"
-                    );
-
-                    // Both should use same index in filename
-                    let expected_filename = format!("generated-{}.pcrlock", index);
-                    assert!(
-                        uki_pcrlock_path
-                            .to_str()
-                            .unwrap()
-                            .ends_with(&expected_filename),
-                        "UKI path should end with correct filename for index {}",
-                        index
+                        addon_names.contains(&addon_name),
+                        "Addon name '{}' should be in the list of expected addon names",
+                        addon_name
                     );
                     assert!(
-                        addon_pcrlock_path
-                            .to_str()
-                            .unwrap()
-                            .ends_with(&expected_filename),
-                        "Addon path should end with correct filename for index {}",
-                        index
+                        addon_names.contains(&addon_name),
+                        "Addon name '{}' should be in the list of expected addon names",
+                        addon_name
                     );
-
-                    // Addon path should contain addon-specific directory
-                    assert!(
-                        addon_pcrlock_path
-                            .to_str()
-                            .unwrap()
-                            .contains(&format!("670-uki-addons-{}", addon_name)),
-                        "Addon path should contain addon-specific directory name"
-                    );
-                }
-            }
+                    assert!(pcrlock
+                        .to_str()
+                        .unwrap()
+                        .contains(UKI_ADDONS_PCRLOCK_DIR_PREFIX));
+                    Ok(())
+                },
+            )
+            .unwrap();
         }
 
-        /// Test that both functions correctly handle the same addon directory
+        /// Test the integration between generate_uki_pcrlock_files and generate_uki_addon_pcrlock_files
         #[test]
-        fn test_shared_addon_directory_handling() {
-            let temp_dir = TempDir::new().unwrap();
-            let uki_path = temp_dir.path().join("shared_test.efi");
-            std::fs::write(&uki_path, "mock uki binary").unwrap();
+        fn test_uki_and_no_addons_pcrlock() {
+            let uki = "no_addons.efi";
+            let test = PcrlockTest::new(uki, vec![]);
 
-            // Create addon directory and files
-            let addon_dir = uki::uki_addon_dir(&uki_path);
-            std::fs::create_dir_all(&addon_dir).unwrap();
-
-            // Mix of valid and invalid files
-            std::fs::write(addon_dir.join("valid1.addon.efi"), "valid addon").unwrap();
-            std::fs::write(addon_dir.join("valid2.addon.efi"), "valid addon").unwrap();
-            std::fs::write(addon_dir.join("invalid.txt"), "invalid file").unwrap();
-            std::fs::create_dir_all(addon_dir.join("subdir")).unwrap();
-
-            // Test generate_uki_pcrlock_files (which calls generate_uki_addon_pcrlock_files)
-            let result1 = generate_uki_pcrlock_files(uki_path, 0);
-            assert!(
-                result1.is_err(),
-                "generate_uki_pcrlock_files should fail due to systemd-pcrlock"
-            );
-
-            // Test generate_uki_addon_pcrlock_files directly
-            let result2 = generate_uki_addon_pcrlock_files(addon_dir.clone(), 0);
-            assert!(
-                result2.is_err(),
-                "generate_uki_addon_pcrlock_files should fail due to systemd-pcrlock"
-            );
-
-            // Both should process the same valid addon files
-            let valid_addons: Vec<_> = std::fs::read_dir(&addon_dir)
-                .unwrap()
-                .filter_map(|entry| {
-                    let entry = entry.ok()?;
-                    let path = entry.path();
-                    if uki::is_uki_addon_file(&path) {
-                        Some(path)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
-            assert_eq!(
-                valid_addons.len(),
-                2,
-                "Should find exactly 2 valid addon files"
-            );
-
-            // Verify both valid files are properly named
-            let mut found_valid1 = false;
-            let mut found_valid2 = false;
-            for path in &valid_addons {
-                let addon_name = uki::get_uki_name_from_addon_file(path).unwrap();
-                if addon_name == "valid1" {
-                    found_valid1 = true;
-                }
-                if addon_name == "valid2" {
-                    found_valid2 = true;
-                }
-            }
-            assert!(found_valid1, "Should find valid1 addon");
-            assert!(found_valid2, "Should find valid2 addon");
+            // Test that the main function processes both UKI and addons
+            generate_uki_pcrlock_files(
+                test.uki_path.clone(),
+                1,
+                |path, pcrlock| {
+                    assert!(path.to_str().unwrap().contains(uki), "lock_uki should be called with the correct UKI path, but was called with '{}', which does not contain '{}'", path.display(), uki);
+                    assert!(pcrlock.to_str().unwrap().contains(UKI_PCRLOCK_DIR), "lock_uki should be called with the correct pcrlock path, but was called with '{}', which does not contain '{}'", pcrlock.display(), UKI_PCRLOCK_DIR);
+                    Ok(())
+                },
+                |path, pcrlock| panic!("lock_pe should not be called when no addons are provided, but was called with path '{}' and pcrlock '{}'", path.display(), pcrlock.display())
+            )
+            .unwrap();
         }
     }
 }
