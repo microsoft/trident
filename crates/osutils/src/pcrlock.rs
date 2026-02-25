@@ -1,4 +1,5 @@
 use std::{
+    ffi::OsString,
     fs,
     path::{Path, PathBuf},
     process::Command,
@@ -606,7 +607,7 @@ fn generate_pcrlock_files(
                 );
             };
 
-            let pcrlock_file = generate_pcrlock_output_path(sub_dir, index);
+            let pcrlock_file = generate_pcrlock_output_path(&OsString::from(sub_dir), index);
             debug!(
                 "Generating .pcrlock file at '{}' to measure bootloader PE binary at '{}'",
                 pcrlock_file.display(),
@@ -633,8 +634,10 @@ fn generate_pcrlock_files(
         // measured into PCR 4 as well.
         if !efivar::secure_boot_is_enabled() {
             for (index, uki_path) in uki_binaries.into_iter().enumerate() {
-                let pcrlock_file =
-                    generate_pcrlock_output_path(BOOT_LOADER_CODE_UKI_PCRLOCK_DIR, index);
+                let pcrlock_file = generate_pcrlock_output_path(
+                    &OsString::from(BOOT_LOADER_CODE_UKI_PCRLOCK_DIR),
+                    index,
+                );
                 debug!(
                     "SecureBoot is disabled, so generating .pcrlock file at '{}' \
                     to measure .linux section of UKI PE binary at '{}'",
@@ -721,7 +724,7 @@ where
     G: FnMut(PathBuf, PathBuf) -> Result<(), Error>,
 {
     // Generate .pcrlock file for the UKI binary, which covers both PCR 4 and PCR 11 measurements for that UKI binary
-    let pcrlock_file = generate_pcrlock_output_path(UKI_PCRLOCK_DIR, index);
+    let pcrlock_file = generate_pcrlock_output_path(&OsString::from(UKI_PCRLOCK_DIR), index);
     lock_uki(uki_path.clone(), pcrlock_file.clone())?;
 
     // Check the UKI addon path (`uki_path` + 'extra.d') for existence, and if it exists, generate a .pcrlock file for it as well,
@@ -762,12 +765,21 @@ where
             }
 
             // Get addon name
-            // TODO: should failures here bail or log+continue?
-            let addon_name = uki::get_uki_name_from_addon_file(&path)?;
+            let Ok(addon_name) = uki::get_uki_name_from_addon_file(&path) else {
+                warn!(
+                    "Failed to get addon name from UKI addon file at '{}', skipping generating .pcrlock file for it",
+                    path.display()
+                );
+                continue;
+            };
             // Create pcrlock component name
-            let pcrlock_addon_name = format!(
-                "{UKI_ADDONS_PCRLOCK_DIR_PREFIX}{addon_name}{UKI_ADDONS_PCRLOCK_DIR_SUFFIX}"
-            );
+            let pcrlock_addon_name = {
+                let mut pcrlock_addon_osstring = std::ffi::OsString::new();
+                pcrlock_addon_osstring.push(UKI_ADDONS_PCRLOCK_DIR_PREFIX);
+                pcrlock_addon_osstring.push(addon_name);
+                pcrlock_addon_osstring.push(UKI_ADDONS_PCRLOCK_DIR_SUFFIX);
+                pcrlock_addon_osstring
+            };
             // Generate .pcrlock file path for this addon
             let addon_pcrlock_file = generate_pcrlock_output_path(&pcrlock_addon_name, index);
             // Run lock-pe for this addon
@@ -780,7 +792,7 @@ where
 /// Generates a full .pcrlock file path under PCRLOCK_DIR, given the sub-dir, and the index of the
 /// .pcrlock file. This is needed so that each image, current and update, gets its own .pcrlock
 /// file.
-fn generate_pcrlock_output_path(pcrlock_subdir: &str, index: usize) -> PathBuf {
+fn generate_pcrlock_output_path(pcrlock_subdir: &OsString, index: usize) -> PathBuf {
     let base = Path::new(PCRLOCK_DIR).join(pcrlock_subdir);
     base.join(format!("generated-{index}.pcrlock"))
 }
@@ -853,7 +865,7 @@ mod tests {
             .join(BOOT_LOADER_CODE_SHIM_PCRLOCK_DIR)
             .join(format!("generated-{index}.pcrlock"));
         assert_eq!(
-            generate_pcrlock_output_path(BOOT_LOADER_CODE_SHIM_PCRLOCK_DIR, index),
+            generate_pcrlock_output_path(&OsString::from(BOOT_LOADER_CODE_SHIM_PCRLOCK_DIR), index),
             expected_path
         );
     }
@@ -939,10 +951,10 @@ mod tests {
                         "lock_pe should be called with the correct addon path"
                     );
                     let expected_pcrlock_path = generate_pcrlock_output_path(
-                        &format!(
+                        &OsString::from(format!(
                             "{}test_addon{}",
                             UKI_ADDONS_PCRLOCK_DIR_PREFIX, UKI_ADDONS_PCRLOCK_DIR_SUFFIX
-                        ),
+                        )),
                         index,
                     );
                     assert_eq!(

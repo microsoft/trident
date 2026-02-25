@@ -1,4 +1,8 @@
-use std::path::{Path, PathBuf};
+use std::{
+    ffi::OsString,
+    os::unix::ffi::OsStringExt,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Error, Result};
 
@@ -22,33 +26,35 @@ pub fn uki_addon_dir(uki_path: &Path) -> PathBuf {
 /// example, `vmlinuz-1-azla1.efi.addon.efi` would be considered a UKI addon
 /// file, while `vmlinuz-1-azla1.efi` would not.
 pub fn is_uki_addon_file(path: &Path) -> bool {
-    path.is_file()
-        && path
-            .file_name()
-            .is_some_and(|name| name.to_string_lossy().ends_with(UKI_ADDON_FILE_SUFFIX))
+    if !path.is_file() {
+        return false;
+    }
+
+    path.as_os_str()
+        .as_encoded_bytes()
+        .ends_with(UKI_ADDON_FILE_SUFFIX.as_bytes())
 }
 
 /// Extracts the UKI name from a given addon file path by removing the `.addon.efi` suffix.
 /// If the file name does not end with the expected suffix, an error is returned. For example,
 /// given the addon file path `vmlinuz-1-azla1.efi.addon.efi`, this function would return
 /// `vmlinuz-1-azla1.efi`.
-pub fn get_uki_name_from_addon_file(addon_file: &Path) -> Result<&str, Error> {
-    addon_file
+pub fn get_uki_name_from_addon_file(addon_file: &Path) -> Result<OsString, Error> {
+    let addon_name = addon_file
         .file_name()
         .with_context(|| format!(
             "Expected a file but found a directory at path '{}' in UKI addons directory.",
             addon_file.display()
         ))?
-        .to_str()
-        .with_context(|| format!(
-            "Failed to get file name for path '{}' in UKI addons directory.",
-            addon_file.display()
-        ))?
-        .strip_suffix(UKI_ADDON_FILE_SUFFIX)
+        .as_encoded_bytes()
+        .strip_suffix(UKI_ADDON_FILE_SUFFIX.as_bytes())
         .with_context(|| format!(
             "File '{}' in UKI addons directory does not end with expected suffix '{UKI_ADDON_FILE_SUFFIX}'.",
             addon_file.display(),
-        ))
+        ))?
+        .to_vec();
+
+    Ok(OsString::from_vec(addon_name))
 }
 
 #[cfg(test)]
