@@ -978,6 +978,7 @@ mod tests {
         // Test struct
         struct PcrlockTest {
             uki_path: PathBuf,
+            _temp_dir: TempDir,
         }
         impl PcrlockTest {
             fn new(uki_file: &str, addon_files: Vec<String>) -> Self {
@@ -995,7 +996,10 @@ mod tests {
                         std::fs::write(&addon_path, "mock addon binary").unwrap();
                     }
                 }
-                Self { uki_path }
+                Self {
+                    uki_path,
+                    _temp_dir: temp_dir,
+                }
             }
         }
 
@@ -1029,11 +1033,6 @@ mod tests {
                         .unwrap()
                         .strip_suffix(UKI_ADDON_FILE_SUFFIX)
                         .unwrap();
-                    assert!(
-                        addon_names.contains(&addon_name),
-                        "Addon name '{}' should be in the list of expected addon names",
-                        addon_name
-                    );
                     assert!(
                         addon_names.contains(&addon_name),
                         "Addon name '{}' should be in the list of expected addon names",
