@@ -171,7 +171,7 @@ impl HttpSubFile {
                 let reader = self.new_partial_response_reader(previous_response_was_empty)?;
                 if !reader.exhausted() {
                     trace!(
-                        "Successfully populated PartialResponseReader for subfile '{}' at position {} with {} bytes available",
+                        "Received a response for subfile '{}' at position {} with {} bytes",
                         self.url,
                         self.position,
                         reader.bytes_remaining,
