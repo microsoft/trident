@@ -16,6 +16,8 @@ mod grpc_client;
 
 pub use grpc_client::{ClientArgs, ClientCommands};
 
+pub const DEFAULT_HOST_CONFIG_PATH: &str = "/etc/trident/config.yaml";
+
 /// Standard exit codes used by Trident.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TridentExitCodes {
@@ -79,7 +81,7 @@ pub enum Commands {
     /// Initiate an install of Azure Linux
     Install {
         /// The new configuration to apply
-        #[clap(index = 1, default_value = "/etc/trident/config.yaml")]
+        #[clap(index = 1, default_value = DEFAULT_HOST_CONFIG_PATH)]
         config: PathBuf,
 
         /// Comma-separated list of operations that Trident will be allowed to perform
@@ -102,7 +104,7 @@ pub enum Commands {
     /// Start or continue an A/B update from an existing install
     Update {
         /// The new configuration to apply
-        #[clap(index = 1, default_value = "/etc/trident/config.yaml")]
+        #[clap(index = 1, default_value = DEFAULT_HOST_CONFIG_PATH)]
         config: PathBuf,
 
         /// Comma-separated list of operations that Trident will be allowed to perform
@@ -149,7 +151,7 @@ pub enum Commands {
     #[clap(name = "start-network", hide(true))]
     StartNetwork {
         /// The new configuration to apply
-        #[clap(index = 1, default_value = "/etc/trident/config.yaml")]
+        #[clap(index = 1, default_value = DEFAULT_HOST_CONFIG_PATH)]
         config: PathBuf,
     },
 
@@ -190,7 +192,7 @@ pub enum Commands {
     /// validated.
     Validate {
         /// Path to a Host Configuration file
-        #[clap(index = 1, default_value = "/etc/trident/config.yaml")]
+        #[clap(index = 1, default_value = DEFAULT_HOST_CONFIG_PATH)]
         config: PathBuf,
     },
 

@@ -275,23 +275,41 @@ fn setup_tracing(args: &Cli) -> Result<TraceStream, Error> {
 
     let tracestream = TraceStream::default();
 
-    if matches!(
-        args.command,
-        Commands::Install { .. }
-            | Commands::Update { .. }
-            | Commands::Commit { .. }
-            | Commands::RebuildRaid { .. }
-            | Commands::Rollback { .. }
-    ) {
-        // Set up the trace sender
-        let trace_sender = tracestream
-            .make_trace_sender()
-            .with_filter(filter::LevelFilter::INFO);
-
-        tracing::subscriber::set_global_default(
-            tracing_subscriber::Registry::default().with(trace_sender),
-        )
-        .context("Failed to set global default subscriber")?;
+    match &args.command {
+        Commands::Commit { .. }
+        | Commands::Daemon { .. }
+        | Commands::GrpcClient { .. }
+        | Commands::Install { .. }
+        | Commands::RebuildRaid { .. }
+        | Commands::Rollback { check: false, .. }
+        | Commands::Update { .. } => {
+            // As functionality moves to the Daemon, move the journald layer to
+            // only be enabled for the Daemon command. Until then, keep it enabled
+            // for all commands to ensure we have tracing info in journald for all
+            // commands.
+            let baseline_tracing = tracing_subscriber::Registry::default().with(
+                tracestream
+                    .make_trace_sender()
+                    .with_filter(filter::LevelFilter::INFO),
+            );
+            if let Ok(journald_layer) = tracing_journald::layer() {
+                tracing::subscriber::set_global_default(
+                    baseline_tracing.with(
+                        journald_layer
+                            .with_syslog_identifier("trident-tracing".to_string())
+                            .with_filter(filter::LevelFilter::INFO),
+                    ),
+                )
+                .context("Failed to set global default subscriber")?;
+            } else {
+                eprintln!("Failed to connect to journald, falling back to tracing without journald support");
+                tracing::subscriber::set_global_default(baseline_tracing)
+                    .context("Failed to set global default subscriber")?;
+            }
+        }
+        _ => {
+            // no op
+        }
     }
 
     Ok(tracestream)

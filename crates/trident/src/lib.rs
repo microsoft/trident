@@ -199,6 +199,11 @@ impl Trident {
             info!("Running Trident in a container");
         }
 
+        // Trace features enabled in the Host Configuration.
+        if let Some(hc) = &host_config {
+            hc.feature_tracing();
+        }
+
         if let Ok(selinux_context) = fs::read_to_string("/proc/self/attr/current") {
             debug!(
                 "Trident is running in SELinux domain '{}'",
@@ -306,7 +311,14 @@ impl Trident {
                 // Record error in datastore.
                 let error = match last_error_to_preserve {
                     Some(err) => err,
-                    None => serde_yaml::to_value(&e).structured(InternalError::SerializeError)?,
+                    None => {
+                        // Create trace error for new errors.
+                        tracing::error!(
+                            error_kind = e.kind().as_str(),
+                            error_subkind = e.subkind(),
+                        );
+                        serde_yaml::to_value(&e).structured(InternalError::SerializeError)?
+                    }
                 };
                 if let Err(e2) =
                     datastore.with_host_status(|status| status.last_error = Some(error))
@@ -631,6 +643,7 @@ impl Trident {
         image_url: &Url,
         hash: &str,
     ) -> Result<ExitKind, TridentError> {
+        tracing::info!(metric_name = "stream_image_start", value = true,);
         let mut image_source = ConfigOsImage {
             url: image_url.clone(),
             sha384: ImageSha384::new(hash)?,

@@ -21,5 +21,8 @@ steps:
       cat ${{ parameters.cargoConfigPath }}
 
       set +x
+      printf "\n\n\n"
+      echo "REGISTRY TOKENS:"
       echo CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN=${CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN:0:20}...
+      echo CARGO_REGISTRIES_POLARCOREARTIFACTS_TOKEN=${CARGO_REGISTRIES_POLARCOREARTIFACTS_TOKEN:0:20}...
     displayName: "Add global-credential-providers to Cargo config"

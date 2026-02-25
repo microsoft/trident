@@ -17,7 +17,10 @@ use sysdefs::{
 };
 use trident_api::{error::TridentError, primitives::hash::Sha384Hash};
 
-use super::{OsImageFile, OsImageFileSystem, OsImageFileSystemType, OsImageVerityHash};
+use super::{
+    GptPartitionInfo, OsImageFile, OsImageFileSystem, OsImageFileSystemType, OsImagePartition,
+    OsImageVerityHash,
+};
 
 /// Content returned by the reader of a mock OS image file.
 pub const MOCK_OS_IMAGE_CONTENT: &str = "mock-os-image-content-lorem-ipsum";
@@ -47,6 +50,12 @@ pub struct MockOsImage {
 pub struct MockPartitioningInfo {
     pub lba0: [u8; 512],
     pub gpt: GptDisk<Cursor<Vec<u8>>>,
+    pub partitions: Vec<MockPartition>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MockPartition {
+    pub info: GptPartitionInfo,
 }
 
 impl MockPartitioningInfo {
@@ -75,6 +84,7 @@ impl MockPartitioningInfo {
         Ok(Self {
             lba0: protective_mbr,
             gpt: disk,
+            partitions: Vec::new(),
         })
     }
 }
@@ -185,6 +195,16 @@ impl MockOsImage {
                     hash_image_file: mock_os_image_file(),
                 }),
             })
+    }
+
+    /// Returns the partition information in the mock image, if available.
+    pub fn partitions(&self) -> Option<impl Iterator<Item = OsImagePartition>> {
+        self.partitioning_info.as_ref().map(|info| {
+            info.partitions.iter().map(|part| OsImagePartition {
+                info: part.info.clone(),
+                image_file: mock_os_image_file(),
+            })
+        })
     }
 
     /// Returns the OS architecture of the image.

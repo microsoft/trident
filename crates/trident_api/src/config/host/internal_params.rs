@@ -69,6 +69,11 @@ impl InternalParams {
     pub fn set_flag_false(&mut self, key: String) {
         self.0.insert(key, false.into());
     }
+
+    /// Get list of keys that are set as internal params.
+    pub fn get_set_params(&self) -> Vec<String> {
+        self.0.keys().cloned().collect()
+    }
 }
 
 #[cfg(test)]
@@ -165,5 +170,45 @@ mod tests {
         assert!(params.get_flag("myString"));
         assert!(!params.get_flag("x"));
         assert!(!params.get_flag("missing"));
+    }
+
+    #[test]
+    fn test_get_set_params() {
+        // Test with multiple parameters
+        let params: InternalParams = serde_yaml::from_str(
+            r#"
+            param1: value1
+            param2: 123
+            param3:
+              - item1
+              - item2
+            flag: true
+        "#,
+        )
+        .unwrap();
+
+        let keys = params.get_set_params();
+        assert_eq!(keys.len(), 4);
+        assert!(keys.contains(&"param1".to_string()));
+        assert!(keys.contains(&"param2".to_string()));
+        assert!(keys.contains(&"param3".to_string()));
+        assert!(keys.contains(&"flag".to_string()));
+
+        // Test with empty params
+        let empty_params = InternalParams::default();
+        let empty_keys = empty_params.get_set_params();
+        assert_eq!(empty_keys.len(), 0);
+
+        // Test with single parameter
+        let single_params: InternalParams = serde_yaml::from_str(
+            r#"
+            only_key: only_value
+        "#,
+        )
+        .unwrap();
+
+        let single_keys = single_params.get_set_params();
+        assert_eq!(single_keys.len(), 1);
+        assert_eq!(single_keys[0], "only_key");
     }
 }

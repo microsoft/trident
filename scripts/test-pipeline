@@ -19,6 +19,7 @@ from typing import Any, Dict
 @dataclass
 class PipelineMetadata:
     id: int
+    project: str = "ECF"
     parameters: Dict[str, Any] = None
 
 
@@ -45,6 +46,7 @@ pipeline_metadata_map: Dict[str, PipelineMetadata] = {
     ),
     "prism-cicd": PipelineMetadata(id=5069),
     "full-validation": PipelineMetadata(id=5070),
+    "publish-crates": PipelineMetadata(id=5324, project="polar"),
 }
 
 parser = argparse.ArgumentParser(description="Preview a pipeline run")
@@ -81,7 +83,7 @@ if args.parallel and not args.quiet:
     parser.error("--parallel requires --quiet (-q)")
 
 
-def check_pipeline(pipeline_name: str, selected_branch: str):
+def check_pipeline(pipeline_name: str, selected_branch: str, quiet: bool = False):
     pipeline_metadata = pipeline_metadata_map[pipeline_name]
 
     if pipeline_metadata.id == -1:
@@ -117,7 +119,7 @@ def check_pipeline(pipeline_name: str, selected_branch: str):
             "--resource",
             "runs",
             "--route-parameters",
-            "project=ECF",
+            f"project={pipeline_metadata.project}",
             f"pipelineId={pipeline_metadata.id}",
             "--http-method",
             "POST",
@@ -134,7 +136,7 @@ def check_pipeline(pipeline_name: str, selected_branch: str):
 
     print(f"Pipeline '{pipeline_name}' previewed successfully", file=sys.stderr)
 
-    if not args.quiet:
+    if not quiet:
         out_json = json.loads(output.stdout.decode("utf-8"))
         print(out_json["finalYaml"])
 
@@ -178,7 +180,7 @@ if args.parallel:
 else:
     for pipeline_name in args.pipeline:
         try:
-            check_pipeline(pipeline_name, selected_branch)
+            check_pipeline(pipeline_name, selected_branch, args.quiet)
         except Exception as e:
             print(f"Error previewing pipeline '{pipeline_name}': {e}", file=sys.stderr)
             exit(1)
