@@ -38,6 +38,7 @@ stages:
               baseimgType: baremetal
             # Need rcp-agent from go tools
             downloadGoTools: true
+            timeoutInMinutes: 30
 
   - ${{ if parameters.testAzureLinuxStreamingImage }}:
     - stage: BuildImagesForDirectStreaming_azurelinux_${{ parameters.architecture }}
@@ -65,6 +66,7 @@ stages:
               baseimgType: core_arm64
             ${{ if eq(parameters.architecture, 'amd64') }}:
               baseimgType: baremetal
+            timeoutInMinutes: 30
 
     # Run netlaunch test to validate direct streaming installer
     - template: stages/direct-streaming/netlaunch-testing.yml
@@ -95,7 +97,7 @@ stages:
             label: "ubuntu-direct-streaming-testimage-${{ parameters.architecture }}"
             makeTarget: "artifacts/ubuntu-direct-streaming-testimage-${{ parameters.architecture }}.cosi"
             baseimgType: ubuntu_${{ parameters.architecture }}
-
+            timeoutInMinutes: 30
     # Run netlaunch test to validate direct streaming installer
     - template: stages/direct-streaming/netlaunch-testing.yml
       parameters:

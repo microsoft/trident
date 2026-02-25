@@ -55,11 +55,16 @@ parameters:
     type: boolean
     default: false
 
+  - name: timeoutInMinutes
+    displayName: "Timeout for the job in minutes"
+    type: number
+    default: 20
+
 
 jobs:
   - job: PrepareImage_${{ replace(parameters.label, '-', '_') }}
     displayName: Prepare Image ${{ parameters.label }}
-    timeoutInMinutes: 20
+    timeoutInMinutes: ${{ parameters.timeoutInMinutes }}
     pool:
       ${{ if eq(parameters.architecture, 'arm64') }}:
         type: linux
