@@ -168,9 +168,8 @@ impl HttpSubFile {
             // replace any existing reader.
             let mut previous_response_was_empty = false;
             let new_reader = loop {
-                // Pass `silent = true` after an empty response so that
-                // repeated retries don't produce identical "Requesting HTTP
-                // range" trace lines.
+                // If we have already tried and got a zero-length response,
+                // make the new request silently to avoid log spam.
                 let reader = self.new_partial_response_reader(previous_response_was_empty)?;
                 if !reader.exhausted() {
                     trace!(
