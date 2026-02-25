@@ -257,6 +257,7 @@ fn setup_logging(
             | Commands::Commit { .. }
             | Commands::RebuildRaid { .. }
             | Commands::Rollback { .. }
+            | Commands::Daemon { .. }
     ) {
         multilogger.add_logger(BackgroundLog::new(TRIDENT_BACKGROUND_LOG_PATH).into_logger());
     }
