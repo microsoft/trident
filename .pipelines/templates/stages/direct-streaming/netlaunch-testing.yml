@@ -75,8 +75,6 @@ stages:
               ${{ if eq(parameters.architecture, 'amd64') }}:
                 goToolsArtifactName: go-tools
 
-          - template: ../testing_vm/netlaunch-prep.yml
-
           - bash: |
               set -ex
               sudo apt update -y
@@ -84,6 +82,8 @@ stages:
 
             displayName: "Install pip and seabios"
             retryCountOnTaskFailure: 3
+
+          - template: ../testing_vm/netlaunch-prep.yml
 
           - bash: |
               set -eux
