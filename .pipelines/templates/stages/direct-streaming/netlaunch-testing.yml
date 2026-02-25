@@ -75,17 +75,15 @@ stages:
               ${{ if eq(parameters.architecture, 'amd64') }}:
                 goToolsArtifactName: go-tools
 
+          - template: ../testing_vm/netlaunch-prep.yml
+
           - bash: |
               set -ex
               sudo apt update -y
               sudo apt install -y python3 python3-pip seabios
 
-              sudo snap install yq
-
-            displayName: "Install pip and yq"
+            displayName: "Install pip and seabios"
             retryCountOnTaskFailure: 3
-
-          - template: ../testing_vm/netlaunch-prep.yml
 
           - bash: |
               set -eux
