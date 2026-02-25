@@ -168,6 +168,9 @@ impl HttpSubFile {
             // replace any existing reader.
             let mut previous_response_was_empty = false;
             let new_reader = loop {
+                // Pass `silent = true` after an empty response so that
+                // repeated retries don't produce identical "Requesting HTTP
+                // range" trace lines.
                 let reader = self.new_partial_response_reader(previous_response_was_empty)?;
                 if !reader.exhausted() {
                     trace!(
@@ -209,7 +212,9 @@ impl HttpSubFile {
     }
 
     /// Creates a new PartialResponseReader for the current position within
-    /// the subfile.
+    /// the subfile. When `silent` is true, the "Requesting HTTP range" trace
+    /// log is suppressed — used during retries after an empty response to
+    /// avoid flooding the logs with repeated identical messages.
     fn new_partial_response_reader(&self, silent: bool) -> IoResult<PartialResponseReader> {
         // Always attempt to read up to the end of the subfile.
         let range = HttpRangeRequest::new(
