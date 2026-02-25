@@ -765,12 +765,16 @@ where
             }
 
             // Get addon name
-            let Ok(addon_name) = uki::get_uki_name_from_addon_file(&path) else {
-                warn!(
-                    "Failed to get addon name from UKI addon file at '{}', skipping generating .pcrlock file for it",
-                    path.display()
-                );
-                continue;
+            let addon_name = match uki::get_uki_name_from_addon_file(&path) {
+                Ok(addon_name) => addon_name,
+                Err(e) => {
+                    warn!(
+                        "Failed to get addon name from UKI addon file at '{}': {}, skipping generating .pcrlock file for it",
+                        path.display(),
+                        e,
+                    );
+                    continue;
+                }
             };
             // Create pcrlock component name
             let pcrlock_addon_name = {
