@@ -166,9 +166,9 @@ impl HttpSubFile {
         if self.reader.as_ref().is_none_or(|r| r.exhausted()) {
             // Create a new partial response reader for the next range and
             // replace any existing reader.
-            let mut received_empty_response = false;
+            let mut previous_response_was_empty = false;
             let new_reader = loop {
-                let reader = self.new_partial_response_reader(received_empty_response)?;
+                let reader = self.new_partial_response_reader(previous_response_was_empty)?;
                 if !reader.exhausted() {
                     trace!(
                         "Successfully populated PartialResponseReader for subfile '{}' at position {} with {} bytes available",
@@ -180,8 +180,8 @@ impl HttpSubFile {
                     break reader;
                 }
 
-                if !received_empty_response {
-                    received_empty_response = true;
+                if !previous_response_was_empty {
+                    previous_response_was_empty = true;
                     trace!(
                         "Received empty response when populating reader for subfile '{}' at position {}, retrying silently...",
                         self.url,
