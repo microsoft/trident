@@ -329,6 +329,8 @@ stages:
           architecture: amd64
           tridentRepoName: ${{ parameters.tridentRepoName }}
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+          micBuildType: ${{ parameters.micBuildType }}
+          micVersion: ${{ parameters.micVersion }}
 
   # TESTING stages for full validation matrix host/container and bm/bm
   - ${{ if eq(parameters.stageType, 'full-validation') }}:
@@ -359,6 +361,8 @@ stages:
           architecture: amd64
           tridentRepoName: ${{ parameters.tridentRepoName }}
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+          micBuildType: ${{ parameters.micBuildType }}
+          micVersion: ${{ parameters.micVersion }}
 
       - ${{ if parameters.baremetalTestsEnabled }}:
           # BM Testing (host, weekly)
@@ -407,6 +411,8 @@ stages:
           architecture: amd64
           tridentRepoName: ${{ parameters.tridentRepoName }}
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+          micBuildType: ${{ parameters.micBuildType }}
+          micVersion: ${{ parameters.micVersion }}
 
   # TESTING stages for PR-E2E
   - ${{ if eq(parameters.stageType, 'pr-e2e') }}:
@@ -439,6 +445,8 @@ stages:
           architecture: amd64
           tridentRepoName: ${{ parameters.tridentRepoName }}
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+          micBuildType: ${{ parameters.micBuildType }}
+          micVersion: ${{ parameters.micVersion }}
 
   # TESTING stages for AZL-VALIDATION
   - ${{ if eq(parameters.stageType, 'azl-validation') }}:
@@ -482,6 +490,8 @@ stages:
           architecture: amd64
           tridentRepoName: ${{ parameters.tridentRepoName }}
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+          micBuildType: ${{ parameters.micBuildType }}
+          micVersion: ${{ parameters.micVersion }}
 
   # PUBLISHING
   #

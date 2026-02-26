@@ -20,6 +20,20 @@ parameters:
     type: boolean
     default: true
 
+  - name: micBuildType
+    displayName: MIC Build Type
+    type: string
+    values:
+      - dev
+      - preview
+      - release
+    default: release
+
+  - name: micVersion
+    displayName: MIC Version
+    type: string
+    default: "*.*.*"
+
   - name: dependsOnStage
     type: string
     default: ""
@@ -73,9 +87,8 @@ stages:
             parameters:
               labelPrefix: "" # No prefix for this image
               architecture: ${{ parameters.architecture }}
-              # TODO: when IC next releases, no longer needs dev image
-              micBuildType: dev
-              micVersion: "main"
+              micBuildType: ${{ parameters.micBuildType }}
+              micVersion: ${{ parameters.micVersion }}
               label: "azurelinux-direct-streaming-testimage-${{ parameters.architecture }}"
               makeTarget: "artifacts/azurelinux-direct-streaming-testimage-${{ parameters.architecture }}.cosi"
               ${{ if eq(parameters.architecture, 'arm64') }}:
@@ -110,9 +123,8 @@ stages:
             parameters:
               labelPrefix: "" # No prefix for this image
               architecture: ${{ parameters.architecture }}
-              # TODO: when IC next releases, no longer needs dev image
-              micBuildType: dev
-              micVersion: "main"
+              micBuildType: ${{ parameters.micBuildType }}
+              micVersion: ${{ parameters.micVersion }}
               label: "ubuntu-direct-streaming-testimage-${{ parameters.architecture }}"
               makeTarget: "artifacts/ubuntu-direct-streaming-testimage-${{ parameters.architecture }}.cosi"
               baseimgType: ubuntu_${{ parameters.architecture }}
