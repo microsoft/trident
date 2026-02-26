@@ -21,14 +21,9 @@ use super::{metadata::Image, CosiPartitioningInfo};
 /// A helper function that performs the actual derivation of the host
 /// configuration assuming that the COSI version is sufficient and the
 /// necessary metadata and GPT data are present. This is separated from
-/// `derive_host_configuration` to:
-///
-/// - Allow for easier testing since we can directly construct a COSI object
-///   with the required fields without having to go through the GPT
-///   population logic.
-/// - Take an immutable reference to self, which makes it clear that this
-///   function does not modify the COSI object and relies on all necessary
-///   data being pre-populated. (Also simplifies borrowing.)
+/// `derive_host_configuration` to allow for easier testing since we can
+/// directly construct a COSI object with the required fields without having
+/// to go through the GPT population logic.
 pub(super) fn derive_host_configuration_inner(
     source_url: &Url,
     metadata_sha384: &Sha384Hash,
