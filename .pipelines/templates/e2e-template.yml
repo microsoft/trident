@@ -443,6 +443,7 @@ stages:
       - template: direct-streaming-test.yml
         parameters:
           architecture: amd64
+<<<<<<< HEAD
           tridentRepoName: ${{ parameters.tridentRepoName }}
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
           micBuildType: ${{ parameters.micBuildType }}
@@ -490,6 +491,8 @@ stages:
           architecture: amd64
           tridentRepoName: ${{ parameters.tridentRepoName }}
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+=======
+>>>>>>> e62f95a3 (update trident for imagecustomizer 1.2)
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
 
