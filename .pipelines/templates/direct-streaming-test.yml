@@ -5,12 +5,28 @@ parameters:
       - arm64
       - amd64
     default: arm64
+
   - name: testAzureLinuxStreamingImage
     type: boolean
     default: true
+
   - name: testUbuntuStreamingImage
     type: boolean
     default: true
+
+  - name: micBuildType
+    displayName: MIC Build Type
+    type: string
+    values:
+      - dev
+      - preview
+      - release
+    default: release
+
+  - name: micVersion
+    displayName: MIC Version
+    type: string
+    default: "*.*.*"
 
 stages:
   - ${{ if or(parameters.testAzureLinuxStreamingImage, parameters.testUbuntuStreamingImage) }}:
@@ -57,9 +73,8 @@ stages:
           parameters:
             labelPrefix: "" # No prefix for this image
             architecture: ${{ parameters.architecture }}
-            # TODO: when IC next releases, no longer needs dev image
-            micBuildType: dev
-            micVersion: "main"
+            micBuildType: ${{ parameters.micBuildType }}
+            micVersion: ${{ parameters.micVersion }}
             label: "azurelinux-direct-streaming-testimage-${{ parameters.architecture }}"
             makeTarget: "artifacts/azurelinux-direct-streaming-testimage-${{ parameters.architecture }}.cosi"
             ${{ if eq(parameters.architecture, 'arm64') }}:
@@ -91,9 +106,8 @@ stages:
           parameters:
             labelPrefix: "" # No prefix for this image
             architecture: ${{ parameters.architecture }}
-            # TODO: when IC next releases, no longer needs dev image
-            micBuildType: dev
-            micVersion: "main"
+            micBuildType: ${{ parameters.micBuildType }}
+            micVersion: ${{ parameters.micVersion }}
             label: "ubuntu-direct-streaming-testimage-${{ parameters.architecture }}"
             makeTarget: "artifacts/ubuntu-direct-streaming-testimage-${{ parameters.architecture }}.cosi"
             baseimgType: ubuntu_${{ parameters.architecture }}
@@ -103,4 +117,3 @@ stages:
       parameters:
         architecture: ${{ parameters.architecture }}
         streamingImageDistro: ubuntu
-
