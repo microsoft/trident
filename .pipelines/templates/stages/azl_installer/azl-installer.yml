@@ -99,6 +99,7 @@ stages:
               imageName: azl-installer
               baseimgBuildType: $(BASEIMG_BUILD_TYPE)
               baseimgVersion: $(BASEIMG_VERSION)
+              rpmsVersion: $(RPMS_VERSION)
               micBuildType: ${{ parameters.micBuildType }}
               micVersion: ${{ parameters.micVersion }}
 
