@@ -180,7 +180,7 @@ steps:
   # template is always run and contains logic to skip if not needed.
   - template: common/rpms-download-template.yaml@platform-pipelines
     parameters:
-      rpmsVersion: ${{ parameters.baseimgVersion }}
+      rpmsVersion: ${{ parameters.rpmsVersion }}
       azureLinuxVersion: ${{ parameters.baseimgAzureLinuxVersion }}
       runtimeBuildType: ${{ parameters.baseimgBuildType }}
 
