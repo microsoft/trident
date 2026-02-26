@@ -121,6 +121,7 @@ jobs:
           tridentArtifactName: $(tridentArtifactName)
           baseimgBuildType: $(BASEIMG_BUILD_TYPE)
           baseimgVersion: $(BASEIMG_VERSION)
+          rpmsVersion: $(RPMS_VERSION)
           baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
           baseimgTypes:
             - ${{ parameters.baseimgType }}
