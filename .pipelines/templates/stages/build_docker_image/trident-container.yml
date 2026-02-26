@@ -5,11 +5,17 @@ parameters:
       - self
       - trident
 
+  - name: dependsOnStage
+    type: string
+    default: ""
+
 stages:
   - stage: BuildTridentContainerImage
     displayName: Build Docker Image
     dependsOn:
       - GetTridentBinaries_rpms_amd64
+      - ${{ if ne(parameters.dependsOnStage, '') }}:
+          - ${{ parameters.dependsOnStage }}
 
     jobs:
       - job: BuildImage
