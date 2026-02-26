@@ -20,7 +20,7 @@ from builder import (
 # to use by default when building   #
 # images.                           #
 # # # # # # # # # # # # # # # # # # #
-DEFAULT_IMAGE_CUSTOMIZER_VERSION = "0.19"
+DEFAULT_IMAGE_CUSTOMIZER_VERSION = "latest"
 
 
 DEFINED_IMAGES: List[ImageConfig] = [
