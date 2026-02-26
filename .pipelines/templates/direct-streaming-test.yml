@@ -11,12 +11,18 @@ parameters:
       - arm64
       - amd64
     default: arm64
+
   - name: testAzureLinuxStreamingImage
     type: boolean
     default: true
+
   - name: testUbuntuStreamingImage
     type: boolean
     default: true
+
+  - name: dependsOnStage
+    type: string
+    default: ""
 
 stages:
   - ${{ if or(parameters.testAzureLinuxStreamingImage, parameters.testUbuntuStreamingImage) }}:
@@ -30,6 +36,8 @@ stages:
               - GetTridentBinaries_rpms_amd64
               - BuildingTools
           - PrepareSSHKeys
+          - ${{ if ne(parameters.dependsOnStage, '') }}:
+              - ${{ parameters.dependsOnStage }}
         jobs:
           # Build Trident direct streaming installer ISO
           - template: stages/trident_images/build-image.yml
@@ -57,6 +65,8 @@ stages:
               - GetTridentBinaries_rpms_amd64
               - BuildingTools
           - PrepareSSHKeys
+          - ${{ if ne(parameters.dependsOnStage, '') }}:
+              - ${{ parameters.dependsOnStage }}
         jobs:
           # Build direct streaming COSI VHD
           - template: stages/trident_images/build-image.yml
@@ -92,6 +102,8 @@ stages:
               - GetTridentBinaries_rpms_amd64
               - BuildingTools
           - PrepareSSHKeys
+          - ${{ if ne(parameters.dependsOnStage, '') }}:
+              - ${{ parameters.dependsOnStage }}
         jobs:
           # Build direct streaming COSI VHD
           - template: stages/trident_images/build-image.yml

@@ -147,6 +147,7 @@ stages:
   - template: stages/build_docker_image/trident-container.yml
     parameters:
       tridentRepoName: ${{ parameters.tridentRepoName }}
+      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # Build Trident installer ISO (host)
   - template: stages/build_image/build-image.yml
