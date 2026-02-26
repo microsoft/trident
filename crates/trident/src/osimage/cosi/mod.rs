@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     io::{self, BufReader, Cursor, Read, Seek, SeekFrom, Write},
     ops::ControlFlow,
     path::{Path, PathBuf},
@@ -10,20 +11,23 @@ use gpt::{disk::LogicalBlockSize, GptConfig, GptDisk};
 use log::{debug, trace};
 use tar::Archive;
 use url::Url;
+use zstd::Decoder;
 
+use sysdefs::partition_types::DiscoverablePartitionType;
 use trident_api::{
     config::{HostConfiguration, ImageSha384, OsImage},
     error::{InternalError, ReportError, TridentError},
     primitives::hash::Sha384Hash,
 };
-use zstd::Decoder;
 
 use crate::io_utils::{
     file_reader::FileReader,
     hashing_reader::{HashingReader, HashingReader384},
 };
 
-use super::{OsImageFile, OsImageFileSystem, OsImageVerityHash};
+use super::{
+    GptPartitionInfo, OsImageFile, OsImageFileSystem, OsImagePartition, OsImageVerityHash,
+};
 
 mod derived_hc;
 mod entries;
@@ -33,7 +37,7 @@ mod validation;
 
 use entries::{CosiEntries, CosiEntry};
 use metadata::{
-    CosiMetadata, CosiMetadataVersion, GptRegionType, ImageFile, KnownMetadataVersion,
+    CosiMetadata, CosiMetadataVersion, DiskInfo, GptRegionType, ImageFile, KnownMetadataVersion,
     MetadataVersion,
 };
 
@@ -82,6 +86,17 @@ pub(super) struct CosiPartitioningInfo {
 
     /// The parsed GPT disk data from the COSI file.
     pub(super) gpt_disk: GptDisk<Cursor<Vec<u8>>>,
+
+    /// Partition metadata.
+    pub(super) partitions: BTreeMap<u32, CosiPartition>,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct CosiPartition {
+    /// The image file in the COSI file that contains the partition data.
+    pub image_file: ImageFile,
+    /// Information about the GPT partition.
+    pub info: GptPartitionInfo,
 }
 
 impl Cosi {
@@ -133,6 +148,25 @@ impl Cosi {
             .map(cosi_image_to_os_image_filesystem)
     }
 
+    /// Returns an iterator over all partitions defined in the metadata.
+    pub(super) fn partitions(&self) -> Option<impl Iterator<Item = OsImagePartition>> {
+        Some(
+            self.partitioning_info
+                .as_ref()?
+                .partitions
+                .values()
+                .map(|part| OsImagePartition {
+                    image_file: OsImageFile {
+                        path: part.image_file.path.clone(),
+                        compressed_size: part.image_file.compressed_size,
+                        sha384: part.image_file.sha384.clone(),
+                        uncompressed_size: part.image_file.uncompressed_size,
+                    },
+                    info: part.info.clone(),
+                }),
+        )
+    }
+
     /// Returns the full disk size of the original disk that the OS image was
     /// created from, if specified in the metadata.
     pub(super) fn original_disk_size(&self) -> Option<u64> {
@@ -175,8 +209,16 @@ impl Cosi {
                 .context("Failed to populate GPT data for COSI version >= 1.2")?;
         }
 
-        self.derive_host_configuration_inner(target_disk)
-            .context("Failed to derive host configuration from COSI metadata and GPT data")
+        let partitioning_info = self.partitioning_info.as_ref().context("Partitioning information is not available after populating it, cannot derive host configuration")?;
+
+        derived_hc::derive_host_configuration_inner(
+            &self.source,
+            &self.metadata_sha384,
+            target_disk,
+            &self.metadata.images,
+            partitioning_info,
+        )
+        .context("Failed to derive host configuration from COSI metadata and GPT data")
     }
 
     pub(super) fn read_images<F>(&self, mut f: F) -> Result<(), TridentError>
@@ -324,75 +366,145 @@ impl Cosi {
         Ok(data)
     }
 
-    /// On COSI >= v1.2, populates GPT data for images that require it.
+    /// On COSI >= v1.2, populates GPT data for images that require it. The
+    /// caller is expected to have already checked that the COSI version is >=
+    /// 1.2 before calling this function.
     fn populate_gpt_data(&mut self) -> Result<(), Error> {
         trace!("Populating GPT data for COSI file: {}", self.source);
         // First, get the gpt region from the metadata. All of the possible
         // errors here should have been checked in validation already.
-        let (gpt_image, lba_size) = {
-            let disk = self
-                .metadata
-                .disk
-                .as_ref()
-                .context("Disk information not populated for COSI >= 1.2")?;
+        let disk_info = self
+            .metadata
+            .disk
+            .as_ref()
+            .context("Disk information not populated for COSI >= 1.2")?
+            .clone(); // Clone to avoid borrowing issues later.
 
-            let gpt_region = disk
-                .gpt_regions
-                .first()
-                .context("GPT regions not defined in COSI >= 1.2")?;
+        let gpt_region = disk_info
+            .gpt_regions
+            .first()
+            .context("GPT regions not defined in COSI >= 1.2")?;
 
-            // This should be checked by validation, but we double check here.
-            ensure!(
-                gpt_region.region_type == GptRegionType::PrimaryGpt,
-                "GPT region is not of type PrimaryGpt"
-            );
-
-            // Clone to avoid borrow issues.
-            (gpt_region.image.clone(), disk.lba_size)
-        };
+        // This should be checked by validation, but we double check here.
+        ensure!(
+            gpt_region.region_type == GptRegionType::PrimaryGpt,
+            "GPT region is not of type PrimaryGpt"
+        );
 
         let raw_gpt_data = self
-            .get_file_data(&gpt_image)
+            .get_file_data(&gpt_region.image)
             .context("Failed to read GPT image data from COSI file")?;
 
-        // The protective MBR is 512 bytes, and the GPT header is at least one
-        // logical block, so we need at least 2 LBAs of data to have both.
-        let min_expected_size = lba_size * 2;
-
-        ensure!(
-            raw_gpt_data.len() > min_expected_size as usize,
-            "Raw GPT data is too small to contain protective MBR and GPT header, data size: {}, expected at least: {}",
-            raw_gpt_data.len(),
-            min_expected_size,
+        self.partitioning_info = Some(
+            create_cosi_partitioning_info(raw_gpt_data, disk_info)
+                .context("Failed to produce COSI partitioning information.")?,
         );
-
-        // Extract a copy of the protective MBR (LBA 0) from the raw GPT data.
-        // This is needed because the protective MBR is not part of the GPT disk
-        // structure and needs to be written separately when deploying the GPT
-        // to disk.
-        let lba0 = raw_gpt_data[0..lba_size as usize].to_vec();
-
-        // Now get a reader for the image that contains the GPT.
-        let raw_gpt_cursor = Cursor::new(raw_gpt_data);
-
-        let gpt_disk = GptConfig::new()
-            .writable(false)
-            .logical_block_size(match lba_size {
-                512 => LogicalBlockSize::Lb512,
-                4096 => LogicalBlockSize::Lb4096,
-                other => bail!("Unsupported LBA size for GPT: {}", other),
-            })
-            .open_from_device(raw_gpt_cursor)?;
-
-        trace!(
-            "Successfully read GPT data from COSI file, found {} partitions",
-            gpt_disk.partitions().len()
-        );
-
-        self.partitioning_info = Some(CosiPartitioningInfo { lba0, gpt_disk });
 
         Ok(())
     }
+}
+
+/// Creates the complete COSI partitioning information by reading the raw GPT
+/// data from the COSI file and correlating it with the disk metadata in the
+/// COSI metadata.
+fn create_cosi_partitioning_info(
+    raw_gpt_data: Vec<u8>,
+    disk_info: DiskInfo,
+) -> Result<CosiPartitioningInfo, Error> {
+    // Extract a copy of the protective MBR (LBA 0) from the raw GPT data.
+    // This is needed because the protective MBR is not part of the GPT disk
+    // structure and needs to be written separately when deploying the GPT
+    // to disk.
+    ensure!(
+        raw_gpt_data.len() >= 2 * (disk_info.lba_size as usize),
+        "Raw GPT data size ({} bytes) is smaller than 2 LBAs size (LBA size {} bytes)",
+        raw_gpt_data.len(),
+        disk_info.lba_size
+    );
+    let lba0 = raw_gpt_data[0..disk_info.lba_size as usize].to_vec();
+
+    // Now get a reader for the image that contains the GPT.
+    let raw_gpt_cursor = Cursor::new(raw_gpt_data);
+
+    // Determine the LBA size from the disk metadata. This is needed to
+    // calculate partition sizes from the GPT data. The GPT library we use
+    // only supports 512 and 4096 byte LBAs, so we error if it's any other
+    // value.
+    let lba_size_gpt = match disk_info.lba_size {
+        512 => LogicalBlockSize::Lb512,
+        4096 => LogicalBlockSize::Lb4096,
+        other => bail!("Unsupported LBA size: {}", other),
+    };
+
+    let gpt_disk = GptConfig::new()
+        .writable(false)
+        .logical_block_size(lba_size_gpt)
+        .open_from_device(raw_gpt_cursor)?;
+
+    // We now have the gpt data. Next, we correlate it with the COSI metadata.
+    let gpt_partitions = gpt_disk.partitions();
+
+    trace!(
+        "Successfully read GPT data from COSI file, found {} partitions",
+        gpt_partitions.len()
+    );
+
+    let metadata_partitions = disk_info
+        .gpt_regions
+        .into_iter()
+        .filter_map(|r| match r.region_type {
+            GptRegionType::Partition { number } => Some((r.image, number)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    ensure!(
+        metadata_partitions.len() == gpt_partitions.len(),
+        "Number of partitions in disk metadata ({}) does not match number of GPT partitions ({})",
+        metadata_partitions.len(),
+        gpt_partitions.len()
+    );
+
+    let partitions = metadata_partitions
+        .into_iter()
+        .map(|(image, number)| {
+            let gpt_partition = gpt_partitions.get(&number).with_context(|| {
+                format!(
+                    "GPT partition number {} referenced in disk metadata not found in GPT data",
+                    number
+                )
+            })?;
+
+            let size = gpt_partition
+                .bytes_len(lba_size_gpt)
+                .with_context(|| format!("Failed to calculate size of partition {number}"))?;
+
+            let part = CosiPartition {
+                image_file: image,
+                info: GptPartitionInfo {
+                    partition_number: number,
+                    size,
+                    part_type: DiscoverablePartitionType::from_uuid(
+                        &gpt_partition.part_type_guid.guid,
+                    ),
+                    part_uuid: gpt_partition.part_guid,
+                    first_lba: gpt_partition.first_lba,
+                    last_lba: gpt_partition.last_lba,
+                    flags: gpt_partition.flags,
+                    name: gpt_partition.name.clone(),
+                },
+            };
+
+            Ok((number, part))
+        })
+        .collect::<Result<BTreeMap<u32, CosiPartition>, Error>>()
+        .context("Failed to correlate GPT partitions with COSI metadata partitions")?;
+
+    Ok(CosiPartitioningInfo {
+        lba0,
+        gpt_disk,
+        partitions,
+    })
 }
 
 /// Converts a COSI metadata Image to an OsImageFileSystem.
@@ -1756,15 +1868,29 @@ mod tests {
             sha384: Sha384Hash::from(compressed_hash),
         };
 
-        // Create disk info with GPT region.
+        // Create a partition image file descriptor (for the test partition).
+        let partition_image_file = ImageFile {
+            path: PathBuf::from("images/test_partition.img.zst"),
+            compressed_size: 1024,
+            uncompressed_size: 2048,
+            sha384: Sha384Hash::from("0".repeat(96)),
+        };
+
+        // Create disk info with GPT region and partition region.
         let disk_info = DiskInfo {
             size: disk_size,
             lba_size,
             partition_table_type: PartitionTableType::Gpt,
-            gpt_regions: vec![GptDiskRegion {
-                image: gpt_image_file,
-                region_type: GptRegionType::PrimaryGpt,
-            }],
+            gpt_regions: vec![
+                GptDiskRegion {
+                    image: gpt_image_file,
+                    region_type: GptRegionType::PrimaryGpt,
+                },
+                GptDiskRegion {
+                    image: partition_image_file,
+                    region_type: GptRegionType::Partition { number: 1 },
+                },
+            ],
         };
 
         // Create a COSI instance with disk metadata (version 1.2 to trigger GPT parsing).
@@ -2002,14 +2128,27 @@ mod tests {
             sha384: Sha384Hash::from(compressed_hash),
         };
 
+        let partition_image_file = ImageFile {
+            path: PathBuf::from("images/gpt_test_partition.img.zst"),
+            compressed_size: 1024,
+            uncompressed_size: 2048,
+            sha384: Sha384Hash::from("0".repeat(96)),
+        };
+
         let disk_info = DiskInfo {
             size: disk_size,
             lba_size,
             partition_table_type: PartitionTableType::Gpt,
-            gpt_regions: vec![GptDiskRegion {
-                image: gpt_image_file,
-                region_type: GptRegionType::PrimaryGpt,
-            }],
+            gpt_regions: vec![
+                GptDiskRegion {
+                    image: gpt_image_file,
+                    region_type: GptRegionType::PrimaryGpt,
+                },
+                GptDiskRegion {
+                    image: partition_image_file,
+                    region_type: GptRegionType::Partition { number: 1 },
+                },
+            ],
         };
 
         let mut cosi = Cosi {
@@ -2039,7 +2178,6 @@ mod tests {
 
         // First call to gpt() should load the GPT.
         let gpt_result = cosi.partitioning_info();
-        assert!(gpt_result.is_ok(), "gpt() should succeed for COSI >= 1.2");
 
         let gpt = gpt_result.unwrap();
         assert!(gpt.is_some(), "GPT should be present after gpt() call");

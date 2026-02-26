@@ -56,6 +56,7 @@ parser.add_argument(
     type=str,
     help="The pipeline to preview",
     choices=pipeline_metadata_map.keys(),
+    nargs="+",
 )
 
 parser.add_argument(
@@ -70,14 +71,75 @@ parser.add_argument(
     "-q", "--quiet", action="store_true", help="Suppress YAML output", default=False
 )
 
+parser.add_argument(
+    "--parallel",
+    action="store_true",
+    help="Preview pipelines in parallel",
+)
+
 args = parser.parse_args()
 
+if args.parallel and not args.quiet:
+    parser.error("--parallel requires --quiet (-q)")
 
-pipeline_metadata = pipeline_metadata_map[args.pipeline]
 
-if pipeline_metadata.id == -1:
-    print("Pipeline does not exist yet", file=sys.stderr)
-    exit(2)
+def check_pipeline(pipeline_name: str, selected_branch: str, quiet: bool = False):
+    pipeline_metadata = pipeline_metadata_map[pipeline_name]
+
+    if pipeline_metadata.id == -1:
+        raise Exception(f"Pipeline '{pipeline_name}' is not defined in the script")
+
+    print(
+        f"Checking pipeline '{pipeline_name}' with ID '{pipeline_metadata.id}' on branch '{selected_branch}'",
+        file=sys.stderr,
+    )
+
+    payload = {
+        "previewRun": True,
+        "resources": {"repositories": {"self": {"refName": selected_branch}}},
+    }
+
+    if pipeline_metadata.parameters:
+        payload["templateParameters"] = pipeline_metadata.parameters
+
+    with tempfile.NamedTemporaryFile() as payload_file:
+        payload_file.write(json.dumps(payload).encode("utf-8"))
+        payload_file.flush()
+
+        cmd = [
+            "az",
+            "devops",
+            "invoke",
+            "--org",
+            "https://dev.azure.com/mariner-org",
+            "--api-version",
+            "7.0",
+            "--area",
+            "pipelines",
+            "--resource",
+            "runs",
+            "--route-parameters",
+            f"project={pipeline_metadata.project}",
+            f"pipelineId={pipeline_metadata.id}",
+            "--http-method",
+            "POST",
+            "--in-file",
+            payload_file.name,
+        ]
+        output = subprocess.run(
+            cmd,
+            capture_output=True,
+        )
+
+    if output.returncode != 0:
+        raise Exception(f"Pipeline preview failed: {output.stderr.decode('utf-8')}")
+
+    print(f"Pipeline '{pipeline_name}' previewed successfully", file=sys.stderr)
+
+    if not quiet:
+        out_json = json.loads(output.stdout.decode("utf-8"))
+        print(out_json["finalYaml"])
+
 
 if args.branch:
     selected_branch = args.branch
@@ -93,55 +155,32 @@ else:
         .strip()
     )
 
-print(
-    f"Checking pipeline '{args.pipeline}' with ID '{pipeline_metadata.id}' on branch '{selected_branch}'",
-    file=sys.stderr,
-)
+if args.parallel:
+    import concurrent.futures
 
-payload = {
-    "previewRun": True,
-    "resources": {"repositories": {"self": {"refName": selected_branch}}},
-}
-
-if pipeline_metadata.parameters:
-    payload["templateParameters"] = pipeline_metadata.parameters
-
-with tempfile.NamedTemporaryFile() as payload_file:
-    payload_file.write(json.dumps(payload).encode("utf-8"))
-    payload_file.flush()
-
-    cmd = [
-        "az",
-        "devops",
-        "invoke",
-        "--org",
-        "https://dev.azure.com/mariner-org",
-        "--api-version",
-        "7.0",
-        "--area",
-        "pipelines",
-        "--resource",
-        "runs",
-        "--route-parameters",
-        f"project={pipeline_metadata.project}",
-        f"pipelineId={pipeline_metadata.id}",
-        "--http-method",
-        "POST",
-        "--in-file",
-        payload_file.name,
-    ]
-    output = subprocess.run(
-        cmd,
-        capture_output=True,
-    )
-
-if output.returncode != 0:
-    print("Failed to preview pipeline:", file=sys.stderr)
-    print(output.stderr.decode("utf-8"), file=sys.stderr)
-    exit(1)
-
-print("Pipeline previewed successfully", file=sys.stderr)
-
-if not args.quiet:
-    out_json = json.loads(output.stdout.decode("utf-8"))
-    print(out_json["finalYaml"])
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = {
+            executor.submit(check_pipeline, name, selected_branch): name
+            for name in args.pipeline
+        }
+        failures = []
+        for future in concurrent.futures.as_completed(futures):
+            name = futures[future]
+            try:
+                future.result()
+            except Exception as e:
+                print(f"Error previewing pipeline '{name}': {e}", file=sys.stderr)
+                failures.append(name)
+        if failures:
+            print(
+                f"Failed pipelines: {', '.join(failures)}",
+                file=sys.stderr,
+            )
+            exit(1)
+else:
+    for pipeline_name in args.pipeline:
+        try:
+            check_pipeline(pipeline_name, selected_branch, args.quiet)
+        except Exception as e:
+            print(f"Error previewing pipeline '{pipeline_name}': {e}", file=sys.stderr)
+            exit(1)

@@ -13,7 +13,7 @@ use osutils::dependencies::{Dependency, DependencyResultExt};
 use sysdefs::filesystems::{KernelFilesystemType, RealFilesystemType};
 use trident_api::{
     config::{HostConfigurationDynamicValidationError, SelinuxMode},
-    constants::SELINUX_CONFIG,
+    constants::{internal_params::RAW_COSI_STORAGE, SELINUX_CONFIG},
     error::{InvalidInputError, ReportError, ServicingError, TridentError},
     status::ServicingType,
 };
@@ -83,6 +83,11 @@ impl Subsystem for SelinuxSubsystem {
         if !(ctx.servicing_type == ServicingType::CleanInstall
             || ctx.servicing_type == ServicingType::AbUpdate)
         {
+            return Ok(());
+        }
+
+        if ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
+            warn!("Raw COSI storage is enabled, skipping SELinux configuration");
             return Ok(());
         }
 
