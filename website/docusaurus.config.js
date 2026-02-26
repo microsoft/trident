@@ -170,6 +170,10 @@ const config = {
             title: "More",
             items: [
               {
+                href: 'pathname:///logexplorer/',
+                label: "Log Explorer",
+              },
+              {
                 label: "GitHub",
                 href: "https://github.com/microsoft/trident",
               },
