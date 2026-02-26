@@ -328,6 +328,7 @@ stages:
         parameters:
           architecture: amd64
           tridentRepoName: ${{ parameters.tridentRepoName }}
+          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # TESTING stages for full validation matrix host/container and bm/bm
   - ${{ if eq(parameters.stageType, 'full-validation') }}:
@@ -357,6 +358,7 @@ stages:
         parameters:
           architecture: amd64
           tridentRepoName: ${{ parameters.tridentRepoName }}
+          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
       - ${{ if parameters.baremetalTestsEnabled }}:
           # BM Testing (host, weekly)
@@ -404,6 +406,7 @@ stages:
         parameters:
           architecture: amd64
           tridentRepoName: ${{ parameters.tridentRepoName }}
+          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # TESTING stages for PR-E2E
   - ${{ if eq(parameters.stageType, 'pr-e2e') }}:
@@ -435,6 +438,7 @@ stages:
         parameters:
           architecture: amd64
           tridentRepoName: ${{ parameters.tridentRepoName }}
+          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # TESTING stages for AZL-VALIDATION
   - ${{ if eq(parameters.stageType, 'azl-validation') }}:
@@ -477,6 +481,7 @@ stages:
         parameters:
           architecture: amd64
           tridentRepoName: ${{ parameters.tridentRepoName }}
+          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # PUBLISHING
   #
