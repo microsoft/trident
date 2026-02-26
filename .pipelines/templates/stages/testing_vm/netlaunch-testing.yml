@@ -282,6 +282,7 @@ stages:
                   --metric-file $(tridentSourceDirectory)/trident-clean-install-metrics.jsonl
             timeoutInMinutes: 5
             displayName: "Check for trace file and journald logs for expected trace entry"
+            workingDirectory: $(tridentSourceDirectory)
 
           - bash: |
               set -eux
