@@ -91,7 +91,7 @@ def build(
     image = find_image(configs, name)
     log.info(f"Building image '{image.name}'")
     rpm_sources: List[Path] = []
-    if not image.no_rpm_sources:
+    if image.rpm_sources_allowed:
         if image.requires_trident:
             rpm_sources.append(RpmSources.TRIDENT.path())
         if image.requires_dhcp:

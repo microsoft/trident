@@ -126,8 +126,8 @@ class ImageConfig:
     # Architecture of the image
     architecture: SystemArchitecture = SystemArchitecture.AMD64
 
-    # No RPM sources
-    no_rpm_sources: bool = False
+    # RPM sources are allowed for image
+    rpm_sources_allowed: bool = True
 
     @classmethod
     def kebab_fields(cls) -> List[str]:
