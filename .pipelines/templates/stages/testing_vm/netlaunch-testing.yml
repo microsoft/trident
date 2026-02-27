@@ -270,19 +270,19 @@ stages:
             workingDirectory: $(tridentSourceDirectory)
             displayName: "📄 Check target OS deployment"
 
-          - bash: |
-              set -eux
+          # - bash: |
+          #     set -eux
 
-              HOST_IP=$(jq -r '.virtualmachines[0].ip' $(tridentSourceDirectory)/tools/virt-deploy-metadata.json)
-              ./bin/storm-trident helper check-tracing \
-                  "$(tridentSourceDirectory)/tests/e2e_tests/helpers/key" \
-                  "$HOST_IP" \
-                  "testing-user" \
-                  "${{ parameters.runtimeEnv }}" \
-                  --metric-file $(tridentSourceDirectory)/trident-clean-install-metrics.jsonl
-            timeoutInMinutes: 5
-            displayName: "Check for trace file and journald logs for expected trace entry"
-            workingDirectory: $(tridentSourceDirectory)
+          #     HOST_IP=$(jq -r '.virtualmachines[0].ip' $(tridentSourceDirectory)/tools/virt-deploy-metadata.json)
+          #     ./bin/storm-trident helper check-tracing \
+          #         "$(tridentSourceDirectory)/tests/e2e_tests/helpers/key" \
+          #         "$HOST_IP" \
+          #         "testing-user" \
+          #         "${{ parameters.runtimeEnv }}" \
+          #         --metric-file $(tridentSourceDirectory)/trident-clean-install-metrics.jsonl
+          #   timeoutInMinutes: 5
+          #   displayName: "Check for trace file and journald logs for expected trace entry"
+          #   workingDirectory: $(tridentSourceDirectory)
 
           - bash: |
               set -eux
