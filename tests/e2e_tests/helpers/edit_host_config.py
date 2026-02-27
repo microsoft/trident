@@ -97,11 +97,14 @@ def remove_encryption_pcr7(host_config_path):
     pcr7_aliases = ["7", "secure-boot-policy"]
     for pcr7_alias in pcr7_aliases:
         if (
-            "os" in host_config
-            and "encryption" in host_config["os"]
-            and pcr7_alias in host_config["os"]["encryption"]
+            "storage" in host_config
+            and "encryption" in host_config["storage"]
+            and "pcrs" in host_config["storage"]["encryption"]
+            and pcr7_alias in host_config["storage"]["encryption"]["pcrs"]
         ):
-            del host_config["os"]["encryption"][pcr7_alias]
+            existing_pcr_list = host_config["storage"]["encryption"]["pcrs"]
+            existing_pcr_list.remove(pcr7_alias)
+            host_config["storage"]["encryption"]["pcrs"] = existing_pcr_list
 
     with open(host_config_path, "w") as f:
         yaml.safe_dump(host_config, f)
