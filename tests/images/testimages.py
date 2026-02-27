@@ -125,6 +125,7 @@ DEFINED_IMAGES: List[ImageConfig] = [
         config_file="base/baseimg.yaml",
         base_image=BaseImage.UBUNTU_AMD64,
         output_format=OutputFormat.BAREMETAL_IMAGE,
+        no_rpm_sources=True,
     ),
     ImageConfig(
         "ubuntu-direct-streaming-testimage-arm64",
@@ -133,6 +134,7 @@ DEFINED_IMAGES: List[ImageConfig] = [
         base_image=BaseImage.UBUNTU_ARM64,
         output_format=OutputFormat.BAREMETAL_IMAGE,
         architecture=SystemArchitecture.ARM64,
+        no_rpm_sources=True,
     ),
 ]
 
