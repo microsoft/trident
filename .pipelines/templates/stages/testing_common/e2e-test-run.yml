@@ -455,7 +455,7 @@ steps:
           PROXY_ARG="--env-vars HTTPS_PROXY=${{ parameters.httpsProxy }}"
         fi
         # To allow storm to access VM serial logs, need sudo.
-        sudo $(Build.SourcesDirectory)/bin/storm-trident helper manual-rollback -a \
+        sudo ./bin/storm-trident helper manual-rollback -a \
             --log-dir "$(ob_outputDirectory)" \
             "${{ parameters.sshKeyPath }}" \
             "${{ parameters.hostIp }}" \
@@ -470,7 +470,7 @@ steps:
     - bash: |
         set -eux
         # sudo is needed to read qemu VM serial logs, `-a` is needed with sudo
-        sudo $(Build.SourcesDirectory)/bin/storm-trident helper display-logs -a \
+        sudo ./bin/storm-trident helper display-logs -a \
             --netlisten-config "${{ parameters.netlistenConfigFile }}" \
             --serial-log-artifact-file-name "rollback-target-os-${TARGET_OS}-serial.log" \
             --artifacts-folder "$(ob_outputDirectory)"

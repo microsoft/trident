@@ -38,6 +38,7 @@ stages:
               mkdir -p bin/RPMS
             displayName: Prepare to build docker image
             retryCountOnTaskFailure: 3
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
 
           - task: DownloadPipelineArtifact@2
             displayName: "Download Trident rpms"
