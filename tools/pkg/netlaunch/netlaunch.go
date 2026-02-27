@@ -355,7 +355,7 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 					streamCtx, streamCancel := context.WithTimeout(ctx, time.Minute*10)
 					defer streamCancel()
 
-					imgUrl, imgHash, err := getUmageUrlAndHashFromTridentConfig(hostConfigData)
+					imgUrl, imgHash, err := getImageUrlAndHashFromTridentConfig(hostConfigData)
 					if err != nil {
 						return fmt.Errorf("failed to get image URL and hash from Trident config: %w", err)
 					}
