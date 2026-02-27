@@ -93,9 +93,9 @@ steps:
       buildType: ${{ parameters.micBuildType }}
       arch: ${{ parameters.architecture }}
       micVersion: ${{ parameters.micVersion }}
-  
-# Note: DHCP packages are not being installed in this image template.
-# If needed use template download-dhcp.yml on test-images.
+
+  # Note: DHCP packages are not being installed in this image template.
+  # If needed use template download-dhcp.yml on test-images.
 
   - template: common/base-images-download-template.yaml@platform-pipelines
     parameters:
@@ -107,11 +107,11 @@ steps:
   # For dev builds, the RPMs are not neccessarily published, so download them here. The
   # parameter is set based on a runtime variable, so we cannot use ${{ if }}, so the
   # template is always run and contains logic to skip if not needed.
-  - template: common/rpms-download-template.yaml@platform-pipelines
-    parameters:
-      rpmsVersion: ${{ parameters.rpmsVersion }}
-      azureLinuxVersion: ${{ parameters.azureLinuxVersion }}
-      runtimeBuildType: ${{ parameters.baseimgBuildType }}
+  # - template: common/rpms-download-template.yaml@platform-pipelines
+  #   parameters:
+  #     rpmsVersion: ${{ parameters.rpmsVersion }}
+  #     azureLinuxVersion: ${{ parameters.azureLinuxVersion }}
+  #     runtimeBuildType: ${{ parameters.baseimgBuildType }}
 
   - bash: |
       set -ex
