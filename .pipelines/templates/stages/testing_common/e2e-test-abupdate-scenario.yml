@@ -182,14 +182,14 @@ steps:
       timeoutInMinutes: 12
 
   - ${{ if eq(parameters.deploymentEnvironment, 'virtualMachine') }}:
-      - bash: |
-          set -eux
-          ./bin/storm-trident script capture-screenshot \
-              --screenshot-filename "update-${{ parameters.updateScenarioName }}.png" \
-              --artifacts-folder "$(ob_outputDirectory)"
-        displayName: "📷 Capture ${{ parameters.updateScenarioName }} update screenshot"
-        condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
-        workingDirectory: $(TRIDENT_SOURCE_DIR)
+    - bash: |
+        set -eux
+        ./bin/storm-trident script capture-screenshot \
+            --screenshot-filename "update-${{ parameters.updateScenarioName }}.png" \
+            --artifacts-folder "$(ob_outputDirectory)"
+      displayName: "📷 Capture ${{ parameters.updateScenarioName }} update screenshot"
+      condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
+      workingDirectory: $(TRIDENT_SOURCE_DIR)
 
   - bash: |
       set -eux

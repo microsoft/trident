@@ -90,16 +90,16 @@ jobs:
       - template: ../common_tasks/avoid-pypi-usage.yml
 
       - ${{ if parameters.downloadGoTools }}:
-          - task: DownloadPipelineArtifact@2
-            displayName: "Download $(goToolsArtifactName)"
-            inputs:
-              buildType: current
-              artifactName: $(goToolsArtifactName)
-              targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
-          - bash: |
-              set -eux
-              chmod +x $(TRIDENT_SOURCE_DIR)/bin/*
-            displayName: "Make go tools executable"
+        - task: DownloadPipelineArtifact@2
+          displayName: "Download $(goToolsArtifactName)"
+          inputs:
+            buildType: current
+            artifactName: $(goToolsArtifactName)
+            targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
+        - bash: |
+            set -eux
+            chmod +x $(TRIDENT_SOURCE_DIR)/bin/*
+          displayName: "Make go tools executable"
 
       - task: DownloadPipelineArtifact@2
         inputs:
