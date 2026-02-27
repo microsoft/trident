@@ -24,6 +24,11 @@ parameters:
   - name: config
     type: string
 
+  - name: testSecureBoot
+    displayName: "Test Secure Boot"
+    type: boolean
+    default: true
+
 steps:
   - bash: |
       set -eux
@@ -34,11 +39,17 @@ steps:
   - bash: |
       set -eux
 
+      SECURE_BOOT_ARG=""
+      if [ "${{ parameters.testSecureBoot }}" == "True" ]; then
+        SECURE_BOOT_ARG="--secureBoot"
+      fi
+
       cmd=(
         python3 ${{ parameters.tridentSourceDirectory }}/tests/e2e_tests/helpers/edit_host_config.py \
           --keypath ${{ parameters.tridentSourceDirectory }}/tests/e2e_tests/helpers/key \
           --hostconfig ${{ parameters.tridentConfigPath }}/trident-config.yaml \
-          --runtimeEnv ${{ parameters.runtimeEnv }}
+          --runtimeEnv ${{ parameters.runtimeEnv }} \
+          ${SECURE_BOOT_ARG}
       )
 
       # TAG_BASE, SYSEXT_REPO, and CONFEXT_REPO are set in push-to-acr.yml

@@ -169,6 +169,7 @@ stages:
               runtimeEnv: ${{ parameters.runtimeEnv }}
               config: ${{ variables.tridentConfigurationName }}
               imageName: ${{ variables.testImageName }}
+              testSecureBoot: ${{ parameters.testSecureBoot }}
 
           - bash: |
               set -eux

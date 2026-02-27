@@ -85,6 +85,28 @@ def add_confexts_or_sysexts(host_config_path, ext_type, oci_ext_url, ext_hash):
         yaml.safe_dump(host_config, f)
 
 
+# If Secure Boot is not enabled, then Pcr7 can not be included in the
+# Host Configuration storage.encryption.pcrs section. This function will
+# remove pcr7 from the HC if it is included.
+def remove_encryption_pcr7(host_config_path):
+    with open(host_config_path, "r") as f:
+        host_config = yaml.safe_load(f)
+
+    # PCR7 can be denoted either with 7 or "secure-boot-policy" in the HC,
+    # so check for both and remove if either exists.
+    pcr7_aliases = ["7", "secure-boot-policy"]
+    for pcr7_alias in pcr7_aliases:
+        if (
+            "os" in host_config
+            and "encryption" in host_config["os"]
+            and pcr7_alias in host_config["os"]["encryption"]
+        ):
+            del host_config["os"]["encryption"][pcr7_alias]
+
+    with open(host_config_path, "w") as f:
+        yaml.safe_dump(host_config, f)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Makes Host Configuration edits: Adds an SSH key and optionally copies the container image."
@@ -137,6 +159,12 @@ def main():
         choices=["host", "container"],
         help="The runtime environment of Trident (e.g., host or container).",
     )
+    parser.add_argument(
+        "--secureBoot",
+        type=bool,
+        default=False,
+        help="Whether Secure Boot is enabled.",
+    )
     args = parser.parse_args()
 
     public_key = generate_rsa_key(args.keypath)
@@ -163,6 +191,9 @@ def main():
             args.ociConfextUrl,
             args.confextHash,
         )
+
+    if not args.secureBoot:
+        remove_encryption_pcr7(args.hostconfig)
 
 
 if __name__ == "__main__":
