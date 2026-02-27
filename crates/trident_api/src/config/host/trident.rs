@@ -23,11 +23,6 @@ pub struct Trident {
     #[serde(default)]
     pub disable: bool,
 
-    /// Whether Trident should start a gRPC server to listen for commands when the target OS boots.
-    /// Defaults to `false`.
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub enable_grpc: bool,
-
     /// Describes where to place the datastore Trident will use to store its state.
     /// Defaults to `/var/lib/trident/datastore.sqlite`. Needs to end with
     /// `.sqlite`, cannot be an existing file and cannot reside on a read-only
@@ -53,7 +48,6 @@ impl Default for Trident {
     fn default() -> Self {
         Self {
             disable: Default::default(),
-            enable_grpc: Default::default(),
             datastore_path: Trident::default_datastore_path(),
             phonehome: Default::default(),
             logstream: Default::default(),

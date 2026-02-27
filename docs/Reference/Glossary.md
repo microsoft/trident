@@ -56,6 +56,21 @@ new install on the device.
 A clean install is what you do when you install an OS for the first time, or
 when you are replacing an existing OS with a new one.
 
+## COSI
+
+Composable OS Image. A disk image format designed for efficient network transfer
+and deployment. COSI files package compressed partition images with metadata
+describing the disk layout, enabling sparse reads and streaming without
+downloading the full image. See [COSI](../Explanation/COSI.md).
+
+## Disk Streaming
+
+A [servicing type](#servicing-type) where a [COSI](#cosi) image is streamed
+from a remote source directly to disk, with the disk layout derived entirely
+from the image metadata. Disk streaming is a more performant alternative to
+flashing traditional disk image formats. See
+[Disk Streaming](../Explanation/Disk-Streaming.md).
+
 ## Dualboot
 
 See [Multiboot](#multiboot).
@@ -70,6 +85,13 @@ running on top of one of the former environments.
 
 The finalize [operation](#operation) performs any final pre-reboot actions
 needed for the servicing, as well as the reboot itself.
+
+## gRPC Server
+
+A daemon (`tridentd`) that exposes Trident's functionality over a gRPC API on a
+Unix domain socket. It enables programmatic interaction with Trident from
+orchestration systems and agents, with streaming progress updates and structured
+error reporting. See [gRPC Server](../Explanation/gRPC-Server.md).
 
 ## Install
 
