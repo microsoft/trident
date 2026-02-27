@@ -164,8 +164,7 @@ def main():
     )
     parser.add_argument(
         "--secureBoot",
-        type=bool,
-        default=False,
+        action="store_true",
         help="Whether Secure Boot is enabled.",
     )
     args = parser.parse_args()
