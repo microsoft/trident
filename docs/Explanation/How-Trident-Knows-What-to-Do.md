@@ -41,7 +41,7 @@ subsystem is responsible for a specific area (for example,
 Each subsystem will validate the relevant Host Configuration setting(s), prepare
 the system for changes, perform the required changes, and then modify any
 required system configurations. The various subsystems in the Trident
-architecture can be seen in the [Install Flow](../Explanation/Install-Flow.md)
+architecture can be seen in the [Install Service](../Explanation/Install-Service.md)
 diagram.
 
 Using `storage` as an example, Trident will read the Host Configuration and

@@ -53,7 +53,9 @@ Legend:
 
 For more information, see:
 
+- [Installation](../Explanation/Install-Service.md)
 - [VM Initialization](../Explanation/Offline-Initialize.md)
+- [Update](../Explanation/Update-Service.md)
 - [Disk Streaming](../Explanation/Disk-Streaming.md)
 
 _Notes:_
