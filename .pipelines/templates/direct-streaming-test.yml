@@ -40,99 +40,99 @@ parameters:
 
 stages:
   - ${{ if or(parameters.testAzureLinuxStreamingImage, parameters.testUbuntuStreamingImage) }}:
-      - stage: BuildInstallerForDirectStreaming_${{ parameters.architecture }}
-        displayName: Build ${{ parameters.architecture }} Installer for Direct Streaming
-        dependsOn:
-          - ${{ if eq(parameters.architecture, 'arm64') }}:
-              - GetTridentBinaries_rpms_arm64
-              - BuildingTools_arm64
-          - ${{ if eq(parameters.architecture, 'amd64') }}:
-              - GetTridentBinaries_rpms_amd64
-              - BuildingTools
-          - PrepareSSHKeys
-          - ${{ if ne(parameters.dependsOnStage, '') }}:
-              - ${{ parameters.dependsOnStage }}
-        jobs:
-          # Build Trident direct streaming installer ISO
-          - template: stages/trident_images/build-image.yml
-            parameters:
-              labelPrefix: "" # No prefix for this image
-              architecture: ${{ parameters.architecture }}
-              label: "trident-direct-streaming-installer-${{ parameters.architecture }}"
-              makeTarget: "artifacts/trident-direct-streaming-installer-${{ parameters.architecture }}.iso"
-              ${{ if eq(parameters.architecture, 'arm64') }}:
-                baseimgType: core_arm64
-              ${{ if eq(parameters.architecture, 'amd64') }}:
-                baseimgType: baremetal
-              # Need rcp-agent from go tools
-              downloadGoTools: true
-              tridentRepoName: ${{ parameters.tridentRepoName }}
+    - stage: BuildInstallerForDirectStreaming_${{ parameters.architecture }}
+      displayName: Build ${{ parameters.architecture }} Installer for Direct Streaming
+      dependsOn:
+        - ${{ if eq(parameters.architecture, 'arm64') }}:
+          - GetTridentBinaries_rpms_arm64
+          - BuildingTools_arm64
+        - ${{ if eq(parameters.architecture, 'amd64') }}:
+          - GetTridentBinaries_rpms_amd64
+          - BuildingTools
+        - PrepareSSHKeys
+        - ${{ if ne(parameters.dependsOnStage, '') }}:
+          - ${{ parameters.dependsOnStage }}
+      jobs:
+        # Build Trident direct streaming installer ISO
+        - template: stages/trident_images/build-image.yml
+          parameters:
+            labelPrefix: "" # No prefix for this image
+            architecture: ${{ parameters.architecture }}
+            label: "trident-direct-streaming-installer-${{ parameters.architecture }}"
+            makeTarget: "artifacts/trident-direct-streaming-installer-${{ parameters.architecture }}.iso"
+            ${{ if eq(parameters.architecture, 'arm64') }}:
+              baseimgType: core_arm64
+            ${{ if eq(parameters.architecture, 'amd64') }}:
+              baseimgType: baremetal
+            # Need rcp-agent from go tools
+            downloadGoTools: true
+            tridentRepoName: ${{ parameters.tridentRepoName }}
 
   - ${{ if parameters.testAzureLinuxStreamingImage }}:
-      - stage: BuildImagesForDirectStreaming_azurelinux_${{ parameters.architecture }}
-        displayName: Build ${{ parameters.architecture }} azurelinux Images for Direct Streaming
-        dependsOn:
-          - ${{ if eq(parameters.architecture, 'arm64') }}:
-              - GetTridentBinaries_rpms_arm64
-              - BuildingTools_arm64
-          - ${{ if eq(parameters.architecture, 'amd64') }}:
-              - GetTridentBinaries_rpms_amd64
-              - BuildingTools
-          - PrepareSSHKeys
-          - ${{ if ne(parameters.dependsOnStage, '') }}:
-              - ${{ parameters.dependsOnStage }}
-        jobs:
-          # Build direct streaming COSI VHD
-          - template: stages/trident_images/build-image.yml
-            parameters:
-              labelPrefix: "" # No prefix for this image
-              architecture: ${{ parameters.architecture }}
-              micBuildType: ${{ parameters.micBuildType }}
-              micVersion: ${{ parameters.micVersion }}
-              label: "azurelinux-direct-streaming-testimage-${{ parameters.architecture }}"
-              makeTarget: "artifacts/azurelinux-direct-streaming-testimage-${{ parameters.architecture }}.cosi"
-              ${{ if eq(parameters.architecture, 'arm64') }}:
-                baseimgType: core_arm64
-              ${{ if eq(parameters.architecture, 'amd64') }}:
-                baseimgType: baremetal
-              tridentRepoName: ${{ parameters.tridentRepoName }}
+    - stage: BuildImagesForDirectStreaming_azurelinux_${{ parameters.architecture }}
+      displayName: Build ${{ parameters.architecture }} azurelinux Images for Direct Streaming
+      dependsOn:
+        - ${{ if eq(parameters.architecture, 'arm64') }}:
+          - GetTridentBinaries_rpms_arm64
+          - BuildingTools_arm64
+        - ${{ if eq(parameters.architecture, 'amd64') }}:
+          - GetTridentBinaries_rpms_amd64
+          - BuildingTools
+        - PrepareSSHKeys
+        - ${{ if ne(parameters.dependsOnStage, '') }}:
+          - ${{ parameters.dependsOnStage }}
+      jobs:
+        # Build direct streaming COSI VHD
+        - template: stages/trident_images/build-image.yml
+          parameters:
+            labelPrefix: "" # No prefix for this image
+            architecture: ${{ parameters.architecture }}
+            micBuildType: ${{ parameters.micBuildType }}
+            micVersion: ${{ parameters.micVersion }}
+            label: "azurelinux-direct-streaming-testimage-${{ parameters.architecture }}"
+            makeTarget: "artifacts/azurelinux-direct-streaming-testimage-${{ parameters.architecture }}.cosi"
+            ${{ if eq(parameters.architecture, 'arm64') }}:
+              baseimgType: core_arm64
+            ${{ if eq(parameters.architecture, 'amd64') }}:
+              baseimgType: baremetal
+            tridentRepoName: ${{ parameters.tridentRepoName }}
 
-      # Run netlaunch test to validate direct streaming installer
-      - template: stages/direct-streaming/netlaunch-testing.yml
-        parameters:
-          architecture: ${{ parameters.architecture }}
-          streamingImageDistro: azurelinux
-          tridentRepoName: ${{ parameters.tridentRepoName }}
+    # Run netlaunch test to validate direct streaming installer
+    - template: stages/direct-streaming/netlaunch-testing.yml
+      parameters:
+        architecture: ${{ parameters.architecture }}
+        streamingImageDistro: azurelinux
+        tridentRepoName: ${{ parameters.tridentRepoName }}
 
   - ${{ if parameters.testUbuntuStreamingImage }}:
-      - stage: BuildImagesForDirectStreaming_ubuntu_${{ parameters.architecture }}
-        displayName: Build ${{ parameters.architecture }} ubuntu Images for Direct Streaming
-        dependsOn:
-          - ${{ if eq(parameters.architecture, 'arm64') }}:
-              - GetTridentBinaries_rpms_arm64
-              - BuildingTools_arm64
-          - ${{ if eq(parameters.architecture, 'amd64') }}:
-              - GetTridentBinaries_rpms_amd64
-              - BuildingTools
-          - PrepareSSHKeys
-          - ${{ if ne(parameters.dependsOnStage, '') }}:
-              - ${{ parameters.dependsOnStage }}
-        jobs:
-          # Build direct streaming COSI VHD
-          - template: stages/trident_images/build-image.yml
-            parameters:
-              labelPrefix: "" # No prefix for this image
-              architecture: ${{ parameters.architecture }}
-              micBuildType: ${{ parameters.micBuildType }}
-              micVersion: ${{ parameters.micVersion }}
-              label: "ubuntu-direct-streaming-testimage-${{ parameters.architecture }}"
-              makeTarget: "artifacts/ubuntu-direct-streaming-testimage-${{ parameters.architecture }}.cosi"
-              baseimgType: ubuntu_${{ parameters.architecture }}
-              tridentRepoName: ${{ parameters.tridentRepoName }}
+    - stage: BuildImagesForDirectStreaming_ubuntu_${{ parameters.architecture }}
+      displayName: Build ${{ parameters.architecture }} ubuntu Images for Direct Streaming
+      dependsOn:
+        - ${{ if eq(parameters.architecture, 'arm64') }}:
+          - GetTridentBinaries_rpms_arm64
+          - BuildingTools_arm64
+        - ${{ if eq(parameters.architecture, 'amd64') }}:
+          - GetTridentBinaries_rpms_amd64
+          - BuildingTools
+        - PrepareSSHKeys
+        - ${{ if ne(parameters.dependsOnStage, '') }}:
+          - ${{ parameters.dependsOnStage }}
+      jobs:
+        # Build direct streaming COSI VHD
+        - template: stages/trident_images/build-image.yml
+          parameters:
+            labelPrefix: "" # No prefix for this image
+            architecture: ${{ parameters.architecture }}
+            micBuildType: ${{ parameters.micBuildType }}
+            micVersion: ${{ parameters.micVersion }}
+            label: "ubuntu-direct-streaming-testimage-${{ parameters.architecture }}"
+            makeTarget: "artifacts/ubuntu-direct-streaming-testimage-${{ parameters.architecture }}.cosi"
+            baseimgType: ubuntu_${{ parameters.architecture }}
+            tridentRepoName: ${{ parameters.tridentRepoName }}
 
-      # Run netlaunch test to validate direct streaming installer
-      - template: stages/direct-streaming/netlaunch-testing.yml
-        parameters:
-          architecture: ${{ parameters.architecture }}
-          streamingImageDistro: ubuntu
-          tridentRepoName: ${{ parameters.tridentRepoName }}
+    # Run netlaunch test to validate direct streaming installer
+    - template: stages/direct-streaming/netlaunch-testing.yml
+      parameters:
+        architecture: ${{ parameters.architecture }}
+        streamingImageDistro: ubuntu
+        tridentRepoName: ${{ parameters.tridentRepoName }}

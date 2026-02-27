@@ -76,17 +76,17 @@ stages:
       tridentRepoName: ${{ parameters.tridentRepoName }}
 
   - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pre'), eq(parameters.stageType, 'full-validation')) }}:
-      # Build tools (Go stuff)
-      - template: stages/building_tools/building-tools.yml
-        parameters:
-          architecture: arm64
-          stageName: BuildingTools_arm64
-          tridentRepoName: ${{ parameters.tridentRepoName }}
+    # Build tools (Go stuff)
+    - template: stages/building_tools/building-tools.yml
+      parameters:
+        architecture: arm64
+        stageName: BuildingTools_arm64
+        tridentRepoName: ${{ parameters.tridentRepoName }}
 
-      # Run direct streaming tests for arm64 with streaming images
-      - template: direct-streaming-test.yml
-        parameters:
-          architecture: arm64
-          tridentRepoName: ${{ parameters.tridentRepoName }}
-          micBuildType: ${{ parameters.micBuildType }}
-          micVersion: ${{ parameters.micVersion }}
+    # Run direct streaming tests for arm64 with streaming images
+    - template: direct-streaming-test.yml
+      parameters:
+        architecture: arm64
+        tridentRepoName: ${{ parameters.tridentRepoName }}
+        micBuildType: ${{ parameters.micBuildType }}
+        micVersion: ${{ parameters.micVersion }}

@@ -100,17 +100,17 @@ parameters:
 
 stages:
   - ${{ if ne( parameters.stageType, 'azl-validation') }}:
-      # Trident Build/Download, azl-validation will use trident RPMs from AZL build
-      - template: stages/trident_rpms/trident-stage.yml
-        parameters:
-          stageType: ${{ parameters.stageType }}
-          tridentArtifactName: trident-binaries
-          codeCoverage: false
-          tridentBuildOptions: ${{ parameters.tridentBuildOptions }}
-          osModifierBranch: ${{ parameters.osModifierBranch }}
-          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-          targetArchitecture: amd64
-          tridentRepoName: ${{ parameters.tridentRepoName }}
+    # Trident Build/Download, azl-validation will use trident RPMs from AZL build
+    - template: stages/trident_rpms/trident-stage.yml
+      parameters:
+        stageType: ${{ parameters.stageType }}
+        tridentArtifactName: trident-binaries
+        codeCoverage: false
+        tridentBuildOptions: ${{ parameters.tridentBuildOptions }}
+        osModifierBranch: ${{ parameters.osModifierBranch }}
+        dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+        targetArchitecture: amd64
+        tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # Build tools (Go stuff)
   - template: stages/building_tools/building-tools.yml
