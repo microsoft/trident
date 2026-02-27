@@ -248,7 +248,7 @@ stages:
                     --verbosity TRACE"
               fi
 
-              cat << EOF > ./baremetal-netlaunch.yaml
+              cat << EOF > $(TRIDENT_SOURCE_DIR)/baremetal-netlaunch.yaml
               netlaunch:
                 bmc:
                   ip: "$(baremetal_controller.bmc_ip)"
@@ -265,9 +265,9 @@ stages:
                   $SERVICE_OVERRIDE
               EOF
 
-              cat ./baremetal-netlaunch.yaml | grep -v password
+              cat $(TRIDENT_SOURCE_DIR)/baremetal-netlaunch.yaml | grep -v password
 
-              cat << EOF > ./baremetal-netlisten.yaml
+              cat << EOF > $(TRIDENT_SOURCE_DIR)/baremetal-netlisten.yaml
               netlisten:
                 bmc:
                   ip: "$(baremetal_controller.bmc_ip)"
@@ -279,7 +279,7 @@ stages:
                     output:  "baremetal-serial.log"
               EOF
 
-              cat ./baremetal-netlisten.yaml | grep -v password
+              cat $(TRIDENT_SOURCE_DIR)/baremetal-netlisten.yaml | grep -v password
 
             workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: "Write Netlaunch and netlisten configuration"
