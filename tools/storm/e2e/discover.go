@@ -53,8 +53,20 @@ func DiscoverTridentScenarios(log *logrus.Logger) ([]scenario.TridentE2EScenario
 			return nil, fmt.Errorf("failed to unmarshal configuration file for '%s': %v", name, err)
 		}
 
+		// Read the test-selection.yaml file for this configuration.
+		testSelectionPath := getTestSelectionPath(name)
+		testSelectionYaml, err := content.ReadFile(testSelectionPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read test-selection file for '%s': %w", name, err)
+		}
+
+		testSelection, err := ParseTestSelection(testSelectionYaml)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse test-selection file for '%s': %w", name, err)
+		}
+
 		// Produce scenarios from this configuration.
-		scenarios, err := produceScenariosFromConfig(name, conf, hostConfig)
+		scenarios, err := produceScenariosFromConfig(name, conf, hostConfig, testSelection)
 		if err != nil {
 			return nil, fmt.Errorf("failed to produce scenarios for '%s': %v", name, err)
 		}
@@ -70,8 +82,13 @@ func getConfigPath(scenarioName string) string {
 	return "configurations/trident_configurations/" + scenarioName + "/trident-config.yaml"
 }
 
+// Returns the path to the test-selection.yaml file for the given scenario name.
+func getTestSelectionPath(scenarioName string) string {
+	return "configurations/trident_configurations/" + scenarioName + "/test-selection.yaml"
+}
+
 // Produces all scenarios from a given configuration.
-func produceScenariosFromConfig(name string, conf scenarioConfig, hostConfig hostconfig.HostConfig) ([]scenario.TridentE2EScenario, error) {
+func produceScenariosFromConfig(name string, conf scenarioConfig, hostConfig hostconfig.HostConfig, testSelection *TestSelection) ([]scenario.TridentE2EScenario, error) {
 	var scenarios []scenario.TridentE2EScenario
 
 	// Iterate over all hardware types
@@ -97,7 +114,7 @@ func produceScenariosFromConfig(name string, conf scenarioConfig, hostConfig hos
 			}
 
 			// Produce the scenario for this hardware/runtime/ring combination
-			scenario, err := produceScenario(name, hostConfig, conf.Parameters, hw, rt, ring)
+			scenario, err := produceScenario(name, hostConfig, conf.Parameters, hw, rt, ring, testSelection.TestTags())
 			if err != nil {
 				return nil, err
 			}
@@ -127,6 +144,7 @@ func produceScenario(
 	hardware scenario.HardwareType,
 	runtime trident.RuntimeType,
 	lowestRing testrings.TestRing,
+	testTags []string,
 ) (*scenario.TridentE2EScenario, error) {
 	// Get the list of all target rings for this scenario. This is the list of
 	// rings from the lowest declared ring up to the highest existing ring.
@@ -151,6 +169,7 @@ func produceScenario(
 	for _, ring := range rings {
 		tags = append(tags, string(ring))
 	}
+	tags = append(tags, testTags...)
 
 	newScenario, err := scenario.NewTridentE2EScenario(
 		fmt.Sprintf("%s_%s-%s", name, hardware, runtime),
@@ -160,6 +179,7 @@ func produceScenario(
 		hardware,
 		runtime,
 		rings,
+		testTags,
 	)
 	if err != nil {
 		return nil, err

@@ -51,6 +51,10 @@ type TridentE2EScenario struct {
 	originalConfig hostconfig.HostConfig
 	// Parameters specific to this host configuration
 	configParams TridentE2EHostConfigParams
+	// Test tags derived from the test-selection.yaml configuration. These
+	// tags (e.g. "test:base", "test:encryption") control which validation
+	// test cases run for this scenario.
+	testTags []string
 
 	// Storm scenario arguments, populated when the scenario is executed.
 	args struct {
@@ -92,6 +96,7 @@ func NewTridentE2EScenario(
 	hardware HardwareType,
 	runtime trident.RuntimeType,
 	testRings testrings.TestRingSet,
+	testTags []string,
 ) (*TridentE2EScenario, error) {
 	configClone, err := config.Clone()
 	if err != nil {
@@ -107,6 +112,7 @@ func NewTridentE2EScenario(
 		runtime:        runtime,
 		testRings:      testRings,
 		config:         configClone,
+		testTags:       testTags,
 	}, nil
 }
 
@@ -164,6 +170,24 @@ func (s *TridentE2EScenario) RuntimeType() trident.RuntimeType {
 	return s.runtime
 }
 
+// TestTags returns the test selection tags for this scenario (e.g. "test:base",
+// "test:encryption"). These are derived from the configuration's
+// test-selection.yaml during discovery.
+func (s *TridentE2EScenario) TestTags() []string {
+	return s.testTags
+}
+
+// HasTestTag reports whether the scenario has the given test tag. The tag
+// should include the "test:" prefix (e.g. "test:base").
+func (s *TridentE2EScenario) HasTestTag(tag string) bool {
+	for _, t := range s.testTags {
+		if t == tag {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 	if s.hardware.IsVM() {
 		r.RegisterTestCase("install-vm-deps", s.installVmDependencies)
@@ -173,11 +197,36 @@ func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 	r.RegisterTestCase("setup-test-host", s.setupTestHost)
 	r.RegisterTestCase("install-os", s.installOs)
 	r.RegisterTestCase("check-trident-ssh", s.checkTridentViaSshAfterInstall)
+	r.RegisterTestCase("collect-install-boot-metrics", s.collectInstallBootMetrics)
+
+	if s.HasTestTag("test:base") {
+		r.RegisterTestCase("validate-partitions", s.validatePartitions)
+		r.RegisterTestCase("validate-users", s.validateUsers)
+		r.RegisterTestCase("validate-uefi-fallback", s.validateUefiFallback)
+	}
+
+	if s.HasTestTag("test:encryption") {
+		r.RegisterTestCase("validate-encryption", s.validateEncryption)
+	}
+
+	if s.HasTestTag("test:root_verity") || s.HasTestTag("test:usr_verity") {
+		r.RegisterTestCase("validate-verity", s.validateVerity)
+	}
+
+	if s.HasTestTag("test:extensions") {
+		r.RegisterTestCase("validate-extensions", s.validateExtensions)
+	}
+
+	if s.HasTestTag("test:rollback") {
+		r.RegisterTestCase("validate-rollback", s.validateRollback)
+	}
 
 	if s.originalConfig.HasABUpdate() {
 		s.addAbUpdateTests(r, "ab-update-1")
 		s.addSplitABUpdateTests(r, "ab-update-split")
 	}
+
+	r.RegisterTestCase("publish-logs", s.publishLogs)
 	return nil
 }
 
