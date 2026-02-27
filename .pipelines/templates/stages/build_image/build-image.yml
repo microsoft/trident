@@ -50,7 +50,7 @@ stages:
       dependsOn:
         - GetTridentBinaries_rpms_amd64
         - ${{ if ne(parameters.dependsOnStage, '') }}:
-          - ${{ parameters.dependsOnStage }}
+            - ${{ parameters.dependsOnStage }}
     ${{ elseif ne(parameters.dependsOnStage, '') }}:
       dependsOn:
         - ${{ parameters.dependsOnStage }}
@@ -89,7 +89,7 @@ stages:
               clones: ${{ parameters.clones }}
               baseimgBuildType: $(BASEIMG_BUILD_TYPE)
               baseimgVersion: $(BASEIMG_VERSION)
-              rpmsVersion: $(RPMS_VERSION)
+              # rpmsVersion: $(RPMS_VERSION)
               azureLinuxVersion: ${{ variables.BASEIMG_AZURE_LINUX_VERSION }}
               micBuildType: ${{ parameters.micBuildType }}
               micVersion: ${{ parameters.micVersion }}
