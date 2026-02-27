@@ -24,7 +24,7 @@ const (
 
 	// MESSAGE logged by Trident before requesting a system reboot.
 	// Must match the message in crates/trident/src/reboot.rs
-	REBOOTING_LOG_MESSAGE = "Rebooting system"
+	REBOOTING_LOG_MESSAGE = "Requesting reboot"
 )
 
 func BuildTridentContainerCommand(envVars []string) string {
