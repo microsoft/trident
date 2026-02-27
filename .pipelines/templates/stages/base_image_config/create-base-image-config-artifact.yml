@@ -11,6 +11,14 @@ parameters:
     type: string
     default: "latestFromBranch"
 
+  - name: rpmsPipelineBuildId
+    type: string
+    default: "latestFromBranch"
+
+  - name: rpmsArm64PipelineBuildId
+    type: string
+    default: "latestFromBranch"
+
   - name: previousStage
     type: string
     default: ''
@@ -27,7 +35,7 @@ stages:
           type: linux
         variables:
           - name: ob_outputDirectory
-            value: "$(Build.SourcesDirectory)/base-image-config"
+            value: "$(Pipeline.Workspace)/s/trident/base-image-config"
           - name: ob_artifactBaseName
             value: "base-image-config"
         steps:
@@ -36,4 +44,6 @@ stages:
               baseimgBuildType: ${{ parameters.baseimgBuildType }}
               baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
               baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
+              rpmsPipelineBuildId: ${{ parameters.rpmsPipelineBuildId }}
+              rpmsArm64PipelineBuildId: ${{ parameters.rpmsArm64PipelineBuildId }}
               outputDirectory: $(ob_outputDirectory)

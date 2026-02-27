@@ -1,0 +1,15 @@
+parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
+steps:
+  - checkout: ${{ parameters.tridentRepoName }}
+    fetchDepth: 1
+    path: s/trident
+  - bash: |
+      echo "Setting TRIDENT_SOURCE_DIR variable: $(Pipeline.Workspace)/s/trident"
+      echo "##vso[task.setvariable variable=TRIDENT_SOURCE_DIR]$(Pipeline.Workspace)/s/trident"
+    displayName: "Set TRIDENT_SOURCE_DIR variable"

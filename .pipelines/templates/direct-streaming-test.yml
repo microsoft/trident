@@ -1,16 +1,42 @@
 parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
   - name: architecture
     type: string
     values:
       - arm64
       - amd64
     default: arm64
+
   - name: testAzureLinuxStreamingImage
     type: boolean
     default: true
+
   - name: testUbuntuStreamingImage
     type: boolean
     default: true
+
+  - name: micBuildType
+    displayName: MIC Build Type
+    type: string
+    values:
+      - dev
+      - preview
+      - release
+    default: release
+
+  - name: micVersion
+    displayName: MIC Version
+    type: string
+    default: "*.*.*"
+
+  - name: dependsOnStage
+    type: string
+    default: ""
 
 stages:
   - ${{ if or(parameters.testAzureLinuxStreamingImage, parameters.testUbuntuStreamingImage) }}:
@@ -24,6 +50,8 @@ stages:
           - GetTridentBinaries_rpms_amd64
           - BuildingTools
         - PrepareSSHKeys
+        - ${{ if ne(parameters.dependsOnStage, '') }}:
+          - ${{ parameters.dependsOnStage }}
       jobs:
         # Build Trident direct streaming installer ISO
         - template: stages/trident_images/build-image.yml
@@ -39,6 +67,7 @@ stages:
             # Need rcp-agent from go tools
             downloadGoTools: true
             timeoutInMinutes: 30
+            tridentRepoName: ${{ parameters.tridentRepoName }}
 
   - ${{ if parameters.testAzureLinuxStreamingImage }}:
     - stage: BuildImagesForDirectStreaming_azurelinux_${{ parameters.architecture }}
@@ -51,15 +80,16 @@ stages:
           - GetTridentBinaries_rpms_amd64
           - BuildingTools
         - PrepareSSHKeys
+        - ${{ if ne(parameters.dependsOnStage, '') }}:
+          - ${{ parameters.dependsOnStage }}
       jobs:
         # Build direct streaming COSI VHD
         - template: stages/trident_images/build-image.yml
           parameters:
             labelPrefix: "" # No prefix for this image
             architecture: ${{ parameters.architecture }}
-            # TODO: when IC next releases, no longer needs dev image
-            micBuildType: dev
-            micVersion: "main"
+            micBuildType: ${{ parameters.micBuildType }}
+            micVersion: ${{ parameters.micVersion }}
             label: "azurelinux-direct-streaming-testimage-${{ parameters.architecture }}"
             makeTarget: "artifacts/azurelinux-direct-streaming-testimage-${{ parameters.architecture }}.cosi"
             ${{ if eq(parameters.architecture, 'arm64') }}:
@@ -67,12 +97,14 @@ stages:
             ${{ if eq(parameters.architecture, 'amd64') }}:
               baseimgType: baremetal
             timeoutInMinutes: 30
+            tridentRepoName: ${{ parameters.tridentRepoName }}
 
     # Run netlaunch test to validate direct streaming installer
     - template: stages/direct-streaming/netlaunch-testing.yml
       parameters:
         architecture: ${{ parameters.architecture }}
         streamingImageDistro: azurelinux
+        tridentRepoName: ${{ parameters.tridentRepoName }}
 
   - ${{ if parameters.testUbuntuStreamingImage }}:
     - stage: BuildImagesForDirectStreaming_ubuntu_${{ parameters.architecture }}
@@ -85,22 +117,25 @@ stages:
           - GetTridentBinaries_rpms_amd64
           - BuildingTools
         - PrepareSSHKeys
+        - ${{ if ne(parameters.dependsOnStage, '') }}:
+          - ${{ parameters.dependsOnStage }}
       jobs:
         # Build direct streaming COSI VHD
         - template: stages/trident_images/build-image.yml
           parameters:
             labelPrefix: "" # No prefix for this image
             architecture: ${{ parameters.architecture }}
-            # TODO: when IC next releases, no longer needs dev image
-            micBuildType: dev
-            micVersion: "main"
+            micBuildType: ${{ parameters.micBuildType }}
+            micVersion: ${{ parameters.micVersion }}
             label: "ubuntu-direct-streaming-testimage-${{ parameters.architecture }}"
             makeTarget: "artifacts/ubuntu-direct-streaming-testimage-${{ parameters.architecture }}.cosi"
             baseimgType: ubuntu_${{ parameters.architecture }}
             timeoutInMinutes: 30
+            tridentRepoName: ${{ parameters.tridentRepoName }}
+
     # Run netlaunch test to validate direct streaming installer
     - template: stages/direct-streaming/netlaunch-testing.yml
       parameters:
         architecture: ${{ parameters.architecture }}
         streamingImageDistro: ubuntu
-
+        tridentRepoName: ${{ parameters.tridentRepoName }}

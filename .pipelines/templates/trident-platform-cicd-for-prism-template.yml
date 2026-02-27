@@ -8,9 +8,9 @@ parameters:
     displayName: MIC Build Type
     type: string
     values:
-    - dev
-    - preview
-    - release
+      - dev
+      - preview
+      - release
     default: release
 
   - name: micVersion
@@ -29,7 +29,7 @@ stages:
       parameters:
         stageType: ci
         blockPublishing: true
-        forceTridentRebuild: true
+        tridentBuildOptions: forceBuild
         micBuildType: ${{ parameters.micBuildType }}
         micVersion: ${{ parameters.micVersion }}
         osModifierBranch: ${{ parameters.osModifierBranch }}
@@ -37,6 +37,8 @@ stages:
     - template: e2e-arm64-template.yml
       parameters:
         stageType: ci
-        forceTridentRebuild: true
+        tridentBuildOptions: forceBuild
         osModifierBranch: ${{ parameters.osModifierBranch }}
         baseImageArtifactStage: CreateBaseImageConfig
+        micBuildType: ${{ parameters.micBuildType }}
+        micVersion: ${{ parameters.micVersion }}

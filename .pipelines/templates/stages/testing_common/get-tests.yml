@@ -1,4 +1,10 @@
 parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
   - name: buildPurpose
     type: string
     default: "post_merge"
@@ -31,10 +37,13 @@ jobs:
       type: linux
 
     variables:
-      ob_outputDirectory: $(Build.SourcesDirectory)/build
+      ob_outputDirectory: $(Pipeline.Workspace)/s/trident/build
       ob_artifactBaseName: select_tests_${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_$(System.JobAttempt)
 
     steps:
+      - template: ../common_tasks/checkout_trident.yml
+        parameters:
+          tridentRepoName: ${{ parameters.tridentRepoName }}
       - template: ../common_tasks/avoid-pypi-usage.yml
       - bash: |
           python3 ./tests/e2e_tests/helpers/read_target_configurations.py \
@@ -45,3 +54,4 @@ jobs:
               --matrix-name matrixConfigurations
         name: setConfigurations
         displayName: Matrix of Trident configurations for E2E Tests
+        workingDirectory: $(TRIDENT_SOURCE_DIR)

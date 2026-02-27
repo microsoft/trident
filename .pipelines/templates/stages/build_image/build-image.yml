@@ -1,4 +1,10 @@
 parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
   - name: imageName
     type: string
 
@@ -35,7 +41,7 @@ parameters:
 
   - name: dependsOnStage
     type: string
-    default: ''
+    default: ""
 
 stages:
   - stage: TridentTestImg_${{ replace(parameters.imageName, '-', '_') }}
@@ -62,6 +68,9 @@ stages:
           BASEIMG_AZURE_LINUX_VERSION: "3.0"
 
         steps:
+          - template: ../common_tasks/checkout_trident.yml
+            parameters:
+              tridentRepoName: ${{ parameters.tridentRepoName }}
           - template: ../common_tasks/avoid-pypi-usage.yml
 
           - task: DownloadPipelineArtifact@2
@@ -80,6 +89,7 @@ stages:
               clones: ${{ parameters.clones }}
               baseimgBuildType: $(BASEIMG_BUILD_TYPE)
               baseimgVersion: $(BASEIMG_VERSION)
+              rpmsVersion: $(RPMS_VERSION)
               azureLinuxVersion: ${{ variables.BASEIMG_AZURE_LINUX_VERSION }}
               micBuildType: ${{ parameters.micBuildType }}
               micVersion: ${{ parameters.micVersion }}

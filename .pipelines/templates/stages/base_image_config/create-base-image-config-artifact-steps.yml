@@ -11,15 +11,38 @@ parameters:
     type: string
     default: "latestFromBranch"
 
+  - name: rpmsPipelineBuildId
+    type: string
+    default: "latestFromBranch"
+
+  - name: rpmsArm64PipelineBuildId
+    type: string
+    default: "latestFromBranch"
+
   - name: outputDirectory
     type: string
-    
+
+  - name: tridentSourceDirectory
+    type: string
+    default: $(Pipeline.Workspace)/s/trident
+
 steps:
   - bash: |
-      ./create-base-image-config.sh \
+      set -eux
+      echo "Creating Base Image Config artifact..."
+      echo "  Base Image Build Type: ${{ parameters.baseimgBuildType }}"
+      echo "  Base Image Pipeline Build ID: ${{ parameters.baseImagePipelineBuildId }}"
+      echo "  Base Image ARM64 Pipeline Build ID: ${{ parameters.baseImageArm64PipelineBuildId }}"
+      echo "  RPMs Pipeline Build ID: ${{ parameters.rpmsPipelineBuildId }}"
+      echo "  RPMs ARM64 Pipeline Build ID: ${{ parameters.rpmsArm64PipelineBuildId }}"
+      echo "  Output Directory: ${{ parameters.outputDirectory }}"
+
+      ./.pipelines/templates/stages/base_image_config/create-base-image-config.sh \
           "${{ parameters.baseimgBuildType }}" \
           "${{ parameters.baseImagePipelineBuildId }}" \
           "${{ parameters.baseImageArm64PipelineBuildId }}" \
+          "${{ parameters.rpmsPipelineBuildId }}" \
+          "${{ parameters.rpmsArm64PipelineBuildId }}" \
           "${{ parameters.outputDirectory }}"
-    workingDirectory: $(Build.SourcesDirectory)/.pipelines/templates/stages/base_image_config
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Create Base Image Config artifact"

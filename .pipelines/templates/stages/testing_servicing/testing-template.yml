@@ -1,4 +1,10 @@
 parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
   - name: updateIterationCount
     displayName: "Number of updates to test"
     type: number
@@ -44,6 +50,11 @@ parameters:
     type: string
     default: "trident-ubuntu-1es-pool-eastus2"
 
+  - name: testSecureBoot
+    displayName: "Test Secure Boot"
+    type: boolean
+    default: true
+
 jobs:
   # For azure tests where there are multiple workers, use a dedicated job to publish the base
   # image.  Otherwise, the publish will be done as part of the actual test.
@@ -56,9 +67,11 @@ jobs:
           name: ${{ parameters.pool }}
           hostArchitecture: amd64
         variables:
-          ob_outputDirectory: $(Build.SourcesDirectory)/logs
-          tridentSourceDirectory: $(Build.SourcesDirectory)
+          ob_outputDirectory: $(Pipeline.Workspace)/s/trident/logs
         steps:
+          - template: ../common_tasks/checkout_trident.yml
+            parameters:
+              tridentRepoName: ${{ parameters.tridentRepoName }}
           - task: DownloadPipelineArtifact@2
             displayName: "Download go-tools: storm"
             inputs:
@@ -66,10 +79,10 @@ jobs:
               artifactName: "go-tools"
               patterns: |
                 storm-trident
-              targetPath: "$(tridentSourceDirectory)/bin"
+              targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
           - bash: |
               set -eux
-              chmod +x $(tridentSourceDirectory)/bin/storm-trident
+              chmod +x $(TRIDENT_SOURCE_DIR)/bin/storm-trident
               mkdir -p $(ob_outputDirectory)
             displayName: Make storm executable and create output directory
           - task: DownloadPipelineArtifact@2
@@ -86,6 +99,7 @@ jobs:
               inlineScript: |
                 set -eux
 
+                cd $(TRIDENT_SOURCE_DIR)
                 ./bin/storm-trident run servicing -a \
                   --output-path $(ob_outputDirectory) \
                   --platform ${{ parameters.platform }} \
@@ -116,12 +130,14 @@ jobs:
           - PublishAzureImage
 
     variables:
-      tridentSourceDirectory: $(Build.SourcesDirectory)
-      ob_outputDirectory: $(tridentSourceDirectory)/deployment_logs_${{ parameters.flavor }}
+      ob_outputDirectory: $(Pipeline.Workspace)/s/trident/deployment_logs_${{ parameters.flavor }}
       ob_artifactBaseName: "update-testing-${{ parameters.flavor }}-$(System.JobPositionInPhase)"
       TEST_RESOURCE_GROUP: trident-vm-servicing-validation-$(Build.BuildId)-$(System.JobPositionInPhase)
 
     steps:
+      - template: ../common_tasks/checkout_trident.yml
+        parameters:
+          tridentRepoName: ${{ parameters.tridentRepoName }}
       - bash: |
           echo "##vso[task.setvariable variable=ob_artifactBaseName;]update-testing-${{ parameters.flavor }}-$(printf '%03d' $(System.JobPositionInPhase))"
           echo "##vso[task.setvariable variable=TEST_RESOURCE_GROUP;]trident-vm-servicing-validation-$(Build.BuildId)-$(printf '%03d' $(System.JobPositionInPhase))"
@@ -172,12 +188,12 @@ jobs:
           patterns: |
             netlisten
             storm-trident
-          targetPath: "$(tridentSourceDirectory)/bin"
+          targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
 
       - bash: |
           set -eux
-          chmod +x $(tridentSourceDirectory)/bin/netlisten
-          chmod +x $(tridentSourceDirectory)/bin/storm-trident
+          chmod +x $(TRIDENT_SOURCE_DIR)/bin/netlisten
+          chmod +x $(TRIDENT_SOURCE_DIR)/bin/storm-trident
           cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* ~/.ssh/
           chmod -R 700 ~/.ssh/
           mkdir -p $(ob_outputDirectory)
@@ -202,7 +218,9 @@ jobs:
             FLAGS="$FLAGS --verbose"
           fi
           if [ "${{ parameters.flavor }}" != "uki" ]; then
-            FLAGS="$FLAGS --secure-boot"
+            if [[ "${{ parameters.testSecureBoot }}" == 'true' ]]; then
+              FLAGS="$FLAGS --secure-boot"
+            fi
           fi
           if [ "${{ parameters.rollbackTesting }}" == "True" ]; then
             FLAGS="$FLAGS --rollback-retry-count ${{ parameters.updateIterationCount }} --rollback"
@@ -220,6 +238,7 @@ jobs:
               inlineScript: |
                 set -eux
 
+                cd $(TRIDENT_SOURCE_DIR)
                 ./bin/storm-trident run servicing $(STORM_FLAGS) \
                   --artifacts-dir $(Build.ArtifactStagingDirectory) \
                   --output-path $(ob_outputDirectory) \
@@ -250,6 +269,7 @@ jobs:
               inlineScript: |
                 set -eux
 
+                cd $(TRIDENT_SOURCE_DIR)
                 # If platform is azure AND the test failed to finish, run cleanup to
                 # ensure there are no azure resources left behind
                 if [ "${STORM_SCENARIO_FINISHED}" != "true" ]; then
@@ -286,6 +306,7 @@ jobs:
               set +x
               echo "##vso[task.setvariable variable=STORM_SCENARIO_FINISHED;]true"
             displayName: "Servicing test (${{ parameters.platform }})"
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
 
       - bash: |
           set -eux
@@ -297,7 +318,7 @@ jobs:
           # TODO: use
           # https://learn.microsoft.com/en-us/azure/virtual-machines/linux/download-vhd?tabs=azure-cli
           # for Azure images
-        workingDirectory: $(tridentSourceDirectory)
+        workingDirectory: $(TRIDENT_SOURCE_DIR)
         condition: failed()
         displayName: "Publish logs and OS disk on failure"
         timeoutInMinutes: 5

@@ -1,7 +1,7 @@
 parameters:
   - name: outputDirectory
     type: string
-    default: "$(Build.SourcesDirectory)/output"
+    default: "$(Pipeline.Workspace)/s/trident/output"
 
   - name: target
     type: string
@@ -42,6 +42,11 @@ parameters:
     type: string
     default: "*.*.*"
 
+  - name: rpmsVersion
+    displayName: RPM Version
+    type: string
+    default: "*.*.*"
+
   - name: baseimgAzureLinuxVersion
     displayName: Version of AzureLinux for the Base Image
     type: string
@@ -61,7 +66,7 @@ parameters:
       - qemu_guest
       - ubuntu_amd64
       - ubuntu_arm64
-    default: 
+    default:
       - baremetal
 
   - name: downloadTrident
@@ -110,15 +115,15 @@ steps:
       - bash: |
           set -eux
 
-          mkdir -p $(Build.SourcesDirectory)/artifacts
-          ssh-keygen -t rsa -b 2048 -f $(Build.SourcesDirectory)/artifacts/id_rsa -q -N ""
+          mkdir -p $(TRIDENT_SOURCE_DIR)/artifacts
+          ssh-keygen -t rsa -b 2048 -f $(TRIDENT_SOURCE_DIR)/artifacts/id_rsa -q -N ""
         displayName: Set up SSH Keys
   - ${{ if eq(parameters.useStagedSshKeys, true) }}:
       - bash: |
           set -eux
 
-          mkdir -p $(Build.SourcesDirectory)/artifacts
-          cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* $(Build.SourcesDirectory)/artifacts/
+          mkdir -p $(TRIDENT_SOURCE_DIR)/artifacts
+          cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* $(TRIDENT_SOURCE_DIR)/artifacts/
         displayName: Copy SSH Keys
 
   - script: |
@@ -130,7 +135,9 @@ steps:
       set -eux
 
       if which tdnf; then
-        sudo tdnf install -y veritysetup squashfs-tools lsof
+        # nss-tools provides certutil while pesign provides efikeygen & pesign,
+        # which are required for producing a signed image to enable SecureBoot
+        sudo tdnf install -y veritysetup squashfs-tools lsof nss-tools pesign
         sudo systemctl start docker
       else
         # Ubuntu is used for building and testing of VM images suitable for
@@ -158,7 +165,8 @@ steps:
           mkdir -p $(Build.ArtifactStagingDirectory)/images
           mv artifacts/${{ baseimgType }}.vhdx $(Build.ArtifactStagingDirectory)/images/
         displayName: "Download Ubuntu Base Image - ${{ baseimgType }}"
-        
+        workingDirectory: $(TRIDENT_SOURCE_DIR)
+
     - ${{ else }}:
       - template: common/base-images-download-template.yaml@platform-pipelines
         parameters:
@@ -167,17 +175,19 @@ steps:
           imageVersion: ${{ parameters.baseimgVersion }}
           azureLinuxVersion: ${{ parameters.baseimgAzureLinuxVersion }}
 
-  # For dev builds, the RPMs are not neccessarily published, so download them here
-  - ${{ if eq(parameters.baseimgBuildType, 'dev') }}:
-      - template: common/rpms-download-template.yaml@platform-pipelines
-        parameters:
-          imageVersion: ${{ parameters.baseimgVersion }}
-          azureLinuxVersion: ${{ parameters.baseimgAzureLinuxVersion }}
+  # For dev builds, the RPMs are not neccessarily published, so download them here. The
+  # parameter is set based on a runtime variable, so we cannot use ${{ if }}, so the
+  # template is always run and contains logic to skip if not needed.
+  - template: common/rpms-download-template.yaml@platform-pipelines
+    parameters:
+      rpmsVersion: ${{ parameters.rpmsVersion }}
+      azureLinuxVersion: ${{ parameters.baseimgAzureLinuxVersion }}
+      runtimeBuildType: ${{ parameters.baseimgBuildType }}
 
   - bash: |
       set -ex
 
-      base_dir='$(Build.SourcesDirectory)/artifacts'
+      base_dir='$(TRIDENT_SOURCE_DIR)/artifacts'
 
       mkdir -p $base_dir
       # Check if there are any .vhdx files in the images directory and move them
@@ -198,13 +208,13 @@ steps:
 
       find $(Build.ArtifactStagingDirectory)
       if [ -d "$(Build.ArtifactStagingDirectory)/trident" ]; then
-        rpm_dir='$(Build.SourcesDirectory)/bin/RPMS'
+        rpm_dir='$(TRIDENT_SOURCE_DIR)/bin/RPMS'
         mkdir -p $rpm_dir
         cp -r $(Build.ArtifactStagingDirectory)/trident/* $rpm_dir/ || echo 'no rpms to copy'
         rm -rf $(Build.ArtifactStagingDirectory)/trident
       fi
 
-    workingDirectory: $(Build.SourcesDirectory)
+    workingDirectory: $(TRIDENT_SOURCE_DIR)
     displayName: "Prepare and move requirements"
 
   - script: |
@@ -222,13 +232,13 @@ steps:
 
       # Compress the full image & delete the uncompressed image
       make ${{ parameters.target }}
-    workingDirectory: $(Build.SourcesDirectory)
+    workingDirectory: $(TRIDENT_SOURCE_DIR)
     displayName: "Build Test Image"
 
   - script: |
       set -ex
       mkdir -p "${{ parameters.outputDirectory }}"
-      
+
       # images that have build/**/ format are expected to have multiple output files
       if [ -d "build/${{ parameters.target }}" ]; then
         sudo mv -v build/${{ parameters.target }}/* "${{ parameters.outputDirectory }}/"
@@ -236,5 +246,5 @@ steps:
         # Everything else is a file
         sudo mv -v "${{ parameters.target }}" "${{ parameters.outputDirectory }}/"
       fi
-    workingDirectory: $(Build.SourcesDirectory)
+    workingDirectory: $(TRIDENT_SOURCE_DIR)
     displayName: "Copy artifacts to output directory"

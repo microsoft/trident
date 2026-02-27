@@ -12,6 +12,13 @@
 # ensure that e2e-template waits for the base image artifact to be created.
 #
 parameters:
+  - name: tridentRepoName
+    type: string
+    default: self
+    values:
+      - self
+      - trident
+
   - name: "stageType"
     displayName: "Pipeline configuration type"
     type: string
@@ -24,10 +31,14 @@ parameters:
       - rel
       - full-validation
 
-  - name: forceTridentRebuild
-    displayName: "Force trident rebuild rather than downloading previously built."
-    type: boolean
-    default: false
+  - name: tridentBuildOptions
+    displayName: "Trident Build Options"
+    type: string
+    default: default
+    values:
+      - default
+      - forceBuild
+      - prebuilt
 
   - name: osModifierBranch
     type: string
@@ -35,7 +46,21 @@ parameters:
 
   - name: baseImageArtifactStage
     type: string
-    default: ''
+    default: ""
+
+  - name: micBuildType
+    displayName: MIC Build Type
+    type: string
+    values:
+      - dev
+      - preview
+      - release
+    default: release
+
+  - name: micVersion
+    displayName: MIC Version
+    type: string
+    default: "*.*.*"
 
 stages:
   # Trident Build/Download
@@ -44,10 +69,11 @@ stages:
       stageType: ${{ parameters.stageType }}
       tridentArtifactName: trident-binaries
       codeCoverage: false
-      forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
+      tridentBuildOptions: ${{ parameters.tridentBuildOptions }}
       osModifierBranch: ${{ parameters.osModifierBranch }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
       targetArchitecture: arm64
+      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pre'), eq(parameters.stageType, 'full-validation')) }}:
     # Build tools (Go stuff)
@@ -55,8 +81,12 @@ stages:
       parameters:
         architecture: arm64
         stageName: BuildingTools_arm64
+        tridentRepoName: ${{ parameters.tridentRepoName }}
 
     # Run direct streaming tests for arm64 with streaming images
     - template: direct-streaming-test.yml
       parameters:
         architecture: arm64
+        tridentRepoName: ${{ parameters.tridentRepoName }}
+        micBuildType: ${{ parameters.micBuildType }}
+        micVersion: ${{ parameters.micVersion }}

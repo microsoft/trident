@@ -1,4 +1,10 @@
 parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
   - name: testingRun
     displayName: "Download prebuilt test artifacts"
     type: boolean
@@ -55,6 +61,11 @@ parameters:
     type: string
     default: ""
 
+  - name: testSecureBoot
+    displayName: "Test Secure Boot"
+    type: boolean
+    default: true
+
 stages:
   - ${{ if eq(parameters.testingRun, false) }}:
       - ${{ if eq(parameters.includeQemuGrub, true) }}:
@@ -76,6 +87,7 @@ stages:
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
                   useStagedSshKeys: true
+                  tridentRepoName: ${{ parameters.tridentRepoName }}
 
               - template: ../testing_servicing/build-image.yml
                 parameters:
@@ -86,6 +98,7 @@ stages:
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
                   useStagedSshKeys: true
+                  tridentRepoName: ${{ parameters.tridentRepoName }}
 
   - stage: RuntimeUpdateAndRollbackTesting
     displayName: Runtime Update and Rollback Testing
@@ -120,6 +133,8 @@ stages:
               flavor: qemu-grub
               micBuildType: ${{ parameters.micBuildType }}
               micVersion: ${{ parameters.micVersion }}
+              testSecureBoot: ${{ parameters.testSecureBoot }}
+              tridentRepoName: ${{ parameters.tridentRepoName }}
       - ${{ if eq(parameters.includeQemu, true) }}:
           - template: testing-template.yml
             parameters:
@@ -137,6 +152,8 @@ stages:
               micBuildType: ${{ parameters.micBuildType }}
               micVersion: ${{ parameters.micVersion }}
               isUki: true
+              testSecureBoot: ${{ parameters.testSecureBoot }}
+              tridentRepoName: ${{ parameters.tridentRepoName }}
       - ${{ if eq(parameters.includeUKI, true) }}:
           - template: testing-template.yml
             parameters:
@@ -147,3 +164,5 @@ stages:
               micBuildType: ${{ parameters.micBuildType }}
               micVersion: ${{ parameters.micVersion }}
               isUki: true
+              testSecureBoot: ${{ parameters.testSecureBoot }}
+              tridentRepoName: ${{ parameters.tridentRepoName }}

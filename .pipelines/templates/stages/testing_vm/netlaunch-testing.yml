@@ -1,4 +1,10 @@
 parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
   - name: buildPurpose
     type: string
     default: "post_merge"
@@ -22,6 +28,18 @@ parameters:
       - host
       - container
 
+  - name: testSecureBoot
+    displayName: "Test Secure Boot"
+    type: boolean
+    default: true
+
+  - name: acrServiceConnectionName
+    type: string
+    default: trident-dev-acr-write-umi-ECF
+    values:
+      - maritimus-dev-acr-write-umi
+      - trident-dev-acr-write-umi-ECF
+
 stages:
   - stage: DefineTests_VM_${{ parameters.runtimeEnv }}
     displayName: Test List for VM:${{ parameters.runtimeEnv }}
@@ -31,6 +49,7 @@ stages:
           buildPurpose: ${{ parameters.buildPurpose }}
           deploymentEnvironment: virtualMachine
           runtimeEnv: ${{ parameters.runtimeEnv }}
+          tridentRepoName: ${{ parameters.tridentRepoName }}
 
   - stage: DeploymentTesting_${{ parameters.runtimeEnv }}
     displayName: Deployment VM ${{ parameters.runtimeEnv }} Testing
@@ -70,7 +89,7 @@ stages:
             value: $(configuration)
 
           - name: tridentSourceDirectory
-            value: $(Build.SourcesDirectory)
+            value: $(Pipeline.Workspace)/s/trident
 
           - name: tridentConfigPath
             value: $(tridentSourceDirectory)/tests/e2e_tests/trident_configurations/$(tridentConfigurationName)
@@ -110,6 +129,10 @@ stages:
           - group: trident_e2e_params
 
         steps:
+          - template: ../common_tasks/checkout_trident.yml
+            parameters:
+              tridentRepoName: ${{ parameters.tridentRepoName }}
+
           - bash: |
               if [ ${{ variables['tridentConfigurationName'] }} == 'split' ]; then
                 splitInstallerIsoName="trident-split-installer"
@@ -135,6 +158,7 @@ stages:
               config: ${{ variables.tridentConfigurationName }}
               deploymentEnvironment: "virtualMachine"
               runtimeEnvironment: ${{ parameters.runtimeEnv }}
+              acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
           - template: netlaunch-prep.yml
 
@@ -172,7 +196,10 @@ stages:
               fi
 
               # Enable SecureBoot for all E2E tests.
-              SECURE_BOOT="--secure-boot"
+              SECURE_BOOT=""
+              if [[ "${{ parameters.testSecureBoot }}" == 'true' ]]; then
+                SECURE_BOOT="--secure-boot"
+              fi
 
               # If this is a usr-verity UKI image, a signing certificate must
               # be set via --signing-cert; otherwise, set it to an empty
@@ -240,6 +267,7 @@ stages:
 
             timeoutInMinutes: 5
             condition: succeededOrFailed()
+            workingDirectory: $(tridentSourceDirectory)
             displayName: "📄 Check target OS deployment"
 
           - bash: |
@@ -254,6 +282,7 @@ stages:
                   --metric-file $(tridentSourceDirectory)/trident-clean-install-metrics.jsonl
             timeoutInMinutes: 5
             displayName: "Check for trace file and journald logs for expected trace entry"
+            workingDirectory: $(tridentSourceDirectory)
 
           - bash: |
               set -eux
@@ -262,6 +291,7 @@ stages:
                   --artifacts-folder "$(ob_outputDirectory)"
             displayName: "📷 Capture screenshot: clean install"
             condition: succeededOrFailed()
+            workingDirectory: $(tridentSourceDirectory)
 
           - bash: |
               set -eux
@@ -271,6 +301,7 @@ stages:
                   --artifacts-folder "$(ob_outputDirectory)"
             displayName: "📄 Display clean install logs"
             condition: succeededOrFailed()
+            workingDirectory: $(tridentSourceDirectory)
 
           - bash: |
               set -eux
@@ -285,6 +316,7 @@ stages:
             timeoutInMinutes: 5
             condition: eq('${{ parameters.runtimeEnv }}', 'host')
             displayName: "📄 Check for SELinux failures"
+            workingDirectory: $(tridentSourceDirectory)
 
           - bash: |
               set -eux
@@ -295,7 +327,7 @@ stages:
                 'sudo journalctl -u trident-container.service'
             condition: eq('${{ parameters.runtimeEnv }}', 'container')
             displayName: "📄 Display Container logs"
-
+            workingDirectory: $(tridentSourceDirectory)
           - bash: |
               set -eux
               HOST_IP=$(jq -r '.virtualmachines[0].ip' $(tridentSourceDirectory)/tools/virt-deploy-metadata.json)
@@ -307,6 +339,7 @@ stages:
                   --metrics-file $(tridentSourceDirectory)/trident-clean-install-metrics.jsonl \
                   --metrics-operation install
             displayName: "Create boot metrics for booting into target OS"
+            workingDirectory: $(tridentSourceDirectory)
 
           - template: ../testing_common/trident-metrics.yml
             parameters:
@@ -339,6 +372,7 @@ stages:
               repository: ${{ variables.testImageName }}
               config: ${{ variables.tridentConfigurationName }}
               deploymentEnvironment: "virtualMachine"
+              acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
           - bash: |
               set -eux

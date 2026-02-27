@@ -4,12 +4,20 @@ stages:
       stageType: pr
       tridentArtifactName: trident-binaries
       targetArchitecture: amd64
+      tridentRepoName: self
   - template: stages/trident_rpms/trident-stage.yml
     parameters:
       stageType: pr
       tridentArtifactName: trident-binaries
       codeCoverage: false
       targetArchitecture: arm64
+      tridentRepoName: self
   - template: stages/validate_makefile/dev-build.yml
+    parameters:
+      tridentRepoName: self
   - template: stages/building_tools/building-tools.yml
+    parameters:
+      tridentRepoName: self
   - template: stages/azl_installer/build-installer-tools.yml
+    parameters:
+      tridentRepoName: self

@@ -1,4 +1,11 @@
 parameters:
+  - name: acrServiceConnectionName
+    type: string
+    default: trident-dev-acr-write-umi-ECF
+    values:
+      - maritimus-dev-acr-write-umi
+      - trident-dev-acr-write-umi-ECF
+
   - name: "repository"
     displayName: "Repository containing COSI images"
     type: string
@@ -19,12 +26,13 @@ parameters:
 steps:
   - task: AzureCLI@2
     inputs:
-      azureSubscription: trident-dev-acr-write-umi-ECF
+      azureSubscription: ${{ parameters.acrServiceConnectionName }}
       scriptType: bash
       scriptLocation: inlineScript
       inlineScript: |
         set -eux
 
+        cd $(TRIDENT_SOURCE_DIR)
         if [ "${{ parameters.config }}" == 'misc' ]; then
           # Remove COSI images
           ./bin/storm-trident script acr-delete \

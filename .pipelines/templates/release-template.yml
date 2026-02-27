@@ -18,3 +18,4 @@ stages:
   - template: stages/publishing/publish.yml
     parameters:
       stageType: rel
+      tridentRepoName: self

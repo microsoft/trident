@@ -13,25 +13,36 @@ steps:
       echo "BASEIMG_BUILD_TYPE: $(BASEIMG_BUILD_TYPE)"
       echo "BASE_IMAGE_PIPELINE_BUILD_ID: $(BASE_IMAGE_PIPELINE_BUILD_ID)"
       echo "BASE_IMAGE_ARM64_PIPELINE_BUILD_ID: $(BASE_IMAGE_ARM64_PIPELINE_BUILD_ID)"
+      echo "RPMS_PIPELINE_BUILD_ID = $(RPMS_PIPELINE_BUILD_ID)"
+      echo "RPMS_ARM64_PIPELINE_BUILD_ID = $(RPMS_ARM64_PIPELINE_BUILD_ID)"
     displayName: Show variables before
-  
+
   # baseimgBuildType == dev
   - script: |
       BASEIMG_VERSION="*.*.*"
+      RPMS_VERSION="*.*.*"
       if [[ "${{ parameters.architecture }}" == "arm64" ]]; then
         if [[ "$(BASE_IMAGE_ARM64_PIPELINE_BUILD_ID)" != "latestFromBranch" ]]; then
           BASEIMG_VERSION="$(BASE_IMAGE_ARM64_PIPELINE_BUILD_ID)"
+        fi
+        if [[ "$(RPMS_ARM64_PIPELINE_BUILD_ID)" != "latestFromBranch" ]]; then
+          RPMS_VERSION="$(RPMS_ARM64_PIPELINE_BUILD_ID)"
         fi
       else
         if [[ "$(BASE_IMAGE_PIPELINE_BUILD_ID)" != "latestFromBranch" ]]; then
           BASEIMG_VERSION="$(BASE_IMAGE_PIPELINE_BUILD_ID)"
         fi
+        if [[ "$(RPMS_PIPELINE_BUILD_ID)" != "latestFromBranch" ]]; then
+          RPMS_VERSION="$(RPMS_PIPELINE_BUILD_ID)"
+        fi
       fi
       echo "##vso[task.setvariable variable=BASEIMG_VERSION]$BASEIMG_VERSION"
       echo "BASEIMG_VERSION: $BASEIMG_VERSION"
+      echo "##vso[task.setvariable variable=RPMS_VERSION]$RPMS_VERSION"
+      echo "RPMS_VERSION: $RPMS_VERSION"
     name: SetBaseImageVersionDev
     condition: eq(variables['BASEIMG_BUILD_TYPE'], 'dev')
-    displayName: Set Base Image version variable for dev
+    displayName: Set version variables for dev
 
   # baseimgBuildType == preview
   - script: |
@@ -47,10 +58,11 @@ steps:
         BASEIMG_VERSION="$(BASE_IMAGE_ARM64_PIPELINE_BUILD_ID)"
       fi
       echo "##vso[task.setvariable variable=BASEIMG_VERSION]$BASEIMG_VERSION"
-      echo "BASEIMG_VERSION: $BASEIMG_VERSION"
-      
+      echo "##vso[task.setvariable variable=RPMS_VERSION]$BASEIMG_VERSION"
+      echo "BASEIMG_VERSION & RPMS_VERSION: $BASEIMG_VERSION"
+
     condition: eq(variables['BASEIMG_BUILD_TYPE'], 'preview')
-    displayName: Set Base Image version variable for preview
+    displayName: Set version variables for preview
 
   # Download when baseimgBuildType == preview
   - task: DownloadPipelineArtifact@2
@@ -66,26 +78,30 @@ steps:
       tags: "3.0-preview"
       artifactName: "drop_build_rpms_build"
       patterns: "**/build-config/version-full.config"
-      targetPath: "$(Build.SourcesDirectory)/output"
+      targetPath: "$(TRIDENT_SOURCE_DIR)/output"
   - script: |
-      versionFullConfigPath=$(find $(Build.SourcesDirectory) -name version-full.config)
+      versionFullConfigPath=$(find $(TRIDENT_SOURCE_DIR) -name version-full.config)
       BASEIMG_VERSION=$(cat $versionFullConfigPath)
       echo "##vso[task.setvariable variable=BASEIMG_VERSION]$BASEIMG_VERSION"
-      echo "BASEIMG_VERSION: $BASEIMG_VERSION"
+      echo "##vso[task.setvariable variable=RPMS_VERSION]$BASEIMG_VERSION"
+      echo "BASEIMG_VERSION & RPMS_VERSION: $BASEIMG_VERSION"
+    name: SetBaseImageVersionPreview
     condition: eq(variables['BASEIMG_BUILD_TYPE'], 'preview')
-    displayName: Set Base Image version variable for preview
+    displayName: Set version variables for preview
 
   # baseimgBuildType == release
   - script: |
       BASEIMG_VERSION="*.*.*"
       echo "##vso[task.setvariable variable=BASEIMG_VERSION]$BASEIMG_VERSION"
-      echo "BASEIMG_VERSION: $BASEIMG_VERSION"
+      echo "##vso[task.setvariable variable=RPMS_VERSION]$BASEIMG_VERSION"
+      echo "BASEIMG_VERSION & RPMS_VERSION: $BASEIMG_VERSION"
     name: SetBaseImageVersionRelease
     condition: eq(variables['BASEIMG_BUILD_TYPE'], 'release')
-    displayName: Set Base Image version variable for release
+    displayName: Set version variables for release
 
   - bash: |
       echo "BASEIMG_BUILD_TYPE: $(BASEIMG_BUILD_TYPE)"
       echo "BASE_IMAGE_PIPELINE_BUILD_ID: $(BASE_IMAGE_PIPELINE_BUILD_ID)"
       echo "BASEIMG_VERSION: $(BASEIMG_VERSION)"
+      echo "RPMS_VERSION: $(RPMS_VERSION)"
     displayName: Show variables after

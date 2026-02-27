@@ -1,4 +1,10 @@
 parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
   - name: label
     type: string
     displayName: "Label for the image"
@@ -22,9 +28,9 @@ parameters:
     displayName: MIC Build Type
     type: string
     values:
-    - dev
-    - preview
-    - release
+      - dev
+      - preview
+      - release
     default: release
 
   - name: micVersion
@@ -45,10 +51,13 @@ jobs:
       type: linux
 
     variables:
-      ob_outputDirectory: $(Build.SourcesDirectory)/out
+      ob_outputDirectory: $(Pipeline.Workspace)/s/trident/out
       ob_artifactBaseName: "image-${{ parameters.label }}"
 
     steps:
+      - template: ../common_tasks/checkout_trident.yml
+        parameters:
+          tridentRepoName: ${{ parameters.tridentRepoName }}
       - template: ../common_tasks/avoid-pypi-usage.yml
 
       - task: DownloadPipelineArtifact@2
@@ -77,8 +86,9 @@ jobs:
           micVersion: ${{ parameters.micVersion }}
           baseimgBuildType: $(BASEIMG_BUILD_TYPE)
           baseimgVersion: $(BASEIMG_VERSION)
+          rpmsVersion: $(RPMS_VERSION)
           baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
-          baseimgTypes: 
+          baseimgTypes:
             - ${{ parameters.baseimgType }}
           useStagedSshKeys: ${{ parameters.useStagedSshKeys }}
           micArchitecture: arm64

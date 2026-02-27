@@ -1,4 +1,10 @@
 parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
   - name: osModifierBranch
     type: string
     default: "main"
@@ -24,6 +30,9 @@ stages:
         variables:
           ob_outputDirectory: $(Build.SourcesDirectory)/build
         steps:
+          - template: ../common_tasks/checkout_trident.yml
+            parameters:
+              tridentRepoName: ${{ parameters.tridentRepoName }}
           - template: ../common_tasks/avoid-pypi-usage.yml
 
           - script: |
@@ -31,7 +40,7 @@ stages:
 
               make check-pipelines BRANCH=$(Build.SourceBranch) NO_PARALLEL=true
             displayName: "Validating pipeline templates work"
-            workingDirectory: $(Build.SourcesDirectory)
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
             env:
               AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
               OVERRIDE_RUST_FEED: false
@@ -46,6 +55,9 @@ stages:
         variables:
           ob_outputDirectory: $(Build.SourcesDirectory)/build
         steps:
+          - template: ../common_tasks/checkout_trident.yml
+            parameters:
+              tridentRepoName: ${{ parameters.tridentRepoName }}
           - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../common_tasks/rustup.yml
           - template: ../common_tasks/cargo-auth.yml
@@ -54,9 +66,11 @@ stages:
               # Use a lower optimization level to speed up cargo-deny installation.
               CARGO_PROFILE_RELEASE_OPT_LEVEL=0 cargo install --locked cargo-deny@0.16.2
             displayName: Install cargo-deny
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
 
           - script: cargo deny --all-features --workspace check licenses
             displayName: Check licenses
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
 
       - job: Make
         displayName: make
@@ -67,16 +81,19 @@ stages:
           hostArchitecture: amd64
 
         variables:
-          ob_outputDirectory: $(Build.SourcesDirectory)/build
+          ob_outputDirectory: $(Pipeline.Workspace)/s/trident/build
 
         steps:
+          - template: ../common_tasks/checkout_trident.yml
+            parameters:
+              tridentRepoName: ${{ parameters.tridentRepoName }}
           - template: ../common_tasks/avoid-pypi-usage.yml
-
           - bash: |
               set -eux
               make artifacts/osmodifier
               rm -rf artifacts/osmodifier
             displayName: Invoke make artifacts/osmodifier
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
 
           - template: ../common_tasks/download-osmodifier.yml
             parameters:
@@ -97,6 +114,8 @@ stages:
           - template: ../common_tasks/update-protoc.yml
           - template: ../common_tasks/rustup.yml
           - template: ../common_tasks/cargo-auth.yml
+            parameters:
+              cargoConfigPath: $(TRIDENT_SOURCE_DIR)/.cargo/config.toml
 
           - bash: |
               set -eux
@@ -109,6 +128,7 @@ stages:
               make bin/trident-rpms.tar.gz
               make docker-build
             displayName: Invoke make
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
             env:
               OVERRIDE_RUST_FEED: false
 
@@ -117,6 +137,6 @@ stages:
 
               make check-sh
             displayName: "Validate sh files in repo"
-            workingDirectory: $(Build.SourcesDirectory)
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
             env:
               OVERRIDE_RUST_FEED: false

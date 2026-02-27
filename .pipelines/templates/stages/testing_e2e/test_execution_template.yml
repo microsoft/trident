@@ -1,4 +1,10 @@
 parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
   - name: hardwareType
     type: string
     values:
@@ -60,7 +66,7 @@ stages:
         condition: ne(variables['matrixJson'], '{}')
         variables:
           - name: ob_outputDirectory
-            value: $(Build.SourcesDirectory)/output
+            value: $(Pipeline.Workspace)/s/trident/output
           - name: ob_artifactBaseName
             value: $(SCENARIO)_$(System.JobAttempt)
           - ${{ if eq(parameters.runtimeType, 'CONTAINER') }}:
@@ -87,6 +93,9 @@ stages:
                 value: false
 
         steps:
+          - template: ../common_tasks/checkout_trident.yml
+            parameters:
+              tridentRepoName: ${{ parameters.tridentRepoName }}
           - bash: |
               if [ ${{ variables['tridentConfigurationName'] }} == 'split' ]; then
                 splitInstallerIsoName="trident-split-installer"
@@ -114,3 +123,4 @@ stages:
                   --pipeline-run \
                   --iso "./artifacts/iso/$(installerISOName).iso"
             displayName: "🧪 Run E2E Test"
+            workingDirectory: $(TRIDENT_SOURCE_DIR)

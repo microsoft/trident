@@ -1,4 +1,10 @@
 parameters:
+  - name: tridentRepoName
+    type: string
+    values:
+      - self
+      - trident
+
   - name: label
     type: string
     displayName: "Label for the image"
@@ -27,9 +33,9 @@ parameters:
     displayName: MIC Build Type
     type: string
     values:
-    - dev
-    - preview
-    - release
+      - dev
+      - preview
+      - release
     default: release
 
   - name: micVersion
@@ -60,7 +66,6 @@ parameters:
     type: number
     default: 20
 
-
 jobs:
   - job: PrepareImage_${{ replace(parameters.label, '-', '_') }}
     displayName: Prepare Image ${{ parameters.label }}
@@ -84,14 +89,10 @@ jobs:
         goToolsArtifactName: go-tools-arm64
 
     steps:
+      - template: ../common_tasks/checkout_trident.yml
+        parameters:
+          tridentRepoName: ${{ parameters.tridentRepoName }}
       - template: ../common_tasks/avoid-pypi-usage.yml
-
-      - task: DownloadPipelineArtifact@2
-        inputs:
-          buildType: current
-          artifactName: $(tridentArtifactName)
-          targetPath: "$(Build.ArtifactStagingDirectory)/trident"
-        displayName: Download Trident RPMs
 
       - ${{ if parameters.downloadGoTools }}:
         - task: DownloadPipelineArtifact@2
@@ -99,10 +100,10 @@ jobs:
           inputs:
             buildType: current
             artifactName: $(goToolsArtifactName)
-            targetPath: "$(Build.SourcesDirectory)/bin"
+            targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
         - bash: |
             set -eux
-            chmod +x $(Build.SourcesDirectory)/bin/*
+            chmod +x $(TRIDENT_SOURCE_DIR)/bin/*
           displayName: "Make go tools executable"
 
       - task: DownloadPipelineArtifact@2
@@ -125,7 +126,8 @@ jobs:
           tridentArtifactName: $(tridentArtifactName)
           baseimgBuildType: $(BASEIMG_BUILD_TYPE)
           baseimgVersion: $(BASEIMG_VERSION)
+          rpmsVersion: $(RPMS_VERSION)
           baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
-          baseimgTypes: 
+          baseimgTypes:
             - ${{ parameters.baseimgType }}
           useStagedSshKeys: ${{ parameters.useStagedSshKeys }}

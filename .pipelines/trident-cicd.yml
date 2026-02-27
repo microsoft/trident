@@ -63,7 +63,7 @@ extends:
               type: linux
             variables:
               - name: ob_outputDirectory
-                value: "$(Build.SourcesDirectory)/base-image-config"
+                value: "$(Pipeline.Workspace)/s/trident/base-image-config"
               - name: ob_artifactBaseName
                 value: "base-image-config"
             steps:
@@ -90,6 +90,9 @@ extends:
                   baseimgBuildType: $(BASEIMG_BUILD_TYPE)
                   baseImagePipelineBuildId: $(BASE_IMAGE_PIPELINE_BUILD_ID)
                   baseImageArm64PipelineBuildId: $(BASE_IMAGE_ARM64_PIPELINE_BUILD_ID)
+                  # Use same build ids for rpms as base image
+                  rpmsPipelineBuildId: $(BASE_IMAGE_PIPELINE_BUILD_ID)
+                  rpmsArm64PipelineBuildId: $(BASE_IMAGE_ARM64_PIPELINE_BUILD_ID)
                   outputDirectory: $(ob_outputDirectory)
 
       # Test amd64 if targetArchitecture is "all" or "amd64" (i.e. !arm64)
@@ -101,7 +104,6 @@ extends:
         - stage: ProcessJunit_Stage_amd64
           displayName: Process amd64 junit files
           dependsOn:
-            - FunctionalTesting
             - DeploymentTesting_host
             - DeploymentTesting_container
             # - BaremetalDeploymentTesting_host
@@ -113,7 +115,7 @@ extends:
               pool:
                 type: linux
               variables:
-                ob_outputDirectory: "$(Build.SourcesDirectory)/out"
+                ob_outputDirectory: "$(Pipeline.Workspace)/s/trident/out"
               steps:
                 - script: |
                     set -eux
@@ -136,7 +138,7 @@ extends:
               pool:
                 type: linux
               variables:
-                ob_outputDirectory: "$(Build.SourcesDirectory)/out"
+                ob_outputDirectory: "$(Pipeline.Workspace)/s/trident/out"
               steps:
                 - script: |
                     set -eux

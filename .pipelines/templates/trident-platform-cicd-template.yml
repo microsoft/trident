@@ -10,27 +10,64 @@ parameters:
 
   - name: baseImageArtifactStage
     type: string
-  
+
   - name: targetArchitecture
     type: string
     values:
       - amd64
       - arm64
 
+  - name: tridentBuildOptions
+    displayName: "Trident Build Options"
+    type: string
+    default: prebuilt
+    values:
+      - default
+      - forceBuild
+      - prebuilt
+
+  - name: testSecureBoot
+    displayName: "Test Secure Boot"
+    type: boolean
+    default: true
+
+  - name: micVersion
+    displayName: MIC Version
+    type: string
+    default: "*.*.*"
+
+  - name: acrServiceConnectionName
+    type: string
+    default: trident-dev-acr-write-umi-ECF
+    values:
+      - maritimus-dev-acr-write-umi
+      - trident-dev-acr-write-umi-ECF
+
+  - name: tridentRepoName
+    type: string
+    default: self
+    values:
+      - self
+      - trident
+
 stages:
   - ${{ if eq( parameters.targetArchitecture, 'amd64') }}:
     - template: e2e-template.yml
       parameters:
-        stageType: pre
-        blockPublishing: true
-        forceTridentRebuild: true
-        forceFunctionalTestImageRebuild: true
+        stageType: azl-validation
         baremetalTestsEnabled: ${{ parameters.baremetalTestsEnabled }}
         baseImageArtifactStage: ${{ parameters.baseImageArtifactStage }}
+        tridentBuildOptions: ${{ parameters.tridentBuildOptions }}
+        testSecureBoot: ${{ parameters.testSecureBoot }}
+        micBuildType: dev
+        micVersion: ${{ parameters.micVersion }}
+        acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
+        tridentRepoName: ${{ parameters.tridentRepoName }}
 
   - ${{ if eq( parameters.targetArchitecture, 'arm64') }}:
     - template: e2e-arm64-template.yml
       parameters:
-        stageType: pre
-        forceTridentRebuild: true
+        stageType: azl-validation
+        tridentBuildOptions: ${{ parameters.tridentBuildOptions }}
         baseImageArtifactStage: ${{ parameters.baseImageArtifactStage }}
+        tridentRepoName: ${{ parameters.tridentRepoName }}

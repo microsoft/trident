@@ -1,7 +1,7 @@
 steps:
   - bash: |
       ./read-base-image-config-artifact-if-exists.sh $(Build.BuildId)
-    workingDirectory: $(Build.SourcesDirectory)/.pipelines/templates/stages/base_image_config
+    workingDirectory: $(TRIDENT_SOURCE_DIR)/.pipelines/templates/stages/base_image_config
     displayName: "Read Base Image Config artifact into variables"
     env:
       AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
@@ -11,4 +11,6 @@ steps:
       echo "BASEIMG_BUILD_TYPE = $(BASEIMG_BUILD_TYPE)"
       echo "BASE_IMAGE_PIPELINE_BUILD_ID = $(BASE_IMAGE_PIPELINE_BUILD_ID)"
       echo "BASE_IMAGE_ARM64_PIPELINE_BUILD_ID = $(BASE_IMAGE_ARM64_PIPELINE_BUILD_ID)"
+      echo "RPMS_PIPELINE_BUILD_ID = $(RPMS_PIPELINE_BUILD_ID)"
+      echo "RPMS_ARM64_PIPELINE_BUILD_ID = $(RPMS_ARM64_PIPELINE_BUILD_ID)"
     displayName: "Output Base Image Config runtime variables"

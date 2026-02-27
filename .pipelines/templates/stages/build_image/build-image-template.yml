@@ -47,6 +47,11 @@ parameters:
     type: string
     default: "*.*.*"
 
+  - name: rpmsVersion
+    displayName: RPM Version
+    type: string
+    default: "*.*.*"
+
   - name: clones
     type: number
     default: 1
@@ -75,7 +80,7 @@ steps:
   - bash: |
       ./tests/images/testimages.py show-image ${{ parameters.imageName }} base-image --devops-var baseImageType
     displayName: "Get Image Info"
-    workingDirectory: $(Build.SourcesDirectory)
+    workingDirectory: $(TRIDENT_SOURCE_DIR)
 
   - bash: |
       echo "Image type: $(baseImageType)"
@@ -99,12 +104,14 @@ steps:
       imageVersion: ${{ parameters.baseimgVersion }}
       azureLinuxVersion: ${{ parameters.azureLinuxVersion }}
 
-  # For dev builds, the RPMs are not necessarily published, so download them here
-  - ${{ if eq(parameters.baseimgBuildType, 'dev') }}:
-      - template: common/rpms-download-template.yaml@platform-pipelines
-        parameters:
-          imageVersion: ${{ parameters.baseimgVersion }}
-          azureLinuxVersion: ${{ parameters.azureLinuxVersion }}
+  # For dev builds, the RPMs are not neccessarily published, so download them here. The
+  # parameter is set based on a runtime variable, so we cannot use ${{ if }}, so the
+  # template is always run and contains logic to skip if not needed.
+  - template: common/rpms-download-template.yaml@platform-pipelines
+    parameters:
+      rpmsVersion: ${{ parameters.rpmsVersion }}
+      azureLinuxVersion: ${{ parameters.azureLinuxVersion }}
+      runtimeBuildType: ${{ parameters.baseimgBuildType }}
 
   - bash: |
       set -ex
@@ -134,7 +141,7 @@ steps:
         rm -rf "$(Build.ArtifactStagingDirectory)/trident"
       fi
     displayName: "Prepare and move requirements"
-    workingDirectory: $(Build.SourcesDirectory)
+    workingDirectory: $(TRIDENT_SOURCE_DIR)
 
   - bash: |
       set -ex
@@ -151,4 +158,4 @@ steps:
           --no-download \
           --clones ${{ parameters.clones }}
     displayName: "Build ${{ parameters.imageName }}"
-    workingDirectory: $(Build.SourcesDirectory)
+    workingDirectory: $(TRIDENT_SOURCE_DIR)
