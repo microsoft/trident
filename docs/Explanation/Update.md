@@ -1,7 +1,7 @@
 # Update
 
-An is a servicing type that applies changes to an existing Trident-managed
-system. Like an [install](./Install.md), it is driven by a [Host
+An update is a servicing type that applies changes to an existing
+Trident-managed system. Like an [install](./Install.md), it is driven by a [Host
 Configuration](../Reference/Host-Configuration/API-Reference/HostConfiguration.md)
 file that declares the desired state. Trident compares the new Host
 Configuration against the currently provisioned one and automatically selects

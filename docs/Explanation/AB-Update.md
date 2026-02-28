@@ -102,9 +102,9 @@ On the next boot:
 2. **Health checks** — if [health checks](./Health-Checks.md) are configured,
    Trident runs them before committing to verify the update was successful.
 3. **Rollback** — if the commit fails or health checks do not pass, Trident can
-   [roll back](./Manual-Rollback.md) to the previous volume. The previous
-   volume remains intact and bootable because the A/B scheme guarantees that the
-   old OS is never modified during the update.
+   roll back to the previous volume. The previous volume remains intact and
+   bootable because the A/B scheme guarantees that the old OS is never modified
+   during the update.
 
 This commit-or-rollback mechanism ensures that a failed update never leaves the
 system in an unbootable state.
