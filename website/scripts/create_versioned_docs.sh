@@ -127,7 +127,9 @@ create_version_docs() {
         echo "Check for commit override for version ${version}"
         version_commit=$(get_version_commit "$version")
         echo "Using commit ${version_commit} for version ${version}"
-        gh repo clone "https://github.com/${REPO}.git" "${tmp_dir}" -- --depth=1 --revision=${version_commit}
+        gh repo clone "https://github.com/${REPO}.git" "${tmp_dir}"
+        cd "${tmp_dir}"
+        git checkout ${version_commit}
     fi
     cd "${tmp_dir}"
     echo "Verify checkout for version ${version}"
