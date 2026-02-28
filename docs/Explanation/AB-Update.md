@@ -6,8 +6,8 @@ continues running on the active volume. Like an
 [install](./Install.md), it is driven by a
 [Host Configuration](../Reference/Host-Configuration/API-Reference/HostConfiguration.md)
 file that declares the desired state. Trident compares the new Host
-Configuration against the currently provisioned one and applies only the
-necessary changes to bring the inactive volume to the desired state.
+Configuration against the currently provisioned one and applies the necessary
+changes to bring the inactive volume to the desired state.
 
 An A/B update is triggered automatically when Trident detects that the Host
 Configuration changes go beyond
