@@ -64,9 +64,6 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 		},
 	}
 	if testConfig.Uki {
-		customizerConfig["os"].(map[string]interface{})["uki"] = map[string]interface{}{
-			"mode": "passthrough",
-		}
 		customizerConfig["previewFeatures"] = append(customizerConfig["previewFeatures"].([]string), "uki")
 	}
 	customizerConfigContent, err := yaml.Marshal(customizerConfig)
