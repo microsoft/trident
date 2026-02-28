@@ -78,11 +78,11 @@ socket and will reactivate the daemon on the next incoming connection.
 ### Connection Management
 
 The gRPC server uses a read-write lock to manage concurrent connections. Data
-retrieval operations (such as querying status) acquire a read lock, allowing
-multiple simultaneous readers. Servicing operations (such as install or update)
-acquire a write lock, ensuring that at most one servicing operation runs at a
-time. An additional global servicing lock prevents a second servicing from
-starting if a previous one is still running after the client disconnects.
+retrieval operations acquire a read lock, allowing multiple simultaneous
+readers. Servicing operations (such as install or update) acquire a write lock,
+ensuring that at most one servicing operation runs at a time. An additional
+global servicing lock prevents a second servicing from starting if a previous
+one is still running after the client disconnects.
 
 ### Inactivity Shutdown
 
@@ -141,11 +141,11 @@ Servicing operations that modify boot configuration may require a reboot to take
 effect. The gRPC API allows callers to specify how reboots should be handled via
 the `RebootManagement` field in the request:
 
-| Mode | Behavior |
-|------|----------|
-| `TRIDENT_HANDLES_REBOOT` | Trident initiates the reboot automatically. |
-| `CALLER_HANDLES_REBOOT` | The caller is responsible for rebooting the system. The `Completed` response indicates that a reboot is required. |
-| `REBOOT_HANDLING_UNSPECIFIED` | Defaults to Trident handling the reboot. |
+| Mode                          | Behavior                                                                                                          |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `TRIDENT_HANDLES_REBOOT`      | Trident initiates the reboot automatically.                                                                       |
+| `CALLER_HANDLES_REBOOT`       | The caller is responsible for rebooting the system. The `Completed` response indicates that a reboot is required. |
+| `REBOOT_HANDLING_UNSPECIFIED` | Defaults to Trident handling the reboot.                                                                          |
 
 Choosing `CALLER_HANDLES_REBOOT` is useful when the caller needs to perform
 additional steps (such as draining workloads) before the machine reboots.
