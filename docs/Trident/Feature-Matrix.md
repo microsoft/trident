@@ -14,41 +14,49 @@ Legend:
 
 ## Servicing Features
 
-| Category        | Feature                                 | Install | VM-Init | Update |
-| --------------- | --------------------------------------- | ------- | ------- | ------ |
-| 🚀 Runtime       | Native binary                           | ✅       | ✅       | ✅      |
-| 🚀 Runtime       | Containerized                           | ✅       | ❌       | ✅      |
-| ⚙️ Bootloader    | UEFI [1]                                | ✅       | ✅       | ✅      |
-| ⚙️ Bootloader    | GPT partitioning                        | ✅       | ✅       | ✅      |
-| ⚙️ Bootloader    | Grub2                                   | ✅       | ✅       | ✅      |
-| ⚙️ Bootloader    | Systemd-boot                            | ☑️       | ☑️       | ☑️      |
-| 🔄 Lifecycle     | Onboard system for updates              | ✅       | ✅       | ✅      |
-| 🔄 Lifecycle     | Rollback (grub)                         | ✅       | ✅       | ✅      |
-| 🔄 Lifecycle     | Rollback (systemd-boot/UKI)             | 🔜       | 🔜       | 🔜      |
-| 🔏 Integrity     | Secure Boot                             | ✅       | ✅       | ✅      |
-| 🔏 Integrity     | UKI                                     | ☑️       | ☑️       | ☑️      |
-| 🔏 Integrity     | Root-verity (grub)                      | ⚠️[2]    | ⚠️[2]    | ⚠️[2]   |
-| 🔏 Integrity     | Root-verity (UKI)                       | ☑️       | ☑️       | ☑️      |
-| 🔏 Integrity     | User-verity (UKI)                       | ☑️       | ☑️       | ☑️      |
-| 💽 Storage       | Block device creation                   | ✅       | 🔜       | ❌      |
-| 💽 Storage       | Image streaming (local)                 | ✅       | 🔜       | ✅      |
-| 💽 Storage       | Image streaming (HTTPS)                 | ✅       | 🔜       | ✅      |
-| 💽 Storage       | Multiboot                               | ☑️       | ❌       | ✅[3]   |
-| 💽 Storage       | Partition adoption                      | ☑️       | ❌       | ✅[3]   |
-| 💽 Storage       | Software RAID                           | ✅       | ❌       | ✅[3]   |
-| 💽 Storage       | ESP redundancy                          | ✅       | ❌       | ✅[3]   |
-| 💽 Storage       | Encryption with Secure Boot PCR sealing | ✅       | 🔜       | ✅[3]   |
-| 💽 Storage       | Encryption with OS PCR sealing          | 🔜[4]    | 🔜       | ✅[3]   |
-| 📝 OS Config     | Network configuration                   | ✅       | ❌       | ✅      |
-| 📝 OS Config     | Hostname configuration                  | ✅[5]    | ❌       | ✅[5]   |
-| 📝 OS Config     | User configuration                      | ✅[5]    | ❌       | ✅[5]   |
-| 📝 OS Config     | SSH configuration                       | ✅[5]    | ❌       | ✅[5]   |
-| 📝 OS Config     | Initrd regeneration (grub)              | ✅       | ❌       | ✅      |
-| 📝 OS Config     | Initrd regeneration (UKI)               | ❌       | ❌       | ❌      |
-| 🛡️ Security      | SELinux Configuration                   | ✅       | ❌       | ✅      |
-| 🪛 Customization | User provided-scripts                   | ✅       | ❌       | ✅      |
-| 🛠️ Development   | Offline validation                      | ✅       | 🔜       | 🔜      |
-| 🛠️ Development   | Debugging log                           | ✅       | ✅       | ✅      |
+| Category        | Feature                                 | Install | VM-Init | Update | Stream Disk |
+| --------------- | --------------------------------------- | ------- | ------- | ------ | ----------- |
+| 🚀 Runtime       | Native binary                           | ✅       | ✅       | ✅      | ✅           |
+| 🚀 Runtime       | Containerized                           | ✅       | ❌       | ✅      | ✅           |
+| 🚀 Runtime       | gRPC API                                | 🔜       | ❌       | 🔜      | ✅           |
+| ⚙️ Bootloader    | UEFI [1]                                | ✅       | ✅       | ✅      | ✅           |
+| ⚙️ Bootloader    | GPT partitioning                        | ✅       | ✅       | ✅      | ✅           |
+| ⚙️ Bootloader    | Grub2                                   | ✅       | ✅       | ✅      | ✅           |
+| ⚙️ Bootloader    | Systemd-boot                            | ☑️       | ☑️       | ☑️      | ✅           |
+| 🔄 Lifecycle     | Onboard system for updates              | ✅       | ✅       | ✅      | ❌           |
+| 🔄 Lifecycle     | Rollback (grub)                         | ✅       | ✅       | ✅      | ❌           |
+| 🔄 Lifecycle     | Rollback (systemd-boot/UKI)             | 🔜       | 🔜       | 🔜      | ❌           |
+| 🔏 Integrity     | Secure Boot                             | ✅       | ✅       | ✅      | ✅           |
+| 🔏 Integrity     | UKI                                     | ☑️       | ☑️       | ☑️      | ✅           |
+| 🔏 Integrity     | Root-verity (grub)                      | ⚠️[2]    | ⚠️[2]    | ⚠️[2]   | ✅           |
+| 🔏 Integrity     | Root-verity (UKI)                       | ☑️       | ☑️       | ☑️      | ✅           |
+| 🔏 Integrity     | User-verity (UKI)                       | ☑️       | ☑️       | ☑️      | ✅           |
+| 💽 Storage       | Block device creation                   | ✅       | 🔜       | ❌      | ✅           |
+| 💽 Storage       | Image streaming (local)                 | ✅       | 🔜       | ✅      | ✅           |
+| 💽 Storage       | Image streaming (HTTPS)                 | ✅       | 🔜       | ✅      | ✅           |
+| 💽 Storage       | Multiboot                               | ☑️       | ❌       | ✅[3]   | ❌           |
+| 💽 Storage       | Partition adoption                      | ☑️       | ❌       | ✅[3]   | ❌           |
+| 💽 Storage       | Software RAID                           | ✅       | ❌       | ✅[3]   | ❌           |
+| 💽 Storage       | ESP redundancy                          | ✅       | ❌       | ✅[3]   | ❌           |
+| 💽 Storage       | Encryption with Secure Boot PCR sealing | ✅       | 🔜       | ✅[3]   | ❌           |
+| 💽 Storage       | Encryption with OS PCR sealing          | 🔜[4]    | 🔜       | ✅[3]   | ❌           |
+| 📝 OS Config     | Network configuration                   | ✅       | ❌       | ✅      | ❌           |
+| 📝 OS Config     | Hostname configuration                  | ✅[5]    | ❌       | ✅[5]   | ❌           |
+| 📝 OS Config     | User configuration                      | ✅[5]    | ❌       | ✅[5]   | ❌           |
+| 📝 OS Config     | SSH configuration                       | ✅[5]    | ❌       | ✅[5]   | ❌           |
+| 📝 OS Config     | Initrd regeneration (grub)              | ✅       | ❌       | ✅      | ❌           |
+| 📝 OS Config     | Initrd regeneration (UKI)               | ❌       | ❌       | ❌      | ❌           |
+| 🛡️ Security      | SELinux Configuration                   | ✅       | ❌       | ✅      | ❌           |
+| 🪛 Customization | User provided-scripts                   | ✅       | ❌       | ✅      | 🔜           |
+| 🛠️ Development   | Offline validation                      | ✅       | 🔜       | 🔜      | ❌           |
+| 🛠️ Development   | Debugging log                           | ✅       | ✅       | ✅      | ✅           |
+
+For more information, see:
+
+- [Install](../Explanation/Install.md)
+- [VM Initialization](../Explanation/Offline-Initialize.md)
+- [Update](../Explanation/Update.md)
+- [Disk Streaming](../Explanation/Disk-Streaming.md)
 
 _Notes:_
 

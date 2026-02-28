@@ -3,8 +3,8 @@
 
 This guide explains how to create a new [encrypted
 volume](../Reference/Host-Configuration/API-Reference/EncryptedVolume.md) on
-[clean install](../Reference/Glossary.md#clean-install) with Trident, using the
-Host Configuration API.
+[clean install](../Reference/Glossary.md#install-servicing-type) with Trident,
+using the Host Configuration API.
 
 ## Goals
 

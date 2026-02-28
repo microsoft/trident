@@ -7,9 +7,9 @@ which extends the `/etc` directory tree by mounting a read-only overlay over
 page](https://man.archlinux.org/man/systemd-confext.8.en) for more information.
 
 Trident supports servicing confexts as part of the [Clean
-Install](../Reference/Glossary.md#clean-install) and [A/B
-Update](../Reference/Glossary.md#ab-update) flows. Please reference the [confexts
-API
+Install](../Reference/Glossary.md#install-servicing-type) and [A/B
+Update](../Reference/Glossary.md#ab-update) flows. Please reference the
+[confexts API
 documentation](../Reference/Host-Configuration/API-Reference/Os.md#confexts-optional)
 for how to configure confexts in the Trident Host Configuration.
 
