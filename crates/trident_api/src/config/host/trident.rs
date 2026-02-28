@@ -5,10 +5,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
-use crate::{
-    constants::{DATASTORE_FILE_EXTENSION, TRIDENT_DATASTORE_PATH_DEFAULT},
-    is_default,
-};
+use crate::constants::{DATASTORE_FILE_EXTENSION, TRIDENT_DATASTORE_PATH_DEFAULT};
 
 use super::error::HostConfigurationStaticValidationError;
 
