@@ -18,7 +18,7 @@ Legend:
 | --------------- | --------------------------------------- | ------- | ------- | ------ | ----------- |
 | 🚀 Runtime       | Native binary                           | ✅       | ✅       | ✅      | ✅           |
 | 🚀 Runtime       | Containerized                           | ✅       | ❌       | ✅      | ✅           |
-| 🚀 Runtime       | gRPC API                                | ✅       | ✅       | ✅      | ✅           |
+| 🚀 Runtime       | gRPC API                                | 🔜       | ❌       | 🔜      | ✅           |
 | ⚙️ Bootloader    | UEFI [1]                                | ✅       | ✅       | ✅      | ✅           |
 | ⚙️ Bootloader    | GPT partitioning                        | ✅       | ✅       | ✅      | ✅           |
 | ⚙️ Bootloader    | Grub2                                   | ✅       | ✅       | ✅      | ✅           |
