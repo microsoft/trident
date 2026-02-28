@@ -14,6 +14,14 @@ hashes, and compression information. This metadata allows Trident to derive a
 complete deployment plan from the image alone without a separate Host
 Configuration file.
 
+:::note
+
+Only COSI v1.2+ images are supported for disk streaming, as they contain the
+necessary metadata for this servicing type. This version of COSI can be produced
+with Image Customizer ≥ v1.2.
+
+:::
+
 ## Disk Streaming vs. Install
 
 Image streaming is used as the underlying transfer mechanism in multiple
