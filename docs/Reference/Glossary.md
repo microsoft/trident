@@ -29,7 +29,7 @@ then rebooting the device into the updated volume. When this happens, the active
 volume swaps from A to B, or from B to A.
 
 A system can have multiple A/B volume pairs, each pair representing a different
-mount point on the device. All pairs in an [install](#install) are updated in
+mount point on the device. All pairs in an [install](#os-install) are updated in
 lockstep, meaning all pairs will have their A volume be the active one, or all
 pairs will have their B volume be the active one.
 
@@ -44,17 +44,6 @@ drives, SSDs, and USB drives.
 >
 > ([Block Special
 > File](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_79))
-
-## Clean Install
-
-A [servicing type](#servicing-type) where a new [install](#install) is
-performed.
-
-A clean install does not update or modify an existing OS. It creates an entirely
-new install on the device.
-
-A clean install is what you do when you install an OS for the first time, or
-when you are replacing an existing OS with a new one.
 
 ## COSI
 
@@ -93,15 +82,28 @@ Unix domain socket. It enables programmatic interaction with Trident from
 orchestration systems and agents, with streaming progress updates and structured
 error reporting. See [gRPC Server](../Explanation/gRPC-Server.md).
 
-## Install
+## OS Install
 
-A full deployment of a Azure Linux made with Trident.
+A full deployment of an Azure Linux OS made with Trident.
 
 The install encompasses the entire OS, including the bootloader, the kernel, the
 initramfs, the root filesystem, all [A/B Volume Pairs](#ab-volume-pair),
 associated partitions, and any other partitions that are part of the install.
 
 _Note: This definition does not consider other OSes or distros._
+
+## Install (Servicing Type)
+
+(aka Clean Install in some contexts)
+
+A [servicing type](#servicing-type) where a new [install](#os-install) is
+performed.
+
+An install does not update or modify an existing OS. It creates an entirely
+new install on the device.
+
+An install is what you do when you install an OS for the first time, or
+when you are replacing an existing OS with a new one.
 
 ## minimal-os
 
@@ -110,7 +112,7 @@ minimal components to be bootable.
 
 ## Multiboot
 
-The capability of having multiple [installs](#install) on the same device, even
+The capability of having multiple [installs](#os-install) on the same device, even
 on the same disk.
 
 ## Newroot
@@ -142,8 +144,8 @@ performed on an OS with or without A/B partitions present.
 
 ## Servicing
 
-The general process of performing an action on an [install](#install). There are
-several [types of servicing](#servicing-type).
+The general process of performing an action on an [install](#os-install). There
+are several [types of servicing](#servicing-type).
 
 ## Servicing OS
 
@@ -152,7 +154,7 @@ The OS where Trident is running.
 ## Servicing Type
 
 The specific kind of [Servicing](#servicing) that is being performed on an
-install, such as [clean install](#clean-install), or an [A/B
+install, such as [clean install](#install-servicing-type), or an [A/B
 update](#ab-update).
 
 ## Stage (Operation)
