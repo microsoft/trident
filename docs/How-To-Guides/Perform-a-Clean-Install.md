@@ -3,8 +3,9 @@
 
 ## Goals
 
-Use Trident to perform a [clean install](../Reference/Glossary.md#clean-install)
-of a [target operating system](../Reference/Glossary.md#target-os).
+Use Trident to perform a [clean
+install](../Reference/Glossary.md#install-servicing-type) of a [target operating
+system](../Reference/Glossary.md#target-os).
 
 ## Instructions
 

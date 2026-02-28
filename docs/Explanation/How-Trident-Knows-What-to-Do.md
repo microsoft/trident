@@ -11,10 +11,11 @@ machine.
 
 ## Install Command
 
-For `install`, a [Clean Install](../Reference/Glossary.md#clean-install) is
-typically triggered. If the `--multiboot` flag is used, multiple operating
-systems may be installed. See the [Explanation of
-Multiboot](../Explanation/Multiboot.md) for more information.
+For `install`, a [Clean
+Install](../Reference/Glossary.md#install-servicing-type) is typically
+triggered. If the `--multiboot` flag is used, multiple operating systems may be
+installed. See the [Explanation of Multiboot](../Explanation/Multiboot.md) for
+more information.
 
 ## Update Command
 

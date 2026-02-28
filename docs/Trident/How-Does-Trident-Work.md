@@ -5,12 +5,13 @@ sidebar_position: 4
 # How does Trident work?
 
 Trident operates based on two primary concepts: [OS
-installation](Reference/Glossary.md#install) and update, each corresponding to
-dedicated CLI commands. Upon invocation, Trident receives a command along with a
-Host Configuration that defines the desired state of the host. During initial
-installation—or when performing offline initialization for a VM image—Trident
-establishes its own datastore (implemented as a SQLite database) on the OS
-filesystem, capturing the current state via the Host Status API.
+installation](Reference/Glossary.md#install-servicing-type) and update, each
+corresponding to dedicated CLI commands. Upon invocation, Trident receives a
+command along with a Host Configuration that defines the desired state of the
+host. During initial installation—or when performing offline initialization for
+a VM image—Trident establishes its own datastore (implemented as a SQLite
+database) on the OS filesystem, capturing the current state via the Host Status
+API.
 
 For subsequent servicing operations, Trident compares the provided Host
 Configuration against the most recent Host Status stored in its datastore. It
