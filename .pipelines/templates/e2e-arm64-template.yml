@@ -37,6 +37,20 @@ parameters:
     type: string
     default: ''
 
+  - name: micBuildType
+    displayName: MIC Build Type
+    type: string
+    values:
+      - dev
+      - preview
+      - release
+    default: release
+
+  - name: micVersion
+    displayName: MIC Version
+    type: string
+    default: "*.*.*"
+
 stages:
   # Trident Build/Download
   - template: stages/trident_rpms/trident-stage.yml
@@ -60,3 +74,5 @@ stages:
     - template: direct-streaming-test.yml
       parameters:
         architecture: arm64
+        micBuildType: ${{ parameters.micBuildType }}
+        micVersion: ${{ parameters.micVersion }}
