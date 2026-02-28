@@ -112,7 +112,7 @@ create_version_docs() {
     local version="$1"
     local tmp_dir=$(mktemp -d)
     cd "${tmp_dir}"
-    
+
     echo "Checkout ${version} in ${tmp_dir}"
     if [[ "$DEBUG_USE_DEV_BRANCH" == "true" ]]; then
         # Debug: clone the dev branch
@@ -124,9 +124,15 @@ create_version_docs() {
         git fetch origin "${DEV_BRANCH}"
         git checkout FETCH_HEAD
     else
-        gh repo clone "https://github.com/${REPO}.git" "${tmp_dir}" -- --depth 1 --branch "${version}" 
+        echo "Check for commit override for version ${version}"
+        version_commit=$(get_version_commit "$version")
+        echo "Using commit ${version_commit} for version ${version}"
+        gh repo clone "https://github.com/${REPO}.git" "${tmp_dir}" -- --depth=1 --revision=${version_commit}
     fi
-    cd "${tmp_dir}"/website
+    cd "${tmp_dir}"
+    echo "Verify checkout for version ${version}"
+    git log -n 1 --oneline
+    cd website
     # For this temp repo, copy the docs folder from the root of the repo
     # to get around docusaurus' need for the "current" docs version to
     # exist.  This copy will not impact the actual website/docs folder.
