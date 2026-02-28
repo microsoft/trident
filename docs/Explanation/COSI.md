@@ -68,6 +68,21 @@ is fully specified and open. The complete specification is available in the
 [COSI Specification](../Reference/Composable-OS-Image.md) reference document,
 making it possible for other tools to read or produce COSI files.
 
+## COSI Revisions
+
+The COSI specification has gone through several revisions. Each revision is
+produced by a minimum version of
+[Image Customizer](https://github.com/microsoft/azure-linux-image-tools):
+
+| COSI Revision | Image Customizer Version |
+| ------------- | ------------------------ |
+| 1.0           | v0.10.0                  |
+| 1.1           | v0.16.0                  |
+| 1.2           | v1.2.0                   |
+
+See the [COSI Specification](../Reference/Composable-OS-Image.md) for full
+details on what changed in each revision.
+
 ## How Trident Uses COSI
 
 For a detailed walkthrough of how Trident reads the COSI metadata and streams
