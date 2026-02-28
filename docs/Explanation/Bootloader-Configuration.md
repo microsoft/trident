@@ -36,7 +36,7 @@ os:
   bootLoader:
     resetType: hard-reset
   uki:
-    mode: create
+    kernels: auto
 previewFeatures:
 - uki
 ```

@@ -91,15 +91,14 @@ def build(
     image = find_image(configs, name)
     log.info(f"Building image '{image.name}'")
     rpm_sources: List[Path] = []
-    if image.rpm_sources_allowed:
-        if image.requires_trident:
-            rpm_sources.append(RpmSources.TRIDENT.path())
-        if image.requires_dhcp:
-            rpm_sources.append(RpmSources.DHCP.path())
+    if image.requires_trident:
+        rpm_sources.append(RpmSources.TRIDENT.path())
+    if image.requires_dhcp:
+        rpm_sources.append(RpmSources.DHCP.path())
 
-        rpm_overrides_path = RpmSources.RPM_OVERRIDES.path()
-        if rpm_overrides_path.exists():
-            rpm_sources.append(rpm_overrides_path)
+    rpm_overrides_path = RpmSources.RPM_OVERRIDES.path()
+    if rpm_overrides_path.exists():
+        rpm_sources.append(rpm_overrides_path)
 
     container_image: Optional[str] = container_name
     if container_image is None:

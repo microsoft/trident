@@ -40,5 +40,3 @@ stages:
         forceTridentRebuild: true
         osModifierBranch: ${{ parameters.osModifierBranch }}
         baseImageArtifactStage: CreateBaseImageConfig
-        micBuildType: ${{ parameters.micBuildType }}
-        micVersion: ${{ parameters.micVersion }}
