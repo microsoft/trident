@@ -1,6 +1,6 @@
 # Disk Streaming
 
-Disk streaming is a service offered by Trident to bootstrap machines by
+Disk streaming is a servicing type offered by Trident to bootstrap machines by
 applying a remote OS image to disk. It is designed as a more performant
 alternative to flashing traditional disk image formats (such as VHD or VHDX) by
 leveraging the [COSI](./COSI.md) format. Because COSI excludes unallocated

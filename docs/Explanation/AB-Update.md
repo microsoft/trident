@@ -1,9 +1,9 @@
-# A/B Update Service
+# A/B Update
 
-An A/B update provisions a new OS onto the inactive
+An A/B update is a servicing type that provisions a new OS onto the inactive
 [A/B volume](../Reference/Glossary.md#ab-volume-pair) while the current OS
 continues running on the active volume. Like an
-[install](./Install-Service.md), it is driven by a
+[install](./Install.md), it is driven by a
 [Host Configuration](../Reference/Host-Configuration/API-Reference/HostConfiguration.md)
 file that declares the desired state. Trident compares the new Host
 Configuration against the currently provisioned one and applies only the

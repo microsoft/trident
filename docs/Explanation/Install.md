@@ -1,9 +1,9 @@
-# Install Service
+# Install
 
-An install is a [clean install](../Reference/Glossary.md#clean-install) of an
-Azure Linux OS onto a machine using Trident. It is the most comprehensive
-servicing type, driven entirely by a
-[Host Configuration](../Reference/Host-Configuration/API-Reference/HostConfiguration.md)
+An [install](../Reference/Glossary.md#install-servicing-type) is a servicing
+type that provisions an Azure Linux OS onto a machine using Trident. It is the
+most comprehensive servicing type, driven entirely by a [Host
+Configuration](../Reference/Host-Configuration/API-Reference/HostConfiguration.md)
 file that declares the desired state of the system. The Host Configuration is
 the ultimate authority on how the disk should be laid out, what images to
 deploy, and how the OS should be configured.

@@ -1,8 +1,8 @@
-# Update Service
+# Update
 
-The update service applies changes to an existing Trident-managed system. Like
-an [install](./Install-Service.md), it is driven by a
-[Host Configuration](../Reference/Host-Configuration/API-Reference/HostConfiguration.md)
+An is a servicing type that applies changes to an existing Trident-managed
+system. Like an [install](./Install.md), it is driven by a [Host
+Configuration](../Reference/Host-Configuration/API-Reference/HostConfiguration.md)
 file that declares the desired state. Trident compares the new Host
 Configuration against the currently provisioned one and automatically selects
 the appropriate update strategy.
@@ -22,7 +22,7 @@ An [A/B update](../Reference/Glossary.md#ab-update) is used when the OS image
 or any non-runtime-updateable configuration has changed. It provisions a
 complete new OS onto the inactive [A/B volume](../Reference/Glossary.md#ab-volume-pair)
 while the current OS continues running, then reboots into the updated volume.
-See [A/B Update Service](./AB-Update-Service.md) for a detailed breakdown of
+See [A/B Update](./AB-Update.md) for a detailed breakdown of
 what happens during an A/B update.
 
 ### Runtime Update

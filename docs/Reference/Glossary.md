@@ -153,9 +153,8 @@ The OS where Trident is running.
 
 ## Servicing Type
 
-The specific kind of [Servicing](#servicing) that is being performed on an
-install, such as [clean install](#install-servicing-type), or an [A/B
-update](#ab-update).
+The specific kind of [Servicing](#servicing) that is being performed, such as
+[clean install](#install-servicing-type), or an [A/B update](#ab-update).
 
 ## Stage (Operation)
 
