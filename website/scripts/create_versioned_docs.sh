@@ -25,6 +25,7 @@ VERSIONED_DOCS_DIR="$WEBSITE_SCRIPTS_DIR/../$VERSIONED_DOCS_NAME"
 VERSIONED_SIDEBARS_NAME=versioned_sidebars
 VERSIONED_SIDEBARS_DIR="$WEBSITE_SCRIPTS_DIR/../$VERSIONED_SIDEBARS_NAME"
 VERSIONS_FILE="$WEBSITE_SCRIPTS_DIR/../versions.json"
+VERSION_COMMIT_OVERRIDE_FILE="$WEBSITE_SCRIPTS_DIR/version_commit_overrides.conf"
 
 
 # Check if gh CLI is installed
@@ -84,6 +85,26 @@ exclude_versions() {
             fi
         done <<< "$all_versions"
     fi
+}
+
+get_version_commit() {
+    local version="$1"
+    # Check for override commit for version before using version tag
+    if [[ -f "$VERSION_COMMIT_OVERRIDE_FILE" ]]; then
+        # Check for an override of this version
+        if grep -q "^${version}=" "$VERSION_COMMIT_OVERRIDE_FILE"; then
+            # Get override commit hash
+            override_commit=$(grep "^${version}=" "$VERSION_COMMIT_OVERRIDE_FILE" | cut -d'=' -f2-)
+            if [[ -n "$override_commit" ]]; then
+                # Return override
+                echo "$override_commit"
+                return
+            fi
+        fi
+    fi
+    # Get the commit SHA for the given version tag
+    commit_sha=$(gh api "repos/${REPO}/git/ref/tags/${version}" --jq ".object.sha")
+    echo "$commit_sha"
 }
 
 # Create version directory structure
