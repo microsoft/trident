@@ -1,6 +1,9 @@
 package netlaunch
 
-import "tridenttools/pkg/bmc"
+import (
+	"os"
+	"tridenttools/pkg/bmc"
+)
 
 type NetCommonConfig struct {
 	// Port to serve the HTTP server on.
@@ -66,13 +69,9 @@ type NetLaunchConfig struct {
 
 // Configuration for netlaunch reverse-connect proxy.
 type RcpConfiguration struct {
-	// Run netlaunch in gRPC mode. When true, netlaunch will use the
-	// reverse-connect proxy to communicate with Trident using gRPC. When false,
-	// netlaunch will use the reverse-connect proxy to download the Host
-	// Configuration file and start the legacy installation service.
-	//
-	// If omitted, defaults to false.
-	GrpcMode bool `yaml:"grpcMode,omitempty"`
+	// gRPC mode to use in netlaunch. If not specified, gRPC mode will be
+	// disabled and netlaunch will use the legacy CLI installation method.
+	GrpcMode GrpcMode `yaml:"grpcMode,omitempty"`
 
 	// Port number to listen on for incoming connections from the
 	// reverse-connect proxy.
@@ -84,14 +83,74 @@ type RcpConfiguration struct {
 	// If not specified, no Trident binary will be copied.
 	LocalTridentPath *string `yaml:"localTridentPath,omitempty"`
 
-	// An optional path to a local osmodifier binary to copy into the remote host.
-	// If not specified, no Osmodifier binary will be copied.
+	// An optional path to a local osmodifier binary to copy into the remote
+	// host. If not specified, no Osmodifier binary will be copied.
 	LocalOsmodifierPath *string `yaml:"localOsmodifierPath,omitempty"`
 
 	// Replace the execution for trident-install to use stream image instead of
 	// the default installation method.
 	UseStreamImage bool `yaml:"useStreamImage,omitempty"`
+
+	// The local Unix socket netlaunch will listen on when gRPC mode is
+	// `local-proxy`.
+	LocalProxySocket string `yaml:"localProxySocket,omitempty"`
+
+	AdditionalFiles []RcpAdditionalFile `yaml:"-"`
+
+	// The address of the server the RCP agent should connect to. This is only
+	// used in gRPC modes.
+	//
+	// If not specified, the RCP agent will connect to Trident's default unix
+	// socket address.
+	RcpAgentServerAddress string `yaml:"rcpAgentServerAddress,omitempty"`
+
+	// The connection type to use when the RCP agent connects to the server.
+	// This is only used in gRPC modes.
+	//
+	// If not specified, the RCP agent will use "unix" as the default connection
+	// type, connecting to Trident's default unix socket address.
+	RcpAgentServerConnectionType string `yaml:"rcpAgentServerConnectionType,omitempty"`
+
+	// Systemd services to start via the RCP agent after file downloads.
+	StartServices []string `yaml:"-"`
 }
+
+type RcpAdditionalFile struct {
+	Name        string
+	Destination string
+	Mode        os.FileMode
+	Data        []byte
+}
+
+func (c *RcpConfiguration) GetGrpcMode() GrpcMode {
+	if c.GrpcMode == "" {
+		return GrpcModeDisabled
+	}
+
+	return c.GrpcMode
+}
+
+func (c *RcpConfiguration) IsGrpcModeEnabled() bool {
+	return c.GetGrpcMode() != GrpcModeDisabled
+}
+
+type GrpcMode string
+
+const (
+	// GrpcModeDisabled: gRPC mode is disabled and netlaunch will use the legacy
+	// CLI installation method.
+	GrpcModeDisabled GrpcMode = "disabled"
+	// GrpcModeLocalProxy: gRPC mode is enabled and netlaunch will open a local
+	// listener and forward connections to Trident via the reverse-connect
+	// proxy.
+	GrpcModeLocalProxy GrpcMode = "local-proxy"
+	// GrpcModeDirect: gRPC mode is enabled and netlaunch will directly connect
+	// to Trident via the reverse-connect proxy to perform an install.
+	GrpcModeInstall GrpcMode = "install"
+	// GrpcModeStream: gRPC mode is enabled and netlaunch will directly connect
+	// to Trident via the reverse-connect proxy to stream a disk image.
+	GrpcModeStream GrpcMode = "stream"
+)
 
 type HostConnectionConfiguration struct {
 	// Configuration for physical/emulated BMCs.
@@ -142,6 +201,6 @@ type NetListenConfig struct {
 	}
 }
 
-func (c *NetLaunchConfig) IsGrpcMode() bool {
-	return c.Rcp != nil && c.Rcp.GrpcMode
+func (c *NetLaunchConfig) IsGrpcModeEnabled() bool {
+	return c.Rcp != nil && c.Rcp.IsGrpcModeEnabled()
 }

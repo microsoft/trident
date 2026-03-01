@@ -23,8 +23,6 @@ import (
 	rcpclient "tridenttools/pkg/rcp/client"
 	"tridenttools/pkg/rcp/tlscerts"
 	"tridenttools/pkg/tridentgrpc"
-	"tridenttools/pkg/tridentgrpc/tridentpbv1"
-	"tridenttools/pkg/tridentgrpc/tridentpbv1preview"
 	stormutils "tridenttools/storm/utils"
 )
 
@@ -52,7 +50,14 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 
 	// When enabled, set up RCP listener.
 	var rcpListener *rcpclient.RcpListener
-	if config.Rcp != nil && config.Rcp.GrpcMode {
+	if config.IsGrpcModeEnabled() {
+		if config.Rcp.GetGrpcMode() == GrpcModeLocalProxy {
+			log.Info("RCP gRPC mode enabled: local proxy mode")
+			if config.Rcp.LocalProxySocket == "" {
+				return fmt.Errorf("local proxy socket path must be specified when using local proxy gRPC mode")
+			}
+		}
+
 		port := uint16(0)
 		if config.Rcp.ListenPort != nil {
 			port = *config.Rcp.ListenPort
@@ -113,6 +118,8 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 	defer terminateFunc()
 
 	var finalHostConfigurationYaml string
+	hostConfigData := make(map[string]interface{})
+	var extraRcpAgentFiles []rcpAgentFileDownload
 
 	// If we have a Trident config file, we need to patch it into the ISO.
 	if len(config.HostConfigFile) != 0 {
@@ -125,8 +132,7 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 		// Replace NETLAUNCH_HOST_ADDRESS with the address of the netlaunch server
 		tridentConfigContentsStr := strings.ReplaceAll(string(tridentConfigContents), "NETLAUNCH_HOST_ADDRESS", announceAddress)
 
-		trident := make(map[string]interface{})
-		err = yaml.UnmarshalStrict([]byte(tridentConfigContentsStr), &trident)
+		err = yaml.UnmarshalStrict([]byte(tridentConfigContentsStr), &hostConfigData)
 		if err != nil {
 			return fmt.Errorf("failed to unmarshal Trident config: %w", err)
 		}
@@ -134,18 +140,19 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 		logstreamAddress := fmt.Sprintf("http://%s/logstream", announceAddress)
 
 		// Add phonehome & logstream config ONLY when NOT in gRPC RCP mode
-		if !config.IsGrpcMode() {
-			if _, ok := trident["trident"]; !ok {
-				trident["trident"] = make(map[interface{}]interface{})
+		if !config.IsGrpcModeEnabled() {
+			if _, ok := hostConfigData["trident"]; !ok {
+				hostConfigData["trident"] = make(map[interface{}]interface{})
 			}
-			trident["trident"].(map[interface{}]interface{})["phonehome"] = fmt.Sprintf("http://%s/phonehome", announceAddress)
-			trident["trident"].(map[interface{}]interface{})["logstream"] = logstreamAddress
+			hostConfigData["trident"].(map[interface{}]interface{})["phonehome"] = fmt.Sprintf("http://%s/phonehome", announceAddress)
+			hostConfigData["trident"].(map[interface{}]interface{})["logstream"] = logstreamAddress
 		}
 
-		// Patch the ISO Host Configuration file unless this is a stream-image test, where
-		// the Host Configuration file is not expected to be present.
-		if config.Rcp == nil || !config.Rcp.UseStreamImage {
-			tridentConfig, err := yaml.Marshal(trident)
+		// Patch the ISO Host Configuration file unless this is a stream-image
+		// test, where the Host Configuration file is not expected to be
+		// present, or we are using gRPC mode, where the HC file is irrelevant.
+		if config.Rcp == nil || !config.Rcp.UseStreamImage || !config.IsGrpcModeEnabled() {
+			tridentConfig, err := yaml.Marshal(hostConfigData)
 			if err != nil {
 				return fmt.Errorf("failed to marshal Trident config: %w", err)
 			}
@@ -159,23 +166,13 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 			}
 		}
 
-		if config.Rcp != nil {
-			var extraRcpAgentFiles []rcpAgentFileDownload
-			if config.Rcp.UseStreamImage {
-				overrideFile, err := makeStreamImageOverrideFileDownload(trident, logstreamAddress)
-				if err != nil {
-					return fmt.Errorf("failed to create stream image override file download: %w", err)
-				}
-
-				extraRcpAgentFiles = append(extraRcpAgentFiles, overrideFile)
-			}
-			// Populate RCP agent config into the ISO. This handles both CLI and
-			// GRPC modes, where rcpListener == nil and rcpListener != nil
-			// respectively.
-			err = injectRcpAgentConfig(mux, announceIp, announceAddress, iso, rcpListener, *config.Rcp, extraRcpAgentFiles...)
+		if config.Rcp != nil && config.Rcp.UseStreamImage {
+			overrideFile, err := makeStreamImageOverrideFileDownload(hostConfigData, logstreamAddress)
 			if err != nil {
-				return fmt.Errorf("failed to inject RCP agent config into ISO: %w", err)
+				return fmt.Errorf("failed to create stream image override file download: %w", err)
 			}
+
+			extraRcpAgentFiles = append(extraRcpAgentFiles, overrideFile)
 		}
 
 		if config.Iso.PreTridentScript != nil {
@@ -194,21 +191,30 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 			}
 		}
 
-		mux.HandleFunc("/provision.iso", func(w http.ResponseWriter, r *http.Request) {
-			isoLogFunc(r.RemoteAddr)
-			http.ServeContent(w, r, "provision.iso", time.Now(), bytes.NewReader(iso))
-		})
-
 		// We injected the phonehome & logstream config, so we're expecting Trident to reach back
 		enable_phonehome_listening = true
-	} else {
-		// Otherwise, serve the iso as-is
-		mux.HandleFunc("/provision.iso", func(w http.ResponseWriter, r *http.Request) {
-			isoLogFunc(r.RemoteAddr)
-			http.ServeContent(w, r, "provision.iso", time.Now(), bytes.NewReader(iso))
-			terminateFunc()
-		})
 	}
+
+	// Inject RCP agent config when we are using it.
+	if config.Rcp != nil {
+		// Populate RCP agent config into the ISO. This handles both CLI and
+		// GRPC modes, where rcpListener == nil and rcpListener != nil
+		// respectively.
+		err = injectRcpAgentConfig(mux, announceIp, announceAddress, iso, rcpListener, *config.Rcp, extraRcpAgentFiles...)
+		if err != nil {
+			return fmt.Errorf("failed to inject RCP agent config into ISO: %w", err)
+		}
+	}
+
+	mux.HandleFunc("/provision.iso", func(w http.ResponseWriter, r *http.Request) {
+		isoLogFunc(r.RemoteAddr)
+		http.ServeContent(w, r, "provision.iso", time.Now(), bytes.NewReader(iso))
+		if !enable_phonehome_listening {
+			// If we're not expecting Trident to reach back, we can terminate
+			// after serving the ISO
+			terminateFunc()
+		}
+	})
 
 	// If we're expecting Trident to reach back, we need to listen for it.
 	if enable_phonehome_listening {
@@ -314,30 +320,55 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 	}
 
 	if rcpListener != nil {
-		log.Info("Waiting for RCP connection...")
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case conn, ok := <-rcpListener.ConnChan:
-			if !ok {
-				return fmt.Errorf("RCP listener channel closed")
+		if config.Rcp.GetGrpcMode() == GrpcModeLocalProxy {
+			err := openLocalProxy(ctx, config.Rcp.LocalProxySocket, rcpListener)
+			if err != nil {
+				return fmt.Errorf("failed to run local proxy: %w", err)
 			}
+		} else {
+			// Netlaunch will directly speak gRPC to trident. Wait for the
+			// connection and handle it.
+			log.Info("Waiting for RCP connection...")
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case conn, ok := <-rcpListener.ConnChan:
+				if !ok {
+					return fmt.Errorf("RCP listener channel closed")
+				}
 
-			log.Infof("Accepted RCP connection from %s", conn.RemoteAddr())
-			installCtx, installCancel := context.WithTimeout(ctx, time.Minute*10)
-			defer installCancel()
-
-			func() {
-				// Defer termination of the phonehome listener
-				defer terminateFunc()
 				defer conn.Close()
 
-				err := doGrpcInstall(installCtx, conn, finalHostConfigurationYaml)
-				if err != nil {
-					log.WithError(err).Errorln("gRPC installation failed")
-					return
+				log.Infof("Accepted RCP connection from %s", conn.RemoteAddr())
+
+				if config.Rcp.GetGrpcMode() == GrpcModeInstall {
+					installCtx, installCancel := context.WithTimeout(ctx, time.Minute*10)
+					defer installCancel()
+
+					err := doGrpcInstall(installCtx, conn, finalHostConfigurationYaml)
+					if err != nil {
+						return fmt.Errorf("gRPC installation failed: %w", err)
+					}
+
+					log.Info("gRPC installation completed successfully")
+				} else if config.Rcp.GetGrpcMode() == GrpcModeStream {
+					streamCtx, streamCancel := context.WithTimeout(ctx, time.Minute*10)
+					defer streamCancel()
+
+					imgUrl, imgHash, err := getImageUrlAndHashFromTridentConfig(hostConfigData)
+					if err != nil {
+						return fmt.Errorf("failed to get image URL and hash from Trident config: %w", err)
+					}
+
+					err = doGrpcStream(streamCtx, conn, imgUrl, imgHash)
+					if err != nil {
+						return fmt.Errorf("gRPC streaming failed: %w", err)
+					}
+					log.Info("gRPC streaming completed successfully")
+				} else {
+					return fmt.Errorf("unsupported RCP gRPC mode: %s", config.Rcp.GetGrpcMode())
 				}
-			}()
+			}
 		}
 	} else {
 		// Wait for something to happen
@@ -392,8 +423,28 @@ func injectRcpAgentConfig(
 	localRcpConf RcpConfiguration,
 	extraFiles ...rcpAgentFileDownload,
 ) error {
+	rcpServerAddress := tridentgrpc.DefaultTridentSocketPath
+	rcpServerConnectionType := "unix"
+
+	if localRcpConf.RcpAgentServerAddress != "" {
+		log.Warnf("Custom rcp-agent server: '%s'", localRcpConf.RcpAgentServerAddress)
+		rcpServerAddress = localRcpConf.RcpAgentServerAddress
+	}
+
+	if localRcpConf.RcpAgentServerConnectionType != "" {
+		log.Warnf("Custom rcp-agent server connection type: '%s'", localRcpConf.RcpAgentServerConnectionType)
+		rcpServerConnectionType = localRcpConf.RcpAgentServerConnectionType
+	}
+
 	// Create an empty RcpAgentConfiguration
-	rcpAgentConfBuilder := newRcpAgentConfigBuilder(mux, announceIp, announceHttpAddress, rcpListener)
+	rcpAgentConfBuilder := newRcpAgentConfigBuilder(
+		mux,
+		announceIp,
+		announceHttpAddress,
+		rcpListener,
+		rcpServerAddress,
+		rcpServerConnectionType,
+	)
 
 	// If we have a local trident path, serve that file via HTTP and set the download URL.
 	if localRcpConf.LocalTridentPath != nil {
@@ -419,6 +470,14 @@ func injectRcpAgentConfig(
 		rcpAgentConfBuilder.registerRcpFile(extraFile)
 	}
 
+	for _, file := range localRcpConf.AdditionalFiles {
+		rcpAgentConfBuilder.registerRcpFile(newRcpAgentFileDownload(file.Name, file.Destination, file.Mode, file.Data))
+	}
+
+	for _, service := range localRcpConf.StartServices {
+		rcpAgentConfBuilder.startService(service)
+	}
+
 	encoded, err := yaml.Marshal(rcpAgentConfBuilder.build())
 	if err != nil {
 		return fmt.Errorf("failed to marshal RCP agent config to YAML: %w", err)
@@ -427,37 +486,6 @@ func injectRcpAgentConfig(
 	err = isopatcher.PatchFile(iso, "/trident_cdrom/rcp-agent.yaml", encoded)
 	if err != nil {
 		return fmt.Errorf("failed to patch RCP agent config into ISO: %w", err)
-	}
-
-	return nil
-}
-
-func doGrpcInstall(ctx context.Context, conn net.Conn, hostConfiguration string) error {
-	tridentClient, err := tridentgrpc.NewTridentClientFromNetworkConnection(conn)
-	if err != nil {
-		return fmt.Errorf("failed to create Trident gRPC client from RCP connection: %w", err)
-	}
-	defer tridentClient.Close()
-
-	stream, err := tridentClient.Install(ctx, &tridentpbv1preview.InstallRequest{
-		Stage: &tridentpbv1preview.StageInstallRequest{
-			Config: &tridentpbv1preview.HostConfiguration{
-				Config: hostConfiguration,
-			},
-		},
-		Finalize: &tridentpbv1preview.FinalizeInstallRequest{
-			Reboot: &tridentpbv1.RebootManagement{
-				Handling: tridentpbv1.RebootHandling_TRIDENT_HANDLES_REBOOT,
-			},
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to start installation via gRPC: %w", err)
-	}
-
-	err = handleServicingResponseStream(stream)
-	if err != nil {
-		return fmt.Errorf("error during installation via gRPC: %w", err)
 	}
 
 	return nil

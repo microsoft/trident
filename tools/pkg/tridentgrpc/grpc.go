@@ -52,6 +52,7 @@ func NewTridentClientFromNetworkConnection(conn net.Conn) (*TridentClient, error
 	return &TridentClient{
 		VersionServiceClient:   tridentpbv1.NewVersionServiceClient(grpcConn),
 		StreamingServiceClient: tridentpbv1.NewStreamingServiceClient(grpcConn),
+		InstallServiceClient:   tridentpbv1preview.NewInstallServiceClient(grpcConn),
 		grpcConn:               grpcConn,
 	}, nil
 }
