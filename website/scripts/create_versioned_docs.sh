@@ -94,7 +94,7 @@ get_version_commit() {
         # Check for an override of this version
         if grep -q "^${version}=" "$VERSION_COMMIT_OVERRIDE_FILE"; then
             # Get override commit hash
-            override_commit=$(grep "^${version}=" "$VERSION_COMMIT_OVERRIDE_FILE" | cut -d'=' -f2-)
+            local override_commit=$(awk -F'=' -v v="$version" '$1 == v { $1 = ""; sub(/^=/, ""); print; exit }' "$VERSION_COMMIT_OVERRIDE_FILE")
             if [[ -n "$override_commit" ]]; then
                 # Return override
                 echo "$override_commit"
@@ -103,7 +103,7 @@ get_version_commit() {
         fi
     fi
     # Get the commit SHA for the given version tag
-    commit_sha=$(gh api "repos/${REPO}/git/ref/tags/${version}" --jq ".object.sha")
+    local commit_sha=$(gh api "repos/${REPO}/git/ref/tags/${version}" --jq ".object.sha")
     echo "$commit_sha"
 }
 
@@ -125,7 +125,7 @@ create_version_docs() {
         git checkout FETCH_HEAD
     else
         echo "Check for commit override for version ${version}"
-        version_commit=$(get_version_commit "$version")
+        local version_commit=$(get_version_commit "$version")
         echo "Using commit ${version_commit} for version ${version}"
         gh repo clone "https://github.com/${REPO}.git" "${tmp_dir}"
         cd "${tmp_dir}"
