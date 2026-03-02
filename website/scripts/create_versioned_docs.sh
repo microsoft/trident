@@ -87,7 +87,7 @@ exclude_versions() {
     fi
 }
 
-get_version_commit() {
+check_version_override() {
     local version="$1"
     # Check for override commit for version before using version tag
     if [[ -f "$VERSION_COMMIT_OVERRIDE_FILE" ]]; then
@@ -124,7 +124,7 @@ create_version_docs() {
         git checkout FETCH_HEAD
     else
         echo "Check for commit override for version ${version}"
-        local version_commit=$(get_version_commit "$version")
+        local version_commit=$(check_version_override "$version")
         echo "Using commit ${version_commit} for version ${version}"
         gh repo clone "https://github.com/${REPO}.git" "${tmp_dir}"
         cd "${tmp_dir}"
