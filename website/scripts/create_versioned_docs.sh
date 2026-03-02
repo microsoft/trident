@@ -102,9 +102,8 @@ get_version_commit() {
             fi
         fi
     fi
-    # Get the commit SHA for the given version tag
-    local commit_sha=$(gh api "repos/${REPO}/git/ref/tags/${version}" --jq ".object.sha")
-    echo "$commit_sha"
+    # Default to using the version
+    echo "$version"
 }
 
 # Create version directory structure
