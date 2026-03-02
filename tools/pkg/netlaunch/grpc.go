@@ -11,7 +11,6 @@ import (
 	"tridenttools/pkg/tridentgrpc/tridentpbv1preview"
 
 	"github.com/fatih/color"
-	"github.com/sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 )
@@ -101,18 +100,18 @@ func handleServicingResponse(resp *tridentpbv1.ServicingResponse) (err error) {
 	case *tridentpbv1.ServicingResponse_Log:
 		logEntry := payload.Log
 
-		outLevel := logrus.InfoLevel
+		outLevel := log.InfoLevel
 		switch logEntry.Level {
 		case tridentpbv1.LogLevel_LOG_LEVEL_TRACE:
-			outLevel = logrus.TraceLevel
+			outLevel = log.TraceLevel
 		case tridentpbv1.LogLevel_LOG_LEVEL_DEBUG:
-			outLevel = logrus.DebugLevel
+			outLevel = log.DebugLevel
 		case tridentpbv1.LogLevel_LOG_LEVEL_INFO:
-			outLevel = logrus.InfoLevel
+			outLevel = log.InfoLevel
 		case tridentpbv1.LogLevel_LOG_LEVEL_WARN:
-			outLevel = logrus.WarnLevel
+			outLevel = log.WarnLevel
 		case tridentpbv1.LogLevel_LOG_LEVEL_ERROR:
-			outLevel = logrus.ErrorLevel
+			outLevel = log.ErrorLevel
 		}
 
 		if outLevel <= log.DebugLevel {
@@ -140,9 +139,9 @@ func handleServicingResponse(resp *tridentpbv1.ServicingResponse) (err error) {
 			statusStr = color.YellowString("UNSPECIFIED")
 		}
 		var errStr string
-		level := logrus.InfoLevel
+		level := log.InfoLevel
 		if tridentError := payload.Completed.GetError(); tridentError != nil {
-			level = logrus.ErrorLevel
+			level = log.ErrorLevel
 			errStr = fmt.Sprintf("\n%s", tridentError.Message)
 			err = fmt.Errorf("operation failed with error kind %s:%s: %s", tridentError.Kind, tridentError.Subkind, tridentError.Message)
 		} else {

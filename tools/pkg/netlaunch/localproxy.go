@@ -11,7 +11,6 @@ import (
 	"time"
 	rcpclient "tridenttools/pkg/rcp/client"
 
-	"github.com/sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -112,9 +111,9 @@ func forwardConnections(ctx context.Context, local, remote net.Conn) {
 			case errors.Is(err, io.EOF),
 				errors.Is(err, net.ErrClosed),
 				errors.Is(err, syscall.EPIPE):
-				logrus.Debugf("Connection closed while copying from client to server: %v", err)
+				log.Debugf("Connection closed while copying from client to server: %v", err)
 			default:
-				logrus.Errorf("Error copying from client to server: %v", err)
+				log.Errorf("Error copying from client to server: %v", err)
 			}
 		}
 		doneChan <- "local->remote"
@@ -126,9 +125,9 @@ func forwardConnections(ctx context.Context, local, remote net.Conn) {
 			case errors.Is(err, io.EOF),
 				errors.Is(err, net.ErrClosed),
 				errors.Is(err, syscall.EPIPE):
-				logrus.Debugf("Connection closed while copying from server to client: %v", err)
+				log.Debugf("Connection closed while copying from server to client: %v", err)
 			default:
-				logrus.Errorf("Error copying from server to client: %v", err)
+				log.Errorf("Error copying from server to client: %v", err)
 			}
 		}
 		doneChan <- "remote->local"
@@ -137,8 +136,8 @@ func forwardConnections(ctx context.Context, local, remote net.Conn) {
 	// Wait for either copy to finish or context cancellation
 	select {
 	case direction := <-doneChan:
-		logrus.Infof("Connection closed by '%s'", direction)
+		log.Infof("Connection closed by '%s'", direction)
 	case <-ctx.Done():
-		logrus.Info("Context cancelled")
+		log.Info("Context cancelled")
 	}
 }
