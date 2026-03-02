@@ -116,6 +116,13 @@ func handleClientConnection(
 ) error {
 	defer clientConn.Close()
 
+	// Safe default to use a local Unix socket if no connection type is
+	// specified to avoid getting weird errors from net.Dial with an invalid
+	// connection type.
+	if serverConnectionType == "" {
+		serverConnectionType = "unix"
+	}
+
 	logrus.Infof("Connecting to server at '%s'", serverAddress)
 	serverConn, err := net.Dial(serverConnectionType, serverAddress)
 	if err != nil {
