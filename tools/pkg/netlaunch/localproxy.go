@@ -46,8 +46,17 @@ func openLocalProxy(ctx context.Context, socketPath string, rcpListener *rcpclie
 func runLocalProxy(ctx context.Context, socketPath string, remoteConn net.Conn) error {
 	defer remoteConn.Close()
 	// Remove any existing socket file to avoid "address already in use" errors.
-	if err := os.Remove(socketPath); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to remove existing socket %s: %w", socketPath, err)
+	// Only remove if the path is actually a unix socket to avoid accidentally
+	// deleting unrelated files or following symlinks.
+	if info, err := os.Lstat(socketPath); err == nil {
+		if info.Mode().Type()&os.ModeSocket == 0 {
+			return fmt.Errorf("path %s exists but is not a unix socket (mode: %s); refusing to remove", socketPath, info.Mode().Type())
+		}
+		if err := os.Remove(socketPath); err != nil {
+			return fmt.Errorf("failed to remove existing socket %s: %w", socketPath, err)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("failed to stat socket path %s: %w", socketPath, err)
 	}
 
 	listener, err := net.Listen("unix", socketPath)
