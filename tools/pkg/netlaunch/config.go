@@ -87,9 +87,9 @@ type RcpConfiguration struct {
 	// host. If not specified, no Osmodifier binary will be copied.
 	LocalOsmodifierPath *string `yaml:"localOsmodifierPath,omitempty"`
 
-	// Replace the execution for trident-install to use stream image instead of
+	// Replace the execution for trident-install to use stream disk instead of
 	// the default installation method.
-	UseStreamImage bool `yaml:"useStreamImage,omitempty"`
+	ReplaceInstallWithStreamDisk bool `yaml:"replaceInstallWithStreamDisk,omitempty"`
 
 	// The local Unix socket netlaunch will listen on when gRPC mode is
 	// `local-proxy`.
@@ -144,7 +144,7 @@ const (
 	// listener and forward connections to Trident via the reverse-connect
 	// proxy.
 	GrpcModeLocalProxy GrpcMode = "local-proxy"
-	// GrpcModeDirect: gRPC mode is enabled and netlaunch will directly connect
+	// GrpcModeInstall: gRPC mode is enabled and netlaunch will directly connect
 	// to Trident via the reverse-connect proxy to perform an install.
 	GrpcModeInstall GrpcMode = "install"
 	// GrpcModeStream: gRPC mode is enabled and netlaunch will directly connect

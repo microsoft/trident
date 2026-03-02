@@ -145,7 +145,7 @@ var rootCmd = &cobra.Command{
 				config.Rcp.LocalOsmodifierPath = &osmodifierBinaryPath
 			}
 
-			config.Rcp.UseStreamImage = streamImage
+			config.Rcp.ReplaceInstallWithStreamDisk = streamImage
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())

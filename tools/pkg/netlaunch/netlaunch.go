@@ -56,6 +56,18 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 			if config.Rcp.LocalProxySocket == "" {
 				return fmt.Errorf("local proxy socket path must be specified when using local proxy gRPC mode")
 			}
+		} else if config.Rcp.GetGrpcMode() == GrpcModeInstall {
+			log.Info("RCP gRPC mode enabled: install mode")
+			if config.HostConfigFile == "" {
+				return fmt.Errorf("host config file must be specified when using install gRPC mode")
+			}
+		} else if config.Rcp.GetGrpcMode() == GrpcModeStream {
+			log.Info("RCP gRPC mode enabled: stream mode")
+			if config.HostConfigFile == "" {
+				return fmt.Errorf("host config file with the image section must be specified when using stream gRPC mode")
+			}
+		} else {
+			return fmt.Errorf("unsupported RCP gRPC mode: %s", config.Rcp.GetGrpcMode())
 		}
 
 		port := uint16(0)
@@ -148,10 +160,17 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 			hostConfigData["trident"].(map[interface{}]interface{})["logstream"] = logstreamAddress
 		}
 
-		// Patch the ISO Host Configuration file unless this is a stream-image
-		// test, where the Host Configuration file is not expected to be
-		// present, or we are using gRPC mode, where the HC file is irrelevant.
-		if config.Rcp == nil || !config.Rcp.UseStreamImage || !config.IsGrpcModeEnabled() {
+		// Patch the ISO Host Configuration file when it will be needed by
+		// Trident, which is when: 
+		// 
+		// - We are NOT using RCP (config.Rcp == nil), OR 
+		// - We are using RCP, but we are NOT:
+		//   - Using Stream Disk, NOR
+		//   - Using gRPC mode.
+		//
+		// Stream disk and gRPC modes do NOT need an in-ISO Host Configuration
+		// file, so we skip injecting it in those cases.
+		if config.Rcp == nil || !(config.Rcp.ReplaceInstallWithStreamDisk || config.IsGrpcModeEnabled()) {
 			tridentConfig, err := yaml.Marshal(hostConfigData)
 			if err != nil {
 				return fmt.Errorf("failed to marshal Trident config: %w", err)
@@ -166,7 +185,7 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 			}
 		}
 
-		if config.Rcp != nil && config.Rcp.UseStreamImage {
+		if config.Rcp != nil && config.Rcp.ReplaceInstallWithStreamDisk {
 			overrideFile, err := makeStreamImageOverrideFileDownload(hostConfigData, logstreamAddress)
 			if err != nil {
 				return fmt.Errorf("failed to create stream image override file download: %w", err)

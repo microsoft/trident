@@ -103,6 +103,7 @@ func ListenAndAccept(ctx context.Context, certProvider tlscerts.CertProvider, po
 				}
 
 				logrus.Errorf("Failed to accept connection: %v", err)
+				continue
 			}
 
 			logrus.Debugf("RCP-client accepted connection from %s", conn.RemoteAddr())
