@@ -25,6 +25,7 @@ VERSIONED_DOCS_DIR="$WEBSITE_SCRIPTS_DIR/../$VERSIONED_DOCS_NAME"
 VERSIONED_SIDEBARS_NAME=versioned_sidebars
 VERSIONED_SIDEBARS_DIR="$WEBSITE_SCRIPTS_DIR/../$VERSIONED_SIDEBARS_NAME"
 VERSIONS_FILE="$WEBSITE_SCRIPTS_DIR/../versions.json"
+VERSION_COMMIT_OVERRIDE_FILE="$WEBSITE_SCRIPTS_DIR/version_commit_overrides.conf"
 
 
 # Check if gh CLI is installed
@@ -86,12 +87,31 @@ exclude_versions() {
     fi
 }
 
+check_version_override() {
+    local version="$1"
+    # Check for override commit for version before using version tag
+    if [[ -f "$VERSION_COMMIT_OVERRIDE_FILE" ]]; then
+        # Check for an override of this version
+        if grep -q "^${version}=" "$VERSION_COMMIT_OVERRIDE_FILE"; then
+            # Get override commit hash
+            local override_commit=$(awk -F'=' -v v="$version" '$1 == v { $1 = ""; sub(/^=/, ""); print; exit }' "$VERSION_COMMIT_OVERRIDE_FILE")
+            if [[ -n "$override_commit" ]]; then
+                # Return override
+                echo "$override_commit"
+                return
+            fi
+        fi
+    fi
+    # Default to using the version
+    echo "$version"
+}
+
 # Create version directory structure
 create_version_docs() {
     local version="$1"
     local tmp_dir=$(mktemp -d)
     cd "${tmp_dir}"
-    
+
     echo "Checkout ${version} in ${tmp_dir}"
     if [[ "$DEBUG_USE_DEV_BRANCH" == "true" ]]; then
         # Debug: clone the dev branch
@@ -103,9 +123,17 @@ create_version_docs() {
         git fetch origin "${DEV_BRANCH}"
         git checkout FETCH_HEAD
     else
-        gh repo clone "https://github.com/${REPO}.git" "${tmp_dir}" -- --depth 1 --branch "${version}" 
+        echo "Check for commit override for version ${version}"
+        local version_commit=$(check_version_override "$version")
+        echo "Using commit ${version_commit} for version ${version}"
+        gh repo clone "https://github.com/${REPO}.git" "${tmp_dir}"
+        cd "${tmp_dir}"
+        git checkout ${version_commit}
     fi
-    cd "${tmp_dir}"/website
+    cd "${tmp_dir}"
+    echo "Verify checkout for version ${version}"
+    git log -n 1 --oneline
+    cd website
     # For this temp repo, copy the docs folder from the root of the repo
     # to get around docusaurus' need for the "current" docs version to
     # exist.  This copy will not impact the actual website/docs folder.
