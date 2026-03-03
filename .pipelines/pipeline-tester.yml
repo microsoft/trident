@@ -13,12 +13,23 @@ parameters:
       - "ci"
       - "pre"
       - "crate-publishing"
+      - "release"
     displayName: "Stage to run"
 
   - name: cratePublishingDryRun
     type: boolean
     displayName: "crate-publishing: Perform a dry run without actually publishing the crates"
     default: true
+
+  - name: specificVersion
+    type: string
+    displayName: |
+      release: Specific pre-release version to release.
+
+  - name: sourceCommit
+    type: string
+    displayName: "release: The commit hash of the source code to package."
+    default: ""
 
 trigger: none
 

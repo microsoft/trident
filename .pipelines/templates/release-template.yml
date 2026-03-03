@@ -9,7 +9,7 @@ parameters:
 
   - name: skipPublishing
     type: boolean
-    displayName: "Skip publishing stage (will still download the artifact)"
+    displayName: "Skip publishing stage"
     default: false
 
   - name: sourceCommit
