@@ -37,12 +37,12 @@ parameters:
   - name: specificVersion
     type: string
     displayName: "release: Specific pre-release version to release."
-    default: ""
+    default: "(none)"
 
   - name: sourceCommit
     type: string
     displayName: "release: The commit hash of the source code to package."
-    default: ""
+    default: "(none)"
 
 stages:
   - ${{ if eq(parameters.targetStage, 'pr') }}:
