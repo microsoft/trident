@@ -126,6 +126,9 @@ class ImageConfig:
     # Architecture of the image
     architecture: SystemArchitecture = SystemArchitecture.AMD64
 
+    # RPM sources are allowed for image
+    rpm_sources_allowed: bool = True
+
     @classmethod
     def kebab_fields(cls) -> List[str]:
         """Return a list of fields in kebab-case."""
