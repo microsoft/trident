@@ -25,6 +25,7 @@ parameters:
     type: string
     displayName: |
       release: Specific pre-release version to release.
+    default: ""
 
   - name: sourceCommit
     type: string
