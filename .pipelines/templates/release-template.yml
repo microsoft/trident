@@ -25,11 +25,11 @@ stages:
       specificVersion: ${{ parameters.specificVersion }}
       packageName: rpms
 
-  - ${{ if not parameters.skipPublishing }}:
+  - ${{ if ne(parameters.skipPublishing, true) }}:
       - template: stages/publishing/publish.yml
         parameters:
           stageType: rel
 
-  - template: stages/publishing/release_artifacts.yml
+  - template: stages/publishing/release-artifacts.yml
     parameters:
       sourceCommit: ${{ parameters.sourceCommit }}
