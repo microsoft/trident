@@ -61,7 +61,7 @@ stages:
               sha256sum $(ob_outputDirectory)/$TAR_FILE_NAME > $(ob_outputDirectory)/$TAR_FILE_NAME.sha256
             displayName: "Package RPMs into tarball"
 
-          - ${{ if ne(parameters.sourceCommit, "") }}:
+          - ${{ if ne(parameters.sourceCommit, '') }}:
               - template: ../common_tasks/update-protoc.yml
               - template: ../common_tasks/rustup.yml
               - template: ../common_tasks/cargo-auth.yml
