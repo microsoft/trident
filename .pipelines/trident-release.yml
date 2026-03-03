@@ -4,6 +4,16 @@ parameters:
     displayName: |
       Specific pre-release version to release.
 
+  - name: skipPublishing
+    type: boolean
+    displayName: "Skip publishing stage (will still download the artifact)"
+    default: false
+
+  - name: sourceCommit
+    type: string
+    displayName: "The commit hash of the source code to package."
+    default: ""
+
 trigger: none
 
 variables:
