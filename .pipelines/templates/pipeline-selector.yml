@@ -36,8 +36,8 @@ parameters:
 
   - name: specificVersion
     type: string
-    displayName: |
-      release: Specific pre-release version to release.
+    displayName: "release: Specific pre-release version to release."
+    default: ""
 
   - name: sourceCommit
     type: string
@@ -55,6 +55,8 @@ stages:
           cargoRegistry: TridentDev
 
   - ${{ elseif eq(parameters.targetStage, 'release') }}:
+      - ${{ if eq(parameters.specificVersion, '') }}:
+          - "Error: specificVersion parameter must be provided for release stage.": error
       - template: release-template.yml
         parameters:
           specificVersion: ${{ parameters.specificVersion }}

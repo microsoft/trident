@@ -23,8 +23,7 @@ parameters:
 
   - name: specificVersion
     type: string
-    displayName: |
-      release: Specific pre-release version to release.
+    displayName: "release: Specific pre-release version to release."
     default: ""
 
   - name: sourceCommit
@@ -96,3 +95,5 @@ extends:
           targetStage: ${{ parameters.targetStage }}
           blockPublishing: true
           cratePublishingDryRun: ${{ parameters.cratePublishingDryRun }}
+          specificVersion: ${{ parameters.specificVersion }}
+          sourceCommit: ${{ parameters.sourceCommit }}
