@@ -159,7 +159,7 @@ impl Operation {
                     return false;
                 }
                 TridentVersion::SemVer(version) => {
-                    if *version < *MINIMUM_ROLLBACK_TRIDENT_VERSION {
+                    if !Self::is_trident_version_compatible(version) {
                         trace!(
                             "The rollback HostStatus has Trident version below minimum: {:?}, cannot rollback",
                             version
@@ -190,7 +190,7 @@ impl Operation {
                 return false;
             }
             TridentVersion::SemVer(version) => {
-                if *version < *MINIMUM_ROLLBACK_TRIDENT_VERSION {
+                if !Self::is_trident_version_compatible(version) {
                     trace!(
                         "The operation HostStatus has Trident version below minimum: {:?}, cannot rollback",
                         version
@@ -208,6 +208,22 @@ impl Operation {
 
         // All checks passed; continue parsing operations
         true
+    }
+
+    /// SemVer comparison for Trident version that ignores the pre & build components
+    fn is_trident_version_compatible(trident_version: &Version) -> bool {
+        // AZL creates versions like 0.21.0-1.azl3, where the pre/build components make
+        // the version earlier than 0.21.0 according to semver rules. This is not how we
+        // intend to use versioning. So, for our purposes, we will only look at the major,
+        // minor, and patch components for comparison.
+        let stripped_version = Version {
+            major: trident_version.major,
+            minor: trident_version.minor,
+            patch: trident_version.patch,
+            pre: semver::Prerelease::EMPTY, // Ignore pre-release for comparison
+            build: semver::BuildMetadata::EMPTY, // Ignore build metadata for comparison
+        };
+        stripped_version >= *MINIMUM_ROLLBACK_TRIDENT_VERSION
     }
 }
 
@@ -1239,5 +1255,38 @@ mod tests {
             ..Default::default()
         });
         assert!(!operation.keep_parsing());
+    }
+
+    #[test]
+    fn test_is_trident_version_compatible() {
+        // Validate that incompatible version is not compatible
+        assert!(!Operation::is_trident_version_compatible(
+            &Version::parse("0.18.0").unwrap()
+        ));
+        assert!(!Operation::is_trident_version_compatible(
+            &Version::parse("0.20.0").unwrap()
+        ));
+        // Validate that compatible version is compatible
+        assert!(Operation::is_trident_version_compatible(
+            &Version::parse(MINIMUM_ROLLBACK_TRIDENT_VERSION_STR).unwrap()
+        ));
+        // Validate AZL RPM build versioning
+        assert!(Operation::is_trident_version_compatible(
+            &Version::parse("0.21.0-1.azl3").unwrap()
+        ));
+        // Validate Trident repo build versioning
+        assert!(Operation::is_trident_version_compatible(
+            &Version::parse("0.21.2026022503-ve392693").unwrap()
+        ));
+        // Validate private Trident build versioning
+        assert!(Operation::is_trident_version_compatible(
+            &Version::parse("0.21.2026030499-dev.b43a1bd6.dirty").unwrap()
+        ));
+        assert!(Operation::is_trident_version_compatible(
+            &Version::parse("0.21.1").unwrap()
+        ));
+        assert!(Operation::is_trident_version_compatible(
+            &Version::parse("0.25.0").unwrap()
+        ));
     }
 }
