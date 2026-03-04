@@ -304,9 +304,8 @@ stages:
                   --screenshot-filename "install.png" \
                   --artifacts-folder "$(ob_outputDirectory)"
             displayName: "📷 Capture screenshot: clean install"
-            condition: succeededOrFailed()
             workingDirectory: $(tridentSourceDirectory)
-            condition: and(succeeded(), ne(variables['skipEncryptionTests'], 'true'))
+            condition: and(succeededOrFailed(), ne(variables['skipEncryptionTests'], 'true'))
 
           - bash: |
               set -eux
@@ -315,9 +314,8 @@ stages:
                   --trident-trace-log-file "$(tridentSourceDirectory)/logstream-full.log" \
                   --artifacts-folder "$(ob_outputDirectory)"
             displayName: "📄 Display clean install logs"
-            condition: succeededOrFailed()
             workingDirectory: $(tridentSourceDirectory)
-            condition: and(succeeded(), ne(variables['skipEncryptionTests'], 'true'))
+            condition: and(succeededOrFailed(), ne(variables['skipEncryptionTests'], 'true'))
 
           - bash: |
               set -eux
