@@ -506,6 +506,6 @@ steps:
           EXPECTED_VOLUME: "volume-b"
           TARGET_OS: "B"
       timeoutInMinutes: 5
-      workingDirectory: $(Build.SourcesDirectory)/tests/e2e_tests
+      workingDirectory: $(TRIDENT_SOURCE_DIR)/tests/e2e_tests
       displayName: "🔬 Run Trident E2E tests after manual rollback"
       condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
