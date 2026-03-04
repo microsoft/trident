@@ -38,6 +38,10 @@ parameters:
     type: string
     default: ""
 
+  - name: testSecureBoot
+    type: boolean
+    default: true
+
 stages:
   - ${{ if or(parameters.testAzureLinuxStreamingImage, parameters.testUbuntuStreamingImage) }}:
     - stage: BuildInstallerForDirectStreaming_${{ parameters.architecture }}
@@ -105,6 +109,7 @@ stages:
         architecture: ${{ parameters.architecture }}
         streamingImageDistro: azurelinux
         tridentRepoName: ${{ parameters.tridentRepoName }}
+        testSecureBoot: ${{ parameters.testSecureBoot }}
 
   - ${{ if parameters.testUbuntuStreamingImage }}:
     - stage: BuildImagesForDirectStreaming_ubuntu_${{ parameters.architecture }}
@@ -139,3 +144,4 @@ stages:
         architecture: ${{ parameters.architecture }}
         streamingImageDistro: ubuntu
         tridentRepoName: ${{ parameters.tridentRepoName }}
+        testSecureBoot: ${{ parameters.testSecureBoot }}

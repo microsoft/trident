@@ -25,6 +25,11 @@ parameters:
       - azurelinux
     default: azurelinux
 
+  - name: testSecureBoot
+    displayName: "Test Secure Boot"
+    type: boolean
+    default: true
+
 stages:
   - stage: DirectStreaming_DeploymentTesting_${{ parameters.streamingImageDistro }}_${{ parameters.architecture }}
     displayName: Direct Streaming Deployment VM ${{ parameters.streamingImageDistro }} ${{ parameters.architecture }} Testing
@@ -113,6 +118,12 @@ stages:
               ISO_FILE=./artifacts/iso/$(installerISOName).iso
               COSI_FILE=./artifacts/test-image/regular.cosi
               HASH=$(./scripts/cosi-sha384.py $COSI_FILE)
+
+              SECURE_BOOT_ARG=""
+              if [ "${{ parameters.testSecureBoot }}" == "True" ]; then
+                SECURE_BOOT_ARG="--enable-secure-boot"
+              fi
+
               sudo ./bin/storm-trident helper direct-streaming -a \
                   --log-dir $(ob_outputDirectory) \
                   --netlaunch-config-file ./tools/vm-netlaunch.yaml \
@@ -120,7 +131,7 @@ stages:
                   --cosi-metadata-sha384 $HASH \
                   --iso-file $ISO_FILE \
                   --port ${{variables.netlaunchPort}} \
-                  --enable-secure-boot \
+                  $SECURE_BOOT_ARG \
                   --timeout-in-seconds 2400
 
             workingDirectory: $(TRIDENT_SOURCE_DIR)

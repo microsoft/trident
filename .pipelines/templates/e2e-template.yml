@@ -331,6 +331,7 @@ stages:
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
+          testSecureBoot: ${{ parameters.testSecureBoot }}
 
   # TESTING stages for full validation matrix host/container and bm/bm
   - ${{ if eq(parameters.stageType, 'full-validation') }}:
@@ -363,6 +364,7 @@ stages:
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
+          testSecureBoot: ${{ parameters.testSecureBoot }}
 
       - ${{ if parameters.baremetalTestsEnabled }}:
           # BM Testing (host, weekly)
@@ -413,6 +415,7 @@ stages:
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
+          testSecureBoot: ${{ parameters.testSecureBoot }}
 
   # TESTING stages for PR-E2E
   - ${{ if eq(parameters.stageType, 'pr-e2e') }}:
@@ -447,6 +450,7 @@ stages:
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
+          testSecureBoot: ${{ parameters.testSecureBoot }}
 
   # TESTING stages for AZL-VALIDATION
   - ${{ if eq(parameters.stageType, 'azl-validation') }}:
@@ -492,6 +496,7 @@ stages:
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
+          testSecureBoot: ${{ parameters.testSecureBoot }}
 
   # PUBLISHING
   #
