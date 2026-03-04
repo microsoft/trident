@@ -461,6 +461,7 @@ stages:
           runtimeEnv: "host"
           tridentRepoName: ${{ parameters.tridentRepoName }}
           acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
+          testSecureBoot: ${{ parameters.testSecureBoot }}
 
       # VM Testing (container, post_merge)
       - template: stages/testing_vm/netlaunch-testing.yml
@@ -469,6 +470,7 @@ stages:
           runtimeEnv: "container"
           tridentRepoName: ${{ parameters.tridentRepoName }}
           acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
+          testSecureBoot: ${{ parameters.testSecureBoot }}
 
       - ${{ if parameters.baremetalTestsEnabled }}:
           # BM Testing (host, weekly)
