@@ -29,6 +29,12 @@ parameters:
       - host
       - container
 
+  - name: testSecureBoot
+    displayName: "Test Secure Boot"
+    type: boolean
+    default: true
+
+
 jobs:
   - job: DefineTests
     displayName: Get List of tests to run
@@ -46,11 +52,16 @@ jobs:
           tridentRepoName: ${{ parameters.tridentRepoName }}
       - template: ../common_tasks/avoid-pypi-usage.yml
       - bash: |
+          SKIP_ENCRYPTION_TESTS_ARG=""
+          if [ "${{ parameters.testSecureBoot }}" == "False" ]; then
+            SKIP_ENCRYPTION_TESTS_ARG="--skipEncryptionTests"
+          fi
           python3 ./tests/e2e_tests/helpers/read_target_configurations.py \
               --configurations ./tests/e2e_tests/target-configurations.yaml \
               --env ${{ parameters.deploymentEnvironment }} \
               --runtimeEnv ${{ parameters.runtimeEnv }} \
               --purpose ${{ parameters.buildPurpose }} \
+              $SKIP_ENCRYPTION_TESTS_ARG \
               --matrix-name matrixConfigurations
         name: setConfigurations
         displayName: Matrix of Trident configurations for E2E Tests
