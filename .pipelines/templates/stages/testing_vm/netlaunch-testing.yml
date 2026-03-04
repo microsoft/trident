@@ -134,12 +134,23 @@ stages:
               tridentRepoName: ${{ parameters.tridentRepoName }}
 
           - bash: |
+              SKIP_ENCRYPTION_TESTS=false
+              ENCRYPTION_VALUE=$(sudo yq '.storage.encryption' "$TRIDENT_CONFIG")
+              if [[ "${{ parameters.testSecureBoot }}" != 'True' && \
+                    "$ENCRYPTION_VALUE" != "null" ]]; then
+                    SKIP_ENCRYPTION_TESTS=true
+              fi
+              echo "setting variable.skipEncryptionTests to $SKIP_ENCRYPTION_TESTS"
+              echo "##vso[task.setvariable variable=skipEncryptionTests]$SKIP_ENCRYPTION_TESTS"
+            displayName: Special handling for non-SecureBoot encryption tests
+
+          - bash: |
               if [ ${{ variables['tridentConfigurationName'] }} == 'split' ]; then
                 splitInstallerIsoName="trident-split-installer"
                 echo "setting variable.installerISOName to $splitInstallerIsoName"
                 echo "##vso[task.setvariable variable=installerISOName]$splitInstallerIsoName"
               fi
-            displayName: Special handle for split test
+            displayName: Special handling for split test
 
           # Download all test images
           - template: ../testing_common/download-test-images.yml
@@ -258,6 +269,7 @@ stages:
             workingDirectory: $(tridentSourceDirectory)
             displayName: "🚀 Run netlaunch for testing"
             timeoutInMinutes: 20
+            condition: and(succeeded(), ne(variables['skipEncryptionTests'], 'true'))
 
           - bash: |
               set -eux
@@ -267,7 +279,7 @@ stages:
                   --artifacts-folder "$(ob_outputDirectory)"
 
             timeoutInMinutes: 5
-            condition: succeededOrFailed()
+            condition: and(succeededOrFailed(), ne(variables['skipEncryptionTests'], 'true'))
             workingDirectory: $(tridentSourceDirectory)
             displayName: "📄 Check target OS deployment"
 
@@ -284,6 +296,7 @@ stages:
             timeoutInMinutes: 5
             displayName: "Check for trace file and journald logs for expected trace entry"
             workingDirectory: $(tridentSourceDirectory)
+            condition: and(succeeded(), ne(variables['skipEncryptionTests'], 'true'))
 
           - bash: |
               set -eux
@@ -293,6 +306,7 @@ stages:
             displayName: "📷 Capture screenshot: clean install"
             condition: succeededOrFailed()
             workingDirectory: $(tridentSourceDirectory)
+            condition: and(succeeded(), ne(variables['skipEncryptionTests'], 'true'))
 
           - bash: |
               set -eux
@@ -303,6 +317,7 @@ stages:
             displayName: "📄 Display clean install logs"
             condition: succeededOrFailed()
             workingDirectory: $(tridentSourceDirectory)
+            condition: and(succeeded(), ne(variables['skipEncryptionTests'], 'true'))
 
           - bash: |
               set -eux
@@ -315,7 +330,7 @@ stages:
                   "${{ parameters.runtimeEnv }}" \
                   --audit-file $(ob_outputDirectory)/audit.log \
             timeoutInMinutes: 5
-            condition: eq('${{ parameters.runtimeEnv }}', 'host')
+            condition: and(succeeded(), ne(variables['skipEncryptionTests'], 'true'), eq('${{ parameters.runtimeEnv }}', 'host'))
             displayName: "📄 Check for SELinux failures"
             workingDirectory: $(tridentSourceDirectory)
 
@@ -326,7 +341,7 @@ stages:
                 'sudo journalctl -u docker.service'
               ssh -o StrictHostKeyChecking=no -i $(tridentSourceDirectory)/tests/e2e_tests/helpers/key testing-user@$HOST_IP \
                 'sudo journalctl -u trident-container.service'
-            condition: eq('${{ parameters.runtimeEnv }}', 'container')
+            condition: and(succeeded(), ne(variables['skipEncryptionTests'], 'true'), eq('${{ parameters.runtimeEnv }}', 'container'))
             displayName: "📄 Display Container logs"
             workingDirectory: $(tridentSourceDirectory)
           - bash: |
@@ -341,6 +356,7 @@ stages:
                   --metrics-operation install
             displayName: "Create boot metrics for booting into target OS"
             workingDirectory: $(tridentSourceDirectory)
+            condition: and(succeeded(), ne(variables['skipEncryptionTests'], 'true'))
 
           - template: ../testing_common/trident-metrics.yml
             parameters:
