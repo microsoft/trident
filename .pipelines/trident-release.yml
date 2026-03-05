@@ -62,3 +62,5 @@ extends:
       - template: templates/release-template.yml
         parameters:
           specificVersion: ${{ parameters.specificVersion }}
+          skipPublishing: ${{ parameters.skipPublishing }}
+          sourceCommit: ${{ parameters.sourceCommit }}
