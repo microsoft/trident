@@ -77,7 +77,7 @@ check-sh:
 
 .PHONY: version-vars
 version-vars:
-	$(eval TRIDENT_CARGO_VERSION := $(shell python3 ./scripts/get-version.py "$(shell date +%Y%m%d).99 $(VERSION_ARGS)" --build-type $(TRIDENT_BUILD_TYPE)))
+	$(eval TRIDENT_CARGO_VERSION := $(shell python3 ./scripts/get-version.py "$(shell date +%Y%m%d).99" --build-type $(TRIDENT_BUILD_TYPE)))
 	$(eval GIT_COMMIT := $(shell git rev-parse --short HEAD)$(shell git diff --quiet || echo '.dirty'))
 	$(eval LOCAL_BUILD_TRIDENT_VERSION=$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT))
 	@echo "TRIDENT_CARGO_VERSION=$(TRIDENT_CARGO_VERSION)"

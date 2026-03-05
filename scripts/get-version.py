@@ -38,20 +38,20 @@ def get_version(file, build_type):
 
 
 parser = argparse.ArgumentParser(
-    description="Return the new version for Trident given the date and ID. Format: MAJOR.MINOR.PATCH-YYYYMMDDID"
+    description="Return the new version for Trident given the date, ID, and commit. Format: MAJOR.MINOR.PATCH-YYYYMMDDID-vCOMMIT"
 )
 parser.add_argument(
     "-c",
     "--commit",
     action="store_true",
-    help="Optional flag to use the short commit hash as part of the ID. Format: MAJOR.MINOR.PATCH-YYYYMMDDID-COMMIT",
+    help="Optional flag to use the short commit hash as part of the ID. Format: MAJOR.MINOR.PATCH-YYYYMMDDID-vCOMMIT",
 )
 parser.add_argument(
     "--build-type",
     type=str,
     choices=["local", "pipeline"],
     default="local",
-    help="Defines what type of build to create, for local builds the version will be major.minor",
+    help="Defines what type of build to create, for local builds the date will be used as the patch version, for pipeline builds the patch will be read from Cargo.toml.",
 )
 parser.add_argument(
     "BuildNumber", type=str, help="Date and ID (counter) separated by a point."
