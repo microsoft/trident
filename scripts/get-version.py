@@ -20,26 +20,38 @@ def get_git_revision_short_hash() -> str:
     )
 
 
-def get_version(file):
+def get_version(file, build_type):
     pattern = r'version\s*=\s*"(\d+\.\d+)(\.\d+)"'
 
     match = re.search(pattern, file)
 
     if match:
-        return match.group(1)
+        if build_type == "local":
+            # For local builds, return major.minor
+            return match.group(1)
+        else:
+            # For non-local builds, return major.minor.patch
+            return f"{match.group(1)}{match.group(2)}"
     else:
         print("Version definition not found.")
         sys.exit(1)
 
 
 parser = argparse.ArgumentParser(
-    description="Return the new version for Trident given the date and ID. Format: MAJOR.MINOR.YYYYMMDDID"
+    description="Return the new version for Trident given the date and ID. Format: MAJOR.MINOR.PATCH-YYYYMMDDID"
 )
 parser.add_argument(
     "-c",
     "--commit",
     action="store_true",
-    help="Optional flag to use the short commit hash as part of the ID. Format: MAJOR.MINOR.YYYYMMDDID-COMMIT",
+    help="Optional flag to use the short commit hash as part of the ID. Format: MAJOR.MINOR.PATCH-YYYYMMDDID-COMMIT",
+)
+parser.add_argument(
+    "--build-type",
+    type=str,
+    choices=["local", "pipeline"],
+    default="local",
+    help="Defines what type of build to create, for local builds the version will be major.minor",
 )
 parser.add_argument(
     "BuildNumber", type=str, help="Date and ID (counter) separated by a point."
@@ -49,7 +61,7 @@ args = parser.parse_args()
 
 with open("crates/trident/Cargo.toml", "r") as file:
     content = file.read()
-version = get_version(content)
+version = get_version(content, args.build_type)
 
 
 if not args.BuildNumber:
