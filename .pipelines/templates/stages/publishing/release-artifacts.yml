@@ -12,7 +12,7 @@ stages:
 
     jobs:
       - job: ReleaseArtifacts
-        displayName: Publish Trident RPMs and Provisioning OS Template ISO to Universal Packages
+        displayName: Package Trident release artifacts
         pool:
           type: linux
 

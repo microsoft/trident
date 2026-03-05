@@ -35,9 +35,23 @@ def get_version(file, full=False):
         sys.exit(1)
 
 
-parser = argparse.ArgumentParser(
-    description="Return the new version for Trident given the date and ID. Format: MAJOR.MINOR.YYYYMMDDID"
-)
+desc = """Return the Trident version.
+
+When no BuildNumber is provided, the version from the cargo file will be
+produced as-is, in the format MAJOR.MINOR.PATCH. 
+
+If a BuildNumber is provided, the patch number from cargo will be ignored
+and the version will be in the format MAJOR.MINOR.YYYYMMDDID, where:
+- MAJOR and MINOR are taken from the cargo file.
+- YYYYMMDD is the date part of the BuildNumber.
+- ID is the counter part of the BuildNumber, formatted as a two-digit number.
+
+When the optional flag --commit is used, the short commit hash will be appended
+to the version in the format MAJOR.MINOR.YYYYMMDDID-vCOMMIT, where COMMIT is the
+short commit hash.
+"""
+
+parser = argparse.ArgumentParser(description=desc)
 parser.add_argument(
     "-c",
     "--commit",
