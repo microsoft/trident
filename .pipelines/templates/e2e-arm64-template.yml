@@ -48,15 +48,6 @@ parameters:
     type: string
     default: ""
 
-  - name: micBuildType
-    displayName: MIC Build Type
-    type: string
-    values:
-      - dev
-      - preview
-      - release
-    default: release
-
   - name: micVersion
     displayName: MIC Version
     type: string
@@ -70,11 +61,6 @@ parameters:
       - preview
       - release
     default: release
-
-  - name: micVersion
-    displayName: MIC Version
-    type: string
-    default: "*.*.*"
 
 stages:
   # Trident Build/Download
