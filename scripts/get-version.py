@@ -20,17 +20,17 @@ def get_git_revision_short_hash() -> str:
     )
 
 
-def get_version(file, build_type):
+def get_version(file, use_date_as_patch):
     pattern = r'version\s*=\s*"(\d+\.\d+)(\.\d+)"'
 
     match = re.search(pattern, file)
 
     if match:
-        if build_type == "local":
-            # For local builds, return major.minor
+        if use_date_as_patch:
+            # If using date as patch, just return major.minor
             return match.group(1)
         else:
-            # For non-local builds, return major.minor.patch
+            # if using patch from Cargo.toml, return major.minor.patch
             return f"{match.group(1)}{match.group(2)}"
     else:
         print("Version definition not found.")
@@ -61,8 +61,10 @@ args = parser.parse_args()
 
 with open("crates/trident/Cargo.toml", "r") as file:
     content = file.read()
-version = get_version(content, args.build_type)
 
+use_date_as_patch = args.build_type == "local"
+version = get_version(content, use_date_as_patch)
+next_separator = "." if use_date_as_patch else "-"
 
 if not args.BuildNumber:
     print("Missing BuildNumber.")
@@ -81,9 +83,9 @@ if match:
 
         if args.commit:
             short_commit = get_git_revision_short_hash()
-            print(f"{version}.{date}{id:02d}-v{short_commit.strip()}")
+            print(f"{version}{next_separator}{date}{id:02d}-v{short_commit.strip()}")
         else:
-            print(f"{version}.{date}{id:02d}")
+            print(f"{version}{next_separator}{date}{id:02d}")
 else:
     print(
         "Invalid input. BuildNumber should be a date and ID, for example a counter, separated by a point."
