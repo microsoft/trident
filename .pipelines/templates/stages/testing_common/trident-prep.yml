@@ -24,8 +24,10 @@ parameters:
   - name: config
     type: string
 
+  # Define whether to run tests using SecureBoot or not. This impacts both
+  # which tests run (many encryption-related tests only run with SecureBoot enabled) and
+  # how the test machines are configured.
   - name: testSecureBoot
-    displayName: "Test Secure Boot"
     type: boolean
     default: true
 

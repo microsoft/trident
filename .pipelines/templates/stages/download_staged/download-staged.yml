@@ -26,12 +26,14 @@ parameters:
     type: string
     default: ''
 
+  # Define checkout name for the Trident repo. If this is
+  # loaded from a pipeline hosted in the Trident repo, use
+  # `self`. If this is loaded from a pipeline hosted in a
+  # different repo, use the repository name defined in the
+  # pipeline resources.
   - name: tridentRepoName
     type: string
     default: self
-    values:
-      - self
-      - trident
 
 stages:
   - stage: GetTridentBinaries_${{ replace(parameters.packageName, '-', '_') }}_amd64

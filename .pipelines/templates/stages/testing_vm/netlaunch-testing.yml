@@ -1,9 +1,12 @@
 parameters:
+  # Define checkout name for the Trident repo. If this is
+  # loaded from a pipeline hosted in the Trident repo, use
+  # `self`. If this is loaded from a pipeline hosted in a
+  # different repo, use the repository name defined in the
+  # pipeline resources.
   - name: tridentRepoName
     type: string
-    values:
-      - self
-      - trident
+    default: self
 
   - name: buildPurpose
     type: string
@@ -28,11 +31,16 @@ parameters:
       - host
       - container
 
+  # Define whether to run tests using SecureBoot or not. This impacts both
+  # which tests run (many encryption-related tests only run with SecureBoot enabled) and
+  # how the test machines are configured.
   - name: testSecureBoot
-    displayName: "Test Secure Boot"
     type: boolean
     default: true
 
+  # Define which service connection to use for accessing ACR.
+  #   `maritimus-dev-acr-write-umi` is the service connection for the Polar SC
+  #   `trident-dev-acr-write-umi-ECF` is the service connection for the ECF SC
   - name: acrServiceConnectionName
     type: string
     default: trident-dev-acr-write-umi-ECF

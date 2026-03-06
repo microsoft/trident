@@ -1,9 +1,12 @@
 parameters:
+  # Define checkout name for the Trident repo. If this is
+  # loaded from a pipeline hosted in the Trident repo, use
+  # `self`. If this is loaded from a pipeline hosted in a
+  # different repo, use the repository name defined in the
+  # pipeline resources.
   - name: tridentRepoName
     type: string
-    values:
-      - self
-      - trident
+    default: self
 
   - name: osModifierBranch
     type: string

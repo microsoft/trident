@@ -12,13 +12,18 @@
 # ensure that e2e-template waits for the base image artifact to be created.
 #
 parameters:
+  # Define checkout name for the Trident repo. If this is
+  # loaded from a pipeline hosted in the Trident repo, use
+  # `self`. If this is loaded from a pipeline hosted in a
+  # different repo, use the repository name defined in the
+  # pipeline resources.
   - name: tridentRepoName
     type: string
     default: self
-    values:
-      - self
-      - trident
 
+  # Define which service connection to use for accessing ACR.
+  #   `maritimus-dev-acr-write-umi` is the service connection for the Polar SC
+  #   `trident-dev-acr-write-umi-ECF` is the service connection for the ECF SC
   - name: acrServiceConnectionName
     type: string
     default: trident-dev-acr-write-umi-ECF
@@ -44,6 +49,10 @@ parameters:
     type: boolean
     default: false
 
+  # We have three options for how to handle the Trident binaries artifact in this pipeline:
+  # 1) default: use the default behavior for this pipeline
+  # 2) forceBuild: force this pipeline to build the Trident binaries artifact
+  # 3) prebuilt: the Trident binaries artifact already exists
   - name: tridentBuildOptions
     displayName: "Trident Build Options"
     type: string
@@ -93,8 +102,10 @@ parameters:
     type: string
     default: ""
 
+  # Define whether to run tests using SecureBoot or not. This impacts both
+  # which tests run (many encryption-related tests only run with SecureBoot enabled) and
+  # how the test machines are configured.
   - name: testSecureBoot
-    displayName: "Test Secure Boot"
     type: boolean
     default: true
 

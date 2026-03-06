@@ -1,9 +1,12 @@
 parameters:
+  # Define checkout name for the Trident repo. If this is
+  # loaded from a pipeline hosted in the Trident repo, use
+  # `self`. If this is loaded from a pipeline hosted in a
+  # different repo, use the repository name defined in the
+  # pipeline resources.
   - name: tridentRepoName
     type: string
-    values:
-      - self
-      - trident
+    default: self
 
   - name: updateIterationCount
     displayName: "Number of updates to test"
@@ -50,8 +53,10 @@ parameters:
     type: string
     default: "trident-ubuntu-1es-pool-eastus2"
 
+  # Define whether to run tests using SecureBoot or not. This impacts both
+  # which tests run (many encryption-related tests only run with SecureBoot enabled) and
+  # how the test machines are configured.
   - name: testSecureBoot
-    displayName: "Test Secure Boot"
     type: boolean
     default: true
 
