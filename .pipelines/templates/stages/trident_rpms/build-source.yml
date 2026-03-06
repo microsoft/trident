@@ -105,6 +105,7 @@ stages:
                   cargoConfigPath: $(TRIDENT_SOURCE_DIR)/.cargo/config.toml
               - template: ../common_tasks/download-osmodifier.yml
                 parameters:
+                  tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
                   targetArchitecture: ${{ parameters.targetArchitecture }}
                   osModifierBranch: ${{ parameters.osModifierBranch }}
                   osModifierBuildType: ${{ parameters.osModifierBuildType }}
@@ -144,6 +145,7 @@ stages:
                 displayName: Start Docker
               - template: ../common_tasks/download-osmodifier.yml
                 parameters:
+                  tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
                   targetArchitecture: ${{ parameters.targetArchitecture }}
                   osModifierBranch: ${{ parameters.osModifierBranch }}
                   osModifierBuildType: ${{ parameters.osModifierBuildType }}

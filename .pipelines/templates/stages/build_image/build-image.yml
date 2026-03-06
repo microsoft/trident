@@ -82,6 +82,8 @@ stages:
             condition: and(eq('${{ parameters.runtimeEnv }}', 'host'), eq('${{ parameters.dependsOnTrident }}', true))
 
           - template: ../common_tasks/find-base-image-version.yml
+            parameters:
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
 
           - template: .pipelines/templates/build-image.yml@test-images
             parameters:

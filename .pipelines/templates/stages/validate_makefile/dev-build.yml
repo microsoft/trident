@@ -97,6 +97,7 @@ stages:
 
           - template: ../common_tasks/download-osmodifier.yml
             parameters:
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
               osModifierBuildType: dev
               osModifierBranch: ${{ parameters.osModifierBranch }}
               targetArchitecture: amd64

@@ -1,6 +1,10 @@
 # Download the latest version of a package from the Trident feed.
 
 parameters:
+  - name: tridentSourceDirectory
+    type: string
+    default: $(Pipeline.Workspace)/s/trident
+
   - name: packageName
     type: string
     displayName: "Name of the package to download"
@@ -43,7 +47,7 @@ steps:
           set -x
           mkdir -p ${{ parameters.downloadLocation }}
         displayName: "Getting latest version of ${{ parameters.packageName }} from Trident feed"
-        workingDirectory: $(TRIDENT_SOURCE_DIR)
+        workingDirectory: ${{ parameters.tridentSourceDirectory }}
         env:
           AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
 

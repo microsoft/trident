@@ -10,6 +10,7 @@ parameters:
 stages:
   - template: stages/download_staged/download-staged.yml
     parameters:
+      tridentRepoName: self
       stageType: rel
       artifactName: trident-binaries
       specificVersion: ${{ parameters.specificVersion }}

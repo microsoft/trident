@@ -5,6 +5,7 @@ parameters:
     values:
       - arm64
       - amd64
+
   - name: tridentRepoDirectory
     type: string
 
@@ -29,13 +30,13 @@ steps:
   - script: |
       set -eux
       sudo systemctl start docker
-    workingDirectory: $(TRIDENT_SOURCE_DIR)
+    workingDirectory: ${{ parameters.tridentRepoDirectory }}
     displayName: Start Docker
 
   - template: ../common_tasks/preview-container.yml
     parameters:
-      dockerfilePath: $(TRIDENT_SOURCE_DIR)/packaging/docker/Dockerfile.full
-      dockerBuildContext: $(TRIDENT_SOURCE_DIR)
+      dockerfilePath: ${{ parameters.tridentRepoDirectory }}/packaging/docker/Dockerfile.full
+      dockerBuildContext: ${{ parameters.tridentRepoDirectory }}
       targetArchitecture: ${{ parameters.targetArchitecture }}
 
   - script: |
@@ -53,7 +54,7 @@ steps:
       rm -rf "$outdir"
       mkdir -p "$outdir"
 
-      docker build -f $(TRIDENT_SOURCE_DIR)/packaging/docker/Dockerfile.full -t trident/trident-build:latest \
+      docker build -f ${{ parameters.tridentRepoDirectory }}/packaging/docker/Dockerfile.full -t trident/trident-build:latest \
         --secret id=registry_token,env=CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN \
         --build-arg TRIDENT_VERSION="$full_version" \
         --build-arg RPM_VER="$version"\
@@ -66,9 +67,9 @@ steps:
 
       mkdir -p $(ob_outputDirectory)
       tar -xzf trident-rpms.tar.gz -C $(ob_outputDirectory) --strip-components=3
-    workingDirectory: $(TRIDENT_SOURCE_DIR)
+    workingDirectory: ${{ parameters.tridentRepoDirectory }}
     displayName: Build RPMs
 
   - script: ./scripts/extract-binary.sh $(ob_outputDirectory) $(ob_outputDirectory)
-    workingDirectory: $(TRIDENT_SOURCE_DIR)
+    workingDirectory: ${{ parameters.tridentRepoDirectory }}
     displayName: Extract Trident binary

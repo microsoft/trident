@@ -69,6 +69,7 @@ stages:
   - ${{ elseif and(ne(parameters.tridentBuildOptions, 'prebuilt'), eq(parameters.targetArchitecture, 'amd64')) }}:
       - template: ../download_staged/download-staged.yml
         parameters:
+          tridentRepoName: ${{ parameters.tridentRepoName }}
           artifactName: ${{ parameters.tridentArtifactName }}
           stageType: ${{ parameters.stageType }}
           packageName: rpms

@@ -111,6 +111,7 @@ stages:
 
           - template: ../common_tasks/download-osmodifier.yml
             parameters:
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
               osModifierBranch: ${{ parameters.osModifierBranch }}
               targetArchitecture: amd64
 
@@ -143,6 +144,7 @@ stages:
 
           - template: ../common_tasks/coverage.yml
             parameters:
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
               codeCoverageBaseline: 78 # Unit + functional tests
               executeUnitTests: true
               installNativeDependencies: false

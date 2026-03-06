@@ -1,5 +1,9 @@
 # TODO: Migrate test images to Trident repository and build them locally #16117
 parameters:
+  - name: tridentSourceDirectory
+    type: string
+    default: $(Pipeline.Workspace)/s/trident
+
   - name: imageName
     type: string
 
@@ -80,7 +84,7 @@ steps:
   - bash: |
       ./tests/images/testimages.py show-image ${{ parameters.imageName }} base-image --devops-var baseImageType
     displayName: "Get Image Info"
-    workingDirectory: $(TRIDENT_SOURCE_DIR)
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
 
   - bash: |
       echo "Image type: $(baseImageType)"
@@ -141,7 +145,7 @@ steps:
         rm -rf "$(Build.ArtifactStagingDirectory)/trident"
       fi
     displayName: "Prepare and move requirements"
-    workingDirectory: $(TRIDENT_SOURCE_DIR)
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
 
   - bash: |
       set -ex
@@ -158,4 +162,4 @@ steps:
           --no-download \
           --clones ${{ parameters.clones }}
     displayName: "Build ${{ parameters.imageName }}"
-    workingDirectory: $(TRIDENT_SOURCE_DIR)
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}

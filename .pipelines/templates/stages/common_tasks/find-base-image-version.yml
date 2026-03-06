@@ -1,4 +1,8 @@
 parameters:
+  - name: tridentSourceDirectory
+    type: string
+    default: $(Pipeline.Workspace)/s/trident
+
   - name: architecture
     displayName: Architecture
     type: string
@@ -9,6 +13,8 @@ parameters:
 
 steps:
   - template: ../base_image_config/read-base-image-config-artifact.yml
+    parameters:
+      tridentSourceDirectory: ${{ parameters.tridentSourceDirectory }}
   - bash: |
       echo "BASEIMG_BUILD_TYPE: $(BASEIMG_BUILD_TYPE)"
       echo "BASE_IMAGE_PIPELINE_BUILD_ID: $(BASE_IMAGE_PIPELINE_BUILD_ID)"
@@ -78,9 +84,9 @@ steps:
       tags: "3.0-preview"
       artifactName: "drop_build_rpms_build"
       patterns: "**/build-config/version-full.config"
-      targetPath: "$(TRIDENT_SOURCE_DIR)/output"
+      targetPath: "${{ parameters.tridentSourceDirectory }}/output"
   - script: |
-      versionFullConfigPath=$(find $(TRIDENT_SOURCE_DIR) -name version-full.config)
+      versionFullConfigPath=$(find ${{ parameters.tridentSourceDirectory }} -name version-full.config)
       BASEIMG_VERSION=$(cat $versionFullConfigPath)
       echo "##vso[task.setvariable variable=BASEIMG_VERSION]$BASEIMG_VERSION"
       echo "##vso[task.setvariable variable=RPMS_VERSION]$BASEIMG_VERSION"

@@ -76,10 +76,12 @@ jobs:
 
       - template: ../common_tasks/find-base-image-version.yml
         parameters:
+          tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
           architecture: "arm64"
 
       - template: ./trident-testimg-template.yml
         parameters:
+          tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
           target: ${{ parameters.makeTarget }}
           outputDirectory: "$(ob_outputDirectory)"
           micBuildType: ${{ parameters.micBuildType }}

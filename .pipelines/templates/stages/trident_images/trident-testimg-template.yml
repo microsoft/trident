@@ -1,4 +1,8 @@
 parameters:
+  - name: tridentSourceDirectory
+    type: string
+    default: $(Pipeline.Workspace)/s/trident
+
   - name: outputDirectory
     type: string
     default: "$(Pipeline.Workspace)/s/trident/output"
@@ -115,15 +119,15 @@ steps:
       - bash: |
           set -eux
 
-          mkdir -p $(TRIDENT_SOURCE_DIR)/artifacts
-          ssh-keygen -t rsa -b 2048 -f $(TRIDENT_SOURCE_DIR)/artifacts/id_rsa -q -N ""
+          mkdir -p ${{ parameters.tridentSourceDirectory }}/artifacts
+          ssh-keygen -t rsa -b 2048 -f ${{ parameters.tridentSourceDirectory }}/artifacts/id_rsa -q -N ""
         displayName: Set up SSH Keys
   - ${{ if eq(parameters.useStagedSshKeys, true) }}:
       - bash: |
           set -eux
 
-          mkdir -p $(TRIDENT_SOURCE_DIR)/artifacts
-          cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* $(TRIDENT_SOURCE_DIR)/artifacts/
+          mkdir -p ${{ parameters.tridentSourceDirectory }}/artifacts
+          cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* ${{ parameters.tridentSourceDirectory }}/artifacts/
         displayName: Copy SSH Keys
 
   - script: |
@@ -165,7 +169,7 @@ steps:
           mkdir -p $(Build.ArtifactStagingDirectory)/images
           mv artifacts/${{ baseimgType }}.vhdx $(Build.ArtifactStagingDirectory)/images/
         displayName: "Download Ubuntu Base Image - ${{ baseimgType }}"
-        workingDirectory: $(TRIDENT_SOURCE_DIR)
+        workingDirectory: ${{ parameters.tridentSourceDirectory }}
 
     - ${{ else }}:
       - template: common/base-images-download-template.yaml@platform-pipelines
@@ -187,7 +191,7 @@ steps:
   - bash: |
       set -ex
 
-      base_dir='$(TRIDENT_SOURCE_DIR)/artifacts'
+      base_dir='${{ parameters.tridentSourceDirectory }}/artifacts'
 
       mkdir -p $base_dir
       # Check if there are any .vhdx files in the images directory and move them
@@ -208,13 +212,13 @@ steps:
 
       find $(Build.ArtifactStagingDirectory)
       if [ -d "$(Build.ArtifactStagingDirectory)/trident" ]; then
-        rpm_dir='$(TRIDENT_SOURCE_DIR)/bin/RPMS'
+        rpm_dir='${{ parameters.tridentSourceDirectory }}/bin/RPMS'
         mkdir -p $rpm_dir
         cp -r $(Build.ArtifactStagingDirectory)/trident/* $rpm_dir/ || echo 'no rpms to copy'
         rm -rf $(Build.ArtifactStagingDirectory)/trident
       fi
 
-    workingDirectory: $(TRIDENT_SOURCE_DIR)
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Prepare and move requirements"
 
   - script: |
@@ -232,7 +236,7 @@ steps:
 
       # Compress the full image & delete the uncompressed image
       make ${{ parameters.target }}
-    workingDirectory: $(TRIDENT_SOURCE_DIR)
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Build Test Image"
 
   - script: |
@@ -246,5 +250,5 @@ steps:
         # Everything else is a file
         sudo mv -v "${{ parameters.target }}" "${{ parameters.outputDirectory }}/"
       fi
-    workingDirectory: $(TRIDENT_SOURCE_DIR)
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Copy artifacts to output directory"

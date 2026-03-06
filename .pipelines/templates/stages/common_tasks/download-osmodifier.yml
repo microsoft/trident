@@ -1,4 +1,8 @@
 parameters:
+  - name: tridentSourceDirectory
+    type: string
+    default: $(Pipeline.Workspace)/s/trident
+
   - name: osModifierBuildType
     displayName: OSModifier build type to download from osmodifier pipelines
     type: string
@@ -28,7 +32,7 @@ steps:
         mkdir -p artifacts
         make artifacts/osmodifier
       displayName: "Build OSModifier from ${{ parameters.osModifierBranch }}"
-      workingDirectory: $(TRIDENT_SOURCE_DIR)
+      workingDirectory: ${{ parameters.tridentSourceDirectory }}
       retryCountOnTaskFailure: 3
 
   - ${{ if eq(parameters.osModifierBuildType, 'preview') }}:
@@ -42,4 +46,4 @@ steps:
         ${{ if eq(parameters.targetArchitecture, 'arm64') }}:
           vstsFeedPackage: osmodifier_arm64_preview
         vstsPackageVersion: "1.1.0-preview.939023"
-        downloadDirectory: "$(TRIDENT_SOURCE_DIR)/artifacts"
+        downloadDirectory: "${{ parameters.tridentSourceDirectory }}/artifacts"

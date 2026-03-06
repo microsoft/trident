@@ -155,6 +155,7 @@ stages:
           # ACR
           - template: ../common_tasks/push-to-acr.yml
             parameters:
+              tridentSourceDirectory: $(tridentSourceDirectory)
               imageName: ${{ variables.testImageName }}
               config: ${{ variables.tridentConfigurationName }}
               deploymentEnvironment: "virtualMachine"
@@ -358,6 +359,7 @@ stages:
 
           - template: ../testing_common/e2e-test-run.yml
             parameters:
+              tridentSourceDirectory: $(tridentSourceDirectory)
               buildPurpose: ${{ parameters.buildPurpose }}
               deploymentEnvironment: virtualMachine
               tridentConfigurationName: $(tridentConfigurationName)
@@ -371,6 +373,7 @@ stages:
 
           - template: ../common_tasks/remove-from-acr.yml
             parameters:
+              tridentSourceDirectory: $(tridentSourceDirectory)
               repository: ${{ variables.testImageName }}
               config: ${{ variables.tridentConfigurationName }}
               deploymentEnvironment: "virtualMachine"

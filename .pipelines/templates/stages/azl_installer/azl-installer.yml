@@ -93,9 +93,12 @@ stages:
             workingDirectory: $(TRIDENT_SOURCE_DIR)
 
           - template: ../common_tasks/find-base-image-version.yml
+            parameters:
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
 
           - template: ../build_image/build-image-template.yml
             parameters:
+              tridentRepoName: ${{ parameters.tridentRepoName }}
               imageName: azl-installer
               baseimgBuildType: $(BASEIMG_BUILD_TYPE)
               baseimgVersion: $(BASEIMG_VERSION)
@@ -144,4 +147,5 @@ stages:
               tridentRepoName: ${{ parameters.tridentRepoName }}
           - template: ./validate-azl-installer-iso.yml
             parameters:
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
               isoName: azl-installer-unattended
