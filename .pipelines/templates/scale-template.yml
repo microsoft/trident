@@ -79,8 +79,6 @@ stages:
 
   # Build tools (Go stuff)
   - template: stages/building_tools/building-tools.yml
-    parameters:
-      tridentRepoName: self
 
   # Trident Build/Download
   - template: stages/trident_rpms/trident-stage.yml
@@ -94,7 +92,6 @@ stages:
         tridentBuildOptions: default
       dependsOnStage: CreateBaseImageConfig
       targetArchitecture: amd64
-      tridentRepoName: self
 
   # Test Servicing on VMs
   - template: stages/testing_servicing/vm-testing.yml
@@ -109,4 +106,3 @@ stages:
       includeAzure: ${{ parameters.includeAzure }}
       includeUKI: ${{ parameters.includeUKI }}
       dependsOnStage: CreateBaseImageConfig
-      tridentRepoName: self

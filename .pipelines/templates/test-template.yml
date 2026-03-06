@@ -66,7 +66,6 @@ stages:
         parameters:
           downloadPrebuiltImage: true
           rerunTests: true
-          tridentRepoName: self
 
   - ${{ if parameters.runDeploymentVMHost }}:
       - template: stages/testing_vm/netlaunch-testing.yml
@@ -74,7 +73,6 @@ stages:
           buildPurpose: "validation"
           runtimeEnv: "host"
           testingRun: true
-          tridentRepoName: self
 
   - ${{ if parameters.runDeploymentVMContainer }}:
       - template: stages/testing_vm/netlaunch-testing.yml
@@ -82,7 +80,6 @@ stages:
           buildPurpose: "validation"
           runtimeEnv: "container"
           testingRun: true
-          tridentRepoName: self
 
   - ${{ if parameters.runDeploymentBMHost }}:
       - template: stages/testing_baremetal/baremetal-testing.yml
@@ -90,7 +87,6 @@ stages:
           buildPurpose: "validation"
           runtimeEnv: "host"
           testingRun: true
-          tridentRepoName: self
 
   - ${{ if parameters.runDeploymentBMContainer }}:
       - template: stages/testing_baremetal/baremetal-testing.yml
@@ -100,7 +96,6 @@ stages:
           testingRun: true
           ${{ if parameters.runDeploymentBMHost }}:
             extraDependsOn: "BaremetalDeploymentTesting_host"
-          tridentRepoName: self
 
   - ${{ if parameters.runServicingTests }}:
       - template: stages/testing_servicing/vm-testing.yml
@@ -109,4 +104,3 @@ stages:
           verboseLogging: true
           includeQemu: true
           includeAzure: false # To test in Azure please use trident-pr-e2e-azure pipeline
-          tridentRepoName: self
