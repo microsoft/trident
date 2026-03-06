@@ -71,10 +71,11 @@ check-sh:
 
 .PHONY: version-vars
 version-vars:
+	$(eval SIMULATED_BUILD_ID := 99)
 	$(eval TRIDENT_BUILD_DATE := $(shell date +%Y%m%d))
-	$(eval TRIDENT_CARGO_VERSION := $(shell python3 ./scripts/get-version.py "$(TRIDENT_BUILD_DATE).99"))
-	$(eval GIT_COMMIT := $(shell git rev-parse --short HEAD)$(shell git diff --quiet || echo '.dirty'))
-	$(eval TRIDENT_PREVIEW_VERSION=$(TRIDENT_BUILD_DATE).$(GIT_COMMIT))
+	$(eval TRIDENT_CARGO_VERSION := $(shell python3 ./scripts/get-version.py "$(TRIDENT_BUILD_DATE).$(SIMULATED_BUILD_ID)"))
+	$(eval GIT_COMMIT := v$(shell git rev-parse --short HEAD)$(shell git diff --quiet || echo '.dirty'))
+	$(eval TRIDENT_PREVIEW_VERSION=$(TRIDENT_BUILD_DATE)$(SIMULATED_BUILD_ID).$(GIT_COMMIT))
 	$(eval LOCAL_BUILD_TRIDENT_VERSION=$(TRIDENT_CARGO_VERSION)-$(TRIDENT_PREVIEW_VERSION))
 	@echo "TRIDENT_CARGO_VERSION=$(TRIDENT_CARGO_VERSION)"
 	@echo "TRIDENT_PREVIEW_VERSION=$(TRIDENT_PREVIEW_VERSION)"
