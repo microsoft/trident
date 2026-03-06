@@ -34,16 +34,18 @@ def get_version(file):
 
 
 parser = argparse.ArgumentParser(
-    description="Return the new version for Trident given the date, ID, and commit. Format: MAJOR.MINOR.PATCH-YYYYMMDDID-vCOMMIT"
+    description="Return the new version for Trident given the date and ID. Format: MAJOR.MINOR.PATCH"
 )
 parser.add_argument(
     "-c",
     "--commit",
     action="store_true",
-    help="Optional flag to use the short commit hash as part of the ID. Format: MAJOR.MINOR.PATCH-YYYYMMDDID-vCOMMIT",
+    help="Optional flag to include prerelease version in output, where prerelease is YYYYMMDDID-vCOMMIT. See `BuildNumber` help for more details.",
 )
 parser.add_argument(
-    "BuildNumber", type=str, help="Date and ID (counter) separated by a point."
+    "BuildNumber",
+    type=str,
+    help="BuildNumber is expected to either be in the format YYYYMMDD.ID (date.id) or MAJOR.MINOR.PATCH-YYYYMMDDID-vCOMMIT. If YYYYMMDD.ID is provided and `--commit` is specified, BuildNumber will be the source for prerelease version's YYYYMMDDID. If MAJOR.MINOR.PATCH-YYYYMMDDID-vCOMMIT is provided, it will be validated against the version in Cargo.toml and returned if valid.",
 )
 
 args = parser.parse_args()
