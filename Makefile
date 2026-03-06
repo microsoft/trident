@@ -77,10 +77,18 @@ check-sh:
 
 .PHONY: version-vars
 version-vars:
-	$(eval TRIDENT_CARGO_VERSION := $(shell python3 ./scripts/get-version.py "$(shell date +%Y%m%d).99" --build-type $(TRIDENT_BUILD_TYPE)))
+	$(eval TRIDENT_BUILD_DATE := $(shell date +%Y%m%d))
+	$(eval TRIDENT_CARGO_VERSION := $(shell python3 ./scripts/get-version.py "$(TRIDENT_BUILD_DATE).99" --build-type $(TRIDENT_BUILD_TYPE)))
 	$(eval GIT_COMMIT := $(shell git rev-parse --short HEAD)$(shell git diff --quiet || echo '.dirty'))
-	$(eval LOCAL_BUILD_TRIDENT_VERSION=$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT))
+ifeq ($(TRIDENT_BUILD_TYPE),local)
+	$(eval TRIDENT_PREVIEW_VERSION=dev.$(GIT_COMMIT))
+else
+	$(eval TRIDENT_PREVIEW_VERSION=$(TRIDENT_BUILD_DATE).$(GIT_COMMIT))
+endif
+	$(eval LOCAL_BUILD_TRIDENT_VERSION=$(TRIDENT_CARGO_VERSION)-$(TRIDENT_PREVIEW_VERSION))
 	@echo "TRIDENT_CARGO_VERSION=$(TRIDENT_CARGO_VERSION)"
+	@echo "TRIDENT_PREVIEW_VERSION=$(TRIDENT_PREVIEW_VERSION)"
+	@echo "LOCAL_BUILD_TRIDENT_VERSION=$(LOCAL_BUILD_TRIDENT_VERSION)"
 	@echo "GIT_COMMIT=$(GIT_COMMIT)"
 
 .PHONY: build
@@ -88,7 +96,7 @@ build: .cargo/config version-vars
 	@OPENSSL_STATIC=1 \
 		OPENSSL_LIB_DIR=$(shell dirname `whereis libssl.a | cut -d" " -f2`) \
 		OPENSSL_INCLUDE_DIR=/usr/include/openssl \
-		TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
+		TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
 		cargo build --release --features dangerous-options,grpc-preview
 	@mkdir -p bin
 
@@ -183,7 +191,7 @@ build-azl3: azl3-builder-image version-vars
 	@mkdir -p target/azl3/
 	@echo "Building Trident for Azure Linux 3 using Docker image $(AZL3_BUILDER_IMAGE)..."
 	@docker run --rm \
-		-e TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
+		-e TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
 		-v $(PWD):/work -w /work $(AZL3_BUILDER_IMAGE) \
 		cargo build --color always --target-dir target/azl3 --release --features dangerous-options,grpc-preview
 
@@ -202,7 +210,7 @@ bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full packaging/systemd
 			--build-arg CARGO_REGISTRIES_FROM_ENV="true" \
 			--build-arg TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
 			--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)" \
-			--build-arg RPM_REL="dev.$(GIT_COMMIT)" \
+			--build-arg RPM_REL="$(TRIDENT_PREVIEW_VERSION)" \
 			--target artifact \
 			--output type=local,dest=$$tmpdir \
 			-f packaging/docker/Dockerfile.full \
@@ -217,7 +225,7 @@ bin/trident-rpms.tar.gz: packaging/docker/Dockerfile.azl3 packaging/systemd/*.se
 	@docker build -t trident/trident-build:latest \
 		--build-arg TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
 		--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)" \
-		--build-arg RPM_REL="dev.$(GIT_COMMIT)" \
+		--build-arg RPM_REL="$(TRIDENT_PREVIEW_VERSION)" \
 		-f packaging/docker/Dockerfile.azl3 \
 		.
 	@mkdir -p bin/

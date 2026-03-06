@@ -11,6 +11,9 @@ import re
 import subprocess
 import sys
 
+LOCAL_BUILD_TYPE = "local"
+PIPELINE_BUILD_TYPE = "pipeline"
+
 
 def get_git_revision_short_hash() -> str:
     return (
@@ -20,18 +23,14 @@ def get_git_revision_short_hash() -> str:
     )
 
 
-def get_version(file, use_date_as_patch):
-    pattern = r'version\s*=\s*"(\d+\.\d+)(\.\d+)"'
+def get_versions(file):
+    pattern = r'version\s*=\s*"(\d+)\.(\d+)\.(\d+)"'
 
     match = re.search(pattern, file)
 
     if match:
-        if use_date_as_patch:
-            # If using date as patch, just return major.minor
-            return match.group(1)
-        else:
-            # if using patch from Cargo.toml, return major.minor.patch
-            return f"{match.group(1)}{match.group(2)}"
+        # Return the major, minor, and patch versions as integers
+        return match.group(1), match.group(2), match.group(3)
     else:
         print("Version definition not found.")
         sys.exit(1)
@@ -49,8 +48,8 @@ parser.add_argument(
 parser.add_argument(
     "--build-type",
     type=str,
-    choices=["local", "pipeline"],
-    default="local",
+    choices=[LOCAL_BUILD_TYPE, PIPELINE_BUILD_TYPE],
+    default=LOCAL_BUILD_TYPE,
     help="Defines what type of build to create, for local builds the date will be used as the patch version, for pipeline builds the patch will be read from Cargo.toml.",
 )
 parser.add_argument(
@@ -59,34 +58,51 @@ parser.add_argument(
 
 args = parser.parse_args()
 
-with open("crates/trident/Cargo.toml", "r") as file:
-    content = file.read()
-
-use_date_as_patch = args.build_type == "local"
-version = get_version(content, use_date_as_patch)
-next_separator = "." if use_date_as_patch else "-"
-
 if not args.BuildNumber:
     print("Missing BuildNumber.")
     sys.exit()
 
 match = re.match(r"(\d+)\.(\d+)", args.BuildNumber)
-
-if match:
-    # Check if BuildNumber is already the Trident version
-    version_pattern = rf"(^{version}\.)(\d{{10}})(-?.*$)"
-    if re.match(version_pattern, args.BuildNumber):
-        print(args.BuildNumber)
-    else:
-        date, id = match.groups()
-        id = int(id)
-
-        if args.commit:
-            short_commit = get_git_revision_short_hash()
-            print(f"{version}{next_separator}{date}{id:02d}-v{short_commit.strip()}")
-        else:
-            print(f"{version}{next_separator}{date}{id:02d}")
-else:
+if not match:
     print(
         "Invalid input. BuildNumber should be a date and ID, for example a counter, separated by a point."
     )
+    sys.exit()
+
+with open("crates/trident/Cargo.toml", "r") as file:
+    content = file.read()
+
+use_date_as_patch = args.build_type == LOCAL_BUILD_TYPE
+major, minor, patch = get_versions(content)
+
+date_pattern = "\d{10}"
+basic_version_pattern = (
+    rf"{major}\.{minor}\.{date_pattern}"  # major.minor.date
+    if use_date_as_patch
+    else rf"{major}\.{minor}\.{patch}"  # major.minor.patch
+)
+prerelease_pattern = ".*"
+version_pattern = f"^{basic_version_pattern}-?{prerelease_pattern}$"  # major.minor.date-rest or major.minor.patch-rest
+
+if re.match(version_pattern, args.BuildNumber):
+    print(args.BuildNumber)
+else:
+    date, id = match.groups()
+    id = int(id)
+
+    basic_version = (
+        f"{major}.{minor}.{date}{id:02d}"  # Format: MAJOR.MINOR.YYYMMDDID
+        if use_date_as_patch
+        else f"{major}.{minor}.{patch}"  # Format: MAJOR.MINOR.PATCH
+    )
+
+    if args.commit:
+        short_commit = f"v{get_git_revision_short_hash().strip()}"
+        if use_date_as_patch:
+            # Format: MAJOR.MINOR.YYYMMDDID-vCOMMIT
+            print(f"{basic_version}-{short_commit}")
+        else:
+            # Format: MAJOR.MINOR.PATCH-YYYMMDDID.vCOMMIT
+            print(f"{basic_version}-{date}{id:02d}.{short_commit}")
+    else:
+        print(f"{basic_version}")
