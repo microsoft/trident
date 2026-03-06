@@ -13,12 +13,6 @@ OVERRIDE_RUST_FEED ?= true
 
 SERVER_PORT ?= 8133
 
-# For 'local' builds, trident version will be major.minor.<date>-<commit>.
-# For anything else, trident version will be major.minor.patch-<date>-<commit>.
-# This allows local builds to be a newer version than any official build so
-# that local RPMs will be loaded before official builds.
-TRIDENT_BUILD_TYPE ?= local
-
 # Azl3 builder docker image name
 AZL3_BUILDER_IMAGE := azl3/trident-builder:latest
 
@@ -78,13 +72,9 @@ check-sh:
 .PHONY: version-vars
 version-vars:
 	$(eval TRIDENT_BUILD_DATE := $(shell date +%Y%m%d))
-	$(eval TRIDENT_CARGO_VERSION := $(shell python3 ./scripts/get-version.py "$(TRIDENT_BUILD_DATE).99" --build-type $(TRIDENT_BUILD_TYPE)))
+	$(eval TRIDENT_CARGO_VERSION := $(shell python3 ./scripts/get-version.py "$(TRIDENT_BUILD_DATE).99"))
 	$(eval GIT_COMMIT := $(shell git rev-parse --short HEAD)$(shell git diff --quiet || echo '.dirty'))
-ifeq ($(TRIDENT_BUILD_TYPE),local)
-	$(eval TRIDENT_PREVIEW_VERSION=dev.$(GIT_COMMIT))
-else
 	$(eval TRIDENT_PREVIEW_VERSION=$(TRIDENT_BUILD_DATE).$(GIT_COMMIT))
-endif
 	$(eval LOCAL_BUILD_TRIDENT_VERSION=$(TRIDENT_CARGO_VERSION)-$(TRIDENT_PREVIEW_VERSION))
 	@echo "TRIDENT_CARGO_VERSION=$(TRIDENT_CARGO_VERSION)"
 	@echo "TRIDENT_PREVIEW_VERSION=$(TRIDENT_PREVIEW_VERSION)"

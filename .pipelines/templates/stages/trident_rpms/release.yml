@@ -9,7 +9,7 @@ parameters:
 steps:
   - script: |
       set -eux
-      TRIDENT_VERSION=$(python3 ./scripts/get-version.py "$(Build.BuildNumber)" --commit --build-type pipeline)
+      TRIDENT_VERSION=$(python3 ./scripts/get-version.py "$(Build.BuildNumber)" --commit)
       echo "##vso[task.setvariable variable=trident_version]$TRIDENT_VERSION"
     displayName: "Setting Trident version"
 

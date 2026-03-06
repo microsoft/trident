@@ -106,7 +106,7 @@ stages:
               export CARGO_PROFILE_RELEASE_OPT_LEVEL=0
 
               make validate-configs
-              TRIDENT_BUILD_TYPE=pipeline make bin/trident-rpms.tar.gz
+              make bin/trident-rpms.tar.gz
               make docker-build
             displayName: Invoke make
             env:
