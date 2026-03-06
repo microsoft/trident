@@ -75,14 +75,14 @@ with open("crates/trident/Cargo.toml", "r") as file:
 use_date_as_patch = args.build_type == LOCAL_BUILD_TYPE
 major, minor, patch = get_versions(content)
 
-date_pattern = "\d{10}"
+date_pattern = rf"\d{{10}}"
 basic_version_pattern = (
     rf"{major}\.{minor}\.{date_pattern}"  # major.minor.date
     if use_date_as_patch
     else rf"{major}\.{minor}\.{patch}"  # major.minor.patch
 )
-prerelease_pattern = ".*"
-version_pattern = f"^{basic_version_pattern}-?{prerelease_pattern}$"  # major.minor.date-rest or major.minor.patch-rest
+prerelease_pattern = rf".*"
+version_pattern = rf"^{basic_version_pattern}-?{prerelease_pattern}$"  # major.minor.date-rest or major.minor.patch-rest
 
 if re.match(version_pattern, args.BuildNumber):
     print(args.BuildNumber)
