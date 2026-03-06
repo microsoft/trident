@@ -52,7 +52,7 @@ stages:
 
             variables:
               - name: ob_outputDirectory
-                value: "$(Pipeline.Workspace)/s/trident/out"
+                value: "/tmp/out"
 
             steps:
               - template: ../common_tasks/avoid-pypi-usage.yml
@@ -65,7 +65,7 @@ stages:
 
             variables:
               - name: ob_outputDirectory
-                value: "$(Pipeline.Workspace)/s/trident/out"
+                value: "/tmp/out"
 
             steps:
               - template: ../common_tasks/checkout_trident.yml
@@ -93,7 +93,7 @@ stages:
               - name: ob_artifactBaseName
                 value: ${{ parameters.tridentArtifactName }}
               - name: ob_outputDirectory
-                value: "$(Pipeline.Workspace)/s/trident/out"
+                value: "/tmp/trident-binaries"
               - template: common/setup-registries-vars-template.yaml@platform-pipelines
                 parameters:
                   buildType: auto
@@ -118,6 +118,7 @@ stages:
                 parameters:
                   targetArchitecture: ${{ parameters.targetArchitecture }}
                   tridentRepoDirectory: $(TRIDENT_SOURCE_DIR)
+                  artifactDirectory: "$(ob_outputDirectory)"
 
       - ${{ elseif eq( parameters.targetArchitecture, 'arm64' ) }}:
           - job: BuildTrident_${{ parameters.targetArchitecture }}
@@ -131,7 +132,7 @@ stages:
               - name: ob_artifactBaseName
                 value: ${{ parameters.tridentArtifactName }}-arm64
               - name: ob_outputDirectory
-                value: "$(Pipeline.Workspace)/s/trident/out"
+                value: "/tmp/trident-binaries"
               - template: common/setup-registries-vars-template.yaml@platform-pipelines
                 parameters:
                   buildType: auto
@@ -159,3 +160,4 @@ stages:
                 parameters:
                   targetArchitecture: ${{ parameters.targetArchitecture }}
                   tridentRepoDirectory: $(TRIDENT_SOURCE_DIR)
+                  artifactDirectory: "$(ob_outputDirectory)"

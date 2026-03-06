@@ -44,7 +44,7 @@ stages:
         variables:
           - template: ../../feed-staging-vars.yml
           - name: ob_outputDirectory
-            value: $(Pipeline.Workspace)/s/trident/build
+            value: /tmp/build
           - name: "artifactSuffix"
             ${{ if eq(parameters.stageType, 'ci') }}:
               value: "${{ variables.stage_ci_suffix }}"

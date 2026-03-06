@@ -53,8 +53,7 @@ stages:
           hostArchitecture: amd64
 
         variables:
-          ob_outputDirectory: $(Pipeline.Workspace)/s/trident/build
-          baseImageDirectory: "$(Pipeline.Workspace)/s/trident/artifacts"
+          ob_outputDirectory: /tmp/build
 
         steps:
           - template: ../common_tasks/checkout_trident.yml
@@ -86,7 +85,7 @@ stages:
                 inputs:
                   buildType: current
                   artifactName: "${{ parameters.functestImageArtifact }}"
-                  targetPath: "${{ variables.baseImageDirectory }}"
+                  targetPath: "$(TRIDENT_SOURCE_DIR)/artifacts"
           - ${{ else }}:
               - task: DownloadPipelineArtifact@2
                 displayName: "Download FT Image from latest build of ${{ parameters.functestImageArtifactPipeline}}"
@@ -97,7 +96,7 @@ stages:
                   buildVersionToDownload: latestFromBranch
                   branchName: "refs/heads/main"
                   artifactName: "${{ parameters.functestImageArtifact }}"
-                  targetPath: "${{ variables.baseImageDirectory }}"
+                  targetPath: "$(TRIDENT_SOURCE_DIR)/artifacts"
 
           - bash: |
               set -eux

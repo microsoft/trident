@@ -69,7 +69,7 @@ stages:
         condition: ne(variables['matrixJson'], '{}')
         variables:
           - name: ob_outputDirectory
-            value: $(Pipeline.Workspace)/s/trident/output
+            value: /tmp/output
           - name: ob_artifactBaseName
             value: $(SCENARIO)_$(System.JobAttempt)
           - ${{ if eq(parameters.runtimeType, 'CONTAINER') }}:

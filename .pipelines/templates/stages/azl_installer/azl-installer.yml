@@ -49,7 +49,7 @@ stages:
           type: linux
 
         variables:
-          ob_outputDirectory: $(Pipeline.Workspace)/s/output
+          ob_outputDirectory: /tmp/output
           ob_artifactBaseName: azl-installer
           BASEIMG_AZURE_LINUX_VERSION: "3.0"
 
@@ -142,7 +142,7 @@ stages:
           hostArchitecture: amd64
 
         variables:
-          ob_outputDirectory: $(Pipeline.Workspace)/azl-installer-test-unattended
+          ob_outputDirectory: /tmp/azl-installer-test-unattended
           ob_artifactBaseName: azl-installer-test-unattended-$(System.JobAttempt)
 
         steps:

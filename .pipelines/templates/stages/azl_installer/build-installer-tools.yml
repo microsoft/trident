@@ -34,7 +34,7 @@ stages:
           hostArchitecture: amd64
 
         variables:
-          ob_outputDirectory: $(Pipeline.Workspace)/s/trident/installer-tools
+          ob_outputDirectory: /tmp/installer-tools
           ob_artifactBaseName: installer-tools
 
         steps:

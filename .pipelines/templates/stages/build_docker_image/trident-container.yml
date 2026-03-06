@@ -27,7 +27,7 @@ stages:
           type: linux
 
         variables:
-          ob_outputDirectory: "$(Pipeline.Workspace)/s/trident/out"
+          ob_outputDirectory: "/tmp/trident-docker-image"
           ob_artifactBaseName: "trident-docker-image"
 
         steps:

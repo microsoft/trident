@@ -124,7 +124,7 @@ stages:
                 value: false
 
           - name: ob_outputDirectory
-            value: $(Pipeline.Workspace)/s/trident/deployment_logs
+            value: /tmp/deployment_logs
           - name: ob_artifactBaseName
             value: $(tridentConfigurationName)_${{ parameters.runtimeEnv }}_deployment_log_$(System.JobAttempt)
 

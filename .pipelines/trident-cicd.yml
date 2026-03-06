@@ -63,7 +63,7 @@ extends:
               type: linux
             variables:
               - name: ob_outputDirectory
-                value: "$(Pipeline.Workspace)/s/trident/base-image-config"
+                value: "/tmp/base-image-config"
               - name: ob_artifactBaseName
                 value: "base-image-config"
             steps:
@@ -115,7 +115,7 @@ extends:
               pool:
                 type: linux
               variables:
-                ob_outputDirectory: "$(Pipeline.Workspace)/s/trident/out"
+                ob_outputDirectory: "/tmp/out"
               steps:
                 - script: |
                     set -eux
@@ -138,7 +138,7 @@ extends:
               pool:
                 type: linux
               variables:
-                ob_outputDirectory: "$(Pipeline.Workspace)/s/trident/out"
+                ob_outputDirectory: "/tmp/out"
               steps:
                 - script: |
                     set -eux

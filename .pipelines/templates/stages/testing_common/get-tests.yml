@@ -49,7 +49,7 @@ jobs:
       type: linux
 
     variables:
-      ob_outputDirectory: $(Pipeline.Workspace)/s/trident/build
+      ob_outputDirectory: /tmp/build
       ob_artifactBaseName: select_tests_${{ parameters.deploymentEnvironment }}_${{ parameters.runtimeEnv }}_$(System.JobAttempt)
 
     steps:

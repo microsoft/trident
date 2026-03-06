@@ -25,7 +25,7 @@ stages:
           type: linux
 
         variables:
-          ob_outputDirectory: $(Pipeline.Workspace)/s/trident/build
+          ob_outputDirectory: /tmp/build
           ob_artifactBaseName: storm-e2e-select-tests
 
         steps:

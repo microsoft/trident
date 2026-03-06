@@ -18,7 +18,7 @@ stages:
 
     variables:
       - name: ob_outputDirectory
-        value: $(Pipeline.Workspace)/s/trident/output
+        value: /tmp/output
       - name: ob_artifactBaseName
         value: ${{ parameters.outputArtifactName }}
       - name: mic_package

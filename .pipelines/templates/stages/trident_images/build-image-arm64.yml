@@ -54,7 +54,7 @@ jobs:
       type: linux
 
     variables:
-      ob_outputDirectory: $(Pipeline.Workspace)/s/trident/out
+      ob_outputDirectory: /tmp/out
       ob_artifactBaseName: "image-${{ parameters.label }}"
 
     steps:

@@ -2,7 +2,6 @@
 parameters:
   - name: tridentSourceDirectory
     type: string
-    default: $(Pipeline.Workspace)/s/trident
 
   - name: imageName
     type: string
@@ -156,7 +155,7 @@ steps:
         EXTRA_ARGS+=" --container imagecustomizer:dev"
       fi
 
-      python3  ./tests/images/testimages.py build \
+      python3 ./tests/images/testimages.py build \
           "${{ parameters.imageName }}" $EXTRA_ARGS \
           --output-dir $(ob_outputDirectory) \
           --no-download \

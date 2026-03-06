@@ -14,11 +14,16 @@ parameters:
     type: string
     default: TRIDENT_SOURCE_DIR
 
+  # Define Pipeline.Workspace subpath for trident repo.
+  - name: tridentSourceDirectoryPathFragment
+    type: string
+    default: s/trident
+
 steps:
   - checkout: ${{ parameters.tridentRepoName }}
     fetchDepth: 1
-    path: s/trident
+    path: ${{ parameters.tridentSourceDirectoryPathFragment }}
   - bash: |
-      echo "Setting ${{ parameters.tridentSourceDirectoryVariableName }} variable: $(Pipeline.Workspace)/s/trident"
-      echo "##vso[task.setvariable variable=${{ parameters.tridentSourceDirectoryVariableName }}]$(Pipeline.Workspace)/s/trident"
+      echo "Setting ${{ parameters.tridentSourceDirectoryVariableName }} variable: $(Pipeline.Workspace)/${{ parameters.tridentSourceDirectoryPathFragment }}"
+      echo "##vso[task.setvariable variable=${{ parameters.tridentSourceDirectoryVariableName }}]$(Pipeline.Workspace)/${{ parameters.tridentSourceDirectoryPathFragment }}"
     displayName: "Set ${{ parameters.tridentSourceDirectoryVariableName }} variable"

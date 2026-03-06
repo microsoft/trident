@@ -98,7 +98,7 @@ jobs:
       hostArchitecture: amd64
 
     variables:
-      ob_outputDirectory: $(Pipeline.Workspace)/s/trident/deployment_logs_${{ parameters.flavor }}
+      ob_outputDirectory: /tmp/deployment_logs_${{ parameters.flavor }}
       ob_artifactBaseName: "rollback-testing-${{ parameters.flavor }}"
       TEST_RESOURCE_GROUP: trident-vm-servicing-validation-$(Build.BuildId)
 

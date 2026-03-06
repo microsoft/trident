@@ -52,7 +52,7 @@ stages:
           - name: ob_artifactBaseName
             value: ${{ parameters.artifactName }}
           - name: ob_outputDirectory
-            value: "$(Pipeline.Workspace)/s/trident/out"
+            value: "/tmp/out"
 
           - template: ../../feed-staging-vars.yml
 

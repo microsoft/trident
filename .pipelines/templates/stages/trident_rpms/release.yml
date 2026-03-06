@@ -9,6 +9,9 @@ parameters:
   - name: tridentRepoDirectory
     type: string
 
+  - name: artifactDirectory
+    type: string
+
 steps:
   - script: |
       set -eux
@@ -65,11 +68,11 @@ steps:
 
       cp -f "$outdir/trident-rpms.tar.gz" ./trident-rpms.tar.gz
 
-      mkdir -p $(ob_outputDirectory)
-      tar -xzf trident-rpms.tar.gz -C $(ob_outputDirectory) --strip-components=3
+      mkdir -p ${{ parameters.artifactDirectory }}
+      tar -xzf trident-rpms.tar.gz -C ${{ parameters.artifactDirectory }} --strip-components=3
     workingDirectory: ${{ parameters.tridentRepoDirectory }}
     displayName: Build RPMs
 
-  - script: ./scripts/extract-binary.sh $(ob_outputDirectory) $(ob_outputDirectory)
+  - script: ./scripts/extract-binary.sh ${{ parameters.artifactDirectory }} ${{ parameters.artifactDirectory }}
     workingDirectory: ${{ parameters.tridentRepoDirectory }}
     displayName: Extract Trident binary

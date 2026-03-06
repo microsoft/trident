@@ -71,7 +71,7 @@ stages:
             artifactName: go-tools-arm64
           ${{ if eq(parameters.architecture, 'amd64') }}:
             artifactName: go-tools
-          ob_outputDirectory: $(Pipeline.Workspace)/s/trident/$(artifactName)
+          ob_outputDirectory: /tmp/$(artifactName)
           ob_artifactBaseName: $(artifactName)
 
         steps:
