@@ -29,7 +29,7 @@ def get_versions(file):
     match = re.search(pattern, file)
 
     if match:
-        # Return the major, minor, and patch versions as integers
+        # Return the major, minor, and patch versions
         return match.group(1), match.group(2), match.group(3)
     else:
         print("Version definition not found.")
@@ -60,14 +60,14 @@ args = parser.parse_args()
 
 if not args.BuildNumber:
     print("Missing BuildNumber.")
-    sys.exit()
+    sys.exit(1)
 
 match = re.match(r"(\d+)\.(\d+)", args.BuildNumber)
 if not match:
     print(
         "Invalid input. BuildNumber should be a date and ID, for example a counter, separated by a point."
     )
-    sys.exit()
+    sys.exit(1)
 
 with open("crates/trident/Cargo.toml", "r") as file:
     content = file.read()
@@ -91,7 +91,7 @@ else:
     id = int(id)
 
     basic_version = (
-        f"{major}.{minor}.{date}{id:02d}"  # Format: MAJOR.MINOR.YYYMMDDID
+        f"{major}.{minor}.{date}{id:02d}"  # Format: MAJOR.MINOR.YYYYMMDDID
         if use_date_as_patch
         else f"{major}.{minor}.{patch}"  # Format: MAJOR.MINOR.PATCH
     )
@@ -99,10 +99,10 @@ else:
     if args.commit:
         short_commit = f"v{get_git_revision_short_hash().strip()}"
         if use_date_as_patch:
-            # Format: MAJOR.MINOR.YYYMMDDID-vCOMMIT
+            # Format: MAJOR.MINOR.YYYYMMDDID-vCOMMIT
             print(f"{basic_version}-{short_commit}")
         else:
-            # Format: MAJOR.MINOR.PATCH-YYYMMDDID.vCOMMIT
+            # Format: MAJOR.MINOR.PATCH-YYYYMMDDID.vCOMMIT
             print(f"{basic_version}-{date}{id:02d}.{short_commit}")
     else:
         print(f"{basic_version}")
