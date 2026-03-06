@@ -72,9 +72,9 @@ if match:
         basic_version = f"{major}.{minor}.{patch}"  # Format: MAJOR.MINOR.PATCH
 
         if args.commit:
-            short_commit = f"v{get_git_revision_short_hash().strip()}"
+            short_commit = get_git_revision_short_hash()
             # Format: MAJOR.MINOR.PATCH-YYYYMMDDID.vCOMMIT
-            print(f"{basic_version}-{date}{id:02d}.{short_commit}")
+            print(f"{basic_version}-{date}{id:02d}.v{short_commit.strip()}")
         else:
             print(f"{basic_version}")
 else:
