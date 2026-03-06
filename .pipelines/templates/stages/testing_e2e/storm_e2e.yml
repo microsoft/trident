@@ -32,6 +32,7 @@ stages:
           - template: ../common_tasks/checkout_trident.yml
             parameters:
               tridentRepoName: ${{ parameters.tridentRepoName }}
+              tridentSourceDirectoryVariableName: TRIDENT_SOURCE_DIR
           - task: DownloadPipelineArtifact@2
             displayName: "Download go-tools"
             inputs:

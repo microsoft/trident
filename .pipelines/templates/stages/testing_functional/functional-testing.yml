@@ -60,6 +60,7 @@ stages:
           - template: ../common_tasks/checkout_trident.yml
             parameters:
               tridentRepoName: ${{ parameters.tridentRepoName }}
+              tridentSourceDirectoryVariableName: TRIDENT_SOURCE_DIR
           - checkout: platform-tests
             fetchDepth: 1
             path: s/platform-tests

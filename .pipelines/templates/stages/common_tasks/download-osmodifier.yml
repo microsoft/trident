@@ -1,7 +1,6 @@
 parameters:
   - name: tridentSourceDirectory
     type: string
-    default: $(Pipeline.Workspace)/s/trident
 
   - name: osModifierBuildType
     displayName: OSModifier build type to download from osmodifier pipelines

@@ -71,6 +71,7 @@ stages:
               - template: ../common_tasks/checkout_trident.yml
                 parameters:
                   tridentRepoName: ${{ parameters.tridentRepoName }}
+                  tridentSourceDirectoryVariableName: TRIDENT_SOURCE_DIR
               - template: ../common_tasks/avoid-pypi-usage.yml
               # need newer rust for cargo-nextest, use rustup.yml to install
               - template: ../common_tasks/rustup.yml
@@ -101,6 +102,7 @@ stages:
               - template: ../common_tasks/checkout_trident.yml
                 parameters:
                   tridentRepoName: ${{ parameters.tridentRepoName }}
+                  tridentSourceDirectoryVariableName: TRIDENT_SOURCE_DIR
               - template: ../common_tasks/os-info.yml
               - template: ../common_tasks/avoid-pypi-usage.yml
               - template: ../common_tasks/cargo-auth.yml
@@ -138,6 +140,7 @@ stages:
               - template: ../common_tasks/checkout_trident.yml
                 parameters:
                   tridentRepoName: ${{ parameters.tridentRepoName }}
+                  tridentSourceDirectoryVariableName: TRIDENT_SOURCE_DIR
               - template: ../common_tasks/avoid-pypi-usage.yml
               - template: ../common_tasks/cargo-auth.yml
                 parameters:

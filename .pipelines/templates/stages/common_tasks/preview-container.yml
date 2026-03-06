@@ -13,7 +13,6 @@ parameters:
     
   - name: dockerBuildContext
     type: string
-    default: $(Pipeline.Workspace)/s/trident
     displayName: Path in which the Dockerfile will be run, the base for the container image will be saved there.
 
 steps:

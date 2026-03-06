@@ -99,6 +99,7 @@ stages:
           - template: ../common_tasks/checkout_trident.yml
             parameters:
               tridentRepoName: ${{ parameters.tridentRepoName }}
+              tridentSourceDirectoryVariableName: TRIDENT_SOURCE_DIR
           - bash: |
               if [ ${{ variables['tridentConfigurationName'] }} == 'split' ]; then
                 splitInstallerIsoName="trident-split-installer"
@@ -115,6 +116,7 @@ stages:
               tridentTestImageVerity: ${{ variables.verityTestImageName }}
               downloadTridentContainer: ${{ variables.downloadTridentContainer }}
               tridentTestImageUsrVerity: ${{ variables.usrVerityTestImageName }}
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
           - bash: |
               set -eux
 

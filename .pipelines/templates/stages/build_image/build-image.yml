@@ -74,6 +74,7 @@ stages:
           - template: ../common_tasks/checkout_trident.yml
             parameters:
               tridentRepoName: ${{ parameters.tridentRepoName }}
+              tridentSourceDirectoryVariableName: TRIDENT_SOURCE_DIR
           - template: ../common_tasks/avoid-pypi-usage.yml
 
           - task: DownloadPipelineArtifact@2

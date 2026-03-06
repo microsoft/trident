@@ -1,7 +1,6 @@
 parameters:
   - name: tridentSourceDirectory
     type: string
-    default: $(Pipeline.Workspace)/s/trident
 
   # Define which service connection to use for accessing ACR.
   #   `maritimus-dev-acr-write-umi` is the service connection for the Polar SC

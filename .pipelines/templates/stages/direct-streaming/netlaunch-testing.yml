@@ -64,14 +64,12 @@ stages:
             hostArchitecture: arm64
 
         variables:
-          - name: tridentSourceDirectory
-            value: $(Pipeline.Workspace)/s/trident
           - name: testImageName
             value: ${{ parameters.streamingImageDistro }}-direct-streaming-testimage-${{ parameters.architecture }}
           - name: installerISOName
             value: trident-direct-streaming-installer-${{ parameters.architecture }}
           - name: ob_outputDirectory
-            value: $(tridentSourceDirectory)/deployment_logs
+            value: $(Pipeline.Workspace)/s/trident/deployment_logs
           - name: ob_artifactBaseName
             value: direct_streaming_${{ parameters.streamingImageDistro }}_${{ parameters.architecture }}_log_$(System.JobAttempt)
           - name: netlaunchPort
@@ -81,6 +79,7 @@ stages:
           - template: ../common_tasks/checkout_trident.yml
             parameters:
               tridentRepoName: ${{ parameters.tridentRepoName }}
+              tridentSourceDirectoryVariableName: TRIDENT_SOURCE_DIR
 
           # Download all test images
           - template: ../testing_common/download-test-images.yml
@@ -94,6 +93,7 @@ stages:
                 goToolsArtifactName: go-tools-arm64
               ${{ if eq(parameters.architecture, 'amd64') }}:
                 goToolsArtifactName: go-tools
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
 
           - bash: |
               set -ex

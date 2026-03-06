@@ -1,7 +1,6 @@
 parameters:
   - name: tridentSourceDirectory
     type: string
-    default: $(Pipeline.Workspace)/s/trident
 
   - name: executeUnitTests
     type: boolean
