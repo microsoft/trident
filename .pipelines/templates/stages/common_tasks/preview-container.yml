@@ -11,12 +11,13 @@ parameters:
     default: ""
     displayName: File that will be edited to use preview container image
     
-  - name: dockerBuildContext
+  - name: tridentSourceDirectory
     type: string
-    displayName: Path in which the Dockerfile will be run, the base for the container image will be saved there.
 
 steps:
   - template: ../base_image_config/read-base-image-config-artifact.yml
+    parameters:
+      tridentSourceDirectory: ${{ parameters.tridentSourceDirectory }}
   - bash: |
       set -eux
 
@@ -69,9 +70,9 @@ steps:
   - script: |
       set -eux
 
-      mkdir -p ${{ parameters.dockerBuildContext }}/artifacts/container_base/
+      mkdir -p ${{ parameters.tridentSourceDirectory }}/artifacts/container_base/
       tar -xzvf $(Pipeline.Workspace)/build-artifacts/container_base/core-*.tar.gz -C \
-        ${{ parameters.dockerBuildContext }}/artifacts/container_base/ > /dev/null 2>&1
+        ${{ parameters.tridentSourceDirectory }}/artifacts/container_base/ > /dev/null 2>&1
       
       # Only replace the *first* FROM line so multi-stage Dockerfiles keep
       # their later stages intact (e.g. a final scratch "artifact" stage).
