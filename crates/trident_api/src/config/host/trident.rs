@@ -5,10 +5,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
-use crate::{
-    constants::{DATASTORE_FILE_EXTENSION, TRIDENT_DATASTORE_PATH_DEFAULT},
-    is_default,
-};
+use crate::constants::{DATASTORE_FILE_EXTENSION, TRIDENT_DATASTORE_PATH_DEFAULT};
 
 use super::error::HostConfigurationStaticValidationError;
 
@@ -22,11 +19,6 @@ pub struct Trident {
     /// In that case, the remaining fields are ignored.
     #[serde(default)]
     pub disable: bool,
-
-    /// Whether Trident should start a gRPC server to listen for commands when the target OS boots.
-    /// Defaults to `false`.
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub enable_grpc: bool,
 
     /// Describes where to place the datastore Trident will use to store its state.
     /// Defaults to `/var/lib/trident/datastore.sqlite`. Needs to end with
@@ -53,7 +45,6 @@ impl Default for Trident {
     fn default() -> Self {
         Self {
             disable: Default::default(),
-            enable_grpc: Default::default(),
             datastore_path: Trident::default_datastore_path(),
             phonehome: Default::default(),
             logstream: Default::default(),

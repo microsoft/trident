@@ -8,7 +8,7 @@ by mounting a read-only overlay over `/usr` and `/opt`. Please reference the
 more information.
 
 Trident supports servicing sysexts as part of the [Clean
-Install](../Reference/Glossary.md#clean-install) and [A/B
+Install](../Reference/Glossary.md#install-servicing-type) and [A/B
 Update](../Reference/Glossary.md#ab-update) flows. Please reference the [sysexts
 API
 documentation](../Reference/Host-Configuration/API-Reference/Os.md#sysexts-optional)

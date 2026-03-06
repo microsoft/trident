@@ -45,6 +45,18 @@ environments, orchestrators can utilize the `get` command to monitor operation
 status and determine appropriate next steps based on structured feedback from
 Trident.
 
+## gRPC API
+
+In addition to the CLI, Trident exposes a
+[gRPC server](../Explanation/gRPC-Server.md) for programmatic interaction. The
+server runs as a daemon (`tridentd`) and listens on a Unix domain socket,
+allowing orchestration systems and agents to interact with Trident using a
+structured, strongly-typed API with streaming progress updates. This is the
+recommended integration path for complex orchestrators that need real-time
+observability and structured error reporting without parsing CLI output.
+
+## Logging
+
 Trident logs its operations to standard output, which can be redirected to a
 file or monitored in real-time. The logging verbosity can be adjusted using the
 `--verbosity` flag, allowing users to tailor the level of detail to their needs.

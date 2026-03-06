@@ -31,14 +31,6 @@ When set to `true`, prevents Trident from being enabled on the target OS. In tha
 | Type           | `boolean` |
 | Default        | `false`   |
 
-### `enableGrpc` (optional)
-
-Whether Trident should start a gRPC server to listen for commands when the target OS boots. Defaults to `false`.
-
-| Characteristic | Value     |
-| -------------- | --------- |
-| Type           | `boolean` |
-
 ### `logstream` (optional)
 
 Optional URL to stream logs to. TODO: document the interface.

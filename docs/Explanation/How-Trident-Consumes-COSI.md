@@ -64,7 +64,9 @@ file. Given this information, Trident performs one HTTP read request per
 partition image. Importantly, this functionality requires that the hosting
 server supports HTTP Range Requests. Using information from the Host
 Configuration, Trident then writes the streamed partition image data directly to
-the appropriate block device path on disk.
+the appropriate block device path on disk. For more details on how the streaming
+mechanism works, see the
+[Image Streaming Pipeline](./Image-Streaming-Pipeline.md).
 
 As Trident streams an image to its destination partition, it performs an
 integrity check. The COSI metadata contains a SHA384 hash for each partition

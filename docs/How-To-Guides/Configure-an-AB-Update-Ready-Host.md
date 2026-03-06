@@ -42,9 +42,10 @@ By following this guide, you will:
   focuses on configuring an A/B update-ready host on **clean install**; to
   onboard a VM to Trident, follow [this
   tutorial](../Tutorials/Onboard-a-VM-to-Trident.md).
-- If you're doing [a clean install](../Reference/Glossary.md#clean-install),
-  then Trident will implement the A/B partition scheme for you. The target OS
-  image, i.e., a COSI file, can be built by referencing this
+- If you're doing [a clean
+  install](../Reference/Glossary.md#install-servicing-type), then Trident will
+  implement the A/B partition scheme for you. The target OS image, i.e., a COSI
+  file, can be built by referencing this
   [tutorial](../Tutorials/Building-AB-Update-Images-for-Install-and-Update.md).
   The OS image will target a single partition, A or B, at a time, so it must
   contain only a single set of volume copies.

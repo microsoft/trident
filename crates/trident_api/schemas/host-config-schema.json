@@ -1601,10 +1601,6 @@
           "default": false,
           "type": "boolean"
         },
-        "enableGrpc": {
-          "description": "Whether Trident should start a gRPC server to listen for commands when the target OS boots. Defaults to `false`.",
-          "type": "boolean"
-        },
         "logstream": {
           "description": "Optional URL to stream logs to. TODO: document the interface.",
           "type": "string",

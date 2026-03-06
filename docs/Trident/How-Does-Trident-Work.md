@@ -4,13 +4,13 @@ sidebar_position: 4
 
 # How does Trident work?
 
-Trident operates based on two primary concepts: [OS
-installation](Reference/Glossary.md#install) and update, each corresponding to
-dedicated CLI commands. Upon invocation, Trident receives a command along with a
-Host Configuration that defines the desired state of the host. During initial
-installation—or when performing offline initialization for a VM image—Trident
-establishes its own datastore (implemented as a SQLite database) on the OS
-filesystem, capturing the current state via the Host Status API.
+Trident operates based on two primary concepts: OS installation and update, each
+corresponding to dedicated CLI commands. Upon invocation, Trident receives a
+command along with a Host Configuration that defines the desired state of the
+host. During initial installation—or when performing offline initialization for
+a VM image—Trident establishes its own datastore (implemented as a SQLite
+database) on the OS filesystem, capturing the current state via the Host Status
+API.
 
 For subsequent servicing operations, Trident compares the provided Host
 Configuration against the most recent Host Status stored in its datastore. It
@@ -53,14 +53,14 @@ This two-phase approach minimizes workload downtime and ensures a smooth
 transition to the updated OS.
 
 To stage OS images, Trident utilizes the
-[COSI](../Reference/Composable-OS-Image.md) file format to enable efficient
-transfer and reliable deployment of the OS images. The file format is designed
-so that Trident can stream individual filesystem images directly from the
-specified source—such as a local file, HTTPS endpoint, or OCI registry—into the
-target block device (partition, RAID array, LUKS volume, etc.). During this
-process, Trident performs on-the-fly hashing and decompression of filesystem
-blocks, ensuring rapid transfer without requiring additional storage or memory
-for intermediate placement.
+[COSI](../Reference/Composable-OS-Image.md) ([overview](../Explanation/COSI.md))
+file format to enable efficient transfer and reliable deployment of the OS
+images. The file format is designed so that Trident can stream individual
+filesystem images directly from the specified source—such as a local file, HTTPS
+endpoint, or OCI registry—into the target block device (partition, RAID array,
+LUKS volume, etc.). During this process, Trident performs on-the-fly hashing and
+decompression of filesystem blocks, ensuring rapid transfer without requiring
+additional storage or memory for intermediate placement.
 
 ## Image validation and configuration
 
