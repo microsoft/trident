@@ -20,7 +20,7 @@ def get_git_revision_short_hash() -> str:
     )
 
 
-def get_versions(file):
+def split_semver_version(file):
     pattern = r'version\s*=\s*"(\d+)\.(\d+)\.(\d+)"'
 
     match = re.search(pattern, file)
@@ -48,38 +48,39 @@ parser.add_argument(
 
 args = parser.parse_args()
 
+with open("crates/trident/Cargo.toml", "r") as file:
+    content = file.read()
+
+major, minor, patch = split_semver_version(content)
+
 if not args.BuildNumber:
     print("Missing BuildNumber.")
     sys.exit(1)
 
 match = re.match(r"(\d+)\.(\d+)", args.BuildNumber)
-if not match:
+
+if match:
+    date_pattern = rf"\d{{10}}"
+    basic_version_pattern = rf"{major}\.{minor}\.{patch}"  # major.minor.patch
+    prerelease_pattern = rf".*"
+    version_pattern = rf"^{basic_version_pattern}-?{prerelease_pattern}$"  # major.minor.date-rest or major.minor.patch-rest
+
+    if re.match(version_pattern, args.BuildNumber):
+        print(args.BuildNumber)
+    else:
+        date, id = match.groups()
+        id = int(id)
+
+        basic_version = f"{major}.{minor}.{patch}"  # Format: MAJOR.MINOR.PATCH
+
+        if args.commit:
+            short_commit = f"v{get_git_revision_short_hash().strip()}"
+            # Format: MAJOR.MINOR.PATCH-YYYYMMDDID.vCOMMIT
+            print(f"{basic_version}-{date}{id:02d}.{short_commit}")
+        else:
+            print(f"{basic_version}")
+else:
     print(
         "Invalid input. BuildNumber should be a date and ID, for example a counter, separated by a point."
     )
     sys.exit(1)
-
-with open("crates/trident/Cargo.toml", "r") as file:
-    content = file.read()
-
-major, minor, patch = get_versions(content)
-
-date_pattern = rf"\d{{10}}"
-basic_version_pattern = rf"{major}\.{minor}\.{patch}"  # major.minor.patch
-prerelease_pattern = rf".*"
-version_pattern = rf"^{basic_version_pattern}-?{prerelease_pattern}$"  # major.minor.date-rest or major.minor.patch-rest
-
-if re.match(version_pattern, args.BuildNumber):
-    print(args.BuildNumber)
-else:
-    date, id = match.groups()
-    id = int(id)
-
-    basic_version = f"{major}.{minor}.{patch}"  # Format: MAJOR.MINOR.PATCH
-
-    if args.commit:
-        short_commit = f"v{get_git_revision_short_hash().strip()}"
-        # Format: MAJOR.MINOR.PATCH-YYYYMMDDID.vCOMMIT
-        print(f"{basic_version}-{date}{id:02d}.{short_commit}")
-    else:
-        print(f"{basic_version}")
