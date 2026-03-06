@@ -31,6 +31,10 @@ resources:
       type: git
       ref: refs/heads/main
 
+variables:
+  - name: GLOBAL_TRIDENT_REPO_NAME
+    value: self
+
 extends:
   template: templates/MockOB.yml
   parameters:

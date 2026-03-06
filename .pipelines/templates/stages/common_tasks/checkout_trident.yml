@@ -1,4 +1,8 @@
 parameters:
+  # Define checkout name for the Trident repo. If this is
+  # loaded from a pipeline hosted in the Trident repo, use
+  # `self`. If this is loaded from a pipeline hosted in a
+  # different repo, use `trident`.
   - name: tridentRepoName
     type: string
     values:
@@ -6,7 +10,7 @@ parameters:
       - trident
 
 steps:
-  - checkout: ${{ parameters.tridentRepoName }}
+  - checkout: $(GLOBAL_TRIDENT_REPO_NAME)
     fetchDepth: 1
     path: s/trident
   - bash: |
