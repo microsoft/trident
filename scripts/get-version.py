@@ -60,10 +60,8 @@ if not args.BuildNumber:
 match = re.match(r"(\d+)\.(\d+)", args.BuildNumber)
 
 if match:
-    date_pattern = rf"\d{{10}}"
-    basic_version_pattern = rf"{major}\.{minor}\.{patch}"  # major.minor.patch
-    prerelease_pattern = rf".*"
-    version_pattern = rf"^{basic_version_pattern}-?{prerelease_pattern}$"  # major.minor.date-rest or major.minor.patch-rest
+    # Check if BuildNumber is already the Trident version
+    version_pattern = rf"^{major}\.{minor}\.{patch}-\d{{10}}(\..*)?$"
 
     if re.match(version_pattern, args.BuildNumber):
         print(args.BuildNumber)
