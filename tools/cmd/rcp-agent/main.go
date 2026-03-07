@@ -62,6 +62,11 @@ func main() {
 		}
 	}
 
+	// Apply service configuration
+	if err := applyServicesConfiguration(config.Services); err != nil {
+		logrus.Fatalf("Failed to apply services configuration: %v", err)
+	}
+
 	if config.ClientAddress == "" {
 		logrus.Warn("No client address specified, running legacy Trident install service.")
 
@@ -77,7 +82,14 @@ func main() {
 	}
 
 	logrus.Infof("Starting reverse-connect proxy with client address: '%s' and server address: '%s'", config.ClientAddress, config.ServerAddress)
-	if err := proxy.StartReverseConnectProxy(ctx, &config.RcpClientTls, config.ClientAddress, config.ServerAddress, time.Second); err != nil {
+	if err := proxy.StartReverseConnectProxy(
+		ctx,
+		&config.RcpClientTls,
+		config.ClientAddress,
+		config.ServerAddress,
+		config.ServerConnectionType,
+		time.Second,
+	); err != nil {
 		logrus.Fatalf("reverse-connect proxy error: %v", err)
 	}
 	logrus.Info("Shutdown complete")
@@ -124,6 +136,23 @@ func enableAndStartTridentInstallService() error {
 	err = cmd.Run("systemctl", "start", "--no-block", tridentInstallServiceName)
 	if err != nil {
 		return fmt.Errorf("failed to start %s: %w", tridentInstallServiceName, err)
+	}
+
+	return nil
+}
+
+func applyServicesConfiguration(config agent.ServicesConfiguration) error {
+	for _, service := range config.Start {
+		logrus.Infof("Enabling and starting service '%s'", service)
+		err := cmd.Run("systemctl", "enable", service)
+		if err != nil {
+			return fmt.Errorf("failed to enable service '%s': %w", service, err)
+		}
+
+		err = cmd.Run("systemctl", "start", "--no-block", service)
+		if err != nil {
+			return fmt.Errorf("failed to start service '%s': %w", service, err)
+		}
 	}
 
 	return nil
