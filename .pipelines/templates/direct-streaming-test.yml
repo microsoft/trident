@@ -93,8 +93,8 @@ stages:
 
   - ${{ if parameters.testUbuntuStreamingImage }}:
     - ${{ each ubuntuVersion in parameters.ubuntuVersions }}:
-      - stage: BuildImagesForDirectStreaming_ubuntu_$(ubuntuVersion)_${{ parameters.architecture }}
-        displayName: Build ${{ parameters.architecture }} ubuntu $(ubuntuVersion) Images for Direct Streaming
+      - stage: BuildImagesForDirectStreaming_ubuntu_${{ubuntuVersion}}_${{ parameters.architecture }}
+        displayName: Build ${{ parameters.architecture }} ubuntu ${{ubuntuVersion}} Images for Direct Streaming
         dependsOn:
           - ${{ if eq(parameters.architecture, 'arm64') }}:
             - GetTridentBinaries_rpms_arm64
@@ -112,16 +112,16 @@ stages:
               # TODO: when IC next releases, no longer needs dev image
               micBuildType: dev
               micVersion: "main"
-              label: "ubuntu-direct-streaming-testimage-$(ubuntuVersion)-${{ parameters.architecture }}"
-              makeTarget: "artifacts/ubuntu-direct-streaming-testimage-$(ubuntuVersion)-${{ parameters.architecture }}.cosi"
+              label: "ubuntu-direct-streaming-testimage-${{ubuntuVersion}}-${{ parameters.architecture }}"
+              makeTarget: "artifacts/ubuntu-direct-streaming-testimage-${{ubuntuVersion}}-${{ parameters.architecture }}.cosi"
               baseimgType: ubuntu_${{ parameters.architecture }}
               timeoutInMinutes: 30
       # Run netlaunch test to validate direct streaming installer
       - template: stages/direct-streaming/netlaunch-testing.yml
         parameters:
           architecture: ${{ parameters.architecture }}
-          buildImageStage: BuildImagesForDirectStreaming_ubuntu_$(ubuntuVersion)_${{ parameters.architecture }}
-          testImageName: ubuntu-direct-streaming-testimage-$(ubuntuVersion)-${{ parameters.architecture }}
+          buildImageStage: BuildImagesForDirectStreaming_ubuntu_${{ubuntuVersion}}_${{ parameters.architecture }}
+          testImageName: ubuntu-direct-streaming-testimage-${{ubuntuVersion}}-${{ parameters.architecture }}
           streamingImageScenario: ubuntu
 
   - ${{ if and(parameters.testFairwaterStreamingImage, eq(parameters.architecture, 'arm64')) }}:
