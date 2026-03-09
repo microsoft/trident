@@ -59,9 +59,11 @@ parameters:
       - core_selinux
       - minimal
       - qemu_guest
-      - ubuntu_amd64
-      - ubuntu_arm64
-      - fairwater_arm64
+      - ubuntu_2204_amd64
+      - ubuntu_2204_arm64
+      - ubuntu_2404_amd64
+      - ubuntu_2404_arm64
+      - fairwater_2204_arm64
     default: 
       - baremetal
 

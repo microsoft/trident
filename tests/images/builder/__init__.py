@@ -21,10 +21,20 @@ class BaseImage(Enum):
     MINIMAL_AARCH64 = BaseImageData(
         "minimal_aarch64", Path("artifacts/minimal_aarch64.vhdx")
     )
-    UBUNTU_AMD64 = BaseImageData("ubuntu_amd64", Path("artifacts/ubuntu_amd64.vhdx"))
-    UBUNTU_ARM64 = BaseImageData("ubuntu_arm64", Path("artifacts/ubuntu_arm64.vhdx"))
-    FAIRWATER_ARM64 = BaseImageData(
-        "fairwater_arm64", Path("artifacts/fairwater_arm64.vhdx")
+    UBUNTU_2204_AMD64 = BaseImageData(
+        "ubuntu_2204_amd64", Path("artifacts/ubuntu_2204_amd64.vhdx")
+    )
+    UBUNTU_2204_ARM64 = BaseImageData(
+        "ubuntu_2204_arm64", Path("artifacts/ubuntu_2204_arm64.vhdx")
+    )
+    UBUNTU_2404_AMD64 = BaseImageData(
+        "ubuntu_2404_amd64", Path("artifacts/ubuntu_2404_amd64.vhdx")
+    )
+    UBUNTU_2404_ARM64 = BaseImageData(
+        "ubuntu_2404_arm64", Path("artifacts/ubuntu_2404_arm64.vhdx")
+    )
+    FAIRWATER_2204_ARM64 = BaseImageData(
+        "fairwater_2204_arm64", Path("artifacts/fairwater_2204_arm64.vhdx")
     )
 
     @property

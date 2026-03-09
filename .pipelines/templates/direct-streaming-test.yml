@@ -21,11 +21,11 @@ parameters:
   - name: ubuntuVersions
     type: object
     values:
-      - "22.04"
-      - "24.04"
+      - "2204"
+      - "2404"
     default:
-      - "22.04"
-      - "24.04"
+      - "2204"
+      - "2404"
 
 stages:
   - ${{ if or(parameters.testAzureLinuxStreamingImage, parameters.testUbuntuStreamingImage) }}:
@@ -114,7 +114,7 @@ stages:
               micVersion: "main"
               label: "ubuntu-direct-streaming-testimage-${{ubuntuVersion}}-${{ parameters.architecture }}"
               makeTarget: "artifacts/ubuntu-direct-streaming-testimage-${{ubuntuVersion}}-${{ parameters.architecture }}.cosi"
-              baseimgType: ubuntu_${{ parameters.architecture }}
+              baseimgType: ubuntu_${{ubuntuVersion}}_${{ parameters.architecture }}
               timeoutInMinutes: 30
       # Run netlaunch test to validate direct streaming installer
       - template: stages/direct-streaming/netlaunch-testing.yml
@@ -142,7 +142,7 @@ stages:
             micVersion: "main"
             label: "fairwater-direct-streaming-testimage-${{ parameters.architecture }}"
             makeTarget: "artifacts/fairwater-direct-streaming-testimage-${{ parameters.architecture }}.cosi"
-            baseimgType: fairwater_${{ parameters.architecture }}
+            baseimgType: fairwater_2204_${{ parameters.architecture }}
             timeoutInMinutes: 30
     # Run netlaunch test to validate direct streaming installer
     - template: stages/direct-streaming/netlaunch-testing.yml
