@@ -27,8 +27,8 @@ parameters:
     default: azurelinux
 
 stages:
-  - stage: DirectStreaming_DeploymentTesting_${{ parameters.streamingImageScenario }}_${{ parameters.architecture }}
-    displayName: Direct Streaming Deployment VM ${{ parameters.streamingImageScenario }} ${{ parameters.architecture }} Testing
+  - stage: DirectStreaming_DeploymentTesting_${{ replace( parameters.testImageName, '-', '_') }}
+    displayName: Direct Streaming Deployment VM for ${{ parameters.testImageName }}
     dependsOn:
       - ${{ if eq(parameters.testingRun, true) }}:
           - DownloadTestingElements
@@ -41,8 +41,8 @@ stages:
           - ${{ parameters.buildImageStage }}
 
     jobs:
-      - job: DirectStreamingTesting_${{ parameters.streamingImageScenario }}_${{ parameters.architecture }}
-        displayName: Direct Streaming Deployment Testing for ${{ parameters.streamingImageScenario }} ${{ parameters.architecture }}
+      - job: DirectStreamingTesting_${{ replace( parameters.testImageName, '-', '_') }}
+        displayName: Direct Streaming Deployment Testing for ${{ parameters.testImageName }}
         timeoutInMinutes: 50
         pool:
           ${{ if eq(parameters.architecture, 'amd64') }}:
