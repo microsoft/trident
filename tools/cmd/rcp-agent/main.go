@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -51,7 +52,7 @@ func main() {
 	}
 
 	// Handle Ctrl+C gracefully
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM, syscall.SIGABRT)
 	defer stop()
 
 	// Download files when provided in config
@@ -90,8 +91,13 @@ func main() {
 		config.ServerConnectionType,
 		time.Second,
 	); err != nil {
-		logrus.Fatalf("reverse-connect proxy error: %v", err)
+		if errors.Is(err, context.Canceled) {
+			logrus.Info("Context cancelled, shutting down reverse-connect proxy.")
+		} else {
+			logrus.Fatalf("reverse-connect proxy error: %v", err)
+		}
 	}
+
 	logrus.Info("Shutdown complete")
 }
 

@@ -57,6 +57,10 @@ func StartReverseConnectProxy(
 	// consecutively, to reduce log spam.
 	multipleRefused := false
 
+	// Build a context-aware TLS dialer so that a cancelled context
+	// (e.g. during shutdown) immediately unblocks the TLS handshake.
+	tlsDialer := tls.Dialer{Config: &tlsConfig}
+
 	// Main loop to keep trying to connect to the client
 	for {
 		if ctx.Err() != nil {
@@ -65,7 +69,7 @@ func StartReverseConnectProxy(
 		}
 
 		// Try to establish connection to the client
-		clientConn, err := tls.Dial("tcp", clientAddress, &tlsConfig)
+		clientConn, err := tlsDialer.DialContext(ctx, "tcp", clientAddress)
 		if err != nil {
 			var errno syscall.Errno
 
@@ -75,6 +79,9 @@ func StartReverseConnectProxy(
 					multipleRefused = true
 					logrus.Warnf("Client connection refused, will retry silently.")
 				}
+			} else if errors.Is(err, context.Canceled) {
+				logrus.Info("Context cancelled while trying to connect to client, exiting.")
+				return err
 			} else {
 				// Some other error occurred
 				logrus.Errorf("Failed to establish client connection: %v", err)
