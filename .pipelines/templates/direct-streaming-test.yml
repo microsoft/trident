@@ -142,7 +142,7 @@ stages:
             micVersion: "main"
             label: "fairwater-direct-streaming-testimage-${{ parameters.architecture }}"
             makeTarget: "artifacts/fairwater-direct-streaming-testimage-${{ parameters.architecture }}.cosi"
-            baseimgType: fairwater_2204_${{ parameters.architecture }}
+            baseimgType: "fairwater_2204_${{ parameters.architecture }}"
             timeoutInMinutes: 30
     # Run netlaunch test to validate direct streaming installer
     - template: stages/direct-streaming/netlaunch-testing.yml

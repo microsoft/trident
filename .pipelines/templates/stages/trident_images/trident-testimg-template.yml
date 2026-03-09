@@ -151,44 +151,42 @@ steps:
       micVersion: ${{ parameters.micVersion }}
 
   - ${{ each baseimgType in parameters.baseimgTypes }}:
-    - ${{ if contains(baseimgType, 'fairwater') }}:
+    - ${{ if or(contains(baseimgType, 'fairwater'), contains(baseimgType, 'ubuntu')) }}:
       - task: AzureCLI@2
         inputs:
-          azureSubscription: maritimus-github-storage-ado-dev-umi-write
+          azureSubscription: azlinuxbmpstaging-storage-account-read
           scriptType: bash
           scriptLocation: inlineScript
           inlineScript: |
-            BLOB_NAME="ubuntu/fairwater_arm64/20260309/image.vhdx"
-            mkdir -p $(Build.ArtifactStagingDirectory)/images
-            az storage blob download \
-              --auth-mode login \
-              --account-name maritimusgithubstorage \
-              --container-name os-images-cache-dev \
-              --name "$BLOB_NAME" \
-              --file $(Build.ArtifactStagingDirectory)/images/${{ baseimgType }}.vhdx
-        retryCountOnTaskFailure: 5
-        displayName: "Download fairwater Base Image - ${{ baseimgType }}"
+            set -eux
 
-    - ${{ elseif contains(baseimgType, 'ubuntu') }}:
-      - task: AzureCLI@2
-        inputs:
-          azureSubscription: maritimus-github-storage-ado-dev-umi-write
-          scriptType: bash
-          scriptLocation: inlineScript
-          inlineScript: |
-            BLOB_NAME="ubuntu/azure-cloud-vhdx-22.04-amd64/20260119/image.vhdx"
-            if [[ "${{ parameters.baseimgType }}" = "ubuntu_arm64" ]]; then
-              BLOB_NAME="ubuntu/azure-cloud-vhdx-22.04-arm64/20260119/image.vhdx"
-            fi
+            case ${{ baseimgType }} in
+              ubuntu_2204_amd64)
+                BLOB_NAME="ubuntu/server-cloudimg-2204-amd64/20260309/image.vhdx"
+                ;;
+              ubuntu_2204_arm64)
+                BLOB_NAME="ubuntu/server-cloudimg-2204-arm64/20260309/image.vhdx"
+                ;;
+              ubuntu_2404_amd64)
+                BLOB_NAME="ubuntu/server-cloudimg-2404-amd64/20260309/image.vhdx"
+                ;;
+              ubuntu_2404_arm64)
+                BLOB_NAME="ubuntu/server-cloudimg-2404-arm64/20260309/image.vhdx"
+                ;;
+              fairwater_2204_arm64)
+                BLOB_NAME="fairwater/arm64/20260309/image.vhdx"
+                ;;
+            esac              
+            
             mkdir -p $(Build.ArtifactStagingDirectory)/images
             az storage blob download \
               --auth-mode login \
-              --account-name maritimusgithubstorage \
-              --container-name os-images-cache-dev \
+              --account-name azlinuxbmpstaging \
+              --container-name os-images-cache \
               --name "$BLOB_NAME" \
               --file $(Build.ArtifactStagingDirectory)/images/${{ baseimgType }}.vhdx
         retryCountOnTaskFailure: 5
-        displayName: "Download ubuntu Base Image - ${{ baseimgType }}"
+        displayName: "Download Base Image - ${{ baseimgType }}"
 
     - ${{ else }}:
       - template: common/base-images-download-template.yaml@platform-pipelines
