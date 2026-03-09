@@ -69,15 +69,20 @@ stages:
               - script: |
                   set -eux
 
+                  # Reset the source code to the specified commit to ensure
+                  # we're packaging the correct source code.
+                  git fetch origin "${{ parameters.sourceCommit }}"
+                  git reset --hard "${{ parameters.sourceCommit }}"
+                displayName: "Reset source code to specified commit"
+                workingDirectory: $(Build.SourcesDirectory)
+
+              - script: |
+                  set -eux
+
                   # Get the raw version from the cargo file to provide a clean
                   # version string for the source tarball and cargo vendor
                   # tarball.
                   TRIDENT_CARGO_VERSION=$(python3 ./scripts/get-version.py)
-
-                  # Reset the source code to the specified commit to ensure
-                  # we're packaging the correct source code.
-                  git fetch origin
-                  git reset --hard "${{ parameters.sourceCommit }}"
 
                   SOURCE_TARBALL_NAME="trident-source-$TRIDENT_CARGO_VERSION.tar.gz"
                   SOURCE_TARBALL_PATH="$(ob_outputDirectory)/$SOURCE_TARBALL_NAME"
