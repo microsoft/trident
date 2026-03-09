@@ -23,6 +23,9 @@ class BaseImage(Enum):
     )
     UBUNTU_AMD64 = BaseImageData("ubuntu_amd64", Path("artifacts/ubuntu_amd64.vhdx"))
     UBUNTU_ARM64 = BaseImageData("ubuntu_arm64", Path("artifacts/ubuntu_arm64.vhdx"))
+    FAIRWATER_ARM64 = BaseImageData(
+        "fairwater_arm64", Path("artifacts/fairwater_arm64.vhdx")
+    )
 
     @property
     def path(self) -> Path:

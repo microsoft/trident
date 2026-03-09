@@ -12,16 +12,23 @@ parameters:
       - amd64
     default: amd64
 
-  - name: streamingImageDistro
+  - name: buildImageStage
+    type: string
+
+  - name: testImageName
+    type: string
+
+  - name: streamingImageScenario
     type: string
     values:
       - ubuntu
+      - fairwater
       - azurelinux
     default: azurelinux
 
 stages:
-  - stage: DirectStreaming_DeploymentTesting_${{ parameters.streamingImageDistro }}_${{ parameters.architecture }}
-    displayName: Direct Streaming Deployment VM ${{ parameters.streamingImageDistro }} ${{ parameters.architecture }} Testing
+  - stage: DirectStreaming_DeploymentTesting_${{ parameters.streamingImageScenario }}_${{ parameters.architecture }}
+    displayName: Direct Streaming Deployment VM ${{ parameters.streamingImageScenario }} ${{ parameters.architecture }} Testing
     dependsOn:
       - ${{ if eq(parameters.testingRun, true) }}:
           - DownloadTestingElements
@@ -30,12 +37,12 @@ stages:
               - BuildingTools_arm64
           - ${{ if eq(parameters.architecture, 'amd64') }}:
               - BuildingTools
-          - BuildImagesForDirectStreaming_${{ parameters.streamingImageDistro }}_${{ parameters.architecture }}
           - BuildInstallerForDirectStreaming_${{ parameters.architecture }}
+          - ${{ parameters.buildImageStage }}
 
     jobs:
-      - job: DirectStreamingTesting_${{ parameters.streamingImageDistro }}_${{ parameters.architecture }}
-        displayName: Direct Streaming Deployment Testing for ${{ parameters.streamingImageDistro }} ${{ parameters.architecture }}
+      - job: DirectStreamingTesting_${{ parameters.streamingImageScenario }}_${{ parameters.architecture }}
+        displayName: Direct Streaming Deployment Testing for ${{ parameters.streamingImageScenario }} ${{ parameters.architecture }}
         timeoutInMinutes: 50
         pool:
           ${{ if eq(parameters.architecture, 'amd64') }}:
@@ -50,14 +57,12 @@ stages:
         variables:
           - name: tridentSourceDirectory
             value: $(Build.SourcesDirectory)
-          - name: testImageName
-            value: ${{ parameters.streamingImageDistro }}-direct-streaming-testimage-${{ parameters.architecture }}
           - name: installerISOName
             value: trident-direct-streaming-installer-${{ parameters.architecture }}
           - name: ob_outputDirectory
             value: $(tridentSourceDirectory)/deployment_logs
           - name: ob_artifactBaseName
-            value: direct_streaming_${{ parameters.streamingImageDistro }}_${{ parameters.architecture }}_log_$(System.JobAttempt)
+            value: ${{ replace(parameters.testImageName, "-", "_") }}_log_$(System.JobAttempt)
           - name: netlaunchPort
             value: 4000
 
@@ -66,7 +71,7 @@ stages:
           - template: ../testing_common/download-test-images.yml
             parameters:
               installerISO: $(installerISOName)
-              tridentTestImage: ${{ variables.testImageName }}
+              tridentTestImage: ${{ parameters.testImageName }}
               tridentTestImageVerity: skip
               tridentTestImageUsrVerity: skip
               downloadTridentContainer: false
@@ -114,7 +119,7 @@ stages:
                   --timeout-in-seconds 2400
 
             workingDirectory: $(tridentSourceDirectory)
-            displayName: "🚀 Deploy direct streaming ISO and validate stream-image for ${{ parameters.streamingImageDistro }} ${{ parameters.architecture }}"
+            displayName: "🚀 Deploy direct streaming ISO and validate stream-image for ${{ parameters.streamingImageScenario }} ${{ parameters.architecture }}"
             timeoutInMinutes: 40
 
           - bash: |

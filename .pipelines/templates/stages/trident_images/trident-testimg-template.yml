@@ -61,6 +61,7 @@ parameters:
       - qemu_guest
       - ubuntu_amd64
       - ubuntu_arm64
+      - fairwater_arm64
     default: 
       - baremetal
 
@@ -148,17 +149,45 @@ steps:
       micVersion: ${{ parameters.micVersion }}
 
   - ${{ each baseimgType in parameters.baseimgTypes }}:
-    - ${{ if contains(baseimgType, 'ubuntu') }}:
-      - bash: |
-          set -eux
-          mkdir -p artifacts
-          make artifacts/${{ baseimgType }}.vhdx
-          # Move the downloaded base image to the images directory consistent
-          # with how the azurelinux base images are stored.
-          mkdir -p $(Build.ArtifactStagingDirectory)/images
-          mv artifacts/${{ baseimgType }}.vhdx $(Build.ArtifactStagingDirectory)/images/
-        displayName: "Download Ubuntu Base Image - ${{ baseimgType }}"
-        
+    - ${{ if contains(baseimgType, 'fairwater') }}:
+      - task: AzureCLI@2
+        inputs:
+          azureSubscription: maritimus-github-storage-ado-dev-umi-write
+          scriptType: bash
+          scriptLocation: inlineScript
+          inlineScript: |
+            BLOB_NAME="ubuntu/fairwater_arm64/20260309/image.vhdx"
+            mkdir -p $(Build.ArtifactStagingDirectory)/images
+            az storage blob download \
+              --auth-mode login \
+              --account-name maritimusgithubstorage \
+              --container-name os-images-cache-dev \
+              --name "$BLOB_NAME" \
+              --file $(Build.ArtifactStagingDirectory)/images/${{ baseimgType }}.vhdx
+        retryCountOnTaskFailure: 5
+        displayName: "Download fairwater Base Image - ${{ baseimgType }}"
+
+    - ${{ elseif contains(baseimgType, 'ubuntu') }}:
+      - task: AzureCLI@2
+        inputs:
+          azureSubscription: maritimus-github-storage-ado-dev-umi-write
+          scriptType: bash
+          scriptLocation: inlineScript
+          inlineScript: |
+            BLOB_NAME="ubuntu/azure-cloud-vhdx-22.04-amd64/20260119/image.vhdx"
+            if [[ "${{ parameters.baseimgType }}" = "ubuntu_arm64" ]]; then
+              BLOB_NAME="ubuntu/azure-cloud-vhdx-22.04-arm64/20260119/image.vhdx"
+            fi
+            mkdir -p $(Build.ArtifactStagingDirectory)/images
+            az storage blob download \
+              --auth-mode login \
+              --account-name maritimusgithubstorage \
+              --container-name os-images-cache-dev \
+              --name "$BLOB_NAME" \
+              --file $(Build.ArtifactStagingDirectory)/images/${{ baseimgType }}.vhdx
+        retryCountOnTaskFailure: 5
+        displayName: "Download ubuntu Base Image - ${{ baseimgType }}"
+
     - ${{ else }}:
       - template: common/base-images-download-template.yaml@platform-pipelines
         parameters:
