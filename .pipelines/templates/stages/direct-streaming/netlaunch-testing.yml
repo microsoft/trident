@@ -62,7 +62,7 @@ stages:
           - name: ob_outputDirectory
             value: $(tridentSourceDirectory)/deployment_logs
           - name: ob_artifactBaseName
-            value: ${{ replace(parameters.testImageName, "-", "_") }}_log_$(System.JobAttempt)
+            value: ${{ replace(parameters.testImageName, '-', '_') }}_log_$(System.JobAttempt)
           - name: netlaunchPort
             value: 4000
 
