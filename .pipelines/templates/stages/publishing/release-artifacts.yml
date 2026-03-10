@@ -84,7 +84,7 @@ stages:
                   # tarball.
                   TRIDENT_CARGO_VERSION=$(python3 ./scripts/get-version.py)
 
-                  SOURCE_TARBALL_NAME="trident-source-$TRIDENT_CARGO_VERSION.tar.gz"
+                  SOURCE_TARBALL_NAME="trident-$TRIDENT_CARGO_VERSION.tar.gz"
                   SOURCE_TARBALL_PATH="$(ob_outputDirectory)/$SOURCE_TARBALL_NAME"
 
                   # Create source code tarball
@@ -97,7 +97,7 @@ stages:
                   # Package cargo dependencies into a separate tarball
                   cargo vendor -v --locked vendor
 
-                  VENDOR_TARBALL_NAME="trident-cargo-$TRIDENT_CARGO_VERSION.tar.gz"
+                  VENDOR_TARBALL_NAME="trident-$TRIDENT_CARGO_VERSION-cargo.tar.gz"
                   VENDOR_TARBALL_PATH="$(ob_outputDirectory)/$VENDOR_TARBALL_NAME"
 
                   # Create cargo vendor tarball
