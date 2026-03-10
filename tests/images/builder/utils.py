@@ -1,8 +1,5 @@
 import logging
 from pathlib import Path
-import subprocess
-import sys
-from typing import List
 
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger(__name__ if __name__ != "__main__" else "convert-image")
