@@ -33,8 +33,8 @@ class BaseImage(Enum):
     UBUNTU_2404_ARM64 = BaseImageData(
         "ubuntu_2404_arm64", Path("artifacts/ubuntu_2404_arm64.vhdx")
     )
-    FAIRWATER_2204_ARM64 = BaseImageData(
-        "fairwater_2204_arm64", Path("artifacts/fairwater_2204_arm64.vhdx")
+    FAIRWATER_2404_ARM64 = BaseImageData(
+        "fairwater_2404_arm64", Path("artifacts/fairwater_2404_arm64.vhdx")
     )
 
     @property

@@ -154,10 +154,10 @@ DEFINED_IMAGES: List[ImageConfig] = [
         rpm_sources_allowed=False,
     ),
     ImageConfig(
-        "fairwater-direct-streaming-testimage-2204-arm64",
+        "fairwater-direct-streaming-testimage-2404-arm64",
         config="ubuntu-direct-streaming-testimage",
-        config_file="base/baseimg-2204.yaml",
-        base_image=BaseImage.FAIRWATER_2204_ARM64,
+        config_file="base/baseimg-2404.yaml",
+        base_image=BaseImage.FAIRWATER_2404_ARM64,
         output_format=OutputFormat.BAREMETAL_IMAGE,
         architecture=SystemArchitecture.ARM64,
         rpm_sources_allowed=False,

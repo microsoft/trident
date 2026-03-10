@@ -140,15 +140,15 @@ stages:
             # TODO: when IC next releases, no longer needs dev image
             micBuildType: dev
             micVersion: "main"
-            label: "fairwater-direct-streaming-testimage-${{ parameters.architecture }}"
-            makeTarget: "artifacts/fairwater-direct-streaming-testimage-${{ parameters.architecture }}.cosi"
-            baseimgType: "fairwater_2204_${{ parameters.architecture }}"
+            label: "fairwater-direct-streaming-testimage-2404-${{ parameters.architecture }}"
+            makeTarget: "artifacts/fairwater-direct-streaming-testimage-2404-${{ parameters.architecture }}.cosi"
+            baseimgType: "fairwater_2404_${{ parameters.architecture }}"
             timeoutInMinutes: 30
     # Run netlaunch test to validate direct streaming installer
     - template: stages/direct-streaming/netlaunch-testing.yml
       parameters:
         architecture: ${{ parameters.architecture }}
         buildImageStage: BuildImagesForDirectStreaming_fairwater_${{ parameters.architecture }}
-        testImageName: fairwater-direct-streaming-testimage-${{ parameters.architecture }}
+        testImageName: fairwater-direct-streaming-testimage-2404-${{ parameters.architecture }}
         streamingImageScenario: fairwater
 

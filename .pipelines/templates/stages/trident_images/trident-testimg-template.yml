@@ -63,7 +63,7 @@ parameters:
       - ubuntu_2204_arm64
       - ubuntu_2404_amd64
       - ubuntu_2404_arm64
-      - fairwater_2204_arm64
+      - fairwater_2404_arm64
     default: 
       - baremetal
 
