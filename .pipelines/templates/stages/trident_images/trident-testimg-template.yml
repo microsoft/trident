@@ -180,7 +180,7 @@ steps:
             
             mkdir -p $(Build.ArtifactStagingDirectory)/images
             az storage blob download \
-              --max-connections 20 \
+              --max-connections 10 \
               --auth-mode login \
               --account-name azlinuxbmpstaging \
               --container-name os-image-cache \
