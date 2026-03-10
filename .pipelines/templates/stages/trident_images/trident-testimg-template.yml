@@ -182,7 +182,7 @@ steps:
             az storage blob download \
               --auth-mode login \
               --account-name azlinuxbmpstaging \
-              --container-name os-images-cache \
+              --container-name os-image-cache \
               --name "$BLOB_NAME" \
               --file $(Build.ArtifactStagingDirectory)/images/${{ baseimgType }}.vhdx
         retryCountOnTaskFailure: 5
