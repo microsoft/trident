@@ -19,7 +19,6 @@ def build_config(
     img_format: str,
     output_file: Path,
     rpm_sources: List[Path] = [],
-    use_convert_subcommand: bool = False,
     dry_run: bool = False,
 ):
     """
@@ -55,36 +54,23 @@ def build_config(
         "-v",
         "/dev:/dev",
         container_image,
+        "--config-file",
+        build_path(yaml_path),
+        "--log-level",
+        "debug",
+        "--build-dir",
+        BUILD_DIR,
+        "--image-file",
+        build_path(base_image),
+        "--output-image-format",
+        img_format,
+        "--output-image-file",
+        build_path(output_file),
     ]
-    if use_convert_subcommand:
-        # Use 'convert' subcommand, which does not
-        # allow --config-file or --rpm-source(s)
-        base_cmd.append("convert")
-    else:
-        base_cmd.extend(
-            [
-                "--config-file",
-                build_path(yaml_path),
-            ]
-        )
-        for _, rpm in enumerate(rpm_sources):
-            base_cmd.append("--rpm-source")
-            base_cmd.append(build_path(rpm))
 
-    base_cmd.extend(
-        [
-            "--log-level",
-            "debug",
-            "--build-dir",
-            BUILD_DIR,
-            "--image-file",
-            build_path(base_image),
-            "--output-image-format",
-            img_format,
-            "--output-image-file",
-            build_path(output_file),
-        ]
-    )
+    for _, rpm in enumerate(rpm_sources):
+        base_cmd.append("--rpm-source")
+        base_cmd.append(build_path(rpm))
 
     # Stringify all the args
     base_cmd = [str(x) for x in base_cmd]

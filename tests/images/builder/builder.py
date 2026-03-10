@@ -15,7 +15,14 @@ from cryptography.hazmat.primitives.asymmetric import rsa, ed25519
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from builder import ArtifactManifest, ImageConfig, OutputFormat, customize, sign
+from builder import (
+    ArtifactManifest,
+    ImageConfig,
+    OutputFormat,
+    convert,
+    customize,
+    sign,
+)
 from builder.context_managers import temp_dir, temp_file
 
 logging.basicConfig(level=logging.INFO)
@@ -143,10 +150,20 @@ def build_one(
             log.debug(f"Copying RPM source {rpm_src} to {tmp}")
             shutil.copytree(rpm_src, tmp, dirs_exist_ok=True)
 
-        # If config YAML contains output.artifacts, then need to output signed image. First, build
-        # an unsigned image; then, sign boot artifacts, and inject the signed copies back, to build
-        # a signed image as final output.
-        if image.get_output_artifacts_dir():
+        if image.image_customizer_convert:
+            convert.convert_image(
+                container_image,
+                image.id,
+                image.base_image.path,
+                image.output_format.ic_name(),
+                output_file,
+                dry_run,
+            )
+
+        elif image.get_output_artifacts_dir():
+            # If config YAML contains output.artifacts, then need to output signed image. First, build
+            # an unsigned image; then, sign boot artifacts, and inject the signed copies back, to build
+            # a signed image as final output.
             build_signed_image(
                 stack,
                 container_image,
@@ -167,7 +184,6 @@ def build_one(
                 image.output_format.ic_name(),
                 output_file,
                 tmp_rpm_sources,
-                image.image_customizer_convert,
                 dry_run,
             )
 
@@ -398,7 +414,6 @@ def build_signed_image(
         OutputFormat.RAW.ic_name(),
         unsigned_output_file,
         tmp_rpm_sources,
-        image.image_customizer_convert,
         dry_run,
     )
 
