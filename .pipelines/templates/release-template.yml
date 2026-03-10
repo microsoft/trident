@@ -7,6 +7,16 @@ parameters:
       Specific version of the package to download, leave empty to download latest.
     default: ""
 
+  - name: skipPublishing
+    type: boolean
+    displayName: "Skip publishing stage"
+    default: false
+
+  - name: sourceCommit
+    type: string
+    displayName: "The commit hash of the source code to package."
+    default: ""
+
 stages:
   - template: stages/download_staged/download-staged.yml
     parameters:
@@ -15,6 +25,11 @@ stages:
       specificVersion: ${{ parameters.specificVersion }}
       packageName: rpms
 
-  - template: stages/publishing/publish.yml
+  - ${{ if ne(parameters.skipPublishing, true) }}:
+      - template: stages/publishing/publish.yml
+        parameters:
+          stageType: rel
+
+  - template: stages/publishing/release-artifacts.yml
     parameters:
-      stageType: rel
+      sourceCommit: ${{ parameters.sourceCommit }}
