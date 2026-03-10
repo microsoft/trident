@@ -1,8 +1,4 @@
-import logging
 from pathlib import Path
-
-logging.basicConfig(level=logging.DEBUG)
-log = logging.getLogger(__name__ if __name__ != "__main__" else "convert-image")
 
 BUILD_DIR = "/tmp"
 HOST_PATH = Path("/host")
