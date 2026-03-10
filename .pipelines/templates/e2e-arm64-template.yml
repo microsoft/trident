@@ -60,6 +60,6 @@ stages:
     - template: direct-streaming-test.yml
       parameters:
         architecture: arm64
-        ${{ ne(parameters.stageType, 'pre-e2e') }}:
+        ${{ if ne(parameters.stageType, 'pre-e2e') }}:
           # Run fairwater streaming test for ci/pre/full
           testFairwaterStreamingImage: true
