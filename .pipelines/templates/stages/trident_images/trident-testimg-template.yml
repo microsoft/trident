@@ -173,7 +173,7 @@ steps:
               ubuntu_2404_arm64)
                 BLOB_NAME="ubuntu/server-cloudimg-2404-arm64/20260309/image.vhdx"
                 ;;
-              fairwater_2204_arm64)
+              fairwater_2404_arm64)
                 BLOB_NAME="fairwater/arm64/20260309/image.vhdx"
                 ;;
             esac              
