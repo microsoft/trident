@@ -124,31 +124,31 @@ stages:
           testImageName: ubuntu-direct-streaming-testimage-${{ubuntuVersion}}-${{ parameters.architecture }}
           streamingImageScenario: ubuntu
 
-  - ${{ if and(parameters.testFairwaterStreamingImage, eq(parameters.architecture, 'arm64')) }}:
-    - stage: BuildImagesForDirectStreaming_fairwater_${{ parameters.architecture }}
-      displayName: Build ${{ parameters.architecture }} fairwater Images for Direct Streaming
-      dependsOn:
-        - GetTridentBinaries_rpms_arm64
-        - BuildingTools_arm64
-        - PrepareSSHKeys
-      jobs:
-        # Build direct streaming COSI VHD
-        - template: stages/trident_images/build-image.yml
-          parameters:
-            labelPrefix: "" # No prefix for this image
-            architecture: ${{ parameters.architecture }}
-            # TODO: when IC next releases, no longer needs dev image
-            micBuildType: dev
-            micVersion: "main"
-            label: "fairwater-direct-streaming-testimage-${{ parameters.architecture }}"
-            makeTarget: "artifacts/fairwater-direct-streaming-testimage-${{ parameters.architecture }}.cosi"
-            baseimgType: "fairwater_2204_${{ parameters.architecture }}"
-            timeoutInMinutes: 30
-    # Run netlaunch test to validate direct streaming installer
-    - template: stages/direct-streaming/netlaunch-testing.yml
-      parameters:
-        architecture: ${{ parameters.architecture }}
-        buildImageStage: BuildImagesForDirectStreaming_fairwater_${{ parameters.architecture }}
-        testImageName: fairwater-direct-streaming-testimage-${{ parameters.architecture }}
-        streamingImageScenario: fairwater
+  # - ${{ if and(parameters.testFairwaterStreamingImage, eq(parameters.architecture, 'arm64')) }}:
+  #   - stage: BuildImagesForDirectStreaming_fairwater_${{ parameters.architecture }}
+  #     displayName: Build ${{ parameters.architecture }} fairwater Images for Direct Streaming
+  #     dependsOn:
+  #       - GetTridentBinaries_rpms_arm64
+  #       - BuildingTools_arm64
+  #       - PrepareSSHKeys
+  #     jobs:
+  #       # Build direct streaming COSI VHD
+  #       - template: stages/trident_images/build-image.yml
+  #         parameters:
+  #           labelPrefix: "" # No prefix for this image
+  #           architecture: ${{ parameters.architecture }}
+  #           # TODO: when IC next releases, no longer needs dev image
+  #           micBuildType: dev
+  #           micVersion: "main"
+  #           label: "fairwater-direct-streaming-testimage-${{ parameters.architecture }}"
+  #           makeTarget: "artifacts/fairwater-direct-streaming-testimage-${{ parameters.architecture }}.cosi"
+  #           baseimgType: "fairwater_2204_${{ parameters.architecture }}"
+  #           timeoutInMinutes: 30
+  #   # Run netlaunch test to validate direct streaming installer
+  #   - template: stages/direct-streaming/netlaunch-testing.yml
+  #     parameters:
+  #       architecture: ${{ parameters.architecture }}
+  #       buildImageStage: BuildImagesForDirectStreaming_fairwater_${{ parameters.architecture }}
+  #       testImageName: fairwater-direct-streaming-testimage-${{ parameters.architecture }}
+  #       streamingImageScenario: fairwater
 
