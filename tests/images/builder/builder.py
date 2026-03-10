@@ -167,6 +167,7 @@ def build_one(
                 image.output_format.ic_name(),
                 output_file,
                 tmp_rpm_sources,
+                image.image_customizer_convert,
                 dry_run,
             )
 
@@ -397,6 +398,7 @@ def build_signed_image(
         OutputFormat.RAW.ic_name(),
         unsigned_output_file,
         tmp_rpm_sources,
+        image.image_customizer_convert,
         dry_run,
     )
 
