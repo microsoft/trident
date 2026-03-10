@@ -16,7 +16,7 @@ parameters:
 
   - name: testFairwaterStreamingImage
     type: boolean
-    default: true
+    default: false
 
   - name: ubuntuVersions
     type: object

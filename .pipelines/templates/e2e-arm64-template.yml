@@ -60,3 +60,6 @@ stages:
     - template: direct-streaming-test.yml
       parameters:
         architecture: arm64
+        ${{ or(eq(parameters.targetStage, 'pre'), eq(parameters.targetStage, 'ci'), eq(parameters.targetStage, 'full-validation')) }}:
+          # Run fairwater streaming test for ci/pre/full
+          testFairwaterStreamingImage: true
