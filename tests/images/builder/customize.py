@@ -126,17 +126,17 @@ def inject_files(
         container_image,
         "inject-files",
         "--config-file",
-        build_path(inject_files_yaml_path),
+        utils.build_path(inject_files_yaml_path),
         "--log-level",
         "debug",
         "--build-dir",
         utils.BUILD_DIR,
         "--image-file",
-        build_path(unsigned_image_file),
+        utils.build_path(unsigned_image_file),
         "--output-image-format",
         img_format,
         "--output-image-file",
-        build_path(output_image_file),
+        utils.build_path(output_image_file),
     ]
 
     # Stringify all the args

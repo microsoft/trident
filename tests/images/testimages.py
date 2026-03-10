@@ -125,6 +125,7 @@ DEFINED_IMAGES: List[ImageConfig] = [
         base_image=BaseImage.UBUNTU_AMD64,
         output_format=OutputFormat.BAREMETAL_IMAGE,
         image_customizer_convert=True,
+        requires_trident=False,
     ),
     ImageConfig(
         "ubuntu-direct-streaming-testimage-arm64",
@@ -133,6 +134,7 @@ DEFINED_IMAGES: List[ImageConfig] = [
         output_format=OutputFormat.BAREMETAL_IMAGE,
         architecture=SystemArchitecture.ARM64,
         image_customizer_convert=True,
+        requires_trident=False,
     ),
 ]
 

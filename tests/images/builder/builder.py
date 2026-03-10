@@ -137,56 +137,56 @@ def build_one(
                 log.info(f"Output file {output_file} is up to date.")
                 return output_file
 
-    # Copy RPM sources to standalone temporary directories
-    with ExitStack() as stack:
-        tmp_rpm_sources = []
-        for rpm_src in rpm_sources:
-            # Create a temporary directory for each RPM source, delete with sudo because
-            # createrepo is run as root.
-            tmp = stack.enter_context(
-                temp_dir(prefix=f"rpm-{rpm_src.stem}-", sudo=True)
-            )
-            tmp_rpm_sources.append(tmp)
-            log.debug(f"Copying RPM source {rpm_src} to {tmp}")
-            shutil.copytree(rpm_src, tmp, dirs_exist_ok=True)
+    if image.image_customizer_convert:
+        # If 'convert' is requested, run Image Customizer convert subcommand
+        convert.convert_image(
+            container_image,
+            image.id,
+            image.base_image.path,
+            image.output_format.ic_name(),
+            output_file,
+            dry_run,
+        )
+    else:
+        # Copy RPM sources to standalone temporary directories
+        with ExitStack() as stack:
+            tmp_rpm_sources = []
+            for rpm_src in rpm_sources:
+                # Create a temporary directory for each RPM source, delete with sudo because
+                # createrepo is run as root.
+                tmp = stack.enter_context(
+                    temp_dir(prefix=f"rpm-{rpm_src.stem}-", sudo=True)
+                )
+                tmp_rpm_sources.append(tmp)
+                log.debug(f"Copying RPM source {rpm_src} to {tmp}")
+                shutil.copytree(rpm_src, tmp, dirs_exist_ok=True)
 
-        if image.image_customizer_convert:
-            # If 'convert' is requested, run Image Customizer covnert subcommand
-            convert.convert_image(
-                container_image,
-                image.id,
-                image.base_image.path,
-                image.output_format.ic_name(),
-                output_file,
-                dry_run,
-            )
-
-        elif image.get_output_artifacts_dir():
-            # If config YAML contains output.artifacts, then need to output signed image. First, build
-            # an unsigned image; then, sign boot artifacts, and inject the signed copies back, to build
-            # a signed image as final output.
-            build_signed_image(
-                stack,
-                container_image,
-                image,
-                tmp_rpm_sources,
-                output_dir,
-                output_file,
-                ca_nss_key_db,
-                dry_run,
-            )
-        else:
-            # Otherwise, only build an unsigned image
-            customize.build_config(
-                container_image,
-                image.id,
-                image.full_yaml_path(),
-                image.base_image.path,
-                image.output_format.ic_name(),
-                output_file,
-                tmp_rpm_sources,
-                dry_run,
-            )
+            if image.get_output_artifacts_dir():
+                # If config YAML contains output.artifacts, then need to output signed image. First, build
+                # an unsigned image; then, sign boot artifacts, and inject the signed copies back, to build
+                # a signed image as final output.
+                build_signed_image(
+                    stack,
+                    container_image,
+                    image,
+                    tmp_rpm_sources,
+                    output_dir,
+                    output_file,
+                    ca_nss_key_db,
+                    dry_run,
+                )
+            else:
+                # Otherwise, only build an unsigned image
+                customize.build_config(
+                    container_image,
+                    image.id,
+                    image.full_yaml_path(),
+                    image.base_image.path,
+                    image.output_format.ic_name(),
+                    output_file,
+                    tmp_rpm_sources,
+                    dry_run,
+                )
 
     output_file = output_dir / image.file_name()
     log.info(f"Image '{image.id}' built successfully in {output_file}")
