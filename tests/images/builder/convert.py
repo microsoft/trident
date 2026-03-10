@@ -2,13 +2,11 @@ import logging
 from pathlib import Path
 import subprocess
 import sys
-from typing import List
+
+from builder import utils
 
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger(__name__ if __name__ != "__main__" else "convert-image")
-
-BUILD_DIR = "/tmp"
-HOST_PATH = Path("/host")
 
 
 def convert_image(
@@ -41,7 +39,7 @@ def convert_image(
         "--rm",
         "--privileged",
         "-v",
-        f"/:{HOST_PATH}",
+        f"/:{utils.HOST_PATH}",
         "-v",
         "/dev:/dev",
         container_image,
@@ -49,13 +47,13 @@ def convert_image(
         "--log-level",
         "debug",
         "--build-dir",
-        BUILD_DIR,
+        utils.BUILD_DIR,
         "--image-file",
-        build_path(base_image),
+        utils.build_path(base_image),
         "--output-image-format",
         img_format,
         "--output-image-file",
-        build_path(output_file),
+        utils.build_path(output_file),
     ]
 
     # Stringify all the args
