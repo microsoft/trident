@@ -151,6 +151,7 @@ def build_one(
             shutil.copytree(rpm_src, tmp, dirs_exist_ok=True)
 
         if image.image_customizer_convert:
+            # If 'convert' is requested, run Image Customizer covnert subcommand
             convert.convert_image(
                 container_image,
                 image.id,
