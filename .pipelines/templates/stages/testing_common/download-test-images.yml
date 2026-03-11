@@ -21,8 +21,11 @@ parameters:
       - trident-testimage
       - azurelinux-direct-streaming-testimage-amd64
       - azurelinux-direct-streaming-testimage-arm64
-      - ubuntu-direct-streaming-testimage-amd64
-      - ubuntu-direct-streaming-testimage-arm64
+      - ubuntu-direct-streaming-testimage-2204-amd64
+      - ubuntu-direct-streaming-testimage-2204-arm64
+      - ubuntu-direct-streaming-testimage-2404-amd64
+      - ubuntu-direct-streaming-testimage-2404-arm64
+      - fairwater-direct-streaming-testimage-2404-arm64
 
   - name: tridentTestImageVerity
     displayName: "Image used in the root-verity target OS, source of Trident (container vs host)"
