@@ -60,7 +60,6 @@ parameters:
     type: number
     default: 20
 
-
 jobs:
   - job: PrepareImage_${{ replace(parameters.label, '-', '_') }}
     displayName: Prepare Image ${{ parameters.label }}
