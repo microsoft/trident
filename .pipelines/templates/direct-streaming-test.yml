@@ -149,8 +149,10 @@ stages:
           parameters:
             labelPrefix: "" # No prefix for this image
             architecture: ${{ parameters.architecture }}
-            micBuildType: ${{ parameters.micBuildType }}
-            micVersion: ${{ parameters.micVersion }}
+            # TODO: need newest IC to overcome fstab issues with IC 1.2,
+            #       use dev and main for now to get the most recent.
+            micBuildType: dev
+            micVersion: "main"
             label: "fairwater-direct-streaming-testimage-2404-${{ parameters.architecture }}"
             makeTarget: "artifacts/fairwater-direct-streaming-testimage-2404-${{ parameters.architecture }}.cosi"
             baseimgType: "fairwater_2404_${{ parameters.architecture }}"
