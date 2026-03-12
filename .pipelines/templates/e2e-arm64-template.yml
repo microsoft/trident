@@ -76,6 +76,6 @@ stages:
         architecture: arm64
         micBuildType: ${{ parameters.micBuildType }}
         micVersion: ${{ parameters.micVersion }}
-        ${{ if ne(parameters.stageType, 'pre-e2e') }}:
+        ${{ if ne(parameters.stageType, 'pr-e2e') }}:
           # Run fairwater streaming test for ci/pre/full
           testFairwaterStreamingImage: true
