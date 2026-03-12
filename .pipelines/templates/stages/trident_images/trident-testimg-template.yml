@@ -238,11 +238,6 @@ steps:
     displayName: "Prepare and move requirements"
 
   - script: |
-      # Machine info
-      ls -lh artifacts
-      df -h
-      free -h
-
       # Meta
       echo "Local directory: $(pwd)"
 
