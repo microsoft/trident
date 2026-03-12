@@ -46,13 +46,11 @@ DEFINED_IMAGES: List[ImageConfig] = [
     ImageConfig(
         "azurelinux-direct-streaming-testimage-amd64",
         config="azurelinux-direct-streaming-testimage",
-        config_file="base/baseimg.yaml",
         output_format=OutputFormat.BAREMETAL_IMAGE,
     ),
     ImageConfig(
         "azurelinux-direct-streaming-testimage-arm64",
         config="azurelinux-direct-streaming-testimage",
-        config_file="base/baseimg.yaml",
         output_format=OutputFormat.BAREMETAL_IMAGE,
         base_image=BaseImage.CORE_ARM64,
         architecture=SystemArchitecture.ARM64,

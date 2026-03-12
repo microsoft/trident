@@ -187,7 +187,9 @@ class ImageConfig:
         return self.base_dir() / self.config_file
 
     def dependencies(self) -> List[Path]:
-        deps = [self.base_image.path, self.full_yaml_path()]
+        deps = [self.base_image.path]
+        if not self.image_customizer_convert:
+            deps.append(self.full_yaml_path())
         for file in self.base_dir().rglob("*"):
             if file.is_file():
                 deps.append(file)
