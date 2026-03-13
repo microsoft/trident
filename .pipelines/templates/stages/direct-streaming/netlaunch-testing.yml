@@ -100,11 +100,13 @@ stages:
               sudo systemctl restart virtlogd.socket
 
               MAX_DISK_SIZE=32
+              MEMORY_SIZE=12
               if [[ "${{ parameters.streamingImageScenario }}" == "fairwater" ]]; then
                 MAX_DISK_SIZE=72
+                MEMORY_SIZE=32
               fi
 
-              ./tools/virt-deploy create --mem 12 --disks $MAX_DISK_SIZE,32
+              ./tools/virt-deploy create --mem $MEMORY_SIZE --disks $MAX_DISK_SIZE,32
             workingDirectory: $(tridentSourceDirectory)
             displayName: "Creating virt-deploy VM"
 
