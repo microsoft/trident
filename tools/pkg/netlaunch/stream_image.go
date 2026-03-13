@@ -38,7 +38,7 @@ func makeStreamImageOverrideFileDownload(tridentConfig map[string]any, logstream
 
 	fileContent := fmt.Sprintf(
 		systemdServiceExecOverrideTemplate,
-		fmt.Sprintf("/usr/bin/trident grpc-client stream-image %s --hash %s", imgUrl, imgSha384),
+		fmt.Sprintf("/usr/bin/trident grpc-client stream-image %s --hash %s -v trace", imgUrl, imgSha384),
 		logstreamAddress,
 	)
 
