@@ -252,7 +252,7 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 	if config.Netlaunch.LocalVmUuid != nil {
 		err := startLocalVm(*config.Netlaunch.LocalVmUuid, iso_location, config.EnableSecureBoot, config.CertificateFile)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to start local VM: %w", err)
 		}
 	} else {
 		if config.Netlaunch.Bmc != nil && config.Netlaunch.Bmc.SerialOverSsh != nil {
