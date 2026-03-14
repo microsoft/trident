@@ -51,8 +51,7 @@ const DOCKER_CONFIG_FILE_PATH: &str = ".docker/config.json";
 pub struct HttpFile {
     url: Url,
     position: u64,
-    /// The total size of the file in bytes.
-    pub size: u64,
+    pub(super) size: u64,
     client: Client,
     timeout: Duration,
     token: Option<String>,
@@ -310,7 +309,7 @@ impl HttpFile {
     }
 
     /// Returns an HTTPSubFile object covering the complete file.
-    pub fn complete_reader(&self) -> HttpDownloadMonitor<HttpSubFile> {
+    pub(crate) fn complete_reader(&self) -> HttpDownloadMonitor<HttpSubFile> {
         trace!("Reading complete HTTP file '{}'", self.url);
         // Create a section reader optimized to read the complete file.
         HttpDownloadMonitor::new(
