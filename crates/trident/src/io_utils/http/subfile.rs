@@ -287,7 +287,7 @@ impl Read for HttpSubFile {
                 Ok(n) => n,
                 Err(e) => {
                     warn!(
-                        "Error reading from HTTP subfile at position {}: {e}",
+                        "Error reading from HTTP subfile at position {}: {e:?}",
                         self.position,
                     );
 
