@@ -154,7 +154,7 @@ impl HttpSubFile {
     /// Returns the length of the subfile in bytes.
     pub fn size(&self) -> u64 {
         // Add 1 because the range is inclusive.
-        self.end - self.start + 1
+        self.end.saturating_sub(self.start) + 1
     }
 
     /// Returns whether we have reached the end of the subfile.
@@ -236,7 +236,7 @@ impl HttpSubFile {
 
         let response = super::retriable_request_sender(
             || {
-                let mut req = self.client.get(self.url.clone()).timeout(self.timeout);
+                let mut req = self.client.get(self.url.clone());
 
                 if let Some(range) = range.to_header_value_option() {
                     req = req.header(RANGE, range);
@@ -287,7 +287,7 @@ impl Read for HttpSubFile {
                 Ok(n) => n,
                 Err(e) => {
                     warn!(
-                        "Error reading from HTTP subfile at position {}: {e}",
+                        "Error reading from HTTP subfile at position {}: {e:?}",
                         self.position,
                     );
 
