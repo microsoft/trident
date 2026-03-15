@@ -3,7 +3,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use log::debug;
+use log::warn;
+
 use trident_api::primitives::bytes::ByteCount;
 
 const RING_BUFFER_SIZE: usize = 10;
@@ -116,7 +117,7 @@ impl<R: Read> Read for HttpDownloadMonitor<R> {
                         "done".to_string()
                     };
 
-                    debug!(
+                    warn!(
                         "Slow download: {:.2} Mbps, {:.1}% complete ({}/{}), ETA: {}",
                         mbps,
                         pct,
