@@ -26,12 +26,12 @@ use super::{subfile::HttpSubFile, HttpDownloadMonitor};
 /// timeout for each individual HTTP request. The `HttpFile` implementation will
 /// retry requests that fail due to transient errors, up to the overall timeout
 /// specified when creating the `HttpFile`.
-const MAX_PER_REQUEST_TIMEOUT_SECONDS: u64 = 10;
+const MAX_PER_REQUEST_TIMEOUT_SECONDS: u64 = 5;
 
 /// Threshold speed in Mbps below which to emit debug log messages about slow
 /// HTTP download speed. This is used by the `HttpDownloadMonitor` wrapper
 /// returned by `HttpFile`.
-const SLOW_DOWNLOAD_THRESHOLD_MBPS: f64 = 10.0;
+const SLOW_DOWNLOAD_THRESHOLD_MBPS: f64 = 100.0;
 
 /// Minimum interval between consecutive slow download log messages.
 const SLOW_DOWNLOAD_REPORT_CADENCE: Duration = Duration::from_secs(5);
