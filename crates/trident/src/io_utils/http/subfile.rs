@@ -153,8 +153,13 @@ impl HttpSubFile {
 
     /// Returns the length of the subfile in bytes.
     pub fn size(&self) -> u64 {
-        // Add 1 because the range is inclusive.
-        self.end.saturating_sub(self.start) + 1
+        if self.start > self.end {
+            // Invalid range, treat as empty subfile.
+            0
+        } else {
+            // Add 1 because the range is inclusive.
+            self.end - self.start + 1
+        }
     }
 
     /// Returns whether we have reached the end of the subfile.

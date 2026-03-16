@@ -270,6 +270,12 @@ impl HttpFile {
     }
 
     fn section_reader_inner(&self, section_offset: u64, size: u64) -> HttpSubFile {
+        if size == 0 {
+            // Create an empty subfile if the requested size is 0, to avoid
+            // making unnecessary HTTP requests
+            return HttpSubFile::new_with_client(self.url.clone(), 0, 0, self.client.clone());
+        }
+
         let end = section_offset + size - 1;
         trace!(
             "Reading HTTP file '{}' from {} to {} (inclusive) [{} bytes]",
@@ -382,7 +388,7 @@ impl Read for HttpFile {
     /// in a new HTTP request for the requested range of bytes, so using this
     /// method for large reads may be inefficient.
     fn read(&mut self, buf: &mut [u8]) -> IoResult<usize> {
-        if self.position >= self.size {
+        if self.position >= self.size || buf.is_empty() {
             return Ok(0);
         }
 
@@ -400,6 +406,10 @@ impl Read for HttpFile {
     /// bytes remaining in the file to fill the buffer, even if the end of the
     /// file has not been reached yet.
     fn read_exact(&mut self, buf: &mut [u8]) -> IoResult<()> {
+        if buf.is_empty() {
+            return Ok(());
+        }
+
         if buf.len() as u64 > self.size - self.position {
             return Err(IoError::new(
                 IoErrorKind::UnexpectedEof,
