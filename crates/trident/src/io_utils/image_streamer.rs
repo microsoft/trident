@@ -97,7 +97,7 @@ where
         .context("Failed to sync")?;
 
     debug!(
-        "Copied {} [{}] to '{}'{} in {:.2} seconds: {:.2} Mbps",
+        "Copied {} [{}] to '{}'{} in {:.2} seconds: {:.2} MB/s",
         ByteCount::from(bytes_copied).to_human_readable_approx(),
         bytes_copied,
         destination_path.display(),
@@ -108,7 +108,7 @@ where
             _ => "".into(),
         },
         t.elapsed().as_secs_f32(),
-        (bytes_copied as f64 * 8.0) / (t.elapsed().as_secs_f64() * 1_000_000.0)
+        (bytes_copied as f64) / (t.elapsed().as_secs_f64() * 1_000_000.0)
     );
 
     Ok(())
