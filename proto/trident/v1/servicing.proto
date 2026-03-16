@@ -71,7 +71,8 @@ message Completed {
   // automatically by Trident.
   RebootStatus reboot_status = 3;
 
-  // The hash of the image if available. Will be of the form "sha384:<hash_value>".
+  // The hash for the image if available. Will be of the form
+  // "sha384:<hash_value>".
   optional string image_hash = 4;
 }
 
