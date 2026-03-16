@@ -53,7 +53,7 @@ func newVirtDeployResourceConfig(config VirtDeployConfig) (*virtDeployResourceCo
 	}
 
 	// Create the storage pool configuration
-	storagePool := newPool(ns.storagePoolName(), fmt.Sprintf("/var/lib/libvirt/%s", ns))
+	storagePool := newPool(ns.storagePoolName(), fmt.Sprintf("/mnt/artifacts/libvirt/%s", ns))
 	nvramPool := newPool(ns.nvramPoolName(), fmt.Sprintf("/var/lib/%s-nvram", ns))
 	nvramPool.mode = "0777"
 
