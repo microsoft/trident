@@ -25,6 +25,7 @@ use trident_api::{
         ExecutionEnvironmentMisconfigurationError, InitializationError, InternalError,
         InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt,
     },
+    primitives::hash::Sha384Hash,
     status::{ServicingState, ServicingType},
 };
 
@@ -642,7 +643,7 @@ impl Trident {
         datastore: &mut DataStore,
         image_url: &Url,
         hash: &str,
-    ) -> Result<ExitKind, TridentError> {
+    ) -> Result<(ExitKind, Sha384Hash), TridentError> {
         tracing::info!(metric_name = "stream_image_start", value = true,);
         let mut image_source = ConfigOsImage {
             url: image_url.clone(),
@@ -651,6 +652,15 @@ impl Trident {
 
         let mut image = OsImage::load(&mut image_source, Duration::from_secs(10))
             .message("Failed to download OS image")?;
+
+        let hash = match image_source.sha384 {
+            ImageSha384::Checksum(hash) => hash,
+            ImageSha384::Ignored => {
+                return Err(TridentError::internal(
+                    "Image hash should have been populated by OsImage::load",
+                ))
+            }
+        };
 
         let original_disk_size = image
             .original_disk_size()
@@ -683,6 +693,7 @@ impl Trident {
         self.host_config = Some(config);
 
         self.install(datastore, Operations::all(), false, Some(image))
+            .map(|r| (r, hash))
     }
 
     pub fn commit(&mut self, datastore: &mut DataStore) -> Result<ExitKind, TridentError> {

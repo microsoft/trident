@@ -7,7 +7,10 @@ use log::error;
 use tokio::sync::{Mutex, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock};
 use tokio_util::sync::CancellationToken;
 
-use trident_api::error::{InternalError, TridentError};
+use trident_api::{
+    error::{InternalError, TridentError},
+    primitives::hash::Sha384Hash,
+};
 use trident_proto::v1::{Completed, RebootStatus, StatusCode, TridentError as ProtoTridentError};
 
 use crate::{server::activitytracker::ActivityTracker, ExitKind};
@@ -109,7 +112,10 @@ impl ServicingManager {
         f: F,
     ) -> Completed
     where
-        F: FnOnce() -> Result<ExitKind, TridentError> + Send + panic::UnwindSafe + 'static,
+        F: FnOnce() -> Result<(ExitKind, Sha384Hash), TridentError>
+            + Send
+            + panic::UnwindSafe
+            + 'static,
     {
         // Spawn the servicing operation in a blocking task, notifying the activity
         // tracker of start and end of servicing through the guard.
@@ -122,17 +128,16 @@ impl ServicingManager {
         })
         .await;
 
-        let exit_kind = match result {
-            Ok(r) => match r {
-                Ok(exit_kind) => exit_kind,
-                Err(e) => {
-                    return Completed {
-                        status: StatusCode::Failure.into(),
-                        error: Some(ProtoTridentError::from(&e)),
-                        reboot_status: RebootStatus::RebootNotRequired.into(),
-                    }
+        let (exit_kind, sha384) = match result {
+            Ok(Ok(r)) => r,
+            Ok(Err(e)) => {
+                return Completed {
+                    status: StatusCode::Failure.into(),
+                    error: Some(ProtoTridentError::from(&e)),
+                    reboot_status: RebootStatus::RebootNotRequired.into(),
+                    image_hash: None,
                 }
-            },
+            }
             Err(e) => {
                 error!("Servicing task join error: {:?}", e);
                 return Completed {
@@ -142,6 +147,7 @@ impl ServicingManager {
                         anyhow!(e),
                     ))),
                     reboot_status: RebootStatus::RebootNotRequired.into(),
+                    image_hash: None,
                 };
             }
         };
@@ -173,6 +179,7 @@ impl ServicingManager {
                         InternalError::Internal("The servicing task requested a reboot, but this task type should not cause reboots."),
                     ))),
                     reboot_status: RebootStatus::RebootNotRequired.into(),
+                    image_hash: None,
                 };
             }
 
@@ -184,6 +191,7 @@ impl ServicingManager {
             status: StatusCode::Success.into(),
             error: None,
             reboot_status: reboot_status.into(),
+            image_hash: Some(format!("sha384:{sha384}")),
         }
     }
 
@@ -218,6 +226,10 @@ mod tests {
 
     use trident_api::error::InvalidInputError;
     use trident_proto::v1::TridentErrorKind;
+
+    fn test_hash() -> Sha384Hash {
+        Sha384Hash::from("a".repeat(96))
+    }
 
     #[tokio::test]
     async fn test_servicing_manager_new() {
@@ -325,7 +337,7 @@ mod tests {
 
         let result = manager
             .spawn_servicing_task(RebootDecision::Handle, guard, tracker, || {
-                Ok(ExitKind::Done)
+                Ok((ExitKind::Done, test_hash()))
             })
             .await;
 
@@ -342,7 +354,7 @@ mod tests {
 
         let result = manager
             .spawn_servicing_task(RebootDecision::Defer, guard, tracker, || {
-                Ok(ExitKind::NeedsReboot)
+                Ok((ExitKind::NeedsReboot, test_hash()))
             })
             .await;
 
@@ -369,7 +381,7 @@ mod tests {
 
         let result = manager
             .spawn_servicing_task(RebootDecision::Handle, guard, tracker, || {
-                Ok(ExitKind::NeedsReboot)
+                Ok((ExitKind::NeedsReboot, test_hash()))
             })
             .await;
 
@@ -396,7 +408,7 @@ mod tests {
 
         let result = manager
             .spawn_servicing_task(RebootDecision::Error, guard, tracker, || {
-                Ok(ExitKind::NeedsReboot)
+                Ok((ExitKind::NeedsReboot, test_hash()))
             })
             .await;
 
@@ -455,7 +467,7 @@ mod tests {
                 .spawn_servicing_task(RebootDecision::Handle, guard, tracker, || {
                     // Task body
                     std::thread::sleep(Duration::from_millis(50));
-                    Ok(ExitKind::Done)
+                    Ok((ExitKind::Done, test_hash()))
                 })
                 .await
         });
@@ -512,7 +524,7 @@ mod tests {
                 .expect("First lock should succeed");
             let result = manager
                 .spawn_servicing_task(RebootDecision::Handle, guard, tracker.clone(), || {
-                    Ok(ExitKind::Done)
+                    Ok((ExitKind::Done, test_hash()))
                 })
                 .await;
             assert_eq!(result.status(), StatusCode::Success);
@@ -525,7 +537,7 @@ mod tests {
                 .expect("Second lock should succeed");
             let result = manager
                 .spawn_servicing_task(RebootDecision::Handle, guard, tracker.clone(), || {
-                    Ok(ExitKind::NeedsReboot)
+                    Ok((ExitKind::NeedsReboot, test_hash()))
                 })
                 .await;
             assert_eq!(result.status(), StatusCode::Success);
