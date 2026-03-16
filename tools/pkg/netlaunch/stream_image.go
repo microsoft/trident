@@ -13,20 +13,20 @@ StandardError=journal+console
 Environment="LOGSTREAM_URL=%s"
 `
 
-func makeStreamImageOverrideFileDownload(tridentConfig map[string]any, logstreamAddress string) (rcpAgentFileDownload, error) {
+func getImageUrlAndHashFromTridentConfig(tridentConfig map[string]any) (string, string, error) {
 	imgConf, ok := tridentConfig["image"]
 	if !ok {
-		return rcpAgentFileDownload{}, fmt.Errorf("trident config does not contain an image section")
+		return "", "", fmt.Errorf("trident config does not contain an image section")
 	}
 
 	imgConfMap, ok := imgConf.(map[any]any)
 	if !ok {
-		return rcpAgentFileDownload{}, fmt.Errorf("trident config image section is not a map")
+		return "", "", fmt.Errorf("trident config image section is not a map")
 	}
 
 	imgUrl, ok := imgConfMap["url"].(string)
 	if !ok {
-		return rcpAgentFileDownload{}, fmt.Errorf("trident config image section does not contain a 'url' field of type string")
+		return "", "", fmt.Errorf("trident config image section does not contain a 'url' field of type string")
 	}
 
 	imgSha384, ok := imgConfMap["sha384"].(string)
@@ -34,6 +34,15 @@ func makeStreamImageOverrideFileDownload(tridentConfig map[string]any, logstream
 		// If we can't find a sha384 field default to "ignored", which Trident
 		// will accept and just skip the hash verification.
 		imgSha384 = "ignored"
+	}
+
+	return imgUrl, imgSha384, nil
+}
+
+func makeStreamImageOverrideFileDownload(tridentConfig map[string]any, logstreamAddress string) (rcpAgentFileDownload, error) {
+	imgUrl, imgSha384, err := getImageUrlAndHashFromTridentConfig(tridentConfig)
+	if err != nil {
+		return rcpAgentFileDownload{}, fmt.Errorf("failed to get image URL and hash from Trident config: %w", err)
 	}
 
 	fileContent := fmt.Sprintf(

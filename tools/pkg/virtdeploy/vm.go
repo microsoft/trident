@@ -200,6 +200,11 @@ func (vm *VirtDeployVM) createDomain(
 				Target: &libvirtxml.DomainSerialTarget{Port: new(uint)},
 				Log:    &libvirtxml.DomainChardevLog{File: fmt.Sprintf("/tmp/%s-serial0.log", vm.name), Append: "off"},
 			}},
+			Graphics: []libvirtxml.DomainGraphic{{
+				Spice: &libvirtxml.DomainGraphicSpice{
+					AutoPort: "yes",
+				},
+			}},
 			TPMs: vm.configureTpms(),
 		},
 	}

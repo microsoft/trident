@@ -12,10 +12,12 @@ import (
 // RcpAgentConfiguration holds the configuration for the RCP agent.
 
 type RcpAgentConfiguration struct {
-	ClientAddress   string              `yaml:"clientAddress,omitempty" mapstructure:"clientAddress"`
-	ServerAddress   string              `yaml:"serverAddress,omitempty" mapstructure:"serverAddress"`
-	AdditionalFiles []RcpAdditionalFile `yaml:"additionalFiles,omitempty" mapstructure:"additionalFiles"`
-	RcpClientTls    RcpTlsClientData    `yaml:"rcpClientTls,omitempty" mapstructure:"rcpClientTls"`
+	ClientAddress        string                `yaml:"clientAddress,omitempty" mapstructure:"clientAddress"`
+	ServerConnectionType string                `yaml:"serverConnectionType,omitempty" mapstructure:"serverConnectionType"`
+	ServerAddress        string                `yaml:"serverAddress,omitempty" mapstructure:"serverAddress"`
+	AdditionalFiles      []RcpAdditionalFile   `yaml:"additionalFiles,omitempty" mapstructure:"additionalFiles"`
+	RcpClientTls         RcpTlsClientData      `yaml:"rcpClientTls,omitempty" mapstructure:"rcpClientTls"`
+	Services             ServicesConfiguration `yaml:"services,omitempty" mapstructure:"services"`
 }
 
 type RcpAdditionalFile struct {
@@ -28,6 +30,10 @@ type RcpTlsClientData struct {
 	ClientCert string `yaml:"certData,omitempty" mapstructure:"certData"`
 	ClientKey  string `yaml:"keyData,omitempty" mapstructure:"keyData"`
 	ServerCert string `yaml:"serverCert,omitempty" mapstructure:"serverCert"`
+}
+
+type ServicesConfiguration struct {
+	Start []string `yaml:"start,omitempty" mapstructure:"start"`
 }
 
 // LocalCert implements the CertProvider interface.

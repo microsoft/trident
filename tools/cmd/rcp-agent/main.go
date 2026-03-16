@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -51,7 +52,7 @@ func main() {
 	}
 
 	// Handle Ctrl+C gracefully
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM, syscall.SIGABRT)
 	defer stop()
 
 	// Download files when provided in config
@@ -60,6 +61,11 @@ func main() {
 		if err := downloadFile(&file); err != nil {
 			logrus.Fatalf("Failed to download additional file: %v", err)
 		}
+	}
+
+	// Apply service configuration
+	if err := applyServicesConfiguration(config.Services); err != nil {
+		logrus.Fatalf("Failed to apply services configuration: %v", err)
 	}
 
 	if config.ClientAddress == "" {
@@ -77,9 +83,21 @@ func main() {
 	}
 
 	logrus.Infof("Starting reverse-connect proxy with client address: '%s' and server address: '%s'", config.ClientAddress, config.ServerAddress)
-	if err := proxy.StartReverseConnectProxy(ctx, &config.RcpClientTls, config.ClientAddress, config.ServerAddress, time.Second); err != nil {
-		logrus.Fatalf("reverse-connect proxy error: %v", err)
+	if err := proxy.StartReverseConnectProxy(
+		ctx,
+		&config.RcpClientTls,
+		config.ClientAddress,
+		config.ServerAddress,
+		config.ServerConnectionType,
+		time.Second,
+	); err != nil {
+		if errors.Is(err, context.Canceled) {
+			logrus.Info("Context cancelled, shutting down reverse-connect proxy.")
+		} else {
+			logrus.Fatalf("reverse-connect proxy error: %v", err)
+		}
 	}
+
 	logrus.Info("Shutdown complete")
 }
 
@@ -124,6 +142,23 @@ func enableAndStartTridentInstallService() error {
 	err = cmd.Run("systemctl", "start", "--no-block", tridentInstallServiceName)
 	if err != nil {
 		return fmt.Errorf("failed to start %s: %w", tridentInstallServiceName, err)
+	}
+
+	return nil
+}
+
+func applyServicesConfiguration(config agent.ServicesConfiguration) error {
+	for _, service := range config.Start {
+		logrus.Infof("Enabling and starting service '%s'", service)
+		err := cmd.Run("systemctl", "enable", service)
+		if err != nil {
+			return fmt.Errorf("failed to enable service '%s': %w", service, err)
+		}
+
+		err = cmd.Run("systemctl", "start", "--no-block", service)
+		if err != nil {
+			return fmt.Errorf("failed to start service '%s': %w", service, err)
+		}
 	}
 
 	return nil
