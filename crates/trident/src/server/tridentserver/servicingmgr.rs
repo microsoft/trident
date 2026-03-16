@@ -112,7 +112,7 @@ impl ServicingManager {
         f: F,
     ) -> Completed
     where
-        F: FnOnce() -> Result<(ExitKind, Sha384Hash), TridentError>
+        F: FnOnce() -> Result<(ExitKind, Option<Sha384Hash>), TridentError>
             + Send
             + panic::UnwindSafe
             + 'static,
@@ -191,7 +191,7 @@ impl ServicingManager {
             status: StatusCode::Success.into(),
             error: None,
             reboot_status: reboot_status.into(),
-            image_hash: Some(format!("sha384:{sha384}")),
+            image_hash: sha384.map(|hash| format!("sha384:{hash}")),
         }
     }
 
@@ -227,8 +227,8 @@ mod tests {
     use trident_api::error::InvalidInputError;
     use trident_proto::v1::TridentErrorKind;
 
-    fn test_hash() -> Sha384Hash {
-        Sha384Hash::from("a".repeat(96))
+    fn test_hash() -> Option<Sha384Hash> {
+        Some(Sha384Hash::from("a".repeat(96)))
     }
 
     #[tokio::test]

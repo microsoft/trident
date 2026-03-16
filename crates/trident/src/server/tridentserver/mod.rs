@@ -194,7 +194,7 @@ impl TridentServer {
         f: F,
     ) -> Result<Response<ServicingResponseStream>, Status>
     where
-        F: FnOnce() -> Result<(ExitKind, Sha384Hash), TridentError>
+        F: FnOnce() -> Result<(ExitKind, Option<Sha384Hash>), TridentError>
             + Send
             + panic::UnwindSafe
             + 'static,
