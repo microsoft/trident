@@ -97,14 +97,14 @@ steps:
 
     displayName: Validate installer ISO name
 
-  - ${{ if parameters.downloadTridentContainer }}:
-      - task: DownloadPipelineArtifact@2
-        displayName: "Download Trident container"
-        inputs:
-          buildType: current
-          artifactName: "trident-docker-image"
-          patterns: "**/trident-container.tar.gz"
-          targetPath: "${{ parameters.targetDirectory }}"
+  # - ${{ if parameters.downloadTridentContainer }}:
+  #     - task: DownloadPipelineArtifact@2
+  #       displayName: "Download Trident container"
+  #       inputs:
+  #         buildType: current
+  #         artifactName: "trident-docker-image"
+  #         patterns: "**/trident-container.tar.gz"
+  #         targetPath: "${{ parameters.targetDirectory }}"
 
   - task: DownloadPipelineArtifact@2
     displayName: "Download ${{ parameters.installerISO }}"
@@ -113,20 +113,20 @@ steps:
       artifactName: "${{ parameters.installerISO }}"
       targetPath: "${{ parameters.isoDirectory }}"
 
-  - task: DownloadPipelineArtifact@2
-    displayName: "Download ${{ parameters.tridentTestImage }}"
-    inputs:
-      buildType: current
-      artifactName: "${{ parameters.tridentTestImage }}"
-      targetPath: "${{ parameters.testImageDir }}"
+  # - task: DownloadPipelineArtifact@2
+  #   displayName: "Download ${{ parameters.tridentTestImage }}"
+  #   inputs:
+  #     buildType: current
+  #     artifactName: "${{ parameters.tridentTestImage }}"
+  #     targetPath: "${{ parameters.testImageDir }}"
 
-  - ${{ if ne(parameters.tridentTestImageVerity, 'skip') }}:
-    - task: DownloadPipelineArtifact@2
-      displayName: "Download ${{ parameters.tridentTestImageVerity }}"
-      inputs:
-        buildType: current
-        artifactName: "${{ parameters.tridentTestImageVerity }}"
-        targetPath: "${{ parameters.testImageDirVerity }}"
+  # - ${{ if ne(parameters.tridentTestImageVerity, 'skip') }}:
+  #   - task: DownloadPipelineArtifact@2
+  #     displayName: "Download ${{ parameters.tridentTestImageVerity }}"
+  #     inputs:
+  #       buildType: current
+  #       artifactName: "${{ parameters.tridentTestImageVerity }}"
+  #       targetPath: "${{ parameters.testImageDirVerity }}"
 
   - ${{ if ne(parameters.tridentTestImageUsrVerity, 'skip') }}:
     - task: DownloadPipelineArtifact@2

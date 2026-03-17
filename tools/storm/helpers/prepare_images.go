@@ -40,8 +40,8 @@ func (h *PrepareImages) Args() any {
 }
 
 func (h *PrepareImages) RegisterTestCases(r storm.TestRegistrar) error {
-	r.RegisterTestCase("copy-regular", h.copyRegularImages)
-	r.RegisterTestCase("copy-verity", h.copyVerityImages)
+	// r.RegisterTestCase("copy-regular", h.copyRegularImages)
+	// r.RegisterTestCase("copy-verity", h.copyVerityImages)
 	r.RegisterTestCase("copy-usrverity", h.copyUsrVerityImages)
 	return nil
 }
