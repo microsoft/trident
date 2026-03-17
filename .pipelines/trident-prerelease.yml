@@ -82,4 +82,4 @@ extends:
       - template: templates/pipeline-selector.yml
         parameters:
           targetStage: pre
-          imageBuild: ${{ parameters.imageBuild }}
+          imagesBuild: ${{ parameters.imagesBuild }}
