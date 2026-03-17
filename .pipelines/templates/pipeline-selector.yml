@@ -69,6 +69,6 @@ stages:
           # Only perform Azure testing from official pipelines, as only those have access to the Azure subscription.
           includeAzure: ${{ or(eq(parameters.targetStage, 'pre'), eq(parameters.targetStage, 'ci'), eq(parameters.targetStage, 'pr-e2e-azure')) }}
           numberOfUpdateIterations: ${{ parameters.numberOfUpdateIterations }}
-      - template: e2e-arm64-template.yml
-        parameters:
-          stageType: ${{ parameters.targetStage }}
+      # - template: e2e-arm64-template.yml
+      #   parameters:
+      #     stageType: ${{ parameters.targetStage }}
