@@ -372,11 +372,11 @@ stages:
   #         micBuildType: ${{ parameters.micBuildType }}
   #         micVersion: ${{ parameters.micVersion }}
 
-  # PUBLISHING
-  #
-  # Only enabled for PRERELEASE and CI unless blockPublishing is set to true.
-  - ${{ if eq(parameters.blockPublishing, false) }}:
-      - ${{ if or(eq(parameters.stageType, 'pre'), eq(parameters.stageType, 'ci')) }}:
-          - template: stages/publishing/publish.yml
-            parameters:
-              stageType: ${{ parameters.stageType }}
+  # # PUBLISHING
+  # #
+  # # Only enabled for PRERELEASE and CI unless blockPublishing is set to true.
+  # - ${{ if eq(parameters.blockPublishing, false) }}:
+  #     - ${{ if or(eq(parameters.stageType, 'pre'), eq(parameters.stageType, 'ci')) }}:
+  #         - template: stages/publishing/publish.yml
+  #           parameters:
+  #             stageType: ${{ parameters.stageType }}
