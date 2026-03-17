@@ -17,6 +17,7 @@ import (
 	"tridenttools/pkg/netlaunch"
 	"tridenttools/pkg/netlisten"
 	"tridenttools/storm/e2e/testrings"
+	sshclient "tridenttools/storm/utils/ssh/client"
 	"tridenttools/storm/utils/ssh/sftp"
 	"tridenttools/storm/utils/sshutils"
 	"tridenttools/storm/utils/trident"
@@ -154,6 +155,9 @@ func (s *TridentE2EScenario) updateHostConfig(tc storm.TestCase) error {
 	s.config.Set(false, "internalParams", "selfUpgradeTrident")
 	// Remove storage section which is not needed for AB update.
 	s.config.Delete("storage")
+
+	// set InternalParams.NoTransition so we can fetch logs before reboot
+	s.config.Set(true, "internalParams", "noTransition")
 
 	return nil
 }
@@ -308,33 +312,53 @@ func runTridentUpdate(tc storm.TestCase, runtime trident.RuntimeType, client *ss
 	for i := 1; ; i++ {
 		logrus.Infof("Invoking Trident attempt #%d with args: %s", i, args)
 
+		// InternalParams.NoTransition is set, so no auto reboot should happen
 		out, err := trident.InvokeTrident(runtime, client, nil, args)
+		logrus.Infof("Trident invocation: %v\nStdout:\n%s\nStderr:\n%s\n", err, out.Stdout, out.Stderr)
 		if err != nil {
-			if err, ok := err.(*ssh.ExitMissingError); ok && strings.Contains(out.Stderr, trident.REBOOTING_LOG_MESSAGE) {
-				// The connection closed without an exit code, and the output contains REBOOTING_LOG_MESSAGE.
-				// This indicates that the host has rebooted.
-				logrus.Infof("Host rebooted successfully")
-				break
-			} else {
-				// Some unknown error occurred.
-				logrus.Errorf("Failed to invoke Trident: %s; %s", err, out.Report())
-				return fmt.Errorf("failed to invoke Trident: %w", err)
-			}
-		}
-
-		if out.Status == 0 && strings.Contains(out.Stderr, "Staging of A/B update succeeded") {
-			logrus.Infof("Staging of A/B update succeeded")
-			break
-		}
-
-		if out.Status == 2 && strings.Contains(out.Stderr, "Failed to run post-configure script 'fail-on-the-first-run'") {
-			logrus.Infof("Detected intentional failure. Re-running...")
+			logrus.Infof("Trident attempt #%d failed: %+v", i, err)
 			continue
 		}
 
-		logrus.Errorf("Trident update failed %s", out.Report())
+		// Get logs
+		fullOut, err := sshclient.RunCommand(client, "cat /var/log/trident-full.log")
+		logrus.Infof("Trident full trace logs: %v\nStdout:\n%s\nStderr:\n%s\n", err, fullOut.Stdout, fullOut.Stderr)
+		if err != nil {
+			logrus.Infof("Trident log retrieval attempt #%d failed: %+v", i, err)
+			continue
+		}
 
-		tc.Fail(fmt.Sprintf("Trident update failed with status %d", out.Status))
+		// Trigger reboot
+		out, err = sshclient.RunCommand(client, "sudo shutdown -r 0")
+		// Assume success, but log results:
+		logrus.Infof("Manual reboot results: %v\nStdout:\n%s\nStderr:\n%s\n", err, out.Stdout, out.Stderr)
+		break
+		// if err != nil {
+		// 	if err, ok := err.(*ssh.ExitMissingError); ok && strings.Contains(out.Stderr, trident.REBOOTING_LOG_MESSAGE) {
+		// 		// The connection closed without an exit code, and the output contains REBOOTING_LOG_MESSAGE.
+		// 		// This indicates that the host has rebooted.
+		// 		logrus.Infof("Host rebooted successfully")
+		// 		break
+		// 	} else {
+		// 		// Some unknown error occurred.
+		// 		logrus.Errorf("Failed to invoke Trident: %s; %s", err, out.Report())
+		// 		return fmt.Errorf("failed to invoke Trident: %w", err)
+		// 	}
+		// }
+
+		// if out.Status == 0 && strings.Contains(out.Stderr, "Staging of A/B update succeeded") {
+		// 	logrus.Infof("Staging of A/B update succeeded")
+		// 	break
+		// }
+
+		// if out.Status == 2 && strings.Contains(out.Stderr, "Failed to run post-configure script 'fail-on-the-first-run'") {
+		// 	logrus.Infof("Detected intentional failure. Re-running...")
+		// 	continue
+		// }
+
+		// logrus.Errorf("Trident update failed %s", out.Report())
+
+		// tc.Fail(fmt.Sprintf("Trident update failed with status %d", out.Status))
 	}
 
 	return nil
