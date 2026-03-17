@@ -78,11 +78,13 @@ func getSerialPathFromNetlistenConfig(netlistenConfigPath string) string {
 			if bmc, ok := netlisten["bmc"].(map[string]interface{}); ok {
 				if serialOverSsh, ok := bmc["serialOverSsh"].(map[string]interface{}); ok {
 					if output, ok := serialOverSsh["output"].(string); ok {
+						logrus.Infof("Found serial path %s in netlisten config file %s", output, netlistenConfigPath)
 						return output
 					}
 				}
 			}
 		}
+		logrus.Infof("No serial path found in netlisten config file:\n%s", tridentConfigContents)
 	}
 	return ""
 }
