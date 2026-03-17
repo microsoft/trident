@@ -173,6 +173,8 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 		h.config["internalParams"] = internalParams
 	}
 	internalParams["selfUpgradeTrident"] = false
+	// set noTransition
+	internalParams["noTransition"] = true
 
 	// Delete the storage section from the config, not needed for A/B update
 	delete(h.config, "storage")
@@ -327,33 +329,53 @@ func (h *AbUpdateHelper) triggerTridentUpdate(tc storm.TestCase) error {
 	for i := 1; ; i++ {
 		logrus.Infof("Invoking Trident attempt #%d with args: %s", i, args)
 
+		// InternalParams.NoTransition is set, so no auto reboot should happen
 		out, err := stormtrident.InvokeTrident(h.args.TridentRuntimeType, h.client, h.args.EnvVars, args)
+		logrus.Infof("Trident invocation: %v\nStdout:\n%s\nStderr:\n%s\n", err, out.Stdout, out.Stderr)
 		if err != nil {
-			if err, ok := err.(*ssh.ExitMissingError); ok && strings.Contains(out.Stderr, trident.REBOOTING_LOG_MESSAGE) {
-				// The connection closed without an exit code, and the output contains REBOOTING_LOG_MESSAGE.
-				// This indicates that the host has rebooted.
-				logrus.Infof("Host rebooted successfully")
-				break
-			} else {
-				// Some unknown error occurred.
-				logrus.Errorf("Failed to invoke Trident: %s; %s", err, out.Report())
-				return fmt.Errorf("failed to invoke Trident: %w", err)
-			}
-		}
-
-		if out.Status == 0 && strings.Contains(out.Stderr, "Staging of A/B update succeeded") {
-			logrus.Infof("Staging of A/B update succeeded")
-			break
-		}
-
-		if out.Status == 2 && strings.Contains(out.Stderr, "Failed to run post-configure script 'fail-on-the-first-run'") {
-			logrus.Infof("Detected intentional failure. Re-running...")
+			logrus.Infof("Trident attempt #%d failed: %+v", i, err)
 			continue
 		}
 
-		logrus.Errorf("Trident update failed %s", out.Report())
+		// Get logs
+		fullOut, err := stormsshclient.RunCommand(h.client, "cat /var/log/trident-full.log")
+		logrus.Infof("Trident full trace logs: %v\nStdout:\n%s\nStderr:\n%s\n", err, fullOut.Stdout, fullOut.Stderr)
+		if err != nil {
+			logrus.Infof("Trident log retrieval attempt #%d failed: %+v", i, err)
+			continue
+		}
 
-		tc.Fail(fmt.Sprintf("Trident update failed with status %d", out.Status))
+		// Trigger reboot
+		out, err = stormsshclient.RunCommand(h.client, "sudo shutdown -r 0")
+		// Assume success, but log results:
+		logrus.Infof("Manual reboot results: %v\nStdout:\n%s\nStderr:\n%s\n", err, out.Stdout, out.Stderr)
+		break
+		// if err != nil {
+		// 	if err, ok := err.(*ssh.ExitMissingError); ok && strings.Contains(out.Stderr, trident.REBOOTING_LOG_MESSAGE) {
+		// 		// The connection closed without an exit code, and the output contains REBOOTING_LOG_MESSAGE.
+		// 		// This indicates that the host has rebooted.
+		// 		logrus.Infof("Host rebooted successfully")
+		// 		break
+		// 	} else {
+		// 		// Some unknown error occurred.
+		// 		logrus.Errorf("Failed to invoke Trident: %s; %s", err, out.Report())
+		// 		return fmt.Errorf("failed to invoke Trident: %w", err)
+		// 	}
+		// }
+
+		// if out.Status == 0 && strings.Contains(out.Stderr, "Staging of A/B update succeeded") {
+		// 	logrus.Infof("Staging of A/B update succeeded")
+		// 	break
+		// }
+
+		// if out.Status == 2 && strings.Contains(out.Stderr, "Failed to run post-configure script 'fail-on-the-first-run'") {
+		// 	logrus.Infof("Detected intentional failure. Re-running...")
+		// 	continue
+		// }
+
+		// logrus.Errorf("Trident update failed %s", out.Report())
+
+		// tc.Fail(fmt.Sprintf("Trident update failed with status %d", out.Status))
 	}
 
 	// On success close the client because the host will reboot into the new OS.

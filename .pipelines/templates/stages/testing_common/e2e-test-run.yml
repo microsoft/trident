@@ -136,6 +136,8 @@ steps:
 
       NETLISTEN_CONFIG_ARGS=""
       if [ -n "${{ parameters.netlistenConfigFile }}" ]; then
+        echo "View netlisten config:"
+        cat ${{ parameters.netlistenConfigFile }}
         NETLISTEN_CONFIG_ARGS="--config ${{ parameters.netlistenConfigFile }}"
       fi
 
