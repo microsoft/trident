@@ -78,6 +78,11 @@ parameters:
       - go-tools
       - go-tools-arm64
 
+  - name: imagesBuild
+    displayName: "Build to get images from"
+    type: string
+    default: "current"
+
 steps:
   - bash: |
       set -eux
@@ -109,7 +114,13 @@ steps:
   - task: DownloadPipelineArtifact@2
     displayName: "Download ${{ parameters.installerISO }}"
     inputs:
-      buildType: current
+      ${{ if eq(parameters.imageBuild, "current") }}:
+        buildType: current
+      ${{ else }}:
+        buildType: specific
+        runVersion: specific
+        project: ECF
+        runId: ${{ parameters.imageBuild }}
       artifactName: "${{ parameters.installerISO }}"
       targetPath: "${{ parameters.isoDirectory }}"
 
@@ -132,7 +143,13 @@ steps:
     - task: DownloadPipelineArtifact@2
       displayName: "Download ${{ parameters.tridentTestImageUsrVerity }}"
       inputs:
-        buildType: current
+        ${{ if eq(parameters.imageBuild, "current") }}:
+          buildType: current
+        ${{ else }}:
+          buildType: specific
+          runVersion: specific
+          project: ECF
+          runId: ${{ parameters.imageBuild }}
         artifactName: "${{ parameters.tridentTestImageUsrVerity }}"
         targetPath: "${{ parameters.testImageDirUsrVerity }}"
 

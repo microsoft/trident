@@ -1,4 +1,9 @@
 parameters:
+  - name: imagesBuild
+    displayName: "Build to get images from"
+    type: string
+    default: "current"
+
   - name: "debug"
     displayName: "Enable debug output"
     type: boolean
@@ -77,3 +82,4 @@ extends:
       - template: templates/pipeline-selector.yml
         parameters:
           targetStage: pre
+          imageBuild: ${{ parameters.imageBuild }}

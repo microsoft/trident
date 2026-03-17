@@ -74,10 +74,15 @@ func getSerialPathFromNetlistenConfig(netlistenConfigPath string) string {
 			logrus.Tracef("Failed to parse netlisten config file %s: %v", netlistenConfigPath, err)
 			return ""
 		}
+		logrus.Infof("Parsed netlisten config: %v", netlistenConfig)
 		if netlisten, ok := netlistenConfig["netlisten"].(map[string]interface{}); ok {
+			logrus.Infof("Found netlisten in config: %v", netlisten)
 			if bmc, ok := netlisten["bmc"].(map[string]interface{}); ok {
+				logrus.Infof("Found bmc in config: %v", bmc)
 				if serialOverSsh, ok := bmc["serialOverSsh"].(map[string]interface{}); ok {
+					logrus.Infof("Found serialOverSsh in config: %v", serialOverSsh)
 					if output, ok := serialOverSsh["output"].(string); ok {
+						logrus.Infof("Found output in config: %v", output)
 						logrus.Infof("Found serial path %s in netlisten config file %s", output, netlistenConfigPath)
 						return output
 					}

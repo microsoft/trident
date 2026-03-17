@@ -28,6 +28,11 @@ parameters:
     type: string
     default: ""
 
+  - name: imagesBuild
+    displayName: "Build to get images from"
+    type: string
+    default: "current"
+
 stages:
   - stage: BaremetalDeploymentTesting_${{ parameters.runtimeEnv }}
     displayName: Baremetal Deployment Testing ${{ parameters.runtimeEnv }}
@@ -46,9 +51,10 @@ stages:
           #     - TridentTestImg_trident_container_usrverity_testimage
           # - ${{ else }}:
           #     - TridentTestImg_trident_verity_testimage
-          - TridentTestImg_trident_installer
+          - ${{ if eq(parameters.imageBuild, "current") }}:
+            - TridentTestImg_trident_installer
           #    - TridentTestImg_trident_testimage
-          - TridentTestImg_trident_usrverity_testimage
+            - TridentTestImg_trident_usrverity_testimage
 
     jobs:
       - template: ../testing_common/get-tests.yml
@@ -164,6 +170,7 @@ stages:
               tridentTestImageUsrVerity: ${{ variables.USRVERITY_IMAGE_NAME }}
               ${{ if eq(parameters.runtimeEnv, 'container') }}:
                 downloadTridentContainer: true
+              imageBuild: ${{ parameters.imageBuild }}
 
           # Push (regular or container) testimage, sysexts, and/or confexts to
           # ACR. This step must occur before trident prep, since the ACR image

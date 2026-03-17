@@ -44,6 +44,11 @@ parameters:
     displayName: "release: The commit hash of the source code to package."
     default: ""
 
+  - name: imagesBuild
+    displayName: "Build to get images from"
+    type: string
+    default: "current"
+
 stages:
   - ${{ if eq(parameters.targetStage, 'pr') }}:
       - template: pr-template.yml
@@ -69,6 +74,7 @@ stages:
           # Only perform Azure testing from official pipelines, as only those have access to the Azure subscription.
           includeAzure: ${{ or(eq(parameters.targetStage, 'pre'), eq(parameters.targetStage, 'ci'), eq(parameters.targetStage, 'pr-e2e-azure')) }}
           numberOfUpdateIterations: ${{ parameters.numberOfUpdateIterations }}
+          imageBuild: ${{ parameters.imageBuild }}
       # - template: e2e-arm64-template.yml
       #   parameters:
       #     stageType: ${{ parameters.targetStage }}
