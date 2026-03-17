@@ -12,16 +12,18 @@ import (
 	"tridenttools/pkg/serial"
 )
 
+type SerialOverSsh struct {
+	SshPort uint16
+	ComPort string
+	Output  string
+}
+
 type Bmc struct {
 	Ip            string
 	Port          *string
 	Username      string
 	Password      string
-	SerialOverSsh *struct {
-		SshPort uint16
-		ComPort string
-		Output  string
-	}
+	SerialOverSsh *SerialOverSsh `yaml:"serialOverSsh,omitempty"`
 }
 
 // ListenForSerialOutput sets up a serial over SSH session in a background

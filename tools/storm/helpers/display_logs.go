@@ -9,6 +9,8 @@ import (
 	"github.com/microsoft/storm"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
+
+	"tridenttools/pkg/netlaunch"
 )
 
 type DisplayLogsHelper struct {
@@ -68,26 +70,15 @@ func getSerialPathFromNetlistenConfig(netlistenConfigPath string) string {
 			return ""
 		}
 
-		netlistenConfig := make(map[string]interface{})
-		err = yaml.UnmarshalStrict(tridentConfigContents, &netlistenConfig)
+		netlistenConfig := netlaunch.NetListenConfig{}
+		err = yaml.Unmarshal(tridentConfigContents, &netlistenConfig)
 		if err != nil {
 			logrus.Tracef("Failed to parse netlisten config file %s: %v", netlistenConfigPath, err)
 			return ""
 		}
-		logrus.Infof("Parsed netlisten config: %v", netlistenConfig)
-		if netlisten, ok := netlistenConfig["netlisten"].(map[string]interface{}); ok {
-			logrus.Infof("Found netlisten in config: %v", netlisten)
-			if bmc, ok := netlisten["bmc"].(map[string]interface{}); ok {
-				logrus.Infof("Found bmc in config: %v", bmc)
-				if serialOverSsh, ok := bmc["serialOverSsh"].(map[string]interface{}); ok {
-					logrus.Infof("Found serialOverSsh in config: %v", serialOverSsh)
-					if output, ok := serialOverSsh["output"].(string); ok {
-						logrus.Infof("Found output in config: %v", output)
-						logrus.Infof("Found serial path %s in netlisten config file %s", output, netlistenConfigPath)
-						return output
-					}
-				}
-			}
+		logrus.Infof("Parsed netlisten config: %+v", netlistenConfig.Netlisten.Bmc)
+		if netlistenConfig.Netlisten.Bmc != nil && netlistenConfig.Netlisten.Bmc.SerialOverSsh != nil && netlistenConfig.Netlisten.Bmc.SerialOverSsh.Output != "" {
+			return netlistenConfig.Netlisten.Bmc.SerialOverSsh.Output
 		}
 		logrus.Infof("No serial path found in netlisten config file:\n%s", tridentConfigContents)
 	}
