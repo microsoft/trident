@@ -80,7 +80,7 @@ parameters:
     default: "current"
 
 stages:
-  - ${{ if eq(parameters.imagesBuild, "current") }}:
+  - ${{ if eq(parameters.imagesBuild, 'current') }}:
     # Trident Build/Download
     - template: stages/trident_rpms/trident-stage.yml
       parameters:
@@ -121,7 +121,7 @@ stages:
   # # Build Trident container image (depends on GetTridentBinaries_rpms_amd64)
   # - template: stages/build_docker_image/trident-container.yml
 
-  - ${{ if eq(parameters.imagesBuild, "current") }}:
+  - ${{ if eq(parameters.imagesBuild, 'current') }}:
     # Build Trident installer ISO (host)
     - template: stages/build_image/build-image.yml
       parameters:

@@ -114,7 +114,7 @@ steps:
   - task: DownloadPipelineArtifact@2
     displayName: "Download ${{ parameters.installerISO }}"
     inputs:
-      ${{ if eq(parameters.imagesBuild, "current") }}:
+      ${{ if eq(parameters.imagesBuild, 'current') }}:
         buildType: current
       ${{ else }}:
         buildType: specific
@@ -143,7 +143,7 @@ steps:
     - task: DownloadPipelineArtifact@2
       displayName: "Download ${{ parameters.tridentTestImageUsrVerity }}"
       inputs:
-        ${{ if eq(parameters.imagesBuild, "current") }}:
+        ${{ if eq(parameters.imagesBuild, 'current') }}:
           buildType: current
         ${{ else }}:
           buildType: specific
