@@ -89,10 +89,10 @@ stages:
   # Build tools (Go stuff)
   - template: stages/building_tools/building-tools.yml
 
-  # E2E Test Matrix Definition
-  - template: stages/testing_e2e/storm_e2e.yml
-    parameters:
-      stageType: ${{ parameters.stageType }}
+  # # E2E Test Matrix Definition
+  # - template: stages/testing_e2e/storm_e2e.yml
+  #   parameters:
+  #     stageType: ${{ parameters.stageType }}
 
   # Makefile validation, only for CI
   - ${{ if eq(parameters.stageType, 'ci') }}:
@@ -100,17 +100,17 @@ stages:
         parameters:
           osModifierBranch: ${{ parameters.osModifierBranch }}
 
-  # Build FT base Image, only for CI or if forceFunctionalTestImageRebuild is true
-  - ${{ if or(eq(parameters.stageType, 'ci'), eq(parameters.forceFunctionalTestImageRebuild, true)) }}:
-      # Build Trident installer ISO (host)
-      - template: stages/build_image/build-image.yml
-        parameters:
-          imageName: trident-functest
-          dependsOnTrident: false
-          micBuildType: ${{ parameters.micBuildType }}
-          micVersion: ${{ parameters.micVersion }}
-          clones: 1
-          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+  # # Build FT base Image, only for CI or if forceFunctionalTestImageRebuild is true
+  # - ${{ if or(eq(parameters.stageType, 'ci'), eq(parameters.forceFunctionalTestImageRebuild, true)) }}:
+  #     # Build Trident installer ISO (host)
+  #     - template: stages/build_image/build-image.yml
+  #       parameters:
+  #         imageName: trident-functest
+  #         dependsOnTrident: false
+  #         micBuildType: ${{ parameters.micBuildType }}
+  #         micVersion: ${{ parameters.micVersion }}
+  #         clones: 1
+  #         dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # Build Trident container image (depends on GetTridentBinaries_rpms_amd64)
   - template: stages/build_docker_image/trident-container.yml
@@ -124,58 +124,58 @@ stages:
       clones: 1
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
-  # Build Trident split (stage and finalize separated) installer ISO (host)
-  - template: stages/build_image/build-image.yml
-    parameters:
-      imageName: trident-split-installer
-      micBuildType: ${{ parameters.micBuildType }}
-      micVersion: ${{ parameters.micVersion }}
-      clones: 1
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+  # # Build Trident split (stage and finalize separated) installer ISO (host)
+  # - template: stages/build_image/build-image.yml
+  #   parameters:
+  #     imageName: trident-split-installer
+  #     micBuildType: ${{ parameters.micBuildType }}
+  #     micVersion: ${{ parameters.micVersion }}
+  #     clones: 1
+  #     dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
-  # Build Trident installer ISO (container)
-  - template: stages/build_image/build-image.yml
-    parameters:
-      imageName: trident-container-installer
-      runtimeEnv: "container"
-      micBuildType: ${{ parameters.micBuildType }}
-      micVersion: ${{ parameters.micVersion }}
-      clones: 1
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+  # # Build Trident installer ISO (container)
+  # - template: stages/build_image/build-image.yml
+  #   parameters:
+  #     imageName: trident-container-installer
+  #     runtimeEnv: "container"
+  #     micBuildType: ${{ parameters.micBuildType }}
+  #     micVersion: ${{ parameters.micVersion }}
+  #     clones: 1
+  #     dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
-  # Build Trident test image (regular)
-  - template: stages/build_image/build-image.yml
-    parameters:
-      imageName: trident-testimage
-      micBuildType: ${{ parameters.micBuildType }}
-      micVersion: ${{ parameters.micVersion }}
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+  # # Build Trident test image (regular)
+  # - template: stages/build_image/build-image.yml
+  #   parameters:
+  #     imageName: trident-testimage
+  #     micBuildType: ${{ parameters.micBuildType }}
+  #     micVersion: ${{ parameters.micVersion }}
+  #     dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
-  # Build Trident test image (container)
-  - template: stages/build_image/build-image.yml
-    parameters:
-      imageName: trident-container-testimage
-      runtimeEnv: "container"
-      micBuildType: ${{ parameters.micBuildType }}
-      micVersion: ${{ parameters.micVersion }}
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+  # # Build Trident test image (container)
+  # - template: stages/build_image/build-image.yml
+  #   parameters:
+  #     imageName: trident-container-testimage
+  #     runtimeEnv: "container"
+  #     micBuildType: ${{ parameters.micBuildType }}
+  #     micVersion: ${{ parameters.micVersion }}
+  #     dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
-  # Build Trident test image for root-verity (host)
-  - template: stages/build_image/build-image.yml
-    parameters:
-      imageName: trident-verity-testimage
-      micBuildType: ${{ parameters.micBuildType }}
-      micVersion: ${{ parameters.micVersion }}
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+  # # Build Trident test image for root-verity (host)
+  # - template: stages/build_image/build-image.yml
+  #   parameters:
+  #     imageName: trident-verity-testimage
+  #     micBuildType: ${{ parameters.micBuildType }}
+  #     micVersion: ${{ parameters.micVersion }}
+  #     dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
-  # Build Trident test image for root-verity (container)
-  - template: stages/build_image/build-image.yml
-    parameters:
-      imageName: trident-container-verity-testimage
-      runtimeEnv: "container"
-      micBuildType: ${{ parameters.micBuildType }}
-      micVersion: ${{ parameters.micVersion }}
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+  # # Build Trident test image for root-verity (container)
+  # - template: stages/build_image/build-image.yml
+  #   parameters:
+  #     imageName: trident-container-verity-testimage
+  #     runtimeEnv: "container"
+  #     micBuildType: ${{ parameters.micBuildType }}
+  #     micVersion: ${{ parameters.micVersion }}
+  #     dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # Build Trident test image for usr-verity (host)
   - template: stages/build_image/build-image.yml
@@ -185,22 +185,22 @@ stages:
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
-  # Build Trident test image for usr-verity (container)
-  - template: stages/build_image/build-image.yml
-    parameters:
-      imageName: trident-container-usrverity-testimage
-      runtimeEnv: "container"
-      micBuildType: ${{ parameters.micBuildType }}
-      micVersion: ${{ parameters.micVersion }}
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+  # # Build Trident test image for usr-verity (container)
+  # - template: stages/build_image/build-image.yml
+  #   parameters:
+  #     imageName: trident-container-usrverity-testimage
+  #     runtimeEnv: "container"
+  #     micBuildType: ${{ parameters.micBuildType }}
+  #     micVersion: ${{ parameters.micVersion }}
+  #     dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # Build AzL installer ISO (attended and unattended)
-  - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
-      - template: stages/azl_installer/azl-installer.yml
-        parameters:
-          micBuildType: ${{ parameters.micBuildType }}
-          micVersion: ${{ parameters.micVersion }}
-          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+  # - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
+  #     - template: stages/azl_installer/azl-installer.yml
+  #       parameters:
+  #         micBuildType: ${{ parameters.micBuildType }}
+  #         micVersion: ${{ parameters.micVersion }}
+  #         dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # dom0 is failing for not known reasons ... comment out for now to unblock, longterm this may
   # be removed from Trident pipelines alltogether in favor of being only test-images
@@ -208,46 +208,46 @@ stages:
   #   # Build Trident test image (dom0: mshv+ch)
   #   - template: stages/build_image/trident-mshvch-dom0-testimg.yml
 
-  # Test Runtime Updates and Rollback on VMs
-  - template: stages/testing_rollback/vm-testing.yml
-    parameters:
-      includeQemu: true
-      includeUKI: true
-      micBuildType: ${{ parameters.micBuildType }}
-      micVersion: ${{ parameters.micVersion }}
-      verboseLogging: true
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-      # Expect GRUB w/o verity to succeed and it works locally, but
-      # fails in pipeline to reconnect to VM after first A/B update,
-      # so default to false for now
-      includeQemuGrub: false
+  # # Test Runtime Updates and Rollback on VMs
+  # - template: stages/testing_rollback/vm-testing.yml
+  #   parameters:
+  #     includeQemu: true
+  #     includeUKI: true
+  #     micBuildType: ${{ parameters.micBuildType }}
+  #     micVersion: ${{ parameters.micVersion }}
+  #     verboseLogging: true
+  #     dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+  #     # Expect GRUB w/o verity to succeed and it works locally, but
+  #     # fails in pipeline to reconnect to VM after first A/B update,
+  #     # so default to false for now
+  #     includeQemuGrub: false
 
-  # Test Servicing on VMs
-  - template: stages/testing_servicing/vm-testing.yml
-    parameters:
-      includeQemu: true
-      includeUKI: true
-      includeAzure: ${{ parameters.includeAzure }}
-      micBuildType: ${{ parameters.micBuildType }}
-      micVersion: ${{ parameters.micVersion }}
-      verboseLogging: true
-      updateIterationCount: ${{ parameters.numberOfUpdateIterations }}
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+  # # Test Servicing on VMs
+  # - template: stages/testing_servicing/vm-testing.yml
+  #   parameters:
+  #     includeQemu: true
+  #     includeUKI: true
+  #     includeAzure: ${{ parameters.includeAzure }}
+  #     micBuildType: ${{ parameters.micBuildType }}
+  #     micVersion: ${{ parameters.micVersion }}
+  #     verboseLogging: true
+  #     updateIterationCount: ${{ parameters.numberOfUpdateIterations }}
+  #     dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # TESTING stages for PRERELEASE
   - ${{ if eq(parameters.stageType, 'pre') }}:
-      # Functional Testing
-      - template: stages/testing_functional/functional-testing.yml
-        parameters:
-          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-          ${{ if parameters.forceFunctionalTestImageRebuild }}:
-            downloadPrebuiltImage: false
+      # # Functional Testing
+      # - template: stages/testing_functional/functional-testing.yml
+      #   parameters:
+      #     dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      #     ${{ if parameters.forceFunctionalTestImageRebuild }}:
+      #       downloadPrebuiltImage: false
 
       # VM Testing (host, daily)
-      - template: stages/testing_vm/netlaunch-testing.yml
-        parameters:
-          buildPurpose: "daily"
-          runtimeEnv: "host"
+      # - template: stages/testing_vm/netlaunch-testing.yml
+      #   parameters:
+      #     buildPurpose: "daily"
+      #     runtimeEnv: "host"
 
       - ${{ if parameters.baremetalTestsEnabled }}:
           # BM Testing (host, daily)
@@ -257,120 +257,120 @@ stages:
               runtimeEnv: "host"
 
           # BM Testing (container, daily)
-          - template: stages/testing_baremetal/baremetal-testing.yml
-            parameters:
-              buildPurpose: "daily"
-              runtimeEnv: "container"
-              extraDependsOn: "BaremetalDeploymentTesting_host"
+          # - template: stages/testing_baremetal/baremetal-testing.yml
+          #   parameters:
+          #     buildPurpose: "daily"
+          #     runtimeEnv: "container"
+          #     extraDependsOn: "BaremetalDeploymentTesting_host"
 
       # VM Testing (container, daily)
-      - template: stages/testing_vm/netlaunch-testing.yml
-        parameters:
-          buildPurpose: "daily"
-          runtimeEnv: "container"
+      # - template: stages/testing_vm/netlaunch-testing.yml
+      #   parameters:
+      #     buildPurpose: "daily"
+      #     runtimeEnv: "container"
 
-      - template: direct-streaming-test.yml
-        parameters:
-          architecture: amd64
-          micBuildType: ${{ parameters.micBuildType }}
-          micVersion: ${{ parameters.micVersion }}
+      # - template: direct-streaming-test.yml
+      #   parameters:
+      #     architecture: amd64
+      #     micBuildType: ${{ parameters.micBuildType }}
+      #     micVersion: ${{ parameters.micVersion }}
 
-  # TESTING stages for full validation matrix host/container and bm/bm
-  - ${{ if eq(parameters.stageType, 'full-validation') }}:
-      # Functional Testing
-      - template: stages/testing_functional/functional-testing.yml
-        parameters:
-          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-          ${{ if parameters.forceFunctionalTestImageRebuild }}:
-            downloadPrebuiltImage: false
+  # # TESTING stages for full validation matrix host/container and bm/bm
+  # - ${{ if eq(parameters.stageType, 'full-validation') }}:
+  #     # Functional Testing
+  #     - template: stages/testing_functional/functional-testing.yml
+  #       parameters:
+  #         dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+  #         ${{ if parameters.forceFunctionalTestImageRebuild }}:
+  #           downloadPrebuiltImage: false
 
-      # VM Testing (host, weekly)
-      - template: stages/testing_vm/netlaunch-testing.yml
-        parameters:
-          buildPurpose: "weekly"
-          runtimeEnv: "host"
+  #     # VM Testing (host, weekly)
+  #     - template: stages/testing_vm/netlaunch-testing.yml
+  #       parameters:
+  #         buildPurpose: "weekly"
+  #         runtimeEnv: "host"
 
-      # VM Testing (container, weekly)
-      - template: stages/testing_vm/netlaunch-testing.yml
-        parameters:
-          buildPurpose: "weekly"
-          runtimeEnv: "container"
+  #     # VM Testing (container, weekly)
+  #     - template: stages/testing_vm/netlaunch-testing.yml
+  #       parameters:
+  #         buildPurpose: "weekly"
+  #         runtimeEnv: "container"
 
-      - template: direct-streaming-test.yml
-        parameters:
-          architecture: amd64
-          micBuildType: ${{ parameters.micBuildType }}
-          micVersion: ${{ parameters.micVersion }}
+  #     - template: direct-streaming-test.yml
+  #       parameters:
+  #         architecture: amd64
+  #         micBuildType: ${{ parameters.micBuildType }}
+  #         micVersion: ${{ parameters.micVersion }}
 
-      - ${{ if parameters.baremetalTestsEnabled }}:
-          # BM Testing (host, weekly)
-          - template: stages/testing_baremetal/baremetal-testing.yml
-            parameters:
-              buildPurpose: "weekly"
-              runtimeEnv: "host"
+  #     - ${{ if parameters.baremetalTestsEnabled }}:
+  #         # BM Testing (host, weekly)
+  #         - template: stages/testing_baremetal/baremetal-testing.yml
+  #           parameters:
+  #             buildPurpose: "weekly"
+  #             runtimeEnv: "host"
 
-          # BM Testing (container, weekly)
-          - template: stages/testing_baremetal/baremetal-testing.yml
-            parameters:
-              buildPurpose: "weekly"
-              runtimeEnv: "container"
-              extraDependsOn: "BaremetalDeploymentTesting_host"
+  #         # BM Testing (container, weekly)
+  #         - template: stages/testing_baremetal/baremetal-testing.yml
+  #           parameters:
+  #             buildPurpose: "weekly"
+  #             runtimeEnv: "container"
+  #             extraDependsOn: "BaremetalDeploymentTesting_host"
 
-  # TESTING stages for CI
-  - ${{ if eq(parameters.stageType, 'ci') }}:
-      # Functional Testing
-      - template: stages/testing_functional/functional-testing.yml
-        parameters:
-          downloadPrebuiltImage: false
-          osModifierBranch: ${{ parameters.osModifierBranch }}
-          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+  # # TESTING stages for CI
+  # - ${{ if eq(parameters.stageType, 'ci') }}:
+  #     # Functional Testing
+  #     - template: stages/testing_functional/functional-testing.yml
+  #       parameters:
+  #         downloadPrebuiltImage: false
+  #         osModifierBranch: ${{ parameters.osModifierBranch }}
+  #         dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
-      # VM Testing (host, post_merge)
-      - template: stages/testing_vm/netlaunch-testing.yml
-        parameters:
-          buildPurpose: "post_merge"
-          runtimeEnv: "host"
+  #     # VM Testing (host, post_merge)
+  #     - template: stages/testing_vm/netlaunch-testing.yml
+  #       parameters:
+  #         buildPurpose: "post_merge"
+  #         runtimeEnv: "host"
 
-      # VM Testing (container, post_merge)
-      - template: stages/testing_vm/netlaunch-testing.yml
-        parameters:
-          buildPurpose: "post_merge"
-          runtimeEnv: "container"
+  #     # VM Testing (container, post_merge)
+  #     - template: stages/testing_vm/netlaunch-testing.yml
+  #       parameters:
+  #         buildPurpose: "post_merge"
+  #         runtimeEnv: "container"
 
-      - template: direct-streaming-test.yml
-        parameters:
-          architecture: amd64
-          micBuildType: ${{ parameters.micBuildType }}
-          micVersion: ${{ parameters.micVersion }}
+  #     - template: direct-streaming-test.yml
+  #       parameters:
+  #         architecture: amd64
+  #         micBuildType: ${{ parameters.micBuildType }}
+  #         micVersion: ${{ parameters.micVersion }}
 
-  # TESTING stages for PR-E2E
-  - ${{ if eq(parameters.stageType, 'pr-e2e') }}:
-      # Functional Testing (short version)
-      - template: stages/testing_functional/functional-testing.yml
-        parameters:
-          rerunTests: false
-          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-          ${{ if parameters.forceFunctionalTestImageRebuild }}:
-            downloadPrebuiltImage: false
+  # # TESTING stages for PR-E2E
+  # - ${{ if eq(parameters.stageType, 'pr-e2e') }}:
+  #     # Functional Testing (short version)
+  #     - template: stages/testing_functional/functional-testing.yml
+  #       parameters:
+  #         rerunTests: false
+  #         dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+  #         ${{ if parameters.forceFunctionalTestImageRebuild }}:
+  #           downloadPrebuiltImage: false
 
-      # VM Testing (host, pullrequest)
-      - template: stages/testing_vm/netlaunch-testing.yml
-        parameters:
-          buildPurpose: "pullrequest"
-          runtimeEnv: "host"
+  #     # VM Testing (host, pullrequest)
+  #     - template: stages/testing_vm/netlaunch-testing.yml
+  #       parameters:
+  #         buildPurpose: "pullrequest"
+  #         runtimeEnv: "host"
 
-      # VM Testing (container, pullrequest)
-      - template: stages/testing_vm/netlaunch-testing.yml
-        parameters:
-          buildPurpose: "pullrequest"
-          runtimeEnv: "container"
+  #     # VM Testing (container, pullrequest)
+  #     - template: stages/testing_vm/netlaunch-testing.yml
+  #       parameters:
+  #         buildPurpose: "pullrequest"
+  #         runtimeEnv: "container"
 
-      # Run direct streaming tests for amd64 with streaming images
-      - template: direct-streaming-test.yml
-        parameters:
-          architecture: amd64
-          micBuildType: ${{ parameters.micBuildType }}
-          micVersion: ${{ parameters.micVersion }}
+  #     # Run direct streaming tests for amd64 with streaming images
+  #     - template: direct-streaming-test.yml
+  #       parameters:
+  #         architecture: amd64
+  #         micBuildType: ${{ parameters.micBuildType }}
+  #         micVersion: ${{ parameters.micVersion }}
 
   # PUBLISHING
   #

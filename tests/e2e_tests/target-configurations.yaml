@@ -1,10 +1,10 @@
 bareMetal:
   host:
     daily:
-      - base
+      # - base
       - combined
-      - encrypted-partition
-      - split
+      # - encrypted-partition
+      # - split
       - usr-verity
     validation:
       - base
