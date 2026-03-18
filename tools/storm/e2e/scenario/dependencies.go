@@ -6,8 +6,10 @@ import (
 	"os/user"
 	"path/filepath"
 	"slices"
+	"time"
 	"tridenttools/storm/utils/cmd"
 	"tridenttools/storm/utils/env"
+	"tridenttools/storm/utils/retry"
 
 	"github.com/microsoft/storm"
 	log "github.com/sirupsen/logrus"
@@ -52,53 +54,60 @@ func (s *TridentE2EScenario) installVmDependencies(tc storm.TestCase) error {
 }
 
 func installUbuntuDependencies(osRelease *env.OsReleaseInfo) error {
-	err := prepareSwtpmUbuntu(osRelease)
-	if err != nil {
-		return fmt.Errorf("failed to install swtpm: %w", err)
-	}
+	_, err := retry.Retry(
+		time.Minute*time.Duration(10),
+		time.Second*5,
+		func(attempt int) (*bool, error) {
+			err := prepareSwtpmUbuntu(osRelease)
+			if err != nil {
+				return nil, fmt.Errorf("failed to install swtpm: %w", err)
+			}
 
-	err = cmd.Run("sudo", "NEEDRESTART_MODE=a",
-		"apt-get", "-y", "install",
-		"swtpm",
-		"swtpm-tools",
-		"bridge-utils",
-		"virt-manager",
-		"qemu-efi",
-		"qemu-kvm",
-		"libtpms0",
-		"libvirt-daemon-system",
-		"libvirt-clients",
-		"python3-libvirt",
-		"ovmf",
-		"openssl",
-		"python3-netifaces",
-		"python3-docker",
-		"python3-bcrypt",
-		"python3-jinja2",
-		"zstd",
-		"imagemagick",
+			err = cmd.Run("sudo", "NEEDRESTART_MODE=a",
+				"apt-get", "-y", "install",
+				"swtpm",
+				"swtpm-tools",
+				"bridge-utils",
+				"virt-manager",
+				"qemu-efi",
+				"qemu-kvm",
+				"libtpms0",
+				"libvirt-daemon-system",
+				"libvirt-clients",
+				"python3-libvirt",
+				"ovmf",
+				"openssl",
+				"python3-netifaces",
+				"python3-docker",
+				"python3-bcrypt",
+				"python3-jinja2",
+				"zstd",
+				"imagemagick",
+			)
+
+			if err != nil {
+				return nil, fmt.Errorf("failed to install ubuntu dependencies: %w", err)
+			}
+
+			// install virt-firmware
+			switch osRelease.VersionCodename {
+			case "focal":
+				fallthrough
+			case "jammy":
+				err = cmd.Run("sudo", "pip3", "install", "virt-firmware")
+			case "noble":
+				err = cmd.Run("sudo", "apt-get", "-y", "install", "python3-virt-firmware")
+			default:
+				return nil, fmt.Errorf("unsupported Ubuntu version for virt-firmware installation: %s", osRelease.VersionCodename)
+			}
+			if err != nil {
+				return nil, fmt.Errorf("failed to install virt-firmware: %w", err)
+			}
+
+			return nil, nil
+		},
 	)
-
-	if err != nil {
-		return fmt.Errorf("failed to install ubuntu dependencies: %w", err)
-	}
-
-	// install virt-firmware
-	switch osRelease.VersionCodename {
-	case "focal":
-		fallthrough
-	case "jammy":
-		err = cmd.Run("sudo", "pip3", "install", "virt-firmware")
-	case "noble":
-		err = cmd.Run("sudo", "apt-get", "-y", "install", "python3-virt-firmware")
-	default:
-		return fmt.Errorf("unsupported Ubuntu version for virt-firmware installation: %s", osRelease.VersionCodename)
-	}
-	if err != nil {
-		return fmt.Errorf("failed to install virt-firmware: %w", err)
-	}
-
-	return nil
+	return err
 }
 
 func prepareSwtpmUbuntu(osRelease *env.OsReleaseInfo) error {

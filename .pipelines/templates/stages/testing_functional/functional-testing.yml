@@ -52,7 +52,7 @@ stages:
             fetchDepth: 1
 
           - template: ../common_tasks/cargo-auth.yml
-
+          - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../testing_vm/netlaunch-prep.yml
 
           - task: DownloadPipelineArtifact@2

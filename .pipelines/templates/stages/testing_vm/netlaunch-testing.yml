@@ -136,6 +136,7 @@ stages:
               deploymentEnvironment: "virtualMachine"
               runtimeEnvironment: ${{ parameters.runtimeEnv }}
 
+          - template: ../common_tasks/avoid-pypi-usage.yml
           - template: netlaunch-prep.yml
 
           - template: ../testing_common/trident-prep.yml

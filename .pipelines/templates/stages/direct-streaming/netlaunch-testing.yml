@@ -75,6 +75,8 @@ stages:
               ${{ if eq(parameters.architecture, 'amd64') }}:
                 goToolsArtifactName: go-tools
 
+          - template: ../common_tasks/avoid-pypi-usage.yml
+
           - bash: |
               set -ex
               sudo apt update -y
