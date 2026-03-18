@@ -542,7 +542,7 @@ fn generate_pcrlock_files(
     // Define PCR coverage for each command
     let basic_cmds: Vec<(LockCommand, BitFlags<Pcr>)> = vec![
         (LockCommand::FirmwareCode, Pcr::Pcr0 | Pcr::Pcr2 | Pcr::Pcr4),
-        (LockCommand::FirmwareConfig, Pcr::Pcr3),
+        (LockCommand::FirmwareConfig, Pcr::Pcr3.into()),
         (LockCommand::SecureBootPolicy, Pcr::Pcr7.into()),
         (LockCommand::SecureBootAuthority, Pcr::Pcr7.into()),
         (LockCommand::MachineId, Pcr::Pcr15.into()),
