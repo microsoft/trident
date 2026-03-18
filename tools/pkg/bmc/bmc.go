@@ -21,7 +21,7 @@ type Bmc struct {
 		SshPort uint16
 		ComPort string
 		Output  string
-	}
+	} `yaml:"serialOverSsh,omitempty"`
 }
 
 // ListenForSerialOutput sets up a serial over SSH session in a background
