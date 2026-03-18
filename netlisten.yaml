@@ -1,0 +1,9 @@
+netlisten:
+  bmc:
+    ip: "10.8.3.20"
+    username: "root"
+    password: "***"
+    serialOverSsh:
+      sshPort: 22
+      comPort: com2
+      output:  "baremetal-serial.log" 
