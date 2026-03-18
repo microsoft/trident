@@ -1,6 +1,7 @@
 use std::{ffi::OsStr, path::Path};
 
 use anyhow::{bail, Context, Error};
+use log::{error, warn};
 use regex::Regex;
 use trident_api::error::{TridentError, TridentResultExt};
 
@@ -282,7 +283,127 @@ pub fn delete_boot_entry(entry_number: &str) -> Result<(), TridentError> {
 fn is_valid_bootloader_path(esp_path: &Path, bootloader_path: &Path) -> bool {
     let full_path = join_relative(esp_path, bootloader_path);
 
-    full_path.exists() && full_path.is_file()
+    warn!(
+        "Checking if bootloader path '{}' exists at '{}' (ESP path: '{}')",
+        bootloader_path.display(),
+        full_path.display(),
+        esp_path.display(),
+    );
+
+    let exists = full_path.exists();
+    let is_file = full_path.is_file();
+
+    if exists && is_file {
+        // Happy path
+        warn!(
+            "Bootloader path '{}' exists and is a file: OK",
+            full_path.display()
+        );
+        return true;
+    }
+
+    warn!(
+        "Bootloader path '{}' is not valid. Exists: {}, IsFile: {}",
+        full_path.display(),
+        exists,
+        is_file
+    );
+
+    if exists {
+        match full_path.metadata() {
+            Ok(metadata) => {
+                warn!("File metadata: {:#?}", metadata);
+            }
+            Err(e) => {
+                error!(
+                    "Failed to get metadata for bootloader path '{}': {}",
+                    full_path.display(),
+                    e
+                );
+            }
+        }
+    } else {
+        error!("Bootloader path '{}' does not exist.", full_path.display());
+
+        let Some(dir) = full_path.parent() else {
+            error!(
+                "Failed to get parent directory of '{}'",
+                full_path.display()
+            );
+            return false;
+        };
+
+        if dir.exists() {
+            error!(
+                "Bootloader path '{}' does not exist, but parent directory '{}' exists.",
+                full_path.display(),
+                dir.display()
+            );
+
+            match dir.metadata() {
+                Ok(metadata) => {
+                    warn!("Parent directory metadata: {:#?}", metadata);
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to get metadata for parent directory '{}': {}",
+                        dir.display(),
+                        e
+                    );
+                }
+            }
+
+            dir.read_dir()
+                .map(|entries| {
+                    warn!("Contents of parent directory '{}':", dir.display());
+                    for entry in entries.flatten() {
+                        warn!(" - {}", entry.path().display());
+                    }
+                })
+                .unwrap_or_else(|e| {
+                    error!(
+                        "Failed to read contents of parent directory '{}': {}",
+                        dir.display(),
+                        e
+                    );
+                });
+        } else {
+            error!(
+                "Neither bootloader path '{}' nor its parent directory '{}' exist.",
+                full_path.display(),
+                dir.display()
+            );
+
+            // Find first existing parent directory
+            let mut current_dir = dir;
+            while !current_dir.exists() {
+                if let Some(parent) = current_dir.parent() {
+                    current_dir = parent;
+                } else {
+                    error!(
+                        "Could not get parent directory of '{}'",
+                        current_dir.display()
+                    );
+                    break;
+                }
+            }
+
+            if current_dir.exists() {
+                warn!(
+                    "First existing parent directory for '{}' is '{}'",
+                    full_path.display(),
+                    current_dir.display()
+                );
+            } else {
+                error!(
+                    "No existing parent directory found for '{}'",
+                    full_path.display()
+                );
+            }
+        }
+    }
+
+    false
 }
 
 pub fn list_and_parse_bootmgr_entries() -> Result<EfiBootManagerOutput, Error> {
