@@ -2,7 +2,7 @@ import logging
 from pathlib import Path
 import subprocess
 import sys
-from typing import List
+from typing import List, Optional
 
 from builder import utils
 
@@ -18,6 +18,7 @@ def build_config(
     img_format: str,
     output_file: Path,
     rpm_sources: List[Path] = [],
+    image_architecture: Optional[str] = None,
     dry_run: bool = False,
 ):
     """
@@ -52,20 +53,29 @@ def build_config(
         f"/:{utils.HOST_PATH}",
         "-v",
         "/dev:/dev",
-        container_image,
-        "--config-file",
-        utils.build_path(yaml_path),
-        "--log-level",
-        "debug",
-        "--build-dir",
-        utils.BUILD_DIR,
-        "--image-file",
-        utils.build_path(base_image),
-        "--output-image-format",
-        img_format,
-        "--output-image-file",
-        utils.build_path(output_file),
     ]
+
+    if image_architecture:
+        base_cmd.append("--platform")
+        base_cmd.append(image_architecture)
+
+    base_cmd.extend(
+        [
+            container_image,
+            "--config-file",
+            utils.build_path(yaml_path),
+            "--log-level",
+            "debug",
+            "--build-dir",
+            utils.BUILD_DIR,
+            "--image-file",
+            utils.build_path(base_image),
+            "--output-image-format",
+            img_format,
+            "--output-image-file",
+            utils.build_path(output_file),
+        ]
+    )
 
     for _, rpm in enumerate(rpm_sources):
         base_cmd.append("--rpm-source")
