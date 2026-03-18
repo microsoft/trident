@@ -100,6 +100,7 @@ stages:
 
           - bash: |
               set -euxo pipefail
+              mkdir -p $(ob_outputDirectory)
               ISO_FILE=./artifacts/iso/$(installerISOName).iso
               COSI_FILE=./artifacts/test-image/regular.cosi
               HASH=$(./scripts/cosi-sha384.py $COSI_FILE)
@@ -124,3 +125,12 @@ stages:
                   --artifacts-folder "$(ob_outputDirectory)"
             displayName: "📷 Capture screenshot: direct streaming"
             condition: succeededOrFailed()
+
+          - bash: |
+              set -eux
+              mkdir -p $(ob_outputDirectory)
+              sudo chmod -R 777 $(ob_outputDirectory)/
+              sudo chown -R $USER:$USER $(ob_outputDirectory)/
+              ls -lR $(ob_outputDirectory)/
+            condition: always()
+            displayName: "Ensure output directory permissions"
