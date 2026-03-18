@@ -91,12 +91,7 @@ parameters:
     default: false
 
 steps:
-  - task: PipAuthenticate@1
-    displayName: Provision - Authenticate Pip
-    inputs:
-      artifactFeeds: "mariner/Mariner-Pypi-Feed"
-
-  - template: common/sfi-enforce-isolation-with-etc-hosts.yaml@platform-pipelines
+  - template: ../common_tasks/avoid-pypi-usage.yml
 
   - ${{ if eq(parameters.downloadTrident, true) }}:
       - task: DownloadPipelineArtifact@2
