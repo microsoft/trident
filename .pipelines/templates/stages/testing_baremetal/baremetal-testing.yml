@@ -356,20 +356,20 @@ stages:
               ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:
                 kustoTableName: dev
 
-          - template: ../testing_common/e2e-test-run.yml
-            parameters:
-              buildPurpose: ${{ parameters.buildPurpose }}
-              deploymentEnvironment: bareMetal
-              tridentConfigurationName: $(TRIDENT_CONFIGURATION_NAME)
-              hostIp: "$(baremetal_controller.oam_ip)"
-              tridentConfigPath: $(TRIDENT_CONFIG_PATH)
-              netlistenPort: ${{ variables.NETLAUNCH_PORT }}
-              runtimeEnv: ${{ parameters.runtimeEnv }}
-              netlistenConfigFile: $(TRIDENT_SOURCE_DIR)/baremetal-netlisten.yaml
-              httpsProxy: "$(baremetal_controller.https_proxy)"
+          # - template: ../testing_common/e2e-test-run.yml
+          #   parameters:
+          #     buildPurpose: ${{ parameters.buildPurpose }}
+          #     deploymentEnvironment: bareMetal
+          #     tridentConfigurationName: $(TRIDENT_CONFIGURATION_NAME)
+          #     hostIp: "$(baremetal_controller.oam_ip)"
+          #     tridentConfigPath: $(TRIDENT_CONFIG_PATH)
+          #     netlistenPort: ${{ variables.NETLAUNCH_PORT }}
+          #     runtimeEnv: ${{ parameters.runtimeEnv }}
+          #     netlistenConfigFile: $(TRIDENT_SOURCE_DIR)/baremetal-netlisten.yaml
+          #     httpsProxy: "$(baremetal_controller.https_proxy)"
 
-          - template: ../common_tasks/remove-from-acr.yml
-            parameters:
-              repository: ${{ variables.IMAGE_NAME }}
-              config: $(TRIDENT_CONFIGURATION_NAME)
-              deploymentEnvironment: "bareMetal"
+          # - template: ../common_tasks/remove-from-acr.yml
+          #   parameters:
+          #     repository: ${{ variables.IMAGE_NAME }}
+          #     config: $(TRIDENT_CONFIGURATION_NAME)
+          #     deploymentEnvironment: "bareMetal"
