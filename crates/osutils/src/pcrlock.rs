@@ -323,23 +323,35 @@ fn make_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
             output.status, stderr
         );
 
-        match Dependency::Journalctl
-            .cmd()
-            .args(["--no-pager", "-u", "systemd-pcrlock-make-policy.service"])
+        match Command::new("/usr/lib/systemd/systemd-pcrlock")
+            .arg("list-components")
             .output()
         {
             Ok(command_output) => {
                 warn!(
-                    "journalctl -u systemd-pcrlock-make-policy.service output:\n{}\nerror:\n{}",
-                    command_output.output(),
-                    command_output.error_output()
+                    "systemd-pcrlock list-components output:\n{}\nerror:\n{}",
+                    String::from_utf8(command_output.stdout).context("Failed to convert stdout of 'systemd-pcrlock list-components' to a string as it contains invalid UTF-8")?,
+                    String::from_utf8(command_output.stderr).context("Failed to convert stderr of 'systemd-pcrlock list-components' to a string as it contains invalid UTF-8")?
                 )
             }
             Err(error) => {
+                warn!("systemd-pcrlock list-components error: {:?}", error)
+            }
+        };
+
+        match Command::new("/usr/lib/systemd/systemd-pcrlock")
+            .arg("log")
+            .output()
+        {
+            Ok(command_output) => {
                 warn!(
-                    "journalctl -u systemd-pcrlock-make-policy.service error: {:?}",
-                    error
+                    "systemd-pcrlock log output:\n{}\nerror:\n{}",
+                    String::from_utf8(command_output.stdout).context("Failed to convert stdout of 'systemd-pcrlock log' to a string as it contains invalid UTF-8")?,
+                    String::from_utf8(command_output.stderr).context("Failed to convert stderr of 'systemd-pcrlock log' to a string as it contains invalid UTF-8")?
                 )
+            }
+            Err(error) => {
+                warn!("systemd-pcrlock log error: {:?}", error)
             }
         };
     }
