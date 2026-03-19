@@ -356,6 +356,10 @@ stages:
               ${{ if ne(variables['Build.SourceBranchName'], 'main') }}:
                 kustoTableName: dev
 
+          - bash: |
+              set -eux
+              scp -i ${{ parameters.sshKeyPath }} artifacts/test-image/*.cosi ${{ parameters.userName }}@${{ parameters.hostIp }}
+            displayName: "Copy cosi files to running image"
           # - template: ../testing_common/e2e-test-run.yml
           #   parameters:
           #     buildPurpose: ${{ parameters.buildPurpose }}
