@@ -87,7 +87,7 @@ stages:
         stageType: ${{ parameters.stageType }}
         tridentArtifactName: trident-binaries
         codeCoverage: false
-        forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
+        forceTridentRebuild: true
         osModifierBranch: ${{ parameters.osModifierBranch }}
         dependsOnStage: ${{ parameters.baseImageArtifactStage }}
         targetArchitecture: amd64
