@@ -20,8 +20,9 @@ use log::info;
 
 #[cfg(feature = "grpc-preview")]
 use trident_api::{
-    config::{HostConfigurationSource, Operation, Operations},
+    config::{HostConfigurationSource, ImageSha384, Operation, Operations},
     error::{InternalError, TridentError},
+    primitives::hash::Sha384Hash,
     status::AbVolumeSelection,
 };
 #[cfg(feature = "grpc-preview")]
@@ -71,6 +72,20 @@ fn reboot_allowed(reboot_opt: &Option<RebootManagement>) -> RebootDecision {
         // If no reboot configuration is provided, we default to Trident
         // handling reboots.
         RebootDecision::Handle
+    }
+}
+
+#[cfg(feature = "grpc-preview")]
+fn stored_image_hash(datastore: &DataStore) -> Option<Sha384Hash> {
+    match datastore
+        .host_status()
+        .spec
+        .image
+        .as_ref()
+        .map(|image| &image.sha384)
+    {
+        Some(ImageSha384::Checksum(hash)) => Some(hash.clone()),
+        _ => None,
     }
 }
 
@@ -362,7 +377,11 @@ impl CommitService for TridentServer {
             let mut datastore =
                 DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
 
-            trident.commit(&mut datastore)
+            let image_hash = stored_image_hash(&datastore);
+
+            trident
+                .commit(&mut datastore)
+                .map(|exit_kind| (exit_kind, image_hash))
         })
     }
 }
@@ -578,11 +597,13 @@ impl RebuildRaidService for TridentServer {
             let mut datastore =
                 DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
 
+            let image_hash = stored_image_hash(&datastore);
+
             trident
                 .rebuild_raid(&mut datastore)
                 .message("Failed to rebuild RAID arrays")?;
 
-            Ok(ExitKind::Done)
+            Ok((ExitKind::Done, image_hash))
         })
     }
 }
