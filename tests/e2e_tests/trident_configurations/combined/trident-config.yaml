@@ -156,7 +156,9 @@ storage:
         options: defaults,ro
     - deviceId: web
       source: new
-      mountPoint: /web
+      mountPoint:
+        path: /web
+        options: defaults,nofail,x-systemd.device-timeout=4
     - deviceId: trident
       source: new
       mountPoint: /var/lib/trident
