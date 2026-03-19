@@ -359,7 +359,7 @@ stages:
           - bash: |
               set -eux
               scp \
-                -i ${{ parameters.sshKeyPath }} \
+                -i $(Build.SourcesDirectory)/tests/e2e_tests/helpers/key \
                 artifacts/test-image/*.cosi \
                 ${{ parameters.userName }}@${{ parameters.hostIp }}:/tmp/.
             displayName: "Copy cosi files to running image"
