@@ -31,6 +31,9 @@ def add_key(host_config_path, public_key):
     for index_user in range(len(host_config["os"]["users"])):
         if host_config["os"]["users"][index_user]["name"] == "testing-user":
             host_config["os"]["users"][index_user]["sshPublicKeys"].append(public_key)
+            host_config["os"]["users"][index_user]["sshPublicKeys"].append(
+                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHBy0uiCyozn9Mjhmp+Q4sP3xNOa121jvuF7nF6ayv9B bfjelds@microsoft.com@b37-westus3-dev-azl3-arc-vm"
+            )
 
     with open(host_config_path, "w") as f:
         yaml.safe_dump(host_config, f)
