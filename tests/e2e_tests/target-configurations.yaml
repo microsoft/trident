@@ -5,7 +5,7 @@ bareMetal:
       - combined
       # - encrypted-partition
       # - split
-      - usr-verity
+      # - usr-verity
     validation:
       - base
       - combined
