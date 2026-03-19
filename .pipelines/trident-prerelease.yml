@@ -51,7 +51,7 @@ resources:
     - repository: test-images
       type: git
       name: test-images
-      ref: refs/heads/main
+      ref: refs/heads/user/bfjelds/diagnose-combined-failure
 
     - repository: platform-telemetry
       name: platform-telemetry
