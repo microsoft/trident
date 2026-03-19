@@ -359,6 +359,7 @@ stages:
           - bash: |
               set -eux
               scp \
+                -o StrictHostKeyChecking=no \
                 -i $(Build.SourcesDirectory)/tests/e2e_tests/helpers/key \
                 artifacts/test-image/*.cosi \
                 testing-user@$(baremetal_controller.oam_ip):/tmp/.
