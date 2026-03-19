@@ -322,6 +322,26 @@ fn make_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
             "Command 'systemd-pcrlock make-policy' failed with status {}: {}",
             output.status, stderr
         );
+
+        match Dependency::Journalctl
+            .cmd()
+            .args(["--no-pager", "-u", "systemd-pcrlock-make-policy.service"])
+            .output()
+        {
+            Ok(command_output) => {
+                warn!(
+                    "journalctl -u systemd-pcrlock-make-policy.service output:\n{}\nerror:\n{}",
+                    command_output.output(),
+                    command_output.error_output()
+                )
+            }
+            Err(error) => {
+                warn!(
+                    "journalctl -u systemd-pcrlock-make-policy.service error: {:?}",
+                    error
+                )
+            }
+        };
     }
 
     // Convert stdout to UTF-8
@@ -542,7 +562,7 @@ fn generate_pcrlock_files(
     // Define PCR coverage for each command
     let basic_cmds: Vec<(LockCommand, BitFlags<Pcr>)> = vec![
         (LockCommand::FirmwareCode, Pcr::Pcr0 | Pcr::Pcr2 | Pcr::Pcr4),
-        (LockCommand::FirmwareConfig, Pcr::Pcr3.into()),
+        (LockCommand::FirmwareConfig, Pcr::Pcr1 | Pcr::Pcr3),
         (LockCommand::SecureBootPolicy, Pcr::Pcr7.into()),
         (LockCommand::SecureBootAuthority, Pcr::Pcr7.into()),
         (LockCommand::MachineId, Pcr::Pcr15.into()),
