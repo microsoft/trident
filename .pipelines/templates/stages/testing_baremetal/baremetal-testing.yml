@@ -361,7 +361,7 @@ stages:
               scp \
                 -i $(Build.SourcesDirectory)/tests/e2e_tests/helpers/key \
                 artifacts/test-image/*.cosi \
-                ${{ parameters.userName }}@${{ parameters.hostIp }}:/tmp/.
+                testing-user@$(baremetal_controller.oam_ip):/tmp/.
             displayName: "Copy cosi files to running image"
           # - template: ../testing_common/e2e-test-run.yml
           #   parameters:
