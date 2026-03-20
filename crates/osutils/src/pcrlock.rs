@@ -50,14 +50,15 @@ const BOOT_LOADER_CODE_SDBOOT_PCRLOCK_DIR: &str = "640-boot-loader-code-sdboot.p
 /// into PCR 4,
 const UKI_PCRLOCK_DIR: &str = "650-uki.pcrlock.d";
 
+/// `/var/lib/pcrlock.d/655-uki-addons-<name>.pcrlock.d`, where `lock-pe` measures the UKI addons binaries, as recorded
+/// into PCR 4. This needs to occur between 650-* and 660-* as the addons are loaded between the uki and the uki .linux
+/// section.
+const UKI_ADDONS_PCRLOCK_DIR_PREFIX: &str = "655-uki-addons-";
+const UKI_ADDONS_PCRLOCK_DIR_SUFFIX: &str = ".pcrlock.d";
+
 /// `/var/lib/pcrlock.d/660-boot-loader-code-uki.pcrlock.d`, where `lock-pe` measures the .linux
 /// section of the UKI binary, as recorded into PCR 4 following Microsoft's Authenticode hash spec,
 const BOOT_LOADER_CODE_UKI_PCRLOCK_DIR: &str = "660-boot-loader-code-uki.pcrlock.d";
-
-/// `/var/lib/pcrlock.d/670-uki-addons-<name>.pcrlock.d`, where `lock-pe` measures the UKI addons binaries, as recorded
-/// into PCR 4.
-const UKI_ADDONS_PCRLOCK_DIR_PREFIX: &str = "670-uki-addons-";
-const UKI_ADDONS_PCRLOCK_DIR_SUFFIX: &str = ".pcrlock.d";
 
 #[derive(Debug, Deserialize)]
 struct PcrValue {
