@@ -126,8 +126,8 @@ class ImageConfig:
     # Architecture of the image
     architecture: SystemArchitecture = SystemArchitecture.AMD64
 
-    # RPM sources are allowed for image
-    rpm_sources_allowed: bool = True
+    # Use ImageCustomizer convert command rather than customize
+    image_customizer_convert: bool = False
 
     @classmethod
     def kebab_fields(cls) -> List[str]:

@@ -152,16 +152,20 @@ fn run_trident(
                         ref allowed_operations,
                         multiboot,
                         ..
-                    } => trident.install(
-                        &mut datastore,
-                        cli::to_operations(allowed_operations),
-                        multiboot,
-                        None,
-                    ),
+                    } => trident
+                        .install(
+                            &mut datastore,
+                            cli::to_operations(allowed_operations),
+                            multiboot,
+                            None,
+                        )
+                        .map(|(exit_kind, _image_hash)| exit_kind),
                     Commands::Update {
                         ref allowed_operations,
                         ..
-                    } => trident.update(&mut datastore, cli::to_operations(allowed_operations)),
+                    } => trident
+                        .update(&mut datastore, cli::to_operations(allowed_operations))
+                        .map(|(exit_kind, _image_hash)| exit_kind),
                     Commands::Commit { .. } => trident.commit(&mut datastore),
                     Commands::Rollback {
                         runtime,

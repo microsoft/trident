@@ -9,6 +9,8 @@ import (
 	"github.com/microsoft/storm"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
+
+	"tridenttools/pkg/netlaunch"
 )
 
 type DisplayLogsHelper struct {
@@ -68,20 +70,15 @@ func getSerialPathFromNetlistenConfig(netlistenConfigPath string) string {
 			return ""
 		}
 
-		netlistenConfig := make(map[string]interface{})
-		err = yaml.UnmarshalStrict(tridentConfigContents, &netlistenConfig)
+		netlistenConfig := netlaunch.NetListenConfig{}
+		err = yaml.Unmarshal(tridentConfigContents, &netlistenConfig)
 		if err != nil {
 			logrus.Tracef("Failed to parse netlisten config file %s: %v", netlistenConfigPath, err)
 			return ""
 		}
-		if netlisten, ok := netlistenConfig["netlisten"].(map[string]interface{}); ok {
-			if bmc, ok := netlisten["bmc"].(map[string]interface{}); ok {
-				if serialOverSsh, ok := bmc["serialOverSsh"].(map[string]interface{}); ok {
-					if output, ok := serialOverSsh["output"].(string); ok {
-						return output
-					}
-				}
-			}
+		if netlistenConfig.Netlisten.Bmc != nil && netlistenConfig.Netlisten.Bmc.SerialOverSsh != nil && netlistenConfig.Netlisten.Bmc.SerialOverSsh.Output != "" {
+			logrus.Infof("Serial log found in netlisten config file: %s", netlistenConfig.Netlisten.Bmc.SerialOverSsh.Output)
+			return netlistenConfig.Netlisten.Bmc.SerialOverSsh.Output
 		}
 	}
 	return ""

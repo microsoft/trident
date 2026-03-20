@@ -81,7 +81,7 @@ At a high level, there are only a couple things that need to be configured:
         - rd.hostonly=0
 
     uki:
-      kernels: auto
+      mode: create
 
     previewFeatures:
     - uki
