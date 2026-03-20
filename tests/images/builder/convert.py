@@ -2,6 +2,7 @@ import logging
 from pathlib import Path
 import subprocess
 import sys
+from typing import Optional
 
 from builder import utils
 
@@ -15,6 +16,7 @@ def convert_image(
     base_image: Path,
     img_format: str,
     output_file: Path,
+    image_architecture: Optional[str] = None,
     dry_run: bool = False,
 ):
     """
@@ -42,19 +44,28 @@ def convert_image(
         f"/:{utils.HOST_PATH}",
         "-v",
         "/dev:/dev",
-        container_image,
-        "convert",
-        "--log-level",
-        "debug",
-        "--build-dir",
-        utils.BUILD_DIR,
-        "--image-file",
-        utils.build_path(base_image),
-        "--output-image-format",
-        img_format,
-        "--output-image-file",
-        utils.build_path(output_file),
     ]
+
+    if image_architecture:
+        base_cmd.append("--platform")
+        base_cmd.append(image_architecture)
+
+    base_cmd.extend(
+        [
+            container_image,
+            "convert",
+            "--log-level",
+            "debug",
+            "--build-dir",
+            utils.BUILD_DIR,
+            "--image-file",
+            utils.build_path(base_image),
+            "--output-image-format",
+            img_format,
+            "--output-image-file",
+            utils.build_path(output_file),
+        ]
+    )
 
     # Stringify all the args
     base_cmd = [str(x) for x in base_cmd]

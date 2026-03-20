@@ -94,6 +94,19 @@ def init(parser: ArgumentParser):
     )
 
     parser.add_argument(
+        "--storage-path",
+        help="Optional storage path override",
+        default=None,
+        type=str,
+    )
+
+    parser.add_argument(
+        "--arm",
+        action="store_true",
+        help="Create arm vm (overrides default behavior to match system architecture).",
+    )
+
+    parser.add_argument(
         "nodes",
         help="Node definition.",
         metavar="flags[:cpus[:mem[:disks]]]",
@@ -256,6 +269,12 @@ def run(args: Namespace):
         get_host_default_gateway_interface(),
         False,
     )
+
+    if args.storage_path:
+        lv.set_storage_path(args.storage_path)
+
+    if args.arm:
+        lv.set_arm()
 
     if args.dryrun:
         action = "CREATING" if not args.clean else "REMOVING"
