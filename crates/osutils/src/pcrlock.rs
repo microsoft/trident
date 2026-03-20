@@ -50,14 +50,15 @@ const BOOT_LOADER_CODE_SDBOOT_PCRLOCK_DIR: &str = "640-boot-loader-code-sdboot.p
 /// into PCR 4,
 const UKI_PCRLOCK_DIR: &str = "650-uki.pcrlock.d";
 
+/// `/var/lib/pcrlock.d/655-uki-addons-<name>.pcrlock.d`, where `lock-pe` measures the UKI addons binaries, as recorded
+/// into PCR 4. This needs to occur between 650-* and 660-* as the addons are loaded between the uki and the uki .linux
+/// section.
+const UKI_ADDONS_PCRLOCK_DIR_PREFIX: &str = "655-uki-addons-";
+const UKI_ADDONS_PCRLOCK_DIR_SUFFIX: &str = ".pcrlock.d";
+
 /// `/var/lib/pcrlock.d/660-boot-loader-code-uki.pcrlock.d`, where `lock-pe` measures the .linux
 /// section of the UKI binary, as recorded into PCR 4 following Microsoft's Authenticode hash spec,
 const BOOT_LOADER_CODE_UKI_PCRLOCK_DIR: &str = "660-boot-loader-code-uki.pcrlock.d";
-
-/// `/var/lib/pcrlock.d/670-uki-addons-<name>.pcrlock.d`, where `lock-pe` measures the UKI addons binaries, as recorded
-/// into PCR 4.
-const UKI_ADDONS_PCRLOCK_DIR_PREFIX: &str = "670-uki-addons-";
-const UKI_ADDONS_PCRLOCK_DIR_SUFFIX: &str = ".pcrlock.d";
 
 #[derive(Debug, Deserialize)]
 struct PcrValue {
@@ -305,6 +306,19 @@ fn make_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
     );
 
+    // Log pcrlock policy JSON contents
+    match fs::read_to_string(PCRLOCK_POLICY_JSON_PATH) {
+        Ok(pcrlock_policy) => trace!(
+            "bcf: Contents of **EXISTING** pcrlock policy JSON at '{}':\n{}",
+            PCRLOCK_POLICY_JSON_PATH,
+            pcrlock_policy
+        ),
+        Err(e) => trace!(
+            "bcf: Unable to read **EXISTING** pcrlock policy json at '{}'",
+            PCRLOCK_POLICY_JSON_PATH
+        ),
+    }
+
     // Run command directly since pcrlock may write to stderr even when a pcrlock policy is
     // successfully generated
     let mut cmd = Command::new("/usr/lib/systemd/systemd-pcrlock");
@@ -380,6 +394,19 @@ fn make_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
             Output:\n{}",
             output_str
         );
+    }
+
+    // Log pcrlock policy JSON contents
+    match fs::read_to_string(PCRLOCK_POLICY_JSON_PATH) {
+        Ok(pcrlock_policy) => trace!(
+            "bcf: Contents of pcrlock policy JSON at '{}':\n{}",
+            PCRLOCK_POLICY_JSON_PATH,
+            pcrlock_policy
+        ),
+        Err(e) => trace!(
+            "bcf: Unable to read pcrlock policy json at '{}'",
+            PCRLOCK_POLICY_JSON_PATH
+        ),
     }
 
     Ok(())
