@@ -615,7 +615,9 @@ fn generate_pcrlock_files(
 
     // Generate .pcrlock files when PCR 4 is requested
     if pcrs.contains(Pcr::Pcr4) {
-        for (index, bootloader_path) in bootloader_binaries.into_iter().enumerate() {
+        let mut boot_efi_index = 0;
+        let mut grub_efi_index = 0;
+        for (_index, bootloader_path) in bootloader_binaries.into_iter().enumerate() {
             // Extract name of PE binary, to determine which dir to write to
             let bootloader_name = bootloader_path
                 .file_name()
@@ -626,10 +628,12 @@ fn generate_pcrlock_files(
                         bootloader_path.display()
                     )
                 })?;
-            let sub_dir = if bootloader_name == BOOT_EFI {
-                BOOT_LOADER_CODE_SHIM_PCRLOCK_DIR
+            let (index, sub_dir) = if bootloader_name == BOOT_EFI {
+                boot_efi_index += 1;
+                (boot_efi_index - 1, BOOT_LOADER_CODE_SHIM_PCRLOCK_DIR)
             } else if bootloader_name == GRUB_EFI {
-                BOOT_LOADER_CODE_SDBOOT_PCRLOCK_DIR
+                grub_efi_index += 1;
+                (grub_efi_index - 1, BOOT_LOADER_CODE_SDBOOT_PCRLOCK_DIR)
             } else {
                 bail!(
                     "Unexpected bootloader PE binary name '{}'. Expected '{}' or '{}'.",
