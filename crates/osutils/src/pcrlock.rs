@@ -101,6 +101,12 @@ fn generate_tpm2_access_policy(pcrs: BitFlags<Pcr>) -> Result<(), Error> {
         pcrs.iter().map(|pcr| pcr.to_num()).collect::<Vec<_>>()
     );
 
+    debug!("Removing existing policy");
+    match remove_policy() {
+        Ok(_) => debug!("Removed existing policy"),
+        Err(e) => debug!("Failed to remove existing policy: {:?}", e),
+    };
+
     // If running inside of a container AND pcrlock.json already exists in the target OS on the
     // host, copy it from the host into the container
     if container::is_running_in_container()
