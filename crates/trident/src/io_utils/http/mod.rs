@@ -10,10 +10,12 @@ use reqwest::{
     StatusCode,
 };
 
+mod download_monitor;
 pub mod file;
 mod range;
 mod subfile;
 
+pub use download_monitor::HttpDownloadMonitor;
 pub use file::HttpFile;
 use range::HttpRangeRequest;
 
