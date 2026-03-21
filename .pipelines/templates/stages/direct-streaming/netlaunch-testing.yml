@@ -126,11 +126,7 @@ stages:
             displayName: "📷 Capture screenshot: direct streaming"
             condition: succeededOrFailed()
 
-          - bash: |
-              set -eux
-              mkdir -p $(ob_outputDirectory)
-              sudo chmod -R 777 $(ob_outputDirectory)/
-              sudo chown -R $USER:$USER $(ob_outputDirectory)/
-              ls -lR $(ob_outputDirectory)/
-            condition: always()
-            displayName: "Ensure output directory permissions"
+          - template: ../testing_common/fix-output-directory-for-one-branch-step.yml
+            parameters:
+              outputDir: $(ob_outputDirectory)
+              condition: always()

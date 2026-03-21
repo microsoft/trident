@@ -1,0 +1,36 @@
+parameters:
+- name: condition
+  displayName: Condition under which to run steps in this template, or "" to not specify any condition.
+  type: string
+  default: ""
+
+- name: outputDir
+  displayName: The One Branch output directory to fix permissions for.
+  type: string
+
+steps:
+# Ensure the output directory exists and is owned by the current user to prevent a OneBranch failure.
+# Ensure also that a permissive artifact ignore file is used by defaulting to an empty .artifactignore so all files can
+# be published. Useful for debugging failed builds.
+- bash: |
+    set -euo pipefail
+
+    if [[ -e "${{ parameters.outputDir }}" ]]; then
+      echo "Fixing permissions in output directory '${{ parameters.outputDir }}'."
+      sudo chown -R "$USER:$USER" "${{ parameters.outputDir }}"
+    else
+      echo "Creating output directory '${{ parameters.outputDir }}'."
+      mkdir -p "${{ parameters.outputDir }}"
+    fi
+
+    artifact_ignore_file="${{ parameters.outputDir }}/.artifactignore"
+
+    if [[ -e "$artifact_ignore_file" ]]; then
+      echo "Already exists: '$artifact_ignore_file'."
+    else
+      echo "Creating empty artifact ignore file: '$artifact_ignore_file'."
+      touch "$artifact_ignore_file"
+    fi
+  displayName: Fix Output Directory for OneBranch
+  ${{ if ne(parameters.condition, '') }}:
+    condition: "${{ parameters.condition }}"
