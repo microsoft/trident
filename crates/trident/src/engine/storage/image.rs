@@ -3,7 +3,6 @@ use std::{
     io::Read,
     ops::ControlFlow,
     path::{Path, PathBuf},
-    time::Duration,
 };
 
 use anyhow::{bail, ensure, Context, Error};
@@ -22,9 +21,7 @@ use trident_api::{
 
 use crate::{
     engine::{context::filesystem::FileSystemDataImage, EngineContext},
-    io_utils::{
-        hashing_reader::HashingReader384, image_streamer, read_monitor::ReadMonitor,
-    },
+    io_utils::{hashing_reader::HashingReader384, image_streamer, read_monitor::ReadMonitor},
     osimage::{OsImageFile, OsImagePartition},
 };
 
@@ -153,6 +150,11 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
         );
     }
 
+    // Get the threshold and interval for reporting slow streaming speed from
+    // the context, to be used in the ReadMonitor while streaming images to the
+    // block devices.
+    let (threshold_reporting, reporting_interval) = ctx.read_monitor_params()?;
+
     os_img.read_images(|path, reader| -> ControlFlow<Result<(), TridentError>> {
         let Some((id, image_file, resize)) = combined_images.remove(path) else {
             debug!(
@@ -170,8 +172,8 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
         let monitored_reader = ReadMonitor::new(
             reader,
             image_file.compressed_size,
-            100.0,
-            Duration::from_secs(5),
+            threshold_reporting,
+            reporting_interval,
         );
 
         if let Err(e) = deploy_os_image_file(ctx, &id, image_file, resize, monitored_reader) {

@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, HashMap},
     path::{Path, PathBuf},
+    time::Duration,
 };
 
 use anyhow::{bail, Context, Error};
@@ -9,14 +10,23 @@ use log::{debug, trace};
 
 use trident_api::{
     config::{HostConfiguration, Partition, VerityDevice},
-    constants::ROOT_MOUNT_POINT_PATH,
+    constants::{
+        internal_params::{
+            STREAM_SLOW_SPEED_REPORTING_INTERVAL_SECONDS,
+            STREAM_SLOW_SPEED_REPORTING_THRESHOLD_MBPS,
+        },
+        ROOT_MOUNT_POINT_PATH,
+    },
     error::{InternalError, ReportError, TridentError},
     status::{AbVolumeSelection, ServicingType},
     storage_graph::graph::StorageGraph,
     BlockDeviceId,
 };
 
-use crate::osimage::OsImage;
+use crate::{
+    osimage::OsImage, STREAM_SLOW_SPEED_REPORTING_INTERVAL_SECONDS_DEFAULT,
+    STREAM_SLOW_SPEED_REPORTING_THRESHOLD_MBPS_DEFAULT,
+};
 
 #[allow(dead_code)]
 pub mod filesystem;
@@ -312,6 +322,26 @@ impl EngineContext {
             .as_ref()?
             .zstd_decompression_parameters()
             .and_then(|p| p.max_window_log)
+    }
+
+    /// Returns the threshold and interval for reporting slow streaming speed.
+    pub(crate) fn read_monitor_params(&self) -> Result<(f64, Duration), TridentError> {
+        Ok((
+            self.spec
+                .internal_params
+                .get::<f64>(STREAM_SLOW_SPEED_REPORTING_THRESHOLD_MBPS)
+                .transpose()
+                .map_err(TridentError::new)?
+                .unwrap_or(STREAM_SLOW_SPEED_REPORTING_THRESHOLD_MBPS_DEFAULT),
+            Duration::from_secs(
+                self.spec
+                    .internal_params
+                    .get_u64(STREAM_SLOW_SPEED_REPORTING_INTERVAL_SECONDS)
+                    .transpose()
+                    .map_err(TridentError::new)?
+                    .unwrap_or(STREAM_SLOW_SPEED_REPORTING_INTERVAL_SECONDS_DEFAULT),
+            ),
+        ))
     }
 }
 

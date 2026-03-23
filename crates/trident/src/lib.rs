@@ -104,6 +104,15 @@ const SAFETY_OVERRIDE_CHECK_PATH: &str = "/override-trident-safety-check";
 /// Temporary location of the datastore for multiboot install scenarios.
 pub const TEMPORARY_DATASTORE_PATH: &str = "/tmp/trident-datastore.sqlite";
 
+/// Threshold in mega bits per second for reporting slow streaming speeds. If
+/// the streaming speed is below this threshold, it will be reported via in the
+/// logs.
+pub const STREAM_SLOW_SPEED_REPORTING_THRESHOLD_MBPS_DEFAULT: f64 = 15.0;
+
+/// Interval in seconds for reporting slow streaming speeds. If the streaming
+/// speed is below the threshold, it will be reported every this many seconds.
+pub const STREAM_SLOW_SPEED_REPORTING_INTERVAL_SECONDS_DEFAULT: u64 = 10;
+
 #[must_use]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ExitKind {
