@@ -34,12 +34,18 @@ stages:
             name: matrices
             displayName: Matrix of Trident configurations for E2E Tests
 
-  # TODO: enable once storm tests are ready
+  # Storm E2E Tests: VM HOST
+  # All 18 VM host configurations are enabled and run via single storm-trident
+  # invocations. Each scenario handles setup, install, validation, A/B updates,
+  # metrics collection, and log publishing internally.
   - template: test_execution_template.yml
     parameters:
       hardwareType: "VM"
       runtimeType: "HOST"
 
+  # VM CONTAINER and BM configurations are not yet supported by storm-trident.
+  # BM requires BMC credential management and external provisioning (not implemented).
+  # Container runtime support is pending (see setup.go, invert.py).
   # - template: test_execution_template.yml
   #   parameters:
   #     hardwareType: "VM"
