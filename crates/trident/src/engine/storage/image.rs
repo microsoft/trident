@@ -3,6 +3,7 @@ use std::{
     io::Read,
     ops::ControlFlow,
     path::{Path, PathBuf},
+    time::Duration,
 };
 
 use anyhow::{bail, ensure, Context, Error};
@@ -21,7 +22,9 @@ use trident_api::{
 
 use crate::{
     engine::{context::filesystem::FileSystemDataImage, EngineContext},
-    io_utils::{hashing_reader::HashingReader384, image_streamer},
+    io_utils::{
+        hashing_reader::HashingReader384, image_streamer, read_monitor::ReadMonitor,
+    },
     osimage::{OsImageFile, OsImagePartition},
 };
 
@@ -163,7 +166,15 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
             "Initializing '{id}': writing image for filesystem from '{}'",
             os_img.source()
         );
-        if let Err(e) = deploy_os_image_file(ctx, &id, image_file, resize, reader) {
+
+        let monitored_reader = ReadMonitor::new(
+            reader,
+            image_file.compressed_size,
+            100.0,
+            Duration::from_secs(5),
+        );
+
+        if let Err(e) = deploy_os_image_file(ctx, &id, image_file, resize, monitored_reader) {
             return ControlFlow::Break(Err(e).structured(ServicingError::DeployImages));
         }
 
@@ -290,12 +301,12 @@ enum FileSystemResize {
 }
 
 /// Deploys an individual OS image file from an OS image.
-fn deploy_os_image_file(
+fn deploy_os_image_file<R: Read>(
     ctx: &EngineContext,
     id: &BlockDeviceId,
     image_file: &OsImageFile,
     fs_resize: FileSystemResize,
-    reader: Box<dyn Read>,
+    reader: R,
 ) -> Result<(), Error> {
     let block_device_path = ctx
         .get_block_device_path(id)

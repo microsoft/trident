@@ -12,7 +12,7 @@ const RING_BUFFER_SIZE: usize = 10;
 /// the last [`RING_BUFFER_SIZE`] reads. When the speed falls below a
 /// configurable threshold, it emits debug-level log messages at a configurable
 /// minimum cadence.
-pub struct HttpDownloadMonitor<R> {
+pub struct ReadMonitor<R> {
     inner: R,
     /// Expected size of the complete file being read (for log context).
     size: u64,
@@ -32,7 +32,7 @@ pub struct HttpDownloadMonitor<R> {
     total_bytes: u64,
 }
 
-impl<R> HttpDownloadMonitor<R> {
+impl<R> ReadMonitor<R> {
     /// Creates a new download monitor wrapping `inner`.
     ///
     /// * `threshold_mbps` — speed in Mbps below which debug messages are
@@ -85,47 +85,52 @@ impl<R> HttpDownloadMonitor<R> {
     }
 }
 
-impl<R: Read> Read for HttpDownloadMonitor<R> {
+impl<R: Read> Read for ReadMonitor<R> {
     fn read(&mut self, buf: &mut [u8]) -> IoResult<usize> {
         let start = Instant::now();
         let n = self.inner.read(buf)?;
         let elapsed = start.elapsed();
 
-        if n > 0 {
-            self.total_bytes += n as u64;
-            self.record_sample(n as u64, elapsed);
+        // Return early if there is no threshold configured, to avoid the
+        // overhead of recording samples and computing averages.
+        //
+        // Also return early if n == 0, which naturally happens at EOF.
+        if self.threshold_mbps <= 0.0 || n == 0 {
+            return Ok(n);
+        }
 
-            if let Some(mbps) = self.moving_average_mbps() {
-                if mbps <= self.threshold_mbps && self.last_report.elapsed() >= self.report_cadence
-                {
-                    let pct = if self.size > 0 {
-                        self.total_bytes as f64 / self.size as f64 * 100.0
-                    } else {
-                        0.0
-                    };
+        self.total_bytes += n as u64;
+        self.record_sample(n as u64, elapsed);
 
-                    let eta = if self.size > self.total_bytes {
-                        self.moving_average_bytes_per_sec()
-                            .filter(|&bps| bps > 0.0)
-                            .map(|bps| {
-                                let remaining = (self.size - self.total_bytes) as f64;
-                                format_duration(Duration::from_secs_f64(remaining / bps))
-                            })
-                            .unwrap_or_else(|| "unknown".to_string())
-                    } else {
-                        "done".to_string()
-                    };
+        if let Some(mbps) = self.moving_average_mbps() {
+            if mbps <= self.threshold_mbps && self.last_report.elapsed() >= self.report_cadence {
+                let pct = if self.size > 0 {
+                    self.total_bytes as f64 / self.size as f64 * 100.0
+                } else {
+                    0.0
+                };
 
-                    debug!(
-                        "Slow download: {:.2} Mbps, {:.1}% complete ({}/{}), ETA: {}",
-                        mbps,
-                        pct,
-                        ByteCount::from(self.total_bytes).to_human_readable_approx(),
-                        ByteCount::from(self.size).to_human_readable_approx(),
-                        eta,
-                    );
-                    self.last_report = Instant::now();
-                }
+                let eta = if self.size > self.total_bytes {
+                    self.moving_average_bytes_per_sec()
+                        .filter(|&bps| bps > 0.0)
+                        .map(|bps| {
+                            let remaining = (self.size - self.total_bytes) as f64;
+                            format_duration(Duration::from_secs_f64(remaining / bps))
+                        })
+                        .unwrap_or_else(|| "unknown".to_string())
+                } else {
+                    "done".to_string()
+                };
+
+                debug!(
+                    "Slow download: {:.2} Mbps, {:.1}% complete ({}/{}), ETA: {}",
+                    mbps,
+                    pct,
+                    ByteCount::from(self.total_bytes).to_human_readable_approx(),
+                    ByteCount::from(self.size).to_human_readable_approx(),
+                    eta,
+                );
+                self.last_report = Instant::now();
             }
         }
 
@@ -158,7 +163,7 @@ mod tests {
     fn test_monitor_passes_through_data() {
         let data = b"hello world";
         let len = data.len() as u64;
-        let mut monitor = HttpDownloadMonitor::new(
+        let mut monitor = ReadMonitor::new(
             Cursor::new(data.as_slice()),
             len,
             10.0,
@@ -175,8 +180,7 @@ mod tests {
     fn test_ring_buffer_wraps() {
         let data = vec![0u8; 1024];
         let len = data.len() as u64;
-        let mut monitor =
-            HttpDownloadMonitor::new(Cursor::new(data), len, 10.0, Duration::from_secs(1));
+        let mut monitor = ReadMonitor::new(Cursor::new(data), len, 10.0, Duration::from_secs(1));
 
         let mut buf = vec![0u8; 64];
         // Read more times than the ring buffer size.

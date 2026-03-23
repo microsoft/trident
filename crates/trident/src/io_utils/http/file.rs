@@ -19,7 +19,7 @@ use url::Url;
 #[cfg(feature = "dangerous-options")]
 use docker_credential::{self, DockerCredential};
 
-use super::{subfile::HttpSubFile, HttpDownloadMonitor};
+use super::subfile::HttpSubFile;
 
 /// The maximum timeout for a single HTTP request to establish a connection.
 /// This is not a timeout for the entire file read operation, but rather a
@@ -27,14 +27,6 @@ use super::{subfile::HttpSubFile, HttpDownloadMonitor};
 /// retry requests that fail due to transient errors, up to the overall timeout
 /// specified when creating the `HttpFile`.
 const MAX_PER_REQUEST_TIMEOUT_SECONDS: u64 = 10;
-
-/// Threshold speed in Mbps below which to emit debug log messages about slow
-/// HTTP download speed. This is used by the `HttpDownloadMonitor` wrapper
-/// returned by `HttpFile`.
-const SLOW_DOWNLOAD_THRESHOLD_MBPS: f64 = 10.0;
-
-/// Minimum interval between consecutive slow download log messages.
-const SLOW_DOWNLOAD_REPORT_CADENCE: Duration = Duration::from_secs(5);
 
 #[cfg(feature = "dangerous-options")]
 const DOCKER_CONFIG_FILE_PATH: &str = ".docker/config.json";
@@ -301,30 +293,16 @@ impl HttpFile {
     }
 
     /// Returns an HTTPSubFile object covering a specific section of the file.
-    pub(crate) fn section_reader(
-        &self,
-        section_offset: u64,
-        size: u64,
-    ) -> HttpDownloadMonitor<HttpSubFile> {
-        HttpDownloadMonitor::new(
-            self.section_reader_inner(section_offset, size),
-            size,
-            SLOW_DOWNLOAD_THRESHOLD_MBPS,
-            SLOW_DOWNLOAD_REPORT_CADENCE,
-        )
+    pub(crate) fn section_reader(&self, section_offset: u64, size: u64) -> HttpSubFile {
+        self.section_reader_inner(section_offset, size)
     }
 
     /// Returns an HTTPSubFile object covering the complete file.
-    pub(crate) fn complete_reader(&self) -> HttpDownloadMonitor<HttpSubFile> {
+    pub(crate) fn complete_reader(&self) -> HttpSubFile {
         trace!("Reading complete HTTP file '{}'", self.url);
         // Create a section reader optimized to read the complete file.
-        HttpDownloadMonitor::new(
-            self.section_reader_inner(0, self.size)
-                .with_end_is_parent_eof(),
-            self.size,
-            SLOW_DOWNLOAD_THRESHOLD_MBPS,
-            SLOW_DOWNLOAD_REPORT_CADENCE,
-        )
+        self.section_reader_inner(0, self.size)
+            .with_end_is_parent_eof()
     }
 }
 
