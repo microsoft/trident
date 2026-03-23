@@ -37,7 +37,7 @@ When no BuildNumber is provided, the version from the cargo file will be
 produced as-is, in the format MAJOR.MINOR.PATCH. 
 
 If a BuildNumber is provided, the format will be MAJOR.MINOR.PATCH-YYYYMMDDID, where:
-- MAJOR and MINOR are taken from the cargo file.
+- MAJOR, MINOR, and PATCH are taken from the cargo file.
 - YYYYMMDD is the date part of the BuildNumber.
 - ID is the counter part of the BuildNumber, formatted as a two-digit number.
 
@@ -70,13 +70,16 @@ with open("crates/trident/Cargo.toml", "r") as file:
 version = get_version(content)
 
 if args.BuildNumber is not None:
-    version = get_version(content)
-
-    # Check if BuildNumber is already the Trident version
     version_pattern = rf"({version})-(\d{{10}})(\.?.*)"
     if re.match(version_pattern, args.BuildNumber):
+        # If BuildNumber contains the Trident version found in Cargo.toml
+        # followed by the date and build id, just return it
+        # Format: MAJOR.MINOR.PATCH-YYYYMMDDID.*
         print(args.BuildNumber)
     else:
+        # Otherwise, BuildNumber is expected to be date.buildid. In this case
+        # use the date and build id to construct the returned version. If --commit
+        # is specified, also include the git short hash.
         match = re.match(r"^(\d{8})\.(\d+)$", args.BuildNumber)
         if match is None:
             print(
@@ -92,6 +95,8 @@ if args.BuildNumber is not None:
             # Format: MAJOR.MINOR.PATCH-YYYYMMDDID.vCOMMIT
             print(f"{version}-{date}{id:02d}.v{short_commit.strip()}")
         else:
+            # Format: MAJOR.MINOR.PATCH-YYYYMMDDID
             print(f"{version}-{date}{id:02d}")
 else:
+    # If BuildNumber is not provided, return Cargo version (MAJOR.MINOR.PATCH)
     print(f"{version}")
