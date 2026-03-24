@@ -683,6 +683,7 @@
             function parseLog(text) {
                 const lines = text.split("\n");
                 allEntries = [];
+                bookmarkedSet.clear();
                 let parseErrors = 0;
 
                 for (let i = 0; i < lines.length; i++) {
