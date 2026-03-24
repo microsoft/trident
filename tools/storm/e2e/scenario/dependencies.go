@@ -88,7 +88,7 @@ func installUbuntuDependencies(osRelease *env.OsReleaseInfo) error {
 	case "focal":
 		fallthrough
 	case "jammy":
-		err = cmd.Run("sudo", "pip3", "install", "virt-firmware")
+		err = cmd.Run("sudo", "pip3", "install", "virt-firmware", "-vvv")
 	case "noble":
 		err = cmd.Run("sudo", "apt-get", "-y", "install", "python3-virt-firmware")
 	default:
