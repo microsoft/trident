@@ -586,8 +586,8 @@
     </div>
 
     <div class="paste-overlay" id="paste-overlay" style="display:none">
-        <div class="paste-modal">
-            <h3>Paste Log Lines</h3>
+        <div class="paste-modal" role="dialog" aria-modal="true" aria-labelledby="paste-modal-title">
+            <h3 id="paste-modal-title">Paste Log Lines</h3>
             <textarea id="paste-textarea" placeholder="Paste JSONL log lines here…"></textarea>
             <div class="paste-modal-buttons">
                 <button class="btn-cancel" id="paste-cancel">Cancel</button>
@@ -626,24 +626,35 @@
 
             // --- Paste modal ---
 
-            document.getElementById("paste-btn").addEventListener("click", () => {
+            const pasteBtn = document.getElementById("paste-btn");
+
+            function openPasteModal() {
                 pasteOverlay.style.display = "flex";
                 pasteTextarea.value = "";
                 pasteTextarea.focus();
-            });
+            }
 
-            document.getElementById("paste-cancel").addEventListener("click", () => {
+            function closePasteModal() {
                 pasteOverlay.style.display = "none";
-            });
+                pasteBtn.focus();
+            }
+
+            pasteBtn.addEventListener("click", openPasteModal);
+
+            document.getElementById("paste-cancel").addEventListener("click", closePasteModal);
 
             pasteOverlay.addEventListener("click", (e) => {
-                if (e.target === pasteOverlay) pasteOverlay.style.display = "none";
+                if (e.target === pasteOverlay) closePasteModal();
+            });
+
+            pasteOverlay.addEventListener("keydown", (e) => {
+                if (e.key === "Escape") closePasteModal();
             });
 
             document.getElementById("paste-load").addEventListener("click", () => {
                 const text = pasteTextarea.value.trim();
                 if (text) {
-                    pasteOverlay.style.display = "none";
+                    closePasteModal();
                     parseLog(text);
                 }
             });
