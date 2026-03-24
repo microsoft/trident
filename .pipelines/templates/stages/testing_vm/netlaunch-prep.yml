@@ -31,6 +31,8 @@ steps:
     displayName: "Install SWTPM PPA"
     retryCountOnTaskFailure: 3
 
+  # Connect Pip to internal feed rather than PyPI
+  - template: ../common_tasks/avoid-pypi-usage.yml
   - bash: |
       set -eux
 
