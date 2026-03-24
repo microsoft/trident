@@ -97,8 +97,7 @@ impl HttpFile {
         //
         // The clamped connect timeout is per request. We always do requests in
         // a retry loop that respects the overall timeout given to us.
-        let connect_timeout =
-            Duration::from_secs(MAX_PER_REQUEST_TIMEOUT_SECONDS).min(timeout);
+        let connect_timeout = Duration::from_secs(MAX_PER_REQUEST_TIMEOUT_SECONDS).min(timeout);
         let client = ClientBuilder::new()
             .connect_timeout(connect_timeout)
             .build()
