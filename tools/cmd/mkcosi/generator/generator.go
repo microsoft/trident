@@ -137,10 +137,8 @@ func CosiFromImage(imagePath string, arch metadata.OsArchitecture) (*cosi.Cosi, 
 		Compression: &metadata.Compression{
 			MaxWindowLog: DefaultZstdWindowLog,
 		},
-		Bootloader: metadata.Bootloader{
-			Type: metadata.BootloaderTypeGrub,
-		},
-		OsArch: arch,
+		Bootloader: metadata.Bootloader{},
+		OsArch:     arch,
 	}
 
 	// Extract and compress the primary GPT region
@@ -199,18 +197,24 @@ func CosiFromImage(imagePath string, arch metadata.OsArchitecture) (*cosi.Cosi, 
 		})
 	}
 
-	// Now scan the filesystems to populate additional metadata
-	// We need to decompress and mount each partition to get filesystem info
-	err = populateFilesystemMetadata(&cosiMetadata, partitionInfos, tmpDir)
+	// Detect if this is a CIH (Code Integrity Host) image and use
+	// the appropriate metadata population strategy. CIH images use a
+	// hermetic /usr partition and require special handling.
+	if isCIHImage(parsedGPT) {
+		log.Info("Detected CIH (Code Integrity Host) image")
+		err = populateCIHFilesystemMetadata(&cosiMetadata, partitionInfos, tmpDir)
+	} else {
+		err = populateFilesystemMetadata(&cosiMetadata, partitionInfos, tmpDir)
+	}
 	if err != nil {
 		cleanup()
 		return nil, fmt.Errorf("failed to populate filesystem metadata: %w", err)
 	}
 
-	// Verify we have grub as bootloader
-	if cosiMetadata.Bootloader.Type != metadata.BootloaderTypeGrub {
+	// Verify we have a supported bootloader
+	if cosiMetadata.Bootloader.Type != metadata.BootloaderTypeGrub && cosiMetadata.Bootloader.Type != metadata.BootloaderTypeSystemDBoot {
 		cleanup()
-		return nil, fmt.Errorf("only GRUB bootloader is supported, found: %s", cosiMetadata.Bootloader.Type)
+		return nil, fmt.Errorf("unsupported bootloader type: %q", cosiMetadata.Bootloader.Type)
 	}
 
 	// Create the Cosi object
@@ -508,6 +512,7 @@ func populateFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []par
 	// Track which partition is the root filesystem
 	var rootMountPath string
 	var espMountPath string
+	var espMountPoint string // logical mount point of the ESP (e.g. /boot/efi)
 
 	// First pass: get filesystem info and mount points using blkid
 	for i := range partInfos {
@@ -630,6 +635,7 @@ func populateFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []par
 			rootMountPath = mountPath
 		} else if pi.mountPoint == "/boot/efi" || pi.mountPoint == "/efi" {
 			espMountPath = mountPath
+			espMountPoint = pi.mountPoint
 		}
 	}
 
@@ -653,7 +659,25 @@ func populateFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []par
 		}
 	}
 
-	// Verify GRUB is present
+	// Detect bootloader type.
+	// Check for systemd-boot + UKI first, because systemd-boot and GRUB
+	// share the same fallback EFI filename (e.g. BOOTX64.EFI), so a
+	// GRUB check would give a false positive on systemd-boot images.
+	if espMountPath != "" {
+		ukiEntries := findUkiEntries(espMountPath, espMountPoint)
+		if len(ukiEntries) > 0 {
+			log.WithField("count", len(ukiEntries)).Info("Found systemd-boot with UKI entries")
+			cosiMeta.Bootloader = metadata.Bootloader{
+				Type: metadata.BootloaderTypeSystemDBoot,
+				SystemDBoot: &metadata.SystemDBoot{
+					Entries: ukiEntries,
+				},
+			}
+			return nil
+		}
+	}
+
+	// Fall back to GRUB detection
 	grubFound := false
 	if espMountPath != "" {
 		grubFound = checkGrubPresence(espMountPath)
@@ -662,11 +686,14 @@ func populateFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []par
 		grubFound = checkGrubPresence(rootMountPath)
 	}
 
-	if !grubFound {
-		return fmt.Errorf("GRUB bootloader not found; only GRUB is supported")
+	if grubFound {
+		cosiMeta.Bootloader = metadata.Bootloader{
+			Type: metadata.BootloaderTypeGrub,
+		}
+		return nil
 	}
 
-	return nil
+	return fmt.Errorf("no supported bootloader found; supported: GRUB, systemd-boot with UKI")
 }
 
 // decompressFile decompresses a zstd-compressed file.
@@ -1021,6 +1048,106 @@ func parseDebianVersion(fullVersion string) (string, string) {
 	}
 
 	return version, release
+}
+
+// findUkiEntries scans the ESP for UKI (Unified Kernel Image) files.
+// UKIs are typically placed under EFI/Linux/ on the ESP as .efi files.
+// The embedded .cmdline and .uname PE sections are extracted from each UKI.
+// espMountPath is the host path where the ESP is mounted.
+// espMountPoint is the logical mount point of the ESP (e.g. /boot/efi).
+func findUkiEntries(espMountPath string, espMountPoint string) []metadata.SystemDBootEntry {
+	var entries []metadata.SystemDBootEntry
+
+	ukiDir := filepath.Join(espMountPath, "EFI", "Linux")
+	dirEntries, err := os.ReadDir(ukiDir)
+	if err != nil {
+		log.WithError(err).Debug("Could not read EFI/Linux directory")
+		return nil
+	}
+
+	for _, de := range dirEntries {
+		if de.IsDir() {
+			continue
+		}
+		name := de.Name()
+		if !strings.HasSuffix(strings.ToLower(name), ".efi") {
+			continue
+		}
+
+		// Absolute path from the root filesystem
+		absFsPath := filepath.Join(espMountPoint, "EFI", "Linux", name)
+		absHostPath := filepath.Join(ukiDir, name)
+		log.WithField("path", absFsPath).Debug("Found UKI entry")
+
+		cmdline := extractUkiSection(absHostPath, ".cmdline")
+		kernel := extractUkiSection(absHostPath, ".uname")
+
+		entries = append(entries, metadata.SystemDBootEntry{
+			Type:    metadata.SystemDBootEntryTypeUkiStandalone,
+			Path:    absFsPath,
+			Kernel:  kernel,
+			Cmdline: cmdline,
+		})
+	}
+
+	return entries
+}
+
+// extractUkiSection extracts a named PE section from a UKI .efi file using
+// objcopy. The UKI is first copied to a writable temp directory because objcopy
+// creates a temporary file next to the input, which fails on read-only mounts.
+// Returns the section content as a string, or empty on failure.
+func extractUkiSection(ukiPath string, section string) string {
+	// Copy the UKI to a temp file so objcopy can write next to it.
+	ukiCopy, err := os.CreateTemp("", "uki-copy-*.efi")
+	if err != nil {
+		log.WithError(err).Debug("Could not create temp file for UKI copy")
+		return ""
+	}
+	ukiCopyPath := ukiCopy.Name()
+	defer os.Remove(ukiCopyPath)
+
+	src, err := os.Open(ukiPath)
+	if err != nil {
+		ukiCopy.Close()
+		log.WithError(err).Debug("Could not open UKI file")
+		return ""
+	}
+	if _, err := io.Copy(ukiCopy, src); err != nil {
+		src.Close()
+		ukiCopy.Close()
+		log.WithError(err).Debug("Could not copy UKI to temp file")
+		return ""
+	}
+	src.Close()
+	ukiCopy.Close()
+
+	outFile, err := os.CreateTemp("", "uki-section-*")
+	if err != nil {
+		log.WithError(err).Debug("Could not create temp file for UKI section extraction")
+		return ""
+	}
+	outPath := outFile.Name()
+	outFile.Close()
+	defer os.Remove(outPath)
+
+	cmd := exec.Command("objcopy", "--dump-section", section+"="+outPath, ukiCopyPath)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		log.WithError(err).WithFields(log.Fields{
+			"section": section,
+			"uki":     ukiPath,
+			"output":  strings.TrimSpace(string(output)),
+		}).Debug("Could not extract UKI section")
+		return ""
+	}
+
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		log.WithError(err).Debug("Could not read extracted UKI section")
+		return ""
+	}
+
+	return strings.TrimRight(string(data), "\x00\n\r ")
 }
 
 // checkGrubPresence checks if GRUB is present in the given mount path.
