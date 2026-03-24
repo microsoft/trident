@@ -88,18 +88,19 @@ impl HttpFile {
     ) -> IoResult<Self> {
         debug!("Opening HTTP file '{}'", url);
 
-        // Create a new client for this file with a
-        // `MAX_PER_REQUEST_TIMEOUT_SECONDS` second connect timeout. We
-        // intentionally do not set a total request timeout here because body
-        // reads for large range requests can take much longer than the
-        // connection timeout, and reqwest's `.timeout()` applies to the entire
-        // transfer including body streaming.
+        // Create a new client for this file with a per-request connect timeout
+        // that is clamped to at most `MAX_PER_REQUEST_TIMEOUT_SECONDS` and the
+        // overall `timeout` passed in. We intentionally do not set a total
+        // request timeout here because body reads for large range requests can
+        // take much longer than the connection timeout, and reqwest's
+        // `.timeout()` applies to the entire transfer including body streaming.
         //
-        // The `MAX_PER_REQUEST_TIMEOUT_SECONDS` connect timeout is per request,
-        // We always do requests in a retry loop that respects the overall timeout
-        // given to us.
+        // The clamped connect timeout is per request. We always do requests in
+        // a retry loop that respects the overall timeout given to us.
+        let connect_timeout =
+            Duration::from_secs(MAX_PER_REQUEST_TIMEOUT_SECONDS).min(timeout);
         let client = ClientBuilder::new()
-            .connect_timeout(Duration::from_secs(MAX_PER_REQUEST_TIMEOUT_SECONDS))
+            .connect_timeout(connect_timeout)
             .build()
             .map_err(|e| IoError::other(format!("Failed to create HTTP client: {e}")))?;
 
