@@ -439,6 +439,100 @@
             padding-right: 14px;
         }
 
+        /* Paste modal */
+        .paste-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+
+        .paste-modal {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 20px;
+            width: 640px;
+            max-width: 90vw;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .paste-modal h3 {
+            font-size: 15px;
+            font-weight: 600;
+        }
+
+        .paste-modal textarea {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 6px;
+            padding: 10px;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+            font-size: 12px;
+            resize: vertical;
+            min-height: 200px;
+            flex: 1;
+            outline: none;
+        }
+
+        .paste-modal textarea:focus {
+            border-color: var(--accent);
+        }
+
+        .paste-modal-buttons {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+
+        .paste-modal-buttons button {
+            padding: 6px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid var(--border);
+        }
+
+        .btn-cancel {
+            background: var(--surface-hover);
+            color: var(--text);
+        }
+
+        .btn-load {
+            background: var(--accent);
+            color: #0d1117;
+            border-color: var(--accent);
+        }
+
+        .btn-load:hover {
+            opacity: 0.85;
+        }
+
+        .drop-zone-separator {
+            margin-top: 8px;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
+        .paste-btn {
+            background: var(--accent);
+            color: #0d1117;
+            border: none;
+            border-radius: 6px;
+            padding: 8px 18px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
         #minimap {
             position: absolute;
             right: 8px;
@@ -478,7 +572,7 @@
                     checked></label>
         </div>
 
-        <input type="text" id="commit-input" placeholder="Commit SHA (enables source links)" disabled>
+        <input type="text" id="commit-input" placeholder="Commit SHA or tag (enables source links)" disabled>
 
         <span class="stats" id="stats"></span>
     </div>
@@ -486,6 +580,20 @@
     <div class="drop-zone" id="drop-zone">
         <div class="drop-zone-icon">📄</div>
         <div>Drop a <strong>.jsonl</strong> log file here or click <strong>Open Log File</strong></div>
+        <div class="drop-zone-separator">or</div>
+        <button id="paste-btn" class="paste-btn">📋
+            Paste from Clipboard</button>
+    </div>
+
+    <div class="paste-overlay" id="paste-overlay" style="display:none">
+        <div class="paste-modal" role="dialog" aria-modal="true" aria-labelledby="paste-modal-title">
+            <h3 id="paste-modal-title">Paste Log Lines</h3>
+            <textarea id="paste-textarea" placeholder="Paste JSONL log lines here…"></textarea>
+            <div class="paste-modal-buttons">
+                <button class="btn-cancel" id="paste-cancel">Cancel</button>
+                <button class="btn-load" id="paste-load">Load</button>
+            </div>
+        </div>
     </div>
 
     <div class="log-wrapper" id="log-wrapper">
@@ -513,6 +621,43 @@
             const commitInput = document.getElementById("commit-input");
             const statsEl = document.getElementById("stats");
             const levelFilters = document.getElementById("level-filters");
+            const pasteOverlay = document.getElementById("paste-overlay");
+            const pasteTextarea = document.getElementById("paste-textarea");
+
+            // --- Paste modal ---
+
+            const pasteBtn = document.getElementById("paste-btn");
+
+            function openPasteModal() {
+                pasteOverlay.style.display = "flex";
+                pasteTextarea.value = "";
+                pasteTextarea.focus();
+            }
+
+            function closePasteModal() {
+                pasteOverlay.style.display = "none";
+                pasteBtn.focus();
+            }
+
+            pasteBtn.addEventListener("click", openPasteModal);
+
+            document.getElementById("paste-cancel").addEventListener("click", closePasteModal);
+
+            pasteOverlay.addEventListener("click", (e) => {
+                if (e.target === pasteOverlay) closePasteModal();
+            });
+
+            pasteOverlay.addEventListener("keydown", (e) => {
+                if (e.key === "Escape") closePasteModal();
+            });
+
+            document.getElementById("paste-load").addEventListener("click", () => {
+                const text = pasteTextarea.value.trim();
+                if (text) {
+                    closePasteModal();
+                    parseLog(text);
+                }
+            });
 
             // --- File loading ---
 
@@ -549,13 +694,20 @@
             function parseLog(text) {
                 const lines = text.split("\n");
                 allEntries = [];
+                bookmarkedSet.clear();
                 let parseErrors = 0;
 
-                for (const line of lines) {
-                    const trimmed = line.trim();
+                for (let i = 0; i < lines.length; i++) {
+                    const trimmed = lines[i].trim();
                     if (!trimmed) continue;
                     try {
                         const entry = JSON.parse(trimmed);
+                        // Validate expected fields
+                        if (!("level" in entry) && !("message" in entry) && !("timestamp" in entry)) {
+                            parseErrors++;
+                            console.warn(`Log parser: line ${i + 1} has no expected fields (level, message, timestamp):`, entry);
+                            continue;
+                        }
                         // Normalize level to lowercase
                         if (entry.level) entry.level = entry.level.toLowerCase();
                         entry._idx = allEntries.length;
@@ -565,12 +717,22 @@
                     }
                 }
 
-                // Auto-detect commit hash from version message
+                if (parseErrors > 0) {
+                    console.warn(`Log parser: ${parseErrors} line(s) could not be parsed as JSON`);
+                }
+
+                // Auto-detect commit hash or tag from version message
                 if (!commitInput.value.trim() && allEntries.length > 0) {
                     const firstMsg = allEntries[0].message || "";
-                    const versionMatch = firstMsg.match(/Trident version:.*-v([0-9a-fA-F]+)/);
-                    if (versionMatch) {
-                        commitInput.value = versionMatch[1];
+                    const commitMatch = firstMsg.match(/Trident version:.*[.\-]v([0-9a-fA-F]+)/);
+                    if (commitMatch) {
+                        commitInput.value = commitMatch[1];
+                    } else {
+                        // Prod builds: MAJOR.MINOR.PATCH-RELEASE.DISTRO → use tag MAJOR.MINOR.PATCH
+                        const tagMatch = firstMsg.match(/Trident version:\s*(\d+\.\d+\.\d+)-\d+\.\w+/);
+                        if (tagMatch) {
+                            commitInput.value = tagMatch[1];
+                        }
                     }
                 }
 
@@ -644,9 +806,12 @@
             // --- Rendering ---
 
             function escapeHtml(str) {
-                const div = document.createElement("div");
-                div.textContent = str;
-                return div.innerHTML;
+                return String(str)
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .replace(/"/g, "&quot;")
+                    .replace(/'/g, "&#39;");
             }
 
             function highlightText(escaped, query) {
@@ -658,6 +823,7 @@
 
             function formatTimestamp(ts) {
                 if (!ts) return "";
+
                 try {
                     const d = new Date(ts);
                     return d.toISOString().replace("T", " ").replace("Z", " UTC");
@@ -673,10 +839,13 @@
             }
 
             function makeFileLink(file, line) {
-                const commit = commitInput.value.trim();
+                const ref = commitInput.value.trim();
                 const text = escapeHtml(file + ":" + line);
-                if (commit) {
-                    const url = `https://github.com/microsoft/trident/blob/${encodeURIComponent(commit)}/${encodeURIComponent(file)}#L${line}`;
+                if (ref) {
+                    // If ref looks like a semver tag (e.g. "0.21.0"), prefix with "v"
+                    const gitRef = /^\d+\.\d+\.\d+$/.test(ref) ? "v" + ref : ref;
+                    const encodedFile = file.split("/").map(encodeURIComponent).join("/");
+                    const url = `https://github.com/microsoft/trident/blob/${encodeURIComponent(gitRef)}/${encodedFile}#L${line}`;
                     return `<a href="${url}" target="_blank" rel="noopener">${text}</a>`;
                 }
                 return text;
