@@ -516,6 +516,23 @@
             opacity: 0.85;
         }
 
+        .drop-zone-separator {
+            margin-top: 8px;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
+        .paste-btn {
+            background: var(--accent);
+            color: #0d1117;
+            border: none;
+            border-radius: 6px;
+            padding: 8px 18px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
         #minimap {
             position: absolute;
             right: 8px;
@@ -563,9 +580,8 @@
     <div class="drop-zone" id="drop-zone">
         <div class="drop-zone-icon">📄</div>
         <div>Drop a <strong>.jsonl</strong> log file here or click <strong>Open Log File</strong></div>
-        <div style="margin-top: 8px; color: var(--text-muted); font-size: 13px;">or</div>
-        <button id="paste-btn"
-            style="background: var(--accent); color: #0d1117; border: none; border-radius: 6px; padding: 8px 18px; font-size: 13px; font-weight: 600; cursor: pointer;">📋
+        <div class="drop-zone-separator">or</div>
+        <button id="paste-btn" class="paste-btn">📋
             Paste from Clipboard</button>
     </div>
 
@@ -669,15 +685,15 @@
                 allEntries = [];
                 let parseErrors = 0;
 
-                for (const line of lines) {
-                    const trimmed = line.trim();
+                for (let i = 0; i < lines.length; i++) {
+                    const trimmed = lines[i].trim();
                     if (!trimmed) continue;
                     try {
                         const entry = JSON.parse(trimmed);
                         // Validate expected fields
-                        if (!entry.level && !entry.message && !entry.timestamp) {
+                        if (!("level" in entry) && !("message" in entry) && !("timestamp" in entry)) {
                             parseErrors++;
-                            console.warn(`Log parser: line ${allEntries.length + parseErrors} has no expected fields (level, message, timestamp):`, entry);
+                            console.warn(`Log parser: line ${i + 1} has no expected fields (level, message, timestamp):`, entry);
                             continue;
                         }
                         // Normalize level to lowercase
