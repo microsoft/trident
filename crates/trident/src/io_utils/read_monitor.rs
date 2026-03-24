@@ -91,11 +91,11 @@ impl<R: Read> Read for ReadMonitor<R> {
         let n = self.inner.read(buf)?;
         let elapsed = start.elapsed();
 
-        // Return early if there is no threshold configured, to avoid the
-        // overhead of recording samples and computing averages.
-        //
-        // Also return early if n == 0, which naturally happens at EOF.
-        if self.threshold_mbps <= 0.0 || n == 0 {
+        // Return early:
+        // - if there is no threshold configured, which disables the monitor, or
+        // - report cadence is 0 or negative, which disables the monitor, or
+        // - if n == 0, which naturally happens at EOF.
+        if self.threshold_mbps <= 0.0 || self.report_cadence <= Duration::ZERO || n == 0 {
             return Ok(n);
         }
 
