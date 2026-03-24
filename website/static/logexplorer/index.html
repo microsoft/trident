@@ -674,6 +674,12 @@
                     if (!trimmed) continue;
                     try {
                         const entry = JSON.parse(trimmed);
+                        // Validate expected fields
+                        if (!entry.level && !entry.message && !entry.timestamp) {
+                            parseErrors++;
+                            console.warn(`Log parser: line ${allEntries.length + parseErrors} has no expected fields (level, message, timestamp):`, entry);
+                            continue;
+                        }
                         // Normalize level to lowercase
                         if (entry.level) entry.level = entry.level.toLowerCase();
                         entry._idx = allEntries.length;
@@ -681,6 +687,10 @@
                     } catch {
                         parseErrors++;
                     }
+                }
+
+                if (parseErrors > 0) {
+                    console.warn(`Log parser: ${parseErrors} line(s) could not be parsed as JSON`);
                 }
 
                 // Auto-detect commit hash or tag from version message
