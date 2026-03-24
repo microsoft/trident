@@ -30,6 +30,7 @@ func StartReverseConnectProxy(
 	certProvider tlscerts.CertProvider,
 	clientAddress string,
 	serverAddress string,
+	serverConnectionType string,
 	retryInterval time.Duration,
 ) error {
 	// Load our private client certificate
@@ -56,6 +57,10 @@ func StartReverseConnectProxy(
 	// consecutively, to reduce log spam.
 	multipleRefused := false
 
+	// Build a context-aware TLS dialer so that a cancelled context
+	// (e.g. during shutdown) immediately unblocks the TLS handshake.
+	tlsDialer := tls.Dialer{Config: &tlsConfig}
+
 	// Main loop to keep trying to connect to the client
 	for {
 		if ctx.Err() != nil {
@@ -64,7 +69,7 @@ func StartReverseConnectProxy(
 		}
 
 		// Try to establish connection to the client
-		clientConn, err := tls.Dial("tcp", clientAddress, &tlsConfig)
+		clientConn, err := tlsDialer.DialContext(ctx, "tcp", clientAddress)
 		if err != nil {
 			var errno syscall.Errno
 
@@ -74,6 +79,9 @@ func StartReverseConnectProxy(
 					multipleRefused = true
 					logrus.Warnf("Client connection refused, will retry silently.")
 				}
+			} else if errors.Is(err, context.Canceled) {
+				logrus.Info("Context cancelled while trying to connect to client, exiting.")
+				return err
 			} else {
 				// Some other error occurred
 				logrus.Errorf("Failed to establish client connection: %v", err)
@@ -96,7 +104,7 @@ func StartReverseConnectProxy(
 		// Handle the client connection, the function will block until the
 		// connection is closed or an error occurs and close the connection.
 		logrus.Infof("Client connected from '%s'", clientConn.RemoteAddr().String())
-		err = handleClientConnection(ctx, clientConn, serverAddress)
+		err = handleClientConnection(ctx, clientConn, serverAddress, serverConnectionType)
 		if err != nil {
 			logrus.Errorf("Client connection error: %v", err)
 		}
@@ -107,11 +115,23 @@ func StartReverseConnectProxy(
 // the server and proxying data between the client and server connections.
 //
 // This function blocks until the connection is closed or an error occurs.
-func handleClientConnection(ctx context.Context, clientConn net.Conn, serverAddress string) error {
+func handleClientConnection(
+	ctx context.Context,
+	clientConn net.Conn,
+	serverAddress string,
+	serverConnectionType string,
+) error {
 	defer clientConn.Close()
 
+	// Safe default to use a local Unix socket if no connection type is
+	// specified to avoid getting weird errors from net.Dial with an invalid
+	// connection type.
+	if serverConnectionType == "" {
+		serverConnectionType = "unix"
+	}
+
 	logrus.Infof("Connecting to server at '%s'", serverAddress)
-	serverConn, err := net.Dial("unix", serverAddress)
+	serverConn, err := net.Dial(serverConnectionType, serverAddress)
 	if err != nil {
 		return fmt.Errorf("failed to connect to server at '%s': %w", serverAddress, err)
 	}
@@ -119,7 +139,8 @@ func handleClientConnection(ctx context.Context, clientConn net.Conn, serverAddr
 
 	// Both connections are established, start proxying data between them
 
-	// Channel to signal when copying is done. Buffered to allow both goroutines to send without blocking.
+	// Channel to signal when copying is done. Buffered to allow both goroutines
+	// to send without blocking.
 	doneChan := make(chan string, 2)
 
 	// Start the proxying
