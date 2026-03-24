@@ -4,4 +4,9 @@ steps:
     inputs:
       artifactFeeds: "mariner/Mariner-Pypi-Feed"
 
+  - bash: |
+      set -eux
+      sudo cp $(find $HOME -name pip.conf) /etc/pip.conf
+    displayName: Apply user pip.conf to global pip.conf
+
   - template: common/sfi-enforce-isolation-with-etc-hosts.yaml@platform-pipelines

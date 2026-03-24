@@ -66,8 +66,8 @@ parameters:
 steps:
   - bash: |
       set -eux
-      pip3 install pytest -vvv
-      pip3 install fabric -vvv
+      sudo pip3 install pytest -vvv
+      sudo pip3 install fabric -vvv
     displayName: "Installing dependencies for E2E tests"
 
   - bash: |
