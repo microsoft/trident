@@ -10,7 +10,7 @@ use anyhow::{ensure, Context, Error};
 use log::{debug, trace, warn};
 use oci_client::{secrets::RegistryAuth, Client as OciClient, Reference, RegistryOperation};
 use reqwest::{
-    blocking::Client,
+    blocking::{Client, ClientBuilder},
     header::{ACCEPT_RANGES, AUTHORIZATION},
 };
 use tokio::runtime::Runtime;
@@ -19,7 +19,14 @@ use url::Url;
 #[cfg(feature = "dangerous-options")]
 use docker_credential::{self, DockerCredential};
 
-use crate::io_utils::http::subfile::HttpSubFile;
+use super::subfile::HttpSubFile;
+
+/// The maximum timeout for a single HTTP request to establish a connection.
+/// This is not a timeout for the entire file read operation, but rather a
+/// timeout for each individual HTTP request. The `HttpFile` implementation will
+/// retry requests that fail due to transient errors, up to the overall timeout
+/// specified when creating the `HttpFile`.
+const MAX_PER_REQUEST_TIMEOUT_SECONDS: u64 = 10;
 
 #[cfg(feature = "dangerous-options")]
 const DOCKER_CONFIG_FILE_PATH: &str = ".docker/config.json";
@@ -81,8 +88,21 @@ impl HttpFile {
     ) -> IoResult<Self> {
         debug!("Opening HTTP file '{}'", url);
 
-        // Create a new client for this file.
-        let client = Client::new();
+        // Create a new client for this file with a per-request connect timeout
+        // that is clamped to at most `MAX_PER_REQUEST_TIMEOUT_SECONDS` and the
+        // overall `timeout` passed in. We intentionally do not set a total
+        // request timeout here because body reads for large range requests can
+        // take much longer than the connection timeout, and reqwest's
+        // `.timeout()` applies to the entire transfer including body streaming.
+        //
+        // The clamped connect timeout is per request. We always do requests in
+        // a retry loop that respects the overall timeout given to us.
+        let connect_timeout = Duration::from_secs(MAX_PER_REQUEST_TIMEOUT_SECONDS).min(timeout);
+        let client = ClientBuilder::new()
+            .connect_timeout(connect_timeout)
+            .build()
+            .map_err(|e| IoError::other(format!("Failed to create HTTP client: {e}")))?;
+
         let request_sender = || {
             let mut request = client.head(url.as_str());
             if let Some(token) = &token {
@@ -241,8 +261,16 @@ impl HttpFile {
         })
     }
 
-    /// Returns an HTTPSubFile object covering a specific section of the file.
-    pub(crate) fn section_reader(&self, section_offset: u64, size: u64) -> HttpSubFile {
+    fn section_reader_inner(&self, section_offset: u64, size: u64) -> HttpSubFile {
+        if size == 0 {
+            // When size is 0, create an empty subfile reader. This avoids
+            // making an HTTP request with an invalid range header (e.g. "Range:
+            // bytes=100-99") and also allows us to return an empty reader even
+            // if the server does not support range requests, as long as we
+            // never actually try to read from it.
+            return HttpSubFile::new_empty_with_client(self.url.clone(), self.client.clone());
+        }
+
         let end = section_offset + size - 1;
         trace!(
             "Reading HTTP file '{}' from {} to {} (inclusive) [{} bytes]",
@@ -267,11 +295,17 @@ impl HttpFile {
         subfile
     }
 
+    /// Returns an HTTPSubFile object covering a specific section of the file.
+    pub(crate) fn section_reader(&self, section_offset: u64, size: u64) -> HttpSubFile {
+        self.section_reader_inner(section_offset, size)
+    }
+
     /// Returns an HTTPSubFile object covering the complete file.
     pub(crate) fn complete_reader(&self) -> HttpSubFile {
         trace!("Reading complete HTTP file '{}'", self.url);
         // Create a section reader optimized to read the complete file.
-        self.section_reader(0, self.size).with_end_is_parent_eof()
+        self.section_reader_inner(0, self.size)
+            .with_end_is_parent_eof()
     }
 }
 
@@ -327,21 +361,58 @@ impl Seek for HttpFile {
 }
 
 impl Read for HttpFile {
+    /// Implementation of `read()` from the `Read` trait for the HTTP file
+    /// reader provided for broad compatibility. Where possible, it is
+    /// recommended to use specialized methods, such as `section_reader()` or
+    /// `complete_reader()`, as they will make more efficient use of HTTP range
+    /// requests and avoid unnecessary requests. Each call to `read` will result
+    /// in a new HTTP request for the requested range of bytes, so using this
+    /// method for large reads may be inefficient.
     fn read(&mut self, buf: &mut [u8]) -> IoResult<usize> {
-        let mut subfile = self.section_reader(self.position, buf.len() as u64);
+        if self.position >= self.size || buf.is_empty() {
+            return Ok(0);
+        }
+
+        let size_to_read = std::cmp::min(buf.len() as u64, self.size - self.position) as usize;
+        let mut subfile = self.section_reader(self.position, size_to_read as u64);
         let res = subfile.read(buf)?;
         self.position += res as u64;
         Ok(res)
     }
 
+    /// Implementation of `read_exact()` from the `Read` trait for the HTTP file
+    /// reader. Each call to `read_exact` will result in a new HTTP request for
+    /// the requested range of bytes, so using this method for large reads may
+    /// be inefficient. This method will return an error if there are not enough
+    /// bytes remaining in the file to fill the buffer, even if the end of the
+    /// file has not been reached yet.
     fn read_exact(&mut self, buf: &mut [u8]) -> IoResult<()> {
+        if buf.is_empty() {
+            return Ok(());
+        }
+
+        if buf.len() as u64 > self.size - self.position {
+            return Err(IoError::new(
+                IoErrorKind::UnexpectedEof,
+                "Not enough bytes remaining in the file to fill the buffer",
+            ));
+        }
+
         let mut subfile = self.section_reader(self.position, buf.len() as u64);
         subfile.read_exact(buf)?;
         self.position += buf.len() as u64;
         Ok(())
     }
 
+    /// Implementation of `read_to_end()` from the `Read` trait for the HTTP
+    /// file reader. This method will read until the end of the file is reached.
+    /// In best case scenarios, only one HTTP request will be made. Internal
+    /// retries may result in additional requests.
     fn read_to_end(&mut self, buf: &mut Vec<u8>) -> IoResult<usize> {
+        if self.position >= self.size {
+            return Ok(0);
+        }
+
         let mut subfile = self.section_reader(self.position, self.size - self.position);
         let res = subfile.read_to_end(buf)?;
         self.position += res as u64;

@@ -235,11 +235,10 @@ impl Cosi {
         {
             let (path, entry) = entry.structured(InternalError::Internal("read COSI archive"))?;
 
-            let reader = Box::new(
-                self.reader
-                    .section_reader(entry.offset, entry.size)
-                    .structured(InternalError::Internal("read COSI archive"))?,
-            );
+            let reader = self
+                .reader
+                .section_reader(entry.offset, entry.size)
+                .structured(InternalError::Internal("read COSI archive"))?;
             match f(&path, reader) {
                 ControlFlow::Continue(()) => {}
                 ControlFlow::Break(b) => return b,

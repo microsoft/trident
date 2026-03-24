@@ -96,8 +96,17 @@ where
         .sync_all()
         .context("Failed to sync")?;
 
+    let elapsed_safe = {
+        let elapsed = t.elapsed().as_secs_f64();
+        if elapsed == 0.0 {
+            0.001 // Avoid division by zero in case of very fast writes
+        } else {
+            elapsed
+        }
+    };
+
     debug!(
-        "Copied {} [{}] to '{}'{} in {:.2} seconds",
+        "Copied {} [{}] to '{}'{} in {:.2} seconds: {:.2} MB/s",
         ByteCount::from(bytes_copied).to_human_readable_approx(),
         bytes_copied,
         destination_path.display(),
@@ -107,7 +116,8 @@ where
                 format!(" ('{}')", real_path.display()),
             _ => "".into(),
         },
-        t.elapsed().as_secs_f32()
+        t.elapsed().as_secs_f32(),
+        (bytes_copied as f64) / (elapsed_safe * 1_000_000.0)
     );
 
     Ok(())
