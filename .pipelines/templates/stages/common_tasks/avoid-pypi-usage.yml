@@ -1,22 +1,7 @@
 steps:
-  - bash: |
-      set -eux
-      printenv
-    displayName: List vars before
-
   - task: PipAuthenticate@1
     displayName: Provision - Authenticate Pip
     inputs:
       artifactFeeds: "mariner/Mariner-Pypi-Feed"
-
-  - bash: |
-      set -eux
-      printenv
-    displayName: Apply user pip.conf to global pip.conf
-
-  - bash: |
-      set -eux
-      sudo cp $(find $HOME -name pip.conf) /etc/pip.conf
-    displayName: Apply user pip.conf to global pip.conf
 
   - template: common/sfi-enforce-isolation-with-etc-hosts.yaml@platform-pipelines

@@ -56,7 +56,9 @@ steps:
           zstd \
           imagemagick
 
-      sudo pip3 install virt-firmware -vvv
+      # Use `-E` to preserve PipAuthenticate connection to
+      # internal feed replacing PyPI
+      sudo -E pip3 install virt-firmware -vvv
     displayName: Install virt-deploy dependencies
     retryCountOnTaskFailure: 3
 

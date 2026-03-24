@@ -66,8 +66,10 @@ parameters:
 steps:
   - bash: |
       set -eux
-      sudo pip3 install pytest -vvv
-      sudo pip3 install fabric -vvv
+      # Use `-E` to preserve PipAuthenticate connection to
+      # internal feed replacing PyPI
+      sudo -E pip3 install pytest -vvv
+      sudo -E pip3 install fabric -vvv
     displayName: "Installing dependencies for E2E tests"
 
   - bash: |
