@@ -2,7 +2,7 @@ steps:
   - bash: |
       set -eux
       printenv
-    displayName: List vars before PipAuthenticate
+    displayName: List vars before
 
   - task: PipAuthenticate@1
     displayName: Provision - Authenticate Pip
@@ -12,9 +12,9 @@ steps:
   - bash: |
       set -eux
       printenv
-    displayName: List vars after PipAuthenticate
+    displayName: Apply user pip.conf to global pip.conf
 
-    - bash: |
+  - bash: |
       set -eux
       sudo cp $(find $HOME -name pip.conf) /etc/pip.conf
     displayName: Apply user pip.conf to global pip.conf
