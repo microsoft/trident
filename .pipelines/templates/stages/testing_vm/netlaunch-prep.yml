@@ -31,6 +31,8 @@ steps:
     displayName: "Install SWTPM PPA"
     retryCountOnTaskFailure: 3
 
+  # Connect Pip to internal feed rather than PyPI
+  - template: ../common_tasks/avoid-pypi-usage.yml
   - bash: |
       set -eux
 
@@ -54,7 +56,9 @@ steps:
           zstd \
           imagemagick
 
-      sudo pip3 install virt-firmware
+      # Use `-E` to preserve PipAuthenticate connection to
+      # internal feed replacing PyPI
+      sudo -E pip3 install virt-firmware -vvv
     displayName: Install virt-deploy dependencies
     retryCountOnTaskFailure: 3
 

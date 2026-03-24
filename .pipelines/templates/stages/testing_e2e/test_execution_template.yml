@@ -87,6 +87,7 @@ stages:
                 value: false
 
         steps:
+          - template: ../common_tasks/avoid-pypi-usage.yml
           - bash: |
               if [ ${{ variables['tridentConfigurationName'] }} == 'split' ]; then
                 splitInstallerIsoName="trident-split-installer"
