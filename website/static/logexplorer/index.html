@@ -844,7 +844,8 @@
                 if (ref) {
                     // If ref looks like a semver tag (e.g. "0.21.0"), prefix with "v"
                     const gitRef = /^\d+\.\d+\.\d+$/.test(ref) ? "v" + ref : ref;
-                    const url = `https://github.com/microsoft/trident/blob/${encodeURIComponent(gitRef)}/${encodeURIComponent(file)}#L${line}`;
+                    const encodedFile = file.split("/").map(encodeURIComponent).join("/");
+                    const url = `https://github.com/microsoft/trident/blob/${encodeURIComponent(gitRef)}/${encodedFile}#L${line}`;
                     return `<a href="${url}" target="_blank" rel="noopener">${text}</a>`;
                 }
                 return text;
