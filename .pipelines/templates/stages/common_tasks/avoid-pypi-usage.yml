@@ -1,10 +1,20 @@
 steps:
+  - bash: |
+      set -eux
+      printenv
+    displayName: List vars before PipAuthenticate
+
   - task: PipAuthenticate@1
     displayName: Provision - Authenticate Pip
     inputs:
       artifactFeeds: "mariner/Mariner-Pypi-Feed"
 
   - bash: |
+      set -eux
+      printenv
+    displayName: List vars after PipAuthenticate
+
+    - bash: |
       set -eux
       sudo cp $(find $HOME -name pip.conf) /etc/pip.conf
     displayName: Apply user pip.conf to global pip.conf
