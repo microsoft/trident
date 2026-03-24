@@ -200,7 +200,7 @@ func populateCIHFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []
 		}
 	}
 
-	// Detect bootloader. ACL uses systemd-boot with UKI.
+	// Detect bootloader. CIH uses systemd-boot with UKI.
 	if espMountPath != "" {
 		ukiEntries := findUkiEntries(espMountPath, espMountPoint)
 		if len(ukiEntries) > 0 {
