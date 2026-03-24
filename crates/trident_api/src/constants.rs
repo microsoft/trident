@@ -269,14 +269,15 @@ pub mod internal_params {
     /// COSI metadata.
     pub const RAW_COSI_STORAGE: &str = "rawCosi";
 
-    /// Threshold in mega bits per second for reporting slow streaming speeds. If
-    /// the streaming speed is below this threshold, it will be reported via in the
+    /// Threshold in megabits per second for reporting slow streaming speeds. If
+    /// the streaming speed is below this threshold, it will be reported in the
     /// logs.
     pub const STREAM_SLOW_SPEED_REPORTING_THRESHOLD_MBPS: &str =
         "streamSlowSpeedReportingThresholdMbps";
 
     /// Interval in seconds for reporting slow streaming speeds. If the streaming
-    /// speed is below the threshold, it will be reported every this many seconds.
+    /// speed is below the threshold, it will be reported at most once every this
+    /// many seconds.
     pub const STREAM_SLOW_SPEED_REPORTING_INTERVAL_SECONDS: &str =
         "streamSlowSpeedReportingIntervalSeconds";
 }
