@@ -366,3 +366,8 @@ stages:
               repository: ${{ variables.IMAGE_NAME }}
               config: $(TRIDENT_CONFIGURATION_NAME)
               deploymentEnvironment: "bareMetal"
+
+          - template: ../testing_common/fix-output-directory-for-one-branch-step.yml
+            parameters:
+              outputDir: $(ob_outputDirectory)
+              condition: always()
