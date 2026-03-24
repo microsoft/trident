@@ -263,9 +263,12 @@ impl HttpFile {
 
     fn section_reader_inner(&self, section_offset: u64, size: u64) -> HttpSubFile {
         if size == 0 {
-            // Create an empty subfile if the requested size is 0, to avoid
-            // making unnecessary HTTP requests
-            return HttpSubFile::new_with_client(self.url.clone(), 0, 0, self.client.clone());
+            // When size is 0, create an empty subfile reader. This avoids
+            // making an HTTP request with an invalid range header (e.g. "Range:
+            // bytes=100-99") and also allows us to return an empty reader even
+            // if the server does not support range requests, as long as we
+            // never actually try to read from it.
+            return HttpSubFile::new_empty_with_client(self.url.clone(), self.client.clone());
         }
 
         let end = section_offset + size - 1;

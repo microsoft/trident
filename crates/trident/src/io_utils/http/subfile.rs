@@ -78,6 +78,10 @@ use super::HttpRangeRequest;
 /// occurs, without the caller even needing to be aware of it. Note that the
 /// `read()` call never fails in this example, even though multiple requests
 /// were needed and a network error occurred during the process.
+///
+/// When `start > end`, the subfile is considered empty and all reads will
+/// return EOF. This allows creating empty subfiles without needing to make an
+/// HTTP request, which can be useful for certain edge cases and optimizations.
 pub struct HttpSubFile {
     /// The URL of the HTTP resource.
     url: Url,
@@ -108,8 +112,8 @@ pub struct HttpSubFile {
 }
 
 impl HttpSubFile {
-    /// Creates a new HttpSubFile that reads the byte range [start, end] from the
-    /// given URL. The range is inclusive like the HTTP Range header, and is
+    /// Creates a new HttpSubFile that reads the byte range [start, end] from
+    /// the given URL. The range is inclusive like the HTTP Range header, and is
     /// expected to have been validated beforehand.
     #[allow(dead_code)] // Used in tests
     pub fn new(url: Url, start: u64, end: u64) -> Self {
@@ -122,6 +126,22 @@ impl HttpSubFile {
             url,
             start,
             end,
+            client,
+            position: 0,
+            reader: None,
+            authorization: None,
+            timeout: Duration::from_secs(30),
+            end_is_parent_eof: false,
+        }
+    }
+
+    /// Creates a new empty HttpSubFile with the given URL and HTTP client. The
+    /// returned HttpSubFile will always return `Ok(0)` when read.
+    pub(super) fn new_empty_with_client(url: Url, client: Client) -> Self {
+        HttpSubFile {
+            url,
+            start: 1,
+            end: 0,
             client,
             position: 0,
             reader: None,
@@ -154,7 +174,8 @@ impl HttpSubFile {
     /// Returns the length of the subfile in bytes.
     pub fn size(&self) -> u64 {
         if self.start > self.end {
-            // Invalid range, treat as empty subfile.
+            // Invalid range, this means the subfile is empty and all reads
+            // should return EOF.
             0
         } else {
             // Add 1 because the range is inclusive.
@@ -782,6 +803,34 @@ mod tests {
         assert_eq!(bytes_read4, 0); // EOF
 
         mock.assert();
+    }
+
+    #[test]
+    fn test_empty_subfile_when_start_greater_than_end() {
+        let url = Url::parse("http://localhost:1/should-not-be-contacted").unwrap();
+        let mut subfile = HttpSubFile::new(url, 10, 5);
+
+        assert_eq!(subfile.size(), 0);
+
+        let mut buf = vec![0_u8; 16];
+        let bytes_read = subfile.read(&mut buf).unwrap();
+        assert_eq!(bytes_read, 0);
+
+        // A second read should also return EOF.
+        let bytes_read = subfile.read(&mut buf).unwrap();
+        assert_eq!(bytes_read, 0);
+    }
+
+    #[test]
+    fn test_new_empty_with_client_returns_eof() {
+        let url = Url::parse("http://localhost:1/should-not-be-contacted").unwrap();
+        let mut subfile = HttpSubFile::new_empty_with_client(url, Client::new());
+
+        assert_eq!(subfile.size(), 0);
+
+        let mut buf = vec![0_u8; 16];
+        let bytes_read = subfile.read(&mut buf).unwrap();
+        assert_eq!(bytes_read, 0);
     }
 
     #[test]
