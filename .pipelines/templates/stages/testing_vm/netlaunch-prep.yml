@@ -56,8 +56,7 @@ steps:
           zstd \
           imagemagick
 
-      sudo python3 -m pip install virt-firmware -vvv
-      # sudo pip3 install virt-firmware -vvv
+      pip3 install virt-firmware -vvv
     displayName: Install virt-deploy dependencies
     retryCountOnTaskFailure: 3
 
