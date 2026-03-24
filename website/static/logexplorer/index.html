@@ -478,7 +478,7 @@
                     checked></label>
         </div>
 
-        <input type="text" id="commit-input" placeholder="Commit SHA (enables source links)" disabled>
+        <input type="text" id="commit-input" placeholder="Commit SHA or tag (enables source links)" disabled>
 
         <span class="stats" id="stats"></span>
     </div>
@@ -565,12 +565,18 @@
                     }
                 }
 
-                // Auto-detect commit hash from version message
+                // Auto-detect commit hash or tag from version message
                 if (!commitInput.value.trim() && allEntries.length > 0) {
                     const firstMsg = allEntries[0].message || "";
-                    const versionMatch = firstMsg.match(/Trident version:.*-v([0-9a-fA-F]+)/);
-                    if (versionMatch) {
-                        commitInput.value = versionMatch[1];
+                    const commitMatch = firstMsg.match(/Trident version:.*[.\-]v([0-9a-fA-F]+)/);
+                    if (commitMatch) {
+                        commitInput.value = commitMatch[1];
+                    } else {
+                        // Prod builds: MAJOR.MINOR.PATCH-RELEASE.DISTRO → use tag MAJOR.MINOR.PATCH
+                        const tagMatch = firstMsg.match(/Trident version:\s*(\d+\.\d+\.\d+)-\d+\.\w+/);
+                        if (tagMatch) {
+                            commitInput.value = tagMatch[1];
+                        }
                     }
                 }
 
@@ -673,10 +679,12 @@
             }
 
             function makeFileLink(file, line) {
-                const commit = commitInput.value.trim();
+                const ref = commitInput.value.trim();
                 const text = escapeHtml(file + ":" + line);
-                if (commit) {
-                    const url = `https://github.com/microsoft/trident/blob/${encodeURIComponent(commit)}/${encodeURIComponent(file)}#L${line}`;
+                if (ref) {
+                    // If ref looks like a semver tag (e.g. "0.21.0"), prefix with "v"
+                    const gitRef = /^\d+\.\d+\.\d+$/.test(ref) ? "v" + ref : ref;
+                    const url = `https://github.com/microsoft/trident/blob/${encodeURIComponent(gitRef)}/${encodeURIComponent(file)}#L${line}`;
                     return `<a href="${url}" target="_blank" rel="noopener">${text}</a>`;
                 }
                 return text;
