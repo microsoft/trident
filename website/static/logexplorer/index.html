@@ -439,6 +439,83 @@
             padding-right: 14px;
         }
 
+        /* Paste modal */
+        .paste-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+
+        .paste-modal {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 20px;
+            width: 640px;
+            max-width: 90vw;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .paste-modal h3 {
+            font-size: 15px;
+            font-weight: 600;
+        }
+
+        .paste-modal textarea {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 6px;
+            padding: 10px;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+            font-size: 12px;
+            resize: vertical;
+            min-height: 200px;
+            flex: 1;
+            outline: none;
+        }
+
+        .paste-modal textarea:focus {
+            border-color: var(--accent);
+        }
+
+        .paste-modal-buttons {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+
+        .paste-modal-buttons button {
+            padding: 6px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid var(--border);
+        }
+
+        .btn-cancel {
+            background: var(--surface-hover);
+            color: var(--text);
+        }
+
+        .btn-load {
+            background: var(--accent);
+            color: #0d1117;
+            border-color: var(--accent);
+        }
+
+        .btn-load:hover {
+            opacity: 0.85;
+        }
+
         #minimap {
             position: absolute;
             right: 8px;
@@ -486,6 +563,21 @@
     <div class="drop-zone" id="drop-zone">
         <div class="drop-zone-icon">📄</div>
         <div>Drop a <strong>.jsonl</strong> log file here or click <strong>Open Log File</strong></div>
+        <div style="margin-top: 8px; color: var(--text-muted); font-size: 13px;">or</div>
+        <button id="paste-btn"
+            style="background: var(--accent); color: #0d1117; border: none; border-radius: 6px; padding: 8px 18px; font-size: 13px; font-weight: 600; cursor: pointer;">📋
+            Paste from Clipboard</button>
+    </div>
+
+    <div class="paste-overlay" id="paste-overlay" style="display:none">
+        <div class="paste-modal">
+            <h3>Paste Log Lines</h3>
+            <textarea id="paste-textarea" placeholder="Paste JSONL log lines here…"></textarea>
+            <div class="paste-modal-buttons">
+                <button class="btn-cancel" id="paste-cancel">Cancel</button>
+                <button class="btn-load" id="paste-load">Load</button>
+            </div>
+        </div>
     </div>
 
     <div class="log-wrapper" id="log-wrapper">
@@ -513,6 +605,32 @@
             const commitInput = document.getElementById("commit-input");
             const statsEl = document.getElementById("stats");
             const levelFilters = document.getElementById("level-filters");
+            const pasteOverlay = document.getElementById("paste-overlay");
+            const pasteTextarea = document.getElementById("paste-textarea");
+
+            // --- Paste modal ---
+
+            document.getElementById("paste-btn").addEventListener("click", () => {
+                pasteOverlay.style.display = "flex";
+                pasteTextarea.value = "";
+                pasteTextarea.focus();
+            });
+
+            document.getElementById("paste-cancel").addEventListener("click", () => {
+                pasteOverlay.style.display = "none";
+            });
+
+            pasteOverlay.addEventListener("click", (e) => {
+                if (e.target === pasteOverlay) pasteOverlay.style.display = "none";
+            });
+
+            document.getElementById("paste-load").addEventListener("click", () => {
+                const text = pasteTextarea.value.trim();
+                if (text) {
+                    pasteOverlay.style.display = "none";
+                    parseLog(text);
+                }
+            });
 
             // --- File loading ---
 
