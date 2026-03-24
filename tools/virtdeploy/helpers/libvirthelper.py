@@ -136,6 +136,8 @@ class LibvirtHelper:
         self.net = Network(f"{prefix}-network", networkstr)
         self.vms = self._generate_vms_metadata(vm_templates)
         self.network_interface = network_interface
+        self.storage_path = self.DEFAULT_POOL_LOCATION
+        self.arm_vm = platform.machine().lower() in ("arm64", "aarch64")
         self.dryrun = dryrun
         self.env = jinja2.Environment(
             loader=jinja2.PackageLoader("virtdeploy"),
@@ -161,20 +163,26 @@ class LibvirtHelper:
         if hasattr(self, "conn") and self.conn is not None and self.conn.isAlive():
             self.conn.close()
 
+    def set_storage_path(self, storage_path):
+        self.storage_path = storage_path
+
+    def set_arm(self):
+        self.arm_vm = True
+
     def construct(self) -> List[VirtualMachine]:
         # Create the network to connect VMs to
         self._setup_network()
 
         # Setu-up the default pool, required by sushy
         default_pool = self._setup_pool(
-            LibvirtHelper.DEFAULT_POOL_NAME, LibvirtHelper.DEFAULT_POOL_LOCATION
+            LibvirtHelper.DEFAULT_POOL_NAME, self.storage_path
         )
 
         # Set up pool for our own use
         pool_name = f"{self.prefix}-pool"
         pool = self._setup_pool(
             pool_name,
-            pt.join(LibvirtHelper.DEFAULT_POOL_LOCATION, pool_name),
+            pt.join(self.storage_path, pool_name),
             delete_old=True,
         )
 
@@ -338,9 +346,8 @@ class LibvirtHelper:
         return volume
 
     def _setup_vms(self, pool: libvirt.virStoragePool) -> List[VirtualMachine]:
-        arm = platform.machine().lower() in ("arm64", "aarch64")
-        disk_dev_prefix = "vd" if arm else "sd"
-        vm_template = "vm_arm64.xml" if arm else "vm.xml"
+        disk_dev_prefix = "vd" if self.arm_vm else "sd"
+        vm_template = "vm_arm64.xml" if self.arm_vm else "vm.xml"
 
         for vm in self.vms:
             # Locate and destroy any old VMs

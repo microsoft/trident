@@ -42,8 +42,16 @@ parameters:
     type: boolean
     default: false
 
-  - name: architecture
-    displayName: Architecture for MIC
+  - name: pipelineArchitecture
+    displayName: Architecture for pipeline
+    type: string
+    values:
+      - arm64
+      - amd64
+    default: "amd64"
+
+  - name: targetArchitecture
+    displayName: Architecture for target images
     type: string
     values:
       - arm64
@@ -55,43 +63,42 @@ parameters:
     type: boolean
     default: false
 
+  - name: downloadTrident
+    displayName: "Download Trident RPMs"
+    type: boolean
+    default: true
+
   - name: timeoutInMinutes
     displayName: "Timeout for the job in minutes"
     type: number
     default: 20
-
 
 jobs:
   - job: PrepareImage_${{ replace(parameters.label, '-', '_') }}
     displayName: Prepare Image ${{ parameters.label }}
     timeoutInMinutes: ${{ parameters.timeoutInMinutes }}
     pool:
-      ${{ if eq(parameters.architecture, 'arm64') }}:
+      ${{ if eq(parameters.pipelineArchitecture, 'arm64') }}:
         type: linux
         name: azl3-hci-ARM64-1es-pool-westcentralus
         hostArchitecture: arm64
-      ${{ if eq(parameters.architecture, 'amd64') }}:
+      ${{ if eq(parameters.pipelineArchitecture, 'amd64') }}:
         type: linux
 
     variables:
       ob_outputDirectory: $(Build.SourcesDirectory)/out
       ob_artifactBaseName: "${{ parameters.labelPrefix }}${{ parameters.label }}"
-      ${{ if eq(parameters.architecture, 'amd64') }}:
+      ${{ if eq(parameters.targetArchitecture, 'amd64') }}:
         tridentArtifactName: trident-binaries
-        goToolsArtifactName: go-tools
-      ${{ if eq(parameters.architecture, 'arm64') }}:
+      ${{ if eq(parameters.targetArchitecture, 'arm64') }}:
         tridentArtifactName: trident-binaries-arm64
+      ${{ if eq(parameters.pipelineArchitecture, 'amd64') }}:
+        goToolsArtifactName: go-tools
+      ${{ if eq(parameters.pipelineArchitecture, 'arm64') }}:
         goToolsArtifactName: go-tools-arm64
 
     steps:
       - template: ../common_tasks/avoid-pypi-usage.yml
-
-      - task: DownloadPipelineArtifact@2
-        inputs:
-          buildType: current
-          artifactName: $(tridentArtifactName)
-          targetPath: "$(Build.ArtifactStagingDirectory)/trident"
-        displayName: Download Trident RPMs
 
       - ${{ if parameters.downloadGoTools }}:
         - task: DownloadPipelineArtifact@2
@@ -114,14 +121,15 @@ jobs:
 
       - template: ../common_tasks/find-base-image-version.yml
         parameters:
-          architecture: ${{ parameters.architecture }}
+          architecture: ${{ parameters.targetArchitecture }}
       - template: ./trident-testimg-template.yml
         parameters:
           target: ${{ parameters.makeTarget }}
           outputDirectory: "$(ob_outputDirectory)"
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
-          micArchitecture: ${{ parameters.architecture }}
+          micArchitecture: ${{ parameters.targetArchitecture }}
+          pipelineArchitecture: ${{ parameters.pipelineArchitecture }}
           tridentArtifactName: $(tridentArtifactName)
           baseimgBuildType: $(BASEIMG_BUILD_TYPE)
           baseimgVersion: $(BASEIMG_VERSION)
@@ -129,3 +137,4 @@ jobs:
           baseimgTypes: 
             - ${{ parameters.baseimgType }}
           useStagedSshKeys: ${{ parameters.useStagedSshKeys }}
+          downloadTrident: ${{ parameters.downloadTrident }}

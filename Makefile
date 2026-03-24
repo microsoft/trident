@@ -946,7 +946,8 @@ artifacts/%.cosi artifacts/%.iso artifacts/%.vhdx: $$(shell ./tests/images/testi
 	sudo ./tests/images/testimages.py build \
 		$* \
 		--output-dir ./artifacts \
-		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE))
+		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE)) \
+		$(if $(strip $(MIC_ARCHITECTURE)),--image-architecture $(MIC_ARCHITECTURE))
 
 MIC_CONTAINER_IMAGE ?= $(shell ./tests/images/testimages.py show-artifact customizer-container-full)
 artifacts/trident-functest.qcow2: $$(shell ./tests/images/testimages.py dependencies $$(basename $$(notdir $$@)))
@@ -1173,12 +1174,22 @@ imagecustomizer-dev-arm64:
 	make -C ../azure-linux-image-tools/toolkit go-imagecustomizer
 	../azure-linux-image-tools/toolkit/tools/imagecustomizer/container/build-container.sh -t imagecustomizer:dev -a arm64
 
-artifacts/ubuntu_amd64.vhdx:
+artifacts/ubuntu_2204_amd64.vhdx:
 	curl -LO https://cloud-images.ubuntu.com/releases/server/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img
-	qemu-img convert -O vhdx ubuntu-22.04-server-cloudimg-amd64.img artifacts/ubuntu_amd64.vhdx
+	qemu-img convert -O vhdx ubuntu-22.04-server-cloudimg-amd64.img artifacts/ubuntu_2204_amd64.vhdx
 	rm -f ubuntu-22.04-server-cloudimg-amd64.img
 
-artifacts/ubuntu_arm64.vhdx:
+artifacts/ubuntu_2204_arm64.vhdx:
 	curl -LO https://cloud-images.ubuntu.com/releases/server/22.04/release/ubuntu-22.04-server-cloudimg-arm64.img
-	qemu-img convert -O vhdx ubuntu-22.04-server-cloudimg-arm64.img artifacts/ubuntu_arm64.vhdx
+	qemu-img convert -O vhdx ubuntu-22.04-server-cloudimg-arm64.img artifacts/ubuntu_2204_arm64.vhdx
 	rm -f ubuntu-22.04-server-cloudimg-arm64.img
+
+artifacts/ubuntu_2404_amd64.vhdx:
+	curl -LO https://cloud-images.ubuntu.com/releases/server/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img
+	qemu-img convert -O vhdx ubuntu-24.04-server-cloudimg-amd64.img artifacts/ubuntu_2404_amd64.vhdx
+	rm -f ubuntu-24.04-server-cloudimg-amd64.img
+
+artifacts/ubuntu_2404_arm64.vhdx:
+	curl -LO https://cloud-images.ubuntu.com/releases/server/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img
+	qemu-img convert -O vhdx ubuntu-24.04-server-cloudimg-arm64.img artifacts/ubuntu_2404_arm64.vhdx
+	rm -f ubuntu-24.04-server-cloudimg-arm64.img

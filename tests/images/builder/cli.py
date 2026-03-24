@@ -133,6 +133,12 @@ def setup_parser_build(
         help="Configure Prism container image",
     )
     parser_build.add_argument(
+        "--image-architecture",
+        default=None,
+        type=str,
+        help="Provide image architecture override for cross-compile",
+    )
+    parser_build.add_argument(
         "--clones",
         type=positive_int,
         default=1,
@@ -260,6 +266,7 @@ def run_cmd(
             container_name=args.container,
             output_dir=args.output_dir,
             clones=args.clones,
+            image_architecture=args.image_architecture,
             dry_run=args.dry_run,
             force=args.force,
             download=args.download,

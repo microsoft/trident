@@ -43,6 +43,7 @@ def build_image(
     artifacts: ArtifactManifest,
     clones: int = 1,
     rpm_sources: List[Path] = [],
+    image_architecture: Optional[str] = None,
     dry_run: bool = False,
     force: bool = False,
 ):
@@ -72,6 +73,7 @@ def build_image(
                 image,
                 output_dir,
                 rpm_sources,
+                image_architecture,
                 dry_run,
                 force,
                 ca_nss_key_db=ca_nss_key_db,
@@ -84,6 +86,7 @@ def build_image(
                 output_dir,
                 clones,
                 rpm_sources,
+                image_architecture,
                 dry_run,
                 force,
                 ca_nss_key_db=ca_nss_key_db,
@@ -110,6 +113,7 @@ def build_one(
     image: ImageConfig,
     output_dir: Path,
     rpm_sources: List[Path] = [],
+    image_architecture: Optional[str] = None,
     dry_run: bool = False,
     force: bool = False,
     ca_nss_key_db: Optional[Path] = None,
@@ -145,6 +149,7 @@ def build_one(
             image.base_image.path,
             image.output_format.ic_name(),
             output_file,
+            image_architecture,
             dry_run,
         )
     else:
@@ -173,6 +178,7 @@ def build_one(
                     output_dir,
                     output_file,
                     ca_nss_key_db,
+                    image_architecture,
                     dry_run,
                 )
             else:
@@ -185,6 +191,7 @@ def build_one(
                     image.output_format.ic_name(),
                     output_file,
                     tmp_rpm_sources,
+                    image_architecture,
                     dry_run,
                 )
 
@@ -198,6 +205,7 @@ def build_with_clones(
     output_dir: Path,
     clones: int,
     rpm_sources: List[Path] = [],
+    image_architecture: Optional[str] = None,
     dry_run: bool = False,
     force: bool = False,
     ca_nss_key_db: Optional[Path] = None,
@@ -209,6 +217,7 @@ def build_with_clones(
         output_dir,
         clones,
         rpm_sources,
+        image_architecture,
         dry_run,
         force,
         ca_nss_key_db=ca_nss_key_db,
@@ -286,6 +295,7 @@ def build_clones(
     output_dir: Path,
     clones: int,
     rpm_sources: List[Path] = [],
+    image_architecture: Optional[str] = None,
     dry_run: bool = False,
     force: bool = False,
     ca_nss_key_db: Optional[Path] = None,
@@ -306,6 +316,7 @@ def build_clones(
                     clone_image(image, i),
                     output_dir,
                     rpm_sources,
+                    image_architecture,
                     dry_run,
                     force,
                     ca_nss_key_db,
@@ -392,6 +403,7 @@ def build_signed_image(
     output_dir: Path,
     output_file: Path,
     ca_nss_key_db: Path,
+    image_architecture: Optional[str] = None,
     dry_run: bool = False,
 ):
 
@@ -415,6 +427,7 @@ def build_signed_image(
         OutputFormat.RAW.ic_name(),
         unsigned_output_file,
         tmp_rpm_sources,
+        image_architecture,
         dry_run,
     )
 
