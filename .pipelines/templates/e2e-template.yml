@@ -500,7 +500,6 @@ stages:
       # Run direct streaming tests for amd64 with streaming images
       - template: direct-streaming-test.yml
         parameters:
-          architecture: amd64
           tridentRepoName: ${{ parameters.tridentRepoName }}
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
           micBuildType: ${{ parameters.micBuildType }}
