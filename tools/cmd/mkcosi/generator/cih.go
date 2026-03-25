@@ -30,21 +30,29 @@ import (
 type cihPartitionDef struct {
 	Name     string // GPT partition name (e.g. "USR-A")
 	TypeGUID string // Partition type GUID, lowercase
-	UUID     string // Unique partition GUID, lowercase
+	UUID     string // Unique partition GUID, lowercase; empty means "don't check"
 }
 
-// cihExpectedPartitions is the canonical partition table of a CIH image.
-// Every unique partition UUID listed here must be present for the image to
-// be recognized as CIH. Update this table when the layout changes.
-var cihExpectedPartitions = []cihPartitionDef{
-	//                                  Type GUID                                 Unique Partition UUID
-	{Name: "EFI-SYSTEM", TypeGUID: "c12a7328-f81f-11d2-ba4b-00a0c93ec93b", UUID: "a499fe13-3da0-4f2d-b168-b144169f1507"},
-	{Name: "BIOS-BOOT", TypeGUID: "21686148-6449-6e6f-744e-656564454649", UUID: "a91d25df-cb67-4946-99df-32a87a717bd2"},
+// cihRequiredPartitions lists the partitions that must be present (by name and
+// type GUID) for an image to be recognized as CIH. USR-A, USR-B, HASH-A, and
+// HASH-B have constant partition UUIDs that are additionally verified. Other
+// partition UUIDs vary across builds and are not checked.
+// HASH-A and HASH-B are optional — images without them are still valid CIH.
+var cihRequiredPartitions = []cihPartitionDef{
+	{Name: "EFI-SYSTEM", TypeGUID: "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"},
+	{Name: "BIOS-BOOT", TypeGUID: "21686148-6449-6e6f-744e-656564454649"},
 	{Name: "USR-A", TypeGUID: "5dfbf5f4-2848-4bac-aa5e-0d9a20b745a6", UUID: "7130c94a-213a-4e5a-8e26-6cce9662f132"},
 	{Name: "USR-B", TypeGUID: "5dfbf5f4-2848-4bac-aa5e-0d9a20b745a6", UUID: "e03dd35c-7c2d-4a47-b3fe-27f15780a57c"},
-	{Name: "OEM", TypeGUID: "0fc63daf-8483-4772-8e79-3d69d8477de4", UUID: "f5c21f12-c070-4be3-ac26-4d8d0f7bded6"},
-	{Name: "OEM-CONFIG", TypeGUID: "c95dc21a-df0e-4340-8d7b-26cbfa9a03e0", UUID: "88d1b7f5-d8a7-4b57-88ba-7e116fcb076d"},
-	{Name: "ROOT", TypeGUID: "4f68bce3-e8cd-4db1-96e7-fbcaf984b709", UUID: "78177793-13ad-443b-8125-1e3a1de14733"},
+	{Name: "OEM", TypeGUID: "0fc63daf-8483-4772-8e79-3d69d8477de4"},
+	{Name: "OEM-CONFIG", TypeGUID: "c95dc21a-df0e-4340-8d7b-26cbfa9a03e0"},
+	{Name: "ROOT", TypeGUID: "4f68bce3-e8cd-4db1-96e7-fbcaf984b709"},
+}
+
+// cihOptionalPartitions lists partitions that may or may not be present.
+// When present, both name+typeGUID and UUID must match.
+var cihOptionalPartitions = []cihPartitionDef{
+	{Name: "HASH-A", TypeGUID: "77ff5f63-e7b6-4633-acf4-1565b864c0e6", UUID: "b736baf1-cdb4-4535-beba-ddaaa30ad7b7"},
+	{Name: "HASH-B", TypeGUID: "77ff5f63-e7b6-4633-acf4-1565b864c0e6", UUID: "35bdf78b-c453-4661-98e6-f834f534ef5b"},
 }
 
 // cihMountPointByName maps CIH partition names to their logical mount points.
@@ -59,16 +67,41 @@ var cihMountPointByName = map[string]string{
 }
 
 // isCIHImage reports whether the parsed GPT matches the known CIH (Code
-// Integrity Host) partition layout by checking that every expected unique
-// partition UUID is present.
+// Integrity Host) partition layout. Required partitions must be present by
+// name+typeGUID; those with a non-empty UUID are also verified by UUID.
+// Optional partitions (HASH-A/HASH-B) are validated when present.
 func isCIHImage(parsedGPT *gpt.ParsedGPT) bool {
-	imageUUIDs := make(map[string]bool, len(parsedGPT.Partitions))
+	type partKey struct {
+		name     string
+		typeGUID string
+	}
+	// Map name+typeGUID -> partition UUID for checking.
+	partMap := make(map[partKey]string, len(parsedGPT.Partitions))
 	for _, p := range parsedGPT.Partitions {
-		imageUUIDs[strings.ToLower(p.UniquePartitionGUID.String())] = true
+		partMap[partKey{
+			name:     p.GetName(),
+			typeGUID: strings.ToLower(p.PartitionTypeGUID.String()),
+		}] = strings.ToLower(p.UniquePartitionGUID.String())
 	}
 
-	for _, expected := range cihExpectedPartitions {
-		if !imageUUIDs[expected.UUID] {
+	// All required partitions must be present with matching name+typeGUID.
+	// Those with a specified UUID must also match.
+	for _, req := range cihRequiredPartitions {
+		key := partKey{name: req.Name, typeGUID: req.TypeGUID}
+		actualUUID, found := partMap[key]
+		if !found {
+			return false
+		}
+		if req.UUID != "" && actualUUID != req.UUID {
+			return false
+		}
+	}
+
+	// Optional partitions: if present, their UUID must match.
+	for _, opt := range cihOptionalPartitions {
+		key := partKey{name: opt.Name, typeGUID: opt.TypeGUID}
+		actualUUID, found := partMap[key]
+		if found && opt.UUID != "" && actualUUID != opt.UUID {
 			return false
 		}
 	}
@@ -88,6 +121,13 @@ func populateCIHFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []
 	var usrAMountPath string
 	var espMountPath string
 	var espMountPoint string
+	var usrAImageIdx int = -1
+
+	// Build a lookup from partition name to partitionInfo for HASH-A.
+	partByName := make(map[string]*partitionInfo, len(partInfos))
+	for i := range partInfos {
+		partByName[partInfos[i].entry.GetName()] = &partInfos[i]
+	}
 
 	for i := range partInfos {
 		pi := &partInfos[i]
@@ -146,6 +186,7 @@ func populateCIHFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []
 
 		// Create the Image entry.
 		partType := uuidToPartitionType(pi.entry.PartitionTypeGUID)
+		imageIdx := len(cosiMeta.Images)
 		cosiMeta.Images = append(cosiMeta.Images, metadata.Image{
 			Image:      *pi.imageFile,
 			MountPoint: mountPoint,
@@ -166,6 +207,7 @@ func populateCIHFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []
 		switch partName {
 		case "USR-A":
 			usrAMountPath = mountPath
+			usrAImageIdx = imageIdx
 		case "EFI-SYSTEM":
 			espMountPath = mountPath
 			espMountPoint = mountPoint
@@ -200,6 +242,35 @@ func populateCIHFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []
 		}
 	}
 
+	// If HASH-A is present, populate dm-verity metadata for USR-A.
+	if hashAPart, ok := partByName["HASH-A"]; ok && usrAImageIdx >= 0 {
+		log.Info("CIH: HASH-A partition found, extracting dm-verity root hash")
+
+		// Decompress both USR-A and HASH-A to extract the root hash.
+		usrADecompressed := filepath.Join(tmpDir, fmt.Sprintf("verity-data-%d.raw", partByName["USR-A"].partNumber))
+		if err := decompressFile(partByName["USR-A"].imageFile.SourceFile, usrADecompressed); err != nil {
+			return fmt.Errorf("failed to decompress USR-A for verity: %w", err)
+		}
+		defer os.Remove(usrADecompressed)
+
+		hashADecompressed := filepath.Join(tmpDir, fmt.Sprintf("verity-hash-%d.raw", hashAPart.partNumber))
+		if err := decompressFile(hashAPart.imageFile.SourceFile, hashADecompressed); err != nil {
+			return fmt.Errorf("failed to decompress HASH-A for verity: %w", err)
+		}
+		defer os.Remove(hashADecompressed)
+
+		roothash, err := extractVerityRoothash(usrADecompressed, hashADecompressed)
+		if err != nil {
+			return fmt.Errorf("failed to extract dm-verity root hash: %w", err)
+		}
+
+		log.WithField("roothash", roothash).Info("CIH: extracted dm-verity root hash for USR-A")
+		cosiMeta.Images[usrAImageIdx].Verity = &metadata.Verity{
+			Image:    *hashAPart.imageFile,
+			Roothash: roothash,
+		}
+	}
+
 	// Detect bootloader. CIH uses systemd-boot with UKI.
 	if espMountPath != "" {
 		ukiEntries := findUkiEntries(espMountPath, espMountPoint)
@@ -223,4 +294,25 @@ func populateCIHFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []
 	}
 
 	return fmt.Errorf("no supported bootloader found in CIH image")
+}
+
+// extractVerityRoothash extracts the dm-verity root hash from a data device
+// and its hash device using veritysetup dump.
+func extractVerityRoothash(dataDevice string, hashDevice string) (string, error) {
+	cmd := exec.Command("veritysetup", "dump", dataDevice, hashDevice)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("veritysetup dump failed: %w", err)
+	}
+
+	for _, line := range strings.Split(string(output), "\n") {
+		if after, found := strings.CutPrefix(line, "Root hash:"); found {
+			roothash := strings.TrimSpace(after)
+			if roothash != "" {
+				return roothash, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("root hash not found in veritysetup dump output")
 }
