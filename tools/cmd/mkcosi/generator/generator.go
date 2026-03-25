@@ -64,7 +64,8 @@ type partitionInfo struct {
 }
 
 // CosiFromImage creates a COSI structure from a raw or fixed VHD disk image.
-// The image must contain a valid GPT partition table and use GRUB as the bootloader.
+// The image must contain a valid GPT partition table and a supported bootloader
+// (GRUB or systemd-boot with UKI).
 // Returns a Cosi object with all metadata populated and compressed images in a temporary directory.
 // The caller is responsible for calling Close() on the returned Cosi to clean up the temporary directory.
 func CosiFromImage(imagePath string, arch metadata.OsArchitecture) (*cosi.Cosi, error) {
@@ -1081,6 +1082,12 @@ func findUkiEntries(espMountPath string, espMountPoint string) []metadata.System
 
 		cmdline := extractUkiSection(absHostPath, ".cmdline")
 		kernel := extractUkiSection(absHostPath, ".uname")
+
+		// Only treat this file as a UKI if at least one expected section was extracted.
+		if cmdline == "" && kernel == "" {
+			log.WithField("path", absFsPath).Debug("Skipping EFI/Linux file with no extractable UKI sections")
+			continue
+		}
 
 		entries = append(entries, metadata.SystemDBootEntry{
 			Type:    metadata.SystemDBootEntryTypeUkiStandalone,
