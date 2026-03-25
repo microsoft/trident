@@ -116,6 +116,7 @@ stages:
               sudo free -h
               sudo df -h
               sudo ls -l /              
+              sudo lsblk           
             displayName: "env info"
           - bash: |
               set -eux

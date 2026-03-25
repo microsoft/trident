@@ -78,7 +78,8 @@ stages:
               set -eux
               sudo free -h
               sudo df -h
-              sudo ls -l /              
+              sudo ls -l /   
+              sudo lsblk           
             displayName: "env info"
 
             # Download all test images
@@ -139,6 +140,7 @@ stages:
               sudo free -h
               sudo df -h
               sudo ls -l /              
+              sudo lsblk           
             displayName: "env info"
 
           - bash: |
