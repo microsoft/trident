@@ -217,26 +217,12 @@ func populateCIHFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []
 		}
 	}
 
-	// If HASH-A is present, extract dm-verity root hash and pair with USR-A.
-	// The root hash is read directly from the raw HASH-A partition file.
-	if hashAIdx, ok := nameToIdx["HASH-A"]; ok {
-		if usrAIdx, ok := nameToIdx["USR-A"]; ok {
-			log.Info("CIH: HASH-A partition found, extracting dm-verity root hash")
-
-			roothash, err := extractVerityRoothash(partInfos[hashAIdx].rawPath)
-			if err != nil {
-				return fmt.Errorf("failed to extract dm-verity root hash: %w", err)
-			}
-
-			log.WithField("roothash", roothash).Info("CIH: extracted dm-verity root hash for USR-A")
-			partInfos[usrAIdx].verityHashPartIdx = hashAIdx
-			partInfos[usrAIdx].verityRoothash = roothash
-		}
-	}
-
-	// Detect bootloader. CIH uses systemd-boot with UKI.
+	// Detect bootloader. CIH uses systemd-boot with UKI. This must happen
+	// before verity extraction because the USR root hash is embedded in the
+	// UKI command line (usrhash=<hex>).
+	var ukiEntries []metadata.SystemDBootEntry
 	if espMountPath != "" {
-		ukiEntries := findUkiEntries(espMountPath, espMountPoint)
+		ukiEntries = findUkiEntries(espMountPath, espMountPoint)
 		if len(ukiEntries) > 0 {
 			log.WithField("count", len(ukiEntries)).Info("CIH: found systemd-boot with UKI entries")
 			cosiMeta.Bootloader = metadata.Bootloader{
@@ -245,38 +231,49 @@ func populateCIHFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []
 					Entries: ukiEntries,
 				},
 			}
-			return nil
-		}
-
-		if checkGrubPresence(espMountPath) {
+		} else if checkGrubPresence(espMountPath) {
 			cosiMeta.Bootloader = metadata.Bootloader{
 				Type: metadata.BootloaderTypeGrub,
 			}
-			return nil
 		}
 	}
 
-	return fmt.Errorf("no supported bootloader found in CIH image")
-}
-
-// extractVerityRoothash extracts the dm-verity root hash from a hash device
-// using veritysetup dump. The dump command reads the verity superblock from the
-// hash device which contains the root hash.
-func extractVerityRoothash(hashDevice string) (string, error) {
-	cmd := exec.Command("veritysetup", "dump", hashDevice)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("veritysetup dump failed: %w\noutput: %s", err, strings.TrimSpace(string(output)))
+	if cosiMeta.Bootloader.Type == "" {
+		return fmt.Errorf("no supported bootloader found in CIH image")
 	}
 
-	for _, line := range strings.Split(string(output), "\n") {
-		if after, found := strings.CutPrefix(line, "Root hash:"); found {
-			roothash := strings.TrimSpace(after)
-			if roothash != "" {
-				return roothash, nil
+	// If HASH-A is present, pair it with USR-A and extract the dm-verity
+	// root hash from the UKI command line. The root hash is NOT stored on
+	// the hash device itself; it is passed via the "usrhash=" kernel
+	// parameter embedded in the UKI .cmdline section.
+	if hashAIdx, ok := nameToIdx["HASH-A"]; ok {
+		if usrAIdx, ok := nameToIdx["USR-A"]; ok {
+			log.Info("CIH: HASH-A partition found, extracting dm-verity root hash from UKI cmdline")
+
+			roothash := extractUsrhashFromUKIEntries(ukiEntries)
+			if roothash == "" {
+				return fmt.Errorf("HASH-A partition present but usrhash= not found in any UKI command line")
+			}
+
+			log.WithField("roothash", roothash).Info("CIH: extracted dm-verity root hash for USR-A")
+			partInfos[usrAIdx].verityHashPartIdx = hashAIdx
+			partInfos[usrAIdx].verityRoothash = roothash
+		}
+	}
+
+	return nil
+}
+
+// extractUsrhashFromUKIEntries searches the UKI boot entries for a
+// "usrhash=<hex>" kernel command-line parameter and returns the hash value.
+// Returns an empty string if not found.
+func extractUsrhashFromUKIEntries(entries []metadata.SystemDBootEntry) string {
+	for _, entry := range entries {
+		for _, field := range strings.Fields(entry.Cmdline) {
+			if after, found := strings.CutPrefix(field, "usrhash="); found {
+				return after
 			}
 		}
 	}
-
-	return "", fmt.Errorf("root hash not found in veritysetup dump output: %s", strings.TrimSpace(string(output)))
+	return ""
 }
