@@ -39,6 +39,15 @@ parameters:
     type: string
     default: BuildingTools
 
+  # Define checkout name for the Trident repo. If this is
+  # loaded from a pipeline hosted in the Trident repo, use
+  # `self`. If this is loaded from a pipeline hosted in a
+  # different repo, use the repository name defined in the
+  # pipeline resources.
+  - name: tridentRepoName
+    type: string
+    default: self
+
 stages:
   - stage: ${{ parameters.stageName }}
     displayName: Building Tools for ${{ parameters.architecture }}
@@ -62,10 +71,14 @@ stages:
             artifactName: go-tools-arm64
           ${{ if eq(parameters.architecture, 'amd64') }}:
             artifactName: go-tools
-          ob_outputDirectory: $(Build.SourcesDirectory)/$(artifactName)
+          ob_outputDirectory: /tmp/$(artifactName)
           ob_artifactBaseName: $(artifactName)
 
         steps:
+          - template: ../common_tasks/checkout_trident.yml
+            parameters:
+              tridentRepoName: ${{ parameters.tridentRepoName }}
+              tridentSourceDirectoryVariableName: TRIDENT_SOURCE_DIR
           - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../common_tasks/update-protoc.yml
             parameters:
@@ -88,7 +101,7 @@ stages:
                   make bin/netlaunch
                   mkdir -p $(ob_outputDirectory)
                   mv bin/netlaunch $(ob_outputDirectory)
-                workingDirectory: $(Build.SourcesDirectory)
+                workingDirectory: $(TRIDENT_SOURCE_DIR)
                 displayName: "Building netlaunch"
 
           - ${{ if eq(parameters.buildNetlaunch, true) }}:
@@ -97,7 +110,7 @@ stages:
                   make bin/netlisten
                   mkdir -p $(ob_outputDirectory)
                   mv bin/netlisten $(ob_outputDirectory)
-                workingDirectory: $(Build.SourcesDirectory)
+                workingDirectory: $(TRIDENT_SOURCE_DIR)
                 displayName: "Building netlisten"
 
           - ${{ if eq(parameters.buildMiniproxy, true) }}:
@@ -106,7 +119,7 @@ stages:
                   make bin/miniproxy
                   mkdir -p $(ob_outputDirectory)
                   mv bin/miniproxy $(ob_outputDirectory)
-                workingDirectory: $(Build.SourcesDirectory)
+                workingDirectory: $(TRIDENT_SOURCE_DIR)
                 displayName: "Building miniproxy"
 
           - ${{ if eq(parameters.buildMkcosi, true) }}:
@@ -115,7 +128,7 @@ stages:
                   make bin/mkcosi
                   mkdir -p $(ob_outputDirectory)
                   mv bin/mkcosi $(ob_outputDirectory)
-                workingDirectory: $(Build.SourcesDirectory)
+                workingDirectory: $(TRIDENT_SOURCE_DIR)
                 displayName: "Building mkcosi"
 
           - ${{ if eq(parameters.buildStormTrident, true) }}:
@@ -124,7 +137,7 @@ stages:
                   make bin/storm-trident
                   mkdir -p $(ob_outputDirectory)
                   mv bin/storm-trident $(ob_outputDirectory)
-                workingDirectory: $(Build.SourcesDirectory)
+                workingDirectory: $(TRIDENT_SOURCE_DIR)
                 displayName: "Building storm-trident"
 
           - ${{ if eq(parameters.buildVirtdeploy, true) }}:
@@ -133,7 +146,7 @@ stages:
                   make bin/virtdeploy
                   mkdir -p $(ob_outputDirectory)
                   mv bin/virtdeploy $(ob_outputDirectory)
-                workingDirectory: $(Build.SourcesDirectory)
+                workingDirectory: $(TRIDENT_SOURCE_DIR)
                 displayName: "Building virtdeploy"
 
           - ${{ if eq(parameters.buildRcpAgent, true) }}:
@@ -142,6 +155,5 @@ stages:
                   make bin/rcp-agent
                   mkdir -p $(ob_outputDirectory)
                   mv bin/rcp-agent $(ob_outputDirectory)
-                workingDirectory: $(Build.SourcesDirectory)
+                workingDirectory: $(TRIDENT_SOURCE_DIR)
                 displayName: "Building rcp-agent"
-

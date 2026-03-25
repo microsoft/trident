@@ -161,6 +161,13 @@ def setup_parser_build(
         help="By default, the builder will try to download any missing artifacts, "
         "this flag will disable that behavior.",
     )
+    parser_build.add_argument(
+        "--use-rpms-in-place",
+        action="store_true",
+        help="By default, the rpms provided will be copied to a temp location for building. "
+        "Setting this flag will eliminate this copy, but there will be some build artifacts "
+        "left in the rpm folders.",
+    )
 
 
 def setup_parser_list_files(
@@ -270,6 +277,7 @@ def run_cmd(
             dry_run=args.dry_run,
             force=args.force,
             download=args.download,
+            use_rpms_in_place=args.use_rpms_in_place,
         )
     elif subcommand == SubCommand.LIST_FILES:
         run.list_files(

@@ -541,7 +541,7 @@ $(ARTIFACTS_TEST_IMAGE_DIR)/azl-installer.iso: \
 	mkdir -p $(AZL_INSTALLER_ISO_DIR)/bin
 	cp bin/liveinstaller $(AZL_INSTALLER_ISO_DIR)/bin/
 	# Build ISO
-	./tests/images/testimages.py build azl-installer --output-dir $(ARTIFACTS_TEST_IMAGE_DIR)
+	./tests/images/testimages.py build azl-installer --output-dir $(ARTIFACTS_TEST_IMAGE_DIR) $(if $(strip $(USE_RPMS_IN_PLACE)),--use-rpms-in-place)
 
 .PHONY: validate
 validate: $(TRIDENT_CONFIG) bin/trident
@@ -953,6 +953,7 @@ artifacts/%.cosi artifacts/%.iso artifacts/%.vhdx: $$(shell ./tests/images/testi
 		--output-dir ./artifacts \
 		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE)) \
 		$(if $(strip $(MIC_ARCHITECTURE)),--image-architecture $(MIC_ARCHITECTURE))
+		$(if $(strip $(USE_RPMS_IN_PLACE)),--use-rpms-in-place)
 
 MIC_CONTAINER_IMAGE ?= $(shell ./tests/images/testimages.py show-artifact customizer-container-full)
 artifacts/trident-functest.qcow2: $$(shell ./tests/images/testimages.py dependencies $$(basename $$(notdir $$@)))
@@ -963,7 +964,8 @@ artifacts/trident-functest.qcow2: $$(shell ./tests/images/testimages.py dependen
 	sudo ./tests/images/testimages.py build \
 		$(basename $(notdir $@)) \
 		--output-dir ./artifacts \
-		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE))
+		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE)) \
+		$(if $(strip $(USE_RPMS_IN_PLACE)),--use-rpms-in-place)
 
 # TRIDENT VM UPDATE IMAGES
 

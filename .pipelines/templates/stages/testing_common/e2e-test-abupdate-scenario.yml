@@ -40,6 +40,9 @@ parameters:
   #
   # Support all of the e2e-test-run.yml parameters
   #
+  - name: tridentSourceDirectory
+    type: string
+
   - name: buildPurpose
     type: string
 
@@ -128,7 +131,7 @@ steps:
       fi
 
       ./bin/netlisten --force-color $NETLISTEN_CONFIG_ARGS \
-          -m $(Build.SourcesDirectory)/trident-ab-update-metrics-target-os-${{ parameters.updateScenarioTargetOs }}-${{ parameters.updateScenarioName }}.jsonl \
+          -m ${{ parameters.tridentSourceDirectory }}/trident-ab-update-metrics-target-os-${{ parameters.updateScenarioTargetOs }}-${{ parameters.updateScenarioName }}.jsonl \
           --full-logstream ./logstream-full.log \
           -s "${{ parameters.artifactsDirectory }}" \
           -p ${{ parameters.netlistenPort }} > ./stage-finalize-ab-update-target-os-${{ parameters.updateScenarioTargetOs }}-${{ parameters.updateScenarioName }}.log 2>&1 &
@@ -173,7 +176,7 @@ steps:
         echo "##vso[task.setvariable variable=version]$new_version"
       fi
 
-    workingDirectory: $(Build.SourcesDirectory)
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "🔄${{ parameters.updateEmoji }} Stage and finalize A/B update into target OS ${{ parameters.updateScenarioTargetOs }} testing ${{ parameters.updateScenarioName }}"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
     ${{ if eq(parameters.deploymentEnvironment, 'bareMetal') }}:
@@ -189,6 +192,7 @@ steps:
             --artifacts-folder "$(ob_outputDirectory)"
       displayName: "📷 Capture ${{ parameters.updateScenarioName }} update screenshot"
       condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
+      workingDirectory: ${{ parameters.tridentSourceDirectory }}
 
   - bash: |
       set -eux
@@ -196,11 +200,12 @@ steps:
       sudo ./bin/storm-trident helper display-logs -a \
           --netlisten-config "${{ parameters.netlistenConfigFile }}" \
           --serial-log-artifact-file-name "stage-finalize-ab-update-target-os-${{ parameters.updateScenarioTargetOs }}-${{ parameters.updateScenarioName }}-serial.log" \
-          --trident-log-file "$(Build.SourcesDirectory)/stage-finalize-ab-update-target-os-${{ parameters.updateScenarioTargetOs }}-${{ parameters.updateScenarioName }}.log" \
-          --trident-trace-log-file "$(Build.SourcesDirectory)/logstream-full.log" \
+          --trident-log-file "${{ parameters.tridentSourceDirectory }}/stage-finalize-ab-update-target-os-${{ parameters.updateScenarioTargetOs }}-${{ parameters.updateScenarioName }}.log" \
+          --trident-trace-log-file "${{ parameters.tridentSourceDirectory }}/logstream-full.log" \
           --artifacts-folder "$(ob_outputDirectory)"
     displayName: "📄 ${{ parameters.updateEmoji }} A/B update deployment logs for target OS ${{ parameters.updateScenarioTargetOs }}"
     condition: and(succeededOrFailed(), ne(variables['abActiveVolume'], 'null'))
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
 
   - bash: |
       set -eux
@@ -213,7 +218,7 @@ steps:
           --configuration ${{ parameters.tridentConfigPath }} \
           --ab-active-volume ${{ parameters.expectActiveVolume }}
     timeoutInMinutes: 5
-    workingDirectory: $(Build.SourcesDirectory)/tests/e2e_tests
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}/tests/e2e_tests
     displayName: "🔬${{ parameters.updateEmoji }} Run Trident E2E tests after A/B update into target OS ${{ parameters.updateScenarioTargetOs }} testing ${{ parameters.updateScenarioName }}"
     condition: and(succeeded(), ne(variables['abActiveVolume'], 'null'))
 

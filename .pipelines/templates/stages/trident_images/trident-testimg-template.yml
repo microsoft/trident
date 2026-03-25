@@ -1,7 +1,9 @@
 parameters:
+  - name: tridentSourceDirectory
+    type: string
+
   - name: outputDirectory
     type: string
-    default: "$(Build.SourcesDirectory)/output"
 
   - name: target
     type: string
@@ -47,6 +49,11 @@ parameters:
 
   - name: baseimgVersion
     displayName: Base Image Version
+    type: string
+    default: "*.*.*"
+
+  - name: rpmsVersion
+    displayName: RPM Version
     type: string
     default: "*.*.*"
 
@@ -116,15 +123,15 @@ steps:
       - bash: |
           set -eux
 
-          mkdir -p $(Build.SourcesDirectory)/artifacts
-          ssh-keygen -t rsa -b 2048 -f $(Build.SourcesDirectory)/artifacts/id_rsa -q -N ""
+          mkdir -p ${{ parameters.tridentSourceDirectory }}/artifacts
+          ssh-keygen -t rsa -b 2048 -f ${{ parameters.tridentSourceDirectory }}/artifacts/id_rsa -q -N ""
         displayName: Set up SSH Keys
   - ${{ if eq(parameters.useStagedSshKeys, true) }}:
       - bash: |
           set -eux
 
-          mkdir -p $(Build.SourcesDirectory)/artifacts
-          cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* $(Build.SourcesDirectory)/artifacts/
+          mkdir -p ${{ parameters.tridentSourceDirectory }}/artifacts
+          cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* ${{ parameters.tridentSourceDirectory }}/artifacts/
         displayName: Copy SSH Keys
 
   - script: |
@@ -136,7 +143,9 @@ steps:
       set -eux
 
       if which tdnf; then
-        sudo tdnf install -y veritysetup squashfs-tools lsof
+        # nss-tools provides certutil while pesign provides efikeygen & pesign,
+        # which are required for producing a signed image to enable SecureBoot
+        sudo tdnf install -y veritysetup squashfs-tools lsof nss-tools pesign
         sudo systemctl start docker
       else
         # Ubuntu is used for building and testing of VM images suitable for
@@ -210,17 +219,19 @@ steps:
           imageVersion: ${{ parameters.baseimgVersion }}
           azureLinuxVersion: ${{ parameters.baseimgAzureLinuxVersion }}
 
-  # For dev builds, the RPMs are not neccessarily published, so download them here
-  - ${{ if eq(parameters.baseimgBuildType, 'dev') }}:
-      - template: common/rpms-download-template.yaml@platform-pipelines
-        parameters:
-          imageVersion: ${{ parameters.baseimgVersion }}
-          azureLinuxVersion: ${{ parameters.baseimgAzureLinuxVersion }}
+  # For dev builds, the RPMs are not neccessarily published, so download them here. The
+  # parameter is set based on a runtime variable, so we cannot use ${{ if }}, so the
+  # template is always run and contains logic to skip if not needed.
+  - template: common/rpms-download-template.yaml@platform-pipelines
+    parameters:
+      rpmsVersion: ${{ parameters.rpmsVersion }}
+      azureLinuxVersion: ${{ parameters.baseimgAzureLinuxVersion }}
+      runtimeBuildType: ${{ parameters.baseimgBuildType }}
 
   - bash: |
       set -ex
 
-      base_dir='$(Build.SourcesDirectory)/artifacts'
+      base_dir='${{ parameters.tridentSourceDirectory }}/artifacts'
 
       mkdir -p $base_dir
       # Check if there are any .vhdx files in the images directory and move them
@@ -237,17 +248,18 @@ steps:
         tar -xvf $(Build.ArtifactStagingDirectory)/rpms/rpms.tar.gz \
           --strip-components=2 \
           -C $base_dir/rpm-overrides
+        rm $(Build.ArtifactStagingDirectory)/rpms/rpms.tar.gz
       fi
 
       find $(Build.ArtifactStagingDirectory)
       if [ -d "$(Build.ArtifactStagingDirectory)/trident" ]; then
-        rpm_dir='$(Build.SourcesDirectory)/bin/RPMS'
+        rpm_dir='${{ parameters.tridentSourceDirectory }}/bin/RPMS'
         mkdir -p $rpm_dir
         cp -r $(Build.ArtifactStagingDirectory)/trident/* $rpm_dir/ || echo 'no rpms to copy'
         rm -rf $(Build.ArtifactStagingDirectory)/trident
       fi
 
-    workingDirectory: $(Build.SourcesDirectory)
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Prepare and move requirements"
 
   - script: |
@@ -261,6 +273,7 @@ steps:
 
       if [[ "${{ parameters.micBuildType }}" == "dev" ]]; then
         export MIC_CONTAINER_IMAGE="imagecustomizer:dev"
+        # export USE_RPMS_IN_PLACE=1
       fi
 
       # Allow cross-platform (i.e. amd64 pipeline creating arm64 images)
@@ -271,13 +284,13 @@ steps:
 
       # Compress the full image & delete the uncompressed image
       make ${{ parameters.target }}
-    workingDirectory: $(Build.SourcesDirectory)
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Build Test Image"
 
   - script: |
       set -ex
       mkdir -p "${{ parameters.outputDirectory }}"
-      
+
       # images that have build/**/ format are expected to have multiple output files
       if [ -d "build/${{ parameters.target }}" ]; then
         sudo mv -v build/${{ parameters.target }}/* "${{ parameters.outputDirectory }}/"
@@ -285,5 +298,5 @@ steps:
         # Everything else is a file
         sudo mv -v "${{ parameters.target }}" "${{ parameters.outputDirectory }}/"
       fi
-    workingDirectory: $(Build.SourcesDirectory)
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Copy artifacts to output directory"

@@ -1,4 +1,13 @@
 parameters:
+  # Define checkout name for the Trident repo. If this is
+  # loaded from a pipeline hosted in the Trident repo, use
+  # `self`. If this is loaded from a pipeline hosted in a
+  # different repo, use the repository name defined in the
+  # pipeline resources.
+  - name: tridentRepoName
+    type: string
+    default: self
+
   - name: label
     type: string
     displayName: "Label for the image"
@@ -22,9 +31,9 @@ parameters:
     displayName: MIC Build Type
     type: string
     values:
-    - dev
-    - preview
-    - release
+      - dev
+      - preview
+      - release
     default: release
 
   - name: micVersion
@@ -45,10 +54,14 @@ jobs:
       type: linux
 
     variables:
-      ob_outputDirectory: $(Build.SourcesDirectory)/out
+      ob_outputDirectory: /tmp/out
       ob_artifactBaseName: "image-${{ parameters.label }}"
 
     steps:
+      - template: ../common_tasks/checkout_trident.yml
+        parameters:
+          tridentRepoName: ${{ parameters.tridentRepoName }}
+          tridentSourceDirectoryVariableName: TRIDENT_SOURCE_DIR
       - template: ../common_tasks/avoid-pypi-usage.yml
 
       - task: DownloadPipelineArtifact@2
@@ -67,18 +80,21 @@ jobs:
 
       - template: ../common_tasks/find-base-image-version.yml
         parameters:
+          tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
           architecture: "arm64"
 
       - template: ./trident-testimg-template.yml
         parameters:
+          tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
           target: ${{ parameters.makeTarget }}
           outputDirectory: "$(ob_outputDirectory)"
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
           baseimgBuildType: $(BASEIMG_BUILD_TYPE)
           baseimgVersion: $(BASEIMG_VERSION)
+          rpmsVersion: $(RPMS_VERSION)
           baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
-          baseimgTypes: 
+          baseimgTypes:
             - ${{ parameters.baseimgType }}
           useStagedSshKeys: ${{ parameters.useStagedSshKeys }}
           micArchitecture: arm64
