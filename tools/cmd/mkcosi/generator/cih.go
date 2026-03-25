@@ -112,6 +112,8 @@ func isCIHImage(parsedGPT *gpt.ParsedGPT) bool {
 // populateCIHFilesystemMetadata fills COSI metadata for a CIH image.
 // It uses partition names (rather than type GUIDs) to determine mount points
 // and extracts os-release from the USR-A partition instead of root.
+// Image entries are NOT created here — they are built by the caller after
+// compression.
 func populateCIHFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []partitionInfo, tmpDir string) error {
 	mountTmpDir := filepath.Join(tmpDir, "mounts")
 	if err := os.MkdirAll(mountTmpDir, 0755); err != nil {
@@ -121,12 +123,11 @@ func populateCIHFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []
 	var usrAMountPath string
 	var espMountPath string
 	var espMountPoint string
-	var usrAImageIdx int = -1
 
-	// Build a lookup from partition name to partitionInfo for HASH-A.
-	partByName := make(map[string]*partitionInfo, len(partInfos))
+	// Build a lookup from partition name to index for verity pairing.
+	nameToIdx := make(map[string]int, len(partInfos))
 	for i := range partInfos {
-		partByName[partInfos[i].entry.GetName()] = &partInfos[i]
+		nameToIdx[partInfos[i].entry.GetName()] = i
 	}
 
 	for i := range partInfos {
@@ -143,16 +144,9 @@ func populateCIHFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []
 			continue
 		}
 
-		// Decompress the partition image.
-		decompressedPath := filepath.Join(tmpDir, fmt.Sprintf("partition-%d.raw", pi.partNumber))
-		if err := decompressFile(pi.imageFile.SourceFile, decompressedPath); err != nil {
-			return fmt.Errorf("failed to decompress partition %d (%s): %w", pi.partNumber, partName, err)
-		}
-
-		// Get filesystem type and UUID via blkid.
-		fsType, fsUuid, err := getFsData(decompressedPath)
+		// Get filesystem type and UUID via blkid on the raw file.
+		fsType, fsUuid, err := getFsData(pi.rawPath)
 		if err != nil {
-			os.Remove(decompressedPath)
 			log.WithError(err).WithFields(log.Fields{
 				"partition": pi.partNumber,
 				"name":      partName,
@@ -163,38 +157,20 @@ func populateCIHFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []
 		pi.fsUuid = fsUuid
 		pi.mountPoint = mountPoint
 
-		// Mount the partition read-only.
+		// Mount the raw partition read-only.
 		mountPath := filepath.Join(mountTmpDir, fmt.Sprintf("part%d", pi.partNumber))
 		if err := os.MkdirAll(mountPath, 0755); err != nil {
-			os.Remove(decompressedPath)
 			return fmt.Errorf("failed to create mount point: %w", err)
 		}
 
-		if err := exec.Command("mount", "-o", "loop,ro", decompressedPath, mountPath).Run(); err != nil {
-			os.Remove(decompressedPath)
+		if err := exec.Command("mount", "-o", "loop,ro", pi.rawPath, mountPath).Run(); err != nil {
 			log.WithError(err).WithFields(log.Fields{
 				"partition": pi.partNumber,
 				"name":      partName,
 			}).Warn("CIH: could not mount partition, skipping")
 			continue
 		}
-
-		defer func(mp, dp string) {
-			exec.Command("umount", mp).Run()
-			os.Remove(dp)
-		}(mountPath, decompressedPath)
-
-		// Create the Image entry.
-		partType := uuidToPartitionType(pi.entry.PartitionTypeGUID)
-		imageIdx := len(cosiMeta.Images)
-		cosiMeta.Images = append(cosiMeta.Images, metadata.Image{
-			Image:      *pi.imageFile,
-			MountPoint: mountPoint,
-			FsType:     fsType,
-			FsUuid:     fsUuid,
-			PartType:   partType,
-			Verity:     nil,
-		})
+		defer exec.Command("umount", mountPath).Run()
 
 		log.WithFields(log.Fields{
 			"partition":  pi.partNumber,
@@ -207,7 +183,6 @@ func populateCIHFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []
 		switch partName {
 		case "USR-A":
 			usrAMountPath = mountPath
-			usrAImageIdx = imageIdx
 		case "EFI-SYSTEM":
 			espMountPath = mountPath
 			espMountPoint = mountPoint
@@ -242,32 +217,20 @@ func populateCIHFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []
 		}
 	}
 
-	// If HASH-A is present, populate dm-verity metadata for USR-A.
-	if hashAPart, ok := partByName["HASH-A"]; ok && usrAImageIdx >= 0 {
-		log.Info("CIH: HASH-A partition found, extracting dm-verity root hash")
+	// If HASH-A is present, extract dm-verity root hash and pair with USR-A.
+	// The root hash is read directly from the raw HASH-A partition file.
+	if hashAIdx, ok := nameToIdx["HASH-A"]; ok {
+		if usrAIdx, ok := nameToIdx["USR-A"]; ok {
+			log.Info("CIH: HASH-A partition found, extracting dm-verity root hash")
 
-		// Decompress both USR-A and HASH-A to extract the root hash.
-		usrADecompressed := filepath.Join(tmpDir, fmt.Sprintf("verity-data-%d.raw", partByName["USR-A"].partNumber))
-		if err := decompressFile(partByName["USR-A"].imageFile.SourceFile, usrADecompressed); err != nil {
-			return fmt.Errorf("failed to decompress USR-A for verity: %w", err)
-		}
-		defer os.Remove(usrADecompressed)
+			roothash, err := extractVerityRoothash(partInfos[hashAIdx].rawPath)
+			if err != nil {
+				return fmt.Errorf("failed to extract dm-verity root hash: %w", err)
+			}
 
-		hashADecompressed := filepath.Join(tmpDir, fmt.Sprintf("verity-hash-%d.raw", hashAPart.partNumber))
-		if err := decompressFile(hashAPart.imageFile.SourceFile, hashADecompressed); err != nil {
-			return fmt.Errorf("failed to decompress HASH-A for verity: %w", err)
-		}
-		defer os.Remove(hashADecompressed)
-
-		roothash, err := extractVerityRoothash(usrADecompressed, hashADecompressed)
-		if err != nil {
-			return fmt.Errorf("failed to extract dm-verity root hash: %w", err)
-		}
-
-		log.WithField("roothash", roothash).Info("CIH: extracted dm-verity root hash for USR-A")
-		cosiMeta.Images[usrAImageIdx].Verity = &metadata.Verity{
-			Image:    *hashAPart.imageFile,
-			Roothash: roothash,
+			log.WithField("roothash", roothash).Info("CIH: extracted dm-verity root hash for USR-A")
+			partInfos[usrAIdx].verityHashPartIdx = hashAIdx
+			partInfos[usrAIdx].verityRoothash = roothash
 		}
 	}
 
@@ -296,13 +259,14 @@ func populateCIHFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []
 	return fmt.Errorf("no supported bootloader found in CIH image")
 }
 
-// extractVerityRoothash extracts the dm-verity root hash from a data device
-// and its hash device using veritysetup dump.
-func extractVerityRoothash(dataDevice string, hashDevice string) (string, error) {
-	cmd := exec.Command("veritysetup", "dump", dataDevice, hashDevice)
-	output, err := cmd.Output()
+// extractVerityRoothash extracts the dm-verity root hash from a hash device
+// using veritysetup dump. The dump command reads the verity superblock from the
+// hash device which contains the root hash.
+func extractVerityRoothash(hashDevice string) (string, error) {
+	cmd := exec.Command("veritysetup", "dump", hashDevice)
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("veritysetup dump failed: %w", err)
+		return "", fmt.Errorf("veritysetup dump failed: %w\noutput: %s", err, strings.TrimSpace(string(output)))
 	}
 
 	for _, line := range strings.Split(string(output), "\n") {
@@ -314,5 +278,5 @@ func extractVerityRoothash(dataDevice string, hashDevice string) (string, error)
 		}
 	}
 
-	return "", fmt.Errorf("root hash not found in veritysetup dump output")
+	return "", fmt.Errorf("root hash not found in veritysetup dump output: %s", strings.TrimSpace(string(output)))
 }

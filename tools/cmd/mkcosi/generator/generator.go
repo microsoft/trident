@@ -55,12 +55,18 @@ func isVHDFixed(file *os.File) (bool, error) {
 
 // partitionInfo holds information about a partition during processing.
 type partitionInfo struct {
-	entry      gpt.PartitionEntry
-	imageFile  *metadata.ImageFile
-	partNumber uint32
-	fsType     string
-	fsUuid     string
-	mountPoint string
+	entry            gpt.PartitionEntry
+	imageFile        *metadata.ImageFile // populated after compression (Phase 3)
+	partNumber       uint32
+	rawPath          string // path to the raw (possibly shrunk) partition file
+	uncompressedSize uint64
+	fsType           string
+	fsUuid           string
+	mountPoint       string
+	// verityHashPartIdx is the index into the partitionInfos slice of the
+	// hash partition paired with this data partition. -1 means no verity.
+	verityHashPartIdx int
+	verityRoothash    string
 }
 
 // CosiFromImage creates a COSI structure from a raw or fixed VHD disk image.
@@ -162,10 +168,12 @@ func CosiFromImage(imagePath string, arch metadata.OsArchitecture) (*cosi.Cosi, 
 		return sortedPartitions[i].StartingLBA < sortedPartitions[j].StartingLBA
 	})
 
-	// Track mount points for filesystem scanning
+	// Track partition data for multi-phase processing.
 	partitionInfos := make([]partitionInfo, 0, len(sortedPartitions))
 
-	// Extract and compress each partition
+	// Phase 1: Extract and shrink partitions. Raw files are kept on disk
+	// so that the metadata-extraction step can read them directly instead of
+	// doing a wasteful compress→decompress round trip.
 	for i, partition := range sortedPartitions {
 		partNumber := uint32(i + 1) // 1-based partition numbers
 
@@ -175,32 +183,26 @@ func CosiFromImage(imagePath string, arch metadata.OsArchitecture) (*cosi.Cosi, 
 			"startLBA":  partition.StartingLBA,
 			"endLBA":    partition.EndingLBA,
 			"size":      partition.SizeInBytes(parsedGPT.LBASize),
-		}).Info("Processing partition")
+		}).Info("Extracting partition")
 
-		imageFile, err := extractAndCompressPartition(file, &partition, parsedGPT.LBASize, imagesDir, partNumber, tmpDir)
+		rawPath, uncompressedSize, err := extractAndShrinkPartition(file, &partition, parsedGPT.LBASize, tmpDir, partNumber)
 		if err != nil {
 			cleanup()
 			return nil, fmt.Errorf("failed to extract partition %d: %w", partNumber, err)
 		}
 
-		// Add partition region
-		pn := partNumber
-		cosiMetadata.Disk.GptRegions = append(cosiMetadata.Disk.GptRegions, metadata.GptDiskRegion{
-			Image:  *imageFile,
-			Type:   metadata.RegionTypePartition,
-			Number: &pn,
-		})
-
 		partitionInfos = append(partitionInfos, partitionInfo{
-			entry:      partition,
-			imageFile:  imageFile,
-			partNumber: partNumber,
+			entry:             partition,
+			partNumber:        partNumber,
+			rawPath:           rawPath,
+			uncompressedSize:  uncompressedSize,
+			verityHashPartIdx: -1,
 		})
 	}
 
-	// Detect if this is a CIH (Code Integrity Host) image and use
-	// the appropriate metadata population strategy. CIH images use a
-	// hermetic /usr partition and require special handling.
+	// Phase 2: Gather filesystem metadata from the raw (uncompressed)
+	// partition images — blkid, mount, os-release, packages, bootloader,
+	// and dm-verity root hashes.
 	if isCIHImage(parsedGPT) {
 		log.Info("Detected CIH (Code Integrity Host) image")
 		err = populateCIHFilesystemMetadata(&cosiMetadata, partitionInfos, tmpDir)
@@ -210,6 +212,57 @@ func CosiFromImage(imagePath string, arch metadata.OsArchitecture) (*cosi.Cosi, 
 	if err != nil {
 		cleanup()
 		return nil, fmt.Errorf("failed to populate filesystem metadata: %w", err)
+	}
+
+	// Phase 3: Compress partitions and build GptRegions.
+	for i := range partitionInfos {
+		pi := &partitionInfos[i]
+
+		log.WithFields(log.Fields{
+			"partition": pi.partNumber,
+			"name":      pi.entry.GetName(),
+		}).Info("Compressing partition")
+
+		imageFile, err := compressPartition(pi.rawPath, pi.uncompressedSize, imagesDir, pi.partNumber)
+		if err != nil {
+			cleanup()
+			return nil, fmt.Errorf("failed to compress partition %d: %w", pi.partNumber, err)
+		}
+		pi.imageFile = imageFile
+		os.Remove(pi.rawPath)
+
+		pn := pi.partNumber
+		cosiMetadata.Disk.GptRegions = append(cosiMetadata.Disk.GptRegions, metadata.GptDiskRegion{
+			Image:  *imageFile,
+			Type:   metadata.RegionTypePartition,
+			Number: &pn,
+		})
+	}
+
+	// Phase 4: Build Image entries from the metadata gathered in Phase 2.
+	for i := range partitionInfos {
+		pi := &partitionInfos[i]
+		if pi.mountPoint == "" || pi.imageFile == nil {
+			continue
+		}
+
+		img := metadata.Image{
+			Image:      *pi.imageFile,
+			MountPoint: pi.mountPoint,
+			FsType:     pi.fsType,
+			FsUuid:     pi.fsUuid,
+			PartType:   uuidToPartitionType(pi.entry.PartitionTypeGUID),
+		}
+
+		if pi.verityHashPartIdx >= 0 {
+			hashPi := &partitionInfos[pi.verityHashPartIdx]
+			img.Verity = &metadata.Verity{
+				Image:    *hashPi.imageFile,
+				Roothash: pi.verityRoothash,
+			}
+		}
+
+		cosiMetadata.Images = append(cosiMetadata.Images, img)
 	}
 
 	// Verify we have a supported bootloader
@@ -248,30 +301,32 @@ func extractAndCompressGPTRegion(file *os.File, parsedGPT *gpt.ParsedGPT, output
 	}, nil
 }
 
-// extractAndCompressPartition extracts a partition, optionally shrinks ext filesystems,
-// and compresses it with zstd.
-func extractAndCompressPartition(file *os.File, partition *gpt.PartitionEntry, lbaSize uint64, outputDir string, partNumber uint32, tmpDir string) (*metadata.ImageFile, error) {
+// extractAndShrinkPartition extracts a partition from the image and optionally
+// shrinks ext filesystems. The raw (possibly shrunk) file is kept on disk so
+// the caller can gather metadata before compressing.
+func extractAndShrinkPartition(file *os.File, partition *gpt.PartitionEntry, lbaSize uint64, tmpDir string, partNumber uint32) (string, uint64, error) {
 	startOffset := partition.StartOffset(lbaSize)
 	partitionSize := partition.SizeInBytes(lbaSize)
 
-	// First, extract the raw partition to a temporary file
 	rawPartPath := filepath.Join(tmpDir, fmt.Sprintf("partition-%d.raw", partNumber))
 	err := extractRegionToFile(file, int64(startOffset), int64(partitionSize), rawPartPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to extract partition: %w", err)
+		return "", 0, fmt.Errorf("failed to extract partition: %w", err)
 	}
-	defer os.Remove(rawPartPath)
 
-	// Check if this is an ext filesystem and shrink it if possible
 	shrunkSize, err := shrinkExtFilesystem(rawPartPath, partitionSize)
 	if err != nil {
 		log.WithError(err).WithField("partition", partNumber).Debug("Could not shrink filesystem, using full partition")
 		shrunkSize = partitionSize
 	}
 
-	// Compress the (possibly shrunk) partition
+	return rawPartPath, shrunkSize, nil
+}
+
+// compressPartition compresses a raw partition file with zstd.
+func compressPartition(rawPath string, uncompressedSize uint64, outputDir string, partNumber uint32) (*metadata.ImageFile, error) {
 	outputPath := filepath.Join(outputDir, fmt.Sprintf("partition-%d.raw.zst", partNumber))
-	compressedSize, sha384Hash, err := compressFileRegionToFile(rawPartPath, int64(shrunkSize), outputPath)
+	compressedSize, sha384Hash, err := compressFileRegionToFile(rawPath, int64(uncompressedSize), outputPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compress partition: %w", err)
 	}
@@ -279,7 +334,7 @@ func extractAndCompressPartition(file *os.File, partition *gpt.PartitionEntry, l
 	return &metadata.ImageFile{
 		Path:             fmt.Sprintf("images/partition-%d.raw.zst", partNumber),
 		CompressedSize:   compressedSize,
-		UncompressedSize: shrunkSize,
+		UncompressedSize: uncompressedSize,
 		Sha384:           sha384Hash,
 		SourceFile:       outputPath,
 	}, nil
@@ -508,27 +563,25 @@ func compressRegionToFile(file *os.File, offset int64, size int64, outputPath st
 	return uint64(stat.Size()), uint64(written), fmt.Sprintf("%x", sha384Hash.Sum(nil)), nil
 }
 
-// populateFilesystemMetadata decompresses partitions, mounts them, and extracts metadata.
+// populateFilesystemMetadata mounts the raw partition images, extracts
+// metadata (fs type, UUID, os-release, packages, bootloader), and populates
+// each partitionInfo's fields. Image entries are NOT created here — they are
+// built by the caller after compression.
 func populateFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []partitionInfo, tmpDir string) error {
-	// Track which partition is the root filesystem
 	var rootMountPath string
 	var espMountPath string
-	var espMountPoint string // logical mount point of the ESP (e.g. /boot/efi)
+	var espMountPoint string
 
-	// First pass: get filesystem info and mount points using blkid
+	mountTmpDir := filepath.Join(tmpDir, "mounts")
+	if err := os.MkdirAll(mountTmpDir, 0755); err != nil {
+		return fmt.Errorf("failed to create mounts directory: %w", err)
+	}
+
 	for i := range partInfos {
 		pi := &partInfos[i]
 
-		// Decompress the partition to a temporary file
-		decompressedPath := filepath.Join(tmpDir, fmt.Sprintf("partition-%d.raw", pi.partNumber))
-		err := decompressFile(pi.imageFile.SourceFile, decompressedPath)
-		if err != nil {
-			return fmt.Errorf("failed to decompress partition %d: %w", pi.partNumber, err)
-		}
-		defer os.Remove(decompressedPath)
-
-		// Get filesystem type and UUID using blkid
-		fsType, fsUuid, err := getFsData(decompressedPath)
+		// Get filesystem type and UUID using blkid on the raw file.
+		fsType, fsUuid, err := getFsData(pi.rawPath)
 		if err != nil {
 			log.WithError(err).WithField("partition", pi.partNumber).Warn("Could not get filesystem data, skipping")
 			continue
@@ -536,67 +589,25 @@ func populateFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []par
 
 		pi.fsType = fsType
 		pi.fsUuid = fsUuid
-
-		// Determine mount point based on partition type GUID
 		pi.mountPoint = determineMountPoint(pi.entry.PartitionTypeGUID)
 
-		log.WithFields(log.Fields{
-			"partition":  pi.partNumber,
-			"fsType":     pi.fsType,
-			"fsUuid":     pi.fsUuid,
-			"mountPoint": pi.mountPoint,
-		}).Debug("Got filesystem info")
-	}
-
-	// Second pass: mount filesystems and extract metadata
-	mountTmpDir := filepath.Join(tmpDir, "mounts")
-	if err := os.MkdirAll(mountTmpDir, 0755); err != nil {
-		return fmt.Errorf("failed to create mounts directory: %w", err)
-	}
-
-	// Track mounted partitions with their mount paths for later processing
-	type mountedPartition struct {
-		info      *partitionInfo
-		mountPath string
-		imageIdx  int // index in cosiMeta.Images
-	}
-	var mountedParts []mountedPartition
-
-	for i := range partInfos {
-		pi := &partInfos[i]
-
-		if pi.fsType == "" || pi.fsType == "UNKNOWN" {
+		if fsType == "" || fsType == "UNKNOWN" {
 			continue
 		}
 
-		// Decompress for mounting
-		decompressedPath := filepath.Join(tmpDir, fmt.Sprintf("partition-%d.raw", pi.partNumber))
-		err := decompressFile(pi.imageFile.SourceFile, decompressedPath)
-		if err != nil {
-			return fmt.Errorf("failed to decompress partition %d for mounting: %w", pi.partNumber, err)
-		}
-
-		// Mount the filesystem
+		// Mount the raw partition read-only.
 		mountPath := filepath.Join(mountTmpDir, fmt.Sprintf("part%d", pi.partNumber))
 		if err := os.MkdirAll(mountPath, 0755); err != nil {
-			os.Remove(decompressedPath)
 			return fmt.Errorf("failed to create mount point: %w", err)
 		}
 
-		err = exec.Command("mount", "-o", "loop,ro", decompressedPath, mountPath).Run()
-		if err != nil {
-			os.Remove(decompressedPath)
+		if err := exec.Command("mount", "-o", "loop,ro", pi.rawPath, mountPath).Run(); err != nil {
 			log.WithError(err).WithField("partition", pi.partNumber).Warn("Could not mount partition")
 			continue
 		}
+		defer exec.Command("umount", mountPath).Run()
 
-		// Remember to unmount and cleanup
-		defer func(mp, dp string) {
-			exec.Command("umount", mp).Run()
-			os.Remove(dp)
-		}(mountPath, decompressedPath)
-
-		// Detect mount point if not already determined from partition type
+		// Detect mount point from content if not determined by type GUID.
 		if pi.mountPoint == "" {
 			pi.mountPoint = detectMountPointFromContent(mountPath)
 			log.WithFields(log.Fields{
@@ -605,33 +616,18 @@ func populateFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []par
 			}).Debug("Detected mount point from filesystem content")
 		}
 
-		// Skip partitions with unknown or empty mount points
 		if pi.mountPoint == "" || pi.mountPoint == "/mnt/unknown" {
 			log.WithField("partition", pi.partNumber).Debug("Skipping partition with unknown mount point")
 			continue
 		}
 
-		// Create the Image entry
-		partType := uuidToPartitionType(pi.entry.PartitionTypeGUID)
+		log.WithFields(log.Fields{
+			"partition":  pi.partNumber,
+			"fsType":     pi.fsType,
+			"fsUuid":     pi.fsUuid,
+			"mountPoint": pi.mountPoint,
+		}).Debug("Got filesystem info")
 
-		imageIdx := len(cosiMeta.Images)
-		img := metadata.Image{
-			Image:      *pi.imageFile,
-			MountPoint: pi.mountPoint,
-			FsType:     pi.fsType,
-			FsUuid:     pi.fsUuid,
-			PartType:   partType,
-			Verity:     nil,
-		}
-		cosiMeta.Images = append(cosiMeta.Images, img)
-
-		mountedParts = append(mountedParts, mountedPartition{
-			info:      pi,
-			mountPath: mountPath,
-			imageIdx:  imageIdx,
-		})
-
-		// Track root and ESP mount paths
 		if pi.mountPoint == "/" {
 			rootMountPath = mountPath
 		} else if pi.mountPoint == "/boot/efi" || pi.mountPoint == "/efi" {
@@ -640,7 +636,7 @@ func populateFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []par
 		}
 	}
 
-	// Extract os-release from root filesystem
+	// Extract os-release from root filesystem.
 	if rootMountPath != "" {
 		osRelease, err := extractOsRelease(rootMountPath)
 		if err != nil {
@@ -650,7 +646,6 @@ func populateFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []par
 			cosiMeta.OsArch = detectArchitecture(osRelease)
 		}
 
-		// Extract installed packages
 		packages, err := extractPackages(rootMountPath)
 		if err != nil {
 			log.WithError(err).Warn("Could not extract package list")
@@ -678,7 +673,6 @@ func populateFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []par
 		}
 	}
 
-	// Fall back to GRUB detection
 	grubFound := false
 	if espMountPath != "" {
 		grubFound = checkGrubPresence(espMountPath)
