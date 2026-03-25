@@ -160,6 +160,12 @@ stages:
             displayName: "Creating virt-deploy VM"
 
           - bash: |
+              set -eux
+              sudo free -h
+              sudo df -h
+              sudo ls -l /              
+            displayName: "env info"
+          - bash: |
               set -euxo pipefail
               MAX_FAILURES_FLAG=""
 

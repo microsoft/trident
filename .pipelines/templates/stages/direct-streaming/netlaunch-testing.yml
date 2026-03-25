@@ -74,7 +74,14 @@ stages:
             value: 4000
 
         steps:
-          # Download all test images
+          - bash: |
+              set -eux
+              sudo free -h
+              sudo df -h
+              sudo ls -l /              
+            displayName: "env info"
+
+            # Download all test images
           - template: ../testing_common/download-test-images.yml
             parameters:
               installerISO: $(installerISOName)
@@ -126,6 +133,13 @@ stages:
               ./tools/virt-deploy create --mem $MEMORY_SIZE --disks $MAX_DISK_SIZE,32 $ARM_OVERRIDE_ARG
             workingDirectory: $(tridentSourceDirectory)
             displayName: "Creating virt-deploy VM"
+
+          - bash: |
+              set -eux
+              sudo free -h
+              sudo df -h
+              sudo ls -l /              
+            displayName: "env info"
 
           - bash: |
               set -euxo pipefail
