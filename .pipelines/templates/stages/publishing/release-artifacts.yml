@@ -76,24 +76,28 @@ stages:
               - template: ../common_tasks/rustup.yml
               - template: ../common_tasks/cargo-auth.yml
 
-              # Ensure the cargo config has the [source.BMP_PublicPackages]
-              # section needed for source replacement to work. Older commits
-              # may only define BMP_PublicPackages under [registries], which
-              # is not sufficient for [source.crates-io] replace-with.
+              # The RustInstaller@1 task sets up CARGO_HOME/config.toml with
+              # source replacement (crates-io → ms-crates-io) pointing to the
+              # BMP_PublicPackages feed. The project-level .cargo/config.toml
+              # may also define [source.crates-io] replace-with pointing to a
+              # different name ("BMP_PublicPackages"). These two competing
+              # source replacements confuse Cargo, causing it to fall back to
+              # the real crates.io. Fix: remove the project-level source
+              # replacement so the CARGO_HOME config takes effect.
               - script: |
                   set -eux
                   CONFIG=".cargo/config.toml"
-                  if ! grep -q '\[source\.BMP_PublicPackages\]' "$CONFIG"; then
-                    REGISTRY_URL=$(grep 'BMP_PublicPackages' "$CONFIG" | grep -oP 'sparse\+https://[^"]+' | head -1)
-                    cat >> "$CONFIG" <<EOF
+                  echo "=== Before ==="
+                  cat "$CONFIG"
 
-                  [source.BMP_PublicPackages]
-                  registry = "${REGISTRY_URL}"
-                  EOF
-                    echo "Patched $CONFIG with [source.BMP_PublicPackages]"
-                    cat "$CONFIG"
-                  fi
-                displayName: "Ensure cargo source replacement config"
+                  # Remove [source.crates-io] and [source.BMP_PublicPackages]
+                  # sections so the CARGO_HOME source replacement is used.
+                  sed -i '/^\[source\.crates-io\]/,/^\[/{/^\[source\.crates-io\]/d;/^replace-with/d;/^\[/!d}' "$CONFIG"
+                  sed -i '/^\[source\.BMP_PublicPackages\]/,/^\[/{/^\[source\.BMP_PublicPackages\]/d;/^registry/d;/^\[/!d}' "$CONFIG"
+
+                  echo "=== After ==="
+                  cat "$CONFIG"
+                displayName: "Remove conflicting source replacement config"
                 workingDirectory: $(Build.SourcesDirectory)
 
               - script: |
