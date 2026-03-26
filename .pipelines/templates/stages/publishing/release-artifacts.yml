@@ -62,10 +62,6 @@ stages:
             displayName: "Package RPMs into tarball"
 
           - ${{ if ne(parameters.sourceCommit, '') }}:
-              - template: ../common_tasks/update-protoc.yml
-              - template: ../common_tasks/rustup.yml
-              - template: ../common_tasks/cargo-auth.yml
-
               - script: |
                   set -eux
 
@@ -75,6 +71,10 @@ stages:
                   git reset --hard "${{ parameters.sourceCommit }}"
                 displayName: "Reset source code to specified commit"
                 workingDirectory: $(Build.SourcesDirectory)
+
+              - template: ../common_tasks/update-protoc.yml
+              - template: ../common_tasks/rustup.yml
+              - template: ../common_tasks/cargo-auth.yml
 
               - script: |
                   set -eux
