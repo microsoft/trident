@@ -6,5 +6,8 @@ BMP_PublicPackages = { index = "sparse+https://pkgs.dev.azure.com/mariner-org/EC
 PolarCoreArtifacts = { index = "sparse+https://pkgs.dev.azure.com/mariner-org/polar/_packaging/PolarCoreArtifacts/Cargo/index/" }
 TridentDev = { index = "sparse+https://pkgs.dev.azure.com/mariner-org/ECF/_packaging/TridentDev/Cargo/index/" }
 
+[source.BMP_PublicPackages]
+registry = "sparse+https://pkgs.dev.azure.com/mariner-org/ECF/_packaging/BMP_PublicPackages/Cargo/index/"
+
 [source.crates-io]
 replace-with = "BMP_PublicPackages"
