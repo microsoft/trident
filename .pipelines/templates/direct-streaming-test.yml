@@ -155,6 +155,8 @@ stages:
           - ${{ if eq(parameters.pipelineArchitecture, 'amd64') }}:
             - BuildingTools
           - PrepareSSHKeys
+          - ${{ if ne(parameters.dependsOnStage, '') }}:
+            - ${{ parameters.dependsOnStage }}
         jobs:
           # Build direct streaming COSI VHD
           - template: stages/trident_images/build-image.yml
