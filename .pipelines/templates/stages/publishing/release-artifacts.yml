@@ -98,6 +98,20 @@ stages:
 
               - script: |
                   set -eux
+                  echo "=== Project config ==="
+                  cat .cargo/config.toml
+                  echo ""
+                  echo "=== CARGO_HOME ==="
+                  echo "${CARGO_HOME:-not set}"
+                  echo "=== CARGO_HOME config ==="
+                  cat "${CARGO_HOME:-/nonexistent}/config.toml" 2>/dev/null || echo "(no CARGO_HOME config)"
+                  echo "=== Relevant env vars ==="
+                  env | grep -iE 'CARGO_SOURCE|CARGO_REGISTRIES|CARGO_HOME' | sort || true
+                displayName: "Debug cargo config"
+                workingDirectory: $(Build.SourcesDirectory)
+
+              - script: |
+                  set -eux
 
                   # Get the raw version from the cargo file to provide a clean
                   # version string for the source tarball and cargo vendor
