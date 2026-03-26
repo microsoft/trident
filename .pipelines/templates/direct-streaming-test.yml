@@ -171,6 +171,7 @@ stages:
               baseimgType: ubuntu_${{ubuntuVersion}}_${{ parameters.targetArchitecture }}
               downloadTrident: false
               timeoutInMinutes: 30
+              tridentRepoName: ${{ parameters.tridentRepoName }}
       # Run netlaunch test to validate direct streaming installer
       - template: stages/direct-streaming/netlaunch-testing.yml
         parameters:
@@ -178,6 +179,8 @@ stages:
           buildImageStage: BuildImagesForDirectStreaming_ubuntu_${{ubuntuVersion}}_${{ parameters.targetArchitecture }}
           testImageName: ubuntu-direct-streaming-testimage-${{ubuntuVersion}}-${{ parameters.targetArchitecture }}
           streamingImageScenario: ubuntu
+          tridentRepoName: ${{ parameters.tridentRepoName }}
+          testSecureBoot: ${{ parameters.testSecureBoot }}
 
   - ${{ if and(parameters.testGB200StreamingImage, eq(parameters.targetArchitecture, 'arm64')) }}:
     - stage: BuildImagesForDirectStreaming_gb200_${{ parameters.targetArchitecture }}
