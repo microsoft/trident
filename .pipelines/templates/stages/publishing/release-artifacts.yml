@@ -76,6 +76,26 @@ stages:
               - template: ../common_tasks/rustup.yml
               - template: ../common_tasks/cargo-auth.yml
 
+              # Ensure the cargo config has the [source.BMP_PublicPackages]
+              # section needed for source replacement to work. Older commits
+              # may only define BMP_PublicPackages under [registries], which
+              # is not sufficient for [source.crates-io] replace-with.
+              - script: |
+                  set -eux
+                  CONFIG=".cargo/config.toml"
+                  if ! grep -q '\[source\.BMP_PublicPackages\]' "$CONFIG"; then
+                    REGISTRY_URL=$(grep 'BMP_PublicPackages' "$CONFIG" | grep -oP 'sparse\+https://[^"]+' | head -1)
+                    cat >> "$CONFIG" <<EOF
+
+                  [source.BMP_PublicPackages]
+                  registry = "${REGISTRY_URL}"
+                  EOF
+                    echo "Patched $CONFIG with [source.BMP_PublicPackages]"
+                    cat "$CONFIG"
+                  fi
+                displayName: "Ensure cargo source replacement config"
+                workingDirectory: $(Build.SourcesDirectory)
+
               - script: |
                   set -eux
 
