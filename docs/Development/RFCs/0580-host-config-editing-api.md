@@ -36,7 +36,10 @@ This workflow is functional but has several drawbacks:
   host configuration, even when making a single-field change such as updating
   the image URL for an A/B update. This is the most common update scenario in
   practice—tests and automation pipelines overwhelmingly only change
-  `image.url` and `image.sha384`.
+  `image.url` and `image.sha384`. For this specific case, the `Update` API
+  offers a fixed shortcut that accepts only the image section, but the client
+  must still construct a valid YAML document with the correct structure, and
+  this shortcut does not generalize to other sections of the configuration.
 - **No incremental validation**: The client has no way to validate individual
   changes before submitting the complete configuration. Errors are only
   discovered at submission time.
@@ -852,13 +855,13 @@ The generated schema enables several capabilities:
 
 The macro must handle several serde attributes that affect the path namespace:
 
-| Serde Attribute | Macro Behavior |
-|---|---|
-| `#[serde(rename_all = "camelCase")]` | Use the camelCase name in the schema, not the Rust field name. |
-| `#[serde(rename = "...")]` | Use the explicit rename. |
-| `#[serde(flatten)]` | Inline the flattened type's children into the parent. (e.g., `Script.source: ScriptSource` is flattened, so `content` and `path` appear as direct children of `Script`.) |
-| `#[serde(skip)]` | Omit from the schema entirely. |
-| `#[serde(default)]` | Mark as optional in the schema (DELETE is safe). |
+| Serde Attribute                      | Macro Behavior                                                                                                                                                           |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `#[serde(rename_all = "camelCase")]` | Use the camelCase name in the schema, not the Rust field name.                                                                                                           |
+| `#[serde(rename = "...")]`           | Use the explicit rename.                                                                                                                                                 |
+| `#[serde(flatten)]`                  | Inline the flattened type's children into the parent. (e.g., `Script.source: ScriptSource` is flattened, so `content` and `path` appear as direct children of `Script`.) |
+| `#[serde(skip)]`                     | Omit from the schema entirely.                                                                                                                                           |
+| `#[serde(default)]`                  | Mark as optional in the schema (DELETE is safe).                                                                                                                         |
 
 For types that use custom `Deserialize` implementations (e.g., `Check` in
 `health.rs`, `NetworkConfig` for netplan), the macro cannot automatically
@@ -877,14 +880,14 @@ that triggered the error, and a descriptive message.
 Each error code corresponds to a specific stage in the edit pipeline. They are
 ordered to reflect the sequence in which checks occur:
 
-| Code | Name | Pipeline Stage | Meaning |
-|---|---|---|---|
-| `1` | `SESSION_NOT_FOUND` | Session lookup | The `session_id` does not correspond to an active session. It may have expired, been discarded, or been consumed by `ApplyEditSession`. |
-| `2` | `POLICY_DENIED` | Policy check | The path targets a section that is restricted by the current edit policy (e.g., `storage.*`). The `message` field includes which policy rule matched. |
-| `3` | `INVALID_PATH` | Path parsing | The path string is syntactically malformed (e.g., unmatched brackets, empty segments) or references a field name that does not exist in the host configuration schema. |
-| `4` | `PATH_NOT_FOUND` | Path resolution | The path is syntactically valid and exists in the schema, but does not resolve to a node in the current document. For example: an array index is out of bounds, or a `[key=value]` selector matches no element. |
-| `5` | `INVALID_VALUE` | Value application | The provided `value` string could not be parsed as valid YAML, or the parsed YAML does not match the expected type for the target field (e.g., setting a string field to a YAML mapping). |
-| `6` | `VALIDATION_FAILED` | Semantic validation | The edit was syntactically applied to the Value tree and the result deserialized into a `HostConfiguration` struct, but the struct-level semantic validation (`HostConfiguration::validate()`) rejected it. The `validation_error` field carries the full `TridentError` from the validation logic. |
+| Code | Name                | Pipeline Stage      | Meaning                                                                                                                                                                                                                                                                                             |
+| ---- | ------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `1`  | `SESSION_NOT_FOUND` | Session lookup      | The `session_id` does not correspond to an active session. It may have expired, been discarded, or been consumed by `ApplyEditSession`.                                                                                                                                                             |
+| `2`  | `POLICY_DENIED`     | Policy check        | The path targets a section that is restricted by the current edit policy (e.g., `storage.*`). The `message` field includes which policy rule matched.                                                                                                                                               |
+| `3`  | `INVALID_PATH`      | Path parsing        | The path string is syntactically malformed (e.g., unmatched brackets, empty segments) or references a field name that does not exist in the host configuration schema.                                                                                                                              |
+| `4`  | `PATH_NOT_FOUND`    | Path resolution     | The path is syntactically valid and exists in the schema, but does not resolve to a node in the current document. For example: an array index is out of bounds, or a `[key=value]` selector matches no element.                                                                                     |
+| `5`  | `INVALID_VALUE`     | Value application   | The provided `value` string could not be parsed as valid YAML, or the parsed YAML does not match the expected type for the target field (e.g., setting a string field to a YAML mapping).                                                                                                           |
+| `6`  | `VALIDATION_FAILED` | Semantic validation | The edit was syntactically applied to the Value tree and the result deserialized into a `HostConfiguration` struct, but the struct-level semantic validation (`HostConfiguration::validate()`) rejected it. The `validation_error` field carries the full `TridentError` from the validation logic. |
 
 #### Error Message Quality
 
