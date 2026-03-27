@@ -2,11 +2,11 @@ use trident_proto::v1::{RebootHandling, RebootManagement};
 
 use crate::server::tridentserver::RebootDecision;
 
+mod commit;
 mod streaming;
+mod update;
 mod version;
 
-#[cfg(feature = "grpc-preview")]
-mod commit;
 #[cfg(feature = "grpc-preview")]
 mod install;
 #[cfg(feature = "grpc-preview")]
@@ -15,8 +15,6 @@ mod rebuild_raid;
 mod rollback;
 #[cfg(feature = "grpc-preview")]
 mod status;
-#[cfg(feature = "grpc-preview")]
-mod update;
 #[cfg(feature = "grpc-preview")]
 mod validation;
 
