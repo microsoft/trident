@@ -4,7 +4,7 @@ use trident_api::{
     config::{HostConfigurationSource, Operation, Operations},
     error::TridentResultExt,
 };
-use trident_proto::v1preview::{
+use trident_proto::v1::{
     update_service_server::UpdateService, FinalizeUpdateRequest, StageUpdateRequest, UpdateRequest,
 };
 

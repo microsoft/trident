@@ -2,7 +2,7 @@
 
 syntax = "proto3";
 
-package trident.v1preview;
+package trident.v1;
 
 message HostConfiguration {
   // The Host Configuration YAML.

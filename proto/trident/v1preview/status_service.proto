@@ -6,7 +6,7 @@ package trident.v1preview;
 
 import "trident/v1/error.proto";
 import "trident/v1/servicing.proto";
-import "trident/v1preview/host_config.proto";
+import "trident/v1/host_config.proto";
 
 // StatusService provides methods for retrieving the status of the host and
 // various operations.
@@ -32,7 +32,7 @@ message GetConfigRequest {}
 
 message GetConfigResponse {
   // The Host Configuration content as a string.
-  HostConfiguration config = 1;
+  trident.v1.HostConfiguration config = 1;
 }
 
 message GetLastErrorRequest {}
