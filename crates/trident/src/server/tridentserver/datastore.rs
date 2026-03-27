@@ -1,4 +1,4 @@
-use trident_api::status::ServicingState;
+use trident_api::{config::ImageSha384, primitives::hash::Sha384Hash, status::ServicingState};
 use trident_proto::v1preview::ServicingState as ProtoServicingState;
 
 use crate::DataStore;
@@ -19,6 +19,21 @@ pub(super) fn servicing_state_from_datastore(datastore: &DataStore) -> ProtoServ
         ServicingState::ManualRollbackAbFinalized => ProtoServicingState::ManualRollbackAbFinalized,
         ServicingState::Provisioned => ProtoServicingState::Provisioned,
         ServicingState::AbUpdateHealthCheckFailed => ProtoServicingState::UpdateAbHealthCheckFailed,
+    }
+}
+
+/// Returns the stored image hash from the datastore, if it exists.
+#[cfg(feature = "grpc-preview")]
+pub(super) fn stored_image_hash(datastore: &DataStore) -> Option<Sha384Hash> {
+    match datastore
+        .host_status()
+        .spec
+        .image
+        .as_ref()
+        .map(|image| &image.sha384)
+    {
+        Some(ImageSha384::Checksum(hash)) => Some(hash.clone()),
+        _ => None,
     }
 }
 

@@ -62,10 +62,6 @@ stages:
             displayName: "Package RPMs into tarball"
 
           - ${{ if ne(parameters.sourceCommit, '') }}:
-              - template: ../common_tasks/update-protoc.yml
-              - template: ../common_tasks/rustup.yml
-              - template: ../common_tasks/cargo-auth.yml
-
               - script: |
                   set -eux
 
@@ -74,6 +70,24 @@ stages:
                   git fetch origin "${{ parameters.sourceCommit }}"
                   git reset --hard "${{ parameters.sourceCommit }}"
                 displayName: "Reset source code to specified commit"
+                workingDirectory: $(Build.SourcesDirectory)
+
+              - template: ../common_tasks/update-protoc.yml
+              - template: ../common_tasks/rustup.yml
+              - template: ../common_tasks/cargo-auth.yml
+
+              - script: |
+                  set -eux
+                  echo "=== Project config ==="
+                  cat .cargo/config.toml
+                  echo ""
+                  echo "=== CARGO_HOME ==="
+                  echo "${CARGO_HOME:-not set}"
+                  echo "=== CARGO_HOME config ==="
+                  cat "${CARGO_HOME:-/nonexistent}/config.toml" 2>/dev/null || echo "(no CARGO_HOME config)"
+                  echo "=== Relevant env vars ==="
+                  env | grep -iE 'CARGO_SOURCE|CARGO_REGISTRIES|CARGO_HOME' | sort || true
+                displayName: "Debug cargo config"
                 workingDirectory: $(Build.SourcesDirectory)
 
               - script: |
@@ -95,7 +109,7 @@ stages:
                   sha256sum $SOURCE_TARBALL_PATH > $(ob_outputDirectory)/$SOURCE_TARBALL_NAME.sha256
 
                   # Package cargo dependencies into a separate tarball
-                  cargo vendor -v --locked vendor
+                  cargo vendor --respect-source-config -v --locked vendor
 
                   VENDOR_TARBALL_NAME="trident-$TRIDENT_CARGO_VERSION-cargo.tar.gz"
                   VENDOR_TARBALL_PATH="$(ob_outputDirectory)/$VENDOR_TARBALL_NAME"
@@ -105,5 +119,7 @@ stages:
 
                   sha256sum $VENDOR_TARBALL_PATH > $(ob_outputDirectory)/$VENDOR_TARBALL_NAME.sha256
 
+                  # Remove vendor directory to free disk space
+                  rm -rf vendor
                 displayName: "Package source code tarballs"
                 workingDirectory: $(Build.SourcesDirectory)
