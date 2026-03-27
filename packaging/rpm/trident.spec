@@ -8,21 +8,16 @@
 
 Summary:        Declarative, security-first OS lifecycle agent designed primarily for Azure Linux
 Name:           trident
-%if %{undefined rpm_ver}
 # Use hard-coded versions for distro build
-Version:        0.20.0
+Version:        0.22.0
 Release:        1%{?dist}
-%else
-Version:        %{rpm_ver}
-Release:        %{rpm_rel}%{?dist}
-%endif
 License:        MIT
 Vendor:         Microsoft Corporation
 Group:          Applications/System
 Distribution:   Azure Linux
 
 %if %{undefined rpm_ver}
-# For distro build, use Source0 for source tarball and Source1 for vendor tarball
+# Use source and vendor tarballs for distro build
 URL:            https://github.com/microsoft/trident/
 Source0:        https://github.com/microsoft/trident/archive/refs/tags/v%{version}.tar.gz#/%{name}-%{version}.tar.gz
 # Below is a manually created tarball, no download link.
@@ -35,18 +30,18 @@ Source0:        https://github.com/microsoft/trident/archive/refs/tags/v%{versio
 #
 Source1:        %{name}-%{version}-cargo.tar.gz
 %else
-# For Trident repo build, use osmodifier is passed in as Source1
 Source1:        osmodifier
 %endif
 
 BuildRequires:  openssl-devel
+BuildRequires:  protobuf-compiler
+BuildRequires:  protobuf-devel
 BuildRequires:  systemd-units
 BuildRequires:  rust
 
 %if %{undefined rpm_ver}
-# For distro build, require cargo to build trident
+# For distro build, require cargo to build and osmodifier
 BuildRequires:  cargo
-# For distro build, require osmodifier RPM at runtime
 Requires:       azurelinux-image-tools-osmodifier
 %endif
 
@@ -84,8 +79,7 @@ and its dependencies for managing the lifecycle of Azure Linux hosts.
 %{_bindir}/%{name}
 %dir /etc/%{name}
 %if %{defined rpm_ver}
-# For Trident repo build, install osmodifier (distro build will require
-# azurelinux-image-tools-osmodifier RPM at runtimme)
+# For Trident repo build, package osmodifier included via `Source1`
 %{_bindir}/osmodifier
 %endif
 %{_unitdir}/%{name}d.service
@@ -129,7 +123,7 @@ Requires:       %{name}
 Conflicts:      %{name}-install-service
 
 %description service
-Trident files for SystemD commit service
+Trident files for SystemD commit services
 
 %files service
 %{_unitdir}/%{name}.service
@@ -216,12 +210,16 @@ be removed once the fix is merged in AZL 4.0.
 # ------------------------------------------------------------------------------
 
 %if %{undefined rpm_ver}
-# For distro build, unpack source and vendor tarballs for building trident
+# Use cargo with source and vendor tarballs for distro build
 %prep
 %autosetup -n %{name}-%{version} -p1
-tar -xf %{SOURCE1}
 
+# Do vendor expansion here manually by
+# calling `tar x` and setting up
+# .cargo/config to use it.
+tar fx %{SOURCE1}
 mkdir -p .cargo
+
 cat >.cargo/config << EOF
 [source.crates-io]
 replace-with = "vendored-sources"
@@ -233,8 +231,10 @@ EOF
 
 %build
 %if %{undefined rpm_ver}
+# Use %{version}-%{release} for TRIDENT_VERSION in distro build
 export TRIDENT_VERSION="%{version}-%{release}"
 %else
+# Use %{trident_version} for Trident repo build
 export TRIDENT_VERSION="%{trident_version}"
 %endif
 cargo build --release
@@ -248,27 +248,29 @@ make -f %{_datadir}/selinux/devel/Makefile %{name}.pp
 bzip2 -9 %{name}.pp
 
 %check
+# Test the trident variable for the appropiate version
 %if %{undefined rpm_ver}
+# Use %{version}-%{release} for TRIDENT_VERSION in distro build
 test "$(./target/release/trident --version)" = "trident %{version}-%{release}"
-export TRIDENT_VERSION="%{version}-%{release}"
-# For distro builds, allow trident unit tests to execute as part of check
+%else
+# Use %{trident_version} for Trident repo build
+test "$(./target/release/trident --version)" = "trident %{trident_version}"
+%endif
+
+%if %{undefined rpm_ver}
 %ifarch x86_64
-# Run unit tests only for x86_g4.
-# Skip 3 tests that do not work in RPM chroot environment
+# Run unit tests as part of check for distro build, skip 3 tests that do not work
+# in RPM chroot environment
 cargo test --all --no-fail-fast -- --skip test_run_systemd_check --skip test_prepare_mount_directory --skip test_read
 %endif
-%else
-test "$(./target/release/trident --version)" = "trident %{trident_version}"
 %endif
 
 %install
 %if %{defined rpm_ver}
-# For Trident repo build, install osmodifier included via `Source1` (for
-# distro build, osmodifier will be provided via azurelinux-image-tools-osmodifier
-# runtime Requires)
+# For Trident repo build, package osmodifier included via `Source1`.
+# Distro RPM will use distro osmodifier RPM via Requires directive.
 install -D -m 755 %{SOURCE1} %{buildroot}%{_bindir}/osmodifier
 %endif
-
 install -D -m 755 target/release/%{name} %{buildroot}/%{_bindir}/%{name}
 
 # Copy Trident SELinux policy module to /usr/share/selinux/packages
@@ -276,9 +278,7 @@ install -D -m 0644 %{name}.pp.bz2 %{buildroot}%{_datadir}/selinux/packages/%{sel
 install -D -p -m 0644 selinux/%{name}.if %{buildroot}%{_datadir}/selinux/devel/include/distributed/%{name}.if
 
 mkdir -p %{buildroot}%{_unitdir}
-# Commit service
 install -D -m 644 packaging/systemd/%{name}.service %{buildroot}%{_unitdir}/%{name}.service
-# Auto-installation service
 install -D -m 644 packaging/systemd/%{name}-install.service %{buildroot}%{_unitdir}/%{name}-install.service
 # Network configuration service for provisioning OS
 install -D -m 644 packaging/systemd/%{name}-network.service %{buildroot}%{_unitdir}/%{name}-network.service
@@ -298,3 +298,11 @@ mkdir -p "$pcrlockroot"
       install -m 644 "$f" "$pcrlockroot/$f"
   done
 )
+
+%changelog
+* Thu Mar 26 2026 Brian Fjeldstad <bfjelds@microsoft.com> 0.22.0-1
+- Upgrade to version 0.22.0
+
+* Mon Mar 2 2026 Brian Fjeldstad <bfjelds@microsoft.com> 0.21.0-1
+- Original version for Azure Linux (license: MIT).
+- License verified.
