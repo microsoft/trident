@@ -86,28 +86,28 @@ stages:
               # to the real crates.io. Fix: strip the project-level source
               # replacement at build time so the CARGO_HOME config takes
               # effect.
-              - script: |
-                  set -eux
-                  CONFIG=".cargo/config.toml"
-                  echo "=== Before ==="
-                  cat "$CONFIG"
+              # - script: |
+              #     set -eux
+              #     CONFIG=".cargo/config.toml"
+              #     echo "=== Before ==="
+              #     cat "$CONFIG"
 
-                  # Remove the entire [source.crates-io] table so the
-                  # CARGO_HOME source replacement is used instead. This
-                  # drops the header and all keys in that table (e.g.,
-                  # replace-with) until the next TOML table header or EOF.
-                  awk '
-                    BEGIN { skip = 0 }
-                    /^\[source\.crates-io\]$/ { skip = 1; next }
-                    /^\[/ { skip = 0 }
-                    { if (!skip) print }
-                  ' "$CONFIG" > "$CONFIG.tmp"
-                  mv "$CONFIG.tmp" "$CONFIG"
+              #     # Remove the entire [source.crates-io] table so the
+              #     # CARGO_HOME source replacement is used instead. This
+              #     # drops the header and all keys in that table (e.g.,
+              #     # replace-with) until the next TOML table header or EOF.
+              #     awk '
+              #       BEGIN { skip = 0 }
+              #       /^\[source\.crates-io\]$/ { skip = 1; next }
+              #       /^\[/ { skip = 0 }
+              #       { if (!skip) print }
+              #     ' "$CONFIG" > "$CONFIG.tmp"
+              #     mv "$CONFIG.tmp" "$CONFIG"
 
-                  echo "=== After ==="
-                  cat "$CONFIG"
-                displayName: "Remove conflicting source replacement config"
-                workingDirectory: $(Build.SourcesDirectory)
+              #     echo "=== After ==="
+              #     cat "$CONFIG"
+              #   displayName: "Remove conflicting source replacement config"
+              #   workingDirectory: $(Build.SourcesDirectory)
 
               - script: |
                   set -eux
@@ -142,7 +142,7 @@ stages:
                   sha256sum $SOURCE_TARBALL_PATH > $(ob_outputDirectory)/$SOURCE_TARBALL_NAME.sha256
 
                   # Package cargo dependencies into a separate tarball
-                  cargo vendor -v --locked vendor
+                  cargo vendor --respect-source-config -v --locked vendor
 
                   VENDOR_TARBALL_NAME="trident-$TRIDENT_CARGO_VERSION-cargo.tar.gz"
                   VENDOR_TARBALL_PATH="$(ob_outputDirectory)/$VENDOR_TARBALL_NAME"
