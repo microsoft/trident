@@ -76,39 +76,6 @@ stages:
               - template: ../common_tasks/rustup.yml
               - template: ../common_tasks/cargo-auth.yml
 
-              # The [source.crates-io] section in .cargo/config.toml is required
-              # to be checked in by policy so that local developer builds
-              # route through the internal feed. However, in CI the
-              # RustInstaller@1 task (via cargo-auth.yml) sets up its own
-              # source replacement in CARGO_HOME/config.toml (crates-io →
-              # ms-crates-io). The two competing [source.crates-io]
-              # replace-with entries confuse Cargo, causing it to fall back
-              # to the real crates.io. Fix: strip the project-level source
-              # replacement at build time so the CARGO_HOME config takes
-              # effect.
-              # - script: |
-              #     set -eux
-              #     CONFIG=".cargo/config.toml"
-              #     echo "=== Before ==="
-              #     cat "$CONFIG"
-
-              #     # Remove the entire [source.crates-io] table so the
-              #     # CARGO_HOME source replacement is used instead. This
-              #     # drops the header and all keys in that table (e.g.,
-              #     # replace-with) until the next TOML table header or EOF.
-              #     awk '
-              #       BEGIN { skip = 0 }
-              #       /^\[source\.crates-io\]$/ { skip = 1; next }
-              #       /^\[/ { skip = 0 }
-              #       { if (!skip) print }
-              #     ' "$CONFIG" > "$CONFIG.tmp"
-              #     mv "$CONFIG.tmp" "$CONFIG"
-
-              #     echo "=== After ==="
-              #     cat "$CONFIG"
-              #   displayName: "Remove conflicting source replacement config"
-              #   workingDirectory: $(Build.SourcesDirectory)
-
               - script: |
                   set -eux
                   echo "=== Project config ==="
