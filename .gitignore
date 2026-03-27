@@ -361,6 +361,9 @@ baremetal-serial.log
 # Local cargo config
 .cargo/config
 
+# Cargo vendor files
+vendor/
+
 # Virtdeploy files
 /tools/vm-netlaunch.yaml
 /tools/virt-deploy-metadata.json
