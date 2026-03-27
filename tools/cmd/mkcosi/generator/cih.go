@@ -24,7 +24,8 @@ import (
 //
 // CIH images have a static partition layout: all images share the same
 // partition numbers, unique partition UUIDs, and partition type GUIDs.
-// Update cihExpectedPartitions when the CIH partition definition changes.
+// Update cihRequiredPartitions and cihOptionalPartitions when the CIH
+// partition definition changes.
 
 // cihPartitionDef describes one expected partition in a CIH image.
 type cihPartitionDef struct {
@@ -60,7 +61,7 @@ var cihOptionalPartitions = []cihPartitionDef{
 // do not produce an Image entry (e.g. BIOS-BOOT has no filesystem, USR-B is
 // the inactive A/B slot, OEM-CONFIG is reserved for first-boot customization).
 var cihMountPointByName = map[string]string{
-	"EFI-SYSTEM": "/boot/efi",
+	"EFI-SYSTEM": "/boot",
 	"USR-A":      "/usr",
 	"OEM":        "/oem",
 	"ROOT":       "/",

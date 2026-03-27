@@ -214,6 +214,12 @@ func CosiFromImage(imagePath string, arch metadata.OsArchitecture) (*cosi.Cosi, 
 		return nil, fmt.Errorf("failed to populate filesystem metadata: %w", err)
 	}
 
+	// Verify we have a supported bootloader before expensive compression.
+	if cosiMetadata.Bootloader.Type != metadata.BootloaderTypeGrub && cosiMetadata.Bootloader.Type != metadata.BootloaderTypeSystemDBoot {
+		cleanup()
+		return nil, fmt.Errorf("unsupported bootloader type: %q", cosiMetadata.Bootloader.Type)
+	}
+
 	// Phase 3: Compress partitions and build GptRegions.
 	for i := range partitionInfos {
 		pi := &partitionInfos[i]
@@ -263,12 +269,6 @@ func CosiFromImage(imagePath string, arch metadata.OsArchitecture) (*cosi.Cosi, 
 		}
 
 		cosiMetadata.Images = append(cosiMetadata.Images, img)
-	}
-
-	// Verify we have a supported bootloader
-	if cosiMetadata.Bootloader.Type != metadata.BootloaderTypeGrub && cosiMetadata.Bootloader.Type != metadata.BootloaderTypeSystemDBoot {
-		cleanup()
-		return nil, fmt.Errorf("unsupported bootloader type: %q", cosiMetadata.Bootloader.Type)
 	}
 
 	// Create the Cosi object
@@ -643,7 +643,9 @@ func populateFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []par
 			log.WithError(err).Warn("Could not extract os-release")
 		} else {
 			cosiMeta.OsRelease = osRelease
-			cosiMeta.OsArch = detectArchitecture(osRelease)
+			if cosiMeta.OsArch == "" {
+				cosiMeta.OsArch = detectArchitecture(osRelease)
+			}
 		}
 
 		packages, err := extractPackages(rootMountPath)
