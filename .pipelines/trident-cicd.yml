@@ -85,12 +85,12 @@ extends:
                   echo "##vso[task.setvariable variable=BASE_IMAGE_ARM64_PIPELINE_BUILD_ID]$BASE_IMAGE_ARM64_PIPELINE_BUILD_ID"
                 displayName: Validate variables for our templates
 
-              - template: ../common_tasks/checkout_trident.yml
+              - template: templates/stages/common_tasks/checkout_trident.yml
                 parameters:
                   tridentRepoName: self
                   tridentSourceDirectoryVariableName: TRIDENT_SOURCE_DIR
 
-              - template: stages/base_image_config/create-base-image-config-artifact-steps.yml
+              - template: templates/stages/base_image_config/create-base-image-config-artifact-steps.yml
                 parameters:
                   baseimgBuildType: $(BASEIMG_BUILD_TYPE)
                   baseImagePipelineBuildId: $(BASE_IMAGE_PIPELINE_BUILD_ID)
