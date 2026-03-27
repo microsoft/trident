@@ -1,7 +1,7 @@
-# 0000 Host Configuration Live Editing API
+# 0580 Host Configuration Live Editing API
 
 - Date: 2026-03-09
-- RFC PR: [microsoft/trident#0000](https://github.com/microsoft/trident/pull/0000)
+- RFC PR: [microsoft/trident#580](https://github.com/microsoft/trident/pull/580)
 - Issue: [microsoft/trident#0000](https://github.com/microsoft/trident/issues/0000)
 
 ## Summary
