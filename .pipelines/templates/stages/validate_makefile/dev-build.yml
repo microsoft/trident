@@ -66,6 +66,8 @@ stages:
           - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../common_tasks/rustup.yml
           - template: ../common_tasks/cargo-auth.yml
+            parameters:
+              cargoConfigPath: $(TRIDENT_SOURCE_DIR)/.cargo/config.toml
 
           - script: |
               # Use a lower optimization level to speed up cargo-deny installation.
