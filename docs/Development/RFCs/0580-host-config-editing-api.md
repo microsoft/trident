@@ -42,7 +42,7 @@ This workflow is functional but has several drawbacks:
   this shortcut does not generalize to other sections of the configuration.
 - **No incremental validation**: The client has no way to validate individual
   changes before submitting the complete configuration. Errors are only
-  discovered at submission time.
+  discovered at submission time and only one error is reported at a time.
 - **No server-side policy enforcement**: The server cannot inspect what
   *changed* between the current and new configurations. It can only validate
   the new configuration in its entirety. This makes it impossible to enforce
