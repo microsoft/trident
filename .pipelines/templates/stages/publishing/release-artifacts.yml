@@ -76,24 +76,25 @@ stages:
               - template: ../common_tasks/rustup.yml
               - template: ../common_tasks/cargo-auth.yml
 
-              # The RustInstaller@1 task sets up CARGO_HOME/config.toml with
-              # source replacement (crates-io → ms-crates-io) pointing to the
-              # BMP_PublicPackages feed. The project-level .cargo/config.toml
-              # may also define [source.crates-io] replace-with pointing to a
-              # different name ("BMP_PublicPackages"). These two competing
-              # source replacements confuse Cargo, causing it to fall back to
-              # the real crates.io. Fix: remove the project-level source
-              # replacement so the CARGO_HOME config takes effect.
+              # The [source.crates-io] section in .cargo/config.toml is required
+              # to be checked in by policy so that local developer builds
+              # route through the internal feed. However, in CI the
+              # RustInstaller@1 task (via cargo-auth.yml) sets up its own
+              # source replacement in CARGO_HOME/config.toml (crates-io →
+              # ms-crates-io). The two competing [source.crates-io]
+              # replace-with entries confuse Cargo, causing it to fall back
+              # to the real crates.io. Fix: strip the project-level source
+              # replacement at build time so the CARGO_HOME config takes
+              # effect.
               - script: |
                   set -eux
                   CONFIG=".cargo/config.toml"
                   echo "=== Before ==="
                   cat "$CONFIG"
 
-                  # Remove [source.crates-io] and [source.BMP_PublicPackages]
-                  # sections so the CARGO_HOME source replacement is used.
+                  # Remove [source.crates-io] so the CARGO_HOME source
+                  # replacement is used.
                   sed -i '/^\[source\.crates-io\]/,/^\[/{/^\[source\.crates-io\]/d;/^replace-with/d;/^\[/!d}' "$CONFIG"
-                  sed -i '/^\[source\.BMP_PublicPackages\]/,/^\[/{/^\[source\.BMP_PublicPackages\]/d;/^registry/d;/^\[/!d}' "$CONFIG"
 
                   echo "=== After ==="
                   cat "$CONFIG"
@@ -143,5 +144,7 @@ stages:
 
                   sha256sum $VENDOR_TARBALL_PATH > $(ob_outputDirectory)/$VENDOR_TARBALL_NAME.sha256
 
+                  # Remove vendor directory to free disk space
+                  rm -rf vendor
                 displayName: "Package source code tarballs"
                 workingDirectory: $(Build.SourcesDirectory)
