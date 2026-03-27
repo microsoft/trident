@@ -1,8 +1,24 @@
+parameters:
+  # Define checkout name for the Trident repo. If this is
+  # loaded from a pipeline hosted in the Trident repo, use
+  # `self`. If this is loaded from a pipeline hosted in a
+  # different repo, use the repository name defined in the
+  # pipeline resources.
+  - name: tridentRepoName
+    type: string
+    default: self
+
+  - name: dependsOnStage
+    type: string
+    default: ""
+
 stages:
   - stage: BuildTridentContainerImage
     displayName: Build Docker Image
     dependsOn:
       - GetTridentBinaries_rpms_amd64
+      - ${{ if ne(parameters.dependsOnStage, '') }}:
+          - ${{ parameters.dependsOnStage }}
 
     jobs:
       - job: BuildImage
@@ -11,10 +27,14 @@ stages:
           type: linux
 
         variables:
-          ob_outputDirectory: "$(Build.SourcesDirectory)/trident/out"
+          ob_outputDirectory: "/tmp/trident-docker-image"
           ob_artifactBaseName: "trident-docker-image"
 
         steps:
+          - template: ../common_tasks/checkout_trident.yml
+            parameters:
+              tridentRepoName: ${{ parameters.tridentRepoName }}
+              tridentSourceDirectoryVariableName: TRIDENT_SOURCE_DIR
           - template: ../common_tasks/avoid-pypi-usage.yml
 
           - script: |
@@ -22,6 +42,7 @@ stages:
               mkdir -p bin/RPMS
             displayName: Prepare to build docker image
             retryCountOnTaskFailure: 3
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
 
           - task: DownloadPipelineArtifact@2
             displayName: "Download Trident rpms"
@@ -29,12 +50,12 @@ stages:
               buildType: current
               artifactName: "trident-binaries"
               patterns: "**/*.rpm"
-              targetPath: "$(Build.SourcesDirectory)/bin/RPMS/x86_64"
+              targetPath: "$(TRIDENT_SOURCE_DIR)/bin/RPMS/x86_64"
 
           - template: ../common_tasks/preview-container.yml
             parameters:
-              dockerfilePath: $(Build.SourcesDirectory)/packaging/docker/Dockerfile.runtime
-              dockerBuildContext: $(Build.SourcesDirectory)
+              dockerfilePath: $(TRIDENT_SOURCE_DIR)/packaging/docker/Dockerfile.runtime
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
 
           - script: |
               set -euxo pipefail
@@ -42,5 +63,5 @@ stages:
               mkdir -p $(ob_outputDirectory)
               DOCKER_BUILDKIT=1 docker build -f packaging/docker/Dockerfile.runtime --progress plain -t trident/trident:latest .
               docker save trident/trident:latest | gzip > $(ob_outputDirectory)/trident-container.tar.gz
-            workingDirectory: $(Build.SourcesDirectory)
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: Build Docker image

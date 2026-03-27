@@ -63,7 +63,7 @@ extends:
               type: linux
             variables:
               - name: ob_outputDirectory
-                value: "$(Build.SourcesDirectory)/base-image-config"
+                value: "/tmp/base-image-config"
               - name: ob_artifactBaseName
                 value: "base-image-config"
             steps:
@@ -85,12 +85,21 @@ extends:
                   echo "##vso[task.setvariable variable=BASE_IMAGE_ARM64_PIPELINE_BUILD_ID]$BASE_IMAGE_ARM64_PIPELINE_BUILD_ID"
                 displayName: Validate variables for our templates
 
+              - template: stages/common_tasks/checkout_trident.yml
+                parameters:
+                  tridentRepoName: self
+                  tridentSourceDirectoryVariableName: TRIDENT_SOURCE_DIR
+
               - template: stages/base_image_config/create-base-image-config-artifact-steps.yml
                 parameters:
                   baseimgBuildType: $(BASEIMG_BUILD_TYPE)
                   baseImagePipelineBuildId: $(BASE_IMAGE_PIPELINE_BUILD_ID)
                   baseImageArm64PipelineBuildId: $(BASE_IMAGE_ARM64_PIPELINE_BUILD_ID)
+                  # Use same build ids for rpms as base image
+                  rpmsPipelineBuildId: $(BASE_IMAGE_PIPELINE_BUILD_ID)
+                  rpmsArm64PipelineBuildId: $(BASE_IMAGE_ARM64_PIPELINE_BUILD_ID)
                   outputDirectory: $(ob_outputDirectory)
+                  tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
 
       # Test amd64 if targetArchitecture is "all" or "amd64" (i.e. !arm64)
       - ${{ if ne(parameters.targetArchitecture, 'arm64') }}:
@@ -101,7 +110,6 @@ extends:
         - stage: ProcessJunit_Stage_amd64
           displayName: Process amd64 junit files
           dependsOn:
-            - FunctionalTesting
             - DeploymentTesting_host
             - DeploymentTesting_container
             # - BaremetalDeploymentTesting_host
@@ -113,7 +121,7 @@ extends:
               pool:
                 type: linux
               variables:
-                ob_outputDirectory: "$(Build.SourcesDirectory)/out"
+                ob_outputDirectory: "/tmp/out"
               steps:
                 - script: |
                     set -eux
@@ -136,7 +144,7 @@ extends:
               pool:
                 type: linux
               variables:
-                ob_outputDirectory: "$(Build.SourcesDirectory)/out"
+                ob_outputDirectory: "/tmp/out"
               steps:
                 - script: |
                     set -eux

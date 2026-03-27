@@ -1,4 +1,13 @@
 parameters:
+  # Define checkout name for the Trident repo. If this is
+  # loaded from a pipeline hosted in the Trident repo, use
+  # `self`. If this is loaded from a pipeline hosted in a
+  # different repo, use the repository name defined in the
+  # pipeline resources.
+  - name: tridentRepoName
+    type: string
+    default: self
+
   - name: downloadPrebuiltImage
     displayName: "Download prebuilt base image"
     type: boolean
@@ -44,14 +53,20 @@ stages:
           hostArchitecture: amd64
 
         variables:
-          ob_outputDirectory: $(Build.SourcesDirectory)/build
-          baseImageDirectory: "$(Build.SourcesDirectory)/artifacts"
+          ob_outputDirectory: /tmp/build
 
         steps:
+          - template: ../common_tasks/checkout_trident.yml
+            parameters:
+              tridentRepoName: ${{ parameters.tridentRepoName }}
+              tridentSourceDirectoryVariableName: TRIDENT_SOURCE_DIR
           - checkout: platform-tests
             fetchDepth: 1
+            path: s/platform-tests
 
           - template: ../common_tasks/cargo-auth.yml
+            parameters:
+              cargoConfigPath: $(TRIDENT_SOURCE_DIR)/.cargo/config.toml
 
           - template: ../testing_vm/netlaunch-prep.yml
 
@@ -62,7 +77,7 @@ stages:
               artifactName: "go-tools"
               patterns: |
                 virtdeploy
-              targetPath: "$(Build.SourcesDirectory)/bin"
+              targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
 
           - ${{ if eq(parameters.downloadPrebuiltImage, false) }}:
               - task: DownloadPipelineArtifact@2
@@ -70,7 +85,7 @@ stages:
                 inputs:
                   buildType: current
                   artifactName: "${{ parameters.functestImageArtifact }}"
-                  targetPath: "${{ variables.baseImageDirectory }}"
+                  targetPath: "$(TRIDENT_SOURCE_DIR)/artifacts"
           - ${{ else }}:
               - task: DownloadPipelineArtifact@2
                 displayName: "Download FT Image from latest build of ${{ parameters.functestImageArtifactPipeline}}"
@@ -81,7 +96,7 @@ stages:
                   buildVersionToDownload: latestFromBranch
                   branchName: "refs/heads/main"
                   artifactName: "${{ parameters.functestImageArtifact }}"
-                  targetPath: "${{ variables.baseImageDirectory }}"
+                  targetPath: "$(TRIDENT_SOURCE_DIR)/artifacts"
 
           - bash: |
               set -eux
@@ -99,6 +114,7 @@ stages:
 
           - template: ../common_tasks/download-osmodifier.yml
             parameters:
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
               osModifierBranch: ${{ parameters.osModifierBranch }}
               targetArchitecture: amd64
 
@@ -118,8 +134,8 @@ stages:
               chmod +x ./bin/virtdeploy
 
               # Copy files from platform-tests to functional_tests
-              cp platform-tests/tools/marinerhci_test_tools/node_interface.py tests/functional_tests/
-              cp platform-tests/tools/marinerhci_test_tools/ssh_node.py tests/functional_tests/
+              cp $(Pipeline.Workspace)/s/platform-tests/tools/marinerhci_test_tools/node_interface.py tests/functional_tests/
+              cp $(Pipeline.Workspace)/s/platform-tests/tools/marinerhci_test_tools/ssh_node.py tests/functional_tests/
 
               # Run the core of the functional tests, which means only
               # rebuilding the test binaries and invoking pytest. The regular
@@ -127,9 +143,11 @@ stages:
               # here.
               sg libvirt "make functional-test-core"
             displayName: Execute Functional Tests
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
 
           - template: ../common_tasks/coverage.yml
             parameters:
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
               codeCoverageBaseline: 78 # Unit + functional tests
               executeUnitTests: true
               installNativeDependencies: false
@@ -138,7 +156,7 @@ stages:
           - template: ../junit/handle-junit-test-results.yml
             parameters:
               testRunName: "FunctionalTests_$(System.JobAttempt)"
-              junitTestFile: "$(Build.SourcesDirectory)/target/trident_functional_tests.xml"
+              junitTestFile: "$(TRIDENT_SOURCE_DIR)/target/trident_functional_tests.xml"
               displayNameSpecifier: "functional tests"
               artifactName: "junit_for_trident_functionaltests"
 
@@ -147,4 +165,5 @@ stages:
 
               sg libvirt "make patch-functional-test"
             condition: and(succeeded(), eq('${{ parameters.rerunTests }}', 'true'))
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: Rerun Functional Tests

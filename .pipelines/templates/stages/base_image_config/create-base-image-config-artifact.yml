@@ -1,4 +1,13 @@
 parameters:
+  # Define checkout name for the Trident repo. If this is
+  # loaded from a pipeline hosted in the Trident repo, use
+  # `self`. If this is loaded from a pipeline hosted in a
+  # different repo, use the repository name defined in the
+  # pipeline resources.
+  - name: tridentRepoName
+    type: string
+    default: self
+
   - name: baseimgBuildType
     type: string
     default: "release"
@@ -8,6 +17,14 @@ parameters:
     default: "latestFromBranch"
 
   - name: baseImageArm64PipelineBuildId
+    type: string
+    default: "latestFromBranch"
+
+  - name: rpmsPipelineBuildId
+    type: string
+    default: "latestFromBranch"
+
+  - name: rpmsArm64PipelineBuildId
     type: string
     default: "latestFromBranch"
 
@@ -27,13 +44,21 @@ stages:
           type: linux
         variables:
           - name: ob_outputDirectory
-            value: "$(Build.SourcesDirectory)/base-image-config"
+            value: "/tmp/base-image-config"
           - name: ob_artifactBaseName
             value: "base-image-config"
         steps:
+          - template: ../common_tasks/checkout_trident.yml
+            parameters:
+              tridentRepoName: ${{ parameters.tridentRepoName }}
+              tridentSourceDirectoryVariableName: TRIDENT_SOURCE_DIR
+
           - template: create-base-image-config-artifact-steps.yml
             parameters:
               baseimgBuildType: ${{ parameters.baseimgBuildType }}
               baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
               baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
+              rpmsPipelineBuildId: ${{ parameters.rpmsPipelineBuildId }}
+              rpmsArm64PipelineBuildId: ${{ parameters.rpmsArm64PipelineBuildId }}
               outputDirectory: $(ob_outputDirectory)
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
