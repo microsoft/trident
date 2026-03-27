@@ -8,6 +8,16 @@ parameters:
     type: string
     default: self
 
+  # Define which service connection to use for accessing ACR.
+  #   `maritimus-dev-acr-write-umi` is the service connection for the Polar SC
+  #   `trident-dev-acr-write-umi-ECF` is the service connection for the ECF SC
+  - name: acrServiceConnectionName
+    type: string
+    default: trident-dev-acr-write-umi-ECF
+    values:
+      - maritimus-dev-acr-write-umi
+      - trident-dev-acr-write-umi-ECF
+
   - name: jobName
     type: string
     default: trident_baremetal_tests
@@ -188,6 +198,7 @@ stages:
               config: $(TRIDENT_CONFIGURATION_NAME)
               deploymentEnvironment: "bareMetal"
               runtimeEnvironment: ${{ parameters.runtimeEnv }}
+              acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
           #   Run trident prep
           - template: ../testing_common/trident-prep.yml
@@ -387,6 +398,7 @@ stages:
               repository: ${{ variables.IMAGE_NAME }}
               config: $(TRIDENT_CONFIGURATION_NAME)
               deploymentEnvironment: "bareMetal"
+              acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
           - template: ../testing_common/fix-output-directory-for-one-branch-step.yml
             parameters:
