@@ -85,12 +85,12 @@ extends:
                   echo "##vso[task.setvariable variable=BASE_IMAGE_ARM64_PIPELINE_BUILD_ID]$BASE_IMAGE_ARM64_PIPELINE_BUILD_ID"
                 displayName: Validate variables for our templates
 
-              - template: templates/stages/common_tasks/checkout_trident.yml
+              - template: stages/common_tasks/checkout_trident.yml
                 parameters:
                   tridentRepoName: self
                   tridentSourceDirectoryVariableName: TRIDENT_SOURCE_DIR
 
-              - template: templates/stages/base_image_config/create-base-image-config-artifact-steps.yml
+              - template: stages/base_image_config/create-base-image-config-artifact-steps.yml
                 parameters:
                   baseimgBuildType: $(BASEIMG_BUILD_TYPE)
                   baseImagePipelineBuildId: $(BASE_IMAGE_PIPELINE_BUILD_ID)
@@ -103,7 +103,7 @@ extends:
 
       # Test amd64 if targetArchitecture is "all" or "amd64" (i.e. !arm64)
       - ${{ if ne(parameters.targetArchitecture, 'arm64') }}:
-        - template: templates/trident-platform-cicd-template.yml
+        - template: trident-platform-cicd-template.yml
           parameters:
             baseImageArtifactStage: GetBaseImageBuildIds
             targetArchitecture: amd64
@@ -130,7 +130,7 @@ extends:
 
       # Test arm64 if targetArchitecture is "all" or "arm64" (i.e. !amd64)
       - ${{ if ne(parameters.targetArchitecture, 'amd64') }}:
-        - template: templates/trident-platform-cicd-template.yml
+        - template: trident-platform-cicd-template.yml
           parameters:
             baseImageArtifactStage: GetBaseImageBuildIds
             targetArchitecture: arm64
