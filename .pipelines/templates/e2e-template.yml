@@ -110,7 +110,7 @@ parameters:
     default: true
 
 stages:
-  - ${{ if ne( parameters.stageType, 'azl-validation') }}:
+  - ${{ if ne( parameters.tridentBuildOptions, 'prebuilt') }}:
     # Trident Build/Download, azl-validation will use trident RPMs from AZL build
     - template: stages/trident_rpms/trident-stage.yml
       parameters:
