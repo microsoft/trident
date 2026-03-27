@@ -92,9 +92,17 @@ stages:
                   echo "=== Before ==="
                   cat "$CONFIG"
 
-                  # Remove [source.crates-io] so the CARGO_HOME source
-                  # replacement is used.
-                  sed -i '/^\[source\.crates-io\]/,/^\[/{/^\[source\.crates-io\]/d;/^replace-with/d;/^\[/!d}' "$CONFIG"
+                  # Remove the entire [source.crates-io] table so the
+                  # CARGO_HOME source replacement is used instead. This
+                  # drops the header and all keys in that table (e.g.,
+                  # replace-with) until the next TOML table header or EOF.
+                  awk '
+                    BEGIN { skip = 0 }
+                    /^\[source\.crates-io\]$/ { skip = 1; next }
+                    /^\[/ { skip = 0 }
+                    { if (!skip) print }
+                  ' "$CONFIG" > "$CONFIG.tmp"
+                  mv "$CONFIG.tmp" "$CONFIG"
 
                   echo "=== After ==="
                   cat "$CONFIG"
