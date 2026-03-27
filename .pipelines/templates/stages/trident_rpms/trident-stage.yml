@@ -19,6 +19,7 @@ parameters:
       - pre
       - rel
       - full-validation
+      - azl-validation
 
   - name: codeCoverage
     type: boolean
