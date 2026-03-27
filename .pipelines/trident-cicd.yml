@@ -85,6 +85,11 @@ extends:
                   echo "##vso[task.setvariable variable=BASE_IMAGE_ARM64_PIPELINE_BUILD_ID]$BASE_IMAGE_ARM64_PIPELINE_BUILD_ID"
                 displayName: Validate variables for our templates
 
+              - template: ../common_tasks/checkout_trident.yml
+                parameters:
+                  tridentRepoName: ${{ parameters.tridentRepoName }}
+                  tridentSourceDirectoryVariableName: TRIDENT_SOURCE_DIR
+
               - template: stages/base_image_config/create-base-image-config-artifact-steps.yml
                 parameters:
                   baseimgBuildType: $(BASEIMG_BUILD_TYPE)
@@ -94,6 +99,7 @@ extends:
                   rpmsPipelineBuildId: $(BASE_IMAGE_PIPELINE_BUILD_ID)
                   rpmsArm64PipelineBuildId: $(BASE_IMAGE_ARM64_PIPELINE_BUILD_ID)
                   outputDirectory: $(ob_outputDirectory)
+                  tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
 
       # Test amd64 if targetArchitecture is "all" or "amd64" (i.e. !arm64)
       - ${{ if ne(parameters.targetArchitecture, 'arm64') }}:
