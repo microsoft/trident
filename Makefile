@@ -71,10 +71,15 @@ check-sh:
 
 .PHONY: version-vars
 version-vars:
-	$(eval TRIDENT_CARGO_VERSION := $(shell python3 ./scripts/get-version.py "$(shell date +%Y%m%d).99"))
-	$(eval GIT_COMMIT := $(shell git rev-parse --short HEAD)$(shell git diff --quiet || echo '.dirty'))
-	$(eval LOCAL_BUILD_TRIDENT_VERSION=$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT))
+	$(eval SIMULATED_BUILD_ID := 99)
+	$(eval TRIDENT_BUILD_DATE := $(shell date +%Y%m%d))
+	$(eval TRIDENT_CARGO_VERSION := $(shell python3 ./scripts/get-version.py))
+	$(eval GIT_COMMIT := v$(shell git rev-parse --short HEAD)$(shell git diff --quiet || echo '.dirty'))
+	$(eval TRIDENT_PREVIEW_VERSION := "dev.$(TRIDENT_BUILD_DATE)$(SIMULATED_BUILD_ID).$(GIT_COMMIT)")
+	$(eval LOCAL_BUILD_TRIDENT_VERSION := "$(TRIDENT_CARGO_VERSION)-$(TRIDENT_PREVIEW_VERSION)")
 	@echo "TRIDENT_CARGO_VERSION=$(TRIDENT_CARGO_VERSION)"
+	@echo "TRIDENT_PREVIEW_VERSION=$(TRIDENT_PREVIEW_VERSION)"
+	@echo "LOCAL_BUILD_TRIDENT_VERSION=$(LOCAL_BUILD_TRIDENT_VERSION)"
 	@echo "GIT_COMMIT=$(GIT_COMMIT)"
 
 .PHONY: build
@@ -82,7 +87,7 @@ build: .cargo/config version-vars
 	@OPENSSL_STATIC=1 \
 		OPENSSL_LIB_DIR=$(shell dirname `whereis libssl.a | cut -d" " -f2`) \
 		OPENSSL_INCLUDE_DIR=/usr/include/openssl \
-		TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
+		TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
 		cargo build --release --features dangerous-options,grpc-preview
 	@mkdir -p bin
 
@@ -177,7 +182,7 @@ build-azl3: azl3-builder-image version-vars
 	@mkdir -p target/azl3/
 	@echo "Building Trident for Azure Linux 3 using Docker image $(AZL3_BUILDER_IMAGE)..."
 	@docker run --rm \
-		-e TRIDENT_VERSION="$(TRIDENT_CARGO_VERSION)-dev.$(GIT_COMMIT)" \
+		-e TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
 		-v $(PWD):/work -w /work $(AZL3_BUILDER_IMAGE) \
 		cargo build --color always --target-dir target/azl3 --release --features dangerous-options,grpc-preview
 
@@ -196,7 +201,7 @@ bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full packaging/systemd
 			--build-arg CARGO_REGISTRIES_FROM_ENV="true" \
 			--build-arg TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
 			--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)" \
-			--build-arg RPM_REL="dev.$(GIT_COMMIT)" \
+			--build-arg RPM_REL="$(TRIDENT_PREVIEW_VERSION)" \
 			--target artifact \
 			--output type=local,dest=$$tmpdir \
 			-f packaging/docker/Dockerfile.full \
@@ -211,7 +216,7 @@ bin/trident-rpms.tar.gz: packaging/docker/Dockerfile.azl3 packaging/systemd/*.se
 	@docker build -t trident/trident-build:latest \
 		--build-arg TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
 		--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)" \
-		--build-arg RPM_REL="dev.$(GIT_COMMIT)" \
+		--build-arg RPM_REL="$(TRIDENT_PREVIEW_VERSION)" \
 		-f packaging/docker/Dockerfile.azl3 \
 		.
 	@mkdir -p bin/
@@ -946,7 +951,8 @@ artifacts/%.cosi artifacts/%.iso artifacts/%.vhdx: $$(shell ./tests/images/testi
 	sudo ./tests/images/testimages.py build \
 		$* \
 		--output-dir ./artifacts \
-		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE))
+		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE)) \
+		$(if $(strip $(MIC_ARCHITECTURE)),--image-architecture $(MIC_ARCHITECTURE))
 
 MIC_CONTAINER_IMAGE ?= $(shell ./tests/images/testimages.py show-artifact customizer-container-full)
 artifacts/trident-functest.qcow2: $$(shell ./tests/images/testimages.py dependencies $$(basename $$(notdir $$@)))
@@ -1173,12 +1179,22 @@ imagecustomizer-dev-arm64:
 	make -C ../azure-linux-image-tools/toolkit go-imagecustomizer
 	../azure-linux-image-tools/toolkit/tools/imagecustomizer/container/build-container.sh -t imagecustomizer:dev -a arm64
 
-artifacts/ubuntu_amd64.vhdx:
+artifacts/ubuntu_2204_amd64.vhdx:
 	curl -LO https://cloud-images.ubuntu.com/releases/server/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img
-	qemu-img convert -O vhdx ubuntu-22.04-server-cloudimg-amd64.img artifacts/ubuntu_amd64.vhdx
+	qemu-img convert -O vhdx ubuntu-22.04-server-cloudimg-amd64.img artifacts/ubuntu_2204_amd64.vhdx
 	rm -f ubuntu-22.04-server-cloudimg-amd64.img
 
-artifacts/ubuntu_arm64.vhdx:
+artifacts/ubuntu_2204_arm64.vhdx:
 	curl -LO https://cloud-images.ubuntu.com/releases/server/22.04/release/ubuntu-22.04-server-cloudimg-arm64.img
-	qemu-img convert -O vhdx ubuntu-22.04-server-cloudimg-arm64.img artifacts/ubuntu_arm64.vhdx
+	qemu-img convert -O vhdx ubuntu-22.04-server-cloudimg-arm64.img artifacts/ubuntu_2204_arm64.vhdx
 	rm -f ubuntu-22.04-server-cloudimg-arm64.img
+
+artifacts/ubuntu_2404_amd64.vhdx:
+	curl -LO https://cloud-images.ubuntu.com/releases/server/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img
+	qemu-img convert -O vhdx ubuntu-24.04-server-cloudimg-amd64.img artifacts/ubuntu_2404_amd64.vhdx
+	rm -f ubuntu-24.04-server-cloudimg-amd64.img
+
+artifacts/ubuntu_2404_arm64.vhdx:
+	curl -LO https://cloud-images.ubuntu.com/releases/server/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img
+	qemu-img convert -O vhdx ubuntu-24.04-server-cloudimg-arm64.img artifacts/ubuntu_2404_arm64.vhdx
+	rm -f ubuntu-24.04-server-cloudimg-arm64.img

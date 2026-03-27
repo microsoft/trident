@@ -35,6 +35,7 @@ use crate::{
     io_utils::{
         hashing_reader::{HashingReader, HashingReader384},
         image_streamer,
+        read_monitor::ReadMonitor,
     },
 };
 
@@ -117,18 +118,30 @@ fn deploy_esp(ctx: &EngineContext, mount_point: &Path) -> Result<(), TridentErro
     // have to store a potentially large ESP image in memory.
     let esp_extraction_dir = path::join_relative(mount_point, ESP_EXTRACTION_DIRECTORY);
 
+    // Get the threshold and interval for reporting slow streaming speed from
+    // the context, to be used in the ReadMonitor while streaming images to the
+    // block devices.
+    let (threshold_reporting, reporting_interval) = ctx.read_monitor_params()?;
+
     let mut found_esp = false;
     os_image.read_images(|path, stream| {
         if path != esp_img.image_file.path {
             return ControlFlow::Continue(());
         }
 
+        let monitored_reader = ReadMonitor::new(
+            stream,
+            esp_img.image_file.compressed_size,
+            threshold_reporting,
+            reporting_interval,
+        );
+
         found_esp = true;
         let (temp_file, computed_sha384) = match load_raw_image(
             ctx,
             &esp_extraction_dir,
             os_image.source(),
-            HashingReader384::new(stream),
+            HashingReader384::new(monitored_reader),
         ) {
             Ok(r) => r,
             Err(e) => {

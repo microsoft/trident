@@ -15,7 +15,14 @@ from cryptography.hazmat.primitives.asymmetric import rsa, ed25519
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from builder import ArtifactManifest, ImageConfig, OutputFormat, customize, sign
+from builder import (
+    ArtifactManifest,
+    ImageConfig,
+    OutputFormat,
+    convert,
+    customize,
+    sign,
+)
 from builder.context_managers import temp_dir, temp_file
 
 logging.basicConfig(level=logging.INFO)
@@ -36,6 +43,7 @@ def build_image(
     artifacts: ArtifactManifest,
     clones: int = 1,
     rpm_sources: List[Path] = [],
+    image_architecture: Optional[str] = None,
     dry_run: bool = False,
     force: bool = False,
 ):
@@ -65,6 +73,7 @@ def build_image(
                 image,
                 output_dir,
                 rpm_sources,
+                image_architecture,
                 dry_run,
                 force,
                 ca_nss_key_db=ca_nss_key_db,
@@ -77,6 +86,7 @@ def build_image(
                 output_dir,
                 clones,
                 rpm_sources,
+                image_architecture,
                 dry_run,
                 force,
                 ca_nss_key_db=ca_nss_key_db,
@@ -103,6 +113,7 @@ def build_one(
     image: ImageConfig,
     output_dir: Path,
     rpm_sources: List[Path] = [],
+    image_architecture: Optional[str] = None,
     dry_run: bool = False,
     force: bool = False,
     ca_nss_key_db: Optional[Path] = None,
@@ -130,45 +141,59 @@ def build_one(
                 log.info(f"Output file {output_file} is up to date.")
                 return output_file
 
-    # Copy RPM sources to standalone temporary directories
-    with ExitStack() as stack:
-        tmp_rpm_sources = []
-        for rpm_src in rpm_sources:
-            # Create a temporary directory for each RPM source, delete with sudo because
-            # createrepo is run as root.
-            tmp = stack.enter_context(
-                temp_dir(prefix=f"rpm-{rpm_src.stem}-", sudo=True)
-            )
-            tmp_rpm_sources.append(tmp)
-            log.debug(f"Copying RPM source {rpm_src} to {tmp}")
-            shutil.copytree(rpm_src, tmp, dirs_exist_ok=True)
+    if image.image_customizer_convert:
+        # If 'convert' is requested, run Image Customizer convert subcommand
+        convert.convert_image(
+            container_image,
+            image.id,
+            image.base_image.path,
+            image.output_format.ic_name(),
+            output_file,
+            image_architecture,
+            dry_run,
+        )
+    else:
+        # Copy RPM sources to standalone temporary directories
+        with ExitStack() as stack:
+            tmp_rpm_sources = []
+            for rpm_src in rpm_sources:
+                # Create a temporary directory for each RPM source, delete with sudo because
+                # createrepo is run as root.
+                tmp = stack.enter_context(
+                    temp_dir(prefix=f"rpm-{rpm_src.stem}-", sudo=True)
+                )
+                tmp_rpm_sources.append(tmp)
+                log.debug(f"Copying RPM source {rpm_src} to {tmp}")
+                shutil.copytree(rpm_src, tmp, dirs_exist_ok=True)
 
-        # If config YAML contains output.artifacts, then need to output signed image. First, build
-        # an unsigned image; then, sign boot artifacts, and inject the signed copies back, to build
-        # a signed image as final output.
-        if image.get_output_artifacts_dir():
-            build_signed_image(
-                stack,
-                container_image,
-                image,
-                tmp_rpm_sources,
-                output_dir,
-                output_file,
-                ca_nss_key_db,
-                dry_run,
-            )
-        else:
-            # Otherwise, only build an unsigned image
-            customize.build_config(
-                container_image,
-                image.id,
-                image.full_yaml_path(),
-                image.base_image.path,
-                image.output_format.ic_name(),
-                output_file,
-                tmp_rpm_sources,
-                dry_run,
-            )
+            if image.get_output_artifacts_dir():
+                # If config YAML contains output.artifacts, then need to output signed image. First, build
+                # an unsigned image; then, sign boot artifacts, and inject the signed copies back, to build
+                # a signed image as final output.
+                build_signed_image(
+                    stack,
+                    container_image,
+                    image,
+                    tmp_rpm_sources,
+                    output_dir,
+                    output_file,
+                    ca_nss_key_db,
+                    image_architecture,
+                    dry_run,
+                )
+            else:
+                # Otherwise, only build an unsigned image
+                customize.build_config(
+                    container_image,
+                    image.id,
+                    image.full_yaml_path(),
+                    image.base_image.path,
+                    image.output_format.ic_name(),
+                    output_file,
+                    tmp_rpm_sources,
+                    image_architecture,
+                    dry_run,
+                )
 
     output_file = output_dir / image.file_name()
     log.info(f"Image '{image.id}' built successfully in {output_file}")
@@ -180,6 +205,7 @@ def build_with_clones(
     output_dir: Path,
     clones: int,
     rpm_sources: List[Path] = [],
+    image_architecture: Optional[str] = None,
     dry_run: bool = False,
     force: bool = False,
     ca_nss_key_db: Optional[Path] = None,
@@ -191,6 +217,7 @@ def build_with_clones(
         output_dir,
         clones,
         rpm_sources,
+        image_architecture,
         dry_run,
         force,
         ca_nss_key_db=ca_nss_key_db,
@@ -268,6 +295,7 @@ def build_clones(
     output_dir: Path,
     clones: int,
     rpm_sources: List[Path] = [],
+    image_architecture: Optional[str] = None,
     dry_run: bool = False,
     force: bool = False,
     ca_nss_key_db: Optional[Path] = None,
@@ -288,6 +316,7 @@ def build_clones(
                     clone_image(image, i),
                     output_dir,
                     rpm_sources,
+                    image_architecture,
                     dry_run,
                     force,
                     ca_nss_key_db,
@@ -374,6 +403,7 @@ def build_signed_image(
     output_dir: Path,
     output_file: Path,
     ca_nss_key_db: Path,
+    image_architecture: Optional[str] = None,
     dry_run: bool = False,
 ):
 
@@ -397,6 +427,7 @@ def build_signed_image(
         OutputFormat.RAW.ic_name(),
         unsigned_output_file,
         tmp_rpm_sources,
+        image_architecture,
         dry_run,
     )
 

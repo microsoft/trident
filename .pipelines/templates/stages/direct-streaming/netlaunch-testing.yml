@@ -4,60 +4,72 @@ parameters:
     type: boolean
     default: false
 
-  - name: architecture
-    displayName: Architecture
+  - name: pipelineArchitecture
+    displayName: Architecture of the pipeline agent
     type: string
     values:
       - arm64
       - amd64
     default: amd64
 
-  - name: streamingImageDistro
+  - name: targetArchitecture
+    displayName: Architecture of the target image being tested
+    type: string
+    values:
+      - arm64
+      - amd64
+    default: amd64
+
+  - name: buildImageStage
+    type: string
+
+  - name: testImageName
+    type: string
+
+  - name: streamingImageScenario
     type: string
     values:
       - ubuntu
+      - gb200
       - azurelinux
     default: azurelinux
 
 stages:
-  - stage: DirectStreaming_DeploymentTesting_${{ parameters.streamingImageDistro }}_${{ parameters.architecture }}
-    displayName: Direct Streaming Deployment VM ${{ parameters.streamingImageDistro }} ${{ parameters.architecture }} Testing
+  - stage: DirectStreaming_DeploymentTesting_${{ replace( parameters.testImageName, '-', '_') }}
+    displayName: Direct Streaming Deployment VM for ${{ parameters.testImageName }}
     dependsOn:
       - ${{ if eq(parameters.testingRun, true) }}:
           - DownloadTestingElements
       - ${{ else }}:
-          - ${{ if eq(parameters.architecture, 'arm64') }}:
+          - ${{ if eq(parameters.pipelineArchitecture, 'arm64') }}:
               - BuildingTools_arm64
-          - ${{ if eq(parameters.architecture, 'amd64') }}:
+          - ${{ if eq(parameters.pipelineArchitecture, 'amd64') }}:
               - BuildingTools
-          - BuildImagesForDirectStreaming_${{ parameters.streamingImageDistro }}_${{ parameters.architecture }}
-          - BuildInstallerForDirectStreaming_${{ parameters.architecture }}
+          - BuildInstallerForDirectStreaming_${{ parameters.targetArchitecture }}
+          - ${{ parameters.buildImageStage }}
 
     jobs:
-      - job: DirectStreamingTesting_${{ parameters.streamingImageDistro }}_${{ parameters.architecture }}
-        displayName: Direct Streaming Deployment Testing for ${{ parameters.streamingImageDistro }} ${{ parameters.architecture }}
+      - job: DirectStreamingTesting_${{ replace( parameters.testImageName, '-', '_') }}
+        displayName: Direct Streaming Deployment Testing for ${{ parameters.testImageName }}
         timeoutInMinutes: 50
         pool:
-          ${{ if eq(parameters.architecture, 'amd64') }}:
-            type: linux
-            name: trident-ubuntu-1es-pool-eastus2
-            hostArchitecture: amd64
-          ${{ if eq(parameters.architecture, 'arm64') }}:
-            type: linux
+          type: linux
+          ${{ if eq(parameters.pipelineArchitecture, 'arm64') }}:
             name: trident-ubuntu-ARM64-1es-pool-westus2
             hostArchitecture: arm64
+          ${{ if eq(parameters.pipelineArchitecture, 'amd64') }}:
+            name: trident-ubuntu-1es-pool-eastus2
+            hostArchitecture: amd64
 
         variables:
           - name: tridentSourceDirectory
             value: $(Build.SourcesDirectory)
-          - name: testImageName
-            value: ${{ parameters.streamingImageDistro }}-direct-streaming-testimage-${{ parameters.architecture }}
           - name: installerISOName
-            value: trident-direct-streaming-installer-${{ parameters.architecture }}
+            value: trident-direct-streaming-installer-${{ parameters.targetArchitecture }}
           - name: ob_outputDirectory
             value: $(tridentSourceDirectory)/deployment_logs
           - name: ob_artifactBaseName
-            value: direct_streaming_${{ parameters.streamingImageDistro }}_${{ parameters.architecture }}_log_$(System.JobAttempt)
+            value: ${{ replace(parameters.testImageName, '-', '_') }}_log_$(System.JobAttempt)
           - name: netlaunchPort
             value: 4000
 
@@ -66,20 +78,25 @@ stages:
           - template: ../testing_common/download-test-images.yml
             parameters:
               installerISO: $(installerISOName)
-              tridentTestImage: ${{ variables.testImageName }}
+              tridentTestImage: ${{ parameters.testImageName }}
               tridentTestImageVerity: skip
               tridentTestImageUsrVerity: skip
               downloadTridentContainer: false
-              ${{ if eq(parameters.architecture, 'arm64') }}:
+              ${{ if eq(parameters.pipelineArchitecture, 'arm64') }}:
                 goToolsArtifactName: go-tools-arm64
-              ${{ if eq(parameters.architecture, 'amd64') }}:
+              ${{ if eq(parameters.pipelineArchitecture, 'amd64') }}:
                 goToolsArtifactName: go-tools
 
           - bash: |
               set -ex
               sudo apt update -y
               sudo apt install -y python3 python3-pip seabios
-
+              if [[ "${{ parameters.pipelineArchitecture }}" != "${{ parameters.targetArchitecture }}" ]]; then
+                if [[ "${{ parameters.targetArchitecture }}" == "arm64" ]]; then
+                    # If pipeline is not arm64, but are testing arm64, install emulator
+                    sudo apt install -y qemu-system-arm qemu-efi-aarch64
+                fi
+              fi
             displayName: "Install pip and seabios"
             retryCountOnTaskFailure: 3
 
@@ -94,12 +111,25 @@ stages:
               cat /etc/libvirt/virtlogd.conf
               sudo systemctl restart virtlogd.socket
 
-              ./tools/virt-deploy create --mem 12 --disks 32,32
+              MAX_DISK_SIZE=32
+              MEMORY_SIZE=12
+              if [[ "${{ parameters.streamingImageScenario }}" == "gb200" ]]; then
+                MAX_DISK_SIZE=72
+                MEMORY_SIZE=24
+              fi
+
+              ARM_OVERRIDE_ARG=""
+              if [[ "${{ parameters.targetArchitecture }}" == "arm64" ]]; then
+                  ARM_OVERRIDE_ARG="--arm"
+              fi
+
+              ./tools/virt-deploy create --mem $MEMORY_SIZE --disks $MAX_DISK_SIZE,32 $ARM_OVERRIDE_ARG
             workingDirectory: $(tridentSourceDirectory)
             displayName: "Creating virt-deploy VM"
 
           - bash: |
               set -euxo pipefail
+              mkdir -p $(ob_outputDirectory)
               ISO_FILE=./artifacts/iso/$(installerISOName).iso
               COSI_FILE=./artifacts/test-image/regular.cosi
               HASH=$(./scripts/cosi-sha384.py $COSI_FILE)
@@ -114,7 +144,7 @@ stages:
                   --timeout-in-seconds 2400
 
             workingDirectory: $(tridentSourceDirectory)
-            displayName: "🚀 Deploy direct streaming ISO and validate stream-image for ${{ parameters.streamingImageDistro }} ${{ parameters.architecture }}"
+            displayName: "🚀 Deploy direct streaming ISO and validate stream-image for ${{ parameters.streamingImageScenario }} ${{ parameters.targetArchitecture }}"
             timeoutInMinutes: 40
 
           - bash: |
@@ -124,3 +154,8 @@ stages:
                   --artifacts-folder "$(ob_outputDirectory)"
             displayName: "📷 Capture screenshot: direct streaming"
             condition: succeededOrFailed()
+
+          - template: ../testing_common/fix-output-directory-for-one-branch-step.yml
+            parameters:
+              outputDir: $(ob_outputDirectory)
+              condition: always()

@@ -16,6 +16,7 @@ parameters:
       - "pre"
       - "full-validation"
       - "crate-publishing"
+      - "release"
     displayName: "Stage to run"
 
   - name: blockPublishing
@@ -33,6 +34,16 @@ parameters:
     displayName: "crate-publishing: Perform a dry run without actually publishing the crates"
     default: true
 
+  - name: specificVersion
+    type: string
+    displayName: "release: Specific pre-release version to release."
+    default: ""
+
+  - name: sourceCommit
+    type: string
+    displayName: "release: The commit hash of the source code to package."
+    default: ""
+
 stages:
   - ${{ if eq(parameters.targetStage, 'pr') }}:
       - template: pr-template.yml
@@ -43,13 +54,21 @@ stages:
           dryRun: ${{ parameters.cratePublishingDryRun }}
           cargoRegistry: TridentDev
 
+  - ${{ elseif eq(parameters.targetStage, 'release') }}:
+      - template: release-template.yml
+        parameters:
+          specificVersion: ${{ parameters.specificVersion }}
+          skipPublishing: true
+          sourceCommit: ${{ parameters.sourceCommit }}
+
   - ${{ else }}:
       - template: e2e-template.yml
         parameters:
           stageType: ${{ parameters.targetStage }}
           blockPublishing: ${{ parameters.blockPublishing }}
-          # Only perform Azure testing from official pipelines, as only those have access to the Azure subscription.
-          includeAzure: ${{ or(eq(parameters.targetStage, 'pre'), eq(parameters.targetStage, 'ci'), eq(parameters.targetStage, 'pr-e2e-azure')) }}
+          # TODO: enable this when Azure resources are available
+          # # Only perform Azure testing from official pipelines, as only those have access to the Azure subscription.
+          # includeAzure: ${{ or(eq(parameters.targetStage, 'pre'), eq(parameters.targetStage, 'ci'), eq(parameters.targetStage, 'pr-e2e-azure')) }}
           numberOfUpdateIterations: ${{ parameters.numberOfUpdateIterations }}
       - template: e2e-arm64-template.yml
         parameters:

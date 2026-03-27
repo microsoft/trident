@@ -2,13 +2,12 @@ import logging
 from pathlib import Path
 import subprocess
 import sys
-from typing import List
+from typing import List, Optional
+
+from builder import utils
 
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger(__name__ if __name__ != "__main__" else "customize-image")
-
-BUILD_DIR = "/tmp"
-HOST_PATH = Path("/host")
 
 
 def build_config(
@@ -19,6 +18,7 @@ def build_config(
     img_format: str,
     output_file: Path,
     rpm_sources: List[Path] = [],
+    image_architecture: Optional[str] = None,
     dry_run: bool = False,
 ):
     """
@@ -50,27 +50,36 @@ def build_config(
         "--rm",
         "--privileged",
         "-v",
-        f"/:{HOST_PATH}",
+        f"/:{utils.HOST_PATH}",
         "-v",
         "/dev:/dev",
-        container_image,
-        "--config-file",
-        build_path(yaml_path),
-        "--log-level",
-        "debug",
-        "--build-dir",
-        BUILD_DIR,
-        "--image-file",
-        build_path(base_image),
-        "--output-image-format",
-        img_format,
-        "--output-image-file",
-        build_path(output_file),
     ]
+
+    if image_architecture:
+        base_cmd.append("--platform")
+        base_cmd.append(image_architecture)
+
+    base_cmd.extend(
+        [
+            container_image,
+            "--config-file",
+            utils.build_path(yaml_path),
+            "--log-level",
+            "debug",
+            "--build-dir",
+            utils.BUILD_DIR,
+            "--image-file",
+            utils.build_path(base_image),
+            "--output-image-format",
+            img_format,
+            "--output-image-file",
+            utils.build_path(output_file),
+        ]
+    )
 
     for _, rpm in enumerate(rpm_sources):
         base_cmd.append("--rpm-source")
-        base_cmd.append(build_path(rpm))
+        base_cmd.append(utils.build_path(rpm))
 
     # Stringify all the args
     base_cmd = [str(x) for x in base_cmd]
@@ -90,26 +99,6 @@ def build_config(
     except Exception as e:
         log.error(f"Error building config '{config_name}': {e}")
         raise e
-
-
-def build_path(path: Path) -> Path:
-    """
-    Convert a host filesystem path to its corresponding path inside the Docker container.
-
-    The Docker container mounts the host's root filesystem at /host, so this function
-    transforms absolute host paths like '/home/user/file.txt' to container paths
-    like '/host/home/user/file.txt'.
-
-    Args:
-        path: Absolute or relative path on the host filesystem
-
-    Returns:
-        Path that can be used inside the Docker container to access the same file
-
-    Example:
-        build_path(Path("/home/user/config.yaml")) -> Path("/host/home/user/config.yaml")
-    """
-    return HOST_PATH / path.absolute().relative_to(Path("/"))
 
 
 def inject_files(
@@ -141,23 +130,23 @@ def inject_files(
         "--rm",
         "--privileged",
         "-v",
-        f"/:{HOST_PATH}",
+        f"/:{utils.HOST_PATH}",
         "-v",
         "/dev:/dev",
         container_image,
         "inject-files",
         "--config-file",
-        build_path(inject_files_yaml_path),
+        utils.build_path(inject_files_yaml_path),
         "--log-level",
         "debug",
         "--build-dir",
-        BUILD_DIR,
+        utils.BUILD_DIR,
         "--image-file",
-        build_path(unsigned_image_file),
+        utils.build_path(unsigned_image_file),
         "--output-image-format",
         img_format,
         "--output-image-file",
-        build_path(output_image_file),
+        utils.build_path(output_image_file),
     ]
 
     # Stringify all the args

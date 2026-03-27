@@ -351,3 +351,8 @@ stages:
             workingDirectory: $(tridentSourceDirectory)
             condition: failed()
             displayName: "Publish OS disk"
+
+          - template: ../testing_common/fix-output-directory-for-one-branch-step.yml
+            parameters:
+              outputDir: $(ob_outputDirectory)
+              condition: always()

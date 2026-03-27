@@ -5,6 +5,7 @@ from typing import List, Optional
 
 from builder import ImageConfig, RpmSources, ArtifactManifest
 from .builder import build_image
+from .convert import convert_image
 from . import download
 
 log = logging.getLogger(__name__)
@@ -86,12 +87,30 @@ def build(
     clones: int,
     dry_run: bool,
     force: bool,
+    image_architecture: Optional[str] = None,
     download: bool = True,
 ) -> None:
     image = find_image(configs, name)
     log.info(f"Building image '{image.name}'")
-    rpm_sources: List[Path] = []
-    if image.rpm_sources_allowed:
+
+    container_image: Optional[str] = container_name
+    if container_image is None:
+        log.error("Image Customizer container image is required")
+        exit(1)
+
+    if image.image_customizer_convert:
+        # If 'convert' is requested, run Image Customizer convert subcommand
+        convert_image(
+            container_image,
+            image.id,
+            image.base_image.path,
+            image.output_format.ic_name(),
+            output_dir / image.file_name(),
+            image_architecture,
+            dry_run,
+        )
+    else:
+        rpm_sources: List[Path] = []
         if image.requires_trident:
             rpm_sources.append(RpmSources.TRIDENT.path())
         if image.requires_dhcp:
@@ -101,32 +120,28 @@ def build(
         if rpm_overrides_path.exists():
             rpm_sources.append(rpm_overrides_path)
 
-    container_image: Optional[str] = container_name
-    if container_image is None:
-        log.error("Image Customizer container image is required")
-        exit(1)
+        if not image.base_image.path.exists():
+            if download:
+                log.info(
+                    f"Downloading base image to '{image.base_image.path}'"
+                    " (use --no-download to skip this step)"
+                )
 
-    if not image.base_image.path.exists():
-        if download:
-            log.info(
-                f"Downloading base image to '{image.base_image.path}'"
-                " (use --no-download to skip this step)"
-            )
+            else:
+                log.error(f"Base image '{image.base_image.path}' does not exist.")
+                exit(1)
 
-        else:
-            log.error(f"Base image '{image.base_image.path}' does not exist.")
-            exit(1)
-
-    build_image(
-        container_image=container_image,
-        image=image,
-        output_dir=output_dir,
-        artifacts=artifacts,
-        clones=clones,
-        rpm_sources=rpm_sources,
-        dry_run=dry_run,
-        force=force,
-    )
+        build_image(
+            container_image=container_image,
+            image=image,
+            output_dir=output_dir,
+            artifacts=artifacts,
+            clones=clones,
+            rpm_sources=rpm_sources,
+            image_architecture=image_architecture,
+            dry_run=dry_run,
+            force=force,
+        )
 
 
 def download_base_image(

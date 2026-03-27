@@ -1,0 +1,125 @@
+parameters:
+  - name: sourceCommit
+    type: string
+    displayName: "The commit hash of the source code to package."
+    default: ""
+
+stages:
+  - stage: ReleaseArtifacts
+    dependsOn:
+      - GetTridentBinaries_rpms_amd64
+    condition: succeeded()
+
+    jobs:
+      - job: ReleaseArtifacts
+        displayName: Package Trident release artifacts
+        pool:
+          type: linux
+
+        variables:
+          - name: ob_outputDirectory
+            value: $(Build.SourcesDirectory)/build
+          - name: ob_artifactBaseName
+            value: "release-artifacts"
+
+        steps:
+          - script: echo $(Build.BuildNumber)
+            displayName: "Print Trident Version"
+
+          - script: |
+              set -eux
+
+              rm -rf $(ob_outputDirectory)
+              mkdir -p $(ob_outputDirectory)
+
+              rm -rf $(Pipeline.Workspace)/rpms
+              mkdir -p $(Pipeline.Workspace)/rpms
+            displayName: "Clean output and rpms directories"
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              buildType: current
+              patterns: |
+                *.rpm
+              targetPath: $(Pipeline.Workspace)/rpms
+              artifactName: trident-binaries
+            displayName: "Download Trident RPMs"
+
+          - script: |
+              set -eux
+
+              TAR_FILE_NAME="trident-rpms-$(Build.BuildNumber).tar.gz"
+
+              STAGING_DIR=$(mktemp -d)
+              mkdir -p "${STAGING_DIR}/$(Build.BuildNumber)"
+              cp $(Pipeline.Workspace)/rpms/*.rpm "${STAGING_DIR}/$(Build.BuildNumber)/"
+              tar -czf $(ob_outputDirectory)/$TAR_FILE_NAME \
+                -C "${STAGING_DIR}" \
+                "$(Build.BuildNumber)"
+              rm -rf "${STAGING_DIR}"
+
+              sha256sum $(ob_outputDirectory)/$TAR_FILE_NAME > $(ob_outputDirectory)/$TAR_FILE_NAME.sha256
+            displayName: "Package RPMs into tarball"
+
+          - ${{ if ne(parameters.sourceCommit, '') }}:
+              - script: |
+                  set -eux
+
+                  # Reset the source code to the specified commit to ensure
+                  # we're packaging the correct source code.
+                  git fetch origin "${{ parameters.sourceCommit }}"
+                  git reset --hard "${{ parameters.sourceCommit }}"
+                displayName: "Reset source code to specified commit"
+                workingDirectory: $(Build.SourcesDirectory)
+
+              - template: ../common_tasks/update-protoc.yml
+              - template: ../common_tasks/rustup.yml
+              - template: ../common_tasks/cargo-auth.yml
+
+              - script: |
+                  set -eux
+                  echo "=== Project config ==="
+                  cat .cargo/config.toml
+                  echo ""
+                  echo "=== CARGO_HOME ==="
+                  echo "${CARGO_HOME:-not set}"
+                  echo "=== CARGO_HOME config ==="
+                  cat "${CARGO_HOME:-/nonexistent}/config.toml" 2>/dev/null || echo "(no CARGO_HOME config)"
+                  echo "=== Relevant env vars ==="
+                  env | grep -iE 'CARGO_SOURCE|CARGO_REGISTRIES|CARGO_HOME' | sort || true
+                displayName: "Debug cargo config"
+                workingDirectory: $(Build.SourcesDirectory)
+
+              - script: |
+                  set -eux
+
+                  # Get the raw version from the cargo file to provide a clean
+                  # version string for the source tarball and cargo vendor
+                  # tarball.
+                  TRIDENT_CARGO_VERSION=$(python3 ./scripts/get-version.py)
+
+                  SOURCE_TARBALL_NAME="trident-$TRIDENT_CARGO_VERSION.tar.gz"
+                  SOURCE_TARBALL_PATH="$(ob_outputDirectory)/$SOURCE_TARBALL_NAME"
+
+                  # Create source code tarball
+                  git archive --format=tar.gz \
+                    -o $SOURCE_TARBALL_PATH \
+                    HEAD
+
+                  sha256sum $SOURCE_TARBALL_PATH > $(ob_outputDirectory)/$SOURCE_TARBALL_NAME.sha256
+
+                  # Package cargo dependencies into a separate tarball
+                  cargo vendor --respect-source-config -v --locked vendor
+
+                  VENDOR_TARBALL_NAME="trident-$TRIDENT_CARGO_VERSION-cargo.tar.gz"
+                  VENDOR_TARBALL_PATH="$(ob_outputDirectory)/$VENDOR_TARBALL_NAME"
+
+                  # Create cargo vendor tarball
+                  tar -czf $VENDOR_TARBALL_PATH vendor/
+
+                  sha256sum $VENDOR_TARBALL_PATH > $(ob_outputDirectory)/$VENDOR_TARBALL_NAME.sha256
+
+                  # Remove vendor directory to free disk space
+                  rm -rf vendor
+                displayName: "Package source code tarballs"
+                workingDirectory: $(Build.SourcesDirectory)

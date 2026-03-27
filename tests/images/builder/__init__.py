@@ -21,8 +21,21 @@ class BaseImage(Enum):
     MINIMAL_AARCH64 = BaseImageData(
         "minimal_aarch64", Path("artifacts/minimal_aarch64.vhdx")
     )
-    UBUNTU_AMD64 = BaseImageData("ubuntu_amd64", Path("artifacts/ubuntu_amd64.vhdx"))
-    UBUNTU_ARM64 = BaseImageData("ubuntu_arm64", Path("artifacts/ubuntu_arm64.vhdx"))
+    UBUNTU_2204_AMD64 = BaseImageData(
+        "ubuntu_2204_amd64", Path("artifacts/ubuntu_2204_amd64.vhdx")
+    )
+    UBUNTU_2204_ARM64 = BaseImageData(
+        "ubuntu_2204_arm64", Path("artifacts/ubuntu_2204_arm64.vhdx")
+    )
+    UBUNTU_2404_AMD64 = BaseImageData(
+        "ubuntu_2404_amd64", Path("artifacts/ubuntu_2404_amd64.vhdx")
+    )
+    UBUNTU_2404_ARM64 = BaseImageData(
+        "ubuntu_2404_arm64", Path("artifacts/ubuntu_2404_arm64.vhdx")
+    )
+    GB200_2404_ARM64 = BaseImageData(
+        "gb200_2404_arm64", Path("artifacts/gb200_2404_arm64.vhdx")
+    )
 
     @property
     def path(self) -> Path:
@@ -126,8 +139,8 @@ class ImageConfig:
     # Architecture of the image
     architecture: SystemArchitecture = SystemArchitecture.AMD64
 
-    # RPM sources are allowed for image
-    rpm_sources_allowed: bool = True
+    # Use ImageCustomizer convert command rather than customize
+    image_customizer_convert: bool = False
 
     @classmethod
     def kebab_fields(cls) -> List[str]:
@@ -174,7 +187,9 @@ class ImageConfig:
         return self.base_dir() / self.config_file
 
     def dependencies(self) -> List[Path]:
-        deps = [self.base_image.path, self.full_yaml_path()]
+        deps = [self.base_image.path]
+        if not self.image_customizer_convert:
+            deps.append(self.full_yaml_path())
         for file in self.base_dir().rglob("*"):
             if file.is_file():
                 deps.append(file)

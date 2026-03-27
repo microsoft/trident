@@ -271,7 +271,8 @@ stages:
 
       - template: direct-streaming-test.yml
         parameters:
-          architecture: amd64
+          micBuildType: ${{ parameters.micBuildType }}
+          micVersion: ${{ parameters.micVersion }}
 
   # TESTING stages for full validation matrix host/container and bm/bm
   - ${{ if eq(parameters.stageType, 'full-validation') }}:
@@ -296,7 +297,8 @@ stages:
 
       - template: direct-streaming-test.yml
         parameters:
-          architecture: amd64
+          micBuildType: ${{ parameters.micBuildType }}
+          micVersion: ${{ parameters.micVersion }}
 
       - ${{ if parameters.baremetalTestsEnabled }}:
           # BM Testing (host, weekly)
@@ -335,7 +337,8 @@ stages:
 
       - template: direct-streaming-test.yml
         parameters:
-          architecture: amd64
+          micBuildType: ${{ parameters.micBuildType }}
+          micVersion: ${{ parameters.micVersion }}
 
   # TESTING stages for PR-E2E
   - ${{ if eq(parameters.stageType, 'pr-e2e') }}:
@@ -362,7 +365,8 @@ stages:
       # Run direct streaming tests for amd64 with streaming images
       - template: direct-streaming-test.yml
         parameters:
-          architecture: amd64
+          micBuildType: ${{ parameters.micBuildType }}
+          micVersion: ${{ parameters.micVersion }}
 
   # PUBLISHING
   #

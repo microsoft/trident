@@ -6,6 +6,14 @@ parameters:
   - name: target
     type: string
 
+  - name: pipelineArchitecture
+    displayName: Architecture for pipeline
+    type: string
+    values:
+      - arm64
+      - amd64
+    default: "amd64"
+
   - name: micBuildType
     displayName: MIC Build Type
     type: string
@@ -59,8 +67,11 @@ parameters:
       - core_selinux
       - minimal
       - qemu_guest
-      - ubuntu_amd64
-      - ubuntu_arm64
+      - ubuntu_2204_amd64
+      - ubuntu_2204_arm64
+      - ubuntu_2404_amd64
+      - ubuntu_2404_arm64
+      - gb200_2404_arm64
     default: 
       - baremetal
 
@@ -91,12 +102,7 @@ parameters:
     default: false
 
 steps:
-  - task: PipAuthenticate@1
-    displayName: Provision - Authenticate Pip
-    inputs:
-      artifactFeeds: "mariner/Mariner-Pypi-Feed"
-
-  - template: common/sfi-enforce-isolation-with-etc-hosts.yaml@platform-pipelines
+  - template: ../common_tasks/avoid-pypi-usage.yml
 
   - ${{ if eq(parameters.downloadTrident, true) }}:
       - task: DownloadPipelineArtifact@2
@@ -137,6 +143,16 @@ steps:
         # servicing by Trident
         sudo apt install -y createrepo-c swtpm squashfs-tools lsof
       fi
+
+      if [[ "${{ parameters.micArchitecture }}" != "${{ parameters.pipelineArchitecture }}" ]]; then
+        # Register qemu for cross-platform ImageCustomizer usage
+        if which tdnf; then
+          sudo tdnf install -y qemu-user-static
+        else
+          sudo apt install -y qemu-user-static binfmt-support
+        fi
+      fi
+
       az extension add --name azure-devops
     displayName: "Install native dependencies"
     retryCountOnTaskFailure: 3
@@ -148,17 +164,44 @@ steps:
       micVersion: ${{ parameters.micVersion }}
 
   - ${{ each baseimgType in parameters.baseimgTypes }}:
-    - ${{ if contains(baseimgType, 'ubuntu') }}:
-      - bash: |
-          set -eux
-          mkdir -p artifacts
-          make artifacts/${{ baseimgType }}.vhdx
-          # Move the downloaded base image to the images directory consistent
-          # with how the azurelinux base images are stored.
-          mkdir -p $(Build.ArtifactStagingDirectory)/images
-          mv artifacts/${{ baseimgType }}.vhdx $(Build.ArtifactStagingDirectory)/images/
-        displayName: "Download Ubuntu Base Image - ${{ baseimgType }}"
-        
+    - ${{ if or(contains(baseimgType, 'gb200'), contains(baseimgType, 'ubuntu')) }}:
+      - task: AzureCLI@2
+        inputs:
+          azureSubscription: azlinuxbmpstaging-storage-account-read
+          scriptType: bash
+          scriptLocation: inlineScript
+          inlineScript: |
+            set -eux
+
+            case ${{ baseimgType }} in
+              ubuntu_2204_amd64)
+                BLOB_NAME="ubuntu/server-cloudimg-2204-amd64/20260309/image.vhdx"
+                ;;
+              ubuntu_2204_arm64)
+                BLOB_NAME="ubuntu/server-cloudimg-2204-arm64/20260309/image.vhdx"
+                ;;
+              ubuntu_2404_amd64)
+                BLOB_NAME="ubuntu/server-cloudimg-2404-amd64/20260309/image.vhdx"
+                ;;
+              ubuntu_2404_arm64)
+                BLOB_NAME="ubuntu/server-cloudimg-2404-arm64/20260309/image.vhdx"
+                ;;
+              gb200_2404_arm64)
+                BLOB_NAME="gb200/arm64/20260318/image.vhdx"
+                ;;
+            esac              
+            
+            mkdir -p $(Build.ArtifactStagingDirectory)/images
+            az storage blob download \
+              --max-connections 10 \
+              --auth-mode login \
+              --account-name azlinuxbmpstaging \
+              --container-name os-image-cache \
+              --name "$BLOB_NAME" \
+              --file $(Build.ArtifactStagingDirectory)/images/${{ baseimgType }}.vhdx
+        retryCountOnTaskFailure: 5
+        displayName: "Download Base Image - ${{ baseimgType }}"
+
     - ${{ else }}:
       - template: common/base-images-download-template.yaml@platform-pipelines
         parameters:
@@ -218,6 +261,12 @@ steps:
 
       if [[ "${{ parameters.micBuildType }}" == "dev" ]]; then
         export MIC_CONTAINER_IMAGE="imagecustomizer:dev"
+      fi
+
+      # Allow cross-platform (i.e. amd64 pipeline creating arm64 images)
+      if [[ "${{ parameters.micArchitecture }}" != "${{ parameters.pipelineArchitecture }}" ]]; then
+        # Export variable to tell Makefile and testimages to use `docker --platform`
+        export MIC_ARCHITECTURE="linux/${{ parameters.micArchitecture }}"
       fi
 
       # Compress the full image & delete the uncompressed image

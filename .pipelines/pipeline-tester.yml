@@ -13,12 +13,23 @@ parameters:
       - "ci"
       - "pre"
       - "crate-publishing"
+      - "release"
     displayName: "Stage to run"
 
   - name: cratePublishingDryRun
     type: boolean
     displayName: "crate-publishing: Perform a dry run without actually publishing the crates"
     default: true
+
+  - name: specificVersion
+    type: string
+    displayName: "release: Specific pre-release version to release."
+    default: "replace-for-release, ignored otherwise"
+
+  - name: sourceCommit
+    type: string
+    displayName: "release: The commit hash of the source code to package."
+    default: "replace-for-release, ignored otherwise"
 
 trigger: none
 
@@ -84,3 +95,6 @@ extends:
           targetStage: ${{ parameters.targetStage }}
           blockPublishing: true
           cratePublishingDryRun: ${{ parameters.cratePublishingDryRun }}
+          ${{ if eq(parameters.targetStage, 'release') }}:
+            specificVersion: ${{ parameters.specificVersion }}
+            sourceCommit: ${{ parameters.sourceCommit }}

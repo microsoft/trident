@@ -18,7 +18,7 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 use tonic::{Response, Status};
 
-use trident_api::error::TridentError;
+use trident_api::{error::TridentError, primitives::hash::Sha384Hash};
 use trident_proto::v1::{servicing_response::Response as ResponseType, ServicingResponse, Started};
 
 use crate::{
@@ -37,10 +37,11 @@ use tonic::Code;
 #[cfg(feature = "grpc-preview")]
 use trident_api::error::ErrorKind;
 
+mod services;
+mod servicingmgr;
+
 #[cfg(feature = "grpc-preview")]
 mod datastore;
-mod service_impl;
-mod servicingmgr;
 
 use servicingmgr::RebootDecision;
 pub(super) use servicingmgr::ServicingManager;
@@ -194,7 +195,10 @@ impl TridentServer {
         f: F,
     ) -> Result<Response<ServicingResponseStream>, Status>
     where
-        F: FnOnce() -> Result<ExitKind, TridentError> + Send + panic::UnwindSafe + 'static,
+        F: FnOnce() -> Result<(ExitKind, Option<Sha384Hash>), TridentError>
+            + Send
+            + panic::UnwindSafe
+            + 'static,
     {
         info!("Received servicing request '{}'", name);
 
