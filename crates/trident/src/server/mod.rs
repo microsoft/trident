@@ -18,6 +18,7 @@ use tonic::transport::Server;
 use tonic_middleware::MiddlewareFor;
 
 use trident_proto::v1::{
+    initialize_service_server::InitializeServiceServer,
     streaming_service_server::StreamingServiceServer, version_service_server::VersionServiceServer,
 };
 
@@ -211,6 +212,11 @@ async fn server_main_inner(
 
     router = router.add_service(MiddlewareFor::new(
         StreamingServiceServer::from_arc(trident_server.clone()),
+        activity_tracker.middleware(),
+    ));
+
+    router = router.add_service(MiddlewareFor::new(
+        InitializeServiceServer::from_arc(trident_server.clone()),
         activity_tracker.middleware(),
     ));
 
