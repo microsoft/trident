@@ -3,6 +3,7 @@ use trident_proto::v1::{RebootHandling, RebootManagement};
 use crate::server::tridentserver::RebootDecision;
 
 mod commit;
+mod initialize;
 mod streaming;
 mod update;
 mod version;

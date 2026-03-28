@@ -1,0 +1,35 @@
+// Proto file defining the InitializeService and related messages.
+
+syntax = "proto3";
+
+package trident.v1;
+
+import "trident/v1/error.proto";
+import "trident/v1/servicing.proto";
+
+// InitializeService defines the gRPC service for initializing a Trident
+// datastore.
+service InitializeService {
+  // OnlineInitialize initializes a Trident datastore in an online system.
+  rpc OnlineInitialize(OnlineInitializeRequest) returns (OnlineInitializeResponse);
+}
+
+message OnlineInitializeRequest {
+    PresetConfiguration preset_configuration = 1;
+}
+
+message OnlineInitializeResponse {
+  // Result of the initialization operation.
+  StatusCode status = 1;
+
+  // Error details if the initialization failed. Only present when status
+  // is not STATUS_CODE_SUCCESS.
+  optional TridentError error = 2;
+}
+
+enum PresetConfiguration {
+  PRESET_CONFIGURATION_UNSPECIFIED = 0;
+
+  // This is a CIHv1 host.
+  CIH_V1 = 1;
+}
