@@ -1,8 +1,13 @@
 use tonic::{async_trait, Request, Response, Status};
 
-use trident_api::error::{InternalError, TridentError, TridentResultExt};
+use trident_api::error::TridentResultExt;
+use trident_proto::v1::{commit_service_server::CommitService, CommitRequest};
+
+#[cfg(feature = "grpc-preview")]
+use trident_api::error::{InternalError, TridentError};
+#[cfg(feature = "grpc-preview")]
 use trident_proto::v1preview::{
-    commit_service_server::CommitService, CheckRootRequest, CommitRequest,
+    commit_service_server::CommitService as CommitServicePreview, CheckRootRequest,
 };
 
 use crate::{
@@ -15,18 +20,6 @@ use crate::{
 
 #[async_trait]
 impl CommitService for TridentServer {
-    type CheckRootStream = ServicingResponseStream;
-    async fn check_root(
-        &self,
-        _request: Request<CheckRootRequest>,
-    ) -> Result<Response<Self::CheckRootStream>, Status> {
-        self.servicing_request("check_root", RebootDecision::Error, || {
-            Err(TridentError::new(InternalError::Internal(
-                "Not implemented: check_root",
-            )))
-        })
-    }
-
     type CommitStream = ServicingResponseStream;
     async fn commit(
         &self,
@@ -48,6 +41,22 @@ impl CommitService for TridentServer {
             trident
                 .commit(&mut datastore)
                 .map(|exit_kind| (exit_kind, image_hash))
+        })
+    }
+}
+
+#[cfg(feature = "grpc-preview")]
+#[async_trait]
+impl CommitServicePreview for TridentServer {
+    type CheckRootStream = ServicingResponseStream;
+    async fn check_root(
+        &self,
+        _request: Request<CheckRootRequest>,
+    ) -> Result<Response<Self::CheckRootStream>, Status> {
+        self.servicing_request("check_root", RebootDecision::Error, || {
+            Err(TridentError::new(InternalError::Internal(
+                "Not implemented: check_root",
+            )))
         })
     }
 }

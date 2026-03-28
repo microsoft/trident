@@ -2,11 +2,10 @@ use trident_proto::v1::{RebootHandling, RebootManagement};
 
 use crate::server::tridentserver::RebootDecision;
 
+mod commit;
 mod streaming;
 mod version;
 
-#[cfg(feature = "grpc-preview")]
-mod commit;
 #[cfg(feature = "grpc-preview")]
 mod install;
 #[cfg(feature = "grpc-preview")]
