@@ -203,6 +203,7 @@ stages:
           #   Run trident prep
           - template: ../testing_common/trident-prep.yml
             parameters:
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
               tridentConfigPath: $(TRIDENT_SOURCE_DIR)/$(TRIDENT_CONFIG_PATH)
               runtimeEnv: ${{ parameters.runtimeEnv }}
               config: $(TRIDENT_CONFIGURATION_NAME)
