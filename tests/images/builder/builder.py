@@ -46,7 +46,6 @@ def build_image(
     image_architecture: Optional[str] = None,
     dry_run: bool = False,
     force: bool = False,
-    use_rpms_in_place: bool = False,
 ):
     """Build the image using the specified Image Customizer container."""
 
@@ -78,7 +77,6 @@ def build_image(
                 dry_run,
                 force,
                 ca_nss_key_db=ca_nss_key_db,
-                use_rpms_in_place=use_rpms_in_place,
             )
         else:
             # Parallel execution
@@ -92,7 +90,6 @@ def build_image(
                 dry_run,
                 force,
                 ca_nss_key_db=ca_nss_key_db,
-                use_rpms_in_place=use_rpms_in_place,
             )
 
         # Publish the CA certificate to the output dir
@@ -120,7 +117,6 @@ def build_one(
     dry_run: bool = False,
     force: bool = False,
     ca_nss_key_db: Optional[Path] = None,
-    use_rpms_in_place: bool = False,
 ):
     for dep in image.dependencies():
         if not dep.exists():
@@ -160,18 +156,15 @@ def build_one(
         # Copy RPM sources to standalone temporary directories
         with ExitStack() as stack:
             tmp_rpm_sources = []
-            if use_rpms_in_place:
-                tmp_rpm_sources = rpm_sources
-            else:
-                for rpm_src in rpm_sources:
-                    # Create a temporary directory for each RPM source, delete with sudo because
-                    # createrepo is run as root.
-                    tmp = stack.enter_context(
-                        temp_dir(prefix=f"rpm-{rpm_src.stem}-", sudo=True)
-                    )
-                    tmp_rpm_sources.append(tmp)
-                    log.debug(f"Copying RPM source {rpm_src} to {tmp}")
-                    shutil.copytree(rpm_src, tmp, dirs_exist_ok=True)
+            for rpm_src in rpm_sources:
+                # Create a temporary directory for each RPM source, delete with sudo because
+                # createrepo is run as root.
+                tmp = stack.enter_context(
+                    temp_dir(prefix=f"rpm-{rpm_src.stem}-", sudo=True)
+                )
+                tmp_rpm_sources.append(tmp)
+                log.debug(f"Copying RPM source {rpm_src} to {tmp}")
+                shutil.copytree(rpm_src, tmp, dirs_exist_ok=True)
 
             if image.get_output_artifacts_dir():
                 # If config YAML contains output.artifacts, then need to output signed image. First, build
@@ -216,7 +209,6 @@ def build_with_clones(
     dry_run: bool = False,
     force: bool = False,
     ca_nss_key_db: Optional[Path] = None,
-    use_rpms_in_place: bool = False,
 ):
     # Build all the clones in parallel
     build_clones(
@@ -229,7 +221,6 @@ def build_with_clones(
         dry_run,
         force,
         ca_nss_key_db=ca_nss_key_db,
-        use_rpms_in_place=use_rpms_in_place,
     )
 
     # In the future, when enabled by Prism, we want to build an intermediate
@@ -308,7 +299,6 @@ def build_clones(
     dry_run: bool = False,
     force: bool = False,
     ca_nss_key_db: Optional[Path] = None,
-    use_rpms_in_place: bool = False,
 ):
     def clone_image(image: ImageConfig, clone_index: int) -> ImageConfig:
         img = copy.deepcopy(image)
@@ -330,7 +320,6 @@ def build_clones(
                     dry_run,
                     force,
                     ca_nss_key_db,
-                    use_rpms_in_place,
                 )
                 for i in range(clones)
             ],

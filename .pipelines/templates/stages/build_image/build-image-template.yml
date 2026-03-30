@@ -154,7 +154,6 @@ steps:
 
       if [[ "${{ parameters.micBuildType }}" == "dev" ]]; then
         EXTRA_ARGS+=" --container imagecustomizer:dev"
-        # EXTRA_ARGS+=" --use-rpms-in-place"
       fi
 
       python3 ./tests/images/testimages.py build \

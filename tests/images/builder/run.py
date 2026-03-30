@@ -89,7 +89,6 @@ def build(
     force: bool,
     image_architecture: Optional[str] = None,
     download: bool = True,
-    use_rpms_in_place: bool = False,
 ) -> None:
     image = find_image(configs, name)
     log.info(f"Building image '{image.name}'")
@@ -142,7 +141,6 @@ def build(
             image_architecture=image_architecture,
             dry_run=dry_run,
             force=force,
-            use_rpms_in_place=use_rpms_in_place,
         )
 
 

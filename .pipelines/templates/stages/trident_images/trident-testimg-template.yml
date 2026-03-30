@@ -273,7 +273,6 @@ steps:
 
       if [[ "${{ parameters.micBuildType }}" == "dev" ]]; then
         export MIC_CONTAINER_IMAGE="imagecustomizer:dev"
-        # export USE_RPMS_IN_PLACE=1
       fi
 
       # Allow cross-platform (i.e. amd64 pipeline creating arm64 images)
