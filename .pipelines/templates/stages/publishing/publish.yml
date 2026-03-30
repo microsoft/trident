@@ -66,7 +66,7 @@ stages:
               buildType: current
               patterns: |
                 *.rpm
-              targetPath: $(Pipeline.Workspace)/rpms
+              targetPath: /tmp/rpms
               artifactName: trident-binaries
             displayName: "Download Trident RPMs"
 
@@ -93,6 +93,6 @@ stages:
               command: publish
               vstsFeedPublish: ${{ parameters.feed }}
               vstsFeedPackagePublish: "${{ variables.rpmsPackageBaseName }}${{ variables.artifactSuffix }}"
-              publishDirectory: "$(TRIDENT_SOURCE_DIR)/rpms"
+              publishDirectory: "/tmp/rpms"
               versionPublish: $(Build.BuildNumber)
               versionOption: custom
