@@ -2,6 +2,7 @@ use std::process::ExitCode;
 
 use anyhow::{bail, Context, Error};
 use log::error;
+use tokio::fs;
 use tokio::runtime::Builder;
 
 use crate::{
@@ -9,10 +10,6 @@ use crate::{
     ExitKind, TRIDENT_VERSION,
 };
 
-#[cfg(feature = "grpc-preview")]
-use tokio::fs;
-
-#[cfg(feature = "grpc-preview")]
 use crate::cli;
 
 mod error;
