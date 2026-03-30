@@ -248,7 +248,7 @@ make -f %{_datadir}/selinux/devel/Makefile %{name}.pp
 bzip2 -9 %{name}.pp
 
 %check
-# Test the trident variable for the appropiate version
+# Test the trident variable for the appropriate version
 %if %{undefined rpm_ver}
 # Use %{version}-%{release} for TRIDENT_VERSION in distro build
 test "$(./target/release/trident --version)" = "trident %{version}-%{release}"
