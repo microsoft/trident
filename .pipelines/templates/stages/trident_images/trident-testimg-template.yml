@@ -219,7 +219,7 @@ steps:
           imageVersion: ${{ parameters.baseimgVersion }}
           azureLinuxVersion: ${{ parameters.baseimgAzureLinuxVersion }}
 
-  # For dev builds, the RPMs are not neccessarily published, so download them here. The
+  # For dev builds, the RPMs are not necessarily published, so download them here. The
   # parameter is set based on a runtime variable, so we cannot use ${{ if }}, so the
   # template is always run and contains logic to skip if not needed.
   - template: common/rpms-download-template.yaml@platform-pipelines
