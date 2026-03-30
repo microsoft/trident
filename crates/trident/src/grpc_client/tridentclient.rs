@@ -10,13 +10,11 @@ use url::Url;
 use trident_proto::v1::{
     servicing_response::Response as ResponseBody, streaming_service_client::StreamingServiceClient,
     update_service_client::UpdateServiceClient, version_service_client::VersionServiceClient,
-    FinalizeUpdateRequest, RebootHandling as ProtoRebootHandling, RebootManagement, RebootStatus,
-    ServicingResponse, StageUpdateRequest, StatusCode, StreamDiskRequest, UpdateRequest,
-    VersionRequest,
+    FinalizeUpdateRequest, HostConfiguration, RebootHandling as ProtoRebootHandling,
+    RebootManagement, RebootStatus, ServicingResponse, StageUpdateRequest, StatusCode,
+    StreamDiskRequest, UpdateRequest, VersionRequest,
 };
 
-#[cfg(feature = "grpc-preview")]
-use trident_proto::v1::HostConfiguration;
 #[cfg(feature = "grpc-preview")]
 use trident_proto::v1preview::{
     commit_service_client::CommitServiceClient, install_service_client::InstallServiceClient,
