@@ -66,6 +66,31 @@ async fn run_client(args: &ClientArgs) -> Result<ExitKind, Error> {
                 .context("Trident failed to stream image");
         }
 
+        ClientCommands::Update {
+            config,
+            allowed_operations,
+            ..
+        } => {
+            let config_yaml = fs::read_to_string(config).await.with_context(|| {
+                format!("Failed to read configuration file: {}", config.display())
+            })?;
+
+            let operations = cli::to_operations(allowed_operations);
+
+            if operations.has_finalize() && operations.has_stage() {
+                return client
+                    .update(config_yaml, RebootHandling::Trident)
+                    .await
+                    .context("Trident failed to perform update");
+            } else if operations.has_stage() {
+                bail!("Staging-only updates are not implemented via gRPC client yet");
+            } else if operations.has_finalize() {
+                bail!("Finalizing-only updates are not implemented via gRPC client yet");
+            } else {
+                bail!("At least one allowed operation must be specified");
+            }
+        }
+
         #[cfg(feature = "grpc-preview")]
         ClientCommands::Install {
             config,

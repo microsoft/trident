@@ -10,8 +10,9 @@ use url::Url;
 use trident_proto::v1::{
     servicing_response::Response as ResponseBody, streaming_service_client::StreamingServiceClient,
     update_service_client::UpdateServiceClient, version_service_client::VersionServiceClient,
-    RebootHandling as ProtoRebootHandling, RebootManagement, RebootStatus, ServicingResponse,
-    StatusCode, StreamDiskRequest, VersionRequest,
+    FinalizeUpdateRequest, RebootHandling as ProtoRebootHandling, RebootManagement, RebootStatus,
+    ServicingResponse, StageUpdateRequest, StatusCode, StreamDiskRequest, UpdateRequest,
+    VersionRequest,
 };
 
 #[cfg(feature = "grpc-preview")]
@@ -59,7 +60,6 @@ pub struct TridentClient {
     version_client: VersionServiceClient<Channel>,
     streaming_client: StreamingServiceClient<Channel>,
 
-    #[expect(dead_code)]
     update_client: UpdateServiceClient<Channel>,
 
     #[cfg(feature = "grpc-preview")]
@@ -155,6 +155,34 @@ impl TridentClient {
             .install(request)
             .await
             .map_err(|e| TridentClientError::RequestError("install".to_string(), e))?
+            .into_inner();
+
+        handle_servicing_response_stream(response).await
+    }
+
+    pub async fn update(
+        &mut self,
+        host_configuration: impl Into<String>,
+        reboot_handling: RebootHandling,
+    ) -> Result<ExitKind, TridentClientError> {
+        let request = Request::new(UpdateRequest {
+            stage: Some(StageUpdateRequest {
+                config: Some(HostConfiguration {
+                    config: host_configuration.into(),
+                }),
+            }),
+            finalize: Some(FinalizeUpdateRequest {
+                reboot: Some(RebootManagement {
+                    handling: reboot_handling.into(),
+                }),
+            }),
+        });
+
+        let response = self
+            .update_client
+            .update(request)
+            .await
+            .map_err(|e| TridentClientError::RequestError("update".to_string(), e))?
             .into_inner();
 
         handle_servicing_response_stream(response).await

@@ -160,7 +160,7 @@ func (u *UpdateTest) doUpdateTest() error {
 	logrus.Tracef("Host Configuration put on VM")
 	// Invoke trident update
 	logrus.Tracef("Invoking `trident update` on VM")
-	updateOutput, err := stormssh.SshCommandCombinedOutput(u.VMConfig.VMConfig, u.VMIP, fmt.Sprintf("sudo trident -v trace update %s", vmHostConfigPath))
+	updateOutput, err := stormssh.SshCommandCombinedOutput(u.VMConfig.VMConfig, u.VMIP, fmt.Sprintf("sudo trident -v trace grpc-client update %s", vmHostConfigPath))
 	logrus.Tracef("Update output (%v):\n%s", err, updateOutput)
 	if strings.Contains(updateOutput, "Trident failed due to a servicing error") {
 		return fmt.Errorf("failed to update: %w", err)

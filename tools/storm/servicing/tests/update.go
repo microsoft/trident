@@ -194,7 +194,7 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 		}
 
 		logrus.Tracef("Running Trident update staging command on VM")
-		combinedStagingOutput, stageErr := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, fmt.Sprintf("sudo trident update %s %s --allowed-operations stage", tridentLoggingArg, updateConfig))
+		combinedStagingOutput, stageErr := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, fmt.Sprintf("sudo trident grpc-client update %s %s --allowed-operations stage", tridentLoggingArg, updateConfig))
 		if testConfig.Verbose {
 			logrus.Tracef("Staging output for iteration %d:\n%s", i, combinedStagingOutput)
 		}
@@ -243,7 +243,7 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 		}
 
 		logrus.Tracef("Running Trident update finalize command on VM")
-		combinedFinalizeOutput, finalizeErr := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, fmt.Sprintf("sudo trident update %s %s --allowed-operations finalize", tridentLoggingArg, updateConfig))
+		combinedFinalizeOutput, finalizeErr := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, fmt.Sprintf("sudo trident grpc-client update %s %s --allowed-operations finalize", tridentLoggingArg, updateConfig))
 		if testConfig.Verbose {
 			logrus.Tracef("Finalize output for iteration %d:\n%s\n%v", i, combinedFinalizeOutput, finalizeErr)
 		}
