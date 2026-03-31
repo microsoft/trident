@@ -14,6 +14,9 @@ Summary of the complicated locations.
 | `ESP_RELATIVE_MOUNT_POINT_PATH` | trident     | [offline_init/mod.rs:489](../crates/trident/src/offline_init/mod.rs#L489)             | `execute`                   | Top-level offline-init command handler; no `EngineContext` in call chain                 |
 | `ESP_RELATIVE_MOUNT_POINT_PATH` | trident     | [install_index.rs:15](../crates/trident/src/engine/install_index.rs#L15)              | `next_install_index`        | Pure utility; finds install index from path                                              |
 
+See also [Annex: `is_esp()` Usages](#annex-is_esp-usages) for downstream callers
+of the `is_esp` method.
+
 ---
 
 ## Product Code Usages
@@ -86,3 +89,28 @@ Defined in [crates/trident_api/src/constants.rs](../crates/trident_api/src/const
 ### `ROOT_EFI_DIRECTORY`
 
 No test usages.
+
+---
+
+## Annex: `is_esp()` Usages
+
+The `is_esp()` method is defined on `FileSystem` in
+[filesystem.rs:353](../crates/trident_api/src/config/host/storage/filesystem.rs#L353)
+and uses `ESP_MOUNT_POINT_PATH` internally.
+
+### Product Code
+
+| Crate       | Location                                                                                                            | Function                            | Description                                                        |
+| ----------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------ |
+| trident     | [storage/filesystem.rs:60](../crates/trident/src/engine/storage/filesystem.rs#L60)                                  | `block_devices_needing_fs_creation` | Guard in pattern match; decides if ESP needs filesystem recreation |
+| trident     | [storage/image.rs:220](../crates/trident/src/engine/storage/image.rs#L220)                                          | `filesystems_from_image`            | Skips ESP deployment when not using raw COSI storage               |
+| trident     | [cosi/metadata.rs:136](../crates/trident/src/osimage/cosi/metadata.rs#L136)                                         | `get_esp_filesystem`                | Filters images list to find the ESP filesystem                     |
+| trident     | [cosi/metadata.rs:158](../crates/trident/src/osimage/cosi/metadata.rs#L158)                                         | `get_regular_filesystems`           | Filters out ESP to iterate only non-ESP filesystems                |
+| trident     | [storage/osimage.rs:152](../crates/trident/src/subsystems/storage/osimage.rs#L152)                                  | `validate_filesystems`              | Includes ESP in required filesystems map for validation            |
+| trident_api | [storage_graph/conversions.rs:121](../crates/trident_api/src/config/host/storage/storage_graph/conversions.rs#L121) | `from` (`BlkDevReferrerKind`)       | Classifies filesystem as `FileSystemEsp` in the storage graph      |
+
+### Test Code
+
+| File                                                     | Instances | Test Function                      |
+| -------------------------------------------------------- | --------- | ---------------------------------- |
+| crates/trident_api/src/config/host/storage/filesystem.rs | 4         | `test_filesystem_mount_point_path` |
