@@ -57,7 +57,6 @@ impl From<RebootHandling> for i32 {
 pub struct TridentClient {
     version_client: VersionServiceClient<Channel>,
     streaming_client: StreamingServiceClient<Channel>,
-
     update_client: UpdateServiceClient<Channel>,
 
     #[cfg(feature = "grpc-preview")]
