@@ -130,6 +130,7 @@ os:
       - etc-mount
       - kdump
       - trident
+      - tridentd.socket
 
   users:
     - name: testuser

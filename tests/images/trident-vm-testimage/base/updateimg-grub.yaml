@@ -56,6 +56,7 @@ os:
   services:
     enable:
       - trident
+      - tridentd.socket
   users:
     - name: testuser
       sshPublicKeyPaths:
