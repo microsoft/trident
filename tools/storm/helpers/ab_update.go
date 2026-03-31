@@ -301,6 +301,7 @@ func (h *AbUpdateHelper) handleAutoRollback(tc storm.TestCase) error {
 func (h *AbUpdateHelper) triggerTridentUpdate(tc storm.TestCase) error {
 	allowedOperations := make([]string, 0)
 
+	updateCmd := "update"
 	if h.args.StageAbUpdate {
 		logrus.Infof("Allowed operations: stage")
 		allowedOperations = append(allowedOperations, "stage")
@@ -309,10 +310,15 @@ func (h *AbUpdateHelper) triggerTridentUpdate(tc storm.TestCase) error {
 	if h.args.FinalizeAbUpdate {
 		logrus.Infof("Allowed operations: finalize")
 		allowedOperations = append(allowedOperations, "finalize")
+		if h.args.StageAbUpdate {
+			// If both stage and finalize, use `grpc-client update`
+			updateCmd = "grpc-client update"
+		}
 	}
 
 	args := fmt.Sprintf(
-		"update -v trace %s --allowed-operations %s",
+		"%s -v trace %s --allowed-operations %s",
+		updateCmd,
 		path.Join(h.args.TridentRuntimeType.HostPath(), h.args.TridentConfig),
 		strings.Join(allowedOperations, ","),
 	)

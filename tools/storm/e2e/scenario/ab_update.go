@@ -205,7 +205,7 @@ func (s *TridentE2EScenario) uploadNewConfig(tc storm.TestCase) error {
 
 func (s *TridentE2EScenario) abUpdateOs(tc storm.TestCase, split bool) error {
 	args := fmt.Sprintf(
-		"update -v trace %s",
+		"grpc-client update -v trace %s",
 		path.Join(s.runtime.HostPath(), hostConfigRemotePath),
 	)
 
