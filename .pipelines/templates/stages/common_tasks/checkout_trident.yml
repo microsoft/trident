@@ -20,7 +20,7 @@ parameters:
     default: s/trident
 
 steps:
-  - ${{ if eq(variables['Build.Repository.Name'], 'trident')}}:
+  - ${{ if eq(variables['Build.Repository.ID'], 'microsoft/trident')}}:
       - checkout: self
         fetchDepth: 1
         path: ${{ parameters.tridentSourceDirectoryPathFragment }}
