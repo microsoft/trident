@@ -1,13 +1,4 @@
 parameters:
-  # Define checkout name for the Trident repo. If this is
-  # loaded from a pipeline hosted in the Trident repo, use
-  # `self`. If this is loaded from a pipeline hosted in a
-  # different repo, use the repository name defined in the
-  # pipeline resources.
-  - name: tridentRepoName
-    type: string
-    default: self
-
   - name: micBuildType
     displayName: MIC Build Type
     type: string
@@ -29,8 +20,6 @@ parameters:
 stages:
   # Build installer tools
   - template: build-installer-tools.yml
-    parameters:
-      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   - stage: AzureLinux_Installer_ISO
     displayName: Build azl-installer-iso
@@ -55,9 +44,6 @@ stages:
 
         steps:
           - template: ../common_tasks/checkout_trident.yml
-            parameters:
-              tridentRepoName: ${{ parameters.tridentRepoName }}
-              tridentSourceDirectoryVariableName: TRIDENT_SOURCE_DIR
           - template: ../common_tasks/avoid-pypi-usage.yml
 
           - task: DownloadPipelineArtifact@2
@@ -147,9 +133,6 @@ stages:
 
         steps:
           - template: ../common_tasks/checkout_trident.yml
-            parameters:
-              tridentRepoName: ${{ parameters.tridentRepoName }}
-              tridentSourceDirectoryVariableName: TRIDENT_SOURCE_DIR
           - template: ./validate-azl-installer-iso.yml
             parameters:
               tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)

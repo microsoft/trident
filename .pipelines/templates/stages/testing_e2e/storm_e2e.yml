@@ -1,13 +1,4 @@
 parameters:
-  # Define checkout name for the Trident repo. If this is
-  # loaded from a pipeline hosted in the Trident repo, use
-  # `self`. If this is loaded from a pipeline hosted in a
-  # different repo, use the repository name defined in the
-  # pipeline resources.
-  - name: tridentRepoName
-    type: string
-    default: self
-
   - name: "stageType"
     displayName: "Pipeline configuration type"
     type: string
@@ -30,9 +21,6 @@ stages:
 
         steps:
           - template: ../common_tasks/checkout_trident.yml
-            parameters:
-              tridentRepoName: ${{ parameters.tridentRepoName }}
-              tridentSourceDirectoryVariableName: TRIDENT_SOURCE_DIR
           - task: DownloadPipelineArtifact@2
             displayName: "Download go-tools"
             inputs:
@@ -53,24 +41,20 @@ stages:
     parameters:
       hardwareType: "VM"
       runtimeType: "HOST"
-      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # - template: test_execution_template.yml
   #   parameters:
   #     hardwareType: "VM"
   #     runtimeType: "CONTAINER"
-  #     tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # - template: test_execution_template.yml
   #   parameters:
   #     hardwareType: "BM"
   #     runtimeType: "HOST"
   #     maxParallel: 1
-  #     tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # - template: test_execution_template.yml
   #   parameters:
   #     hardwareType: "BM"
   #     runtimeType: "CONTAINER"
   #     maxParallel: 1
-  #     tridentRepoName: ${{ parameters.tridentRepoName }}

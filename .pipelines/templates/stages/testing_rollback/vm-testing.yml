@@ -1,13 +1,4 @@
 parameters:
-  # Define checkout name for the Trident repo. If this is
-  # loaded from a pipeline hosted in the Trident repo, use
-  # `self`. If this is loaded from a pipeline hosted in a
-  # different repo, use the repository name defined in the
-  # pipeline resources.
-  - name: tridentRepoName
-    type: string
-    default: self
-
   - name: testingRun
     displayName: "Download prebuilt test artifacts"
     type: boolean
@@ -92,7 +83,6 @@ stages:
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
                   useStagedSshKeys: true
-                  tridentRepoName: ${{ parameters.tridentRepoName }}
 
               - template: ../testing_servicing/build-image.yml
                 parameters:
@@ -103,7 +93,6 @@ stages:
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
                   useStagedSshKeys: true
-                  tridentRepoName: ${{ parameters.tridentRepoName }}
 
   - stage: RuntimeUpdateAndRollbackTesting
     displayName: Runtime Update and Rollback Testing
@@ -139,7 +128,6 @@ stages:
               micBuildType: ${{ parameters.micBuildType }}
               micVersion: ${{ parameters.micVersion }}
               testSecureBoot: ${{ parameters.testSecureBoot }}
-              tridentRepoName: ${{ parameters.tridentRepoName }}
       - ${{ if eq(parameters.includeQemu, true) }}:
           - template: testing-template.yml
             parameters:
@@ -158,7 +146,6 @@ stages:
               micVersion: ${{ parameters.micVersion }}
               isUki: true
               testSecureBoot: ${{ parameters.testSecureBoot }}
-              tridentRepoName: ${{ parameters.tridentRepoName }}
       - ${{ if eq(parameters.includeUKI, true) }}:
           - template: testing-template.yml
             parameters:
@@ -170,4 +157,3 @@ stages:
               micVersion: ${{ parameters.micVersion }}
               isUki: true
               testSecureBoot: ${{ parameters.testSecureBoot }}
-              tridentRepoName: ${{ parameters.tridentRepoName }}

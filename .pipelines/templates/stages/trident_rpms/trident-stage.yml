@@ -1,13 +1,4 @@
 parameters:
-  # Define checkout name for the Trident repo. If this is
-  # loaded from a pipeline hosted in the Trident repo, use
-  # `self`. If this is loaded from a pipeline hosted in a
-  # different repo, use the repository name defined in the
-  # pipeline resources.
-  - name: tridentRepoName
-    type: string
-    default: self
-
   - name: "stageType"
     displayName: "Pipeline configuration type"
     type: string
@@ -73,12 +64,10 @@ stages:
             osModifierBuildType: dev
           ${{ else }}:
             osModifierBuildType: preview
-          tridentRepoName: ${{ parameters.tridentRepoName }}
 
   - ${{ elseif and(ne(parameters.tridentBuildOptions, 'prebuilt'), eq(parameters.targetArchitecture, 'amd64')) }}:
       - template: ../download_staged/download-staged.yml
         parameters:
-          tridentRepoName: ${{ parameters.tridentRepoName }}
           artifactName: ${{ parameters.tridentArtifactName }}
           stageType: ${{ parameters.stageType }}
           packageName: rpms

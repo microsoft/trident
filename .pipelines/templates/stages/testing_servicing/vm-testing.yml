@@ -1,13 +1,4 @@
 parameters:
-  # Define checkout name for the Trident repo. If this is
-  # loaded from a pipeline hosted in the Trident repo, use
-  # `self`. If this is loaded from a pipeline hosted in a
-  # different repo, use the repository name defined in the
-  # pipeline resources.
-  - name: tridentRepoName
-    type: string
-    default: self
-
   - name: testingRun
     displayName: "Download prebuilt test artifacts"
     type: boolean
@@ -109,7 +100,6 @@ stages:
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
                   useStagedSshKeys: true
-                  tridentRepoName: ${{ parameters.tridentRepoName }}
 
               - template: ../trident_images/build-image.yml
                 parameters:
@@ -120,7 +110,6 @@ stages:
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
                   useStagedSshKeys: true
-                  tridentRepoName: ${{ parameters.tridentRepoName }}
 
               - template: ../trident_images/build-image.yml
                 parameters:
@@ -131,7 +120,6 @@ stages:
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
                   useStagedSshKeys: true
-                  tridentRepoName: ${{ parameters.tridentRepoName }}
 
       - ${{ if eq(parameters.includeAzure, true) }}:
           - stage: BuildImagesAzure
@@ -151,7 +139,6 @@ stages:
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
-                  tridentRepoName: ${{ parameters.tridentRepoName }}
 
               - template: ../trident_images/build-image.yml
                 parameters:
@@ -161,7 +148,6 @@ stages:
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
-                  tridentRepoName: ${{ parameters.tridentRepoName }}
 
               - template: ../trident_images/build-image.yml
                 parameters:
@@ -171,7 +157,6 @@ stages:
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
-                  tridentRepoName: ${{ parameters.tridentRepoName }}
 
       - ${{ if eq(parameters.includeUKI, true) }}:
           - stage: BuildImagesUKI
@@ -192,7 +177,6 @@ stages:
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
                   useStagedSshKeys: true
-                  tridentRepoName: ${{ parameters.tridentRepoName }}
 
               - template: ../trident_images/build-image.yml
                 parameters:
@@ -203,7 +187,6 @@ stages:
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
                   useStagedSshKeys: true
-                  tridentRepoName: ${{ parameters.tridentRepoName }}
 
               - template: ../trident_images/build-image.yml
                 parameters:
@@ -214,7 +197,6 @@ stages:
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
                   useStagedSshKeys: true
-                  tridentRepoName: ${{ parameters.tridentRepoName }}
 
   - stage: ServicingTesting
     displayName: Servicing Testing
@@ -251,7 +233,6 @@ stages:
               platform: qemu
               flavor: qemu
               testSecureBoot: ${{ parameters.testSecureBoot }}
-              tridentRepoName: ${{ parameters.tridentRepoName }}
 
       - ${{ if eq(parameters.includeAzure, true) }}:
           - template: testing-template.yml
@@ -265,7 +246,6 @@ stages:
               flavor: azure
               pool: trident-ubuntu-official-1es-pool-eastus2
               testSecureBoot: ${{ parameters.testSecureBoot }}
-              tridentRepoName: ${{ parameters.tridentRepoName }}
 
       - ${{ if eq(parameters.includeUKI, true) }}:
           - template: testing-template.yml
@@ -278,4 +258,3 @@ stages:
               platform: qemu
               flavor: uki
               testSecureBoot: ${{ parameters.testSecureBoot }}
-              tridentRepoName: ${{ parameters.tridentRepoName }}

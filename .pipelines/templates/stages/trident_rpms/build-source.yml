@@ -1,13 +1,4 @@
 parameters:
-  # Define checkout name for the Trident repo. If this is
-  # loaded from a pipeline hosted in the Trident repo, use
-  # `self`. If this is loaded from a pipeline hosted in a
-  # different repo, use the repository name defined in the
-  # pipeline resources.
-  - name: tridentRepoName
-    type: string
-    default: self
-
   - name: tridentArtifactName
     type: string
 
@@ -69,9 +60,6 @@ stages:
 
             steps:
               - template: ../common_tasks/checkout_trident.yml
-                parameters:
-                  tridentRepoName: ${{ parameters.tridentRepoName }}
-                  tridentSourceDirectoryVariableName: TRIDENT_SOURCE_DIR
               - template: ../common_tasks/avoid-pypi-usage.yml
               # need newer rust for cargo-nextest, use rustup.yml to install
               - template: ../common_tasks/rustup.yml
@@ -100,9 +88,6 @@ stages:
 
             steps:
               - template: ../common_tasks/checkout_trident.yml
-                parameters:
-                  tridentRepoName: ${{ parameters.tridentRepoName }}
-                  tridentSourceDirectoryVariableName: TRIDENT_SOURCE_DIR
               - template: ../common_tasks/os-info.yml
               - template: ../common_tasks/avoid-pypi-usage.yml
               - template: ../common_tasks/cargo-auth.yml
@@ -139,9 +124,6 @@ stages:
 
             steps:
               - template: ../common_tasks/checkout_trident.yml
-                parameters:
-                  tridentRepoName: ${{ parameters.tridentRepoName }}
-                  tridentSourceDirectoryVariableName: TRIDENT_SOURCE_DIR
               - template: ../common_tasks/avoid-pypi-usage.yml
               - template: ../common_tasks/cargo-auth.yml
                 parameters:

@@ -27,15 +27,6 @@ parameters:
     type: string
     default: ''
 
-  # Define checkout name for the Trident repo. If this is
-  # loaded from a pipeline hosted in the Trident repo, use
-  # `self`. If this is loaded from a pipeline hosted in a
-  # different repo, use the repository name defined in the
-  # pipeline resources.
-  - name: tridentRepoName
-    type: string
-    default: self
-
 stages:
   - stage: GetTridentBinaries_${{ replace(parameters.packageName, '-', '_') }}_amd64
     displayName: Download staged ${{ parameters.packageName }} for ${{ parameters.stageType }}
@@ -66,9 +57,6 @@ stages:
 
         steps:
           - template: ../common_tasks/checkout_trident.yml
-            parameters:
-              tridentRepoName: ${{ parameters.tridentRepoName }}
-              tridentSourceDirectoryVariableName: TRIDENT_SOURCE_DIR
           - template: ../common_tasks/download-universal-artifact.yml
             parameters:
               tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)

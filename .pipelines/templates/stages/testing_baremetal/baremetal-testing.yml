@@ -1,13 +1,4 @@
 parameters:
-  # Define checkout name for the Trident repo. If this is
-  # loaded from a pipeline hosted in the Trident repo, use
-  # `self`. If this is loaded from a pipeline hosted in a
-  # different repo, use the repository name defined in the
-  # pipeline resources.
-  - name: tridentRepoName
-    type: string
-    default: self
-
   # Define which service connection to use for accessing ACR.
   #   `maritimus-dev-acr-write-umi` is the service connection for the Polar SC
   #   `trident-dev-acr-write-umi-ECF` is the service connection for the ECF SC
@@ -75,7 +66,6 @@ stages:
           buildPurpose: ${{ parameters.buildPurpose }}
           deploymentEnvironment: bareMetal
           runtimeEnv: ${{ parameters.runtimeEnv }}
-          tridentRepoName: ${{ parameters.tridentRepoName }}
 
       - job: ${{ parameters.jobName }}
         displayName: Run E2E Test
@@ -144,9 +134,6 @@ stages:
 
         steps:
           - template: ../common_tasks/checkout_trident.yml
-            parameters:
-              tridentRepoName: ${{ parameters.tridentRepoName }}
-              tridentSourceDirectoryVariableName: TRIDENT_SOURCE_DIR
 
           - bash: |
               set -xe

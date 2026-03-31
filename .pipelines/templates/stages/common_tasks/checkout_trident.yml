@@ -1,13 +1,4 @@
 parameters:
-  # Define checkout name for the Trident repo. If this is
-  # loaded from a pipeline hosted in the Trident repo, use
-  # `self`. If this is loaded from a pipeline hosted in a
-  # different repo, use the repository name defined in the
-  # pipeline resources.
-  - name: tridentRepoName
-    type: string
-    default: self
-
   # Define output variable name for the trident repo source
   # directory.
   - name: tridentSourceDirectoryVariableName
@@ -28,10 +19,6 @@ steps:
       - checkout: trident
         fetchDepth: 1
         path: ${{ parameters.tridentSourceDirectoryPathFragment }}
-
-  # - checkout: ${{ parameters.tridentRepoName }}
-  #   fetchDepth: 1
-  #   path: ${{ parameters.tridentSourceDirectoryPathFragment }}
 
   - bash: |
       echo "Setting ${{ parameters.tridentSourceDirectoryVariableName }} variable: $(Pipeline.Workspace)/${{ parameters.tridentSourceDirectoryPathFragment }}"

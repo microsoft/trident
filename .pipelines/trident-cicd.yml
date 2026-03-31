@@ -86,9 +86,6 @@ extends:
                 displayName: Validate variables for our templates
 
               - template: stages/common_tasks/checkout_trident.yml
-                parameters:
-                  tridentRepoName: self
-                  tridentSourceDirectoryVariableName: TRIDENT_SOURCE_DIR
 
               - template: stages/base_image_config/create-base-image-config-artifact-steps.yml
                 parameters:

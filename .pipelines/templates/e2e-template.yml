@@ -12,15 +12,6 @@
 # ensure that e2e-template waits for the base image artifact to be created.
 #
 parameters:
-  # Define checkout name for the Trident repo. If this is
-  # loaded from a pipeline hosted in the Trident repo, use
-  # `self`. If this is loaded from a pipeline hosted in a
-  # different repo, use the repository name defined in the
-  # pipeline resources.
-  - name: tridentRepoName
-    type: string
-    default: self
-
   # Define which service connection to use for accessing ACR.
   #   `maritimus-dev-acr-write-umi` is the service connection for the Polar SC
   #   `trident-dev-acr-write-umi-ECF` is the service connection for the ECF SC
@@ -121,25 +112,20 @@ stages:
         osModifierBranch: ${{ parameters.osModifierBranch }}
         dependsOnStage: ${{ parameters.baseImageArtifactStage }}
         targetArchitecture: amd64
-        tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # Build tools (Go stuff)
   - template: stages/building_tools/building-tools.yml
-    parameters:
-      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # E2E Test Matrix Definition
   - template: stages/testing_e2e/storm_e2e.yml
     parameters:
       stageType: ${{ parameters.stageType }}
-      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # Makefile validation, only for CI
   - ${{ if eq(parameters.stageType, 'ci') }}:
       - template: stages/validate_makefile/dev-build.yml
         parameters:
           osModifierBranch: ${{ parameters.osModifierBranch }}
-          tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # Build FT base Image, only for CI or if forceFunctionalTestImageRebuild is true
   - ${{ if or(eq(parameters.stageType, 'ci'), eq(parameters.forceFunctionalTestImageRebuild, true)) }}:
@@ -152,12 +138,10 @@ stages:
           micVersion: ${{ parameters.micVersion }}
           clones: 1
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-          tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # Build Trident container image (depends on GetTridentBinaries_rpms_amd64)
   - template: stages/build_docker_image/trident-container.yml
     parameters:
-      tridentRepoName: ${{ parameters.tridentRepoName }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # Build Trident installer ISO (host)
@@ -168,7 +152,6 @@ stages:
       micVersion: ${{ parameters.micVersion }}
       clones: 1
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # Build Trident split (stage and finalize separated) installer ISO (host)
   - template: stages/build_image/build-image.yml
@@ -178,7 +161,6 @@ stages:
       micVersion: ${{ parameters.micVersion }}
       clones: 1
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # Build Trident installer ISO (container)
   - template: stages/build_image/build-image.yml
@@ -189,7 +171,6 @@ stages:
       micVersion: ${{ parameters.micVersion }}
       clones: 1
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # Build Trident test image (regular)
   - template: stages/build_image/build-image.yml
@@ -198,7 +179,6 @@ stages:
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # Build Trident test image (container)
   - template: stages/build_image/build-image.yml
@@ -208,7 +188,6 @@ stages:
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # Build Trident test image for root-verity (host)
   - template: stages/build_image/build-image.yml
@@ -217,7 +196,6 @@ stages:
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # Build Trident test image for root-verity (container)
   - template: stages/build_image/build-image.yml
@@ -227,7 +205,6 @@ stages:
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # Build Trident test image for usr-verity (host)
   - template: stages/build_image/build-image.yml
@@ -236,7 +213,6 @@ stages:
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # Build Trident test image for usr-verity (container)
   - template: stages/build_image/build-image.yml
@@ -246,7 +222,6 @@ stages:
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # Build AzL installer ISO (attended and unattended)
   - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure'), eq(parameters.stageType, 'azl-validation')) }}:
@@ -255,7 +230,6 @@ stages:
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-          tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # dom0 is failing for not known reasons ... comment out for now to unblock, longterm this may
   # be removed from Trident pipelines alltogether in favor of being only test-images
@@ -277,7 +251,6 @@ stages:
       # fails in pipeline to reconnect to VM after first A/B update,
       # so default to false for now
       includeQemuGrub: false
-      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # Test Servicing on VMs
   - template: stages/testing_servicing/vm-testing.yml
@@ -291,7 +264,6 @@ stages:
       updateIterationCount: ${{ parameters.numberOfUpdateIterations }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
       testSecureBoot: ${{ parameters.testSecureBoot }}
-      tridentRepoName: ${{ parameters.tridentRepoName }}
 
   # TESTING stages for PRERELEASE
   - ${{ if eq(parameters.stageType, 'pre') }}:
@@ -301,14 +273,12 @@ stages:
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
           ${{ if parameters.forceFunctionalTestImageRebuild }}:
             downloadPrebuiltImage: false
-          tridentRepoName: ${{ parameters.tridentRepoName }}
 
       # VM Testing (host, daily)
       - template: stages/testing_vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "daily"
           runtimeEnv: "host"
-          tridentRepoName: ${{ parameters.tridentRepoName }}
 
       - ${{ if parameters.baremetalTestsEnabled }}:
           # BM Testing (host, daily)
@@ -316,7 +286,6 @@ stages:
             parameters:
               buildPurpose: "daily"
               runtimeEnv: "host"
-              tridentRepoName: ${{ parameters.tridentRepoName }}
               acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
           # BM Testing (container, daily)
@@ -325,7 +294,6 @@ stages:
               buildPurpose: "daily"
               runtimeEnv: "container"
               extraDependsOn: "BaremetalDeploymentTesting_host"
-              tridentRepoName: ${{ parameters.tridentRepoName }}
               acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
       # VM Testing (container, daily)
@@ -333,11 +301,9 @@ stages:
         parameters:
           buildPurpose: "daily"
           runtimeEnv: "container"
-          tridentRepoName: ${{ parameters.tridentRepoName }}
 
       - template: direct-streaming-test.yml
         parameters:
-          tridentRepoName: ${{ parameters.tridentRepoName }}
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
@@ -351,25 +317,21 @@ stages:
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
           ${{ if parameters.forceFunctionalTestImageRebuild }}:
             downloadPrebuiltImage: false
-          tridentRepoName: ${{ parameters.tridentRepoName }}
 
       # VM Testing (host, weekly)
       - template: stages/testing_vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "weekly"
           runtimeEnv: "host"
-          tridentRepoName: ${{ parameters.tridentRepoName }}
 
       # VM Testing (container, weekly)
       - template: stages/testing_vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "weekly"
           runtimeEnv: "container"
-          tridentRepoName: ${{ parameters.tridentRepoName }}
 
       - template: direct-streaming-test.yml
         parameters:
-          tridentRepoName: ${{ parameters.tridentRepoName }}
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
@@ -381,7 +343,6 @@ stages:
             parameters:
               buildPurpose: "weekly"
               runtimeEnv: "host"
-              tridentRepoName: ${{ parameters.tridentRepoName }}
               acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
           # BM Testing (container, weekly)
@@ -390,7 +351,6 @@ stages:
               buildPurpose: "weekly"
               runtimeEnv: "container"
               extraDependsOn: "BaremetalDeploymentTesting_host"
-              tridentRepoName: ${{ parameters.tridentRepoName }}
               acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
   # TESTING stages for CI
@@ -401,25 +361,21 @@ stages:
           downloadPrebuiltImage: false
           osModifierBranch: ${{ parameters.osModifierBranch }}
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-          tridentRepoName: ${{ parameters.tridentRepoName }}
 
       # VM Testing (host, post_merge)
       - template: stages/testing_vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "post_merge"
           runtimeEnv: "host"
-          tridentRepoName: ${{ parameters.tridentRepoName }}
 
       # VM Testing (container, post_merge)
       - template: stages/testing_vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "post_merge"
           runtimeEnv: "container"
-          tridentRepoName: ${{ parameters.tridentRepoName }}
 
       - template: direct-streaming-test.yml
         parameters:
-          tridentRepoName: ${{ parameters.tridentRepoName }}
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
@@ -434,26 +390,22 @@ stages:
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
           ${{ if parameters.forceFunctionalTestImageRebuild }}:
             downloadPrebuiltImage: false
-          tridentRepoName: ${{ parameters.tridentRepoName }}
 
       # VM Testing (host, pullrequest)
       - template: stages/testing_vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "pullrequest"
           runtimeEnv: "host"
-          tridentRepoName: ${{ parameters.tridentRepoName }}
 
       # VM Testing (container, pullrequest)
       - template: stages/testing_vm/netlaunch-testing.yml
         parameters:
           buildPurpose: "pullrequest"
           runtimeEnv: "container"
-          tridentRepoName: ${{ parameters.tridentRepoName }}
 
       # Run direct streaming tests for amd64 with streaming images
       - template: direct-streaming-test.yml
         parameters:
-          tridentRepoName: ${{ parameters.tridentRepoName }}
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
@@ -466,7 +418,6 @@ stages:
         parameters:
           buildPurpose: "post_merge"
           runtimeEnv: "host"
-          tridentRepoName: ${{ parameters.tridentRepoName }}
           acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
           testSecureBoot: ${{ parameters.testSecureBoot }}
 
@@ -475,7 +426,6 @@ stages:
         parameters:
           buildPurpose: "post_merge"
           runtimeEnv: "container"
-          tridentRepoName: ${{ parameters.tridentRepoName }}
           acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
           testSecureBoot: ${{ parameters.testSecureBoot }}
 
@@ -485,7 +435,6 @@ stages:
             parameters:
               buildPurpose: "weekly"
               runtimeEnv: "host"
-              tridentRepoName: ${{ parameters.tridentRepoName }}
               acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
           # BM Testing (container, weekly)
@@ -494,13 +443,11 @@ stages:
               buildPurpose: "weekly"
               runtimeEnv: "container"
               extraDependsOn: "BaremetalDeploymentTesting_host"
-              tridentRepoName: ${{ parameters.tridentRepoName }}
               acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
       # Run direct streaming tests for amd64 with streaming images
       - template: direct-streaming-test.yml
         parameters:
-          tridentRepoName: ${{ parameters.tridentRepoName }}
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
@@ -514,4 +461,3 @@ stages:
           - template: stages/publishing/publish.yml
             parameters:
               stageType: ${{ parameters.stageType }}
-              tridentRepoName: ${{ parameters.tridentRepoName }}

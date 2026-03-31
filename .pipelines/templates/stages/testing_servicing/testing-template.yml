@@ -1,13 +1,4 @@
 parameters:
-  # Define checkout name for the Trident repo. If this is
-  # loaded from a pipeline hosted in the Trident repo, use
-  # `self`. If this is loaded from a pipeline hosted in a
-  # different repo, use the repository name defined in the
-  # pipeline resources.
-  - name: tridentRepoName
-    type: string
-    default: self
-
   - name: updateIterationCount
     displayName: "Number of updates to test"
     type: number
@@ -75,9 +66,6 @@ jobs:
           ob_outputDirectory: /tmp/logs
         steps:
           - template: ../common_tasks/checkout_trident.yml
-            parameters:
-              tridentRepoName: ${{ parameters.tridentRepoName }}
-              tridentSourceDirectoryVariableName: TRIDENT_SOURCE_DIR
           - task: DownloadPipelineArtifact@2
             displayName: "Download go-tools: storm"
             inputs:
@@ -142,9 +130,6 @@ jobs:
 
     steps:
       - template: ../common_tasks/checkout_trident.yml
-        parameters:
-          tridentRepoName: ${{ parameters.tridentRepoName }}
-          tridentSourceDirectoryVariableName: TRIDENT_SOURCE_DIR
       - bash: |
           echo "##vso[task.setvariable variable=ob_artifactBaseName;]update-testing-${{ parameters.flavor }}-$(printf '%03d' $(System.JobPositionInPhase))"
           echo "##vso[task.setvariable variable=TEST_RESOURCE_GROUP;]trident-vm-servicing-validation-$(Build.BuildId)-$(printf '%03d' $(System.JobPositionInPhase))"

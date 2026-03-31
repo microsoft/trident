@@ -1,13 +1,4 @@
 parameters:
-  # Define checkout name for the Trident repo. If this is
-  # loaded from a pipeline hosted in the Trident repo, use
-  # `self`. If this is loaded from a pipeline hosted in a
-  # different repo, use the repository name defined in the
-  # pipeline resources.
-  - name: tridentRepoName
-    type: string
-    default: self
-
   - name: pipelineArchitecture
     type: string
     values:
@@ -100,7 +91,6 @@ stages:
             # Need rcp-agent from go tools
             downloadGoTools: true
             timeoutInMinutes: 30
-            tridentRepoName: ${{ parameters.tridentRepoName }}
 
   - ${{ if parameters.testAzureLinuxStreamingImage }}:
     - stage: BuildImagesForDirectStreaming_azurelinux_${{ parameters.targetArchitecture }}
@@ -133,7 +123,6 @@ stages:
             ${{ if eq(parameters.targetArchitecture, 'amd64') }}:
               baseimgType: baremetal
             timeoutInMinutes: 30
-            tridentRepoName: ${{ parameters.tridentRepoName }}
 
     # Run netlaunch test to validate direct streaming installer
     - template: stages/direct-streaming/netlaunch-testing.yml
@@ -142,7 +131,6 @@ stages:
         buildImageStage: BuildImagesForDirectStreaming_azurelinux_${{ parameters.targetArchitecture }}
         testImageName: azurelinux-direct-streaming-testimage-${{ parameters.targetArchitecture }}
         streamingImageScenario: azurelinux
-        tridentRepoName: ${{ parameters.tridentRepoName }}
         testSecureBoot: ${{ parameters.testSecureBoot }}
 
   - ${{ if parameters.testUbuntuStreamingImage }}:
@@ -171,7 +159,6 @@ stages:
               baseimgType: ubuntu_${{ubuntuVersion}}_${{ parameters.targetArchitecture }}
               downloadTrident: false
               timeoutInMinutes: 30
-              tridentRepoName: ${{ parameters.tridentRepoName }}
       # Run netlaunch test to validate direct streaming installer
       - template: stages/direct-streaming/netlaunch-testing.yml
         parameters:
@@ -179,7 +166,6 @@ stages:
           buildImageStage: BuildImagesForDirectStreaming_ubuntu_${{ubuntuVersion}}_${{ parameters.targetArchitecture }}
           testImageName: ubuntu-direct-streaming-testimage-${{ubuntuVersion}}-${{ parameters.targetArchitecture }}
           streamingImageScenario: ubuntu
-          tridentRepoName: ${{ parameters.tridentRepoName }}
           testSecureBoot: ${{ parameters.testSecureBoot }}
 
   - ${{ if and(parameters.testGB200StreamingImage, eq(parameters.targetArchitecture, 'arm64')) }}:
@@ -211,7 +197,6 @@ stages:
             baseimgType: "gb200_2404_${{ parameters.targetArchitecture }}"
             downloadTrident: false
             timeoutInMinutes: 60
-            tridentRepoName: ${{ parameters.tridentRepoName }}
 
     # Run netlaunch test to validate direct streaming installer
     - template: stages/direct-streaming/netlaunch-testing.yml
@@ -220,5 +205,4 @@ stages:
         buildImageStage: BuildImagesForDirectStreaming_gb200_${{ parameters.targetArchitecture }}
         testImageName: gb200-direct-streaming-testimage-2404-${{ parameters.targetArchitecture }}
         streamingImageScenario: gb200
-        tridentRepoName: ${{ parameters.tridentRepoName }}
         testSecureBoot: ${{ parameters.testSecureBoot }}
