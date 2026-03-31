@@ -185,6 +185,46 @@ impl TridentClient {
         handle_servicing_response_stream(response).await
     }
 
+    pub async fn update_stage(
+        &mut self,
+        host_configuration: impl Into<String>,
+    ) -> Result<ExitKind, TridentClientError> {
+        let request = Request::new(StageUpdateRequest {
+            config: Some(HostConfiguration {
+                config: host_configuration.into(),
+            }),
+        });
+
+        let response = self
+            .update_client
+            .update_stage(request)
+            .await
+            .map_err(|e| TridentClientError::RequestError("update_stage".to_string(), e))?
+            .into_inner();
+
+        handle_servicing_response_stream(response).await
+    }
+
+    pub async fn update_finalize(
+        &mut self,
+        reboot_handling: RebootHandling,
+    ) -> Result<ExitKind, TridentClientError> {
+        let request = Request::new(FinalizeUpdateRequest {
+            reboot: Some(RebootManagement {
+                handling: reboot_handling.into(),
+            }),
+        });
+
+        let response = self
+            .update_client
+            .update_finalize(request)
+            .await
+            .map_err(|e| TridentClientError::RequestError("update_finalize".to_string(), e))?
+            .into_inner();
+
+        handle_servicing_response_stream(response).await
+    }
+
     /// Stream an image to the Trident server.
     pub async fn stream_disk(
         &mut self,

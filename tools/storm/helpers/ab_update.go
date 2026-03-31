@@ -302,6 +302,10 @@ func (h *AbUpdateHelper) triggerTridentUpdate(tc storm.TestCase) error {
 	allowedOperations := make([]string, 0)
 
 	updateCmd := "update"
+	if h.args.TridentRuntimeType == trident.RuntimeTypeHost {
+		updateCmd = "grpc-client update"
+	}
+
 	if h.args.StageAbUpdate {
 		logrus.Infof("Allowed operations: stage")
 		allowedOperations = append(allowedOperations, "stage")
@@ -310,10 +314,6 @@ func (h *AbUpdateHelper) triggerTridentUpdate(tc storm.TestCase) error {
 	if h.args.FinalizeAbUpdate {
 		logrus.Infof("Allowed operations: finalize")
 		allowedOperations = append(allowedOperations, "finalize")
-		if h.args.StageAbUpdate && h.args.TridentRuntimeType == trident.RuntimeTypeHost {
-			// For runtime=host, if both stage and finalize, use `grpc-client update`
-			updateCmd = "grpc-client update"
-		}
 	}
 
 	args := fmt.Sprintf(

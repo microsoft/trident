@@ -80,9 +80,15 @@ async fn run_client(args: &ClientArgs) -> Result<ExitKind, Error> {
                     .await
                     .context("Trident failed to perform update");
             } else if operations.has_stage() {
-                bail!("Staging-only updates are not implemented via gRPC client yet");
+                return client
+                    .update_stage(config_yaml)
+                    .await
+                    .context("Trident failed to perform update_stage");
             } else if operations.has_finalize() {
-                bail!("Finalizing-only updates are not implemented via gRPC client yet");
+                return client
+                    .update_finalize(RebootHandling::Trident)
+                    .await
+                    .context("Trident failed to perform update_finalize");
             } else {
                 bail!("At least one allowed operation must be specified");
             }
