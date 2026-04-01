@@ -7,7 +7,7 @@ parameters:
     type: string
   - name: artifactName
     type: string
-  - name: 1esFriendly
+  - name: artifacts1esFriendly
     type: boolean
     default: false
 
@@ -38,7 +38,7 @@ steps:
     displayName: "Prepare JUnit XML for ${{ parameters.displayNameSpecifier }}"
     condition: and(succeededOrFailed(), ne(variables['skipJunitHandling'], 'true'))
 
-  - ${{ if parameters.1esFriendly }}:
+  - ${{ if parameters.artifacts1esFriendly }}:
     - task: PublishBuildArtifacts@1
       displayName: "Publish JUnit XML for ${{ parameters.displayNameSpecifier }}"
       condition: and(succeededOrFailed(), ne(variables['skipJunitHandling'], 'true'))
