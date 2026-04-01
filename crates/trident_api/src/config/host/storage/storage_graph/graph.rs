@@ -7,9 +7,12 @@ use petgraph::{
     visit::{Dfs, EdgeRef, IntoNodeReferences, Reversed, Walker},
     Directed, Direction, Graph,
 };
+use sysdefs::partition_types::DiscoverablePartitionType;
 
 use crate::{
-    config::{FileSystem, FileSystemSource, RaidLevel, VerityDevice},
+    config::{
+        FileSystem, FileSystemSource, MountPoint, Partition, PartitionType, RaidLevel, VerityDevice,
+    },
     constants::{LUKS_HEADER_SIZE_IN_MIB, ROOT_MOUNT_POINT_PATH, USR_MOUNT_POINT_PATH},
     storage_graph::references::SpecialReferenceKind,
     BlockDeviceId,
@@ -221,6 +224,60 @@ impl StorageGraph {
     ) -> Option<&VerityDevice> {
         let (fs_idx, _) = self.filesystem_node_by_mount_point(mount_path)?;
         self.backing_verity_device(fs_idx).map(|(_, dev)| dev)
+    }
+
+    /// Returns a list of all orphaned partitions, meaning partitions that do
+    /// not have any filesystem on top of them.
+    pub fn orphaned_partitions(&self) -> Vec<&Partition> {
+        self.inner
+            .node_weights()
+            .filter_map(|node| node.as_block_device())
+            .filter_map(|dev| {
+                if let HostConfigBlockDevice::Partition(partition) = &dev.host_config_ref {
+                    // Check if there is a filesystem on top of this partition. If not, this is an orphaned partition.
+                    self.filesystem_on_device(&partition.id)
+                        .is_none()
+                        .then_some(partition)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Returns the mount point of the filesystem on the ESP partition, if any.
+    pub fn esp_mount_point(&self) -> Vec<&MountPoint> {
+        // First find all filesystem nodes:
+        let filesystems = self
+            .inner
+            .node_references()
+            .filter_map(|(idx, node)| node.as_filesystem().map(|fs| (idx, fs)));
+
+        let mut mount_points = Vec::new();
+
+        // Then find the one that is on a partition of type ESP, either directly
+        // or transitively through other block devices.
+        for (node, fs) in filesystems {
+            let mut dfs = Dfs::new(&self.inner, node);
+            while let Some(idx) = dfs.next(&self.inner) {
+                if let StorageGraphNode::BlockDevice(BlockDevice {
+                    host_config_ref: HostConfigBlockDevice::Partition(partition),
+                    ..
+                }) = &self.inner[idx]
+                {
+                    if !partition.partition_type.is_esp() {
+                        // If the partition is not an ESP, we want to continue the DFS to check the next one.
+                        continue;
+                    }
+
+                    if let Some(mount_point) = &fs.mount_point {
+                        mount_points.push(mount_point);
+                    }
+                }
+            }
+        }
+
+        mount_points
     }
 }
 

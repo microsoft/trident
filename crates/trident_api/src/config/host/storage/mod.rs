@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 use swap::Swap;
+use sysdefs::partition_types::DiscoverablePartitionType;
 
 use crate::{
     constants::{
@@ -184,10 +185,7 @@ impl Storage {
 
         // If storage configuration is requested, then
         if *self != Storage::default() {
-            // ESP volume must be present, to update Grub configuration
-            validate_volume_presence(&graph, ESP_MOUNT_POINT_PATH)?;
-            // /var/tmp must not be on a read-only volume
-            self.validate_writable_mount_points()?;
+            self.validate_inner(&graph)?;
         }
 
         // Ensure the root mount point is present when:
@@ -202,6 +200,56 @@ impl Storage {
         self.validate_verity_devices(&graph)?;
 
         Ok(graph)
+    }
+
+    /// Validation on non-default storage configuration.
+    fn validate_inner(
+        &self,
+        graph: &StorageGraph,
+    ) -> Result<(), HostConfigurationStaticValidationError> {
+        // Validate that there are no orphaned ESP partitions, meaning
+        // partitions of type ESP that do not have a filesystem on top of them.
+        let orphaned_esps: Vec<&Partition> = graph
+            .orphaned_partitions()
+            .into_iter()
+            .filter(|p| p.partition_type.as_dps() == DiscoverablePartitionType::Esp)
+            .collect();
+
+        if !orphaned_esps.is_empty() {
+            return Err(
+                HostConfigurationStaticValidationError::OrphanedEspPartition {
+                    block_device_id: orphaned_esps[0].id.clone(),
+                },
+            );
+        }
+
+        // Now get the list of ESP mount points. We expect exactly one, as
+        // multiple ESPs are not supported by Trident, and at least one is
+        // required to update the bootloader configuration.
+        let esp_mount_points = graph.esp_mount_point();
+        if esp_mount_points.len() != 1 {
+            return Err(
+                HostConfigurationStaticValidationError::MultipleEspMountPoints {
+                    mount_point_paths: esp_mount_points
+                        .iter()
+                        .map(|mp| mp.path.to_string_lossy().to_string())
+                        .collect::<Vec<_>>()
+                        .join(","),
+                },
+            );
+        }
+
+        // This is now the real ESP mount point, as we have validated there is
+        // exactly one.
+        let esp_mount_point = esp_mount_points[0];
+
+        // ESP volume must be present, to update Grub configuration
+        validate_volume_presence(graph, &esp_mount_point.path)?;
+
+        // /var/tmp must not be on a read-only volume
+        self.validate_writable_mount_points()?;
+
+        Ok(())
     }
 
     /// Checks that mountpoints that are expected to be writable are mounted as

@@ -102,11 +102,17 @@ pub enum HostConfigurationStaticValidationError {
     #[error("Mount point '{mount_point_path}' must be backed by an image")]
     MountPointNotBackedByImage { mount_point_path: String },
 
+    #[error("Multiple ESP mount points found: '{mount_point_paths}', but only one ESP mount point is supported")]
+    MultipleEspMountPoints { mount_point_paths: String },
+
     #[error(
         "Directory '{VAR_TMP_PATH}' must be on a read-write volume, but is on a read-only \
         volume mounted at '{mount_point_path}'"
     )]
     VarTmpOnReadOnlyVolume { mount_point_path: String },
+
+    #[error("Orphaned ESP partition found: '{block_device_id}', ESP partitions MUST be mounted.")]
+    OrphanedEspPartition { block_device_id: String },
 
     #[error(
         "Overlay '{overlay_path}' cannot be on volume '{mount_point_path}' as it is read-only"
