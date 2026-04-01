@@ -7,12 +7,9 @@ use petgraph::{
     visit::{Dfs, EdgeRef, IntoNodeReferences, Reversed, Walker},
     Directed, Direction, Graph,
 };
-use sysdefs::partition_types::DiscoverablePartitionType;
 
 use crate::{
-    config::{
-        FileSystem, FileSystemSource, MountPoint, Partition, PartitionType, RaidLevel, VerityDevice,
-    },
+    config::{FileSystem, FileSystemSource, MountPoint, Partition, RaidLevel, VerityDevice},
     constants::{LUKS_HEADER_SIZE_IN_MIB, ROOT_MOUNT_POINT_PATH, USR_MOUNT_POINT_PATH},
     storage_graph::references::SpecialReferenceKind,
     BlockDeviceId,

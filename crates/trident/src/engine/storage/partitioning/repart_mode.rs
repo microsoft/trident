@@ -15,9 +15,8 @@ use osutils::{
     sfdisk::SfDisk,
     udevadm,
 };
-use sysdefs::partition_types::DiscoverablePartitionType;
 use trident_api::{
-    config::{Disk, PartitionSize, PartitionType},
+    config::{Disk, PartitionSize},
     BlockDeviceId,
 };
 use uuid::Uuid;
