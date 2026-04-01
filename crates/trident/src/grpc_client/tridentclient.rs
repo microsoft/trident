@@ -9,17 +9,20 @@ use url::Url;
 
 use trident_proto::v1::{
     servicing_response::Response as ResponseBody, streaming_service_client::StreamingServiceClient,
-    version_service_client::VersionServiceClient, RebootHandling as ProtoRebootHandling,
-    RebootManagement, RebootStatus, ServicingResponse, StatusCode, StreamDiskRequest,
-    VersionRequest,
+    update_service_client::UpdateServiceClient, version_service_client::VersionServiceClient,
+    RebootHandling as ProtoRebootHandling, RebootManagement, RebootStatus, ServicingResponse,
+    StatusCode, StreamDiskRequest, VersionRequest,
 };
+
+#[cfg(feature = "grpc-preview")]
+use trident_proto::v1::HostConfiguration;
 #[cfg(feature = "grpc-preview")]
 use trident_proto::v1preview::{
     commit_service_client::CommitServiceClient, install_service_client::InstallServiceClient,
     rebuild_raid_service_client::RebuildRaidServiceClient,
     rollback_service_client::RollbackServiceClient, status_service_client::StatusServiceClient,
-    update_service_client::UpdateServiceClient, validation_service_client::ValidationServiceClient,
-    CommitRequest, FinalizeInstallRequest, HostConfiguration, InstallRequest, StageInstallRequest,
+    validation_service_client::ValidationServiceClient, CommitRequest, FinalizeInstallRequest,
+    InstallRequest, StageInstallRequest,
 };
 
 use crate::ExitKind;
@@ -55,14 +58,14 @@ impl From<RebootHandling> for i32 {
 pub struct TridentClient {
     version_client: VersionServiceClient<Channel>,
     streaming_client: StreamingServiceClient<Channel>,
+
+    #[expect(dead_code)]
+    update_client: UpdateServiceClient<Channel>,
+
     #[cfg(feature = "grpc-preview")]
     install_client: InstallServiceClient<Channel>,
     #[cfg(feature = "grpc-preview")]
     commit_client: CommitServiceClient<Channel>,
-
-    #[expect(dead_code)]
-    #[cfg(feature = "grpc-preview")]
-    update_client: UpdateServiceClient<Channel>,
     #[expect(dead_code)]
     #[cfg(feature = "grpc-preview")]
     rollback_client: RollbackServiceClient<Channel>,
@@ -99,8 +102,6 @@ impl TridentClient {
             #[cfg(feature = "grpc-preview")]
             commit_client: CommitServiceClient::new(channel.clone()),
             #[cfg(feature = "grpc-preview")]
-            update_client: UpdateServiceClient::new(channel.clone()),
-            #[cfg(feature = "grpc-preview")]
             rollback_client: RollbackServiceClient::new(channel.clone()),
             #[cfg(feature = "grpc-preview")]
             rebuild_raid_client: RebuildRaidServiceClient::new(channel.clone()),
@@ -110,6 +111,7 @@ impl TridentClient {
             validation_client: ValidationServiceClient::new(channel.clone()),
 
             // Prod clients
+            update_client: UpdateServiceClient::new(channel.clone()),
             version_client: VersionServiceClient::new(channel.clone()),
             streaming_client: StreamingServiceClient::new(channel),
         })
