@@ -9,7 +9,7 @@ use petgraph::{
 };
 
 use crate::{
-    config::{FileSystem, FileSystemSource, MountPoint, Partition, RaidLevel, VerityDevice},
+    config::{FileSystem, FileSystemSource, MountPoint, RaidLevel, VerityDevice},
     constants::{LUKS_HEADER_SIZE_IN_MIB, ROOT_MOUNT_POINT_PATH, USR_MOUNT_POINT_PATH},
     storage_graph::references::SpecialReferenceKind,
     BlockDeviceId,
@@ -223,25 +223,6 @@ impl StorageGraph {
         self.backing_verity_device(fs_idx).map(|(_, dev)| dev)
     }
 
-    /// Returns a list of all orphaned partitions, meaning partitions that do
-    /// not have any filesystem on top of them.
-    pub fn orphaned_partitions(&self) -> Vec<&Partition> {
-        self.inner
-            .node_weights()
-            .filter_map(|node| node.as_block_device())
-            .filter_map(|dev| {
-                if let HostConfigBlockDevice::Partition(partition) = &dev.host_config_ref {
-                    // Check if there is a filesystem on top of this partition. If not, this is an orphaned partition.
-                    self.filesystem_on_device(&partition.id)
-                        .is_none()
-                        .then_some(partition)
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
-
     /// Returns the mount point of the filesystem on the ESP partition, if any.
     pub fn esp_mount_point(&self) -> Vec<&MountPoint> {
         // First find all filesystem nodes:
@@ -256,7 +237,8 @@ impl StorageGraph {
         // or transitively through other block devices.
         for (node, fs) in filesystems {
             let mut dfs = Dfs::new(&self.inner, node);
-            while let Some(idx) = dfs.next(&self.inner) {
+
+            'inner: while let Some(idx) = dfs.next(&self.inner) {
                 if let StorageGraphNode::BlockDevice(BlockDevice {
                     host_config_ref: HostConfigBlockDevice::Partition(partition),
                     ..
@@ -269,6 +251,11 @@ impl StorageGraph {
 
                     if let Some(mount_point) = &fs.mount_point {
                         mount_points.push(mount_point);
+                        // If one ESP partition is found, we assume all other
+                        // partitions under the same filesystem are also ESP
+                        // (this covered by the homogeneity check), so we can
+                        // stop the DFS here.
+                        break 'inner;
                     }
                 }
             }

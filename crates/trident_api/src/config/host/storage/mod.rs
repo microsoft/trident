@@ -214,24 +214,6 @@ impl Storage {
             .find(|p| p.partition_type.is_esp())
             .ok_or(HostConfigurationStaticValidationError::EspPartitionNotFound)?;
 
-        // Validate that there are no orphaned ESP partitions, meaning
-        // partitions of type ESP that do not have a filesystem on top of them.
-        // After this check, ALL ESP partitions are guaranteed to have a
-        // filesystem on top of them.
-        let orphaned_esps: Vec<&Partition> = graph
-            .orphaned_partitions()
-            .into_iter()
-            .filter(|p| p.partition_type.is_esp())
-            .collect();
-
-        if !orphaned_esps.is_empty() {
-            return Err(
-                HostConfigurationStaticValidationError::OrphanedEspPartition {
-                    block_device_id: orphaned_esps[0].id.clone(),
-                },
-            );
-        }
-
         // Now get the list of ESP mount points. We expect exactly one, as
         // multiple ESPs are not supported by Trident, and at least one is
         // required to update the bootloader configuration.
@@ -246,6 +228,8 @@ impl Storage {
                         .join(","),
                 },
             );
+        } else if esp_mount_points.is_empty() {
+            return Err(HostConfigurationStaticValidationError::EspMountPointNotFound);
         }
 
         // This is now the real ESP mount point, as we have validated there is
@@ -2819,29 +2803,6 @@ mod tests {
         );
     }
 
-    /// Validates that an ESP partition without a filesystem on top of it
-    /// (an orphaned ESP) is rejected during storage validation.
-    ///
-    /// The test starts from a valid storage configuration and removes the
-    /// filesystem that references the ESP partition, leaving it orphaned.
-    #[test]
-    fn test_validate_orphaned_esp_partition_fail() {
-        let mut storage = get_storage();
-
-        // Remove the filesystem mounted on the ESP partition, leaving it
-        // orphaned (no filesystem references it).
-        storage
-            .filesystems
-            .retain(|fs| fs.device_id != Some("esp".into()));
-
-        assert_eq!(
-            storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::OrphanedEspPartition {
-                block_device_id: "esp".into(),
-            }
-        );
-    }
-
     /// Validates that having multiple ESP mount points is rejected.
     ///
     /// The test creates a storage configuration with two separate ESP
@@ -2900,6 +2861,26 @@ mod tests {
         assert_eq!(
             storage.validate(true).unwrap_err(),
             HostConfigurationStaticValidationError::EspPartitionNotFound,
+        );
+    }
+
+    /// Validates that an ESP partition without a mounted filesystem is
+    /// rejected. The ESP partition exists (passing `EspPartitionNotFound`),
+    /// but `esp_mount_point()` returns empty because no filesystem
+    /// references it, triggering `EspMountPointNotFound`.
+    #[test]
+    fn test_validate_esp_mount_point_not_found_fail() {
+        let mut storage = get_storage();
+
+        // Remove only the filesystem on the ESP partition, keeping the
+        // partition itself so the partition-existence check passes.
+        storage
+            .filesystems
+            .retain(|fs| fs.device_id != Some("esp".into()));
+
+        assert_eq!(
+            storage.validate(true).unwrap_err(),
+            HostConfigurationStaticValidationError::EspMountPointNotFound,
         );
     }
 

@@ -52,6 +52,9 @@ pub enum HostConfigurationStaticValidationError {
     #[error("Underlying device of encrypted volume '{encrypted_volume}' must be a partition or a software RAID array")]
     EncryptedVolumeNotPartitionOrRaid { encrypted_volume: String },
 
+    #[error("No mount point found for any ESP partition")]
+    EspMountPointNotFound,
+
     #[error(
         "ESP partition not found, the system requires at least one ESP partition for UEFI boot"
     )]
@@ -115,9 +118,6 @@ pub enum HostConfigurationStaticValidationError {
         volume mounted at '{mount_point_path}'"
     )]
     VarTmpOnReadOnlyVolume { mount_point_path: String },
-
-    #[error("Orphaned ESP partition found: '{block_device_id}', ESP partitions MUST be mounted.")]
-    OrphanedEspPartition { block_device_id: String },
 
     #[error(
         "Overlay '{overlay_path}' cannot be on volume '{mount_point_path}' as it is read-only"

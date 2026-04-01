@@ -175,9 +175,10 @@ pub(super) fn wait_for_part_symlink(repart_partition: &RepartPartition) -> Resul
 mod tests {
     use super::*;
 
+    use sysdefs::partition_types::DiscoverablePartitionType;
     use uuid::Uuid;
 
-    use trident_api::config::{Partition, PartitionTableType};
+    use trident_api::config::{Partition, PartitionTableType, PartitionType};
 
     #[test]
     fn test_add_repart_entries() {
