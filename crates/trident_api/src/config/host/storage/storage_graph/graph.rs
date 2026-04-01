@@ -253,7 +253,7 @@ impl StorageGraph {
                         mount_points.push(mount_point);
                         // If one ESP partition is found, we assume all other
                         // partitions under the same filesystem are also ESP
-                        // (this covered by the homogeneity check), so we can
+                        // (this is covered by the homogeneity check), so we can
                         // stop the DFS here.
                         break 'inner;
                     }

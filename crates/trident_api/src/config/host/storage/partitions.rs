@@ -89,7 +89,7 @@ pub struct AdoptedPartition {
 /// Specification](<https://uapi-group.org/specifications/specs/discoverable_partitions_specification/>).
 ///
 /// # INTERNAL
-/// IT IT NOT RECOMMENDED TO USE THIS ENUM DIRECTLY, but rather the
+/// IT IS NOT RECOMMENDED TO USE THIS ENUM DIRECTLY, but rather the
 /// DiscoverablePartitionType enum from sysdefs, which has more flexible
 /// matching logic. This enum is primarily intended for serialization and user
 /// input parsing, and the `as_dps()` method can be used to convert it to a

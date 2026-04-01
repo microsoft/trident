@@ -208,11 +208,18 @@ impl Storage {
     ) -> Result<(), HostConfigurationStaticValidationError> {
         // Validate that there is at least ONE ESP partition, as it is required
         // for UEFI boot and for dropping the bootloader configuration.
-        self.disks
+        // Skip this check when adopted partitions exist, since the ESP may be
+        // discovered at runtime rather than declared explicitly.
+        let has_adopted_partitions = self.disks.iter().any(|d| !d.adopted_partitions.is_empty());
+        let has_esp_partition = self
+            .disks
             .iter()
             .flat_map(|d| d.partitions.iter())
-            .find(|p| p.partition_type.is_esp())
-            .ok_or(HostConfigurationStaticValidationError::EspPartitionNotFound)?;
+            .any(|p| p.partition_type.is_esp());
+
+        if !has_esp_partition && !has_adopted_partitions {
+            return Err(HostConfigurationStaticValidationError::EspPartitionNotFound);
+        }
 
         // Now get the list of ESP mount points. We expect exactly one, as
         // multiple ESPs are not supported by Trident, and at least one is
@@ -228,16 +235,26 @@ impl Storage {
                         .join(","),
                 },
             );
-        } else if esp_mount_points.is_empty() {
-            return Err(HostConfigurationStaticValidationError::EspMountPointNotFound);
         }
 
-        // This is now the real ESP mount point, as we have validated there is
-        // exactly one.
-        let esp_mount_point = esp_mount_points[0];
+        // Now try to figure out the ESP mount path from all the info we have.
+        let esp_mount_point_path = if !esp_mount_points.is_empty() {
+            // There is exactly one mounted ESP. This is now the real ESP mount
+            // point, as we have validated there is exactly one.
+            &esp_mount_points[0].path
+        } else if has_adopted_partitions {
+            // We couldn't find a mounted ESP partition, but we have adopted
+            // partitions, for which we do NOT know type, so we assume ESP must
+            // be in one of them, and we infer the mount point to be the
+            // standard ESP mount point for Azure Linux.
+            Path::new(ESP_MOUNT_POINT_PATH)
+        } else {
+            // If no adopted partitions are declared, then we expect the ESP to be declared explicitly and have a mount point.
+            return Err(HostConfigurationStaticValidationError::EspMountPointNotFound);
+        };
 
         // ESP volume must be present, to update Grub configuration
-        validate_volume_presence(graph, &esp_mount_point.path)?;
+        validate_volume_presence(graph, esp_mount_point_path)?;
 
         // /var/tmp must not be on a read-only volume
         self.validate_writable_mount_points()?;
@@ -597,7 +614,7 @@ mod tests {
         encryption::EncryptedVolume,
         filesystem::{FileSystemSource, MountOptions, MountPoint},
         filesystem_types::NewFileSystemType,
-        partitions::{PartitionSize, PartitionType},
+        partitions::{AdoptedPartition, PartitionSize, PartitionType},
         raid::{RaidLevel, SoftwareRaidArray},
     };
 
@@ -2862,6 +2879,46 @@ mod tests {
             storage.validate(true).unwrap_err(),
             HostConfigurationStaticValidationError::EspPartitionNotFound,
         );
+    }
+
+    /// Validates that the `EspPartitionNotFound` check is skipped when
+    /// adopted partitions are present, even if no partition is explicitly
+    /// typed as ESP.
+    ///
+    /// Adopted partitions have no declared partition type, so the ESP may
+    /// be among them and discovered at runtime. The test removes the
+    /// explicit ESP partition and its filesystem, then adds an adopted
+    /// partition to verify the check is bypassed.
+    #[test]
+    fn test_validate_no_esp_partition_with_adopted_partitions_pass() {
+        let mut storage = get_storage();
+
+        // Remove the ESP filesystem and the ESP partition.
+        storage
+            .filesystems
+            .retain(|fs| fs.device_id != Some("esp".into()));
+        storage.disks[1].partitions.retain(|p| p.id != "esp");
+
+        // Add an adopted partition — its type is unknown at validation time,
+        // so the ESP existence check must be skipped.
+        storage.disks[1].adopted_partitions.push(AdoptedPartition {
+            id: "adopted-esp".into(),
+            match_label: Some("EFI".into()),
+            match_uuid: None,
+        });
+
+        // Add a filesystem on the adopted partition mounted at ESP path so
+        // the rest of validation (volume presence, etc.) can pass.
+        storage.filesystems.push(FileSystem {
+            device_id: Some("adopted-esp".into()),
+            source: FileSystemSource::Adopted(Default::default()),
+            mount_point: Some(MountPoint {
+                path: PathBuf::from(ESP_MOUNT_POINT_PATH),
+                options: MountOptions::empty(),
+            }),
+        });
+
+        storage.validate(true).unwrap();
     }
 
     /// Validates that an ESP partition without a mounted filesystem is
