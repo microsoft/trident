@@ -6,6 +6,9 @@ parameters:
   - name: unitTestCoverageBaseline
     type: number
 
+  - name: tridentRepoDirectory
+    type: string
+
 steps:
   - script: sudo tdnf install -y protobuf protobuf-c openssl-devel clang-devel rust protobuf-devel
     displayName: Install native dependencies
@@ -22,21 +25,22 @@ steps:
       # - target/nextest/ci/trident_unit_tests.xml
       make coverage-llvm
     displayName: Run Unit Tests
+    workingDirectory: ${{ parameters.tridentRepoDirectory }}
 
   - task: PublishTestResults@2
     condition: succeededOrFailed()
     inputs:
       testResultsFormat: "JUnit"
-      testResultsFiles: "./target/nextest/ci/trident_unit_tests.xml"
+      testResultsFiles: "${{ parameters.tridentRepoDirectory }}/target/nextest/ci/trident_unit_tests.xml"
 
   - task: PublishCodeCoverageResults@2
     condition: and(succeededOrFailed(), eq(${{ parameters.codeCoverage }}, true))
     inputs:
-      summaryFileLocation: "./target/lcov.info"
+      summaryFileLocation: "${{ parameters.tridentRepoDirectory }}/target/lcov.info"
 
   - bash: |
       set -eux
-      MEASURED_COVERAGE="$(jq '.data[0].totals.lines.percent' ./target/coverage.json)"
+      MEASURED_COVERAGE="$(jq '.data[0].totals.lines.percent' ${{ parameters.tridentRepoDirectory }}/target/coverage.json)"
       BASELINE="${{ parameters.unitTestCoverageBaseline }}"
 
       if (( $(echo "$MEASURED_COVERAGE < $BASELINE" | bc -l) )); then

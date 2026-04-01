@@ -34,6 +34,13 @@ parameters:
       - azurelinux
     default: azurelinux
 
+  # Define whether to run tests using SecureBoot or not. This impacts both
+  # which tests run (many encryption-related tests only run with SecureBoot enabled) and
+  # how the test machines are configured.
+  - name: testSecureBoot
+    type: boolean
+    default: true
+
 stages:
   - stage: DirectStreaming_DeploymentTesting_${{ replace( parameters.testImageName, '-', '_') }}
     displayName: Direct Streaming Deployment VM for ${{ parameters.testImageName }}
@@ -62,18 +69,18 @@ stages:
             hostArchitecture: amd64
 
         variables:
-          - name: tridentSourceDirectory
-            value: $(Build.SourcesDirectory)
           - name: installerISOName
             value: trident-direct-streaming-installer-${{ parameters.targetArchitecture }}
           - name: ob_outputDirectory
-            value: $(tridentSourceDirectory)/deployment_logs
+            value: /tmp/deployment_logs
           - name: ob_artifactBaseName
             value: ${{ replace(parameters.testImageName, '-', '_') }}_log_$(System.JobAttempt)
           - name: netlaunchPort
             value: 4000
 
         steps:
+          - template: ../common_tasks/checkout_trident.yml
+
           # Download all test images
           - template: ../testing_common/download-test-images.yml
             parameters:
@@ -86,6 +93,7 @@ stages:
                 goToolsArtifactName: go-tools-arm64
               ${{ if eq(parameters.pipelineArchitecture, 'amd64') }}:
                 goToolsArtifactName: go-tools
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
 
           - bash: |
               set -ex
@@ -124,7 +132,7 @@ stages:
               fi
 
               ./tools/virt-deploy create --mem $MEMORY_SIZE --disks $MAX_DISK_SIZE,32 $ARM_OVERRIDE_ARG
-            workingDirectory: $(tridentSourceDirectory)
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: "Creating virt-deploy VM"
 
           - bash: |
@@ -133,6 +141,12 @@ stages:
               ISO_FILE=./artifacts/iso/$(installerISOName).iso
               COSI_FILE=./artifacts/test-image/regular.cosi
               HASH=$(./scripts/cosi-sha384.py $COSI_FILE)
+
+              SECURE_BOOT_ARG=""
+              if [ "${{ parameters.testSecureBoot }}" == "True" ]; then
+                SECURE_BOOT_ARG="--enable-secure-boot"
+              fi
+
               sudo ./bin/storm-trident helper direct-streaming -a \
                   --log-dir $(ob_outputDirectory) \
                   --netlaunch-config-file ./tools/vm-netlaunch.yaml \
@@ -140,10 +154,10 @@ stages:
                   --cosi-metadata-sha384 $HASH \
                   --iso-file $ISO_FILE \
                   --port ${{variables.netlaunchPort}} \
-                  --enable-secure-boot \
+                  $SECURE_BOOT_ARG \
                   --timeout-in-seconds 2400
 
-            workingDirectory: $(tridentSourceDirectory)
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: "🚀 Deploy direct streaming ISO and validate stream-image for ${{ parameters.streamingImageScenario }} ${{ parameters.targetArchitecture }}"
             timeoutInMinutes: 40
 
@@ -153,6 +167,7 @@ stages:
                   --screenshot-filename "direct-streaming.png" \
                   --artifacts-folder "$(ob_outputDirectory)"
             displayName: "📷 Capture screenshot: direct streaming"
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
             condition: succeededOrFailed()
 
           - template: ../testing_common/fix-output-directory-for-one-branch-step.yml

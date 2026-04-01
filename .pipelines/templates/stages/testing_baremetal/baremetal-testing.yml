@@ -1,4 +1,14 @@
 parameters:
+  # Define which service connection to use for accessing ACR.
+  #   `maritimus-dev-acr-write-umi` is the service connection for the Polar SC
+  #   `trident-dev-acr-write-umi-ECF` is the service connection for the ECF SC
+  - name: acrServiceConnectionName
+    type: string
+    default: trident-dev-acr-write-umi-ECF
+    values:
+      - maritimus-dev-acr-write-umi
+      - trident-dev-acr-write-umi-ECF
+
   - name: jobName
     type: string
     default: trident_baremetal_tests
@@ -75,11 +85,8 @@ stages:
           - name: TRIDENT_CONFIGURATION_NAME
             value: $(configuration)
 
-          - name: TRIDENT_SOURCE_DIR
-            value: $(Build.SourcesDirectory)
-
           - name: TRIDENT_CONFIG_PATH
-            value: $(TRIDENT_SOURCE_DIR)/tests/e2e_tests/trident_configurations/$(TRIDENT_CONFIGURATION_NAME)
+            value: tests/e2e_tests/trident_configurations/$(TRIDENT_CONFIGURATION_NAME)
 
           - name: TRIDENT_CONFIG_FILE
             value: $(TRIDENT_CONFIG_PATH)/trident-config.yaml
@@ -88,7 +95,7 @@ stages:
             value: $(TRIDENT_CONFIG_PATH)/test-selection.yaml
 
           - name: ob_outputDirectory
-            value: $(Build.SourcesDirectory)/deployment_logs
+            value: /tmp/deployment_logs
 
           - name: ob_artifactBaseName
             value: $(TRIDENT_CONFIGURATION_NAME)_baremetal_${{ parameters.runtimeEnv }}_deployment_log_$(System.JobAttempt)
@@ -126,6 +133,8 @@ stages:
           - group: trident_e2e_params
 
         steps:
+          - template: ../common_tasks/checkout_trident.yml
+
           - bash: |
               set -xe
               ping -c 3 "$(baremetal_controller.lab_canary_ip)"
@@ -164,21 +173,25 @@ stages:
               tridentTestImageUsrVerity: ${{ variables.USRVERITY_IMAGE_NAME }}
               ${{ if eq(parameters.runtimeEnv, 'container') }}:
                 downloadTridentContainer: true
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
 
           # Push (regular or container) testimage, sysexts, and/or confexts to
           # ACR. This step must occur before trident prep, since the ACR image
           # tag variable is set in this template.
           - template: ../common_tasks/push-to-acr.yml
             parameters:
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
               imageName: ${{ variables.IMAGE_NAME }}
               config: $(TRIDENT_CONFIGURATION_NAME)
               deploymentEnvironment: "bareMetal"
               runtimeEnvironment: ${{ parameters.runtimeEnv }}
+              acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
           #   Run trident prep
           - template: ../testing_common/trident-prep.yml
             parameters:
-              tridentConfigPath: $(TRIDENT_CONFIG_PATH)
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
+              tridentConfigPath: $(TRIDENT_SOURCE_DIR)/$(TRIDENT_CONFIG_PATH)
               runtimeEnv: ${{ parameters.runtimeEnv }}
               config: $(TRIDENT_CONFIGURATION_NAME)
               imageName: ${{ variables.IMAGE_NAME }}
@@ -193,15 +206,16 @@ stages:
 
               # Run script to update the trident.yaml file
               python3 ./.pipelines/templates/stages/testing_baremetal/update_host_config.py \
-                    --trident-yaml $(TRIDENT_CONFIG_FILE) \
-                    --test-selection $(TEST_SELECTION_FILE) \
+                    --trident-yaml $(TRIDENT_SOURCE_DIR)/$(TRIDENT_CONFIG_FILE) \
+                    --test-selection $(TRIDENT_SOURCE_DIR)/$(TEST_SELECTION_FILE) \
                     --oam-ip "$(baremetal_controller.oam_ip)" \
                     --oam-gateway "$(baremetal_controller.oam_gateway)" \
                     --interface-name "$(baremetal_controller.oam_interface)" \
                     --oam-mac "$(baremetal_controller.oam_mac)"
-              cat $(TRIDENT_CONFIG_FILE)
+              cat $(TRIDENT_SOURCE_DIR)/$(TRIDENT_CONFIG_FILE)
             env:
               SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: "Update Trident Config to inject static IP for OAM interface"
 
           - bash: |
@@ -269,6 +283,7 @@ stages:
 
               cat $(TRIDENT_SOURCE_DIR)/baremetal-netlisten.yaml | grep -v password
 
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: "Write Netlaunch and netlisten configuration"
 
           - bash: |
@@ -291,7 +306,7 @@ stages:
               ./bin/netlaunch \
                   --iso $(TRIDENT_SOURCE_DIR)/artifacts/iso/${{ variables.INSTALLER_ISO_NAME }}.iso \
                   --config $(TRIDENT_SOURCE_DIR)/baremetal-netlaunch.yaml \
-                  --trident $(TRIDENT_CONFIG_FILE) \
+                  --trident $(TRIDENT_SOURCE_DIR)/$(TRIDENT_CONFIG_FILE) \
                   --servefolder ./artifacts/test-image \
                   --logstream $MAX_FAILURES_FLAG \
                   --trace-file $(TRIDENT_SOURCE_DIR)/trident-clean-install-metrics.jsonl \
@@ -300,46 +315,49 @@ stages:
                   --wait-for-provisioned-state \
                   --port ${{ variables.NETLAUNCH_PORT }} 2>&1 | tee ./clean-install-deployment.log
             timeoutInMinutes: 35
-            workingDirectory: ${{ variables.TRIDENT_SOURCE_DIR }}
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: "Run netlaunch for testing"
 
           - bash: |
               set -eux
               sudo ./bin/storm-trident helper display-logs -a \
-                  --serial-log-path "${{ variables.TRIDENT_SOURCE_DIR }}/baremetal-serial.log" \
+                  --serial-log-path "$(TRIDENT_SOURCE_DIR)/baremetal-serial.log" \
                   --serial-log-artifact-file-name "clean-install-target-os-A-serial.log" \
-                  --trident-trace-log-file "${{ variables.TRIDENT_SOURCE_DIR }}/logstream-full.log" \
+                  --trident-trace-log-file "$(TRIDENT_SOURCE_DIR)/logstream-full.log" \
                   --artifacts-folder "$(ob_outputDirectory)"
             displayName: "Display clean install logs"
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
             condition: succeededOrFailed()
 
           - bash: |
               set -eux
               ./bin/storm-trident helper check-selinux \
-                  "$(Build.SourcesDirectory)/tests/e2e_tests/helpers/key" \
+                  "$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/helpers/key" \
                   "$(baremetal_controller.oam_ip)" \
                   "testing-user" \
                   "${{ parameters.runtimeEnv }}" \
                   --audit-file $(ob_outputDirectory)/audit.log \
             timeoutInMinutes: 5
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
             condition: eq('${{ parameters.runtimeEnv }}', 'host')
             displayName: "📄 Check for SELinux failures"
 
           - bash: |
               set -eux
               ./bin/storm-trident helper boot-metrics \
-                  "$(Build.SourcesDirectory)/tests/e2e_tests/helpers/key" \
+                  "$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/helpers/key" \
                   "$(baremetal_controller.oam_ip)" \
                   "testing-user" \
                   "${{ parameters.runtimeEnv }}" \
                   --metrics-file $(TRIDENT_SOURCE_DIR)/trident-clean-install-metrics.jsonl \
                   --metrics-operation install
             displayName: "Create boot metrics for booting into target OS"
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
 
           - template: ../testing_common/trident-metrics.yml
             parameters:
               tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
-              tridentConfigPath: $(TRIDENT_CONFIG_PATH)
+              tridentConfigPath: $(TRIDENT_SOURCE_DIR)/$(TRIDENT_CONFIG_PATH)
               deploymentEnvironment: bareMetal
               runtimeEnvironment: ${{ parameters.runtimeEnv }}
               tridentConfigurationName: $(TRIDENT_CONFIGURATION_NAME)
@@ -351,11 +369,12 @@ stages:
 
           - template: ../testing_common/e2e-test-run.yml
             parameters:
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
               buildPurpose: ${{ parameters.buildPurpose }}
               deploymentEnvironment: bareMetal
               tridentConfigurationName: $(TRIDENT_CONFIGURATION_NAME)
               hostIp: "$(baremetal_controller.oam_ip)"
-              tridentConfigPath: $(TRIDENT_CONFIG_PATH)
+              tridentConfigPath: $(TRIDENT_SOURCE_DIR)/$(TRIDENT_CONFIG_PATH)
               netlistenPort: ${{ variables.NETLAUNCH_PORT }}
               runtimeEnv: ${{ parameters.runtimeEnv }}
               netlistenConfigFile: $(TRIDENT_SOURCE_DIR)/baremetal-netlisten.yaml
@@ -363,9 +382,11 @@ stages:
 
           - template: ../common_tasks/remove-from-acr.yml
             parameters:
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
               repository: ${{ variables.IMAGE_NAME }}
               config: $(TRIDENT_CONFIGURATION_NAME)
               deploymentEnvironment: "bareMetal"
+              acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
           - template: ../testing_common/fix-output-directory-for-one-branch-step.yml
             parameters:

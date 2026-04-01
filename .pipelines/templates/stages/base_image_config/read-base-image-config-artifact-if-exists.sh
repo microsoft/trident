@@ -19,19 +19,27 @@ if az pipelines runs artifact download \
     BASEIMG_BUILD_TYPE=$(jq -r .baseimgBuildType $ARTIFACT_DIR/$ARTIFACT_FILE)
     BASE_IMAGE_PIPELINE_BUILD_ID=$(jq -r .baseImagePipelineBuildId $ARTIFACT_DIR/$ARTIFACT_FILE)
     BASE_IMAGE_ARM64_PIPELINE_BUILD_ID=$(jq -r .baseImageArm64PipelineBuildId $ARTIFACT_DIR/$ARTIFACT_FILE)
+    RPMS_PIPELINE_BUILD_ID=$(jq -r .rpmsPipelineBuildId $ARTIFACT_DIR/$ARTIFACT_FILE)
+    RPMS_ARM64_PIPELINE_BUILD_ID=$(jq -r .rpmsArm64PipelineBuildId $ARTIFACT_DIR/$ARTIFACT_FILE)
 else
     echo "base image config artifact not found, using default settings (release, latest, latest)"
 
     BASEIMG_BUILD_TYPE="release"
     BASE_IMAGE_PIPELINE_BUILD_ID="latestFromBranch"
     BASE_IMAGE_ARM64_PIPELINE_BUILD_ID="latestFromBranch"
+    RPMS_PIPELINE_BUILD_ID="latestFromBranch"
+    RPMS_ARM64_PIPELINE_BUILD_ID="latestFromBranch"
 fi
 
 echo "base image config:"
 echo "BASEIMG_BUILD_TYPE = $BASEIMG_BUILD_TYPE"
 echo "BASE_IMAGE_PIPELINE_BUILD_ID = $BASE_IMAGE_PIPELINE_BUILD_ID"
 echo "BASE_IMAGE_ARM64_PIPELINE_BUILD_ID = $BASE_IMAGE_ARM64_PIPELINE_BUILD_ID"
+echo "RPMS_PIPELINE_BUILD_ID = $RPMS_PIPELINE_BUILD_ID"
+echo "RPMS_ARM64_PIPELINE_BUILD_ID = $RPMS_ARM64_PIPELINE_BUILD_ID"
 
 echo "##vso[task.setvariable variable=BASEIMG_BUILD_TYPE]$BASEIMG_BUILD_TYPE"
 echo "##vso[task.setvariable variable=BASE_IMAGE_PIPELINE_BUILD_ID]$BASE_IMAGE_PIPELINE_BUILD_ID"
 echo "##vso[task.setvariable variable=BASE_IMAGE_ARM64_PIPELINE_BUILD_ID]$BASE_IMAGE_ARM64_PIPELINE_BUILD_ID"
+echo "##vso[task.setvariable variable=RPMS_PIPELINE_BUILD_ID]$RPMS_PIPELINE_BUILD_ID"
+echo "##vso[task.setvariable variable=RPMS_ARM64_PIPELINE_BUILD_ID]$RPMS_ARM64_PIPELINE_BUILD_ID"

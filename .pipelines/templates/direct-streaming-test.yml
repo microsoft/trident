@@ -48,6 +48,17 @@ parameters:
       - "2204"
       - "2404"
 
+  - name: dependsOnStage
+    type: string
+    default: ""
+
+  # Define whether to run tests using SecureBoot or not. This impacts both
+  # which tests run (many encryption-related tests only run with SecureBoot enabled) and
+  # how the test machines are configured.
+  - name: testSecureBoot
+    type: boolean
+    default: true
+
 stages:
   - ${{ if or(parameters.testAzureLinuxStreamingImage, parameters.testUbuntuStreamingImage) }}:
     - stage: BuildInstallerForDirectStreaming_${{ parameters.targetArchitecture }}
@@ -62,6 +73,8 @@ stages:
         - ${{ if eq(parameters.targetArchitecture, 'amd64') }}:
           - GetTridentBinaries_rpms_amd64
         - PrepareSSHKeys
+        - ${{ if ne(parameters.dependsOnStage, '') }}:
+          - ${{ parameters.dependsOnStage }}
       jobs:
         # Build Trident direct streaming installer ISO
         - template: stages/trident_images/build-image.yml
@@ -92,6 +105,8 @@ stages:
         - ${{ if eq(parameters.pipelineArchitecture, 'amd64') }}:
           - BuildingTools
         - PrepareSSHKeys
+        - ${{ if ne(parameters.dependsOnStage, '') }}:
+          - ${{ parameters.dependsOnStage }}
       jobs:
         # Build direct streaming COSI VHD
         - template: stages/trident_images/build-image.yml
@@ -116,6 +131,7 @@ stages:
         buildImageStage: BuildImagesForDirectStreaming_azurelinux_${{ parameters.targetArchitecture }}
         testImageName: azurelinux-direct-streaming-testimage-${{ parameters.targetArchitecture }}
         streamingImageScenario: azurelinux
+        testSecureBoot: ${{ parameters.testSecureBoot }}
 
   - ${{ if parameters.testUbuntuStreamingImage }}:
     - ${{ each ubuntuVersion in parameters.ubuntuVersions }}:
@@ -127,6 +143,8 @@ stages:
           - ${{ if eq(parameters.pipelineArchitecture, 'amd64') }}:
             - BuildingTools
           - PrepareSSHKeys
+          - ${{ if ne(parameters.dependsOnStage, '') }}:
+            - ${{ parameters.dependsOnStage }}
         jobs:
           # Build direct streaming COSI VHD
           - template: stages/trident_images/build-image.yml
@@ -148,6 +166,7 @@ stages:
           buildImageStage: BuildImagesForDirectStreaming_ubuntu_${{ubuntuVersion}}_${{ parameters.targetArchitecture }}
           testImageName: ubuntu-direct-streaming-testimage-${{ubuntuVersion}}-${{ parameters.targetArchitecture }}
           streamingImageScenario: ubuntu
+          testSecureBoot: ${{ parameters.testSecureBoot }}
 
   - ${{ if and(parameters.testGB200StreamingImage, eq(parameters.targetArchitecture, 'arm64')) }}:
     - stage: BuildImagesForDirectStreaming_gb200_${{ parameters.targetArchitecture }}
@@ -158,6 +177,8 @@ stages:
         - ${{ if eq( parameters.pipelineArchitecture, "amd64") }}:
           - BuildingTools
         - PrepareSSHKeys
+        - ${{ if ne(parameters.dependsOnStage, '') }}:
+          - ${{ parameters.dependsOnStage }}
       jobs:
         # Build direct streaming COSI VHD
         - template: stages/trident_images/build-image.yml
@@ -167,6 +188,8 @@ stages:
             targetArchitecture: ${{ parameters.targetArchitecture }}
             # TODO: need newest IC to overcome fstab issues with IC 1.2,
             #       use dev and main for now to get the most recent.
+            # micBuildType: ${{ parameters.micBuildType }}
+            # micVersion: ${{ parameters.micVersion }}
             micBuildType: dev
             micVersion: main
             label: "gb200-direct-streaming-testimage-2404-${{ parameters.targetArchitecture }}"
@@ -174,6 +197,7 @@ stages:
             baseimgType: "gb200_2404_${{ parameters.targetArchitecture }}"
             downloadTrident: false
             timeoutInMinutes: 60
+
     # Run netlaunch test to validate direct streaming installer
     - template: stages/direct-streaming/netlaunch-testing.yml
       parameters:
@@ -181,3 +205,4 @@ stages:
         buildImageStage: BuildImagesForDirectStreaming_gb200_${{ parameters.targetArchitecture }}
         testImageName: gb200-direct-streaming-testimage-2404-${{ parameters.targetArchitecture }}
         streamingImageScenario: gb200
+        testSecureBoot: ${{ parameters.testSecureBoot }}

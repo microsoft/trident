@@ -1,0 +1,26 @@
+parameters:
+  # Define output variable name for the trident repo source
+  # directory.
+  - name: tridentSourceDirectoryVariableName
+    type: string
+    default: TRIDENT_SOURCE_DIR
+
+  # Define Pipeline.Workspace subpath for trident repo.
+  - name: tridentSourceDirectoryPathFragment
+    type: string
+    default: s/trident
+
+steps:
+  - ${{ if eq(variables['Build.Repository.ID'], 'microsoft/trident')}}:
+      - checkout: self
+        fetchDepth: 1
+        path: ${{ parameters.tridentSourceDirectoryPathFragment }}
+  - ${{ else }}:
+      - checkout: trident
+        fetchDepth: 1
+        path: ${{ parameters.tridentSourceDirectoryPathFragment }}
+
+  - bash: |
+      echo "Setting ${{ parameters.tridentSourceDirectoryVariableName }} variable: $(Pipeline.Workspace)/${{ parameters.tridentSourceDirectoryPathFragment }}"
+      echo "##vso[task.setvariable variable=${{ parameters.tridentSourceDirectoryVariableName }}]$(Pipeline.Workspace)/${{ parameters.tridentSourceDirectoryPathFragment }}"
+    displayName: "Set ${{ parameters.tridentSourceDirectoryVariableName }} variable"
