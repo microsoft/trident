@@ -23,6 +23,7 @@ parameters:
       - pre
       - rel
       - full-validation
+      - azl-validation
 
   # We have three options for how to handle the Trident binaries artifact in this pipeline:
   # 1) default: use the default behavior for this pipeline
@@ -60,18 +61,19 @@ parameters:
     default: release
 
 stages:
-  # Trident Build/Download
-  - template: stages/trident_rpms/trident-stage.yml
-    parameters:
-      stageType: ${{ parameters.stageType }}
-      tridentArtifactName: trident-binaries
-      codeCoverage: false
-      tridentBuildOptions: ${{ parameters.tridentBuildOptions }}
-      osModifierBranch: ${{ parameters.osModifierBranch }}
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-      targetArchitecture: arm64
+  - ${{ if ne( parameters.tridentBuildOptions, 'prebuilt') }}:
+    # Trident Build/Download
+    - template: stages/trident_rpms/trident-stage.yml
+      parameters:
+        stageType: ${{ parameters.stageType }}
+        tridentArtifactName: trident-binaries
+        codeCoverage: false
+        tridentBuildOptions: ${{ parameters.tridentBuildOptions }}
+        osModifierBranch: ${{ parameters.osModifierBranch }}
+        dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+        targetArchitecture: arm64
 
-  - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pre'), eq(parameters.stageType, 'full-validation')) }}:
+  - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pre'), eq(parameters.stageType, 'full-validation'), eq(parameters.stageType, 'azl-validation')) }}:
     # Build tools (Go stuff)
     - template: stages/building_tools/building-tools.yml
       parameters:
