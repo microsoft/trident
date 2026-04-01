@@ -28,8 +28,9 @@ Summary of the complicated locations.
 
 | Item# | Constant                        | Crate       | Location                                                                                          | Function                      | Notes                                                                                    | Status |
 | ----- | ------------------------------- | ----------- | ------------------------------------------------------------------------------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------- | ------ |
-| 1     | `ESP_MOUNT_POINT_PATH`          | trident_api | [rules/mod.rs:524](../crates/trident_api/src/config/host/storage/storage_graph/rules/mod.rs#L524) | `expected_partition_type`     | Returns allowed partition type for ESP mount point                                       | ☑️      |
+| 1     | `ESP_MOUNT_POINT_PATH`          | trident_api | [rules/mod.rs:524](../crates/trident_api/src/config/host/storage/storage_graph/rules/mod.rs#L524) | `expected_partition_type`     | Returns allowed partition type for ESP mount point                                       | ☑️ [1]  |
 | 2     | `ESP_MOUNT_POINT_PATH`          | trident_api | [storage/mod.rs:188](../crates/trident_api/src/config/host/storage/mod.rs#L188)                   | `Storage::validate`           | Validates ESP volume presence in storage config                                          | ✅      |
+| 2b    | `ESP_MOUNT_POINT_PATH`          | trident_api | [storage/mod.rs:250](../crates/trident_api/src/config/host/storage/mod.rs#L250)                   | `Storage::validate`           | Fallback ESP mount-point for adopted-partition configs                                   | ☑️ [2]  |
 | 3     | `ESP_MOUNT_POINT_PATH`          | trident_api | [storage/mod.rs:507](../crates/trident_api/src/config/host/storage/mod.rs#L507)                   | `Storage::esp_filesystem`     | Returns reference to ESP device_id and filesystem                                        |        |
 | 4     | `ESP_MOUNT_POINT_PATH`          | trident_api | [filesystem.rs:353](../crates/trident_api/src/config/host/storage/filesystem.rs#L353)             | `FileSystem::is_esp`          | Pure method on `FileSystem`; compares mount point to constant                            |        |
 | 5     | `ESP_MOUNT_POINT_PATH`          | trident_api | [sample_hc.rs:63](../crates/trident_api/src/samples/sample_hc.rs#L63)                             | `sample_host_configuration`   | Sample data builder (×8 occurrences at L63, L116, L313, L524, L985, L1192, L1342, L1524) |        |
@@ -55,8 +56,9 @@ Defined in [crates/trident_api/src/constants.rs](../crates/trident_api/src/const
 
 | Item# | Crate       | Location                                                                                          | Function                                         | Ctx | Notes                                                                        | Status |
 | ----- | ----------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------ | --- | ---------------------------------------------------------------------------- | ------ |
-| 1     | trident_api | [rules/mod.rs:524](../crates/trident_api/src/config/host/storage/storage_graph/rules/mod.rs#L524) | `expected_partition_type`                        | ❌   | Returns allowed partition type for ESP mount point                           |        |
+| 1     | trident_api | [rules/mod.rs:524](../crates/trident_api/src/config/host/storage/storage_graph/rules/mod.rs#L524) | `expected_partition_type`                        | ❌   | Returns allowed partition type for ESP mount point                           | ☑️ [1]  |
 | 2     | trident_api | [storage/mod.rs:188](../crates/trident_api/src/config/host/storage/mod.rs#L188)                   | `Storage::validate`                              | ❌   | Validates ESP volume presence in storage config                              | ✅      |
+| 2b    | trident_api | [storage/mod.rs:250](../crates/trident_api/src/config/host/storage/mod.rs#L250)                   | `Storage::validate`                              | ❌   | Fallback ESP mount-point for adopted-partition configs                       | ☑️ [2]  |
 | 3     | trident_api | [storage/mod.rs:507](../crates/trident_api/src/config/host/storage/mod.rs#L507)                   | `Storage::esp_filesystem`                        | ❌   | Returns reference to ESP device_id and filesystem                            |        |
 | 4     | trident_api | [filesystem.rs:353](../crates/trident_api/src/config/host/storage/filesystem.rs#L353)             | `FileSystem::is_esp`                             | ❌   | Pure method; compares mount point to constant                                |        |
 | 5     | trident_api | [sample_hc.rs:63](../crates/trident_api/src/samples/sample_hc.rs#L63)                             | `sample_host_configuration`                      | ❌   | Sample data builder (×8 at L63, L116, L313, L524, L985, L1192, L1342, L1524) |        |
@@ -161,3 +163,22 @@ that use the same constant directly.
 | File                                                     | Instances | Test Function                      |
 | -------------------------------------------------------- | --------- | ---------------------------------- |
 | crates/trident_api/src/config/host/storage/filesystem.rs | 4         | `test_filesystem_mount_point_path` |
+
+---
+
+## Review Notes
+
+1. `expected_partition_type` is a validation rule that maps mount points to their
+   expected partition types. Using `ESP_MOUNT_POINT_PATH` here is correct because
+   the function only constrains which partition type is *allowed* at a given
+   mount point — it does not assume the ESP must be at that path. When the ESP
+   is mounted elsewhere (e.g. `/boot` or `/efi`), the function simply returns
+   `AllowBlockList::Any`, so no false rejection occurs.
+
+2. Added by this PR. When adopted partitions are present but DFS traversal
+   finds no mounted ESP, `validate_inner` needs a fallback mount-point path
+   to validate volume presence. Because adopted partitions carry no type
+   information, the ESP cannot be discovered at static-validation time, so
+   the canonical Azure Linux default (`/boot/efi`) is assumed. This is safe
+   because adopted-partition configurations are only used for images that
+   follow the standard Azure Linux layout.
