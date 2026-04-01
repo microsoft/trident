@@ -70,7 +70,7 @@ stages:
     - stage: PrepareSSHKeys
       displayName: Prepare SSH Keys
       jobs:
-        - template: .pipelines/templates/stages/testing_servicing/generate-ssh-keys.yml@trident
+        - template: stages/testing_servicing/generate-ssh-keys.yml
 
     - template: e2e-arm64-template.yml
       parameters:
