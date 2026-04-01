@@ -7,6 +7,9 @@ parameters:
     type: string
   - name: artifactName
     type: string
+  - name: 1esFriendly
+    type: boolean
+    default: false
 
 steps:
   # PublishTestResults can handle missing JUnit files, it has always run
@@ -35,9 +38,10 @@ steps:
     displayName: "Prepare JUnit XML for ${{ parameters.displayNameSpecifier }}"
     condition: and(succeededOrFailed(), ne(variables['skipJunitHandling'], 'true'))
 
-  - task: PublishBuildArtifacts@1
-    displayName: "Publish JUnit XML for ${{ parameters.displayNameSpecifier }}"
-    condition: and(succeededOrFailed(), ne(variables['skipJunitHandling'], 'true'))
-    inputs:
-      pathToPublish: /tmp/ONEBRANCH_ARTIFACT/
-      artifactName: ${{ parameters.artifactName }}
+  - ${{ if parameters.1esFriendly }}:
+    - task: PublishBuildArtifacts@1
+      displayName: "Publish JUnit XML for ${{ parameters.displayNameSpecifier }}"
+      condition: and(succeededOrFailed(), ne(variables['skipJunitHandling'], 'true'))
+      inputs:
+        pathToPublish: /tmp/ONEBRANCH_ARTIFACT/
+        artifactName: ${{ parameters.artifactName }}
