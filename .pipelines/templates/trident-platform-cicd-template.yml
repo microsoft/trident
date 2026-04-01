@@ -71,6 +71,8 @@ stages:
       displayName: Prepare SSH Keys
       jobs:
         - template: stages/testing_servicing/generate-ssh-keys.yml
+    # Build tools (amd64) for DirectStreaming tests
+    - template: stages/building_tools/building-tools.yml
 
     - template: e2e-arm64-template.yml
       parameters:
