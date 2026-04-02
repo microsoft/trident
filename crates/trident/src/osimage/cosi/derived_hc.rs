@@ -118,6 +118,7 @@ pub(super) fn derive_host_configuration_inner(
                     options: MountOptions::defaults().with("ro"),
                 }),
                 source: FileSystemSource::Image,
+                is_esp: false,
             });
         } else {
             // Add this filesystem directly on top of the partition since there is no verity.
@@ -125,6 +126,7 @@ pub(super) fn derive_host_configuration_inner(
                 device_id: Some(partition_id.clone()),
                 mount_point: Some(filesystem_metadata.mount_point.as_path().into()),
                 source: FileSystemSource::Image,
+                is_esp: false,
             });
         };
     }

@@ -99,6 +99,7 @@ fn test_basic_graph() {
             path: ROOT_MOUNT_POINT_PATH.into(),
             options: MountOptions::empty(),
         }),
+        is_esp: false,
     };
     builder.add_node((&fs).into());
     nodes.push(StorageGraphNode::from(&fs));
@@ -143,6 +144,7 @@ fn test_duplicate_mountpoint() {
             path: ROOT_MOUNT_POINT_PATH.into(),
             options: MountOptions::defaults(),
         }),
+        is_esp: false,
     };
     builder.add_node((&fs1).into());
     builder.add_node((&fs1).into());
@@ -216,6 +218,7 @@ fn test_filesystem_missing_blkdev_id() {
             path: ROOT_MOUNT_POINT_PATH.into(),
             options: MountOptions::empty(),
         }),
+        is_esp: false,
     };
     let mut builder = builder_base.clone();
     builder.add_node((&fs).into());
@@ -235,6 +238,7 @@ fn test_filesystem_missing_mp() {
         device_id: None,
         source: FileSystemSource::New(NewFileSystemType::Tmpfs),
         mount_point: None,
+        is_esp: false,
     };
     let mut builder = StorageGraphBuilder::default();
     builder.add_node((&fs).into());
@@ -270,6 +274,7 @@ fn test_unexpected_blkdev_id() {
             path: ROOT_MOUNT_POINT_PATH.into(),
             options: MountOptions::defaults(),
         }),
+        is_esp: false,
     };
     builder.add_node((&fs).into());
     assert_eq!(
@@ -582,6 +587,7 @@ fn test_mount_point_path_not_absolute() {
             path: "not/absolute".into(),
             options: MountOptions::defaults(),
         }),
+        is_esp: false,
     };
     builder.add_node((&fs).into());
 
@@ -602,6 +608,7 @@ fn test_nonexistent_ref() {
             path: ROOT_MOUNT_POINT_PATH.into(),
             options: MountOptions::empty(),
         }),
+        is_esp: false,
     };
     builder.add_node((&fs).into());
 
@@ -755,6 +762,7 @@ fn test_esp_enforce_partition_type() {
             path: ESP_MOUNT_POINT_PATH.into(),
             options: MountOptions::defaults(),
         }),
+        is_esp: true,
     };
     builder.add_node((&fs).into());
     builder.build().unwrap();

@@ -794,6 +794,7 @@ mod tests {
                     path: PathBuf::from("/"),
                     options: MountOptions::empty(),
                 }),
+                is_esp: false,
             });
 
         let mut host_status = HostStatus {
@@ -857,6 +858,7 @@ mod tests {
                     path: PathBuf::from("/esp"),
                     options: MountOptions::empty(),
                 }),
+                is_esp: false,
             });
 
         let mut host_status = HostStatus {

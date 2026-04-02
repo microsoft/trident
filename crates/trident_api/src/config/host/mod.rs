@@ -79,6 +79,29 @@ pub struct HostConfiguration {
 }
 
 impl HostConfiguration {
+    /// Creates a new HostConfiguration from a YAML string. This is the main
+    /// entry point for creating a HostConfiguration, and it will perform
+    /// necessary initialization and validation of the configuration.
+    pub fn new_from_config(raw: impl AsRef<str>) -> Result<Self, serde_yaml::Error> {
+        Ok(serde_yaml::from_str::<Self>(raw.as_ref())?.initialize())
+    }
+
+    /// Creates a new HostConfiguration from a YAML value.
+    pub fn new_from_yaml_value(yaml: serde_yaml::Value) -> Result<Self, serde_yaml::Error> {
+        Ok(serde_yaml::from_value::<Self>(yaml)?.initialize())
+    }
+
+    /// Performs necessary initialization of the HostConfiguration immediately
+    /// after deserialization. This function only performs indirect data
+    /// population, but does not do any checking. No errors should be produced
+    /// other than those resulting from anything that could be categorized as a
+    /// parsing error. Actual validation is performed on an immutable self in
+    /// the validate() function.
+    fn initialize(mut self) -> Self {
+        self.storage.initialize();
+        self
+    }
+
     pub fn validate(&self) -> Result<(), HostConfigurationStaticValidationError> {
         let require_root_mount_point = self.trident != Trident::default()
             || self.scripts != Scripts::default()
@@ -487,6 +510,7 @@ mod tests {
                         path: PathBuf::from("/"),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
                 FileSystem {
                     device_id: Some("data".to_owned()),
@@ -495,6 +519,7 @@ mod tests {
                         path: PathBuf::from("/data"),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
             ],
             ab_update: Some(AbUpdate {
@@ -569,6 +594,7 @@ mod tests {
                         path: PathBuf::from("/"),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
                 FileSystem {
                     device_id: Some("shared".to_owned()),
@@ -577,6 +603,7 @@ mod tests {
                         path: PathBuf::from("/var/lib/extensions"),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
             ],
             ab_update: Some(AbUpdate {
@@ -613,6 +640,7 @@ mod tests {
                             options: MountOptions::defaults(),
                         }),
                         source: FileSystemSource::New(NewFileSystemType::Ext4),
+                        is_esp: false,
                     },
                     FileSystem {
                         device_id: Some("bar".into()),
@@ -621,6 +649,7 @@ mod tests {
                             options: MountOptions::defaults(),
                         }),
                         source: FileSystemSource::New(NewFileSystemType::Ext4),
+                        is_esp: false,
                     },
                 ],
                 ..Default::default()
@@ -641,6 +670,7 @@ mod tests {
                             options: MountOptions::defaults(),
                         }),
                         source: FileSystemSource::New(NewFileSystemType::Ext4),
+                        is_esp: false,
                     },
                     FileSystem {
                         device_id: Some("bar".into()),
@@ -649,6 +679,7 @@ mod tests {
                             options: MountOptions::defaults(),
                         }),
                         source: FileSystemSource::New(NewFileSystemType::Ext4),
+                        is_esp: false,
                     },
                 ],
                 ab_update: Some(AbUpdate {
@@ -676,6 +707,7 @@ mod tests {
                             options: MountOptions::defaults(),
                         }),
                         source: FileSystemSource::New(NewFileSystemType::Ext4),
+                        is_esp: false,
                     },
                     FileSystem {
                         device_id: Some("bar".into()),
@@ -684,6 +716,7 @@ mod tests {
                             options: MountOptions::defaults(),
                         }),
                         source: FileSystemSource::New(NewFileSystemType::Ext4),
+                        is_esp: false,
                     },
                 ],
                 ab_update: Some(AbUpdate {
@@ -715,6 +748,7 @@ mod tests {
                             options: MountOptions::defaults(),
                         }),
                         source: FileSystemSource::New(NewFileSystemType::Ext4),
+                        is_esp: false,
                     },
                     FileSystem {
                         device_id: Some("bar".into()),
@@ -723,6 +757,7 @@ mod tests {
                             options: MountOptions::defaults(),
                         }),
                         source: FileSystemSource::New(NewFileSystemType::Ext4),
+                        is_esp: false,
                     },
                 ],
                 ab_update: Some(AbUpdate {
@@ -795,6 +830,7 @@ mod tests {
                         path: ROOT_MOUNT_POINT_PATH.into(),
                         options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
                     }),
+                    is_esp: false,
                 }],
                 ..Default::default()
             },

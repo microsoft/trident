@@ -100,6 +100,15 @@ pub struct Storage {
 }
 
 impl Storage {
+    pub(super) fn initialize(&mut self) {
+        // Set the is_esp field for filesystems based on the esp_mount_path
+        for fs in &mut self.filesystems {
+            if let Some(mount_point) = &fs.mount_point {
+                fs.is_esp = mount_point.path == self.esp_mount_path.0;
+            }
+        }
+    }
+
     /// Returns the verity device with the given ID, if it exists.
     pub fn verity_device(&self, device_id: &BlockDeviceId) -> Option<&VerityDevice> {
         self.verity.iter().find(|v| &v.id == device_id)
@@ -212,6 +221,17 @@ impl Storage {
         &self,
         graph: &StorageGraph,
     ) -> Result<(), HostConfigurationStaticValidationError> {
+        // Ensure that there is exists a filesystem denoted as being ESP. The
+        // graph has already validated that all mount paths are unique, so any()
+        // is sufficient.
+        if !self.filesystems.iter().any(|fs| fs.is_esp) {
+            return Err(
+                HostConfigurationStaticValidationError::EspMountPointNotFound {
+                    expected: self.esp_mount_path.to_string_lossy().to_string(),
+                },
+            );
+        }
+
         // Validate that there is at least ONE ESP partition, as it is required
         // for UEFI boot and for dropping the bootloader configuration.
         // Skip this check when adopted partitions exist, since the ESP may be
@@ -256,7 +276,11 @@ impl Storage {
             Path::new(ESP_MOUNT_POINT_PATH)
         } else {
             // If no adopted partitions are declared, then we expect the ESP to be declared explicitly and have a mount point.
-            return Err(HostConfigurationStaticValidationError::EspMountPointNotFound);
+            return Err(
+                HostConfigurationStaticValidationError::EspMountPointNotFound {
+                    expected: self.esp_mount_path.to_string_lossy().to_string(),
+                },
+            );
         };
 
         // ESP volume must be present, to update Grub configuration
@@ -796,6 +820,7 @@ mod tests {
                         path: PathBuf::from(ESP_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: true,
                 },
                 FileSystem {
                     device_id: Some("boot".into()),
@@ -804,6 +829,7 @@ mod tests {
                         path: PathBuf::from(BOOT_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
                 FileSystem {
                     device_id: Some("root".into()),
@@ -812,6 +838,7 @@ mod tests {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
                 FileSystem {
                     device_id: Some("srv".into()),
@@ -820,6 +847,7 @@ mod tests {
                         path: PathBuf::from("/srv"),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
                 FileSystem {
                     device_id: Some("overlay".into()),
@@ -828,6 +856,7 @@ mod tests {
                         path: PathBuf::from(TRIDENT_OVERLAY_PATH),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
                 FileSystem {
                     device_id: Some("mnt".into()),
@@ -836,6 +865,7 @@ mod tests {
                         path: PathBuf::from("/mnt"),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
                 FileSystem {
                     device_id: Some("var".into()),
@@ -844,6 +874,7 @@ mod tests {
                         path: PathBuf::from("/var"),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
             ],
             ab_update: Some(AbUpdate {
@@ -880,6 +911,7 @@ mod tests {
                 path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                 options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
             }),
+            is_esp: false,
         });
 
         storage
@@ -1021,6 +1053,7 @@ mod tests {
                         path: PathBuf::from(ESP_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: true,
                 },
                 FileSystem {
                     device_id: Some("disk1-partition2".to_string()),
@@ -1029,6 +1062,7 @@ mod tests {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
             ],
             ..Default::default()
@@ -1051,6 +1085,7 @@ mod tests {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
                 FileSystem {
                     device_id: Some("disk1-partition1".to_string()),
@@ -1059,6 +1094,7 @@ mod tests {
                         path: PathBuf::from(ESP_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: true,
                 },
             ],
             ..storage.clone()
@@ -1111,6 +1147,7 @@ mod tests {
                     path: PathBuf::from("/some/path"),
                     options: MountOptions::empty(),
                 }),
+                is_esp: false,
             }],
             ..storage.clone()
         };
@@ -1197,6 +1234,7 @@ mod tests {
                         path: PathBuf::from(ESP_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: true,
                 },
                 FileSystem {
                     device_id: Some("ab1".to_owned()),
@@ -1205,6 +1243,7 @@ mod tests {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
             ],
             ab_update: Some(AbUpdate {
@@ -1584,6 +1623,7 @@ mod tests {
                 path: PathBuf::from("/alt"),
                 options: MountOptions::empty(),
             }),
+            is_esp: false,
         });
         assert_eq!(
             storage.validate(true).unwrap_err(),
@@ -2081,6 +2121,7 @@ mod tests {
                 path: PathBuf::from("/alt"),
                 options: MountOptions::empty(),
             }),
+            is_esp: false,
         });
         assert_eq!(
             storage.validate(true).unwrap_err(),
@@ -2114,6 +2155,7 @@ mod tests {
                 path: PathBuf::from("/mnt/some-mount-point"),
                 options: MountOptions::empty(),
             }),
+            is_esp: false,
         });
 
         assert_eq!(
@@ -2496,6 +2538,7 @@ mod tests {
                         path: ESP_MOUNT_POINT_PATH.into(),
                         options: MountOptions::defaults(),
                     }),
+                    is_esp: true,
                 },
                 FileSystem {
                     device_id: Some("root".into()),
@@ -2504,6 +2547,7 @@ mod tests {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
                 FileSystem {
                     device_id: Some("var".into()),
@@ -2512,6 +2556,7 @@ mod tests {
                         path: PathBuf::from("/var"),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
             ],
             disks: vec![Disk {
@@ -2679,6 +2724,7 @@ mod tests {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 }],
                 ab_update: Some(AbUpdate {
                     volume_pairs: vec![AbVolumePair {
@@ -2706,6 +2752,7 @@ mod tests {
                 path: PathBuf::from(ROOT_MOUNT_POINT_PATH).join("boot"),
                 options: MountOptions::empty(),
             }),
+            is_esp: false,
         });
 
         let mount_point = host_config
@@ -2785,6 +2832,7 @@ mod tests {
                             path: PathBuf::from("/esp"),
                             options: MountOptions::empty(),
                         }),
+                        is_esp: true,
                     },
                     FileSystem {
                         device_id: Some("root".into()),
@@ -2793,11 +2841,13 @@ mod tests {
                             path: PathBuf::from("/"),
                             options: MountOptions::empty(),
                         }),
+                        is_esp: false,
                     },
                     FileSystem {
                         device_id: Some("trident".into()),
                         source: FileSystemSource::Image,
                         mount_point: None,
+                        is_esp: false,
                     },
                 ],
                 ab_update: Some(AbUpdate {
@@ -2903,6 +2953,7 @@ mod tests {
                 path: PathBuf::from("/efi"),
                 options: MountOptions::empty(),
             }),
+            is_esp: true,
         });
 
         assert!(matches!(
@@ -2972,6 +3023,7 @@ mod tests {
                 path: PathBuf::from(ESP_MOUNT_POINT_PATH),
                 options: MountOptions::empty(),
             }),
+            is_esp: true,
         });
 
         storage.validate(true).unwrap();
@@ -2993,7 +3045,9 @@ mod tests {
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::EspMountPointNotFound,
+            HostConfigurationStaticValidationError::EspMountPointNotFound {
+                expected: ESP_MOUNT_POINT_PATH.into()
+            },
         );
     }
 

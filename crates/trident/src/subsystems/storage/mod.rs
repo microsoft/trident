@@ -328,6 +328,7 @@ mod tests {
                     device_id: Some("part1".to_owned()),
                     source: Default::default(),
                     mount_point: Some(MountPoint::from_str("/").unwrap()),
+                    is_esp: false,
                 }],
                 ab_update: Some(AbUpdate {
                     volume_pairs: vec![trident_api::config::AbVolumePair {

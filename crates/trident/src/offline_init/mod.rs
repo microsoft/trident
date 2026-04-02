@@ -320,6 +320,7 @@ fn generate_host_status(
                     options => MountOptions::new(options),
                 },
             }),
+            is_esp: false,
         })
     }
 

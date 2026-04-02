@@ -415,6 +415,7 @@ mod tests {
             device_id: Some("fs1".into()),
             mount_point: Some(MountPoint::from_str("/mnt/fs1").unwrap()),
             source: FileSystemSource::New(NewFileSystemType::Ext4),
+            is_esp: false,
         };
         let fs_node_idx = graph.inner.add_node((&fs).into());
 
@@ -444,6 +445,7 @@ mod tests {
             device_id: Some("fs2".into()),
             mount_point: Some(MountPoint::from_str("/mnt/fs2").unwrap()),
             source: FileSystemSource::New(NewFileSystemType::Ext4),
+            is_esp: false,
         };
         let fs2_node_idx = graph.inner.add_node((&fs2).into());
 
@@ -483,6 +485,7 @@ mod tests {
             device_id: Some("fs1".into()),
             mount_point: Some(MountPoint::from_str("/mnt/fs1").unwrap()),
             source: FileSystemSource::New(NewFileSystemType::Ext4),
+            is_esp: false,
         });
         let _ = graph.inner.add_node(fs_node);
 
@@ -495,6 +498,7 @@ mod tests {
             device_id: Some("rootfs".into()),
             mount_point: Some(MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap()),
             source: FileSystemSource::New(NewFileSystemType::Ext4),
+            is_esp: false,
         });
         let root_fs_node_idx = graph.inner.add_node(root_fs_node.clone());
 
@@ -529,6 +533,7 @@ mod tests {
             device_id: Some(block_dev_id.into()),
             mount_point: Some(MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap()),
             source: FileSystemSource::New(NewFileSystemType::Ext4),
+            is_esp: false,
         });
 
         let root_fs_node_idx = graph.inner.add_node(root_fs_node.clone());
@@ -611,6 +616,7 @@ mod tests {
                 device_id: Some(dev_id.into()),
                 mount_point: Some(MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap()),
                 source: FileSystemSource::New(NewFileSystemType::Ext4),
+                is_esp: false,
             }));
 
         // Add an edge from the partition to the filesystem.

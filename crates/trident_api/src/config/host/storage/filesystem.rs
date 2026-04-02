@@ -9,7 +9,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    constants::{ESP_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
+    constants::{MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
     BlockDeviceId,
 };
 
@@ -30,6 +30,12 @@ pub struct FileSystem {
     /// It can be provided as an object for more control over the mount options,
     /// or as a just a string when `defaults` is sufficient.
     pub mount_point: Option<MountPoint>,
+
+    /// Whether this filesystem is the EFI System Partition (ESP), as determined
+    /// by its mount point path and the esp_mount_path field of the
+    /// HostStorageConfig. This field is not deserialized from user input; it is
+    /// set internally based on the mount point path and esp_mount_path.
+    pub is_esp: bool,
 }
 
 pub mod fs_serde {
@@ -153,6 +159,7 @@ pub mod fs_serde {
                 device_id: interim.device_id,
                 source,
                 mount_point: interim.mount_point,
+                is_esp: false,
             })
         }
     }
@@ -346,13 +353,6 @@ impl FileSystem {
         .join(", ")
     }
 
-    /// Returns whether the filesystem is the EFI System Partition (ESP), as
-    /// determined by its mount point path.
-    pub fn is_esp(&self) -> bool {
-        self.mount_point_path()
-            .is_some_and(|mpp| mpp == Path::new(ESP_MOUNT_POINT_PATH))
-    }
-
     /// Returns whether the filesystem is the root filesystem, as determined by
     /// its mount point path.
     pub fn is_root(&self) -> bool {
@@ -390,6 +390,7 @@ mod tests {
             device_id: Some("device_id".to_string()),
             source: Default::default(),
             mount_point: None,
+            is_esp: false,
         };
         assert_eq!(fs.mount_point_path(), None);
 
@@ -398,7 +399,7 @@ mod tests {
             options: MountOptions::new("defaults"),
         });
         assert_eq!(fs.mount_point_path(), Some(Path::new("/mnt")));
-        assert!(!fs.is_esp());
+        assert!(!fs.is_esp);
         assert!(!fs.is_root());
         assert!(!fs.is_read_only());
 
@@ -406,8 +407,12 @@ mod tests {
             path: PathBuf::from("/boot/efi"),
             options: MountOptions::new("defaults"),
         });
-        assert_eq!(fs.mount_point_path(), Some(Path::new(ESP_MOUNT_POINT_PATH)));
-        assert!(fs.is_esp());
+        fs.is_esp = true; // Manually set is_esp to true since we're not using the HostStorageConfig's esp_mount_path in this test.
+        assert_eq!(
+            fs.mount_point_path(),
+            Some(Path::new(ROOT_MOUNT_POINT_PATH))
+        );
+        assert!(fs.is_esp);
         assert!(!fs.is_root());
         assert!(!fs.is_read_only());
 
@@ -415,11 +420,12 @@ mod tests {
             path: PathBuf::from("/"),
             options: MountOptions::new("defaults"),
         });
+        fs.is_esp = false; // Manually set is_esp to false since the mount point is now the root mount point, not the ESP mount point.
         assert_eq!(
             fs.mount_point_path(),
             Some(Path::new(ROOT_MOUNT_POINT_PATH))
         );
-        assert!(!fs.is_esp());
+        assert!(!fs.is_esp);
         assert!(fs.is_root());
         assert!(!fs.is_read_only());
 
@@ -428,7 +434,7 @@ mod tests {
             options: MountOptions::new("ro"),
         });
         assert_eq!(fs.mount_point_path(), Some(Path::new("/mnt")));
-        assert!(!fs.is_esp());
+        assert!(!fs.is_esp);
         assert!(!fs.is_root());
         assert!(fs.is_read_only());
     }
@@ -442,32 +448,33 @@ mod tests {
                 path: "/".into(),
                 options: MountOptions::defaults(),
             }),
+            is_esp: false,
         };
 
         // Success: source unspecified
-        let yaml = r#"
-deviceId: root
-mountPoint: /
-"#;
+        let yaml = indoc::indoc! {r#"
+            deviceId: root
+            mountPoint: /
+        "#};
         let filesystem: FileSystem = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(filesystem, root_fs);
 
         // Success: source specified
-        let yaml = r#"
-deviceId: root
-source: image
-mountPoint: /
-"#;
+        let yaml = indoc::indoc! {r#"
+            deviceId: root
+            source: image
+            mountPoint: /
+        "#};
         let filesystem: FileSystem = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(filesystem, root_fs);
 
         // Failure: filesystem type specified
-        let yaml = r#"
-deviceId: root
-source: image
-type: ext4
-mountPoint: /
-"#;
+        let yaml = indoc::indoc! {r#"
+            deviceId: root
+            source: image
+            type: ext4
+            mountPoint: /
+        "#};
         let err = serde_yaml::from_str::<FileSystem>(yaml).unwrap_err();
         assert!(err
             .to_string()
@@ -483,44 +490,45 @@ mountPoint: /
                 path: "/".into(),
                 options: MountOptions::defaults(),
             }),
+            is_esp: false,
         };
 
         // Success: filesystem type unspecified (default to Ext4)
-        let yaml = r#"
-deviceId: trident
-source: new
-mountPoint: /
-"#;
+        let yaml = indoc::indoc! {r#"
+            deviceId: trident
+            source: new
+            mountPoint: /
+        "#};
         let filesystem: FileSystem = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(filesystem, new_fs);
 
         // Success: filesystem type specified
-        let yaml = r#"
-deviceId: trident
-source: new
-type: ext4
-mountPoint: /
-"#;
+        let yaml = indoc::indoc! {r#"
+            deviceId: trident
+            source: new
+            type: ext4
+            mountPoint: /
+        "# };
         let filesystem: FileSystem = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(filesystem, new_fs);
 
         // Failure: invalid filesystem type specified (unknown)
-        let yaml = r#"
-deviceId: trident
-source: new
-type: abcd
-mountPoint: /
-"#;
+        let yaml = indoc::indoc! {r#"#
+            deviceId: trident
+            source: new
+            type: abcd
+            mountPoint: /
+        "#};
         let err = serde_yaml::from_str::<FileSystem>(yaml).unwrap_err();
         assert!(err.to_string().contains("unknown variant `abcd`"));
 
         // Failure: invalid filesystem type specified (adopted)
-        let yaml = r#"
-deviceId: trident
-source: new
-type: iso9660
-mountPoint: /
-"#;
+        let yaml = indoc::indoc! {r#"
+            deviceId: trident
+            source: new
+            type: iso9660
+            mountPoint: /
+        "#};
         let err = serde_yaml::from_str::<FileSystem>(yaml).unwrap_err();
         assert!(err.to_string().contains("Invalid new filesystem type"));
     }
@@ -534,66 +542,68 @@ mountPoint: /
                 path: "/".into(),
                 options: MountOptions::defaults(),
             }),
+            is_esp: false,
         };
 
         // Success: filesystem type unspecified (default to Auto)
-        let yaml = r#"
-deviceId: trident
-source: adopted
-mountPoint: /
-"#;
+        let yaml = indoc::indoc! {r#"
+            deviceId: trident
+            source: adopted
+            mountPoint: /
+        "#};
         let filesystem: FileSystem = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(filesystem, adopted_fs);
 
         // Success: filesystem type specified
-        let yaml = r#"
-deviceId: trident
-source: adopted
-type: auto
-mountPoint: /
-"#;
+        let yaml = indoc::indoc! {r#"
+            deviceId: trident
+            source: adopted
+            type: auto
+            mountPoint: /
+        "#};
         let filesystem: FileSystem = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(filesystem, adopted_fs);
 
         // Failure: invalid filesystem type specified (unknown)
-        let yaml = r#"
-deviceId: trident
-source: adopted
-type: abcd
-mountPoint: /
-"#;
+        let yaml = indoc::indoc! {r#"
+            deviceId: trident
+            source: adopted
+            type: abcd
+            mountPoint: /
+        "#};
         let err = serde_yaml::from_str::<FileSystem>(yaml).unwrap_err();
         assert!(err.to_string().contains("unknown variant `abcd`"));
 
         // Failure: invalid filesystem type specified (new)
-        let yaml = r#"
-deviceId: trident
-source: adopted
-type: tmpfs
-mountPoint: /
-"#;
+        let yaml = indoc::indoc! {r#"
+            deviceId: trident
+            source: adopted
+            type: tmpfs
+            mountPoint: /
+        "#};
         let err = serde_yaml::from_str::<FileSystem>(yaml).unwrap_err();
         assert!(err.to_string().contains("Invalid adopted filesystem type"));
 
         // Failure: invalid nesting structure
-        let yaml = r#"
-deviceId: trident
-source:
-  source: adopted
-  type: auto
-mountPoint: /
-"#;
+        let yaml = indoc::indoc! {r#"
+            deviceId: trident
+            source:
+              source: adopted
+              type: auto
+            mountPoint: /
+        "#};
         serde_yaml::from_str::<FileSystem>(yaml).unwrap_err();
     }
 
     #[test]
     fn test_serialize_filesystem() {
         // Image
-        let image_yaml = r#"deviceId: root
-mountPoint:
-  path: /
-  options: defaults
-"#;
+        let image_yaml = indoc::indoc! {r#"
+            deviceId: root
+            mountPoint:
+              path: /
+              options: defaults
+        "#};
         let image_fs = FileSystem {
             device_id: Some("root".into()),
             source: FileSystemSource::Image,
@@ -601,17 +611,19 @@ mountPoint:
                 path: "/".into(),
                 options: MountOptions::defaults(),
             }),
+            is_esp: false,
         };
         assert_eq!(serde_yaml::to_string(&image_fs).unwrap(), image_yaml);
 
         // New
-        let new_yaml = r#"deviceId: root
-source: new
-type: ext4
-mountPoint:
-  path: /
-  options: defaults
-"#;
+        let new_yaml = indoc::indoc! {r#"
+            deviceId: root
+            source: new
+            type: ext4
+            mountPoint:
+              path: /
+              options: defaults
+        "#};
         let new_fs = FileSystem {
             device_id: Some("root".into()),
             source: FileSystemSource::New(NewFileSystemType::Ext4),
@@ -619,17 +631,19 @@ mountPoint:
                 path: "/".into(),
                 options: MountOptions::defaults(),
             }),
+            is_esp: false,
         };
         assert_eq!(serde_yaml::to_string(&new_fs).unwrap(), new_yaml);
 
         // Adopted
-        let adopted_yaml = r#"deviceId: root
-source: adopted
-type: auto
-mountPoint:
-  path: /
-  options: defaults
-"#;
+        let adopted_yaml = indoc::indoc! {r#"
+            deviceId: root
+            source: adopted
+            type: auto
+            mountPoint:
+              path: /
+              options: defaults
+        "#};
         let adopted_fs = FileSystem {
             device_id: Some("root".into()),
             source: FileSystemSource::Adopted(AdoptedFileSystemType::Auto),
@@ -637,6 +651,7 @@ mountPoint:
                 path: "/".into(),
                 options: MountOptions::defaults(),
             }),
+            is_esp: false,
         };
         assert_eq!(serde_yaml::to_string(&adopted_fs).unwrap(), adopted_yaml);
     }
@@ -648,6 +663,7 @@ mountPoint:
                 device_id: dev_id,
                 source,
                 mount_point: mp,
+                is_esp: false,
             };
 
             let serialized_result = serde_yaml::to_string(&original).unwrap();

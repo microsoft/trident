@@ -124,6 +124,7 @@ mod tests {
                             path: PathBuf::from("/boot/efi"),
                             options: MountOptions::empty(),
                         }),
+                        is_esp: true,
                     },
                     FileSystem {
                         device_id: Some("root".into()),
@@ -132,11 +133,13 @@ mod tests {
                             path: PathBuf::from("/"),
                             options: MountOptions::empty(),
                         }),
+                        is_esp: false,
                     },
                     FileSystem {
                         device_id: Some("trident".into()),
                         source: FileSystemSource::Image,
                         mount_point: None,
+                        is_esp: false,
                     },
                 ],
                 ab_update: Some(AbUpdate {
