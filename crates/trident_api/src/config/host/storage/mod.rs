@@ -94,6 +94,11 @@ pub struct Storage {
     )]
     pub swap: Vec<Swap>,
 
+    /// The mount path for the ESP partition in the Linux distro being serviced.
+    /// The default is the standard ESP mount point for Azure Linux, but it can
+    /// be overridden if the Linux distro being serviced uses a different mount
+    /// point for the ESP partition. This is used to determine which partition
+    /// is the ESP and to update the bootloader configuration on it.
     #[serde(default, skip_serializing_if = "EspMountPath::is_default")]
     #[cfg_attr(feature = "schemars", schemars(schema_with = "EspMountPath::schema"))]
     pub esp_mount_path: EspMountPath,
@@ -127,7 +132,7 @@ impl Storage {
 
     /// Builds a storage graph from the storage configuration.
     pub fn build_graph(&self) -> Result<StorageGraph, StorageGraphBuildError> {
-        let mut builder = StorageGraphBuilder::default();
+        let mut builder = StorageGraphBuilder::new(self.esp_mount_path.as_path());
 
         // Add disks
         for disk in &self.disks {
@@ -232,59 +237,8 @@ impl Storage {
             );
         }
 
-        // Validate that there is at least ONE ESP partition, as it is required
-        // for UEFI boot and for dropping the bootloader configuration.
-        // Skip this check when adopted partitions exist, since the ESP may be
-        // discovered at runtime rather than declared explicitly.
-        let has_adopted_partitions = self.disks.iter().any(|d| !d.adopted_partitions.is_empty());
-        let has_esp_partition = self
-            .disks
-            .iter()
-            .flat_map(|d| d.partitions.iter())
-            .any(|p| p.partition_type.is_esp());
-
-        if !has_esp_partition && !has_adopted_partitions {
-            return Err(HostConfigurationStaticValidationError::EspPartitionNotFound);
-        }
-
-        // Now get the list of ESP mount points. We expect exactly one, as
-        // multiple ESPs are not supported by Trident, and at least one is
-        // required to update the bootloader configuration.
-        let esp_mount_points = graph.esp_mount_points();
-        if esp_mount_points.len() > 1 {
-            return Err(
-                HostConfigurationStaticValidationError::MultipleEspMountPoints {
-                    mount_point_paths: esp_mount_points
-                        .iter()
-                        .map(|mp| mp.path.to_string_lossy().to_string())
-                        .collect::<Vec<_>>()
-                        .join(","),
-                },
-            );
-        }
-
-        // Now try to figure out the ESP mount path from all the info we have.
-        let esp_mount_point_path = if !esp_mount_points.is_empty() {
-            // There is exactly one mounted ESP. This is now the real ESP mount
-            // point, as we have validated there is exactly one.
-            &esp_mount_points[0].path
-        } else if has_adopted_partitions {
-            // We couldn't find a mounted ESP partition, but we have adopted
-            // partitions, for which we do NOT know type, so we assume ESP must
-            // be in one of them, and we infer the mount point to be the
-            // standard ESP mount point for Azure Linux.
-            Path::new(ESP_MOUNT_POINT_PATH)
-        } else {
-            // If no adopted partitions are declared, then we expect the ESP to be declared explicitly and have a mount point.
-            return Err(
-                HostConfigurationStaticValidationError::EspMountPointNotFound {
-                    expected: self.esp_mount_path.to_string_lossy().to_string(),
-                },
-            );
-        };
-
-        // ESP volume must be present, to update Grub configuration
-        validate_volume_presence(graph, esp_mount_point_path)?;
+        // ESP volume must be present to update boot configuration
+        validate_volume_presence(graph, self.esp_mount_path.as_path())?;
 
         // /var/tmp must not be on a read-only volume
         self.validate_writable_mount_points()?;
@@ -634,6 +588,11 @@ impl EspMountPath {
         Path::new(ESP_MOUNT_POINT_PATH)
     }
 
+    /// Returns the ESP mount path as a &Path.
+    pub fn as_path(&self) -> &Path {
+        &self.0
+    }
+
     /// Returns whether the ESP mount path is the default path.
     fn is_default(&self) -> bool {
         self.0.as_path() == EspMountPath::default_path()
@@ -670,6 +629,12 @@ impl Deref for EspMountPath {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl From<&str> for EspMountPath {
+    fn from(value: &str) -> Self {
+        Self(PathBuf::from(value))
     }
 }
 
@@ -2647,6 +2612,7 @@ mod tests {
         // This verifies the transitive DFS in `esp_mount_points()` correctly
         // walks through the RAID layer to find the underlying ESP partitions
         // even when the mount path is not the default /boot/efi.
+        storage.esp_mount_path = "/boot".into();
         storage.raid.software[0].level = RaidLevel::Raid1;
         storage.filesystems[0].mount_point = Some(MountPoint {
             path: PathBuf::from("/boot"),
@@ -2832,7 +2798,7 @@ mod tests {
                             path: PathBuf::from("/esp"),
                             options: MountOptions::empty(),
                         }),
-                        is_esp: true,
+                        is_esp: false,
                     },
                     FileSystem {
                         device_id: Some("root".into()),
@@ -2926,68 +2892,6 @@ mod tests {
         );
     }
 
-    /// Validates that having multiple ESP mount points is rejected.
-    ///
-    /// The test creates a storage configuration with two separate ESP
-    /// partitions, each with its own filesystem and mount point. The
-    /// validation must reject this because Trident only supports a single
-    /// ESP mount point.
-    #[test]
-    fn test_validate_multiple_esp_mount_points_fail() {
-        let mut storage = get_storage();
-
-        // Add a second ESP partition on disk1.
-        storage.disks[0].partitions.push(Partition {
-            id: "esp2".to_owned(),
-            partition_type: PartitionType::Esp,
-            size: PartitionSize::from_str("512M").unwrap(),
-            uuid: None,
-            label: None,
-        });
-
-        // Mount this second ESP partition at a different valid ESP path.
-        storage.filesystems.push(FileSystem {
-            device_id: Some("esp2".to_owned()),
-            source: FileSystemSource::Image,
-            mount_point: Some(MountPoint {
-                path: PathBuf::from("/efi"),
-                options: MountOptions::empty(),
-            }),
-            is_esp: true,
-        });
-
-        assert!(matches!(
-            storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::MultipleEspMountPoints { .. }
-        ));
-    }
-
-    /// Validates that a storage configuration with no ESP partition at all
-    /// is rejected because Trident requires at least one ESP partition for
-    /// UEFI boot and bootloader configuration updates.
-    ///
-    /// The test removes both the ESP partition and its filesystem from an
-    /// otherwise valid configuration. The new `EspPartitionNotFound` error
-    /// fires before any orphaned-ESP or mount-point checks.
-    #[test]
-    fn test_validate_no_esp_partition_fail() {
-        let mut storage = get_storage();
-
-        // Remove the ESP filesystem.
-        storage
-            .filesystems
-            .retain(|fs| fs.device_id != Some("esp".into()));
-
-        // Remove the ESP partition itself so the partition-existence check
-        // fires first (before the orphaned-ESP check).
-        storage.disks[1].partitions.retain(|p| p.id != "esp");
-
-        assert_eq!(
-            storage.validate(true).unwrap_err(),
-            HostConfigurationStaticValidationError::EspPartitionNotFound,
-        );
-    }
-
     /// Validates that the `EspPartitionNotFound` check is skipped when
     /// adopted partitions are present, even if no partition is explicitly
     /// typed as ESP.
@@ -3068,6 +2972,9 @@ mod tests {
             .filesystems
             .retain(|fs| fs.device_id != Some("boot".into()));
 
+        // Set the ESP mount point to /boot instead of /boot/efi.
+        storage.esp_mount_path = "/boot".into();
+
         // Change the ESP filesystem mount point to /boot.
         storage
             .filesystems
@@ -3091,6 +2998,9 @@ mod tests {
     #[test]
     fn test_validate_esp_mounted_at_efi_pass() {
         let mut storage = get_storage();
+
+        // Change the ESP mount path in the storage configuration to /efi.
+        storage.esp_mount_path = "/efi".into();
 
         // Change the ESP filesystem mount point to /efi.
         storage

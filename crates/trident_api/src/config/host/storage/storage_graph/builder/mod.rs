@@ -30,7 +30,10 @@
 //! If the output is Err, it means that the Host Configuration provided is
 //! invalid.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::PathBuf,
+};
 
 use log::{debug, trace};
 use petgraph::visit::{EdgeRef, IntoNodeReferences};
@@ -50,12 +53,21 @@ mod partition;
 mod raid;
 mod relationships;
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct StorageGraphBuilder {
     nodes: Vec<StorageGraphNode>,
+    esp_mount_path: PathBuf,
 }
 
 impl StorageGraphBuilder {
+    /// Create a new StorageGraphBuilder with the given ESP mount path.
+    pub(crate) fn new(esp_mount_path: impl Into<PathBuf>) -> Self {
+        Self {
+            nodes: Vec::new(),
+            esp_mount_path: esp_mount_path.into(),
+        }
+    }
+
     /// Adds a new block device node to the graph.
     pub(crate) fn add_node(&mut self, node: StorageGraphNode) {
         self.nodes.push(node);
@@ -70,6 +82,7 @@ impl StorageGraphBuilder {
     /// other block device, enforcing exclusive ownership of block devices.
     pub(crate) fn build(self) -> Result<StorageGraph, StorageGraphBuildError> {
         debug!("Building storage graph");
+        let esp_mount_path = self.esp_mount_path;
         // Populate the graph with all nodes and check that all block devices have unique IDs.
         let (mut graph, node_id_index_map) = populate_graph_nodes(self.nodes)?;
 
@@ -110,7 +123,7 @@ impl StorageGraphBuilder {
 
         // Check partition type homogeneity
         trace!("Checking partition type homogeneity");
-        partition::check_partition_types(&graph)?;
+        partition::check_partition_types(&graph, &esp_mount_path)?;
 
         // Check that verity devices have congruent partition types
         trace!("Checking verity partition types");

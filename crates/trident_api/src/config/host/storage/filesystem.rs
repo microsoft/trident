@@ -377,6 +377,8 @@ impl FileSystem {
 mod tests {
     use super::*;
 
+    use crate::constants::ESP_MOUNT_POINT_PATH;
+
     #[test]
     fn test_mount_point_from_str() {
         let mount_point: MountPoint = "/mnt".into();
@@ -408,10 +410,7 @@ mod tests {
             options: MountOptions::new("defaults"),
         });
         fs.is_esp = true; // Manually set is_esp to true since we're not using the HostStorageConfig's esp_mount_path in this test.
-        assert_eq!(
-            fs.mount_point_path(),
-            Some(Path::new(ROOT_MOUNT_POINT_PATH))
-        );
+        assert_eq!(fs.mount_point_path(), Some(Path::new(ESP_MOUNT_POINT_PATH)));
         assert!(fs.is_esp);
         assert!(!fs.is_root());
         assert!(!fs.is_read_only());

@@ -32,65 +32,142 @@ use scripts::Scripts;
 use storage::Storage;
 use trident::Trident;
 
-/// HostConfiguration is the configuration for a host. Trident agent will use this to configure the host.
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[cfg_attr(feature = "schemars", derive(JsonSchema))]
+/// HostConfiguration is the configuration for a host. Trident agent will use
+/// this to configure the host.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct HostConfiguration {
     /// The Trident Management configuration controls the installation of the
     /// Trident agent onto the target OS.
-    #[serde(default, skip_serializing_if = "is_default")]
     pub trident: Trident,
 
     /// Describes the storage configuration of the host.
-    #[serde(default, skip_serializing_if = "is_default")]
     pub storage: Storage,
 
     /// Optional scripts to be run after different Trident stages have completed.
-    #[serde(default, skip_serializing_if = "is_default")]
     pub scripts: Scripts,
 
     /// OS Configuration for the target OS.
-    #[serde(default, skip_serializing_if = "is_default")]
     pub os: Os,
 
     /// OS Configuration for the management OS.
     ///
     /// These settings are only applicable for clean install servicing. They are
     /// ignored on updates.
-    #[serde(default, skip_serializing_if = "is_default")]
     pub management_os: ManagementOs,
+
+    /// PREVIEW-ONLY: TODO: Remove before GA. (#9023)
+    ///
+    /// Extra parameters to override default trident behavior.
+    pub internal_params: InternalParams,
+
+    /// Data about the image to deploy on the host, including sourcing and
+    /// integrity information.
+    pub image: Option<OsImage>,
+
+    /// Health configuration for the target OS.
+    pub health: Health,
+}
+
+/// HostConfiguration is the configuration for a host. Trident agent will use
+/// this to configure the host.
+///
+/// # INTERNAL
+/// Because of serde/schemars limitations, we have to use a separate struct for
+/// deserialization. All public documentation is sourced from THIS struct, not
+/// the proper HostConfiguration. This struct has the same fields as
+/// HostConfiguration, but it is used to perform necessary initialization of
+/// certain fields after deserialization and before validation. This struct MUST
+/// NOT BE USED outside of the serde implementations of HostConfiguration.
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
+struct HostConfigurationSerde {
+    /// The Trident Management configuration controls the installation of the
+    /// Trident agent onto the target OS.
+    #[serde(default, skip_serializing_if = "is_default")]
+    trident: Trident,
+
+    /// Describes the storage configuration of the host.
+    #[serde(default, skip_serializing_if = "is_default")]
+    storage: Storage,
+
+    /// Optional scripts to be run after different Trident stages have completed.
+    #[serde(default, skip_serializing_if = "is_default")]
+    scripts: Scripts,
+
+    /// OS Configuration for the target OS.
+    #[serde(default, skip_serializing_if = "is_default")]
+    os: Os,
+
+    /// OS Configuration for the management OS.
+    ///
+    /// These settings are only applicable for clean install servicing. They are
+    /// ignored on updates.
+    #[serde(default, skip_serializing_if = "is_default")]
+    management_os: ManagementOs,
 
     /// PREVIEW-ONLY: TODO: Remove before GA. (#9023)
     ///
     /// Extra parameters to override default trident behavior.
     #[serde(default, skip_serializing_if = "is_default")]
     #[cfg_attr(feature = "schemars", schemars(skip))]
-    pub internal_params: InternalParams,
+    internal_params: InternalParams,
 
     /// Data about the image to deploy on the host, including sourcing and
     /// integrity information.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub image: Option<OsImage>,
+    image: Option<OsImage>,
 
     /// Health configuration for the target OS.
     #[serde(default, skip_serializing_if = "is_default")]
-    pub health: Health,
+    health: Health,
+}
+
+impl Serialize for HostConfiguration {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        HostConfigurationSerde {
+            trident: self.trident.clone(),
+            storage: self.storage.clone(),
+            scripts: self.scripts.clone(),
+            os: self.os.clone(),
+            management_os: self.management_os.clone(),
+            internal_params: self.internal_params.clone(),
+            image: self.image.clone(),
+            health: self.health.clone(),
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for HostConfiguration {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let serde_struct = HostConfigurationSerde::deserialize(deserializer)?;
+        Ok(Self {
+            trident: serde_struct.trident,
+            storage: serde_struct.storage,
+            scripts: serde_struct.scripts,
+            os: serde_struct.os,
+            management_os: serde_struct.management_os,
+            internal_params: serde_struct.internal_params,
+            image: serde_struct.image,
+            health: serde_struct.health,
+        }
+        .initialize())
+    }
+}
+
+#[cfg(feature = "schemars")]
+impl JsonSchema for HostConfiguration {
+    fn schema_name() -> String {
+        "HostConfiguration".to_string()
+    }
+
+    fn json_schema(generator: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        HostConfigurationSerde::json_schema(generator)
+    }
 }
 
 impl HostConfiguration {
-    /// Creates a new HostConfiguration from a YAML string. This is the main
-    /// entry point for creating a HostConfiguration, and it will perform
-    /// necessary initialization and validation of the configuration.
-    pub fn new_from_config(raw: impl AsRef<str>) -> Result<Self, serde_yaml::Error> {
-        Ok(serde_yaml::from_str::<Self>(raw.as_ref())?.initialize())
-    }
-
-    /// Creates a new HostConfiguration from a YAML value.
-    pub fn new_from_yaml_value(yaml: serde_yaml::Value) -> Result<Self, serde_yaml::Error> {
-        Ok(serde_yaml::from_value::<Self>(yaml)?.initialize())
-    }
-
     /// Performs necessary initialization of the HostConfiguration immediately
     /// after deserialization. This function only performs indirect data
     /// population, but does not do any checking. No errors should be produced

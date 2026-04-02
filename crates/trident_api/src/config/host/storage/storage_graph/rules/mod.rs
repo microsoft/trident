@@ -17,12 +17,9 @@ use std::{
 
 use anyhow::{bail, ensure, Error};
 
-use crate::{
-    config::{
-        FileSystemSource, FileSystemType, HostConfigurationStaticValidationError,
-        NewFileSystemType, Partition, PartitionSize, PartitionType, RaidLevel,
-    },
-    constants::ESP_MOUNT_POINT_PATH,
+use crate::config::{
+    FileSystemSource, FileSystemType, HostConfigurationStaticValidationError, NewFileSystemType,
+    Partition, PartitionSize, PartitionType, RaidLevel,
 };
 
 use super::{
@@ -520,8 +517,11 @@ impl SpecialReferenceKind {
 }
 
 /// Returns the expected partition type for a given mount point, if any.
-pub fn expected_partition_type(mount_point: &Path) -> AllowBlockList<PartitionType> {
-    if mount_point == Path::new(ESP_MOUNT_POINT_PATH) {
+pub fn expected_partition_type(
+    mount_point: &Path,
+    esp_mount_path: &Path,
+) -> AllowBlockList<PartitionType> {
+    if mount_point == esp_mount_path {
         return AllowBlockList::new_allow([PartitionType::Esp]);
     }
 

@@ -577,7 +577,7 @@ mod tests {
                         }),
                         device_id: Some("sda3".to_string()),
                         source: FileSystemSource::Image,
-                        is_esp: true,
+                        is_esp: false,
                     },
                     FileSystem {
                         mount_point: Some(MountPoint {

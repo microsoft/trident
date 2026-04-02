@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use log::{trace, warn};
 use petgraph::{
     visit::{EdgeRef, IntoNodeReferences},
@@ -90,7 +92,10 @@ pub(super) fn check_partition_size_homogeneity(
 
 /// Checks referrers for partition type homogeneity and for valid partition
 /// types.
-pub(super) fn check_partition_types(graph: &StoragePetgraph) -> Result<(), StorageGraphBuildError> {
+pub(super) fn check_partition_types(
+    graph: &StoragePetgraph,
+    esp_mount_path: &Path,
+) -> Result<(), StorageGraphBuildError> {
     // Get all top-level nodes
     for (node_idx, node) in get_top_level_nodes(graph) {
         trace!(
@@ -104,7 +109,7 @@ pub(super) fn check_partition_types(graph: &StoragePetgraph) -> Result<(), Stora
         let expected_partition_type = node
             .as_filesystem()
             .and_then(|fs| fs.mount_point.as_ref())
-            .map(|mntp| expected_partition_type(&mntp.path))
+            .map(|mntp| expected_partition_type(&mntp.path, esp_mount_path))
             .unwrap_or(AllowBlockList::Any);
 
         let partition_types = explore_tree_partitions(
