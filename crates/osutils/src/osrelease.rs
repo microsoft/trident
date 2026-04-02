@@ -66,6 +66,25 @@ impl OsRelease {
                     })
                     .unwrap_or_default(),
             ),
+            Some("special_legacy") => Distro::Special(
+                self.version_id
+                    .as_deref()
+                    .map(|v| SpecialRelease::SpecialLegacy)
+                    .unwrap_or_default(),
+            ),
+            Some("special") => Distro::Special(
+                self.version_id
+                    .as_deref()
+                    .map(|v| {
+                        if v.starts_with("1.") {
+                            SpecialRelease::Special1
+                        } else {
+                            trace!("Unknown Special release: {v}");
+                            SpecialRelease::Other
+                        }
+                    })
+                    .unwrap_or_default(),
+            ),
             _ => Distro::Other,
         }
     }
@@ -179,6 +198,7 @@ impl ExtensionRelease {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Distro {
     AzureLinux(AzureLinuxRelease),
+    Special(SpecialRelease),
     Other,
 }
 
@@ -199,6 +219,15 @@ pub enum AzureLinuxRelease {
     Other,
     AzL2,
     AzL3,
+}
+
+/// Represents the Special release.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+pub enum SpecialRelease {
+    #[default]
+    Other,
+    SpecialLegacy,
+    Special1,
 }
 
 #[cfg(test)]

@@ -1,16 +1,24 @@
 use std::{fs, path::Path};
 
 use log::{debug, warn};
+use rust_embed::RustEmbed;
 use sqlite::State;
 
 use trident_api::{
     error::{
-        DatastoreError, InternalError, ReportError, ServicingError, TridentError, TridentResultExt,
+        DatastoreError, InternalError, InvalidInputError, ReportError, ServicingError,
+        TridentError, TridentResultExt,
     },
     status::{decode_host_status, HostStatus, TridentVersion},
 };
 
+use osutils::osrelease::{Distro, OsRelease, SpecialRelease};
+
 use crate::TRIDENT_SEMVER_VERSION;
+
+#[derive(RustEmbed)]
+#[folder = "assets/"] // Folder containing YAML files
+struct Asset;
 
 pub struct DataStore {
     db: Option<sqlite::Connection>,
@@ -111,6 +119,26 @@ impl DataStore {
 
     pub(crate) fn is_persistent(&self) -> bool {
         !self.temporary
+    }
+
+    pub(crate) fn try_initialize_if_needed(&self) -> Result<(), TridentError> {
+        if self.temporary {
+            let os_release = OsRelease::read()
+                .structured(ServicingError::from(DatastoreError::ReadDatastore))?;
+            match os_release.get_distro() {
+                Distro::Special(version) => {
+                    if version == SpecialRelease::SpecialLegacy {
+                        return Err(TridentError::new(InvalidInputError::HostNotProvisioned)).message("Persistent datastore not found on host, Special Legacy distro is not supported.");
+                    }
+                    // For special distro, initialize the datastore if it does not exist yet.
+                    Ok(())
+                }
+                _ => Err(TridentError::new(InvalidInputError::HostNotProvisioned))
+                    .message("Persistent datastore not found on host"),
+            }
+        } else {
+            Ok(())
+        }
     }
 
     fn make_datastore(path: &Path) -> Result<sqlite::Connection, TridentError> {

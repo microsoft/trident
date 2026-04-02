@@ -572,10 +572,8 @@ impl Trident {
             ))?;
 
         self.execute_and_record_error(datastore, |datastore| {
-            if !datastore.is_persistent() {
-                return Err(TridentError::new(InvalidInputError::HostNotProvisioned))
-                    .message("Persistent datastore not found on host");
-            }
+            // Initialize the datastore if it is not created yet for special distro.
+            datastore.try_initialize_if_needed()?;
 
             // The storage section is optional for updates if COSI is in use.
             if host_config.image.is_some() && host_config.storage == Default::default() {
