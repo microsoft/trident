@@ -1,14 +1,15 @@
 use std::{
     collections::{BTreeMap, HashSet},
-    path::Path,
+    fmt::Debug,
+    ops::Deref,
+    path::{Path, PathBuf},
 };
 
 use log::trace;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "schemars")]
-use schemars::JsonSchema;
-use swap::Swap;
+use schemars::{gen::SchemaGenerator, schema::Schema, JsonSchema};
 
 use crate::{
     constants::{
@@ -44,6 +45,7 @@ use self::{
         error::StorageGraphBuildError,
         graph::{StorageGraph, VolumeStatus},
     },
+    swap::Swap,
     verity::VerityDevice,
 };
 
@@ -91,6 +93,10 @@ pub struct Storage {
         )
     )]
     pub swap: Vec<Swap>,
+
+    #[serde(default, skip_serializing_if = "EspMountPath::is_default")]
+    #[cfg_attr(feature = "schemars", schemars(schema_with = "EspMountPath::schema"))]
+    pub esp_mount_path: EspMountPath,
 }
 
 impl Storage {
@@ -590,6 +596,56 @@ fn validate_volume_presence(
                 mount_point_path: path.as_ref().to_string_lossy().to_string(),
             },
         ),
+    }
+}
+
+/// Simple wrapper to encapsulate logic about the default ESP mount point.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct EspMountPath(PathBuf);
+
+impl EspMountPath {
+    /// Returns the default ESP mount point path.
+    fn default_path() -> &'static Path {
+        Path::new(ESP_MOUNT_POINT_PATH)
+    }
+
+    /// Returns whether the ESP mount path is the default path.
+    fn is_default(&self) -> bool {
+        self.0.as_path() == EspMountPath::default_path()
+    }
+
+    #[cfg(feature = "schemars")]
+    fn schema(gen: &mut SchemaGenerator) -> Schema {
+        let mut schema = gen.subschema_for::<PathBuf>().into_object();
+        schema.format = Some("Linux Path".to_owned());
+        schema.metadata().default = Some(
+            EspMountPath::default_path()
+                .to_string_lossy()
+                .to_string()
+                .into(),
+        );
+        Schema::Object(schema)
+    }
+}
+
+impl Default for EspMountPath {
+    fn default() -> Self {
+        Self(PathBuf::from(EspMountPath::default_path()))
+    }
+}
+
+impl Debug for EspMountPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl Deref for EspMountPath {
+    type Target = Path;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 

@@ -47,6 +47,14 @@ Encryption configuration.
 | Type           | `Encryption`                  |
 | Link           | [Encryption](./Encryption.md) |
 
+### `espMountPath` (optional)
+
+| Characteristic | Value         |
+| -------------- | ------------- |
+| Type           | `string`      |
+| Default        | `"/boot/efi"` |
+| Format         | `Linux Path`  |
+
 ### `filesystems` (optional)
 
 Filesystems in this host.

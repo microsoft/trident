@@ -1494,6 +1494,11 @@
           ],
           "nullable": true
         },
+        "espMountPath": {
+          "default": "/boot/efi",
+          "type": "string",
+          "format": "Linux Path"
+        },
         "filesystems": {
           "description": "Filesystems in this host.",
           "type": "array",
