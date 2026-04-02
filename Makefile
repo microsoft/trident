@@ -514,7 +514,7 @@ bin/attendedinstaller-simulator: \
 		if cat /etc/os-release | grep -i azurelinux >/dev/null 2>&1; then \
 			GOEXPERIMENT=ms_nocgo_opensslcrypto go build -o $(CURDIR)/$(INSTALLER_OUT_DIR)/attendedinstaller-simulator attendedinstaller_simulator.go; \
 		else \
-			CGO_ENABLED=0 go build -o $(CURDIR)/$(INSTALLER_OUT_DIR)/attendedinstaller-simulator attendedinstaller_simulator.go;
+			CGO_ENABLED=0 go build -o $(CURDIR)/$(INSTALLER_OUT_DIR)/attendedinstaller-simulator attendedinstaller_simulator.go; \
 		fi
 		
 
