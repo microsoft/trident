@@ -500,14 +500,23 @@ bin/liveinstaller: \
 	$(INSTALLER_DIR)/go.sum
 	@mkdir -p bin
 	cd $(INSTALLER_DIR)/liveinstaller && \
-		CGO_ENABLED=0 go build -o $(CURDIR)/$(INSTALLER_OUT_DIR)/liveinstaller
+		if cat /etc/os-release | grep -i azurelinux >/dev/null 2>&1; then \
+			GOEXPERIMENT=ms_nocgo_opensslcrypto go build -o $(CURDIR)/$(INSTALLER_OUT_DIR)/liveinstaller; \
+		else \
+			CGO_ENABLED=0 go build -o $(CURDIR)/$(INSTALLER_OUT_DIR)/liveinstaller; \
+		fi
 
 bin/attendedinstaller-simulator: \
 	$(shell find $(INSTALLER_DIR)/imagegen/ -type f) \
 	$(INSTALLER_DIR)/go.sum
 	@mkdir -p bin
 	cd $(INSTALLER_DIR)/imagegen/attendedinstaller/attendedinstaller_tests && \
-		CGO_ENABLED=0 go build -o $(CURDIR)/$(INSTALLER_OUT_DIR)/attendedinstaller-simulator attendedinstaller_simulator.go
+		if cat /etc/os-release | grep -i azurelinux >/dev/null 2>&1; then \
+			GOEXPERIMENT=ms_nocgo_opensslcrypto go build -o $(CURDIR)/$(INSTALLER_OUT_DIR)/attendedinstaller-simulator attendedinstaller_simulator.go; \
+		else \
+			CGO_ENABLED=0 go build -o $(CURDIR)/$(INSTALLER_OUT_DIR)/attendedinstaller-simulator attendedinstaller_simulator.go;
+		fi
+		
 
 .PHONY: run-attendedinstaller-simulator
 run-attendedinstaller-simulator: bin/attendedinstaller-simulator
