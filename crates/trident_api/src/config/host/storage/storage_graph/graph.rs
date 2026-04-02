@@ -222,50 +222,6 @@ impl StorageGraph {
         let (fs_idx, _) = self.filesystem_node_by_mount_point(mount_path)?;
         self.backing_verity_device(fs_idx).map(|(_, dev)| dev)
     }
-
-    /// Returns all mount points of filesystems that are placed on ESP partitions.
-    ///
-    /// The returned vector will contain one entry for each filesystem mounted on an
-    /// ESP partition; it will be empty if no such filesystems exist.
-    pub fn esp_mount_points(&self) -> Vec<&MountPoint> {
-        // First find all filesystem nodes:
-        let filesystems = self
-            .inner
-            .node_references()
-            .filter_map(|(idx, node)| node.as_filesystem().map(|fs| (idx, fs)));
-
-        let mut mount_points = Vec::new();
-
-        // Then find the one that is on a partition of type ESP, either directly
-        // or transitively through other block devices.
-        for (node, fs) in filesystems {
-            let mut dfs = Dfs::new(&self.inner, node);
-
-            'inner: while let Some(idx) = dfs.next(&self.inner) {
-                if let StorageGraphNode::BlockDevice(BlockDevice {
-                    host_config_ref: HostConfigBlockDevice::Partition(partition),
-                    ..
-                }) = &self.inner[idx]
-                {
-                    if !partition.partition_type.is_esp() {
-                        // If the partition is not an ESP, we want to continue the DFS to check the next one.
-                        continue;
-                    }
-
-                    if let Some(mount_point) = &fs.mount_point {
-                        mount_points.push(mount_point);
-                        // If one ESP partition is found, we assume all other
-                        // partitions under the same filesystem are also ESP
-                        // (this is covered by the homogeneity check), so we can
-                        // stop the DFS here.
-                        break 'inner;
-                    }
-                }
-            }
-        }
-
-        mount_points
-    }
 }
 
 /// For a given NodeIndex, find the first outgoing edge with the given
