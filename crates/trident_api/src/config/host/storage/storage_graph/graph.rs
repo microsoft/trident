@@ -227,7 +227,7 @@ impl StorageGraph {
     ///
     /// The returned vector will contain one entry for each filesystem mounted on an
     /// ESP partition; it will be empty if no such filesystems exist.
-    pub fn esp_mount_point(&self) -> Vec<&MountPoint> {
+    pub fn esp_mount_points(&self) -> Vec<&MountPoint> {
         // First find all filesystem nodes:
         let filesystems = self
             .inner

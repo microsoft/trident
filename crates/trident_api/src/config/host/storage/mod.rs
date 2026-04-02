@@ -224,7 +224,7 @@ impl Storage {
         // Now get the list of ESP mount points. We expect exactly one, as
         // multiple ESPs are not supported by Trident, and at least one is
         // required to update the bootloader configuration.
-        let esp_mount_points = graph.esp_mount_point();
+        let esp_mount_points = graph.esp_mount_points();
         if esp_mount_points.len() > 1 {
             return Err(
                 HostConfigurationStaticValidationError::MultipleEspMountPoints {
@@ -2543,7 +2543,7 @@ mod tests {
         );
 
         // Restore RAID 1 and change the ESP mount point to /boot.
-        // This verifies the transitive DFS in `esp_mount_point()` correctly
+        // This verifies the transitive DFS in `esp_mount_points()` correctly
         // walks through the RAID layer to find the underlying ESP partitions
         // even when the mount path is not the default /boot/efi.
         storage.raid.software[0].level = RaidLevel::Raid1;
@@ -2923,7 +2923,7 @@ mod tests {
 
     /// Validates that an ESP partition without a mounted filesystem is
     /// rejected. The ESP partition exists (passing `EspPartitionNotFound`),
-    /// but `esp_mount_point()` returns empty because no filesystem
+    /// but `esp_mount_points()` returns empty because no filesystem
     /// references it, triggering `EspMountPointNotFound`.
     #[test]
     fn test_validate_esp_mount_point_not_found_fail() {
@@ -2946,7 +2946,7 @@ mod tests {
     ///
     /// The test modifies the base storage configuration to mount the ESP
     /// at `/boot` and removes the separate `/boot` filesystem to avoid
-    /// conflicts. This exercises the DFS-based `esp_mount_point()` lookup
+    /// conflicts. This exercises the DFS-based `esp_mount_points()` lookup
     /// which identifies the ESP by its partition type rather than by
     /// a hardcoded mount path.
     #[test]
@@ -2976,7 +2976,7 @@ mod tests {
     /// of the default `/boot/efi`.
     ///
     /// Similar to the `/boot` test, this exercises an alternate valid ESP
-    /// mount path. The partition type–based lookup in `esp_mount_point()`
+    /// mount path. The partition type–based lookup in `esp_mount_points()`
     /// must correctly identify the ESP regardless of the actual mount path.
     #[test]
     fn test_validate_esp_mounted_at_efi_pass() {
