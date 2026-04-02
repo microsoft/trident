@@ -223,7 +223,10 @@ impl StorageGraph {
         self.backing_verity_device(fs_idx).map(|(_, dev)| dev)
     }
 
-    /// Returns the mount point of the filesystem on the ESP partition, if any.
+    /// Returns all mount points of filesystems that are placed on ESP partitions.
+    ///
+    /// The returned vector will contain one entry for each filesystem mounted on an
+    /// ESP partition; it will be empty if no such filesystems exist.
     pub fn esp_mount_point(&self) -> Vec<&MountPoint> {
         // First find all filesystem nodes:
         let filesystems = self

@@ -9,7 +9,7 @@ Status:
 
 | Symbol  | Status                                                                  |
 | ------- | ----------------------------------------------------------------------- |
-| ✅       | **OK** — usage has been been removed                                    |
+| ✅       | **OK** — usage has been removed                                         |
 | ☑️       | This has been reviewed and determined to be a valid use of the constant |
 | (blank) | **Untouched** — usage still present                                     |
 
