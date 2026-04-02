@@ -825,7 +825,7 @@
       ]
     },
     "PartitionType": {
-      "description": "Partition types as defined by [The Discoverable Partitions Specification](<https://uapi-group.org/specifications/specs/discoverable_partitions_specification/>).",
+      "description": "Partition types as defined by [The Discoverable Partitions Specification](<https://uapi-group.org/specifications/specs/discoverable_partitions_specification/>).\n\n# INTERNAL IT IS NOT RECOMMENDED TO USE THIS ENUM DIRECTLY, but rather the DiscoverablePartitionType enum from sysdefs, which has more flexible matching logic. This enum is primarily intended for serialization and user input parsing, and the `as_dps()` method can be used to convert it to a DiscoverablePartitionType for comparison and other logic.",
       "oneOf": [
         {
           "title": "EFI System Partition",
