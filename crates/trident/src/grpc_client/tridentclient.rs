@@ -10,12 +10,11 @@ use url::Url;
 use trident_proto::v1::{
     servicing_response::Response as ResponseBody, streaming_service_client::StreamingServiceClient,
     update_service_client::UpdateServiceClient, version_service_client::VersionServiceClient,
-    RebootHandling as ProtoRebootHandling, RebootManagement, RebootStatus, ServicingResponse,
-    StatusCode, StreamDiskRequest, VersionRequest,
+    FinalizeUpdateRequest, HostConfiguration, RebootHandling as ProtoRebootHandling,
+    RebootManagement, RebootStatus, ServicingResponse, StageUpdateRequest, StatusCode,
+    StreamDiskRequest, UpdateRequest, VersionRequest,
 };
 
-#[cfg(feature = "grpc-preview")]
-use trident_proto::v1::HostConfiguration;
 #[cfg(feature = "grpc-preview")]
 use trident_proto::v1preview::{
     commit_service_client::CommitServiceClient, install_service_client::InstallServiceClient,
@@ -58,8 +57,6 @@ impl From<RebootHandling> for i32 {
 pub struct TridentClient {
     version_client: VersionServiceClient<Channel>,
     streaming_client: StreamingServiceClient<Channel>,
-
-    #[expect(dead_code)]
     update_client: UpdateServiceClient<Channel>,
 
     #[cfg(feature = "grpc-preview")]
@@ -155,6 +152,74 @@ impl TridentClient {
             .install(request)
             .await
             .map_err(|e| TridentClientError::RequestError("install".to_string(), e))?
+            .into_inner();
+
+        handle_servicing_response_stream(response).await
+    }
+
+    pub async fn update(
+        &mut self,
+        host_configuration: impl Into<String>,
+        reboot_handling: RebootHandling,
+    ) -> Result<ExitKind, TridentClientError> {
+        let request = Request::new(UpdateRequest {
+            stage: Some(StageUpdateRequest {
+                config: Some(HostConfiguration {
+                    config: host_configuration.into(),
+                }),
+            }),
+            finalize: Some(FinalizeUpdateRequest {
+                reboot: Some(RebootManagement {
+                    handling: reboot_handling.into(),
+                }),
+            }),
+        });
+
+        let response = self
+            .update_client
+            .update(request)
+            .await
+            .map_err(|e| TridentClientError::RequestError("update".to_string(), e))?
+            .into_inner();
+
+        handle_servicing_response_stream(response).await
+    }
+
+    pub async fn update_stage(
+        &mut self,
+        host_configuration: impl Into<String>,
+    ) -> Result<ExitKind, TridentClientError> {
+        let request = Request::new(StageUpdateRequest {
+            config: Some(HostConfiguration {
+                config: host_configuration.into(),
+            }),
+        });
+
+        let response = self
+            .update_client
+            .update_stage(request)
+            .await
+            .map_err(|e| TridentClientError::RequestError("update_stage".to_string(), e))?
+            .into_inner();
+
+        handle_servicing_response_stream(response).await
+    }
+
+    pub async fn update_finalize(
+        &mut self,
+        reboot_handling: RebootHandling,
+    ) -> Result<ExitKind, TridentClientError> {
+        let request = Request::new(FinalizeUpdateRequest {
+            reboot: Some(RebootManagement {
+                handling: reboot_handling.into(),
+            }),
+        });
+
+        let response = self
+            .update_client
+            .update_finalize(request)
+            .await
+            .map_err(|e| TridentClientError::RequestError("update_finalize".to_string(), e))?
             .into_inner();
 
         handle_servicing_response_stream(response).await

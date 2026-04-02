@@ -23,6 +23,7 @@ type TridentClient struct {
 	// Stable APIs
 	tridentpbv1.VersionServiceClient
 	tridentpbv1.StreamingServiceClient
+	tridentpbv1.UpdateServiceClient
 	grpcConn *grpc.ClientConn
 
 	// Preview APIs

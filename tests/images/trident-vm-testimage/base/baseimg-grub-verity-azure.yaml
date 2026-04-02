@@ -149,6 +149,7 @@ os:
     enable:
       - etc-mount
       - kdump
+      - tridentd.socket
 
   users:
     - name: testuser
