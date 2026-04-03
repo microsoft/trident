@@ -12,25 +12,30 @@ use trident_proto::v1preview::{
 
 use crate::{
     server::{
-        tridentserver::{datastore, RebootDecision, ServicingResponseStream},
+        tridentserver::{datastore, ServicingResponseStream},
         TridentServer,
     },
     DataStore, Trident,
 };
+
+#[cfg(feature = "grpc-preview")]
+use crate::server::tridentserver::RebootDecision;
 
 #[async_trait]
 impl CommitService for TridentServer {
     type CommitStream = ServicingResponseStream;
     async fn commit(
         &self,
-        _request: Request<CommitRequest>,
+        request: Request<CommitRequest>,
     ) -> Result<Response<Self::CommitStream>, Status> {
+        let req = request.into_inner();
+
         let data_store_path = self.agent_config.datastore_path().to_owned();
         let logstream = self.logstream.clone();
         let tracestream = self.tracestream.clone();
 
-        self.servicing_request("commit", RebootDecision::Error, move || {
-            let mut trident = Trident::new(None, &data_store_path, logstream, tracestream)
+        self.servicing_request("commit", super::reboot_allowed(&req.reboot), move || {
+            let mut trident: Trident = Trident::new(None, &data_store_path, logstream, tracestream)
                 .message("Failed to initialize Trident")?;
 
             let mut datastore =

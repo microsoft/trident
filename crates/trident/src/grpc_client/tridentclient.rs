@@ -58,12 +58,9 @@ impl From<RebootHandling> for i32 {
 pub struct TridentClient {
     version_client: VersionServiceClient<Channel>,
     streaming_client: StreamingServiceClient<Channel>,
-
+    update_client: UpdateServiceClient<Channel>,
     #[allow(dead_code)]
     commit_client: CommitServiceClient<Channel>,
-
-    #[expect(dead_code)]
-    update_client: UpdateServiceClient<Channel>,
 
     #[cfg(feature = "grpc-preview")]
     install_client: InstallServiceClient<Channel>,
@@ -258,7 +255,11 @@ impl TridentClient {
     pub async fn commit(&mut self) -> Result<ExitKind, TridentClientError> {
         let response = self
             .commit_client
-            .commit(Request::new(CommitRequest {}))
+            .commit(Request::new(CommitRequest {
+                reboot: Some(RebootManagement {
+                    handling: RebootHandling::Trident.into(),
+                }),
+            }))
             .await
             .map_err(|e| TridentClientError::RequestError("commit".to_string(), e))?
             .into_inner();
