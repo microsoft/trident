@@ -334,36 +334,28 @@ func (h *AbUpdateHelper) triggerTridentUpdate(tc storm.TestCase) error {
 		logrus.Infof("Invoking Trident attempt #%d with args: %s", i, args)
 
 		out, err := stormtrident.InvokeTrident(h.args.TridentRuntimeType, h.client, h.args.EnvVars, args)
-		if err != nil {
-			if err, ok := err.(*ssh.ExitMissingError); ok && strings.Contains(out.Stderr, trident.REBOOTING_LOG_MESSAGE) {
-				// The connection closed without an exit code, and the output contains REBOOTING_LOG_MESSAGE.
-				// This indicates that the host has rebooted.
-				logrus.Infof("Host rebooted successfully")
-				break
-			} else {
-				// Some unknown error occurred.
-				logrus.Errorf("Failed to invoke Trident: %s; %s", err, out.Report())
-				return fmt.Errorf("failed to invoke Trident: %w", err)
-			}
-		}
+		logrus.Tracef("Trident '%s' details: %s; %s", args, err, out.Report())
 
-		if out.Status == 0 && strings.Contains(out.Stderr, trident.REBOOTING_LOG_MESSAGE) {
+		// If this is not staging only, check and exit if reboot message found in output
+		if h.args.FinalizeAbUpdate && strings.Contains(out.Stderr, trident.REBOOTING_LOG_MESSAGE) {
 			logrus.Infof("Host rebooted successfully")
 			break
 		}
-
-		if out.Status == 0 && strings.Contains(out.Stderr, "Staging of A/B update succeeded") {
+		// Errors that occur without the reboot message are a test failure
+		if err != nil {
+			return fmt.Errorf("failed to invoke Trident: %w", err)
+		}
+		// If only staging, check for staging success message in output
+		if !h.args.FinalizeAbUpdate && out.Status == 0 && strings.Contains(out.Stderr, "Staging of A/B update succeeded") {
 			logrus.Infof("Staging of A/B update succeeded")
 			break
 		}
-
+		// Check for specific failure case representing a retry e2e scenario
 		if out.Status == 2 && strings.Contains(out.Stderr, "Failed to run post-configure script 'fail-on-the-first-run'") {
 			logrus.Infof("Detected intentional failure. Re-running...")
 			continue
 		}
-
-		logrus.Errorf("Trident update failed %s", out.Report())
-
+		// Any case where we end up here is a failure, fail the test
 		tc.Fail(fmt.Sprintf("Trident update failed with status %d", out.Status))
 	}
 
