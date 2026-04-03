@@ -12,4 +12,7 @@ service CommitService {
   rpc Commit(CommitRequest) returns (stream ServicingResponse);
 }
 
-message CommitRequest {}
+message CommitRequest {
+  // Reboot handling configuration.
+  RebootManagement reboot = 1;
+}
