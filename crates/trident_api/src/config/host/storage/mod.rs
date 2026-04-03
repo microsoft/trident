@@ -2896,9 +2896,8 @@ mod tests {
         );
     }
 
-    /// Validates that the `EspPartitionNotFound` check is skipped when
-    /// adopted partitions are present, even if no partition is explicitly
-    /// typed as ESP.
+    /// Validates that ESP validation passes when adopted partitions are
+    /// present, even if no partition is explicitly typed as ESP.
     ///
     /// Adopted partitions have no declared partition type, so the ESP may
     /// be among them and discovered at runtime. The test removes the
@@ -2938,9 +2937,8 @@ mod tests {
     }
 
     /// Validates that an ESP partition without a mounted filesystem is
-    /// rejected. The ESP partition exists (passing `EspPartitionNotFound`),
-    /// but `esp_mount_points()` returns empty because no filesystem
-    /// references it, triggering `EspMountPointNotFound`.
+    /// rejected. No filesystem has `is_esp` set, triggering
+    /// `EspMountPointNotFound`.
     #[test]
     fn test_validate_esp_mount_point_not_found_fail() {
         let mut storage = get_storage();

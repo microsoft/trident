@@ -58,11 +58,6 @@ pub enum HostConfigurationStaticValidationError {
     #[error("No filesystem matches the expected ESP mount point path '{expected}', but one is required for UEFI boot")]
     EspMountPointNotFound { expected: String },
 
-    #[error(
-        "ESP partition not found, the system requires at least one ESP partition for UEFI boot"
-    )]
-    EspPartitionNotFound,
-
     #[error("Failed to find expected mount point '{mount_point_path}'")]
     ExpectedMountPointNotFound { mount_point_path: String },
 
