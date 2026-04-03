@@ -18,13 +18,14 @@ use tonic::transport::Server;
 use tonic_middleware::MiddlewareFor;
 
 use trident_proto::v1::{
-    streaming_service_server::StreamingServiceServer, update_service_server::UpdateServiceServer,
-    version_service_server::VersionServiceServer,
+    commit_service_server::CommitServiceServer, streaming_service_server::StreamingServiceServer,
+    update_service_server::UpdateServiceServer, version_service_server::VersionServiceServer,
 };
 
 #[cfg(feature = "grpc-preview")]
 use trident_proto::v1preview::{
-    commit_service_server::CommitServiceServer, install_service_server::InstallServiceServer,
+    commit_service_server::CommitServiceServer as CommitServiceServerPreview,
+    install_service_server::InstallServiceServer,
     rebuild_raid_service_server::RebuildRaidServiceServer,
     rollback_service_server::RollbackServiceServer, status_service_server::StatusServiceServer,
     validation_service_server::ValidationServiceServer,
@@ -218,13 +219,17 @@ async fn server_main_inner(
         .add_service(MiddlewareFor::new(
             UpdateServiceServer::from_arc(trident_server.clone()),
             activity_tracker.middleware(),
+        ))
+        .add_service(MiddlewareFor::new(
+            CommitServiceServer::from_arc(trident_server.clone()),
+            activity_tracker.middleware(),
         ));
 
     #[cfg(feature = "grpc-preview")]
     {
         router = router
             .add_service(MiddlewareFor::new(
-                CommitServiceServer::from_arc(trident_server.clone()),
+                CommitServiceServerPreview::from_arc(trident_server.clone()),
                 activity_tracker.middleware(),
             ))
             .add_service(MiddlewareFor::new(

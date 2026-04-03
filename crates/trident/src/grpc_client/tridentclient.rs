@@ -8,20 +8,21 @@ use tonic::{
 use url::Url;
 
 use trident_proto::v1::{
-    servicing_response::Response as ResponseBody, streaming_service_client::StreamingServiceClient,
-    update_service_client::UpdateServiceClient, version_service_client::VersionServiceClient,
-    FinalizeUpdateRequest, HostConfiguration, RebootHandling as ProtoRebootHandling,
-    RebootManagement, RebootStatus, ServicingResponse, StageUpdateRequest, StatusCode,
-    StreamDiskRequest, UpdateRequest, VersionRequest,
+    commit_service_client::CommitServiceClient, servicing_response::Response as ResponseBody,
+    streaming_service_client::StreamingServiceClient, update_service_client::UpdateServiceClient,
+    version_service_client::VersionServiceClient, CommitRequest, FinalizeUpdateRequest,
+    HostConfiguration, RebootHandling as ProtoRebootHandling, RebootManagement, RebootStatus,
+    ServicingResponse, StageUpdateRequest, StatusCode, StreamDiskRequest, UpdateRequest,
+    VersionRequest,
 };
 
 #[cfg(feature = "grpc-preview")]
 use trident_proto::v1preview::{
-    commit_service_client::CommitServiceClient, install_service_client::InstallServiceClient,
+    install_service_client::InstallServiceClient,
     rebuild_raid_service_client::RebuildRaidServiceClient,
     rollback_service_client::RollbackServiceClient, status_service_client::StatusServiceClient,
-    validation_service_client::ValidationServiceClient, CommitRequest, FinalizeInstallRequest,
-    InstallRequest, StageInstallRequest,
+    validation_service_client::ValidationServiceClient, FinalizeInstallRequest, InstallRequest,
+    StageInstallRequest,
 };
 
 use crate::ExitKind;
@@ -58,11 +59,11 @@ pub struct TridentClient {
     version_client: VersionServiceClient<Channel>,
     streaming_client: StreamingServiceClient<Channel>,
     update_client: UpdateServiceClient<Channel>,
+    #[allow(dead_code)]
+    commit_client: CommitServiceClient<Channel>,
 
     #[cfg(feature = "grpc-preview")]
     install_client: InstallServiceClient<Channel>,
-    #[cfg(feature = "grpc-preview")]
-    commit_client: CommitServiceClient<Channel>,
     #[expect(dead_code)]
     #[cfg(feature = "grpc-preview")]
     rollback_client: RollbackServiceClient<Channel>,
@@ -97,8 +98,6 @@ impl TridentClient {
             #[cfg(feature = "grpc-preview")]
             install_client: InstallServiceClient::new(channel.clone()),
             #[cfg(feature = "grpc-preview")]
-            commit_client: CommitServiceClient::new(channel.clone()),
-            #[cfg(feature = "grpc-preview")]
             rollback_client: RollbackServiceClient::new(channel.clone()),
             #[cfg(feature = "grpc-preview")]
             rebuild_raid_client: RebuildRaidServiceClient::new(channel.clone()),
@@ -108,6 +107,7 @@ impl TridentClient {
             validation_client: ValidationServiceClient::new(channel.clone()),
 
             // Prod clients
+            commit_client: CommitServiceClient::new(channel.clone()),
             update_client: UpdateServiceClient::new(channel.clone()),
             version_client: VersionServiceClient::new(channel.clone()),
             streaming_client: StreamingServiceClient::new(channel),
@@ -251,11 +251,15 @@ impl TridentClient {
     }
 
     /// Perform a commit on the Trident server.
-    #[cfg(feature = "grpc-preview")]
+    #[allow(dead_code)]
     pub async fn commit(&mut self) -> Result<ExitKind, TridentClientError> {
         let response = self
             .commit_client
-            .commit(Request::new(CommitRequest {}))
+            .commit(Request::new(CommitRequest {
+                reboot: Some(RebootManagement {
+                    handling: RebootHandling::Trident.into(),
+                }),
+            }))
             .await
             .map_err(|e| TridentClientError::RequestError("commit".to_string(), e))?
             .into_inner();
