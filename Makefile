@@ -135,12 +135,12 @@ clean-coverage:
 	rm -rf target/coverage/profraw
 	rm -rf target/lcov.info
 
-target/release/trident: .cargo/config | version-vars
+target/release/trident target/release/launcher: .cargo/config | version-vars
 	@OPENSSL_STATIC=1 \
 		OPENSSL_LIB_DIR=$(shell dirname `whereis libssl.a | cut -d" " -f2`) \
 		OPENSSL_INCLUDE_DIR=/usr/include/openssl \
 		TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
-		cargo build --release --features dangerous-options,grpc-preview
+		cargo build --release --features dangerous-options,grpc-preview -p trident -p launcher
 
 TOOLKIT_DIR="azure-linux-image-tools/toolkit"
 AZL_TOOLS_OUT_DIR="$(TOOLKIT_DIR)/out/tools"
@@ -175,7 +175,7 @@ clean-azl3-builder-image:
 	@echo "Removing local image $(AZL3_BUILDER_IMAGE)..."
 	@docker rmi $(AZL3_BUILDER_IMAGE) || echo "Image $(AZL3_BUILDER_IMAGE) not found locally."
 
-target/azl3/release/trident: | version-vars azl3-builder-image
+target/azl3/release/trident target/azl3/release/launcher: | version-vars azl3-builder-image
 	@mkdir -p bin/
 	@mkdir -p target/azl3/
 	@echo "Building Trident for Azure Linux 3 using Docker image $(AZL3_BUILDER_IMAGE)..."
@@ -183,6 +183,11 @@ target/azl3/release/trident: | version-vars azl3-builder-image
 		-e TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
 		-v $(PWD):/work -w /work $(AZL3_BUILDER_IMAGE) \
 		cargo build --color always --target-dir target/azl3 --release --features dangerous-options,grpc-preview
+	@docker run --rm \
+		-e TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
+		-v $(PWD):/work -w /work $(AZL3_BUILDER_IMAGE) \
+		cargo build --color always --target-dir target/azl3 --release -p launcher
+
 
 # This will do a proper build on azl3, exactly as the pipelines would, with the custom registry and all.
 bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full packaging/systemd/*.service packaging/rpm/trident.spec artifacts/osmodifier packaging/selinux-policy-trident/* version-vars
@@ -562,7 +567,7 @@ IS_UBUNTU_24_OR_NEWER := $(shell \
 RUN_NETLAUNCH_TRIDENT_BIN ?= $(if $(filter yes,$(IS_UBUNTU_24_OR_NEWER)),target/azl3/release/trident,target/release/trident)
 
 .PHONY: run-netlaunch run-netlaunch-stream
-run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch validate artifacts/osmodifier $(RUN_NETLAUNCH_TRIDENT_BIN)
+run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch artifacts/osmodifier $(RUN_NETLAUNCH_TRIDENT_BIN) bin/launcher
 	@echo "Using trident binary: $(RUN_NETLAUNCH_TRIDENT_BIN)"
 	@mkdir -p artifacts/test-image
 	@cp $(RUN_NETLAUNCH_TRIDENT_BIN) artifacts/test-image/trident

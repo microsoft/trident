@@ -15,11 +15,11 @@ use futures::StreamExt;
 use log::{debug, error, info, trace, warn, LevelFilter};
 use semver::Version;
 use sha2::{Digest, Sha256};
-use tonic::transport::Endpoint;
+use tonic::{transport::Endpoint, Streaming};
 use trident_proto::v1::{
     servicing_response::Response as ResponseBody, update_service_client::UpdateServiceClient,
     FinalizeUpdateRequest, HostConfiguration, LogLevel, RebootHandling, RebootManagement,
-    StageUpdateRequest, StatusCode, UpdateRequest,
+    ServicingResponse, StageUpdateRequest, StatusCode, UpdateRequest,
 };
 use url::Url;
 use uuid::Uuid;
@@ -149,8 +149,13 @@ async fn trigger(url: &Url, hash: Option<String>) -> Result<(), anyhow::Error> {
         }))
         .await?;
 
-    // Iterate through the stream until we get a Control message
-    let mut stream = response.into_inner();
+    handle_servicing_stream(response.into_inner()).await
+}
+
+async fn handle_servicing_stream(
+    mut stream: Streaming<ServicingResponse>,
+) -> Result<(), anyhow::Error> {
+    // Iterate through the stream until we get a Completed message
     loop {
         match stream.next().await {
             Some(Ok(response)) => match response.response {
@@ -174,15 +179,16 @@ async fn trigger(url: &Url, hash: Option<String>) -> Result<(), anyhow::Error> {
                             "Trident install succeeded: status={:?}",
                             final_status.status()
                         );
-                        break;
+                        break Ok(());
                     } else {
                         error!("Trident install failed: status={:?}", final_status.status());
                         match final_status.error {
                             Some(err) => {
-                                return Err(anyhow::anyhow!(err.message));
+                                error!("Trident reported error: {}", err.message);
+                                break Err(anyhow::anyhow!(err.message));
                             }
                             None => {
-                                return Err(anyhow::anyhow!("Trident install failed"));
+                                break Err(anyhow::anyhow!("Trident install failed"));
                             }
                         }
                     }
@@ -193,17 +199,15 @@ async fn trigger(url: &Url, hash: Option<String>) -> Result<(), anyhow::Error> {
                 }
             },
             Some(Err(e)) => {
-                return Err(anyhow::anyhow!("Error reading from Trident stream: {e}"));
+                break Err(anyhow::anyhow!("Error reading from Trident stream: {e}"));
             }
             None => {
-                return Err(anyhow::anyhow!(
+                break Err(anyhow::anyhow!(
                     "Trident install stream ended without control message"
                 ));
             }
         }
     }
-
-    Ok(())
 }
 
 /// Query the Omaha server at the given URL for the given app and track to fetch
