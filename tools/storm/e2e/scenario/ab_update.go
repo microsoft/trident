@@ -329,6 +329,11 @@ func runTridentUpdate(tc storm.TestCase, runtime trident.RuntimeType, client *ss
 			}
 		}
 
+		if out.Status == 0 && strings.Contains(out.Stderr, trident.REBOOTING_LOG_MESSAGE) {
+			logrus.Infof("Host rebooted successfully")
+			break
+		}
+
 		if out.Status == 0 && strings.Contains(out.Stderr, "Staging of A/B update succeeded") {
 			logrus.Infof("Staging of A/B update succeeded")
 			break
