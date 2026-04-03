@@ -40,18 +40,23 @@ This workflow is functional but has several drawbacks:
   offers a fixed shortcut that accepts only the image section, but the client
   must still construct a valid YAML document with the correct structure, and
   this shortcut does not generalize to other sections of the configuration.
-- **No incremental validation**: The client has no way to validate individual
-  changes before submitting the complete configuration. Errors are only
-  discovered at submission time and only one error is reported at a time.
-- **No server-side policy enforcement**: The server cannot inspect what
-  *changed* between the current and new configurations. It can only validate
-  the new configuration in its entirety. This makes it impossible to enforce
-  policies like "storage modifications are not permitted during updates."
-- **No structured audit trail**: There is no record of what specific changes
-  were made to a configuration, only a before and after state.
 - **Client complexity**: Every client (orchestrator, automation tool, test
   harness) must implement its own YAML manipulation logic, leading to
   duplicated effort and potential inconsistencies.
+- **No incremental validation**: The client has no way to validate individual
+  changes before submitting the complete configuration. Errors are only
+  discovered at submission time and only one error is reported at a time.
+- **Limited server-side policy enforcement**: The server cannot inspect what
+  *changed* between the current and new configurations. It can only validate
+  the new configuration in its entirety. Some policies are enforced at
+  submission time—for example, storage modifications are rejected during
+  updates—but these checks are a side effect of full-document validation,
+  not a dedicated policy layer. Violations are only discovered when the
+  complete configuration is submitted, alongside any other validation errors.
+- **No structured audit trail**: There is no record of what specific changes
+  were made to a configuration, only a before and after state. This is a minor
+  concern in practice—the committed configuration is the source of truth—but
+  a structured change log would improve debuggability.
 
 ### Goals
 
