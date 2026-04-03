@@ -1,6 +1,6 @@
 use std::ops::ControlFlow;
 
-use log::info;
+use log::{debug, info};
 use tonic::{
     transport::{Channel, Endpoint},
     Request, Streaming,
@@ -334,7 +334,14 @@ async fn handle_servicing_response(
             info!("Servicing completed successfully");
 
             match status.reboot_status() {
-                RebootStatus::RebootStarted => info!("A reboot has been started by Trident"),
+                RebootStatus::RebootStarted => {
+                    info!("A reboot has been started by Trident");
+                    // IMPORTANT: This message is used by E2E A/B update tests to validate that
+                    // a reboot was requested. Do not change or remove without updating the
+                    // test constant in:
+                    // tools/storm/utils/trident/trident.go:REBOOTING_LOG_MESSAGE
+                    debug!("Requesting reboot");
+                }
                 RebootStatus::RebootRequired => {
                     info!("A reboot is required to complete the operation");
                     return Ok(ControlFlow::Break(ExitKind::NeedsReboot));

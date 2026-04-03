@@ -257,20 +257,20 @@ func (s *TridentE2EScenario) abUpdateOs(tc storm.TestCase, split bool) error {
 	if !split {
 		// regular case
 		logrus.Infof("Running Trident A/B update...")
-		err = runTridentUpdate(tc, s.runtime, s.sshClient, args)
+		err = runTridentUpdate(tc, s.runtime, s.sshClient, args, false)
 		if err != nil {
 			return fmt.Errorf("failed to run Trident A/B update: %w", err)
 		}
 	} else {
 		// split stage and finalize
 		logrus.Infof("Running split Trident A/B update (stage)...")
-		err = runTridentUpdate(tc, s.runtime, s.sshClient, args+" --allowed-operations stage")
+		err = runTridentUpdate(tc, s.runtime, s.sshClient, args+" --allowed-operations stage", true)
 		if err != nil {
 			return fmt.Errorf("failed to run Trident A/B update: %w", err)
 		}
 
 		logrus.Infof("Running split Trident A/B update (finalize)...")
-		err = runTridentUpdate(tc, s.runtime, s.sshClient, args+" --allowed-operations finalize")
+		err = runTridentUpdate(tc, s.runtime, s.sshClient, args+" --allowed-operations finalize", false)
 		if err != nil {
 			return fmt.Errorf("failed to run Trident A/B update: %w", err)
 		}
@@ -311,36 +311,33 @@ func (s *TridentE2EScenario) abUpdateOs(tc storm.TestCase, split bool) error {
 	return nil
 }
 
-func runTridentUpdate(tc storm.TestCase, runtime trident.RuntimeType, client *ssh.Client, args string) error {
+func runTridentUpdate(tc storm.TestCase, runtime trident.RuntimeType, client *ssh.Client, args string, stagingOnly bool) error {
 	for i := 1; ; i++ {
 		logrus.Infof("Invoking Trident attempt #%d with args: %s", i, args)
 
 		out, err := trident.InvokeTrident(runtime, client, nil, args)
-		if err != nil {
-			if err, ok := err.(*ssh.ExitMissingError); ok && strings.Contains(out.Stderr, trident.REBOOTING_LOG_MESSAGE) {
-				// The connection closed without an exit code, and the output contains REBOOTING_LOG_MESSAGE.
-				// This indicates that the host has rebooted.
-				logrus.Infof("Host rebooted successfully")
-				break
-			} else {
-				// Some unknown error occurred.
-				logrus.Errorf("Failed to invoke Trident: %s; %s", err, out.Report())
-				return fmt.Errorf("failed to invoke Trident: %w", err)
-			}
-		}
+		logrus.Tracef("Trident '%s' details: %s; %s", args, err, out.Report())
 
-		if out.Status == 0 && strings.Contains(out.Stderr, "Staging of A/B update succeeded") {
+		// If this is not staging only, check and exit if reboot message found in output
+		if !stagingOnly && strings.Contains(out.Stderr, trident.REBOOTING_LOG_MESSAGE) {
+			logrus.Infof("Host rebooted successfully")
+			break
+		}
+		// Errors that occur without the reboot message are a test failure
+		if err != nil {
+			return fmt.Errorf("failed to invoke Trident: %w", err)
+		}
+		// If only staging, check for staging success message in output
+		if stagingOnly && out.Status == 0 && strings.Contains(out.Stderr, "Staging of A/B update succeeded") {
 			logrus.Infof("Staging of A/B update succeeded")
 			break
 		}
-
+		// Check for specific failure case representing a retry e2e scenario
 		if out.Status == 2 && strings.Contains(out.Stderr, "Failed to run post-configure script 'fail-on-the-first-run'") {
 			logrus.Infof("Detected intentional failure. Re-running...")
 			continue
 		}
-
-		logrus.Errorf("Trident update failed %s", out.Report())
-
+		// Any case where we end up here is a failure, fail the test
 		tc.Fail(fmt.Sprintf("Trident update failed with status %d", out.Status))
 	}
 
