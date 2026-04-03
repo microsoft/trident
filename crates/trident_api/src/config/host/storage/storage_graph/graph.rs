@@ -9,7 +9,7 @@ use petgraph::{
 };
 
 use crate::{
-    config::{FileSystem, FileSystemSource, MountPoint, RaidLevel, VerityDevice},
+    config::{FileSystem, FileSystemSource, RaidLevel, VerityDevice},
     constants::{LUKS_HEADER_SIZE_IN_MIB, ROOT_MOUNT_POINT_PATH, USR_MOUNT_POINT_PATH},
     storage_graph::references::SpecialReferenceKind,
     BlockDeviceId,
