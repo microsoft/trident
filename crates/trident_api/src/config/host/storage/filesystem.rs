@@ -32,9 +32,9 @@ pub struct FileSystem {
     pub mount_point: Option<MountPoint>,
 
     /// Whether this filesystem is the EFI System Partition (ESP), as determined
-    /// by its mount point path and the esp_mount_path field of the
-    /// HostStorageConfig. This field is not deserialized from user input; it is
-    /// set internally based on the mount point path and esp_mount_path.
+    /// by its mount point path and the `esp_mount_path` field of [`Storage`].
+    /// This field is not deserialized from user input; it is set internally
+    /// based on the mount point path and `esp_mount_path`.
     pub is_esp: bool,
 }
 
