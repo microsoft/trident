@@ -347,6 +347,11 @@ func (h *AbUpdateHelper) triggerTridentUpdate(tc storm.TestCase) error {
 			}
 		}
 
+		if out.Status == 0 && strings.Contains(out.Stderr, trident.REBOOTING_LOG_MESSAGE) {
+			logrus.Infof("Host rebooted successfully")
+			break
+		}
+
 		if out.Status == 0 && strings.Contains(out.Stderr, "Staging of A/B update succeeded") {
 			logrus.Infof("Staging of A/B update succeeded")
 			break

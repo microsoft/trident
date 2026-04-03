@@ -122,6 +122,10 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 			return fmt.Errorf("failed to invoke Trident: %w", err)
 		}
 	}
+	if out.Status == 0 && strings.Contains(out.Stderr, trident.REBOOTING_LOG_MESSAGE) {
+		logrus.Infof("Host rebooted successfully")
+	}
+
 	logrus.Infof("Trident 'rollback' succeeded:\n%s", out.Stdout)
 
 	if !h.args.ExpectRuntimeRollback {
