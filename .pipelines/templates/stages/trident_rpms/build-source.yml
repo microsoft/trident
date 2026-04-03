@@ -43,7 +43,7 @@ stages:
 
             variables:
               - name: ob_outputDirectory
-                value: "$(Build.SourcesDirectory)/trident/out"
+                value: "/tmp/out"
 
             steps:
               - template: ../common_tasks/avoid-pypi-usage.yml
@@ -56,17 +56,21 @@ stages:
 
             variables:
               - name: ob_outputDirectory
-                value: "$(Build.SourcesDirectory)/trident/out"
+                value: "/tmp/out"
 
             steps:
+              - template: ../common_tasks/checkout_trident.yml
               - template: ../common_tasks/avoid-pypi-usage.yml
               # need newer rust for cargo-nextest, use rustup.yml to install
               - template: ../common_tasks/rustup.yml
               - template: ../common_tasks/cargo-auth.yml
+                parameters:
+                  cargoConfigPath: $(TRIDENT_SOURCE_DIR)/.cargo/config.toml
               - template: unit-test.yml
                 parameters:
                   codeCoverage: ${{ parameters.codeCoverage }}
                   unitTestCoverageBaseline: 70 # Unit tests
+                  tridentRepoDirectory: $(TRIDENT_SOURCE_DIR)
 
           - job: BuildTrident_${{ parameters.targetArchitecture }}
             displayName: Build Trident 3.0 ${{ parameters.targetArchitecture }} RPMs
@@ -77,23 +81,29 @@ stages:
               - name: ob_artifactBaseName
                 value: ${{ parameters.tridentArtifactName }}
               - name: ob_outputDirectory
-                value: "$(Build.SourcesDirectory)/out"
+                value: "/tmp/trident-binaries"
               - template: common/setup-registries-vars-template.yaml@platform-pipelines
                 parameters:
                   buildType: auto
 
             steps:
+              - template: ../common_tasks/checkout_trident.yml
               - template: ../common_tasks/os-info.yml
               - template: ../common_tasks/avoid-pypi-usage.yml
               - template: ../common_tasks/cargo-auth.yml
+                parameters:
+                  cargoConfigPath: $(TRIDENT_SOURCE_DIR)/.cargo/config.toml
               - template: ../common_tasks/download-osmodifier.yml
                 parameters:
+                  tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
                   targetArchitecture: ${{ parameters.targetArchitecture }}
                   osModifierBranch: ${{ parameters.osModifierBranch }}
                   osModifierBuildType: ${{ parameters.osModifierBuildType }}
               - template: release.yml
                 parameters:
                   targetArchitecture: ${{ parameters.targetArchitecture }}
+                  tridentRepoDirectory: $(TRIDENT_SOURCE_DIR)
+                  artifactDirectory: "$(ob_outputDirectory)"
 
       - ${{ elseif eq( parameters.targetArchitecture, 'arm64' ) }}:
           - job: BuildTrident_${{ parameters.targetArchitecture }}
@@ -107,24 +117,29 @@ stages:
               - name: ob_artifactBaseName
                 value: ${{ parameters.tridentArtifactName }}-arm64
               - name: ob_outputDirectory
-                value: "$(Build.SourcesDirectory)/out"
+                value: "/tmp/trident-binaries"
               - template: common/setup-registries-vars-template.yaml@platform-pipelines
                 parameters:
                   buildType: auto
 
             steps:
+              - template: ../common_tasks/checkout_trident.yml
               - template: ../common_tasks/avoid-pypi-usage.yml
               - template: ../common_tasks/cargo-auth.yml
+                parameters:
+                  cargoConfigPath: $(TRIDENT_SOURCE_DIR)/.cargo/config.toml
               - script: |
                   set -eux
                   sudo systemctl start docker
-                workingDirectory: $(Build.SourcesDirectory)
                 displayName: Start Docker
               - template: ../common_tasks/download-osmodifier.yml
                 parameters:
+                  tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
                   targetArchitecture: ${{ parameters.targetArchitecture }}
                   osModifierBranch: ${{ parameters.osModifierBranch }}
                   osModifierBuildType: ${{ parameters.osModifierBuildType }}
               - template: release.yml
                 parameters:
                   targetArchitecture: ${{ parameters.targetArchitecture }}
+                  tridentRepoDirectory: $(TRIDENT_SOURCE_DIR)
+                  artifactDirectory: "$(ob_outputDirectory)"

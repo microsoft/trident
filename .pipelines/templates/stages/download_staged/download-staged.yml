@@ -15,6 +15,7 @@ parameters:
       - pre
       - rel
       - full-validation
+      - azl-validation
 
   - name: specificVersion
     type: string
@@ -43,20 +44,22 @@ stages:
           - name: ob_artifactBaseName
             value: ${{ parameters.artifactName }}
           - name: ob_outputDirectory
-            value: "$(Build.SourcesDirectory)/out"
+            value: "/tmp/out"
 
           - template: ../../feed-staging-vars.yml
 
           # Set the download artifact suffix to be that of the *previous* stage
           - name: downloadArtifactSuffix
-            ${{ if or(eq(parameters.stageType, 'pre'), eq(parameters.stageType, 'full-validation')) }}:
-              value: ${{ variables.stage_ci_suffix }}
             ${{ if eq(parameters.stageType, 'rel') }}:
               value: ${{ variables.stage_pre_suffix }}
+            ${{ else }}:
+              value: ${{ variables.stage_ci_suffix }}
 
         steps:
+          - template: ../common_tasks/checkout_trident.yml
           - template: ../common_tasks/download-universal-artifact.yml
             parameters:
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
               packageName: ${{ parameters.packageName }}${{ variables.downloadArtifactSuffix }}
               downloadLocation: $(ob_outputDirectory)
               outputVersionVariable: trident_version
@@ -75,3 +78,4 @@ stages:
 
             - script: ./scripts/extract-binary.sh $(ob_outputDirectory) $(ob_outputDirectory)
               displayName: Extract Trident binary
+              workingDirectory: $(TRIDENT_SOURCE_DIR)

@@ -50,17 +50,20 @@ parameters:
     type: boolean
     default: false
 
-  - name: targetDirectory
+  - name: tridentSourceDirectory
     type: string
-    default: "$(Build.SourcesDirectory)/artifacts/test-image"
 
-  - name: isoDirectory
+  - name: tridentTargetDirectory
     type: string
-    default: "$(Build.SourcesDirectory)/artifacts/iso"
+    default: "artifacts/test-image"
 
-  - name: toolsDirectory
+  - name: tridentIsoDirectory
     type: string
-    default: "$(Build.SourcesDirectory)/bin"
+    default: "artifacts/iso"
+
+  - name: tridentToolsDirectory
+    type: string
+    default: "bin"
 
   - name: testImageDir
     type: string
@@ -107,14 +110,14 @@ steps:
           buildType: current
           artifactName: "trident-docker-image"
           patterns: "**/trident-container.tar.gz"
-          targetPath: "${{ parameters.targetDirectory }}"
+          targetPath: "${{ parameters.tridentSourceDirectory }}/${{ parameters.tridentTargetDirectory }}"
 
   - task: DownloadPipelineArtifact@2
     displayName: "Download ${{ parameters.installerISO }}"
     inputs:
       buildType: current
       artifactName: "${{ parameters.installerISO }}"
-      targetPath: "${{ parameters.isoDirectory }}"
+      targetPath: "${{ parameters.tridentSourceDirectory }}/${{ parameters.tridentIsoDirectory }}"
 
   - task: DownloadPipelineArtifact@2
     displayName: "Download ${{ parameters.tridentTestImage }}"
@@ -150,7 +153,7 @@ steps:
         mkcosi
         storm-trident
         virtdeploy
-      targetPath: "${{ parameters.toolsDirectory }}"
+      targetPath: "${{ parameters.tridentSourceDirectory }}/${{ parameters.tridentToolsDirectory }}"
 
   - bash: |
       # Debug log
@@ -166,13 +169,13 @@ steps:
       set -eux
 
       # Set tools to be executable
-      chmod +x ${{ parameters.toolsDirectory }}/net*
-      chmod +x ${{ parameters.toolsDirectory }}/mkcosi
-      chmod +x ${{ parameters.toolsDirectory }}/storm-trident
-      chmod +x ${{ parameters.toolsDirectory }}/virtdeploy
+      chmod +x ${{ parameters.tridentSourceDirectory }}/${{ parameters.tridentToolsDirectory }}/net*
+      chmod +x ${{ parameters.tridentSourceDirectory }}/${{ parameters.tridentToolsDirectory }}/mkcosi
+      chmod +x ${{ parameters.tridentSourceDirectory }}/${{ parameters.tridentToolsDirectory }}/storm-trident
+      chmod +x ${{ parameters.tridentSourceDirectory }}/${{ parameters.tridentToolsDirectory }}/virtdeploy
 
       # Call helper to copy and rename images!
-      ${{ parameters.toolsDirectory }}/storm-trident \
+      ${{ parameters.tridentSourceDirectory }}/${{ parameters.tridentToolsDirectory }}/storm-trident \
           helper prepare-images -a -- \
           "${{ parameters.testImageDir }}" \
           "${{ parameters.testImageDirVerity }}" \
@@ -180,15 +183,15 @@ steps:
           "${{ parameters.tridentTestImage }}" \
           "${{ parameters.tridentTestImageVerity }}" \
           "${{ parameters.tridentTestImageUsrVerity }}" \
-          "${{ parameters.targetDirectory }}" \
+          "${{ parameters.tridentSourceDirectory }}/${{ parameters.tridentTargetDirectory }}" \
           -v 4
 
       # List tools in the target directory
-      ls -lh "${{ parameters.toolsDirectory }}"
+      ls -lh "${{ parameters.tridentSourceDirectory }}/${{ parameters.tridentToolsDirectory }}"
 
       # List ISOs in the target directory
-      ls -lh "${{ parameters.isoDirectory }}"
+      ls -lh "${{ parameters.tridentSourceDirectory }}/${{ parameters.tridentIsoDirectory }}"
 
       # List images in the target directory
-      ls -lh "${{ parameters.targetDirectory }}"
+      ls -lh "${{ parameters.tridentSourceDirectory }}/${{ parameters.tridentTargetDirectory }}"
     displayName: "Move and Rename Trident Test Images"

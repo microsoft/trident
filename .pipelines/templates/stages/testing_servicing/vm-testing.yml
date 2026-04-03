@@ -67,6 +67,13 @@ parameters:
     type: string
     default: ""
 
+  # Define whether to run tests using SecureBoot or not. This impacts both
+  # which tests run (many encryption-related tests only run with SecureBoot enabled) and
+  # how the test machines are configured.
+  - name: testSecureBoot
+    type: boolean
+    default: true
+
 stages:
   - ${{ if eq(parameters.testingRun, false) }}:
       - stage: PrepareSSHKeys
@@ -225,6 +232,7 @@ stages:
               verboseLogging: ${{ parameters.verboseLogging }}
               platform: qemu
               flavor: qemu
+              testSecureBoot: ${{ parameters.testSecureBoot }}
 
       - ${{ if eq(parameters.includeAzure, true) }}:
           - template: testing-template.yml
@@ -237,6 +245,7 @@ stages:
               platform: azure
               flavor: azure
               pool: trident-ubuntu-official-1es-pool-eastus2
+              testSecureBoot: ${{ parameters.testSecureBoot }}
 
       - ${{ if eq(parameters.includeUKI, true) }}:
           - template: testing-template.yml
@@ -248,3 +257,4 @@ stages:
               verboseLogging: ${{ parameters.verboseLogging }}
               platform: qemu
               flavor: uki
+              testSecureBoot: ${{ parameters.testSecureBoot }}

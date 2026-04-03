@@ -72,6 +72,9 @@ os:
       - trident-service
       - vim
       - netplan
+  services:
+    enable:
+      - tridentd.socket
 
   additionalFiles:
     - source: files/sshd-keygen.service
