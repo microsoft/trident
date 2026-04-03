@@ -34,7 +34,13 @@ use trident::Trident;
 
 /// HostConfiguration is the configuration for a host. Trident agent will use
 /// this to configure the host.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
+#[serde(
+    rename_all = "camelCase",
+    deny_unknown_fields,
+    from = "HostConfigurationSerde",
+    into = "HostConfigurationSerde"
+)]
 pub struct HostConfiguration {
     /// The Trident Management configuration controls the installation of the
     /// Trident agent onto the target OS.
@@ -66,6 +72,37 @@ pub struct HostConfiguration {
 
     /// Health configuration for the target OS.
     pub health: Health,
+}
+
+impl From<HostConfigurationSerde> for HostConfiguration {
+    fn from(serde_struct: HostConfigurationSerde) -> Self {
+        Self {
+            trident: serde_struct.trident,
+            storage: serde_struct.storage,
+            scripts: serde_struct.scripts,
+            os: serde_struct.os,
+            management_os: serde_struct.management_os,
+            internal_params: serde_struct.internal_params,
+            image: serde_struct.image,
+            health: serde_struct.health,
+        }
+        .initialize()
+    }
+}
+
+impl From<HostConfiguration> for HostConfigurationSerde {
+    fn from(config: HostConfiguration) -> Self {
+        Self {
+            trident: config.trident,
+            storage: config.storage,
+            scripts: config.scripts,
+            os: config.os,
+            management_os: config.management_os,
+            internal_params: config.internal_params,
+            image: config.image,
+            health: config.health,
+        }
+    }
 }
 
 /// HostConfiguration is the configuration for a host. Trident agent will use
@@ -121,39 +158,6 @@ struct HostConfigurationSerde {
     /// Health configuration for the target OS.
     #[serde(default, skip_serializing_if = "is_default")]
     health: Health,
-}
-
-impl Serialize for HostConfiguration {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        HostConfigurationSerde {
-            trident: self.trident.clone(),
-            storage: self.storage.clone(),
-            scripts: self.scripts.clone(),
-            os: self.os.clone(),
-            management_os: self.management_os.clone(),
-            internal_params: self.internal_params.clone(),
-            image: self.image.clone(),
-            health: self.health.clone(),
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for HostConfiguration {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let serde_struct = HostConfigurationSerde::deserialize(deserializer)?;
-        Ok(Self {
-            trident: serde_struct.trident,
-            storage: serde_struct.storage,
-            scripts: serde_struct.scripts,
-            os: serde_struct.os,
-            management_os: serde_struct.management_os,
-            internal_params: serde_struct.internal_params,
-            image: serde_struct.image,
-            health: serde_struct.health,
-        }
-        .initialize())
-    }
 }
 
 #[cfg(feature = "schemars")]
