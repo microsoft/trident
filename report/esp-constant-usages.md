@@ -26,18 +26,18 @@ EngineContext Availability:
 
 Summary of the complicated locations.
 
-| Item# | Constant                        | Crate       | Location                                                                                          | Function                      | Notes                                                                                    | Status |
-| ----- | ------------------------------- | ----------- | ------------------------------------------------------------------------------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------- | ------ |
-| 1     | `ESP_MOUNT_POINT_PATH`          | trident_api | [rules/mod.rs:524](../crates/trident_api/src/config/host/storage/storage_graph/rules/mod.rs#L524) | `expected_partition_type`     | Returns allowed partition type for ESP mount point                                       | ☑️ [1]  |
-| 2     | `ESP_MOUNT_POINT_PATH`          | trident_api | [storage/mod.rs:188](../crates/trident_api/src/config/host/storage/mod.rs#L188)                   | `Storage::validate`           | Validates ESP volume presence in storage config                                          | ✅      |
-| 2b    | `ESP_MOUNT_POINT_PATH`          | trident_api | [storage/mod.rs:250](../crates/trident_api/src/config/host/storage/mod.rs#L250)                   | `Storage::validate`           | Fallback ESP mount-point for adopted-partition configs                                   | ☑️ [2]  |
-| 3     | `ESP_MOUNT_POINT_PATH`          | trident_api | [storage/mod.rs:507](../crates/trident_api/src/config/host/storage/mod.rs#L507)                   | `Storage::esp_filesystem`     | Returns reference to ESP device_id and filesystem                                        |        |
-| 4     | `ESP_MOUNT_POINT_PATH`          | trident_api | [filesystem.rs:353](../crates/trident_api/src/config/host/storage/filesystem.rs#L353)             | `FileSystem::is_esp`          | Pure method on `FileSystem`; compares mount point to constant                            |        |
-| 5     | `ESP_MOUNT_POINT_PATH`          | trident_api | [sample_hc.rs:63](../crates/trident_api/src/samples/sample_hc.rs#L63)                             | `sample_host_configuration`   | Sample data builder (×8 occurrences at L63, L116, L313, L524, L985, L1192, L1342, L1524) |        |
-| 6     | `ESP_MOUNT_POINT_PATH`          | trident     | [context/filesystem.rs:178](../crates/trident/src/engine/context/filesystem.rs#L178)              | `FileSystemData::is_esp`      | Pure method; checks if filesystem mount equals ESP path                                  |        |
-| 7     | `ESP_MOUNT_POINT_PATH`          | trident     | [context/filesystem.rs:258](../crates/trident/src/engine/context/filesystem.rs#L258)              | `FileSystemDataImage::is_esp` | Pure method; checks ESP mount path equality                                              |        |
-| 20    | `ESP_RELATIVE_MOUNT_POINT_PATH` | trident     | [offline_init/mod.rs:489](../crates/trident/src/offline_init/mod.rs#L489)                         | `execute`                     | Top-level offline-init command handler; no `EngineContext` in call chain                 |        |
-| 23    | `ESP_RELATIVE_MOUNT_POINT_PATH` | trident     | [install_index.rs:15](../crates/trident/src/engine/install_index.rs#L15)                          | `next_install_index`          | Pure utility; finds install index from path                                              |        |
+| Item# | Constant                        | Crate       | Location                                                                                          | Function                      | Notes                                                                                     | Status |
+| ----- | ------------------------------- | ----------- | ------------------------------------------------------------------------------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------- | ------ |
+| 1     | `ESP_MOUNT_POINT_PATH`          | trident_api | [rules/mod.rs:524](../crates/trident_api/src/config/host/storage/storage_graph/rules/mod.rs#L524) | `expected_partition_type`     | ~~Returns allowed partition type for ESP mount point~~ Now takes `esp_mount_path` param   | ✅      |
+| 2     | `ESP_MOUNT_POINT_PATH`          | trident_api | [storage/mod.rs:188](../crates/trident_api/src/config/host/storage/mod.rs#L188)                   | `Storage::validate`           | Validates ESP volume presence in storage config                                           | ✅      |
+| 3     | `ESP_MOUNT_POINT_PATH`          | trident_api | [storage/mod.rs:545](../crates/trident_api/src/config/host/storage/mod.rs#L545)                   | `Storage::esp_filesystem`     | Returns reference to ESP device_id and filesystem                                         | ✅      |
+| 4     | `ESP_MOUNT_POINT_PATH`          | trident_api | [filesystem.rs:353](../crates/trident_api/src/config/host/storage/filesystem.rs#L353)             | `FileSystem::is_esp`          | ~~Pure method~~ Now a field; set by `Storage::initialize()`                               | ✅      |
+| 5     | `ESP_MOUNT_POINT_PATH`          | trident_api | [sample_hc.rs:63](../crates/trident_api/src/samples/sample_hc.rs#L63)                             | `sample_host_configuration`   | Sample data builder (×8 occurrences at L63, L118, L317, L533, L1001, L1217, L1369, L1554) |        |
+| 5b    | `ESP_MOUNT_POINT_PATH`          | trident_api | [storage/mod.rs:588](../crates/trident_api/src/config/host/storage/mod.rs#L588)                   | `EspMountPath::default_path`  | New: default ESP mount path for `EspMountPath` type                                       | ☑️[1]   |
+| 6     | `ESP_MOUNT_POINT_PATH`          | trident     | [context/filesystem.rs:178](../crates/trident/src/engine/context/filesystem.rs#L178)              | `FileSystemData::is_esp`      | Pure method; checks if filesystem mount equals ESP path                                   |        |
+| 7     | `ESP_MOUNT_POINT_PATH`          | trident     | [context/filesystem.rs:258](../crates/trident/src/engine/context/filesystem.rs#L258)              | `FileSystemDataImage::is_esp` | Pure method; checks ESP mount path equality                                               |        |
+| 20    | `ESP_RELATIVE_MOUNT_POINT_PATH` | trident     | [offline_init/mod.rs:489](../crates/trident/src/offline_init/mod.rs#L489)                         | `execute`                     | Top-level offline-init command handler; no `EngineContext` in call chain                  |        |
+| 23    | `ESP_RELATIVE_MOUNT_POINT_PATH` | trident     | [install_index.rs:15](../crates/trident/src/engine/install_index.rs#L15)                          | `next_install_index`          | Pure utility; finds install index from path                                               |        |
 
 See also:
 
@@ -54,27 +54,28 @@ Defined in [crates/trident_api/src/constants.rs](../crates/trident_api/src/const
 
 #### Usages
 
-| Item# | Crate       | Location                                                                                          | Function                                         | Ctx | Notes                                                                        | Status |
-| ----- | ----------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------ | --- | ---------------------------------------------------------------------------- | ------ |
-| 1     | trident_api | [rules/mod.rs:524](../crates/trident_api/src/config/host/storage/storage_graph/rules/mod.rs#L524) | `expected_partition_type`                        | ❌   | Returns allowed partition type for ESP mount point                           | ☑️ [1]  |
-| 2     | trident_api | [storage/mod.rs:188](../crates/trident_api/src/config/host/storage/mod.rs#L188)                   | `Storage::validate`                              | ❌   | Validates ESP volume presence in storage config                              | ✅      |
-| 2b    | trident_api | [storage/mod.rs:250](../crates/trident_api/src/config/host/storage/mod.rs#L250)                   | `Storage::validate`                              | ❌   | Fallback ESP mount-point for adopted-partition configs                       | ☑️ [2]  |
-| 3     | trident_api | [storage/mod.rs:507](../crates/trident_api/src/config/host/storage/mod.rs#L507)                   | `Storage::esp_filesystem`                        | ❌   | Returns reference to ESP device_id and filesystem                            |        |
-| 4     | trident_api | [filesystem.rs:353](../crates/trident_api/src/config/host/storage/filesystem.rs#L353)             | `FileSystem::is_esp`                             | ❌   | Pure method; compares mount point to constant                                |        |
-| 5     | trident_api | [sample_hc.rs:63](../crates/trident_api/src/samples/sample_hc.rs#L63)                             | `sample_host_configuration`                      | ❌   | Sample data builder (×8 at L63, L116, L313, L524, L985, L1192, L1342, L1524) |        |
-| 6     | trident     | [context/filesystem.rs:178](../crates/trident/src/engine/context/filesystem.rs#L178)              | `FileSystemData::is_esp`                         | ❌   | Pure method; checks if filesystem mount equals ESP path                      |        |
-| 7     | trident     | [context/filesystem.rs:258](../crates/trident/src/engine/context/filesystem.rs#L258)              | `FileSystemDataImage::is_esp`                    | ❌   | Pure method; checks ESP mount path equality                                  |        |
-| 8     | trident     | [context/filesystem.rs:357](../crates/trident/src/engine/context/filesystem.rs#L357)              | `EngineContext::esp_filesystem`                  | ✅   | Finds ESP filesystem in image filesystems                                    |        |
-| 9     | trident     | [grub.rs:84](../crates/trident/src/engine/boot/grub.rs#L84)                                       | `update_configs`                                 | ✅   | Constructs GRUB boot entry config path on ESP                                |        |
-| 10    | trident     | [bootentries.rs:289](../crates/trident/src/engine/bootentries.rs#L289)                            | `create_boot_entries_for_rebuilt_esp_partitions` | ✅   | Boot entry creation on ESP for RAID recovery                                 |        |
-| 11    | trident     | [encryption.rs:306](../crates/trident/src/engine/storage/encryption.rs#L306)                      | `get_binary_paths_pcrlock`                       | ✅   | Gets ESP path for UKI/bootloader binary discovery                            |        |
-| 12    | trident     | [encryption.rs:455](../crates/trident/src/engine/storage/encryption.rs#L455)                      | `get_bootloader_paths`                           | ✅   | Constructs bootloader paths in target OS during A/B update                   |        |
-| 13    | trident     | [verity.rs:185](../crates/trident/src/engine/storage/verity.rs#L185)                              | `open_verity_device_with_signature`              | ✅   | Validates signature file is NOT on ESP mount point (×2 at L185, L187)        |        |
-| 14    | trident     | [image.rs:75](../crates/trident/src/engine/storage/image.rs#L75)                                  | `deploy_images`                                  | ✅   | Maps ESP filesystem in raw COSI storage mode                                 |        |
-| 15    | trident     | [uki.rs:62](../crates/trident/src/engine/boot/uki.rs#L62)                                         | `stage_uki_on_esp`                               | 🔗   | UKI staging path construction; caller has `ctx`                              |        |
-| 16    | trident     | [uki.rs:148](../crates/trident/src/engine/boot/uki.rs#L148)                                       | `prepare_esp_for_uki`                            | 🔗   | ESP preparation for UKI; caller has `ctx`                                    |        |
-| 17    | trident     | [ab_update.rs:159](../crates/trident/src/engine/ab_update.rs#L159)                                | `finalize_update`                                | ✅   | `ctx` built locally at L142                                                  |        |
-| 18    | trident     | [clean_install.rs:309](../crates/trident/src/engine/clean_install.rs#L309)                        | `finalize_clean_install`                         | ✅   | `ctx` built locally at L283                                                  |        |
+| Item# | Crate       | Location                                                                                          | Function                                         | Ctx | Notes                                                                                   | Status |
+| ----- | ----------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------ | --- | --------------------------------------------------------------------------------------- | ------ |
+| 1     | trident_api | [rules/mod.rs:524](../crates/trident_api/src/config/host/storage/storage_graph/rules/mod.rs#L524) | `expected_partition_type`                        | ❌   | ~~Returns allowed partition type for ESP mount point~~ Now takes `esp_mount_path` param | ✅      |
+| 2     | trident_api | [storage/mod.rs:188](../crates/trident_api/src/config/host/storage/mod.rs#L188)                   | `Storage::validate`                              | ❌   | Validates ESP volume presence in storage config                                         | ✅      |
+| 2b    | trident_api | [storage/mod.rs:250](../crates/trident_api/src/config/host/storage/mod.rs#L250)                   | `Storage::validate`                              | ❌   | ~~Fallback ESP mount-point~~ Now uses `self.esp_mount_path`                             | ✅      |
+| 3     | trident_api | [storage/mod.rs:545](../crates/trident_api/src/config/host/storage/mod.rs#L545)                   | `Storage::esp_filesystem`                        | ❌   | Returns reference to ESP device_id and filesystem                                       |        |
+| 4     | trident_api | [filesystem.rs:353](../crates/trident_api/src/config/host/storage/filesystem.rs#L353)             | `FileSystem::is_esp`                             | ❌   | ~~Pure method~~ Now a field; set by `Storage::initialize()`                             | ✅      |
+| 5     | trident_api | [sample_hc.rs:63](../crates/trident_api/src/samples/sample_hc.rs#L63)                             | `sample_host_configuration`                      | ❌   | Sample data builder (×8 at L63, L118, L317, L533, L1001, L1217, L1369, L1554)           |        |
+| 5b    | trident_api | [storage/mod.rs:588](../crates/trident_api/src/config/host/storage/mod.rs#L588)                   | `EspMountPath::default_path`                     | ❌   | New: default ESP mount path for `EspMountPath` type                                     |        |
+| 6     | trident     | [context/filesystem.rs:178](../crates/trident/src/engine/context/filesystem.rs#L178)              | `FileSystemData::is_esp`                         | ❌   | Pure method; checks if filesystem mount equals ESP path                                 |        |
+| 7     | trident     | [context/filesystem.rs:258](../crates/trident/src/engine/context/filesystem.rs#L258)              | `FileSystemDataImage::is_esp`                    | ❌   | Pure method; checks ESP mount path equality                                             |        |
+| 8     | trident     | [context/filesystem.rs:357](../crates/trident/src/engine/context/filesystem.rs#L357)              | `EngineContext::esp_filesystem`                  | ✅   | Finds ESP filesystem in image filesystems                                               |        |
+| 9     | trident     | [grub.rs:84](../crates/trident/src/engine/boot/grub.rs#L84)                                       | `update_configs`                                 | ✅   | Constructs GRUB boot entry config path on ESP                                           |        |
+| 10    | trident     | [bootentries.rs:289](../crates/trident/src/engine/bootentries.rs#L289)                            | `create_boot_entries_for_rebuilt_esp_partitions` | ✅   | Boot entry creation on ESP for RAID recovery                                            |        |
+| 11    | trident     | [encryption.rs:306](../crates/trident/src/engine/storage/encryption.rs#L306)                      | `get_binary_paths_pcrlock`                       | ✅   | Gets ESP path for UKI/bootloader binary discovery                                       |        |
+| 12    | trident     | [encryption.rs:455](../crates/trident/src/engine/storage/encryption.rs#L455)                      | `get_bootloader_paths`                           | ✅   | Constructs bootloader paths in target OS during A/B update                              |        |
+| 13    | trident     | [verity.rs:185](../crates/trident/src/engine/storage/verity.rs#L185)                              | `open_verity_device_with_signature`              | ✅   | Validates signature file is NOT on ESP mount point (×2 at L185, L187)                   |        |
+| 14    | trident     | [image.rs:75](../crates/trident/src/engine/storage/image.rs#L75)                                  | `deploy_images`                                  | ✅   | Maps ESP filesystem in raw COSI storage mode                                            |        |
+| 15    | trident     | [uki.rs:62](../crates/trident/src/engine/boot/uki.rs#L62)                                         | `stage_uki_on_esp`                               | 🔗   | UKI staging path construction; caller has `ctx`                                         |        |
+| 16    | trident     | [uki.rs:148](../crates/trident/src/engine/boot/uki.rs#L148)                                       | `prepare_esp_for_uki`                            | 🔗   | ESP preparation for UKI; caller has `ctx`                                               |        |
+| 17    | trident     | [ab_update.rs:159](../crates/trident/src/engine/ab_update.rs#L159)                                | `finalize_update`                                | ✅   | `ctx` built locally at L142                                                             |        |
+| 18    | trident     | [clean_install.rs:309](../crates/trident/src/engine/clean_install.rs#L309)                        | `finalize_clean_install`                         | ✅   | `ctx` built locally at L283                                                             |        |
 
 ---
 
@@ -115,8 +116,8 @@ Defined in [crates/trident_api/src/constants.rs](../crates/trident_api/src/const
 | ---------------------------------------------------------------------------- | --------- |
 | crates/osutils/src/tabfile.rs                                                | 2         |
 | crates/trident_api/src/config/host/storage/filesystem.rs                     | 1         |
-| crates/trident_api/src/config/host/storage/mod.rs                            | 5         |
-| crates/trident_api/src/config/host/storage/storage_graph/validation_tests.rs | 2         |
+| crates/trident_api/src/config/host/storage/mod.rs                            | 7         |
+| crates/trident_api/src/config/host/storage/storage_graph/validation_tests.rs | 34        |
 | crates/trident/src/engine/boot/grub.rs                                       | 1         |
 | crates/trident/src/engine/boot/uki.rs                                        | 5         |
 | crates/trident/src/engine/bootentries.rs                                     | 3         |
@@ -140,12 +141,13 @@ No test usages.
 
 ## Annex: `is_esp()` Usages
 
-The `is_esp()` method is defined on `FileSystem` in
-[filesystem.rs:353](../crates/trident_api/src/config/host/storage/filesystem.rs#L353)
-and uses `ESP_MOUNT_POINT_PATH` internally. Note that there are also
+`is_esp` is now a **field** on `FileSystem`
+([filesystem.rs:38](../crates/trident_api/src/config/host/storage/filesystem.rs#L38)),
+set by `Storage::initialize()` based on `esp_mount_path`. It no longer uses
+`ESP_MOUNT_POINT_PATH` directly. Note that there are also
 `is_esp()` methods on `FileSystemData` and `FileSystemDataImage` in
 [context/filesystem.rs](../crates/trident/src/engine/context/filesystem.rs)
-that use the same constant directly.
+that use the constant directly.
 
 ### Product Code
 
@@ -162,23 +164,11 @@ that use the same constant directly.
 
 | File                                                     | Instances | Test Function                      |
 | -------------------------------------------------------- | --------- | ---------------------------------- |
-| crates/trident_api/src/config/host/storage/filesystem.rs | 4         | `test_filesystem_mount_point_path` |
+| crates/trident_api/src/config/host/storage/filesystem.rs | 6         | `test_filesystem_mount_point_path` |
 
 ---
 
 ## Review Notes
 
-1. `expected_partition_type` is a validation rule that maps mount points to their
-   expected partition types. Using `ESP_MOUNT_POINT_PATH` here is correct because
-   the function only constrains which partition type is *allowed* at a given
-   mount point — it does not assume the ESP must be at that path. When the ESP
-   is mounted elsewhere (e.g. `/boot` or `/efi`), the function simply returns
-   `AllowBlockList::Any`, so no false rejection occurs.
-
-2. Added by this PR. When adopted partitions are present but DFS traversal
-   finds no mounted ESP, `validate_inner` needs a fallback mount-point path
-   to validate volume presence. Because adopted partitions carry no type
-   information, the ESP cannot be discovered at static-validation time, so
-   the canonical Azure Linux default (`/boot/efi`) is assumed. This is safe
-   because adopted-partition configurations are only used for images that
-   follow the standard Azure Linux layout.
+1. This is the default ESP mount path used in Host Configuration. It is the
+   value used when no specific override is given.

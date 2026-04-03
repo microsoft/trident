@@ -540,13 +540,13 @@ impl Storage {
     /// available.
     ///
     /// The ESP filesystem is defined as having a block device and being mounted
-    /// at ESP_MOUNT_POINT_PATH.
+    /// at the ESP mount path.
     pub fn esp_filesystem(&self) -> Option<(&BlockDeviceId, &FileSystem)> {
         self.filesystems.iter().find_map(|fs| {
             if fs
                 .mount_point
                 .as_ref()
-                .is_some_and(|mp| mp.path.as_path() == Path::new(ESP_MOUNT_POINT_PATH))
+                .is_some_and(|mp| mp.path.as_path() == self.esp_mount_path.as_path())
             {
                 fs.device_id.as_ref().map(|id| (id, fs))
             } else {
