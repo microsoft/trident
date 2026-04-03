@@ -3,14 +3,15 @@ resolver = "2"
 default-members = ["crates/trident"]
 
 members = [
-    "crates/trident",
-    "crates/trident_api",
-    "crates/osutils",
     "crates/docbuilder",
-    "crates/pytest",
+    "crates/launcher",
+    "crates/osutils",
     "crates/pytest_gen",
+    "crates/pytest",
     "crates/sysdefs",
+    "crates/trident_api",
     "crates/trident-proto",
+    "crates/trident",
 ]
 
 [workspace.dependencies]
