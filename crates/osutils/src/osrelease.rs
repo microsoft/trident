@@ -7,6 +7,8 @@ use serde::{Deserialize, Deserializer};
 
 use crate::path;
 
+use trident_api::status::HostStatus;
+
 /// Absolute path to the /etc/os-release file.
 pub const OS_RELEASE_PATH: &str = "/etc/os-release";
 
@@ -66,12 +68,7 @@ impl OsRelease {
                     })
                     .unwrap_or_default(),
             ),
-            Some("special_legacy") => Distro::Special(
-                self.version_id
-                    .as_deref()
-                    .map(|v| SpecialRelease::SpecialLegacy)
-                    .unwrap_or_default(),
-            ),
+            Some("special_legacy") => Distro::Special(SpecialRelease::SpecialLegacy),
             Some("special") => Distro::Special(
                 self.version_id
                     .as_deref()
@@ -228,6 +225,107 @@ pub enum SpecialRelease {
     Other,
     SpecialLegacy,
     Special1,
+}
+
+impl SpecialRelease {
+    pub fn initial_host_status(&self) -> Option<HostStatus> {
+        matches!(self, SpecialRelease::Special1).then_some(HostStatus {
+            // spec:
+            // trident: {}
+            // storage:
+            //     disks:
+            //     - id: disk-0
+            //         device: "@@DISK_DEVICE@@"
+            //         partitionTableType: gpt
+            //         partitions:
+            //         - id: efi-system
+            //             size: "@@EFI_SYSTEM_SIZE@@"
+            //             type: esp
+            //         - id: bios-boot
+            //             size: "@@BIOS_BOOT_SIZE@@"
+            //             type: 21686148-6449-6e6f-7468-656564454649 # BIOS Boot Partition
+            //         - id: usr-data-a
+            //             size: "@@USR_A_SIZE@@"
+            //             type: 5dfbf5f4-2848-4bac-aa5e-0d9a20b745a6 # Flatcar rootfs (USR)
+            //         - id: usr-hash-a
+            //             size: "@@HASH_A_SIZE@@"
+            //             type: usr-verity
+            //         - id: usr-data-b
+            //             size: "@@USR_B_SIZE@@"
+            //             type: 5dfbf5f4-2848-4bac-aa5e-0d9a20b745a6 # Flatcar rootfs (USR)
+            //         - id: usr-hash-b
+            //             size: "@@HASH_B_SIZE@@"
+            //             type: usr-verity
+            //         - id: root-c
+            //             size: "@@ROOT_C_SIZE@@"
+            //             type: linux-generic
+            //         - id: oem
+            //             size: "@@OEM_SIZE@@"
+            //             type: linux-generic
+            //         - id: oem-config
+            //             size: "@@OEM_CONFIG_SIZE@@"
+            //             type: c95dc21a-df0e-4340-8d7b-26cbfa9a03e0 # Flatcar reserved
+            //         - id: flatcar-reserved
+            //             size: "@@FLATCAR_RESERVED_SIZE@@"
+            //             type: c95dc21a-df0e-4340-8d7b-26cbfa9a03e0 # Flatcar reserved
+            //         - id: root
+            //             size: "@@ROOT_SIZE@@"
+            //             type: root
+            //     filesystems:
+            //     - deviceId: efi-system
+            //         mountPoint:
+            //         options: umask=0077
+            //         path: /boot
+            //         type: vfat
+            //     - deviceId: usr-a
+            //         mountPoint:
+            //         options: defaults,ro
+            //         path: /usr
+            //         type: btrfs
+            //     - deviceId: oem
+            //         mountPoint:
+            //         options: defaults
+            //         path: /oem
+            //         type: btrfs
+            //     - deviceId: root
+            //         mountPoint:
+            //         options: defaults
+            //         path: /
+            //         type: ext4
+            //     verity:
+            //     - id: usr
+            //         name: usr
+            //         dataDeviceId: usr-data
+            //         hashDeviceId: usr-hash
+            //     abUpdate:
+            //     volumePairs:
+            //         - id: usr-data
+            //         volumeAId: usr-data-a
+            //         volumeBId: usr-data-b
+            //         - id: usr-hash
+            //         volumeAId: usr-hash-a
+            //         volumeBId: usr-hash-b
+            // servicingState: provisioned
+            // installIndex: 0
+            // abActiveVolume: volume-a
+            // diskUuids:
+            // disk-0: "@@DISK_UUID@@"
+            // partitionPaths:
+            // efi-system: "@@EFI_SYSTEM_PATH@@"
+            // bios-boot: "@@BIOS_BOOT_PATH@@"
+            // usr-data-a: "@@USR_A_PATH@@"
+            // usr-hash-a: "@@HASH_A_PATH@@"
+            // usr-data-b: "@@USR_B_PATH@@"
+            // usr-hash-b: "@@HASH_B_PATH@@"
+            // root-c: "@@ROOT_C_PATH@@"
+            // oem: "@@OEM_PATH@@"
+            // oem-config: "@@OEM_CONFIG_PATH@@"
+            // flatcar-reserved: "@@FLATCAR_RESERVED_PATH@@"
+            // root: "@@ROOT_PATH@@"
+            // tridentVersion: "@@TRIDENT_VERSION@@"
+            ..Default::default()
+        })
+    }
 }
 
 #[cfg(test)]

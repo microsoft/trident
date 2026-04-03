@@ -1,7 +1,6 @@
 use std::{fs, path::Path};
 
 use log::{debug, warn};
-use rust_embed::RustEmbed;
 use sqlite::State;
 
 use trident_api::{
@@ -12,13 +11,9 @@ use trident_api::{
     status::{decode_host_status, HostStatus, TridentVersion},
 };
 
-use osutils::osrelease::{Distro, OsRelease, SpecialRelease};
+use osutils::osrelease::{Distro, OsRelease};
 
 use crate::TRIDENT_SEMVER_VERSION;
-
-#[derive(RustEmbed)]
-#[folder = "assets/"] // Folder containing YAML files
-struct Asset;
 
 pub struct DataStore {
     db: Option<sqlite::Connection>,
@@ -121,17 +116,27 @@ impl DataStore {
         !self.temporary
     }
 
-    pub(crate) fn try_initialize_if_needed(&self) -> Result<(), TridentError> {
+    pub(crate) fn try_initialize_if_needed(&mut self) -> Result<(), TridentError> {
         if self.temporary {
             let os_release = OsRelease::read()
                 .structured(ServicingError::from(DatastoreError::ReadDatastore))?;
             match os_release.get_distro() {
+                // For supported special distro versions, initialize the datastore if it does not exist yet.
                 Distro::Special(version) => {
-                    if version == SpecialRelease::SpecialLegacy {
-                        return Err(TridentError::new(InvalidInputError::HostNotProvisioned)).message("Persistent datastore not found on host, Special Legacy distro is not supported.");
+                    if let Some(initial_host_status) = version.initial_host_status() {
+                        let db = self
+                            .db
+                            .as_ref()
+                            .structured(ServicingError::from(DatastoreError::OpenDatastore))
+                            .message("Database not found.")?;
+                        Self::write_host_status(db, &initial_host_status)?;
+                        self.temporary = false;
+                        Ok(())
+                    } else {
+                        Err(TridentError::new(InvalidInputError::HostNotProvisioned)).message(
+                            "Persistent datastore not found on host, no initial state known.",
+                        )
                     }
-                    // For special distro, initialize the datastore if it does not exist yet.
-                    Ok(())
                 }
                 _ => Err(TridentError::new(InvalidInputError::HostNotProvisioned))
                     .message("Persistent datastore not found on host"),
