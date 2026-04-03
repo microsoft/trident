@@ -507,12 +507,12 @@ mod tests {
             source: new
             type: ext4
             mountPoint: /
-        "# };
+        "#};
         let filesystem: FileSystem = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(filesystem, new_fs);
 
         // Failure: invalid filesystem type specified (unknown)
-        let yaml = indoc::indoc! {r#"#
+        let yaml = indoc::indoc! {r#"
             deviceId: trident
             source: new
             type: abcd
