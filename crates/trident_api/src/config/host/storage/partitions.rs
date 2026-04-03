@@ -225,15 +225,6 @@ impl PartitionType {
     pub fn as_dps(&self) -> DiscoverablePartitionType {
         DiscoverablePartitionType::from(*self)
     }
-
-    /// Returns whether this is an ESP partition type.
-    ///
-    /// This method resolves the partition type to a DiscoverablePartitionType
-    /// before checking if it is an ESP, to allow for more flexible matching
-    /// (e.g. treating unknown types with an ESP UUID as ESP partitions).
-    pub fn is_esp(&self) -> bool {
-        self.as_dps() == DiscoverablePartitionType::Esp
-    }
 }
 
 impl From<PartitionType> for DiscoverablePartitionType {
