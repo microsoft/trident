@@ -52,6 +52,9 @@ pub enum HostConfigurationStaticValidationError {
     #[error("Underlying device of encrypted volume '{encrypted_volume}' must be a partition or a software RAID array")]
     EncryptedVolumeNotPartitionOrRaid { encrypted_volume: String },
 
+    #[error("ESP mount point must be an absolute path")]
+    EspMountPointNotAbsolute,
+
     #[error("No filesystem matches the expected ESP mount point path '{expected}', but one is required for UEFI boot")]
     EspMountPointNotFound { expected: String },
 

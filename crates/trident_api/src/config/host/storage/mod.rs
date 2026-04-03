@@ -226,6 +226,10 @@ impl Storage {
         &self,
         graph: &StorageGraph,
     ) -> Result<(), HostConfigurationStaticValidationError> {
+        if self.esp_mount_path.as_path().is_relative() {
+            return Err(HostConfigurationStaticValidationError::EspMountPointNotAbsolute);
+        }
+
         // Ensure that there is exists a filesystem denoted as being ESP. The
         // graph has already validated that all mount paths are unique, so any()
         // is sufficient.
@@ -3014,5 +3018,20 @@ mod tests {
         });
 
         storage.validate(true).unwrap();
+    }
+
+    /// ESP mount path must be an absolute path.
+    #[test]
+    fn test_validate_esp_mount_path_relative_fail() {
+        let mut storage = get_storage();
+
+        // Set a relative ESP mount path, but keep the filesystem mount point
+        // absolute so graph validation passes and validate_inner is reached.
+        storage.esp_mount_path = "boot/efi".into();
+
+        assert_eq!(
+            storage.validate(true).unwrap_err(),
+            HostConfigurationStaticValidationError::EspMountPointNotAbsolute,
+        );
     }
 }
