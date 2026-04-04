@@ -2622,6 +2622,7 @@ mod tests {
             path: PathBuf::from("/boot"),
             options: MountOptions::empty(),
         });
+        storage.initialize();
         storage.validate(true).unwrap();
     }
 
@@ -2988,6 +2989,7 @@ mod tests {
             options: MountOptions::empty(),
         });
 
+        storage.initialize();
         storage.validate(true).unwrap();
     }
 
@@ -3015,6 +3017,7 @@ mod tests {
             options: MountOptions::empty(),
         });
 
+        storage.initialize();
         storage.validate(true).unwrap();
     }
 
@@ -3026,6 +3029,7 @@ mod tests {
         // Set a relative ESP mount path, but keep the filesystem mount point
         // absolute so graph validation passes and validate_inner is reached.
         storage.esp_mount_path = "boot/efi".into();
+        storage.initialize();
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
