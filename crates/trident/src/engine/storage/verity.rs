@@ -647,16 +647,19 @@ mod functional_test {
                         device_id: Some("root".to_string()),
                         mount_point: Some(ROOT_MOUNT_POINT_PATH.into()),
                         source: FileSystemSource::Image,
+                        is_esp: false,
                     },
                     FileSystem {
                         device_id: Some("boot".to_string()),
                         mount_point: Some("/boot".into()),
                         source: FileSystemSource::Image,
+                        is_esp: false,
                     },
                     FileSystem {
                         device_id: Some("overlay".to_string()),
                         mount_point: Some("/var/lib/trident-overlay".into()),
                         source: FileSystemSource::New(NewFileSystemType::Ext4),
+                        is_esp: false,
                     },
                 ],
                 ..Default::default()

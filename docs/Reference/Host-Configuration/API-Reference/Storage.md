@@ -47,6 +47,16 @@ Encryption configuration.
 | Type           | `Encryption`                  |
 | Link           | [Encryption](./Encryption.md) |
 
+### `espMountPath` (optional)
+
+The mount path for the ESP partition in the Linux distro being serviced. The default is the standard ESP mount point for Azure Linux, but it can be overridden if the Linux distro being serviced uses a different mount point for the ESP partition. This is used to determine which partition is the ESP and to update the bootloader configuration on it.
+
+| Characteristic | Value         |
+| -------------- | ------------- |
+| Type           | `string`      |
+| Default        | `"/boot/efi"` |
+| Format         | `Linux Path`  |
+
 ### `filesystems` (optional)
 
 Filesystems in this host.

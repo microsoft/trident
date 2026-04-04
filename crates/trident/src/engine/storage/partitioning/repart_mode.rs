@@ -15,9 +15,8 @@ use osutils::{
     sfdisk::SfDisk,
     udevadm,
 };
-use sysdefs::partition_types::DiscoverablePartitionType;
 use trident_api::{
-    config::{Disk, PartitionSize, PartitionType},
+    config::{Disk, PartitionSize},
     BlockDeviceId,
 };
 use uuid::Uuid;
@@ -139,7 +138,7 @@ fn add_repart_entries(disk: &Disk, repart: &mut SystemdRepartInvoker) {
             id: partition.id.clone(),
 
             // Inform repart about the partition type.
-            partition_type: config_part_type_into_discoverable(partition.partition_type),
+            partition_type: partition.partition_type.as_dps(),
 
             // Use the configured label if present, otherwise use the partition id.
             label: Some(partition.label.as_ref().unwrap_or(&partition.id).clone()),
@@ -151,24 +150,6 @@ fn add_repart_entries(disk: &Disk, repart: &mut SystemdRepartInvoker) {
             size_max_bytes: size,
             size_min_bytes: size,
         })
-    }
-}
-
-fn config_part_type_into_discoverable(part_type: PartitionType) -> DiscoverablePartitionType {
-    match part_type {
-        PartitionType::Esp => DiscoverablePartitionType::Esp,
-        PartitionType::Home => DiscoverablePartitionType::Home,
-        PartitionType::LinuxGeneric => DiscoverablePartitionType::LinuxGeneric,
-        PartitionType::Root => DiscoverablePartitionType::Root,
-        PartitionType::RootVerity => DiscoverablePartitionType::RootVerity,
-        PartitionType::Srv => DiscoverablePartitionType::Srv,
-        PartitionType::Swap => DiscoverablePartitionType::Swap,
-        PartitionType::Tmp => DiscoverablePartitionType::Tmp,
-        PartitionType::Usr => DiscoverablePartitionType::Usr,
-        PartitionType::UsrVerity => DiscoverablePartitionType::UsrVerity,
-        PartitionType::Var => DiscoverablePartitionType::Var,
-        PartitionType::Xbootldr => DiscoverablePartitionType::Xbootldr,
-        PartitionType::Unknown(uuid) => DiscoverablePartitionType::from_uuid(&uuid),
     }
 }
 
@@ -194,9 +175,10 @@ pub(super) fn wait_for_part_symlink(repart_partition: &RepartPartition) -> Resul
 mod tests {
     use super::*;
 
+    use sysdefs::partition_types::DiscoverablePartitionType;
     use uuid::Uuid;
 
-    use trident_api::config::{Partition, PartitionTableType};
+    use trident_api::config::{Partition, PartitionTableType, PartitionType};
 
     #[test]
     fn test_add_repart_entries() {

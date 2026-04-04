@@ -118,7 +118,7 @@ impl From<&FileSystem> for BlkDevReferrerKind {
 
                 // If it's an OS image, then check the mount point...
                 FileSystemSource::Image => {
-                    if fs.is_esp() {
+                    if fs.is_esp {
                         // If the mount point is the ESP mount point, then it's an
                         // ESP filesystem referrer.
                         BlkDevReferrerKind::FileSystemEsp

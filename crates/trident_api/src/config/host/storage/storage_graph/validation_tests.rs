@@ -41,7 +41,7 @@ fn generic_partition() -> Partition {
 
 #[test]
 fn test_basic_graph() {
-    let mut builder = StorageGraphBuilder::default();
+    let mut builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
     let mut nodes = Vec::new();
 
     let disk = Disk {
@@ -99,6 +99,7 @@ fn test_basic_graph() {
             path: ROOT_MOUNT_POINT_PATH.into(),
             options: MountOptions::empty(),
         }),
+        is_esp: false,
     };
     builder.add_node((&fs).into());
     nodes.push(StorageGraphNode::from(&fs));
@@ -115,7 +116,7 @@ fn test_basic_graph() {
 
 #[test]
 fn test_duplicate_node() {
-    let mut builder = StorageGraphBuilder::default();
+    let mut builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
 
     let disk = Disk {
         id: "disk".into(),
@@ -134,7 +135,7 @@ fn test_duplicate_node() {
 
 #[test]
 fn test_duplicate_mountpoint() {
-    let mut builder = StorageGraphBuilder::default();
+    let mut builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
 
     let fs1 = FileSystem {
         device_id: Some("partition".into()),
@@ -143,6 +144,7 @@ fn test_duplicate_mountpoint() {
             path: ROOT_MOUNT_POINT_PATH.into(),
             options: MountOptions::defaults(),
         }),
+        is_esp: false,
     };
     builder.add_node((&fs1).into());
     builder.add_node((&fs1).into());
@@ -164,7 +166,7 @@ fn test_duplicate_member() {
     };
 
     // Duplicate member in A/B volume
-    let mut builder = StorageGraphBuilder::default();
+    let mut builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
     builder.add_node((&partition).into());
 
     let ab_volume_pair = AbVolumePair {
@@ -184,7 +186,7 @@ fn test_duplicate_member() {
     );
 
     // Duplicate member in RAID volume
-    let mut builder = StorageGraphBuilder::default();
+    let mut builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
     builder.add_node((&partition).into());
 
     let raid_array = SoftwareRaidArray {
@@ -207,7 +209,7 @@ fn test_duplicate_member() {
 
 #[test]
 fn test_filesystem_missing_blkdev_id() {
-    let builder_base = StorageGraphBuilder::default();
+    let builder_base = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
 
     let fs = FileSystem {
         device_id: None,
@@ -216,6 +218,7 @@ fn test_filesystem_missing_blkdev_id() {
             path: ROOT_MOUNT_POINT_PATH.into(),
             options: MountOptions::empty(),
         }),
+        is_esp: false,
     };
     let mut builder = builder_base.clone();
     builder.add_node((&fs).into());
@@ -235,8 +238,9 @@ fn test_filesystem_missing_mp() {
         device_id: None,
         source: FileSystemSource::New(NewFileSystemType::Tmpfs),
         mount_point: None,
+        is_esp: false,
     };
-    let mut builder = StorageGraphBuilder::default();
+    let mut builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
     builder.add_node((&fs).into());
     assert_eq!(
         builder.build().unwrap_err(),
@@ -250,14 +254,14 @@ fn test_filesystem_missing_mp() {
         path: ROOT_MOUNT_POINT_PATH.into(),
         options: MountOptions::defaults(),
     });
-    let mut builder = StorageGraphBuilder::default();
+    let mut builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
     builder.add_node((&fs).into());
     builder.build().unwrap();
 }
 
 #[test]
 fn test_unexpected_blkdev_id() {
-    let mut builder = StorageGraphBuilder::default();
+    let mut builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
 
     let partition = generic_partition();
     builder.add_node((&partition).into());
@@ -270,6 +274,7 @@ fn test_unexpected_blkdev_id() {
             path: ROOT_MOUNT_POINT_PATH.into(),
             options: MountOptions::defaults(),
         }),
+        is_esp: false,
     };
     builder.add_node((&fs).into());
     assert_eq!(
@@ -282,7 +287,7 @@ fn test_unexpected_blkdev_id() {
 
 #[test]
 fn test_member_validity() {
-    let mut builder = StorageGraphBuilder::default();
+    let mut builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
 
     let disk = Disk {
         id: "disk".into(),
@@ -446,7 +451,7 @@ fn test_valid_target_count() {
         label: None,
     };
 
-    let mut base_builder = StorageGraphBuilder::default();
+    let mut base_builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
     base_builder.add_node((&partition1).into());
     base_builder.add_node((&partition2).into());
 
@@ -508,7 +513,7 @@ fn test_valid_target_count() {
 
 #[test]
 fn test_invalid_sizes() {
-    let base_builder = StorageGraphBuilder::default();
+    let base_builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
 
     let partition1 = Partition {
         id: "partition1".into(),
@@ -570,7 +575,7 @@ fn test_invalid_sizes() {
 
 #[test]
 fn test_mount_point_path_not_absolute() {
-    let mut builder = StorageGraphBuilder::default();
+    let mut builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
 
     let partition = generic_partition();
     builder.add_node((&partition).into());
@@ -582,6 +587,7 @@ fn test_mount_point_path_not_absolute() {
             path: "not/absolute".into(),
             options: MountOptions::defaults(),
         }),
+        is_esp: false,
     };
     builder.add_node((&fs).into());
 
@@ -593,7 +599,7 @@ fn test_mount_point_path_not_absolute() {
 
 #[test]
 fn test_nonexistent_ref() {
-    let mut builder = StorageGraphBuilder::default();
+    let mut builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
 
     let fs = FileSystem {
         device_id: Some("partition".into()),
@@ -602,6 +608,7 @@ fn test_nonexistent_ref() {
             path: ROOT_MOUNT_POINT_PATH.into(),
             options: MountOptions::empty(),
         }),
+        is_esp: false,
     };
     builder.add_node((&fs).into());
 
@@ -617,7 +624,7 @@ fn test_nonexistent_ref() {
 
 #[test]
 fn test_nonexistent_ref_raid() {
-    let mut builder = StorageGraphBuilder::default();
+    let mut builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
 
     let partition = generic_partition();
     builder.add_node((&partition).into());
@@ -642,7 +649,7 @@ fn test_nonexistent_ref_raid() {
 
 #[test]
 fn test_unique_field_constraint_error() {
-    let mut builder = StorageGraphBuilder::default();
+    let mut builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
 
     let disk1 = Disk {
         id: "disk1".into(),
@@ -703,7 +710,7 @@ fn test_partition_uuid_uniqueness_constraint() {
         label: None,
     };
 
-    let mut builder = StorageGraphBuilder::default();
+    let mut builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
     builder.add_node((&partition1).into());
     builder.add_node((&partition2).into());
     builder.add_node((&partition3).into());
@@ -711,7 +718,7 @@ fn test_partition_uuid_uniqueness_constraint() {
     // Ensure no error occurs when UUIDs are different
     builder.build().unwrap();
 
-    let mut builder = StorageGraphBuilder::default();
+    let mut builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
     builder.add_node((&partition1).into());
 
     // Now set partition2's UUID to be the SAME as partition1's UUID
@@ -736,7 +743,7 @@ fn test_partition_uuid_uniqueness_constraint() {
 #[test]
 fn test_esp_enforce_partition_type() {
     // Test success case
-    let mut builder = StorageGraphBuilder::default();
+    let mut builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
 
     let mut partition = Partition {
         id: "partition".into(),
@@ -755,12 +762,13 @@ fn test_esp_enforce_partition_type() {
             path: ESP_MOUNT_POINT_PATH.into(),
             options: MountOptions::defaults(),
         }),
+        is_esp: true,
     };
     builder.add_node((&fs).into());
     builder.build().unwrap();
 
     // Test failure case
-    let mut builder = StorageGraphBuilder::default();
+    let mut builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
     // Incorrect type for ESP
     partition.partition_type = PartitionType::LinuxGeneric;
 
@@ -774,7 +782,10 @@ fn test_esp_enforce_partition_type() {
             kind: BlkDevReferrerKind::FileSystemEsp,
             partition_id: "partition".into(),
             partition_type: PartitionType::LinuxGeneric,
-            valid_types: expected_partition_type(Path::new(ESP_MOUNT_POINT_PATH))
+            valid_types: expected_partition_type(
+                Path::new(ESP_MOUNT_POINT_PATH),
+                Path::new(ESP_MOUNT_POINT_PATH)
+            )
         }
     );
 }
@@ -786,7 +797,7 @@ mod verity {
 
     #[test]
     fn test_verity_homogeneous_targets() {
-        let mut builder = StorageGraphBuilder::default();
+        let mut builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
 
         let part1 = Partition {
             id: "part1".into(),
@@ -820,7 +831,7 @@ mod verity {
 
     #[test]
     fn test_verity_heterogeneous_targets_fail() {
-        let mut builder = StorageGraphBuilder::default();
+        let mut builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
 
         let part1 = Partition {
             id: "part1".into(),
@@ -877,7 +888,7 @@ mod verity {
 
     #[test]
     fn test_verity_invalid_partition_type_fail() {
-        let mut builder = StorageGraphBuilder::default();
+        let mut builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
 
         let part1 = Partition {
             id: "part1".into(),
@@ -924,7 +935,7 @@ mod verity {
 
     #[test]
     fn test_verity_invalid_hash_partition_type_fail() {
-        let mut builder = StorageGraphBuilder::default();
+        let mut builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
 
         let part1 = Partition {
             id: "part1".into(),
@@ -971,7 +982,7 @@ mod verity {
 
     #[test]
     fn test_verity_filesystem_duplicate_name() {
-        let mut builder = StorageGraphBuilder::default();
+        let mut builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
 
         let part1 = Partition {
             id: "part1".into(),
@@ -1043,7 +1054,7 @@ mod verity {
 
     #[test]
     fn test_verity_nonexistent_ref() {
-        let mut builder = StorageGraphBuilder::default();
+        let mut builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
 
         let partition = generic_partition();
         builder.add_node((&partition).into());
@@ -1076,7 +1087,7 @@ mod ab {
 
     #[test]
     fn test_ab_volume_heterogeneous_references_fail() {
-        let mut builder = StorageGraphBuilder::default();
+        let mut builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
 
         let part1 = Partition {
             id: "part1".into(),
@@ -1121,7 +1132,7 @@ mod ab {
 
     #[test]
     fn test_ab_volume_partition_size_mismatch() {
-        let mut builder = StorageGraphBuilder::default();
+        let mut builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
 
         let part1 = Partition {
             id: "part1".into(),
@@ -1159,7 +1170,7 @@ mod ab {
 
     #[test]
     fn test_ab_volume_partition_size_grow() {
-        let mut builder = StorageGraphBuilder::default();
+        let mut builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
 
         let part1 = Partition {
             id: "part1".into(),
@@ -1199,7 +1210,7 @@ mod ab {
 
     #[test]
     fn test_ab_volume_partition_type_mismatch() {
-        let mut builder = StorageGraphBuilder::default();
+        let mut builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
 
         let part1 = Partition {
             id: "part1".into(),
@@ -1238,7 +1249,7 @@ mod ab {
 
     #[test]
     fn test_ab_volume_nonexistent_ref() {
-        let mut builder = StorageGraphBuilder::default();
+        let mut builder = StorageGraphBuilder::new(ESP_MOUNT_POINT_PATH);
 
         let partition = generic_partition();
         builder.add_node((&partition).into());

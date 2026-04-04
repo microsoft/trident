@@ -515,6 +515,7 @@ mod tests {
                         }),
                         device_id: Some("efi".into()),
                         source: FileSystemSource::Image,
+                        is_esp: true,
                     },
                     FileSystem {
                         mount_point: Some(MountPoint {
@@ -523,6 +524,7 @@ mod tests {
                         }),
                         device_id: Some("root".into()),
                         source: FileSystemSource::Image,
+                        is_esp: false,
                     },
                     FileSystem {
                         mount_point: Some(MountPoint {
@@ -531,6 +533,7 @@ mod tests {
                         }),
                         device_id: Some("home".into()),
                         source: FileSystemSource::New(NewFileSystemType::Ext4),
+                        is_esp: false,
                     },
                 ],
                 swap: vec![Swap {
@@ -670,11 +673,13 @@ mod tests {
                             }),
                             device_id: Some("efi".into()),
                             source: FileSystemSource::Image,
+                            is_esp: true,
                         },
                         FileSystem {
                             mount_point: Some(MountPoint::from(ROOT_MOUNT_POINT_PATH)),
                             device_id: Some("root".into()),
                             source: FileSystemSource::Image,
+                            is_esp: false,
                         },
                         FileSystem {
                             mount_point: Some(MountPoint {
@@ -683,6 +688,7 @@ mod tests {
                             }),
                             device_id: Some("usr".into()),
                             source: FileSystemSource::Image,
+                            is_esp: false,
                         },
                     ],
                     swap: vec![Swap {

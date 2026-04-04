@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "HostConfiguration",
-  "description": "HostConfiguration is the configuration for a host. Trident agent will use this to configure the host.",
+  "description": "HostConfiguration is the configuration for a host. Trident agent will use this to configure the host.\n\n# INTERNAL Because of serde/schemars limitations, we have to use a separate struct for deserialization. All public documentation is sourced from THIS struct, not the proper HostConfiguration. This struct has the same fields as HostConfiguration, but it is used to perform necessary initialization of certain fields after deserialization and before validation. This struct MUST NOT BE USED outside of the serde implementations of HostConfiguration.",
   "type": "object",
   "properties": {
     "health": {
@@ -825,7 +825,7 @@
       ]
     },
     "PartitionType": {
-      "description": "Partition types as defined by [The Discoverable Partitions Specification](<https://uapi-group.org/specifications/specs/discoverable_partitions_specification/>).",
+      "description": "Partition types as defined by [The Discoverable Partitions Specification](<https://uapi-group.org/specifications/specs/discoverable_partitions_specification/>).\n\n# INTERNAL IT IS NOT RECOMMENDED TO USE THIS ENUM DIRECTLY, but rather the DiscoverablePartitionType enum from sysdefs, which has more flexible matching logic. This enum is primarily intended for serialization and user input parsing, and the `as_dps()` method can be used to convert it to a DiscoverablePartitionType for comparison and other logic.",
       "oneOf": [
         {
           "title": "EFI System Partition",
@@ -1493,6 +1493,12 @@
             }
           ],
           "nullable": true
+        },
+        "espMountPath": {
+          "description": "The mount path for the ESP partition in the Linux distro being serviced. The default is the standard ESP mount point for Azure Linux, but it can be overridden if the Linux distro being serviced uses a different mount point for the ESP partition. This is used to determine which partition is the ESP and to update the bootloader configuration on it.",
+          "default": "/boot/efi",
+          "type": "string",
+          "format": "Linux Path"
         },
         "filesystems": {
           "description": "Filesystems in this host.",
