@@ -320,7 +320,7 @@ fn generate_host_status(
                     options => MountOptions::new(options),
                 },
             }),
-            is_esp: false,
+            is_esp: false, // Will get populated by the initialize call below.
         })
     }
 
@@ -335,6 +335,10 @@ fn generate_host_status(
         .filter_map(|h| h.config.preview_features.as_ref())
         .flat_map(|f| f.iter().cloned())
         .collect();
+
+    // Run initialize to perform any necessary transformations on the Host
+    // Configuration.
+    let host_config = host_config.initialize();
 
     Ok(HostStatus {
         spec: host_config,

@@ -178,7 +178,7 @@ impl HostConfiguration {
     /// other than those resulting from anything that could be categorized as a
     /// parsing error. Actual validation is performed on an immutable self in
     /// the validate() function.
-    fn initialize(mut self) -> Self {
+    pub fn initialize(mut self) -> Self {
         self.storage.initialize();
         self
     }
