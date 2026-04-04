@@ -1,12 +1,17 @@
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
-use anyhow::{bail, Context, Error};
+use anyhow::{bail, ensure, Context, Error};
+use log::warn;
+use sysdefs::partition_types::DiscoverablePartitionType;
 use url::Url;
 
 use trident_api::{
     config::{
-        Disk, FileSystem, FileSystemSource, HostConfiguration, ImageSha384, MountOptions,
-        MountPoint, OsImage as ConfigOsImage, Partition, Storage, VerityDevice,
+        Disk, EspMountPath, FileSystem, FileSystemSource, HostConfiguration, ImageSha384,
+        MountOptions, MountPoint, OsImage as ConfigOsImage, Partition, Storage, VerityDevice,
     },
     constants::{
         ROOT_MOUNT_POINT_PATH, ROOT_VERITY_DEVICE_NAME, USR_MOUNT_POINT_PATH,
@@ -49,6 +54,9 @@ pub(super) fn derive_host_configuration_inner(
     let mut partitions = Vec::new();
     let mut filesystems = Vec::new();
     let mut verity = Vec::new();
+
+    // ESP mount point
+    let mut esp_mount_path: Option<PathBuf> = None;
 
     for part in partitioning_info.partitions.values() {
         let partition_id = partition_ids_by_file
@@ -122,11 +130,46 @@ pub(super) fn derive_host_configuration_inner(
             });
         } else {
             // Add this filesystem directly on top of the partition since there is no verity.
+
+            // If this partition is of type ESP and has a non-empty mount point,
+            // we need to do some additional checks and handling to ensure it is
+            // properly marked as the ESP in the host configuration. We also
+            // want to warn if there are multiple ESP partitions with mount
+            // points since that is unexpected and we will just pick the first
+            // one as the canonical ESP.
+            let is_esp = if part.info.part_type == DiscoverablePartitionType::Esp
+                && filesystem_metadata.mount_point != Path::new("")
+            {
+                ensure!(
+                    filesystem_metadata.part_type == DiscoverablePartitionType::Esp,
+                    "Partition {} '{}' is of type ESP but the associated filesystem metadata has \
+                    partition type '{:?}', expected ESP. This is unexpected since the partition \
+                    type from the GPT data should match the partition type in the filesystem metadata.",
+                    part.info.partition_number,
+                    part.info.name,
+                    filesystem_metadata.part_type,
+                );
+
+                if let Some(existing_esp_mount_path) = &esp_mount_path {
+                    warn!(
+                        "Multiple ESP partitions with mount points found. The first ESP partition \
+                        mounted at '{}' will be used as the canonical ESP.",
+                        existing_esp_mount_path.display(),
+                    );
+                } else {
+                    esp_mount_path = Some(filesystem_metadata.mount_point.clone());
+                }
+
+                true
+            } else {
+                false
+            };
+
             filesystems.push(FileSystem {
                 device_id: Some(partition_id.clone()),
                 mount_point: Some(filesystem_metadata.mount_point.as_path().into()),
                 source: FileSystemSource::Image,
-                is_esp: false,
+                is_esp,
             });
         };
     }
@@ -137,10 +180,20 @@ pub(super) fn derive_host_configuration_inner(
     // them.
     if let Some(extra_filesystem) = filesystems_by_path.into_values().next() {
         bail!(
-                "The filesystem at path '{}' (from '{}') does not correspond to any partition in the GPT data, cannot derive host configuration.",
-                extra_filesystem.mount_point.display(),
-                extra_filesystem.file.path.display()
-            );
+            "The filesystem at path '{}' (from '{}') does not correspond to any partition in the \
+                GPT data, cannot derive host configuration.",
+            extra_filesystem.mount_point.display(),
+            extra_filesystem.file.path.display()
+        );
+    }
+
+    if esp_mount_path.is_none() {
+        warn!(
+            "Failed to find the ESP partition mount point from the COSI metadata. The default ESP \
+            mount point '{}' will be used. If the image actually has an ESP partition, this may \
+            cause boot issues since the ESP won't be properly mounted.",
+            EspMountPath::default().display()
+        );
     }
 
     Ok(HostConfiguration {
@@ -149,6 +202,7 @@ pub(super) fn derive_host_configuration_inner(
             sha384: ImageSha384::Checksum(metadata_sha384.clone()),
         }),
         storage: Storage {
+            esp_mount_path: esp_mount_path.map(EspMountPath::from).unwrap_or_default(),
             disks: vec![Disk {
                 id: "disk-0".to_string(),
                 device: target_disk.as_ref().to_path_buf(),
@@ -346,6 +400,7 @@ mod tests {
         );
 
         let hc = result.unwrap();
+        hc.validate().unwrap();
 
         // Verify image source.
         assert!(hc.image.is_some(), "Image should be present");
@@ -468,6 +523,7 @@ mod tests {
         );
 
         let hc = result.unwrap();
+        hc.validate().unwrap();
         assert_eq!(
             hc.storage.disks[0].partitions.len(),
             2,
@@ -690,6 +746,7 @@ mod tests {
         );
 
         let hc = result.unwrap();
+        hc.validate().unwrap();
 
         // 5 partitions: esp, root, root-hash, usr, usr-hash.
         assert_eq!(

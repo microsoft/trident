@@ -24,7 +24,7 @@ pub use host::{
         raid::{Raid, RaidLevel, SoftwareRaidArray},
         swap::Swap,
         verity::{VerityCorruptionOption, VerityDevice},
-        Storage,
+        EspMountPath, Storage,
     },
     trident::Trident,
     HostConfiguration,

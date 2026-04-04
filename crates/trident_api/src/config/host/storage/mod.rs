@@ -636,9 +636,12 @@ impl Deref for EspMountPath {
     }
 }
 
-impl From<&str> for EspMountPath {
-    fn from(value: &str) -> Self {
-        Self(PathBuf::from(value))
+impl<T> From<T> for EspMountPath
+where
+    T: Into<PathBuf>,
+{
+    fn from(value: T) -> Self {
+        Self(value.into())
     }
 }
 
