@@ -64,6 +64,12 @@ impl Subsystem for ManagementSubsystem {
                 path::join_relative(mount_path, TRIDENT_BINARY_PATH),
             )
             .structured(ServicingError::CopyTridentBinary)?;
+
+            fs::copy(
+                "/usr/bin/launcher",
+                path::join_relative(mount_path, "/usr/bin/launcher"),
+            )
+            .structured(ServicingError::CopyTridentBinary)?;
         }
 
         Ok(())
