@@ -34,10 +34,10 @@ Summary of the complicated locations.
 | 4     | `ESP_MOUNT_POINT_PATH`          | trident_api | [filesystem.rs:353](../crates/trident_api/src/config/host/storage/filesystem.rs#L353)             | `FileSystem::is_esp`          | ~~Pure method~~ Now a field; set by `Storage::initialize()`                               | ✅      |
 | 5     | `ESP_MOUNT_POINT_PATH`          | trident_api | [sample_hc.rs:63](../crates/trident_api/src/samples/sample_hc.rs#L63)                             | `sample_host_configuration`   | Sample data builder (×8 occurrences at L63, L118, L317, L533, L1001, L1217, L1369, L1554) | ☑️[1]   |
 | 5b    | `ESP_MOUNT_POINT_PATH`          | trident_api | [storage/mod.rs:588](../crates/trident_api/src/config/host/storage/mod.rs#L588)                   | `EspMountPath::default_path`  | New: default ESP mount path for `EspMountPath` type                                       | ☑️[2]   |
-| 6     | `ESP_MOUNT_POINT_PATH`          | trident     | [context/filesystem.rs:178](../crates/trident/src/engine/context/filesystem.rs#L178)              | `FileSystemData::is_esp`      | Pure method; checks if filesystem mount equals ESP path                                   |        |
-| 7     | `ESP_MOUNT_POINT_PATH`          | trident     | [context/filesystem.rs:258](../crates/trident/src/engine/context/filesystem.rs#L258)              | `FileSystemDataImage::is_esp` | Pure method; checks ESP mount path equality                                               |        |
-| 20    | `ESP_RELATIVE_MOUNT_POINT_PATH` | trident     | [offline_init/mod.rs:489](../crates/trident/src/offline_init/mod.rs#L489)                         | `execute`                     | Top-level offline-init command handler; no `EngineContext` in call chain                  |        |
-| 23    | `ESP_RELATIVE_MOUNT_POINT_PATH` | trident     | [install_index.rs:15](../crates/trident/src/engine/install_index.rs#L15)                          | `next_install_index`          | Pure utility; finds install index from path                                               |        |
+| 6     | `ESP_MOUNT_POINT_PATH`          | trident     | [context/filesystem.rs:178](../crates/trident/src/engine/context/filesystem.rs#L178)              | `FileSystemData::is_esp`      | Pure method; checks if filesystem mount equals ESP path                                   | ✅      |
+| 7     | `ESP_MOUNT_POINT_PATH`          | trident     | [context/filesystem.rs:258](../crates/trident/src/engine/context/filesystem.rs#L258)              | `FileSystemDataImage::is_esp` | Pure method; checks ESP mount path equality                                               | ✅      |
+| 20    | `ESP_RELATIVE_MOUNT_POINT_PATH` | trident     | [offline_init/mod.rs:489](../crates/trident/src/offline_init/mod.rs#L489)                         | `execute`                     | Top-level offline-init command handler; no `EngineContext` in call chain                  | ☑️[3]   |
+| 23    | `ESP_RELATIVE_MOUNT_POINT_PATH` | trident     | [install_index.rs:15](../crates/trident/src/engine/install_index.rs#L15)                          | `next_install_index`          | Pure utility; finds install index from path                                               | ✅      |
 
 See also:
 
@@ -172,3 +172,4 @@ that use the constant directly.
 1. These are just samples, it makes sense for these to grab the default constant.
 2. This is the default ESP mount path used in Host Configuration. It is the
    value used when no specific override is given.
+3. Offline init is only targeting AzL at this time.
