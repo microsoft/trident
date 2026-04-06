@@ -36,10 +36,10 @@ mod diagnostics;
 mod engine;
 mod grpc_client;
 mod health;
+pub mod init;
 mod io_utils;
 mod logging;
 mod monitor_metrics;
-pub mod offline_init;
 mod orchestrate;
 pub mod osimage;
 mod reboot;
@@ -67,6 +67,7 @@ pub use crate::{
 
 use crate::{
     engine::{ab_update, rollback, runtime_update, storage::rebuild, SUBSYSTEMS},
+    init::cih,
     osimage::OsImage,
     stream::DiskSelectionStrategy,
 };
@@ -573,7 +574,21 @@ impl Trident {
 
         self.execute_and_record_error(datastore, |datastore| {
             // Initialize the datastore if it is not created yet for special distro.
-            datastore.try_initialize_if_needed()?;
+            if !datastore.is_persistent() {
+                if cih::is_cih().structured(InvalidInputError::DeriveHostConfiguration).message("Failed to determine if host is running CIH")? {
+                    let initial_host_status = cih::initial_host_status()
+                                .structured(InvalidInputError::DeriveHostConfiguration)
+                                .message("Failed to initialize host status for CIH")?;
+                    datastore
+                        .with_host_status(|status| {
+                            *status = initial_host_status;
+                        })
+                        .message("Failed to initialize datastore")?;
+                } else {
+                    return Err(TridentError::new(InvalidInputError::HostNotProvisioned))
+                        .message("Persistent datastore not found on host");
+                }
+            }
 
             // The storage section is optional for updates if COSI is in use.
             if host_config.image.is_some() && host_config.storage == Default::default() {

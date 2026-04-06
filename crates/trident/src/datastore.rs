@@ -5,13 +5,10 @@ use sqlite::State;
 
 use trident_api::{
     error::{
-        DatastoreError, InternalError, InvalidInputError, ReportError, ServicingError,
-        TridentError, TridentResultExt,
+        DatastoreError, InternalError, ReportError, ServicingError, TridentError, TridentResultExt,
     },
     status::{decode_host_status, HostStatus, TridentVersion},
 };
-
-use osutils::osrelease::{Distro, OsRelease};
 
 use crate::TRIDENT_SEMVER_VERSION;
 
@@ -114,41 +111,6 @@ impl DataStore {
 
     pub(crate) fn is_persistent(&self) -> bool {
         !self.temporary
-    }
-
-    pub(crate) fn try_initialize_if_needed(&mut self) -> Result<(), TridentError> {
-        if self.temporary {
-            let os_release = OsRelease::read()
-                .structured(ServicingError::from(DatastoreError::ReadDatastore))?;
-            match os_release.get_distro() {
-                // For supported special distro versions, initialize the datastore if it does not exist yet.
-                Distro::Special(version) => {
-                    if let Some(initial_host_status) = version
-                        .initial_host_status()
-                        .structured(ServicingError::from(DatastoreError::InitializeDatastore))
-                        .message(
-                        "Persistent datastore not found on host, unable to create initial state.",
-                    )? {
-                        let db = self
-                            .db
-                            .as_ref()
-                            .structured(ServicingError::from(DatastoreError::OpenDatastore))
-                            .message("Database not found.")?;
-                        Self::write_host_status(db, &initial_host_status)?;
-                        self.temporary = false;
-                        Ok(())
-                    } else {
-                        Err(TridentError::new(InvalidInputError::HostNotProvisioned)).message(
-                            "Persistent datastore not found on host, no initial state known.",
-                        )
-                    }
-                }
-                _ => Err(TridentError::new(InvalidInputError::HostNotProvisioned))
-                    .message("Persistent datastore not found on host"),
-            }
-        } else {
-            Ok(())
-        }
     }
 
     fn make_datastore(path: &Path) -> Result<sqlite::Connection, TridentError> {
