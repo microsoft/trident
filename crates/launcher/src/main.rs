@@ -47,11 +47,7 @@ pub struct HarpoonQueryResponse {
 #[derive(Debug, PartialEq, Eq)]
 pub enum QueryResult {
     NoUpdate,
-    NewDocument {
-        url: Url,
-        version: Version,
-        document: String,
-    },
+    NewDocument { url: Url, version: Version },
 }
 
 #[derive(Parser, Debug)]
@@ -82,8 +78,7 @@ enum Command {
     },
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let args = Args::parse();
 
     if let Some(Ok(journal_logger)) =
@@ -103,6 +98,7 @@ async fn main() {
     match args.trigger {
         Some(Command::Trigger { url, hash }) => {
             debug!("Triggering update with URL: {url} and hash: {hash:?}");
+            //trigger(&url, hash).await.unwrap();
         }
         Some(Command::Run {
             url,
@@ -114,6 +110,18 @@ async fn main() {
         }
         None => {
             debug!("No command provided. Exiting.");
+
+            let r = query_and_fetch_yaml_document(
+                &Url::parse("https://nebraska-poc-ep-cda8e2czfnhahxfk.b01.azurefd.net/v1/update")
+                    .unwrap(),
+                "b0ec8f0d-1c13-4bf4-9efd-ea54464a7098",
+                "west-us",
+                &Version::new(3, 1, 0),
+                IdSource::MachineIdHashed,
+            )
+            .expect("Failed to query Omaha server");
+
+            debug!("Query result: {r:?}");
         }
     }
 }
@@ -134,9 +142,9 @@ async fn trigger(url: &Url, hash: Option<String>) -> Result<(), anyhow::Error> {
             stage: Some(StageUpdateRequest {
                 config: Some(HostConfiguration {
                     config: match hash {
-                        Some(hash) => format!("image:\n  url: {url}\n  hash: {hash}"),
+                        Some(hash) => format!("image:\n  url: {url}\n  sha384: {hash}"),
                         None => {
-                            format!("image:\n  url: {url}")
+                            format!("image:\n  url: {url}\n  sha384: ignored")
                         }
                     },
                 }),
@@ -234,6 +242,13 @@ pub fn query_and_fetch_yaml_document(
 
     let response = omaha::send(url, &request)?;
 
+    debug!(
+        "Received response from Omaha server at '{url}' for app '{app_id}' on track '{track}': {response:#?}",
+        url = url,
+        app_id = app_id,
+        track = track,
+        response = response
+    );
     if response.apps().len() != 1 {
         return Err(HarpoonError::InvalidResponse(
             "Expected exactly one app in response".to_string(),
@@ -258,6 +273,7 @@ pub fn query_and_fetch_yaml_document(
     let update_check = app.update_check().ok_or_else(|| {
         HarpoonError::InvalidResponse("Missing update check in response".to_string())
     })?;
+    debug!("Received update check response: {update_check:#?}");
 
     if update_check.status().is_error() {
         return Err(HarpoonError::QueryError(format!(
@@ -293,44 +309,40 @@ pub fn query_and_fetch_yaml_document(
         ));
     }
 
-    // Download the document and get the URL from which it was downloaded.
-    let response_result = download_document(
-        update_base_url,
-        update_check.packages().first().unwrap(),
-        ".yaml",
-    );
+    let package_url = update_base_url
+        .join(&update_check.packages().first().unwrap().name)
+        .map_err(|err| {
+            HarpoonError::InvalidResponse(format!("Failed to join URL with package name: {err}"))
+        })?;
 
-    // Send an Update Download Finished event to the server as best effort. Do
-    // not fail the query if the event fails to send.
-    if let Err(err) = report_omaha_event(
-        url,
-        app_id,
-        track,
-        OmahaEventType::UpdateDownloadFinished,
-        match response_result {
-            Ok(_) => EventResult::Success,
-            Err(_) => EventResult::Error,
-        },
-        machine_id_source,
-    ) {
-        error!("Failed to send UpdateDownloadFinished event to server at '{url}': {err}");
-    }
-
-    // Now let's check if we successfully downloaded the document.
-    let (document, package_url) = response_result?;
+    // // Send an Update Download Finished event to the server as best effort. Do
+    // // not fail the query if the event fails to send.
+    // if let Err(err) = report_omaha_event(
+    //     url,
+    //     app_id,
+    //     track,
+    //     OmahaEventType::UpdateDownloadFinished,
+    //     match response_result {
+    //         Ok(_) => EventResult::Success,
+    //         Err(_) => EventResult::Error,
+    //     },
+    //     machine_id_source,
+    // ) {
+    //     error!("Failed to send UpdateDownloadFinished event to server at '{url}': {err}");
+    // }
 
     // Now let's report that we dowloaded the update!
     debug!(
         "Downloaded update for app '{}' v{} to v{}",
         app_id, document_version, new_version
     );
+    debug!("Document URL: {package_url}");
 
     Ok(HarpoonQueryResponse {
         session_id: request.session_id(),
         result: QueryResult::NewDocument {
             url: package_url,
             version: new_version.as_version().clone(),
-            document,
         },
     })
 }
