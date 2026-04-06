@@ -213,7 +213,8 @@ fn stage_clean_install(
         &ctx.partition_paths,
         AbVolumeSelection::VolumeA,
     )?;
-    ctx.install_index = install_index::next_install_index(newroot_mount.path())?;
+    ctx.install_index =
+        install_index::next_install_index(newroot_mount.path(), ctx.esp_mount_path())?;
 
     engine::provision(subsystems, &ctx, newroot_mount.path())?;
 
