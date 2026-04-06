@@ -54,12 +54,12 @@ impl SpecialRelease {
             root_blk_device.device_path().display()
         ))?;
 
-        self.inner_initial_host_status(disk_information, &root_blk_device)
+        self.inner_initial_host_status(&disk_information, &root_blk_device)
     }
 
     fn inner_initial_host_status(
         &self,
-        disk_information: SfDisk,
+        disk_information: &SfDisk,
         root_blk_device: &BlockDevice,
     ) -> Result<Option<HostStatus>, Error> {
         let mut disk_uuids: HashMap<BlockDeviceId, Uuid> = HashMap::new();
@@ -234,4 +234,277 @@ impl SpecialRelease {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        lsblk::{BlockDevice, BlockDeviceType, PartitionTableType},
+        sfdisk::{SfDisk, SfDiskLabel, SfDiskUnit, SfPartition},
+    };
+    use sysdefs::{osuuid::OsUuid, partition_types::DiscoverablePartitionType};
+
+    enum TestPartitions {
+        Correct,
+        MissingOne,
+        ExtraOne,
+    }
+    fn create_sfpart(
+        label: String,
+        path: &PathBuf,
+        ptype: DiscoverablePartitionType,
+        uuid: &str,
+        number: usize,
+    ) -> SfPartition {
+        SfPartition {
+            node: path.clone(),
+            start: 0,
+            size_sectors: 0,
+            partition_type: ptype,
+            id: OsUuid::from(uuid),
+            name: Some(label),
+            size: 0,
+            parent: path.clone(),
+            number,
+        }
+    }
+    fn create_sfdisk(first_part_name: &str, test_partitions: TestPartitions) -> SfDisk {
+        let mut partitions = vec![
+            create_sfpart(
+                first_part_name.to_string(),
+                &PathBuf::from("/dev/sda1"),
+                DiscoverablePartitionType::Esp,
+                "123e4567-e89b-12d3-a456-426614174001",
+                1,
+            ),
+            create_sfpart(
+                "bios-boot".to_string(),
+                &PathBuf::from("/dev/sda2"),
+                DiscoverablePartitionType::Unknown(
+                    Uuid::from_str("21686148-6449-6e6f-7468-656564454649").unwrap(),
+                ),
+                "123e4567-e89b-12d3-a456-426614174002",
+                2,
+            ),
+            create_sfpart(
+                "usr-data-a".to_string(),
+                &PathBuf::from("/dev/sda3"),
+                DiscoverablePartitionType::Unknown(
+                    Uuid::from_str("5dfbf5f4-2848-4bac-aa5e-0d9a20b745a6").unwrap(),
+                ),
+                "123e4567-e89b-12d3-a456-426614174003",
+                3,
+            ),
+            create_sfpart(
+                "usr-hash-a".to_string(),
+                &PathBuf::from("/dev/sda4"),
+                DiscoverablePartitionType::UsrVerity,
+                "123e4567-e89b-12d3-a456-426614174004",
+                4,
+            ),
+            create_sfpart(
+                "usr-data-b".to_string(),
+                &PathBuf::from("/dev/sda5"),
+                DiscoverablePartitionType::Unknown(
+                    Uuid::from_str("5dfbf5f4-2848-4bac-aa5e-0d9a20b745a6").unwrap(),
+                ),
+                "123e4567-e89b-12d3-a456-426614174005",
+                5,
+            ),
+            create_sfpart(
+                "usr-hash-b".to_string(),
+                &PathBuf::from("/dev/sda6"),
+                DiscoverablePartitionType::UsrVerity,
+                "123e4567-e89b-12d3-a456-426614174006",
+                6,
+            ),
+            create_sfpart(
+                "root-c".to_string(),
+                &PathBuf::from("/dev/sda7"),
+                DiscoverablePartitionType::LinuxGeneric,
+                "123e4567-e89b-12d3-a456-426614174007",
+                7,
+            ),
+            create_sfpart(
+                "oem".to_string(),
+                &PathBuf::from("/dev/sda8"),
+                DiscoverablePartitionType::LinuxGeneric,
+                "123e4567-e89b-12d3-a456-426614174008",
+                8,
+            ),
+            create_sfpart(
+                "oem-config".to_string(),
+                &PathBuf::from("/dev/sda9"),
+                DiscoverablePartitionType::Unknown(
+                    Uuid::from_str("c95dc21a-df0e-4340-8d7b-26cbfa9a03e0").unwrap(),
+                ),
+                "123e4567-e89b-12d3-a456-426614174009",
+                9,
+            ),
+            create_sfpart(
+                "flatcar-reserved".to_string(),
+                &PathBuf::from("/dev/sda10"),
+                DiscoverablePartitionType::Unknown(
+                    Uuid::from_str("c95dc21a-df0e-4340-8d7b-26cbfa9a03e0").unwrap(),
+                ),
+                "123e4567-e89b-12d3-a456-42661417400A",
+                10,
+            ),
+            create_sfpart(
+                "root".to_string(),
+                &PathBuf::from("/dev/sda11"),
+                DiscoverablePartitionType::Root,
+                "123e4567-e89b-12d3-a456-42661417400B",
+                11,
+            ),
+        ];
+
+        match test_partitions {
+            TestPartitions::Correct => {}
+            TestPartitions::MissingOne => {
+                // Remove a partition
+                partitions.remove(2);
+            }
+            TestPartitions::ExtraOne => {
+                // Add extra partition
+                partitions.push(create_sfpart(
+                    "extra-one".to_string(),
+                    &PathBuf::from("/dev/sda12"),
+                    DiscoverablePartitionType::LinuxGeneric,
+                    "123e4567-e89b-12d3-a456-42661417400C",
+                    12,
+                ));
+            }
+        };
+
+        SfDisk {
+            label: SfDiskLabel::Gpt,
+            id: OsUuid::from("123e4567-e89b-12d3-a456-426614174000"),
+            device: PathBuf::from("/dev/sda"),
+            unit: SfDiskUnit::Sectors,
+            firstlba: 0,
+            lastlba: 0,
+            sectorsize: 512,
+            capacity: 0,
+            partitions,
+        }
+    }
+
+    fn create_blk_device() -> BlockDevice {
+        BlockDevice {
+            name: "/dev/sda".into(),
+            fstype: None,
+            fssize: None,
+            fsuuid: None,
+            ptuuid: Some("5f578d9b-bc43-4778-927b-d7e019586bc5".into()),
+            part_uuid: None,
+            partn: None,
+            size: 17179869184,
+            parent_kernel_name: None,
+            readonly: false,
+            blkdev_type: BlockDeviceType::Disk,
+            mountpoint: None,
+            mountpoints: vec![],
+            partition_table_type: Some(PartitionTableType::Gpt),
+            children: vec![],
+        }
+    }
+
+    #[test]
+    fn test_inner_initial_host_status_success() {
+        let special_release = SpecialRelease::Special1;
+        let sfdisk = create_sfdisk("efi-system", TestPartitions::Correct);
+        let blkdevice = create_blk_device();
+        // Run
+        let init_host_status = special_release
+            .inner_initial_host_status(&sfdisk, &blkdevice)
+            .unwrap();
+        assert!(init_host_status.is_some());
+        assert_eq!(
+            init_host_status.as_ref().unwrap().spec.storage.disks[0].partitions[0].label,
+            Some("efi-system".to_string())
+        );
+        assert_eq!(
+            init_host_status.as_ref().unwrap().spec.storage.disks[0].partitions[1].label,
+            Some("bios-boot".to_string())
+        );
+        assert_eq!(
+            init_host_status.as_ref().unwrap().spec.storage.disks[0].partitions[2].label,
+            Some("usr-data-a".to_string())
+        );
+        assert_eq!(
+            init_host_status.as_ref().unwrap().spec.storage.disks[0].partitions[3].label,
+            Some("usr-hash-a".to_string())
+        );
+        assert_eq!(
+            init_host_status.as_ref().unwrap().spec.storage.disks[0].partitions[4].label,
+            Some("usr-data-b".to_string())
+        );
+        assert_eq!(
+            init_host_status.as_ref().unwrap().spec.storage.disks[0].partitions[5].label,
+            Some("usr-hash-b".to_string())
+        );
+        assert_eq!(
+            init_host_status.as_ref().unwrap().spec.storage.disks[0].partitions[6].label,
+            Some("root-c".to_string())
+        );
+        assert_eq!(
+            init_host_status.as_ref().unwrap().spec.storage.disks[0].partitions[7].label,
+            Some("oem".to_string())
+        );
+        assert_eq!(
+            init_host_status.as_ref().unwrap().spec.storage.disks[0].partitions[8].label,
+            Some("oem-config".to_string())
+        );
+        assert_eq!(
+            init_host_status.as_ref().unwrap().spec.storage.disks[0].partitions[9].label,
+            Some("flatcar-reserved".to_string())
+        );
+        assert_eq!(
+            init_host_status.as_ref().unwrap().spec.storage.disks[0].partitions[10].label,
+            Some("root".to_string())
+        );
+    }
+
+    #[test]
+    fn test_inner_initial_host_status_unexpected_part_name() {
+        let special_release = SpecialRelease::Special1;
+        let wrong_label = "wrong-label";
+        let unexpected_label = create_sfdisk(wrong_label, TestPartitions::Correct);
+        let blkdevice = create_blk_device();
+        // Run
+        assert!(special_release
+            .inner_initial_host_status(&unexpected_label, &blkdevice)
+            .unwrap_err()
+            .root_cause()
+            .to_string()
+            .contains(&format!(
+                "Unexpected partition label '{}' found on root disk",
+                wrong_label
+            )));
+    }
+
+    #[test]
+    fn test_inner_initial_host_status_missing_part() {
+        let special_release = SpecialRelease::Special1;
+        let sfdisk = create_sfdisk("efi-system", TestPartitions::MissingOne);
+        let blkdevice = create_blk_device();
+        // Run
+        assert!(special_release
+            .inner_initial_host_status(&sfdisk, &blkdevice)
+            .unwrap_err()
+            .root_cause()
+            .to_string()
+            .contains("Missing partition labels found on root disk"));
+    }
+
+    #[test]
+    fn test_inner_initial_host_status_extra_part() {
+        let special_release = SpecialRelease::Special1;
+        let sfdisk = create_sfdisk("efi-system", TestPartitions::ExtraOne);
+        let blkdevice = create_blk_device();
+        // Run
+        assert!(special_release
+            .inner_initial_host_status(&sfdisk, &blkdevice)
+            .unwrap_err()
+            .root_cause()
+            .to_string()
+            .contains("Unexpected partition label 'extra-one' found on root disk"));
+    }
 }
