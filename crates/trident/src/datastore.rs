@@ -123,7 +123,12 @@ impl DataStore {
             match os_release.get_distro() {
                 // For supported special distro versions, initialize the datastore if it does not exist yet.
                 Distro::Special(version) => {
-                    if let Some(initial_host_status) = version.initial_host_status() {
+                    if let Some(initial_host_status) = version
+                        .initial_host_status()
+                        .structured(ServicingError::from(DatastoreError::InitializeDatastore))
+                        .message(
+                        "Persistent datastore not found on host, unable to create initial state.",
+                    )? {
                         let db = self
                             .db
                             .as_ref()

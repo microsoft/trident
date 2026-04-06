@@ -35,6 +35,7 @@ pub mod repart;
 pub mod resize2fs;
 pub mod scripts;
 pub mod sfdisk;
+pub mod special_release;
 pub mod swap;
 pub mod systemd;
 pub mod tabfile;
