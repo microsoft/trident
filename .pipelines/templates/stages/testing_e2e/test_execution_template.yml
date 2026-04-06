@@ -60,7 +60,7 @@ stages:
         condition: ne(variables['matrixJson'], '{}')
         variables:
           - name: ob_outputDirectory
-            value: $(Build.SourcesDirectory)/output
+            value: /tmp/output
           - name: ob_artifactBaseName
             value: $(SCENARIO)_$(System.JobAttempt)
           - ${{ if eq(parameters.runtimeType, 'CONTAINER') }}:
@@ -87,7 +87,9 @@ stages:
                 value: false
 
         steps:
+          - template: ../common_tasks/checkout_trident.yml
           - template: ../common_tasks/avoid-pypi-usage.yml
+
           - bash: |
               if [ ${{ variables['tridentConfigurationName'] }} == 'split' ]; then
                 splitInstallerIsoName="trident-split-installer"
@@ -104,6 +106,7 @@ stages:
               tridentTestImageVerity: ${{ variables.verityTestImageName }}
               downloadTridentContainer: ${{ variables.downloadTridentContainer }}
               tridentTestImageUsrVerity: ${{ variables.usrVerityTestImageName }}
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
           - bash: |
               set -eux
 
@@ -115,3 +118,4 @@ stages:
                   --pipeline-run \
                   --iso "./artifacts/iso/$(installerISOName).iso"
             displayName: "🧪 Run E2E Test"
+            workingDirectory: $(TRIDENT_SOURCE_DIR)

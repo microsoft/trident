@@ -158,6 +158,7 @@ os:
     enable:
       - kdump
       - trident
+      - tridentd.socket
 
   users:
     - name: testuser

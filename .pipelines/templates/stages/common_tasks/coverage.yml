@@ -1,4 +1,7 @@
 parameters:
+  - name: tridentSourceDirectory
+    type: string
+
   - name: executeUnitTests
     type: boolean
     default: true
@@ -31,13 +34,15 @@ steps:
   - script: make ut-coverage
     displayName: Collect code coverage
     condition: eq(${{ parameters.executeUnitTests }}, true)
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
 
   - script: make coverage-report
     displayName: Generate code coverage report
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
 
   - task: PublishCodeCoverageResults@2
     inputs:
-      summaryFileLocation: ./target/coverage/cobertura.xml
+      summaryFileLocation: ${{ parameters.tridentSourceDirectory }}/target/coverage/cobertura.xml
       #pathToSources: # string. Path to Source files.
       #reportDirectory: # string. Report directory.
       #additionalCodeCoverageFiles: # string. Additional files.
@@ -52,3 +57,4 @@ steps:
         exit 1
       fi
     displayName: Assert coverage is above baseline
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}

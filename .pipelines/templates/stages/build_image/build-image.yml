@@ -35,7 +35,7 @@ parameters:
 
   - name: dependsOnStage
     type: string
-    default: ''
+    default: ""
 
 stages:
   - stage: TridentTestImg_${{ replace(parameters.imageName, '-', '_') }}
@@ -57,11 +57,12 @@ stages:
           type: linux
 
         variables:
-          ob_outputDirectory: $(Pipeline.Workspace)/s/output
+          ob_outputDirectory: /tmp/output
           ob_artifactBaseName: ${{ parameters.imageName }}
           BASEIMG_AZURE_LINUX_VERSION: "3.0"
 
         steps:
+          - template: ../common_tasks/checkout_trident.yml
           - template: ../common_tasks/avoid-pypi-usage.yml
 
           - task: DownloadPipelineArtifact@2
@@ -73,6 +74,8 @@ stages:
             condition: and(eq('${{ parameters.runtimeEnv }}', 'host'), eq('${{ parameters.dependsOnTrident }}', true))
 
           - template: ../common_tasks/find-base-image-version.yml
+            parameters:
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
 
           - template: .pipelines/templates/build-image.yml@test-images
             parameters:
@@ -80,6 +83,7 @@ stages:
               clones: ${{ parameters.clones }}
               baseimgBuildType: $(BASEIMG_BUILD_TYPE)
               baseimgVersion: $(BASEIMG_VERSION)
+              rpmsVersion: $(RPMS_VERSION)
               azureLinuxVersion: ${{ variables.BASEIMG_AZURE_LINUX_VERSION }}
               micBuildType: ${{ parameters.micBuildType }}
               micVersion: ${{ parameters.micVersion }}

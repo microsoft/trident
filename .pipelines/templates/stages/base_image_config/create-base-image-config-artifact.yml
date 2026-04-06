@@ -11,6 +11,14 @@ parameters:
     type: string
     default: "latestFromBranch"
 
+  - name: rpmsPipelineBuildId
+    type: string
+    default: "latestFromBranch"
+
+  - name: rpmsArm64PipelineBuildId
+    type: string
+    default: "latestFromBranch"
+
   - name: previousStage
     type: string
     default: ''
@@ -27,13 +35,17 @@ stages:
           type: linux
         variables:
           - name: ob_outputDirectory
-            value: "$(Build.SourcesDirectory)/base-image-config"
+            value: "/tmp/base-image-config"
           - name: ob_artifactBaseName
             value: "base-image-config"
         steps:
+          - template: ../common_tasks/checkout_trident.yml
           - template: create-base-image-config-artifact-steps.yml
             parameters:
               baseimgBuildType: ${{ parameters.baseimgBuildType }}
               baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
               baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
+              rpmsPipelineBuildId: ${{ parameters.rpmsPipelineBuildId }}
+              rpmsArm64PipelineBuildId: ${{ parameters.rpmsArm64PipelineBuildId }}
               outputDirectory: $(ob_outputDirectory)
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)

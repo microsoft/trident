@@ -55,6 +55,13 @@ parameters:
     type: string
     default: ""
 
+  # Define whether to run tests using SecureBoot or not. This impacts both
+  # which tests run (many encryption-related tests only run with SecureBoot enabled) and
+  # how the test machines are configured.
+  - name: testSecureBoot
+    type: boolean
+    default: true
+
 stages:
   - ${{ if eq(parameters.testingRun, false) }}:
       - ${{ if eq(parameters.includeQemuGrub, true) }}:
@@ -120,6 +127,7 @@ stages:
               flavor: qemu-grub
               micBuildType: ${{ parameters.micBuildType }}
               micVersion: ${{ parameters.micVersion }}
+              testSecureBoot: ${{ parameters.testSecureBoot }}
       - ${{ if eq(parameters.includeQemu, true) }}:
           - template: testing-template.yml
             parameters:
@@ -137,6 +145,7 @@ stages:
               micBuildType: ${{ parameters.micBuildType }}
               micVersion: ${{ parameters.micVersion }}
               isUki: true
+              testSecureBoot: ${{ parameters.testSecureBoot }}
       - ${{ if eq(parameters.includeUKI, true) }}:
           - template: testing-template.yml
             parameters:
@@ -147,3 +156,4 @@ stages:
               micBuildType: ${{ parameters.micBuildType }}
               micVersion: ${{ parameters.micVersion }}
               isUki: true
+              testSecureBoot: ${{ parameters.testSecureBoot }}

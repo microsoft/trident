@@ -1,6 +1,6 @@
 use std::ops::ControlFlow;
 
-use log::info;
+use log::{debug, info};
 use tonic::{
     transport::{Channel, Endpoint},
     Request, Streaming,
@@ -8,18 +8,21 @@ use tonic::{
 use url::Url;
 
 use trident_proto::v1::{
-    servicing_response::Response as ResponseBody, streaming_service_client::StreamingServiceClient,
-    version_service_client::VersionServiceClient, RebootHandling as ProtoRebootHandling,
-    RebootManagement, RebootStatus, ServicingResponse, StatusCode, StreamDiskRequest,
+    commit_service_client::CommitServiceClient, servicing_response::Response as ResponseBody,
+    streaming_service_client::StreamingServiceClient, update_service_client::UpdateServiceClient,
+    version_service_client::VersionServiceClient, CommitRequest, FinalizeUpdateRequest,
+    HostConfiguration, RebootHandling as ProtoRebootHandling, RebootManagement, RebootStatus,
+    ServicingResponse, StageUpdateRequest, StatusCode, StreamDiskRequest, UpdateRequest,
     VersionRequest,
 };
+
 #[cfg(feature = "grpc-preview")]
 use trident_proto::v1preview::{
-    commit_service_client::CommitServiceClient, install_service_client::InstallServiceClient,
+    install_service_client::InstallServiceClient,
     rebuild_raid_service_client::RebuildRaidServiceClient,
     rollback_service_client::RollbackServiceClient, status_service_client::StatusServiceClient,
-    update_service_client::UpdateServiceClient, validation_service_client::ValidationServiceClient,
-    CommitRequest, FinalizeInstallRequest, HostConfiguration, InstallRequest, StageInstallRequest,
+    validation_service_client::ValidationServiceClient, FinalizeInstallRequest, InstallRequest,
+    StageInstallRequest,
 };
 
 use crate::ExitKind;
@@ -55,14 +58,12 @@ impl From<RebootHandling> for i32 {
 pub struct TridentClient {
     version_client: VersionServiceClient<Channel>,
     streaming_client: StreamingServiceClient<Channel>,
-    #[cfg(feature = "grpc-preview")]
-    install_client: InstallServiceClient<Channel>,
-    #[cfg(feature = "grpc-preview")]
+    update_client: UpdateServiceClient<Channel>,
+    #[allow(dead_code)]
     commit_client: CommitServiceClient<Channel>,
 
-    #[expect(dead_code)]
     #[cfg(feature = "grpc-preview")]
-    update_client: UpdateServiceClient<Channel>,
+    install_client: InstallServiceClient<Channel>,
     #[expect(dead_code)]
     #[cfg(feature = "grpc-preview")]
     rollback_client: RollbackServiceClient<Channel>,
@@ -97,10 +98,6 @@ impl TridentClient {
             #[cfg(feature = "grpc-preview")]
             install_client: InstallServiceClient::new(channel.clone()),
             #[cfg(feature = "grpc-preview")]
-            commit_client: CommitServiceClient::new(channel.clone()),
-            #[cfg(feature = "grpc-preview")]
-            update_client: UpdateServiceClient::new(channel.clone()),
-            #[cfg(feature = "grpc-preview")]
             rollback_client: RollbackServiceClient::new(channel.clone()),
             #[cfg(feature = "grpc-preview")]
             rebuild_raid_client: RebuildRaidServiceClient::new(channel.clone()),
@@ -110,6 +107,8 @@ impl TridentClient {
             validation_client: ValidationServiceClient::new(channel.clone()),
 
             // Prod clients
+            commit_client: CommitServiceClient::new(channel.clone()),
+            update_client: UpdateServiceClient::new(channel.clone()),
             version_client: VersionServiceClient::new(channel.clone()),
             streaming_client: StreamingServiceClient::new(channel),
         })
@@ -158,6 +157,74 @@ impl TridentClient {
         handle_servicing_response_stream(response).await
     }
 
+    pub async fn update(
+        &mut self,
+        host_configuration: impl Into<String>,
+        reboot_handling: RebootHandling,
+    ) -> Result<ExitKind, TridentClientError> {
+        let request = Request::new(UpdateRequest {
+            stage: Some(StageUpdateRequest {
+                config: Some(HostConfiguration {
+                    config: host_configuration.into(),
+                }),
+            }),
+            finalize: Some(FinalizeUpdateRequest {
+                reboot: Some(RebootManagement {
+                    handling: reboot_handling.into(),
+                }),
+            }),
+        });
+
+        let response = self
+            .update_client
+            .update(request)
+            .await
+            .map_err(|e| TridentClientError::RequestError("update".to_string(), e))?
+            .into_inner();
+
+        handle_servicing_response_stream(response).await
+    }
+
+    pub async fn update_stage(
+        &mut self,
+        host_configuration: impl Into<String>,
+    ) -> Result<ExitKind, TridentClientError> {
+        let request = Request::new(StageUpdateRequest {
+            config: Some(HostConfiguration {
+                config: host_configuration.into(),
+            }),
+        });
+
+        let response = self
+            .update_client
+            .update_stage(request)
+            .await
+            .map_err(|e| TridentClientError::RequestError("update_stage".to_string(), e))?
+            .into_inner();
+
+        handle_servicing_response_stream(response).await
+    }
+
+    pub async fn update_finalize(
+        &mut self,
+        reboot_handling: RebootHandling,
+    ) -> Result<ExitKind, TridentClientError> {
+        let request = Request::new(FinalizeUpdateRequest {
+            reboot: Some(RebootManagement {
+                handling: reboot_handling.into(),
+            }),
+        });
+
+        let response = self
+            .update_client
+            .update_finalize(request)
+            .await
+            .map_err(|e| TridentClientError::RequestError("update_finalize".to_string(), e))?
+            .into_inner();
+
+        handle_servicing_response_stream(response).await
+    }
+
     /// Stream an image to the Trident server.
     pub async fn stream_disk(
         &mut self,
@@ -184,11 +251,15 @@ impl TridentClient {
     }
 
     /// Perform a commit on the Trident server.
-    #[cfg(feature = "grpc-preview")]
+    #[allow(dead_code)]
     pub async fn commit(&mut self) -> Result<ExitKind, TridentClientError> {
         let response = self
             .commit_client
-            .commit(Request::new(CommitRequest {}))
+            .commit(Request::new(CommitRequest {
+                reboot: Some(RebootManagement {
+                    handling: RebootHandling::Trident.into(),
+                }),
+            }))
             .await
             .map_err(|e| TridentClientError::RequestError("commit".to_string(), e))?
             .into_inner();
@@ -267,7 +338,14 @@ async fn handle_servicing_response(
             info!("Servicing completed successfully");
 
             match status.reboot_status() {
-                RebootStatus::RebootStarted => info!("A reboot has been started by Trident"),
+                RebootStatus::RebootStarted => {
+                    info!("A reboot has been started by Trident");
+                    // IMPORTANT: This message is used by E2E A/B update tests to validate that
+                    // a reboot was requested. Do not change or remove without updating the
+                    // test constant in:
+                    // tools/storm/utils/trident/trident.go:REBOOTING_LOG_MESSAGE
+                    debug!("Requesting reboot");
+                }
                 RebootStatus::RebootRequired => {
                     info!("A reboot is required to complete the operation");
                     return Ok(ControlFlow::Break(ExitKind::NeedsReboot));

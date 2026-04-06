@@ -10,6 +10,7 @@ parameters:
       - pre
       - rel
       - full-validation
+      - azl-validation
 
   - name: codeCoverage
     type: boolean
@@ -18,9 +19,18 @@ parameters:
   - name: tridentArtifactName
     type: string
 
-  - name: forceTridentRebuild
-    type: boolean
-    default: false
+  # We have three options for how to handle the Trident binaries artifact in this pipeline:
+  # 1) default: use the default behavior for this pipeline
+  # 2) forceBuild: force this pipeline to build the Trident binaries artifact
+  # 3) prebuilt: the Trident binaries artifact already exists
+  - name: tridentBuildOptions
+    displayName: "Trident Build Options"
+    type: string
+    default: default
+    values:
+      - default
+      - forceBuild
+      - prebuilt
 
   - name: osModifierBranch
     type: string
@@ -39,9 +49,9 @@ parameters:
 stages:
   # Build the trident rpms if forceTridentRebuild is true, or if the stage type is
   # one that requires a build (pr, pr-e2e, ci).
-  # 
+  #
   # We do not currently stage arm64 binaries, so always build them for now.
-  - ${{ if or(parameters.forceTridentRebuild, eq(parameters.targetArchitecture, 'arm64'), eq(parameters.stageType, 'pr'), eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
+  - ${{ if or(eq(parameters.tridentBuildOptions, 'forceBuild'), eq(parameters.targetArchitecture, 'arm64'), eq(parameters.stageType, 'pr'), eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
       - template: build-source.yml
         parameters:
           tridentArtifactName: ${{ parameters.tridentArtifactName }}
@@ -55,7 +65,7 @@ stages:
           ${{ else }}:
             osModifierBuildType: preview
 
-  - ${{ elseif eq(parameters.targetArchitecture, 'amd64') }}:
+  - ${{ elseif and(ne(parameters.tridentBuildOptions, 'prebuilt'), eq(parameters.targetArchitecture, 'amd64')) }}:
       - template: ../download_staged/download-staged.yml
         parameters:
           artifactName: ${{ parameters.tridentArtifactName }}

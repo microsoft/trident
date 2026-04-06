@@ -73,6 +73,9 @@ stages:
       baseimgBuildType: ${{ parameters.baseimgBuildType }}
       baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
       baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
+      # Use same build ids for rpms as base image
+      rpmsPipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
+      rpmsArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
 
   # Build tools (Go stuff)
   - template: stages/building_tools/building-tools.yml
@@ -83,7 +86,10 @@ stages:
       stageType: ${{ parameters.stageType }}
       tridentArtifactName: trident-binaries
       codeCoverage: false
-      forceTridentRebuild: ${{ or(eq(parameters.forceTridentRebuild, true), eq(parameters.baseimgBuildType, 'preview')) }}
+      ${{ if or(eq(parameters.forceTridentRebuild, true), eq(parameters.baseimgBuildType, 'preview')) }}:
+        tridentBuildOptions: forceBuild
+      ${{ else }}:
+        tridentBuildOptions: default
       dependsOnStage: CreateBaseImageConfig
       targetArchitecture: amd64
 

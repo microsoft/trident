@@ -47,6 +47,11 @@ def main():
         help="The runtime environment of Trident (e.g., host or container).",
     )
     parser.add_argument(
+        "--skipEncryptionTests",
+        action="store_true",
+        help="Whether to skip encryption tests.",
+    )
+    parser.add_argument(
         "--matrix-name",
         type=str,
         required=True,
@@ -78,6 +83,27 @@ def main():
         )
 
     configurations = target_configurations[args.env][args.runtimeEnv][args.purpose]
+
+    if args.skipEncryptionTests:
+        log.info(f"Skipping encryption tests as per the argument --skipEncryptionTests")
+        non_encryption_configurations = []
+        for config in configurations:
+            configurations_path = Path(configurations_file).parent
+            config_path = (
+                configurations_path
+                / "trident_configurations"
+                / config
+                / "trident-config.yaml"
+            )
+            with open(config_path, "r") as config_file:
+                config_as_yaml = yaml.safe_load(config_file)
+                if config_as_yaml.get("storage", {}).get("encryption", {}):
+                    log.info(
+                        f"Found encryption enabled for configuration {config}, skipping this configuration"
+                    )
+                else:
+                    non_encryption_configurations.append(config)
+        configurations = non_encryption_configurations
 
     matrix = {name: {"configuration": name} for name in configurations}
 

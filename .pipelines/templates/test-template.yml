@@ -97,7 +97,6 @@ stages:
           ${{ if parameters.runDeploymentBMHost }}:
             extraDependsOn: "BaremetalDeploymentTesting_host"
 
-          
   - ${{ if parameters.runServicingTests }}:
       - template: stages/testing_servicing/vm-testing.yml
         parameters:
