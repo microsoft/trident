@@ -171,13 +171,6 @@ impl FileSystemData {
             .is_some_and(|mpp| mpp == Path::new(ROOT_MOUNT_POINT_PATH))
     }
 
-    /// Returns whether the filesystem is the EFI System Partition (ESP), as
-    /// determined by its mount point path.
-    pub fn is_esp(&self) -> bool {
-        self.mount_point_path()
-            .is_some_and(|mpp| mpp == Path::new(ESP_MOUNT_POINT_PATH))
-    }
-
     /// Returns the path of the mount point, if it exists.
     pub fn mount_point_path(&self) -> Option<&Path> {
         match self {
@@ -252,10 +245,6 @@ impl FileSystemDataImage {
 
     pub fn is_read_only(&self) -> bool {
         self.mount_point.options.contains(MOUNT_OPTION_READ_ONLY)
-    }
-
-    pub fn is_esp(&self) -> bool {
-        self.mount_point_path() == Path::new(ESP_MOUNT_POINT_PATH)
     }
 
     pub fn is_root(&self) -> bool {

@@ -343,6 +343,11 @@ impl EngineContext {
             ),
         ))
     }
+
+    /// Returns the mount path of the ESP partition.
+    pub fn esp_mount_path(&self) -> &Path {
+        self.spec.storage.esp_mount_path.as_path()
+    }
 }
 
 #[cfg(test)]

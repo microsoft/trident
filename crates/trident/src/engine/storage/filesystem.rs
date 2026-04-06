@@ -57,7 +57,7 @@ fn block_devices_needing_fs_creation(
             // - AND ESP is NOT on an adopted partition.
             FileSystemData::Image(ifs)
                 if ctx.servicing_type == ServicingType::CleanInstall
-                    && fs.is_esp()
+                    && fs.mount_point_path() == Some(ctx.esp_mount_path())
                     && !ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE)
                     && !ctx
                         .storage_graph
