@@ -62,10 +62,11 @@ fn inner_initial_host_status(
     disk_information: &SfDisk,
     root_blk_device: &BlockDevice,
 ) -> Result<HostStatus, Error> {
+    let disk_name = "disk-0".to_string();
     // Construct the HostStatus disk UUID struct
     let mut disk_uuids: HashMap<BlockDeviceId, Uuid> = HashMap::new();
     disk_uuids.insert(
-        root_blk_device.clone().name,
+        disk_name.clone(),
         root_blk_device
             .clone()
             .ptuuid
@@ -73,17 +74,6 @@ fn inner_initial_host_status(
             .as_uuid()
             .context("Root disk has invalid ptuuid")?,
     );
-
-    // Construct the HostStatus partition paths struct
-    let partition_paths: BTreeMap<BlockDeviceId, PathBuf> = root_blk_device
-        .children
-        .iter()
-        .filter_map(|p| {
-            p.mountpoint
-                .as_ref()
-                .map(|m| (p.name.clone(), PathBuf::from(m)))
-        })
-        .collect();
 
     // Define list of expected partitions based on CIH layout. The Partition field
     // will be filled in with the current Host disk information.
@@ -96,10 +86,14 @@ fn inner_initial_host_status(
     let mut expected_partition_info: Vec<(&str, PartitionType, Option<Partition>)> = vec![
         ("efi-system", PartitionType::Esp, None),
         ("bios-boot", PartitionType::Unknown(bios_uuid), None),
+        // Note: this seems to be user-a currently
         ("usr-data-a", PartitionType::Unknown(usr_uuid), None),
         ("usr-hash-a", PartitionType::UsrVerity, None),
+        // Note: this seems to be user-b currently
         ("usr-data-b", PartitionType::Unknown(usr_uuid), None),
         ("usr-hash-b", PartitionType::UsrVerity, None),
+        ("usr-hash-b", PartitionType::UsrVerity, None),
+        // Note: this doesn't seem to be present in images today
         ("root-c", PartitionType::LinuxGeneric, None),
         ("oem", PartitionType::LinuxGeneric, None),
         (
@@ -107,6 +101,7 @@ fn inner_initial_host_status(
             PartitionType::Unknown(special_reserved_uuid),
             None,
         ),
+        // Note: this doesn't seem to be present in images today
         (
             "flatcar-reserved",
             PartitionType::Unknown(special_reserved_uuid),
@@ -119,8 +114,17 @@ fn inner_initial_host_status(
     // Partition structs for the expected partitions. Also, check
     // to ensure that no label is used more than once.
     for p in disk_information.partitions.iter() {
-        let label = p.name.clone().context("Partition is missing name")?;
-        // for p in root_blk_device.children.iter() {
+        // Ensure that partition has both a name and UUID, as both are expected to
+        // exist and are needed to create the HostStatus.
+        let _partition_uuid = p.id.as_uuid().context("Partition is missing UUID")?;
+        let label = p
+            .name
+            .clone()
+            .context("Partition is missing name")?
+            .to_lowercase();
+        // Find corresponding partition entry in expected_partition_info based on label.
+        //   * ignore case for comparison: expected labels are all lowercase, actual label has
+        //     been lowercased above.
         let expected_partition = expected_partition_info
             .iter_mut()
             .find(|(expected_label, _, _)| *expected_label == label)
@@ -128,7 +132,7 @@ fn inner_initial_host_status(
                 "Unexpected partition label '{}' found on root disk",
                 label
             ))?;
-
+        // Ensure there are not any duplicate partition labels.
         if expected_partition.2.is_some() {
             return Err(anyhow!(
                 "Multiple identical partition labels found on root disk: {:#?}",
@@ -137,13 +141,33 @@ fn inner_initial_host_status(
         }
         trace!("Found partition '{}' on root disk", label);
         expected_partition.2 = Some(Partition {
-            id: p.id.to_string(),
+            id: label.clone(),
             size: PartitionSize::from(p.size),
             partition_type: expected_partition.1,
             label: p.name.clone(),
-            uuid: None,
+            uuid: p.id.as_uuid(),
         });
     }
+
+    // Construct the HostStatus partition paths struct
+    let partition_paths: BTreeMap<BlockDeviceId, PathBuf> = disk_information
+        .partitions
+        .iter()
+        .map(|p| {
+            // Note: Name and id have already been validated in the loop above, so it's safe to unwrap here.
+            //       Also, using lower-case label.
+            (
+                p.name
+                    .clone()
+                    .unwrap_or("unknown".to_string())
+                    .to_lowercase(),
+                PathBuf::from(format!(
+                    "/dev/disk/by-partuuid/{}",
+                    p.id.as_uuid().unwrap_or(Uuid::nil())
+                )),
+            )
+        })
+        .collect();
 
     // Make sure that all the expected CIH partitions were found
     // and Partition structs were created for them. If any were not
@@ -164,7 +188,7 @@ fn inner_initial_host_status(
         spec: HostConfiguration {
             storage: Storage {
                 disks: vec![Disk {
-                    id: "disk-0".to_string(),
+                    id: disk_name.clone(),
                     device: root_blk_device.clone().device_path(),
                     partition_table_type: PartitionTableType::Gpt,
                     partitions: expected_partition_info
