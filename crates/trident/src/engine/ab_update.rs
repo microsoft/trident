@@ -4,7 +4,7 @@ use log::{debug, info, warn};
 
 use osutils::{chroot, container};
 use trident_api::{
-    constants::{internal_params::NO_TRANSITION, ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
+    constants::{internal_params::NO_TRANSITION, ROOT_MOUNT_POINT_PATH},
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{HostStatus, ServicingState, ServicingType},
 };
@@ -156,7 +156,7 @@ pub(crate) fn finalize_update(
     };
 
     let root_path = container::get_host_relative_path(PathBuf::from(ROOT_MOUNT_POINT_PATH))?;
-    let esp_path = container::get_host_relative_path(PathBuf::from(ESP_MOUNT_POINT_PATH))?;
+    let esp_path = container::get_host_relative_path(ctx.esp_mount_path().into())?;
     bootentries::create_and_update_boot_variables(&ctx, &esp_path)?;
     // Analogous to how UEFI variables are configured, finalize must start configuring
     // UEFI fallback, and a successful commit will finish it.

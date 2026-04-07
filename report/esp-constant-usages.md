@@ -73,7 +73,7 @@ Defined in [crates/trident_api/src/constants.rs](../crates/trident_api/src/const
 | 14    | trident     | [image.rs:75](../crates/trident/src/engine/storage/image.rs#L75)                                  | `deploy_images`                                  | ✅   | Maps ESP filesystem in raw COSI storage mode                                            | ✅      |
 | 15    | trident     | [uki.rs:62](../crates/trident/src/engine/boot/uki.rs#L62)                                         | `stage_uki_on_esp`                               | 🔗   | UKI staging path construction; caller has `ctx`                                         |        |
 | 16    | trident     | [uki.rs:148](../crates/trident/src/engine/boot/uki.rs#L148)                                       | `prepare_esp_for_uki`                            | 🔗   | ESP preparation for UKI; caller has `ctx`                                               |        |
-| 17    | trident     | [ab_update.rs:159](../crates/trident/src/engine/ab_update.rs#L159)                                | `finalize_update`                                | ✅   | `ctx` built locally at L144                                                             |        |
+| 17    | trident     | [ab_update.rs:159](../crates/trident/src/engine/ab_update.rs#L159)                                | `finalize_update`                                | ✅   | `ctx` built locally at L144                                                             | ✅      |
 | 18    | trident     | [clean_install.rs:310](../crates/trident/src/engine/clean_install.rs#L310)                        | `finalize_clean_install`                         | ✅   | `ctx` built locally at L283                                                             |        |
 
 ---
