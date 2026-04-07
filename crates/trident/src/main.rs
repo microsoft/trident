@@ -124,9 +124,12 @@ fn run_trident(
                 }
 
                 let agent_config = AgentConfig::load()?;
-                // For non-install commands, we expect the datastore to exist
-                if !matches!(args.command, Commands::Install { .. })
-                    && !agent_config.datastore_path().exists()
+                // For non-install and non-update (update will check and has special handling for CIH
+                // scenario) commands, we expect the datastore to exist
+                if !matches!(
+                    args.command,
+                    Commands::Install { .. } | Commands::Update { .. }
+                ) && !agent_config.datastore_path().exists()
                 {
                     return Err(TridentError::new(InvalidInputError::HostNotProvisioned))
                         .message("Datastore file does not exist");
