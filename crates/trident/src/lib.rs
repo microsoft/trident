@@ -573,9 +573,11 @@ impl Trident {
             ))?;
 
         self.execute_and_record_error(datastore, |datastore| {
+            // Ensure that the datastore exists.
             if !datastore.is_persistent() {
                 if cih::is_cih().structured(InvalidInputError::DeriveHostConfiguration).message("Failed to determine if host is running CIH")? {
-                    // Initialize datastore for CIH if it is not created yet.
+                    // For CIH, initialize datastore with known intitial state when
+                    // the datastore is not already created.
                     let initial_host_status = cih::initial_host_status()
                                 .structured(InvalidInputError::DeriveHostConfiguration)
                                 .message("Failed to initialize host status for CIH")?;
