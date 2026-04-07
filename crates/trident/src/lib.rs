@@ -573,9 +573,9 @@ impl Trident {
             ))?;
 
         self.execute_and_record_error(datastore, |datastore| {
-            // Initialize the datastore if it is not created yet for special distro.
             if !datastore.is_persistent() {
                 if cih::is_cih().structured(InvalidInputError::DeriveHostConfiguration).message("Failed to determine if host is running CIH")? {
+                    // Initialize datastore for CIH if it is not created yet.
                     let initial_host_status = cih::initial_host_status()
                                 .structured(InvalidInputError::DeriveHostConfiguration)
                                 .message("Failed to initialize host status for CIH")?;
@@ -585,6 +585,7 @@ impl Trident {
                         })
                         .message("Failed to initialize datastore")?;
                 } else {
+                    // For non-CIH images, if the datastore is not persistent, return error
                     return Err(TridentError::new(InvalidInputError::HostNotProvisioned))
                         .message("Persistent datastore not found on host");
                 }
