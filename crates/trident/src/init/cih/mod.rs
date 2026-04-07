@@ -27,7 +27,7 @@ use trident_api::{
 /// Returns whether the host is running the CIH image.
 pub fn is_cih() -> Result<bool, Error> {
     let os_release = OsRelease::read().context("Failed to read OS release information")?;
-    Ok(os_release.id == Some("cih".to_string()))
+    Ok(os_release.name == Some("CIH".to_string()))
 }
 
 /// Gathers information about the host's disk and partitions, framed by
