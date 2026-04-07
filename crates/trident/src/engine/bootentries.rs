@@ -286,7 +286,7 @@ fn create_boot_entries_for_rebuilt_esp_partitions(
                                 ctx,
                                 esp_device.clone(),
                                 entry_label.clone(),
-                                Path::new(ESP_MOUNT_POINT_PATH),
+                                ctx.esp_mount_path(),
                                 bootloader_path,
                                 true,
                             )
