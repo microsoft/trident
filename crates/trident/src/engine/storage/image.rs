@@ -10,7 +10,7 @@ use log::{debug, info, trace, warn};
 
 use osutils::{e2fsck, lsblk, resize2fs};
 use trident_api::{
-    constants::{internal_params::RAW_COSI_STORAGE, ESP_MOUNT_POINT_PATH},
+    constants::internal_params::RAW_COSI_STORAGE,
     error::{
         InternalError, InvalidInputError, ReportError, ServicingError, TridentError,
         TridentResultExt,
@@ -72,7 +72,7 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
 
         if ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
             tmp.insert(
-                ESP_MOUNT_POINT_PATH.into(),
+                ctx.esp_mount_path().into(),
                 os_img
                     .esp_filesystem()
                     .structured(InternalError::Internal("COSI doesn't have ESP"))?,
