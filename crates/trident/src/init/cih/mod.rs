@@ -238,20 +238,20 @@ mod tests {
     }
     fn create_sfpart(
         label: String,
-        path: &PathBuf,
-        ptype: DiscoverablePartitionType,
+        path: &Path,
+        partition_type: DiscoverablePartitionType,
         uuid: &str,
         number: usize,
     ) -> SfPartition {
         SfPartition {
-            node: path.clone(),
+            node: path.to_path_buf(),
             start: 0,
             size_sectors: 0,
-            partition_type: ptype,
+            partition_type,
             id: OsUuid::from(uuid),
             name: Some(label),
             size: 0,
-            parent: path.clone(),
+            parent: path.to_path_buf(),
             number,
         }
     }
