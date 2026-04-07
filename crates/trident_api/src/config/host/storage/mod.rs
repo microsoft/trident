@@ -105,15 +105,6 @@ pub struct Storage {
 }
 
 impl Storage {
-    pub(super) fn initialize(&mut self) {
-        // Set the is_esp field for filesystems based on the esp_mount_path
-        for fs in &mut self.filesystems {
-            if let Some(mount_point) = &fs.mount_point {
-                fs.is_esp = mount_point.path == self.esp_mount_path.0;
-            }
-        }
-    }
-
     /// Returns the verity device with the given ID, if it exists.
     pub fn verity_device(&self, device_id: &BlockDeviceId) -> Option<&VerityDevice> {
         self.verity.iter().find(|v| &v.id == device_id)
@@ -2625,7 +2616,6 @@ mod tests {
             path: PathBuf::from("/boot"),
             options: MountOptions::empty(),
         });
-        storage.initialize();
         storage.validate(true).unwrap();
     }
 
@@ -2992,7 +2982,6 @@ mod tests {
             options: MountOptions::empty(),
         });
 
-        storage.initialize();
         storage.validate(true).unwrap();
     }
 
@@ -3020,7 +3009,6 @@ mod tests {
             options: MountOptions::empty(),
         });
 
-        storage.initialize();
         storage.validate(true).unwrap();
     }
 
@@ -3032,7 +3020,6 @@ mod tests {
         // Set a relative ESP mount path, but keep the filesystem mount point
         // absolute so graph validation passes and validate_inner is reached.
         storage.esp_mount_path = "boot/efi".into();
-        storage.initialize();
 
         assert_eq!(
             storage.validate(true).unwrap_err(),
