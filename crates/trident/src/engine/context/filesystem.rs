@@ -8,7 +8,7 @@ use derive_more::From;
 use sysdefs::filesystems::{KernelFilesystemType, NodevFilesystemType, RealFilesystemType};
 use trident_api::{
     config::{FileSystem, FileSystemSource, MountPoint, NewFileSystemType},
-    constants::{ESP_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
+    constants::{MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
     error::{InternalError, ReportError, TridentError, TridentResultExt},
     BlockDeviceId,
 };
@@ -343,7 +343,7 @@ impl EngineContext {
     pub fn esp_filesystem(&self) -> Option<FileSystemDataImage> {
         self.filesystems()
             .filter_map(|fs| fs.as_image().cloned())
-            .find(|img_fs| img_fs.mount_point.path == Path::new(ESP_MOUNT_POINT_PATH))
+            .find(|img_fs| img_fs.mount_point.path == self.esp_mount_path())
     }
 }
 
