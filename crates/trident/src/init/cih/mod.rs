@@ -136,7 +136,7 @@ fn inner_initial_host_status(
         // Ensure there are not any duplicate partition labels.
         if expected_partition.2.is_some() {
             return Err(anyhow!(
-                "Multiple identical partition labels found on root disk: {:#?}",
+                "Multiple identical partition labels found on root disk: '{}'",
                 label
             ));
         }
@@ -279,6 +279,7 @@ mod tests {
         Correct,
         MissingOne,
         ExtraOne,
+        Duplicate,
     }
     fn create_sfpart(
         label: String,
@@ -402,6 +403,18 @@ mod tests {
                     "extra-one".to_string(),
                     &PathBuf::from("/dev/sda12"),
                     DiscoverablePartitionType::LinuxGeneric,
+                    "123e4567-e89b-12d3-a456-42661417400C",
+                    12,
+                ));
+            }
+            TestPartitions::Duplicate => {
+                // Duplicate a partition label
+                partitions.push(create_sfpart(
+                    "usr-data-a".to_string(),
+                    &PathBuf::from("/dev/sda12"),
+                    DiscoverablePartitionType::Unknown(
+                        Uuid::from_str("5dfbf5f4-2848-4bac-aa5e-0d9a20b745a6").unwrap(),
+                    ),
                     "123e4567-e89b-12d3-a456-42661417400C",
                     12,
                 ));
@@ -531,5 +544,17 @@ mod tests {
             .root_cause()
             .to_string()
             .contains("Unexpected partition label 'extra-one' found on root disk"));
+    }
+
+    #[test]
+    fn test_inner_initial_host_status_duplicate_part() {
+        let sfdisk = create_sfdisk("efi-system", TestPartitions::Duplicate);
+        let blkdevice = create_blk_device();
+        // Run
+        assert!(inner_initial_host_status(&sfdisk, &blkdevice)
+            .unwrap_err()
+            .root_cause()
+            .to_string()
+            .contains("Multiple identical partition labels found on root disk: 'usr-data-a'"));
     }
 }
