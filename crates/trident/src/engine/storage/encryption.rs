@@ -721,7 +721,7 @@ mod functional_test {
     use super::*;
 
     use pytest_gen::functional_test;
-    use trident_api::status::ServicingType;
+    use trident_api::{constants::ESP_MOUNT_POINT_PATH, status::ServicingType};
 
     #[functional_test(feature = "helpers")]
     fn test_get_uki_paths() {

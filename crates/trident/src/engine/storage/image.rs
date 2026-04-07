@@ -217,7 +217,9 @@ fn filesystems_from_image(
             continue;
         };
 
-        if img_fs.is_esp() && !ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
+        if img_fs.mount_point_path() == ctx.esp_mount_path()
+            && !ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE)
+        {
             debug!(
                 "Skipping deployment of filesystem [{}] sourced from OS Image, as it is the ESP.",
                 filesystem.description()

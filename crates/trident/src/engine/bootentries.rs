@@ -1024,9 +1024,12 @@ mod functional_test {
         testutils::repart::{OS_DISK_DEVICE_PATH, TEST_DISK_DEVICE_PATH},
     };
     use pytest_gen::functional_test;
-    use trident_api::config::{
-        self, Disk, HostConfiguration, ImageSha384, MountOptions, MountPoint, OsImage, Partition,
-        PartitionSize, PartitionType,
+    use trident_api::{
+        config::{
+            self, Disk, HostConfiguration, ImageSha384, MountOptions, MountPoint, OsImage,
+            Partition, PartitionSize, PartitionType,
+        },
+        constants::ESP_MOUNT_POINT_PATH,
     };
 
     use crate::engine::{storage::partitioning, EngineContext};
