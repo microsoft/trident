@@ -88,10 +88,11 @@ fn inner_initial_host_status(
         ("bios-boot", PartitionType::Unknown(bios_uuid), None),
         // Note: this seems to be user-a currently
         ("usr-data-a", PartitionType::Unknown(usr_uuid), None),
+        // Note: this doesn't seem to be present in images today
         ("usr-hash-a", PartitionType::UsrVerity, None),
         // Note: this seems to be user-b currently
         ("usr-data-b", PartitionType::Unknown(usr_uuid), None),
-        ("usr-hash-b", PartitionType::UsrVerity, None),
+        // Note: this doesn't seem to be present in images today
         ("usr-hash-b", PartitionType::UsrVerity, None),
         // Note: this doesn't seem to be present in images today
         ("root-c", PartitionType::LinuxGeneric, None),
