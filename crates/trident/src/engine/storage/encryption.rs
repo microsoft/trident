@@ -303,7 +303,7 @@ pub fn get_binary_paths_pcrlock(
     }
 
     // Determine ESP path depending on the environment
-    let esp_path = container::get_host_relative_path(PathBuf::from(ESP_MOUNT_POINT_PATH))
+    let esp_path = container::get_host_relative_path(ctx.esp_mount_path().into())
         .unstructured("Failed to get host-relative ESP mount path")?;
 
     // If either PCR 4 or PCR 11 is requested, construct UKI paths
