@@ -25,7 +25,7 @@ use trident_api::{
     config::{HostConfiguration, HostConfigurationStaticValidationError, PartitionSize},
     constants::{
         internal_params::{NO_CLOSE_ENCRYPTED_VOLUMES, REENCRYPT_ON_CLEAN_INSTALL},
-        ESP_EFI_DIRECTORY, ESP_MOUNT_POINT_PATH,
+        ESP_EFI_DIRECTORY,
     },
     error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::AbVolumeSelection,
@@ -452,7 +452,7 @@ fn get_bootloader_paths(
     // If there is mount_path, also construct bootloader paths in the target OS image
     if let Some(mount_path) = mount_path {
         debug!("Constructing bootloader binaries for target OS image during A/B update staging");
-        let esp_dir_path = join_relative(mount_path, ESP_MOUNT_POINT_PATH);
+        let esp_dir_path = join_relative(mount_path, ctx.esp_mount_path());
 
         // Determine label for update boot
         let update_label = get_path_label(ctx.ab_active_volume, false);
@@ -538,7 +538,10 @@ fn sort_binary_paths(binaries_with_labels: Vec<(PathBuf, String)>) -> Vec<PathBu
 mod tests {
     use super::*;
 
-    use trident_api::status::{AbVolumeSelection, ServicingType};
+    use trident_api::{
+        constants::ESP_MOUNT_POINT_PATH,
+        status::{AbVolumeSelection, ServicingType},
+    };
 
     #[test]
     fn test_get_bootloader_paths() {
