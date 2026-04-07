@@ -81,7 +81,8 @@ pub(super) fn update_configs(ctx: &EngineContext, os_modifier_path: &Path) -> Re
     }
 
     // Update GRUB config on the ESP
-    let bootentry_config_path = Path::new(ESP_MOUNT_POINT_PATH)
+    let bootentry_config_path = ctx
+        .esp_mount_path()
         .join(ESP_EFI_DIRECTORY)
         .join(super::get_update_esp_dir_name(ctx).context("Failed to get update install ID")?)
         .join(GRUB2_CONFIG_FILENAME);
