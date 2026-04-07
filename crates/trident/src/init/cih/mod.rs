@@ -24,12 +24,16 @@ use trident_api::{
     BlockDeviceId,
 };
 
+/// Returns whether the host is running the CIH image.
 pub fn is_cih() -> Result<bool, Error> {
     let os_release = OsRelease::read().context("Failed to read OS release information")?;
     Ok(os_release.id == Some("cih".to_string()))
 }
 
-/// Represents the Special release.
+/// Gathers information about the host's disk and partitions, framed by
+/// the expectations of the CIH image layout, and returns a HostStatus
+/// representing the current state of the host. This will be used to
+/// initialize the Trident datastore if it has not been created yet.
 pub fn initial_host_status() -> Result<HostStatus, Error> {
     let blk_devices = lsblk::list().context("Failed to run lsblk")?;
     let root_blk_device = blk_devices
@@ -50,10 +54,15 @@ pub fn initial_host_status() -> Result<HostStatus, Error> {
     inner_initial_host_status(&disk_information, &root_blk_device)
 }
 
+/// Internal function that does much of the work of creating the
+/// initial CIH HostStatus, separated from the code that gets the
+/// Host's current disk information. This allows for easier testing
+/// of the HostStatus creation logic.
 fn inner_initial_host_status(
     disk_information: &SfDisk,
     root_blk_device: &BlockDevice,
 ) -> Result<HostStatus, Error> {
+    // Construct the HostStatus disk UUID struct
     let mut disk_uuids: HashMap<BlockDeviceId, Uuid> = HashMap::new();
     disk_uuids.insert(
         root_blk_device.clone().name,
@@ -65,6 +74,7 @@ fn inner_initial_host_status(
             .context("Root disk has invalid ptuuid")?,
     );
 
+    // Construct the HostStatus partition paths struct
     let partition_paths: BTreeMap<BlockDeviceId, PathBuf> = root_blk_device
         .children
         .iter()
@@ -75,6 +85,8 @@ fn inner_initial_host_status(
         })
         .collect();
 
+    // Define list of expected partitions based on CIH layout. The Partition field
+    // will be filled in with the current Host disk information.
     let bios_uuid = Uuid::from_str("21686148-6449-6e6f-7468-656564454649")
         .context("Failed to parse BIOS Boot Partition UUID")?;
     let usr_uuid = Uuid::from_str("5dfbf5f4-2848-4bac-aa5e-0d9a20b745a6")
@@ -103,6 +115,9 @@ fn inner_initial_host_status(
         ("root", PartitionType::Root, None),
     ];
 
+    // Iterate through the current Host's partitions and create
+    // Partition structs for the expected partitions. Also, check
+    // to ensure that no label is used more than once.
     for p in disk_information.partitions.iter() {
         let label = p.name.clone().context("Partition is missing name")?;
         // for p in root_blk_device.children.iter() {
@@ -129,6 +144,10 @@ fn inner_initial_host_status(
             uuid: None,
         });
     }
+
+    // Make sure that all the expected CIH partitions were found
+    // and Partition structs were created for them. If any were not
+    // created, return error.
     let missing_partitions: Vec<_> = expected_partition_info
         .iter()
         .filter(|k| k.2.is_none())
