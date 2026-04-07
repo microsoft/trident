@@ -15,7 +15,7 @@ use osutils::{
 use trident_api::{
     config::Selinux,
     constants::{
-        BOOT_MOUNT_POINT_PATH, ESP_EFI_DIRECTORY, ESP_MOUNT_POINT_PATH, GRUB2_CONFIG_FILENAME,
+        BOOT_MOUNT_POINT_PATH, ESP_EFI_DIRECTORY, GRUB2_CONFIG_FILENAME,
         GRUB2_CONFIG_RELATIVE_PATH, ROOT_MOUNT_POINT_PATH, TRIDENT_OVERLAY_LOWER_RELATIVE_PATH,
         TRIDENT_OVERLAY_UPPER_RELATIVE_PATH, TRIDENT_OVERLAY_WORK_RELATIVE_PATH,
     },
@@ -286,6 +286,7 @@ pub(crate) mod functional_test {
             self, AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, HostConfiguration,
             MountOptions, MountPoint, Partition, PartitionType, RaidLevel, SoftwareRaidArray,
         },
+        constants::ESP_MOUNT_POINT_PATH,
         status::ServicingType,
     };
 

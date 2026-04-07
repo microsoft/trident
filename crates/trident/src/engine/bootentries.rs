@@ -12,7 +12,7 @@ use osutils::{
 
 use trident_api::{
     config::RaidLevel,
-    constants::{self, internal_params::VIRTDEPLOY_BOOT_ORDER_WORKAROUND, ESP_MOUNT_POINT_PATH},
+    constants::{self, internal_params::VIRTDEPLOY_BOOT_ORDER_WORKAROUND},
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, ServicingType},
     BlockDeviceId,
