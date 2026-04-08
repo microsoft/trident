@@ -2823,14 +2823,15 @@ mod tests {
         storage.validate(true).unwrap();
     }
 
-    /// Validates that the ESP partition can be mounted at `/boot` instead
+    /// Validates that the ESP filesystem can be mounted at `/boot` instead
     /// of the default `/boot/efi`.
     ///
     /// The test modifies the base storage configuration to mount the ESP
     /// at `/boot` and removes the separate `/boot` filesystem to avoid
-    /// conflicts. This exercises the DFS-based `esp_mount_points()` lookup
-    /// which identifies the ESP by its partition type rather than by
-    /// a hardcoded mount path.
+    /// conflicts. The `is_esp` flag (set during deserialization via
+    /// `overrideEspMount`, or automatically at the default `/boot/efi`
+    /// path) remains true, so validation accepts the non-default mount
+    /// path.
     #[test]
     fn test_validate_esp_mounted_at_boot_pass() {
         let mut storage = get_storage();
@@ -2854,12 +2855,12 @@ mod tests {
         storage.validate(true).unwrap();
     }
 
-    /// Validates that the ESP partition can be mounted at `/efi` instead
+    /// Validates that the ESP filesystem can be mounted at `/efi` instead
     /// of the default `/boot/efi`.
     ///
-    /// Similar to the `/boot` test, this exercises an alternate valid ESP
-    /// mount path. The partition type–based lookup in `esp_mount_points()`
-    /// must correctly identify the ESP regardless of the actual mount path.
+    /// Similar to the `/boot` test, this verifies that validation accepts
+    /// a non-default ESP mount path as long as the filesystem's `is_esp`
+    /// flag is set.
     #[test]
     fn test_validate_esp_mounted_at_efi_pass() {
         let mut storage = get_storage();
