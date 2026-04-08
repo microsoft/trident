@@ -841,7 +841,10 @@ mod tests {
             mountPoint: /boot/efi
         "#};
         let fs: FileSystem = serde_yaml::from_str(yaml).unwrap();
-        assert!(fs.is_esp, "UseDefault with /boot/efi should set is_esp = true");
+        assert!(
+            fs.is_esp,
+            "UseDefault with /boot/efi should set is_esp = true"
+        );
 
         // Round-trip: serializing and re-deserializing should preserve is_esp
         let reserialized = serde_yaml::to_string(&fs).unwrap();
@@ -854,7 +857,10 @@ mod tests {
             mountPoint: /data
         "#};
         let fs: FileSystem = serde_yaml::from_str(yaml).unwrap();
-        assert!(!fs.is_esp, "UseDefault with /data should set is_esp = false");
+        assert!(
+            !fs.is_esp,
+            "UseDefault with /data should set is_esp = false"
+        );
 
         let reserialized = serde_yaml::to_string(&fs).unwrap();
         let roundtripped: FileSystem = serde_yaml::from_str(&reserialized).unwrap();
