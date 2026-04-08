@@ -830,4 +830,71 @@ mod tests {
             ]
         );
     }
+
+    /// Tests that `override_esp_mount` correctly influences `is_esp` during
+    /// deserialization and that serialization round-trips preserve the behavior.
+    #[test]
+    fn test_override_esp_mount_serde() {
+        // UseDefault + default ESP path → is_esp == true
+        let yaml = indoc::indoc! {r#"
+            deviceId: esp
+            mountPoint: /boot/efi
+        "#};
+        let fs: FileSystem = serde_yaml::from_str(yaml).unwrap();
+        assert!(fs.is_esp, "UseDefault with /boot/efi should set is_esp = true");
+
+        // Round-trip: serializing and re-deserializing should preserve is_esp
+        let reserialized = serde_yaml::to_string(&fs).unwrap();
+        let roundtripped: FileSystem = serde_yaml::from_str(&reserialized).unwrap();
+        assert_eq!(fs, roundtripped);
+
+        // UseDefault + non-default path → is_esp == false
+        let yaml = indoc::indoc! {r#"
+            deviceId: data
+            mountPoint: /data
+        "#};
+        let fs: FileSystem = serde_yaml::from_str(yaml).unwrap();
+        assert!(!fs.is_esp, "UseDefault with /data should set is_esp = false");
+
+        let reserialized = serde_yaml::to_string(&fs).unwrap();
+        let roundtripped: FileSystem = serde_yaml::from_str(&reserialized).unwrap();
+        assert_eq!(fs, roundtripped);
+
+        // Override + non-default path → is_esp == true
+        let yaml = indoc::indoc! {r#"
+            deviceId: esp
+            overrideEspMount: override
+            mountPoint: /efi
+        "#};
+        let fs: FileSystem = serde_yaml::from_str(yaml).unwrap();
+        assert!(fs.is_esp, "Override with /efi should set is_esp = true");
+
+        let reserialized = serde_yaml::to_string(&fs).unwrap();
+        let roundtripped: FileSystem = serde_yaml::from_str(&reserialized).unwrap();
+        assert_eq!(fs, roundtripped);
+
+        // Block + default ESP path → is_esp == false
+        let yaml = indoc::indoc! {r#"
+            deviceId: not-esp
+            overrideEspMount: block
+            mountPoint: /boot/efi
+        "#};
+        let fs: FileSystem = serde_yaml::from_str(yaml).unwrap();
+        assert!(!fs.is_esp, "Block with /boot/efi should set is_esp = false");
+
+        let reserialized = serde_yaml::to_string(&fs).unwrap();
+        let roundtripped: FileSystem = serde_yaml::from_str(&reserialized).unwrap();
+        assert_eq!(fs, roundtripped);
+
+        // Override without mount_point → error
+        let yaml = indoc::indoc! {r#"
+            deviceId: esp
+            overrideEspMount: override
+        "#};
+        let err = serde_yaml::from_str::<FileSystem>(yaml).unwrap_err();
+        assert!(
+            err.to_string().contains("override_esp_mount"),
+            "Override without mount_point should error: {err}"
+        );
+    }
 }
