@@ -491,9 +491,9 @@ mod tests {
     /// filesystem entries.
     #[test]
     fn test_derive_host_configuration_inner_partition_without_filesystem() {
-        let (raw_gpt, disk_size, lba_size) = create_mock_gpt_disk(&[
-            ("esp", 64 * 1024),
-            ("swap", 128 * 1024), // No filesystem for this
+        let (raw_gpt, disk_size, lba_size) = create_mock_gpt_disk_typed(&[
+            ("esp", 64 * 1024, gpt::partition_types::EFI),
+            ("swap", 128 * 1024, gpt::partition_types::LINUX_SWAP), // No filesystem for this
         ]);
 
         let disk_info = DiskInfo {
@@ -523,7 +523,7 @@ mod tests {
             os_release: OsRelease::default(),
             os_packages: None,
             images: vec![
-                sample_image("images/esp.img.zst", "/boot/efi"),
+                sample_esp_image("images/esp.img.zst", "/boot/efi"),
                 // No image for swap partition
             ],
             bootloader: None,
@@ -676,12 +676,12 @@ mod tests {
     /// - Non-verity partitions (ESP) are handled normally alongside verity ones.
     #[test]
     fn test_derive_host_configuration_inner_with_verity() {
-        let (raw_gpt, disk_size, lba_size) = create_mock_gpt_disk(&[
-            ("esp", 64 * 1024),
-            ("root", 256 * 1024),
-            ("root-hash", 32 * 1024),
-            ("usr", 256 * 1024),
-            ("usr-hash", 32 * 1024),
+        let (raw_gpt, disk_size, lba_size) = create_mock_gpt_disk_typed(&[
+            ("esp", 64 * 1024, gpt::partition_types::EFI),
+            ("root", 256 * 1024, gpt::partition_types::LINUX_FS),
+            ("root-hash", 32 * 1024, gpt::partition_types::LINUX_FS),
+            ("usr", 256 * 1024, gpt::partition_types::LINUX_FS),
+            ("usr-hash", 32 * 1024, gpt::partition_types::LINUX_FS),
         ]);
 
         let disk_info = DiskInfo {
@@ -749,7 +749,7 @@ mod tests {
             os_release: OsRelease::default(),
             os_packages: None,
             images: vec![
-                sample_image("images/esp.img.zst", "/boot/efi"),
+                sample_esp_image("images/esp.img.zst", "/boot/efi"),
                 root_image,
                 usr_image,
             ],
