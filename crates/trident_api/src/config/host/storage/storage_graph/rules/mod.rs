@@ -24,13 +24,13 @@ use crate::config::{
 
 use super::{
     cardinality::ValidCardinality,
-    containers::{AllowBlockList, ItemList},
+    containers::AllowBlockList,
     graph::{NodeIndex, StoragePetgraph},
     node::StorageGraphNode,
     references::SpecialReferenceKind,
     types::{
         BlkDevKind, BlkDevKindFlag, BlkDevReferrerKind, BlkDevReferrerKindFlag,
-        FileSystemSourceKind, HostConfigBlockDevice,
+        HostConfigBlockDevice,
     },
 };
 

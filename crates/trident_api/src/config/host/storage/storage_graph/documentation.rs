@@ -1,15 +1,7 @@
-use super::types::{BlkDevKind, BlkDevReferrerKind, FileSystemSourceKind};
+use super::types::{BlkDevKind, BlkDevReferrerKind};
 
 impl BlkDevReferrerKind {
     /// Returns whether a referrer kind should be included in the public
-    /// documentation.
-    pub fn document(&self) -> bool {
-        true
-    }
-}
-
-impl FileSystemSourceKind {
-    /// Returns whether a file system source kind should be included in the public
     /// documentation.
     pub fn document(&self) -> bool {
         true
