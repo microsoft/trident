@@ -185,6 +185,12 @@ impl Storage {
 
         // If storage configuration is requested, then
         if *self != Storage::default() {
+            let Some(esp_mount) = graph.esp_mount_path() else {
+                return Err(HostConfigurationStaticValidationError::EspMountPointNotFound);
+            };
+
+            validate_volume_presence(&graph, esp_mount)?;
+
             // /var/tmp must not be on a read-only volume
             self.validate_writable_mount_points()?;
         }

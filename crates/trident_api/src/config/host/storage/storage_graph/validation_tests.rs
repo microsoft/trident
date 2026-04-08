@@ -1,10 +1,9 @@
 //! A module for testing the storage graph validation.
 
-// Currently the folloowing error variants are not produceable and therefore are not tested:
-// - StorageGraphBuildError::InvalidPartitionTypeSpecial
+// Currently the following error variants are not currently produceable and
+// therefore are not tested:
 // - StorageGraphBuildError::InvalidSpecialReferenceKind
 // - StorageGraphBuildError::InvalidTargets
-// - StorageGraphBuildError::ReferrerForbiddenSharing
 // - StorageGraphBuildError::PartitionTypeMismatchSpecial
 
 use std::path::Path;
@@ -790,6 +789,88 @@ fn test_esp_enforce_partition_type() {
     );
 }
 
+#[test]
+fn test_filesystem_esp_multiple_fail() {
+    let mut builder = StorageGraphBuilder::default();
+
+    let partition1 = Partition {
+        id: "esp1".into(),
+        size: PartitionSize::Fixed(4096.into()),
+        partition_type: PartitionType::Esp,
+        uuid: None,
+        label: None,
+    };
+    builder.add_node((&partition1).into());
+
+    let partition2 = Partition {
+        id: "esp2".into(),
+        size: PartitionSize::Fixed(4096.into()),
+        partition_type: PartitionType::Esp,
+        uuid: None,
+        label: None,
+    };
+    builder.add_node((&partition2).into());
+
+    let fs1 = FileSystem {
+        device_id: Some("esp1".into()),
+        source: FileSystemSource::Image,
+        mount_point: Some(MountPoint {
+            path: ESP_MOUNT_POINT_PATH.into(),
+            options: MountOptions::defaults(),
+        }),
+        is_esp: true,
+    };
+    builder.add_node((&fs1).into());
+
+    let fs2 = FileSystem {
+        device_id: Some("esp2".into()),
+        source: FileSystemSource::Image,
+        mount_point: Some(MountPoint {
+            path: "/efi".into(),
+            options: MountOptions::defaults(),
+        }),
+        is_esp: true,
+    };
+    builder.add_node((&fs2).into());
+
+    assert_eq!(
+        builder.build().unwrap_err(),
+        StorageGraphBuildError::FilesystemEspMultiple {
+            fs_desc_a: fs1.description(),
+            fs_desc_b: fs2.description(),
+        }
+    );
+}
+
+#[test]
+fn test_filesystem_esp_without_mount_point_fail() {
+    let mut builder = StorageGraphBuilder::default();
+
+    let partition = Partition {
+        id: "esp".into(),
+        size: PartitionSize::Fixed(4096.into()),
+        partition_type: PartitionType::Esp,
+        uuid: None,
+        label: None,
+    };
+    builder.add_node((&partition).into());
+
+    let fs = FileSystem {
+        device_id: Some("esp".into()),
+        source: FileSystemSource::Image,
+        mount_point: None,
+        is_esp: true,
+    };
+    builder.add_node((&fs).into());
+
+    assert_eq!(
+        builder.build().unwrap_err(),
+        StorageGraphBuildError::FilesystemEspWithoutMountPoint {
+            fs_desc: fs.description(),
+        }
+    );
+}
+
 mod verity {
     use super::*;
 
@@ -1075,6 +1156,50 @@ mod verity {
                 node_identifier: StorageGraphNode::from(&verity_dev).identifier(),
                 kind: BlkDevReferrerKind::VerityDevice,
                 target_id: "nonexistent-hash-partition".into()
+            }
+        );
+    }
+
+    #[test]
+    fn test_verity_invalid_hash_partition_type_mismatch_fail() {
+        let mut builder = StorageGraphBuilder::default();
+
+        // Data device is Root, so the expected hash type is RootVerity.
+        let part1 = Partition {
+            id: "part1".into(),
+            size: PartitionSize::Fixed(4096.into()),
+            partition_type: PartitionType::Root,
+            uuid: None,
+            label: None,
+        };
+        builder.add_node((&part1).into());
+
+        // Hash device is UsrVerity instead of the expected RootVerity.
+        let part2 = Partition {
+            id: "part2".into(),
+            size: PartitionSize::Fixed(4096.into()),
+            partition_type: PartitionType::UsrVerity,
+            uuid: None,
+            label: None,
+        };
+        builder.add_node((&part2).into());
+
+        let verity_dev = VerityDevice {
+            id: "verity_dev".into(),
+            data_device_id: "part1".into(),
+            hash_device_id: "part2".into(),
+            name: "verity".into(),
+            ..Default::default()
+        };
+        builder.add_node((&verity_dev).into());
+
+        assert_eq!(
+            builder.build().unwrap_err(),
+            StorageGraphBuildError::InvalidVerityHashPartitionType {
+                node_id: "verity".into(),
+                data_dev_partition_type: PartitionType::Root,
+                expected_type: PartitionType::RootVerity,
+                hash_dev_partition_type: PartitionType::UsrVerity,
             }
         );
     }

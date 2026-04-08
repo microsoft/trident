@@ -66,9 +66,6 @@ pub enum StorageGraphBuildError {
         fs_desc_b: String,
     },
 
-    #[error("Filesystem [{fs_desc}] is marked as ESP, but it is not sourced from an image")]
-    FilesystemEspNotBackedByImage { fs_desc: String },
-
     #[error("Filesystem [{fs_desc}] is marked as ESP, but does not have a mount point")]
     FilesystemEspWithoutMountPoint { fs_desc: String },
 
