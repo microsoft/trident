@@ -58,9 +58,6 @@ pub enum StorageGraphBuildError {
         target_id: BlockDeviceId,
     },
 
-    #[error("ESP Filesystem could not be found. One filesystem must be marked as the ESP.")]
-    FilesystemEspNotFound,
-
     #[error(
         "Multiple filesystems are marked as ESP: [{fs_desc_a}] and [{fs_desc_b}]. Only one filesystem can be the ESP."
     )]

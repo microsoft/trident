@@ -784,7 +784,7 @@ fn test_esp_enforce_partition_type() {
             partition_type: PartitionType::LinuxGeneric,
             valid_types: expected_partition_type(
                 Path::new(ESP_MOUNT_POINT_PATH),
-                Path::new(ESP_MOUNT_POINT_PATH)
+                Some(Path::new(ESP_MOUNT_POINT_PATH))
             )
         }
     );

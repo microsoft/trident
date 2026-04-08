@@ -94,7 +94,7 @@ pub(super) fn check_partition_size_homogeneity(
 /// types.
 pub(super) fn check_partition_types(
     graph: &StoragePetgraph,
-    esp_mount_path: &Path,
+    esp_mount_path: Option<&Path>,
 ) -> Result<(), StorageGraphBuildError> {
     // Get all top-level nodes
     for (node_idx, node) in get_top_level_nodes(graph) {

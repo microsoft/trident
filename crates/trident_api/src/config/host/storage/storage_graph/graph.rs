@@ -30,7 +30,7 @@ pub(super) type StoragePetgraph = Graph<StorageGraphNode, ReferenceKind, Directe
 #[derive(Debug, Clone, Default)]
 pub struct StorageGraph {
     pub(super) inner: StoragePetgraph,
-    pub(super) esp_mount_path: PathBuf,
+    pub(super) esp_mount_path: Option<PathBuf>,
 }
 
 impl StorageGraph {
@@ -91,8 +91,8 @@ impl StorageGraph {
     }
 
     /// Returns the ESP mount path.
-    pub fn esp_mount_path(&self) -> &Path {
-        &self.esp_mount_path
+    pub fn esp_mount_path(&self) -> Option<&Path> {
+        self.esp_mount_path.as_deref()
     }
 
     /// Returns whether the root filesystem is on a verity device.

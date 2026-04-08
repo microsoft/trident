@@ -501,10 +501,10 @@ impl SpecialReferenceKind {
 /// Returns the expected partition type for a given mount point, if any.
 pub fn expected_partition_type(
     mount_point: &Path,
-    esp_mount_path: &Path,
+    esp_mount_path: Option<&Path>,
 ) -> AllowBlockList<PartitionType> {
-    if mount_point == esp_mount_path {
-        return AllowBlockList::new_allow([PartitionType::Esp]);
+    if esp_mount_path.is_some_and(|esp_path| mount_point == esp_path) {
+        return AllowBlockList::Allow(vec![PartitionType::Esp]);
     }
 
     AllowBlockList::Any

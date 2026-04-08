@@ -7,13 +7,13 @@ use petgraph::visit::IntoNodeReferences;
 
 use crate::config::{
     host::storage::storage_graph::{error::StorageGraphBuildError, graph::StoragePetgraph},
-    FileSystem, FileSystemSource,
+    FileSystem,
 };
 
 /// Checks all basic properties of filesystems and ensures mount points are unique.
 pub(super) fn check_filesystems(
     graph: &StoragePetgraph,
-) -> Result<PathBuf, StorageGraphBuildError> {
+) -> Result<Option<PathBuf>, StorageGraphBuildError> {
     // Create a set of all unique mount points
     let mut unique_mount_points = BTreeSet::new();
 
@@ -89,19 +89,7 @@ pub(super) fn check_filesystems(
         }
     }
 
-    // Extract the ESP FS data for additional checks.
-    let Some((esp_fs, esp_mount_path)) = esp_filesystem else {
-        return Err(StorageGraphBuildError::FilesystemEspNotFound);
-    };
-
-    // The ESP must be backed by an image.
-    if esp_fs.source != FileSystemSource::Image {
-        return Err(StorageGraphBuildError::FilesystemEspNotBackedByImage {
-            fs_desc: esp_fs.description(),
-        });
-    }
-
-    Ok(esp_mount_path.to_path_buf())
+    Ok(esp_filesystem.map(|(_, mount_point)| mount_point.to_path_buf()))
 }
 
 /// Checks all basic properties of a single filesystem.

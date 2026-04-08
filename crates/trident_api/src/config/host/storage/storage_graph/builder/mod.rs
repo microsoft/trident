@@ -110,7 +110,7 @@ impl StorageGraphBuilder {
 
         // Check partition type homogeneity
         trace!("Checking partition type homogeneity");
-        partition::check_partition_types(&graph, &esp_mount_path)?;
+        partition::check_partition_types(&graph, esp_mount_path.as_deref())?;
 
         // Check that verity devices have congruent partition types
         trace!("Checking verity partition types");

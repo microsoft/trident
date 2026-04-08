@@ -542,7 +542,8 @@ mod tests {
         );
         assert!(
             result.is_ok(),
-            "Should succeed with partition without filesystem"
+            "Should succeed with partition without filesystem: {:?}",
+            result.unwrap_err()
         );
 
         let hc = result.unwrap();
@@ -768,7 +769,7 @@ mod tests {
         assert!(
             result.is_ok(),
             "derive_host_configuration_inner with verity should succeed: {:?}",
-            result.err()
+            result.unwrap_err()
         );
 
         let hc = result.unwrap();
