@@ -10,8 +10,8 @@ use url::Url;
 
 use trident_api::{
     config::{
-        Disk, EspMountPath, FileSystem, FileSystemSource, HostConfiguration, ImageSha384,
-        MountOptions, MountPoint, OsImage as ConfigOsImage, Partition, Storage, VerityDevice,
+        Disk, FileSystem, FileSystemSource, HostConfiguration, ImageSha384, MountOptions,
+        MountPoint, OsImage as ConfigOsImage, Partition, Storage, VerityDevice,
     },
     constants::{
         ROOT_MOUNT_POINT_PATH, ROOT_VERITY_DEVICE_NAME, USR_MOUNT_POINT_PATH,
@@ -188,11 +188,9 @@ pub(super) fn derive_host_configuration_inner(
     }
 
     if esp_mount_path.is_none() {
-        warn!(
-            "Failed to find the ESP partition mount point from the COSI metadata. The default ESP \
-            mount point '{}' will be used. If the image actually has an ESP partition, this may \
-            cause boot issues since the ESP won't be properly mounted.",
-            EspMountPath::default().display()
+        bail!(
+            "No ESP filesystem with a mount point was found. An ESP filesystem is required and must \
+            have a non-empty mount point."
         );
     }
 
@@ -202,7 +200,6 @@ pub(super) fn derive_host_configuration_inner(
             sha384: ImageSha384::Checksum(metadata_sha384.clone()),
         }),
         storage: Storage {
-            esp_mount_path: esp_mount_path.map(EspMountPath::from).unwrap_or_default(),
             disks: vec![Disk {
                 id: "disk-0".to_string(),
                 device: target_disk.as_ref().to_path_buf(),
@@ -976,13 +973,6 @@ mod tests {
         )
         .unwrap();
         hc.validate().unwrap();
-
-        // The first ESP partition's mount point should be picked.
-        assert_eq!(
-            hc.storage.esp_mount_path.as_path(),
-            Path::new("/boot/efi"),
-            "The first ESP partition's mount point should be the canonical ESP path"
-        );
 
         // Only the first ESP filesystem should be marked as ESP, even though both have EFI partition types in the GPT.
         assert!(
