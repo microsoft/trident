@@ -23,22 +23,6 @@ pub(super) fn expects_block_device_id() -> RuleDefinition {
     }
 }
 
-pub(super) fn sources() -> RuleDefinition {
-    let mut table = MdTable::new(vec!["Filesystem Type", "Valid Source Type"]);
-    for fs in get_filesystems() {
-        table.add_row(vec![
-            fs.to_string(),
-            fs.valid_sources().filter(|s| s.document()).to_string(),
-        ]);
-    }
-
-    RuleDefinition {
-        name: "Filesystem Source Requirements",
-        template: "filesystem_sources",
-        body: table.render(),
-    }
-}
-
 pub(super) fn can_be_mounted() -> RuleDefinition {
     let mut table = MdTable::new(vec!["Filesystem Type", "Mount Point"]);
     for fs in get_filesystems() {

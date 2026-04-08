@@ -112,24 +112,6 @@ impl FileSystemType {
         !self.expects_block_device_id()
     }
 
-    /// Returns the valid sources for a filesystem type.
-    pub fn valid_sources(&self) -> ItemList<FileSystemSourceKind> {
-        match self {
-            Self::Ext4 | Self::Xfs | Self::Ntfs => ItemList(vec![
-                FileSystemSourceKind::New,
-                FileSystemSourceKind::Adopted,
-                FileSystemSourceKind::Image,
-            ]),
-            Self::Vfat => ItemList(vec![
-                FileSystemSourceKind::New,
-                FileSystemSourceKind::Adopted,
-                FileSystemSourceKind::Image,
-            ]),
-            Self::Iso9660 | Self::Auto => ItemList(vec![FileSystemSourceKind::Adopted]),
-            Self::Tmpfs | Self::Overlay => ItemList(vec![FileSystemSourceKind::New]),
-        }
-    }
-
     /// Returns whether a filesystem type can be used with verity.
     pub fn supports_verity(&self) -> bool {
         match self {

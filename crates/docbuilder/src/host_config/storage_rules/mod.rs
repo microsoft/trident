@@ -77,7 +77,6 @@ pub(crate) fn write(dest: Option<impl AsRef<Path>>) -> Result<(), Error> {
         referrers::reference_sharing_table(),
         devices::unique_field_value_constraints(),
         filesystems::expects_block_device_id(),
-        filesystems::sources(),
         filesystems::can_be_mounted(),
         filesystems::verity_support(),
         referrers::homogeneous_references(),
