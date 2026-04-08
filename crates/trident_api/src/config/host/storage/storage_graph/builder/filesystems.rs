@@ -1,14 +1,19 @@
-use std::{collections::BTreeSet, path::Path};
+use std::{
+    collections::BTreeSet,
+    path::{Path, PathBuf},
+};
 
 use petgraph::visit::IntoNodeReferences;
 
 use crate::config::{
     host::storage::storage_graph::{error::StorageGraphBuildError, graph::StoragePetgraph},
-    FileSystem,
+    FileSystem, FileSystemSource,
 };
 
 /// Checks all basic properties of filesystems and ensures mount points are unique.
-pub(super) fn check_filesystems(graph: &StoragePetgraph) -> Result<(), StorageGraphBuildError> {
+pub(super) fn check_filesystems(
+    graph: &StoragePetgraph,
+) -> Result<PathBuf, StorageGraphBuildError> {
     // Create a set of all unique mount points
     let mut unique_mount_points = BTreeSet::new();
 
@@ -31,6 +36,10 @@ pub(super) fn check_filesystems(graph: &StoragePetgraph) -> Result<(), StorageGr
         Ok(())
     };
 
+    // Keep track of the ESP filesystem and its mount point (if any) to perform
+    // additional checks later.
+    let mut esp_filesystem: Option<(&FileSystem, &Path)> = None;
+
     // Iterate over all nodes that are filesystems and check their mount points.
     for (_, node) in graph.node_references() {
         let Some(fs) = node.as_filesystem() else {
@@ -38,12 +47,61 @@ pub(super) fn check_filesystems(graph: &StoragePetgraph) -> Result<(), StorageGr
         };
 
         check_filesystem(fs)?;
-        if let Some(mount_point) = &fs.mount_point {
-            check_insert_mount_point(&mount_point.path)?;
+        match (&fs.mount_point, fs.is_esp) {
+            (None, true) => {
+                // A filesystem without mount point CANNOT be the ESP.
+                return Err(StorageGraphBuildError::FilesystemEspWithoutMountPoint {
+                    fs_desc: fs.description(),
+                });
+            }
+
+            (None, false) => {
+                // Nothing to check.
+            }
+
+            (Some(mount_point), is_esp) => {
+                // Check if the mount point is unique.
+                check_insert_mount_point(&mount_point.path)?;
+
+                // If this filesystem is the ESP, we need to check if the mount
+                // point is valid.
+                match (esp_filesystem.as_ref(), is_esp) {
+                    (None, true) => {
+                        // This is the first ESP we've seen, so we store it for
+                        // later checks.
+                        esp_filesystem = Some((fs, mount_point.path.as_path()));
+                    }
+                    (Some((other_fs, _)), true) => {
+                        // We already have one ESP defined, throw a multiple ESP
+                        // error.
+                        return Err(StorageGraphBuildError::FilesystemEspMultiple {
+                            fs_desc_a: other_fs.description(),
+                            fs_desc_b: fs.description(),
+                        });
+                    }
+
+                    (_, false) => {
+                        // This filesystem is not the ESP, so we don't need to
+                        // check its mount point against the ESP.
+                    }
+                }
+            }
         }
     }
 
-    Ok(())
+    // Extract the ESP FS data for additional checks.
+    let Some((esp_fs, esp_mount_path)) = esp_filesystem else {
+        return Err(StorageGraphBuildError::FilesystemEspNotFound);
+    };
+
+    // The ESP must be backed by an image.
+    if esp_fs.source != FileSystemSource::Image {
+        return Err(StorageGraphBuildError::FilesystemEspNotBackedByImage {
+            fs_desc: esp_fs.description(),
+        });
+    }
+
+    Ok(esp_mount_path.to_path_buf())
 }
 
 /// Checks all basic properties of a single filesystem.

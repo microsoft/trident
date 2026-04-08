@@ -56,6 +56,8 @@ pub mod fs_serde {
         NewFileSystemType,
     };
 
+    const DEFAULT_ESP_MOUNT_PATH: &str = ESP_MOUNT_POINT_PATH;
+
     #[derive(Deserialize, Serialize, Default, PartialEq, Eq)]
     #[serde(rename_all = "kebab-case", deny_unknown_fields)]
     #[cfg_attr(feature = "schemars", derive(JsonSchema))]
@@ -179,7 +181,7 @@ pub mod fs_serde {
                 OverrideEspMount::UseDefault => value
                     .mount_point
                     .as_ref()
-                    .is_some_and(|mp| mp.path.eq(ESP_MOUNT_POINT_PATH)),
+                    .is_some_and(|mp| mp.path.eq(DEFAULT_ESP_MOUNT_PATH)),
                 OverrideEspMount::Override => true,
                 OverrideEspMount::Block => false,
             };
@@ -201,7 +203,7 @@ pub mod fs_serde {
                 // point path matches the default ESP mount point path and
                 // whether the is_esp field is set to true.
 
-                match (mp.path.eq(ESP_MOUNT_POINT_PATH), value.is_esp) {
+                match (mp.path.eq(DEFAULT_ESP_MOUNT_PATH), value.is_esp) {
                     // Mount point matches default ESP mount point path and
                     // is_esp is true, so we use the default behavior.
                     (true, true) => OverrideEspMount::UseDefault,
@@ -406,7 +408,14 @@ impl FileSystem {
                     .to_owned(),
                 ),
             ),
-            // ("type", Some(self.fs_type.to_string())),
+            (
+                "type",
+                match &self.source {
+                    FileSystemSource::New(fs_type) => Some(fs_type.to_string()),
+                    FileSystemSource::Adopted(fs_type) => Some(fs_type.to_string()),
+                    FileSystemSource::Image => None,
+                },
+            ),
             ("dev", self.device_id.clone()),
             (
                 "mnt",
@@ -414,6 +423,7 @@ impl FileSystem {
                     .as_ref()
                     .map(|mp| mp.path.to_string_lossy().to_string()),
             ),
+            ("is_esp", self.is_esp.then_some("true".to_owned())),
         ]
         .into_iter()
         .filter_map(|(k, v)| v.map(|v| format!("{k}:{v}")))
