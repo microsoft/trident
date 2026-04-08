@@ -102,12 +102,6 @@ fn inner_initial_host_status(
             PartitionType::Unknown(special_reserved_uuid),
             None,
         ),
-        // Note: this doesn't seem to be present in images today
-        (
-            "flatcar-reserved",
-            PartitionType::Unknown(special_reserved_uuid),
-            None,
-        ),
         ("root", PartitionType::Root, None),
     ];
 
@@ -374,15 +368,6 @@ mod tests {
                 9,
             ),
             create_sfpart(
-                "flatcar-reserved".to_string(),
-                &PathBuf::from("/dev/sda10"),
-                DiscoverablePartitionType::Unknown(
-                    Uuid::from_str("c95dc21a-df0e-4340-8d7b-26cbfa9a03e0").unwrap(),
-                ),
-                "123e4567-e89b-12d3-a456-42661417400A",
-                10,
-            ),
-            create_sfpart(
                 "root".to_string(),
                 &PathBuf::from("/dev/sda11"),
                 DiscoverablePartitionType::Root,
@@ -498,10 +483,6 @@ mod tests {
         );
         assert_eq!(
             init_host_status.spec.storage.disks[0].partitions[9].label,
-            Some("flatcar-reserved".to_string())
-        );
-        assert_eq!(
-            init_host_status.spec.storage.disks[0].partitions[10].label,
             Some("root".to_string())
         );
     }
