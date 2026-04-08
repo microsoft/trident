@@ -52,8 +52,8 @@ pub mod fs_serde {
     use crate::schema_helpers::block_device_id_schema;
 
     use super::{
-        AdoptedFileSystemType, FileSystem, FileSystemSource, FileSystemType, MountPoint,
-        NewFileSystemType,
+        AdoptedFileSystemType, FileSystem, FileSystemSource as FileSystemSourceInner,
+        FileSystemType, MountPoint, NewFileSystemType,
     };
 
     const DEFAULT_ESP_MOUNT_PATH: &str = ESP_MOUNT_POINT_PATH;
@@ -61,7 +61,7 @@ pub mod fs_serde {
     #[derive(Deserialize, Serialize, Default, PartialEq, Eq)]
     #[serde(rename_all = "kebab-case", deny_unknown_fields)]
     #[cfg_attr(feature = "schemars", derive(JsonSchema))]
-    enum FileSystemSourceSerde {
+    enum FileSystemSource {
         /// # New
         ///
         /// Create a new file system.
@@ -92,7 +92,7 @@ pub mod fs_serde {
         ///
         /// If not specified, this field will default to image.
         #[serde(default, skip_serializing_if = "is_default")]
-        source: FileSystemSourceSerde,
+        source: FileSystemSource,
 
         /// The type of the file system.
         ///
@@ -158,22 +158,22 @@ pub mod fs_serde {
 
         fn try_from(value: FileSystemSerde) -> Result<super::FileSystem, Self::Error> {
             let source = match value.source {
-                FileSystemSourceSerde::New => FileSystemSource::New(match value.fs_type {
+                FileSystemSource::New => FileSystemSourceInner::New(match value.fs_type {
                     None => NewFileSystemType::default(),
                     Some(fs_type) => NewFileSystemType::try_from(fs_type)
                         .context("Invalid new filesystem type")?,
                 }),
-                FileSystemSourceSerde::Adopted => FileSystemSource::Adopted(match value.fs_type {
+                FileSystemSource::Adopted => FileSystemSourceInner::Adopted(match value.fs_type {
                     None => AdoptedFileSystemType::default(),
                     Some(fs_type) => AdoptedFileSystemType::try_from(fs_type)
                         .context("Invalid adopted filesystem type")?,
                 }),
-                FileSystemSourceSerde::Image => {
+                FileSystemSource::Image => {
                     ensure!(
                         value.fs_type.is_none(),
                         "Filesystem type cannot be specified for image filesystems"
                     );
-                    FileSystemSource::Image
+                    FileSystemSourceInner::Image
                 }
             };
 
@@ -237,13 +237,13 @@ pub mod fs_serde {
             FileSystemSerde {
                 device_id: value.device_id,
                 source: match &value.source {
-                    FileSystemSource::Image => FileSystemSourceSerde::Image,
-                    FileSystemSource::New(_) => FileSystemSourceSerde::New,
-                    FileSystemSource::Adopted(_) => FileSystemSourceSerde::Adopted,
+                    FileSystemSourceInner::Image => FileSystemSource::Image,
+                    FileSystemSourceInner::New(_) => FileSystemSource::New,
+                    FileSystemSourceInner::Adopted(_) => FileSystemSource::Adopted,
                 },
                 fs_type: match &value.source {
-                    FileSystemSource::New(fs_type) => Some((*fs_type).into()),
-                    FileSystemSource::Adopted(fs_type) => Some((*fs_type).into()),
+                    FileSystemSourceInner::New(fs_type) => Some((*fs_type).into()),
+                    FileSystemSourceInner::Adopted(fs_type) => Some((*fs_type).into()),
                     _ => None,
                 },
                 mount_point: value.mount_point,
