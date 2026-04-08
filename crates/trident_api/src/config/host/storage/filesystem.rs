@@ -182,7 +182,13 @@ pub mod fs_serde {
                     .mount_point
                     .as_ref()
                     .is_some_and(|mp| mp.path.eq(DEFAULT_ESP_MOUNT_PATH)),
-                OverrideEspMount::Override => true,
+                OverrideEspMount::Override => {
+                    ensure!(
+                        value.mount_point.is_some(),
+                        "override_esp_mount cannot be set to Override when mount_point is not specified"
+                    );
+                    true
+                }
                 OverrideEspMount::Block => false,
             };
 
