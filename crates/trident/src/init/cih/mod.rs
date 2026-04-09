@@ -190,6 +190,7 @@ fn inner_initial_host_status(
                             options: MountOptions("umask=0077".to_string()),
                         }),
                         source: FileSystemSource::Image,
+                        is_esp: true,
                     },
                     FileSystem {
                         device_id: Some("usr-a".to_string()),
@@ -198,6 +199,7 @@ fn inner_initial_host_status(
                             options: MountOptions("defaults,ro".to_string()),
                         }),
                         source: FileSystemSource::Image,
+                        is_esp: false,
                     },
                     FileSystem {
                         device_id: Some("oem".to_string()),
@@ -206,6 +208,7 @@ fn inner_initial_host_status(
                             options: MountOptions("defaults".to_string()),
                         }),
                         source: FileSystemSource::Image,
+                        is_esp: false,
                     },
                     FileSystem {
                         device_id: Some("root".to_string()),
@@ -214,6 +217,7 @@ fn inner_initial_host_status(
                             options: MountOptions("defaults".to_string()),
                         }),
                         source: FileSystemSource::Image,
+                        is_esp: false,
                     },
                 ],
                 verity: vec![VerityDevice {
