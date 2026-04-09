@@ -10,7 +10,7 @@
 //! <img src="../logo.jpeg" width="200px"/>
 //!
 
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use futures::StreamExt;
 use log::{debug, error, info, trace, warn, LevelFilter};
 use semver::Version;
@@ -290,23 +290,6 @@ pub fn query_and_fetch_yaml_document(
             HarpoonError::InvalidResponse(format!("Failed to join URL with package name: {err}"))
         })?;
 
-    // // Send an Update Download Finished event to the server as best effort. Do
-    // // not fail the query if the event fails to send.
-    // if let Err(err) = report_omaha_event(
-    //     url,
-    //     app_id,
-    //     track,
-    //     OmahaEventType::UpdateDownloadFinished,
-    //     match response_result {
-    //         Ok(_) => EventResult::Success,
-    //         Err(_) => EventResult::Error,
-    //     },
-    //     machine_id_source,
-    // ) {
-    //     error!("Failed to send UpdateDownloadFinished event to server at '{url}': {err}");
-    // }
-
-    // Now let's report that we dowloaded the update!
     debug!(
         "Downloaded update for app '{}' v{} to v{}",
         app_id, document_version, new_version
@@ -330,6 +313,7 @@ pub fn query_and_fetch_yaml_document(
 ///
 /// The function takes care of validating the size and hash of the downloaded
 /// document.
+#[allow(unused)]
 fn download_document(
     update_base_url: &Url,
     package: &Package,
@@ -490,15 +474,6 @@ mod tests {
 
         let data = "test document";
 
-        let document_mock = server
-            .mock("GET", "/test.yaml")
-            .with_body(data)
-            .with_header("content-length", &data.len().to_string())
-            .with_header("content-type", "text/plain")
-            .with_status(200)
-            .expect(1)
-            .create();
-
         let omaha_mock = server
             .mock("POST", "/")
             .with_status(200)
@@ -528,20 +503,20 @@ mod tests {
             .expect(1)
             .create();
 
-        let omaha_event_mock = server
-            .mock("POST", "/")
-            .with_status(200)
-            .match_body(Matcher::Regex(".*<event.*".to_string()))
-            .with_body(indoc::indoc! {r#"
-                <?xml version="1.0" encoding="UTF-8"?>
-                <response protocol="3.0" server="mock">
-                    <daystart elapsed_seconds="0"/>
-                    <app appid="test" status="ok">
-                        <event status="ok"/>
-                    </app>
-                </response>"#})
-            .expect(1)
-            .create();
+        // let omaha_event_mock = server
+        //     .mock("POST", "/")
+        //     .with_status(200)
+        //     .match_body(Matcher::Regex(".*<event.*".to_string()))
+        //     .with_body(indoc::indoc! {r#"
+        //         <?xml version="1.0" encoding="UTF-8"?>
+        //         <response protocol="3.0" server="mock">
+        //             <daystart elapsed_seconds="0"/>
+        //             <app appid="test" status="ok">
+        //                 <event status="ok"/>
+        //             </app>
+        //         </response>"#})
+        //     .expect(1)
+        //     .create();
 
         let response = query_and_fetch_yaml_document(
             &Url::parse(&server.url()).unwrap(),
@@ -552,9 +527,8 @@ mod tests {
         )
         .unwrap();
 
-        document_mock.assert();
         omaha_mock.assert();
-        omaha_event_mock.assert();
+        // omaha_event_mock.assert();
 
         assert_eq!(
             response,
@@ -563,7 +537,6 @@ mod tests {
                 result: QueryResult::NewDocument {
                     url: Url::parse(&format!("{}/test.yaml", server.url())).unwrap(),
                     version: Version::new(1, 0, 0),
-                    document: data.to_string(),
                 }
             }
         );
