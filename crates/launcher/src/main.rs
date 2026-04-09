@@ -56,6 +56,10 @@ struct Args {
     /// Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
     #[arg(global = true, short, long, default_value_t = LevelFilter::Debug)]
     pub verbosity: LevelFilter,
+
+    /// The URL of the Nebraska server to use. Likely should end in `/v1/update`
+    #[arg()]
+    pub url: Url,
 }
 
 fn main() {
@@ -76,7 +80,7 @@ fn main() {
     }
 
     let r = query_and_fetch_yaml_document(
-        &Url::parse("https://nebraska-poc-ep-cda8e2czfnhahxfk.b01.azurefd.net/v1/update").unwrap(),
+        &args.url,
         "b0ec8f0d-1c13-4bf4-9efd-ea54464a7098",
         "west-us",
         &Version::new(0, 0, 0),
