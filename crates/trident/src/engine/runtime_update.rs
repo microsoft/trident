@@ -10,7 +10,7 @@ use trident_api::{
 
 use crate::{
     datastore::DataStore,
-    engine::{self, EngineContext},
+    engine::{self, EngineContext, EngineContextParams},
     health, monitor_metrics, ExitKind,
 };
 
@@ -160,7 +160,7 @@ fn finalize_or_rollback_runtime_update(
         ));
     }
 
-    let mut ctx = EngineContext {
+    let mut ctx = EngineContext::new(EngineContextParams {
         spec: target_spec,
         spec_old: old_spec,
         servicing_type: ServicingType::RuntimeUpdate,
@@ -168,11 +168,9 @@ fn finalize_or_rollback_runtime_update(
         partition_paths: state.host_status().partition_paths.clone(),
         disk_uuids: state.host_status().disk_uuids.clone(),
         install_index: state.host_status().install_index,
-        is_uki: Some(efivar::current_var_is_uki()),
         image: None,
-        storage_graph: engine::build_storage_graph(&state.host_status().spec.storage)?, // Build storage graph
-        filesystems: Vec::new(), // Left empty since not needed for finalizing runtime update.
-    };
+        is_uki: Some(efivar::current_var_is_uki()),
+    })?;
 
     // Note: provision() is not called during runtime updates.
     engine::configure(subsystems, &ctx)?;
