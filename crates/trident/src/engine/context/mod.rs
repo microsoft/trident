@@ -44,6 +44,20 @@ pub(crate) struct AbVolumePairInfo {
     pub volume_b_id: BlockDeviceId,
 }
 
+/// Parameters for constructing an [`EngineContext`]. All fields must be specified explicitly;
+/// `filesystems` is intentionally excluded and will be initialized to an empty vector.
+pub struct EngineContextParams {
+    pub spec: HostConfiguration,
+    pub spec_old: HostConfiguration,
+    pub servicing_type: ServicingType,
+    pub partition_paths: BTreeMap<BlockDeviceId, PathBuf>,
+    pub ab_active_volume: Option<AbVolumeSelection>,
+    pub disk_uuids: HashMap<BlockDeviceId, uuid::Uuid>,
+    pub install_index: usize,
+    pub image: Option<OsImage>,
+    pub is_uki: Option<bool>,
+}
+
 #[cfg_attr(any(test, feature = "functional-test"), derive(Clone, Default))]
 pub struct EngineContext {
     pub spec: HostConfiguration,
@@ -86,7 +100,29 @@ pub struct EngineContext {
     /// Whether the image will use a UKI or not.
     pub is_uki: Option<bool>,
 }
+
 impl EngineContext {
+    /// Creates a new `EngineContext` from the given [`EngineContextParams`]. The
+    /// `filesystems` field is initialized to an empty vector and should be
+    /// populated later if needed via [`EngineContext::populate_filesystems`].
+    pub fn new(params: EngineContextParams) -> Result<Self, TridentError> {
+        let graph = super::build_storage_graph(&params.spec.storage)?;
+
+        Ok(Self {
+            spec: params.spec,
+            spec_old: params.spec_old,
+            servicing_type: params.servicing_type,
+            ab_active_volume: params.ab_active_volume,
+            partition_paths: params.partition_paths,
+            disk_uuids: params.disk_uuids,
+            install_index: params.install_index,
+            image: params.image,
+            storage_graph: graph,
+            filesystems: Vec::new(),
+            is_uki: params.is_uki,
+        })
+    }
+
     /// Returns the update volume selection for all A/B volume pairs. The update volume is the one
     /// that is meant to be updated, based on the servicing in progress, if any.
     pub fn get_ab_update_volume(&self) -> Option<AbVolumeSelection> {

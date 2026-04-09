@@ -22,7 +22,7 @@ use crate::{
     datastore::DataStore,
     engine::{
         self, boot::uki, bootentries, runtime_update, storage::encryption, EngineContext,
-        SUBSYSTEMS,
+        EngineContextParams, SUBSYSTEMS,
     },
     subsystems::esp,
     ExitKind,
@@ -139,7 +139,7 @@ pub fn execute_rollback(
             ManualRollbackKind::Runtime => ServicingType::ManualRollbackRuntime,
         };
 
-        let engine_context = EngineContext {
+        let engine_context = EngineContext::new(EngineContextParams {
             spec: requested_rollback.spec.clone(),
             spec_old: datastore.host_status().spec.clone(),
             servicing_type: rollback_type,
@@ -149,9 +149,7 @@ pub fn execute_rollback(
             install_index: datastore.host_status().install_index,
             is_uki: Some(efivar::current_var_is_uki()),
             image: None,
-            storage_graph: engine::build_storage_graph(&datastore.host_status().spec.storage)?, // Build storage graph
-            filesystems: Vec::new(),
-        };
+        })?;
 
         let staging_state = match requested_rollback.kind {
             ManualRollbackKind::Ab => ServicingState::ManualRollbackAbStaged,
@@ -183,7 +181,7 @@ pub fn execute_rollback(
                 }));
             }
         };
-        let engine_context = EngineContext {
+        let engine_context = EngineContext::new(EngineContextParams {
             spec: datastore.host_status().spec.clone(),
             spec_old: datastore.host_status().spec_old.clone(),
             servicing_type: current_servicing_type,
@@ -193,9 +191,7 @@ pub fn execute_rollback(
             install_index: datastore.host_status().install_index,
             is_uki: Some(efivar::current_var_is_uki()),
             image: None,
-            storage_graph: engine::build_storage_graph(&datastore.host_status().spec.storage)?, // Build storage graph
-            filesystems: Vec::new(), // Will be populated after dynamic validation
-        };
+        })?;
         let finalize_result = finalize_rollback(
             datastore,
             &engine_context,
