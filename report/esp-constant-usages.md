@@ -172,4 +172,3 @@ that use the constant directly.
 1. These are just samples, it makes sense for these to grab the default constant.
 2. This is the default ESP mount path used in Host Configuration. It is the
    value used when no specific override is given.
-3. Offline init is only targeting AzL at this time.

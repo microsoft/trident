@@ -7,9 +7,10 @@ use log::{error, info, LevelFilter, Log};
 use trident::{
     agentconfig::AgentConfig,
     cli::{self, Cli, Commands, GetKind, TridentExitCodes},
+    init::offline,
     manual_rollback::{self, utils::ManualRollbackRequestKind},
-    offline_init, validation, BackgroundLog, BackgroundUploader, DataStore, ExitKind, LogFilter,
-    LogForwarder, Logstream, MultiLogger, TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
+    validation, BackgroundLog, BackgroundUploader, DataStore, ExitKind, LogFilter, LogForwarder,
+    Logstream, MultiLogger, TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
 };
 use trident_api::{
     config::HostConfigurationSource,
@@ -42,7 +43,7 @@ fn run_trident(
             disk,
             history_path,
         } => {
-            return offline_init::execute(
+            return offline::execute(
                 hs_path.as_deref(),
                 lazy_partitions,
                 disk,
@@ -123,9 +124,12 @@ fn run_trident(
                 }
 
                 let agent_config = AgentConfig::load()?;
-                // For non-install commands, we expect the datastore to exist
-                if !matches!(args.command, Commands::Install { .. })
-                    && !agent_config.datastore_path().exists()
+                // For non-install and non-update (update will check and has special handling for CIH
+                // scenario) commands, we expect the datastore to exist
+                if !matches!(
+                    args.command,
+                    Commands::Install { .. } | Commands::Update { .. }
+                ) && !agent_config.datastore_path().exists()
                 {
                     return Err(TridentError::new(InvalidInputError::HostNotProvisioned))
                         .message("Datastore file does not exist");

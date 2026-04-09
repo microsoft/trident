@@ -36,10 +36,10 @@ mod diagnostics;
 mod engine;
 mod grpc_client;
 mod health;
+pub mod init;
 mod io_utils;
 mod logging;
 mod monitor_metrics;
-pub mod offline_init;
 mod orchestrate;
 pub mod osimage;
 mod reboot;
@@ -67,6 +67,7 @@ pub use crate::{
 
 use crate::{
     engine::{ab_update, rollback, runtime_update, storage::rebuild, SUBSYSTEMS},
+    init::cih,
     osimage::OsImage,
     stream::DiskSelectionStrategy,
 };
@@ -577,9 +578,25 @@ impl Trident {
             ))?;
 
         self.execute_and_record_error(datastore, |datastore| {
+            // Ensure that the datastore exists.
             if !datastore.is_persistent() {
-                return Err(TridentError::new(InvalidInputError::HostNotProvisioned))
-                    .message("Persistent datastore not found on host");
+                if cih::is_cih().structured(InvalidInputError::DeriveHostConfiguration).message("Failed to determine if host is running CIH")? {
+                    // For CIH, initialize datastore with known intitial state when
+                    // the datastore is not already created.
+                    let initial_host_status = cih::initial_host_status()
+                                .structured(InvalidInputError::DeriveHostConfiguration)
+                                .message("Failed to initialize host status for CIH")?;
+                    datastore
+                        .with_host_status(|status| {
+                            *status = initial_host_status;
+                            status.is_management_os = false;
+                        })
+                        .message("Failed to initialize datastore")?;
+                } else {
+                    // For non-CIH images, if the datastore is not persistent, return error
+                    return Err(TridentError::new(InvalidInputError::HostNotProvisioned))
+                        .message("Persistent datastore not found on host");
+                }
             }
 
             // The storage section is optional for updates if COSI is in use.
