@@ -495,7 +495,7 @@ mod tests {
             path: PathBuf::from("/boot/efi"),
             options: MountOptions::new("defaults"),
         });
-        fs.is_esp = true; // Manually set is_esp to true since we're not using the HostStorageConfig's esp_mount_path in this test.
+        fs.is_esp = true; // Manually set; normally derived during deserialization via overrideEspMount / default mount-point detection.
         assert_eq!(fs.mount_point_path(), Some(Path::new(ESP_MOUNT_POINT_PATH)));
         assert!(fs.is_esp);
         assert!(!fs.is_root());
@@ -505,7 +505,7 @@ mod tests {
             path: PathBuf::from("/"),
             options: MountOptions::new("defaults"),
         });
-        fs.is_esp = false; // Manually set is_esp to false since the mount point is now the root mount point, not the ESP mount point.
+        fs.is_esp = false; // Manually reset; this filesystem is no longer the ESP.
         assert_eq!(
             fs.mount_point_path(),
             Some(Path::new(ROOT_MOUNT_POINT_PATH))
