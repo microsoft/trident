@@ -305,7 +305,7 @@ pub(crate) fn finalize_clean_install(
         )?,
     };
 
-    // On clean install, need to verify that AZLA entry exists in /mnt/newroot/boot/efi
+    // On clean install, need to verify that the AZLA entry exists in the configured ESP mount path under the new root.
     let esp_path = join_relative(new_root.path(), ctx.esp_mount_path.as_path());
 
     if !ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
