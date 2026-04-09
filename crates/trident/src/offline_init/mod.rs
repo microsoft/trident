@@ -8,10 +8,11 @@ use std::{
 };
 
 use anyhow::{bail, Error};
-use log::{debug, info, trace};
-
+use log::{debug, info, trace, warn};
 use maplit::hashmap;
+
 use osutils::lsblk;
+use sysdefs::partition_types::DiscoverablePartitionType;
 use trident_api::{
     config::{
         AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, HostConfiguration,
@@ -147,6 +148,16 @@ fn generate_host_status(
         .structured(InvalidInputError::InvalidLazyPartition)?;
 
     let mut host_config = HostConfiguration::default();
+
+    // Collect the list of ESP partitions from the Prism history, so that we can
+    // mark filesystems mounted on them as ESP filesystems in the Host Status.
+    let esp_partitions = prism_partitions
+        .iter()
+        .filter(|p| {
+            DiscoverablePartitionType::try_from_string_name_or_uuid(p.ty.as_deref().unwrap_or(""))
+                .is_ok_and(|t| t == DiscoverablePartitionType::Esp)
+        })
+        .collect::<Vec<_>>();
 
     let partitions = prism_partitions
         .iter()
@@ -293,6 +304,8 @@ fn generate_host_status(
         )
         .collect();
 
+    let mut esp_filesystem_mount_path = None;
+
     for filesystem in &prism_storage.filesystems {
         let Some(mount_point) = &filesystem.mount_point else {
             continue;
@@ -310,6 +323,30 @@ fn generate_host_status(
             None => filesystem.device_id.clone(),
         };
 
+        // Figure out if this filesystem is mounted on an ESP partition by
+        // checking if its device_id matches any of the ESP partitions in the
+        // Prism history. If it is an ESP filesystem, ensure that we haven't
+        // already marked another filesystem as an ESP filesystem, since
+        // multiple ESP filesystems is not supported in the Host Status.
+        let is_esp = match (
+            esp_partitions.iter().any(|p| p.id == filesystem.device_id),
+            esp_filesystem_mount_path.as_ref(),
+        ) {
+            (true, Some(existing_esp_mount_path)) => {
+                warn!(
+                    "Multiple ESP filesystems found in Prism history; the one mounted at '{}' was detected \
+                    first and will take precedence over all others.",
+                    existing_esp_mount_path
+                );
+                false
+            }
+            (true, None) => {
+                esp_filesystem_mount_path = Some(mount_point.path.clone());
+                true
+            }
+            (false, _) => false,
+        };
+
         host_config.storage.filesystems.push(FileSystem {
             device_id: Some(device_id),
             source: FileSystemSource::Image,
@@ -320,7 +357,7 @@ fn generate_host_status(
                     options => MountOptions::new(options),
                 },
             }),
-            is_esp: false, // Will get populated by the initialize call below.
+            is_esp,
         })
     }
 
