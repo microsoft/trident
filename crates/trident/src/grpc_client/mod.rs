@@ -2,6 +2,7 @@ use std::process::ExitCode;
 
 use anyhow::{bail, Context, Error};
 use log::error;
+use tokio::fs;
 use tokio::runtime::Builder;
 
 use crate::{
@@ -9,10 +10,6 @@ use crate::{
     ExitKind, TRIDENT_VERSION,
 };
 
-#[cfg(feature = "grpc-preview")]
-use tokio::fs;
-
-#[cfg(feature = "grpc-preview")]
 use crate::cli;
 
 mod error;
@@ -64,6 +61,37 @@ async fn run_client(args: &ClientArgs) -> Result<ExitKind, Error> {
                 .stream_disk(image, hash.as_ref(), RebootHandling::Trident)
                 .await
                 .context("Trident failed to stream image");
+        }
+
+        ClientCommands::Update {
+            config,
+            allowed_operations,
+            ..
+        } => {
+            let config_yaml = fs::read_to_string(config).await.with_context(|| {
+                format!("Failed to read configuration file: {}", config.display())
+            })?;
+
+            let operations = cli::to_operations(allowed_operations);
+
+            if operations.has_finalize() && operations.has_stage() {
+                return client
+                    .update(config_yaml, RebootHandling::Trident)
+                    .await
+                    .context("Trident failed to perform update");
+            } else if operations.has_stage() {
+                return client
+                    .update_stage(config_yaml)
+                    .await
+                    .context("Trident failed to perform update_stage");
+            } else if operations.has_finalize() {
+                return client
+                    .update_finalize(RebootHandling::Trident)
+                    .await
+                    .context("Trident failed to perform update_finalize");
+            } else {
+                bail!("At least one allowed operation must be specified");
+            }
         }
 
         #[cfg(feature = "grpc-preview")]

@@ -5,7 +5,7 @@ syntax = "proto3";
 package trident.v1preview;
 
 import "trident/v1/servicing.proto";
-import "trident/v1preview/host_config.proto";
+import "trident/v1/host_config.proto";
 
 // InstallService provides methods for performing OS installations.
 service InstallService {
@@ -28,7 +28,7 @@ message InstallRequest {
 
 message StageInstallRequest {
   // The target Host Configuration.
-  HostConfiguration config = 1;
+  trident.v1.HostConfiguration config = 1;
 }
 
 message FinalizeInstallRequest {

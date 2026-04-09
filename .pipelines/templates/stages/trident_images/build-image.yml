@@ -27,9 +27,9 @@ parameters:
     displayName: MIC Build Type
     type: string
     values:
-    - dev
-    - preview
-    - release
+      - dev
+      - preview
+      - release
     default: release
 
   - name: micVersion
@@ -98,6 +98,7 @@ jobs:
         goToolsArtifactName: go-tools-arm64
 
     steps:
+      - template: ../common_tasks/checkout_trident.yml
       - template: ../common_tasks/avoid-pypi-usage.yml
 
       - ${{ if parameters.downloadGoTools }}:
@@ -106,10 +107,10 @@ jobs:
           inputs:
             buildType: current
             artifactName: $(goToolsArtifactName)
-            targetPath: "$(Build.SourcesDirectory)/bin"
+            targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
         - bash: |
             set -eux
-            chmod +x $(Build.SourcesDirectory)/bin/*
+            chmod +x $(TRIDENT_SOURCE_DIR)/bin/*
           displayName: "Make go tools executable"
 
       - task: DownloadPipelineArtifact@2
@@ -122,8 +123,10 @@ jobs:
       - template: ../common_tasks/find-base-image-version.yml
         parameters:
           architecture: ${{ parameters.targetArchitecture }}
+          tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
       - template: ./trident-testimg-template.yml
         parameters:
+          tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
           target: ${{ parameters.makeTarget }}
           outputDirectory: "$(ob_outputDirectory)"
           micBuildType: ${{ parameters.micBuildType }}
@@ -133,8 +136,9 @@ jobs:
           tridentArtifactName: $(tridentArtifactName)
           baseimgBuildType: $(BASEIMG_BUILD_TYPE)
           baseimgVersion: $(BASEIMG_VERSION)
+          rpmsVersion: $(RPMS_VERSION)
           baseimgAzureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
-          baseimgTypes: 
+          baseimgTypes:
             - ${{ parameters.baseimgType }}
           useStagedSshKeys: ${{ parameters.useStagedSshKeys }}
           downloadTrident: ${{ parameters.downloadTrident }}

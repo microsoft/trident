@@ -2,6 +2,9 @@ parameters:
   - name: stages
     type: stageList
     default: []
+  - name: defaultPool
+    type: string
+    default: 'trident-azl3-1es-pool-westus2'
 
 stages:
   - ${{ each stage in parameters.stages }}:
@@ -56,7 +59,7 @@ stages:
                     value: ${{ coalesce(variables.ob_artifactBaseName, format('drop_{0}_{1}', stage.stage, job.job)) }}${{ coalesce(variables.ob_artifactSuffix, '') }}
 
                 pool:
-                  name: ${{ coalesce(job.pool.name, 'trident-azl3-1es-pool-westus2') }}
+                  name: ${{ coalesce(job.pool.name, parameters.defaultPool) }}
 
                   ${{ if ne(job.pool.hostArchitecture, '') }}:
                     HostArchitecture: ${{ job.pool.hostArchitecture }}

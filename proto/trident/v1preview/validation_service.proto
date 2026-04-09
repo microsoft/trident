@@ -6,7 +6,7 @@ package trident.v1preview;
 
 import "trident/v1/error.proto";
 import "trident/v1/servicing.proto";
-import "trident/v1preview/host_config.proto";
+import "trident/v1/host_config.proto";
 
 // ValidationService provides methods for performing configuration validations.
 service ValidationService {
@@ -20,7 +20,7 @@ service ValidationService {
 
 message ValidateHostConfigurationRequest {
   // The Host Configuration to be validated.
-  HostConfiguration config = 1;
+  trident.v1.HostConfiguration config = 1;
 }
 
 message ValidateHostConfigurationResponse {
@@ -44,7 +44,7 @@ enum ServicingType {
 
 message GetRequiredServicingTypeRequest {
   // The target Host Configuration.
-  HostConfiguration config = 1;
+  trident.v1.HostConfiguration config = 1;
 }
 
 message GetRequiredServicingTypeResponse {

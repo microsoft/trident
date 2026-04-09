@@ -567,6 +567,13 @@ impl Trident {
         let mut host_config = self
             .host_config
             .clone()
+            .or_else(|| {
+                if !allowed_operations.has_stage() && allowed_operations.has_finalize() {
+                    Some(datastore.host_status().spec.clone())
+                } else {
+                    None
+                }
+            })
             .structured(InternalError::Internal(
                 "update called without Host Configuration set",
             ))?;

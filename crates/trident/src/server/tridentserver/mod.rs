@@ -37,11 +37,9 @@ use tonic::Code;
 #[cfg(feature = "grpc-preview")]
 use trident_api::error::ErrorKind;
 
+mod datastore;
 mod services;
 mod servicingmgr;
-
-#[cfg(feature = "grpc-preview")]
-mod datastore;
 
 use servicingmgr::RebootDecision;
 pub(super) use servicingmgr::ServicingManager;

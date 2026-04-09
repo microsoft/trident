@@ -441,7 +441,7 @@ func doGrpcInstall(ctx context.Context, conn net.Conn, hostConfiguration string)
 
 	stream, err := tridentClient.Install(ctx, &tridentpbv1preview.InstallRequest{
 		Stage: &tridentpbv1preview.StageInstallRequest{
-			Config: &tridentpbv1preview.HostConfiguration{
+			Config: &tridentpbv1.HostConfiguration{
 				Config: hostConfiguration,
 			},
 		},
