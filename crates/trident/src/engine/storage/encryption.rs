@@ -552,6 +552,7 @@ mod tests {
             ab_active_volume: None,
             install_index: 0,
             servicing_type: ServicingType::CleanInstall,
+            esp_mount_path: esp_path.clone(),
             ..Default::default()
         };
 

@@ -269,6 +269,7 @@ mod tests {
                 "root-b".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
                 "trident".into() => PathBuf::from("/dev/disk/by-partlabel/osp4"),
             },
+            esp_mount_path: PathBuf::from("/boot/efi"),
             ..Default::default()
         };
         ctx_clean_install.populate_filesystems().unwrap();

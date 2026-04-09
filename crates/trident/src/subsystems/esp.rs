@@ -724,6 +724,7 @@ mod tests {
         // Clean install EngineContext
         let mut ctx = EngineContext {
             servicing_type: ServicingType::CleanInstall,
+            esp_mount_path: PathBuf::from("/boot/efi"),
             ..Default::default()
         };
 
