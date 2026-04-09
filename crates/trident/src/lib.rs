@@ -584,6 +584,7 @@ impl Trident {
                     datastore
                         .with_host_status(|status| {
                             *status = initial_host_status;
+                            status.is_management_os = false;
                         })
                         .message("Failed to initialize datastore")?;
                 } else {
