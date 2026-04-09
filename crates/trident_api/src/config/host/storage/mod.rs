@@ -2878,4 +2878,36 @@ mod tests {
 
         storage.validate(true).unwrap();
     }
+
+    /// Validates that removing all ESP filesystems (no `is_esp: true`)
+    /// causes validation to fail with `EspMountPointNotFound`.
+    #[test]
+    fn test_validate_no_esp_filesystem_fail() {
+        let mut storage = get_storage();
+
+        // Remove the ESP filesystem entirely.
+        storage
+            .filesystems
+            .retain(|fs| fs.device_id != Some("esp".into()));
+
+        assert_eq!(
+            storage.validate(true).unwrap_err(),
+            HostConfigurationStaticValidationError::EspMountPointNotFound,
+        );
+
+        // Also verify that keeping the ESP filesystem but setting is_esp to
+        // false triggers the same error.
+        let mut storage = get_storage();
+        storage
+            .filesystems
+            .iter_mut()
+            .find(|fs| fs.device_id == Some("esp".into()))
+            .unwrap()
+            .is_esp = false;
+
+        assert_eq!(
+            storage.validate(true).unwrap_err(),
+            HostConfigurationStaticValidationError::EspMountPointNotFound,
+        );
+    }
 }
