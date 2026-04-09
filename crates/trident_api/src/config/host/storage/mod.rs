@@ -507,8 +507,8 @@ impl Storage {
     pub fn esp_filesystem(&self) -> Option<(&BlockDeviceId, &FileSystem)> {
         self.filesystems
             .iter()
-            .find_map(|fs| fs.is_esp.then(|| fs.device_id.as_ref().map(|id| (id, fs))))
-            .flatten()
+            .find(|fs| fs.is_esp)
+            .and_then(|fs| fs.device_id.as_ref().map(|id| (id, fs)))
     }
 }
 
