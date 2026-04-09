@@ -117,7 +117,7 @@ impl EngineContext {
             graph
                 .esp_mount_path()
                 .ok_or(TridentError::new(InternalError::Internal(
-                    "Storage graph does not contain an ESP mount path, the Host CConfiguration was not validated properly.",
+                    "Storage graph does not contain an ESP mount path, the Host Configuration was not validated properly.",
                 )))?
                 .to_path_buf();
 
