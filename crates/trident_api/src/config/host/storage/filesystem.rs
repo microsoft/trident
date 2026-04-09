@@ -35,11 +35,13 @@ pub struct FileSystem {
     /// or as a just a string when `defaults` is sufficient.
     pub mount_point: Option<MountPoint>,
 
-    ///Whether this filesystem is the ESP.
+    /// Whether this filesystem is the ESP.
     pub is_esp: bool,
 }
 
 pub mod fs_serde {
+    use std::path::Path;
+
     use anyhow::{ensure, Context, Error};
     use serde::{Deserialize, Serialize};
 
@@ -181,7 +183,7 @@ pub mod fs_serde {
                 OverrideEspMount::UseDefault => value
                     .mount_point
                     .as_ref()
-                    .is_some_and(|mp| mp.path.eq(DEFAULT_ESP_MOUNT_PATH)),
+                    .is_some_and(|mp| mp.path == Path::new(DEFAULT_ESP_MOUNT_PATH)),
                 OverrideEspMount::Override => {
                     ensure!(
                         value.mount_point.is_some(),
@@ -209,7 +211,7 @@ pub mod fs_serde {
                 // point path matches the default ESP mount point path and
                 // whether the is_esp field is set to true.
 
-                match (mp.path.eq(DEFAULT_ESP_MOUNT_PATH), value.is_esp) {
+                match (mp.path == Path::new(DEFAULT_ESP_MOUNT_PATH), value.is_esp) {
                     // Mount point matches default ESP mount point path and
                     // is_esp is true, so we use the default behavior.
                     (true, true) => OverrideEspMount::UseDefault,

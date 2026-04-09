@@ -1,7 +1,7 @@
 //! A module for testing the storage graph validation.
 
-// Currently the following error variants are not currently produceable and
-// therefore are not tested:
+// The following error variants are not currently producible and therefore
+// are not tested:
 // - StorageGraphBuildError::InvalidSpecialReferenceKind
 // - StorageGraphBuildError::InvalidTargets
 // - StorageGraphBuildError::PartitionTypeMismatchSpecial
