@@ -343,7 +343,7 @@ impl EngineContext {
     pub fn esp_filesystem(&self) -> Option<FileSystemDataImage> {
         self.filesystems()
             .filter_map(|fs| fs.as_image().cloned())
-            .find(|img_fs| img_fs.mount_point.path == self.esp_mount_path())
+            .find(|img_fs| img_fs.mount_point.path == self.esp_mount_path.as_path())
     }
 }
 

@@ -182,9 +182,9 @@ fn open_verity_device_with_signature(
     // ESP is populated after this point, so we cannot allow signature files to
     // be on the ESP mount point.
     ensure!(
-        !signature_file_path.starts_with(ctx.esp_mount_path()),
+        !signature_file_path.starts_with(ctx.esp_mount_path.as_path()),
         "Signature file cannot be on the ESP mount point '{}'",
-        ctx.esp_mount_path().display()
+        ctx.esp_mount_path.as_path().display()
     );
 
     let (mpi, relative_path) = ctx

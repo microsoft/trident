@@ -99,6 +99,9 @@ pub struct EngineContext {
 
     /// Whether the image will use a UKI or not.
     pub is_uki: Option<bool>,
+
+    /// The mount path of the ESP partition.
+    pub esp_mount_path: PathBuf,
 }
 
 impl EngineContext {
@@ -107,6 +110,16 @@ impl EngineContext {
     /// populated later if needed via [`EngineContext::populate_filesystems`].
     pub fn new(params: EngineContextParams) -> Result<Self, TridentError> {
         let graph = super::build_storage_graph(&params.spec.storage)?;
+
+        // Get the ESP mount path from the storage graph. This should be
+        // guaranteed to exist in validated Host configurations.
+        let esp_mount_path =
+            graph
+                .esp_mount_path()
+                .ok_or(TridentError::new(InternalError::Internal(
+                    "Storage graph does not contain an ESP mount path, the Host CConfiguration was not validated properly.",
+                )))?
+                .to_path_buf();
 
         Ok(Self {
             spec: params.spec,
@@ -120,6 +133,7 @@ impl EngineContext {
             storage_graph: graph,
             filesystems: Vec::new(),
             is_uki: params.is_uki,
+            esp_mount_path,
         })
     }
 
@@ -378,11 +392,6 @@ impl EngineContext {
                     .unwrap_or(STREAM_SLOW_SPEED_REPORTING_INTERVAL_SECONDS_DEFAULT),
             ),
         ))
-    }
-
-    /// Returns the mount path of the ESP partition.
-    pub fn esp_mount_path(&self) -> &Path {
-        self.spec.storage.esp_mount_path.as_path()
     }
 }
 

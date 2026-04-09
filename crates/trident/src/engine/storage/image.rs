@@ -72,7 +72,7 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
 
         if ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
             tmp.insert(
-                ctx.esp_mount_path().into(),
+                ctx.esp_mount_path.as_path().into(),
                 os_img
                     .esp_filesystem()
                     .structured(InternalError::Internal("COSI doesn't have ESP"))?,
@@ -217,7 +217,7 @@ fn filesystems_from_image(
             continue;
         };
 
-        if img_fs.mount_point_path() == ctx.esp_mount_path()
+        if img_fs.mount_point_path() == ctx.esp_mount_path.as_path()
             && !ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE)
         {
             debug!(

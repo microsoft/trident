@@ -303,7 +303,7 @@ pub fn get_binary_paths_pcrlock(
     }
 
     // Determine ESP path depending on the environment
-    let esp_path = container::get_host_relative_path(ctx.esp_mount_path().into())
+    let esp_path = container::get_host_relative_path(ctx.esp_mount_path.as_path().into())
         .unstructured("Failed to get host-relative ESP mount path")?;
 
     // If either PCR 4 or PCR 11 is requested, construct UKI paths
@@ -452,7 +452,7 @@ fn get_bootloader_paths(
     // If there is mount_path, also construct bootloader paths in the target OS image
     if let Some(mount_path) = mount_path {
         debug!("Constructing bootloader binaries for target OS image during A/B update staging");
-        let esp_dir_path = join_relative(mount_path, ctx.esp_mount_path());
+        let esp_dir_path = join_relative(mount_path, ctx.esp_mount_path.as_path());
 
         // Determine label for update boot
         let update_label = get_path_label(ctx.ab_active_volume, false);
