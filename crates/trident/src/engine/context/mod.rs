@@ -58,7 +58,7 @@ pub struct EngineContextParams {
     pub is_uki: Option<bool>,
 }
 
-#[cfg_attr(any(test, feature = "functional-test"), derive(Clone, Default))]
+#[cfg_attr(any(test, feature = "functional-test"), derive(Clone))]
 pub struct EngineContext {
     pub spec: HostConfiguration,
 
@@ -102,6 +102,27 @@ pub struct EngineContext {
 
     /// The mount path of the ESP partition.
     pub esp_mount_path: PathBuf,
+}
+
+#[cfg(any(test, feature = "functional-test"))]
+impl Default for EngineContext {
+    fn default() -> Self {
+        use trident_api::constants::ESP_MOUNT_POINT_PATH;
+        Self {
+            esp_mount_path: PathBuf::from(ESP_MOUNT_POINT_PATH),
+            spec: Default::default(),
+            spec_old: Default::default(),
+            servicing_type: Default::default(),
+            partition_paths: Default::default(),
+            ab_active_volume: Default::default(),
+            disk_uuids: Default::default(),
+            install_index: Default::default(),
+            image: Default::default(),
+            storage_graph: Default::default(),
+            filesystems: Default::default(),
+            is_uki: Default::default(),
+        }
+    }
 }
 
 impl EngineContext {
