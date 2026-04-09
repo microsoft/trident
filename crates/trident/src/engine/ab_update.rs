@@ -14,7 +14,7 @@ use crate::{
     engine::{
         self, bootentries,
         storage::{self, verity},
-        EngineContext, NewrootMount,
+        EngineContext, EngineContextParams, NewrootMount,
     },
     monitor_metrics,
     subsystems::esp,
@@ -141,7 +141,7 @@ pub(crate) fn finalize_update(
         ));
     }
 
-    let ctx = EngineContext {
+    let ctx = EngineContext::new(EngineContextParams {
         spec: state.host_status().spec.clone(),
         spec_old: state.host_status().spec_old.clone(),
         servicing_type: ServicingType::AbUpdate,
@@ -150,10 +150,8 @@ pub(crate) fn finalize_update(
         disk_uuids: state.host_status().disk_uuids.clone(),
         install_index: state.host_status().install_index,
         image: None, // Not used in finalize_update
-        storage_graph: engine::build_storage_graph(&state.host_status().spec.storage)?, // Build storage graph
-        filesystems: Vec::new(), // Left empty since context does not have image
         is_uki: None,
-    };
+    })?;
 
     let root_path = container::get_host_relative_path(PathBuf::from(ROOT_MOUNT_POINT_PATH))?;
     let esp_path = container::get_host_relative_path(PathBuf::from(ESP_MOUNT_POINT_PATH))?;
