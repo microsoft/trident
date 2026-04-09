@@ -137,37 +137,6 @@ No test usages.
 
 ---
 
-## Annex: `is_esp()` Usages
-
-`is_esp` is now a **field** on `FileSystem`
-([filesystem.rs:38](../crates/trident_api/src/config/host/storage/filesystem.rs#L38)),
-set during deserialization in `fs_serde` based on mount point path and
-`overrideEspMount`. It no longer uses `ESP_MOUNT_POINT_PATH` directly.
-There is also an `is_esp()` method on `Image` in
-[cosi/metadata.rs](../crates/trident/src/osimage/cosi/metadata.rs)
-that checks `DiscoverablePartitionType::Esp`.
-
-### Product Code
-
-| Item# | Crate       | Location                                                                                                                          | Function                            | Description                                                      | Status |
-| ----- | ----------- | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | ---------------------------------------------------------------- | ------ |
-| 26    | trident     | [storage/filesystem.rs:60](../crates/trident/src/engine/storage/filesystem.rs#L60)                                                | `block_devices_needing_fs_creation` | Now uses `ctx.esp_mount_path` comparison instead of `is_esp`     |        |
-| 27    | trident     | [storage/image.rs:220](../crates/trident/src/engine/storage/image.rs#L220)                                                        | `filesystems_from_image`            | Now uses `ctx.esp_mount_path` comparison instead of `is_esp`     |        |
-| 28    | trident     | [cosi/metadata.rs:136](../crates/trident/src/osimage/cosi/metadata.rs#L136)                                                       | `get_esp_filesystem`                | Uses `Image::is_esp()` (checks `DiscoverablePartitionType::Esp`) |        |
-| 29    | trident     | [cosi/metadata.rs:158](../crates/trident/src/osimage/cosi/metadata.rs#L158)                                                       | `get_regular_filesystems`           | Uses `Image::is_esp()` to filter out ESP images                  |        |
-| 30    | trident     | [storage/osimage.rs:152](../crates/trident/src/subsystems/storage/osimage.rs#L152)                                                | `validate_filesystems`              | Uses `fs.is_esp` field in required filesystems filter            |        |
-| 31    | trident_api | [storage_graph/conversions.rs:110](../crates/trident_api/src/config/host/storage/storage_graph/conversions.rs#L110)               | `from` (`BlkDevReferrerKind`)       | Uses `fs.is_esp` field to classify as `FileSystemEsp`            |        |
-| 32    | trident_api | [storage_graph/builder/filesystems.rs:50](../crates/trident_api/src/config/host/storage/storage_graph/builder/filesystems.rs#L50) | `check_filesystems`                 | Uses `fs.is_esp` field to validate ESP mount point uniqueness    |        |
-
-### Test Code
-
-| File                                                     | Instances | Test Function(s)                                                            |
-| -------------------------------------------------------- | --------- | --------------------------------------------------------------------------- |
-| crates/trident_api/src/config/host/storage/filesystem.rs | 10        | `test_filesystem_mount_point_path`, `test_override_esp_mount_serialization` |
-| crates/trident/src/osimage/cosi/derived_hc.rs            | 2         | `test_duplicate_esp_single_is_esp`                                          |
-
----
-
 ## Review Notes
 
 1. These are just samples, it makes sense for these to grab the default constant.
