@@ -56,26 +56,6 @@ struct Args {
     /// Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
     #[arg(global = true, short, long, default_value_t = LevelFilter::Debug)]
     pub verbosity: LevelFilter,
-
-    #[command(subcommand)]
-    trigger: Option<Command>,
-}
-
-#[derive(Debug, Subcommand)]
-enum Command {
-    Trigger {
-        #[arg()]
-        url: Url,
-
-        #[arg()]
-        hash: Option<String>,
-    },
-    Run {
-        url: Url,
-        app_id: String,
-        track: String,
-        document_version: Version,
-    },
 }
 
 fn main() {
@@ -95,33 +75,28 @@ fn main() {
             .init();
     }
 
-    match args.trigger {
-        Some(Command::Trigger { url, hash }) => {
-            debug!("Triggering update with URL: {url} and hash: {hash:?}");
-            //trigger(&url, hash).await.unwrap();
-        }
-        Some(Command::Run {
-            url,
-            app_id,
-            track,
-            document_version,
-        }) => {
-            debug!("Running update check for URL: {url}, App ID: {app_id}, Track: {track}, Document Version: {document_version}");
-        }
-        None => {
-            debug!("No command provided. Exiting.");
+    let r = query_and_fetch_yaml_document(
+        &Url::parse("https://nebraska-poc-ep-cda8e2czfnhahxfk.b01.azurefd.net/v1/update").unwrap(),
+        "b0ec8f0d-1c13-4bf4-9efd-ea54464a7098",
+        "west-us",
+        &Version::new(0, 0, 0),
+        IdSource::MachineIdHashed,
+    )
+    .expect("Failed to query Omaha server");
 
-            let r = query_and_fetch_yaml_document(
-                &Url::parse("https://nebraska-poc-ep-cda8e2czfnhahxfk.b01.azurefd.net/v1/update")
-                    .unwrap(),
-                "b0ec8f0d-1c13-4bf4-9efd-ea54464a7098",
-                "west-us",
-                &Version::new(3, 1, 0),
-                IdSource::MachineIdHashed,
-            )
-            .expect("Failed to query Omaha server");
+    match r.result {
+        QueryResult::NoUpdate => {
+            debug!("No update available");
+        }
+        QueryResult::NewDocument { url, version } => {
+            debug!("Updating to version {version}");
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("Failed to create tokio runtime");
 
-            debug!("Query result: {r:?}");
+            rt.block_on(trigger(&url, None))
+                .expect("Failed to run update");
         }
     }
 }
