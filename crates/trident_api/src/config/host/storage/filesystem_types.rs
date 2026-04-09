@@ -223,10 +223,10 @@ impl TryFrom<String> for NewFileSystemType {
     }
 }
 
-impl From<NewFileSystemType> for String {
-    fn from(val: NewFileSystemType) -> Self {
-        let intermediary_str: &'static str = val.into();
-        intermediary_str.to_string()
+impl Display for NewFileSystemType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let intermediary_str: &'static str = (*self).into();
+        write!(f, "{}", intermediary_str)
     }
 }
 
@@ -298,10 +298,10 @@ pub enum AdoptedFileSystemType {
     Iso9660,
 }
 
-impl From<AdoptedFileSystemType> for String {
-    fn from(val: AdoptedFileSystemType) -> Self {
-        let intermediary_str: &'static str = val.into();
-        intermediary_str.to_string()
+impl Display for AdoptedFileSystemType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let intermediary_str: &'static str = (*self).into();
+        write!(f, "{}", intermediary_str)
     }
 }
 
@@ -385,7 +385,7 @@ mod tests {
         );
 
         // NewFileSystemType to text: Success
-        assert_eq!(String::from(NewFileSystemType::Ext4), "ext4".to_string());
+        assert_eq!(NewFileSystemType::Ext4.to_string(), "ext4".to_string());
 
         // Text to NewFileSystemType: Failure case - improper capitalization
         assert!(NewFileSystemType::try_from("Ext4")
@@ -425,10 +425,7 @@ mod tests {
         );
 
         // AdoptedFileSystemType to text: Success
-        assert_eq!(
-            String::from(AdoptedFileSystemType::Ext4),
-            "ext4".to_string()
-        );
+        assert_eq!(AdoptedFileSystemType::Ext4.to_string(), "ext4".to_string());
 
         // Text to AdoptedFileSystemType: Failure case - improper capitalization
         assert!(AdoptedFileSystemType::try_from("Ext4")

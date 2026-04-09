@@ -24,13 +24,13 @@ use crate::config::{
 
 use super::{
     cardinality::ValidCardinality,
-    containers::{AllowBlockList, ItemList},
+    containers::AllowBlockList,
     graph::{NodeIndex, StoragePetgraph},
     node::StorageGraphNode,
     references::SpecialReferenceKind,
     types::{
         BlkDevKind, BlkDevKindFlag, BlkDevReferrerKind, BlkDevReferrerKindFlag,
-        FileSystemSourceKind, HostConfigBlockDevice,
+        HostConfigBlockDevice,
     },
 };
 
@@ -110,24 +110,6 @@ impl FileSystemType {
         // Nodev filesystems REQUIRE a mount point to exist. Today this covers
         // only Tmpfs and overlay.
         !self.expects_block_device_id()
-    }
-
-    /// Returns the valid sources for a filesystem type.
-    pub fn valid_sources(&self) -> ItemList<FileSystemSourceKind> {
-        match self {
-            Self::Ext4 | Self::Xfs | Self::Ntfs => ItemList(vec![
-                FileSystemSourceKind::New,
-                FileSystemSourceKind::Adopted,
-                FileSystemSourceKind::Image,
-            ]),
-            Self::Vfat => ItemList(vec![
-                FileSystemSourceKind::New,
-                FileSystemSourceKind::Adopted,
-                FileSystemSourceKind::Image,
-            ]),
-            Self::Iso9660 | Self::Auto => ItemList(vec![FileSystemSourceKind::Adopted]),
-            Self::Tmpfs | Self::Overlay => ItemList(vec![FileSystemSourceKind::New]),
-        }
     }
 
     /// Returns whether a filesystem type can be used with verity.
@@ -519,10 +501,10 @@ impl SpecialReferenceKind {
 /// Returns the expected partition type for a given mount point, if any.
 pub fn expected_partition_type(
     mount_point: &Path,
-    esp_mount_path: &Path,
+    esp_mount_path: Option<&Path>,
 ) -> AllowBlockList<PartitionType> {
-    if mount_point == esp_mount_path {
-        return AllowBlockList::new_allow([PartitionType::Esp]);
+    if esp_mount_path.is_some_and(|esp_path| mount_point == esp_path) {
+        return AllowBlockList::Allow(vec![PartitionType::Esp]);
     }
 
     AllowBlockList::Any

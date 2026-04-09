@@ -7,13 +7,10 @@ use crate::{
 
 use super::{
     cardinality::ValidCardinality,
-    containers::{AllowBlockList, ItemList},
+    containers::AllowBlockList,
     node::NodeIdentifier,
     references::SpecialReferenceKind,
-    types::{
-        BlkDevKind, BlkDevKindFlag, BlkDevReferrerKind, BlkDevReferrerKindFlag,
-        FileSystemSourceKind,
-    },
+    types::{BlkDevKind, BlkDevKindFlag, BlkDevReferrerKind, BlkDevReferrerKindFlag},
 };
 
 /// Renders a node identifier in to a pretty string suitable for displaying an
@@ -62,14 +59,15 @@ pub enum StorageGraphBuildError {
     },
 
     #[error(
-        "Filesystem [{fs_desc}] has incompatible source type '{fs_source}', \
-            compatible sources are: {fs_compatible_sources}"
+        "Multiple filesystems are marked as ESP: [{fs_desc_a}] and [{fs_desc_b}]. Only one filesystem can be the ESP."
     )]
-    FilesystemIncompatibleSource {
-        fs_desc: String,
-        fs_source: FileSystemSourceKind,
-        fs_compatible_sources: ItemList<FileSystemSourceKind>,
+    FilesystemEspMultiple {
+        fs_desc_a: String,
+        fs_desc_b: String,
     },
+
+    #[error("Filesystem [{fs_desc}] is marked as ESP, but does not have a mount point")]
+    FilesystemEspWithoutMountPoint { fs_desc: String },
 
     #[error("Filesystem [{fs_desc}] requires a reference to a block device")]
     FilesystemMissingBlockDeviceId { fs_desc: String },
@@ -79,12 +77,6 @@ pub enum StorageGraphBuildError {
 
     #[error("Filesystem [{fs_desc}] should not reference a block device")]
     FilesystemUnexpectedBlockDeviceId { fs_desc: String },
-
-    #[error(
-        "Filesystem [{fs_desc}] is placed on top of a verity device, but filesystems of not sourced \
-        from an Image cannot be used with verity."
-    )]
-    FilesystemVerityIncompatible { fs_desc: String },
 
     #[error("Internal error: {body}")]
     InternalError { body: String },

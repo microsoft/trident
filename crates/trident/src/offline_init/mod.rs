@@ -336,10 +336,6 @@ fn generate_host_status(
         .flat_map(|f| f.iter().cloned())
         .collect();
 
-    // Run initialize to perform any necessary transformations on the Host
-    // Configuration.
-    let host_config = host_config.initialize();
-
     Ok(HostStatus {
         spec: host_config,
         disk_uuids: hashmap!["disk0".to_string() => disk_uuid],

@@ -52,11 +52,8 @@ pub enum HostConfigurationStaticValidationError {
     #[error("Underlying device of encrypted volume '{encrypted_volume}' must be a partition or a software RAID array")]
     EncryptedVolumeNotPartitionOrRaid { encrypted_volume: String },
 
-    #[error("ESP mount point must be an absolute path")]
-    EspMountPointNotAbsolute,
-
-    #[error("No filesystem matches the expected ESP mount point path '{expected}', but one is required for UEFI boot")]
-    EspMountPointNotFound { expected: String },
+    #[error("ESP mount point not found in storage configuration; no filesystem was marked as the ESP, either by automatic detection or explicit configuration")]
+    EspMountPointNotFound,
 
     #[error("Failed to find expected mount point '{mount_point_path}'")]
     ExpectedMountPointNotFound { mount_point_path: String },
@@ -78,12 +75,6 @@ pub enum HostConfigurationStaticValidationError {
     #[error("Extension image path '{path}' must be on a known A/B volume")]
     ExtensionImageNotOnABVolume { path: String },
 
-    #[error(
-        "The Host Configuration is using both an image and partition images, these APIs are \
-        mutually exclusive"
-    )]
-    ImageApiMixed,
-
     #[error(transparent)]
     InvalidStorageGraph(#[from] StorageGraphBuildError),
 
@@ -95,9 +86,6 @@ pub enum HostConfigurationStaticValidationError {
 
     #[error("Netplan version '{version}' is invalid, must always be '2'")]
     InvalidNetplanVersion { version: u8 },
-
-    #[error("Invalid URL provided '{url}': '{explanation}'")]
-    InvalidSourceUrl { url: String, explanation: String },
 
     #[error("Mount point '{mount_point_path}' must be backed by A/B update volume pair")]
     MountPointNotBackedByAbUpdateVolumePair { mount_point_path: String },
@@ -149,14 +137,8 @@ pub enum HostConfigurationStaticValidationError {
     #[error("Netplan renderer '{renderer}' is not supported")]
     UnsupportedNetplanRenderer { renderer: String },
 
-    #[error("Unsupported URL scheme provided '{url_scheme}', must be 'file', 'http', or 'https'")]
-    UnsupportedSourceUrlScheme { url_scheme: String },
-
     #[error("Only one of root or usr-verity devices is supported, but other verity devices were requested")]
     UnsupportedVerityDevices,
-
-    #[error("In order to use usr-verity, UKI support must be enabled")]
-    UsrVerityRequiresUkiSupport,
 
     #[error("Verity device '{device_name}' must define a mount point")]
     VerityFilesystemWithoutMountPoint { device_name: String },

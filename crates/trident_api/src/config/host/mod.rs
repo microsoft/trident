@@ -35,154 +35,51 @@ use trident::Trident;
 /// HostConfiguration is the configuration for a host. Trident agent will use
 /// this to configure the host.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
-#[serde(
-    rename_all = "camelCase",
-    deny_unknown_fields,
-    from = "HostConfigurationSerde",
-    into = "HostConfigurationSerde"
-)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub struct HostConfiguration {
     /// The Trident Management configuration controls the installation of the
     /// Trident agent onto the target OS.
+    #[serde(default, skip_serializing_if = "is_default")]
     pub trident: Trident,
 
     /// Describes the storage configuration of the host.
+    #[serde(default, skip_serializing_if = "is_default")]
     pub storage: Storage,
 
     /// Optional scripts to be run after different Trident stages have completed.
+    #[serde(default, skip_serializing_if = "is_default")]
     pub scripts: Scripts,
 
     /// OS Configuration for the target OS.
+    #[serde(default, skip_serializing_if = "is_default")]
     pub os: Os,
 
     /// OS Configuration for the management OS.
     ///
     /// These settings are only applicable for clean install servicing. They are
     /// ignored on updates.
+    #[serde(default, skip_serializing_if = "is_default")]
     pub management_os: ManagementOs,
-
-    /// PREVIEW-ONLY: TODO: Remove before GA. (#9023)
-    ///
-    /// Extra parameters to override default trident behavior.
-    pub internal_params: InternalParams,
-
-    /// Data about the image to deploy on the host, including sourcing and
-    /// integrity information.
-    pub image: Option<OsImage>,
-
-    /// Health configuration for the target OS.
-    pub health: Health,
-}
-
-impl From<HostConfigurationSerde> for HostConfiguration {
-    fn from(serde_struct: HostConfigurationSerde) -> Self {
-        Self {
-            trident: serde_struct.trident,
-            storage: serde_struct.storage,
-            scripts: serde_struct.scripts,
-            os: serde_struct.os,
-            management_os: serde_struct.management_os,
-            internal_params: serde_struct.internal_params,
-            image: serde_struct.image,
-            health: serde_struct.health,
-        }
-        .initialize()
-    }
-}
-
-impl From<HostConfiguration> for HostConfigurationSerde {
-    fn from(config: HostConfiguration) -> Self {
-        Self {
-            trident: config.trident,
-            storage: config.storage,
-            scripts: config.scripts,
-            os: config.os,
-            management_os: config.management_os,
-            internal_params: config.internal_params,
-            image: config.image,
-            health: config.health,
-        }
-    }
-}
-
-/// HostConfiguration is the configuration for a host. Trident agent will use
-/// this to configure the host.
-///
-/// # INTERNAL
-/// Because of serde/schemars limitations, we have to use a separate struct for
-/// deserialization. All public documentation is sourced from THIS struct, not
-/// the proper HostConfiguration. This struct has the same fields as
-/// HostConfiguration, but it is used to perform necessary initialization of
-/// certain fields after deserialization and before validation. This struct MUST
-/// NOT BE USED outside of the serde implementations of HostConfiguration.
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[cfg_attr(feature = "schemars", derive(JsonSchema))]
-struct HostConfigurationSerde {
-    /// The Trident Management configuration controls the installation of the
-    /// Trident agent onto the target OS.
-    #[serde(default, skip_serializing_if = "is_default")]
-    trident: Trident,
-
-    /// Describes the storage configuration of the host.
-    #[serde(default, skip_serializing_if = "is_default")]
-    storage: Storage,
-
-    /// Optional scripts to be run after different Trident stages have completed.
-    #[serde(default, skip_serializing_if = "is_default")]
-    scripts: Scripts,
-
-    /// OS Configuration for the target OS.
-    #[serde(default, skip_serializing_if = "is_default")]
-    os: Os,
-
-    /// OS Configuration for the management OS.
-    ///
-    /// These settings are only applicable for clean install servicing. They are
-    /// ignored on updates.
-    #[serde(default, skip_serializing_if = "is_default")]
-    management_os: ManagementOs,
 
     /// PREVIEW-ONLY: TODO: Remove before GA. (#9023)
     ///
     /// Extra parameters to override default trident behavior.
     #[serde(default, skip_serializing_if = "is_default")]
     #[cfg_attr(feature = "schemars", schemars(skip))]
-    internal_params: InternalParams,
+    pub internal_params: InternalParams,
 
     /// Data about the image to deploy on the host, including sourcing and
     /// integrity information.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    image: Option<OsImage>,
+    pub image: Option<OsImage>,
 
     /// Health configuration for the target OS.
     #[serde(default, skip_serializing_if = "is_default")]
-    health: Health,
-}
-
-#[cfg(feature = "schemars")]
-impl JsonSchema for HostConfiguration {
-    fn schema_name() -> String {
-        "HostConfiguration".to_string()
-    }
-
-    fn json_schema(generator: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
-        HostConfigurationSerde::json_schema(generator)
-    }
+    pub health: Health,
 }
 
 impl HostConfiguration {
-    /// Performs necessary initialization of the HostConfiguration immediately
-    /// after deserialization. This function only performs indirect data
-    /// population, but does not do any checking. No errors should be produced
-    /// other than those resulting from anything that could be categorized as a
-    /// parsing error. Actual validation is performed on an immutable self in
-    /// the validate() function.
-    pub fn initialize(mut self) -> Self {
-        self.storage.initialize();
-        self
-    }
-
     pub fn validate(&self) -> Result<(), HostConfigurationStaticValidationError> {
         let require_root_mount_point = self.trident != Trident::default()
             || self.scripts != Scripts::default()

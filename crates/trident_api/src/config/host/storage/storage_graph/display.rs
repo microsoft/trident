@@ -7,19 +7,9 @@ use super::{
     references::{ReferenceKind, SpecialReferenceKind},
     types::{
         BitFlagsBackingEnumVec, BlkDevKind, BlkDevKindFlag, BlkDevReferrerKind,
-        BlkDevReferrerKindFlag, FileSystemSourceKind,
+        BlkDevReferrerKindFlag,
     },
 };
-
-impl Display for FileSystemSourceKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::New => write!(f, "new"),
-            Self::Adopted => write!(f, "adopted"),
-            Self::Image => write!(f, "image"),
-        }
-    }
-}
 
 impl Display for BlkDevKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

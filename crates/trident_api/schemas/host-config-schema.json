@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "HostConfiguration",
-  "description": "HostConfiguration is the configuration for a host. Trident agent will use this to configure the host.\n\n# INTERNAL Because of serde/schemars limitations, we have to use a separate struct for deserialization. All public documentation is sourced from THIS struct, not the proper HostConfiguration. This struct has the same fields as HostConfiguration, but it is used to perform necessary initialization of certain fields after deserialization and before validation. This struct MUST NOT BE USED outside of the serde implementations of HostConfiguration.",
+  "description": "HostConfiguration is the configuration for a host. Trident agent will use this to configure the host.",
   "type": "object",
   "properties": {
     "health": {
@@ -367,6 +367,14 @@
           ],
           "nullable": true,
           "string_shortcut": "path"
+        },
+        "overrideEspMount": {
+          "description": "Options to change the default ESP mount point path.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/OverrideEspMount"
+            }
+          ]
         },
         "source": {
           "description": "The source of the file system.\n\nIf not specified, this field will default to image.",
@@ -734,6 +742,34 @@
         }
       },
       "additionalProperties": false
+    },
+    "OverrideEspMount": {
+      "oneOf": [
+        {
+          "title": "Use Default Behavior",
+          "description": "Do not override the default ESP mount point path. This is the default behavior.",
+          "type": "string",
+          "enum": [
+            "use-default"
+          ]
+        },
+        {
+          "title": "Override",
+          "description": "Override the default ESP mount point to be the path of this filesystem.",
+          "type": "string",
+          "enum": [
+            "override"
+          ]
+        },
+        {
+          "title": "Block",
+          "description": "This option should be used very rarely and in very specific non-standard scenarios.\n\nUsed to indicate that this filesystem is NOT the ESP, even if it matches the default ESP mount point path. This is necessary in the case where a user has a non-ESP filesystem that they want to mount at the default ESP mount point path, and they want to ensure that Trident does not treat it as the ESP.",
+          "type": "string",
+          "enum": [
+            "block"
+          ]
+        }
+      ]
     },
     "Partition": {
       "description": "Per partition configuration.",
@@ -1493,12 +1529,6 @@
             }
           ],
           "nullable": true
-        },
-        "espMountPath": {
-          "description": "The mount path for the ESP partition in the Linux distro being serviced. The default is the standard ESP mount point for Azure Linux, but it can be overridden if the Linux distro being serviced uses a different mount point for the ESP partition. This is used to determine which partition is the ESP and to update the bootloader configuration on it.",
-          "default": "/boot/efi",
-          "type": "string",
-          "format": "Linux Path"
         },
         "filesystems": {
           "description": "Filesystems in this host.",

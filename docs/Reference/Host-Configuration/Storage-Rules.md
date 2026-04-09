@@ -11,7 +11,6 @@ Documentation about the rules used to validate the storage configuration.
 - [Reference Sharing](#reference-sharing)
 - [Unique Field Value Constraints](#unique-field-value-constraints)
 - [Filesystem Block Device Requirements](#filesystem-block-device-requirements)
-- [Filesystem Source Requirements](#filesystem-source-requirements)
 - [Filesystem Mounting](#filesystem-mounting)
 - [Filesystem Verity Support](#filesystem-verity-support)
 - [Homogeneous References](#homogeneous-references)
@@ -138,19 +137,6 @@ block device.
 | ntfs            | Yes                  |
 | tmpfs           | No                   |
 | auto            | Yes                  |
-
-## Filesystem Source Requirements
-
-Depending on the type of a filesystem, they may have different source types.
-
-| Filesystem Type | Valid Source Type       |
-| --------------- | ----------------------- |
-| ext4            | new or adopted or image |
-| xfs             | new or adopted or image |
-| vfat            | new or adopted or image |
-| ntfs            | new or adopted or image |
-| tmpfs           | new                     |
-| auto            | adopted                 |
 
 ## Filesystem Mounting
 

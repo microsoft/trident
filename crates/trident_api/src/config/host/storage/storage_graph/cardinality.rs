@@ -42,6 +42,13 @@ impl ValidCardinality {
         }
     }
 
+    pub fn new_any() -> Self {
+        Self {
+            min_count: None,
+            max_count: None,
+        }
+    }
+
     pub fn min(&self) -> Option<usize> {
         self.min_count
     }
