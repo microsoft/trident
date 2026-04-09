@@ -4,7 +4,7 @@ use anyhow::{bail, Context, Error};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use log::info;
 
-use crate::schema_renderer::SchemaDocSettings;
+use trident_api::constants::ESP_MOUNT_POINT_PATH;
 
 mod clap_model;
 mod host_config;
@@ -12,6 +12,9 @@ mod markdown;
 mod schema_renderer;
 mod trident_arch;
 mod trident_cli;
+mod util;
+
+use crate::{schema_renderer::SchemaDocSettings, util::string_const_map};
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -222,6 +225,12 @@ fn build_host_config_docs(mut opts: HostConfigMarkdownOpts) -> Result<(), Error>
         }
     }
 
+    // Constants that we are making available to the tera context for rendering
+    // descriptions. They will exists as variables with the exact same name as
+    // the constant. For example, `ESP_MOUNT_POINT_PATH` can be used in
+    // descriptions as `{{ ESP_MOUNT_POINT_PATH }}`.
+    let variables = string_const_map!(ESP_MOUNT_POINT_PATH);
+
     host_config::docs::build(
         opts.output,
         SchemaDocSettings {
@@ -229,6 +238,7 @@ fn build_host_config_docs(mut opts: HostConfigMarkdownOpts) -> Result<(), Error>
             docfx: opts.docfx,
             docusaurus: opts.docusaurus_root,
         },
+        variables,
     )
     .context("Failed to build host config docs")
 }
