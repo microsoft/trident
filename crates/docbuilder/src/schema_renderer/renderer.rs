@@ -86,7 +86,7 @@ impl NodeRenderer {
         debug!("Rendering object: {}", id);
         let mut context = self.global_context();
         context.insert("title", id);
-        context.insert("description", &node.description);
+        context.insert("description", &node.render_description(&context)?);
         context.insert(
             "characteristics",
             &node
