@@ -27,6 +27,7 @@ use trident_api::{
 /// Returns whether the host is running the CIH image.
 pub fn is_cih() -> Result<bool, Error> {
     let os_release = OsRelease::read().context("Failed to read OS release information")?;
+    // TODO: update
     Ok(os_release.name == Some("CIH".to_string()))
 }
 
@@ -77,31 +78,20 @@ fn inner_initial_host_status(
 
     // Define list of expected partitions based on CIH layout. The Partition field
     // will be filled in with the current Host disk information.
-    let bios_uuid = Uuid::from_str("21686148-6449-6e6f-7468-656564454649")
-        .context("Failed to parse BIOS Boot Partition UUID")?;
     let usr_uuid = Uuid::from_str("5dfbf5f4-2848-4bac-aa5e-0d9a20b745a6")
         .context("Failed to parse user-verity data Partition UUID")?;
-    let special_reserved_uuid = Uuid::from_str("c95dc21a-df0e-4340-8d7b-26cbfa9a03e0")
-        .context("Failed to parse Special reserved Partition UUID")?;
     let mut expected_partition_info: Vec<(&str, PartitionType, Option<Partition>)> = vec![
         ("efi-system", PartitionType::Esp, None),
-        ("bios-boot", PartitionType::Unknown(bios_uuid), None),
         // Note: this seems to be user-a currently
-        ("usr-data-a", PartitionType::Unknown(usr_uuid), None),
+        ("usr-a", PartitionType::Unknown(usr_uuid), None),
         // Note: this doesn't seem to be present in images today
-        ("usr-hash-a", PartitionType::UsrVerity, None),
+        ("hash-a", PartitionType::UsrVerity, None),
         // Note: this seems to be user-b currently
-        ("usr-data-b", PartitionType::Unknown(usr_uuid), None),
+        ("usr-b", PartitionType::Unknown(usr_uuid), None),
         // Note: this doesn't seem to be present in images today
-        ("usr-hash-b", PartitionType::UsrVerity, None),
+        ("hash-b", PartitionType::UsrVerity, None),
         // Note: this doesn't seem to be present in images today
-        ("root-c", PartitionType::LinuxGeneric, None),
         ("oem", PartitionType::LinuxGeneric, None),
-        (
-            "oem-config",
-            PartitionType::Unknown(special_reserved_uuid),
-            None,
-        ),
         ("root", PartitionType::Root, None),
     ];
 
@@ -237,13 +227,13 @@ fn inner_initial_host_status(
                     volume_pairs: vec![
                         AbVolumePair {
                             id: "usr-data".to_string(),
-                            volume_a_id: "usr-data-a".to_string(),
-                            volume_b_id: "usr-data-b".to_string(),
+                            volume_a_id: "usr-a".to_string(),
+                            volume_b_id: "usr-b".to_string(),
                         },
                         AbVolumePair {
                             id: "usr-hash".to_string(),
-                            volume_a_id: "usr-hash-a".to_string(),
-                            volume_b_id: "usr-hash-b".to_string(),
+                            volume_a_id: "hash-a".to_string(),
+                            volume_b_id: "hash-b".to_string(),
                         },
                     ],
                 }),
@@ -304,75 +294,50 @@ mod tests {
                 1,
             ),
             create_sfpart(
-                "bios-boot".to_string(),
-                &PathBuf::from("/dev/sda2"),
+                "usr-a".to_string(),
+                &PathBuf::from("/dev/sda3"),
                 DiscoverablePartitionType::Unknown(
-                    Uuid::from_str("21686148-6449-6e6f-7468-656564454649").unwrap(),
+                    Uuid::from_str("5dfbf5f4-2848-4bac-aa5e-0d9a20b745a6").unwrap(),
                 ),
                 "123e4567-e89b-12d3-a456-426614174002",
                 2,
             ),
             create_sfpart(
-                "usr-data-a".to_string(),
-                &PathBuf::from("/dev/sda3"),
-                DiscoverablePartitionType::Unknown(
-                    Uuid::from_str("5dfbf5f4-2848-4bac-aa5e-0d9a20b745a6").unwrap(),
-                ),
+                "hash-a".to_string(),
+                &PathBuf::from("/dev/sda4"),
+                DiscoverablePartitionType::UsrVerity,
                 "123e4567-e89b-12d3-a456-426614174003",
                 3,
             ),
             create_sfpart(
-                "usr-hash-a".to_string(),
-                &PathBuf::from("/dev/sda4"),
-                DiscoverablePartitionType::UsrVerity,
-                "123e4567-e89b-12d3-a456-426614174004",
-                4,
-            ),
-            create_sfpart(
-                "usr-data-b".to_string(),
+                "usr-b".to_string(),
                 &PathBuf::from("/dev/sda5"),
                 DiscoverablePartitionType::Unknown(
                     Uuid::from_str("5dfbf5f4-2848-4bac-aa5e-0d9a20b745a6").unwrap(),
                 ),
-                "123e4567-e89b-12d3-a456-426614174005",
-                5,
+                "123e4567-e89b-12d3-a456-426614174004",
+                4,
             ),
             create_sfpart(
-                "usr-hash-b".to_string(),
+                "hash-b".to_string(),
                 &PathBuf::from("/dev/sda6"),
                 DiscoverablePartitionType::UsrVerity,
-                "123e4567-e89b-12d3-a456-426614174006",
-                6,
-            ),
-            create_sfpart(
-                "root-c".to_string(),
-                &PathBuf::from("/dev/sda7"),
-                DiscoverablePartitionType::LinuxGeneric,
-                "123e4567-e89b-12d3-a456-426614174007",
-                7,
+                "123e4567-e89b-12d3-a456-426614174005",
+                5,
             ),
             create_sfpart(
                 "oem".to_string(),
                 &PathBuf::from("/dev/sda8"),
                 DiscoverablePartitionType::LinuxGeneric,
-                "123e4567-e89b-12d3-a456-426614174008",
-                8,
-            ),
-            create_sfpart(
-                "oem-config".to_string(),
-                &PathBuf::from("/dev/sda9"),
-                DiscoverablePartitionType::Unknown(
-                    Uuid::from_str("c95dc21a-df0e-4340-8d7b-26cbfa9a03e0").unwrap(),
-                ),
-                "123e4567-e89b-12d3-a456-426614174009",
-                9,
+                "123e4567-e89b-12d3-a456-426614174006",
+                6,
             ),
             create_sfpart(
                 "root".to_string(),
                 &PathBuf::from("/dev/sda11"),
                 DiscoverablePartitionType::Root,
-                "123e4567-e89b-12d3-a456-42661417400B",
-                11,
+                "123e4567-e89b-12d3-a456-426614174007",
+                7,
             ),
         ];
 
@@ -388,20 +353,20 @@ mod tests {
                     "extra-one".to_string(),
                     &PathBuf::from("/dev/sda12"),
                     DiscoverablePartitionType::LinuxGeneric,
-                    "123e4567-e89b-12d3-a456-42661417400C",
-                    12,
+                    "123e4567-e89b-12d3-a456-426614174008",
+                    8,
                 ));
             }
             TestPartitions::Duplicate => {
                 // Duplicate a partition label
                 partitions.push(create_sfpart(
-                    "usr-data-a".to_string(),
+                    "usr-a".to_string(),
                     &PathBuf::from("/dev/sda12"),
                     DiscoverablePartitionType::Unknown(
                         Uuid::from_str("5dfbf5f4-2848-4bac-aa5e-0d9a20b745a6").unwrap(),
                     ),
-                    "123e4567-e89b-12d3-a456-42661417400C",
-                    12,
+                    "123e4567-e89b-12d3-a456-426614174009",
+                    9,
                 ));
             }
         };
@@ -451,38 +416,26 @@ mod tests {
         );
         assert_eq!(
             init_host_status.spec.storage.disks[0].partitions[1].label,
-            Some("bios-boot".to_string())
+            Some("usr-a".to_string())
         );
         assert_eq!(
             init_host_status.spec.storage.disks[0].partitions[2].label,
-            Some("usr-data-a".to_string())
+            Some("hash-a".to_string())
         );
         assert_eq!(
             init_host_status.spec.storage.disks[0].partitions[3].label,
-            Some("usr-hash-a".to_string())
+            Some("usr-b".to_string())
         );
         assert_eq!(
             init_host_status.spec.storage.disks[0].partitions[4].label,
-            Some("usr-data-b".to_string())
+            Some("hash-b".to_string())
         );
         assert_eq!(
             init_host_status.spec.storage.disks[0].partitions[5].label,
-            Some("usr-hash-b".to_string())
-        );
-        assert_eq!(
-            init_host_status.spec.storage.disks[0].partitions[6].label,
-            Some("root-c".to_string())
-        );
-        assert_eq!(
-            init_host_status.spec.storage.disks[0].partitions[7].label,
             Some("oem".to_string())
         );
         assert_eq!(
-            init_host_status.spec.storage.disks[0].partitions[8].label,
-            Some("oem-config".to_string())
-        );
-        assert_eq!(
-            init_host_status.spec.storage.disks[0].partitions[9].label,
+            init_host_status.spec.storage.disks[0].partitions[6].label,
             Some("root".to_string())
         );
     }
@@ -536,6 +489,6 @@ mod tests {
             .unwrap_err()
             .root_cause()
             .to_string()
-            .contains("Multiple identical partition labels found on root disk: 'usr-data-a'"));
+            .contains("Multiple identical partition labels found on root disk: 'usr-a'"));
     }
 }
