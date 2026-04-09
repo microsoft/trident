@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use anyhow::{bail, ensure, Context, Error};
+use tera::{Context as TeraCtx, Tera};
 
 use serde_json::Value;
 use trident_api::{
@@ -483,6 +484,14 @@ impl SchemaNodeModel {
         }
 
         Ok(characteristics)
+    }
+
+    /// Interprets the description as jinja markdown and renders it with the given context.
+    pub(super) fn render_description(&self, context: &TeraCtx) -> Result<Option<String>, Error> {
+        self.description
+            .as_ref()
+            .map(|d| Tera::one_off(d, context, false).context("Failed to render description"))
+            .transpose()
     }
 }
 

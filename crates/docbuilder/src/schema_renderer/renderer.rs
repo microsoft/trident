@@ -229,7 +229,7 @@ impl NodeRenderer {
         debug!("Rendering enum: {}", id);
         let mut context = self.global_context();
         context.insert("title", id);
-        context.insert("description", &node.description);
+        context.insert("description", &node.render_description(&context)?);
         context.insert(
             "characteristics",
             &node
@@ -283,7 +283,7 @@ impl NodeRenderer {
         debug!("Rendering simple enum: {}", id);
         let mut context = self.global_context();
         context.insert("title", id);
-        context.insert("description", &node.description);
+        context.insert("description", &node.render_description(&context)?);
         context.insert(
             "characteristics",
             &node
@@ -310,7 +310,7 @@ impl NodeRenderer {
         debug!("Rendering scalar: {}", id);
         let mut context = self.global_context();
         context.insert("title", id);
-        context.insert("description", &node.description);
+        context.insert("description", &node.render_description(&context)?);
         context.insert(
             "characteristics",
             &node
@@ -347,7 +347,7 @@ impl NodeRenderer {
             node.kind, context
         );
 
-        context.insert("description", &node.description);
+        context.insert("description", &node.render_description(&context)?);
 
         // Get the template to use for this node.
         let template = match &node.kind {

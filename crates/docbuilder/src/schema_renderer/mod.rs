@@ -51,7 +51,11 @@ pub(crate) struct SchemaDocBuilder {
 
 impl SchemaDocBuilder {
     /// Create a new schema doc builder with the given settings.
-    pub(crate) fn new(root: RootSchema, settings: SchemaDocSettings) -> Result<Self, Error> {
+    pub(crate) fn new(
+        root: RootSchema,
+        settings: SchemaDocSettings,
+        variables: HashMap<String, String>,
+    ) -> Result<Self, Error> {
         let title = root
             .schema
             .metadata
@@ -63,7 +67,9 @@ impl SchemaDocBuilder {
         Ok(Self {
             renderer: NodeRenderer::new(
                 DefinitionMapper::new(&title, root.definitions.keys()),
-                TeraContextFactory::new(settings.docfx),
+                TeraContextFactory::default()
+                    .with_docfx(settings.docfx)
+                    .with_variables(variables),
             )?,
             root,
             title,
