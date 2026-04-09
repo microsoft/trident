@@ -10,7 +10,7 @@ use nix::unistd::Uid;
 use semver::Version;
 use url::Url;
 
-use engine::{bootentries, EngineContext};
+use engine::{bootentries, EngineContext, EngineContextParams};
 use osutils::{block_devices, container, dependencies::Dependency};
 use trident_api::{
     config::{
@@ -396,7 +396,7 @@ impl Trident {
 
         let host_status = datastore.host_status();
 
-        let ctx = EngineContext {
+        let ctx = EngineContext::new(EngineContextParams {
             spec: host_status.spec.clone(),
             spec_old: host_status.spec_old.clone(),
             servicing_type: ServicingType::NoActiveServicing,
@@ -405,10 +405,8 @@ impl Trident {
             disk_uuids: host_status.disk_uuids.clone(),
             install_index: host_status.install_index,
             image: None,
-            storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
-            filesystems: Vec::new(), // Left empty since context does not have image
             is_uki: None,
-        };
+        })?;
 
         if ctx.ab_active_volume.is_none() {
             return Err(TridentError::new(InternalError::Internal(

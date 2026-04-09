@@ -19,8 +19,8 @@ use trident_api::{
 
 use crate::{
     engine::{
-        self, bootentries,
-        context::EngineContext,
+        bootentries,
+        context::{EngineContext, EngineContextParams},
         storage::{encryption, verity},
     },
     health,
@@ -78,7 +78,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
     };
 
     // Create an EngineContext based on the Host Status
-    let ctx = EngineContext {
+    let ctx = EngineContext::new(EngineContextParams {
         spec: datastore.host_status().spec.clone(),
         spec_old: datastore.host_status().spec_old.clone(),
         servicing_type,
@@ -87,10 +87,8 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         disk_uuids: datastore.host_status().disk_uuids.clone(),
         install_index: datastore.host_status().install_index,
         image: None, // Not used for boot validation logic
-        storage_graph: engine::build_storage_graph(&datastore.host_status().spec.storage)?, // Build storage graph
-        filesystems: Vec::new(), // Left empty since context does not have image
         is_uki: Some(efivar::current_var_is_uki()),
-    };
+    })?;
 
     // Get the block device path of the current root
     let current_root_path =

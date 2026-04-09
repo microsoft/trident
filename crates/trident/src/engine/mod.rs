@@ -55,7 +55,7 @@ mod etc_overlay;
 pub(crate) mod install_index;
 
 pub(crate) use clean_install::{clean_install, finalize_clean_install};
-pub(crate) use context::{filesystem, EngineContext};
+pub(crate) use context::{filesystem, EngineContext, EngineContextParams};
 pub use newroot::NewrootMount;
 pub(crate) use update::update;
 

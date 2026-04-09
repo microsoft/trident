@@ -29,7 +29,9 @@ use trident_api::{
 
 use crate::{
     datastore::DataStore,
-    engine::{self, bootentries, install_index, storage, EngineContext, SUBSYSTEMS},
+    engine::{
+        self, bootentries, install_index, storage, EngineContext, EngineContextParams, SUBSYSTEMS,
+    },
     monitor_metrics,
     osimage::OsImage,
     subsystems::esp,
@@ -175,7 +177,8 @@ fn stage_clean_install(
     // Initialize a copy of the Host Status with the changes that are planned. We make a copy
     // rather than modifying the datastore's version so that we can wait until the clean install is
     // staged before committing the changes.
-    let mut ctx = EngineContext {
+    let is_uki = image.is_uki() || host_config.internal_params.get_flag(ENABLE_UKI_SUPPORT);
+    let mut ctx = EngineContext::new(EngineContextParams {
         spec: host_config.clone(),
         spec_old: Default::default(),
         servicing_type: ServicingType::CleanInstall,
@@ -183,11 +186,9 @@ fn stage_clean_install(
         partition_paths: Default::default(), // Will be initialized later
         disk_uuids: Default::default(),      // Will be initialized later
         install_index: 0,                    // Will be initialized later
-        is_uki: Some(image.is_uki() || host_config.internal_params.get_flag(ENABLE_UKI_SUPPORT)),
         image: Some(image),
-        storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
-        filesystems: Vec::new(), // Will be populated after dynamic validation
-    };
+        is_uki: Some(is_uki),
+    })?;
 
     // Execute pre-servicing scripts
     HooksSubsystem::new_for_local_scripts().execute_pre_servicing_scripts(&ctx)?;
@@ -280,7 +281,7 @@ pub(crate) fn finalize_clean_install(
 ) -> Result<ExitKind, TridentError> {
     info!("Finalizing clean install");
 
-    let ctx = EngineContext {
+    let ctx = EngineContext::new(EngineContextParams {
         spec: state.host_status().spec.clone(),
         spec_old: state.host_status().spec_old.clone(),
         servicing_type: ServicingType::CleanInstall,
@@ -289,10 +290,8 @@ pub(crate) fn finalize_clean_install(
         disk_uuids: state.host_status().disk_uuids.clone(),
         install_index: state.host_status().install_index,
         image: None, // Not used in finalize_clean_install
-        storage_graph: engine::build_storage_graph(&state.host_status().spec.storage)?, // Build storage graph
-        filesystems: Vec::new(), // Left empty since context does not have image
         is_uki: None,
-    };
+    })?;
 
     let new_root = match new_root {
         Some(new_root) => new_root,

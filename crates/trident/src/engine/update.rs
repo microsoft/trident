@@ -11,7 +11,9 @@ use trident_api::{
 
 use crate::{
     datastore::DataStore,
-    engine::{self, ab_update, rollback, runtime_update, EngineContext, SUBSYSTEMS},
+    engine::{
+        self, ab_update, rollback, runtime_update, EngineContext, EngineContextParams, SUBSYSTEMS,
+    },
     osimage::OsImage,
     subsystems::hooks::HooksSubsystem,
     ExitKind,
@@ -43,7 +45,7 @@ pub(crate) fn update(
         })?;
     }
 
-    let mut ctx = EngineContext {
+    let mut ctx = EngineContext::new(EngineContextParams {
         spec: host_config.clone(),
         spec_old: state.host_status().spec.clone(),
         servicing_type: ServicingType::NoActiveServicing,
@@ -53,9 +55,7 @@ pub(crate) fn update(
         install_index: state.host_status().install_index,
         is_uki: Some(image.is_uki() || host_config.internal_params.get_flag(ENABLE_UKI_SUPPORT)),
         image: Some(image),
-        storage_graph: engine::build_storage_graph(&host_config.storage)?, // Build storage graph
-        filesystems: Vec::new(), // Will be populated after dynamic validation
-    };
+    })?;
 
     // Before starting an update servicing, need to validate that the active volume is set
     // correctly.
