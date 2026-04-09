@@ -64,6 +64,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             options: MountOptions::new("umask=0077"),
                         }),
                         source: FileSystemSource::Image,
+                        is_esp: true,
                     },
                     FileSystem {
                         device_id: Some("root".into()),
@@ -72,6 +73,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             options: MountOptions::defaults(),
                         }),
                         source: FileSystemSource::Image,
+                        is_esp: false,
                     },
                 ],
                     ..Default::default()
@@ -117,6 +119,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 options: MountOptions::new("umask=0077"),
                             }),
                             source: FileSystemSource::Image,
+                            is_esp: true,
                         },
                         FileSystem {
                             device_id: Some("root".into()),
@@ -125,6 +128,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 options: MountOptions::defaults(),
                             }),
                             source: FileSystemSource::Image,
+                            is_esp: false,
                         },
                     ],
                     ..Default::default()
@@ -314,6 +318,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 options: MountOptions::new("umask=0077"),
                             }),
                             source: FileSystemSource::Image,
+                            is_esp: true,
                         },
                         FileSystem {
                             device_id: Some("root".into()),
@@ -322,6 +327,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 options: MountOptions::defaults(),
                             }),
                             source: FileSystemSource::Image,
+                            is_esp: false,
                         },
                         FileSystem {
                             device_id: Some("trident".into()),
@@ -330,6 +336,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 options: MountOptions::defaults(),
                             }),
                             source: FileSystemSource::New(NewFileSystemType::Ext4),
+                            is_esp: false,
                         },
                         FileSystem {
                             device_id: Some("srv".into()),
@@ -338,6 +345,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 options: MountOptions::defaults(),
                             }),
                             source: FileSystemSource::New(NewFileSystemType::Ext4),
+                            is_esp: false,
                         },
                         FileSystem {
                             device_id: Some("some_raid".into()),
@@ -346,6 +354,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 options: MountOptions::defaults(),
                             }),
                             source: FileSystemSource::New(NewFileSystemType::Ext4),
+                            is_esp: false,
                         },
                     ],
                     ab_update: Some(AbUpdate {
@@ -525,6 +534,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 options: MountOptions::new("umask=0077"),
                             }),
                             source: FileSystemSource::Image,
+                            is_esp: true,
                         },
                         FileSystem {
                             device_id: Some("boot".into()),
@@ -533,6 +543,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 options: MountOptions::defaults(),
                             }),
                             source: FileSystemSource::Image,
+                            is_esp: false,
                         },
                         FileSystem {
                             device_id: Some("trident".into()),
@@ -541,6 +552,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 path: "/var/lib/trident".into(),
                                 options: MountOptions::defaults(),
                             }),
+                            is_esp: false,
                         },
                         FileSystem {
                             device_id: Some("trident-overlay".into()),
@@ -549,6 +561,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 path: "/var/lib/trident-overlay".into(),
                                 options: MountOptions::defaults(),
                             }),
+                            is_esp: false,
                         },
                         FileSystem {
                             device_id: Some("var".into()),
@@ -557,6 +570,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 path: "/var".into(),
                                 options: MountOptions::defaults(),
                             }),
+                            is_esp: false,
                         },
                         FileSystem {
                             device_id: Some("home".into()),
@@ -565,6 +579,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 path: "/home".into(),
                                 options: MountOptions::defaults(),
                             }),
+                            is_esp: false,
                         },
                         FileSystem {
                             device_id: Some("root".into()),
@@ -573,6 +588,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 path: ROOT_MOUNT_POINT_PATH.into(),
                                 options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
                             }),
+                            is_esp: false,
                         }
                     ],
                     verity: vec![VerityDevice {
@@ -986,11 +1002,13 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 options: MountOptions::new("umask=0077"),
                             }),
                             source: FileSystemSource::Image,
+                            is_esp: true,
                         },
                         FileSystem {
                             device_id: Some("esp2".into()),
                             mount_point: None,
                             source: FileSystemSource::Image,
+                            is_esp: false,
                         },
                         FileSystem {
                             device_id: Some("boot".into()),
@@ -999,6 +1017,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 options: MountOptions::defaults(),
                             }),
                             source: FileSystemSource::Image,
+                            is_esp: false,
                         },
                         FileSystem {
                             device_id: Some("trident".into()),
@@ -1007,6 +1026,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 path: "/var/lib/trident".into(),
                                 options: MountOptions::defaults(),
                             }),
+                            is_esp: false,
                         },
                         FileSystem {
                             device_id: Some("trident-overlay".into()),
@@ -1015,6 +1035,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 path: "/var/lib/trident-overlay".into(),
                                 options: MountOptions::defaults(),
                             }),
+                            is_esp: false,
                         },
                         FileSystem {
                             device_id: Some("var".into()),
@@ -1023,6 +1044,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 path: "/var".into(),
                                 options: MountOptions::defaults(),
                             }),
+                            is_esp: false,
                         },
                         FileSystem {
                             device_id: Some("home".into()),
@@ -1031,6 +1053,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 path: "/home".into(),
                                 options: MountOptions::defaults(),
                             }),
+                            is_esp: false,
                         },
                         FileSystem {
                             device_id: Some("root".into()),
@@ -1039,6 +1062,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 path: ROOT_MOUNT_POINT_PATH.into(),
                                 options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
                             }),
+                            is_esp: false,
                         }
                     ],
                     verity: vec![VerityDevice {
@@ -1193,6 +1217,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 options: MountOptions::new("umask=0077"),
                             }),
                             source: FileSystemSource::Image,
+                            is_esp: true,
                         },
                         FileSystem {
                             device_id: Some("root".into()),
@@ -1201,6 +1226,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 options: MountOptions::defaults(),
                             }),
                             source: FileSystemSource::Image,
+                            is_esp: false,
                         },
                     ],
                     swap: vec![Swap {
@@ -1343,6 +1369,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 options: MountOptions::new("umask=0077"),
                             }),
                             source: FileSystemSource::Image,
+                            is_esp: true,
                         },
                         FileSystem {
                             device_id: Some("root".into()),
@@ -1351,6 +1378,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 options: MountOptions::defaults(),
                             }),
                             source: FileSystemSource::Image,
+                            is_esp: false,
                         },
                         FileSystem {
                             device_id: Some("srv".into()),
@@ -1359,6 +1387,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 options: MountOptions::defaults(),
                             }),
                             source: FileSystemSource::New(NewFileSystemType::Ext4),
+                            is_esp: false,
                         },
                     ],
                     swap: vec![Swap {
@@ -1525,6 +1554,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 options: MountOptions::new("umask=0077"),
                             }),
                             source: FileSystemSource::Image,
+                            is_esp: true,
                         },
                         FileSystem {
                             device_id: Some("root".into()),
@@ -1533,6 +1563,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 options: MountOptions::defaults(),
                             }),
                             source: FileSystemSource::Image,
+                            is_esp: false,
                         },
                         FileSystem {
                             device_id: Some("trident".into()),
@@ -1541,6 +1572,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 options: MountOptions::defaults(),
                             }),
                             source: FileSystemSource::New(NewFileSystemType::Ext4),
+                            is_esp: false,
                         },
                     ],
                     ..Default::default()

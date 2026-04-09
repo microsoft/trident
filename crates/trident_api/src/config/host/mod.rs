@@ -32,7 +32,8 @@ use scripts::Scripts;
 use storage::Storage;
 use trident::Trident;
 
-/// HostConfiguration is the configuration for a host. Trident agent will use this to configure the host.
+/// HostConfiguration is the configuration for a host. Trident agent will use
+/// this to configure the host.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
@@ -487,6 +488,7 @@ mod tests {
                         path: PathBuf::from("/"),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
                 FileSystem {
                     device_id: Some("data".to_owned()),
@@ -495,6 +497,7 @@ mod tests {
                         path: PathBuf::from("/data"),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
             ],
             ab_update: Some(AbUpdate {
@@ -569,6 +572,7 @@ mod tests {
                         path: PathBuf::from("/"),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
                 FileSystem {
                     device_id: Some("shared".to_owned()),
@@ -577,6 +581,7 @@ mod tests {
                         path: PathBuf::from("/var/lib/extensions"),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
             ],
             ab_update: Some(AbUpdate {
@@ -613,6 +618,7 @@ mod tests {
                             options: MountOptions::defaults(),
                         }),
                         source: FileSystemSource::New(NewFileSystemType::Ext4),
+                        is_esp: false,
                     },
                     FileSystem {
                         device_id: Some("bar".into()),
@@ -621,6 +627,7 @@ mod tests {
                             options: MountOptions::defaults(),
                         }),
                         source: FileSystemSource::New(NewFileSystemType::Ext4),
+                        is_esp: false,
                     },
                 ],
                 ..Default::default()
@@ -641,6 +648,7 @@ mod tests {
                             options: MountOptions::defaults(),
                         }),
                         source: FileSystemSource::New(NewFileSystemType::Ext4),
+                        is_esp: false,
                     },
                     FileSystem {
                         device_id: Some("bar".into()),
@@ -649,6 +657,7 @@ mod tests {
                             options: MountOptions::defaults(),
                         }),
                         source: FileSystemSource::New(NewFileSystemType::Ext4),
+                        is_esp: false,
                     },
                 ],
                 ab_update: Some(AbUpdate {
@@ -676,6 +685,7 @@ mod tests {
                             options: MountOptions::defaults(),
                         }),
                         source: FileSystemSource::New(NewFileSystemType::Ext4),
+                        is_esp: false,
                     },
                     FileSystem {
                         device_id: Some("bar".into()),
@@ -684,6 +694,7 @@ mod tests {
                             options: MountOptions::defaults(),
                         }),
                         source: FileSystemSource::New(NewFileSystemType::Ext4),
+                        is_esp: false,
                     },
                 ],
                 ab_update: Some(AbUpdate {
@@ -715,6 +726,7 @@ mod tests {
                             options: MountOptions::defaults(),
                         }),
                         source: FileSystemSource::New(NewFileSystemType::Ext4),
+                        is_esp: false,
                     },
                     FileSystem {
                         device_id: Some("bar".into()),
@@ -723,6 +735,7 @@ mod tests {
                             options: MountOptions::defaults(),
                         }),
                         source: FileSystemSource::New(NewFileSystemType::Ext4),
+                        is_esp: false,
                     },
                 ],
                 ab_update: Some(AbUpdate {
@@ -795,6 +808,7 @@ mod tests {
                         path: ROOT_MOUNT_POINT_PATH.into(),
                         options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
                     }),
+                    is_esp: false,
                 }],
                 ..Default::default()
             },

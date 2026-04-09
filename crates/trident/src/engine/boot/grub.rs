@@ -589,6 +589,7 @@ pub(crate) mod functional_test {
             }),
             device_id: Some(raid_array.id.clone()),
             source: FileSystemSource::Image,
+            is_esp: false,
         });
 
         ctx.partition_paths
@@ -640,6 +641,7 @@ pub(crate) mod functional_test {
                             }),
                             device_id: Some("boot".to_owned()),
                             source: FileSystemSource::Image,
+                            is_esp: false,
                         },
                         FileSystem {
                             mount_point: Some(MountPoint {
@@ -648,6 +650,7 @@ pub(crate) mod functional_test {
                             }),
                             device_id: Some("root".to_owned()),
                             source: FileSystemSource::Image,
+                            is_esp: false,
                         },
                     ],
                     ..Default::default()
@@ -716,6 +719,7 @@ pub(crate) mod functional_test {
                             }),
                             device_id: Some("boot".to_owned()),
                             source: FileSystemSource::Image,
+                            is_esp: false,
                         },
                         FileSystem {
                             mount_point: Some(MountPoint {
@@ -724,6 +728,7 @@ pub(crate) mod functional_test {
                             }),
                             device_id: Some("root".to_owned()),
                             source: FileSystemSource::Image,
+                            is_esp: false,
                         },
                     ],
                     ab_update: Some(AbUpdate {
@@ -792,6 +797,7 @@ pub(crate) mod functional_test {
                         }),
                         device_id: Some("root".to_owned()),
                         source: FileSystemSource::Image,
+                        is_esp: false,
                     }],
                     ..Default::default()
                 },
@@ -852,6 +858,7 @@ pub(crate) mod functional_test {
                         }),
                         device_id: Some("root".to_owned()),
                         source: FileSystemSource::Image,
+                        is_esp: false,
                     }],
                     ..Default::default()
                 },

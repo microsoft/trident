@@ -85,7 +85,15 @@ pub struct AdoptedPartition {
     pub match_uuid: Option<Uuid>,
 }
 
-/// Partition types as defined by [The Discoverable Partitions Specification](<https://uapi-group.org/specifications/specs/discoverable_partitions_specification/>).
+/// Partition types as defined by [The Discoverable Partitions
+/// Specification](<https://uapi-group.org/specifications/specs/discoverable_partitions_specification/>).
+///
+/// # INTERNAL
+/// IT IS NOT RECOMMENDED TO USE THIS ENUM DIRECTLY, but rather the
+/// DiscoverablePartitionType enum from sysdefs, which has more flexible
+/// matching logic. This enum is primarily intended for serialization and user
+/// input parsing, and the `as_dps()` method can be used to convert it to a
+/// DiscoverablePartitionType for comparison and other logic.
 #[derive(Serialize, Deserialize, Copy, Clone, Debug, Hash, Eq, PartialEq, Default)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
@@ -209,6 +217,32 @@ impl PartitionType {
             | Self::Srv
             | Self::Xbootldr
             | Self::Unknown(_) => None,
+        }
+    }
+
+    /// Converts the PartitionType to the corresponding
+    /// DiscoverablePartitionType.
+    pub fn as_dps(&self) -> DiscoverablePartitionType {
+        DiscoverablePartitionType::from(*self)
+    }
+}
+
+impl From<PartitionType> for DiscoverablePartitionType {
+    fn from(pt: PartitionType) -> Self {
+        match pt {
+            PartitionType::Esp => Self::Esp,
+            PartitionType::Root => Self::Root,
+            PartitionType::Swap => Self::Swap,
+            PartitionType::RootVerity => Self::RootVerity,
+            PartitionType::Home => Self::Home,
+            PartitionType::Var => Self::Var,
+            PartitionType::Usr => Self::Usr,
+            PartitionType::UsrVerity => Self::UsrVerity,
+            PartitionType::Tmp => Self::Tmp,
+            PartitionType::LinuxGeneric => Self::LinuxGeneric,
+            PartitionType::Srv => Self::Srv,
+            PartitionType::Xbootldr => Self::Xbootldr,
+            PartitionType::Unknown(uuid) => Self::from_uuid(&uuid),
         }
     }
 }

@@ -333,6 +333,7 @@ mod tests {
             device_id: Some("sda1".into()),
             mount_point: Some(MountPoint::from_str(good_mtp).unwrap()),
             source: Default::default(),
+            is_esp: false,
         };
         let good_img = MockOsImage::new().with_image(MockImage {
             mount_point: good_mtp.into(),
@@ -478,6 +479,7 @@ mod tests {
                     path: PathBuf::from("/"),
                     options: Default::default(),
                 }),
+                is_esp: false,
             }],
             disks: vec![Disk {
                 id: "disk0".into(),

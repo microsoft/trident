@@ -149,7 +149,7 @@ fn validate_filesystems(os_image: &OsImage, ctx: &EngineContext) -> Result<(), T
         .into_iter()
         .filter(|(_, (fs, device_id))| {
             // We ALWAYS require ESP to be present in the OS image.
-            if fs.is_esp() {
+            if fs.is_esp {
                 return true;
             }
 
@@ -596,6 +596,7 @@ mod tests {
                     path: mnt.as_ref().to_path_buf(),
                     options: MountOptions::defaults(),
                 }),
+                is_esp: false,
             });
         }
 
@@ -732,6 +733,7 @@ mod tests {
                         device_id: Some("part1".to_owned()),
                         mount_point: Some("/data".into()),
                         source: FileSystemSource::Image,
+                        is_esp: false,
                     }],
                     ..Default::default()
                 },
@@ -849,6 +851,7 @@ mod tests {
                 device_id: Some("data".into()),
                 source: FileSystemSource::Image,
                 mount_point: Some(MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap()),
+                is_esp: false,
             }],
             ..Default::default()
         }
@@ -900,6 +903,7 @@ mod tests {
                 device_id: Some("verity".into()),
                 source: FileSystemSource::Image,
                 mount_point: Some(MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap()),
+                is_esp: false,
             }],
             ..Default::default()
         }
@@ -951,6 +955,7 @@ mod tests {
                 device_id: Some("verity".into()),
                 source: FileSystemSource::Image,
                 mount_point: Some(MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap()),
+                is_esp: false,
             }],
             ..Default::default()
         }
@@ -1003,6 +1008,7 @@ mod tests {
                 device_id: Some("data".into()),
                 source: FileSystemSource::Image,
                 mount_point: Some(MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap()),
+                is_esp: false,
             }],
             ..Default::default()
         }
@@ -1193,6 +1199,7 @@ mod tests {
                 device_id: Some("verity".into()),
                 source: FileSystemSource::Image,
                 mount_point: Some(MountPoint::from_str(mount_point).unwrap()),
+                is_esp: false,
             }],
             ..Default::default()
         }
@@ -1292,6 +1299,7 @@ mod functional_test {
                         device_id: Some("root".into()),
                         source: FileSystemSource::Image,
                         mount_point: Some(MountPoint::from_str("/").unwrap()),
+                        is_esp: false,
                     }],
                     ab_update: Some(AbUpdate {
                         volume_pairs: vec![AbVolumePair {

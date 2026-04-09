@@ -8,11 +8,10 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
-use swap::Swap;
 
 use crate::{
     constants::{
-        BOOT_MOUNT_POINT_PATH, ESP_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH,
+        BOOT_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH,
         ROOT_VERITY_DEVICE_NAME, TRIDENT_OVERLAY_PATH, USR_MOUNT_POINT_PATH,
         USR_VERITY_DEVICE_NAME, VAR_TMP_PATH,
     },
@@ -44,6 +43,7 @@ use self::{
         error::StorageGraphBuildError,
         graph::{StorageGraph, VolumeStatus},
     },
+    swap::Swap,
     verity::VerityDevice,
 };
 
@@ -184,8 +184,12 @@ impl Storage {
 
         // If storage configuration is requested, then
         if *self != Storage::default() {
-            // ESP volume must be present, to update Grub configuration
-            validate_volume_presence(&graph, ESP_MOUNT_POINT_PATH)?;
+            let Some(esp_mount) = graph.esp_mount_path() else {
+                return Err(HostConfigurationStaticValidationError::EspMountPointNotFound);
+            };
+
+            validate_volume_presence(&graph, esp_mount)?;
+
             // /var/tmp must not be on a read-only volume
             self.validate_writable_mount_points()?;
         }
@@ -498,19 +502,12 @@ impl Storage {
     /// available.
     ///
     /// The ESP filesystem is defined as having a block device and being mounted
-    /// at ESP_MOUNT_POINT_PATH.
+    /// at the ESP mount path.
     pub fn esp_filesystem(&self) -> Option<(&BlockDeviceId, &FileSystem)> {
-        self.filesystems.iter().find_map(|fs| {
-            if fs
-                .mount_point
-                .as_ref()
-                .is_some_and(|mp| mp.path.as_path() == Path::new(ESP_MOUNT_POINT_PATH))
-            {
-                fs.device_id.as_ref().map(|id| (id, fs))
-            } else {
-                None
-            }
-        })
+        self.filesystems
+            .iter()
+            .find(|fs| fs.is_esp)
+            .and_then(|fs| fs.device_id.as_ref().map(|id| (id, fs)))
     }
 }
 
@@ -547,7 +544,7 @@ mod tests {
 
     use crate::{
         config::HostConfiguration,
-        constants::{BOOT_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
+        constants::{BOOT_MOUNT_POINT_PATH, ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
     };
 
     use self::{
@@ -556,7 +553,7 @@ mod tests {
         encryption::EncryptedVolume,
         filesystem::{FileSystemSource, MountOptions, MountPoint},
         filesystem_types::NewFileSystemType,
-        partitions::{PartitionSize, PartitionType},
+        partitions::{AdoptedPartition, PartitionSize, PartitionType},
         raid::{RaidLevel, SoftwareRaidArray},
     };
 
@@ -682,6 +679,7 @@ mod tests {
                         path: PathBuf::from(ESP_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: true,
                 },
                 FileSystem {
                     device_id: Some("boot".into()),
@@ -690,6 +688,7 @@ mod tests {
                         path: PathBuf::from(BOOT_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
                 FileSystem {
                     device_id: Some("root".into()),
@@ -698,6 +697,7 @@ mod tests {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
                 FileSystem {
                     device_id: Some("srv".into()),
@@ -706,6 +706,7 @@ mod tests {
                         path: PathBuf::from("/srv"),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
                 FileSystem {
                     device_id: Some("overlay".into()),
@@ -714,6 +715,7 @@ mod tests {
                         path: PathBuf::from(TRIDENT_OVERLAY_PATH),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
                 FileSystem {
                     device_id: Some("mnt".into()),
@@ -722,6 +724,7 @@ mod tests {
                         path: PathBuf::from("/mnt"),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
                 FileSystem {
                     device_id: Some("var".into()),
@@ -730,6 +733,7 @@ mod tests {
                         path: PathBuf::from("/var"),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
             ],
             ab_update: Some(AbUpdate {
@@ -766,6 +770,7 @@ mod tests {
                 path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                 options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
             }),
+            is_esp: false,
         });
 
         storage
@@ -907,6 +912,7 @@ mod tests {
                         path: PathBuf::from(ESP_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: true,
                 },
                 FileSystem {
                     device_id: Some("disk1-partition2".to_string()),
@@ -915,6 +921,7 @@ mod tests {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
             ],
             ..Default::default()
@@ -937,6 +944,7 @@ mod tests {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
                 FileSystem {
                     device_id: Some("disk1-partition1".to_string()),
@@ -945,6 +953,7 @@ mod tests {
                         path: PathBuf::from(ESP_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: true,
                 },
             ],
             ..storage.clone()
@@ -997,6 +1006,7 @@ mod tests {
                     path: PathBuf::from("/some/path"),
                     options: MountOptions::empty(),
                 }),
+                is_esp: false,
             }],
             ..storage.clone()
         };
@@ -1083,6 +1093,7 @@ mod tests {
                         path: PathBuf::from(ESP_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: true,
                 },
                 FileSystem {
                     device_id: Some("ab1".to_owned()),
@@ -1091,6 +1102,7 @@ mod tests {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
             ],
             ab_update: Some(AbUpdate {
@@ -1470,6 +1482,7 @@ mod tests {
                 path: PathBuf::from("/alt"),
                 options: MountOptions::empty(),
             }),
+            is_esp: false,
         });
         assert_eq!(
             storage.validate(true).unwrap_err(),
@@ -1967,6 +1980,7 @@ mod tests {
                 path: PathBuf::from("/alt"),
                 options: MountOptions::empty(),
             }),
+            is_esp: false,
         });
         assert_eq!(
             storage.validate(true).unwrap_err(),
@@ -2000,6 +2014,7 @@ mod tests {
                 path: PathBuf::from("/mnt/some-mount-point"),
                 options: MountOptions::empty(),
             }),
+            is_esp: false,
         });
 
         assert_eq!(
@@ -2382,6 +2397,7 @@ mod tests {
                         path: ESP_MOUNT_POINT_PATH.into(),
                         options: MountOptions::defaults(),
                     }),
+                    is_esp: true,
                 },
                 FileSystem {
                     device_id: Some("root".into()),
@@ -2390,6 +2406,7 @@ mod tests {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
                 FileSystem {
                     device_id: Some("var".into()),
@@ -2398,6 +2415,7 @@ mod tests {
                         path: PathBuf::from("/var"),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 },
             ],
             disks: vec![Disk {
@@ -2483,6 +2501,14 @@ mod tests {
                 }
             )
         );
+
+        // Restore RAID 1 and change the ESP mount point to /boot.
+        storage.raid.software[0].level = RaidLevel::Raid1;
+        storage.filesystems[0].mount_point = Some(MountPoint {
+            path: PathBuf::from("/boot"),
+            options: MountOptions::empty(),
+        });
+        storage.validate(true).unwrap();
     }
 
     #[test]
@@ -2554,6 +2580,7 @@ mod tests {
                         path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
                     }),
+                    is_esp: false,
                 }],
                 ab_update: Some(AbUpdate {
                     volume_pairs: vec![AbVolumePair {
@@ -2581,6 +2608,7 @@ mod tests {
                 path: PathBuf::from(ROOT_MOUNT_POINT_PATH).join("boot"),
                 options: MountOptions::empty(),
             }),
+            is_esp: false,
         });
 
         let mount_point = host_config
@@ -2660,6 +2688,7 @@ mod tests {
                             path: PathBuf::from("/esp"),
                             options: MountOptions::empty(),
                         }),
+                        is_esp: false,
                     },
                     FileSystem {
                         device_id: Some("root".into()),
@@ -2668,11 +2697,13 @@ mod tests {
                             path: PathBuf::from("/"),
                             options: MountOptions::empty(),
                         }),
+                        is_esp: false,
                     },
                     FileSystem {
                         device_id: Some("trident".into()),
                         source: FileSystemSource::Image,
                         mount_point: None,
+                        is_esp: false,
                     },
                 ],
                 ab_update: Some(AbUpdate {
@@ -2748,6 +2779,134 @@ mod tests {
                 device_name: "usr-foo".into(),
                 expected: "usr".into(),
             }
+        );
+    }
+
+    /// Validates that ESP validation passes when adopted partitions are
+    /// present, even if no partition is explicitly typed as ESP.
+    ///
+    /// Adopted partitions have no declared partition type, so the ESP may
+    /// be among them and discovered at runtime. The test removes the
+    /// explicit ESP partition and its filesystem, then adds an adopted
+    /// partition to verify the check is bypassed.
+    #[test]
+    fn test_validate_no_esp_partition_with_adopted_partitions_pass() {
+        let mut storage = get_storage();
+
+        // Remove the ESP filesystem and the ESP partition.
+        storage
+            .filesystems
+            .retain(|fs| fs.device_id != Some("esp".into()));
+        storage.disks[1].partitions.retain(|p| p.id != "esp");
+
+        // Add an adopted partition — its type is unknown at validation time,
+        // so the ESP existence check must be skipped.
+        storage.disks[1].adopted_partitions.push(AdoptedPartition {
+            id: "adopted-esp".into(),
+            match_label: Some("EFI".into()),
+            match_uuid: None,
+        });
+
+        // Add a filesystem on the adopted partition mounted at ESP path so
+        // the rest of validation (volume presence, etc.) can pass.
+        storage.filesystems.push(FileSystem {
+            device_id: Some("adopted-esp".into()),
+            source: FileSystemSource::Adopted(Default::default()),
+            mount_point: Some(MountPoint {
+                path: PathBuf::from(ESP_MOUNT_POINT_PATH),
+                options: MountOptions::empty(),
+            }),
+            is_esp: true,
+        });
+
+        storage.validate(true).unwrap();
+    }
+
+    /// Validates that the ESP filesystem can be mounted at `/boot` instead
+    /// of the default `/boot/efi`.
+    ///
+    /// The test modifies the base storage configuration to mount the ESP
+    /// at `/boot` and removes the separate `/boot` filesystem to avoid
+    /// conflicts. The `is_esp` flag (set during deserialization via
+    /// `overrideEspMount`, or automatically at the default `/boot/efi`
+    /// path) remains true, so validation accepts the non-default mount
+    /// path.
+    #[test]
+    fn test_validate_esp_mounted_at_boot_pass() {
+        let mut storage = get_storage();
+
+        // Remove the dedicated /boot filesystem — the ESP will serve as /boot.
+        storage
+            .filesystems
+            .retain(|fs| fs.device_id != Some("boot".into()));
+
+        // Change the ESP filesystem mount point to /boot.
+        storage
+            .filesystems
+            .iter_mut()
+            .find(|fs| fs.device_id == Some("esp".into()))
+            .unwrap()
+            .mount_point = Some(MountPoint {
+            path: PathBuf::from("/boot"),
+            options: MountOptions::empty(),
+        });
+
+        storage.validate(true).unwrap();
+    }
+
+    /// Validates that the ESP filesystem can be mounted at `/efi` instead
+    /// of the default `/boot/efi`.
+    ///
+    /// Similar to the `/boot` test, this verifies that validation accepts
+    /// a non-default ESP mount path as long as the filesystem's `is_esp`
+    /// flag is set.
+    #[test]
+    fn test_validate_esp_mounted_at_efi_pass() {
+        let mut storage = get_storage();
+
+        // Change the ESP filesystem mount point to /efi.
+        storage
+            .filesystems
+            .iter_mut()
+            .find(|fs| fs.device_id == Some("esp".into()))
+            .unwrap()
+            .mount_point = Some(MountPoint {
+            path: PathBuf::from("/efi"),
+            options: MountOptions::empty(),
+        });
+
+        storage.validate(true).unwrap();
+    }
+
+    /// Validates that removing all ESP filesystems (no `is_esp: true`)
+    /// causes validation to fail with `EspMountPointNotFound`.
+    #[test]
+    fn test_validate_no_esp_filesystem_fail() {
+        let mut storage = get_storage();
+
+        // Remove the ESP filesystem entirely.
+        storage
+            .filesystems
+            .retain(|fs| fs.device_id != Some("esp".into()));
+
+        assert_eq!(
+            storage.validate(true).unwrap_err(),
+            HostConfigurationStaticValidationError::EspMountPointNotFound,
+        );
+
+        // Also verify that keeping the ESP filesystem but setting is_esp to
+        // false triggers the same error.
+        let mut storage = get_storage();
+        storage
+            .filesystems
+            .iter_mut()
+            .find(|fs| fs.device_id == Some("esp".into()))
+            .unwrap()
+            .is_esp = false;
+
+        assert_eq!(
+            storage.validate(true).unwrap_err(),
+            HostConfigurationStaticValidationError::EspMountPointNotFound,
         );
     }
 }

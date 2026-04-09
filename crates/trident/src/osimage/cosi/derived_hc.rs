@@ -1,6 +1,11 @@
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
-use anyhow::{bail, Context, Error};
+use anyhow::{bail, ensure, Context, Error};
+use log::warn;
+use sysdefs::partition_types::DiscoverablePartitionType;
 use url::Url;
 
 use trident_api::{
@@ -49,6 +54,9 @@ pub(super) fn derive_host_configuration_inner(
     let mut partitions = Vec::new();
     let mut filesystems = Vec::new();
     let mut verity = Vec::new();
+
+    // ESP mount point
+    let mut esp_mount_path: Option<PathBuf> = None;
 
     for part in partitioning_info.partitions.values() {
         let partition_id = partition_ids_by_file
@@ -118,13 +126,50 @@ pub(super) fn derive_host_configuration_inner(
                     options: MountOptions::defaults().with("ro"),
                 }),
                 source: FileSystemSource::Image,
+                is_esp: false,
             });
         } else {
             // Add this filesystem directly on top of the partition since there is no verity.
+
+            // If this partition is of type ESP and has a non-empty mount point,
+            // we need to do some additional checks and handling to ensure it is
+            // properly marked as the ESP in the host configuration. We also
+            // want to warn if there are multiple ESP partitions with mount
+            // points since that is unexpected and we will just pick the first
+            // one as the canonical ESP.
+            let is_esp = if part.info.part_type == DiscoverablePartitionType::Esp
+                && filesystem_metadata.mount_point != Path::new("")
+            {
+                ensure!(
+                    filesystem_metadata.part_type == DiscoverablePartitionType::Esp,
+                    "Partition {} '{}' is of type ESP but the associated filesystem metadata has \
+                    partition type '{:?}', expected ESP. This is unexpected since the partition \
+                    type from the GPT data should match the partition type in the filesystem metadata.",
+                    part.info.partition_number,
+                    part.info.name,
+                    filesystem_metadata.part_type,
+                );
+
+                if let Some(existing_esp_mount_path) = &esp_mount_path {
+                    warn!(
+                        "Multiple ESP partitions with mount points found. The first ESP partition \
+                        mounted at '{}' will be used as the canonical ESP.",
+                        existing_esp_mount_path.display(),
+                    );
+                    false
+                } else {
+                    esp_mount_path = Some(filesystem_metadata.mount_point.clone());
+                    true
+                }
+            } else {
+                false
+            };
+
             filesystems.push(FileSystem {
                 device_id: Some(partition_id.clone()),
                 mount_point: Some(filesystem_metadata.mount_point.as_path().into()),
                 source: FileSystemSource::Image,
+                is_esp,
             });
         };
     }
@@ -135,10 +180,18 @@ pub(super) fn derive_host_configuration_inner(
     // them.
     if let Some(extra_filesystem) = filesystems_by_path.into_values().next() {
         bail!(
-                "The filesystem at path '{}' (from '{}') does not correspond to any partition in the GPT data, cannot derive host configuration.",
-                extra_filesystem.mount_point.display(),
-                extra_filesystem.file.path.display()
-            );
+            "The filesystem at path '{}' (from '{}') does not correspond to any partition in the \
+                GPT data, cannot derive host configuration.",
+            extra_filesystem.mount_point.display(),
+            extra_filesystem.file.path.display()
+        );
+    }
+
+    if esp_mount_path.is_none() {
+        bail!(
+            "No ESP filesystem with a mount point was found. An ESP filesystem is required and must \
+            have a non-empty mount point."
+        );
     }
 
     Ok(HostConfiguration {
@@ -202,6 +255,18 @@ mod tests {
     ///
     /// Each partition is defined by (name, size_bytes).
     fn create_mock_gpt_disk(partitions: &[(&str, u64)]) -> (Vec<u8>, u64, u32) {
+        let typed: Vec<_> = partitions
+            .iter()
+            .map(|(name, size)| (*name, *size, gpt::partition_types::LINUX_FS))
+            .collect();
+        create_mock_gpt_disk_typed(&typed)
+    }
+
+    /// Like [`create_mock_gpt_disk`] but each partition also specifies a GPT
+    /// partition type UUID.
+    fn create_mock_gpt_disk_typed(
+        partitions: &[(&str, u64, gpt::partition_types::Type)],
+    ) -> (Vec<u8>, u64, u32) {
         let disk_size: u64 = 10 * 1024 * 1024; // 10 MB
         let lba_size: u32 = 512;
 
@@ -225,9 +290,9 @@ mod tests {
                 .create_from_device(cursor, None)
                 .expect("Failed to create GPT disk");
 
-            for (name, size) in partitions {
+            for (name, size, part_type) in partitions {
                 gpt_disk
-                    .add_partition(name, *size, gpt::partition_types::LINUX_FS, 0, None)
+                    .add_partition(name, *size, part_type.clone(), 0, None)
                     .expect("Failed to add partition");
             }
 
@@ -276,6 +341,18 @@ mod tests {
         }
     }
 
+    /// Creates a sample ESP Image (filesystem) with the given path and mount point.
+    fn sample_esp_image(path: &str, mount_point: &str) -> Image {
+        Image {
+            file: sample_image_file(path),
+            mount_point: PathBuf::from(mount_point),
+            fs_type: OsImageFileSystemType::Vfat,
+            fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+            part_type: DiscoverablePartitionType::Esp,
+            verity: None,
+        }
+    }
+
     // =========================================================================
     // Tests for derive_host_configuration_inner
     // =========================================================================
@@ -290,8 +367,10 @@ mod tests {
     /// - Filesystems with correct mount points linked to partitions.
     #[test]
     fn test_derive_host_configuration_inner_success() {
-        let (raw_gpt, disk_size, lba_size) =
-            create_mock_gpt_disk(&[("esp", 64 * 1024), ("root", 256 * 1024)]);
+        let (raw_gpt, disk_size, lba_size) = create_mock_gpt_disk_typed(&[
+            ("esp", 64 * 1024, gpt::partition_types::EFI),
+            ("root", 256 * 1024, gpt::partition_types::LINUX_FS),
+        ]);
 
         let disk_info = DiskInfo {
             size: disk_size,
@@ -320,7 +399,7 @@ mod tests {
             os_release: OsRelease::default(),
             os_packages: None,
             images: vec![
-                sample_image("images/esp.img.zst", "/boot/efi"),
+                sample_esp_image("images/esp.img.zst", "/boot/efi"),
                 sample_image("images/root.img.zst", "/"),
             ],
             bootloader: None,
@@ -344,6 +423,7 @@ mod tests {
         );
 
         let hc = result.unwrap();
+        hc.validate().unwrap();
 
         // Verify image source.
         assert!(hc.image.is_some(), "Image should be present");
@@ -411,9 +491,9 @@ mod tests {
     /// filesystem entries.
     #[test]
     fn test_derive_host_configuration_inner_partition_without_filesystem() {
-        let (raw_gpt, disk_size, lba_size) = create_mock_gpt_disk(&[
-            ("esp", 64 * 1024),
-            ("swap", 128 * 1024), // No filesystem for this
+        let (raw_gpt, disk_size, lba_size) = create_mock_gpt_disk_typed(&[
+            ("esp", 64 * 1024, gpt::partition_types::EFI),
+            ("swap", 128 * 1024, gpt::partition_types::LINUX_SWAP), // No filesystem for this
         ]);
 
         let disk_info = DiskInfo {
@@ -443,7 +523,7 @@ mod tests {
             os_release: OsRelease::default(),
             os_packages: None,
             images: vec![
-                sample_image("images/esp.img.zst", "/boot/efi"),
+                sample_esp_image("images/esp.img.zst", "/boot/efi"),
                 // No image for swap partition
             ],
             bootloader: None,
@@ -462,10 +542,15 @@ mod tests {
         );
         assert!(
             result.is_ok(),
-            "Should succeed with partition without filesystem"
+            "Should succeed with partition without filesystem: {:?}",
+            result.unwrap_err()
         );
 
         let hc = result.unwrap();
+        // NOTE: We intentionally do not call hc.validate() here because this
+        // test has an incomplete storage config (no root partition) that would
+        // fail full host configuration validation.
+
         assert_eq!(
             hc.storage.disks[0].partitions.len(),
             2,
@@ -591,12 +676,12 @@ mod tests {
     /// - Non-verity partitions (ESP) are handled normally alongside verity ones.
     #[test]
     fn test_derive_host_configuration_inner_with_verity() {
-        let (raw_gpt, disk_size, lba_size) = create_mock_gpt_disk(&[
-            ("esp", 64 * 1024),
-            ("root", 256 * 1024),
-            ("root-hash", 32 * 1024),
-            ("usr", 256 * 1024),
-            ("usr-hash", 32 * 1024),
+        let (raw_gpt, disk_size, lba_size) = create_mock_gpt_disk_typed(&[
+            ("esp", 64 * 1024, gpt::partition_types::EFI),
+            ("root", 256 * 1024, gpt::partition_types::LINUX_FS),
+            ("root-hash", 32 * 1024, gpt::partition_types::LINUX_FS),
+            ("usr", 256 * 1024, gpt::partition_types::LINUX_FS),
+            ("usr-hash", 32 * 1024, gpt::partition_types::LINUX_FS),
         ]);
 
         let disk_info = DiskInfo {
@@ -664,7 +749,7 @@ mod tests {
             os_release: OsRelease::default(),
             os_packages: None,
             images: vec![
-                sample_image("images/esp.img.zst", "/boot/efi"),
+                sample_esp_image("images/esp.img.zst", "/boot/efi"),
                 root_image,
                 usr_image,
             ],
@@ -684,10 +769,13 @@ mod tests {
         assert!(
             result.is_ok(),
             "derive_host_configuration_inner with verity should succeed: {:?}",
-            result.err()
+            result.unwrap_err()
         );
 
         let hc = result.unwrap();
+        // NOTE: We intentionally do not call hc.validate() here because the
+        // verity-only config (read-only root without /var/tmp) cannot pass
+        // full host configuration validation.
 
         // 5 partitions: esp, root, root-hash, usr, usr-hash.
         assert_eq!(
@@ -820,6 +908,81 @@ mod tests {
             err_msg.contains("unsupported"),
             "Error should mention unsupported verity path: {}",
             err_msg
+        );
+    }
+
+    /// Tests [`derive_host_configuration_inner`] with multiple ESP partitions.
+    ///
+    /// When two ESP partitions with mounted filesystems are present, the first
+    /// one encountered should be picked as the canonical ESP mount path in the
+    /// derived host configuration.
+    #[test]
+    fn test_derive_host_configuration_inner_multiple_esp_picks_first() {
+        let (raw_gpt, disk_size, lba_size) = create_mock_gpt_disk_typed(&[
+            ("esp1", 64 * 1024, gpt::partition_types::EFI),
+            ("esp2", 64 * 1024, gpt::partition_types::EFI),
+            ("root", 256 * 1024, gpt::partition_types::LINUX_FS),
+        ]);
+
+        let disk_info = DiskInfo {
+            size: disk_size,
+            lba_size,
+            partition_table_type: PartitionTableType::Gpt,
+            gpt_regions: vec![
+                GptDiskRegion {
+                    image: sample_image_file("gpt_primary.zst"),
+                    region_type: GptRegionType::PrimaryGpt,
+                },
+                GptDiskRegion {
+                    image: sample_image_file("images/esp1.img.zst"),
+                    region_type: GptRegionType::Partition { number: 1 },
+                },
+                GptDiskRegion {
+                    image: sample_image_file("images/esp2.img.zst"),
+                    region_type: GptRegionType::Partition { number: 2 },
+                },
+                GptDiskRegion {
+                    image: sample_image_file("images/root.img.zst"),
+                    region_type: GptRegionType::Partition { number: 3 },
+                },
+            ],
+        };
+
+        let metadata = CosiMetadata {
+            version: KnownMetadataVersion::V1_2.as_version(),
+            id: Some(Uuid::new_v4()),
+            os_arch: SystemArchitecture::Amd64,
+            os_release: OsRelease::default(),
+            os_packages: None,
+            images: vec![
+                sample_esp_image("images/esp1.img.zst", "/boot/efi"),
+                sample_esp_image("images/esp2.img.zst", "/efi"),
+                sample_image("images/root.img.zst", "/"),
+            ],
+            bootloader: None,
+            disk: Some(disk_info),
+            compression: None,
+        };
+
+        let cosi = create_test_cosi(metadata, Some(raw_gpt));
+        let hc = derive_host_configuration_inner(
+            &cosi.source,
+            &cosi.metadata_sha384,
+            "/dev/sda",
+            &cosi.metadata.images,
+            cosi.partitioning_info.as_ref().unwrap(),
+        )
+        .unwrap();
+        hc.validate().unwrap();
+
+        // Only the first ESP filesystem should be marked as ESP, even though both have EFI partition types in the GPT.
+        assert!(
+            hc.storage.filesystems[0].is_esp,
+            "First ESP filesystem should be marked as ESP"
+        );
+        assert!(
+            !hc.storage.filesystems[1].is_esp,
+            "Second ESP filesystem should not be marked as ESP"
         );
     }
 }

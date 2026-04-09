@@ -820,6 +820,7 @@ mod tests {
             }),
             device_id: Some("root".to_string()),
             source: FileSystemSource::Image,
+            is_esp: false,
         }];
         assert_eq!(
             get_expected_root_device_path(&ctx).unwrap_err().kind(),
@@ -968,6 +969,7 @@ mod tests {
                 options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
             }),
             source: FileSystemSource::Image,
+            is_esp: false,
         }];
 
         // Build storage graph
@@ -1079,6 +1081,7 @@ mod functional_test {
             }),
             device_id: Some("root".to_string()),
             source: FileSystemSource::Image,
+            is_esp: false,
         }];
 
         // Test case #1: Missing A/B volume pair for root mount point.
@@ -1320,6 +1323,7 @@ mod functional_test {
                 options: MountOptions::new(MOUNT_OPTION_READ_ONLY),
             }),
             source: FileSystemSource::Image,
+            is_esp: false,
         }];
 
         // Build storage graph to validate

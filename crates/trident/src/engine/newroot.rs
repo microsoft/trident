@@ -577,6 +577,7 @@ mod tests {
                         }),
                         device_id: Some("sda3".to_string()),
                         source: FileSystemSource::Image,
+                        is_esp: false,
                     },
                     FileSystem {
                         mount_point: Some(MountPoint {
@@ -585,6 +586,7 @@ mod tests {
                         }),
                         device_id: Some("sda1".to_string()),
                         source: FileSystemSource::Image,
+                        is_esp: false,
                     },
                     FileSystem {
                         mount_point: Some(MountPoint {
@@ -593,6 +595,7 @@ mod tests {
                         }),
                         device_id: Some("sda1".to_string()),
                         source: FileSystemSource::Image,
+                        is_esp: false,
                     },
                     FileSystem {
                         mount_point: Some(MountPoint {
@@ -601,6 +604,7 @@ mod tests {
                         }),
                         device_id: Some("sda1".to_string()),
                         source: FileSystemSource::Image,
+                        is_esp: false,
                     },
                     FileSystem {
                         mount_point: Some(MountPoint {
@@ -609,6 +613,7 @@ mod tests {
                         }),
                         device_id: Some("sda2".to_string()),
                         source: FileSystemSource::Image,
+                        is_esp: false,
                     },
                 ],
                 ..Default::default()
@@ -824,6 +829,7 @@ mod functional_test {
                         }),
                         device_id: Some("sr0".to_string()),
                         source: FileSystemSource::Image,
+                        is_esp: false,
                     }],
                     ..Default::default()
                 },
@@ -892,6 +898,7 @@ mod functional_test {
                             }),
                             device_id: Some("root".to_string()),
                             source: FileSystemSource::Image,
+                            is_esp: false,
                         },
                         FileSystem {
                             mount_point: Some(MountPoint {
@@ -900,6 +907,7 @@ mod functional_test {
                             }),
                             device_id: Some("esp".to_string()),
                             source: FileSystemSource::Image,
+                            is_esp: true,
                         },
                     ],
                     ..Default::default()
@@ -1023,6 +1031,7 @@ mod functional_test {
                         }),
                         device_id: Some("sr0".to_string()),
                         source: FileSystemSource::Image,
+                        is_esp: false,
                     }],
                     ..Default::default()
                 },
@@ -1132,6 +1141,7 @@ mod functional_test {
                         }),
                         device_id: Some("sr0".to_string()),
                         source: FileSystemSource::Image,
+                        is_esp: false,
                     }],
                     ..Default::default()
                 },
@@ -1222,6 +1232,7 @@ mod functional_test {
                         }),
                         device_id: Some("staging".to_string()),
                         source: FileSystemSource::Image,
+                        is_esp: false,
                     }],
                     ..Default::default()
                 },

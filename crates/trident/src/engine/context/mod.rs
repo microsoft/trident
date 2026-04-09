@@ -432,6 +432,7 @@ mod tests {
                                 options: MountOptions::empty(),
                             }),
                             source: FileSystemSource::Image,
+                            is_esp: false,
                         },
                         FileSystem {
                             device_id: Some("root".to_owned()),
@@ -440,6 +441,7 @@ mod tests {
                                 options: MountOptions::empty(),
                             }),
                             source: FileSystemSource::Image,
+                            is_esp: false,
                         },
                     ],
                     ..Default::default()
@@ -725,6 +727,7 @@ mod tests {
                     device_id: Some("part1".to_owned()),
                     mount_point: Some("/data".into()),
                     source: FileSystemSource::Image,
+                    is_esp: false,
                 }],
                 ..Default::default()
             },

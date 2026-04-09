@@ -230,6 +230,7 @@ mod tests {
                                 path: PathBuf::from("/boot/efi"),
                                 options: MountOptions::empty(),
                             }),
+                            is_esp: true,
                         },
                         FileSystem {
                             device_id: Some("root".into()),
@@ -238,6 +239,7 @@ mod tests {
                                 path: PathBuf::from("/"),
                                 options: MountOptions::empty(),
                             }),
+                            is_esp: false,
                         },
                         FileSystem {
                             device_id: Some("trident".into()),
@@ -246,6 +248,7 @@ mod tests {
                                 options: MountOptions::defaults(),
                             }),
                             source: FileSystemSource::New(NewFileSystemType::Ext4),
+                            is_esp: false,
                         },
                     ],
                     ab_update: Some(config::AbUpdate {
@@ -349,6 +352,7 @@ mod tests {
                                 path: PathBuf::from("/esp"),
                                 options: MountOptions::empty(),
                             }),
+                            is_esp: false,
                         },
                         FileSystem {
                             device_id: Some("root".into()),
@@ -357,6 +361,7 @@ mod tests {
                                 path: PathBuf::from("/"),
                                 options: MountOptions::empty(),
                             }),
+                            is_esp: false,
                         },
                         FileSystem {
                             device_id: Some("trident".into()),
@@ -365,6 +370,7 @@ mod tests {
                                 options: MountOptions::defaults(),
                             }),
                             source: FileSystemSource::New(NewFileSystemType::Ext4),
+                            is_esp: false,
                         },
                     ],
                     ab_update: Some(config::AbUpdate {
@@ -404,6 +410,7 @@ mod tests {
                 path: PathBuf::from("/"),
                 options: MountOptions::empty(),
             }),
+            is_esp: false,
         };
         ctx_ab_update.image = Some(OsImage::mock(os_image_ab_update));
         ctx_ab_update.populate_filesystems().unwrap();
@@ -456,6 +463,7 @@ mod tests {
                                 path: PathBuf::from("/boot/efi"),
                                 options: MountOptions::empty(),
                             }),
+                            is_esp: true,
                         },
                         FileSystem {
                             device_id: Some("root-b".into()),
@@ -464,6 +472,7 @@ mod tests {
                                 path: PathBuf::from("/"),
                                 options: MountOptions::empty(),
                             }),
+                            is_esp: false,
                         },
                     ],
                     ..Default::default()

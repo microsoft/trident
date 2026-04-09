@@ -34,6 +34,15 @@ It can be provided as an object for more control over the mount options, or as a
 | Shorthand Type   | `string`                      |
 | Shorthand Format | `path`                        |
 
+### `overrideEspMount` (optional)
+
+Options to change the default ESP mount point path.
+
+| Characteristic | Value                                     |
+| -------------- | ----------------------------------------- |
+| Type           | `OverrideEspMount`                        |
+| Link           | [OverrideEspMount](./OverrideEspMount.md) |
+
 ### `source` (optional)
 
 The source of the file system.

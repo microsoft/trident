@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Error};
 use petgraph::{
@@ -30,6 +30,7 @@ pub(super) type StoragePetgraph = Graph<StorageGraphNode, ReferenceKind, Directe
 #[derive(Debug, Clone, Default)]
 pub struct StorageGraph {
     pub(super) inner: StoragePetgraph,
+    pub(super) esp_mount_path: Option<PathBuf>,
 }
 
 impl StorageGraph {
@@ -87,6 +88,11 @@ impl StorageGraph {
         } else {
             VolumeStatus::NotPresent
         }
+    }
+
+    /// Returns the ESP mount path.
+    pub fn esp_mount_path(&self) -> Option<&Path> {
+        self.esp_mount_path.as_deref()
     }
 
     /// Returns whether the root filesystem is on a verity device.
@@ -371,6 +377,7 @@ mod tests {
             device_id: Some("fs1".into()),
             mount_point: Some(MountPoint::from_str("/mnt/fs1").unwrap()),
             source: FileSystemSource::New(NewFileSystemType::Ext4),
+            is_esp: false,
         };
         let fs_node_idx = graph.inner.add_node((&fs).into());
 
@@ -400,6 +407,7 @@ mod tests {
             device_id: Some("fs2".into()),
             mount_point: Some(MountPoint::from_str("/mnt/fs2").unwrap()),
             source: FileSystemSource::New(NewFileSystemType::Ext4),
+            is_esp: false,
         };
         let fs2_node_idx = graph.inner.add_node((&fs2).into());
 
@@ -439,6 +447,7 @@ mod tests {
             device_id: Some("fs1".into()),
             mount_point: Some(MountPoint::from_str("/mnt/fs1").unwrap()),
             source: FileSystemSource::New(NewFileSystemType::Ext4),
+            is_esp: false,
         });
         let _ = graph.inner.add_node(fs_node);
 
@@ -451,6 +460,7 @@ mod tests {
             device_id: Some("rootfs".into()),
             mount_point: Some(MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap()),
             source: FileSystemSource::New(NewFileSystemType::Ext4),
+            is_esp: false,
         });
         let root_fs_node_idx = graph.inner.add_node(root_fs_node.clone());
 
@@ -485,6 +495,7 @@ mod tests {
             device_id: Some(block_dev_id.into()),
             mount_point: Some(MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap()),
             source: FileSystemSource::New(NewFileSystemType::Ext4),
+            is_esp: false,
         });
 
         let root_fs_node_idx = graph.inner.add_node(root_fs_node.clone());
@@ -567,6 +578,7 @@ mod tests {
                 device_id: Some(dev_id.into()),
                 mount_point: Some(MountPoint::from_str(ROOT_MOUNT_POINT_PATH).unwrap()),
                 source: FileSystemSource::New(NewFileSystemType::Ext4),
+                is_esp: false,
             }));
 
         // Add an edge from the partition to the filesystem.

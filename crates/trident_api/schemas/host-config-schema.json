@@ -368,6 +368,14 @@
           "nullable": true,
           "string_shortcut": "path"
         },
+        "overrideEspMount": {
+          "description": "Options to change the default ESP mount point path.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/OverrideEspMount"
+            }
+          ]
+        },
         "source": {
           "description": "The source of the file system.\n\nIf not specified, this field will default to image.",
           "allOf": [
@@ -735,6 +743,34 @@
       },
       "additionalProperties": false
     },
+    "OverrideEspMount": {
+      "oneOf": [
+        {
+          "title": "Use Default Behavior",
+          "description": "Do not override the default ESP mount point path. This is the default behavior.",
+          "type": "string",
+          "enum": [
+            "use-default"
+          ]
+        },
+        {
+          "title": "Override",
+          "description": "Override the default ESP mount point to be the path of this filesystem.",
+          "type": "string",
+          "enum": [
+            "override"
+          ]
+        },
+        {
+          "title": "Block",
+          "description": "This option should be used very rarely and in very specific non-standard scenarios.\n\nUsed to indicate that this filesystem is NOT the ESP, even if it matches the default ESP mount point path. This is necessary in the case where a user has a non-ESP filesystem that they want to mount at the default ESP mount point path, and they want to ensure that Trident does not treat it as the ESP.",
+          "type": "string",
+          "enum": [
+            "block"
+          ]
+        }
+      ]
+    },
     "Partition": {
       "description": "Per partition configuration.",
       "type": "object",
@@ -825,7 +861,7 @@
       ]
     },
     "PartitionType": {
-      "description": "Partition types as defined by [The Discoverable Partitions Specification](<https://uapi-group.org/specifications/specs/discoverable_partitions_specification/>).",
+      "description": "Partition types as defined by [The Discoverable Partitions Specification](<https://uapi-group.org/specifications/specs/discoverable_partitions_specification/>).\n\n# INTERNAL IT IS NOT RECOMMENDED TO USE THIS ENUM DIRECTLY, but rather the DiscoverablePartitionType enum from sysdefs, which has more flexible matching logic. This enum is primarily intended for serialization and user input parsing, and the `as_dps()` method can be used to convert it to a DiscoverablePartitionType for comparison and other logic.",
       "oneOf": [
         {
           "title": "EFI System Partition",

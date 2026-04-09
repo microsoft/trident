@@ -321,8 +321,21 @@ impl DiscoverablePartitionType {
         }
     }
 
+    /// Returns true if this partition type is an unknown type (i.e. it doesn't
+    /// have a well-known name and is not one of the defined types in the
+    /// Discoverable Partition Specification).
     pub fn is_unknown(&self) -> bool {
         matches!(self, Self::Unknown(_))
+    }
+
+    /// Attempts to parse a partition type from either a string name or a UUID
+    /// string.
+    pub fn try_from_string_name_or_uuid(val: &str) -> Result<Self, Error> {
+        if let Ok(uuid) = Uuid::from_str(val) {
+            Ok(Self::from_uuid(&uuid))
+        } else {
+            Self::try_from_str(val)
+        }
     }
 }
 

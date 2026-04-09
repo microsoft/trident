@@ -847,6 +847,7 @@ mod tests {
                             path: ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::defaults(),
                         }),
+                        is_esp: true,
                     }],
                     disks: vec![Disk {
                         id: "disk1".into(),
@@ -902,6 +903,7 @@ mod tests {
                             path: ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::defaults(),
                         }),
+                        is_esp: true,
                     }],
                     disks: vec![Disk {
                         id: "disk1".into(),
@@ -1413,6 +1415,7 @@ mod functional_test {
                             path: ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::defaults(),
                         }),
+                        is_esp: true,
                     }],
                     disks: vec![
                         Disk {

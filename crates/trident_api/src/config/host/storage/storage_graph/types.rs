@@ -155,19 +155,6 @@ bitflags::bitflags! {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Copy)]
-/// Enum for simple representation of a filesystem source
-pub enum FileSystemSourceKind {
-    /// Create a new file system.
-    New,
-
-    /// Filesystem from an adopted block device.
-    Adopted,
-
-    /// Use an existing file system from an OS Image.
-    Image,
-}
-
 impl HostConfigBlockDevice {
     /// Returns the kind of the block device of this HostConfigBlockDevice.
     pub fn kind(&self) -> BlkDevKind {

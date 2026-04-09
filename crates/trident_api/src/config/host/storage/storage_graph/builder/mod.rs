@@ -50,7 +50,7 @@ mod partition;
 mod raid;
 mod relationships;
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub(crate) struct StorageGraphBuilder {
     nodes: Vec<StorageGraphNode>,
 }
@@ -82,7 +82,7 @@ impl StorageGraphBuilder {
 
         // Check all filesystems and ensure mount points are unique.
         trace!("Checking filesystems");
-        filesystems::check_filesystems(&graph)?;
+        let esp_mount_path = filesystems::check_filesystems(&graph)?;
 
         // Check that all nodes and their references are valid and add all
         // correct edges to the graph.
@@ -110,7 +110,7 @@ impl StorageGraphBuilder {
 
         // Check partition type homogeneity
         trace!("Checking partition type homogeneity");
-        partition::check_partition_types(&graph)?;
+        partition::check_partition_types(&graph, esp_mount_path.as_deref())?;
 
         // Check that verity devices have congruent partition types
         trace!("Checking verity partition types");
@@ -131,7 +131,10 @@ impl StorageGraphBuilder {
             graph.node_count(),
             graph.edge_count()
         );
-        Ok(StorageGraph { inner: graph })
+        Ok(StorageGraph {
+            inner: graph,
+            esp_mount_path,
+        })
     }
 }
 

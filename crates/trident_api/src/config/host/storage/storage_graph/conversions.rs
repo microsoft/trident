@@ -7,19 +7,8 @@ use crate::config::{
 
 use super::{
     node::StorageGraphNode,
-    types::{BlkDevReferrerKind, FileSystemSourceKind, HostConfigBlockDevice},
+    types::{BlkDevReferrerKind, HostConfigBlockDevice},
 };
-
-/// Get a FileSystemSourceKind from a FileSystemSource reference
-impl From<&FileSystemSource> for FileSystemSourceKind {
-    fn from(source: &FileSystemSource) -> Self {
-        match source {
-            FileSystemSource::New(_) => Self::New,
-            FileSystemSource::Adopted(_) => Self::Adopted,
-            FileSystemSource::Image => Self::Image,
-        }
-    }
-}
 
 /// Get a StorageGraphNode from a Disk reference.
 impl From<&Disk> for StorageGraphNode {
@@ -118,7 +107,7 @@ impl From<&FileSystem> for BlkDevReferrerKind {
 
                 // If it's an OS image, then check the mount point...
                 FileSystemSource::Image => {
-                    if fs.is_esp() {
+                    if fs.is_esp {
                         // If the mount point is the ESP mount point, then it's an
                         // ESP filesystem referrer.
                         BlkDevReferrerKind::FileSystemEsp

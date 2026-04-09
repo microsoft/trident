@@ -3,19 +3,23 @@ use std::{
     str::FromStr,
 };
 
+use serde::{Deserialize, Serialize};
+
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
-use serde::{Deserialize, Serialize};
-
 use crate::{
-    constants::{ESP_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
+    constants::{MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH},
     BlockDeviceId,
 };
 
 use super::filesystem_types::{AdoptedFileSystemType, FileSystemType, NewFileSystemType};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(
+    try_from = "fs_serde::FileSystemSerde",
+    into = "fs_serde::FileSystemSerde"
+)]
 pub struct FileSystem {
     /// The ID of the block device on which to place this file system.
     pub device_id: Option<BlockDeviceId>,
@@ -30,20 +34,31 @@ pub struct FileSystem {
     /// It can be provided as an object for more control over the mount options,
     /// or as a just a string when `defaults` is sufficient.
     pub mount_point: Option<MountPoint>,
+
+    /// Whether this filesystem is the ESP.
+    pub is_esp: bool,
 }
 
 pub mod fs_serde {
+    use std::path::Path;
+
+    use anyhow::{ensure, Context, Error};
+    use serde::{Deserialize, Serialize};
+
     #[cfg(feature = "schemars")]
     use schemars::JsonSchema;
 
-    use serde::{Deserialize, Deserializer, Serialize};
-
-    use crate::is_default;
+    use crate::{constants::ESP_MOUNT_POINT_PATH, is_default};
 
     #[cfg(feature = "schemars")]
     use crate::schema_helpers::block_device_id_schema;
 
-    use super::{AdoptedFileSystemType, FileSystemType, MountPoint, NewFileSystemType};
+    use super::{
+        AdoptedFileSystemType, FileSystem, FileSystemSource as FileSystemSourceInner,
+        FileSystemType, MountPoint, NewFileSystemType,
+    };
+
+    const DEFAULT_ESP_MOUNT_PATH: &str = ESP_MOUNT_POINT_PATH;
 
     #[derive(Deserialize, Serialize, Default, PartialEq, Eq)]
     #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -69,7 +84,7 @@ pub mod fs_serde {
     #[derive(Deserialize, Serialize)]
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
     #[cfg_attr(feature = "schemars", derive(JsonSchema))]
-    struct FileSystem {
+    pub(super) struct FileSystemSerde {
         /// The ID of the block device on which to place this file system.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
@@ -104,6 +119,139 @@ pub mod fs_serde {
             )
         )]
         mount_point: Option<MountPoint>,
+
+        /// Options to change the default ESP mount point path.
+        #[serde(default, skip_serializing_if = "is_default")]
+        override_esp_mount: OverrideEspMount,
+    }
+
+    #[derive(Default, Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
+    #[serde(rename_all = "kebab-case", deny_unknown_fields)]
+    #[cfg_attr(feature = "schemars", derive(JsonSchema))]
+    enum OverrideEspMount {
+        /// # Use Default Behavior
+        ///
+        /// Do not override the default ESP mount point path. This is the
+        /// default behavior.
+        #[default]
+        UseDefault,
+
+        /// # Override
+        ///
+        /// Override the default ESP mount point to be the path of this
+        /// filesystem.
+        Override,
+
+        /// # Block
+        ///
+        /// This option should be used very rarely and in very specific
+        /// non-standard scenarios.
+        ///
+        /// Used to indicate that this filesystem is NOT the ESP, even if it
+        /// matches the default ESP mount point path. This is necessary in the
+        /// case where a user has a non-ESP filesystem that they want to mount
+        /// at the default ESP mount point path, and they want to ensure that
+        /// Trident does not treat it as the ESP.
+        Block,
+    }
+
+    impl TryFrom<FileSystemSerde> for FileSystem {
+        type Error = Error;
+
+        fn try_from(value: FileSystemSerde) -> Result<super::FileSystem, Self::Error> {
+            let source = match value.source {
+                FileSystemSource::New => FileSystemSourceInner::New(match value.fs_type {
+                    None => NewFileSystemType::default(),
+                    Some(fs_type) => NewFileSystemType::try_from(fs_type)
+                        .context("Invalid new filesystem type")?,
+                }),
+                FileSystemSource::Adopted => FileSystemSourceInner::Adopted(match value.fs_type {
+                    None => AdoptedFileSystemType::default(),
+                    Some(fs_type) => AdoptedFileSystemType::try_from(fs_type)
+                        .context("Invalid adopted filesystem type")?,
+                }),
+                FileSystemSource::Image => {
+                    ensure!(
+                        value.fs_type.is_none(),
+                        "Filesystem type cannot be specified for image filesystems"
+                    );
+                    FileSystemSourceInner::Image
+                }
+            };
+
+            let is_esp = match value.override_esp_mount {
+                OverrideEspMount::UseDefault => value
+                    .mount_point
+                    .as_ref()
+                    .is_some_and(|mp| mp.path == Path::new(DEFAULT_ESP_MOUNT_PATH)),
+                OverrideEspMount::Override => {
+                    ensure!(
+                        value.mount_point.is_some(),
+                        "override_esp_mount cannot be set to Override when mount_point is not specified"
+                    );
+                    true
+                }
+                OverrideEspMount::Block => false,
+            };
+
+            Ok(FileSystem {
+                device_id: value.device_id,
+                source,
+                mount_point: value.mount_point,
+                is_esp,
+            })
+        }
+    }
+
+    impl From<FileSystem> for FileSystemSerde {
+        fn from(value: FileSystem) -> Self {
+            let override_esp_mount = if let Some(mp) = &value.mount_point {
+                // There is a mount point, so the override_esp_mount field has
+                // meaning. We determine its value based on whether the mount
+                // point path matches the default ESP mount point path and
+                // whether the is_esp field is set to true.
+
+                match (mp.path == Path::new(DEFAULT_ESP_MOUNT_PATH), value.is_esp) {
+                    // Mount point matches default ESP mount point path and
+                    // is_esp is true, so we use the default behavior.
+                    (true, true) => OverrideEspMount::UseDefault,
+
+                    // Mount point matches default ESP mount point path but
+                    // is_esp is false, so we block it from being treated as the
+                    // ESP.
+                    (true, false) => OverrideEspMount::Block,
+
+                    // Mount point does not match default ESP mount point path
+                    // but is_esp is true, so we override the default ESP mount
+                    // point to be this mount point.
+                    (false, true) => OverrideEspMount::Override,
+
+                    // Mount point does not match default ESP mount point path and
+                    // is_esp is false, so we use the default behavior.
+                    (false, false) => OverrideEspMount::UseDefault,
+                }
+            } else {
+                // If there is no mount point, then the override_esp_mount field
+                // has no meaning, so we can just set it to UseDefault.
+                OverrideEspMount::UseDefault
+            };
+
+            FileSystemSerde {
+                device_id: value.device_id,
+                source: match &value.source {
+                    FileSystemSourceInner::Image => FileSystemSource::Image,
+                    FileSystemSourceInner::New(_) => FileSystemSource::New,
+                    FileSystemSourceInner::Adopted(_) => FileSystemSource::Adopted,
+                },
+                fs_type: match &value.source {
+                    FileSystemSourceInner::New(fs_type) => Some((*fs_type).into()),
+                    FileSystemSourceInner::Adopted(fs_type) => Some((*fs_type).into()),
+                    _ => None,
+                },
+                mount_point: value.mount_point,
+                override_esp_mount,
+            }
+        }
     }
 
     #[cfg(feature = "schemars")]
@@ -113,70 +261,7 @@ pub mod fs_serde {
         }
 
         fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
-            FileSystem::json_schema(gen)
-        }
-    }
-
-    impl<'de> Deserialize<'de> for super::FileSystem {
-        fn deserialize<D>(deserializer: D) -> Result<super::FileSystem, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            let interim = FileSystem::deserialize(deserializer)?;
-            let source = match interim.source {
-                FileSystemSource::Adopted => {
-                    super::FileSystemSource::Adopted(match interim.fs_type {
-                        None => AdoptedFileSystemType::default(),
-                        Some(fs_type) => AdoptedFileSystemType::try_from(fs_type).map_err(|e| {
-                            serde::de::Error::custom(format!(
-                                "Invalid adopted filesystem type: {e}"
-                            ))
-                        })?,
-                    })
-                }
-                FileSystemSource::New => super::FileSystemSource::New(match interim.fs_type {
-                    None => NewFileSystemType::default(),
-                    Some(fs_type) => NewFileSystemType::try_from(fs_type).map_err(|e| {
-                        serde::de::Error::custom(format!("Invalid new filesystem type: {e}"))
-                    })?,
-                }),
-                FileSystemSource::Image => {
-                    if interim.fs_type.is_some() {
-                        return Err(serde::de::Error::custom(
-                            "Filesystem type cannot be specified for image filesystems",
-                        ));
-                    }
-                    super::FileSystemSource::Image
-                }
-            };
-            Ok(super::FileSystem {
-                device_id: interim.device_id,
-                source,
-                mount_point: interim.mount_point,
-            })
-        }
-    }
-
-    impl Serialize for super::FileSystem {
-        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer,
-        {
-            let interim = FileSystem {
-                device_id: self.device_id.clone(),
-                source: match &self.source {
-                    super::FileSystemSource::Image => FileSystemSource::Image,
-                    super::FileSystemSource::New(_) => FileSystemSource::New,
-                    super::FileSystemSource::Adopted(_) => FileSystemSource::Adopted,
-                },
-                mount_point: self.mount_point.clone(),
-                fs_type: match &self.source {
-                    super::FileSystemSource::New(fs_type) => Some((*fs_type).into()),
-                    super::FileSystemSource::Adopted(fs_type) => Some((*fs_type).into()),
-                    _ => None,
-                },
-            };
-            interim.serialize(serializer)
+            FileSystemSerde::json_schema(gen)
         }
     }
 }
@@ -331,7 +416,14 @@ impl FileSystem {
                     .to_owned(),
                 ),
             ),
-            // ("type", Some(self.fs_type.to_string())),
+            (
+                "type",
+                match &self.source {
+                    FileSystemSource::New(fs_type) => Some(fs_type.to_string()),
+                    FileSystemSource::Adopted(fs_type) => Some(fs_type.to_string()),
+                    FileSystemSource::Image => None,
+                },
+            ),
             ("dev", self.device_id.clone()),
             (
                 "mnt",
@@ -339,18 +431,12 @@ impl FileSystem {
                     .as_ref()
                     .map(|mp| mp.path.to_string_lossy().to_string()),
             ),
+            ("is_esp", self.is_esp.then_some("true".to_owned())),
         ]
         .into_iter()
         .filter_map(|(k, v)| v.map(|v| format!("{k}:{v}")))
         .collect::<Vec<_>>()
         .join(", ")
-    }
-
-    /// Returns whether the filesystem is the EFI System Partition (ESP), as
-    /// determined by its mount point path.
-    pub fn is_esp(&self) -> bool {
-        self.mount_point_path()
-            .is_some_and(|mpp| mpp == Path::new(ESP_MOUNT_POINT_PATH))
     }
 
     /// Returns whether the filesystem is the root filesystem, as determined by
@@ -377,6 +463,8 @@ impl FileSystem {
 mod tests {
     use super::*;
 
+    use crate::constants::ESP_MOUNT_POINT_PATH;
+
     #[test]
     fn test_mount_point_from_str() {
         let mount_point: MountPoint = "/mnt".into();
@@ -390,6 +478,7 @@ mod tests {
             device_id: Some("device_id".to_string()),
             source: Default::default(),
             mount_point: None,
+            is_esp: false,
         };
         assert_eq!(fs.mount_point_path(), None);
 
@@ -398,7 +487,7 @@ mod tests {
             options: MountOptions::new("defaults"),
         });
         assert_eq!(fs.mount_point_path(), Some(Path::new("/mnt")));
-        assert!(!fs.is_esp());
+        assert!(!fs.is_esp);
         assert!(!fs.is_root());
         assert!(!fs.is_read_only());
 
@@ -406,8 +495,9 @@ mod tests {
             path: PathBuf::from("/boot/efi"),
             options: MountOptions::new("defaults"),
         });
+        fs.is_esp = true; // Manually set; normally derived during deserialization via overrideEspMount / default mount-point detection.
         assert_eq!(fs.mount_point_path(), Some(Path::new(ESP_MOUNT_POINT_PATH)));
-        assert!(fs.is_esp());
+        assert!(fs.is_esp);
         assert!(!fs.is_root());
         assert!(!fs.is_read_only());
 
@@ -415,11 +505,12 @@ mod tests {
             path: PathBuf::from("/"),
             options: MountOptions::new("defaults"),
         });
+        fs.is_esp = false; // Manually reset; this filesystem is no longer the ESP.
         assert_eq!(
             fs.mount_point_path(),
             Some(Path::new(ROOT_MOUNT_POINT_PATH))
         );
-        assert!(!fs.is_esp());
+        assert!(!fs.is_esp);
         assert!(fs.is_root());
         assert!(!fs.is_read_only());
 
@@ -428,7 +519,7 @@ mod tests {
             options: MountOptions::new("ro"),
         });
         assert_eq!(fs.mount_point_path(), Some(Path::new("/mnt")));
-        assert!(!fs.is_esp());
+        assert!(!fs.is_esp);
         assert!(!fs.is_root());
         assert!(fs.is_read_only());
     }
@@ -442,32 +533,33 @@ mod tests {
                 path: "/".into(),
                 options: MountOptions::defaults(),
             }),
+            is_esp: false,
         };
 
         // Success: source unspecified
-        let yaml = r#"
-deviceId: root
-mountPoint: /
-"#;
+        let yaml = indoc::indoc! {r#"
+            deviceId: root
+            mountPoint: /
+        "#};
         let filesystem: FileSystem = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(filesystem, root_fs);
 
         // Success: source specified
-        let yaml = r#"
-deviceId: root
-source: image
-mountPoint: /
-"#;
+        let yaml = indoc::indoc! {r#"
+            deviceId: root
+            source: image
+            mountPoint: /
+        "#};
         let filesystem: FileSystem = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(filesystem, root_fs);
 
         // Failure: filesystem type specified
-        let yaml = r#"
-deviceId: root
-source: image
-type: ext4
-mountPoint: /
-"#;
+        let yaml = indoc::indoc! {r#"
+            deviceId: root
+            source: image
+            type: ext4
+            mountPoint: /
+        "#};
         let err = serde_yaml::from_str::<FileSystem>(yaml).unwrap_err();
         assert!(err
             .to_string()
@@ -483,44 +575,45 @@ mountPoint: /
                 path: "/".into(),
                 options: MountOptions::defaults(),
             }),
+            is_esp: false,
         };
 
         // Success: filesystem type unspecified (default to Ext4)
-        let yaml = r#"
-deviceId: trident
-source: new
-mountPoint: /
-"#;
+        let yaml = indoc::indoc! {r#"
+            deviceId: trident
+            source: new
+            mountPoint: /
+        "#};
         let filesystem: FileSystem = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(filesystem, new_fs);
 
         // Success: filesystem type specified
-        let yaml = r#"
-deviceId: trident
-source: new
-type: ext4
-mountPoint: /
-"#;
+        let yaml = indoc::indoc! {r#"
+            deviceId: trident
+            source: new
+            type: ext4
+            mountPoint: /
+        "#};
         let filesystem: FileSystem = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(filesystem, new_fs);
 
         // Failure: invalid filesystem type specified (unknown)
-        let yaml = r#"
-deviceId: trident
-source: new
-type: abcd
-mountPoint: /
-"#;
+        let yaml = indoc::indoc! {r#"
+            deviceId: trident
+            source: new
+            type: abcd
+            mountPoint: /
+        "#};
         let err = serde_yaml::from_str::<FileSystem>(yaml).unwrap_err();
         assert!(err.to_string().contains("unknown variant `abcd`"));
 
         // Failure: invalid filesystem type specified (adopted)
-        let yaml = r#"
-deviceId: trident
-source: new
-type: iso9660
-mountPoint: /
-"#;
+        let yaml = indoc::indoc! {r#"
+            deviceId: trident
+            source: new
+            type: iso9660
+            mountPoint: /
+        "#};
         let err = serde_yaml::from_str::<FileSystem>(yaml).unwrap_err();
         assert!(err.to_string().contains("Invalid new filesystem type"));
     }
@@ -534,66 +627,68 @@ mountPoint: /
                 path: "/".into(),
                 options: MountOptions::defaults(),
             }),
+            is_esp: false,
         };
 
         // Success: filesystem type unspecified (default to Auto)
-        let yaml = r#"
-deviceId: trident
-source: adopted
-mountPoint: /
-"#;
+        let yaml = indoc::indoc! {r#"
+            deviceId: trident
+            source: adopted
+            mountPoint: /
+        "#};
         let filesystem: FileSystem = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(filesystem, adopted_fs);
 
         // Success: filesystem type specified
-        let yaml = r#"
-deviceId: trident
-source: adopted
-type: auto
-mountPoint: /
-"#;
+        let yaml = indoc::indoc! {r#"
+            deviceId: trident
+            source: adopted
+            type: auto
+            mountPoint: /
+        "#};
         let filesystem: FileSystem = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(filesystem, adopted_fs);
 
         // Failure: invalid filesystem type specified (unknown)
-        let yaml = r#"
-deviceId: trident
-source: adopted
-type: abcd
-mountPoint: /
-"#;
+        let yaml = indoc::indoc! {r#"
+            deviceId: trident
+            source: adopted
+            type: abcd
+            mountPoint: /
+        "#};
         let err = serde_yaml::from_str::<FileSystem>(yaml).unwrap_err();
         assert!(err.to_string().contains("unknown variant `abcd`"));
 
         // Failure: invalid filesystem type specified (new)
-        let yaml = r#"
-deviceId: trident
-source: adopted
-type: tmpfs
-mountPoint: /
-"#;
+        let yaml = indoc::indoc! {r#"
+            deviceId: trident
+            source: adopted
+            type: tmpfs
+            mountPoint: /
+        "#};
         let err = serde_yaml::from_str::<FileSystem>(yaml).unwrap_err();
         assert!(err.to_string().contains("Invalid adopted filesystem type"));
 
         // Failure: invalid nesting structure
-        let yaml = r#"
-deviceId: trident
-source:
-  source: adopted
-  type: auto
-mountPoint: /
-"#;
+        let yaml = indoc::indoc! {r#"
+            deviceId: trident
+            source:
+              source: adopted
+              type: auto
+            mountPoint: /
+        "#};
         serde_yaml::from_str::<FileSystem>(yaml).unwrap_err();
     }
 
     #[test]
     fn test_serialize_filesystem() {
         // Image
-        let image_yaml = r#"deviceId: root
-mountPoint:
-  path: /
-  options: defaults
-"#;
+        let image_yaml = indoc::indoc! {r#"
+            deviceId: root
+            mountPoint:
+              path: /
+              options: defaults
+        "#};
         let image_fs = FileSystem {
             device_id: Some("root".into()),
             source: FileSystemSource::Image,
@@ -601,17 +696,19 @@ mountPoint:
                 path: "/".into(),
                 options: MountOptions::defaults(),
             }),
+            is_esp: false,
         };
         assert_eq!(serde_yaml::to_string(&image_fs).unwrap(), image_yaml);
 
         // New
-        let new_yaml = r#"deviceId: root
-source: new
-type: ext4
-mountPoint:
-  path: /
-  options: defaults
-"#;
+        let new_yaml = indoc::indoc! {r#"
+            deviceId: root
+            source: new
+            type: ext4
+            mountPoint:
+              path: /
+              options: defaults
+        "#};
         let new_fs = FileSystem {
             device_id: Some("root".into()),
             source: FileSystemSource::New(NewFileSystemType::Ext4),
@@ -619,17 +716,19 @@ mountPoint:
                 path: "/".into(),
                 options: MountOptions::defaults(),
             }),
+            is_esp: false,
         };
         assert_eq!(serde_yaml::to_string(&new_fs).unwrap(), new_yaml);
 
         // Adopted
-        let adopted_yaml = r#"deviceId: root
-source: adopted
-type: auto
-mountPoint:
-  path: /
-  options: defaults
-"#;
+        let adopted_yaml = indoc::indoc! {r#"
+            deviceId: root
+            source: adopted
+            type: auto
+            mountPoint:
+              path: /
+              options: defaults
+        "#};
         let adopted_fs = FileSystem {
             device_id: Some("root".into()),
             source: FileSystemSource::Adopted(AdoptedFileSystemType::Auto),
@@ -637,6 +736,7 @@ mountPoint:
                 path: "/".into(),
                 options: MountOptions::defaults(),
             }),
+            is_esp: false,
         };
         assert_eq!(serde_yaml::to_string(&adopted_fs).unwrap(), adopted_yaml);
     }
@@ -648,6 +748,7 @@ mountPoint:
                 device_id: dev_id,
                 source,
                 mount_point: mp,
+                is_esp: false,
             };
 
             let serialized_result = serde_yaml::to_string(&original).unwrap();
@@ -729,6 +830,79 @@ mountPoint:
                 "c".to_string(),
                 "d".to_string()
             ]
+        );
+    }
+
+    /// Tests that `override_esp_mount` correctly influences `is_esp` during
+    /// deserialization and that serialization round-trips preserve the behavior.
+    #[test]
+    fn test_override_esp_mount_serde() {
+        // UseDefault + default ESP path → is_esp == true
+        let yaml = indoc::indoc! {r#"
+            deviceId: esp
+            mountPoint: /boot/efi
+        "#};
+        let fs: FileSystem = serde_yaml::from_str(yaml).unwrap();
+        assert!(
+            fs.is_esp,
+            "UseDefault with /boot/efi should set is_esp = true"
+        );
+
+        // Round-trip: serializing and re-deserializing should preserve is_esp
+        let reserialized = serde_yaml::to_string(&fs).unwrap();
+        let roundtripped: FileSystem = serde_yaml::from_str(&reserialized).unwrap();
+        assert_eq!(fs, roundtripped);
+
+        // UseDefault + non-default path → is_esp == false
+        let yaml = indoc::indoc! {r#"
+            deviceId: data
+            mountPoint: /data
+        "#};
+        let fs: FileSystem = serde_yaml::from_str(yaml).unwrap();
+        assert!(
+            !fs.is_esp,
+            "UseDefault with /data should set is_esp = false"
+        );
+
+        let reserialized = serde_yaml::to_string(&fs).unwrap();
+        let roundtripped: FileSystem = serde_yaml::from_str(&reserialized).unwrap();
+        assert_eq!(fs, roundtripped);
+
+        // Override + non-default path → is_esp == true
+        let yaml = indoc::indoc! {r#"
+            deviceId: esp
+            overrideEspMount: override
+            mountPoint: /efi
+        "#};
+        let fs: FileSystem = serde_yaml::from_str(yaml).unwrap();
+        assert!(fs.is_esp, "Override with /efi should set is_esp = true");
+
+        let reserialized = serde_yaml::to_string(&fs).unwrap();
+        let roundtripped: FileSystem = serde_yaml::from_str(&reserialized).unwrap();
+        assert_eq!(fs, roundtripped);
+
+        // Block + default ESP path → is_esp == false
+        let yaml = indoc::indoc! {r#"
+            deviceId: not-esp
+            overrideEspMount: block
+            mountPoint: /boot/efi
+        "#};
+        let fs: FileSystem = serde_yaml::from_str(yaml).unwrap();
+        assert!(!fs.is_esp, "Block with /boot/efi should set is_esp = false");
+
+        let reserialized = serde_yaml::to_string(&fs).unwrap();
+        let roundtripped: FileSystem = serde_yaml::from_str(&reserialized).unwrap();
+        assert_eq!(fs, roundtripped);
+
+        // Override without mount_point → error
+        let yaml = indoc::indoc! {r#"
+            deviceId: esp
+            overrideEspMount: override
+        "#};
+        let err = serde_yaml::from_str::<FileSystem>(yaml).unwrap_err();
+        assert!(
+            err.to_string().contains("override_esp_mount"),
+            "Override without mount_point should error: {err}"
         );
     }
 }
