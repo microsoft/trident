@@ -18,8 +18,8 @@ use tempfile::NamedTempFile;
 use trident_api::{
     config::{HostConfiguration, VerityDevice},
     constants::{
-        internal_params::VERITY_SIGNATURE_PATHS, DEV_MAPPER_PATH, ESP_MOUNT_POINT_PATH,
-        ROOT_VERITY_DEVICE_NAME, USR_MOUNT_POINT_PATH, USR_VERITY_DEVICE_NAME,
+        internal_params::VERITY_SIGNATURE_PATHS, DEV_MAPPER_PATH, ROOT_VERITY_DEVICE_NAME,
+        USR_MOUNT_POINT_PATH, USR_VERITY_DEVICE_NAME,
     },
     BlockDeviceId,
 };
@@ -182,9 +182,9 @@ fn open_verity_device_with_signature(
     // ESP is populated after this point, so we cannot allow signature files to
     // be on the ESP mount point.
     ensure!(
-        !signature_file_path.starts_with(ESP_MOUNT_POINT_PATH),
+        !signature_file_path.starts_with(ctx.esp_mount_path.as_path()),
         "Signature file cannot be on the ESP mount point '{}'",
-        ESP_MOUNT_POINT_PATH
+        ctx.esp_mount_path.as_path().display()
     );
 
     let (mpi, relative_path) = ctx

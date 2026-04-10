@@ -18,7 +18,7 @@ use trident_api::{
         internal_params::{
             DISABLE_MEDIA_EJECTION, ENABLE_UKI_SUPPORT, NO_TRANSITION, RAW_COSI_STORAGE,
         },
-        ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_PATH,
+        ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_PATH,
     },
     error::{
         InitializationError, InternalError, InvalidInputError, ReportError, ServicingError,
@@ -214,7 +214,8 @@ fn stage_clean_install(
         &ctx.partition_paths,
         AbVolumeSelection::VolumeA,
     )?;
-    ctx.install_index = install_index::next_install_index(newroot_mount.path())?;
+    ctx.install_index =
+        install_index::next_install_index(newroot_mount.path(), ctx.esp_mount_path.as_path())?;
 
     engine::provision(subsystems, &ctx, newroot_mount.path())?;
 
@@ -304,8 +305,8 @@ pub(crate) fn finalize_clean_install(
         )?,
     };
 
-    // On clean install, need to verify that AZLA entry exists in /mnt/newroot/boot/efi
-    let esp_path = join_relative(new_root.path(), ESP_MOUNT_POINT_PATH);
+    // On clean install, need to verify that the AZLA entry exists in the configured ESP mount path under the new root.
+    let esp_path = join_relative(new_root.path(), ctx.esp_mount_path.as_path());
 
     if !ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
         bootentries::create_and_update_boot_variables(&ctx, &esp_path)?;

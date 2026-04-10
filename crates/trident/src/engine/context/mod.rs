@@ -58,7 +58,7 @@ pub struct EngineContextParams {
     pub is_uki: Option<bool>,
 }
 
-#[cfg_attr(any(test, feature = "functional-test"), derive(Clone, Default))]
+#[cfg_attr(any(test, feature = "functional-test"), derive(Clone))]
 pub struct EngineContext {
     pub spec: HostConfiguration,
 
@@ -99,6 +99,30 @@ pub struct EngineContext {
 
     /// Whether the image will use a UKI or not.
     pub is_uki: Option<bool>,
+
+    /// The mount path of the ESP partition.
+    pub esp_mount_path: PathBuf,
+}
+
+#[cfg(any(test, feature = "functional-test"))]
+impl Default for EngineContext {
+    fn default() -> Self {
+        use trident_api::constants::ESP_MOUNT_POINT_PATH;
+        Self {
+            esp_mount_path: PathBuf::from(ESP_MOUNT_POINT_PATH),
+            spec: Default::default(),
+            spec_old: Default::default(),
+            servicing_type: Default::default(),
+            partition_paths: Default::default(),
+            ab_active_volume: Default::default(),
+            disk_uuids: Default::default(),
+            install_index: Default::default(),
+            image: Default::default(),
+            storage_graph: Default::default(),
+            filesystems: Default::default(),
+            is_uki: Default::default(),
+        }
+    }
 }
 
 impl EngineContext {
@@ -107,6 +131,16 @@ impl EngineContext {
     /// populated later if needed via [`EngineContext::populate_filesystems`].
     pub fn new(params: EngineContextParams) -> Result<Self, TridentError> {
         let graph = super::build_storage_graph(&params.spec.storage)?;
+
+        // Get the ESP mount path from the storage graph. This should be
+        // guaranteed to exist in validated Host configurations.
+        let esp_mount_path =
+            graph
+                .esp_mount_path()
+                .ok_or(TridentError::new(InternalError::Internal(
+                    "Storage graph does not contain an ESP mount path, the Host Configuration was not validated properly.",
+                )))?
+                .to_path_buf();
 
         Ok(Self {
             spec: params.spec,
@@ -120,6 +154,7 @@ impl EngineContext {
             storage_graph: graph,
             filesystems: Vec::new(),
             is_uki: params.is_uki,
+            esp_mount_path,
         })
     }
 

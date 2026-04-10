@@ -57,7 +57,7 @@ fn block_devices_needing_fs_creation(
             // - AND ESP is NOT on an adopted partition.
             FileSystemData::Image(ifs)
                 if ctx.servicing_type == ServicingType::CleanInstall
-                    && fs.is_esp()
+                    && fs.mount_point_path() == Some(ctx.esp_mount_path.as_path())
                     && !ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE)
                     && !ctx
                         .storage_graph
@@ -269,6 +269,7 @@ mod tests {
                 "root-b".to_owned() => PathBuf::from("/dev/disk/by-partlabel/osp3"),
                 "trident".into() => PathBuf::from("/dev/disk/by-partlabel/osp4"),
             },
+            esp_mount_path: PathBuf::from("/boot/efi"),
             ..Default::default()
         };
         ctx_clean_install.populate_filesystems().unwrap();

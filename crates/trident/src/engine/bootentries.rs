@@ -12,7 +12,7 @@ use osutils::{
 
 use trident_api::{
     config::RaidLevel,
-    constants::{self, internal_params::VIRTDEPLOY_BOOT_ORDER_WORKAROUND, ESP_MOUNT_POINT_PATH},
+    constants::{self, internal_params::VIRTDEPLOY_BOOT_ORDER_WORKAROUND},
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, ServicingType},
     BlockDeviceId,
@@ -286,7 +286,7 @@ fn create_boot_entries_for_rebuilt_esp_partitions(
                                 ctx,
                                 esp_device.clone(),
                                 entry_label.clone(),
-                                Path::new(ESP_MOUNT_POINT_PATH),
+                                ctx.esp_mount_path.as_path(),
                                 bootloader_path,
                                 true,
                             )
@@ -1024,9 +1024,12 @@ mod functional_test {
         testutils::repart::{OS_DISK_DEVICE_PATH, TEST_DISK_DEVICE_PATH},
     };
     use pytest_gen::functional_test;
-    use trident_api::config::{
-        self, Disk, HostConfiguration, ImageSha384, MountOptions, MountPoint, OsImage, Partition,
-        PartitionSize, PartitionType,
+    use trident_api::{
+        config::{
+            self, Disk, HostConfiguration, ImageSha384, MountOptions, MountPoint, OsImage,
+            Partition, PartitionSize, PartitionType,
+        },
+        constants::ESP_MOUNT_POINT_PATH,
     };
 
     use crate::engine::{storage::partitioning, EngineContext};

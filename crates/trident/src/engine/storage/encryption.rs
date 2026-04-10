@@ -25,7 +25,7 @@ use trident_api::{
     config::{HostConfiguration, HostConfigurationStaticValidationError, PartitionSize},
     constants::{
         internal_params::{NO_CLOSE_ENCRYPTED_VOLUMES, REENCRYPT_ON_CLEAN_INSTALL},
-        ESP_EFI_DIRECTORY, ESP_MOUNT_POINT_PATH,
+        ESP_EFI_DIRECTORY,
     },
     error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::AbVolumeSelection,
@@ -303,7 +303,7 @@ pub fn get_binary_paths_pcrlock(
     }
 
     // Determine ESP path depending on the environment
-    let esp_path = container::get_host_relative_path(PathBuf::from(ESP_MOUNT_POINT_PATH))
+    let esp_path = container::get_host_relative_path(ctx.esp_mount_path.as_path().into())
         .unstructured("Failed to get host-relative ESP mount path")?;
 
     // If either PCR 4 or PCR 11 is requested, construct UKI paths
@@ -452,7 +452,7 @@ fn get_bootloader_paths(
     // If there is mount_path, also construct bootloader paths in the target OS image
     if let Some(mount_path) = mount_path {
         debug!("Constructing bootloader binaries for target OS image during A/B update staging");
-        let esp_dir_path = join_relative(mount_path, ESP_MOUNT_POINT_PATH);
+        let esp_dir_path = join_relative(mount_path, ctx.esp_mount_path.as_path());
 
         // Determine label for update boot
         let update_label = get_path_label(ctx.ab_active_volume, false);
@@ -538,7 +538,10 @@ fn sort_binary_paths(binaries_with_labels: Vec<(PathBuf, String)>) -> Vec<PathBu
 mod tests {
     use super::*;
 
-    use trident_api::status::{AbVolumeSelection, ServicingType};
+    use trident_api::{
+        constants::ESP_MOUNT_POINT_PATH,
+        status::{AbVolumeSelection, ServicingType},
+    };
 
     #[test]
     fn test_get_bootloader_paths() {
@@ -549,6 +552,7 @@ mod tests {
             ab_active_volume: None,
             install_index: 0,
             servicing_type: ServicingType::CleanInstall,
+            esp_mount_path: esp_path.clone(),
             ..Default::default()
         };
 
@@ -718,7 +722,7 @@ mod functional_test {
     use super::*;
 
     use pytest_gen::functional_test;
-    use trident_api::status::ServicingType;
+    use trident_api::{constants::ESP_MOUNT_POINT_PATH, status::ServicingType};
 
     #[functional_test(feature = "helpers")]
     fn test_get_uki_paths() {

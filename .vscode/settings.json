@@ -25,5 +25,5 @@
     "protobuf.protoSrcsDir": "proto/",
     "protobuf.includes": [
         "${workspaceFolder}/proto"
-    ],
+    ]
 }

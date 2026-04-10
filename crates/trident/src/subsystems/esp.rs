@@ -724,6 +724,7 @@ mod tests {
         // Clean install EngineContext
         let mut ctx = EngineContext {
             servicing_type: ServicingType::CleanInstall,
+            esp_mount_path: PathBuf::from("/boot/efi"),
             ..Default::default()
         };
 
@@ -743,7 +744,9 @@ mod tests {
                 idx,
                 test_dir.path().display()
             );
-            ctx.install_index = install_index::next_install_index(test_dir.path()).unwrap();
+            ctx.install_index =
+                install_index::next_install_index(test_dir.path(), ctx.esp_mount_path.as_path())
+                    .unwrap();
             assert_eq!(idx, ctx.install_index);
 
             let esp_dir_path = generate_efi_bin_base_dir_path(&ctx, test_dir.path()).unwrap();
