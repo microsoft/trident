@@ -87,12 +87,17 @@ pub const BOOT_RELATIVE_MOUNT_POINT_PATH: &str = BOOT_DIRECTORY;
 pub const BOOT_MOUNT_POINT_PATH: &str =
     formatcp!("{ROOT_MOUNT_POINT_PATH}{BOOT_RELATIVE_MOUNT_POINT_PATH}",);
 
+/// *DO NOT USE IN PRODUCT CODE*
+///
 /// ESP volume relative mount point path (boot/efi) relative to the root mount point.
-pub const ESP_RELATIVE_MOUNT_POINT_PATH: &str = formatcp!("{BOOT_DIRECTORY}/{ROOT_EFI_DIRECTORY}");
+pub const DEFAULT_ESP_RELATIVE_MOUNT_POINT_PATH: &str =
+    formatcp!("{BOOT_DIRECTORY}/{ROOT_EFI_DIRECTORY}");
 
+/// *DO NOT USE IN PRODUCT CODE*
+///
 /// ESP volume mount point path (/boot/efi).
-pub const ESP_MOUNT_POINT_PATH: &str =
-    formatcp!("{ROOT_MOUNT_POINT_PATH}{ESP_RELATIVE_MOUNT_POINT_PATH}");
+pub const DEFAULT_ESP_MOUNT_POINT_PATH: &str =
+    formatcp!("{ROOT_MOUNT_POINT_PATH}{DEFAULT_ESP_RELATIVE_MOUNT_POINT_PATH}");
 
 /// Hardcoded path to the location to store backing of the /etc overlayfs.
 /// Expected to be on top of A/B update volume pair. Relative to root mount point.

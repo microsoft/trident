@@ -4,7 +4,7 @@ use anyhow::{bail, Context, Error};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use log::info;
 
-use trident_api::constants::ESP_MOUNT_POINT_PATH;
+use trident_api::constants::DEFAULT_ESP_MOUNT_POINT_PATH;
 
 mod clap_model;
 mod host_config;
@@ -229,7 +229,7 @@ fn build_host_config_docs(mut opts: HostConfigMarkdownOpts) -> Result<(), Error>
     // descriptions. They will exists as variables with the exact same name as
     // the constant. For example, `ESP_MOUNT_POINT_PATH` can be used in
     // descriptions as `{{ ESP_MOUNT_POINT_PATH }}`.
-    let variables = string_const_map!(ESP_MOUNT_POINT_PATH);
+    let variables = string_const_map!(DEFAULT_ESP_MOUNT_POINT_PATH);
 
     host_config::docs::build(
         opts.output,

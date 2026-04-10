@@ -714,7 +714,7 @@ mod tests {
     };
     use trident_api::{
         config::{HostConfiguration, Os},
-        constants::ESP_RELATIVE_MOUNT_POINT_PATH,
+        constants::DEFAULT_ESP_RELATIVE_MOUNT_POINT_PATH,
     };
     use trident_api::{
         constants::GRUB2_RELATIVE_PATH,
@@ -733,7 +733,7 @@ mod tests {
         let test_dir = TempDir::new().unwrap();
         let test_esp_dir = test_dir
             .path()
-            .join(ESP_RELATIVE_MOUNT_POINT_PATH)
+            .join(DEFAULT_ESP_RELATIVE_MOUNT_POINT_PATH)
             .join(ESP_EFI_DIRECTORY);
 
         // Check over several install ESP directory names. The idea is to ensure
@@ -796,7 +796,7 @@ mod tests {
             let test_dir = TempDir::new().unwrap();
             let test_esp_dir = test_dir
                 .path()
-                .join(ESP_RELATIVE_MOUNT_POINT_PATH)
+                .join(DEFAULT_ESP_RELATIVE_MOUNT_POINT_PATH)
                 .join(ESP_EFI_DIRECTORY);
 
             // On a clean state, generate the ESP directory path.
@@ -888,7 +888,7 @@ mod tests {
     ) -> PathBuf {
         let fallback_esp_dir = mount_point
             .path()
-            .join(ESP_RELATIVE_MOUNT_POINT_PATH)
+            .join(DEFAULT_ESP_RELATIVE_MOUNT_POINT_PATH)
             .join(ESP_EFI_DIRECTORY)
             .join(esp_name);
         fs::create_dir_all(&fallback_esp_dir).unwrap();

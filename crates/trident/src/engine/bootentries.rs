@@ -702,7 +702,7 @@ mod tests {
     use super::*;
     use boot::get_update_esp_dir_name;
 
-    use constants::ESP_MOUNT_POINT_PATH;
+    use constants::DEFAULT_ESP_MOUNT_POINT_PATH;
 
     /// Validates logic for determining which A/B volume to use for updates
     #[test]
@@ -844,7 +844,7 @@ mod tests {
                         source: FileSystemSource::Image,
                         device_id: Some("esp".to_string()),
                         mount_point: Some(MountPoint {
-                            path: ESP_MOUNT_POINT_PATH.into(),
+                            path: DEFAULT_ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::defaults(),
                         }),
                         is_esp: true,
@@ -900,7 +900,7 @@ mod tests {
                         source: FileSystemSource::Image,
                         device_id: Some("esp".to_string()),
                         mount_point: Some(MountPoint {
-                            path: ESP_MOUNT_POINT_PATH.into(),
+                            path: DEFAULT_ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::defaults(),
                         }),
                         is_esp: true,
@@ -1029,7 +1029,7 @@ mod functional_test {
             self, Disk, HostConfiguration, ImageSha384, MountOptions, MountPoint, OsImage,
             Partition, PartitionSize, PartitionType,
         },
-        constants::ESP_MOUNT_POINT_PATH,
+        constants::DEFAULT_ESP_MOUNT_POINT_PATH,
     };
 
     use crate::engine::{storage::partitioning, EngineContext};
@@ -1415,7 +1415,7 @@ mod functional_test {
                         source: config::FileSystemSource::Image,
                         device_id: Some("esp".to_string()),
                         mount_point: Some(MountPoint {
-                            path: ESP_MOUNT_POINT_PATH.into(),
+                            path: DEFAULT_ESP_MOUNT_POINT_PATH.into(),
                             options: MountOptions::defaults(),
                         }),
                         is_esp: true,

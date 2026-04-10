@@ -544,7 +544,7 @@ mod tests {
 
     use crate::{
         config::HostConfiguration,
-        constants::{BOOT_MOUNT_POINT_PATH, ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
+        constants::{BOOT_MOUNT_POINT_PATH, DEFAULT_ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
     };
 
     use self::{
@@ -676,7 +676,7 @@ mod tests {
                     device_id: Some("esp".to_owned()),
                     source: FileSystemSource::Image,
                     mount_point: Some(MountPoint {
-                        path: PathBuf::from(ESP_MOUNT_POINT_PATH),
+                        path: PathBuf::from(DEFAULT_ESP_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
                     }),
                     is_esp: true,
@@ -909,7 +909,7 @@ mod tests {
                     device_id: Some("disk1-partition1".to_string()),
                     source: FileSystemSource::Image,
                     mount_point: Some(MountPoint {
-                        path: PathBuf::from(ESP_MOUNT_POINT_PATH),
+                        path: PathBuf::from(DEFAULT_ESP_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
                     }),
                     is_esp: true,
@@ -950,7 +950,7 @@ mod tests {
                     device_id: Some("disk1-partition1".to_string()),
                     source: FileSystemSource::Image,
                     mount_point: Some(MountPoint {
-                        path: PathBuf::from(ESP_MOUNT_POINT_PATH),
+                        path: PathBuf::from(DEFAULT_ESP_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
                     }),
                     is_esp: true,
@@ -1090,7 +1090,7 @@ mod tests {
                     device_id: Some("part1".to_owned()),
                     source: FileSystemSource::Image,
                     mount_point: Some(MountPoint {
-                        path: PathBuf::from(ESP_MOUNT_POINT_PATH),
+                        path: PathBuf::from(DEFAULT_ESP_MOUNT_POINT_PATH),
                         options: MountOptions::empty(),
                     }),
                     is_esp: true,
@@ -2394,7 +2394,7 @@ mod tests {
                     source: FileSystemSource::Image,
                     device_id: Some("esp".to_string()),
                     mount_point: Some(MountPoint {
-                        path: ESP_MOUNT_POINT_PATH.into(),
+                        path: DEFAULT_ESP_MOUNT_POINT_PATH.into(),
                         options: MountOptions::defaults(),
                     }),
                     is_esp: true,
@@ -2813,7 +2813,7 @@ mod tests {
             device_id: Some("adopted-esp".into()),
             source: FileSystemSource::Adopted(Default::default()),
             mount_point: Some(MountPoint {
-                path: PathBuf::from(ESP_MOUNT_POINT_PATH),
+                path: PathBuf::from(DEFAULT_ESP_MOUNT_POINT_PATH),
                 options: MountOptions::empty(),
             }),
             is_esp: true,

@@ -68,14 +68,14 @@ mod tests {
 
     use tempfile::TempDir;
 
-    use trident_api::{constants::ESP_MOUNT_POINT_PATH, error::ErrorKind};
+    use trident_api::{constants::DEFAULT_ESP_MOUNT_POINT_PATH, error::ErrorKind};
 
     use crate::engine::boot::make_esp_dir_name_candidates;
 
     // Helper that constructs the ESP EFI path, creates the directories, and returns
     // (full_esp_efi_path, esp_mount_path). The esp_mount_path is what next_install_index expects.
     fn setup_esp_efi_path(mount_point: &Path) -> (PathBuf, PathBuf) {
-        let esp_mount_path = PathBuf::from(ESP_MOUNT_POINT_PATH);
+        let esp_mount_path = PathBuf::from(DEFAULT_ESP_MOUNT_POINT_PATH);
         let esp_efi_path =
             path::join_relative(mount_point, &esp_mount_path).join(ESP_EFI_DIRECTORY);
         fs::create_dir_all(&esp_efi_path).unwrap();

@@ -330,7 +330,7 @@ mod tests {
 
     use tempfile::NamedTempFile;
 
-    use trident_api::constants::ESP_MOUNT_POINT_PATH;
+    use trident_api::constants::DEFAULT_ESP_MOUNT_POINT_PATH;
 
     #[test]
     fn test_get_device_path() {
@@ -347,7 +347,7 @@ mod tests {
         tmpfile.flush().unwrap();
 
         assert_eq!(
-            get_device_path(tmpfile.path(), Path::new(ESP_MOUNT_POINT_PATH)).unwrap(),
+            get_device_path(tmpfile.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)).unwrap(),
             PathBuf::from("/dev/sda1")
         );
 
