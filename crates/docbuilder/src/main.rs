@@ -227,8 +227,8 @@ fn build_host_config_docs(mut opts: HostConfigMarkdownOpts) -> Result<(), Error>
 
     // Constants that we are making available to the tera context for rendering
     // descriptions. They will exists as variables with the exact same name as
-    // the constant. For example, `ESP_MOUNT_POINT_PATH` can be used in
-    // descriptions as `{{ ESP_MOUNT_POINT_PATH }}`.
+    // the constant. For example, `DEFAULT_ESP_MOUNT_POINT_PATH` can be used in
+    // descriptions as `{{ DEFAULT_ESP_MOUNT_POINT_PATH }}`.
     let variables = string_const_map!(DEFAULT_ESP_MOUNT_POINT_PATH);
 
     host_config::docs::build(
