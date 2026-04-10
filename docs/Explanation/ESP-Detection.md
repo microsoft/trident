@@ -159,14 +159,17 @@ not cause validation failure:
 For the full set of storage validation rules, see
 [Storage Rules](../Reference/Host-Configuration/Storage-Rules.md).
 
-## ESP Detection in COSI-Derived Host Configuration
+## ESP in OS Image (COSI) Metadata
 
-When Trident derives the Host Configuration from a COSI image (rather than
-reading it from user-provided YAML), the ESP detection mechanism is different.
+The OS image (COSI) carries its own filesystem and partition metadata, which
+reflects how the distribution was built. The ESP mount point in the image is
+determined by the distribution and image build tooling — for example, a
+distribution that mounts the ESP at `/boot` will produce a COSI image with
+the ESP filesystem metadata pointing to `/boot`.
 
-In this path, Trident reads GPT partition metadata from the image and matches
-each partition against its corresponding filesystem metadata. A partition is
-identified as the ESP if:
+When Trident derives a Host Configuration automatically from a COSI image
+(rather than reading user-provided YAML), it identifies the ESP by reading GPT
+partition metadata from the image. A partition is treated as the ESP if:
 
 1. Its GPT partition type is `ESP`
    (`C12A7328-F81F-11D2-BA4B-00A0C93EC93B`), **and**
@@ -176,11 +179,25 @@ If multiple ESP partitions with mount points are found, the first one
 encountered is used as the canonical ESP and a warning is logged for the rest.
 If no qualifying ESP partition is found, the derivation fails.
 
+### Cross-Validation: Host Configuration Must Match the Image
+
+When a user provides their own Host Configuration (the common case), Trident
+performs a cross-validation step that compares the ESP mount point in the Host
+Configuration against the ESP mount point in the OS image metadata. If they do
+not match, Trident rejects the configuration with an `EspMountPointMismatch`
+error.
+
+This means that the `overrideEspMount` and `mountPoint` settings in the Host
+Configuration must reflect the actual ESP layout of the distribution's COSI
+image. For example, if a distribution's image places the ESP at `/efi`, the
+Host Configuration must use `overrideEspMount: override` with
+`mountPoint: /efi`.
+
 :::note
-In COSI-derived configurations, the ESP is detected from the GPT partition type
-rather than by matching a specific mount point path. This differs from the
-user-authored Host Configuration YAML path, where detection is based on the
-mount point and the `overrideEspMount` field.
+The cross-validation check ensures that Trident, the Host Configuration, and
+the OS image all agree on where the ESP lives. A mismatch typically indicates
+that the Host Configuration was written for a different distribution or image
+layout than the one being deployed.
 :::
 
 ## How the Detected ESP Path Is Used
