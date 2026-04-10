@@ -86,9 +86,9 @@ mod tests {
     fn test_install_index_variants() {
         // Test case #0: No existing install directories.
         let test_dir = TempDir::new().unwrap();
-        let (esp_efi_path, relative_esp_efi_path) = setup_esp_efi_path(test_dir.path());
+        let (esp_efi_path, esp_mount_path) = setup_esp_efi_path(test_dir.path());
         assert_eq!(
-            next_install_index(test_dir.path(), &relative_esp_efi_path).unwrap(),
+            next_install_index(test_dir.path(), &esp_mount_path).unwrap(),
             0
         );
         assert_eq!(
@@ -98,7 +98,7 @@ mod tests {
 
         // Test case #1: Install directories 0-9 exist.
         let test_dir = TempDir::new().unwrap();
-        let (esp_efi_path, relative_esp_efi_path) = setup_esp_efi_path(test_dir.path());
+        let (esp_efi_path, esp_mount_path) = setup_esp_efi_path(test_dir.path());
         make_esp_dir_name_candidates()
             .take(10)
             .for_each(|(_, dir_names)| {
@@ -107,7 +107,7 @@ mod tests {
                 }
             });
         assert_eq!(
-            next_install_index(test_dir.path(), &relative_esp_efi_path).unwrap(),
+            next_install_index(test_dir.path(), &esp_mount_path).unwrap(),
             10
         );
         assert_eq!(
@@ -118,14 +118,14 @@ mod tests {
         // Test case #2: Install directories 0-9 exist. Func will skip unavailable indices, even
         // when only the A volume IDs are present.
         let test_dir = TempDir::new().unwrap();
-        let (esp_efi_path, relative_esp_efi_path) = setup_esp_efi_path(test_dir.path());
+        let (esp_efi_path, esp_mount_path) = setup_esp_efi_path(test_dir.path());
         make_esp_dir_name_candidates()
             .take(10)
             .for_each(|(_, dir_names)| {
                 fs::create_dir(esp_efi_path.join(&dir_names[0])).unwrap();
             });
         assert_eq!(
-            next_install_index(test_dir.path(), &relative_esp_efi_path).unwrap(),
+            next_install_index(test_dir.path(), &esp_mount_path).unwrap(),
             10
         );
         assert_eq!(
@@ -136,14 +136,14 @@ mod tests {
         // Test case #3: Install directories 0-9 exist. Func will skip unavailable indices, even
         // when only the A volume IDs are present.
         let test_dir = TempDir::new().unwrap();
-        let (esp_efi_path, relative_esp_efi_path) = setup_esp_efi_path(test_dir.path());
+        let (esp_efi_path, esp_mount_path) = setup_esp_efi_path(test_dir.path());
         make_esp_dir_name_candidates()
             .take(10)
             .for_each(|(_, dir_names)| {
                 fs::create_dir(esp_efi_path.join(&dir_names[1])).unwrap();
             });
         assert_eq!(
-            next_install_index(test_dir.path(), &relative_esp_efi_path).unwrap(),
+            next_install_index(test_dir.path(), &esp_mount_path).unwrap(),
             10
         );
         assert_eq!(
@@ -154,7 +154,7 @@ mod tests {
         // Test case #4: Install directories 0-9 exist. Func will skip unavailable indices, even
         // when only one ID is present per install.
         let test_dir = TempDir::new().unwrap();
-        let (esp_efi_path, relative_esp_efi_path) = setup_esp_efi_path(test_dir.path());
+        let (esp_efi_path, esp_mount_path) = setup_esp_efi_path(test_dir.path());
         let mut volume_selector = (0..=1).cycle();
         make_esp_dir_name_candidates()
             .take(10)
@@ -163,7 +163,7 @@ mod tests {
                     .unwrap();
             });
         assert_eq!(
-            next_install_index(test_dir.path(), &relative_esp_efi_path).unwrap(),
+            next_install_index(test_dir.path(), &esp_mount_path).unwrap(),
             10
         );
         assert_eq!(
@@ -172,7 +172,7 @@ mod tests {
         );
 
         let test_dir = TempDir::new().unwrap();
-        let (esp_efi_path, relative_esp_efi_path) = setup_esp_efi_path(test_dir.path());
+        let (esp_efi_path, esp_mount_path) = setup_esp_efi_path(test_dir.path());
         let mut volume_selector = (0..=1).cycle();
         volume_selector.next(); // Advance to start with B
         make_esp_dir_name_candidates()
@@ -182,7 +182,7 @@ mod tests {
                     .unwrap();
             });
         assert_eq!(
-            next_install_index(test_dir.path(), &relative_esp_efi_path).unwrap(),
+            next_install_index(test_dir.path(), &esp_mount_path).unwrap(),
             10
         );
         assert_eq!(
@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn test_no_available_install_index() {
         let test_dir = tempfile::TempDir::new().unwrap();
-        let (esp_efi_path, relative_esp_efi_path) = setup_esp_efi_path(test_dir.path());
+        let (esp_efi_path, esp_mount_path) = setup_esp_efi_path(test_dir.path());
 
         // Exhaust all possible indices (up to 1000)
         crate::engine::boot::make_esp_dir_name_candidates()
@@ -215,7 +215,7 @@ mod tests {
         );
 
         assert_eq!(
-            next_install_index(test_dir.path(), &relative_esp_efi_path)
+            next_install_index(test_dir.path(), &esp_mount_path)
                 .unwrap_err()
                 .kind(),
             &ErrorKind::UnsupportedConfiguration(
