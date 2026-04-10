@@ -23,7 +23,7 @@ use crate::{
         MountOptions, MountPoint, NewFileSystemType, Partition, PartitionSize, PartitionTableType,
         PartitionType, RaidLevel, SoftwareRaidArray,
     },
-    constants::{ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
+    constants::{DEFAULT_ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
     storage_graph::{rules::expected_partition_type, types::BlkDevKind},
 };
 
@@ -758,7 +758,7 @@ fn test_esp_enforce_partition_type() {
         device_id: Some("partition".into()),
         source: FileSystemSource::Image,
         mount_point: Some(MountPoint {
-            path: ESP_MOUNT_POINT_PATH.into(),
+            path: DEFAULT_ESP_MOUNT_POINT_PATH.into(),
             options: MountOptions::defaults(),
         }),
         is_esp: true,
@@ -782,8 +782,8 @@ fn test_esp_enforce_partition_type() {
             partition_id: "partition".into(),
             partition_type: PartitionType::LinuxGeneric,
             valid_types: expected_partition_type(
-                Path::new(ESP_MOUNT_POINT_PATH),
-                Some(Path::new(ESP_MOUNT_POINT_PATH))
+                Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+                Some(Path::new(DEFAULT_ESP_MOUNT_POINT_PATH))
             )
         }
     );
@@ -815,7 +815,7 @@ fn test_filesystem_esp_multiple_fail() {
         device_id: Some("esp1".into()),
         source: FileSystemSource::Image,
         mount_point: Some(MountPoint {
-            path: ESP_MOUNT_POINT_PATH.into(),
+            path: DEFAULT_ESP_MOUNT_POINT_PATH.into(),
             options: MountOptions::defaults(),
         }),
         is_esp: true,

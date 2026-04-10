@@ -287,7 +287,7 @@ pub(crate) mod functional_test {
             self, AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, HostConfiguration,
             MountOptions, MountPoint, Partition, PartitionType, RaidLevel, SoftwareRaidArray,
         },
-        constants::ESP_MOUNT_POINT_PATH,
+        constants::DEFAULT_ESP_MOUNT_POINT_PATH,
         status::ServicingType,
     };
 
@@ -304,7 +304,7 @@ pub(crate) mod functional_test {
         let grub_esp = include_str!("test_files/grub_esp.cfg");
         let grub_boot = include_str!("test_files/grub_boot.cfg");
 
-        let grub_esp_path = Path::new(ESP_MOUNT_POINT_PATH)
+        let grub_esp_path = Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)
             .join(ESP_EFI_DIRECTORY)
             .join(get_update_esp_dir_name(ctx).expect("Failed to get update esp dir name"))
             .join(GRUB2_CONFIG_FILENAME);

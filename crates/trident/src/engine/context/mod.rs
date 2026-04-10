@@ -107,9 +107,9 @@ pub struct EngineContext {
 #[cfg(any(test, feature = "functional-test"))]
 impl Default for EngineContext {
     fn default() -> Self {
-        use trident_api::constants::ESP_MOUNT_POINT_PATH;
+        use trident_api::constants::DEFAULT_ESP_MOUNT_POINT_PATH;
         Self {
-            esp_mount_path: PathBuf::from(ESP_MOUNT_POINT_PATH),
+            esp_mount_path: PathBuf::from(DEFAULT_ESP_MOUNT_POINT_PATH),
             spec: Default::default(),
             spec_old: Default::default(),
             servicing_type: Default::default(),

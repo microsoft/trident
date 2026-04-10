@@ -1,17 +1,12 @@
-use std::{
-    path::{Path, PathBuf},
-    time::Instant,
-};
+use std::{path::PathBuf, time::Instant};
 
 use enumflags2::BitFlags;
 use log::{debug, info, trace, warn};
 
-use osutils::{efivar, pcrlock};
+use osutils::{efivar, path, pcrlock};
 use trident_api::{
     config::Operations,
-    constants::{
-        internal_params::NO_TRANSITION, ESP_RELATIVE_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH,
-    },
+    constants::{internal_params::NO_TRANSITION, ROOT_MOUNT_POINT_PATH},
     error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{ServicingState, ServicingType},
 };
@@ -286,7 +281,7 @@ fn finalize_rollback(
 
     let root_path = container::get_host_relative_path(PathBuf::from(ROOT_MOUNT_POINT_PATH))
         .message("Failed to get host root path")?;
-    let esp_path = Path::join(&root_path, ESP_RELATIVE_MOUNT_POINT_PATH);
+    let esp_path = path::join_relative(&root_path, engine_context.esp_mount_path.as_path());
 
     // In UKI, find the previous UKI and set it as default boot entry
     if engine_context.is_uki()? {

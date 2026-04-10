@@ -48,7 +48,7 @@ pub mod fs_serde {
     #[cfg(feature = "schemars")]
     use schemars::JsonSchema;
 
-    use crate::{constants::ESP_MOUNT_POINT_PATH, is_default};
+    use crate::{constants::DEFAULT_ESP_MOUNT_POINT_PATH, is_default};
 
     #[cfg(feature = "schemars")]
     use crate::schema_helpers::block_device_id_schema;
@@ -58,7 +58,7 @@ pub mod fs_serde {
         FileSystemType, MountPoint, NewFileSystemType,
     };
 
-    const DEFAULT_ESP_MOUNT_PATH: &str = ESP_MOUNT_POINT_PATH;
+    const DEFAULT_ESP_MOUNT_PATH: &str = DEFAULT_ESP_MOUNT_POINT_PATH;
 
     #[derive(Deserialize, Serialize, Default, PartialEq, Eq)]
     #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -463,7 +463,7 @@ impl FileSystem {
 mod tests {
     use super::*;
 
-    use crate::constants::ESP_MOUNT_POINT_PATH;
+    use crate::constants::DEFAULT_ESP_MOUNT_POINT_PATH;
 
     #[test]
     fn test_mount_point_from_str() {
@@ -496,7 +496,10 @@ mod tests {
             options: MountOptions::new("defaults"),
         });
         fs.is_esp = true; // Manually set; normally derived during deserialization via overrideEspMount / default mount-point detection.
-        assert_eq!(fs.mount_point_path(), Some(Path::new(ESP_MOUNT_POINT_PATH)));
+        assert_eq!(
+            fs.mount_point_path(),
+            Some(Path::new(DEFAULT_ESP_MOUNT_POINT_PATH))
+        );
         assert!(fs.is_esp);
         assert!(!fs.is_root());
         assert!(!fs.is_read_only());

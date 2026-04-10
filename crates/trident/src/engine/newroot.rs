@@ -780,7 +780,7 @@ mod functional_test {
             self, Disk, FileSystemSource, HostConfiguration, MountOptions, MountPoint, Partition,
             PartitionSize, PartitionType,
         },
-        constants::{ESP_RELATIVE_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY},
+        constants::{DEFAULT_ESP_RELATIVE_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY},
         error::ErrorKind,
     };
 
@@ -948,7 +948,7 @@ mod functional_test {
 
         assert!(root_mount_dir
             .path()
-            .join(ESP_RELATIVE_MOUNT_POINT_PATH)
+            .join(DEFAULT_ESP_RELATIVE_MOUNT_POINT_PATH)
             .join(mock_bootloader_path)
             .exists());
         newroot_mount2.unmount_all().unwrap();

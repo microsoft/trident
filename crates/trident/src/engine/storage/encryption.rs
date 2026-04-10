@@ -539,14 +539,14 @@ mod tests {
     use super::*;
 
     use trident_api::{
-        constants::ESP_MOUNT_POINT_PATH,
+        constants::DEFAULT_ESP_MOUNT_POINT_PATH,
         status::{AbVolumeSelection, ServicingType},
     };
 
     #[test]
     fn test_get_bootloader_paths() {
         // Declare ESP path; no need to actually write anything as this func only constructs paths.
-        let esp_path = PathBuf::from(ESP_MOUNT_POINT_PATH);
+        let esp_path = PathBuf::from(DEFAULT_ESP_MOUNT_POINT_PATH);
 
         let mut ctx = EngineContext {
             ab_active_volume: None,
@@ -722,7 +722,7 @@ mod functional_test {
     use super::*;
 
     use pytest_gen::functional_test;
-    use trident_api::{constants::ESP_MOUNT_POINT_PATH, status::ServicingType};
+    use trident_api::{constants::DEFAULT_ESP_MOUNT_POINT_PATH, status::ServicingType};
 
     #[functional_test(feature = "helpers")]
     fn test_get_uki_paths() {
@@ -734,7 +734,7 @@ mod functional_test {
         };
 
         // Declare ESP path; no need to actually write anything as this func only constructs paths.
-        let esp_path = PathBuf::from(ESP_MOUNT_POINT_PATH);
+        let esp_path = PathBuf::from(DEFAULT_ESP_MOUNT_POINT_PATH);
         let esp_uki_path = esp_path.join(UKI_DIRECTORY);
 
         // Test case #1: No mount_path, so only one path is returned, i.e. current entry.
@@ -781,7 +781,7 @@ mod functional_test {
 
     #[functional_test(feature = "helpers")]
     fn test_get_binary_paths_pcrlock() {
-        let esp_path = PathBuf::from(ESP_MOUNT_POINT_PATH);
+        let esp_path = PathBuf::from(DEFAULT_ESP_MOUNT_POINT_PATH);
         let esp_uki_path = esp_path.join(UKI_DIRECTORY);
 
         let mut ctx = EngineContext {

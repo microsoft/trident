@@ -517,7 +517,7 @@ mod tests {
             AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, HostConfiguration,
             MountOptions, MountPoint, Partition, PartitionSize, Storage, VerityDevice,
         },
-        constants::{ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
+        constants::{DEFAULT_ESP_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH},
         error::ErrorKind,
         misc::IdGenerator,
     };
@@ -696,7 +696,7 @@ mod tests {
                 os_release: OsRelease::default(),
                 images: vec![
                     MockImage {
-                        mount_point: PathBuf::from(ESP_MOUNT_POINT_PATH),
+                        mount_point: PathBuf::from(DEFAULT_ESP_MOUNT_POINT_PATH),
                         fs_type: OsImageFileSystemType::Vfat,
                         fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
                         part_type: DiscoverablePartitionType::Esp,
@@ -752,7 +752,7 @@ mod tests {
             os_release: OsRelease::default(),
             images: vec![
                 MockImage {
-                    mount_point: PathBuf::from(ESP_MOUNT_POINT_PATH),
+                    mount_point: PathBuf::from(DEFAULT_ESP_MOUNT_POINT_PATH),
                     fs_type: OsImageFileSystemType::Vfat,
                     fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
                     part_type: DiscoverablePartitionType::Esp,

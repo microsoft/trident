@@ -164,7 +164,7 @@ mod tests {
             Storage, VerityDevice,
         },
         constants::{
-            ESP_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH,
+            DEFAULT_ESP_MOUNT_POINT_PATH, MOUNT_OPTION_READ_ONLY, ROOT_MOUNT_POINT_PATH,
             USR_MOUNT_POINT_PATH,
         },
         status::ServicingType,
@@ -398,7 +398,7 @@ mod tests {
             filesystems: vec![
                 FileSystemDataImage {
                     mount_point: MountPoint {
-                        path: PathBuf::from(ESP_MOUNT_POINT_PATH),
+                        path: PathBuf::from(DEFAULT_ESP_MOUNT_POINT_PATH),
                         options: "umask=0077".into(),
                     },
                     fs_type: Some(RealFilesystemType::Vfat),
@@ -510,7 +510,7 @@ mod tests {
                 filesystems: vec![
                     FileSystem {
                         mount_point: Some(MountPoint {
-                            path: PathBuf::from(ESP_MOUNT_POINT_PATH),
+                            path: PathBuf::from(DEFAULT_ESP_MOUNT_POINT_PATH),
                             options: "umask=0077".into(),
                         }),
                         device_id: Some("efi".into()),
@@ -552,7 +552,7 @@ mod tests {
                 None::<&str>,
             ),
             MockImage::new(
-                PathBuf::from(ESP_MOUNT_POINT_PATH),
+                PathBuf::from(DEFAULT_ESP_MOUNT_POINT_PATH),
                 OsImageFileSystemType::Vfat,
                 DiscoverablePartitionType::Root,
                 Some(Uuid::new_v4().to_string()),
@@ -668,7 +668,7 @@ mod tests {
                     filesystems: vec![
                         FileSystem {
                             mount_point: Some(MountPoint {
-                                path: PathBuf::from(ESP_MOUNT_POINT_PATH),
+                                path: PathBuf::from(DEFAULT_ESP_MOUNT_POINT_PATH),
                                 options: "umask=0077".into(),
                             }),
                             device_id: Some("efi".into()),
@@ -700,7 +700,7 @@ mod tests {
             })
             .with_image(MockOsImage::new().with_images([
                 MockImage::new(
-                    PathBuf::from(ESP_MOUNT_POINT_PATH),
+                    PathBuf::from(DEFAULT_ESP_MOUNT_POINT_PATH),
                     OsImageFileSystemType::Vfat,
                     DiscoverablePartitionType::Esp,
                     None::<&str>,
