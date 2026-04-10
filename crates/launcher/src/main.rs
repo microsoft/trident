@@ -120,6 +120,7 @@ async fn trigger(url: &Url, hash: Option<String>) -> Result<(), anyhow::Error> {
         .update(tonic::Request::new(UpdateRequest {
             stage: Some(StageUpdateRequest {
                 config: Some(HostConfiguration {
+                    // TODO: Handle escaping of URL and hash.
                     config: match hash {
                         Some(hash) => format!("image:\n  url: {url}\n  sha384: {hash}"),
                         None => {
