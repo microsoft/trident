@@ -39,7 +39,8 @@ pub struct OsImage {
 pub enum ImageSha384 {
     /// # Ignored
     ///
-    /// You can pass `ignored` to skip the checksum verification.
+    /// You can pass `{{ IMAGE_CHECKSUM_IGNORED }}` to skip the checksum
+    /// verification.
     Ignored,
 
     /// # Checksum

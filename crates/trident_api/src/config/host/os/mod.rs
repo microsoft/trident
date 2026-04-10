@@ -161,14 +161,13 @@ impl FromStr for SelinuxMode {
 
 /// UEFI fallback mode
 ///
-/// UEFI provides a mechanism for booting from an EFI file without
-/// a corresponding boot variable existing in NVRAM. This is known
-/// as the UEFI fallback mode, and it uses a specific file path
-/// (/EFI/BOOT) to locate the fallback bootloader.
+/// UEFI provides a mechanism for booting from an EFI file without a
+/// corresponding boot variable existing in NVRAM. This is known as the UEFI
+/// fallback mode, and it uses a specific file path (/{{
+/// EFI_DEFAULT_BIN_RELATIVE_PATH }}) to locate the fallback bootloader.
 ///
-/// This configuration option allows specifying how Trident should
-/// populate the UEFI fallback boot files during OS installation or
-/// update.
+/// This configuration option allows specifying how Trident should populate the
+/// UEFI fallback boot files during OS installation or update.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq, Copy, IntoStaticStr)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
