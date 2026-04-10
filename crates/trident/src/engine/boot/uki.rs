@@ -42,7 +42,7 @@ pub fn is_staged(esp_dir_path: &Path) -> bool {
 pub fn stage_uki_on_esp(
     temp_mount_dir: &Path,
     mount_point: &Path,
-    esp_mount_path: impl AsRef<Path>,
+    esp_mount_path: &Path,
 ) -> Result<(), Error> {
     let uki_source_dir = temp_mount_dir.join(UKI_DIRECTORY);
     let ukis: Vec<_> = uki_source_dir
@@ -145,10 +145,7 @@ pub fn stage_uki_on_esp(
 }
 
 /// Prepares the ESP directory structure required for UKI boot.
-pub fn prepare_esp_for_uki(
-    root_mount_point: &Path,
-    esp_mount_path: impl AsRef<Path>,
-) -> Result<(), Error> {
+pub fn prepare_esp_for_uki(root_mount_point: &Path, esp_mount_path: &Path) -> Result<(), Error> {
     let esp_root_path = join_relative(root_mount_point, esp_mount_path);
     let esp_uki_directory = esp_root_path.join(UKI_DIRECTORY);
 
@@ -467,13 +464,13 @@ mod tests {
         fs::write(src_uki_dir.join("dummy-uki.efi"), b"uki-content").unwrap();
 
         let mount_point = tempdir().unwrap();
-        prepare_esp_for_uki(mount_point.path(), DEFAULT_ESP_MOUNT_POINT_PATH).unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)).unwrap();
 
         // Should succeed when exactly one UKI file is present
         stage_uki_on_esp(
             temp_mount.path(),
             mount_point.path(),
-            DEFAULT_ESP_MOUNT_POINT_PATH,
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
         )
         .unwrap();
 
@@ -489,7 +486,7 @@ mod tests {
         stage_uki_on_esp(
             temp_mount.path(),
             mount_point.path(),
-            DEFAULT_ESP_MOUNT_POINT_PATH,
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
         )
         .unwrap_err();
     }
@@ -517,13 +514,13 @@ mod tests {
         fs::write(addon_dir.join("README"), b"ignored").unwrap();
 
         let mount_point = tempdir().unwrap();
-        prepare_esp_for_uki(mount_point.path(), DEFAULT_ESP_MOUNT_POINT_PATH).unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)).unwrap();
 
         // Should succeed when exactly one UKI file is present
         stage_uki_on_esp(
             temp_mount.path(),
             mount_point.path(),
-            DEFAULT_ESP_MOUNT_POINT_PATH,
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
         )
         .unwrap();
 
@@ -557,7 +554,7 @@ mod tests {
     #[test]
     fn test_prepare_esp_for_uki() {
         let root_mount = tempdir().unwrap();
-        prepare_esp_for_uki(root_mount.path(), DEFAULT_ESP_MOUNT_POINT_PATH).unwrap();
+        prepare_esp_for_uki(root_mount.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)).unwrap();
 
         let esp_root_path = join_relative(root_mount.path(), DEFAULT_ESP_MOUNT_POINT_PATH);
         assert!(esp_root_path.join(UKI_DIRECTORY).exists());
@@ -713,11 +710,11 @@ mod tests {
 
         // With no regular files present, staging should fail with "No UKI files found"
         let mount_point = tempdir().unwrap();
-        prepare_esp_for_uki(mount_point.path(), DEFAULT_ESP_MOUNT_POINT_PATH).unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)).unwrap();
         let err = stage_uki_on_esp(
             temp_mount.path(),
             mount_point.path(),
-            DEFAULT_ESP_MOUNT_POINT_PATH,
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
         )
         .unwrap_err();
         assert!(
@@ -730,7 +727,7 @@ mod tests {
         stage_uki_on_esp(
             temp_mount.path(),
             mount_point.path(),
-            DEFAULT_ESP_MOUNT_POINT_PATH,
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
         )
         .unwrap();
 
