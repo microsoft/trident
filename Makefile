@@ -184,12 +184,7 @@ build-azl3: azl3-builder-image version-vars
 	@docker run --rm \
 		-e TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
 		-v $(PWD):/work -w /work $(AZL3_BUILDER_IMAGE) \
-		cargo build --color always --target-dir target/azl3 --release --features dangerous-options,grpc-preview
-	@docker run --rm \
-		-e TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
-		-v $(PWD):/work -w /work $(AZL3_BUILDER_IMAGE) \
-		cargo build --color always --target-dir target/azl3 --release -p launcher
-
+		cargo build --color always --target-dir target/azl3 --release --features dangerous-options,grpc-preview -p trident -p launcher
 
 bin/trident-azl3: build-azl3
 	@cp -u target/azl3/release/trident bin/trident-azl3
@@ -572,7 +567,7 @@ IS_UBUNTU_24_OR_NEWER := $(shell \
 RUN_NETLAUNCH_TRIDENT_BIN ?= $(if $(filter yes,$(IS_UBUNTU_24_OR_NEWER)),bin/trident-azl3,bin/trident)
 
 .PHONY: run-netlaunch run-netlaunch-stream
-run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch artifacts/osmodifier $(RUN_NETLAUNCH_TRIDENT_BIN) bin/launcher
+run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch validate artifacts/osmodifier $(RUN_NETLAUNCH_TRIDENT_BIN) bin/launcher
 	@echo "Using trident binary: $(RUN_NETLAUNCH_TRIDENT_BIN)"
 	@mkdir -p artifacts/test-image
 	@cp $(RUN_NETLAUNCH_TRIDENT_BIN) artifacts/test-image/trident
