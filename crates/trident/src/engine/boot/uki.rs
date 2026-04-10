@@ -16,10 +16,7 @@ use osutils::{
 use trident_api::error::{
     InternalError, ReportError, ServicingError, TridentError, TridentResultExt,
 };
-use trident_api::{
-    constants::{ESP_EFI_DIRECTORY, ESP_MOUNT_POINT_PATH},
-    status::AbVolumeSelection,
-};
+use trident_api::{constants::ESP_EFI_DIRECTORY, status::AbVolumeSelection};
 
 use crate::engine::EngineContext;
 
@@ -42,7 +39,11 @@ pub fn is_staged(esp_dir_path: &Path) -> bool {
 }
 
 /// Copies the UKI file from the mounted image to the ESP directory.
-pub fn stage_uki_on_esp(temp_mount_dir: &Path, mount_point: &Path) -> Result<(), Error> {
+pub fn stage_uki_on_esp(
+    temp_mount_dir: &Path,
+    mount_point: &Path,
+    esp_mount_path: impl AsRef<Path>,
+) -> Result<(), Error> {
     let uki_source_dir = temp_mount_dir.join(UKI_DIRECTORY);
     let ukis: Vec<_> = uki_source_dir
         .read_dir()
@@ -59,7 +60,7 @@ pub fn stage_uki_on_esp(temp_mount_dir: &Path, mount_point: &Path) -> Result<(),
     ensure!(ukis.len() == 1, "Multiple UKI files found within the image");
 
     // Path to stage the UKI file on the ESP, e.g. <mount_point>/EFI/Linux/vmlinuz-0.efi.staged
-    let staging_uki_path = join_relative(mount_point, ESP_MOUNT_POINT_PATH).join(UKI_DIRECTORY);
+    let staging_uki_path = join_relative(mount_point, esp_mount_path).join(UKI_DIRECTORY);
 
     let dest_path = staging_uki_path.join(TMP_UKI_NAME);
     debug!("Staging UKI file at '{}'", dest_path.display());
@@ -144,8 +145,11 @@ pub fn stage_uki_on_esp(temp_mount_dir: &Path, mount_point: &Path) -> Result<(),
 }
 
 /// Prepares the ESP directory structure required for UKI boot.
-pub fn prepare_esp_for_uki(root_mount_point: &Path) -> Result<(), Error> {
-    let esp_root_path = join_relative(root_mount_point, ESP_MOUNT_POINT_PATH);
+pub fn prepare_esp_for_uki(
+    root_mount_point: &Path,
+    esp_mount_path: impl AsRef<Path>,
+) -> Result<(), Error> {
+    let esp_root_path = join_relative(root_mount_point, esp_mount_path);
     let esp_uki_directory = esp_root_path.join(UKI_DIRECTORY);
 
     fs::create_dir_all(&esp_uki_directory)
@@ -415,6 +419,7 @@ mod tests {
     use super::*;
     use std::fs::File;
     use tempfile::tempdir;
+    use trident_api::constants::ESP_MOUNT_POINT_PATH;
 
     /// Validates that `uki_suffix` produces the correct A/B suffix based on
     /// the active volume and install index.
@@ -462,10 +467,10 @@ mod tests {
         fs::write(src_uki_dir.join("dummy-uki.efi"), b"uki-content").unwrap();
 
         let mount_point = tempdir().unwrap();
-        prepare_esp_for_uki(mount_point.path()).unwrap();
+        prepare_esp_for_uki(mount_point.path(), ESP_MOUNT_POINT_PATH).unwrap();
 
         // Should succeed when exactly one UKI file is present
-        stage_uki_on_esp(temp_mount.path(), mount_point.path()).unwrap();
+        stage_uki_on_esp(temp_mount.path(), mount_point.path(), ESP_MOUNT_POINT_PATH).unwrap();
 
         // Check that the file was copied to the correct destination
         let dest_uki_file = join_relative(mount_point.path(), ESP_MOUNT_POINT_PATH)
@@ -476,7 +481,7 @@ mod tests {
         // Should fail if there are multiple UKI files
         let extra_uki_file = src_uki_dir.join("another.efi");
         fs::write(&extra_uki_file, b"other").unwrap();
-        stage_uki_on_esp(temp_mount.path(), mount_point.path()).unwrap_err();
+        stage_uki_on_esp(temp_mount.path(), mount_point.path(), ESP_MOUNT_POINT_PATH).unwrap_err();
     }
 
     /// Validates that `stage_uki_on_esp` copies both the UKI file and its
@@ -502,10 +507,10 @@ mod tests {
         fs::write(addon_dir.join("README"), b"ignored").unwrap();
 
         let mount_point = tempdir().unwrap();
-        prepare_esp_for_uki(mount_point.path()).unwrap();
+        prepare_esp_for_uki(mount_point.path(), ESP_MOUNT_POINT_PATH).unwrap();
 
         // Should succeed when exactly one UKI file is present
-        stage_uki_on_esp(temp_mount.path(), mount_point.path()).unwrap();
+        stage_uki_on_esp(temp_mount.path(), mount_point.path(), ESP_MOUNT_POINT_PATH).unwrap();
 
         // Check that the UKI file was copied to the correct destination
         let dest_uki_file = join_relative(mount_point.path(), ESP_MOUNT_POINT_PATH)
@@ -537,7 +542,7 @@ mod tests {
     #[test]
     fn test_prepare_esp_for_uki() {
         let root_mount = tempdir().unwrap();
-        prepare_esp_for_uki(root_mount.path()).unwrap();
+        prepare_esp_for_uki(root_mount.path(), ESP_MOUNT_POINT_PATH).unwrap();
 
         let esp_root_path = join_relative(root_mount.path(), ESP_MOUNT_POINT_PATH);
         assert!(esp_root_path.join(UKI_DIRECTORY).exists());
@@ -693,8 +698,9 @@ mod tests {
 
         // With no regular files present, staging should fail with "No UKI files found"
         let mount_point = tempdir().unwrap();
-        prepare_esp_for_uki(mount_point.path()).unwrap();
-        let err = stage_uki_on_esp(temp_mount.path(), mount_point.path()).unwrap_err();
+        prepare_esp_for_uki(mount_point.path(), ESP_MOUNT_POINT_PATH).unwrap();
+        let err = stage_uki_on_esp(temp_mount.path(), mount_point.path(), ESP_MOUNT_POINT_PATH)
+            .unwrap_err();
         assert!(
             err.to_string().contains("No UKI files found"),
             "Expected 'No UKI files found' error, got: {err}"
@@ -702,7 +708,7 @@ mod tests {
 
         // Now add exactly one regular file — staging should succeed
         fs::write(src_uki_dir.join("real-uki.efi"), b"uki-content").unwrap();
-        stage_uki_on_esp(temp_mount.path(), mount_point.path()).unwrap();
+        stage_uki_on_esp(temp_mount.path(), mount_point.path(), ESP_MOUNT_POINT_PATH).unwrap();
 
         let dest_uki_file = join_relative(mount_point.path(), ESP_MOUNT_POINT_PATH)
             .join(UKI_DIRECTORY)

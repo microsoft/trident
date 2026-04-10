@@ -21,7 +21,7 @@ use trident_api::{
     constants::{
         internal_params::{DISABLE_GRUB_NOPREFIX_CHECK, RAW_COSI_STORAGE},
         EFI_DEFAULT_BIN_DIRECTORY, EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY,
-        ESP_RELATIVE_MOUNT_POINT_PATH, GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
+        GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
     },
     error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, ServicingState, ServicingType},
@@ -84,6 +84,7 @@ pub fn set_uefi_fallback_contents(
         );
         copy_boot_files_for_uefi_fallback(
             mount_point,
+            ctx.esp_mount_path.as_path(),
             &source_esp_dir_name,
             &ctx.servicing_type,
             ctx.install_index,
@@ -282,10 +283,10 @@ fn copy_file_artifacts(
 
     if ctx.is_uki().unstructured("UKI setting unknown")? {
         // Prepare ESP directory structure for UKI boot
-        uki::prepare_esp_for_uki(mount_point)?;
+        uki::prepare_esp_for_uki(mount_point, &ctx.esp_mount_path)?;
 
         // Copy the UKI from the image into the ESP directory
-        uki::stage_uki_on_esp(temp_mount_dir, mount_point)?;
+        uki::stage_uki_on_esp(temp_mount_dir, mount_point, &ctx.esp_mount_path)?;
     } else {
         // In non-UKI mode, bail if grub_noprefix.efi is not found in the image.
         ensure!(
@@ -407,13 +408,12 @@ fn skip_uefi_fallback_copy(
 /// Copies all files from 'source_esp_name' folder to the UEFI fallback folder.
 fn copy_boot_files_for_uefi_fallback(
     mount_point: &Path,
+    esp_mount_path: &Path,
     source_esp_name: &str,
     servicing_type: &ServicingType,
     install_index: usize,
 ) -> Result<(), Error> {
-    let esp_dir_path = mount_point
-        .join(ESP_RELATIVE_MOUNT_POINT_PATH)
-        .join(ESP_EFI_DIRECTORY);
+    let esp_dir_path = path::join_relative(mount_point, esp_mount_path).join(ESP_EFI_DIRECTORY);
     if skip_uefi_fallback_copy(
         &esp_dir_path,
         source_esp_name,
@@ -689,9 +689,8 @@ fn generate_efi_bin_base_dir_path(
     mount_point: &Path,
 ) -> Result<PathBuf, Error> {
     // Compose the path to the ESP directory
-    let esp_efi_path = mount_point
-        .join(ESP_RELATIVE_MOUNT_POINT_PATH)
-        .join(ESP_EFI_DIRECTORY);
+    let esp_efi_path =
+        path::join_relative(mount_point, ctx.esp_mount_path.as_path()).join(ESP_EFI_DIRECTORY);
 
     // Return the path to the ESP directory with the ESP dir name
     Ok(
@@ -713,7 +712,10 @@ mod tests {
         boot::{get_update_esp_dir_name, make_esp_dir_name_candidates},
         install_index,
     };
-    use trident_api::config::{HostConfiguration, Os};
+    use trident_api::{
+        config::{HostConfiguration, Os},
+        constants::ESP_RELATIVE_MOUNT_POINT_PATH,
+    };
     use trident_api::{
         constants::GRUB2_RELATIVE_PATH,
         status::{AbVolumeSelection, ServicingType},

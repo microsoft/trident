@@ -24,8 +24,8 @@ use trident_api::{
         ESP_RELATIVE_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH,
     },
     error::{
-        ExecutionEnvironmentMisconfigurationError, InitializationError, InvalidInputError,
-        ReportError, TridentError, TridentResultExt,
+        ExecutionEnvironmentMisconfigurationError, InitializationError, InternalError,
+        InvalidInputError, ReportError, TridentError, TridentResultExt,
     },
     status::{decode_host_status, AbVolumeSelection, HostStatus, ServicingState},
     BlockDeviceId,
@@ -523,8 +523,19 @@ pub fn execute(
         .map_err(Into::into)
         .message("The provided Host Status has an invalid Host Configuration")?;
 
+    // Find the ESP filesystem mount point path
+    let esp_path = host_status
+        .spec
+        .storage
+        .filesystems
+        .iter()
+        .find(|fs| fs.is_esp)
+        .and_then(|fs| fs.mount_point_path())
+        .ok_or(TridentError::new(InternalError::Internal(
+            "Failed to find ESP filesystem in Host Status, validation should have failed if this was the case",
+        )))?;
+
     // Ensure AZLA/AZLB esp scheme is present by copying boot files from fallback location if needed.
-    let esp_path = PathBuf::from(ROOT_MOUNT_POINT_PATH).join(ESP_RELATIVE_MOUNT_POINT_PATH);
     let azla_esp_path = esp_path.join(ESP_EFI_DIRECTORY).join("AZLA");
     trace!("Checking for AZLA volume ESP path at {:?}", &azla_esp_path);
     if !azla_esp_path.exists() {
