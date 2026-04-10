@@ -21,7 +21,7 @@ use trident_api::{
     },
     constants::{
         internal_params::ENABLE_UKI_SUPPORT, EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY,
-        ESP_RELATIVE_MOUNT_POINT_PATH, ROOT_MOUNT_POINT_PATH,
+        ROOT_MOUNT_POINT_PATH,
     },
     error::{
         ExecutionEnvironmentMisconfigurationError, InitializationError, InternalError,
