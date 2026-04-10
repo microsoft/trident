@@ -312,11 +312,11 @@ fn validate_esp(os_image: &OsImage, ctx: &EngineContext) -> Result<(), TridentEr
 
     // Ensure the ESP filesystem mount point from the image matches the ESP
     // mount point in the Host Configuration.
-    if esp_img.mount_point != ctx.esp_mount_point {
+    if esp_img.mount_point != ctx.esp_mount_path {
         return Err(TridentError::new(
             InvalidInputError::EspMountPointMismatch {
                 os_image_esp_mount_point: esp_img.mount_point.display().to_string(),
-                host_config_esp_mount_point: ctx.esp_mount_point.display().to_string(),
+                host_config_esp_mount_point: ctx.esp_mount_path.display().to_string(),
             },
         ));
     }
