@@ -19,7 +19,7 @@ use trident_api::{
 
 use crate::{
     engine::{EngineContext, Subsystem},
-    TRIDENT_BINARY_PATH,
+    LAUNCHER_BINARY_PATH, TRIDENT_BINARY_PATH,
 };
 
 #[derive(Default, Debug)]
@@ -65,11 +65,13 @@ impl Subsystem for ManagementSubsystem {
             )
             .structured(ServicingError::CopyTridentBinary)?;
 
-            fs::copy(
-                "/usr/bin/launcher",
-                path::join_relative(mount_path, "/usr/bin/launcher"),
-            )
-            .structured(ServicingError::CopyTridentBinary)?;
+            if Path::new(LAUNCHER_BINARY_PATH).exists() {
+                fs::copy(
+                    LAUNCHER_BINARY_PATH,
+                    path::join_relative(mount_path, LAUNCHER_BINARY_PATH),
+                )
+                .structured(ServicingError::CopyTridentBinary)?;
+            }
         }
 
         Ok(())
