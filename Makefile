@@ -182,12 +182,7 @@ target/azl3/release/trident target/azl3/release/launcher: | version-vars azl3-bu
 	@docker run --rm \
 		-e TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
 		-v $(PWD):/work -w /work $(AZL3_BUILDER_IMAGE) \
-		cargo build --color always --target-dir target/azl3 --release --features dangerous-options,grpc-preview
-	@docker run --rm \
-		-e TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
-		-v $(PWD):/work -w /work $(AZL3_BUILDER_IMAGE) \
-		cargo build --color always --target-dir target/azl3 --release -p launcher
-
+		cargo build --color always --target-dir target/azl3 --release --features dangerous-options,grpc-preview -p trident -p launcher
 
 # This will do a proper build on azl3, exactly as the pipelines would, with the custom registry and all.
 bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full packaging/systemd/*.service packaging/rpm/trident.spec artifacts/osmodifier packaging/selinux-policy-trident/* version-vars
@@ -567,7 +562,7 @@ IS_UBUNTU_24_OR_NEWER := $(shell \
 RUN_NETLAUNCH_TRIDENT_BIN ?= $(if $(filter yes,$(IS_UBUNTU_24_OR_NEWER)),target/azl3/release/trident,target/release/trident)
 
 .PHONY: run-netlaunch run-netlaunch-stream
-run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch artifacts/osmodifier $(RUN_NETLAUNCH_TRIDENT_BIN) bin/launcher
+run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch validate artifacts/osmodifier $(RUN_NETLAUNCH_TRIDENT_BIN) bin/launcher
 	@echo "Using trident binary: $(RUN_NETLAUNCH_TRIDENT_BIN)"
 	@mkdir -p artifacts/test-image
 	@cp $(RUN_NETLAUNCH_TRIDENT_BIN) artifacts/test-image/trident
