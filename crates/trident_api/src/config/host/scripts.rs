@@ -73,7 +73,8 @@ pub struct Script {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub run_on: Vec<ServicingTypeSelection>,
 
-    /// Binary to run the script with. The default is `/bin/sh`.
+    /// Binary to run the script with. The default is `{{
+    /// DEFAULT_SCRIPT_INTERPRETER }}`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub interpreter: Option<PathBuf>,
 

@@ -4,7 +4,11 @@ use anyhow::{bail, Context, Error};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use log::info;
 
-use trident_api::constants::DEFAULT_ESP_MOUNT_POINT_PATH;
+use trident_api::constants::{
+    DATASTORE_FILE_EXTENSION, DEFAULT_ESP_MOUNT_POINT_PATH, DEFAULT_SCRIPT_INTERPRETER,
+    DEV_MAPPER_PATH, EFI_DEFAULT_BIN_RELATIVE_PATH, IMAGE_CHECKSUM_IGNORED,
+    TRIDENT_DATASTORE_PATH_DEFAULT,
+};
 
 mod clap_model;
 mod host_config;
@@ -229,7 +233,15 @@ fn build_host_config_docs(mut opts: HostConfigMarkdownOpts) -> Result<(), Error>
     // descriptions. They will exists as variables with the exact same name as
     // the constant. For example, `DEFAULT_ESP_MOUNT_POINT_PATH` can be used in
     // descriptions as `{{ DEFAULT_ESP_MOUNT_POINT_PATH }}`.
-    let variables = string_const_map!(DEFAULT_ESP_MOUNT_POINT_PATH);
+    let variables = string_const_map!(
+        DATASTORE_FILE_EXTENSION,
+        DEFAULT_ESP_MOUNT_POINT_PATH,
+        DEFAULT_SCRIPT_INTERPRETER,
+        DEV_MAPPER_PATH,
+        EFI_DEFAULT_BIN_RELATIVE_PATH,
+        IMAGE_CHECKSUM_IGNORED,
+        TRIDENT_DATASTORE_PATH_DEFAULT,
+    );
 
     host_config::docs::build(
         opts.output,

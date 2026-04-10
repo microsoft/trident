@@ -145,10 +145,11 @@ pub struct EncryptedVolume {
     #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub id: BlockDeviceId,
 
-    /// The name of the device to create under `/dev/mapper` when opening the volume.
+    /// The name of the device to create under `{{ DEV_MAPPER_PATH }}` when
+    /// opening the volume.
     ///
-    /// This parameter is required. It must be a valid file name and unique among all encrypted
-    /// volumes, as well as among the Device Mapper devices.
+    /// This parameter is required. It must be a valid file name and unique
+    /// among all encrypted volumes, as well as among the Device Mapper devices.
     pub device_name: String,
 
     /// The ID of the disk partition or software RAID array to encrypt.
