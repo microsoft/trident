@@ -184,15 +184,18 @@ build-azl3: azl3-builder-image version-vars
 	@docker run --rm \
 		-e TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
 		-v $(PWD):/work -w /work $(AZL3_BUILDER_IMAGE) \
-		cargo build --color always --target-dir target/azl3 --release --features dangerous-options,grpc-preview
+		cargo build --color always --target-dir target/azl3 --release --features dangerous-options,grpc-preview -p trident -p launcher
 
 bin/trident-azl3: build-azl3
 	@cp -u target/azl3/release/trident bin/trident-azl3
+bin/launcher: build-azl3
+	@cp -u target/azl3/release/launcher bin/launcher
+
 
 # This will do a proper build on azl3, exactly as the pipelines would, with the custom registry and all.
 bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full packaging/systemd/*.service packaging/rpm/trident.spec artifacts/osmodifier packaging/selinux-policy-trident/* version-vars
 	$(eval CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN := $(shell az account get-access-token --query "join(' ', ['Bearer', accessToken])" --output tsv))
-	
+
 	@mkdir -p bin/
 	@tmpdir=$$(mktemp -d) && \
 		export CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN="$(CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN)" &&\
@@ -564,7 +567,7 @@ IS_UBUNTU_24_OR_NEWER := $(shell \
 RUN_NETLAUNCH_TRIDENT_BIN ?= $(if $(filter yes,$(IS_UBUNTU_24_OR_NEWER)),bin/trident-azl3,bin/trident)
 
 .PHONY: run-netlaunch run-netlaunch-stream
-run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch validate artifacts/osmodifier $(RUN_NETLAUNCH_TRIDENT_BIN)
+run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch validate artifacts/osmodifier $(RUN_NETLAUNCH_TRIDENT_BIN) bin/launcher
 	@echo "Using trident binary: $(RUN_NETLAUNCH_TRIDENT_BIN)"
 	@mkdir -p artifacts/test-image
 	@cp $(RUN_NETLAUNCH_TRIDENT_BIN) artifacts/test-image/trident
@@ -1016,7 +1019,7 @@ $(MINIMAL_IMAGE):
 	@tests/images/testimages.py download-image minimal
 
 MINIMAL_IMAGE_AARCH64 = artifacts/minimal_aarch64.vhdx
-$(MINIMAL_IMAGE_AARCH64): 
+$(MINIMAL_IMAGE_AARCH64):
 	@mkdir -p artifacts
 	@tests/images/testimages.py download-image minimal_aarch64
 
