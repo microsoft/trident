@@ -16,6 +16,7 @@ use trident_proto::v1::{
 
 use crate::{
     config::{HostConfigurationDynamicValidationError, HostConfigurationStaticValidationError},
+    constants::DEFAULT_ESP_MOUNT_POINT_PATH,
     primitives::bytes::ByteCount,
     status::{ServicingState, ServicingType},
     storage_graph::error::StorageGraphBuildError,
@@ -169,6 +170,18 @@ pub enum InvalidInputError {
 
     #[error("The provided OS image file is corrupt: {0}")]
     CorruptOsImage(String),
+
+    #[error(
+        "Failed to validate ESP mount point: OS image has ESP mounted at '{os_image_esp_mount_point}' \
+        but Host Configuration has ESP mounted at '{host_config_esp_mount_point}'. If the ESP in the image is \
+        indeed mounted at a location that is NOT the default ESP mount point ('{DEFAULT_ESP_MOUNT_POINT_PATH}'), \
+        mark the correct filesystem as the ESP using the ESP override option in the Host Configuration \
+        filesystem definition."
+    )]
+    EspMountPointMismatch {
+        os_image_esp_mount_point: String,
+        host_config_esp_mount_point: String,
+    },
 
     #[error(
         "Filesystem mounted at '{mount_point}' requires at least {} [{fs_size} bytes] of storage. \
