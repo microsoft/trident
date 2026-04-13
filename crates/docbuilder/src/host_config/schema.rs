@@ -7,6 +7,10 @@ use tera::{Context as TeraCtx, Tera};
 
 use trident_api::{config::HostConfiguration, schema::CONSTANTS_MAP, schemars::schema::RootSchema};
 
+/// Tag used to indicate that anything after it in a description is intended for
+/// internal use and should not be rendered in the documentation.
+const INTERNAL_DESCRIPTION_TAG: &str = "# INTERNAL";
+
 pub(crate) fn write(dest: Option<impl AsRef<Path>>) -> Result<(), Error> {
     let schema = serde_json::to_string_pretty(&host_config_schema()?)?;
 
@@ -51,6 +55,10 @@ fn render_descriptions_recursive(value: &mut Value, ctx: &TeraCtx) -> Result<(),
             for (key, child) in map.iter_mut() {
                 if key == "description" {
                     if let Value::String(desc) = child {
+                        if let Some(idx) = desc.find(INTERNAL_DESCRIPTION_TAG) {
+                            desc.truncate(idx);
+                        }
+
                         debug!("Rendering description: {desc}");
                         *desc = Tera::one_off(desc, ctx, false)
                             .with_context(|| format!("Failed to render description: {desc}"))?;

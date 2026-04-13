@@ -11,10 +11,6 @@ use trident_api::{
 
 use super::characteristics::Characteristics;
 
-/// Tag used to indicate that anything after it in a description is intended for
-/// internal use and should not be rendered in the documentation.
-const INTERNAL_DESCRIPTION_TAG: &str = "# INTERNAL";
-
 /// A model of a Node in the schema
 ///
 /// This is a model of a Node in the schema. It is used to generate
@@ -359,18 +355,9 @@ impl TryFrom<SchemaObject> for SchemaNodeModel {
             }
         };
 
-        let description = schema.metadata().description.clone().map(|desc|
-            // If the description contains the internal tag, we want to remove it and anything after it.
-            if let Some(internal_tag_index) = desc.find(INTERNAL_DESCRIPTION_TAG) {
-                desc[..internal_tag_index].trim().to_string()
-            } else {
-                desc
-            }
-        );
-
         Ok(Self {
             name: schema.metadata().title.clone(),
-            description,
+            description: schema.metadata().description.clone(),
             default: schema.metadata().default.clone(),
             examples: schema.metadata().examples.clone(),
             deprecated: schema.metadata().deprecated,
@@ -498,14 +485,6 @@ impl SchemaNodeModel {
         }
 
         Ok(characteristics)
-    }
-
-    /// Interprets the description as jinja markdown and renders it with the given context.
-    pub(super) fn render_description(&self, context: &TeraCtx) -> Result<Option<String>, Error> {
-        self.description
-            .as_ref()
-            .map(|d| Tera::one_off(d, context, false).context("Failed to render description"))
-            .transpose()
     }
 }
 
