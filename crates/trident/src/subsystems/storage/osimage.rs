@@ -310,6 +310,17 @@ fn validate_esp(os_image: &OsImage, ctx: &EngineContext) -> Result<(), TridentEr
         return Ok(());
     };
 
+    // Ensure the ESP filesystem mount point from the image matches the ESP
+    // mount point in the Host Configuration.
+    if esp_img.mount_point != ctx.esp_mount_path {
+        return Err(TridentError::new(
+            InvalidInputError::EspMountPointMismatch {
+                os_image_esp_mount_point: esp_img.mount_point.display().to_string(),
+                host_config_esp_mount_point: ctx.esp_mount_path.display().to_string(),
+            },
+        ));
+    }
+
     // Ensure there is no verity hash attached
     if esp_img.has_verity() {
         return Err(TridentError::new(InvalidInputError::UnexpectedVerityOnEsp));
@@ -779,6 +790,65 @@ mod tests {
         assert_eq!(
             err.kind(),
             &ErrorKind::InvalidInput(InvalidInputError::UnexpectedVerityOnEsp)
+        );
+    }
+
+    #[test]
+    fn test_validate_esp_mount_point_mismatch() {
+        let make_image = |esp_path: &str| MockOsImage {
+            source: Url::parse(OSIMAGE_DUMMY_SOURCE).unwrap(),
+            os_arch: SystemArchitecture::Amd64,
+            os_release: OsRelease::default(),
+            images: vec![
+                MockImage {
+                    mount_point: PathBuf::from(esp_path),
+                    fs_type: OsImageFileSystemType::Vfat,
+                    fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+                    part_type: DiscoverablePartitionType::Esp,
+                    verity: None,
+                },
+                MockImage {
+                    mount_point: PathBuf::from(ROOT_MOUNT_POINT_PATH),
+                    fs_type: OsImageFileSystemType::Ext4,
+                    fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+                    part_type: DiscoverablePartitionType::Root,
+                    verity: None,
+                },
+            ],
+            is_uki: false,
+            partitioning_info: None,
+        };
+
+        // Both image and ctx agree on the default ESP path — should succeed.
+        let ctx = EngineContext::default().with_image(make_image(DEFAULT_ESP_MOUNT_POINT_PATH));
+        validate_esp(ctx.image.as_ref().unwrap(), &ctx).unwrap();
+
+        // Both image and ctx agree on a non-default ESP path — should succeed.
+        let mut ctx = EngineContext::default().with_image(make_image("/efi"));
+        ctx.esp_mount_path = PathBuf::from("/efi");
+        validate_esp(ctx.image.as_ref().unwrap(), &ctx).unwrap();
+
+        // Mismatch: ctx uses a different path than the image — should fail.
+        ctx.esp_mount_path = PathBuf::from("/boot/efi");
+        let err = validate_esp(ctx.image.as_ref().unwrap(), &ctx).unwrap_err();
+        assert_eq!(
+            err.kind(),
+            &ErrorKind::InvalidInput(InvalidInputError::EspMountPointMismatch {
+                os_image_esp_mount_point: "/efi".to_string(),
+                host_config_esp_mount_point: "/boot/efi".to_string(),
+            })
+        );
+
+        // Mismatch the other way: image uses the default, ctx uses a non-default path.
+        let mut ctx = EngineContext::default().with_image(make_image(DEFAULT_ESP_MOUNT_POINT_PATH));
+        ctx.esp_mount_path = PathBuf::from("/efi");
+        let err = validate_esp(ctx.image.as_ref().unwrap(), &ctx).unwrap_err();
+        assert_eq!(
+            err.kind(),
+            &ErrorKind::InvalidInput(InvalidInputError::EspMountPointMismatch {
+                os_image_esp_mount_point: DEFAULT_ESP_MOUNT_POINT_PATH.to_string(),
+                host_config_esp_mount_point: "/efi".to_string(),
+            })
         );
     }
 

@@ -12,9 +12,11 @@ sidebar_position: 24
 
 ## Variants
 
-### Use Default Behavior
+### Use Default ESP Path
 
 Do not override the default ESP mount point path. This is the default behavior.
+
+The ESP is assumed to be mounted at `/boot/efi` by default.
 
 | Characteristic | Value         |
 | -------------- | ------------- |
@@ -25,6 +27,10 @@ Do not override the default ESP mount point path. This is the default behavior.
 
 Override the default ESP mount point to be the path of this filesystem.
 
+Only ONE filesystem can be used as ESP. Therefore, this option can be used at most once in the Host Configuration.
+
+In the rare scenario where a filesystem is overriding ESP AND another filesystem is mounted at the default ESP mount point path (`/boot/efi`), the latter filesystem will also be detected as the ESP, which will result in an error. If the filesystem mounted at the default ESP mount point path is not actually the ESP, then it should be marked with the `block` option to prevent it from being incorrectly treated as the ESP.
+
 | Characteristic | Value      |
 | -------------- | ---------- |
 | Type           | `string`   |
@@ -34,7 +40,9 @@ Override the default ESP mount point to be the path of this filesystem.
 
 This option should be used very rarely and in very specific non-standard scenarios.
 
-Used to indicate that this filesystem is NOT the ESP, even if it matches the default ESP mount point path. This is necessary in the case where a user has a non-ESP filesystem that they want to mount at the default ESP mount point path, and they want to ensure that Trident does not treat it as the ESP.
+Used to indicate that this filesystem is NOT the ESP, even if it is mounted at the default ESP path, `/boot/efi`. This is only necessary if a distribution has a non-ESP filesystem that is mounted at the default ESP mount point path.
+
+For this to work, the correct ESP filesystem will have to be explicitly marked as the ESP using `override`, and this filesystem will have to be marked with `block` to prevent it from being incorrectly treated as the ESP due to its mount point path.
 
 | Characteristic | Value    |
 | -------------- | -------- |
