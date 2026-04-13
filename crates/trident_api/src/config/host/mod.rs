@@ -270,7 +270,7 @@ impl HostConfiguration {
     pub fn generate_schema() -> schemars::schema::RootSchema {
         use schemars::schema::Schema;
         let mut schema =
-            crate::schema_helpers::schema_generator().into_root_schema_for::<HostConfiguration>();
+            crate::schema::schema_generator().into_root_schema_for::<HostConfiguration>();
 
         // Because netplan-types currently does not support schemars, we have to
         // manually provide a placeholder schema for the netplan fields using

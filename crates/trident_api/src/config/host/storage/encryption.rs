@@ -12,7 +12,7 @@ use crate::{
 use sysdefs::tpm2::Pcr;
 
 #[cfg(feature = "schemars")]
-use crate::schema_helpers::block_device_id_schema;
+use crate::schema::block_device_id_schema;
 
 /// Configure encrypted volumes of underlying disk partitions or software RAID arrays.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]

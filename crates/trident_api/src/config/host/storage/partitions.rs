@@ -10,7 +10,7 @@ use schemars::JsonSchema;
 use crate::{constants::PARTITION_SIZE_GROW, primitives::bytes::ByteCount, BlockDeviceId};
 
 #[cfg(feature = "schemars")]
-use crate::schema_helpers::{block_device_id_schema, unit_enum_with_untagged_variant};
+use crate::schema::{block_device_id_schema, unit_enum_with_untagged_variant};
 
 /// Per partition configuration.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]

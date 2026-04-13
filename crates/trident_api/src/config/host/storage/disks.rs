@@ -11,7 +11,7 @@ use crate::{
 };
 
 #[cfg(feature = "schemars")]
-use crate::schema_helpers::block_device_id_schema;
+use crate::schema::block_device_id_schema;
 
 /// Per disk configuration.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]

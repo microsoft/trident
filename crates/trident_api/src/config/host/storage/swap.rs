@@ -14,7 +14,7 @@ pub struct Swap {
     /// The ID of the block device to use for this swap area.
     #[cfg_attr(
         feature = "schemars",
-        schemars(schema_with = "crate::schema_helpers::block_device_id_schema")
+        schemars(schema_with = "crate::schema::block_device_id_schema")
     )]
     pub device_id: BlockDeviceId,
 }
@@ -32,6 +32,6 @@ impl FromStr for Swap {
 #[cfg(feature = "schemars")]
 impl crate::primitives::shortcuts::StringOrStructMetadata for Swap {
     fn shorthand_format() -> &'static str {
-        crate::schema_helpers::BLOCK_DEVICE_ID_FORMAT
+        crate::schema::BLOCK_DEVICE_ID_FORMAT
     }
 }

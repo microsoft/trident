@@ -1,22 +1,15 @@
-use std::{collections::HashMap, path::Path};
+use std::path::Path;
 
 use anyhow::{Context, Error};
 use serde_json::json;
-use trident_api::config::HostConfiguration;
 
 use crate::schema_renderer::{renderer::Page, SchemaDocBuilder, SchemaDocSettings};
 
-pub(crate) fn build(
-    dest: impl AsRef<Path>,
-    settings: SchemaDocSettings,
-    variables: HashMap<String, String>,
-) -> Result<(), Error> {
-    let builder = SchemaDocBuilder::new(
-        HostConfiguration::generate_schema(),
-        settings.clone(),
-        variables,
-    )
-    .context("Failed to create schema doc builder")?;
+use super::schema;
+
+pub(crate) fn build(dest: impl AsRef<Path>, settings: SchemaDocSettings) -> Result<(), Error> {
+    let builder = SchemaDocBuilder::new(schema::host_config_schema()?, settings.clone())
+        .context("Failed to create schema doc builder")?;
     let pages = builder.build_pages().context("Failed to build pages")?;
 
     // If docusaurus is enabled, make the first page be the category index.

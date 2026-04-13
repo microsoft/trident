@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 #[cfg(feature = "schemars")]
-use crate::schema_helpers::unit_enum_with_untagged_variant;
+use crate::schema::unit_enum_with_untagged_variant;
 use crate::{
     constants::IMAGE_CHECKSUM_IGNORED,
     error::{InvalidInputError, TridentError},
@@ -39,7 +39,8 @@ pub struct OsImage {
 pub enum ImageSha384 {
     /// # Ignored
     ///
-    /// You can pass `ignored` to skip the checksum verification.
+    /// You can pass `{{ IMAGE_CHECKSUM_IGNORED }}` to skip the checksum
+    /// verification.
     Ignored,
 
     /// # Checksum

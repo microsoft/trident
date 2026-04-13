@@ -287,7 +287,8 @@ impl TryFrom<SchemaObject> for SchemaNodeModel {
                                 NodeKind::Object
                             }
                         } else {
-                            bail!("Object instance type has no object validation");
+                            // If the instance type is object but there is no validation, it's a simple object.
+                            NodeKind::SimpleObject
                         }
                     }
                 },

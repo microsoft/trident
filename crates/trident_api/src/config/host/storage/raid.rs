@@ -9,7 +9,7 @@ use schemars::JsonSchema;
 use crate::{constants::DEV_MD_PATH, BlockDeviceId};
 
 #[cfg(feature = "schemars")]
-use crate::schema_helpers::{block_device_id_list_schema, block_device_id_schema};
+use crate::schema::{block_device_id_list_schema, block_device_id_schema};
 
 /// RAID configuration for a host.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
