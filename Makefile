@@ -560,12 +560,14 @@ IS_UBUNTU_24_OR_NEWER := $(shell \
 	[ "$$ID" = "ubuntu" ] && [ "$${VERSION_ID%%.*}" -ge 24 ] && echo yes)
 
 RUN_NETLAUNCH_TRIDENT_BIN ?= $(if $(filter yes,$(IS_UBUNTU_24_OR_NEWER)),target/azl3/release/trident,target/release/trident)
+RUN_NETLAUNCH_LAUNCHER_BIN ?= $(if $(filter yes,$(IS_UBUNTU_24_OR_NEWER)),target/azl3/release/launcher,target/release/launcher)
 
 .PHONY: run-netlaunch run-netlaunch-stream
-run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch validate artifacts/osmodifier $(RUN_NETLAUNCH_TRIDENT_BIN) bin/launcher
+run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch validate artifacts/osmodifier $(RUN_NETLAUNCH_TRIDENT_BIN) $(RUN_NETLAUNCH_LAUNCHER_BIN)
 	@echo "Using trident binary: $(RUN_NETLAUNCH_TRIDENT_BIN)"
 	@mkdir -p artifacts/test-image
 	@cp $(RUN_NETLAUNCH_TRIDENT_BIN) artifacts/test-image/trident
+	@cp $(RUN_NETLAUNCH_LAUNCHER_BIN) artifacts/test-image/launcher
 	@cp artifacts/osmodifier artifacts/test-image/
 	@bin/netlaunch \
 	    --trident-binary $(RUN_NETLAUNCH_TRIDENT_BIN) \

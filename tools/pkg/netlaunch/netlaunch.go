@@ -415,9 +415,9 @@ func injectRcpAgentConfig(
 		rcpAgentConfBuilder.registerRcpFile(newRcpAgentFileDownload("osmodifier", "/usr/bin/osmodifier", 0755, data))
 	}
 
-	data, err := os.ReadFile("bin/launcher")
+	data, err := os.ReadFile("artifacts/test-image/launcher")
 	if err != nil {
-		return fmt.Errorf("failed to read local launcher binary from 'bin/launcher': %w", err)
+		return fmt.Errorf("failed to read local launcher binary from 'artifacts/test-image/launcher': %w", err)
 	}
 	rcpAgentConfBuilder.registerRcpFile(newRcpAgentFileDownload("launcher", "/usr/bin/launcher", 0755, data))
 
