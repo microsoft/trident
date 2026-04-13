@@ -20,10 +20,10 @@ pub struct Trident {
     #[serde(default)]
     pub disable: bool,
 
-    /// Describes where to place the datastore Trident will use to store its state.
-    /// Defaults to `/var/lib/trident/datastore.sqlite`. Needs to end with
-    /// `.sqlite`, cannot be an existing file and cannot reside on a read-only
-    /// filesystem or A/B volume.
+    /// Describes where to place the datastore Trident will use to store its
+    /// state. Defaults to `{{ TRIDENT_DATASTORE_PATH_DEFAULT }}`. Needs to end
+    /// with `.{{ DATASTORE_FILE_EXTENSION }}`, cannot be an existing file and
+    /// cannot reside on a read-only filesystem or A/B volume.
     #[serde(
         default = "Trident::default_datastore_path",
         skip_serializing_if = "Trident::is_default_datastore_path"
