@@ -83,13 +83,7 @@ version-vars:
 	@echo "GIT_COMMIT=$(GIT_COMMIT)"
 
 .PHONY: build
-build: .cargo/config version-vars
-	@OPENSSL_STATIC=1 \
-		OPENSSL_LIB_DIR=$(shell dirname `whereis libssl.a | cut -d" " -f2`) \
-		OPENSSL_INCLUDE_DIR=/usr/include/openssl \
-		TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
-		cargo build --release --features dangerous-options,grpc-preview
-	@mkdir -p bin
+build: target/release/trident
 
 .PHONY: format
 format:
@@ -141,6 +135,13 @@ clean-coverage:
 	rm -rf target/coverage/profraw
 	rm -rf target/lcov.info
 
+target/release/trident: .cargo/config | version-vars
+	@OPENSSL_STATIC=1 \
+		OPENSSL_LIB_DIR=$(shell dirname `whereis libssl.a | cut -d" " -f2`) \
+		OPENSSL_INCLUDE_DIR=/usr/include/openssl \
+		TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
+		cargo build --release --features dangerous-options,grpc-preview
+
 TOOLKIT_DIR="azure-linux-image-tools/toolkit"
 AZL_TOOLS_OUT_DIR="$(TOOLKIT_DIR)/out/tools"
 ARTIFACTS_DIR="artifacts"
@@ -158,10 +159,7 @@ artifacts/osmodifier: packaging/docker/Dockerfile-osmodifier.azl3
 	@id=$$(docker create trident/osmodifier-build:latest) && \
 	    docker cp -q $$id:/work/azure-linux-image-tools/toolkit/out/tools/osmodifier $@ || \
 	    docker rm -v $$id
-
-bin/trident: build
-	@mkdir -p bin
-	@cp -u target/release/trident bin/
+	@touch $@
 
 .PHONY: azl3-builder-image clean-azl3-builder-image build-azl3
 azl3-builder-image:
@@ -177,7 +175,7 @@ clean-azl3-builder-image:
 	@echo "Removing local image $(AZL3_BUILDER_IMAGE)..."
 	@docker rmi $(AZL3_BUILDER_IMAGE) || echo "Image $(AZL3_BUILDER_IMAGE) not found locally."
 
-build-azl3: azl3-builder-image version-vars
+target/azl3/release/trident: | version-vars azl3-builder-image
 	@mkdir -p bin/
 	@mkdir -p target/azl3/
 	@echo "Building Trident for Azure Linux 3 using Docker image $(AZL3_BUILDER_IMAGE)..."
@@ -186,13 +184,10 @@ build-azl3: azl3-builder-image version-vars
 		-v $(PWD):/work -w /work $(AZL3_BUILDER_IMAGE) \
 		cargo build --color always --target-dir target/azl3 --release --features dangerous-options,grpc-preview
 
-bin/trident-azl3: build-azl3
-	@cp -u target/azl3/release/trident bin/trident-azl3
-
 # This will do a proper build on azl3, exactly as the pipelines would, with the custom registry and all.
 bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full packaging/systemd/*.service packaging/rpm/trident.spec artifacts/osmodifier packaging/selinux-policy-trident/* version-vars
 	$(eval CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN := $(shell az account get-access-token --query "join(' ', ['Bearer', accessToken])" --output tsv))
-	
+
 	@mkdir -p bin/
 	@tmpdir=$$(mktemp -d) && \
 		export CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN="$(CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN)" &&\
@@ -212,14 +207,15 @@ bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full packaging/systemd
 	@tar xf $@ -C bin/
 
 # This one does a fast trick-build where we build locally and inject the binary into the container to add it to the RPM.
-bin/trident-rpms.tar.gz: packaging/docker/Dockerfile.azl3 packaging/systemd/*.service packaging/rpm/trident.spec artifacts/osmodifier bin/trident packaging/selinux-policy-trident/*
+bin/trident-rpms.tar.gz: packaging/docker/Dockerfile.azl3 packaging/systemd/*.service packaging/rpm/trident.spec artifacts/osmodifier target/release/trident packaging/selinux-policy-trident/*
+	@mkdir -p bin/
+	@cp target/release/trident bin/
 	@docker build -t trident/trident-build:latest \
 		--build-arg TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
 		--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)" \
 		--build-arg RPM_REL="$(TRIDENT_PREVIEW_VERSION)" \
 		-f packaging/docker/Dockerfile.azl3 \
 		.
-	@mkdir -p bin/
 	@id=$$(docker create trident/trident-build:latest) && \
 	    docker cp -q $$id:/work/trident-rpms.tar.gz $@ || \
 	    docker rm -v $$id
@@ -544,8 +540,8 @@ $(ARTIFACTS_TEST_IMAGE_DIR)/azl-installer.iso: \
 	./tests/images/testimages.py build azl-installer --output-dir $(ARTIFACTS_TEST_IMAGE_DIR)
 
 .PHONY: validate
-validate: $(TRIDENT_CONFIG) bin/trident
-	@bin/trident validate $(TRIDENT_CONFIG)
+validate: $(TRIDENT_CONFIG) target/release/trident
+	@target/release/trident validate $(TRIDENT_CONFIG) -v info
 
 NETLAUNCH_ISO ?= bin/trident-mos.iso
 
@@ -561,7 +557,7 @@ IS_UBUNTU_24_OR_NEWER := $(shell \
 	. $(OS_RELEASE_FILE) 2>/dev/null && \
 	[ "$$ID" = "ubuntu" ] && [ "$${VERSION_ID%%.*}" -ge 24 ] && echo yes)
 
-RUN_NETLAUNCH_TRIDENT_BIN ?= $(if $(filter yes,$(IS_UBUNTU_24_OR_NEWER)),bin/trident-azl3,bin/trident)
+RUN_NETLAUNCH_TRIDENT_BIN ?= $(if $(filter yes,$(IS_UBUNTU_24_OR_NEWER)),target/azl3/release/trident,target/release/trident)
 
 .PHONY: run-netlaunch run-netlaunch-stream
 run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch validate artifacts/osmodifier $(RUN_NETLAUNCH_TRIDENT_BIN)
@@ -1016,7 +1012,7 @@ $(MINIMAL_IMAGE):
 	@tests/images/testimages.py download-image minimal
 
 MINIMAL_IMAGE_AARCH64 = artifacts/minimal_aarch64.vhdx
-$(MINIMAL_IMAGE_AARCH64): 
+$(MINIMAL_IMAGE_AARCH64):
 	@mkdir -p artifacts
 	@tests/images/testimages.py download-image minimal_aarch64
 
