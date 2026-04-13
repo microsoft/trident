@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 
 use anyhow::{bail, ensure, Context, Error};
-use tera::{Context as TeraCtx, Tera};
 
 use serde_json::Value;
 use trident_api::{
