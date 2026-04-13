@@ -57,6 +57,7 @@ fn render_descriptions_recursive(value: &mut Value, ctx: &TeraCtx) -> Result<(),
                     if let Value::String(desc) = child {
                         if let Some(idx) = desc.find(INTERNAL_DESCRIPTION_TAG) {
                             desc.truncate(idx);
+                            *desc = desc.trim_end().to_string();
                         }
 
                         debug!("Rendering description: {desc}");
