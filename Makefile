@@ -425,7 +425,7 @@ generate-functional-test-manifest: .cargo/config
 	target/debug/trident pytest
 
 .PHONY: validate-configs
-validate-configs: bin/trident
+validate-configs: target/release/trident
 	$(eval DETECTED_HC_FILES := $(shell grep -R '^storage:' . --include '*.yaml' -l | grep -E -v '\./(target|dev|azure-linux-image-tools|crates/docbuilder|tests/images|tests/azl-installer)'))
 	@for file in $(DETECTED_HC_FILES); do \
 		echo "Validating $$file"; \
