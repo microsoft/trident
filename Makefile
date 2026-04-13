@@ -209,7 +209,9 @@ bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full packaging/systemd
 # This one does a fast trick-build where we build locally and inject the binary into the container to add it to the RPM.
 bin/trident-rpms.tar.gz: packaging/docker/Dockerfile.azl3 packaging/systemd/*.service packaging/rpm/trident.spec artifacts/osmodifier target/release/trident packaging/selinux-policy-trident/*
 	@mkdir -p bin/
-	@cp target/release/trident bin/
+	@if [ ! -f bin/trident ] || ! cmp -s target/release/trident bin/trident; then \
+		cp target/release/trident bin/trident; \
+	fi
 	@docker build -t trident/trident-build:latest \
 		--build-arg TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
 		--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)" \
