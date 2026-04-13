@@ -27,6 +27,10 @@ The ESP is assumed to be mounted at `/boot/efi` by default.
 
 Override the default ESP mount point to be the path of this filesystem.
 
+Only ONE filesystem can be used as ESP. Therefore, this option can be used at most once in the Host Configuration.
+
+In the rare scenario where a filesystem is overriding ESP AND another filesystem is mounted at the default ESP mount point path (`/boot/efi`), the latter filesystem will also be detected as the ESP, which will result in an error. If the filesystem mounted at the default ESP mount point path is not actually the ESP, then it should be marked with the `block` option to prevent it from being incorrectly treated as the ESP.
+
 | Characteristic | Value      |
 | -------------- | ---------- |
 | Type           | `string`   |
