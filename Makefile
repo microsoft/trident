@@ -175,7 +175,7 @@ clean-azl3-builder-image:
 	@echo "Removing local image $(AZL3_BUILDER_IMAGE)..."
 	@docker rmi $(AZL3_BUILDER_IMAGE) || echo "Image $(AZL3_BUILDER_IMAGE) not found locally."
 
-target/azl3/release/trident target/azl3/release/launcher: | version-vars azl3-builder-image
+target/azl3/release/trident target/azl3/release/launcher: version-vars | azl3-builder-image
 	@mkdir -p bin/
 	@mkdir -p target/azl3/
 	@echo "Building Trident for Azure Linux 3 using Docker image $(AZL3_BUILDER_IMAGE)..."
@@ -571,6 +571,7 @@ run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlau
 	@cp artifacts/osmodifier artifacts/test-image/
 	@bin/netlaunch \
 	    --trident-binary $(RUN_NETLAUNCH_TRIDENT_BIN) \
+        --launcher-binary $(RUN_NETLAUNCH_LAUNCHER_BIN) \
 		--osmodifier-binary artifacts/osmodifier \
 		--rcp-agent-mode cli \
 	 	--iso $(NETLAUNCH_ISO) \
