@@ -51,7 +51,7 @@ pub mod fs_serde {
     use crate::{constants::DEFAULT_ESP_MOUNT_POINT_PATH, is_default};
 
     #[cfg(feature = "schemars")]
-    use crate::schema_helpers::block_device_id_schema;
+    use crate::schema::block_device_id_schema;
 
     use super::{
         AdoptedFileSystemType, FileSystem, FileSystemSource as FileSystemSourceInner,

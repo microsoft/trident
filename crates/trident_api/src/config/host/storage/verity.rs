@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::{constants::DEV_MAPPER_PATH, BlockDeviceId};
 
 #[cfg(feature = "schemars")]
-use crate::schema_helpers::block_device_id_schema;
+use crate::schema::block_device_id_schema;
 
 /// Verity device configuration.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]

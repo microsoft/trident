@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 #[cfg(feature = "schemars")]
-use crate::schema_helpers::unit_enum_with_untagged_variant;
+use crate::schema::unit_enum_with_untagged_variant;
 use crate::{
     constants::IMAGE_CHECKSUM_IGNORED,
     error::{InvalidInputError, TridentError},

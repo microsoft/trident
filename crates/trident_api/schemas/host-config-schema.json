@@ -271,7 +271,7 @@
           "format": "Block Device ID"
         },
         "deviceName": {
-          "description": "The name of the device to create under `{{ DEV_MAPPER_PATH }}` when opening the volume.\n\nThis parameter is required. It must be a valid file name and unique among all encrypted volumes, as well as among the Device Mapper devices.",
+          "description": "The name of the device to create under `/dev/mapper` when opening the volume.\n\nThis parameter is required. It must be a valid file name and unique among all encrypted volumes, as well as among the Device Mapper devices.",
           "type": "string"
         },
         "id": {
@@ -493,7 +493,7 @@
       "oneOf": [
         {
           "title": "Ignored",
-          "description": "You can pass `{{ IMAGE_CHECKSUM_IGNORED }}` to skip the checksum verification.",
+          "description": "You can pass `ignored` to skip the checksum verification.",
           "type": "string",
           "enum": [
             "ignored"
@@ -747,7 +747,7 @@
       "oneOf": [
         {
           "title": "Use Default ESP Path",
-          "description": "Do not override the default ESP mount point path. This is the default behavior.\n\nThe ESP is assumed to be mounted at `{{DEFAULT_ESP_MOUNT_POINT_PATH}}` by default.",
+          "description": "Do not override the default ESP mount point path. This is the default behavior.\n\nThe ESP is assumed to be mounted at `/boot/efi` by default.",
           "type": "string",
           "enum": [
             "use-default"
@@ -755,7 +755,7 @@
         },
         {
           "title": "Override",
-          "description": "Override the default ESP mount point to be the path of this filesystem.\n\nOnly ONE filesystem can be used as ESP. Therefore, this option can be used at most once in the Host Configuration.\n\nIn the rare scenario where a filesystem is overriding ESP AND another filesystem is mounted at the default ESP mount point path (`{{DEFAULT_ESP_MOUNT_POINT_PATH}}`), the latter filesystem will also be detected as the ESP, which will result in an error. If the filesystem mounted at the default ESP mount point path is not actually the ESP, then it should be marked with the `block` option to prevent it from being incorrectly treated as the ESP.",
+          "description": "Override the default ESP mount point to be the path of this filesystem.\n\nOnly ONE filesystem can be used as ESP. Therefore, this option can be used at most once in the Host Configuration.\n\nIn the rare scenario where a filesystem is overriding ESP AND another filesystem is mounted at the default ESP mount point path (`/boot/efi`), the latter filesystem will also be detected as the ESP, which will result in an error. If the filesystem mounted at the default ESP mount point path is not actually the ESP, then it should be marked with the `block` option to prevent it from being incorrectly treated as the ESP.",
           "type": "string",
           "enum": [
             "override"
@@ -763,7 +763,7 @@
         },
         {
           "title": "Block",
-          "description": "This option should be used very rarely and in very specific non-standard scenarios.\n\nUsed to indicate that this filesystem is NOT the ESP, even if it is mounted at the default ESP path, `{{DEFAULT_ESP_MOUNT_POINT_PATH}}`. This is only necessary if a distribution has a non-ESP filesystem that is mounted at the default ESP mount point path.\n\nFor this to work, the correct ESP filesystem will have to be explicitly marked as the ESP using `override`, and this filesystem will have to be marked with `block` to prevent it from being incorrectly treated as the ESP due to its mount point path.",
+          "description": "This option should be used very rarely and in very specific non-standard scenarios.\n\nUsed to indicate that this filesystem is NOT the ESP, even if it is mounted at the default ESP path, `/boot/efi`. This is only necessary if a distribution has a non-ESP filesystem that is mounted at the default ESP mount point path.\n\nFor this to work, the correct ESP filesystem will have to be explicitly marked as the ESP using `override`, and this filesystem will have to be marked with `block` to prevent it from being incorrectly treated as the ESP due to its mount point path.",
           "type": "string",
           "enum": [
             "block"
@@ -861,7 +861,7 @@
       ]
     },
     "PartitionType": {
-      "description": "Partition types as defined by [The Discoverable Partitions Specification](<https://uapi-group.org/specifications/specs/discoverable_partitions_specification/>).\n\n# INTERNAL IT IS NOT RECOMMENDED TO USE THIS ENUM DIRECTLY, but rather the DiscoverablePartitionType enum from sysdefs, which has more flexible matching logic. This enum is primarily intended for serialization and user input parsing, and the `as_dps()` method can be used to convert it to a DiscoverablePartitionType for comparison and other logic.",
+      "description": "Partition types as defined by [The Discoverable Partitions Specification](<https://uapi-group.org/specifications/specs/discoverable_partitions_specification/>).",
       "oneOf": [
         {
           "title": "EFI System Partition",
@@ -1293,7 +1293,7 @@
           }
         },
         "interpreter": {
-          "description": "Binary to run the script with. The default is `{{DEFAULT_SCRIPT_INTERPRETER}}`.",
+          "description": "Binary to run the script with. The default is `/bin/sh`.",
           "type": "string",
           "nullable": true
         },
@@ -1629,7 +1629,7 @@
       "type": "object",
       "properties": {
         "datastorePath": {
-          "description": "Describes where to place the datastore Trident will use to store its state. Defaults to `{{ TRIDENT_DATASTORE_PATH_DEFAULT }}`. Needs to end with `.{{ DATASTORE_FILE_EXTENSION }}`, cannot be an existing file and cannot reside on a read-only filesystem or A/B volume.",
+          "description": "Describes where to place the datastore Trident will use to store its state. Defaults to `/var/lib/trident/datastore.sqlite`. Needs to end with `.sqlite`, cannot be an existing file and cannot reside on a read-only filesystem or A/B volume.",
           "type": "string"
         },
         "disable": {
@@ -1651,7 +1651,7 @@
       "additionalProperties": false
     },
     "UefiFallbackMode": {
-      "description": "UEFI fallback mode\n\nUEFI provides a mechanism for booting from an EFI file without a corresponding boot variable existing in NVRAM. This is known as the UEFI fallback mode, and it uses a specific file path (/{{EFI_DEFAULT_BIN_RELATIVE_PATH}}) to locate the fallback bootloader.\n\nThis configuration option allows specifying how Trident should populate the UEFI fallback boot files during OS installation or update.",
+      "description": "UEFI fallback mode\n\nUEFI provides a mechanism for booting from an EFI file without a corresponding boot variable existing in NVRAM. This is known as the UEFI fallback mode, and it uses a specific file path (/EFI/BOOT) to locate the fallback bootloader.\n\nThis configuration option allows specifying how Trident should populate the UEFI fallback boot files during OS installation or update.",
       "oneOf": [
         {
           "title": "Conservative",

@@ -14,6 +14,7 @@ impl TeraContextFactory {
         self
     }
 
+    #[allow(dead_code)]
     pub(super) fn with_variables(mut self, variables: HashMap<String, String>) -> Self {
         self.variables = variables;
         self

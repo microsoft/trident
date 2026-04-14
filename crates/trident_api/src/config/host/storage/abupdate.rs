@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use crate::BlockDeviceId;
 
 #[cfg(feature = "schemars")]
-use crate::schema_helpers::block_device_id_schema;
+use crate::schema::block_device_id_schema;
 
 /// A/B update configuration. Carries information about the A/B volume pairs that are used to
 /// perform A/B updates.

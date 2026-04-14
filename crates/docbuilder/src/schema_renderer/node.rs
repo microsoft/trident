@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 
 use anyhow::{bail, ensure, Context, Error};
-use tera::{Context as TeraCtx, Tera};
 
 use serde_json::Value;
 use trident_api::{
@@ -10,10 +9,6 @@ use trident_api::{
 };
 
 use super::characteristics::Characteristics;
-
-/// Tag used to indicate that anything after it in a description is intended for
-/// internal use and should not be rendered in the documentation.
-const INTERNAL_DESCRIPTION_TAG: &str = "# INTERNAL";
 
 /// A model of a Node in the schema
 ///
@@ -287,7 +282,8 @@ impl TryFrom<SchemaObject> for SchemaNodeModel {
                                 NodeKind::Object
                             }
                         } else {
-                            bail!("Object instance type has no object validation");
+                            // If the instance type is object but there is no validation, it's a simple object.
+                            NodeKind::SimpleObject
                         }
                     }
                 },
@@ -358,18 +354,9 @@ impl TryFrom<SchemaObject> for SchemaNodeModel {
             }
         };
 
-        let description = schema.metadata().description.clone().map(|desc|
-            // If the description contains the internal tag, we want to remove it and anything after it.
-            if let Some(internal_tag_index) = desc.find(INTERNAL_DESCRIPTION_TAG) {
-                desc[..internal_tag_index].trim().to_string()
-            } else {
-                desc
-            }
-        );
-
         Ok(Self {
             name: schema.metadata().title.clone(),
-            description,
+            description: schema.metadata().description.clone(),
             default: schema.metadata().default.clone(),
             examples: schema.metadata().examples.clone(),
             deprecated: schema.metadata().deprecated,
@@ -497,14 +484,6 @@ impl SchemaNodeModel {
         }
 
         Ok(characteristics)
-    }
-
-    /// Interprets the description as jinja markdown and renders it with the given context.
-    pub(super) fn render_description(&self, context: &TeraCtx) -> Result<Option<String>, Error> {
-        self.description
-            .as_ref()
-            .map(|d| Tera::one_off(d, context, false).context("Failed to render description"))
-            .transpose()
     }
 }
 

@@ -4,21 +4,14 @@ use anyhow::{bail, Context, Error};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use log::info;
 
-use trident_api::constants::{
-    DATASTORE_FILE_EXTENSION, DEFAULT_ESP_MOUNT_POINT_PATH, DEFAULT_SCRIPT_INTERPRETER,
-    DEV_MAPPER_PATH, EFI_DEFAULT_BIN_RELATIVE_PATH, IMAGE_CHECKSUM_IGNORED,
-    TRIDENT_DATASTORE_PATH_DEFAULT,
-};
-
 mod clap_model;
 mod host_config;
 mod markdown;
 mod schema_renderer;
 mod trident_arch;
 mod trident_cli;
-mod util;
 
-use crate::{schema_renderer::SchemaDocSettings, util::string_const_map};
+use crate::schema_renderer::SchemaDocSettings;
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -229,20 +222,6 @@ fn build_host_config_docs(mut opts: HostConfigMarkdownOpts) -> Result<(), Error>
         }
     }
 
-    // Constants that we are making available to the tera context for rendering
-    // descriptions. They will exists as variables with the exact same name as
-    // the constant. For example, `DEFAULT_ESP_MOUNT_POINT_PATH` can be used in
-    // descriptions as `{{ DEFAULT_ESP_MOUNT_POINT_PATH }}`.
-    let variables = string_const_map!(
-        DATASTORE_FILE_EXTENSION,
-        DEFAULT_ESP_MOUNT_POINT_PATH,
-        DEFAULT_SCRIPT_INTERPRETER,
-        DEV_MAPPER_PATH,
-        EFI_DEFAULT_BIN_RELATIVE_PATH,
-        IMAGE_CHECKSUM_IGNORED,
-        TRIDENT_DATASTORE_PATH_DEFAULT,
-    );
-
     host_config::docs::build(
         opts.output,
         SchemaDocSettings {
@@ -250,7 +229,6 @@ fn build_host_config_docs(mut opts: HostConfigMarkdownOpts) -> Result<(), Error>
             docfx: opts.docfx,
             docusaurus: opts.docusaurus_root,
         },
-        variables,
     )
     .context("Failed to build host config docs")
 }
