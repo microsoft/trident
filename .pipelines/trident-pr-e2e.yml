@@ -31,6 +31,10 @@ resources:
       type: git
       ref: refs/heads/main
 
+variables:
+  # For pipelines that do not produce any production artifacts, disable CodeQL analysis
+  Codeql.Enabled: false
+
 extends:
   template: templates/MockOB.yml
   parameters:
