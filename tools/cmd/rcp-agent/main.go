@@ -113,8 +113,8 @@ func downloadFile(file *agent.RcpAdditionalFile) error {
 
 	// Restore SELinux file context so the binary gets the correct label
 	// (e.g. trident_exec_t) based on the loaded policy's file_contexts.
-	if _, err := os.Stat("/sys/fs/selinux"); err == nil {
-		if err := exec.Command("restorecon", file.Destination).Run(); err != nil {
+	if restoreconPath, err := exec.LookPath("restorecon"); err == nil {
+		if err := exec.Command(restoreconPath, "--", file.Destination).Run(); err != nil {
 			logrus.Warnf("restorecon failed for '%s': %v", file.Destination, err)
 		}
 	}
