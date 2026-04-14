@@ -395,31 +395,15 @@ func injectRcpAgentConfig(
 	// Create an empty RcpAgentConfiguration
 	rcpAgentConfBuilder := newRcpAgentConfigBuilder(mux, announceIp, announceHttpAddress, rcpListener)
 
-	// If we have a local trident path, serve that file via HTTP and set the download URL.
-	if localRcpConf.LocalTridentPath != nil {
-		data, err := os.ReadFile(*localRcpConf.LocalTridentPath)
-		if err != nil {
-			return fmt.Errorf("failed to read local Trident binary from '%s': %w", *localRcpConf.LocalTridentPath, err)
-		}
-
-		rcpAgentConfBuilder.registerRcpFile(newRcpAgentFileDownload("trident", "/usr/bin/trident", 0755, data))
+	if err := registerNamedRcpFile(rcpAgentConfBuilder, "trident", "/usr/bin/trident", localRcpConf.LocalTridentPath); err != nil {
+		return err
 	}
-
-	// If we have a local osmodifier path, serve that file via HTTP and set the download URL.
-	if localRcpConf.LocalOsmodifierPath != nil {
-		data, err := os.ReadFile(*localRcpConf.LocalOsmodifierPath)
-		if err != nil {
-			return fmt.Errorf("failed to read local Osmodifier binary from '%s': %w", *localRcpConf.LocalOsmodifierPath, err)
-		}
-
-		rcpAgentConfBuilder.registerRcpFile(newRcpAgentFileDownload("osmodifier", "/usr/bin/osmodifier", 0755, data))
+	if err := registerNamedRcpFile(rcpAgentConfBuilder, "osmodifier", "/usr/bin/osmodifier", localRcpConf.LocalOsmodifierPath); err != nil {
+		return err
 	}
-
-	data, err := os.ReadFile("artifacts/test-image/launcher")
-	if err != nil {
-		return fmt.Errorf("failed to read local launcher binary from 'artifacts/test-image/launcher': %w", err)
+	if err := registerNamedRcpFile(rcpAgentConfBuilder, "launcher", "/usr/bin/launcher", localRcpConf.LocalLauncherPath); err != nil {
+		return err
 	}
-	rcpAgentConfBuilder.registerRcpFile(newRcpAgentFileDownload("launcher", "/usr/bin/launcher", 0755, data))
 
 	for _, extraFile := range extraFiles {
 		rcpAgentConfBuilder.registerRcpFile(extraFile)
@@ -435,6 +419,18 @@ func injectRcpAgentConfig(
 		return fmt.Errorf("failed to patch RCP agent config into ISO: %w", err)
 	}
 
+	return nil
+}
+
+func registerNamedRcpFile(builder *rcpAgentConfigBuilder, name string, remotePath string, localPath *string) error {
+	if localPath == nil {
+		return nil
+	}
+	data, err := os.ReadFile(*localPath)
+	if err != nil {
+		return fmt.Errorf("failed to read local %s binary from '%s': %w", name, *localPath, err)
+	}
+	builder.registerRcpFile(newRcpAgentFileDownload(name, remotePath, 0755, data))
 	return nil
 }
 

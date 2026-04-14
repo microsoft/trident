@@ -88,6 +88,10 @@ type RcpConfiguration struct {
 	// If not specified, no Osmodifier binary will be copied.
 	LocalOsmodifierPath *string `yaml:"localOsmodifierPath,omitempty"`
 
+	// An optional path to a local launcher binary to copy into the remote host.
+	// If not specified, no launcher binary will be copied.
+	LocalLauncherPath *string `yaml:"localLauncherPath,omitempty"`
+
 	// Replace the execution for trident-install to use stream image instead of
 	// the default installation method.
 	UseStreamImage bool `yaml:"useStreamImage,omitempty"`
