@@ -63,6 +63,7 @@ parameters:
 trigger: none
 
 variables:
+  # For pipelines that do not produce any production artifacts, disable CodeQL analysis
   - name: Codeql.Enabled
     value: false
   - name: CDP_DEFINITION_BUILD_COUNT
