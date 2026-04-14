@@ -86,6 +86,9 @@ lazy_static::lazy_static! {
 /// Trident binary path.
 const TRIDENT_BINARY_PATH: &str = "/usr/bin/trident";
 
+/// Launcher binary path.
+const LAUNCHER_BINARY_PATH: &str = "/usr/bin/launcher";
+
 /// OS Modifier (EMU) binary path.
 const OS_MODIFIER_BINARY_PATH: &str = "/usr/bin/osmodifier";
 

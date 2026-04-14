@@ -34,6 +34,7 @@ var (
 	signingCert          string
 	rcpMode              string
 	tridentBinaryPath    string
+	launcherBinaryPath   string
 	osmodifierBinaryPath string
 	streamImage          bool
 )
@@ -126,6 +127,10 @@ var rootCmd = &cobra.Command{
 				config.Rcp.LocalTridentPath = &tridentBinaryPath
 			}
 
+			if launcherBinaryPath != "" {
+				config.Rcp.LocalLauncherPath = &launcherBinaryPath
+			}
+
 			if osmodifierBinaryPath != "" {
 				config.Rcp.LocalOsmodifierPath = &osmodifierBinaryPath
 			}
@@ -168,6 +173,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&signingCert, "signing-cert", "", "", "Path to signing certificate")
 	rootCmd.PersistentFlags().StringVarP(&rcpMode, "rcp-agent-mode", "", "", "RCP agent mode to use (grpc|cli). If not specified, the rcp-agent is not used.")
 	rootCmd.PersistentFlags().StringVarP(&tridentBinaryPath, "trident-binary", "", "", "Optional path to Trident binary to be copied into the VM, requires RCP mode.")
+	rootCmd.PersistentFlags().StringVarP(&launcherBinaryPath, "launcher-binary", "", "", "Optional path to Launcher binary to be copied into the VM, requires RCP mode.")
 	rootCmd.PersistentFlags().StringVarP(&osmodifierBinaryPath, "osmodifier-binary", "", "", "Optional path to Osmodifier binary to be copied into the VM, requires RCP mode.")
 	rootCmd.PersistentFlags().BoolVarP(&streamImage, "stream-image", "", false, "Use stream image for installation instead of the default method, requires RCP mode.")
 	rootCmd.Flags().StringVarP(&iso, "iso", "i", "", "ISO for Netlaunch testing")

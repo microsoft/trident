@@ -1,0 +1,35 @@
+[package]
+name = "launcher"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+anyhow = { workspace = true, features = ["backtrace"] }
+clap = { workspace = true, features = ["derive"] }
+env_logger = { workspace = true }
+futures = { workspace = true }
+log = { workspace = true }
+quick-xml = { workspace = true, features = ["serialize"] }
+reqwest = { workspace = true }
+semver = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_path_to_error = { workspace = true }
+sha2 = { workspace = true }
+systemd-journal-logger = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tonic = { workspace = true }
+url = { workspace = true, features = ["serde"] }
+uuid = { workspace = true, features = ["v4", "serde"] }
+
+sysdefs = { path = "../sysdefs" }
+osutils = { path = "../osutils" }
+trident-proto = { path = "../trident-proto" }
+
+
+[dev-dependencies]
+indoc = { workspace = true }
+maplit = { workspace = true }
+mockito = { workspace = true }
+serde_json = { workspace = true }
