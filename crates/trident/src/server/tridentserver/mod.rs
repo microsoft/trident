@@ -19,7 +19,9 @@ use tokio_util::sync::CancellationToken;
 use tonic::{Response, Status};
 
 use trident_api::{error::TridentError, primitives::hash::Sha384Hash};
-use trident_proto::v1::{servicing_response::Response as ResponseType, ServicingResponse, Started};
+use trident_proto::v1::{
+    servicing_response::Response as ResponseType, ServicingKind, ServicingResponse, Started,
+};
 
 use crate::{
     agentconfig::AgentConfig,
@@ -193,7 +195,7 @@ impl TridentServer {
         f: F,
     ) -> Result<Response<ServicingResponseStream>, Status>
     where
-        F: FnOnce() -> Result<(ExitKind, Option<Sha384Hash>), TridentError>
+        F: FnOnce() -> Result<(ExitKind, Option<Sha384Hash>, Option<ServicingKind>), TridentError>
             + Send
             + panic::UnwindSafe
             + 'static,

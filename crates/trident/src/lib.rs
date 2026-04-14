@@ -435,7 +435,7 @@ impl Trident {
         allowed_operations: Operations,
         multiboot: bool,
         prefetched_image: Option<OsImage>,
-    ) -> Result<(ExitKind, Option<Sha384Hash>), TridentError> {
+    ) -> Result<(ExitKind, Option<Sha384Hash>, ServicingType), TridentError> {
         let mut host_config = self
             .host_config
             .clone()
@@ -506,14 +506,14 @@ impl Trident {
                         image,
                     )
                     .message("Failed to execute a clean install")
-                    .map(|exit_kind| (exit_kind, image_hash))
+                    .map(|ek| (ek, image_hash, ServicingType::CleanInstall))
                 } else {
                     warn!(
                         "Host Configuration has been updated but allowed operations do not include \
                         'stage'. Add 'stage' and re-run to stage the clean install"
                     );
 
-                    Ok((ExitKind::Done, None))
+                    Ok((ExitKind::Done, None, ServicingType::NoActiveServicing))
                 }
             } else {
                 debug!("Host Configuration has not been updated");
@@ -526,7 +526,7 @@ impl Trident {
                         if allowed_operations.has_finalize() {
                             engine::finalize_clean_install(datastore, None, None)
                                 .message("Failed to finalize clean install")
-                                .map(|exit_kind| (exit_kind, image_hash.clone()))
+                                .map(|ek| (ek, image_hash.clone(), ServicingType::CleanInstall))
                         } else {
                             debug!(
                                 "There is a clean install staged on the host, but allowed \
@@ -534,7 +534,7 @@ impl Trident {
                                 to finalize the clean install"
                             );
 
-                            Ok((ExitKind::Done, None))
+                            Ok((ExitKind::Done, None, ServicingType::NoActiveServicing))
                         }
                     }
                     ServicingState::NotProvisioned => {
@@ -548,7 +548,7 @@ impl Trident {
                             image,
                         )
                         .message("Failed to execute a clean install")
-                        .map(|exit_kind| (exit_kind, image_hash))
+                        .map(|ek| (ek, image_hash, ServicingType::CleanInstall))
                     }
                     servicing_state => {
                         Err(TridentError::new(InternalError::UnexpectedServicingState {
@@ -565,7 +565,7 @@ impl Trident {
         &mut self,
         datastore: &mut DataStore,
         allowed_operations: Operations,
-    ) -> Result<(ExitKind, Option<Sha384Hash>), TridentError> {
+    ) -> Result<(ExitKind, Option<Sha384Hash>, ServicingType), TridentError> {
         let mut host_config = self
             .host_config
             .clone()
@@ -626,10 +626,10 @@ impl Trident {
                 if allowed_operations.has_stage() {
                     engine::update(&host_config, datastore, &allowed_operations, image)
                         .message("Failed to execute an update")
-                        .map(|exit_kind| (exit_kind, image_hash))
+                        .map(|(ek, st)| (ek, image_hash, st))
                 } else {
                     warn!("Host Configuration has been updated but allowed operations do not include 'stage'. Add 'stage' and re-run to stage the update");
-                    Ok((ExitKind::Done, None))
+                    Ok((ExitKind::Done, None, ServicingType::NoActiveServicing))
                 }
             } else {
                 debug!("Host Configuration has not been updated");
@@ -644,10 +644,10 @@ impl Trident {
                                 None,
                             )
                             .message("Failed to finalize A/B update")
-                            .map(|exit_kind| (exit_kind, image_hash.clone()))
+                            .map(|ek| (ek, image_hash.clone(), ServicingType::AbUpdate))
                         } else {
                             warn!("There is an A/B update staged on the host, but allowed operations do not include 'finalize'. Add 'finalize' and re-run to finalize the A/B update");
-                            Ok((ExitKind::Done, None))
+                            Ok((ExitKind::Done, None, ServicingType::NoActiveServicing))
                         }
                     }
                     ServicingState::RuntimeUpdateStaged => {
@@ -660,10 +660,10 @@ impl Trident {
                                 datastore,
                                 None,
                             )
-                            .map(|exit_kind| (exit_kind, image_hash.clone()))
+                            .map(|ek| (ek, image_hash.clone(), ServicingType::RuntimeUpdate))
                         } else {
                             warn!("There is a runtime update staged on the host, but allowed operations do not include 'finalize'. Add 'finalize' and re-run to finalize the runtime update");
-                            Ok((ExitKind::Done, None))
+                            Ok((ExitKind::Done, None, ServicingType::NoActiveServicing))
                         }
                     }
                     ServicingState::AbUpdateFinalized | ServicingState::Provisioned => {
@@ -671,7 +671,7 @@ impl Trident {
                         // is needed.
                         engine::update(&host_config, datastore, &allowed_operations, image)
                             .message("Failed to update host")
-                            .map(|exit_kind| (exit_kind, image_hash))
+                            .map(|(ek, st)| (ek, image_hash, st))
                     }
                     servicing_state => {
                         Err(TridentError::new(InternalError::UnexpectedServicingState {
@@ -688,7 +688,7 @@ impl Trident {
         datastore: &mut DataStore,
         image_url: &Url,
         hash: &str,
-    ) -> Result<(ExitKind, Option<Sha384Hash>), TridentError> {
+    ) -> Result<(ExitKind, Option<Sha384Hash>, ServicingType), TridentError> {
         tracing::info!(metric_name = "stream_image_start", value = true,);
         let mut image_source = ConfigOsImage {
             url: image_url.clone(),
@@ -731,11 +731,15 @@ impl Trident {
         self.install(datastore, Operations::all(), false, Some(image))
     }
 
-    pub fn commit(&mut self, datastore: &mut DataStore) -> Result<ExitKind, TridentError> {
+    pub fn commit(
+        &mut self,
+        datastore: &mut DataStore,
+    ) -> Result<(ExitKind, ServicingType), TridentError> {
         // If host's servicing state is *Finalized or *HealthCheckFailed, need to
         // re-evaluate the current state of the host.
+        let servicing_state = datastore.host_status().servicing_state;
         if !matches!(
-            datastore.host_status().servicing_state,
+            servicing_state,
             ServicingState::CleanInstallFinalized
                 | ServicingState::AbUpdateFinalized
                 | ServicingState::AbUpdateHealthCheckFailed
@@ -743,10 +747,19 @@ impl Trident {
         ) {
             info!(
                 "No servicing in progress ({:?}), skipping commit",
-                datastore.host_status().servicing_state
+                servicing_state
             );
-            return Ok(ExitKind::Done);
+            return Ok((ExitKind::Done, ServicingType::NoActiveServicing));
         }
+
+        let servicing_type = match servicing_state {
+            ServicingState::AbUpdateFinalized | ServicingState::AbUpdateHealthCheckFailed => {
+                ServicingType::AbUpdate
+            }
+            ServicingState::CleanInstallFinalized => ServicingType::CleanInstall,
+            ServicingState::ManualRollbackAbFinalized => ServicingType::ManualRollbackAb,
+            _ => ServicingType::NoActiveServicing,
+        };
 
         let rollback_result = self.execute_and_record_error(datastore, |datastore| {
             rollback::validate_boot(datastore).message(
@@ -764,10 +777,12 @@ impl Trident {
         }
 
         match rollback_result {
-            Ok(rollback::BootValidationResult::ValidBootProvisioned) => Ok(ExitKind::Done),
+            Ok(rollback::BootValidationResult::ValidBootProvisioned) => {
+                Ok((ExitKind::Done, servicing_type))
+            }
             Ok(rollback::BootValidationResult::ValidBootHealthCheckFailed(e)) => {
                 debug!("Correct boot, but health check(s) failed: {e:?}");
-                Ok(ExitKind::NeedsReboot)
+                Ok((ExitKind::NeedsReboot, servicing_type))
             }
             Err(e) => {
                 error!("Boot validation failed: {e:?}");

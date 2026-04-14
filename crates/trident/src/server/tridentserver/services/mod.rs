@@ -1,4 +1,5 @@
-use trident_proto::v1::{RebootHandling, RebootManagement};
+use trident_api::status::ServicingType;
+use trident_proto::v1::{RebootHandling, RebootManagement, ServicingKind};
 
 use crate::server::tridentserver::RebootDecision;
 
@@ -39,5 +40,18 @@ fn reboot_allowed(reboot_opt: &Option<RebootManagement>) -> RebootDecision {
         // If no reboot configuration is provided, we default to Trident
         // handling reboots.
         RebootDecision::Handle
+    }
+}
+
+/// Converts a [`ServicingType`] to the corresponding protobuf [`ServicingKind`]
+/// for inclusion in a [`trident_proto::v1::Completed`] response.
+pub(super) fn servicing_type_to_kind(st: ServicingType) -> ServicingKind {
+    match st {
+        ServicingType::NoActiveServicing => ServicingKind::NoneRequired,
+        ServicingType::RuntimeUpdate => ServicingKind::RuntimeUpdate,
+        ServicingType::AbUpdate => ServicingKind::AbUpdate,
+        ServicingType::CleanInstall => ServicingKind::CleanInstall,
+        ServicingType::ManualRollbackAb => ServicingKind::ManualRollbackAb,
+        ServicingType::ManualRollbackRuntime => ServicingKind::ManualRollbackRuntime,
     }
 }

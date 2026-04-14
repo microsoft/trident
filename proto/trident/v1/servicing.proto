@@ -74,6 +74,9 @@ message Completed {
   // The hash for the image if available. Will be of the form
   // "sha384:<hash_value>".
   optional string image_hash = 4;
+
+  // The kind of servicing operation that was performed, if known.
+  optional ServicingKind servicing_kind = 5;
 }
 
 // Represents the final status of a servicing operation.
@@ -102,4 +105,29 @@ enum RebootStatus {
   // The servicing operation completed successfully and Trident has started the
   // reboot process automatically.
   REBOOT_STARTED = 3;
+}
+
+// ServicingKind represents the kind of servicing operation that was performed.
+enum ServicingKind {
+  SERVICING_KIND_UNSPECIFIED = 0;
+
+  // No servicing was required or performed.
+  SERVICING_KIND_NONE_REQUIRED = 1;
+
+  // An update that can be applied without requiring a reboot.
+  SERVICING_KIND_RUNTIME_UPDATE = 2;
+
+  // An update that requires switching to a different root partition and
+  // rebooting.
+  SERVICING_KIND_AB_UPDATE = 3;
+
+  // A clean install of the target OS image from the provisioning OS.
+  SERVICING_KIND_CLEAN_INSTALL = 4;
+
+  // A manual rollback of the inactive volume to the previously deployed state.
+  SERVICING_KIND_MANUAL_ROLLBACK_AB = 5;
+
+  // A manual rollback within the active volume to the previously deployed
+  // state.
+  SERVICING_KIND_MANUAL_ROLLBACK_RUNTIME = 6;
 }
