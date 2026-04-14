@@ -92,6 +92,9 @@ resources:
       tags:
         - "3.0-preview"
 
+variables:
+  Codeql.Enabled: false
+
 extends:
   template: templates/MockOB.yml
   parameters:

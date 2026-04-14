@@ -96,6 +96,9 @@ resources:
       type: git
       ref: refs/heads/main
 
+variables:
+  Codeql.Enabled: false
+
 extends:
   template: templates/MockOB.yml
   parameters:
