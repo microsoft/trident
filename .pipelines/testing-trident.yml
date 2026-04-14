@@ -63,6 +63,8 @@ parameters:
 trigger: none
 
 variables:
+  - name: Codeql.Enabled
+    value: false
   - name: CDP_DEFINITION_BUILD_COUNT
     value: $[counter('', 0)] # needed for onebranch.pipeline.version task https://aka.ms/obpipelines/versioning
   - name: system.debug
@@ -95,9 +97,6 @@ resources:
       name: platform-telemetry
       type: git
       ref: refs/heads/main
-
-variables:
-  Codeql.Enabled: false
 
 extends:
   template: templates/MockOB.yml
