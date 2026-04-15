@@ -72,6 +72,10 @@ extends:
       #   suppressionFile: $(Build.SourcesDirectory)\.gdn\global.gdnsuppress
       cg:
         alertWarningLevel: Medium
+      codeql:
+        compiled:
+          # Disable CodeQL at the pipeline level, enable for jobs that build code
+          enabled: false
     featureFlags:
       runOnHost: true
       EnableCDPxPAT: false

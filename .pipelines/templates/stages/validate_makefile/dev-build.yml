@@ -74,6 +74,8 @@ stages:
 
         variables:
           ob_outputDirectory: /tmp/build
+          # Enable CodeQL for this job as it is building code
+          ob_sdl_codeql_compiled_enabled: true
 
         steps:
           - template: ../common_tasks/checkout_trident.yml
