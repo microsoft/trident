@@ -64,6 +64,9 @@ stages:
             osModifierBuildType: dev
           ${{ else }}:
             osModifierBuildType: preview
+          ${{ if eq(parameters.stageType, 'ci') }}:
+            # Run CodeQL for this in CI only
+            runCodeql: true
 
   - ${{ elseif and(ne(parameters.tridentBuildOptions, 'prebuilt'), eq(parameters.targetArchitecture, 'amd64')) }}:
       - template: ../download_staged/download-staged.yml

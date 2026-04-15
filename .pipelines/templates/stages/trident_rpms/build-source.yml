@@ -28,6 +28,10 @@ parameters:
       - preview
     default: preview
 
+  - name: runCodeql
+    type: boolean
+    default: false
+
 stages:
   - stage: GetTridentBinaries_rpms_${{ parameters.targetArchitecture }}
     displayName: Trident ${{ parameters.targetArchitecture }} RPMs (Build)
@@ -78,9 +82,10 @@ stages:
               type: linux
 
             variables:
-              # Enable CodeQL for this job as it is building code
-              - name: ob_sdl_codeql_compiled_enabled
-                value: true
+              - ${{ if parameters.runCodeql }}:
+                # Enable CodeQL for this job as it is building code
+                - name: ob_sdl_codeql_compiled_enabled
+                  value: true
               - name: ob_artifactBaseName
                 value: ${{ parameters.tridentArtifactName }}
               - name: ob_outputDirectory
@@ -117,9 +122,10 @@ stages:
               hostArchitecture: arm64
 
             variables:
-              # Enable CodeQL for this job as it is building code
-              - name: ob_sdl_codeql_compiled_enabled
-                value: true
+              - ${{ if parameters.runCodeql }}:
+                # Enable CodeQL for this job as it is building code
+                - name: ob_sdl_codeql_compiled_enabled
+                  value: true
               - name: ob_artifactBaseName
                 value: ${{ parameters.tridentArtifactName }}-arm64
               - name: ob_outputDirectory
