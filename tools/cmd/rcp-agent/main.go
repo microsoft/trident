@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"syscall"
@@ -108,6 +109,14 @@ func downloadFile(file *agent.RcpAdditionalFile) error {
 	_, err = io.Copy(out, resp.Body)
 	if err != nil {
 		return fmt.Errorf("failed to write to file '%s': %w", file.Destination, err)
+	}
+
+	// Restore SELinux file context so the binary gets the correct label
+	// (e.g. trident_exec_t) based on the loaded policy's file_contexts.
+	if restoreconPath, err := exec.LookPath("restorecon"); err == nil {
+		if err := exec.Command(restoreconPath, "--", file.Destination).Run(); err != nil {
+			logrus.Warnf("restorecon failed for '%s': %v", file.Destination, err)
+		}
 	}
 
 	return nil
