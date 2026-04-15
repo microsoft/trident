@@ -45,7 +45,8 @@ parameters:
 trigger: none
 
 variables:
-  # For pipelines that do not produce any production artifacts, disable CodeQL analysis
+  # Set CodeQL analysis as disabled by default at top level. Individual
+  # jobs can enable if they are building code
   - name: Codeql.Enabled
     value: false
   - name: CDP_DEFINITION_BUILD_COUNT

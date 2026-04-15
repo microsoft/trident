@@ -57,6 +57,12 @@ resources:
       type: git
       ref: refs/heads/main
 
+variables:
+  # Set CodeQL analysis as disabled by default at top level. Individual
+  # jobs can enable if they are building code
+  - name: Codeql.Enabled
+    value: false
+
 extends:
   template: v2/OneBranch.Official.CrossPlat.yml@templates # https://aka.ms/obpipelines/templates
   parameters:

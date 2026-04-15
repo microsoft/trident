@@ -85,6 +85,9 @@ stages:
               - template: common/setup-registries-vars-template.yaml@platform-pipelines
                 parameters:
                   buildType: auto
+              # Enable CodeQL analysis because this job builds code
+              - name: Codeql.Enabled
+                value: true
 
             steps:
               - template: ../common_tasks/checkout_trident.yml
@@ -121,6 +124,9 @@ stages:
               - template: common/setup-registries-vars-template.yaml@platform-pipelines
                 parameters:
                   buildType: auto
+              # Enable CodeQL analysis because this job builds code
+              - name: Codeql.Enabled
+                value: true
 
             steps:
               - template: ../common_tasks/checkout_trident.yml

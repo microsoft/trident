@@ -27,6 +27,8 @@ stages:
         variables:
           ob_outputDirectory: /tmp/installer-tools
           ob_artifactBaseName: installer-tools
+          # Enable CodeQL analysis because this job builds code
+          Codeql.Enabled: true
 
         steps:
           - template: ../common_tasks/checkout_trident.yml

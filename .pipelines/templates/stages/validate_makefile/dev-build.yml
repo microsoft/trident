@@ -74,6 +74,8 @@ stages:
 
         variables:
           ob_outputDirectory: /tmp/build
+          # Enable CodeQL analysis because this job builds code
+          Codeql.Enabled: true
 
         steps:
           - template: ../common_tasks/checkout_trident.yml

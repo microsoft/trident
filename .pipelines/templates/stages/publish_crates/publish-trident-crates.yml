@@ -22,6 +22,8 @@ stages:
           type: linux
         variables:
           ob_outputDirectory: "$(Build.SourcesDirectory)/out"
+          # Enable CodeQL analysis because this job builds code
+          Codeql.Enabled: true
 
         steps:
           - template: ../common_tasks/update-protoc.yml

@@ -32,8 +32,10 @@ resources:
       ref: refs/heads/main
 
 variables:
-  # For pipelines that do not produce any production artifacts, disable CodeQL analysis
-  Codeql.Enabled: false
+  # Set CodeQL analysis as disabled by default at top level. Individual
+  # jobs can enable if they are building code
+  - name: Codeql.Enabled
+    value: false
 
 extends:
   template: templates/MockOB.yml
