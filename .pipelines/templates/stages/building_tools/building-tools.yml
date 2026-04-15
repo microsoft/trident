@@ -39,6 +39,10 @@ parameters:
     type: string
     default: BuildingTools
 
+  - name: runCodeql
+    type: boolean
+    default: false
+
 stages:
   - stage: ${{ parameters.stageName }}
     displayName: Building Tools for ${{ parameters.architecture }}
@@ -46,7 +50,10 @@ stages:
     jobs:
       - job: BuildGoTools_${{ parameters.architecture }}
         displayName: Build Go Tools for ${{ parameters.architecture }}
-        timeoutInMinutes: 10
+        ${{ if parameters.runCodeql }}:
+          timeoutInMinutes: 20
+        ${{ else }}:
+          timeoutInMinutes: 10
         pool:
           ${{ if eq(parameters.architecture, 'amd64') }}:
             type: linux
@@ -64,6 +71,9 @@ stages:
             artifactName: go-tools
           ob_outputDirectory: /tmp/$(artifactName)
           ob_artifactBaseName: $(artifactName)
+          ${{ if parameters.runCodeql }}:
+            # Enable CodeQL for this job as it is building code
+            ob_sdl_codeql_compiled_enabled: true
 
         steps:
           - template: ../common_tasks/checkout_trident.yml

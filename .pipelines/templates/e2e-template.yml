@@ -115,6 +115,10 @@ stages:
 
   # Build tools (Go stuff)
   - template: stages/building_tools/building-tools.yml
+    ${{ if eq(parameters.stageType, 'ci') }}:
+      parameters:
+        # Run CodeQL for this in CI only
+        runCodeql: true
 
   # E2E Test Matrix Definition
   - template: stages/testing_e2e/storm_e2e.yml
@@ -126,6 +130,9 @@ stages:
       - template: stages/validate_makefile/dev-build.yml
         parameters:
           osModifierBranch: ${{ parameters.osModifierBranch }}
+          ${{ if eq(parameters.stageType, 'ci') }}:
+            # Run CodeQL for this in CI only
+            runCodeql: true
 
   # Build FT base Image, only for CI or if forceFunctionalTestImageRebuild is true
   - ${{ if or(eq(parameters.stageType, 'ci'), eq(parameters.forceFunctionalTestImageRebuild, true)) }}:
@@ -230,6 +237,9 @@ stages:
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+          ${{ if eq(parameters.stageType, 'ci') }}:
+            # Run CodeQL for this in CI only
+            runCodeql: true
 
   # dom0 is failing for not known reasons ... comment out for now to unblock, longterm this may
   # be removed from Trident pipelines alltogether in favor of being only test-images

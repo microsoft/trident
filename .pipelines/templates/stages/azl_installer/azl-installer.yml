@@ -17,9 +17,15 @@ parameters:
     type: string
     default: ""
 
+  - name: runCodeql
+    type: boolean
+    default: false
+
 stages:
   # Build installer tools
   - template: build-installer-tools.yml
+    parameters:
+      runCodeql: ${{ parameters.runCodeql }}
 
   - stage: AzureLinux_Installer_ISO
     displayName: Build azl-installer-iso
