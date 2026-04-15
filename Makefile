@@ -571,7 +571,7 @@ run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlau
 	@cp artifacts/osmodifier artifacts/test-image/
 	@bin/netlaunch \
 	    --trident-binary $(RUN_NETLAUNCH_TRIDENT_BIN) \
-        --launcher-binary $(RUN_NETLAUNCH_LAUNCHER_BIN) \
+	    --launcher-binary $(RUN_NETLAUNCH_LAUNCHER_BIN) \
 		--osmodifier-binary artifacts/osmodifier \
 		--rcp-agent-mode cli \
 	 	--iso $(NETLAUNCH_ISO) \
