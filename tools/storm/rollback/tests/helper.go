@@ -243,12 +243,12 @@ func (u *UpdateTest) doRollbackTest(
 	// If rolling back to initial install, trident.service is not installed, must
 	// invoke commit manually
 	if needManualCommit {
-		logrus.Tracef("Manually invoking `trident commit` on VM")
-		commitOutput, err := stormssh.SshCommand(u.VMConfig.VMConfig, u.VMIP, "sudo trident commit -v trace")
+		logrus.Tracef("Manually invoking `trident grpc-client commit` on VM")
+		commitOutput, err := stormssh.SshCommand(u.VMConfig.VMConfig, u.VMIP, "sudo trident grpc-client commit -v trace")
 		if err != nil {
 			return fmt.Errorf("failed to invoke commit (%w):\n%s", err, commitOutput)
 		}
-		logrus.Tracef("`trident commit` invoked on VM")
+		logrus.Tracef("`trident grpc-client commit` invoked on VM")
 	}
 
 	// Validate OS state

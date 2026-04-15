@@ -124,7 +124,6 @@ async fn run_client(args: &ClientArgs) -> Result<ExitKind, Error> {
             }
         }
 
-        #[cfg(feature = "grpc-preview")]
         ClientCommands::Commit => {
             return client
                 .commit()
