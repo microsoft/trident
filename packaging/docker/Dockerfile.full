@@ -29,6 +29,8 @@ RUN if [ "$CARGO_REGISTRIES_FROM_ENV" = "true" ]; then \
 
 RUN --mount=type=secret,id=registry_token \
     export CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN=$(cat /run/secrets/registry_token) && \
+    sed -i "s/^Version:.*/Version:        $RPM_VER/" trident.spec && \
+    sed -i "s/^Release:.*/Release:        $RPM_REL/" trident.spec && \
     rpmbuild -bb --build-in-place trident.spec \
     --define="trident_version $TRIDENT_VERSION" \
     --define="rpm_ver $RPM_VER" \
