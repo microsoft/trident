@@ -1,8 +1,13 @@
 # This spec file is used for both the Trident repo builds and as the
-# basis for the azurelinux build. For the Trident repo builds, `rpm_ver`
-# is defined, dictating the build version. If `rpm_ver` is undefined,
-# the spec defines the azurelinux distro build (using source and vendor
-# tarballs, etc)
+# basis for the azurelinux build.
+# For the Trident repo builds:
+#   1. Version & Release are modified at build time to reflect
+#      the current cargo version, date, and git commit.
+#   2. `rpm_ver`is defined, dictating the various RPM build
+#      conditional logic.
+# For azurelinux distro builds:
+#   1. `rpm_ver` is undefined, the build will using source and
+#      vendor tarballs, etc.
 
 %global selinuxtype targeted
 
