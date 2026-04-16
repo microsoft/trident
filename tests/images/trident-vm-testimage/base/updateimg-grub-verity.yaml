@@ -124,6 +124,10 @@ os:
       destination: /etc/sudoers.d/wheel
     - source: files/99-dhcp-eth0.network
       destination: /etc/systemd/network/99-dhcp-eth0.network
+    # For tests, override the public trident.service behavior and use
+    # grpc-client commit.
+    - source: files/use-grpc-client-commit.conf
+      destination: /etc/systemd/system/trident.service.d/override.conf
 
   services:
     enable:
