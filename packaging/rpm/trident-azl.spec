@@ -1,25 +1,41 @@
 # AUTO-GENERATED FILE — DO NOT EDIT
 # Edit packaging/rpm/template.spec instead, then run: make generate-specs
 
-# Trident spec file for local repo build.
+# Trident spec file for Azure Linux distro build.
 
 %global selinuxtype targeted
 
 Summary:        Declarative, security-first OS lifecycle agent designed primarily for Azure Linux
 Name:           trident
-Version:        %{rpm_ver}
-Release:        %{rpm_rel}
+Version:        0.22.0
+Release:        1%{?dist}
 License:        MIT
 Vendor:         Microsoft Corporation
 Group:          Applications/System
 Distribution:   Azure Linux
-Source1:        osmodifier
+
+# Use source and vendor tarballs for distro build
+URL:            https://github.com/microsoft/trident/
+Source0:        https://github.com/microsoft/trident/archive/refs/tags/v%{version}.tar.gz#/%{name}-%{version}.tar.gz
+# Below is a manually created tarball, no download link.
+# Note: the %%{name}-%%{version}-cargo.tar.gz file contains a cache created by capturing the contents downloaded into $CARGO_HOME.
+# To update the cache and config.toml run:
+#   tar -xf %%{name}-%%{version}.tar.gz
+#   cd %%{name}-%%{version}
+#   cargo vendor > config.toml
+#   tar -czf %%{name}-%%{version}-cargo.tar.gz vendor/
+#
+Source1:        %{name}-%{version}-cargo.tar.gz
 
 BuildRequires:  openssl-devel
 BuildRequires:  protobuf-compiler
 BuildRequires:  protobuf-devel
 BuildRequires:  systemd-units
 BuildRequires:  rust
+
+# For distro build, require cargo to build and osmodifier
+BuildRequires:  cargo
+Requires:       azurelinux-image-tools-osmodifier
 
 Requires:       e2fsprogs
 Requires:       util-linux
@@ -54,8 +70,6 @@ and its dependencies for managing the lifecycle of Azure Linux hosts.
 %files
 %{_bindir}/%{name}
 %dir /etc/%{name}
-# For Trident repo build, package osmodifier included via `Source1`
-%{_bindir}/osmodifier
 %{_unitdir}/%{name}d.service
 %{_unitdir}/%{name}d.socket
 
@@ -183,9 +197,27 @@ be removed once the fix is merged in AZL 4.0.
 
 # ------------------------------------------------------------------------------
 
+# Use cargo with source and vendor tarballs for distro build
+%prep
+%autosetup -n %{name}-%{version} -p1
+
+# Do vendor expansion here manually by
+# calling `tar x` and setting up
+# .cargo/config to use it.
+tar fx %{SOURCE1}
+mkdir -p .cargo
+
+cat >.cargo/config << EOF
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "vendor"
+EOF
+
 %build
-# Use %{trident_version} for Trident repo build
-export TRIDENT_VERSION="%{trident_version}"
+# Use %{version}-%{release} for TRIDENT_VERSION in distro build
+export TRIDENT_VERSION="%{version}-%{release}"
 cargo build --release
 
 mkdir selinux
@@ -198,13 +230,16 @@ bzip2 -9 %{name}.pp
 
 %check
 # Test the trident variable for the appropriate version
-# Use %{trident_version} for Trident repo build
-test "$(./target/release/trident --version)" = "trident %{trident_version}"
+# Use %{version}-%{release} for TRIDENT_VERSION in distro build
+test "$(./target/release/trident --version)" = "trident %{version}-%{release}"
+
+%ifarch x86_64
+# Run unit tests as part of check for distro build, skip 3 tests that do not work
+# in RPM chroot environment
+cargo test --all --no-fail-fast -- --skip test_run_systemd_check --skip test_prepare_mount_directory --skip test_read
+%endif
 
 %install
-# For Trident repo build, package osmodifier included via `Source1`.
-# Distro RPM will use distro osmodifier RPM via Requires directive.
-install -D -m 755 %{SOURCE1} %{buildroot}%{_bindir}/osmodifier
 install -D -m 755 target/release/%{name} %{buildroot}/%{_bindir}/%{name}
 
 # Copy Trident SELinux policy module to /usr/share/selinux/packages

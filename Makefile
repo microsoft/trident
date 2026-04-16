@@ -292,6 +292,10 @@ docbuilder: .cargo/config
 	cargo build --package docbuilder $(DOCS_CARGO_ARGS)
 	$(eval DOCBUILDER_BIN := $(DOCS_BIN_DIR)/docbuilder)
 
+.PHONY: generate-specs
+generate-specs: docbuilder FORCE
+	$(DOCBUILDER_BIN) generate-specs packaging/rpm
+
 
 TRIDENT_API_HC_SCHEMA_GENERATED  := target/trident-api-docs/host-config-schema.json
 TRIDENT_API_HC_SCHEMA_CHECKED_IN := crates/trident_api/schemas/host-config-schema.json
