@@ -37,9 +37,7 @@ require {
         type chronyd_unit_t;
         type chronyd_var_lib_t;
         type chronyd_var_log_t;
-        type cloud_init_exec_t;
-        type cloud_init_state_t;
-        type cloud_init_t;
+
         type container_conf_home_t;
         type container_unit_t;
         type container_var_lib_t;
@@ -299,10 +297,6 @@ allow trident_t chronyc_exec_t:file getattr;
 allow trident_t chronyd_unit_t:file getattr;
 allow trident_t chronyd_var_lib_t:dir { getattr open read relabelto };
 allow trident_t chronyd_var_log_t:dir { getattr open read relabelto };
-allow trident_t cloud_init_exec_t:file getattr;
-allow trident_t cloud_init_state_t:dir { list_dir_perms relabelto };
-allow trident_t cloud_init_state_t:lnk_file read_lnk_file_perms;
-allow trident_t cloud_init_state_t:file getattr;
 allow trident_t container_conf_home_t:dir search; # Allow access to ~/.docker directory
 allow trident_t container_conf_home_t:file { open read }; # Allow access to ~/.docker/config.json
 allow trident_t container_unit_t:file getattr;
@@ -536,6 +530,18 @@ allow trident_t var_run_t:sock_file write;
 allow trident_t var_spool_t:dir relabelto;
 allow trident_t wtmp_t:file relabelto;
 
+# Optional policies for modifying cloud-init settings
+optional_policy(`
+    require {
+        type cloud_init_exec_t;
+        type cloud_init_state_t;
+    }
+    allow trident_t cloud_init_exec_t:file getattr;
+    allow trident_t cloud_init_state_t:dir { list_dir_perms relabelto };
+    allow trident_t cloud_init_state_t:lnk_file read_lnk_file_perms;
+    allow trident_t cloud_init_state_t:file getattr;
+')
+
 # Policies below must be optional for Steamboat
 optional_policy(`
     require {
@@ -621,7 +627,6 @@ hostname_exec(trident_t)
 init_domtrans(trident_t)
 init_rw_stream_sockets(trident_t)
 logrotate_exec(trident_t)
-ps_process_pattern(trident_t, cloud_init_t) # equivalent to cloud_init_read_state(trident_t)
 ssh_domtrans(trident_t)
 ssh_domtrans_keygen(trident_t)
 ssh_manage_home_files(trident_t)
@@ -630,6 +635,14 @@ systemd_read_networkd_units(trident_t)
 systemd_read_user_runtime_units_files(trident_t)
 systemd_dbus_chat_logind(trident_t)
 systemd_read_user_unit_files(trident_t)
+
+# Optional read access to cloud init state
+optional_policy(`
+    require {
+        type cloud_init_t;
+    }
+    ps_process_pattern(trident_t, cloud_init_t) # equivalent to cloud_init_read_state(trident_t)
+')
 
 ###########################################
 # File System Operations
@@ -842,12 +855,17 @@ optional_policy(`
 fs_list_tmpfs(bootloader_t)
 
 #============= cloud_init_t ==============
-allow cloud_init_t unlabeled_t:dir { add_name getattr remove_name search write };
-allow cloud_init_t unlabeled_t:file { create getattr ioctl open read rename write };
-allow cloud_init_t usr_t:dir { add_name create remove_name write };
+optional_policy(`
+    require {
+        type cloud_init_t;
+    }
+    allow cloud_init_t unlabeled_t:dir { add_name getattr remove_name search write };
+    allow cloud_init_t unlabeled_t:file { create getattr ioctl open read rename write };
+    allow cloud_init_t usr_t:dir { add_name create remove_name write };
 
-files_exec_usr_files(cloud_init_t)
-files_manage_usr_files(cloud_init_t)
+    files_exec_usr_files(cloud_init_t)
+    files_manage_usr_files(cloud_init_t)
+')
 
 #============= fsadm_t ==============
 role unconfined_r types fsadm_t;
@@ -925,8 +943,13 @@ allow setfiles_t container_var_lib_t:blk_file relabelto;
 allow systemd_generator_t home_root_t:dir read;
 
 #============= udev_t ==============
-allow udev_t cloud_init_t:fd use;
-allow udev_t cloud_init_t:fifo_file { append write getattr };
+optional_policy(`
+    require {
+        type cloud_init_t;
+    }
+    allow udev_t cloud_init_t:fd use;
+    allow udev_t cloud_init_t:fifo_file { append write getattr };
+')
 allow udev_t lvm_t:process { noatsecure rlimitinh siginh };
 allow udev_t unlabeled_t:file getattr;
 
