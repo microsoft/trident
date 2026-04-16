@@ -5,6 +5,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use log::info;
 
 mod clap_model;
+mod generate_specs;
 mod host_config;
 mod markdown;
 mod schema_renderer;
@@ -29,6 +30,9 @@ enum Commands {
 
     /// Output a Trident arch diagram
     TridentArch(TridentArchOpts),
+
+    /// Generate RPM spec files from template
+    GenerateSpecs(GenerateSpecsOpts),
 }
 
 #[derive(Args, Debug)]
@@ -65,6 +69,12 @@ struct TridentArchOpts {
 
     /// Arch diagram to output
     selected: TridentArchSelection,
+}
+
+#[derive(Args, Debug)]
+struct GenerateSpecsOpts {
+    /// Directory containing template.spec (also used for output)
+    dir: PathBuf,
 }
 
 #[derive(Debug, ValueEnum, Clone, Copy)]
@@ -173,6 +183,9 @@ fn main() -> Result<(), Error> {
         }
         Commands::TridentArch(opts) => {
             build_trident_arch_diagram(opts).context("Failed to build arch diagram")
+        }
+        Commands::GenerateSpecs(opts) => {
+            generate_specs::generate(&opts.dir).context("Failed to generate spec files")
         }
     }
 }

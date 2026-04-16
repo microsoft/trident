@@ -90,6 +90,7 @@ tempfile = "3.14.0"
 tera = "1.20.0"
 textwrap = "0.16.2"
 thiserror = "1.0.69"
+toml = "0.8"
 tokio = { version = "1.48.0", features = ["full"] }
 tokio-stream = { version = "0.1.17", features = ["net"] }
 tokio-util = "0.7.17"
