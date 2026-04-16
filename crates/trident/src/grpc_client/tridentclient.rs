@@ -59,7 +59,6 @@ pub struct TridentClient {
     version_client: VersionServiceClient<Channel>,
     streaming_client: StreamingServiceClient<Channel>,
     update_client: UpdateServiceClient<Channel>,
-    #[allow(dead_code)]
     commit_client: CommitServiceClient<Channel>,
 
     #[cfg(feature = "grpc-preview")]
@@ -251,7 +250,6 @@ impl TridentClient {
     }
 
     /// Perform a commit on the Trident server.
-    #[allow(dead_code)]
     pub async fn commit(&mut self) -> Result<ExitKind, TridentClientError> {
         let response = self
             .commit_client
