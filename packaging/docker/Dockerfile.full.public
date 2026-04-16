@@ -20,7 +20,9 @@ ARG TRIDENT_VERSION=dev-build
 ARG RPM_VER=0.1.0
 ARG RPM_REL=1
 
-RUN rpmbuild -bb --build-in-place trident.spec \
+RUN sed -i "s/^Version:.*/Version:        $RPM_VER/" trident.spec && \
+    sed -i "s/^Release:.*/Release:        $RPM_REL/" trident.spec && \
+    rpmbuild -bb --build-in-place trident.spec \
     --define="trident_version $TRIDENT_VERSION" \
     --define="rpm_ver $RPM_VER" \
     --define="rpm_rel $RPM_REL" && \
