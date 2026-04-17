@@ -139,6 +139,31 @@ func (vm VirtDeployVM) validate() error {
 		}
 	}
 
+	if vm.CloudInit != nil {
+		if vm.CloudInit.Userdata == "" {
+			return fmt.Errorf("cloud-init user file path must be specified if cloud-init config is provided")
+		}
+		if vm.CloudInit.Metadata == "" {
+			return fmt.Errorf("cloud-init metadata file path must be specified if cloud-init config is provided")
+		}
+		if _, err := os.Stat(vm.CloudInit.Userdata); err != nil {
+			return fmt.Errorf("cloud-init user file path is invalid: %w", err)
+		}
+		if _, err := os.Stat(vm.CloudInit.Metadata); err != nil {
+			return fmt.Errorf("cloud-init metadata file path is invalid: %w", err)
+		}
+	}
+
+	if vm.Arch != "amd64" && vm.Arch != "arm64" {
+		return fmt.Errorf("unsupported architecture '%s'", vm.Arch)
+	}
+
+	if vm.IgnitionConfigPath != "" {
+		if _, err := os.Stat(vm.IgnitionConfigPath); err != nil {
+			return fmt.Errorf("ignition config path is invalid: %w", err)
+		}
+	}
+
 	return nil
 }
 

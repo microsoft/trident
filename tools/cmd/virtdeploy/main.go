@@ -35,6 +35,7 @@ func main() {
 		kong.Vars{
 			"DEFAULT_NAMESPACE": DEFAULT_NAMESPACE,
 			"DEFAULT_NETWORK":   DEFAULT_NETWORK,
+			"GOARCH":            runtime.GOARCH,
 		},
 	)
 	log.SetLevel(cli.Verbosity)
@@ -71,6 +72,7 @@ type CreateOneCmd struct {
 	Netlaunch          string `group:"Output" short:"l" long:"netlaunch" type:"path" help:"Produce a netlaunch YAML at the given path" default:"./tools/vm-netlaunch.yaml"`
 	IgnitionConfigPath string `group:"Ignition" long:"ignition-config" help:"Path to an Ignition config file to pass to the VM"`
 	Start              bool   `group:"VM" short:"s" long:"start" help:"Start the VM after creating it"`
+	Arch               string `group:"VM" long:"arch" help:"Architecture of the VM (amd64 or arm64)" default:"${GOARCH}"`
 }
 
 func (c *CreateOneCmd) Run() error {
@@ -111,7 +113,7 @@ func (c *CreateOneCmd) Run() error {
 				EmulatedTPM:        !c.NoTpm,
 				OsDiskPath:         c.OsDisk,
 				CloudInit:          cloudInitConfig,
-				Arch:               runtime.GOARCH,
+				Arch:               c.Arch,
 				IgnitionConfigPath: c.IgnitionConfigPath,
 			},
 		},
