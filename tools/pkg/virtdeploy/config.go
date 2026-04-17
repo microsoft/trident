@@ -111,6 +111,7 @@ type VirtDeployVM struct {
 	EmulatedTPM bool
 
 	// Architecture of the VM (amd64 or arm64)
+	// Defaults to the architecture of the host if not specified.
 	Arch string
 
 	// Ignition config file to pass to the VM (for ACL)
