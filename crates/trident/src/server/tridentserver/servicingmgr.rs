@@ -197,7 +197,7 @@ impl ServicingManager {
             error: None,
             reboot_status: reboot_status.into(),
             image_hash: sha384.map(|hash| format!("sha384:{hash}")),
-            servicing_kind: servicing_kind.map(|k| k as i32),
+            servicing_kind: servicing_kind.map(Into::into),
         }
     }
 
@@ -505,7 +505,6 @@ mod tests {
         assert_eq!(result.reboot_status(), RebootStatus::RebootNotRequired);
     }
 
-
     #[tokio::test]
     async fn test_spawn_servicing_task_propagates_servicing_kind() {
         let (manager, _) = ServicingManager::new();
@@ -514,7 +513,11 @@ mod tests {
 
         let result = manager
             .spawn_servicing_task(RebootDecision::Handle, guard, tracker, || {
-                Ok((ExitKind::Done, test_hash(), Some(ServicingKind::RuntimeUpdate)))
+                Ok((
+                    ExitKind::Done,
+                    test_hash(),
+                    Some(ServicingKind::RuntimeUpdate),
+                ))
             })
             .await;
 
