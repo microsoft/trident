@@ -10,6 +10,7 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 use strum_macros::EnumIter;
+use trident_proto::v1::ServicingKind;
 use uuid::Uuid;
 
 use crate::{
@@ -84,6 +85,19 @@ pub enum ServicingType {
     ManualRollbackAb = 4,
     /// Manual Rollback of the target OS image within the active volume to the previously deployed state.
     ManualRollbackRuntime = 5,
+}
+
+impl From<ServicingType> for trident_proto::v1::ServicingKind {
+    fn from(st: ServicingType) -> Self {
+        match st {
+            ServicingType::NoActiveServicing => ServicingKind::NoneRequired,
+            ServicingType::RuntimeUpdate => ServicingKind::RuntimeUpdate,
+            ServicingType::AbUpdate => ServicingKind::AbUpdate,
+            ServicingType::CleanInstall => ServicingKind::CleanInstall,
+            ServicingType::ManualRollbackAb => ServicingKind::ManualRollbackAb,
+            ServicingType::ManualRollbackRuntime => ServicingKind::ManualRollbackRuntime,
+        }
+    }
 }
 
 /// Servicing state describes the progress of the servicing that the Trident agent is executing on

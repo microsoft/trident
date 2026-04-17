@@ -1,6 +1,7 @@
 use tonic::{async_trait, Request, Response, Status};
 
 use trident_api::error::TridentResultExt;
+
 use trident_proto::v1::{commit_service_server::CommitService, CommitRequest};
 
 #[cfg(feature = "grpc-preview")]
@@ -45,7 +46,9 @@ impl CommitService for TridentServer {
 
             trident
                 .commit(&mut datastore)
-                .map(|exit_kind| (exit_kind, image_hash))
+                .map(|(exit_kind, servicing_type)| {
+                    (exit_kind, image_hash, Some(servicing_type.into()))
+                })
         })
     }
 }

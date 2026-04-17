@@ -11,7 +11,9 @@ use trident_api::{
     error::{InternalError, TridentError},
     primitives::hash::Sha384Hash,
 };
-use trident_proto::v1::{Completed, RebootStatus, StatusCode, TridentError as ProtoTridentError};
+use trident_proto::v1::{
+    Completed, RebootStatus, ServicingKind, StatusCode, TridentError as ProtoTridentError,
+};
 
 use crate::{server::activitytracker::ActivityTracker, ExitKind};
 
@@ -112,7 +114,7 @@ impl ServicingManager {
         f: F,
     ) -> Completed
     where
-        F: FnOnce() -> Result<(ExitKind, Option<Sha384Hash>), TridentError>
+        F: FnOnce() -> Result<(ExitKind, Option<Sha384Hash>, Option<ServicingKind>), TridentError>
             + Send
             + panic::UnwindSafe
             + 'static,
@@ -128,7 +130,7 @@ impl ServicingManager {
         })
         .await;
 
-        let (exit_kind, sha384) = match result {
+        let (exit_kind, sha384, servicing_kind) = match result {
             Ok(Ok(r)) => r,
             Ok(Err(e)) => {
                 return Completed {
@@ -136,6 +138,7 @@ impl ServicingManager {
                     error: Some(ProtoTridentError::from(&e)),
                     reboot_status: RebootStatus::RebootNotRequired.into(),
                     image_hash: None,
+                    servicing_kind: None,
                 }
             }
             Err(e) => {
@@ -148,6 +151,7 @@ impl ServicingManager {
                     ))),
                     reboot_status: RebootStatus::RebootNotRequired.into(),
                     image_hash: None,
+                    servicing_kind: None,
                 };
             }
         };
@@ -180,6 +184,7 @@ impl ServicingManager {
                     ))),
                     reboot_status: RebootStatus::RebootNotRequired.into(),
                     image_hash: None,
+                    servicing_kind: None,
                 };
             }
 
@@ -192,6 +197,7 @@ impl ServicingManager {
             error: None,
             reboot_status: reboot_status.into(),
             image_hash: sha384.map(|hash| format!("sha384:{hash}")),
+            servicing_kind: servicing_kind.map(Into::into),
         }
     }
 
@@ -337,7 +343,7 @@ mod tests {
 
         let result = manager
             .spawn_servicing_task(RebootDecision::Handle, guard, tracker, || {
-                Ok((ExitKind::Done, test_hash()))
+                Ok((ExitKind::Done, test_hash(), None))
             })
             .await;
 
@@ -354,7 +360,7 @@ mod tests {
 
         let result = manager
             .spawn_servicing_task(RebootDecision::Defer, guard, tracker, || {
-                Ok((ExitKind::NeedsReboot, test_hash()))
+                Ok((ExitKind::NeedsReboot, test_hash(), None))
             })
             .await;
 
@@ -381,7 +387,7 @@ mod tests {
 
         let result = manager
             .spawn_servicing_task(RebootDecision::Handle, guard, tracker, || {
-                Ok((ExitKind::NeedsReboot, test_hash()))
+                Ok((ExitKind::NeedsReboot, test_hash(), None))
             })
             .await;
 
@@ -408,7 +414,7 @@ mod tests {
 
         let result = manager
             .spawn_servicing_task(RebootDecision::Error, guard, tracker, || {
-                Ok((ExitKind::NeedsReboot, test_hash()))
+                Ok((ExitKind::NeedsReboot, test_hash(), None))
             })
             .await;
 
@@ -467,7 +473,7 @@ mod tests {
                 .spawn_servicing_task(RebootDecision::Handle, guard, tracker, || {
                     // Task body
                     std::thread::sleep(Duration::from_millis(50));
-                    Ok((ExitKind::Done, test_hash()))
+                    Ok((ExitKind::Done, test_hash(), None))
                 })
                 .await
         });
@@ -500,6 +506,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_spawn_servicing_task_propagates_servicing_kind() {
+        let (manager, _) = ServicingManager::new();
+        let guard = manager.try_lock_servicing().expect("Lock should succeed");
+        let (tracker, _rx, _token) = ActivityTracker::new(Duration::from_secs(30));
+
+        let result = manager
+            .spawn_servicing_task(RebootDecision::Handle, guard, tracker, || {
+                Ok((
+                    ExitKind::Done,
+                    test_hash(),
+                    Some(ServicingKind::RuntimeUpdate),
+                ))
+            })
+            .await;
+
+        assert_eq!(result.status(), StatusCode::Success);
+        assert_eq!(result.reboot_status(), RebootStatus::RebootNotRequired);
+        assert!(result.error.is_none());
+        assert_eq!(
+            result.servicing_kind(),
+            ServicingKind::RuntimeUpdate,
+            "servicing_kind should be propagated from the task closure into the Completed message"
+        );
+    }
+
+    #[tokio::test]
     async fn test_servicing_manager_is_clonable() {
         let (manager, _) = ServicingManager::new();
         let manager_clone = manager.clone();
@@ -524,7 +556,7 @@ mod tests {
                 .expect("First lock should succeed");
             let result = manager
                 .spawn_servicing_task(RebootDecision::Handle, guard, tracker.clone(), || {
-                    Ok((ExitKind::Done, test_hash()))
+                    Ok((ExitKind::Done, test_hash(), None))
                 })
                 .await;
             assert_eq!(result.status(), StatusCode::Success);
@@ -537,7 +569,7 @@ mod tests {
                 .expect("Second lock should succeed");
             let result = manager
                 .spawn_servicing_task(RebootDecision::Handle, guard, tracker.clone(), || {
-                    Ok((ExitKind::NeedsReboot, test_hash()))
+                    Ok((ExitKind::NeedsReboot, test_hash(), None))
                 })
                 .await;
             assert_eq!(result.status(), StatusCode::Success);

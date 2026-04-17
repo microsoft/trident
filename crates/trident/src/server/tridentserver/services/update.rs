@@ -57,7 +57,9 @@ impl UpdateService for TridentServer {
                 let mut datastore = DataStore::open_or_create(&data_store_path)
                     .message("Failed to open datastore")?;
 
-                trident.update(&mut datastore, Operations::all())
+                trident
+                    .update(&mut datastore, Operations::all())
+                    .map(|(k, h, st)| (k, h, Some(st.into())))
             },
         )
     }
@@ -91,7 +93,9 @@ impl UpdateService for TridentServer {
             let mut datastore =
                 DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
 
-            trident.update(&mut datastore, Operation::Stage.into())
+            trident
+                .update(&mut datastore, Operation::Stage.into())
+                .map(|(k, h, st)| (k, h, Some(st.into())))
         })
     }
 
@@ -116,7 +120,9 @@ impl UpdateService for TridentServer {
                 let mut datastore = DataStore::open_or_create(&data_store_path)
                     .message("Failed to open datastore")?;
 
-                trident.update(&mut datastore, Operation::Finalize.into())
+                trident
+                    .update(&mut datastore, Operation::Finalize.into())
+                    .map(|(k, h, st)| (k, h, Some(st.into())))
             },
         )
     }

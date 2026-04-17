@@ -43,7 +43,9 @@ impl StreamingService for TridentServer {
                 let mut datastore = DataStore::open_or_create(&data_store_path)
                     .message("Failed to open datastore")?;
 
-                trident.stream_image(&mut datastore, &url, &image_hash)
+                trident
+                    .stream_image(&mut datastore, &url, &image_hash)
+                    .map(|(k, h, st)| (k, h, Some(st.into())))
             },
         )
     }

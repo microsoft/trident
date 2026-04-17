@@ -37,7 +37,7 @@ impl RebuildRaidService for TridentServer {
                 .rebuild_raid(&mut datastore)
                 .message("Failed to rebuild RAID arrays")?;
 
-            Ok((ExitKind::Done, image_hash))
+            Ok((ExitKind::Done, image_hash, None))
         })
     }
 }
