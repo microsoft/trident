@@ -207,9 +207,8 @@ func (vm *VirtDeployVM) configureRedirDevs() []libvirtxml.DomainRedirDev {
 	}
 }
 
-// configureDomainType returns the libvirt domain type.
-// AMD64 uses KVM (hardware-accelerated). ARM64 uses plain QEMU (TCG) because
-// we cross-compile on an x86 host where KVM is not available for aarch64.
+// configureDomainType returns the libvirt domain type. AMD64 uses KVM
+// (hardware-accelerated). ARM64 uses plain QEMU for compatibility.
 func (vm *VirtDeployVM) configureDomainType() string {
 	if vm.isArm64() {
 		return "qemu"
