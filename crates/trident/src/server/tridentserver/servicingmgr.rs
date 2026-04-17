@@ -505,6 +505,29 @@ mod tests {
         assert_eq!(result.reboot_status(), RebootStatus::RebootNotRequired);
     }
 
+
+    #[tokio::test]
+    async fn test_spawn_servicing_task_propagates_servicing_kind() {
+        let (manager, _) = ServicingManager::new();
+        let guard = manager.try_lock_servicing().expect("Lock should succeed");
+        let (tracker, _rx, _token) = ActivityTracker::new(Duration::from_secs(30));
+
+        let result = manager
+            .spawn_servicing_task(RebootDecision::Handle, guard, tracker, || {
+                Ok((ExitKind::Done, test_hash(), Some(ServicingKind::RuntimeUpdate)))
+            })
+            .await;
+
+        assert_eq!(result.status(), StatusCode::Success);
+        assert_eq!(result.reboot_status(), RebootStatus::RebootNotRequired);
+        assert!(result.error.is_none());
+        assert_eq!(
+            result.servicing_kind(),
+            ServicingKind::RuntimeUpdate,
+            "servicing_kind should be propagated from the task closure into the Completed message"
+        );
+    }
+
     #[tokio::test]
     async fn test_servicing_manager_is_clonable() {
         let (manager, _) = ServicingManager::new();
