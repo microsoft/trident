@@ -47,11 +47,7 @@ impl CommitService for TridentServer {
             trident
                 .commit(&mut datastore)
                 .map(|(exit_kind, servicing_type)| {
-                    (
-                        exit_kind,
-                        image_hash,
-                        Some(super::servicing_type_to_kind(servicing_type)),
-                    )
+                    (exit_kind, image_hash, Some(servicing_type.into()))
                 })
         })
     }

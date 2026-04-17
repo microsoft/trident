@@ -59,7 +59,7 @@ impl UpdateService for TridentServer {
 
                 trident
                     .update(&mut datastore, Operations::all())
-                    .map(|(k, h, st)| (k, h, Some(super::servicing_type_to_kind(st))))
+                    .map(|(k, h, st)| (k, h, Some(st.into())))
             },
         )
     }
@@ -95,7 +95,7 @@ impl UpdateService for TridentServer {
 
             trident
                 .update(&mut datastore, Operation::Stage.into())
-                .map(|(k, h, st)| (k, h, Some(super::servicing_type_to_kind(st))))
+                .map(|(k, h, st)| (k, h, Some(st.into())))
         })
     }
 
@@ -122,7 +122,7 @@ impl UpdateService for TridentServer {
 
                 trident
                     .update(&mut datastore, Operation::Finalize.into())
-                    .map(|(k, h, st)| (k, h, Some(super::servicing_type_to_kind(st))))
+                    .map(|(k, h, st)| (k, h, Some(st.into())))
             },
         )
     }

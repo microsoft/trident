@@ -45,7 +45,7 @@ impl StreamingService for TridentServer {
 
                 trident
                     .stream_image(&mut datastore, &url, &image_hash)
-                    .map(|(k, h, st)| (k, h, Some(super::servicing_type_to_kind(st))))
+                    .map(|(k, h, st)| (k, h, Some(st.into())))
             },
         )
     }
