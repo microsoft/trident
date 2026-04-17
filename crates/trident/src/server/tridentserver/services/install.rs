@@ -60,7 +60,7 @@ impl InstallService for TridentServer {
 
                 trident
                     .install(&mut datastore, Operations::all(), false, None)
-                    .map(|(k, h, st)| (k, h, Some(super::servicing_type_to_kind(st))))
+                    .map(|(k, h, st)| (k, h, Some(st.into())))
             },
         )
     }
@@ -96,7 +96,7 @@ impl InstallService for TridentServer {
 
             trident
                 .install(&mut datastore, Operation::Stage.into(), false, None)
-                .map(|(k, h, st)| (k, h, Some(super::servicing_type_to_kind(st))))
+                .map(|(k, h, st)| (k, h, Some(st.into())))
         })
     }
 
@@ -123,7 +123,7 @@ impl InstallService for TridentServer {
 
                 trident
                     .install(&mut datastore, Operation::Finalize.into(), false, None)
-                    .map(|(k, h, st)| (k, h, Some(super::servicing_type_to_kind(st))))
+                    .map(|(k, h, st)| (k, h, Some(st.into())))
             },
         )
     }
