@@ -30,6 +30,7 @@ type virtDeployResourceConfig struct {
 	nvramPool storagePool
 	vms       []VirtDeployVM
 	lv        *libvirt.Libvirt
+	startVms  bool
 }
 
 func newVirtDeployResourceConfig(config VirtDeployConfig) (*virtDeployResourceConfig, error) {
@@ -65,6 +66,7 @@ func newVirtDeployResourceConfig(config VirtDeployConfig) (*virtDeployResourceCo
 		nvramPool: nvramPool,
 		vms:       config.VMs,
 		lv:        lvConn,
+		startVms:  config.StartVMs,
 	}
 
 	// Initialize all VMs
@@ -77,8 +79,13 @@ func newVirtDeployResourceConfig(config VirtDeployConfig) (*virtDeployResourceCo
 			return nil, fmt.Errorf("lease IP for VM %s: %w", vm.name, err)
 		}
 		vm.ipAddr = lease
+		vm.networkName = r.network.name
 
 		vm.nvramFile = fmt.Sprintf("%s_VARS.fd", vm.name)
+
+		if vm.IgnitionConfigPath != "" {
+			vm.ignitionVolume = fmt.Sprintf("%s_ignition.ign", vm.name)
+		}
 
 		if vm.SecureBoot {
 			if vm.isArm64() {
@@ -499,6 +506,24 @@ func (rc *virtDeployResourceConfig) setupVm(vm *VirtDeployVM) error {
 		return fmt.Errorf("upload NVRAM template to volume: %w", err)
 	}
 
+	// Set up ignition volume if needed
+	if vm.ignitionVolume != "" {
+		ignVol := newSimpleVolumeMode(vm.ignitionVolume, 0, "raw", "0644")
+		err = rc.setupVolume(&ignVol, rc.pool)
+		if err != nil {
+			return fmt.Errorf("setup ignition volume: %w", err)
+		}
+
+		// Update the VM's ignition volume path to the created volume's path
+		vm.ignitionVolume = ignVol.path
+
+		log.Debugf("Uploading Ignition config from %s to %s", vm.IgnitionConfigPath, ignVol.path)
+		err = rc.uploadFileToVolume(ignVol.lvVol, vm.IgnitionConfigPath)
+		if err != nil {
+			return fmt.Errorf("upload Ignition config to volume: %w", err)
+		}
+	}
+
 	for i := range vm.volumes {
 		vol := &vm.volumes[i]
 		diskDevicePrefix := "sd"
@@ -573,7 +598,7 @@ func (rc *virtDeployResourceConfig) setupVm(vm *VirtDeployVM) error {
 	}
 
 	// Generate the final domain definition, and store it in the VM struct
-	domainXML, err := vm.asXml(rc.network, rc.nvramPool)
+	domainXML, err := vm.asXml()
 	if err != nil {
 		return fmt.Errorf("failed to produce domain XML: %w", err)
 	}
@@ -604,6 +629,15 @@ func (rc *virtDeployResourceConfig) setupVm(vm *VirtDeployVM) error {
 	}
 
 	log.Infof("Created domain '%s'", vm.name)
+
+	if rc.startVms {
+		err = rc.lv.DomainCreate(vm.domain)
+		if err != nil {
+			return fmt.Errorf("start domain: %w", err)
+		}
+
+		log.Infof("Started domain '%s'", vm.name)
+	}
 
 	return nil
 }

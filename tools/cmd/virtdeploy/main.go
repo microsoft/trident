@@ -35,6 +35,7 @@ func main() {
 		kong.Vars{
 			"DEFAULT_NAMESPACE": DEFAULT_NAMESPACE,
 			"DEFAULT_NETWORK":   DEFAULT_NETWORK,
+			"GOARCH":            runtime.GOARCH,
 		},
 	)
 	log.SetLevel(cli.Verbosity)
@@ -57,18 +58,21 @@ func (c *CleanCmd) Run() error {
 }
 
 type CreateOneCmd struct {
-	Namespace    string `group:"Resource" short:"n" long:"namespace" help:"Namespace to create resources in" default:"${DEFAULT_NAMESPACE}"`
-	Network      string `group:"Resource" short:"N" long:"network" help:"Network to create resources in" default:"${DEFAULT_NETWORK}"`
-	CPUs         uint   `group:"VM" short:"c" long:"cpus" help:"Number of CPUs for the VM" default:"4"`
-	Mem          uint   `group:"VM" short:"m" long:"mem" help:"Memory in GB for the VM" default:"6"`
-	Disks        []uint `group:"VM" short:"d" long:"disk" help:"Disk sizes in GB for the VM" default:"32"`
-	NoSecureBoot bool   `group:"VM" long:"no-secure-boot" help:"Disable secure boot"`
-	NoTpm        bool   `group:"VM" long:"no-tpm" help:"Disable emulated TPM"`
-	OsDisk       string `group:"VM" long:"os-disk" help:"Optional path to an OS disk image to attach to the first disk"`
-	CiUser       string `group:"cloud-init" and:"ci-meta" long:"ci-user" help:"Cloud-init userdata file path" type:"existingfile"`
-	CiMeta       string `group:"cloud-init" and:"ci-user" long:"ci-meta" help:"Cloud-init metadata file path" type:"existingfile"`
-	Json         bool   `group:"Output" short:"J" long:"json" help:"Output resource data as JSON to stdout."`
-	Netlaunch    string `group:"Output" short:"l" long:"netlaunch" type:"path" help:"Produce a netlaunch YAML at the given path" default:"./tools/vm-netlaunch.yaml"`
+	Namespace          string `group:"Resource" short:"n" long:"namespace" help:"Namespace to create resources in" default:"${DEFAULT_NAMESPACE}"`
+	Network            string `group:"Resource" short:"N" long:"network" help:"Network to create resources in" default:"${DEFAULT_NETWORK}"`
+	CPUs               uint   `group:"VM" short:"c" long:"cpus" help:"Number of CPUs for the VM" default:"4"`
+	Mem                uint   `group:"VM" short:"m" long:"mem" help:"Memory in GB for the VM" default:"6"`
+	Disks              []uint `group:"VM" short:"d" long:"disk" help:"Disk sizes in GB for the VM" default:"32"`
+	NoSecureBoot       bool   `group:"VM" long:"no-secure-boot" help:"Disable secure boot"`
+	NoTpm              bool   `group:"VM" long:"no-tpm" help:"Disable emulated TPM"`
+	OsDisk             string `group:"VM" long:"os-disk" help:"Optional path to an OS disk image to attach to the first disk"`
+	CiUser             string `group:"cloud-init" and:"ci-meta" long:"ci-user" help:"Cloud-init userdata file path" type:"existingfile"`
+	CiMeta             string `group:"cloud-init" and:"ci-user" long:"ci-meta" help:"Cloud-init metadata file path" type:"existingfile"`
+	Json               bool   `group:"Output" short:"J" long:"json" help:"Output resource data as JSON to stdout."`
+	Netlaunch          string `group:"Output" short:"l" long:"netlaunch" type:"path" help:"Produce a netlaunch YAML at the given path" default:"./tools/vm-netlaunch.yaml"`
+	IgnitionConfigPath string `group:"Ignition" long:"ignition-config" help:"Path to an Ignition config file to pass to the VM"`
+	Start              bool   `group:"VM" short:"s" long:"start" help:"Start the VM after creating it"`
+	Arch               string `group:"VM" long:"arch" help:"Architecture of the VM (amd64 or arm64)" default:"${GOARCH}"`
 }
 
 func (c *CreateOneCmd) Run() error {
@@ -99,16 +103,18 @@ func (c *CreateOneCmd) Run() error {
 		Namespace:    c.Namespace,
 		IPNet:        *network,
 		NatInterface: virtdeploy.AutoDetectNatInterface,
+		StartVMs:     c.Start,
 		VMs: []virtdeploy.VirtDeployVM{
 			{
-				Cpus:        c.CPUs,
-				Mem:         c.Mem,
-				Disks:       c.Disks,
-				SecureBoot:  !c.NoSecureBoot,
-				EmulatedTPM: !c.NoTpm,
-				OsDiskPath:  c.OsDisk,
-				CloudInit:   cloudInitConfig,
-				Arch:        runtime.GOARCH,
+				Cpus:               c.CPUs,
+				Mem:                c.Mem,
+				Disks:              c.Disks,
+				SecureBoot:         !c.NoSecureBoot,
+				EmulatedTPM:        !c.NoTpm,
+				OsDiskPath:         c.OsDisk,
+				CloudInit:          cloudInitConfig,
+				Arch:               c.Arch,
+				IgnitionConfigPath: c.IgnitionConfigPath,
 			},
 		},
 	})
