@@ -125,3 +125,8 @@ steps:
     timeoutInMinutes: 5
     displayName: "Capture azl-installer VHD"
     condition: failed()
+
+  - template: ../testing_common/fix-output-directory-for-one-branch-step.yml
+    parameters:
+      outputDir: $(ob_outputDirectory)
+      condition: always()
