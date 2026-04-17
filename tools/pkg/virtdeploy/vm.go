@@ -16,11 +16,11 @@ func (vm *VirtDeployVM) isArm64() bool {
 // It translates the earlier XML template into structured Go objects.
 // Some low-level address/controller elements are omitted for brevity; libvirt
 // will auto-assign them. Extend if deterministic addressing is required.
-func (vm *VirtDeployVM) asXml(network *virtDeployNetwork, nvramPool storagePool) (string, error) {
+func (vm *VirtDeployVM) asXml() (string, error) {
 	if vm.isArm64() {
-		return vm.asArm64Xml(network, nvramPool)
+		return vm.asArm64Xml()
 	}
-	return vm.asAmd64Xml(network, nvramPool)
+	return vm.asAmd64Xml()
 }
 
 func (vm *VirtDeployVM) configureDisks() []libvirtxml.DomainDisk {
@@ -102,7 +102,6 @@ func (vm *VirtDeployVM) configureTpms() []libvirtxml.DomainTPM {
 }
 
 func (vm *VirtDeployVM) createDomain(
-	network *virtDeployNetwork, nvramPool storagePool,
 	domainType string,
 	osType libvirtxml.DomainOSType,
 	cpuModel libvirtxml.DomainCPUModel,
@@ -114,6 +113,27 @@ func (vm *VirtDeployVM) createDomain(
 	vmPort *libvirtxml.DomainFeatureState,
 	controllers []libvirtxml.DomainController,
 ) libvirtxml.Domain {
+	var networkInterfaces []libvirtxml.DomainInterface
+	if vm.networkName != "" {
+		networkInterfaces = []libvirtxml.DomainInterface{{
+			Model: &libvirtxml.DomainInterfaceModel{Type: "virtio"},
+			MAC:   &libvirtxml.DomainInterfaceMAC{Address: vm.mac.String()},
+			Source: &libvirtxml.DomainInterfaceSource{
+				Network: &libvirtxml.DomainInterfaceSourceNetwork{
+					Network: vm.networkName,
+				},
+			},
+		}}
+	}
+
+	var qemuExtraArgs []libvirtxml.DomainQEMUCommandlineArg
+	if vm.ignitionVolume != "" {
+		qemuExtraArgs = []libvirtxml.DomainQEMUCommandlineArg{
+			{Value: "-fw_cfg"},
+			{Value: fmt.Sprintf("name=opt/org.flatcar-linux/config,file=%s", vm.ignitionVolume)},
+		}
+	}
+
 	return libvirtxml.Domain{
 		Type:   domainType,
 		Name:   vm.name,
@@ -158,15 +178,7 @@ func (vm *VirtDeployVM) createDomain(
 			Emulator:    emulator,
 			Disks:       vm.configureDisks(),
 			Controllers: controllers,
-			Interfaces: []libvirtxml.DomainInterface{{
-				Model: &libvirtxml.DomainInterfaceModel{Type: "virtio"},
-				MAC:   &libvirtxml.DomainInterfaceMAC{Address: vm.mac.String()},
-				Source: &libvirtxml.DomainInterfaceSource{
-					Network: &libvirtxml.DomainInterfaceSourceNetwork{
-						Network: network.name,
-					},
-				},
-			}},
+			Interfaces:  networkInterfaces,
 			Consoles: []libvirtxml.DomainConsole{{
 				Source: &libvirtxml.DomainChardevSource{
 					Pty: &libvirtxml.DomainChardevSourcePty{},
@@ -183,6 +195,22 @@ func (vm *VirtDeployVM) createDomain(
 				},
 			}},
 			Inputs: []libvirtxml.DomainInput{{Type: "tablet", Bus: "usb"}},
+			Graphics: []libvirtxml.DomainGraphic{{
+				Spice: &libvirtxml.DomainGraphicSpice{
+					Port:     -1,
+					TLSPort:  -1,
+					AutoPort: "yes",
+					Image: &libvirtxml.DomainGraphicSpiceImage{
+						Compression: "off",
+					},
+				},
+			}},
+			Sounds: []libvirtxml.DomainSound{{
+				Model: "ich6",
+			}},
+			Videos: []libvirtxml.DomainVideo{{
+				Model: libvirtxml.DomainVideoModel{Type: "qxl"},
+			}},
 			RedirDevs: []libvirtxml.DomainRedirDev{
 				{Bus: "usb", Source: &libvirtxml.DomainChardevSource{
 					SpiceVMC: &libvirtxml.DomainChardevSourceSpiceVMC{},
@@ -202,14 +230,18 @@ func (vm *VirtDeployVM) createDomain(
 			}},
 			TPMs: vm.configureTpms(),
 		},
+		QEMUCommandline: &libvirtxml.DomainQEMUCommandline{
+			Args: qemuExtraArgs,
+		},
+		SecLabel: []libvirtxml.DomainSecLabel{
+			{Type: "none"},
+		},
 	}
 }
 
-func (vm *VirtDeployVM) asAmd64Xml(network *virtDeployNetwork, nvramPool storagePool) (string, error) {
+func (vm *VirtDeployVM) asAmd64Xml() (string, error) {
 	// AMD64-specific domain XML
 	dom := vm.createDomain(
-		network,
-		nvramPool,
 		"kvm",
 		libvirtxml.DomainOSType{Arch: "x86_64", Machine: "q35", Type: "hvm"},
 		libvirtxml.DomainCPUModel{Fallback: "allow", Value: "Broadwell-IBRS"},
@@ -253,11 +285,9 @@ func (vm *VirtDeployVM) asAmd64Xml(network *virtDeployNetwork, nvramPool storage
 	return xml, nil
 }
 
-func (vm *VirtDeployVM) asArm64Xml(network *virtDeployNetwork, nvramPool storagePool) (string, error) {
+func (vm *VirtDeployVM) asArm64Xml() (string, error) {
 	// ARM64-specific domain XML
 	dom := vm.createDomain(
-		network,
-		nvramPool,
 		"qemu",
 		libvirtxml.DomainOSType{Arch: "aarch64", Machine: "virt-6.2", Type: "hvm"},
 		libvirtxml.DomainCPUModel{Fallback: "forbid", Value: "cortex-a57"},

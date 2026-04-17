@@ -23,6 +23,9 @@ type VirtDeployConfig struct {
 
 	// List of VMs to create
 	VMs []VirtDeployVM
+
+	// Start the VMs after creation
+	StartVMs bool
 }
 
 func (c VirtDeployConfig) validate() error {
@@ -74,6 +77,12 @@ type VirtDeployVM struct {
 	nvramFile string
 	nvramPath string
 
+	// Ignition config file volume path
+	ignitionVolume string
+
+	// Network name to attach the VM to
+	networkName string
+
 	// Final domain definition at creation time
 	domainDefinition *libvirtxml.Domain
 
@@ -103,6 +112,9 @@ type VirtDeployVM struct {
 
 	// Architecture of the VM (amd64 or arm64)
 	Arch string
+
+	// Ignition config file to pass to the VM (for ACL)
+	IgnitionConfigPath string
 }
 
 func (vm VirtDeployVM) validate() error {
