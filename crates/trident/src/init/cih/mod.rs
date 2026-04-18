@@ -252,6 +252,9 @@ fn inner_initial_host_status(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::str::FromStr;
+
     use osutils::{
         lsblk::{BlockDevice, BlockDeviceType, PartitionTableType},
         sfdisk::{SfDisk, SfDiskLabel, SfDiskUnit, SfPartition},
