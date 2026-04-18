@@ -121,6 +121,9 @@ func populateCIHFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []
 		return fmt.Errorf("failed to create mounts directory: %w", err)
 	}
 
+	// Initialize empty slice to avoid null in JSON output when no packages are found.
+	cosiMeta.OsPackages = make([]metadata.OsPackage, 0)
+
 	var usrAMountPath string
 	var espMountPath string
 	var espMountPoint string
