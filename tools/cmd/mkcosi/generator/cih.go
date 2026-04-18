@@ -41,17 +41,17 @@ type cihPartitionDef struct {
 // HASH-A and HASH-B are optional — images without them are still valid CIH.
 var cihRequiredPartitions = []cihPartitionDef{
 	{Name: "EFI-SYSTEM", TypeGUID: "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"},
-	{Name: "BIOS-BOOT", TypeGUID: "21686148-6449-6e6f-744e-656564454649"},
 	{Name: "USR-A", TypeGUID: "5dfbf5f4-2848-4bac-aa5e-0d9a20b745a6", UUID: "7130c94a-213a-4e5a-8e26-6cce9662f132"},
 	{Name: "USR-B", TypeGUID: "5dfbf5f4-2848-4bac-aa5e-0d9a20b745a6", UUID: "e03dd35c-7c2d-4a47-b3fe-27f15780a57c"},
 	{Name: "OEM", TypeGUID: "0fc63daf-8483-4772-8e79-3d69d8477de4"},
-	{Name: "OEM-CONFIG", TypeGUID: "c95dc21a-df0e-4340-8d7b-26cbfa9a03e0"},
 	{Name: "ROOT", TypeGUID: "4f68bce3-e8cd-4db1-96e7-fbcaf984b709"},
 }
 
 // cihOptionalPartitions lists partitions that may or may not be present.
 // When present, both name+typeGUID and UUID must match.
 var cihOptionalPartitions = []cihPartitionDef{
+	{Name: "BIOS-BOOT", TypeGUID: "21686148-6449-6e6f-744e-656564454649"},
+	{Name: "OEM-CONFIG", TypeGUID: "c95dc21a-df0e-4340-8d7b-26cbfa9a03e0"},
 	{Name: "HASH-A", TypeGUID: "77ff5f63-e7b6-4633-acf4-1565b864c0e6", UUID: "b736baf1-cdb4-4535-beba-ddaaa30ad7b7"},
 	{Name: "HASH-B", TypeGUID: "77ff5f63-e7b6-4633-acf4-1565b864c0e6", UUID: "35bdf78b-c453-4661-98e6-f834f534ef5b"},
 }

@@ -21,13 +21,49 @@ pub fn is_azl3() -> Result<bool, Error> {
 }
 
 /// Represents the contents of the /etc/os-release file.
+///
+/// See <https://www.freedesktop.org/software/systemd/man/latest/os-release.html>
+/// for the full specification.
 #[derive(Debug, Default, Clone, Eq, PartialEq)]
 pub struct OsRelease {
-    pub id: Option<String>,
+    // General information identifying the operating system.
     pub name: Option<String>,
+    pub id: Option<String>,
+    pub id_like: Option<String>,
+    pub pretty_name: Option<String>,
+    pub cpe_name: Option<String>,
+    pub variant: Option<String>,
+    pub variant_id: Option<String>,
+
+    // Information about the version of the operating system.
     pub version: Option<String>,
     pub version_id: Option<String>,
-    pub pretty_name: Option<String>,
+    pub version_codename: Option<String>,
+    pub build_id: Option<String>,
+    pub image_id: Option<String>,
+    pub image_version: Option<String>,
+    pub release_type: Option<String>,
+
+    // Presentation information and links.
+    pub home_url: Option<String>,
+    pub documentation_url: Option<String>,
+    pub support_url: Option<String>,
+    pub bug_report_url: Option<String>,
+    pub privacy_policy_url: Option<String>,
+    pub support_end: Option<String>,
+    pub logo: Option<String>,
+    pub ansi_color: Option<String>,
+    pub ansi_color_reverse: Option<String>,
+    pub vendor_name: Option<String>,
+    pub vendor_url: Option<String>,
+    pub experiment: Option<String>,
+    pub experiment_url: Option<String>,
+
+    // Distribution-level defaults and metadata.
+    pub default_hostname: Option<String>,
+    pub architecture: Option<String>,
+    pub sysext_level: Option<String>,
+    pub confext_level: Option<String>,
 }
 
 impl OsRelease {
@@ -95,11 +131,37 @@ impl OsRelease {
             };
 
             match key {
-                "ID" => os_release.id = value(),
                 "NAME" => os_release.name = value(),
+                "ID" => os_release.id = value(),
+                "ID_LIKE" => os_release.id_like = value(),
+                "PRETTY_NAME" => os_release.pretty_name = value(),
+                "CPE_NAME" => os_release.cpe_name = value(),
+                "VARIANT" => os_release.variant = value(),
+                "VARIANT_ID" => os_release.variant_id = value(),
                 "VERSION" => os_release.version = value(),
                 "VERSION_ID" => os_release.version_id = value(),
-                "PRETTY_NAME" => os_release.pretty_name = value(),
+                "VERSION_CODENAME" => os_release.version_codename = value(),
+                "BUILD_ID" => os_release.build_id = value(),
+                "IMAGE_ID" => os_release.image_id = value(),
+                "IMAGE_VERSION" => os_release.image_version = value(),
+                "RELEASE_TYPE" => os_release.release_type = value(),
+                "HOME_URL" => os_release.home_url = value(),
+                "DOCUMENTATION_URL" => os_release.documentation_url = value(),
+                "SUPPORT_URL" => os_release.support_url = value(),
+                "BUG_REPORT_URL" => os_release.bug_report_url = value(),
+                "PRIVACY_POLICY_URL" => os_release.privacy_policy_url = value(),
+                "SUPPORT_END" => os_release.support_end = value(),
+                "LOGO" => os_release.logo = value(),
+                "ANSI_COLOR" => os_release.ansi_color = value(),
+                "ANSI_COLOR_REVERSE" => os_release.ansi_color_reverse = value(),
+                "VENDOR_NAME" => os_release.vendor_name = value(),
+                "VENDOR_URL" => os_release.vendor_url = value(),
+                "EXPERIMENT" => os_release.experiment = value(),
+                "EXPERIMENT_URL" => os_release.experiment_url = value(),
+                "DEFAULT_HOSTNAME" => os_release.default_hostname = value(),
+                "ARCHITECTURE" => os_release.architecture = value(),
+                "SYSEXT_LEVEL" => os_release.sysext_level = value(),
+                "CONFEXT_LEVEL" => os_release.confext_level = value(),
                 _ => {}
             }
         }
@@ -119,10 +181,16 @@ impl<'de> Deserialize<'de> for OsRelease {
 
 /// Represents the contents of the extension-release file of a sysext or
 /// confext.
+///
+/// See <https://www.freedesktop.org/software/systemd/man/latest/os-release.html>
+/// for the full specification.
 #[derive(Debug, Default, Clone, Eq, PartialEq)]
 pub struct ExtensionRelease {
     pub sysext_id: Option<String>,
     pub confext_id: Option<String>,
+    pub sysext_scope: Option<String>,
+    pub confext_scope: Option<String>,
+    pub portable_prefixes: Option<String>,
     pub os_release: OsRelease,
 }
 
@@ -138,6 +206,9 @@ impl ExtensionRelease {
     fn parse(data: &str) -> Self {
         let mut sysext_id = None;
         let mut confext_id = None;
+        let mut sysext_scope = None;
+        let mut confext_scope = None;
+        let mut portable_prefixes = None;
 
         for line in data.lines() {
             if line.is_empty() || line.trim_start().starts_with('#') {
@@ -163,6 +234,9 @@ impl ExtensionRelease {
             match key {
                 "SYSEXT_ID" => sysext_id = value(),
                 "CONFEXT_ID" => confext_id = value(),
+                "SYSEXT_SCOPE" => sysext_scope = value(),
+                "CONFEXT_SCOPE" => confext_scope = value(),
+                "PORTABLE_PREFIXES" => portable_prefixes = value(),
                 _ => {}
             }
         }
@@ -170,6 +244,9 @@ impl ExtensionRelease {
         Self {
             sysext_id,
             confext_id,
+            sysext_scope,
+            confext_scope,
+            portable_prefixes,
             os_release: OsRelease::parse(data),
         }
     }
@@ -290,5 +367,119 @@ mod tests {
         assert_eq!(extension_release.sysext_id, Some("docker".to_string()));
         assert_eq!(extension_release.confext_id, None);
         assert_eq!(extension_release.os_release.id, Some("_any".to_string()));
+    }
+
+    #[test]
+    fn test_parse_all_fields() {
+        let data = indoc::indoc! {
+            r#"
+            NAME="Microsoft Azure Linux"
+            ID=azurelinux
+            ID_LIKE="fedora"
+            PRETTY_NAME="Microsoft Azure Linux 3.0 (Workstation Edition)"
+            CPE_NAME="cpe:/o:microsoft:azurelinux:3"
+            VARIANT="Workstation Edition"
+            VARIANT_ID=workstation
+            VERSION="3.0.20240609 (Workstation Edition)"
+            VERSION_ID="3.0"
+            VERSION_CODENAME=azl3
+            BUILD_ID="2024-06-09.1"
+            IMAGE_ID=azurelinux-workstation
+            IMAGE_VERSION=3.0.1
+            RELEASE_TYPE=stable
+            HOME_URL="https://aka.ms/azurelinux"
+            DOCUMENTATION_URL="https://learn.microsoft.com/azure/azure-linux/"
+            SUPPORT_URL="https://aka.ms/azurelinux"
+            BUG_REPORT_URL="https://aka.ms/azurelinux"
+            PRIVACY_POLICY_URL="https://privacy.microsoft.com/"
+            SUPPORT_END=2027-06-09
+            LOGO=azurelinux-logo
+            ANSI_COLOR="1;34"
+            ANSI_COLOR_REVERSE="0;48;2;0;120;212"
+            VENDOR_NAME="Microsoft"
+            VENDOR_URL="https://microsoft.com/"
+            EXPERIMENT="Switch to DNF5"
+            EXPERIMENT_URL="https://aka.ms/azurelinux/dnf5"
+            DEFAULT_HOSTNAME=azurelinux
+            ARCHITECTURE=x86-64
+            SYSEXT_LEVEL=2
+            CONFEXT_LEVEL=3
+            "#,
+        };
+
+        let os_release = OsRelease::parse(data);
+
+        assert_eq!(os_release.name, Some("Microsoft Azure Linux".to_string()));
+        assert_eq!(os_release.id, Some("azurelinux".to_string()));
+        assert_eq!(os_release.id_like, Some("fedora".to_string()));
+        assert_eq!(
+            os_release.pretty_name,
+            Some("Microsoft Azure Linux 3.0 (Workstation Edition)".to_string())
+        );
+        assert_eq!(
+            os_release.cpe_name,
+            Some("cpe:/o:microsoft:azurelinux:3".to_string())
+        );
+        assert_eq!(os_release.variant, Some("Workstation Edition".to_string()));
+        assert_eq!(os_release.variant_id, Some("workstation".to_string()));
+        assert_eq!(
+            os_release.version,
+            Some("3.0.20240609 (Workstation Edition)".to_string())
+        );
+        assert_eq!(os_release.version_id, Some("3.0".to_string()));
+        assert_eq!(os_release.version_codename, Some("azl3".to_string()));
+        assert_eq!(os_release.build_id, Some("2024-06-09.1".to_string()));
+        assert_eq!(
+            os_release.image_id,
+            Some("azurelinux-workstation".to_string())
+        );
+        assert_eq!(os_release.image_version, Some("3.0.1".to_string()));
+        assert_eq!(os_release.release_type, Some("stable".to_string()));
+        assert_eq!(
+            os_release.home_url,
+            Some("https://aka.ms/azurelinux".to_string())
+        );
+        assert_eq!(
+            os_release.documentation_url,
+            Some("https://learn.microsoft.com/azure/azure-linux/".to_string())
+        );
+        assert_eq!(
+            os_release.support_url,
+            Some("https://aka.ms/azurelinux".to_string())
+        );
+        assert_eq!(
+            os_release.bug_report_url,
+            Some("https://aka.ms/azurelinux".to_string())
+        );
+        assert_eq!(
+            os_release.privacy_policy_url,
+            Some("https://privacy.microsoft.com/".to_string())
+        );
+        assert_eq!(os_release.support_end, Some("2027-06-09".to_string()));
+        assert_eq!(os_release.logo, Some("azurelinux-logo".to_string()));
+        assert_eq!(os_release.ansi_color, Some("1;34".to_string()));
+        assert_eq!(
+            os_release.ansi_color_reverse,
+            Some("0;48;2;0;120;212".to_string())
+        );
+        assert_eq!(os_release.vendor_name, Some("Microsoft".to_string()));
+        assert_eq!(
+            os_release.vendor_url,
+            Some("https://microsoft.com/".to_string())
+        );
+        assert_eq!(os_release.experiment, Some("Switch to DNF5".to_string()));
+        assert_eq!(
+            os_release.experiment_url,
+            Some("https://aka.ms/azurelinux/dnf5".to_string())
+        );
+        assert_eq!(os_release.default_hostname, Some("azurelinux".to_string()));
+        assert_eq!(os_release.architecture, Some("x86-64".to_string()));
+        assert_eq!(os_release.sysext_level, Some("2".to_string()));
+        assert_eq!(os_release.confext_level, Some("3".to_string()));
+
+        assert_eq!(
+            os_release.get_distro(),
+            Distro::AzureLinux(AzureLinuxRelease::AzL3)
+        );
     }
 }
