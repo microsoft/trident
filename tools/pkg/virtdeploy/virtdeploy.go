@@ -1,8 +1,18 @@
 package virtdeploy
 
-import "fmt"
+import (
+	"fmt"
+	"runtime"
+)
 
 func CreateResources(config VirtDeployConfig) (*VirtDeployStatus, error) {
+	// Initialize VM architecture to host architecture if not set
+	for i := range config.VMs {
+		if config.VMs[i].Arch == "" {
+			config.VMs[i].Arch = runtime.GOARCH
+		}
+	}
+
 	err := config.validate()
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize config: %w", err)

@@ -23,6 +23,9 @@ type VirtDeployConfig struct {
 
 	// List of VMs to create
 	VMs []VirtDeployVM
+
+	// Start the VMs after creation
+	StartVMs bool
 }
 
 func (c VirtDeployConfig) validate() error {
@@ -74,6 +77,12 @@ type VirtDeployVM struct {
 	nvramFile string
 	nvramPath string
 
+	// Ignition config file volume path
+	ignitionVolume string
+
+	// Network name to attach the VM to
+	networkName string
+
 	// Final domain definition at creation time
 	domainDefinition *libvirtxml.Domain
 
@@ -102,7 +111,11 @@ type VirtDeployVM struct {
 	EmulatedTPM bool
 
 	// Architecture of the VM (amd64 or arm64)
+	// Defaults to the architecture of the host if not specified.
 	Arch string
+
+	// Ignition config file to pass to the VM (for ACL)
+	IgnitionConfigPath string
 }
 
 func (vm VirtDeployVM) validate() error {
@@ -124,6 +137,31 @@ func (vm VirtDeployVM) validate() error {
 	if vm.OsDiskPath != "" {
 		if _, err := os.Stat(vm.OsDiskPath); err != nil {
 			return fmt.Errorf("OS disk path is invalid: %w", err)
+		}
+	}
+
+	if vm.CloudInit != nil {
+		if vm.CloudInit.Userdata == "" {
+			return fmt.Errorf("cloud-init user file path must be specified if cloud-init config is provided")
+		}
+		if vm.CloudInit.Metadata == "" {
+			return fmt.Errorf("cloud-init metadata file path must be specified if cloud-init config is provided")
+		}
+		if _, err := os.Stat(vm.CloudInit.Userdata); err != nil {
+			return fmt.Errorf("cloud-init user file path is invalid: %w", err)
+		}
+		if _, err := os.Stat(vm.CloudInit.Metadata); err != nil {
+			return fmt.Errorf("cloud-init metadata file path is invalid: %w", err)
+		}
+	}
+
+	if vm.Arch != "amd64" && vm.Arch != "arm64" {
+		return fmt.Errorf("unsupported architecture '%s'", vm.Arch)
+	}
+
+	if vm.IgnitionConfigPath != "" {
+		if _, err := os.Stat(vm.IgnitionConfigPath); err != nil {
+			return fmt.Errorf("ignition config path is invalid: %w", err)
 		}
 	}
 
