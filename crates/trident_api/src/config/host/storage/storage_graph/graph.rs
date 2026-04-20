@@ -175,11 +175,17 @@ impl StorageGraph {
         let (idx, _) = self.node_by_id(node_id)?;
         // Do a DFS starting on the node to check if it, or any of its
         // dependencies, are A/B volumes.
-        Some(
-            Dfs::new(&self.inner, idx)
-                .iter(&self.inner)
-                .any(|idx| self.inner[idx].device_kind() == BlkDevKind::ABVolume),
-        )
+        Some(self.has_ab_capabilities_node(idx))
+    }
+
+    /// Returns whether the give node index is an A/B volume, or is on top of an
+    /// A/B volume, meaning that it is capable of A/B updates.
+    fn has_ab_capabilities_node(&self, node_idx: NodeIndex) -> bool {
+        // Do a DFS starting on the node to check if it, or any of its
+        // dependencies, are A/B volumes.
+        Dfs::new(&self.inner, node_idx)
+            .iter(&self.inner)
+            .any(|idx| self.inner[idx].device_kind() == BlkDevKind::ABVolume)
     }
 
     /// Returns the estimated storage size of a block device, when possible.
@@ -227,6 +233,26 @@ impl StorageGraph {
     ) -> Option<&VerityDevice> {
         let (fs_idx, _) = self.filesystem_node_by_mount_point(mount_path)?;
         self.backing_verity_device(fs_idx).map(|(_, dev)| dev)
+    }
+
+    /// TODO: UNIT TEST
+    /// Returns whether the root filesystem is on an A/B volume.
+    pub fn root_fs_is_ab(&self) -> bool {
+        let Some((rootfs_idx, _)) = self.root_fs_node() else {
+            return false;
+        };
+
+        self.has_ab_capabilities_node(rootfs_idx)
+    }
+
+    /// TODO: UNIT TEST
+    /// Returns whether the usr filesystem is on an A/B volume.
+    pub fn usr_fs_is_ab(&self) -> bool {
+        let Some((usrfs_idx, _)) = self.filesystem_node_by_mount_point(USR_MOUNT_POINT_PATH) else {
+            return false;
+        };
+
+        self.has_ab_capabilities_node(usrfs_idx)
     }
 }
 
