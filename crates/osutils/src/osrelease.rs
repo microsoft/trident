@@ -231,6 +231,12 @@ impl<'de> Deserialize<'de> for OsRelease {
     }
 }
 
+impl Default for &OsRelease {
+    fn default() -> Self {
+        &OsRelease::EMPTY
+    }
+}
+
 /// Represents the contents of the extension-release file of a sysext or
 /// confext.
 ///
