@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
 
+use osutils::osrelease::OsRelease;
 use sysdefs::{
     arch::SystemArchitecture, filesystems::RealFilesystemType, osuuid::OsUuid,
     partition_types::DiscoverablePartitionType,
@@ -262,6 +263,15 @@ impl OsImage {
             }),
             #[cfg(test)]
             OsImageInner::Mock(_mock) => None,
+        }
+    }
+
+    /// Retrieves os-release data from the image.
+    pub(crate) fn os_release(&self) -> &OsRelease {
+        match &self.0 {
+            OsImageInner::Cosi(cosi) => &cosi.metadata.os_release,
+            #[cfg(test)]
+            OsImageInner::Mock(mock) => &mock.os_release,
         }
     }
 }
