@@ -158,9 +158,24 @@ impl OsRelease {
         }
     }
 
-    // Ensure that the host OsRelease aligns to a COSI file.
-    pub fn ensure_host_alignment(cosi: &OsRelease) -> Result<(), Error> {
-        OsRelease::read()?.ensure_osrelease_alignment(cosi)
+    /// Ensure that the host OsRelease aligns to a COSI file.
+    pub fn ensure_matching_distro(host: &OsRelease, cosi: &OsRelease) -> Result<(), Error> {
+        // Ensure that the os_releases ids align
+        ensure!(
+            host.id == cosi.id,
+            "Mismatched OS release: host = {:?}, cosi = {:?}",
+            host.id.as_deref().unwrap_or("(blank)"),
+            cosi.id.as_deref().unwrap_or("(blank)"),
+        );
+
+        // Ensure that the os_releases variant ids align
+        ensure!(
+            host.variant_id == cosi.variant_id,
+            "Mismatched OS release variant: host = {:?}, cosi = {:?}",
+            host.variant_id.as_deref().unwrap_or("(blank)"),
+            cosi.variant_id.as_deref().unwrap_or("(blank)"),
+        );
+        Ok(())
     }
 
     /// Parses the input string into an OsRelease struct.
@@ -224,30 +239,6 @@ impl OsRelease {
         }
 
         os_release
-    }
-
-    // Ensure that the host OsRelease aligns to a COSI file.
-    fn ensure_osrelease_alignment(&self, other: &OsRelease) -> Result<(), Error> {
-        // Ensure that the os_releases ids align
-        let id = self.id.clone().unwrap_or("None".to_string());
-        let other_id = other.id.clone().unwrap_or("None".to_string());
-        ensure!(
-            id == other_id,
-            "Mismatched OS release: expected = {:?}, actual = {:?}",
-            id,
-            other_id
-        );
-
-        // Ensure that the os_releases variant ids align
-        let variant_id = self.variant_id.clone().unwrap_or("None".to_string());
-        let other_variant_id = other.variant_id.clone().unwrap_or("None".to_string());
-        ensure!(
-            variant_id == other_variant_id,
-            "Mismatched OS release variant: expected = {:?}, actual = {:?}",
-            variant_id,
-            other_variant_id
-        );
-        Ok(())
     }
 }
 
@@ -635,14 +626,14 @@ mod tests {
             Some("azurelinux".to_string()),
             Some("azurecontainerlinux".to_string()),
         );
-        assert!(os_release1.ensure_osrelease_alignment(&os_release2).is_ok());
+        assert!(OsRelease::ensure_matching_distro(&os_release1, &os_release2).is_ok());
     }
 
     #[test]
     fn test_ensure_osrelease_alignment_matched_no_variant() {
         let os_release1 = create_osrelease(Some("azurelinux".to_string()), None);
         let os_release2 = create_osrelease(Some("azurelinux".to_string()), None);
-        assert!(os_release1.ensure_osrelease_alignment(&os_release2).is_ok());
+        assert!(OsRelease::ensure_matching_distro(&os_release1, &os_release2).is_ok());
     }
 
     #[test]
@@ -655,9 +646,7 @@ mod tests {
             Some("notmatching".to_string()),
             Some("azurecontainerlinux".to_string()),
         );
-        assert!(os_release1
-            .ensure_osrelease_alignment(&os_release2)
-            .is_err());
+        assert!(OsRelease::ensure_matching_distro(&os_release1, &os_release2).is_err());
     }
 
     #[test]
@@ -670,8 +659,6 @@ mod tests {
             Some("azurelinux".to_string()),
             Some("notmatching".to_string()),
         );
-        assert!(os_release1
-            .ensure_osrelease_alignment(&os_release2)
-            .is_err());
+        assert!(OsRelease::ensure_matching_distro(&os_release1, &os_release2).is_err());
     }
 }

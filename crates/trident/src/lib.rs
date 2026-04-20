@@ -619,7 +619,8 @@ impl Trident {
             let image_hash = Some(image.metadata_sha384());
 
             // Ensure that the cosi and host os_release align
-            OsRelease::ensure_host_alignment(image.os_release())
+            let host_os_release = OsRelease::read().unwrap_or_default();
+            OsRelease::ensure_matching_distro(&host_os_release, image.os_release())
                 .structured(InvalidInputError::MismatchedOsRelease)
                 .message("Cannot run A/B Update due to OS release mismatch")?;
 
