@@ -540,4 +540,51 @@ mod tests {
             Distro::AzureLinux(AzureLinuxRelease::AzL3)
         );
     }
+
+    #[test]
+    fn test_get_distro_azure_container_linux() {
+        let data = indoc::indoc! {
+            r#"
+            NAME="Microsoft Azure Linux"
+            VERSION="3.0.20240609"
+            ID=azurelinux
+            VERSION_ID="3.0"
+            VARIANT_ID=azurecontainerlinux
+            PRETTY_NAME="Microsoft Azure Linux 3.0"
+            "#,
+        };
+
+        let os_release = OsRelease::parse(data);
+        assert_eq!(os_release.get_distro(), Distro::AzureContainerLinux);
+    }
+
+    #[test]
+    fn test_get_distro_ubuntu() {
+        let data = indoc::indoc! {
+            r#"
+            NAME="Ubuntu"
+            VERSION="22.04.3 LTS (Jammy Jellyfish)"
+            ID=ubuntu
+            VERSION_ID="22.04"
+            PRETTY_NAME="Ubuntu 22.04.3 LTS"
+            "#,
+        };
+
+        let os_release = OsRelease::parse(data);
+        assert_eq!(os_release.get_distro(), Distro::Ubuntu);
+    }
+
+    #[test]
+    fn test_get_distro_unknown() {
+        let data = indoc::indoc! {
+            r#"
+            NAME="Fedora Linux"
+            ID=fedora
+            VERSION_ID="39"
+            "#,
+        };
+
+        let os_release = OsRelease::parse(data);
+        assert_eq!(os_release.get_distro(), Distro::Other);
+    }
 }
