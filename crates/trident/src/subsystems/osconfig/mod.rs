@@ -257,9 +257,11 @@ impl OsConfigSubsystem {
             os_modifier_config.selinux = Some(ctx.spec.os.selinux.clone());
         }
 
-        os_modifier_config
-            .call_os_modifier(Path::new(OS_MODIFIER_NEWROOT_PATH))
-            .structured(ServicingError::RunOsModifier)
+        // os_modifier_config
+        //     .call_os_modifier(Path::new(OS_MODIFIER_NEWROOT_PATH))
+        //     .structured(ServicingError::RunOsModifier)
+        warn!("ACL: Skipping call to OS Modifier for reboot configuration");
+        Ok(())
     }
 
     /// Build OS Modifier configuration and call OS Modifier on runtime update.

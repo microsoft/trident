@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::{bail, ensure, Context, Error};
-use log::{debug, trace};
+use log::{debug, trace, warn};
 use reqwest::Url;
 use tempfile::{NamedTempFile, TempDir};
 
@@ -621,17 +621,22 @@ fn generate_boot_filepaths(temp_mount_dir: &Path) -> Result<Vec<PathBuf>, Error>
     let boot_grub2_grub_path = Path::new(temp_mount_dir).join(GRUB2_CONFIG_RELATIVE_PATH);
 
     let selected_grub_config_path = if efi_boot_grub_path.exists() && efi_boot_grub_path.is_file() {
-        efi_boot_grub_path
+        Some(efi_boot_grub_path)
     } else if boot_grub2_grub_path.exists() && boot_grub2_grub_path.is_file() {
-        boot_grub2_grub_path
+        Some(boot_grub2_grub_path)
     } else {
-        bail!("Failed to find {GRUB2_CONFIG_FILENAME}");
+        // bail!("Failed to find {GRUB2_CONFIG_FILENAME}");
+        // TODO: check if UKI, if so None, otherwise error.
+        warn!("ACL: Failed to find {GRUB2_CONFIG_FILENAME}");
+        None
     };
-    debug!(
-        "Using GRUB configuration file '{GRUB2_CONFIG_FILENAME}' from '{}'",
-        selected_grub_config_path.display()
-    );
-    paths.push(selected_grub_config_path);
+    if let Some(selected_grub_config_path) = selected_grub_config_path {
+        debug!(
+            "Using GRUB configuration file '{GRUB2_CONFIG_FILENAME}' from '{}'",
+            selected_grub_config_path.display()
+        );
+        paths.push(selected_grub_config_path);
+    }
 
     // Check if the grub-noprefix EFI executable exists; otherwise, use the standard
     // grub EFI executable (e.g., grubx64.efi). For example, on AMD64 systems, with

@@ -619,6 +619,11 @@ fn validate_ab_active_volume_internal(
     } else {
         debug!("Root is not on verity");
 
+        if ctx.image_distro().is_acl() {
+            warn!("ACL SHORTCUT: SKIPPING A/B active volume validation for ACL image");
+            return Ok(());
+        }
+
         // Fetch the A/B volume pair for the root device
         let volume_pair = ctx.get_ab_volume_pair(&root_device_id).structured(
             ServicingError::GetRootAbVolumePair {
