@@ -438,6 +438,7 @@ mod tests {
             version: Some("os-version".into()),
             version_id: Some("os-version-id".into()),
             pretty_name: Some("pretty-name-1234".into()),
+            ..Default::default()
         };
 
         let mock = OsImage::mock(MockOsImage {

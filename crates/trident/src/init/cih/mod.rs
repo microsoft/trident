@@ -1,7 +1,6 @@
 use std::{
     collections::{BTreeMap, HashMap},
     path::{Path, PathBuf},
-    str::FromStr,
 };
 
 use anyhow::{anyhow, Context, Error};
@@ -27,8 +26,8 @@ use trident_api::{
 /// Returns whether the host is running the CIH image.
 pub fn is_cih() -> Result<bool, Error> {
     let os_release = OsRelease::read().context("Failed to read OS release information")?;
-    // TODO: update
-    Ok(os_release.name == Some("CIH".to_string()))
+
+    Ok(os_release.variant_id == Some("azurecontainerlinux".to_string()))
 }
 
 /// Gathers information about the host's disk and partitions, framed by
@@ -76,18 +75,14 @@ fn inner_initial_host_status(
             .context("Root disk has invalid ptuuid")?,
     );
 
-    // Define list of expected partitions based on CIH layout. The Partition field
-    // will be filled in with the current Host disk information.
-    let usr_uuid = Uuid::from_str("5dfbf5f4-2848-4bac-aa5e-0d9a20b745a6")
-        .context("Failed to parse user-verity data Partition UUID")?;
     let mut expected_partition_info: Vec<(&str, PartitionType, Option<Partition>)> = vec![
         ("efi-system", PartitionType::Esp, None),
         // Note: this seems to be user-a currently
-        ("usr-a", PartitionType::Unknown(usr_uuid), None),
+        ("usr-a", PartitionType::Usr, None),
         // Note: this doesn't seem to be present in images today
         ("hash-a", PartitionType::UsrVerity, None),
         // Note: this seems to be user-b currently
-        ("usr-b", PartitionType::Unknown(usr_uuid), None),
+        ("usr-b", PartitionType::Usr, None),
         // Note: this doesn't seem to be present in images today
         ("hash-b", PartitionType::UsrVerity, None),
         // Note: this doesn't seem to be present in images today
@@ -193,7 +188,7 @@ fn inner_initial_host_status(
                         is_esp: true,
                     },
                     FileSystem {
-                        device_id: Some("usr-a".to_string()),
+                        device_id: Some("usr".to_string()),
                         mount_point: Some(MountPoint {
                             path: PathBuf::from("/usr"),
                             options: MountOptions("defaults,ro".to_string()),
@@ -257,6 +252,9 @@ fn inner_initial_host_status(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::str::FromStr;
+
     use osutils::{
         lsblk::{BlockDevice, BlockDeviceType, PartitionTableType},
         sfdisk::{SfDisk, SfDiskLabel, SfDiskUnit, SfPartition},
@@ -283,7 +281,7 @@ mod tests {
             partition_type,
             id: OsUuid::from(uuid),
             name: Some(label),
-            size: 0,
+            size: 4096,
             parent: path.to_path_buf(),
             number,
         }
@@ -414,6 +412,9 @@ mod tests {
         let blkdevice = create_blk_device();
         // Run
         let init_host_status = inner_initial_host_status(&sfdisk, &blkdevice).unwrap();
+
+        init_host_status.spec.validate().unwrap();
+
         assert_eq!(
             init_host_status.spec.storage.disks[0].partitions[0].label,
             Some("efi-system".to_string())
