@@ -8,6 +8,7 @@ use anyhow::{bail, Context, Error};
 use filesystem::FileSystemData;
 use log::{debug, trace};
 
+use osutils::osrelease::{Distro, OsRelease};
 use trident_api::{
     config::{HostConfiguration, Partition, VerityDevice},
     constants::{
@@ -413,6 +414,20 @@ impl EngineContext {
                     .unwrap_or(STREAM_SLOW_SPEED_REPORTING_INTERVAL_SECONDS_DEFAULT),
             ),
         ))
+    }
+
+    /// Retrieves os-release data from the image.
+    pub(crate) fn image_os_release(&self) -> &OsRelease {
+        self.image
+            .as_ref()
+            .map(|img| img.os_release())
+            .unwrap_or_default()
+    }
+
+    /// Retrieves the distribution of the OS image.
+    #[expect(dead_code)]
+    pub(crate) fn image_distro(&self) -> Distro {
+        self.image_os_release().get_distro()
     }
 }
 

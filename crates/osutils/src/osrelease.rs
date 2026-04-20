@@ -10,6 +10,17 @@ use crate::path;
 /// Absolute path to the /etc/os-release file.
 pub const OS_RELEASE_PATH: &str = "/etc/os-release";
 
+// Distro consts
+
+/// Azure Linux distro ID
+pub const AZURE_LINUX_DISTRO_ID: &str = "azurelinux";
+/// CBL-Mariner distro ID
+pub const CBL_MARINER_DISTRO_ID: &str = "mariner";
+/// Ubuntu distro ID
+pub const UBUNTU_DISTRO_ID: &str = "ubuntu";
+/// Azure Container Linux variant ID
+pub const AZURE_CONTAINER_LINUX_VARIANT_ID: &str = "azurecontainerlinux";
+
 /// Returns whether the host is running Azure Linux 2.
 pub fn is_azl2() -> Result<bool, Error> {
     Ok(OsRelease::read()?.get_distro().is_azl2())
@@ -67,6 +78,41 @@ pub struct OsRelease {
 }
 
 impl OsRelease {
+    /// Represents an empty OsRelease, where all fields are set to None.
+    pub const EMPTY: Self = Self {
+        name: None,
+        id: None,
+        id_like: None,
+        pretty_name: None,
+        cpe_name: None,
+        variant: None,
+        variant_id: None,
+        version: None,
+        version_id: None,
+        version_codename: None,
+        build_id: None,
+        image_id: None,
+        image_version: None,
+        release_type: None,
+        home_url: None,
+        documentation_url: None,
+        support_url: None,
+        bug_report_url: None,
+        privacy_policy_url: None,
+        support_end: None,
+        logo: None,
+        ansi_color: None,
+        ansi_color_reverse: None,
+        vendor_name: None,
+        vendor_url: None,
+        experiment: None,
+        experiment_url: None,
+        default_hostname: None,
+        architecture: None,
+        sysext_level: None,
+        confext_level: None,
+    };
+
     /// Reads the contents of /etc/os-release and parses it into an OsRelease struct.
     pub fn read() -> Result<Self, Error> {
         Ok(Self::parse(
@@ -87,7 +133,12 @@ impl OsRelease {
     /// Returns the distribution of the host.
     pub fn get_distro(&self) -> Distro {
         match self.id.as_deref() {
-            Some("mariner") | Some("azurelinux") => Distro::AzureLinux(
+            Some(AZURE_LINUX_DISTRO_ID)
+                if self.variant_id.as_deref() == Some(AZURE_CONTAINER_LINUX_VARIANT_ID) =>
+            {
+                Distro::AzureContainerLinux
+            }
+            Some(CBL_MARINER_DISTRO_ID) | Some(AZURE_LINUX_DISTRO_ID) => Distro::AzureLinux(
                 self.version_id
                     .as_deref()
                     .map(|v| {
@@ -102,6 +153,7 @@ impl OsRelease {
                     })
                     .unwrap_or_default(),
             ),
+            Some(UBUNTU_DISTRO_ID) => Distro::Ubuntu,
             _ => Distro::Other,
         }
     }
@@ -176,6 +228,12 @@ impl<'de> Deserialize<'de> for OsRelease {
         D: Deserializer<'de>,
     {
         Ok(OsRelease::parse(&String::deserialize(deserializer)?))
+    }
+}
+
+impl Default for &OsRelease {
+    fn default() -> Self {
+        &OsRelease::EMPTY
     }
 }
 
@@ -256,6 +314,8 @@ impl ExtensionRelease {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Distro {
     AzureLinux(AzureLinuxRelease),
+    AzureContainerLinux,
+    Ubuntu,
     Other,
 }
 
@@ -266,6 +326,10 @@ impl Distro {
 
     pub fn is_azl3(&self) -> bool {
         self == &Distro::AzureLinux(AzureLinuxRelease::AzL3)
+    }
+
+    pub fn is_acl(&self) -> bool {
+        self == &Distro::AzureContainerLinux
     }
 }
 
