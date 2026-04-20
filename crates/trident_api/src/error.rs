@@ -268,6 +268,9 @@ pub enum InvalidInputError {
         os_img_fs_type: String,
     },
 
+    #[error("Host OS release does not match COSI OS release")]
+    MismatchedOsRelease,
+
     #[error("An OS image must be provided.")]
     MissingOsImage,
 
