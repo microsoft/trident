@@ -421,7 +421,7 @@ impl EngineContext {
         self.image
             .as_ref()
             .map(|img| img.os_release())
-            .unwrap_or_default()
+            .unwrap_or(&OsRelease::EMPTY)
     }
 
     /// Retrieves the distribution of the OS image.
