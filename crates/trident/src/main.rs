@@ -163,14 +163,16 @@ fn run_trident(
                             multiboot,
                             None,
                         )
-                        .map(|(exit_kind, _image_hash)| exit_kind),
+                        .map(|(exit_kind, _image_hash, _servicing_type)| exit_kind),
                     Commands::Update {
                         ref allowed_operations,
                         ..
                     } => trident
                         .update(&mut datastore, cli::to_operations(allowed_operations))
-                        .map(|(exit_kind, _image_hash)| exit_kind),
-                    Commands::Commit { .. } => trident.commit(&mut datastore),
+                        .map(|(exit_kind, _image_hash, _servicing_type)| exit_kind),
+                    Commands::Commit { .. } => trident
+                        .commit(&mut datastore)
+                        .map(|(exit_kind, _servicing_type)| exit_kind),
                     Commands::Rollback {
                         runtime,
                         ab,

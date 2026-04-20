@@ -58,7 +58,9 @@ impl InstallService for TridentServer {
                 let mut datastore = DataStore::open_or_create(&data_store_path)
                     .message("Failed to open datastore")?;
 
-                trident.install(&mut datastore, Operations::all(), false, None)
+                trident
+                    .install(&mut datastore, Operations::all(), false, None)
+                    .map(|(k, h, st)| (k, h, Some(st.into())))
             },
         )
     }
@@ -92,7 +94,9 @@ impl InstallService for TridentServer {
             let mut datastore =
                 DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
 
-            trident.install(&mut datastore, Operation::Stage.into(), false, None)
+            trident
+                .install(&mut datastore, Operation::Stage.into(), false, None)
+                .map(|(k, h, st)| (k, h, Some(st.into())))
         })
     }
 
@@ -117,7 +121,9 @@ impl InstallService for TridentServer {
                 let mut datastore = DataStore::open_or_create(&data_store_path)
                     .message("Failed to open datastore")?;
 
-                trident.install(&mut datastore, Operation::Finalize.into(), false, None)
+                trident
+                    .install(&mut datastore, Operation::Finalize.into(), false, None)
+                    .map(|(k, h, st)| (k, h, Some(st.into())))
             },
         )
     }

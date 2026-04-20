@@ -25,7 +25,7 @@ pub(crate) fn update(
     state: &mut DataStore,
     allowed_operations: &Operations,
     image: OsImage,
-) -> Result<ExitKind, TridentError> {
+) -> Result<(ExitKind, ServicingType), TridentError> {
     info!("Starting update");
     let mut subsystems = SUBSYSTEMS.lock().unwrap();
 
@@ -73,7 +73,7 @@ pub(crate) fn update(
     match servicing_type {
         ServicingType::NoActiveServicing => {
             info!("No update servicing required");
-            return Ok(ExitKind::Done);
+            return Ok((ExitKind::Done, ServicingType::NoActiveServicing));
         }
         ServicingType::RuntimeUpdate => {}
         ServicingType::AbUpdate => {
@@ -127,10 +127,11 @@ pub(crate) fn update(
                     None,
                     state.host_status().servicing_state,
                 );
-                Ok(ExitKind::Done)
+                Ok((ExitKind::Done, ServicingType::AbUpdate))
             } else {
                 ab_update::finalize_update(state, Some(update_start_time))
                     .message("Failed to finalize A/B update")
+                    .map(|ek| (ek, ServicingType::AbUpdate))
             }
         }
         ServicingType::RuntimeUpdate => {
@@ -148,9 +149,10 @@ pub(crate) fn update(
                     None,
                     state.host_status().servicing_state,
                 );
-                Ok(ExitKind::Done)
+                Ok((ExitKind::Done, ServicingType::RuntimeUpdate))
             } else {
                 runtime_update::finalize_update(&mut subsystems, state, Some(update_start_time))
+                    .map(|ek| (ek, ServicingType::RuntimeUpdate))
             }
         }
         ServicingType::CleanInstall => Err(TridentError::new(
