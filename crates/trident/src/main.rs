@@ -143,10 +143,6 @@ fn run_trident(
                 )
                 .message("Failed to initialize Trident")?;
 
-                // After initialization, create a trace event for the purpose of
-                // measuring Trident reboot times
-                tracing::info!(metric_name = "trident_start");
-
                 let mut datastore = DataStore::open_or_create(agent_config.datastore_path())
                     .message("Failed to open datastore")?;
 

@@ -233,6 +233,8 @@ impl Trident {
             ));
         }
 
+        tracing::info!(metric_name = "trident_start");
+
         Ok(Self {
             host_config,
             orchestrator,
