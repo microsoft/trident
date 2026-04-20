@@ -33,10 +33,6 @@ require {
         type cgroup_t;
         type chfn_exec_t;
         type chkpwd_exec_t;
-        type chronyc_exec_t;
-        type chronyd_unit_t;
-        type chronyd_var_lib_t;
-        type chronyd_var_log_t;
 
         type container_conf_home_t;
         type container_unit_t;
@@ -101,8 +97,6 @@ require {
         type mount_exec_t;
         type mptctl_device_t;
         type net_conf_t;
-        type ntpd_exec_t;
-        type ntpd_unit_t;
         type oddjob_mkhomedir_exec_t;
         type power_unit_t;
         type proc_t;
@@ -293,10 +287,6 @@ allow trident_t bpf_t:dir search;
 allow trident_t cgroup_t:filesystem getattr;
 allow trident_t chfn_exec_t:file getattr;
 allow trident_t chkpwd_exec_t:file getattr;
-allow trident_t chronyc_exec_t:file getattr;
-allow trident_t chronyd_unit_t:file getattr;
-allow trident_t chronyd_var_lib_t:dir { getattr open read relabelto };
-allow trident_t chronyd_var_log_t:dir { getattr open read relabelto };
 allow trident_t container_conf_home_t:dir search; # Allow access to ~/.docker directory
 allow trident_t container_conf_home_t:file { open read }; # Allow access to ~/.docker/config.json
 allow trident_t container_unit_t:file getattr;
@@ -385,8 +375,6 @@ allow trident_t modules_object_t:file { getattr map open read relabelto setattr 
 allow trident_t mount_exec_t:file { execute execute_no_trans getattr map open read relabelto setattr unlink write };
 allow trident_t mptctl_device_t:chr_file getattr;
 allow trident_t net_conf_t:file { relabelto setattr unlink };
-allow trident_t ntpd_exec_t:file { execute getattr };
-allow trident_t ntpd_unit_t:file getattr;
 allow trident_t oddjob_mkhomedir_exec_t:file getattr;
 allow trident_t power_unit_t:file { getattr open read relabelto setattr unlink };
 allow trident_t proc_t:dir read;
@@ -608,9 +596,6 @@ userdom_relabelto_user_home_dirs(trident_t)
 # System Services and Daemons
 ###########################################
 bootloader_exec(trident_t)
-chronyd_exec(trident_t)
-chronyd_read_config(trident_t)
-chronyd_read_key_files(trident_t)
 clock_exec(trident_t)
 create_files_pattern(trident_t, cgroup_t, cgroup_t)
 cron_exec(trident_t)
