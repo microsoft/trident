@@ -130,7 +130,7 @@ impl OsRelease {
         ))
     }
 
-    /// Returns the distribution of the host.
+    /// Returns the distribution represented by this `OsRelease` instance.
     pub fn get_distro(&self) -> Distro {
         match self.id.as_deref() {
             Some(AZURE_LINUX_DISTRO_ID)
