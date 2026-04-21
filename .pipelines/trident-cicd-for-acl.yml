@@ -1,0 +1,86 @@
+parameters:
+  - name: micBranch
+    displayName: MIC Version (defaults to latest, specify feed version for release/preview, branch for dev)
+    type: string
+    default: "user/bfjelds/enable-acl"
+  - name: aclBranch
+    displayName: ACL Version (defaults to latest, specify feed version for release/preview, branch for dev)
+    type: string
+    default: "user/frhuelsz/ab-update-trident"
+  - name: tridentRpmBranch
+    displayName: Trident Version to build RPMs from (defaults to latest, specify feed version for release/preview, branch for dev)
+    type: string
+    default: "main"
+
+trigger: none
+
+variables:
+  # For pipelines that do not produce any production artifacts, disable CodeQL analysis
+  Codeql.Enabled: false
+
+extends:
+  template: templates/MockOB.yml
+  parameters:
+    stages:
+      - stage: Build
+        displayName: Build
+        jobs:
+          - job: Build
+            variables:
+              ob_outputDirectory: /tmp/artifacts
+              ob_artifactBaseName: acl-test
+            steps:
+              - checkout: self
+                path: s/trident-pipeline
+              - script: |
+                  set -eux
+                  git clone --branch ${{ variables.tridentRpmBranch }} https://github.com/microsoft/trident.git $(Pipeline.Workspace)/s/trident
+                displayName: Checkout trident (for building RPMs)
+              - script: |
+                  set -eux
+                  git clone --branch ${{ variables.aclBranch }} https://mariner-org@dev.azure.com/mariner-org/ACL/_git/acl-scripts $(Pipeline.Workspace)/s/acl-scripts
+                displayName: Checkout acl-scripts
+
+              - script: |
+                  set -eux
+                  # Build osmodifier artifact from desired branch
+                  sed -i 's|^ARG IMAGE_TOOLS_BRANCH=main|ARG IMAGE_TOOLS_BRANCH=${{ variables.micBranch }}|' packaging/docker/Dockerfile-osmodifier.azl3
+                  make artifacts/osmodifier
+                  # Build trident RPMs using osmodifier artifact
+                  make bin/trident-rpms.tar.gz
+                  mkdir -p ${{ variables.ob_outputDirectory }}
+                  cp -rf bin/RPMS ${{ variables.ob_outputDirectory }}
+                displayName: Build Trident RPMs
+                workingDirectory: $(Pipeline.Workspace)/s/trident
+
+              - script: |
+                  set -eux
+
+                  mkdir -p $(ob_outputDirectory)
+
+                  # generate test key
+                  ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa -q -N ""
+                  cp ~/.ssh/id_rsa* $(ob_outputDirectory)/.
+
+                  git clone --branch ${{ variables.aclBranch }} https://mariner-org@dev.azure.com/mariner-org/ACL/_git/acl-scripts $(Pipeline.Workspace)/s/acl-scripts
+                  ./acl/build_rpm_image.sh --hydrate-with-local=$(Pipeline.Workspace)/s/trident/bin/RPMS --rebuild
+                  ./acl/build_rpm_image.sh --board=amd64-usr --build-standalone-sysexts
+                  ./acl/build_rpm_image.sh --board=amd64-usr --build-vm-image
+                  cp $(Pipeline.Workspace)/s/acl-scripts/__build__/images/images/latest/* $(ob_outputDirectory)/
+                displayName: Checkout acl-scripts and build acl images
+                workingDirectory: $(Pipeline.Workspace)
+
+              - script: |
+                  set -eux
+
+                  sed -i s'|private_key="$(get_ssh_private_key)"|private_key="$HOME/.ssh/id_rsa"|' $(Pipeline.Workspace)/s/acl-scripts/acl/validate_qemu.sh
+                  sed -i s'|ssh_key_path=$(get_ssh_private_key)|ssh_key_path="$HOME/.ssh/id_rsa"|' $(Pipeline.Workspace)/s/acl-scripts/acl/validate_common.sh
+                  ./acl/build_rpm_image.sh --board=amd64-usr --use-test-image --start-vm --run-script "cat /etc/os-release"
+
+                  VM_IP=$(virsh domifaddr acl | grep "ipv4" | awk '{print $4}' | cut -d '/' -f1)
+                  set +eux
+                  echo "ACL VM IP: $VM_IP"
+                  echo "##vso[task.setvariable variable=VM_IP]$VM_IP"
+
+                displayName: Start acl vm and set IP address
+                workingDirectory: $(Pipeline.Workspace)/s/acl-scripts
