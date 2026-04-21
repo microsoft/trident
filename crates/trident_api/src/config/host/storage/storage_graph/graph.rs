@@ -228,6 +228,18 @@ impl StorageGraph {
         let (fs_idx, _) = self.filesystem_node_by_mount_point(mount_path)?;
         self.backing_verity_device(fs_idx).map(|(_, dev)| dev)
     }
+
+    pub fn root_fs_is_ab(&self) -> bool {
+        let Some((rootfs_idx, _)) = self.root_fs_node() else {
+            return false;
+        };
+
+        let Some(root_id) = self.inner[rootfs_idx].id() else {
+            return false;
+        };
+
+        self.has_ab_capabilities(root_id).unwrap_or(false)
+    }
 }
 
 /// For a given NodeIndex, find the first outgoing edge with the given

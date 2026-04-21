@@ -8,7 +8,7 @@ use log::{debug, trace};
 
 use trident_api::{
     config::{Disk, HostConfiguration},
-    constants::{PROC_MOUNTINFO_PATH, ROOT_MOUNT_POINT_PATH},
+    constants::{PROC_MOUNTINFO_PATH, ROOT_MOUNT_POINT_PATH, USR_MOUNT_POINT_PATH},
     error::{InternalError, ReportError, TridentError},
     BlockDeviceId,
 };
@@ -18,6 +18,7 @@ use crate::{
     container,
     dependencies::Dependency,
     lsblk::{self, BlockDeviceType},
+    path::join_relative,
     sfdisk::SfDisk,
     tabfile,
 };
@@ -187,6 +188,28 @@ pub fn get_root_device_path() -> Result<PathBuf, TridentError> {
             .structured(InternalError::GetRootBlockDevicePath)?;
 
     Ok(root_device_path)
+}
+
+/// Gets the path of the usr block device.
+pub fn get_usr_device_path() -> Result<PathBuf, TridentError> {
+    let usr_mount_path = if container::is_running_in_container()? {
+        let host_root_path = join_relative(container::get_host_root_path()?, USR_MOUNT_POINT_PATH);
+        debug!(
+            "Running inside a container. Using root mount path '{}'",
+            host_root_path.display()
+        );
+        host_root_path
+    } else {
+        debug!(
+            "Not running inside a container. Using default root mount path '{USR_MOUNT_POINT_PATH}'",
+        );
+        Path::new(USR_MOUNT_POINT_PATH).to_path_buf()
+    };
+
+    let usr_device_path = tabfile::get_device_path(Path::new(PROC_MOUNTINFO_PATH), &usr_mount_path)
+        .structured(InternalError::GetRootBlockDevicePath)?;
+
+    Ok(usr_device_path)
 }
 
 /// Unmounts all mount points associated with a given block device.

@@ -16,7 +16,7 @@ use trident_api::{
             STREAM_SLOW_SPEED_REPORTING_INTERVAL_SECONDS,
             STREAM_SLOW_SPEED_REPORTING_THRESHOLD_MBPS,
         },
-        ROOT_MOUNT_POINT_PATH,
+        ROOT_MOUNT_POINT_PATH, USR_MOUNT_POINT_PATH,
     },
     error::{InternalError, ReportError, TridentError},
     status::{AbVolumeSelection, ServicingType},
@@ -200,6 +200,14 @@ impl EngineContext {
     pub(super) fn get_root_block_device_path(&self) -> Option<PathBuf> {
         self.get_root_block_device_id()
             .and_then(|id| self.get_block_device_path(&id))
+    }
+
+    /// Using the `/usr` mount point, fetches the root block device ID.
+    pub(super) fn get_usr_block_device_id(&self) -> Option<BlockDeviceId> {
+        self.spec
+            .storage
+            .path_to_filesystem(USR_MOUNT_POINT_PATH)
+            .and_then(|f| f.device_id.clone())
     }
 
     /// Returns the path of the block device with id `block_device_id`.
