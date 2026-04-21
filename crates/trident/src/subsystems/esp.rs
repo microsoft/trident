@@ -609,6 +609,8 @@ fn copy_boot_files(
 /// update of ESP, relative to the mounted directory.
 ///
 /// The func takes the arg temp_mount_dir, which is the path to the directory where the ESP image is mounted to.
+/// The is_uki parameter indicates whether the image being processed is a UKI (Unified Kernel Image), in which
+/// case, grub.cfg is not needed.
 fn generate_boot_filepaths(temp_mount_dir: &Path, is_uki: bool) -> Result<Vec<PathBuf>, Error> {
     let mut paths = Vec::new();
 
@@ -623,17 +625,16 @@ fn generate_boot_filepaths(temp_mount_dir: &Path, is_uki: bool) -> Result<Vec<Pa
     // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6452.
     let boot_grub2_grub_path = Path::new(temp_mount_dir).join(GRUB2_CONFIG_RELATIVE_PATH);
 
-    let selected_grub_config_path = if efi_boot_grub_path.exists() && efi_boot_grub_path.is_file() {
-        Some(efi_boot_grub_path)
-    } else if boot_grub2_grub_path.exists() && boot_grub2_grub_path.is_file() {
-        Some(boot_grub2_grub_path)
-    } else if is_uki {
-        None
-    } else {
-        bail!("Failed to find {GRUB2_CONFIG_FILENAME}");
-    };
+    if !is_uki {
+        let selected_grub_config_path =
+            if efi_boot_grub_path.exists() && efi_boot_grub_path.is_file() {
+                efi_boot_grub_path
+            } else if boot_grub2_grub_path.exists() && boot_grub2_grub_path.is_file() {
+                boot_grub2_grub_path
+            } else {
+                bail!("Failed to find {GRUB2_CONFIG_FILENAME}");
+            };
 
-    if let Some(selected_grub_config_path) = selected_grub_config_path {
         debug!(
             "Using GRUB configuration file '{GRUB2_CONFIG_FILENAME}' from '{}'",
             selected_grub_config_path.display()
