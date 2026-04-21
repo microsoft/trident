@@ -1111,9 +1111,14 @@ mod functional_test {
 
         // Test case #1: Missing A/B volume pair for root mount point.
         assert_eq!(
-            validate_ab_active_volume_internal(&ctx, PathBuf::from(OS_DISK_DEVICE_PATH))
-                .unwrap_err()
-                .kind(),
+            validate_ab_active_volume_internal(
+                &ctx,
+                PathBuf::from(OS_DISK_DEVICE_PATH),
+                "root".to_string(),
+                false,
+            )
+            .unwrap_err()
+            .kind(),
             &ErrorKind::Servicing(ServicingError::GetRootAbVolumePair {
                 device_id: "root".to_string()
             })
@@ -1129,9 +1134,14 @@ mod functional_test {
         });
 
         assert_eq!(
-            validate_ab_active_volume_internal(&ctx, PathBuf::from(OS_DISK_DEVICE_PATH))
-                .unwrap_err()
-                .kind(),
+            validate_ab_active_volume_internal(
+                &ctx,
+                PathBuf::from(OS_DISK_DEVICE_PATH),
+                "root".to_string(),
+                false,
+            )
+            .unwrap_err()
+            .kind(),
             &ErrorKind::Servicing(ServicingError::GetRootAbVolumePair {
                 device_id: "root".to_string()
             })
@@ -1143,9 +1153,14 @@ mod functional_test {
         };
 
         assert_eq!(
-            validate_ab_active_volume_internal(&ctx, PathBuf::from(OS_DISK_DEVICE_PATH))
-                .unwrap_err()
-                .kind(),
+            validate_ab_active_volume_internal(
+                &ctx,
+                PathBuf::from(OS_DISK_DEVICE_PATH),
+                "root".to_string(),
+                false,
+            )
+            .unwrap_err()
+            .kind(),
             &ErrorKind::Servicing(ServicingError::GetRootAbVolumePair {
                 device_id: "root".to_string()
             })
@@ -1160,7 +1175,9 @@ mod functional_test {
         assert_eq!(
             validate_ab_active_volume_internal(
                 &ctx,
-                PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2"))
+                PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2")),
+                "root".to_string(),
+                false,
             )
             .unwrap_err()
             .kind(),
@@ -1175,7 +1192,9 @@ mod functional_test {
         assert_eq!(
             validate_ab_active_volume_internal(
                 &ctx,
-                PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}3"))
+                PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}3")),
+                "root".to_string(),
+                false,
             )
             .unwrap_err()
             .kind(),
@@ -1190,6 +1209,8 @@ mod functional_test {
         validate_ab_active_volume_internal(
             &ctx,
             PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1")),
+            "root".to_string(),
+            false,
         )
         .unwrap();
 
@@ -1197,7 +1218,9 @@ mod functional_test {
         assert_eq!(
             validate_ab_active_volume_internal(
                 &ctx,
-                PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2"))
+                PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2")),
+                "root".to_string(),
+                false,
             )
             .unwrap_err()
             .kind(),
@@ -1212,6 +1235,8 @@ mod functional_test {
         validate_ab_active_volume_internal(
             &ctx,
             PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2")),
+            "root".to_string(),
+            false,
         )
         .unwrap();
 
@@ -1219,7 +1244,9 @@ mod functional_test {
         assert_eq!(
             validate_ab_active_volume_internal(
                 &ctx,
-                PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1"))
+                PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1")),
+                "root".to_string(),
+                false,
             )
             .unwrap_err()
             .kind(),
@@ -1356,7 +1383,13 @@ mod functional_test {
 
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
 
-        validate_ab_active_volume_internal(&ctx, PathBuf::from("/dev/mapper/root")).unwrap();
+        validate_ab_active_volume_internal(
+            &ctx,
+            PathBuf::from("/dev/mapper/root"),
+            "root".to_string(),
+            true,
+        )
+        .unwrap();
     }
 
     /// Validates that get_verity_data_device_path() correctly returns the actual path of the
