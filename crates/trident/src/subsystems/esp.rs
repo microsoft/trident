@@ -254,8 +254,11 @@ fn copy_file_artifacts(
 
     // Generate list of filepaths to the boot files. Pass in the temp dir path where the image is
     // mounted to as an argument
-    let boot_files =
-        generate_boot_filepaths(temp_mount_dir).context("Failed to generate boot filepaths")?;
+    let boot_files = generate_boot_filepaths(
+        temp_mount_dir,
+        ctx.is_uki().unstructured("UKI setting unknown")?,
+    )
+    .context("Failed to generate boot filepaths")?;
 
     // Clear esp_dir_path if it exists
     if esp_dir_path.exists() {
@@ -606,7 +609,9 @@ fn copy_boot_files(
 /// update of ESP, relative to the mounted directory.
 ///
 /// The func takes the arg temp_mount_dir, which is the path to the directory where the ESP image is mounted to.
-fn generate_boot_filepaths(temp_mount_dir: &Path) -> Result<Vec<PathBuf>, Error> {
+/// The is_uki parameter indicates whether the image being processed is a UKI (Unified Kernel Image), in which
+/// case, grub.cfg is not needed.
+fn generate_boot_filepaths(temp_mount_dir: &Path, is_uki: bool) -> Result<Vec<PathBuf>, Error> {
     let mut paths = Vec::new();
 
     // Check if grub.cfg exists in EFI_DEFAULT_BIN_RELATIVE_PATH, otherwise use GRUB2_RELATIVE_PATH
@@ -620,18 +625,22 @@ fn generate_boot_filepaths(temp_mount_dir: &Path) -> Result<Vec<PathBuf>, Error>
     // https://dev.azure.com/mariner-org/ECF/_workitems/edit/6452.
     let boot_grub2_grub_path = Path::new(temp_mount_dir).join(GRUB2_CONFIG_RELATIVE_PATH);
 
-    let selected_grub_config_path = if efi_boot_grub_path.exists() && efi_boot_grub_path.is_file() {
-        efi_boot_grub_path
-    } else if boot_grub2_grub_path.exists() && boot_grub2_grub_path.is_file() {
-        boot_grub2_grub_path
-    } else {
-        bail!("Failed to find {GRUB2_CONFIG_FILENAME}");
-    };
-    debug!(
-        "Using GRUB configuration file '{GRUB2_CONFIG_FILENAME}' from '{}'",
-        selected_grub_config_path.display()
-    );
-    paths.push(selected_grub_config_path);
+    if !is_uki {
+        let selected_grub_config_path =
+            if efi_boot_grub_path.exists() && efi_boot_grub_path.is_file() {
+                efi_boot_grub_path
+            } else if boot_grub2_grub_path.exists() && boot_grub2_grub_path.is_file() {
+                boot_grub2_grub_path
+            } else {
+                bail!("Failed to find {GRUB2_CONFIG_FILENAME}");
+            };
+
+        debug!(
+            "Using GRUB configuration file '{GRUB2_CONFIG_FILENAME}' from '{}'",
+            selected_grub_config_path.display()
+        );
+        paths.push(selected_grub_config_path);
+    }
 
     // Check if the grub-noprefix EFI executable exists; otherwise, use the standard
     // grub EFI executable (e.g., grubx64.efi). For example, on AMD64 systems, with
@@ -1363,7 +1372,8 @@ mod tests {
             .join(BOOT_EFI);
         File::create(&boot_efi_path).unwrap();
 
-        let generated_paths_efi_boot = generate_boot_filepaths(temp_mount_dir.path()).unwrap();
+        let generated_paths_efi_boot =
+            generate_boot_filepaths(temp_mount_dir.path(), false).unwrap();
         // Define your expected paths here when file exists
         let expected_paths_efi_boot = vec![
             efi_boot_grub_path.clone(),
@@ -1379,13 +1389,14 @@ mod tests {
         // Remove the GRUB config from the temp dir and create a new one, under GRUB2_RELATIVE_PATH
         fs::remove_file(&efi_boot_grub_path).unwrap();
         assert_eq!(
-            generate_boot_filepaths(temp_mount_dir.path())
+            generate_boot_filepaths(temp_mount_dir.path(), false)
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
             "Failed to find grub.cfg",
             "generate_boot_filepaths() should fail if grub.cfg does not exist"
         );
+        generate_boot_filepaths(temp_mount_dir.path(), true).unwrap();
 
         // Test case 3: Run generate_boot_filepaths() with GRUB under GRUB2_RELATIVE_PATH
         let boot_grub2_grub_path = temp_mount_dir
@@ -1395,7 +1406,8 @@ mod tests {
         fs::create_dir_all(boot_grub2_grub_path.parent().unwrap()).unwrap();
         File::create(&boot_grub2_grub_path).unwrap();
 
-        let generated_paths_boot_grub2 = generate_boot_filepaths(temp_mount_dir.path()).unwrap();
+        let generated_paths_boot_grub2 =
+            generate_boot_filepaths(temp_mount_dir.path(), false).unwrap();
         // Define expected paths here when EFI/BOOT/grub.cfg does not exist and boot/grub2/grub.cfg
         // is used instead
         let expected_paths_boot_grub2 = vec![
@@ -1412,7 +1424,7 @@ mod tests {
         // Remove old grub EFI executable
         fs::remove_file(&grub_efi_path).unwrap();
         assert_eq!(
-            generate_boot_filepaths(temp_mount_dir.path())
+            generate_boot_filepaths(temp_mount_dir.path(), false)
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -1427,7 +1439,8 @@ mod tests {
             .join(GRUB_NOPREFIX_EFI);
         File::create(&grub_efi_noprefix_path).unwrap();
 
-        let generated_paths_noprefix = generate_boot_filepaths(temp_mount_dir.path()).unwrap();
+        let generated_paths_noprefix =
+            generate_boot_filepaths(temp_mount_dir.path(), false).unwrap();
         // Define expected paths here when EFI/BOOT/grub.cfg does not exist and boot/grub2/grub.cfg
         // is used instead
         let expected_paths_noprefix = vec![
@@ -1444,7 +1457,7 @@ mod tests {
         // Remove old boot EFI executable
         fs::remove_file(&boot_efi_path).unwrap();
         assert_eq!(
-            generate_boot_filepaths(temp_mount_dir.path())
+            generate_boot_filepaths(temp_mount_dir.path(), false)
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
