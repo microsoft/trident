@@ -29,6 +29,7 @@ extends:
             variables:
               ob_outputDirectory: /tmp/artifacts
               ob_artifactBaseName: acl-test
+              IMG_FILENAME: acl_production_qemu_uefi_image
             steps:
               - checkout: self
                 path: s/trident-pipeline
@@ -64,10 +65,25 @@ extends:
 
                   git clone --branch ${{ variables.aclBranch }} https://mariner-org@dev.azure.com/mariner-org/ACL/_git/acl-scripts $(Pipeline.Workspace)/s/acl-scripts
                   ./acl/build_rpm_image.sh --hydrate-with-local=$(Pipeline.Workspace)/s/trident/bin/RPMS --rebuild
-                  ./acl/build_rpm_image.sh --board=amd64-usr --build-standalone-sysexts
-                  ./acl/build_rpm_image.sh --board=amd64-usr --build-vm-image
-                  cp $(Pipeline.Workspace)/s/acl-scripts/__build__/images/images/latest/* $(ob_outputDirectory)/
+                  ./acl/build_rpm_image.sh --board=amd64-usr --rebuild --build-vm-image
+                  cp $(Pipeline.Workspace)/s/acl-scripts/__build__/images/images/amd64-usr/latest/* $(ob_outputDirectory)/
                 displayName: Checkout acl-scripts and build acl images
+                workingDirectory: $(Pipeline.Workspace)
+
+              - script: |
+                  set -eux
+
+                  qemu-img convert -f qcow2 -O raw $(ob_outputDirectory)/$(IMG_FILENAME).img $(ob_outputDirectory)/$(IMG_FILENAME).raw
+
+                  cd $(Pipeline.Workspace)/s/trident
+                  sudo ./bin/mkcosi build $(ob_outputDirectory)/$(IMG_FILENAME).raw $(ob_outputDirectory)/$(IMG_FILENAME).cosi
+
+                  cat << EOF | sudo tee $(ob_outputDirectory)/config.yaml
+                  image:
+                    url: file:///home/core/$(IMG_FILENAME).cosi
+                    sha384: ignored
+                  EOF
+                displayName: Create update COSI and config
                 workingDirectory: $(Pipeline.Workspace)
 
               - script: |
@@ -84,3 +100,18 @@ extends:
 
                 displayName: Start acl vm and set IP address
                 workingDirectory: $(Pipeline.Workspace)/s/acl-scripts
+
+              - script: |
+                  set -eux
+
+                  scp $(ob_outputDirectory)/config.yaml core@$(VM_IP):/home/core/config.yaml
+                  scp $(ob_outputDirectory)/$(IMG_FILENAME).cosi core@$(VM_IP):/home/core/$(IMG_FILENAME).cosi
+                  ssh core@$(VM_IP) sudo trident update /home/core/$(IMG_FILENAME).cosi
+
+                  while ! ssh core@$(VM_IP) cat /etc/os-release; do
+                    sleep 0.5
+                  done
+
+                  ssh core@$(VM_IP) sudo trident status
+
+                displayName: Run update on ACL VM
