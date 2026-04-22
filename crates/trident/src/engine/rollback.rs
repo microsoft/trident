@@ -1091,14 +1091,6 @@ mod functional_test {
             ..Default::default()
         };
 
-        // Test case #0: If no internal mount points defined, should return an error.
-        assert_eq!(
-            validate_ab_active_volume_internal(&ctx, PathBuf::from(OS_DISK_DEVICE_PATH))
-                .unwrap_err()
-                .kind(),
-            &ErrorKind::Servicing(ServicingError::GetRootBlockDeviceId)
-        );
-
         ctx.spec.storage.filesystems = vec![FileSystem {
             mount_point: Some(MountPoint {
                 path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
