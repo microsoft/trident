@@ -163,7 +163,7 @@ impl OsRelease {
         // Ensure that the os_releases ids align
         ensure!(
             host.id == cosi.id,
-            "Mismatched OS release: host = {:?}, cosi = {:?}",
+            "Mismatched OS release ID: host = {:?}, cosi = {:?}",
             host.id.as_deref().unwrap_or("(blank)"),
             cosi.id.as_deref().unwrap_or("(blank)"),
         );
@@ -171,7 +171,7 @@ impl OsRelease {
         // Ensure that the os_releases variant ids align
         ensure!(
             host.variant_id == cosi.variant_id,
-            "Mismatched OS release variant: host = {:?}, cosi = {:?}",
+            "Mismatched OS release VARIANT_ID: host = {:?}, cosi = {:?}",
             host.variant_id.as_deref().unwrap_or("(blank)"),
             cosi.variant_id.as_deref().unwrap_or("(blank)"),
         );
