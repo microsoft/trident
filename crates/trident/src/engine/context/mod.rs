@@ -202,7 +202,7 @@ impl EngineContext {
             .and_then(|id| self.get_block_device_path(&id))
     }
 
-    /// Using the `/usr` mount point, fetches the root block device ID.
+    /// Using the `/usr` mount point, fetches the usr block device ID.
     pub(super) fn get_usr_block_device_id(&self) -> Option<BlockDeviceId> {
         self.spec
             .storage

@@ -100,8 +100,8 @@ pub enum InternalError {
     #[error("Failed to find deviceId for filesystem [{0}] sourced from an OS image")]
     GetDeviceIdForFilesystemFromImage(String),
 
-    #[error("Failed to get root block device path")]
-    GetRootBlockDevicePath,
+    #[error("Failed to get block device path")]
+    GetBlockDevicePath,
 
     #[error("Internal error: {0}")]
     Internal(&'static str),

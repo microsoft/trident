@@ -185,7 +185,7 @@ pub fn get_root_device_path() -> Result<PathBuf, TridentError> {
 
     let root_device_path =
         tabfile::get_device_path(Path::new(PROC_MOUNTINFO_PATH), &root_mount_path)
-            .structured(InternalError::GetRootBlockDevicePath)?;
+            .structured(InternalError::GetBlockDevicePath)?;
 
     Ok(root_device_path)
 }
@@ -193,21 +193,21 @@ pub fn get_root_device_path() -> Result<PathBuf, TridentError> {
 /// Gets the path of the usr block device.
 pub fn get_usr_device_path() -> Result<PathBuf, TridentError> {
     let usr_mount_path = if container::is_running_in_container()? {
-        let host_root_path = join_relative(container::get_host_root_path()?, USR_MOUNT_POINT_PATH);
+        let host_usr_path = join_relative(container::get_host_root_path()?, USR_MOUNT_POINT_PATH);
         debug!(
-            "Running inside a container. Using root mount path '{}'",
-            host_root_path.display()
+            "Running inside a container. Using /usr mount path '{}'",
+            host_usr_path.display()
         );
-        host_root_path
+        host_usr_path
     } else {
         debug!(
-            "Not running inside a container. Using default root mount path '{USR_MOUNT_POINT_PATH}'",
+            "Not running inside a container. Using default /usr mount path '{USR_MOUNT_POINT_PATH}'",
         );
         Path::new(USR_MOUNT_POINT_PATH).to_path_buf()
     };
 
     let usr_device_path = tabfile::get_device_path(Path::new(PROC_MOUNTINFO_PATH), &usr_mount_path)
-        .structured(InternalError::GetRootBlockDevicePath)?;
+        .structured(InternalError::GetBlockDevicePath)?;
 
     Ok(usr_device_path)
 }
