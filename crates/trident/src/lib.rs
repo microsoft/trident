@@ -11,7 +11,7 @@ use semver::Version;
 use url::Url;
 
 use engine::{bootentries, EngineContext, EngineContextParams};
-use osutils::{block_devices, container, dependencies::Dependency};
+use osutils::{block_devices, container, dependencies::Dependency, osrelease::OsRelease};
 use trident_api::{
     config::{
         HostConfiguration, HostConfigurationSource, ImageSha384, Operations,
@@ -619,6 +619,12 @@ impl Trident {
 
             let image = Self::get_cosi_image(&mut host_config)?;
             let image_hash = Some(image.metadata_sha384());
+
+            // Ensure that the cosi and host os_release align
+            let host_os_release = OsRelease::read().unwrap_or_default();
+            OsRelease::ensure_matching_distro(&host_os_release, image.os_release())
+                .structured(InvalidInputError::MismatchedOsRelease)
+                .message("Cannot run A/B Update due to OS release mismatch")?;
 
             // If HS.spec in the datastore is different from the new HC, need to both stage and
             // finalize the update, regardless of state

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use anyhow::{Context, Error};
+use anyhow::{ensure, Context, Error};
 use const_format::formatcp;
 use log::trace;
 use serde::{Deserialize, Deserializer};
@@ -156,6 +156,26 @@ impl OsRelease {
             Some(UBUNTU_DISTRO_ID) => Distro::Ubuntu,
             _ => Distro::Other,
         }
+    }
+
+    /// Ensure that the host OsRelease aligns to a COSI file.
+    pub fn ensure_matching_distro(host: &OsRelease, cosi: &OsRelease) -> Result<(), Error> {
+        // Ensure that the os_releases ids align
+        ensure!(
+            host.id == cosi.id,
+            "Mismatched OS release ID: host = {:?}, cosi = {:?}",
+            host.id.as_deref().unwrap_or("(blank)"),
+            cosi.id.as_deref().unwrap_or("(blank)"),
+        );
+
+        // Ensure that the os_releases variant ids align
+        ensure!(
+            host.variant_id == cosi.variant_id,
+            "Mismatched OS release VARIANT_ID: host = {:?}, cosi = {:?}",
+            host.variant_id.as_deref().unwrap_or("(blank)"),
+            cosi.variant_id.as_deref().unwrap_or("(blank)"),
+        );
+        Ok(())
     }
 
     /// Parses the input string into an OsRelease struct.
@@ -586,5 +606,59 @@ mod tests {
 
         let os_release = OsRelease::parse(data);
         assert_eq!(os_release.get_distro(), Distro::Other);
+    }
+
+    fn create_osrelease(id: Option<String>, variant_id: Option<String>) -> OsRelease {
+        OsRelease {
+            id,
+            variant_id,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_ensure_osrelease_alignment_matched() {
+        let os_release1 = create_osrelease(
+            Some("azurelinux".to_string()),
+            Some("azurecontainerlinux".to_string()),
+        );
+        let os_release2 = create_osrelease(
+            Some("azurelinux".to_string()),
+            Some("azurecontainerlinux".to_string()),
+        );
+        assert!(OsRelease::ensure_matching_distro(&os_release1, &os_release2).is_ok());
+    }
+
+    #[test]
+    fn test_ensure_osrelease_alignment_matched_no_variant() {
+        let os_release1 = create_osrelease(Some("azurelinux".to_string()), None);
+        let os_release2 = create_osrelease(Some("azurelinux".to_string()), None);
+        assert!(OsRelease::ensure_matching_distro(&os_release1, &os_release2).is_ok());
+    }
+
+    #[test]
+    fn test_ensure_alignment_mismatched_id() {
+        let os_release1 = create_osrelease(
+            Some("azurelinux".to_string()),
+            Some("azurecontainerlinux".to_string()),
+        );
+        let os_release2 = create_osrelease(
+            Some("notmatching".to_string()),
+            Some("azurecontainerlinux".to_string()),
+        );
+        assert!(OsRelease::ensure_matching_distro(&os_release1, &os_release2).is_err());
+    }
+
+    #[test]
+    fn test_ensure_alignment_mismatched_variant_id() {
+        let os_release1 = create_osrelease(
+            Some("azurelinux".to_string()),
+            Some("azurecontainerlinux".to_string()),
+        );
+        let os_release2 = create_osrelease(
+            Some("azurelinux".to_string()),
+            Some("notmatching".to_string()),
+        );
+        assert!(OsRelease::ensure_matching_distro(&os_release1, &os_release2).is_err());
     }
 }
