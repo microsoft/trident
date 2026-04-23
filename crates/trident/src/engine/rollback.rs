@@ -574,33 +574,56 @@ fn compare_root_device_paths(
 /// volume set in the Host Status/context accurately reflects the actual active volume, i.e., the
 /// device that the firmware booted from.
 pub(crate) fn validate_ab_active_volume(ctx: &EngineContext) -> Result<(), TridentError> {
-    let root_device_path = block_devices::get_root_device_path()?;
-    validate_ab_active_volume_internal(ctx, root_device_path)
+    if ctx.image_distro().is_acl() {
+        let usr_device_path = block_devices::get_usr_device_path()?;
+        let usr_device_id = ctx
+            .get_usr_block_device_id()
+            .ok_or_else(|| TridentError::new(ServicingError::GetRootBlockDeviceId))?;
+
+        validate_ab_active_volume_internal(
+            ctx,
+            usr_device_path,
+            usr_device_id,
+            ctx.storage_graph.usr_fs_is_verity(),
+        )
+    } else {
+        let root_device_path = block_devices::get_root_device_path()?;
+        let root_device_id = ctx
+            .get_root_block_device_id()
+            .ok_or_else(|| TridentError::new(ServicingError::GetRootBlockDeviceId))?;
+
+        validate_ab_active_volume_internal(
+            ctx,
+            root_device_path,
+            root_device_id,
+            ctx.storage_graph.root_fs_is_verity(),
+        )
+    }
 }
 
-/// This is an internal helper function that:
+/// Validate that the A/B volume mounted for the given device is as expected.
+///
+/// Steps:
 /// - Fetches paths of A/B volumes,
-/// - In case that root is a verity device, fetches root-verity data device path,
-/// - Validates that A/B active volume in engine context matches actual root device path.
+/// - In case that the device is a verity device, fetches the verity data device path,
+/// - Validates that A/B active volume in engine context matches actual device path.
 fn validate_ab_active_volume_internal(
     ctx: &EngineContext,
-    root_device_path: PathBuf,
+    device_path: PathBuf,
+    device_id: BlockDeviceId,
+    is_verity: bool,
 ) -> Result<(), TridentError> {
-    let root_device_id = ctx
-        .get_root_block_device_id()
-        .ok_or_else(|| TridentError::new(ServicingError::GetRootBlockDeviceId))?;
+    let (volume_pair, data_device_path) = if is_verity {
+        debug!("Device is a verity device");
 
-    let (root_volume_pair, root_data_device_path) = if ctx.storage_graph.root_fs_is_verity() {
-        debug!("Root is a verity device");
-
-        // If root is a verity device, need to first fetch the device ID of the data device
-        let verity_device_config = ctx.get_verity_config(&root_device_id).structured(
-            // This should never happen. At this point we know the root device
+        // If the device is a verity device, need to first fetch the device ID of the data device
+        let verity_device_config = ctx.get_verity_config(&device_id).structured(
+            // This should never happen. At this point we know the device
             // is a verity device and we've already found the BlockDeviceId of
             // the verity device, so this search MUST always succeed, otherwise
             // the graph is severely corrupted.
             InternalError::Internal(
-                "Graph is invalid: verity config for root device could not be found.",
+                "Graph is invalid: verity config for device could not be found.",
             ),
         )?;
 
@@ -608,63 +631,65 @@ fn validate_ab_active_volume_internal(
         let volume_pair = ctx
             .get_ab_volume_pair(&verity_device_config.data_device_id)
             .structured(ServicingError::GetRootAbVolumePair {
-                device_id: root_device_id.clone(),
+                device_id: device_id.clone(),
             })?;
 
         // Fetch the actual verity data device path in the system
-        let root_data_device_path = get_verity_data_device_path(ctx, &root_device_id)
+        let data_device_path = get_verity_data_device_path(ctx, &device_id)
             .structured(ServicingError::GetRootVerityDataDevPath)?;
 
-        (volume_pair, root_data_device_path)
+        (volume_pair, data_device_path)
     } else {
-        debug!("Root is not on verity");
+        debug!("Device is not on verity");
 
-        // Fetch the A/B volume pair for the root device
-        let volume_pair = ctx.get_ab_volume_pair(&root_device_id).structured(
-            ServicingError::GetRootAbVolumePair {
-                device_id: root_device_id,
-            },
-        )?;
+        // Fetch the A/B volume pair for the device
+        let volume_pair = ctx
+            .get_ab_volume_pair(&device_id)
+            .structured(ServicingError::GetRootAbVolumePair { device_id })?;
 
-        (volume_pair, root_device_path)
+        (volume_pair, device_path)
     };
 
     debug!(
-        "Root volume A path: {} (device ID: {})",
-        root_volume_pair.volume_a_path.display(),
-        root_volume_pair.volume_a_id
+        "Volume A path: {} (device ID: {})",
+        volume_pair.volume_a_path.display(),
+        volume_pair.volume_a_id
     );
     debug!(
-        "Root volume B path: {} (device ID: {})",
-        root_volume_pair.volume_b_path.display(),
-        root_volume_pair.volume_b_id
+        "Volume B path: {} (device ID: {})",
+        volume_pair.volume_b_path.display(),
+        volume_pair.volume_b_id
     );
 
-    let volume_a_path_canonical = root_volume_pair.volume_a_path.canonicalize().structured(
-        ServicingError::CanonicalizePath {
-            path: root_volume_pair.volume_a_path.display().to_string(),
-        },
-    )?;
-    let volume_b_path_canonical = root_volume_pair.volume_b_path.canonicalize().structured(
-        ServicingError::CanonicalizePath {
-            path: root_volume_pair.volume_b_path.display().to_string(),
-        },
-    )?;
+    let volume_a_path_canonical =
+        volume_pair
+            .volume_a_path
+            .canonicalize()
+            .structured(ServicingError::CanonicalizePath {
+                path: volume_pair.volume_a_path.display().to_string(),
+            })?;
+    let volume_b_path_canonical =
+        volume_pair
+            .volume_b_path
+            .canonicalize()
+            .structured(ServicingError::CanonicalizePath {
+                path: volume_pair.volume_b_path.display().to_string(),
+            })?;
 
     debug!(
-        "Root volume A path (canonical): {}",
+        "Volume A path (canonical): {}",
         volume_a_path_canonical.display()
     );
     debug!(
-        "Root volume B path (canonical): {}",
+        "Volume B path (canonical): {}",
         volume_b_path_canonical.display()
     );
 
-    // Validate that the active volume in Host Status matches actual root device path
-    if volume_a_path_canonical == root_data_device_path {
+    // Validate that the active volume in Host Status matches actual device path
+    if volume_a_path_canonical == data_device_path {
         debug!(
-            "Current root device path '{}' matches root volume A path '{}'",
-            root_data_device_path.display(),
+            "Current device path '{}' matches volume A path '{}'",
+            data_device_path.display(),
             volume_a_path_canonical.display()
         );
 
@@ -676,10 +701,10 @@ fn validate_ab_active_volume_internal(
                     .map_or("None".to_string(), |v| v.to_string()),
             }));
         }
-    } else if volume_b_path_canonical == root_data_device_path {
+    } else if volume_b_path_canonical == data_device_path {
         debug!(
-            "Current root device path '{}' matches root volume B path '{}'",
-            root_data_device_path.display(),
+            "Current device path '{}' matches volume B path '{}'",
+            data_device_path.display(),
             volume_b_path_canonical.display()
         );
 
@@ -694,7 +719,7 @@ fn validate_ab_active_volume_internal(
     } else {
         return Err(TridentError::new(
             ServicingError::RootDevicePathAbActiveVolumeMismatch {
-                root_device_path: root_data_device_path.to_string_lossy().to_string(),
+                root_device_path: data_device_path.to_string_lossy().to_string(),
                 root_volume_a_path: volume_a_path_canonical.to_string_lossy().to_string(),
                 root_volume_b_path: volume_b_path_canonical.to_string_lossy().to_string(),
             },
@@ -1066,14 +1091,6 @@ mod functional_test {
             ..Default::default()
         };
 
-        // Test case #0: If no internal mount points defined, should return an error.
-        assert_eq!(
-            validate_ab_active_volume_internal(&ctx, PathBuf::from(OS_DISK_DEVICE_PATH))
-                .unwrap_err()
-                .kind(),
-            &ErrorKind::Servicing(ServicingError::GetRootBlockDeviceId)
-        );
-
         ctx.spec.storage.filesystems = vec![FileSystem {
             mount_point: Some(MountPoint {
                 path: PathBuf::from(ROOT_MOUNT_POINT_PATH),
@@ -1086,9 +1103,14 @@ mod functional_test {
 
         // Test case #1: Missing A/B volume pair for root mount point.
         assert_eq!(
-            validate_ab_active_volume_internal(&ctx, PathBuf::from(OS_DISK_DEVICE_PATH))
-                .unwrap_err()
-                .kind(),
+            validate_ab_active_volume_internal(
+                &ctx,
+                PathBuf::from(OS_DISK_DEVICE_PATH),
+                "root".to_string(),
+                false,
+            )
+            .unwrap_err()
+            .kind(),
             &ErrorKind::Servicing(ServicingError::GetRootAbVolumePair {
                 device_id: "root".to_string()
             })
@@ -1104,9 +1126,14 @@ mod functional_test {
         });
 
         assert_eq!(
-            validate_ab_active_volume_internal(&ctx, PathBuf::from(OS_DISK_DEVICE_PATH))
-                .unwrap_err()
-                .kind(),
+            validate_ab_active_volume_internal(
+                &ctx,
+                PathBuf::from(OS_DISK_DEVICE_PATH),
+                "root".to_string(),
+                false,
+            )
+            .unwrap_err()
+            .kind(),
             &ErrorKind::Servicing(ServicingError::GetRootAbVolumePair {
                 device_id: "root".to_string()
             })
@@ -1118,9 +1145,14 @@ mod functional_test {
         };
 
         assert_eq!(
-            validate_ab_active_volume_internal(&ctx, PathBuf::from(OS_DISK_DEVICE_PATH))
-                .unwrap_err()
-                .kind(),
+            validate_ab_active_volume_internal(
+                &ctx,
+                PathBuf::from(OS_DISK_DEVICE_PATH),
+                "root".to_string(),
+                false,
+            )
+            .unwrap_err()
+            .kind(),
             &ErrorKind::Servicing(ServicingError::GetRootAbVolumePair {
                 device_id: "root".to_string()
             })
@@ -1135,7 +1167,9 @@ mod functional_test {
         assert_eq!(
             validate_ab_active_volume_internal(
                 &ctx,
-                PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2"))
+                PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2")),
+                "root".to_string(),
+                false,
             )
             .unwrap_err()
             .kind(),
@@ -1150,7 +1184,9 @@ mod functional_test {
         assert_eq!(
             validate_ab_active_volume_internal(
                 &ctx,
-                PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}3"))
+                PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}3")),
+                "root".to_string(),
+                false,
             )
             .unwrap_err()
             .kind(),
@@ -1165,6 +1201,8 @@ mod functional_test {
         validate_ab_active_volume_internal(
             &ctx,
             PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1")),
+            "root".to_string(),
+            false,
         )
         .unwrap();
 
@@ -1172,7 +1210,9 @@ mod functional_test {
         assert_eq!(
             validate_ab_active_volume_internal(
                 &ctx,
-                PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2"))
+                PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2")),
+                "root".to_string(),
+                false,
             )
             .unwrap_err()
             .kind(),
@@ -1187,6 +1227,8 @@ mod functional_test {
         validate_ab_active_volume_internal(
             &ctx,
             PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}2")),
+            "root".to_string(),
+            false,
         )
         .unwrap();
 
@@ -1194,7 +1236,9 @@ mod functional_test {
         assert_eq!(
             validate_ab_active_volume_internal(
                 &ctx,
-                PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1"))
+                PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1")),
+                "root".to_string(),
+                false,
             )
             .unwrap_err()
             .kind(),
@@ -1331,7 +1375,13 @@ mod functional_test {
 
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
 
-        validate_ab_active_volume_internal(&ctx, PathBuf::from("/dev/mapper/root")).unwrap();
+        validate_ab_active_volume_internal(
+            &ctx,
+            PathBuf::from("/dev/mapper/root"),
+            "root".to_string(),
+            true,
+        )
+        .unwrap();
     }
 
     /// Validates that get_verity_data_device_path() correctly returns the actual path of the
