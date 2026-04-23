@@ -10,7 +10,7 @@ use osutils::{
     grub::GrubConfig,
     grub_mkconfig::GrubMkConfigScript,
     osmodifier::{self, BootConfig, IdentifiedPartition, Overlay, Verity},
-    osrelease::{AzureLinuxRelease, Distro, OsRelease},
+    osrelease::{AzureLinuxRelease, Distro},
 };
 use trident_api::{
     config::Selinux,
@@ -64,10 +64,7 @@ pub(super) fn update_configs(ctx: &EngineContext, os_modifier_path: &Path) -> Re
     let boot_grub_config_path = Path::new(ROOT_MOUNT_POINT_PATH).join(GRUB2_CONFIG_RELATIVE_PATH);
 
     // Update GRUB config on the boot device (volume holding /boot)
-    match OsRelease::read()
-        .context("Failed to read OS release")?
-        .get_distro()
-    {
+    match ctx.host_os_release.get_distro() {
         Distro::AzureLinux(AzureLinuxRelease::AzL3) => {
             update_grub_config_azl3(
                 ctx,
@@ -275,6 +272,7 @@ pub(crate) mod functional_test {
         filesystems::MkfsFileSystemType,
         lsblk::{self, BlockDevice, BlockDeviceType, PartitionTableType},
         mdadm, mkfs,
+        osrelease::OsRelease,
         repart::{RepartEmptyMode, SystemdRepartInvoker},
         testutils::repart::{
             self, DISK_SIZE, PART1_SIZE, PART2_SIZE, PART3_SIZE, TEST_DISK_DEVICE_PATH,
@@ -555,6 +553,7 @@ pub(crate) mod functional_test {
                 "root2".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
             },
             is_uki: Some(false),
+            host_os_release: OsRelease::read().unwrap(),
             ..Default::default()
         };
 
@@ -665,6 +664,7 @@ pub(crate) mod functional_test {
                 "boot".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                 "root".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
             },
+            host_os_release: OsRelease::read().unwrap(),
             ..Default::default()
         };
 
@@ -751,6 +751,7 @@ pub(crate) mod functional_test {
                 "root-a".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
                 "root-b".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
             ],
+            host_os_release: OsRelease::read().unwrap(),
             ..Default::default()
         };
 

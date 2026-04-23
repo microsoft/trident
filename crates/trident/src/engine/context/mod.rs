@@ -103,6 +103,9 @@ pub struct EngineContext {
 
     /// The mount path of the ESP partition.
     pub esp_mount_path: PathBuf,
+
+    /// Host OsRelease
+    pub host_os_release: OsRelease,
 }
 
 #[cfg(any(test, feature = "functional-test"))]
@@ -122,6 +125,7 @@ impl Default for EngineContext {
             storage_graph: Default::default(),
             filesystems: Default::default(),
             is_uki: Default::default(),
+            host_os_release: Default::default(),
         }
     }
 }
@@ -143,6 +147,9 @@ impl EngineContext {
                 )))?
                 .to_path_buf();
 
+        let os_release = OsRelease::read().structured(InternalError::Internal(
+            "Failed to read OS release information",
+        ))?;
         Ok(Self {
             spec: params.spec,
             spec_old: params.spec_old,
@@ -156,6 +163,7 @@ impl EngineContext {
             filesystems: Vec::new(),
             is_uki: params.is_uki,
             esp_mount_path,
+            host_os_release: os_release,
         })
     }
 
