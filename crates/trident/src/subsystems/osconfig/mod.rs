@@ -382,11 +382,13 @@ impl Subsystem for MosConfigSubsystem {
 mod tests {
     use std::path::PathBuf;
 
+    use osutils::osrelease::OsRelease;
     use trident_api::{
         config::{
             Extension, HostConfiguration, KernelCommandLine, ManagementOs, Module, Os, Password,
             Selinux, Services, UefiFallbackMode, User,
         },
+        constants::internal_params::DISABLE_HOSTNAME_CARRY_OVER,
         primitives::hash::Sha384Hash,
         status::ServicingType,
     };
@@ -655,6 +657,41 @@ mod tests {
             ..Default::default()
         });
         assert!(mos_config_requires_os_modifier(&mos));
+    }
+
+    #[test]
+    fn test_should_carry_over_hostname() {
+        use super::should_carry_over_hostname;
+
+        let mut ctx = EngineContext::default();
+        assert!(
+            !should_carry_over_hostname(&ctx),
+            "Empty context should not carry over hostname"
+        );
+
+        ctx.servicing_type = ServicingType::AbUpdate;
+        assert!(
+            should_carry_over_hostname(&ctx),
+            "Empty AbUpdate context should carry over hostname"
+        );
+
+        let mut acl_os_release = OsRelease::EMPTY;
+        acl_os_release.id = Some("azurelinux".to_string());
+        acl_os_release.variant_id = Some("azurecontainerlinux".to_string());
+        ctx.host_os_release = acl_os_release;
+        assert!(
+            !should_carry_over_hostname(&ctx),
+            "ACL AbUpdate context should not carry over hostname"
+        );
+
+        ctx.host_os_release = OsRelease::EMPTY;
+        ctx.spec
+            .internal_params
+            .set_flag(DISABLE_HOSTNAME_CARRY_OVER);
+        assert!(
+            !should_carry_over_hostname(&ctx),
+            "Empty AbUpdate context with internal_flag.DISABLE_HOSTNAME_CARRY_OVER should not carry over hostname"
+        );
     }
 }
 

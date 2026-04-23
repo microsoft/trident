@@ -147,7 +147,9 @@ impl EngineContext {
                 )))?
                 .to_path_buf();
 
-        let os_release = OsRelease::read().structured(InternalError::Internal("Failed to read OS release information"))?;
+        let os_release = OsRelease::read().structured(InternalError::Internal(
+            "Failed to read OS release information",
+        ))?;
         Ok(Self {
             spec: params.spec,
             spec_old: params.spec_old,
