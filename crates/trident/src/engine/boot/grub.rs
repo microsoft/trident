@@ -10,7 +10,7 @@ use osutils::{
     grub::GrubConfig,
     grub_mkconfig::GrubMkConfigScript,
     osmodifier::{self, BootConfig, IdentifiedPartition, Overlay, Verity},
-    osrelease::{AzureLinuxRelease, Distro, OsRelease},
+    osrelease::{AzureLinuxRelease, Distro},
 };
 use trident_api::{
     config::Selinux,
@@ -64,9 +64,7 @@ pub(super) fn update_configs(ctx: &EngineContext, os_modifier_path: &Path) -> Re
     let boot_grub_config_path = Path::new(ROOT_MOUNT_POINT_PATH).join(GRUB2_CONFIG_RELATIVE_PATH);
 
     // Update GRUB config on the boot device (volume holding /boot)
-    match OsRelease::read()
-        .context("Failed to read OS release")?
-        .get_distro()
+    match ctx.host_os_release.get_distro()
     {
         Distro::AzureLinux(AzureLinuxRelease::AzL3) => {
             update_grub_config_azl3(

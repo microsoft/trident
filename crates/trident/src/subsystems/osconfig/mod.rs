@@ -74,6 +74,11 @@ fn mos_config_requires_os_modifier(mos_config: &ManagementOs) -> bool {
 /// If the OS configuration does not specify a hostname, so long as DISABLE_HOSTNAME_CARRY_OVER flag
 /// is not set to true, we want to carry over the existing machine hostname after updating.
 fn should_carry_over_hostname(ctx: &EngineContext) -> bool {
+    if ctx.host_os_release.get_distro().is_acl() {
+        // Skip carry-over name for ACL
+        return false;
+    }
+
     !ctx.spec
         .internal_params
         .get_flag(DISABLE_HOSTNAME_CARRY_OVER)
