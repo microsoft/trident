@@ -272,6 +272,7 @@ pub(crate) mod functional_test {
         filesystems::MkfsFileSystemType,
         lsblk::{self, BlockDevice, BlockDeviceType, PartitionTableType},
         mdadm, mkfs,
+        osrelease::OsRelease,
         repart::{RepartEmptyMode, SystemdRepartInvoker},
         testutils::repart::{
             self, DISK_SIZE, PART1_SIZE, PART2_SIZE, PART3_SIZE, TEST_DISK_DEVICE_PATH,
@@ -552,6 +553,7 @@ pub(crate) mod functional_test {
                 "root2".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
             },
             is_uki: Some(false),
+            host_os_release: OsRelease::read().unwrap(),
             ..Default::default()
         };
 
@@ -662,6 +664,7 @@ pub(crate) mod functional_test {
                 "boot".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                 "root".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
             },
+            host_os_release: OsRelease::read().unwrap(),
             ..Default::default()
         };
 
@@ -748,6 +751,7 @@ pub(crate) mod functional_test {
                 "root-a".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
                 "root-b".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
             ],
+            host_os_release: OsRelease::read().unwrap(),
             ..Default::default()
         };
 
