@@ -574,19 +574,7 @@ fn compare_root_device_paths(
 /// volume set in the Host Status/context accurately reflects the actual active volume, i.e., the
 /// device that the firmware booted from.
 pub(crate) fn validate_ab_active_volume(ctx: &EngineContext) -> Result<(), TridentError> {
-    if ctx.storage_graph.root_fs_is_ab() {
-        let root_device_path = block_devices::get_root_device_path()?;
-        let root_device_id = ctx
-            .get_root_block_device_id()
-            .ok_or_else(|| TridentError::new(ServicingError::GetRootBlockDeviceId))?;
-
-        validate_ab_active_volume_internal(
-            ctx,
-            root_device_path,
-            root_device_id,
-            ctx.storage_graph.root_fs_is_verity(),
-        )
-    } else {
+    if ctx.image_distro().is_acl() {
         let usr_device_path = block_devices::get_usr_device_path()?;
         let usr_device_id = ctx
             .get_usr_block_device_id()
@@ -597,6 +585,18 @@ pub(crate) fn validate_ab_active_volume(ctx: &EngineContext) -> Result<(), Tride
             usr_device_path,
             usr_device_id,
             ctx.storage_graph.usr_fs_is_verity(),
+        )
+    } else {
+        let root_device_path = block_devices::get_root_device_path()?;
+        let root_device_id = ctx
+            .get_root_block_device_id()
+            .ok_or_else(|| TridentError::new(ServicingError::GetRootBlockDeviceId))?;
+
+        validate_ab_active_volume_internal(
+            ctx,
+            root_device_path,
+            root_device_id,
+            ctx.storage_graph.root_fs_is_verity(),
         )
     }
 }

@@ -433,7 +433,6 @@ impl EngineContext {
     }
 
     /// Retrieves the distribution of the OS image.
-    #[expect(dead_code)]
     pub(crate) fn image_distro(&self) -> Distro {
         self.image_os_release().get_distro()
     }
