@@ -29,7 +29,9 @@ Trident's dependencies.
 - Python packages:
 
   ```bash
-  sudo pip3 install virt-firmware
+  # Use version 26.2 to avoid a breaking change
+  # introduced in 26.4.
+  sudo pip3 install virt-firmware==26.2
   ```
 
 ## Code Coverage Dependencies

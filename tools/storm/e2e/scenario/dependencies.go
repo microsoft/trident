@@ -90,8 +90,12 @@ func installUbuntuDependencies(osRelease *env.OsReleaseInfo) error {
 	case "jammy":
 		// Use `-E` to preserve PipAuthenticate connection to
 		// internal feed replacing PyPI
-		err = cmd.Run("sudo", "-E", "pip3", "install", "virt-firmware", "-vvv")
+		// Pin to version 26.2 to avoid a breaking change in
+		// 26.4.
+		err = cmd.Run("sudo", "-E", "pip3", "install", "virt-firmware==26.2", "-vvv")
 	case "noble":
+		// noble seems to be using 24.1, which avoids the 26.4
+		// breaking change.
 		err = cmd.Run("sudo", "apt-get", "-y", "install", "python3-virt-firmware")
 	default:
 		return fmt.Errorf("unsupported Ubuntu version for virt-firmware installation: %s", osRelease.VersionCodename)
