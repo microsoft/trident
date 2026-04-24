@@ -57,8 +57,10 @@ steps:
           imagemagick
 
       # Use `-E` to preserve PipAuthenticate connection to
-      # internal feed replacing PyPI
-      sudo -E pip3 install virt-firmware -vvv
+      # internal feed replacing PyPI.
+      # Pin to a working version to avoid breaking change
+      # introduced in 26.4.
+      sudo -E pip3 install virt-firmware==26.2 -vvv
     displayName: Install virt-deploy dependencies
     retryCountOnTaskFailure: 3
 
