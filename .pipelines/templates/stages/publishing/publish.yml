@@ -25,7 +25,7 @@ stages:
           - BaremetalDeploymentTesting_host
           - BaremetalDeploymentTesting_container
           - ServicingTesting
-    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main') )
+    # condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main') )
 
     jobs:
       - job: Publishing
@@ -89,8 +89,8 @@ stages:
             condition: and(succeeded(), eq(variables.isVersionInFeed, false))
             inputs:
               command: publish
-              vstsFeedPublish: ${{ parameters.feed }}
-              vstsFeedPackagePublish: "${{ variables.rpmsPackageBaseName }}${{ variables.artifactSuffix }}"
+              vstsFeedPublish: ECF/TridentDev
+              vstsFeedPackagePublish: "rpms-dev"
               publishDirectory: "/tmp/rpms"
               versionPublish: $(Build.BuildNumber)
               versionOption: custom
