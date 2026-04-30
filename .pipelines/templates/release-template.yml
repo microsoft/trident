@@ -24,6 +24,15 @@ stages:
       artifactName: trident-binaries
       specificVersion: ${{ parameters.specificVersion }}
       packageName: rpms
+      targetArchitecture: amd64
+
+  - template: stages/download_staged/download-staged.yml
+    parameters:
+      stageType: rel
+      artifactName: trident-binaries
+      specificVersion: ${{ parameters.specificVersion }}
+      packageName: rpms
+      targetArchitecture: arm64
 
   - ${{ if ne(parameters.skipPublishing, true) }}:
       - template: stages/publishing/publish.yml
