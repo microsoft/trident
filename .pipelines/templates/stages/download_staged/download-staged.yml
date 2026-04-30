@@ -85,6 +85,6 @@ stages:
               displayName: Install native dependencies to extract Trident binary
               retryCountOnTaskFailure: 3
 
-            - script: ./scripts/extract-binary.sh $(ob_outputDirectory) $(ob_outputDirectory)
+            - script: ./scripts/extract-binary.sh $(ob_outputDirectory) $(ob_outputDirectory) ${{ parameters.targetArchitecture }}
               displayName: Extract Trident binary
               workingDirectory: $(TRIDENT_SOURCE_DIR)
