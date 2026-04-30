@@ -64,26 +64,21 @@ stages:
               buildType: current
               patterns: |
                 *.rpm
-              targetPath: /tmp/rpms-arm64
+              targetPath: /tmp/rpms
               artifactName: trident-binaries-arm64
             displayName: "Download Trident RPMs (arm64)"
 
           - script: |
               set -eux
 
-              amd64AlreadyPublished=$(./scripts/get-packages.py --debug \
-                  --package '${{ variables.rpmsPackageBaseName }}${{ variables.artifactSuffix }}' \
-                  --version '$(Build.BuildNumber)' \
-                  --action=exists)
-              arm64AlreadyPublished=$(./scripts/get-packages.py --debug \
+              alreadyPublished=$(./scripts/get-packages.py --debug \
                   --package '${{ variables.rpmsPackageBaseName }}${{ variables.artifactSuffix }}' \
                   --version '$(Build.BuildNumber)' \
                   --action=exists)
 
               # Save variable to know if package needs to be published
               set +x
-              echo "##vso[task.setvariable variable=isAmd64VersionInFeed;]$amd64AlreadyPublished"
-              echo "##vso[task.setvariable variable=isArm64VersionInFeed;]$arm64AlreadyPublished"
+              echo "##vso[task.setvariable variable=isVersionInFeed;]$alreadyPublished"
             displayName: "Check if package version has already been published in the feed."
             workingDirectory: $(TRIDENT_SOURCE_DIR)
             env:
@@ -91,22 +86,11 @@ stages:
 
           - task: UniversalPackages@0
             displayName: "Publish rpms Universal Package"
-            condition: and(succeeded(), eq(variables.isAmd64VersionInFeed, false))
+            condition: and(succeeded(), eq(variables.isVersionInFeed, false))
             inputs:
               command: publish
               vstsFeedPublish: ${{ parameters.feed }}
               vstsFeedPackagePublish: "${{ variables.rpmsPackageBaseName }}${{ variables.artifactSuffix }}"
               publishDirectory: "/tmp/rpms"
-              versionPublish: $(Build.BuildNumber)
-              versionOption: custom
-
-          - task: UniversalPackages@0
-            displayName: "Publish rpms-arm64 Universal Package"
-            condition: and(succeeded(), eq(variables.isArm64VersionInFeed, false))
-            inputs:
-              command: publish
-              vstsFeedPublish: ${{ parameters.feed }}
-              vstsFeedPackagePublish: "${{ variables.rpmsPackageBaseName }}-arm64${{ variables.artifactSuffix }}"
-              publishDirectory: "/tmp/rpms-arm64"
               versionPublish: $(Build.BuildNumber)
               versionOption: custom

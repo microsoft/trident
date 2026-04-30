@@ -6,7 +6,7 @@
 set -eux
 
 TMP_DIR=$(mktemp -d)
-RPM=$(find $1 | grep -P 'trident-\d.*\.rpm')
+RPM=$(find $1 | grep -P 'trident-\d.*\.x86_64\.rpm ')
 
 cp "$RPM" "$TMP_DIR/trident.rpm"
 

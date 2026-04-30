@@ -69,10 +69,7 @@ stages:
           - template: ../common_tasks/download-universal-artifact.yml
             parameters:
               tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
-              ${{ if eq(parameters.targetArchitecture, 'amd64') }}:
-                packageName: ${{ parameters.packageName }}${{ variables.downloadArtifactSuffix }}
-              ${{ else }}:
-                packageName: ${{ parameters.packageName }}-${{ parameters.targetArchitecture }}${{ variables.downloadArtifactSuffix }}
+              packageName: ${{ parameters.packageName }}${{ variables.downloadArtifactSuffix }}
               downloadLocation: $(ob_outputDirectory)
               outputVersionVariable: trident_version
               specificVersion: ${{ parameters.specificVersion }}
