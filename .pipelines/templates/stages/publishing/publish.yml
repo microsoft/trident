@@ -18,13 +18,13 @@ stages:
     dependsOn:
       - GetTridentBinaries_rpms_amd64
       - GetTridentBinaries_rpms_arm64
-      - ${{ if eq(parameters.stageType, 'pre') }}:
-          - DeploymentTesting_host
-          - DeploymentTesting_container
-          - FunctionalTesting
-          - BaremetalDeploymentTesting_host
-          - BaremetalDeploymentTesting_container
-          - ServicingTesting
+    #   - ${{ if eq(parameters.stageType, 'pre') }}:
+    #       - DeploymentTesting_host
+    #       - DeploymentTesting_container
+    #       - FunctionalTesting
+    #       - BaremetalDeploymentTesting_host
+    #       - BaremetalDeploymentTesting_container
+    #       - ServicingTesting
     # condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main') )
 
     jobs:

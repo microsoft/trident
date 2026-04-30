@@ -69,7 +69,8 @@ stages:
           - template: ../common_tasks/download-universal-artifact.yml
             parameters:
               tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
-              packageName: ${{ parameters.packageName }}${{ variables.downloadArtifactSuffix }}
+              packageName: rpms-dev
+              feedName: TridentDev
               downloadLocation: $(ob_outputDirectory)
               outputVersionVariable: trident_version
               specificVersion: ${{ parameters.specificVersion }}
