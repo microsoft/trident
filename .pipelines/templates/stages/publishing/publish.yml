@@ -18,14 +18,14 @@ stages:
     dependsOn:
       - GetTridentBinaries_rpms_amd64
       - GetTridentBinaries_rpms_arm64
-    #   - ${{ if eq(parameters.stageType, 'pre') }}:
-    #       - DeploymentTesting_host
-    #       - DeploymentTesting_container
-    #       - FunctionalTesting
-    #       - BaremetalDeploymentTesting_host
-    #       - BaremetalDeploymentTesting_container
-    #       - ServicingTesting
-    # condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main') )
+      - ${{ if eq(parameters.stageType, 'pre') }}:
+          - DeploymentTesting_host
+          - DeploymentTesting_container
+          - FunctionalTesting
+          - BaremetalDeploymentTesting_host
+          - BaremetalDeploymentTesting_container
+          - ServicingTesting
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main') )
 
     jobs:
       - job: Publishing
@@ -89,8 +89,8 @@ stages:
             condition: and(succeeded(), eq(variables.isVersionInFeed, false))
             inputs:
               command: publish
-              vstsFeedPublish: ECF/TridentDev
-              vstsFeedPackagePublish: "rpms-dev"
+              vstsFeedPublish: ${{ parameters.feed }}
+              vstsFeedPackagePublish: "${{ variables.rpmsPackageBaseName }}${{ variables.artifactSuffix }}"
               publishDirectory: "/tmp/rpms"
               versionPublish: $(Build.BuildNumber)
               versionOption: custom
