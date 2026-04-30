@@ -27,14 +27,20 @@ parameters:
     type: string
     default: ''
 
+  - name: targetArchitecture
+    type: string
+    values:
+      - amd64
+      - arm64
+
 stages:
-  - stage: GetTridentBinaries_${{ replace(parameters.packageName, '-', '_') }}_amd64
-    displayName: Download staged ${{ parameters.packageName }} for ${{ parameters.stageType }}
+  - stage: GetTridentBinaries_${{ replace(parameters.packageName, '-', '_') }}_${{ parameters.targetArchitecture }}
+    displayName: Download staged ${{ parameters.packageName }} (${{ parameters.targetArchitecture }}) for ${{ parameters.stageType }}
     ${{ if ne(parameters.dependsOnStage, '') }}:
       dependsOn: ${{ parameters.dependsOnStage }}
 
     jobs:
-      - job: DownloadTrident_amd64
+      - job: DownloadTrident_${{ parameters.targetArchitecture }}
         displayName: Download Trident
         pool:
           type: linux
@@ -42,7 +48,10 @@ stages:
         variables:
           # Control the name of the artifact where Trident binaries are stored
           - name: ob_artifactBaseName
-            value: ${{ parameters.artifactName }}
+            ${{ if eq(parameters.targetArchitecture, 'amd64') }}:
+              value: ${{ parameters.artifactName }}
+            ${{ else }}:
+              value: ${{ parameters.artifactName }}-${{ parameters.targetArchitecture }}
           - name: ob_outputDirectory
             value: "/tmp/out"
 
@@ -76,6 +85,6 @@ stages:
               displayName: Install native dependencies to extract Trident binary
               retryCountOnTaskFailure: 3
 
-            - script: ./scripts/extract-binary.sh $(ob_outputDirectory) $(ob_outputDirectory)
+            - script: ./scripts/extract-binary.sh $(ob_outputDirectory) $(ob_outputDirectory) ${{ parameters.targetArchitecture }}
               displayName: Extract Trident binary
               workingDirectory: $(TRIDENT_SOURCE_DIR)

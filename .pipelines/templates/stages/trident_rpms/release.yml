@@ -73,6 +73,6 @@ steps:
     workingDirectory: ${{ parameters.tridentRepoDirectory }}
     displayName: Build RPMs
 
-  - script: ./scripts/extract-binary.sh ${{ parameters.artifactDirectory }} ${{ parameters.artifactDirectory }}
+  - script: ./scripts/extract-binary.sh ${{ parameters.artifactDirectory }} ${{ parameters.artifactDirectory }} ${{ parameters.targetArchitecture }}
     workingDirectory: ${{ parameters.tridentRepoDirectory }}
     displayName: Extract Trident binary

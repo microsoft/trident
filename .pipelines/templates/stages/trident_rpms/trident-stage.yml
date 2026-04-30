@@ -51,7 +51,7 @@ stages:
   # one that requires a build (pr, pr-e2e, ci).
   #
   # We do not currently stage arm64 binaries, so always build them for now.
-  - ${{ if or(eq(parameters.tridentBuildOptions, 'forceBuild'), eq(parameters.targetArchitecture, 'arm64'), eq(parameters.stageType, 'pr'), eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
+  - ${{ if or(eq(parameters.tridentBuildOptions, 'forceBuild'), eq(parameters.stageType, 'pr'), eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
       - template: build-source.yml
         parameters:
           tridentArtifactName: ${{ parameters.tridentArtifactName }}
@@ -68,9 +68,10 @@ stages:
             # Run CodeQL for this in CI only
             runCodeql: true
 
-  - ${{ elseif and(ne(parameters.tridentBuildOptions, 'prebuilt'), eq(parameters.targetArchitecture, 'amd64')) }}:
+  - ${{ elseif ne(parameters.tridentBuildOptions, 'prebuilt') }}:
       - template: ../download_staged/download-staged.yml
         parameters:
           artifactName: ${{ parameters.tridentArtifactName }}
           stageType: ${{ parameters.stageType }}
           packageName: rpms
+          targetArchitecture: ${{ parameters.targetArchitecture }}

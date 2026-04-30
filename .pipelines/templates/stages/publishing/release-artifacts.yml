@@ -45,6 +45,15 @@ stages:
               artifactName: trident-binaries
             displayName: "Download Trident RPMs"
 
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              buildType: current
+              patterns: |
+                *.rpm
+              targetPath: $(Pipeline.Workspace)/rpms
+              artifactName: trident-binaries-arm64
+            displayName: "Download Trident RPMs (arm64)"
+
           - script: |
               set -eux
 

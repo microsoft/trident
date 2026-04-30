@@ -17,6 +17,7 @@ stages:
   - stage: Publishing
     dependsOn:
       - GetTridentBinaries_rpms_amd64
+      - GetTridentBinaries_rpms_arm64
       - ${{ if eq(parameters.stageType, 'pre') }}:
           - DeploymentTesting_host
           - DeploymentTesting_container
@@ -57,6 +58,15 @@ stages:
               targetPath: /tmp/rpms
               artifactName: trident-binaries
             displayName: "Download Trident RPMs"
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              buildType: current
+              patterns: |
+                *.rpm
+              targetPath: /tmp/rpms
+              artifactName: trident-binaries-arm64
+            displayName: "Download Trident RPMs (arm64)"
 
           - script: |
               set -eux
