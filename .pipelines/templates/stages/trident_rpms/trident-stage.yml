@@ -68,7 +68,7 @@ stages:
             # Run CodeQL for this in CI only
             runCodeql: true
 
-  - ${{ elseif ne(parameters.tridentBuildOptions, 'prebuilt')) }}:
+  - ${{ elseif ne(parameters.tridentBuildOptions, 'prebuilt') }}:
       - template: ../download_staged/download-staged.yml
         parameters:
           artifactName: ${{ parameters.tridentArtifactName }}
