@@ -179,6 +179,16 @@ pub enum PartitionType {
 }
 
 impl PartitionType {
+    /// Returns the ACL partition type that is treated as USR-like in storage validation.
+    pub fn acl_usr() -> Self {
+        Self::Unknown(ACL_USR_PARTITION_TYPE_UUID)
+    }
+
+    /// Returns true when this partition type is the ACL USR-equivalent partition type.
+    pub fn is_acl_usr(&self) -> bool {
+        matches!(self, Self::Unknown(uuid) if *uuid == ACL_USR_PARTITION_TYPE_UUID)
+    }
+
     /// Helper function that returns PartititionType as a string. Return values
     /// are based on GPT partition type identifiers, as defined in the Type
     /// section of systemd repart.d manual:
@@ -203,6 +213,10 @@ impl PartitionType {
 
     /// Returns the corresponding verity partition type for a given partition type.
     pub fn to_verity(&self) -> Option<Self> {
+        if self.is_acl_usr() {
+            return Some(PartitionType::UsrVerity);
+        }
+
         match self {
             Self::Root => Some(PartitionType::RootVerity),
             Self::Usr => Some(PartitionType::UsrVerity),
@@ -255,9 +269,11 @@ impl From<PartitionType> for DiscoverablePartitionType {
 }
 
 impl Display for PartitionType {
+    /// Formats known partition types using systemd-repart names and unknown
+    /// partition types as `unknown(<uuid>)` to preserve UUID visibility.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Self::Unknown(uuid) = self {
-            write!(f, "{uuid}")
+            write!(f, "unknown({uuid})")
         } else {
             write!(f, "{}", self.to_sdrepart_part_type())
         }
