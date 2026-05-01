@@ -38,7 +38,7 @@ impl Chroot {
         let mut mounts = Vec::new();
 
         for dir in SpecialDir::iter() {
-            let (mount, temp_dir) = mount_sepcial_dir(path, dir)?;
+            let (mount, temp_dir) = mount_special_dir(path, dir)?;
 
             mounts.push(mount);
 
@@ -137,7 +137,7 @@ pub fn enter_update_chroot(root_mount_path: &Path) -> Result<Chroot, TridentErro
 }
 
 /// Mount a specific special directory.
-fn mount_sepcial_dir(
+fn mount_special_dir(
     root_path: &Path,
     dir: SpecialDir,
 ) -> Result<(UnmountDrop<Mount>, Option<TempDir>), TridentError> {
