@@ -288,6 +288,42 @@ mod functional_test {
     }
 
     #[functional_test(feature = "helpers")]
+    fn test_enter_and_exit_chroot_with_missing_special_dirs() {
+        // Create a temporary directory to act as the chroot environment
+        let temp_dir = tempdir().unwrap();
+        let chroot_path = temp_dir.path().to_path_buf();
+
+        // Intentionally do not create /dev, /proc, /sys under the chroot.
+        assert!(!chroot_path.join("dev").exists());
+        assert!(!chroot_path.join("proc").exists());
+        assert!(!chroot_path.join("sys").exists());
+
+        // Create a dummy file at /
+        File::create(Path::new("/").join("dummy")).unwrap();
+        assert!(Path::new("/dummy").exists());
+
+        // Enter the chroot; special mount directories should be created temporarily.
+        let chroot = Chroot::enter(&chroot_path).unwrap();
+
+        // Verify we are inside the chroot and special directories are available.
+        assert!(Path::new("/dev").exists());
+        assert!(Path::new("/proc").exists());
+        assert!(Path::new("/sys").exists());
+
+        // Verify we cannot access the dummy file from inside of chroot.
+        assert!(!Path::new("/dummy").exists());
+
+        // Exit the chroot.
+        chroot.exit().unwrap();
+
+        // Temporary special directories should be cleaned up after unmount/exit.
+        assert!(!chroot_path.join("dev").exists());
+        assert!(!chroot_path.join("proc").exists());
+        assert!(!chroot_path.join("sys").exists());
+        assert!(Path::new("/dummy").exists());
+    }
+
+    #[functional_test(feature = "helpers")]
     fn test_enter_update_chroot() {
         // Create a temporary directory to act as the chroot environment
         let temp_dir = tempdir().unwrap();
