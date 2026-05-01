@@ -72,17 +72,18 @@ steps:
       vstsFeedPackage: "${{ parameters.packageName }}"
       vstsPackageVersion: "$(${{ parameters.outputVersionVariable }})"
 
-  - script: |
-      set -eux
+  - ${{ if eq(parameters.packageName, 'rpms') }}:
+      - script: |
+          set -eux
 
-      OTHER_ARCH_SUFFIX="aarch64.rpm"
-      if [ "${{ parameters.targetArchitecture }}" = "arm64" ]; then
-        OTHER_ARCH_SUFFIX="x86_64.rpm"
-      fi
+          OTHER_ARCH_SUFFIX="aarch64.rpm"
+          if [ "${{ parameters.targetArchitecture }}" = "arm64" ]; then
+            OTHER_ARCH_SUFFIX="x86_64.rpm"
+          fi
 
-      find ${{ parameters.downloadLocation }} -name "*.${OTHER_ARCH_SUFFIX}" -type f -delete
+          find ${{ parameters.downloadLocation }} -name "*.${OTHER_ARCH_SUFFIX}" -type f -delete
 
-      echo "List remaining RPM files:"
-      find ${{ parameters.downloadLocation }} -name "*.rpm" -type f
+          echo "List remaining RPM files:"
+          find ${{ parameters.downloadLocation }} -name "*.rpm" -type f
 
-    displayName: "Remove RPMs for other architectures (if any)"
+        displayName: "Remove RPMs for other architectures (if any)"
