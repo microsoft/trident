@@ -165,7 +165,7 @@ fn mount_sepcial_dir(
                     )
                 })
                 .structured(ServicingError::ChrootMountSpecialDir {
-                    dir: dir.dir_name().to_string(),
+                    dir: dir.dir_path("/").display().to_string(),
                 })?,
         )
     } else if !full_path.is_dir() {
@@ -187,7 +187,7 @@ fn mount_sepcial_dir(
         .flags(MountFlags::empty())
         .mount(dir.source(), full_path)
         .structured(ServicingError::ChrootMountSpecialDir {
-            dir: dir.dir_name().to_string(),
+            dir: dir.dir_path("/").display().to_string(),
         })?
         .into_unmount_drop(UnmountFlags::empty());
 
