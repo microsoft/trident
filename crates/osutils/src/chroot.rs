@@ -14,7 +14,7 @@ use sys_mount::{Mount, MountFlags, Unmount, UnmountDrop, UnmountFlags};
 use tempfile::{Builder, TempDir};
 
 use trident_api::error::{
-    InvalidInputError, ServicingError, TridentError, TridentResultExt,
+    InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt,
 };
 
 /// Create a chroot environment.
