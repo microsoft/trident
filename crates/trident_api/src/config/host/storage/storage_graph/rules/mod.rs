@@ -17,9 +17,12 @@ use std::{
 
 use anyhow::{bail, ensure, Error};
 
-use crate::config::{
-    FileSystemSource, FileSystemType, HostConfigurationStaticValidationError, NewFileSystemType,
-    Partition, PartitionSize, PartitionType, RaidLevel,
+use crate::{
+    config::{
+        FileSystemSource, FileSystemType, HostConfigurationStaticValidationError,
+        NewFileSystemType, Partition, PartitionSize, PartitionType, RaidLevel,
+    },
+    constants::ACL_USR_PARTITION_TYPE_UUID,
 };
 
 use super::{
@@ -470,6 +473,8 @@ impl BlkDevReferrerKind {
                 PartitionType::Usr,
                 PartitionType::UsrVerity,
                 PartitionType::LinuxGeneric,
+                // Special case for ACL.
+                PartitionType::Unknown(ACL_USR_PARTITION_TYPE_UUID),
             ]),
             Self::FileSystemImage => AllowBlockList::Any,
             Self::Swap => AllowBlockList::Allow(vec![PartitionType::Swap]),
@@ -488,6 +493,8 @@ impl SpecialReferenceKind {
                 PartitionType::Root,
                 PartitionType::Usr,
                 PartitionType::LinuxGeneric,
+                // Special case for ACL.
+                PartitionType::Unknown(ACL_USR_PARTITION_TYPE_UUID),
             ])),
             Self::VerityHashDevice => Some(AllowBlockList::Allow(vec![
                 PartitionType::RootVerity,

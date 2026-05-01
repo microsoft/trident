@@ -7,7 +7,11 @@ use uuid::Uuid;
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
-use crate::{constants::PARTITION_SIZE_GROW, primitives::bytes::ByteCount, BlockDeviceId};
+use crate::{
+    constants::{ACL_USR_PARTITION_TYPE_UUID, PARTITION_SIZE_GROW},
+    primitives::bytes::ByteCount,
+    BlockDeviceId,
+};
 
 #[cfg(feature = "schemars")]
 use crate::schema::{block_device_id_schema, unit_enum_with_untagged_variant};
@@ -203,6 +207,9 @@ impl PartitionType {
             Self::Root => Some(PartitionType::RootVerity),
             Self::Usr => Some(PartitionType::UsrVerity),
 
+            // Special case for ACL.
+            Self::Unknown(ACL_USR_PARTITION_TYPE_UUID) => Some(PartitionType::UsrVerity),
+
             // We permit the use of the generic Linux partition type for verity
             // partitions because it is the default type.
             Self::LinuxGeneric => Some(Self::LinuxGeneric),
@@ -249,7 +256,11 @@ impl From<PartitionType> for DiscoverablePartitionType {
 
 impl Display for PartitionType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_sdrepart_part_type())
+        if let Self::Unknown(uuid) = self {
+            write!(f, "{uuid}")
+        } else {
+            write!(f, "{}", self.to_sdrepart_part_type())
+        }
     }
 }
 

@@ -1,4 +1,5 @@
 use const_format::formatcp;
+use uuid::Uuid;
 
 // Configuration constants
 
@@ -187,6 +188,10 @@ pub const VALID_CONFEXT_DIRECTORIES: [&str; 3] = [
     "/usr/lib/confexts",
     "/usr/local/lib/confexts",
 ];
+
+/// ACL USR partition type UUID.
+pub const ACL_USR_PARTITION_TYPE_UUID: Uuid =
+    Uuid::from_u128(0x5dfbf5f4_2848_4bac_aa5e_0d9a20b745a6);
 
 /// Internal-only overrides
 pub mod internal_params {
