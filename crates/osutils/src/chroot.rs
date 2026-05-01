@@ -1,15 +1,21 @@
 use std::{
     fs, mem,
     os::{fd::OwnedFd, unix},
-    path::Path,
+    path::{Path, PathBuf},
     thread,
     time::Duration,
 };
 
-use log::{debug, trace, warn};
+use anyhow::Context;
+use log::{debug, error, trace, warn};
+use strum::IntoEnumIterator;
+use strum_macros::EnumIter;
 use sys_mount::{Mount, MountFlags, Unmount, UnmountDrop, UnmountFlags};
+use tempfile::{Builder, TempDir};
 
-use trident_api::error::{ReportError, ServicingError, TridentError, TridentResultExt};
+use trident_api::error::{
+    InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt,
+};
 
 /// Create a chroot environment.
 ///
@@ -17,6 +23,7 @@ use trident_api::error::{ReportError, ServicingError, TridentError, TridentResul
 pub struct Chroot {
     rootfd: OwnedFd,
     mounts: Vec<UnmountDrop<Mount>>,
+    cleanup_dirs: Vec<TempDir>,
 }
 impl Chroot {
     /// Mount special directories ('/dev', '/proc', and '/sys') and enter chroot.
@@ -27,32 +34,18 @@ impl Chroot {
 
         // Mount special dirs.
         debug!("Mounting special directories");
-        let mounts = vec![
-            Mount::builder()
-                .fstype("devtmpfs")
-                .flags(MountFlags::empty())
-                .mount("devtmpfs", path.join("dev"))
-                .structured(ServicingError::ChrootMountSpecialDir {
-                    dir: "/dev".to_string(),
-                })?
-                .into_unmount_drop(UnmountFlags::empty()),
-            Mount::builder()
-                .fstype("proc")
-                .flags(MountFlags::empty())
-                .mount("proc", path.join("proc"))
-                .structured(ServicingError::ChrootMountSpecialDir {
-                    dir: "/proc".to_string(),
-                })?
-                .into_unmount_drop(UnmountFlags::empty()),
-            Mount::builder()
-                .fstype("sysfs")
-                .flags(MountFlags::empty())
-                .mount("sysfs", path.join("sys"))
-                .structured(ServicingError::ChrootMountSpecialDir {
-                    dir: "/sys".to_string(),
-                })?
-                .into_unmount_drop(UnmountFlags::empty()),
-        ];
+        let mut mounts = Vec::new();
+        let mut cleanup_dirs = Vec::new();
+
+        for dir in SpecialDir::iter() {
+            let (mount, temp_dir) = mount_sepcial_dir(path, dir)?;
+
+            mounts.push(mount);
+
+            if let Some(temp_dir) = temp_dir {
+                cleanup_dirs.push(temp_dir);
+            }
+        }
 
         // Enter the chroot.
         debug!("Entering chroot");
@@ -62,7 +55,11 @@ impl Chroot {
         unix::fs::chroot(path).structured(ServicingError::EnterChroot)?;
         std::env::set_current_dir("/").structured(ServicingError::EnterChroot)?;
 
-        Ok(Self { rootfd, mounts })
+        Ok(Self {
+            rootfd,
+            mounts,
+            cleanup_dirs,
+        })
     }
 
     pub fn execute_and_exit<F>(self, f: F) -> Result<(), TridentError>
@@ -113,12 +110,130 @@ impl Chroot {
                 }
             }
         }
+
+        // Delete any temporary directories that were created for mounting
+        // special directories. If these fail to be removed, log a warning but
+        // continue with the exit process.
+        for temp_dir in self.cleanup_dirs {
+            let tmp_dir_path = temp_dir.path().to_path_buf();
+            debug!(
+                "Removing temporary directory '{}' used for mounting special directory",
+                tmp_dir_path.display()
+            );
+            if let Err(e) = temp_dir.close() {
+                error!(
+                    "Failed to remove temporary directory '{}': {e:?}",
+                    tmp_dir_path.display()
+                );
+            }
+        }
+
         Ok(())
     }
 }
 
 pub fn enter_update_chroot(root_mount_path: &Path) -> Result<Chroot, TridentError> {
     Chroot::enter(root_mount_path).message("Failed to enter updated OS chroot")
+}
+
+/// Mount a specific special directory.
+fn mount_sepcial_dir(
+    root_path: &Path,
+    dir: SpecialDir,
+) -> Result<(UnmountDrop<Mount>, Option<TempDir>), TridentError> {
+    let full_path = dir.dir_path(root_path);
+
+    let temp_dir: Option<TempDir> = if !full_path.exists() {
+        // Try to create the directory if it doesn't exist, as it is required
+        // for mounting the special directory. We'll use a tempdir to ensure it
+        // gets cleaned up after unmounting or on failure.
+        debug!(
+            "Special directory '{}' does not exist. Creating temporary.",
+            full_path.display()
+        );
+
+        Some(
+            Builder::new()
+                .rand_bytes(0)
+                .prefix(dir.dir_name())
+                .tempdir_in(root_path)
+                .with_context(|| {
+                    format!(
+                        "Failed to create temporary directory for '{}' in '{}'",
+                        dir.dir_name(),
+                        root_path.display()
+                    )
+                })
+                .structured(ServicingError::ChrootMountSpecialDir {
+                    dir: dir.dir_name().to_string(),
+                })?,
+        )
+    } else if !full_path.is_dir() {
+        // If the path exists but is not a directory, we cannot mount the
+        // special directory and must return an error. This is an image
+        // misconfiguration issue.
+        return Err(TridentError::new(
+            InvalidInputError::ChrootSpecialDirInvalid {
+                dir: dir.dir_path("/").display().to_string(),
+            },
+        ));
+    } else {
+        // No temp dir needed.
+        None
+    };
+
+    let mount = Mount::builder()
+        .fstype(dir.fstype())
+        .flags(MountFlags::empty())
+        .mount(dir.source(), full_path)
+        .structured(ServicingError::ChrootMountSpecialDir {
+            dir: dir.dir_name().to_string(),
+        })?
+        .into_unmount_drop(UnmountFlags::empty());
+
+    Ok((mount, temp_dir))
+}
+
+#[derive(Debug, Clone, Copy, EnumIter)]
+enum SpecialDir {
+    Dev,
+    Proc,
+    Sys,
+}
+
+impl SpecialDir {
+    /// Returns the filesystem type to mount for this special directory.
+    fn fstype(&self) -> &str {
+        match self {
+            Self::Dev => "devtmpfs",
+            Self::Proc => "proc",
+            Self::Sys => "sysfs",
+        }
+    }
+
+    /// Returns the source to mount for this special directory.
+    fn source(&self) -> &str {
+        match self {
+            Self::Dev => "devtmpfs",
+            Self::Proc => "proc",
+            Self::Sys => "sysfs",
+        }
+    }
+
+    /// Returns the RELATIVE target path to mount for this special directory.
+    fn dir_name(&self) -> &str {
+        match self {
+            Self::Dev => "dev",
+            Self::Proc => "proc",
+            Self::Sys => "sys",
+        }
+    }
+
+    /// Returns the full target path to mount for this special directory,
+    /// relative to the provided root path.
+    fn dir_path(&self, root_path: impl AsRef<Path>) -> PathBuf {
+        root_path.as_ref().join(self.dir_name())
+    }
 }
 
 #[cfg(feature = "functional-test")]
