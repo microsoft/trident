@@ -76,14 +76,15 @@ steps:
   - ${{ if startswith(parameters.packageName, 'rpms') }}:
       - script: |
           set -eux
-
+          # For amd64, get ride of *.aarch64.rpm
           OTHER_ARCH_SUFFIX="aarch64.rpm"
           if [ "${{ parameters.targetArchitecture }}" = "arm64" ]; then
+            # For arm64, get ride of *.x86_64.rpm
             OTHER_ARCH_SUFFIX="x86_64.rpm"
           fi
-
+          # Use find to delete all RPM files that match the other architecture suffix
           find ${{ parameters.downloadLocation }} -name "*.${OTHER_ARCH_SUFFIX}" -type f -delete
-
+          # List remaining RPM files to help pipeline debugging
           echo "List remaining RPM files:"
           find ${{ parameters.downloadLocation }} -name "*.rpm" -type f
 
