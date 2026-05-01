@@ -73,6 +73,7 @@ stages:
               downloadLocation: $(ob_outputDirectory)
               outputVersionVariable: trident_version
               specificVersion: ${{ parameters.specificVersion }}
+              targetArchitecture: ${{ parameters.targetArchitecture }}
 
           - task: onebranch.pipeline.version@1
             displayName: "Set build number"
