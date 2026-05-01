@@ -17,11 +17,9 @@ use std::{
 
 use anyhow::{bail, ensure, Error};
 
-use crate::{
-    config::{
-        FileSystemSource, FileSystemType, HostConfigurationStaticValidationError,
-        NewFileSystemType, Partition, PartitionSize, PartitionType, RaidLevel,
-    },
+use crate::config::{
+    FileSystemSource, FileSystemType, HostConfigurationStaticValidationError, NewFileSystemType,
+    Partition, PartitionSize, PartitionType, RaidLevel,
 };
 
 use super::{
