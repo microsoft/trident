@@ -112,7 +112,7 @@ impl Chroot {
         }
 
         // Delete any temporary directories that were created for mounting
-        // special directories. If these fail to be removed, log a warning but
+        // special directories. If these fail to be removed, log an error but
         // continue with the exit process.
         for temp_dir in self.cleanup_dirs {
             let tmp_dir_path = temp_dir.path().to_path_buf();
