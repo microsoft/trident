@@ -470,6 +470,8 @@ impl BlkDevReferrerKind {
                 PartitionType::Usr,
                 PartitionType::UsrVerity,
                 PartitionType::LinuxGeneric,
+                // Special case for ACL.
+                PartitionType::acl_usr(),
             ]),
             Self::FileSystemImage => AllowBlockList::Any,
             Self::Swap => AllowBlockList::Allow(vec![PartitionType::Swap]),
@@ -488,6 +490,8 @@ impl SpecialReferenceKind {
                 PartitionType::Root,
                 PartitionType::Usr,
                 PartitionType::LinuxGeneric,
+                // Special case for ACL.
+                PartitionType::acl_usr(),
             ])),
             Self::VerityHashDevice => Some(AllowBlockList::Allow(vec![
                 PartitionType::RootVerity,
