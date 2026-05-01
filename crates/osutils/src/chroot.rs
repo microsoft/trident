@@ -34,8 +34,8 @@ impl Chroot {
 
         // Mount special dirs.
         debug!("Mounting special directories");
-        let mut mounts = Vec::new();
         let mut cleanup_dirs = Vec::new();
+        let mut mounts = Vec::new();
 
         for dir in SpecialDir::iter() {
             let (mount, temp_dir) = mount_sepcial_dir(path, dir)?;
