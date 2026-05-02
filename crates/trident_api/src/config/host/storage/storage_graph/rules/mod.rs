@@ -17,12 +17,9 @@ use std::{
 
 use anyhow::{bail, ensure, Error};
 
-use crate::{
-    config::{
-        FileSystemSource, FileSystemType, HostConfigurationStaticValidationError,
-        NewFileSystemType, Partition, PartitionSize, PartitionType, RaidLevel,
-    },
-    constants::ACL_USR_PARTITION_TYPE_UUID,
+use crate::config::{
+    FileSystemSource, FileSystemType, HostConfigurationStaticValidationError, NewFileSystemType,
+    Partition, PartitionSize, PartitionType, RaidLevel,
 };
 
 use super::{
