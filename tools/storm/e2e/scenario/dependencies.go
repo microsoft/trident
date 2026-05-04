@@ -51,12 +51,7 @@ func (s *TridentE2EScenario) installVmDependencies(tc storm.TestCase) error {
 }
 
 func installUbuntuDependencies(osRelease *env.OsReleaseInfo) error {
-	err := prepareSwtpmUbuntu(osRelease)
-	if err != nil {
-		return fmt.Errorf("failed to install swtpm: %w", err)
-	}
-
-	err = cmd.Run("sudo", "NEEDRESTART_MODE=a",
+	err := cmd.Run("sudo", "NEEDRESTART_MODE=a",
 		"apt-get", "-y", "install",
 		"swtpm",
 		"swtpm-tools",
@@ -102,34 +97,6 @@ func installUbuntuDependencies(osRelease *env.OsReleaseInfo) error {
 	if err != nil {
 		return fmt.Errorf("failed to install virt-firmware: %w", err)
 	}
-
-	return nil
-}
-
-func prepareSwtpmUbuntu(osRelease *env.OsReleaseInfo) error {
-	// swtpmTargetUbuntuCodenames := []string{"focal", "jammy"}
-	// if !slices.Contains(swtpmTargetUbuntuCodenames, osRelease.VersionCodename) {
-	// 	// Skip swtpm installation on unsupported Ubuntu versions
-	// 	log.Debugf("swtpm installation skipped on Ubuntu '%s'", osRelease.VersionCodename)
-	// 	return nil
-	// }
-
-	// var err error
-	// err = cmd.Run("sudo", "add-apt-repository", "-y", "ppa:stefanberger/swtpm-"+osRelease.VersionCodename)
-	// if err != nil {
-	// 	return fmt.Errorf("failed to add swtpm ppa: %w", err)
-	// }
-	// err = cmd.Run("sudo", "apt-get", "-y", "update")
-	// if err != nil {
-	// 	return fmt.Errorf("failed to update apt-get: %w", err)
-	// }
-
-	// // This prevents conflict on later install.
-	// // It fails silently if the packages aren't installed.
-	// err = cmd.Run("sudo", "apt-get", "purge", "-y", "swtpm", "swtpm-tools", "libtpms0")
-	// if err != nil {
-	// 	return fmt.Errorf("failed to purge swtpm packages: %w", err)
-	// }
 
 	return nil
 }
