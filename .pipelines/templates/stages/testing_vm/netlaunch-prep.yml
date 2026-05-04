@@ -10,27 +10,6 @@ steps:
       ls -la
     displayName: "Print pipeline context"
 
-  - bash: |
-      set -eux
-
-      # Proactively try to fix any possible issue from previous task failure
-      sudo dpkg --configure -a
-
-      for codename in focal jammy; do
-        if grep UBUNTU_CODENAME=$codename /etc/os-release -q; then
-          sudo add-apt-repository -y ppa:stefanberger/swtpm-$codename
-          sudo apt-get -y update
-
-          # This prevents conflict on later install.
-          # It fails silently if the packages aren't installed.
-          sudo apt-get purge -y swtpm swtpm-tools libtpms0
-
-          break
-        fi
-      done
-    displayName: "Install SWTPM PPA"
-    retryCountOnTaskFailure: 3
-
   # Connect Pip to internal feed rather than PyPI
   - template: ../common_tasks/avoid-pypi-usage.yml
   - bash: |
