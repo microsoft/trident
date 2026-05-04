@@ -162,6 +162,9 @@ pub enum InvalidInputError {
     #[error("Allowed operations must be passed via command line, not in Host Configuration")]
     AllowedOperationsInHostConfiguration,
 
+    #[error("Could not mount '{dir}' for chroot because the path exists and is not a directory.")]
+    ChrootSpecialDirInvalid { dir: String },
+
     #[error(
         "Failed to initialize clean install as host is already provisioned. If a multiboot \
         install was intended, re-run with the --multiboot flag"

@@ -221,6 +221,9 @@ impl PartitionType {
             Self::Root => Some(PartitionType::RootVerity),
             Self::Usr => Some(PartitionType::UsrVerity),
 
+            // Special case for ACL.
+            Self::Unknown(ACL_USR_PARTITION_TYPE_UUID) => Some(PartitionType::UsrVerity),
+
             // We permit the use of the generic Linux partition type for verity
             // partitions because it is the default type.
             Self::LinuxGeneric => Some(Self::LinuxGeneric),
