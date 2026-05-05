@@ -53,13 +53,10 @@ func (s *TridentE2EScenario) installVmDependencies(tc storm.TestCase) error {
 func installUbuntuDependencies(osRelease *env.OsReleaseInfo) error {
 	err := cmd.Run("sudo", "NEEDRESTART_MODE=a",
 		"apt-get", "-y", "install",
-		"swtpm",
-		"swtpm-tools",
 		"bridge-utils",
 		"virt-manager",
 		"qemu-efi",
 		"qemu-kvm",
-		"libtpms0",
 		"libvirt-daemon-system",
 		"libvirt-clients",
 		"python3-libvirt",

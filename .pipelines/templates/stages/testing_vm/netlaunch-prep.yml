@@ -16,13 +16,10 @@ steps:
       set -eux
 
       sudo NEEDRESTART_MODE=a apt-get install -y \
-          swtpm \
-          swtpm-tools \
           bridge-utils \
           virt-manager \
           qemu-efi \
           qemu-kvm \
-          libtpms0 \
           libvirt-daemon-system \
           libvirt-clients \
           python3-libvirt \
