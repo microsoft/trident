@@ -605,6 +605,44 @@ fn copy_boot_files(
     Ok(no_prefix)
 }
 
+/// Search EFI vendor directories for a specific binary.
+///
+/// UEFI convention: each OS vendor installs its bootloader under
+/// `EFI/<vendor>/` (e.g., `EFI/fedora/`, `EFI/azurelinux/`).
+/// This function searches all subdirectories of the EFI directory
+/// for the specified binary, skipping the BOOT fallback directory.
+fn find_efi_binary_in_vendor_dirs(efi_dir: &Path, binary_name: &str) -> Option<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(efi_dir) else {
+        return None;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+
+        // Skip the BOOT directory (already checked by the caller)
+        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+            if name.eq_ignore_ascii_case("BOOT") {
+                continue;
+            }
+        }
+
+        let candidate = path.join(binary_name);
+        if candidate.exists() && candidate.is_file() {
+            debug!(
+                "Found GRUB EFI executable in vendor directory: '{}'",
+                candidate.display()
+            );
+            return Some(candidate);
+        }
+    }
+
+    None
+}
+
+
 /// Generates a list of filepaths to the boot files that need to be copied to implement file-based
 /// update of ESP, relative to the mounted directory.
 ///
@@ -642,24 +680,37 @@ fn generate_boot_filepaths(temp_mount_dir: &Path, is_uki: bool) -> Result<Vec<Pa
         paths.push(selected_grub_config_path);
     }
 
-    // Check if the grub-noprefix EFI executable exists; otherwise, use the standard
-    // grub EFI executable (e.g., grubx64.efi). For example, on AMD64 systems, with
-    // the package update to use the grub2-efi-binary-noprefix RPM, the EFI executable
-    // would be installed as grubx64-noprefix.efi.
-    let grub_efi_noprefix_path = Path::new(temp_mount_dir)
-        .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
+    // Discover the GRUB EFI executable by searching known locations.
+    // Priority order:
+    //   1. EFI/BOOT/grubx64-noprefix.efi (AZL3 noprefix package)
+    //   2. EFI/BOOT/grubx64.efi (standard UEFI fallback location)
+    //   3. EFI/*/grubx64.efi (vendor directory, e.g. EFI/fedora/ on AZL4)
+    let efi_dir = Path::new(temp_mount_dir).join(ESP_EFI_DIRECTORY);
+    let grub_efi_noprefix_path = efi_dir
+        .join(EFI_DEFAULT_BIN_DIRECTORY)
         .join(GRUB_NOPREFIX_EFI);
-    let grub_efi_path = Path::new(temp_mount_dir)
-        .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
+    let grub_efi_default_path = efi_dir
+        .join(EFI_DEFAULT_BIN_DIRECTORY)
         .join(GRUB_EFI);
 
     let selected_grub_binary_path =
         if grub_efi_noprefix_path.exists() && grub_efi_noprefix_path.is_file() {
             grub_efi_noprefix_path
-        } else if grub_efi_path.exists() && grub_efi_path.is_file() {
-            grub_efi_path
+        } else if grub_efi_default_path.exists() && grub_efi_default_path.is_file() {
+            grub_efi_default_path
+        } else if let Some(vendor_path) = find_efi_binary_in_vendor_dirs(&efi_dir, GRUB_EFI) {
+            vendor_path
         } else {
-            bail!("Failed to find GRUB EFI executable");
+            // Log what we searched to help diagnose image packaging issues
+            let searched = vec![
+                grub_efi_noprefix_path.display().to_string(),
+                grub_efi_default_path.display().to_string(),
+                format!("{}/*/{}",  efi_dir.display(), GRUB_EFI),
+            ];
+            bail!(
+                "Failed to find GRUB EFI executable. Searched: {}",
+                searched.join(", ")
+            );
         };
     debug!(
         "Using GRUB EFI executable from '{}'",
@@ -1423,12 +1474,17 @@ mod tests {
         // Test case 4: Run generate_boot_filepaths() without grub EFI executable
         // Remove old grub EFI executable
         fs::remove_file(&grub_efi_path).unwrap();
-        assert_eq!(
+        assert!(
             generate_boot_filepaths(temp_mount_dir.path(), false)
                 .unwrap_err()
                 .root_cause()
-                .to_string(),
-            "Failed to find GRUB EFI executable"
+                .to_string()
+                .contains("Failed to find GRUB EFI executable"),
+            "Error should mention GRUB EFI, got: {}",
+            generate_boot_filepaths(temp_mount_dir.path(), false)
+                .unwrap_err()
+                .root_cause()
+                .to_string()
         );
 
         // Test case 5: Run generate_boot_filepaths() with a grub EFI executable with noprefix name
