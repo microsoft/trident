@@ -31,6 +31,11 @@ pub fn is_azl3() -> Result<bool, Error> {
     Ok(OsRelease::read()?.get_distro().is_azl3())
 }
 
+/// Returns whether the host is running Azure Linux 4.
+pub fn is_azl4() -> Result<bool, Error> {
+    Ok(OsRelease::read()?.get_distro().is_azl4())
+}
+
 /// Represents the contents of the /etc/os-release file.
 ///
 /// See <https://www.freedesktop.org/software/systemd/man/latest/os-release.html>
@@ -146,6 +151,8 @@ impl OsRelease {
                             AzureLinuxRelease::AzL2
                         } else if v.starts_with("3.") {
                             AzureLinuxRelease::AzL3
+                        } else if v.starts_with("4.") {
+                            AzureLinuxRelease::AzL4
                         } else {
                             trace!("Unknown Azure Linux release: {v}");
                             AzureLinuxRelease::Other
@@ -342,6 +349,10 @@ impl Distro {
         self == &Distro::AzureLinux(AzureLinuxRelease::AzL3)
     }
 
+    pub fn is_azl4(&self) -> bool {
+        self == &Distro::AzureLinux(AzureLinuxRelease::AzL4)
+    }
+
     pub fn is_acl(&self) -> bool {
         self == &Distro::AzureContainerLinux
     }
@@ -354,6 +365,7 @@ pub enum AzureLinuxRelease {
     Other,
     AzL2,
     AzL3,
+    AzL4,
 }
 
 #[cfg(test)]
@@ -428,6 +440,42 @@ mod tests {
             Distro::AzureLinux(AzureLinuxRelease::AzL3)
         );
     }
+
+    #[test]
+    fn test_parse_azl4() {
+        let data = indoc::indoc! {
+            r#"
+            NAME="Azure Linux"
+            VERSION="4.0 (Four Alpha2)"
+            RELEASE_TYPE=development
+            ID=azurelinux
+            ID_LIKE=fedora
+            VERSION_ID="4.0"
+            VERSION_CODENAME=""
+            PRETTY_NAME="Azure Linux 4.0 (Four Alpha2)"
+            ANSI_COLOR="0;38;2;60;110;180"
+            LOGO=azurelinux-logo-icon
+            CPE_NAME="cpe:/o:azurelinuxproject:azurelinux:4.0"
+            DEFAULT_HOSTNAME="azurelinux"
+            HOME_URL="https://aka.ms/azurelinux"
+            DOCUMENTATION_URL="https://aka.ms/azurelinux"
+            SUPPORT_URL="https://aka.ms/azurelinux"
+            BUG_REPORT_URL="https://aka.ms/azurelinux"
+            SUPPORT_END=2026-05-15
+            "#,
+        };
+
+        let os_release = OsRelease::parse(data);
+        assert_eq!(os_release.id, Some("azurelinux".to_string()));
+        assert_eq!(os_release.version_id, Some("4.0".to_string()));
+        assert_eq!(os_release.id_like, Some("fedora".to_string()));
+        assert_eq!(os_release.release_type, Some("development".to_string()));
+        assert_eq!(
+            os_release.get_distro(),
+            Distro::AzureLinux(AzureLinuxRelease::AzL4)
+        );
+    }
+
 
     #[test]
     fn test_parse_extension_release() {
