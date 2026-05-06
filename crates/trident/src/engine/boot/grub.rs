@@ -304,6 +304,15 @@ fn update_grub_config_native(
     )
     .context("Failed to read /etc/default/grub")?;
 
+    // AZL4 uses GRUB_CMDLINE_LINUX_DEFAULT (Fedora/BLS convention).
+    // Determine which variable to update based on what exists in the file.
+    let cmdline_var = if grub.get("GRUB_CMDLINE_LINUX_DEFAULT").is_some() {
+        "GRUB_CMDLINE_LINUX_DEFAULT"
+    } else {
+        "GRUB_CMDLINE_LINUX"
+    };
+    debug!("Using GRUB variable: {}", cmdline_var);
+
     // Build the list of kernel arg updates from engine context
     let mut updates: Vec<(&str, String)> = Vec::new();
 
@@ -384,12 +393,12 @@ fn update_grub_config_native(
         }
     }
 
-    // Apply all updates
+    // Apply all updates to the correct GRUB variable
     let update_refs: Vec<(&str, &str)> = updates
         .iter()
         .map(|(k, v)| (*k, v.as_str()))
         .collect();
-    grub.update_cmdline_args(&update_refs);
+    grub.update_cmdline_args(cmdline_var, &update_refs);
 
     // Write back
     grub.write().context("Failed to write /etc/default/grub")?;
