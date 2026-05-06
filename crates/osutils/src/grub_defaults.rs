@@ -107,11 +107,13 @@ impl GrubDefaults {
         }
     }
 
-    /// Parse kernel command line args from GRUB_CMDLINE_LINUX.
+    /// Parse kernel command line args from the specified GRUB variable.
     /// Returns a map of arg_name -> optional value.
-    pub fn get_cmdline_args(&self) -> HashMap<String, Option<String>> {
+    ///
+    /// Common variables: `GRUB_CMDLINE_LINUX` (AZL3), `GRUB_CMDLINE_LINUX_DEFAULT` (AZL4/Fedora).
+    pub fn get_cmdline_args(&self, var_name: &str) -> HashMap<String, Option<String>> {
         let mut args = HashMap::new();
-        if let Some(cmdline) = self.get("GRUB_CMDLINE_LINUX") {
+        if let Some(cmdline) = self.get(var_name) {
             for token in shell_split(cmdline) {
                 if let Some((key, value)) = token.split_once('=') {
                     args.insert(key.to_string(), Some(value.to_string()));
@@ -123,13 +125,15 @@ impl GrubDefaults {
         args
     }
 
-    /// Update specific kernel command line args in GRUB_CMDLINE_LINUX.
+    /// Update specific kernel command line args in the specified GRUB variable.
     ///
     /// `updates` maps arg names to new values. If the arg exists, its value
     /// is replaced. If it doesn't exist, it's appended. Args not in `updates`
     /// are preserved unchanged.
-    pub fn update_cmdline_args(&mut self, updates: &[(&str, &str)]) {
-        let current = self.get("GRUB_CMDLINE_LINUX").unwrap_or("").to_string();
+    ///
+    /// Common variables: `GRUB_CMDLINE_LINUX` (AZL3), `GRUB_CMDLINE_LINUX_DEFAULT` (AZL4/Fedora).
+    pub fn update_cmdline_args(&mut self, var_name: &str, updates: &[(&str, &str)]) {
+        let current = self.get(var_name).unwrap_or("").to_string();
         let mut tokens: Vec<String> = shell_split(&current);
 
         for (name, value) in updates {
@@ -150,12 +154,12 @@ impl GrubDefaults {
         }
 
         let new_cmdline = tokens.join(" ");
-        self.set("GRUB_CMDLINE_LINUX", &new_cmdline);
+        self.set(var_name, &new_cmdline);
     }
 
-    /// Remove specific args from GRUB_CMDLINE_LINUX by name prefix.
-    pub fn remove_cmdline_args(&mut self, names: &[&str]) {
-        let current = self.get("GRUB_CMDLINE_LINUX").unwrap_or("").to_string();
+    /// Remove specific args from the specified GRUB variable by name prefix.
+    pub fn remove_cmdline_args(&mut self, var_name: &str, names: &[&str]) {
+        let current = self.get(var_name).unwrap_or("").to_string();
         let tokens: Vec<String> = shell_split(&current)
             .into_iter()
             .filter(|token| {
@@ -166,7 +170,7 @@ impl GrubDefaults {
             .collect();
 
         let new_cmdline = tokens.join(" ");
-        self.set("GRUB_CMDLINE_LINUX", &new_cmdline);
+        self.set(var_name, &new_cmdline);
     }
 
     /// Write the modified defaults back to the file.
@@ -330,7 +334,7 @@ GRUB_DISABLE_RECOVERY=true
         );
 
         let grub = GrubDefaults::read(f.path()).unwrap();
-        let args = grub.get_cmdline_args();
+        let args = grub.get_cmdline_args("GRUB_CMDLINE_LINUX");
         assert_eq!(args.get("root"), Some(&Some("/dev/sda2".to_string())));
         assert_eq!(args.get("selinux"), Some(&Some("1".to_string())));
         assert_eq!(args.get("rd.overlayfs"), Some(&Some("a,b,c,d".to_string())));
@@ -345,13 +349,13 @@ GRUB_DISABLE_RECOVERY=true
         );
 
         let mut grub = GrubDefaults::read(f.path()).unwrap();
-        grub.update_cmdline_args(&[
+        grub.update_cmdline_args("GRUB_CMDLINE_LINUX", &[
             ("root", "/dev/sda5"),
             ("selinux", "0"),
             ("rd.overlayfs", "lower,upper,work,/dev/sda3"),
         ]);
 
-        let args = grub.get_cmdline_args();
+        let args = grub.get_cmdline_args("GRUB_CMDLINE_LINUX");
         assert_eq!(args.get("root"), Some(&Some("/dev/sda5".to_string())));
         assert_eq!(args.get("selinux"), Some(&Some("0".to_string())));
         assert_eq!(
@@ -370,9 +374,9 @@ GRUB_DISABLE_RECOVERY=true
         );
 
         let mut grub = GrubDefaults::read(f.path()).unwrap();
-        grub.remove_cmdline_args(&["selinux", "rd.overlayfs"]);
+        grub.remove_cmdline_args("GRUB_CMDLINE_LINUX", &["selinux", "rd.overlayfs"]);
 
-        let args = grub.get_cmdline_args();
+        let args = grub.get_cmdline_args("GRUB_CMDLINE_LINUX");
         assert_eq!(args.get("selinux"), None);
         assert_eq!(args.get("rd.overlayfs"), None);
         assert_eq!(args.get("root"), Some(&Some("/dev/sda2".to_string())));
