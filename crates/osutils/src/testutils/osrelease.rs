@@ -38,11 +38,36 @@ const AZURE_LINUX_3_OS_RELEASE: &str = indoc::indoc! {
     "#,
 };
 
+
+/// Azure Linux 4.0 sample os-release file.
+const AZURE_LINUX_4_OS_RELEASE: &str = indoc::indoc! {
+    r#"
+    NAME="Azure Linux"
+    VERSION="4.0 (Four Alpha2)"
+    RELEASE_TYPE=development
+    ID=azurelinux
+    ID_LIKE=fedora
+    VERSION_ID="4.0"
+    VERSION_CODENAME=""
+    PRETTY_NAME="Azure Linux 4.0 (Four Alpha2)"
+    ANSI_COLOR="0;38;2;60;110;180"
+    LOGO=azurelinux-logo-icon
+    CPE_NAME="cpe:/o:azurelinuxproject:azurelinux:4.0"
+    DEFAULT_HOSTNAME="azurelinux"
+    HOME_URL="https://aka.ms/azurelinux"
+    DOCUMENTATION_URL="https://aka.ms/azurelinux"
+    SUPPORT_URL="https://aka.ms/azurelinux"
+    BUG_REPORT_URL="https://aka.ms/azurelinux"
+    SUPPORT_END=2026-05-15
+    "#,
+};
+
 /// Creates a mock /etc/os-release file with the given Azure Linux release.
 pub fn make_mock_os_release(root_path: &Path, azl_release: AzureLinuxRelease) -> Result<(), Error> {
     let os_release_content = match azl_release {
         AzureLinuxRelease::AzL2 => AZURE_LINUX_2_OS_RELEASE,
         AzureLinuxRelease::AzL3 => AZURE_LINUX_3_OS_RELEASE,
+        AzureLinuxRelease::AzL4 => AZURE_LINUX_4_OS_RELEASE,
         AzureLinuxRelease::Other => bail!("Unsupported Azure Linux release 'other'"),
     };
 

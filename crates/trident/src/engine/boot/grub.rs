@@ -65,7 +65,7 @@ pub(super) fn update_configs(ctx: &EngineContext, os_modifier_path: &Path) -> Re
 
     // Update GRUB config on the boot device (volume holding /boot)
     match ctx.host_os_release.get_distro() {
-        Distro::AzureLinux(AzureLinuxRelease::AzL3) => {
+        Distro::AzureLinux(AzureLinuxRelease::AzL3 | AzureLinuxRelease::AzL4) => {
             update_grub_config_azl3(
                 ctx,
                 os_modifier_path,
@@ -110,7 +110,7 @@ fn update_grub_config_azl3(
             .context("Failed to disable default cloud-init network config")?;
     }
 
-    debug!("Updating GRUB config for Azure Linux 3.0 with OS modifier");
+    debug!("Updating GRUB config for Azure Linux 3.0+ with OS modifier");
 
     // OS modifier will read values of verity, selinux, root device, and overlay from original GRUB config
     // stamp them into /etc/default/grub and regenerate the GRUB config using grub-mkconfig.
@@ -247,7 +247,7 @@ fn update_grub_config_azl3(
         )
     })?;
 
-    debug!("Finished updating GRUB config for Azure Linux 3.0 with OS modifier");
+    debug!("Finished updating GRUB config for Azure Linux 3.0+ with OS modifier");
 
     Ok(())
 }

@@ -102,6 +102,8 @@ mod functional_test {
     fn test_regenerate_initrd() {
         let pattern = if osrelease::is_azl3().unwrap() {
             "/boot/initramfs-*.azl3.img"
+        } else if osrelease::is_azl4().unwrap() {
+            "/boot/initramfs-*.azl4.img"
         } else {
             "/boot/initrd.img-*"
         };
