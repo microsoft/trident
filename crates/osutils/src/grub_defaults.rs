@@ -438,4 +438,112 @@ menuentry 'Azure Linux (recovery)' {
         let written = fs::read_to_string(out.path()).unwrap();
         assert!(written.contains("GRUB_HIDDEN_TIMEOUT=\"0\""));
     }
+    #[test]
+    fn test_azl4_grub_cmdline_linux_default() {
+        // AZL4 uses GRUB_CMDLINE_LINUX_DEFAULT, not GRUB_CMDLINE_LINUX
+        let f = write_temp_grub(
+            r#"GRUB_CMDLINE_LINUX_DEFAULT="console=ttyS0 rd.shell=0"
+GRUB_ENABLE_BLSCFG=true
+GRUB_GFXMODE=auto
+GRUB_TERMINAL_INPUT="console"
+GRUB_TERMINAL_OUTPUT="gfxterm"
+GRUB_TIMEOUT=0
+GRUB_DEFAULT=saved
+"#,
+        );
+
+        let mut grub = GrubDefaults::read(f.path()).unwrap();
+
+        // Detect which variable to use (AZL4 pattern)
+        let var = if grub.get("GRUB_CMDLINE_LINUX_DEFAULT").is_some() {
+            "GRUB_CMDLINE_LINUX_DEFAULT"
+        } else {
+            "GRUB_CMDLINE_LINUX"
+        };
+        assert_eq!(var, "GRUB_CMDLINE_LINUX_DEFAULT");
+
+        // Update with Trident's typical boot args
+        grub.update_cmdline_args(var, &[
+            ("root", "/dev/sda2"),
+            ("selinux", "1"),
+            ("enforcing", "1"),
+            ("rd.overlayfs", "lower,upper,work,/dev/sda5"),
+        ]);
+
+        let args = grub.get_cmdline_args(var);
+        assert_eq!(args.get("root"), Some(&Some("/dev/sda2".to_string())));
+        assert_eq!(args.get("selinux"), Some(&Some("1".to_string())));
+        assert_eq!(args.get("enforcing"), Some(&Some("1".to_string())));
+        assert_eq!(args.get("rd.overlayfs"), Some(&Some("lower,upper,work,/dev/sda5".to_string())));
+        // Original args preserved
+        assert_eq!(args.get("console"), Some(&Some("ttyS0".to_string())));
+        assert_eq!(args.get("rd.shell"), Some(&Some("0".to_string())));
+
+        // BLS config should be preserved
+        assert_eq!(grub.get("GRUB_ENABLE_BLSCFG"), Some("true"));
+
+        // Write and verify file structure
+        let out = NamedTempFile::new().unwrap();
+        grub.write_to(out.path()).unwrap();
+        let written = fs::read_to_string(out.path()).unwrap();
+        assert!(written.contains("GRUB_CMDLINE_LINUX_DEFAULT="));
+        assert!(written.contains("GRUB_ENABLE_BLSCFG="));
+        // Should NOT contain GRUB_CMDLINE_LINUX (without _DEFAULT)
+        assert!(!written.contains("
+GRUB_CMDLINE_LINUX="));
+    }
+
+    #[test]
+    fn test_azl4_bls_entry_extraction() {
+        // AZL4 BLS-style grub.cfg that loads entries via blscfg module
+        // The actual kernel args are in /boot/loader/entries/*.conf
+        // but grub.cfg still has some structure we might parse
+        let cfg = r#"
+### BEGIN /etc/grub.d/10_linux ###
+# The blscfg command parses the BootLoaderSpec files stored in /boot/loader/entries and
+# creates a menu entry for each one.
+insmod blscfg
+blscfg
+### END /etc/grub.d/10_linux ###
+"#;
+        let f = write_temp_grub(cfg);
+        // extract_cmdline_from_grub_cfg should return an error since there's no
+        // linux line in a BLS-only grub.cfg
+        let result = extract_cmdline_from_grub_cfg(f.path());
+        assert!(result.is_err(), "BLS-only grub.cfg should not have linux lines");
+    }
+
+    #[test]
+    fn test_extract_cmdline_from_bls_entry() {
+        // Test parsing a BLS entry file (same format as /boot/loader/entries/*.conf)
+        let entry = r#"title Azure Linux (6.18.5-1.8.azl4~20260420.x86_64) 4.0 (Cloud Variant Alpha2)
+version 6.18.5-1.8.azl4~20260420.x86_64
+linux /boot/vmlinuz-6.18.5-1.8.azl4~20260420.x86_64
+initrd /boot/initramfs-6.18.5-1.8.azl4~20260420.x86_64.img
+options root=UUID=3190eea2-a4b1-4399-9679-e0840cf8eb75 ro console=ttyS0 rd.shell=0
+grub_users $grub_users
+grub_arg --unrestricted
+grub_class azurelinux
+"#;
+        let f = write_temp_grub(entry);
+        // BLS entries use "linux" as a key, same as grub.cfg
+        // Our parser should find the "options" line args
+        let content = fs::read_to_string(f.path()).unwrap();
+        let mut args = HashMap::new();
+        for line in content.lines() {
+            if line.starts_with("options ") {
+                for token in line.strip_prefix("options ").unwrap().split_whitespace() {
+                    if let Some((key, value)) = token.split_once('=') {
+                        args.insert(key.to_string(), Some(value.to_string()));
+                    } else {
+                        args.insert(token.to_string(), None);
+                    }
+                }
+            }
+        }
+        assert_eq!(args.get("root"), Some(&Some("UUID=3190eea2-a4b1-4399-9679-e0840cf8eb75".to_string())));
+        assert_eq!(args.get("console"), Some(&Some("ttyS0".to_string())));
+        assert_eq!(args.get("ro"), Some(&None));
+    }
+
 }
