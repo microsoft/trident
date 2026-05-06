@@ -14,6 +14,7 @@ pub mod files;
 pub mod filesystems;
 pub mod findmnt;
 pub mod grub;
+pub mod grub_defaults;
 pub mod grub_mkconfig;
 pub mod hostname;
 pub mod installation_media;
