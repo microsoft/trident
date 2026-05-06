@@ -8,6 +8,7 @@ use uuid::Uuid;
 use osutils::{
     blkid,
     grub::GrubConfig,
+    grub_defaults,
     grub_mkconfig::GrubMkConfigScript,
     osmodifier::{self, BootConfig, IdentifiedPartition, Overlay, Verity},
     osrelease::{AzureLinuxRelease, Distro},
@@ -65,10 +66,18 @@ pub(super) fn update_configs(ctx: &EngineContext, os_modifier_path: &Path) -> Re
 
     // Update GRUB config on the boot device (volume holding /boot)
     match ctx.host_os_release.get_distro() {
-        Distro::AzureLinux(AzureLinuxRelease::AzL3 | AzureLinuxRelease::AzL4) => {
+        Distro::AzureLinux(AzureLinuxRelease::AzL3) => {
             update_grub_config_azl3(
                 ctx,
                 os_modifier_path,
+                &root_device_path,
+                &boot_grub_config_path,
+            )?;
+        }
+
+        Distro::AzureLinux(AzureLinuxRelease::AzL4) => {
+            update_grub_config_native(
+                ctx,
                 &root_device_path,
                 &boot_grub_config_path,
             )?;
@@ -249,6 +258,147 @@ fn update_grub_config_azl3(
 
     debug!("Finished updating GRUB config for Azure Linux 3.0+ with OS modifier");
 
+    Ok(())
+}
+
+
+/// Updates the GRUB config for Azure Linux 4.0+ natively without os-modifier.
+///
+/// This function replaces the external `os-modifier` tool by directly
+/// manipulating `/etc/default/grub` and running `grub2-mkconfig`. It:
+///
+/// 1. Reads current kernel args from the existing grub.cfg
+/// 2. Builds updated args from the engine context (root device, SELinux,
+///    verity, overlay)
+/// 3. Stamps them into /etc/default/grub
+/// 4. Optionally adds cloud-init network-config=disabled
+/// 5. Regenerates grub.cfg via grub2-mkconfig
+fn update_grub_config_native(
+    ctx: &EngineContext,
+    root_device_path: &Path,
+    boot_grub_config_path: &Path,
+) -> Result<(), Error> {
+    // For AZL4, we need to disable cloud-init's network configuration when Trident is
+    // configuring the network, same as AZL3.
+    if ctx.spec.os.netplan.is_some() {
+        info!("Disabling default cloud-init network config");
+        let mut disable_default_cloud_init_network = GrubMkConfigScript::new("prefer-netplan");
+        disable_default_cloud_init_network.add_kv_param("network-config", "disabled");
+        disable_default_cloud_init_network
+            .write()
+            .context("Failed to disable default cloud-init network config")?;
+    }
+
+    debug!("Updating GRUB config natively for Azure Linux 4.0+");
+
+    // Read current grub.cfg to extract existing kernel args
+    let current_args = grub_defaults::extract_cmdline_from_grub_cfg(boot_grub_config_path)
+        .context("Failed to extract kernel args from grub.cfg")?;
+
+    trace!("Current kernel args from grub.cfg: {:?}", current_args);
+
+    // Read /etc/default/grub
+    let mut grub = grub_defaults::GrubDefaults::read(
+        Path::new(crate::engine::constants::ROOT_MOUNT_POINT_PATH)
+            .join("etc/default/grub"),
+    )
+    .context("Failed to read /etc/default/grub")?;
+
+    // Build the list of kernel arg updates from engine context
+    let mut updates: Vec<(&str, String)> = Vec::new();
+
+    // Root device
+    let root_str = root_device_path
+        .to_str()
+        .context("Failed to convert root device path to string")?;
+    updates.push(("root", root_str.to_string()));
+
+    // SELinux
+    if let Some(mode) = ctx.spec.os.selinux.mode {
+        let (selinux_val, enforcing_val) = match mode {
+            trident_api::config::SelinuxMode::Enforcing => ("1", "1"),
+            trident_api::config::SelinuxMode::Permissive => ("1", "0"),
+            trident_api::config::SelinuxMode::Disabled => ("0", "0"),
+        };
+        updates.push(("selinux", selinux_val.to_string()));
+        updates.push(("enforcing", enforcing_val.to_string()));
+    } else {
+        // Preserve existing SELinux args from grub.cfg if present
+        if let Some(Some(v)) = current_args.get("selinux") {
+            updates.push(("selinux", v.clone()));
+        }
+        if let Some(Some(v)) = current_args.get("enforcing") {
+            updates.push(("enforcing", v.clone()));
+        }
+    }
+
+    // Verity
+    let root_device_id = ctx
+        .spec
+        .storage
+        .path_to_filesystem(trident_api::constants::ROOT_MOUNT_POINT_PATH)
+        .and_then(|m| m.device_id.clone());
+
+    if let Some(root_device_id) = root_device_id {
+        if let Some(verity_device) = ctx
+            .spec
+            .storage
+            .verity
+            .iter()
+            .find(|d| d.id == *root_device_id)
+        {
+            let (data_path, hash_path) =
+                super::super::storage::verity::get_verity_device_paths(ctx, verity_device)
+                    .context("Failed to get verity device paths")?;
+
+            updates.push(("rd.systemd.verity", "1".to_string()));
+            updates.push((
+                "systemd.verity_root_data",
+                data_path.to_string_lossy().to_string(),
+            ));
+            updates.push((
+                "systemd.verity_root_hash",
+                hash_path.to_string_lossy().to_string(),
+            ));
+        }
+    }
+
+    // Overlay
+    if let Some(overlay_mount) = ctx
+        .spec
+        .storage
+        .mount_points_by_path()
+        .get(Path::new(crate::engine::constants::TRIDENT_OVERLAY_PATH))
+    {
+        if let Some(device_id) = &overlay_mount.device_id {
+            if let Some(device_path) = ctx.get_block_device_path(device_id) {
+                let overlay_arg = format!(
+                    "{},{},{},{}",
+                    trident_api::constants::TRIDENT_OVERLAY_LOWER_RELATIVE_PATH,
+                    trident_api::constants::TRIDENT_OVERLAY_UPPER_RELATIVE_PATH,
+                    trident_api::constants::TRIDENT_OVERLAY_WORK_RELATIVE_PATH,
+                    device_path.display(),
+                );
+                updates.push(("rd.overlayfs", overlay_arg));
+            }
+        }
+    }
+
+    // Apply all updates
+    let update_refs: Vec<(&str, &str)> = updates
+        .iter()
+        .map(|(k, v)| (*k, v.as_str()))
+        .collect();
+    grub.update_cmdline_args(&update_refs);
+
+    // Write back
+    grub.write().context("Failed to write /etc/default/grub")?;
+
+    // Regenerate grub.cfg
+    grub_defaults::regenerate_grub_config(boot_grub_config_path)
+        .context("Failed to regenerate grub.cfg")?;
+
+    debug!("Finished native GRUB config update for Azure Linux 4.0+");
     Ok(())
 }
 
