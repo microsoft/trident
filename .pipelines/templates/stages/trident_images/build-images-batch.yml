@@ -160,15 +160,16 @@ jobs:
           azureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
           runtimeBuildType: $(BASEIMG_BUILD_TYPE)
 
+      # --- Prepare requirements ONCE for all images ---
+      - bash: $(TRIDENT_SOURCE_DIR)/.pipelines/scripts/img/prepare-image-requirements.sh
+        workingDirectory: $(TRIDENT_SOURCE_DIR)
+        displayName: "Prepare requirements"
+        env:
+          TRIDENT_SOURCE_DIR: $(TRIDENT_SOURCE_DIR)
+          ARTIFACT_STAGING_DIR: $(Build.ArtifactStagingDirectory)
+
       # --- Build each image sequentially, output to subdirs of ob_outputDirectory ---
       - ${{ each image in parameters.images }}:
-          - bash: $(TRIDENT_SOURCE_DIR)/.pipelines/scripts/img/prepare-image-requirements.sh
-            workingDirectory: $(TRIDENT_SOURCE_DIR)
-            displayName: "Prepare requirements (${{ image.label }})"
-            env:
-              TRIDENT_SOURCE_DIR: $(TRIDENT_SOURCE_DIR)
-              ARTIFACT_STAGING_DIR: $(Build.ArtifactStagingDirectory)
-
           - bash: $(TRIDENT_SOURCE_DIR)/.pipelines/scripts/img/build-test-image.sh
             workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: "Build Image (${{ image.label }})"
@@ -184,6 +185,8 @@ jobs:
               cp ./artifacts/*.qcow2 $(ob_outputDirectory)/${{ image.label }}/ 2>/dev/null || true
               cp ./artifacts/*.cosi $(ob_outputDirectory)/${{ image.label }}/ 2>/dev/null || true
               cp ./artifacts/*.vhd $(ob_outputDirectory)/${{ image.label }}/ 2>/dev/null || true
-              rm -rf ./artifacts/*
+              # Remove only build outputs; preserve base image (.vhdx) and rpm-overrides for next iteration
+              sudo rm -f ./artifacts/*.qcow2 ./artifacts/*.cosi ./artifacts/*.vhd 2>/dev/null || true
+              sudo rm -rf ./build/ 2>/dev/null || true
             workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: "Copy and clean artifacts (${{ image.label }})"
