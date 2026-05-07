@@ -91,35 +91,20 @@ stages:
                   - ${{ parameters.dependsOnStage }}
 
             jobs:
-              - template: ../trident_images/build-image.yml
+              - template: ../trident_images/build-images-batch.yml
                 parameters:
-                  label: "qemu-base"
-                  makeTarget: "artifacts/trident-vm-grub-verity-testimage.qcow2"
                   baseimgType: qemu_guest
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
                   useStagedSshKeys: true
-
-              - template: ../trident_images/build-image.yml
-                parameters:
-                  label: "qemu-update-a"
-                  makeTarget: "artifacts/trident-vm-grub-verity-testimage.cosi"
-                  baseimgType: qemu_guest
-                  baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-                  micBuildType: ${{ parameters.micBuildType }}
-                  micVersion: ${{ parameters.micVersion }}
-                  useStagedSshKeys: true
-
-              - template: ../trident_images/build-image.yml
-                parameters:
-                  label: "qemu-update-b"
-                  makeTarget: "artifacts/trident-vm-grub-verity-testimage.cosi"
-                  baseimgType: qemu_guest
-                  baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-                  micBuildType: ${{ parameters.micBuildType }}
-                  micVersion: ${{ parameters.micVersion }}
-                  useStagedSshKeys: true
+                  images:
+                    - label: "qemu-base"
+                      makeTarget: "artifacts/trident-vm-grub-verity-testimage.qcow2"
+                    - label: "qemu-update-a"
+                      makeTarget: "artifacts/trident-vm-grub-verity-testimage.cosi"
+                    - label: "qemu-update-b"
+                      makeTarget: "artifacts/trident-vm-grub-verity-testimage.cosi"
 
       - ${{ if eq(parameters.includeAzure, true) }}:
           - stage: BuildImagesAzure
@@ -131,32 +116,19 @@ stages:
                   - ${{ parameters.dependsOnStage }}
 
             jobs:
-              - template: ../trident_images/build-image.yml
+              - template: ../trident_images/build-images-batch.yml
                 parameters:
-                  label: "azure-base"
-                  makeTarget: "artifacts/trident-vm-grub-verity-azure-testimage.vhd"
                   baseimgType: core_selinux
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
-
-              - template: ../trident_images/build-image.yml
-                parameters:
-                  label: "azure-update-a"
-                  makeTarget: "artifacts/trident-vm-grub-verity-azure-testimage.cosi"
-                  baseimgType: core_selinux
-                  baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-                  micBuildType: ${{ parameters.micBuildType }}
-                  micVersion: ${{ parameters.micVersion }}
-
-              - template: ../trident_images/build-image.yml
-                parameters:
-                  label: "azure-update-b"
-                  makeTarget: "artifacts/trident-vm-grub-verity-azure-testimage.cosi"
-                  baseimgType: core_selinux
-                  baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-                  micBuildType: ${{ parameters.micBuildType }}
-                  micVersion: ${{ parameters.micVersion }}
+                  images:
+                    - label: "azure-base"
+                      makeTarget: "artifacts/trident-vm-grub-verity-azure-testimage.vhd"
+                    - label: "azure-update-a"
+                      makeTarget: "artifacts/trident-vm-grub-verity-azure-testimage.cosi"
+                    - label: "azure-update-b"
+                      makeTarget: "artifacts/trident-vm-grub-verity-azure-testimage.cosi"
 
       - ${{ if eq(parameters.includeUKI, true) }}:
           - stage: BuildImagesUKI
@@ -168,35 +140,20 @@ stages:
                   - ${{ parameters.dependsOnStage }}
 
             jobs:
-              - template: ../trident_images/build-image.yml
+              - template: ../trident_images/build-images-batch.yml
                 parameters:
-                  label: "uki-base"
-                  makeTarget: "artifacts/trident-vm-usr-verity-testimage.qcow2"
                   baseimgType: qemu_guest
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
                   useStagedSshKeys: true
-
-              - template: ../trident_images/build-image.yml
-                parameters:
-                  label: "uki-update-a"
-                  makeTarget: "artifacts/trident-vm-usr-verity-testimage.cosi"
-                  baseimgType: qemu_guest
-                  baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-                  micBuildType: ${{ parameters.micBuildType }}
-                  micVersion: ${{ parameters.micVersion }}
-                  useStagedSshKeys: true
-
-              - template: ../trident_images/build-image.yml
-                parameters:
-                  label: "uki-update-b"
-                  makeTarget: "artifacts/trident-vm-usr-verity-testimage.cosi"
-                  baseimgType: qemu_guest
-                  baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-                  micBuildType: ${{ parameters.micBuildType }}
-                  micVersion: ${{ parameters.micVersion }}
-                  useStagedSshKeys: true
+                  images:
+                    - label: "uki-base"
+                      makeTarget: "artifacts/trident-vm-usr-verity-testimage.qcow2"
+                    - label: "uki-update-a"
+                      makeTarget: "artifacts/trident-vm-usr-verity-testimage.cosi"
+                    - label: "uki-update-b"
+                      makeTarget: "artifacts/trident-vm-usr-verity-testimage.cosi"
 
   - stage: ServicingTesting
     displayName: Servicing Testing

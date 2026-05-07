@@ -1,0 +1,192 @@
+# Consolidated image build template - builds multiple images in a single job.
+# This avoids repeating expensive @platform-pipelines template downloads
+# (mic-download, base-images-download, rpms-download) for each image.
+parameters:
+  - name: images
+    type: object
+    # Array of objects: [{label: "qemu-base", makeTarget: "artifacts/..."}, ...]
+
+  - name: baseimgType
+    type: string
+
+  - name: baseimgAzlVersion
+    displayName: Base Image AZL version
+    type: string
+    default: "3.0"
+
+  - name: micBuildType
+    displayName: MIC Build Type
+    type: string
+    values:
+      - dev
+      - preview
+      - release
+    default: release
+
+  - name: micVersion
+    displayName: MIC Version
+    type: string
+    default: "*.*.*"
+
+  - name: useStagedSshKeys
+    displayName: "Use staged SSH keys"
+    type: boolean
+    default: false
+
+  - name: pipelineArchitecture
+    displayName: Architecture for pipeline
+    type: string
+    values:
+      - arm64
+      - amd64
+    default: "amd64"
+
+  - name: targetArchitecture
+    displayName: Architecture for target images
+    type: string
+    values:
+      - arm64
+      - amd64
+    default: "amd64"
+
+  - name: downloadTrident
+    displayName: "Download Trident RPMs"
+    type: boolean
+    default: true
+
+  - name: timeoutInMinutes
+    displayName: "Timeout for the job in minutes"
+    type: number
+    default: 45
+
+jobs:
+  - job: BuildAllImages
+    displayName: Build All Images (batch)
+    timeoutInMinutes: ${{ parameters.timeoutInMinutes }}
+    pool:
+      ${{ if eq(parameters.pipelineArchitecture, 'arm64') }}:
+        type: linux
+        name: azl3-hci-ARM64-1es-pool-westcentralus
+        hostArchitecture: arm64
+      ${{ if eq(parameters.pipelineArchitecture, 'amd64') }}:
+        type: linux
+
+    variables:
+      ob_outputDirectory: $(Build.SourcesDirectory)/out
+      # Dummy artifact base name - we publish explicitly per image
+      ob_artifactBaseName: "images-batch"
+      ${{ if eq(parameters.targetArchitecture, 'amd64') }}:
+        tridentArtifactName: trident-binaries
+      ${{ if eq(parameters.targetArchitecture, 'arm64') }}:
+        tridentArtifactName: trident-binaries-arm64
+
+    steps:
+      - template: ../common_tasks/checkout_trident.yml
+      - template: ../common_tasks/avoid-pypi-usage.yml
+
+      - task: DownloadPipelineArtifact@2
+        inputs:
+          buildType: current
+          artifactName: ssh-keys
+          targetPath: "$(Build.ArtifactStagingDirectory)/ssh"
+        displayName: Download SSH Keys
+
+      - ${{ if eq(parameters.useStagedSshKeys, true) }}:
+          - bash: |
+              set -eux
+              mkdir -p $(TRIDENT_SOURCE_DIR)/artifacts
+              cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* $(TRIDENT_SOURCE_DIR)/artifacts/
+            displayName: Copy SSH Keys
+
+      - ${{ if eq(parameters.downloadTrident, true) }}:
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              buildType: current
+              artifactName: $(tridentArtifactName)
+              targetPath: "$(Build.ArtifactStagingDirectory)/trident"
+            displayName: Download Trident RPMs
+
+      - template: ../common_tasks/find-base-image-version.yml
+        parameters:
+          architecture: ${{ parameters.targetArchitecture }}
+          tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
+
+      # --- Common dependency downloads (done ONCE for all images) ---
+      - bash: $(TRIDENT_SOURCE_DIR)/.pipelines/scripts/img/install-native-deps.sh
+        displayName: "Install native dependencies"
+        retryCountOnTaskFailure: 3
+        env:
+          MIC_ARCHITECTURE: ${{ parameters.targetArchitecture }}
+          PIPELINE_ARCHITECTURE: ${{ parameters.pipelineArchitecture }}
+
+      - template: common/mic-download-template.yaml@platform-pipelines
+        parameters:
+          buildType: ${{ parameters.micBuildType }}
+          arch: ${{ parameters.targetArchitecture }}
+          micVersion: ${{ parameters.micVersion }}
+
+      - ${{ if or(contains(parameters.baseimgType, 'gb200'), contains(parameters.baseimgType, 'ubuntu')) }}:
+          - task: AzureCLI@2
+            inputs:
+              azureSubscription: azlinuxbmpstaging-storage-account-read
+              scriptType: bash
+              scriptLocation: scriptPath
+              scriptPath: $(TRIDENT_SOURCE_DIR)/.pipelines/scripts/img/download-base-image.sh
+            retryCountOnTaskFailure: 5
+            displayName: "Download Base Image - ${{ parameters.baseimgType }}"
+            env:
+              BASE_IMG_TYPE: ${{ parameters.baseimgType }}
+              ARTIFACT_STAGING_DIR: $(Build.ArtifactStagingDirectory)
+
+      - ${{ if not(or(contains(parameters.baseimgType, 'gb200'), contains(parameters.baseimgType, 'ubuntu'))) }}:
+          - template: common/base-images-download-template.yaml@platform-pipelines
+            parameters:
+              buildType: $(BASEIMG_BUILD_TYPE)
+              baseImageType: ${{ parameters.baseimgType }}
+              imageVersion: $(BASEIMG_VERSION)
+              azureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
+
+      - template: common/rpms-download-template.yaml@platform-pipelines
+        parameters:
+          rpmsVersion: $(RPMS_VERSION)
+          azureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
+          runtimeBuildType: $(BASEIMG_BUILD_TYPE)
+
+      # --- Build each image sequentially ---
+      - ${{ each image in parameters.images }}:
+          - bash: $(TRIDENT_SOURCE_DIR)/.pipelines/scripts/img/prepare-image-requirements.sh
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+            displayName: "Prepare requirements (${{ image.label }})"
+            env:
+              TRIDENT_SOURCE_DIR: $(TRIDENT_SOURCE_DIR)
+              ARTIFACT_STAGING_DIR: $(Build.ArtifactStagingDirectory)
+
+          - bash: $(TRIDENT_SOURCE_DIR)/.pipelines/scripts/img/build-test-image.sh
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+            displayName: "Build Image (${{ image.label }})"
+            env:
+              MIC_BUILD_TYPE: ${{ parameters.micBuildType }}
+              MIC_ARCHITECTURE: ${{ parameters.targetArchitecture }}
+              PIPELINE_ARCHITECTURE: ${{ parameters.pipelineArchitecture }}
+              MAKE_TARGET: ${{ image.makeTarget }}
+
+          - bash: |
+              set -eux
+              mkdir -p $(Build.SourcesDirectory)/out/${{ image.label }}
+              cp ./artifacts/*.qcow2 $(Build.SourcesDirectory)/out/${{ image.label }}/ 2>/dev/null || true
+              cp ./artifacts/*.cosi $(Build.SourcesDirectory)/out/${{ image.label }}/ 2>/dev/null || true
+              cp ./artifacts/*.vhd $(Build.SourcesDirectory)/out/${{ image.label }}/ 2>/dev/null || true
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+            displayName: "Copy artifacts (${{ image.label }})"
+
+          - task: PublishPipelineArtifact@1
+            inputs:
+              targetPath: $(Build.SourcesDirectory)/out/${{ image.label }}
+              artifactName: image-${{ image.label }}
+            displayName: "Publish image-${{ image.label }}"
+
+          - bash: |
+              set -eux
+              rm -rf $(TRIDENT_SOURCE_DIR)/artifacts/*
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+            displayName: "Clean artifacts for next build (${{ image.label }})"
