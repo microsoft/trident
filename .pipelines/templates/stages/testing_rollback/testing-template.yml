@@ -43,6 +43,11 @@ parameters:
     type: string
     default: "false"
 
+  - name: useBatchArtifacts
+    displayName: "Download images from batch artifact (images-{flavor}) instead of individual (image-{flavor}-base)"
+    type: boolean
+    default: false
+
   - name: skipRuntimeUpdateTesting
     displayName: "Skip runtime update testing"
     type: string
@@ -95,19 +100,44 @@ jobs:
 
     steps:
       - template: ../common_tasks/checkout_trident.yml
-      - task: DownloadPipelineArtifact@2
-        inputs:
-          buildType: current
-          artifactName: image-${{ parameters.flavor }}-base
-          targetPath: "$(Build.ArtifactStagingDirectory)/"
-        displayName: Download Base Image
-
-      - task: DownloadPipelineArtifact@2
-        inputs:
-          buildType: current
-          artifactName: image-${{ parameters.flavor }}-update-a
-          targetPath: "$(Build.ArtifactStagingDirectory)"
-        displayName: Download Update Image
+      - ${{ if eq(parameters.useBatchArtifacts, true) }}:
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              buildType: current
+              artifactName: images-${{ parameters.flavor }}
+              itemPattern: "${{ parameters.flavor }}-base/**"
+              targetPath: "$(Build.ArtifactStagingDirectory)/"
+            displayName: Download Base Image
+          - bash: |
+              set -eux
+              mv $(Build.ArtifactStagingDirectory)/${{ parameters.flavor }}-base/* $(Build.ArtifactStagingDirectory)/
+              rmdir $(Build.ArtifactStagingDirectory)/${{ parameters.flavor }}-base
+            displayName: Flatten base image directory
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              buildType: current
+              artifactName: images-${{ parameters.flavor }}
+              itemPattern: "${{ parameters.flavor }}-update-a/**"
+              targetPath: "$(Build.ArtifactStagingDirectory)/"
+            displayName: Download Update Image
+          - bash: |
+              set -eux
+              mv $(Build.ArtifactStagingDirectory)/${{ parameters.flavor }}-update-a/* $(Build.ArtifactStagingDirectory)/
+              rmdir $(Build.ArtifactStagingDirectory)/${{ parameters.flavor }}-update-a
+            displayName: Flatten update image directory
+      - ${{ else }}:
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              buildType: current
+              artifactName: image-${{ parameters.flavor }}-base
+              targetPath: "$(Build.ArtifactStagingDirectory)/"
+            displayName: Download Base Image
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              buildType: current
+              artifactName: image-${{ parameters.flavor }}-update-a
+              targetPath: "$(Build.ArtifactStagingDirectory)"
+            displayName: Download Update Image
 
       - task: DownloadPipelineArtifact@2
         inputs:

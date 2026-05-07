@@ -146,6 +146,7 @@ stages:
               micVersion: ${{ parameters.micVersion }}
               isUki: true
               testSecureBoot: ${{ parameters.testSecureBoot }}
+              useBatchArtifacts: true
       - ${{ if eq(parameters.includeUKI, true) }}:
           - template: testing-template.yml
             parameters:
@@ -157,3 +158,4 @@ stages:
               micVersion: ${{ parameters.micVersion }}
               isUki: true
               testSecureBoot: ${{ parameters.testSecureBoot }}
+              useBatchArtifacts: true

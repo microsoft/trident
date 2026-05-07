@@ -82,9 +82,15 @@ jobs:
           - task: DownloadPipelineArtifact@2
             inputs:
               buildType: current
-              artifactName: image-${{ parameters.platform }}-base
+              artifactName: images-${{ parameters.platform }}
+              itemPattern: "${{ parameters.platform }}-base/**"
               targetPath: "$(Build.ArtifactStagingDirectory)/"
             displayName: Download Base Image
+          - bash: |
+              set -eux
+              mv $(Build.ArtifactStagingDirectory)/${{ parameters.platform }}-base/* $(Build.ArtifactStagingDirectory)/
+              rmdir $(Build.ArtifactStagingDirectory)/${{ parameters.platform }}-base
+            displayName: Flatten base image directory
           - task: AzureCLI@2
             inputs:
               azureSubscription: trident-servicing-test
