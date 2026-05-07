@@ -139,7 +139,7 @@ steps:
       cat /etc/os-release
     displayName: "Report Host Info"
 
-  - bash: ${{ parameters.tridentSourceDirectory }}/.pipelines/scripts/install-native-deps.sh
+  - bash: ${{ parameters.tridentSourceDirectory }}/.pipelines/scripts/img/install-native-deps.sh
     displayName: "Install native dependencies"
     retryCountOnTaskFailure: 3
     env:
@@ -159,7 +159,7 @@ steps:
           azureSubscription: azlinuxbmpstaging-storage-account-read
           scriptType: bash
           scriptLocation: scriptPath
-          scriptPath: ${{ parameters.tridentSourceDirectory }}/.pipelines/scripts/download-base-image.sh
+          scriptPath: ${{ parameters.tridentSourceDirectory }}/.pipelines/scripts/img/download-base-image.sh
         retryCountOnTaskFailure: 5
         displayName: "Download Base Image - ${{ baseimgType }}"
         env:
@@ -183,14 +183,14 @@ steps:
       azureLinuxVersion: ${{ parameters.baseimgAzureLinuxVersion }}
       runtimeBuildType: ${{ parameters.baseimgBuildType }}
 
-  - bash: ${{ parameters.tridentSourceDirectory }}/.pipelines/scripts/prepare-image-requirements.sh
+  - bash: ${{ parameters.tridentSourceDirectory }}/.pipelines/scripts/img/prepare-image-requirements.sh
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Prepare and move requirements"
     env:
       TRIDENT_SOURCE_DIR: ${{ parameters.tridentSourceDirectory }}
       ARTIFACT_STAGING_DIR: $(Build.ArtifactStagingDirectory)
 
-  - bash: ${{ parameters.tridentSourceDirectory }}/.pipelines/scripts/build-test-image.sh
+  - bash: ${{ parameters.tridentSourceDirectory }}/.pipelines/scripts/img/build-test-image.sh
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Build Test Image"
     env:
@@ -199,7 +199,7 @@ steps:
       PIPELINE_ARCHITECTURE: ${{ parameters.pipelineArchitecture }}
       MAKE_TARGET: ${{ parameters.target }}
 
-  - bash: ${{ parameters.tridentSourceDirectory }}/.pipelines/scripts/copy-image-artifacts.sh
+  - bash: ${{ parameters.tridentSourceDirectory }}/.pipelines/scripts/img/copy-image-artifacts.sh
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Copy artifacts to output directory"
     env:
