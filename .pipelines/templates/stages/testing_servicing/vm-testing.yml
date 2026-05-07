@@ -211,6 +211,58 @@ stages:
                   testSecureBoot: ${{ parameters.testSecureBoot }}
 
       - ${{ if eq(parameters.includeAzure, true) }}:
+          # Publish the base image once for all azure workers to share
+          - ${{ if gt(parameters.workers, 1) }}:
+              - job: PublishAzureImage
+                displayName: Publish Azure Image
+                timeoutInMinutes: 20
+                pool:
+                  type: linux
+                  name: trident-ubuntu-official-1es-pool-eastus2
+                  hostArchitecture: amd64
+                variables:
+                  ob_outputDirectory: /tmp/logs
+                steps:
+                  - template: ../common_tasks/checkout_trident.yml
+                  - task: DownloadPipelineArtifact@2
+                    displayName: "Download go-tools: storm"
+                    inputs:
+                      buildType: current
+                      artifactName: "go-tools"
+                      patterns: |
+                        storm-trident
+                      targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
+                  - bash: |
+                      set -eux
+                      chmod +x $(TRIDENT_SOURCE_DIR)/bin/storm-trident
+                      mkdir -p $(ob_outputDirectory)
+                    displayName: Make storm executable and create output directory
+                  - task: DownloadPipelineArtifact@2
+                    inputs:
+                      buildType: current
+                      artifactName: images-azure
+                      itemPattern: "azure-base/**"
+                      targetPath: "$(Build.ArtifactStagingDirectory)/"
+                    displayName: Download Base Image
+                  - bash: |
+                      set -eux
+                      mv $(Build.ArtifactStagingDirectory)/azure-base/* $(Build.ArtifactStagingDirectory)/
+                      rmdir $(Build.ArtifactStagingDirectory)/azure-base
+                    displayName: Flatten base image directory
+                  - task: AzureCLI@2
+                    inputs:
+                      azureSubscription: trident-servicing-test
+                      scriptType: bash
+                      scriptLocation: scriptPath
+                      scriptPath: $(TRIDENT_SOURCE_DIR)/.pipelines/scripts/svc/publish-azure-image.sh
+                    displayName: Publish Base Image
+                    env:
+                      TRIDENT_SOURCE_DIR: $(TRIDENT_SOURCE_DIR)
+                      PLATFORM: azure
+                      ARTIFACTS: $(Build.ArtifactStagingDirectory)
+                      BUILD_ID: $(Build.BuildId)
+                      OB_OUTPUT_DIR: $(ob_outputDirectory)
+                      AZCOPY_AUTO_LOGIN_TYPE: "AZCLI"
           - ${{ each batch in parameters.workerBatches }}:
               - template: testing-template.yml
                 parameters:
@@ -225,6 +277,7 @@ stages:
                   flavor: azure
                   pool: trident-ubuntu-official-1es-pool-eastus2
                   testSecureBoot: ${{ parameters.testSecureBoot }}
+                  dependsOnPublishAzureImage: ${{ gt(parameters.workers, 1) }}
 
       - ${{ if eq(parameters.includeUKI, true) }}:
           - ${{ each batch in parameters.workerBatches }}:
