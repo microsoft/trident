@@ -24,6 +24,19 @@ parameters:
     type: number
     default: 1
 
+  - name: workersPerBatch
+    displayName: "Max workers per batch (splits large worker counts into multiple phases)"
+    type: number
+    default: 64
+
+  - name: workerBatches
+    displayName: "Worker batch definitions (offset and size for each batch)"
+    type: object
+    default:
+      - id: ""
+        offset: 0
+        size: 1
+
   - name: updateCheckTimeoutInMinutes
     displayName: "Timeout for checking target OS deployment in minutes"
     type: number
@@ -183,38 +196,47 @@ stages:
 
     jobs:
       - ${{ if eq(parameters.includeQemu, true) }}:
-          - template: testing-template.yml
-            parameters:
-              updateIterationCount: ${{ parameters.updateIterationCount }}
-              rollbackTesting: ${{ parameters.rollbackTesting }}
-              workers: ${{ parameters.workers }}
-              updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
-              verboseLogging: ${{ parameters.verboseLogging }}
-              platform: qemu
-              flavor: qemu
-              testSecureBoot: ${{ parameters.testSecureBoot }}
+          - ${{ each batch in parameters.workerBatches }}:
+              - template: testing-template.yml
+                parameters:
+                  updateIterationCount: ${{ parameters.updateIterationCount }}
+                  rollbackTesting: ${{ parameters.rollbackTesting }}
+                  workers: ${{ batch.size }}
+                  workerOffset: ${{ batch.offset }}
+                  batchId: ${{ batch.id }}
+                  updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
+                  verboseLogging: ${{ parameters.verboseLogging }}
+                  platform: qemu
+                  flavor: qemu
+                  testSecureBoot: ${{ parameters.testSecureBoot }}
 
       - ${{ if eq(parameters.includeAzure, true) }}:
-          - template: testing-template.yml
-            parameters:
-              updateIterationCount: ${{ parameters.updateIterationCount }}
-              rollbackTesting: ${{ parameters.rollbackTesting }}
-              workers: ${{ parameters.workers }}
-              updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
-              verboseLogging: ${{ parameters.verboseLogging }}
-              platform: azure
-              flavor: azure
-              pool: trident-ubuntu-official-1es-pool-eastus2
-              testSecureBoot: ${{ parameters.testSecureBoot }}
+          - ${{ each batch in parameters.workerBatches }}:
+              - template: testing-template.yml
+                parameters:
+                  updateIterationCount: ${{ parameters.updateIterationCount }}
+                  rollbackTesting: ${{ parameters.rollbackTesting }}
+                  workers: ${{ batch.size }}
+                  workerOffset: ${{ batch.offset }}
+                  batchId: ${{ batch.id }}
+                  updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
+                  verboseLogging: ${{ parameters.verboseLogging }}
+                  platform: azure
+                  flavor: azure
+                  pool: trident-ubuntu-official-1es-pool-eastus2
+                  testSecureBoot: ${{ parameters.testSecureBoot }}
 
       - ${{ if eq(parameters.includeUKI, true) }}:
-          - template: testing-template.yml
-            parameters:
-              updateIterationCount: ${{ parameters.updateIterationCount }}
-              rollbackTesting: ${{ parameters.rollbackTesting }}
-              workers: ${{ parameters.workers }}
-              updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
-              verboseLogging: ${{ parameters.verboseLogging }}
-              platform: qemu
-              flavor: uki
-              testSecureBoot: ${{ parameters.testSecureBoot }}
+          - ${{ each batch in parameters.workerBatches }}:
+              - template: testing-template.yml
+                parameters:
+                  updateIterationCount: ${{ parameters.updateIterationCount }}
+                  rollbackTesting: ${{ parameters.rollbackTesting }}
+                  workers: ${{ batch.size }}
+                  workerOffset: ${{ batch.offset }}
+                  batchId: ${{ batch.id }}
+                  updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
+                  verboseLogging: ${{ parameters.verboseLogging }}
+                  platform: qemu
+                  flavor: uki
+                  testSecureBoot: ${{ parameters.testSecureBoot }}
