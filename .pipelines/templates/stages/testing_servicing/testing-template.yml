@@ -131,71 +131,20 @@ jobs:
           echo "##vso[task.setvariable variable=TEST_RESOURCE_GROUP;]trident-vm-servicing-validation-$(Build.BuildId)-$(printf '%03d' $(System.JobPositionInPhase))"
         displayName: "Set variables"
 
-      - ${{ if eq(parameters.platform, 'azure') }}:
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              buildType: current
-              artifactName: images-${{ parameters.platform }}
-              itemPattern: "${{ parameters.platform }}-base/**"
-              targetPath: "$(Build.ArtifactStagingDirectory)/"
-            displayName: Download Base Image
-          - bash: |
-              set -eux
-              mv $(Build.ArtifactStagingDirectory)/${{ parameters.platform }}-base/* $(Build.ArtifactStagingDirectory)/
-              rmdir $(Build.ArtifactStagingDirectory)/${{ parameters.platform }}-base
-            displayName: Flatten base image directory
-
-      - ${{ if eq(parameters.platform, 'qemu') }}:
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              buildType: current
-              artifactName: images-${{ parameters.flavor }}
-              itemPattern: "${{ parameters.flavor }}-base/**"
-              targetPath: "$(Build.ArtifactStagingDirectory)/"
-            displayName: Download Base Image
-          - bash: |
-              set -eux
-              mv $(Build.ArtifactStagingDirectory)/${{ parameters.flavor }}-base/* $(Build.ArtifactStagingDirectory)/
-              rmdir $(Build.ArtifactStagingDirectory)/${{ parameters.flavor }}-base
-            displayName: Flatten base image directory
-
+      # Download all artifacts (3 tasks instead of 5+3 flatten tasks)
       - task: DownloadPipelineArtifact@2
         inputs:
           buildType: current
           artifactName: images-${{ parameters.flavor }}
-          itemPattern: "${{ parameters.flavor }}-update-a/**"
           targetPath: "$(Build.ArtifactStagingDirectory)/"
-        displayName: Download Update Image A
-      - bash: |
-          set -eux
-          mkdir -p $(Build.ArtifactStagingDirectory)/update-a
-          mv $(Build.ArtifactStagingDirectory)/${{ parameters.flavor }}-update-a/* $(Build.ArtifactStagingDirectory)/update-a/
-          rmdir $(Build.ArtifactStagingDirectory)/${{ parameters.flavor }}-update-a
-        displayName: Flatten update-a image directory
-
-      - task: DownloadPipelineArtifact@2
-        inputs:
-          buildType: current
-          artifactName: images-${{ parameters.flavor }}
-          itemPattern: "${{ parameters.flavor }}-update-b/**"
-          targetPath: "$(Build.ArtifactStagingDirectory)/"
-        displayName: Download Update Image B
-      - bash: |
-          set -eux
-          mkdir -p $(Build.ArtifactStagingDirectory)/update-b
-          mv $(Build.ArtifactStagingDirectory)/${{ parameters.flavor }}-update-b/* $(Build.ArtifactStagingDirectory)/update-b/
-          rmdir $(Build.ArtifactStagingDirectory)/${{ parameters.flavor }}-update-b
-        displayName: Flatten update-b image directory
-
+        displayName: Download Images
       - task: DownloadPipelineArtifact@2
         inputs:
           buildType: current
           artifactName: ssh-keys
           targetPath: "$(Build.ArtifactStagingDirectory)/ssh"
         displayName: Download SSH Keys
-
       - task: DownloadPipelineArtifact@2
-        displayName: "Download go-tools"
         inputs:
           buildType: current
           artifactName: "go-tools"
@@ -203,26 +152,17 @@ jobs:
             netlisten
             storm-trident
           targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
+        displayName: Download go-tools
 
-      - bash: |
-          set -eux
-          chmod +x $(TRIDENT_SOURCE_DIR)/bin/netlisten
-          chmod +x $(TRIDENT_SOURCE_DIR)/bin/storm-trident
-          cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* ~/.ssh/
-          chmod -R 700 ~/.ssh/
-          mkdir -p $(ob_outputDirectory)
-        displayName: Set up SSH Keys and setup output directory
-
-      - ${{ if eq(parameters.platform, 'qemu') }}:
-        - bash: |
-            set -eux
-            sudo apt update
-            sudo apt install -y imagemagick
-          displayName: "Install imagemagick for libvirt screenshot capture"
-
-      - bash: |
-          echo "##vso[task.setvariable variable=STORM_SCENARIO_FINISHED;]false"
-        displayName: "Initialize STORM_SCENARIO_FINISHED=false"
+      # Single setup script: flatten artifacts, SSH keys, tools, deps, state init
+      - bash: $(TRIDENT_SOURCE_DIR)/.pipelines/scripts/svc/test-setup.sh
+        displayName: "Set up test environment"
+        env:
+          ARTIFACTS: $(Build.ArtifactStagingDirectory)
+          TRIDENT_SOURCE_DIR: $(TRIDENT_SOURCE_DIR)
+          OB_OUTPUT_DIR: $(ob_outputDirectory)
+          FLAVOR: ${{ parameters.flavor }}
+          PLATFORM: ${{ parameters.platform }}
 
       - bash: $(TRIDENT_SOURCE_DIR)/.pipelines/scripts/svc/set-storm-flags.sh
         displayName: "Set flags"
