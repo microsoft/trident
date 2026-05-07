@@ -93,6 +93,7 @@ stages:
             jobs:
               - template: ../trident_images/build-images-batch.yml
                 parameters:
+                  batchLabel: "qemu"
                   baseimgType: qemu_guest
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                   micBuildType: ${{ parameters.micBuildType }}
@@ -118,6 +119,7 @@ stages:
             jobs:
               - template: ../trident_images/build-images-batch.yml
                 parameters:
+                  batchLabel: "azure"
                   baseimgType: core_selinux
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                   micBuildType: ${{ parameters.micBuildType }}
@@ -142,6 +144,7 @@ stages:
             jobs:
               - template: ../trident_images/build-images-batch.yml
                 parameters:
+                  batchLabel: "uki"
                   baseimgType: qemu_guest
                   baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
                   micBuildType: ${{ parameters.micBuildType }}

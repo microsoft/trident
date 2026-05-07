@@ -1,7 +1,16 @@
 # Consolidated image build template - builds multiple images in a single job.
 # This avoids repeating expensive @platform-pipelines template downloads
 # (mic-download, base-images-download, rpms-download) for each image.
+#
+# Images are published as a single OB artifact with subdirectories per image.
+# The artifact name is "images-{batchLabel}" and contains:
+#   {label1}/image-files...
+#   {label2}/image-files...
 parameters:
+  - name: batchLabel
+    type: string
+    displayName: "Label for the batch artifact (e.g. qemu, azure, uki)"
+
   - name: images
     type: object
     # Array of objects: [{label: "qemu-base", makeTarget: "artifacts/..."}, ...]
@@ -73,8 +82,7 @@ jobs:
 
     variables:
       ob_outputDirectory: $(Build.SourcesDirectory)/out
-      # Dummy artifact base name - we publish explicitly per image
-      ob_artifactBaseName: "images-batch"
+      ob_artifactBaseName: "images-${{ parameters.batchLabel }}"
       ${{ if eq(parameters.targetArchitecture, 'amd64') }}:
         tridentArtifactName: trident-binaries
       ${{ if eq(parameters.targetArchitecture, 'arm64') }}:
@@ -152,7 +160,7 @@ jobs:
           azureLinuxVersion: ${{ parameters.baseimgAzlVersion }}
           runtimeBuildType: $(BASEIMG_BUILD_TYPE)
 
-      # --- Build each image sequentially ---
+      # --- Build each image sequentially, output to subdirs of ob_outputDirectory ---
       - ${{ each image in parameters.images }}:
           - bash: $(TRIDENT_SOURCE_DIR)/.pipelines/scripts/img/prepare-image-requirements.sh
             workingDirectory: $(TRIDENT_SOURCE_DIR)
@@ -172,21 +180,10 @@ jobs:
 
           - bash: |
               set -eux
-              mkdir -p $(Build.SourcesDirectory)/out/${{ image.label }}
-              cp ./artifacts/*.qcow2 $(Build.SourcesDirectory)/out/${{ image.label }}/ 2>/dev/null || true
-              cp ./artifacts/*.cosi $(Build.SourcesDirectory)/out/${{ image.label }}/ 2>/dev/null || true
-              cp ./artifacts/*.vhd $(Build.SourcesDirectory)/out/${{ image.label }}/ 2>/dev/null || true
+              mkdir -p $(ob_outputDirectory)/${{ image.label }}
+              cp ./artifacts/*.qcow2 $(ob_outputDirectory)/${{ image.label }}/ 2>/dev/null || true
+              cp ./artifacts/*.cosi $(ob_outputDirectory)/${{ image.label }}/ 2>/dev/null || true
+              cp ./artifacts/*.vhd $(ob_outputDirectory)/${{ image.label }}/ 2>/dev/null || true
+              rm -rf ./artifacts/*
             workingDirectory: $(TRIDENT_SOURCE_DIR)
-            displayName: "Copy artifacts (${{ image.label }})"
-
-          - task: PublishPipelineArtifact@1
-            inputs:
-              targetPath: $(Build.SourcesDirectory)/out/${{ image.label }}
-              artifactName: image-${{ image.label }}
-            displayName: "Publish image-${{ image.label }}"
-
-          - bash: |
-              set -eux
-              rm -rf $(TRIDENT_SOURCE_DIR)/artifacts/*
-            workingDirectory: $(TRIDENT_SOURCE_DIR)
-            displayName: "Clean artifacts for next build (${{ image.label }})"
+            displayName: "Copy and clean artifacts (${{ image.label }})"
