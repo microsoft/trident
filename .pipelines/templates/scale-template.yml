@@ -106,3 +106,14 @@ stages:
       includeAzure: ${{ parameters.includeAzure }}
       includeUKI: ${{ parameters.includeUKI }}
       dependsOnStage: CreateBaseImageConfig
+      # Split 256 workers into 4 batches of 64 to stay under ADO's per-phase
+      # YAML expansion limit. Each batch becomes a separate parallel job group.
+      workerBatches:
+        - id: 0
+          size: 64
+        - id: 1
+          size: 64
+        - id: 2
+          size: 64
+        - id: 3
+          size: 64

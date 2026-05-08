@@ -328,10 +328,12 @@ func (cfg QemuConfig) createQemuVM(name string, bootImage string, useVirtInstall
 }
 
 func (cfg QemuConfig) TruncateLog(vmName string) error {
-	// If domain exists, truncate the serial log file
+	// If domain exists and serial log file exists, truncate the serial log file
 	if _, _, err := getLibvirtDomainByname(vmName); err == nil {
-		if err := exec.Command("truncate", "-s", "0", cfg.SerialLog).Run(); err != nil {
-			return fmt.Errorf("failed to truncate log file: %w", err)
+		if _, err := os.Stat(cfg.SerialLog); err == nil {
+			if err := exec.Command("truncate", "-s", "0", cfg.SerialLog).Run(); err != nil {
+				return fmt.Errorf("failed to truncate log file: %w", err)
+			}
 		}
 	}
 	return nil
@@ -352,6 +354,13 @@ func (cfg QemuConfig) WaitForLogin(vmName string, outputPath string, verbose boo
 		if err := exec.Command("cp", localSerialLog, filepath.Join(outputPath, outputFilename)).Run(); err != nil {
 			return fmt.Errorf("failed to copy serial log to output directory: %w", err)
 		}
+	}
+
+	// Truncate the serial log after saving to prevent unbounded growth across iterations.
+	// Without truncation, the serial log accumulates all prior boot sequences, eventually
+	// causing the serial console capture to be cut off mid-boot.
+	if truncErr := cfg.TruncateLog(vmName); truncErr != nil {
+		logrus.Warnf("Failed to truncate serial log after iteration %d: %v", iteration, truncErr)
 	}
 
 	if waitErr != nil {

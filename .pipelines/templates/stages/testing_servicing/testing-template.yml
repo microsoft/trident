@@ -10,9 +10,14 @@ parameters:
     default: true
 
   - name: workers
-    displayName: "Number of workers to use"
+    displayName: "Number of workers in this batch"
     type: number
     default: 1
+
+  - name: batchId
+    displayName: "Batch identifier for unique job naming"
+    type: number
+    default: 0
 
   - name: updateCheckTimeoutInMinutes
     displayName: "Timeout for checking target OS deployment in minutes"
@@ -51,67 +56,13 @@ parameters:
     type: boolean
     default: true
 
+  - name: dependsOnPublishAzureImage
+    type: boolean
+    default: false
+
 jobs:
-  # For azure tests where there are multiple workers, use a dedicated job to publish the base
-  # image.  Otherwise, the publish will be done as part of the actual test.
-  - ${{ if and(eq(parameters.platform, 'azure'), gt(parameters.workers, 1)) }}:
-      - job: PublishAzureImage
-        displayName: Publish Azure Image
-        timeoutInMinutes: 20
-        pool:
-          type: linux
-          name: ${{ parameters.pool }}
-          hostArchitecture: amd64
-        variables:
-          ob_outputDirectory: /tmp/logs
-        steps:
-          - template: ../common_tasks/checkout_trident.yml
-          - task: DownloadPipelineArtifact@2
-            displayName: "Download go-tools: storm"
-            inputs:
-              buildType: current
-              artifactName: "go-tools"
-              patterns: |
-                storm-trident
-              targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
-          - bash: |
-              set -eux
-              chmod +x $(TRIDENT_SOURCE_DIR)/bin/storm-trident
-              mkdir -p $(ob_outputDirectory)
-            displayName: Make storm executable and create output directory
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              buildType: current
-              artifactName: image-${{ parameters.platform }}-base
-              targetPath: "$(Build.ArtifactStagingDirectory)/"
-            displayName: Download Base Image
-          - task: AzureCLI@2
-            inputs:
-              azureSubscription: trident-servicing-test
-              scriptType: bash
-              scriptLocation: inlineScript
-              inlineScript: |
-                set -eux
-
-                cd $(TRIDENT_SOURCE_DIR)
-                ./bin/storm-trident run servicing -a \
-                  --output-path $(ob_outputDirectory) \
-                  --platform ${{ parameters.platform }} \
-                  --artifacts-dir $ARTIFACTS \
-                  --use-private-ip-address \
-                  --build-id $(Build.BuildId) \
-                  --subscription $(SUBSCRIPTION) \
-                  --image-definition $(IMAGE_DEFINITION) \
-                  --storage-account $(STORAGE_ACCOUNT) \
-                  --storage-account-resource-group $(RESOURCE_GROUP) \
-                  --test-case-to-run publish-sig-image
-            displayName: Publish Base Image
-            env:
-              ARTIFACTS: $(Build.ArtifactStagingDirectory)
-              AZCOPY_AUTO_LOGIN_TYPE: "AZCLI"
-
-  - job: UpdateTesting_${{ parameters.flavor }}
-    displayName: Update Testing - ${{ parameters.flavor }}
+  - job: UpdateTesting_${{ parameters.flavor }}_${{ parameters.batchId }}
+    displayName: Update Testing - ${{ parameters.flavor }} - ${{ parameters.batchId }}
     timeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
     pool:
       type: linux
@@ -119,22 +70,17 @@ jobs:
       hostArchitecture: amd64
     strategy:
       parallel: ${{ parameters.workers }}
-    dependsOn:
-      - ${{ if and(eq(parameters.platform, 'azure'), gt(parameters.workers, 1)) }}:
-          - PublishAzureImage
+    ${{ if eq(parameters.dependsOnPublishAzureImage, true) }}:
+      dependsOn:
+        - PublishAzureImage
 
     variables:
-      ob_outputDirectory: /tmp/deployment_logs_${{ parameters.flavor }}
-      ob_artifactBaseName: "update-testing-${{ parameters.flavor }}-$(System.JobPositionInPhase)"
-      TEST_RESOURCE_GROUP: trident-vm-servicing-validation-$(Build.BuildId)-$(System.JobPositionInPhase)
+      ob_outputDirectory: /tmp/deployment_logs_${{ parameters.flavor }}_${{ parameters.batchId }}
+      ob_artifactBaseName: "update-testing-${{ parameters.flavor }}-${{ parameters.batchId }}-$(System.JobPositionInPhase)"
+      TEST_RESOURCE_GROUP: trident-vm-servicing-validation-$(Build.BuildId)-${{ parameters.batchId }}-$(System.JobPositionInPhase)
 
     steps:
       - template: ../common_tasks/checkout_trident.yml
-      - bash: |
-          echo "##vso[task.setvariable variable=ob_artifactBaseName;]update-testing-${{ parameters.flavor }}-$(printf '%03d' $(System.JobPositionInPhase))"
-          echo "##vso[task.setvariable variable=TEST_RESOURCE_GROUP;]trident-vm-servicing-validation-$(Build.BuildId)-$(printf '%03d' $(System.JobPositionInPhase))"
-        displayName: "Set variables"
-
       - ${{ if eq(parameters.platform, 'azure') }}:
           - task: DownloadPipelineArtifact@2
             inputs:
@@ -197,6 +143,16 @@ jobs:
             sudo apt update
             sudo apt install -y imagemagick
           displayName: "Install imagemagick for libvirt screenshot capture"
+
+        - bash: |
+            set -eux
+
+            # Disable virtlogd rollover by setting max_size to 0
+            cat /etc/libvirt/virtlogd.conf
+            echo "max_size = 0" | sudo tee -a /etc/libvirt/virtlogd.conf
+            cat /etc/libvirt/virtlogd.conf
+            sudo systemctl restart virtlogd.socket
+          displayName: "Disable virtlogd log rollover"
 
       - bash: |
           echo "##vso[task.setvariable variable=STORM_SCENARIO_FINISHED;]false"
