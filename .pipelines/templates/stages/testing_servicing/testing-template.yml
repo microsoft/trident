@@ -80,9 +80,9 @@ jobs:
         - PublishAzureImage
 
     variables:
-      ob_outputDirectory: /tmp/deployment_logs_${{ parameters.flavor }}
-      ob_artifactBaseName: "update-testing-${{ parameters.flavor }}-$(System.JobPositionInPhase)"
-      TEST_RESOURCE_GROUP: trident-vm-servicing-validation-$(Build.BuildId)-$(System.JobPositionInPhase)
+      ob_outputDirectory: /tmp/deployment_logs_${{ parameters.flavor }}${{ parameters.batchId }}
+      ob_artifactBaseName: "update-testing-${{ parameters.flavor }}${{ parameters.batchId }}-$(System.JobPositionInPhase)"
+      TEST_RESOURCE_GROUP: trident-vm-servicing-validation-$(Build.BuildId)${{ parameters.batchId }}-$(System.JobPositionInPhase)
       WORKER_OFFSET: ${{ parameters.workerOffset }}
 
     steps:
