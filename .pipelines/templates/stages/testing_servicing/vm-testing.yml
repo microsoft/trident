@@ -30,11 +30,10 @@ parameters:
     default: 64
 
   - name: workerBatches
-    displayName: "Worker batch definitions (offset and size for each batch)"
+    displayName: "Worker batch definitions for splitting parallel jobs"
     type: object
     default:
-      - id: ""
-        offset: 0
+      - id: 0
         size: 1
 
   - name: updateCheckTimeoutInMinutes
@@ -242,7 +241,6 @@ stages:
                   updateIterationCount: ${{ parameters.updateIterationCount }}
                   rollbackTesting: ${{ parameters.rollbackTesting }}
                   workers: ${{ batch.size }}
-                  workerOffset: ${{ batch.offset }}
                   batchId: ${{ batch.id }}
                   updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
                   verboseLogging: ${{ parameters.verboseLogging }}
@@ -313,7 +311,6 @@ stages:
                   updateIterationCount: ${{ parameters.updateIterationCount }}
                   rollbackTesting: ${{ parameters.rollbackTesting }}
                   workers: ${{ batch.size }}
-                  workerOffset: ${{ batch.offset }}
                   batchId: ${{ batch.id }}
                   updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
                   verboseLogging: ${{ parameters.verboseLogging }}
@@ -330,7 +327,6 @@ stages:
                   updateIterationCount: ${{ parameters.updateIterationCount }}
                   rollbackTesting: ${{ parameters.rollbackTesting }}
                   workers: ${{ batch.size }}
-                  workerOffset: ${{ batch.offset }}
                   batchId: ${{ batch.id }}
                   updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
                   verboseLogging: ${{ parameters.verboseLogging }}

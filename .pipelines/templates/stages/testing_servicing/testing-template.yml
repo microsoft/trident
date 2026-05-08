@@ -14,15 +14,10 @@ parameters:
     type: number
     default: 1
 
-  - name: workerOffset
-    displayName: "Offset for global worker numbering (batch_index * workers_per_batch)"
-    type: number
-    default: 0
-
   - name: batchId
     displayName: "Batch identifier for unique job naming"
-    type: string
-    default: ""
+    type: number
+    default: 0
 
   - name: updateCheckTimeoutInMinutes
     displayName: "Timeout for checking target OS deployment in minutes"
@@ -66,8 +61,8 @@ parameters:
     default: false
 
 jobs:
-  - job: UpdateTesting_${{ parameters.flavor }}${{ parameters.batchId }}
-    displayName: Update Testing - ${{ parameters.flavor }}${{ parameters.batchId }}
+  - job: UpdateTesting_${{ parameters.flavor }}_${{ parameters.batchId }}
+    displayName: Update Testing - ${{ parameters.flavor }} - ${{ parameters.batchId }}
     timeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
     pool:
       type: linux
@@ -80,20 +75,12 @@ jobs:
         - PublishAzureImage
 
     variables:
-      ob_outputDirectory: /tmp/deployment_logs_${{ parameters.flavor }}${{ parameters.batchId }}
-      ob_artifactBaseName: "update-testing-${{ parameters.flavor }}${{ parameters.batchId }}-$(System.JobPositionInPhase)"
-      TEST_RESOURCE_GROUP: trident-vm-servicing-validation-$(Build.BuildId)${{ parameters.batchId }}-$(System.JobPositionInPhase)
-      WORKER_OFFSET: ${{ parameters.workerOffset }}
+      ob_outputDirectory: /tmp/deployment_logs_${{ parameters.flavor }}_${{ parameters.batchId }}
+      ob_artifactBaseName: "update-testing-${{ parameters.flavor }}-${{ parameters.batchId }}-$(System.JobPositionInPhase)"
+      TEST_RESOURCE_GROUP: trident-vm-servicing-validation-$(Build.BuildId)-${{ parameters.batchId }}-$(System.JobPositionInPhase)
 
     steps:
       - template: ../common_tasks/checkout_trident.yml
-      - bash: |
-          GLOBAL_POS=$(( $WORKER_OFFSET + $(System.JobPositionInPhase) ))
-          PADDED=$(printf '%03d' $GLOBAL_POS)
-          echo "##vso[task.setvariable variable=ob_artifactBaseName;]update-testing-${{ parameters.flavor }}-${PADDED}"
-          echo "##vso[task.setvariable variable=TEST_RESOURCE_GROUP;]trident-vm-servicing-validation-$(Build.BuildId)-${PADDED}"
-        displayName: "Set variables"
-
       - ${{ if eq(parameters.platform, 'azure') }}:
           - task: DownloadPipelineArtifact@2
             inputs:
