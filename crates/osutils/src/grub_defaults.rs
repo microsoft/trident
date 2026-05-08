@@ -302,6 +302,91 @@ pub fn extract_cmdline_from_grub_cfg(grub_cfg_path: &Path) -> Result<HashMap<Str
     )
 }
 
+/// Parse kernel command line args from BLS (Boot Loader Spec) entry files.
+///
+/// On AZL4 (Fedora-derived), kernel args live in `/boot/loader/entries/*.conf`
+/// rather than inline `linux` lines in grub.cfg. Each entry has an `options`
+/// line containing the args.
+///
+/// Returns the args from the first non-rescue entry after sorting entries by
+/// filename in *descending* order — typically yielding the newest kernel
+/// installed (BLS entries use `<machine-id>-<version>.conf` and grub2-blscfg
+/// boots the highest version by default). Callers that care about a specific
+/// kernel should select the entry themselves.
+pub fn extract_cmdline_from_bls_entries(
+    loader_entries_dir: &Path,
+) -> Result<HashMap<String, Option<String>>, Error> {
+    let entries_iter = fs::read_dir(loader_entries_dir).with_context(|| {
+        format!(
+            "Failed to read BLS entries dir '{}'",
+            loader_entries_dir.display()
+        )
+    })?;
+
+    let mut entries: Vec<PathBuf> = Vec::new();
+    for entry in entries_iter {
+        match entry {
+            Ok(e) => {
+                let path = e.path();
+                let is_conf = path.extension().map(|x| x == "conf").unwrap_or(false);
+                if !is_conf {
+                    continue;
+                }
+                // Skip rescue/recovery entries (filename heuristic matches
+                // grub2-mkconfig / kernel-install naming on AZL/Fedora/RHEL).
+                let name = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("");
+                if name.contains("rescue") || name.contains("recovery") {
+                    continue;
+                }
+                entries.push(path);
+            }
+            Err(err) => debug!(
+                "Skipping unreadable entry under '{}': {}",
+                loader_entries_dir.display(),
+                err
+            ),
+        }
+    }
+    // Descending: newest kernel version first (grub2-blscfg default).
+    entries.sort();
+    entries.reverse();
+
+    for entry_path in &entries {
+        let content = fs::read_to_string(entry_path)
+            .with_context(|| format!("Failed to read '{}'", entry_path.display()))?;
+        for line in content.lines() {
+            let trimmed = line.trim();
+            // Tolerate any whitespace separator (tab, multiple spaces) between
+            // `options` and the value, per BLS spec.
+            let mut parts = trimmed.splitn(2, char::is_whitespace);
+            if parts.next() != Some("options") {
+                continue;
+            }
+            let rest = match parts.next() {
+                Some(r) => r,
+                None => continue,
+            };
+            let mut args = HashMap::new();
+            for token in rest.split_whitespace() {
+                if let Some((key, value)) = token.split_once('=') {
+                    args.insert(key.to_string(), Some(value.to_string()));
+                } else {
+                    args.insert(token.to_string(), None);
+                }
+            }
+            return Ok(args);
+        }
+    }
+
+    bail!(
+        "No BLS entries with options line found in '{}'",
+        loader_entries_dir.display()
+    )
+}
+
 /// Strip surrounding quotes from a string.
 fn unquote(s: &str) -> &str {
     let s = s.trim();
@@ -604,6 +689,93 @@ grub_class azurelinux
         assert_eq!(args.get("root"), Some(&Some("UUID=3190eea2-a4b1-4399-9679-e0840cf8eb75".to_string())));
         assert_eq!(args.get("console"), Some(&Some("ttyS0".to_string())));
         assert_eq!(args.get("ro"), Some(&None));
+    }
+
+    #[test]
+    fn test_extract_cmdline_from_bls_entries_picks_newest_non_rescue() {
+        // Three BLS entries: rescue (must be skipped), v6.6.10 (older),
+        // v6.6.12 (newer). Function should return the v6.6.12 args because
+        // it sorts descending and skips rescue.
+        let dir = tempfile::tempdir().unwrap();
+        let mk = |name: &str, options: &str| {
+            let path = dir.path().join(name);
+            fs::write(
+                &path,
+                format!(
+                    "title Test\nversion 1\nlinux /boot/vmlinuz\noptions {}\n",
+                    options
+                ),
+            )
+            .unwrap();
+        };
+        mk(
+            "abc123-0-rescue.conf",
+            "root=UUID=rescue rescue selinux=0",
+        );
+        mk("abc123-6.6.10-1.azl4.conf", "root=UUID=old selinux=1 enforcing=0");
+        mk("abc123-6.6.12-1.azl4.conf", "root=UUID=new selinux=1 enforcing=1");
+
+        let args = extract_cmdline_from_bls_entries(dir.path()).unwrap();
+        assert_eq!(args.get("root"), Some(&Some("UUID=new".to_string())));
+        assert_eq!(args.get("enforcing"), Some(&Some("1".to_string())));
+        // Rescue args must not leak in.
+        assert!(!args.contains_key("rescue"));
+    }
+
+    #[test]
+    fn test_extract_cmdline_from_bls_entries_tolerates_tab_separator() {
+        // BLS spec allows any whitespace between `options` and the value.
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("entry.conf"),
+            "title Test\nlinux /boot/vmlinuz\noptions\troot=UUID=tab-test ro\n",
+        )
+        .unwrap();
+
+        let args = extract_cmdline_from_bls_entries(dir.path()).unwrap();
+        assert_eq!(args.get("root"), Some(&Some("UUID=tab-test".to_string())));
+        assert_eq!(args.get("ro"), Some(&None));
+    }
+
+    #[test]
+    fn test_extract_cmdline_from_bls_entries_skips_files_without_options() {
+        // A .conf with no `options` line should be skipped, falling through
+        // to the next entry.
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("aaa-no-options.conf"),
+            "title No options\nlinux /boot/vmlinuz\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("bbb-good.conf"),
+            "title Good\nlinux /boot/vmlinuz\noptions root=UUID=found\n",
+        )
+        .unwrap();
+        // Descending sort iterates "bbb-good.conf" first, which is the entry
+        // with options. Then "aaa-no-options.conf" wouldn't even be visited.
+        // Add a third newer entry that lacks options to verify fall-through.
+        fs::write(
+            dir.path().join("ccc-newer-no-options.conf"),
+            "title Newer but no options\nlinux /boot/vmlinuz\n",
+        )
+        .unwrap();
+
+        let args = extract_cmdline_from_bls_entries(dir.path()).unwrap();
+        assert_eq!(args.get("root"), Some(&Some("UUID=found".to_string())));
+    }
+
+    #[test]
+    fn test_extract_cmdline_from_bls_entries_bails_on_empty_or_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        // Empty directory.
+        let err = extract_cmdline_from_bls_entries(dir.path()).unwrap_err();
+        assert!(err.to_string().contains("No BLS entries with options line"));
+
+        // Missing directory.
+        let missing = dir.path().join("does-not-exist");
+        let err = extract_cmdline_from_bls_entries(&missing).unwrap_err();
+        assert!(err.to_string().contains("Failed to read BLS entries dir"));
     }
 
 }
