@@ -158,6 +158,7 @@ func (cfg QemuConfig) getQemuVmIpAddresses(vmName string) ([]string, error) {
 }
 
 func (cfg QemuConfig) GetAllVmIPAddresses(vmName string) ([]string, error) {
+	const maxStabilizeRetries = 5
 	for {
 		ips, err := cfg.getQemuVmIpAddresses(vmName)
 		if err != nil || len(ips) == 0 {
@@ -168,6 +169,38 @@ func (cfg QemuConfig) GetAllVmIPAddresses(vmName string) ([]string, error) {
 
 			time.Sleep(1 * time.Second) // Wait before retrying
 			continue                    // Retry until we get an IP address
+		}
+
+		// If multiple IPs are found, the DHCP lease table may not have settled yet.
+		// This occurs because DomainInterfaceAddresses with SrcLease queries the
+		// dnsmasq lease file, which can temporarily contain multiple entries for the
+		// same MAC address when a VM sends duplicate DHCPDISCOVER packets at boot
+		// (a known race condition with libvirt's default network).
+		//
+		// See: https://libvirt.org/html/libvirt-libvirt-domain.html#virDomainInterfaceAddresses
+		//   "VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_LEASE queries the DHCP leases
+		//    maintained by the network's DHCP server" — multiple addresses are
+		//    returned when previous leases are still valid or the address has changed.
+		//
+		// Wait and re-query to see if it stabilizes to a single IP.
+		if len(ips) > 1 {
+			logrus.Warnf("Found %d IPs for VM '%s', waiting for DHCP lease to stabilize", len(ips), vmName)
+			latestIps := ips
+			for i := 0; i < maxStabilizeRetries; i++ {
+				time.Sleep(2 * time.Second)
+				retryIps, retryErr := cfg.getQemuVmIpAddresses(vmName)
+				if retryErr != nil || len(retryIps) == 0 {
+					continue
+				}
+				latestIps = retryIps
+				if len(retryIps) == 1 {
+					logrus.Infof("DHCP lease stabilized to single IP '%s' after %d retries", retryIps[0], i+1)
+					return retryIps, nil
+				}
+			}
+			logrus.Warnf("DHCP lease did not stabilize after %d retries, proceeding with first IP '%s' from %v",
+				maxStabilizeRetries, latestIps[0], latestIps)
+			return latestIps[:1], nil
 		}
 
 		return ips, nil

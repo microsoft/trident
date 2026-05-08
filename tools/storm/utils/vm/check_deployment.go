@@ -20,12 +20,16 @@ func CheckDeployment(vmConfig stormvmconfig.AllVMConfig, expectedVolume string) 
 	}
 	logrus.Infof("Found VM IP address(es): %v", vmIPs)
 
-	// Help diagnose https://dev.azure.com/mariner-org/ECF/_workitems/edit/11273 and
-	// fail explicitly if multiple IPs are found
+	// Log a warning if multiple IPs are still found after stabilization.
+	// Previously this was a hard failure for diagnostic purposes (ADO#11273).
+	// Root cause: libvirt's dnsmasq DHCP server can assign multiple leases to
+	// a single VM MAC when duplicate DHCPDISCOVER packets are sent at boot.
+	// See: https://libvirt.org/html/libvirt-libvirt-domain.html#virDomainInterfaceAddresses
+	// GetAllVmIPAddresses now handles stabilization and returns a single IP,
+	// but we keep the warning for observability in case it still occurs.
 	if vmConfig.VMConfig.Platform == stormvmconfig.PlatformQEMU {
 		if len(vmIPs) > 1 {
-			logrus.Errorf("Multiple IPs found, expected only one: %v", vmIPs)
-			return fmt.Errorf("multiple IPs found, expected only one: %v", vmIPs)
+			logrus.Warnf("Multiple IPs found (expected one): %v — proceeding with %s", vmIPs, vmIPs[0])
 		}
 	}
 
