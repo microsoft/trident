@@ -425,21 +425,114 @@ func (cfg QemuConfig) WaitForLogin(vmName string, outputPath string, verbose boo
 			return err
 		}
 
-		dominfoOut, err := exec.Command("virsh", "dominfo", vmName).Output()
-		if err != nil {
-			logrus.Errorf("Failed to get domain info for VM '%s': %v", vmName, err)
-		} else {
-			logrus.Infof("Domain info for VM '%s': %s", vmName, dominfoOut)
-		}
-
-		dfOut, err := exec.Command("df", "-h").Output()
-		if err != nil {
-			logrus.Errorf("Failed to run 'df -h': %v", err)
-		} else {
-			logrus.Infof("Disk usage:\n%s", dfOut)
-		}
+		// Collect comprehensive diagnostics to help root-cause why the VM
+		// failed to boot. After 70-90 successful A/B update cycles, VMs
+		// occasionally fail to come back up with zero boot output (no GRUB,
+		// no kernel). Possible causes include UEFI NVRAM corruption, qcow2
+		// disk bloat, host resource exhaustion, or libvirt restart failure.
+		collectVMDiagnostics(vmName)
 	}
 	return waitErr
+}
+
+// collectVMDiagnostics gathers diagnostic data when a VM fails to boot.
+// This helps root-cause failures where the VM shuts down cleanly but never
+// comes back up (no GRUB, no kernel output in serial log). Suspected causes
+// include UEFI NVRAM corruption after many A/B flips, qcow2 disk image bloat,
+// or host resource exhaustion.
+func collectVMDiagnostics(vmName string) {
+	logrus.Infof("=== VM FAILURE DIAGNOSTICS for '%s' ===", vmName)
+
+	// 1. Domain state — is the VM actually running, or did libvirt fail to restart it?
+	if stateOut, err := exec.Command("virsh", "domstate", vmName).Output(); err != nil {
+		logrus.Errorf("  virsh domstate failed: %v", err)
+	} else {
+		logrus.Infof("  Domain state: %s", strings.TrimSpace(string(stateOut)))
+	}
+
+	// 2. Domain info — memory, CPU, and state details
+	if infoOut, err := exec.Command("virsh", "dominfo", vmName).Output(); err != nil {
+		logrus.Errorf("  virsh dominfo failed: %v", err)
+	} else {
+		logrus.Infof("  Domain info:\n%s", infoOut)
+	}
+
+	// 3. Extract disk path from domain XML and check qcow2 image size.
+	// After 70-90 A/B update cycles writing full images to alternating
+	// partitions, the qcow2 copy-on-write image can bloat significantly.
+	if xmlOut, err := exec.Command("virsh", "dumpxml", vmName).Output(); err != nil {
+		logrus.Errorf("  virsh dumpxml failed: %v", err)
+	} else {
+		xmlStr := string(xmlOut)
+		// Parse disk source file from the domain XML.
+		// Format: <source file='/path/to/booted.qcow2'/>
+		if idx := strings.Index(xmlStr, "<source file='"); idx >= 0 {
+			start := idx + len("<source file='")
+			end := strings.Index(xmlStr[start:], "'")
+			if end > 0 {
+				diskPath := xmlStr[start : start+end]
+				logrus.Infof("  Disk image path: %s", diskPath)
+
+				// qemu-img info shows virtual size, actual size, and format details.
+				if imgOut, err := exec.Command("qemu-img", "info", diskPath).Output(); err != nil {
+					logrus.Errorf("  qemu-img info failed: %v", err)
+				} else {
+					logrus.Infof("  Disk image info:\n%s", imgOut)
+				}
+
+				// Also get raw file size for comparison with virtual size.
+				if fi, err := os.Stat(diskPath); err == nil {
+					logrus.Infof("  Disk file size: %d bytes (%.2f GB)", fi.Size(), float64(fi.Size())/(1024*1024*1024))
+				}
+			}
+		}
+
+		// 4. Check NVRAM/OVMF pflash — look for <loader> and associated nvram file.
+		// Libvirt auto-creates a per-VM NVRAM copy. Corruption here means UEFI
+		// can't find boot entries after A/B finalize flips.
+		if idx := strings.Index(xmlStr, "<nvram>"); idx >= 0 {
+			start := idx + len("<nvram>")
+			end := strings.Index(xmlStr[start:], "</nvram>")
+			if end > 0 {
+				nvramPath := xmlStr[start : start+end]
+				logrus.Infof("  NVRAM path: %s", nvramPath)
+				if fi, err := os.Stat(nvramPath); err == nil {
+					logrus.Infof("  NVRAM file size: %d bytes", fi.Size())
+				} else {
+					logrus.Warnf("  NVRAM file not found: %v", err)
+				}
+			}
+		}
+	}
+
+	// 5. Host disk space — if the host is out of space, qcow2 writes and
+	// NVRAM updates will silently fail.
+	if dfOut, err := exec.Command("df", "-h").Output(); err != nil {
+		logrus.Errorf("  df -h failed: %v", err)
+	} else {
+		logrus.Infof("  Host disk usage:\n%s", dfOut)
+	}
+
+	// 6. Host memory — OOM pressure could cause libvirt/qemu to fail.
+	if memOut, err := exec.Command("free", "-h").Output(); err != nil {
+		logrus.Errorf("  free -h failed: %v", err)
+	} else {
+		logrus.Infof("  Host memory:\n%s", memOut)
+	}
+
+	// 7. Recent dmesg for OOM kills or I/O errors on the host.
+	if dmesgOut, err := exec.Command("dmesg", "--time-format=reltime", "-T").Output(); err != nil {
+		logrus.Warnf("  dmesg failed: %v", err)
+	} else {
+		// Only show the last 30 lines to keep output manageable.
+		lines := strings.Split(strings.TrimSpace(string(dmesgOut)), "\n")
+		if len(lines) > 30 {
+			lines = lines[len(lines)-30:]
+		}
+		logrus.Infof("  Recent dmesg (last 30 lines):\n%s", strings.Join(lines, "\n"))
+	}
+
+	logrus.Infof("=== END VM FAILURE DIAGNOSTICS ===")
 }
 
 func analyzeSerialLog(serial string) error {
