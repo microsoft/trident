@@ -1,11 +1,12 @@
 use std::{io::Write, os::unix::fs::PermissionsExt, path::Path};
 
 use anyhow::{Context, Error};
+use log::info;
 use tempfile::NamedTempFile;
 
 use trident_api::error::{ReportError, ServicingError, TridentError};
 
-use crate::dependencies::Dependency;
+use crate::{dependencies::Dependency, udevadm};
 
 /// Verity workaround script
 ///
@@ -44,7 +45,25 @@ fi
 ///
 /// If mkinitrd is available, it will be used. Azl 3.0 doesn't have mkinitrd anymore, so dracut is
 /// used instead.
+///
+/// Before regenerating, triggers a udev rescan and waits for it to settle. This ensures dracut
+/// sees the current partition table and UUIDs rather than stale entries from a previous OS
+/// installation. Without this, dracut can embed references to old partition UUIDs, causing
+/// initramfs to hang at boot waiting for devices that no longer exist.
 pub fn execute(debug: bool) -> Result<(), TridentError> {
+    // Ensure the kernel's device table is up-to-date before dracut scans it.
+    // dracut in host-only mode reads /dev/disk/by-uuid/ and /dev/disk/by-partuuid/ to determine
+    // which devices to embed in initramfs. If stale UUIDs from a previous installation are still
+    // visible, dracut will embed them, causing the initramfs to wait for non-existent devices
+    // on boot (manifesting as a "stuck in initramfs" hang).
+    info!("Triggering udev rescan before initrd regeneration to clear stale device entries");
+    if let Err(e) = udevadm::trigger() {
+        info!("udevadm trigger failed (non-fatal, continuing): {e}");
+    }
+    if let Err(e) = udevadm::settle() {
+        info!("udevadm settle failed (non-fatal, continuing): {e}");
+    }
+
     if Path::new("/usr/bin/mkinitrd").exists() {
         Dependency::Mkinitrd
             .cmd()
