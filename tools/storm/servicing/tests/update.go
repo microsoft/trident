@@ -87,6 +87,17 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 		return fmt.Errorf("failed to get VM IP: %w", err)
 	}
 
+	// Proactively start serial-getty@ttyS0 after initial deployment.
+	// Due to a known systemd/udev race condition (https://github.com/systemd/systemd/issues/10850),
+	// ~2% of boots skip dev-ttyS0.device, preventing serial-getty from starting.
+	// Starting it here (no-op if already running) ensures serial log detection
+	// works for the first update iteration.
+	if vmConfig.VMConfig.Platform == stormvmconfig.PlatformQEMU {
+		if _, gettErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo systemctl start serial-getty@ttyS0.service"); gettErr != nil {
+			logrus.Tracef("serial-getty@ttyS0 start attempt after deploy: %v", gettErr)
+		}
+	}
+
 	// Run several commands to update/specialize update config files on VM
 	logrus.Tracef("Updating config files")
 	configChanges :=
@@ -147,9 +158,29 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 			}
 
 			if i%10 == 0 {
-				// For every 10th update, reboot the VM (QEMU only)
+				// For every 10th update, reboot the VM (QEMU only).
+				// RebootQemuVm calls WaitForLogin which has a DHCP lease fallback,
+				// but if serial-getty didn't start (systemd#10850), we need the
+				// same SSH fallback + proactive serial-getty restart as the
+				// post-finalize reboot path.
 				if err := vmConfig.QemuConfig.RebootQemuVm(vmConfig.VMConfig.Name, i, testConfig.OutputPath, testConfig.Verbose); err != nil {
-					return fmt.Errorf("failed to reboot QEMU VM before update attempt #%d: %w", i, err)
+					logrus.Warnf("RebootQemuVm failed for iteration %d, attempting SSH fallback: %v", i, err)
+					sshOk := false
+					for j := 0; j < 10; j++ {
+						if _, sshErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "uptime --since"); sshErr == nil {
+							sshOk = true
+							break
+						}
+						time.Sleep(3 * time.Second)
+					}
+					if !sshOk {
+						return fmt.Errorf("failed to reboot QEMU VM before update attempt #%d: %w", i, err)
+					}
+					logrus.Warnf("SSH fallback succeeded for 10th-iteration reboot at iteration %d", i)
+				}
+				// Ensure serial-getty is running after the reboot (see systemd#10850).
+				if _, gettErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo systemctl start serial-getty@ttyS0.service"); gettErr != nil {
+					logrus.Tracef("serial-getty@ttyS0 start attempt after 10th-iteration reboot: %v", gettErr)
 				}
 				if err := vmConfig.QemuConfig.TruncateLog(vmConfig.VMConfig.Name); err != nil {
 					return fmt.Errorf("failed to truncate log file before update attempt #%d: %w", i, err)
