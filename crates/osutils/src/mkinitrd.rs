@@ -46,17 +46,14 @@ fi
 /// If mkinitrd is available, it will be used. Azl 3.0 doesn't have mkinitrd anymore, so dracut is
 /// used instead.
 ///
-/// Before regenerating, triggers a udev rescan and waits for it to settle. This ensures dracut
-/// sees the current partition table and UUIDs rather than stale entries from a previous OS
-/// installation. Without this, dracut can embed references to old partition UUIDs, causing
-/// initramfs to hang at boot waiting for devices that no longer exist.
+/// A udev rescan is performed as defense-in-depth before regenerating. The primary rescan happens
+/// earlier in storage::initialize_block_devices(), but this ensures dracut sees clean state even
+/// if that earlier rescan was skipped or failed.
 pub fn execute(debug: bool) -> Result<(), TridentError> {
-    // Ensure the kernel's device table is up-to-date before dracut scans it.
-    // dracut in host-only mode reads /dev/disk/by-uuid/ and /dev/disk/by-partuuid/ to determine
-    // which devices to embed in initramfs. If stale UUIDs from a previous installation are still
-    // visible, dracut will embed them, causing the initramfs to wait for non-existent devices
-    // on boot (manifesting as a "stuck in initramfs" hang).
-    info!("Triggering udev rescan before initrd regeneration to clear stale device entries");
+    // Defense-in-depth: ensure the kernel's device table is current before dracut scans it.
+    // The primary udev rescan runs after block device setup (storage/mod.rs), but we repeat
+    // it here in case mkinitrd is called from a different path or the earlier rescan failed.
+    info!("Triggering udev rescan before initrd regeneration (defense-in-depth)");
     if let Err(e) = udevadm::trigger() {
         info!("udevadm trigger failed (non-fatal, continuing): {e}");
     }

@@ -1,6 +1,6 @@
 use log::{debug, info, trace, warn};
 
-use osutils::{e2fsck, lsblk};
+use osutils::{e2fsck, lsblk, udevadm};
 use sysdefs::filesystems::{KernelFilesystemType, RealFilesystemType};
 use trident_api::{
     constants::internal_params::PRE_REBOOT_CHECKS,
@@ -73,6 +73,19 @@ pub(super) fn initialize_block_devices(ctx: &EngineContext) -> Result<(), Triden
     // Assumes that images are already in place (data and hash), so that it can
     // assemble the verity devices.
     verity::setup_verity_devices(ctx).structured(ServicingError::CreateVerity)?;
+
+    // Force the kernel to rescan all block devices and wait for udev to process the events.
+    // This clears stale partition UUIDs from previous installations that may still be in
+    // the device table. Without this, dracut (called later during initrd regeneration) can
+    // embed references to old UUIDs, causing initramfs to hang at boot waiting for devices
+    // that no longer exist (bug 15086).
+    info!("Triggering udev rescan after block device setup to clear stale device entries");
+    if let Err(e) = udevadm::trigger() {
+        warn!("udevadm trigger failed (non-fatal): {e}");
+    }
+    if let Err(e) = udevadm::settle() {
+        warn!("udevadm settle failed (non-fatal): {e}");
+    }
 
     Ok(())
 }
