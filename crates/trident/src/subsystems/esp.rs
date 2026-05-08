@@ -292,8 +292,24 @@ fn copy_file_artifacts(
         uki::stage_uki_on_esp(temp_mount_dir, mount_point, &ctx.esp_mount_path)?;
     } else {
         // In non-UKI mode, bail if grub_noprefix.efi is not found in the image.
+        // AZL4+ does not ship grub2-efi-binary-noprefix (AZL3-specific convention),
+        // so automatically skip this check for AZL4 and later. `is_azl4_or_later`
+        // handles AZL5+ correctly by re-checking version_id when the parser
+        // falls back to AzureLinuxRelease::Other.
+        // TODO: Two sources of truth for "noprefix not required" exist now:
+        //   - this distro check
+        //   - the filesystem probe in generate_boot_filepaths
+        // The probe is authoritative. Consider folding the check into the
+        // probe result (e.g. ensure! that *some* grub binary was found,
+        // not specifically the noprefix variant) in a follow-up. See
+        // 2026-05-18 PR-2 deep-review.md.
+        let image_os_release = ctx.image_os_release();
+        let is_azl4_or_later = image_os_release
+            .get_distro()
+            .is_azl4_or_later(image_os_release.version_id.as_deref());
         ensure!(
             grub_noprefix
+                || is_azl4_or_later
                 || ctx
                     .spec
                     .internal_params
