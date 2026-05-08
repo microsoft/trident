@@ -3,6 +3,7 @@ package qemu
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"os/exec"
@@ -398,13 +399,27 @@ func (cfg QemuConfig) WaitForLogin(vmName string, outputPath string, verbose boo
 		}
 
 		if len(ips) > 0 {
-			logrus.Warnf("VM '%s' has DHCP lease (IP: %s) despite no serial login — VM likely booted but serial-getty did not start (ttyS0 device skipped by systemd)", vmName, ips[0])
-			// VM has an IP — it booted far enough for networking. Return success
-			// so the test can proceed with SSH-based operations.
-			return nil
+			// DHCP lease found — but it could be stale from a previous boot.
+			// dnsmasq leases persist across VM reboots (TTL is typically hours),
+			// so a lease existing does NOT guarantee the VM booted this time.
+			// Verify the VM is actually reachable by probing SSH (TCP port 22).
+			sshAddr := fmt.Sprintf("%s:22", ips[0])
+			conn, dialErr := net.DialTimeout("tcp", sshAddr, 10*time.Second)
+			if dialErr != nil {
+				// VM has a stale DHCP lease but is unreachable — it genuinely
+				// failed to boot (not a serial-getty race condition).
+				logrus.Warnf("VM '%s' has DHCP lease (IP: %s) but SSH port is unreachable — stale lease from previous boot, VM failed to come back up", vmName, ips[0])
+			} else {
+				conn.Close()
+				logrus.Warnf("VM '%s' has DHCP lease (IP: %s) and SSH port is reachable — VM booted but serial-getty did not start (systemd race: https://github.com/systemd/systemd/issues/10850)", vmName, ips[0])
+				// VM is genuinely alive — serial-getty race. Return success
+				// so the test can proceed with SSH-based operations.
+				return nil
+			}
 		}
 
-		// VM has no DHCP lease — it's genuinely stuck
+		// VM has no DHCP lease, or has a stale lease but SSH is unreachable —
+		// it's genuinely stuck (failed to boot after reboot).
 		logrus.Errorf("Failed to reach login prompt for the VM for iteration %d: %v", iteration, waitErr)
 		if err := analyzeSerialLog(cfg.SerialLog); err != nil {
 			return err
