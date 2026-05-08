@@ -63,8 +63,9 @@ pub(super) fn update_configs(ctx: &EngineContext) -> Result<(), Error> {
     let boot_uuid = blkid::get_filesystem_uuid(boot_block_device_path)?;
     let boot_grub_config_path = Path::new(ROOT_MOUNT_POINT_PATH).join(GRUB2_CONFIG_RELATIVE_PATH);
 
-    // Update GRUB config on the boot device (volume holding /boot)
-    match ctx.host_os_release.get_distro() {
+    // Update GRUB config on the boot device (volume holding /boot).
+    // Use the *image* distro (the OS being installed), not the host (MOS ISO).
+    match ctx.image_distro() {
         Distro::AzureLinux(AzureLinuxRelease::AzL3) => {
             update_grub_config_azl3(
                 ctx,
@@ -417,7 +418,11 @@ pub(crate) mod functional_test {
     use const_format::formatcp;
     use maplit::btreemap;
 
-    use crate::engine::{boot::get_update_esp_dir_name, storage::raid};
+    use crate::{
+        engine::{boot::get_update_esp_dir_name, storage::raid},
+        osimage::{mock::MockOsImage, OsImage},
+        OS_MODIFIER_BINARY_PATH,
+    };
 
     use osutils::{
         block_devices,
@@ -447,6 +452,20 @@ pub(crate) mod functional_test {
             if let Err(e) = fs::remove_file(&self.0) {
                 eprintln!("Failed to remove file '{}': {}", self.0.display(), e);
             }
+        }
+    }
+
+    /// Fixed `OsRelease` for an AzL4 image. Used in test fixtures so that
+    /// `ctx.image_distro()` resolves to `Distro::AzureLinux(AzL4)` regardless
+    /// of the host running the tests. Previously the fixtures used
+    /// `OsRelease::read()`, which reads the running host's /etc/os-release
+    /// and made the test pass on AzL4 CI but route to `bail!` on a non-AzL
+    /// dev box.
+    fn azl4_os_release() -> OsRelease {
+        OsRelease {
+            id: Some("azurelinux".into()),
+            version_id: Some("4.0".into()),
+            ..Default::default()
         }
     }
 
@@ -705,7 +724,11 @@ pub(crate) mod functional_test {
                 "root2".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
             },
             is_uki: Some(false),
-            host_os_release: OsRelease::read().unwrap(),
+            host_os_release: azl4_os_release(),
+            image: Some(OsImage::mock(MockOsImage {
+                os_release: azl4_os_release(),
+                ..MockOsImage::new()
+            })),
             ..Default::default()
         };
 
@@ -816,7 +839,11 @@ pub(crate) mod functional_test {
                 "boot".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}1")),
                 "root".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
             },
-            host_os_release: OsRelease::read().unwrap(),
+            host_os_release: azl4_os_release(),
+            image: Some(OsImage::mock(MockOsImage {
+                os_release: azl4_os_release(),
+                ..MockOsImage::new()
+            })),
             ..Default::default()
         };
 
@@ -903,7 +930,11 @@ pub(crate) mod functional_test {
                 "root-a".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
                 "root-b".into() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
             ],
-            host_os_release: OsRelease::read().unwrap(),
+            host_os_release: azl4_os_release(),
+            image: Some(OsImage::mock(MockOsImage {
+                os_release: azl4_os_release(),
+                ..MockOsImage::new()
+            })),
             ..Default::default()
         };
 
