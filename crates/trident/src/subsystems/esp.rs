@@ -292,8 +292,15 @@ fn copy_file_artifacts(
         uki::stage_uki_on_esp(temp_mount_dir, mount_point, &ctx.esp_mount_path)?;
     } else {
         // In non-UKI mode, bail if grub_noprefix.efi is not found in the image.
+        // AZL4+ does not ship grub2-efi-binary-noprefix (AZL3-specific convention),
+        // so automatically skip this check for AZL4 and later.
+        let is_azl4_or_later = ctx
+            .image_os_release()
+            .get_distro()
+            .is_azl4();
         ensure!(
             grub_noprefix
+                || is_azl4_or_later
                 || ctx
                     .spec
                     .internal_params
