@@ -157,6 +157,16 @@ jobs:
             sudo apt install -y imagemagick
           displayName: "Install imagemagick for libvirt screenshot capture"
 
+        - bash: |
+            set -eux
+
+            # Disable virtlogd rollover by setting max_size to 0
+            cat /etc/libvirt/virtlogd.conf
+            echo "max_size = 0" | sudo tee -a /etc/libvirt/virtlogd.conf
+            cat /etc/libvirt/virtlogd.conf
+            sudo systemctl restart virtlogd.socket
+          displayName: "Disable virtlogd log rollover"
+
       - bash: |
           echo "##vso[task.setvariable variable=STORM_SCENARIO_FINISHED;]false"
         displayName: "Initialize STORM_SCENARIO_FINISHED=false"
