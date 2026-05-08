@@ -365,11 +365,10 @@ func (cfg QemuConfig) WaitForLogin(vmName string, outputPath string, verbose boo
 
 	if waitErr != nil {
 		// Serial login detection failed. Before declaring the VM dead, check if it
-		// actually booted and acquired a DHCP lease. This handles two known issues:
-		// 1. systemd skips dev-ttyS0.device under load (race condition) so
-		//    serial-getty never starts and no "login:" appears on serial
-		// 2. QEMU file-backed serial I/O stalls under heavy host contention
-		//    (256 VMs writing serial files simultaneously)
+		// actually booted and acquired a DHCP lease. This handles a known systemd/udev
+		// race condition where udev hasn't created /dev/ttyS0 when systemd evaluates
+		// ConditionPathExists on dev-ttyS0.device, so serial-getty never starts.
+		// This happens ~2% of the time on any given boot, regardless of host load.
 		logrus.Warnf("Serial login detection failed for iteration %d, checking DHCP lease as fallback: %v", iteration, waitErr)
 
 		// Try a few times to get the DHCP lease — the VM may still be acquiring one.
