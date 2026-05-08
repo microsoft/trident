@@ -61,65 +61,11 @@ parameters:
     type: boolean
     default: true
 
+  - name: dependsOnPublishAzureImage
+    type: boolean
+    default: false
+
 jobs:
-  # For azure tests where there are multiple workers, use a dedicated job to publish the base
-  # image.  Otherwise, the publish will be done as part of the actual test.
-  - ${{ if and(eq(parameters.platform, 'azure'), gt(parameters.workers, 1)) }}:
-      - job: PublishAzureImage
-        displayName: Publish Azure Image
-        timeoutInMinutes: 20
-        pool:
-          type: linux
-          name: ${{ parameters.pool }}
-          hostArchitecture: amd64
-        variables:
-          ob_outputDirectory: /tmp/logs
-        steps:
-          - template: ../common_tasks/checkout_trident.yml
-          - task: DownloadPipelineArtifact@2
-            displayName: "Download go-tools: storm"
-            inputs:
-              buildType: current
-              artifactName: "go-tools"
-              patterns: |
-                storm-trident
-              targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
-          - bash: |
-              set -eux
-              chmod +x $(TRIDENT_SOURCE_DIR)/bin/storm-trident
-              mkdir -p $(ob_outputDirectory)
-            displayName: Make storm executable and create output directory
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              buildType: current
-              artifactName: image-${{ parameters.platform }}-base
-              targetPath: "$(Build.ArtifactStagingDirectory)/"
-            displayName: Download Base Image
-          - task: AzureCLI@2
-            inputs:
-              azureSubscription: trident-servicing-test
-              scriptType: bash
-              scriptLocation: inlineScript
-              inlineScript: |
-                set -eux
-
-                cd $(TRIDENT_SOURCE_DIR)
-                ./bin/storm-trident run servicing -a \
-                  --output-path $(ob_outputDirectory) \
-                  --platform ${{ parameters.platform }} \
-                  --artifacts-dir $ARTIFACTS \
-                  --use-private-ip-address \
-                  --build-id $(Build.BuildId) \
-                  --subscription $(SUBSCRIPTION) \
-                  --image-definition $(IMAGE_DEFINITION) \
-                  --storage-account $(STORAGE_ACCOUNT) \
-                  --storage-account-resource-group $(RESOURCE_GROUP) \
-                  --test-case-to-run publish-sig-image
-            displayName: Publish Base Image
-            env:
-              ARTIFACTS: $(Build.ArtifactStagingDirectory)
-              AZCOPY_AUTO_LOGIN_TYPE: "AZCLI"
-
   - job: UpdateTesting_${{ parameters.flavor }}${{ parameters.batchId }}
     displayName: Update Testing - ${{ parameters.flavor }}${{ parameters.batchId }}
     timeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
@@ -129,9 +75,9 @@ jobs:
       hostArchitecture: amd64
     strategy:
       parallel: ${{ parameters.workers }}
-    dependsOn:
-      - ${{ if and(eq(parameters.platform, 'azure'), gt(parameters.workers, 1)) }}:
-          - PublishAzureImage
+    ${{ if eq(parameters.dependsOnPublishAzureImage, true) }}:
+      dependsOn:
+        - PublishAzureImage
 
     variables:
       ob_outputDirectory: /tmp/deployment_logs_${{ parameters.flavor }}
