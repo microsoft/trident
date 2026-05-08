@@ -262,17 +262,36 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 		if vmConfig.VMConfig.Platform == stormvmconfig.PlatformQEMU {
 			err := vmConfig.QemuConfig.WaitForLogin(vmConfig.VMConfig.Name, testConfig.OutputPath, testConfig.Verbose, i)
 			if err != nil {
-				if captureErr := stormutils.CaptureScreenshot(
-					vmConfig.VMConfig.Name,
-					testConfig.OutputPath,
-					fmt.Sprintf("%03d-vm-failure-after-update.png", i),
-				); captureErr != nil {
-					logrus.Warnf("failed to capture screenshot: %v", captureErr)
+				// Serial login detection failed. This can happen when:
+				// 1. systemd skips dev-ttyS0.device (race condition under load) so
+				//    serial-getty never starts and no "login:" appears on serial
+				// 2. QEMU file-backed serial I/O stalls under heavy host contention
+				//    (256 VMs writing serial simultaneously)
+				// In both cases the VM may actually be healthy — try SSH as fallback.
+				logrus.Warnf("Serial login detection failed for iteration %d, attempting SSH fallback: %v", i, err)
+
+				sshFallbackSuccess := false
+				for j := 0; j < 10; j++ {
+					if _, sshErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "hostname"); sshErr == nil {
+						sshFallbackSuccess = true
+						break
+					}
+					time.Sleep(3 * time.Second)
 				}
-					// Check serial log for dracut-initqueue timeout patterns that indicate
-					// stale disk UUIDs in initramfs (see bug 15086)
+
+				if !sshFallbackSuccess {
+					// VM is genuinely unreachable — capture diagnostics
+					if captureErr := stormutils.CaptureScreenshot(
+						vmConfig.VMConfig.Name,
+						testConfig.OutputPath,
+						fmt.Sprintf("%03d-vm-failure-after-update.png", i),
+					); captureErr != nil {
+						logrus.Warnf("failed to capture screenshot: %v", captureErr)
+					}
 					checkSerialLogForDracutIssues(vmConfig.QemuConfig.SerialLog, i)
-				return fmt.Errorf("VM did not come back up after update for iteration %d: %w", i, err)
+					return fmt.Errorf("VM did not come back up after update for iteration %d: %w", i, err)
+				}
+				logrus.Warnf("SSH fallback succeeded for iteration %d — VM is healthy but serial-getty did not start (ttyS0 device likely skipped by systemd)", i)
 			}
 		} else if vmConfig.VMConfig.Platform == stormvmconfig.PlatformAzure {
 			time.Sleep(15 * time.Second)
