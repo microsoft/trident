@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs, io::Write, path::Path};
+use std::{fs, io::Write, path::Path};
 
 use anyhow::{bail, Context, Error};
 use log::{debug, info, trace};
@@ -292,22 +292,27 @@ fn update_grub_config_native(
 
     debug!("Updating GRUB config natively for Azure Linux 4.0+");
 
-    // Read current grub.cfg to extract existing kernel args.
-    //
-    // Best-effort: AZL4 ships `GRUB_ENABLE_BLSCFG=true`, so a fully-migrated
-    // grub.cfg will not contain a top-level `linux` line and extraction will
-    // fail. We only use `current_args` to preserve SELinux args when the user
-    // hasn't specified an explicit mode (see below), so an empty map is a
-    // safe fallback. The native `/etc/default/grub` path below is the
-    // authoritative source of kernel args either way.
-    let current_args = grub_defaults::extract_cmdline_from_grub_cfg(boot_grub_config_path)
-        .unwrap_or_else(|e| {
+    // Read current kernel args. AZL3 has them inline in grub.cfg as `linux` lines,
+    // AZL4 (BLS) has them in /boot/loader/entries/*.conf via the `options` line.
+    // Try grub.cfg first, fall back to BLS entries on failure.
+    let current_args = match grub_defaults::extract_cmdline_from_grub_cfg(boot_grub_config_path) {
+        Ok(args) => args,
+        Err(grub_cfg_err) => {
+            // Fall back to BLS entries (typical for AZL4 / Fedora-derived distros)
+            let loader_entries = boot_grub_config_path
+                .parent()
+                .and_then(|p| p.parent())
+                .map(|boot| boot.join("loader/entries"))
+                .context("Failed to derive BLS entries path from grub.cfg path")?;
             debug!(
-                "Could not extract kernel args from grub.cfg (likely BLS-only): {:#}",
-                e
+                "grub.cfg has no inline linux line ({}); falling back to BLS entries at '{}'",
+                grub_cfg_err,
+                loader_entries.display()
             );
-            HashMap::new()
-        });
+            grub_defaults::extract_cmdline_from_bls_entries(&loader_entries)
+                .context("Failed to extract kernel args from BLS entries")?
+        }
+    };
 
     trace!("Current kernel args from grub.cfg: {:?}", current_args);
 
