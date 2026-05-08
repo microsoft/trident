@@ -1,7 +1,8 @@
 use std::{collections::HashMap, fs, io::Write, path::Path};
 
 use anyhow::{bail, Context, Error};
-use log::{debug, info, trace};
+use log::{debug, info, trace, warn};
+use tempfile::NamedTempFile;
 use uuid::Uuid;
 
 use osmodifier::{BootConfig, IdentifiedPartition, OsModifierContext, Overlay, Verity};
@@ -275,24 +276,79 @@ fn update_grub_config_native(
 
     debug!("Updating GRUB config natively for Azure Linux 4.0+");
 
-    // Read current grub.cfg to extract existing kernel args.
+    // Read current kernel args.
     //
-    // Best-effort: AZL4 ships `GRUB_ENABLE_BLSCFG=true`, so a fully-migrated
-    // grub.cfg will not contain a top-level `linux` line and extraction will
-    // fail. We only use `current_args` to preserve SELinux args when the user
-    // hasn't specified an explicit mode (see below), so an empty map is a
-    // safe fallback. The native `/etc/default/grub` path below is the
-    // authoritative source of kernel args either way.
-    let current_args = grub_defaults::extract_cmdline_from_grub_cfg(boot_grub_config_path)
-        .unwrap_or_else(|e| {
-            debug!(
-                "Could not extract kernel args from grub.cfg (likely BLS-only): {:#}",
-                e
-            );
-            HashMap::new()
-        });
+    // Two layouts coexist on AZL-derived images:
+    //   - AZL3 (and older): args live inline in `grub.cfg` as `linux ...` lines.
+    //   - AZL4 (Fedora-derived, `GRUB_ENABLE_BLSCFG=true`): args live in
+    //     `/boot/loader/entries/*.conf` via the `options` line. `grub.cfg` may
+    //     still contain stale `linux` lines from migration / dev edits, which
+    //     are NOT what's actually booting.
+    //
+    // To pick the authoritative source, we check for `/boot/loader/entries/`
+    // first — if the image is laid out for BLS we read it; otherwise we fall
+    // back to grub.cfg. A second fallback to grub.cfg covers BLS-laid-out
+    // images that happen to have empty entries.
+    //
+    // Best-effort: `current_args` is only consulted to preserve `selinux=` /
+    // `enforcing=` when the user didn't specify an explicit SELinux mode in
+    // the host config (see below). An empty map is therefore a safe default,
+    // and the authoritative source for kernel args is `/etc/default/grub`,
+    // read just below. We swallow extraction errors with a warn! so a
+    // mis-staged BLS dir or a malformed grub.cfg doesn't fail the install.
+    let loader_entries = Path::new(ROOT_MOUNT_POINT_PATH)
+        .join(BOOT_MOUNT_POINT_PATH.trim_start_matches('/'))
+        .join("loader/entries");
+    let bls_layout_present = loader_entries
+        .read_dir()
+        .map(|mut iter| {
+            iter.any(|e| {
+                e.ok()
+                    .and_then(|e| e.path().extension().map(|x| x == "conf"))
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false);
 
-    trace!("Current kernel args from grub.cfg: {:?}", current_args);
+    let current_args = if bls_layout_present {
+        // Prefer BLS, fall back to grub.cfg, fall back to empty.
+        grub_defaults::extract_cmdline_from_bls_entries(&loader_entries)
+            .or_else(|bls_err| {
+                debug!(
+                    "BLS extraction failed ({}); trying grub.cfg",
+                    bls_err
+                );
+                grub_defaults::extract_cmdline_from_grub_cfg(boot_grub_config_path)
+            })
+            .unwrap_or_else(|e| {
+                warn!(
+                    "Could not extract kernel args (BLS + grub.cfg both failed): {:#}",
+                    e
+                );
+                HashMap::new()
+            })
+    } else {
+        // Prefer grub.cfg, fall back to BLS (in case loader/entries appears
+        // late), fall back to empty.
+        grub_defaults::extract_cmdline_from_grub_cfg(boot_grub_config_path)
+            .or_else(|grub_cfg_err| {
+                debug!(
+                    "grub.cfg has no inline linux line ({}); trying BLS entries at '{}'",
+                    grub_cfg_err,
+                    loader_entries.display()
+                );
+                grub_defaults::extract_cmdline_from_bls_entries(&loader_entries)
+            })
+            .unwrap_or_else(|e| {
+                warn!(
+                    "Could not extract kernel args (grub.cfg + BLS both failed): {:#}",
+                    e
+                );
+                HashMap::new()
+            })
+    };
+
+    trace!("Current kernel args: {:?}", current_args);
 
     // Read /etc/default/grub
     let mut grub = grub_defaults::GrubDefaults::read(
