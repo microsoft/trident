@@ -288,9 +288,9 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 		// Capture block device state before finalize/reboot for initramfs diagnostics.
 		// If dracut embedded stale UUIDs, comparing pre-reboot blkid with post-reboot
 		// lsinitrd can prove the mismatch.
-		padIteration := fmt.Sprintf("%03d", i)
-		if blkidOut, blkidErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo blkid"); blkidErr == nil {
-			if testConfig.OutputPath != "" {
+		if testConfig.OutputPath != "" {
+			padIteration := fmt.Sprintf("%03d", i)
+			if blkidOut, blkidErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo blkid"); blkidErr == nil {
 				blkidPath := filepath.Join(testConfig.OutputPath, padIteration+"-pre-reboot-blkid.log")
 				if writeErr := os.WriteFile(blkidPath, []byte(blkidOut), 0644); writeErr != nil {
 					logrus.Warnf("Failed to write pre-reboot blkid log: %v", writeErr)
