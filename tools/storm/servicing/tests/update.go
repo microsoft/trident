@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strconv"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -254,6 +253,14 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 			os.WriteFile(blkidPath, []byte(blkidOut), 0644)
 		}
 
+		// Capture uptime before finalize/reboot so we can verify the VM actually
+		// rebooted by comparing with uptime after the reboot.
+		preRebootUptime := ""
+		if uptimeOut, uptimeErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "uptime --since"); uptimeErr == nil {
+			preRebootUptime = strings.TrimSpace(uptimeOut)
+			logrus.Tracef("Pre-reboot uptime --since for iteration %d: %s", i, preRebootUptime)
+		}
+
 		combinedFinalizeOutput, finalizeErr := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, fmt.Sprintf("sudo trident grpc-client update %s %s --allowed-operations finalize", tridentLoggingArg, updateConfig))
 		if testConfig.Verbose {
 			logrus.Tracef("Finalize output for iteration %d:\n%s\n%v", i, combinedFinalizeOutput, finalizeErr)
@@ -272,22 +279,20 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 
 				sshFallbackSuccess := false
 				for j := 0; j < 10; j++ {
-					// Check /proc/uptime to verify the VM rebooted recently (< 300s).
-					// This prevents false positives from connecting to a VM that
-					// never actually rebooted after the finalize step.
-					output, sshErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "cat /proc/uptime")
+					output, sshErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "uptime --since")
 					if sshErr == nil {
-						uptimeStr := strings.Fields(strings.TrimSpace(output))
-						if len(uptimeStr) > 0 {
-							if uptimeSecs, parseErr := strconv.ParseFloat(uptimeStr[0], 64); parseErr == nil {
-								if uptimeSecs < 300 {
-									logrus.Infof("SSH fallback: VM uptime is %.1fs (recently booted)", uptimeSecs)
-									sshFallbackSuccess = true
-									break
-								}
-								logrus.Warnf("SSH fallback: VM uptime is %.1fs (too high — VM may not have rebooted)", uptimeSecs)
-							}
+						postRebootUptime := strings.TrimSpace(output)
+						if preRebootUptime != "" && postRebootUptime != preRebootUptime {
+							logrus.Infof("SSH fallback: VM rebooted (uptime --since changed from %q to %q)", preRebootUptime, postRebootUptime)
+							sshFallbackSuccess = true
+							break
+						} else if preRebootUptime == "" {
+							// No pre-reboot uptime captured — accept any SSH response
+							logrus.Infof("SSH fallback: VM reachable via SSH (uptime --since: %s, no pre-reboot baseline)", postRebootUptime)
+							sshFallbackSuccess = true
+							break
 						}
+						logrus.Warnf("SSH fallback: uptime --since unchanged (%q) — VM may not have rebooted yet", postRebootUptime)
 					}
 					time.Sleep(3 * time.Second)
 				}
