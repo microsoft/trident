@@ -349,15 +349,52 @@ func (cfg QemuConfig) WaitForLogin(vmName string, outputPath string, verbose boo
 }
 
 func analyzeSerialLog(serial string) error {
-	// Read the last line of the serial log
 	lastLines, err := exec.Command("tail", "-n", "100", serial).Output()
-	// Watch for specific failures and create error messages accordingly
-	if err == nil && strings.Contains(string(lastLines), "tpm tpm0: Operation Timed out") {
+	if err != nil {
+		logrus.Warnf("Failed to read serial log tail: %v", err)
+		return nil
+	}
+	serialTail := string(lastLines)
+
+	// Always print the serial log tail on failure to aid diagnosis.
+	// Without this output, boot failures are nearly impossible to root-cause
+	// because the serial log is only available inside large pipeline artifacts.
+	logrus.Infof("Serial log tail (last 100 lines):\n%s", serialTail)
+
+	// Check for known boot failure patterns and return a specific error
+	// if one is found, so the failure category is clear in pipeline results.
+
+	if strings.Contains(serialTail, "tpm tpm0: Operation Timed out") {
 		return fmt.Errorf("tpm tpm0: Operation Timed out")
 	}
+
+	// Dracut/initramfs emergency shell — VM booted but initramfs could not
+	// mount the root filesystem or a required module was missing.
+	// See ADO#10589 for the dracut temp-dir name collision example.
+	if strings.Contains(serialTail, "Entering emergency mode") ||
+		strings.Contains(serialTail, "dracut-emergency") ||
+		strings.Contains(serialTail, "Cannot open shared object file") {
+		return fmt.Errorf("VM stuck in initramfs emergency shell (see serial log above)")
+	}
+
+	// Kernel panic — the kernel itself crashed during boot.
+	if strings.Contains(serialTail, "Kernel panic") ||
+		strings.Contains(serialTail, "end Kernel panic") {
+		return fmt.Errorf("kernel panic during boot (see serial log above)")
+	}
+
+	// GRUB error — bootloader could not find the kernel or boot entry.
+	if strings.Contains(serialTail, "error: no such device") ||
+		strings.Contains(serialTail, "error: file") {
+		return fmt.Errorf("GRUB boot error (see serial log above)")
+	}
+
 	return nil
 }
 
 func innerWaitForLogin(vmSerialLog string, verbose bool, iteration int, localSerialLog string) error {
-	return stormutils.WaitForLoginMessageInSerialLog(vmSerialLog, verbose, iteration, localSerialLog, time.Second*120)
+	// 180 seconds gives headroom for slow boots under resource pressure at scale.
+	// A normal Azure Linux boot takes 10-30 seconds; the extra margin accounts for
+	// host CPU contention when many QEMU VMs run on the same agent.
+	return stormutils.WaitForLoginMessageInSerialLog(vmSerialLog, verbose, iteration, localSerialLog, time.Second*180)
 }
