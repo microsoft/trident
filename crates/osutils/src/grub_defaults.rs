@@ -275,6 +275,54 @@ pub fn extract_cmdline_from_grub_cfg(grub_cfg_path: &Path) -> Result<HashMap<Str
     )
 }
 
+/// Parse kernel command line args from BLS (Boot Loader Spec) entry files.
+///
+/// On AZL4 (Fedora-derived), kernel args live in `/boot/loader/entries/*.conf`
+/// rather than inline `linux` lines in grub.cfg. Each entry has an `options`
+/// line containing the args. Returns the args from the first non-rescue entry.
+pub fn extract_cmdline_from_bls_entries(
+    loader_entries_dir: &Path,
+) -> Result<HashMap<String, Option<String>>, Error> {
+    let mut entries: Vec<PathBuf> = fs::read_dir(loader_entries_dir)
+        .with_context(|| {
+            format!("Failed to read BLS entries dir '{}'", loader_entries_dir.display())
+        })?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().map(|x| x == "conf").unwrap_or(false))
+        .filter(|p| {
+            // Skip rescue/recovery entries
+            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            !name.contains("rescue") && !name.contains("recovery")
+        })
+        .collect();
+    entries.sort();
+
+    for entry_path in &entries {
+        let content = fs::read_to_string(entry_path)
+            .with_context(|| format!("Failed to read '{}'", entry_path.display()))?;
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if let Some(rest) = trimmed.strip_prefix("options ") {
+                let mut args = HashMap::new();
+                for token in rest.split_whitespace() {
+                    if let Some((key, value)) = token.split_once('=') {
+                        args.insert(key.to_string(), Some(value.to_string()));
+                    } else {
+                        args.insert(token.to_string(), None);
+                    }
+                }
+                return Ok(args);
+            }
+        }
+    }
+
+    bail!(
+        "No BLS entries with options line found in '{}'",
+        loader_entries_dir.display()
+    )
+}
+
 /// Strip surrounding quotes from a string.
 fn unquote(s: &str) -> &str {
     let s = s.trim();

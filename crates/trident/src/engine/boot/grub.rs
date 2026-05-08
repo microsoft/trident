@@ -292,9 +292,27 @@ fn update_grub_config_native(
 
     debug!("Updating GRUB config natively for Azure Linux 4.0+");
 
-    // Read current grub.cfg to extract existing kernel args
-    let current_args = grub_defaults::extract_cmdline_from_grub_cfg(boot_grub_config_path)
-        .context("Failed to extract kernel args from grub.cfg")?;
+    // Read current kernel args. AZL3 has them inline in grub.cfg as `linux` lines,
+    // AZL4 (BLS) has them in /boot/loader/entries/*.conf via the `options` line.
+    // Try grub.cfg first, fall back to BLS entries on failure.
+    let current_args = match grub_defaults::extract_cmdline_from_grub_cfg(boot_grub_config_path) {
+        Ok(args) => args,
+        Err(grub_cfg_err) => {
+            // Fall back to BLS entries (typical for AZL4 / Fedora-derived distros)
+            let loader_entries = boot_grub_config_path
+                .parent()
+                .and_then(|p| p.parent())
+                .map(|boot| boot.join("loader/entries"))
+                .context("Failed to derive BLS entries path from grub.cfg path")?;
+            debug!(
+                "grub.cfg has no inline linux line ({}); falling back to BLS entries at '{}'",
+                grub_cfg_err,
+                loader_entries.display()
+            );
+            grub_defaults::extract_cmdline_from_bls_entries(&loader_entries)
+                .context("Failed to extract kernel args from BLS entries")?
+        }
+    };
 
     trace!("Current kernel args from grub.cfg: {:?}", current_args);
 
