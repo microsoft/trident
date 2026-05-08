@@ -64,8 +64,9 @@ pub(super) fn update_configs(ctx: &EngineContext, os_modifier_path: &Path) -> Re
     let boot_uuid = blkid::get_filesystem_uuid(boot_block_device_path)?;
     let boot_grub_config_path = Path::new(ROOT_MOUNT_POINT_PATH).join(GRUB2_CONFIG_RELATIVE_PATH);
 
-    // Update GRUB config on the boot device (volume holding /boot)
-    match ctx.host_os_release.get_distro() {
+    // Update GRUB config on the boot device (volume holding /boot).
+    // Use the *image* distro (the OS being installed), not the host (MOS ISO).
+    match ctx.image_distro() {
         Distro::AzureLinux(AzureLinuxRelease::AzL3) => {
             update_grub_config_azl3(
                 ctx,
