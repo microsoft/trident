@@ -253,8 +253,10 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 			os.WriteFile(blkidPath, []byte(blkidOut), 0644)
 		}
 
-		// Capture uptime before finalize/reboot so we can verify the VM actually
-		// rebooted by comparing with uptime after the reboot.
+		// Capture "uptime --since" before the finalize reboot. After reboot, the SSH
+		// fallback (used when serial-getty fails to start) compares this value with
+		// the post-reboot "uptime --since" to definitively confirm the VM rebooted,
+		// rather than relying on an arbitrary uptime threshold.
 		preRebootUptime := ""
 		if uptimeOut, uptimeErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "uptime --since"); uptimeErr == nil {
 			preRebootUptime = strings.TrimSpace(uptimeOut)
@@ -270,11 +272,23 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 		if vmConfig.VMConfig.Platform == stormvmconfig.PlatformQEMU {
 			err := vmConfig.QemuConfig.WaitForLogin(vmConfig.VMConfig.Name, testConfig.OutputPath, testConfig.Verbose, i)
 			if err != nil {
-				// Serial login detection failed. This is a known systemd/udev race
-				// condition: if udev hasn't created /dev/ttyS0 when systemd evaluates
-				// ConditionPathExists, dev-ttyS0.device is skipped and serial-getty
-				// never starts. This happens ~2% of the time on any given boot.
-				// The VM may actually be healthy — try SSH as fallback.
+				// Serial login detection failed — the "login:" prompt did not appear
+				// in the serial log within the timeout period.
+				//
+				// Root cause: serial-getty@ttyS0.service depends on systemd's
+				// dev-ttyS0.device unit, which is auto-generated when udev reports
+				// /dev/ttyS0. If udev is slightly slow creating the device node,
+				// systemd's ConditionPathExists=/dev/ttyS0 check fails and the
+				// device unit is skipped — so serial-getty never starts and no
+				// "login:" appears on the serial console, even though the VM is
+				// fully healthy with working networking.
+				//
+				// This is a known systemd race condition (~2% of boots):
+				//   https://github.com/systemd/systemd/issues/10850
+				//
+				// Fallback: verify the VM rebooted by comparing "uptime --since"
+				// before and after the reboot. If the value changed, the VM is
+				// confirmed alive and we can proceed.
 				logrus.Warnf("Serial login detection failed for iteration %d, attempting SSH fallback: %v", i, err)
 
 				sshFallbackSuccess := false
@@ -313,9 +327,11 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 			}
 
 			// Proactively ensure serial-getty@ttyS0 is running after every boot.
-			// This is a no-op if it's already running, but prevents the ~2% of boots
-			// where systemd skips dev-ttyS0.device (udev race) from cascading into
-			// serial detection failures on subsequent iterations.
+			// This is a no-op if already running. When systemd skips
+			// dev-ttyS0.device due to the udev race condition described above
+			// (https://github.com/systemd/systemd/issues/10850), this restarts
+			// serial-getty so subsequent iterations detect "login:" normally
+			// via the serial log, avoiding repeated SSH fallbacks.
 			if _, gettErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo systemctl start serial-getty@ttyS0.service"); gettErr != nil {
 				logrus.Tracef("serial-getty@ttyS0 start attempt: %v (may already be running)", gettErr)
 			}
