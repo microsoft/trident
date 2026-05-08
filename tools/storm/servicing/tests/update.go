@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -272,26 +273,47 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 
 				sshFallbackSuccess := false
 				for j := 0; j < 10; j++ {
-					if _, sshErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "hostname"); sshErr == nil {
-						sshFallbackSuccess = true
-						break
-					}
-					time.Sleep(3 * time.Second)
+						// Check /proc/uptime to verify the VM rebooted recently (< 300s).
+						// This prevents false positives from connecting to a VM that
+						// never actually rebooted after the finalize step.
+						output, sshErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "cat /proc/uptime")
+						if sshErr == nil {
+							uptimeStr := strings.Fields(strings.TrimSpace(output))
+							if len(uptimeStr) > 0 {
+								if uptimeSecs, parseErr := strconv.ParseFloat(uptimeStr[0], 64); parseErr == nil {
+									if uptimeSecs < 300 {
+										logrus.Infof("SSH fallback: VM uptime is %.1fs (recently booted)", uptimeSecs)
+										sshFallbackSuccess = true
+										break
+									}
+									logrus.Warnf("SSH fallback: VM uptime is %.1fs (too high — VM may not have rebooted)", uptimeSecs)
+								}
+							}
+						}
+						time.Sleep(3 * time.Second)
 				}
 
-				if !sshFallbackSuccess {
-					// VM is genuinely unreachable — capture diagnostics
-					if captureErr := stormutils.CaptureScreenshot(
-						vmConfig.VMConfig.Name,
-						testConfig.OutputPath,
-						fmt.Sprintf("%03d-vm-failure-after-update.png", i),
-					); captureErr != nil {
-						logrus.Warnf("failed to capture screenshot: %v", captureErr)
+					if !sshFallbackSuccess {
+						// VM is genuinely unreachable — capture diagnostics
+						if captureErr := stormutils.CaptureScreenshot(
+							vmConfig.VMConfig.Name,
+							testConfig.OutputPath,
+							fmt.Sprintf("%03d-vm-failure-after-update.png", i),
+						); captureErr != nil {
+							logrus.Warnf("failed to capture screenshot: %v", captureErr)
+						}
+						checkSerialLogForDracutIssues(vmConfig.QemuConfig.SerialLog, i)
+						return fmt.Errorf("VM did not come back up after update for iteration %d: %w", i, err)
 					}
-					checkSerialLogForDracutIssues(vmConfig.QemuConfig.SerialLog, i)
-					return fmt.Errorf("VM did not come back up after update for iteration %d: %w", i, err)
-				}
-				logrus.Warnf("SSH fallback succeeded for iteration %d — VM is healthy but serial-getty did not start (ttyS0 device likely skipped by systemd)", i)
+
+					// VM is alive but serial-getty didn't start. Kick it so subsequent
+					// iterations don't hit the same serial detection failure.
+					if _, gettErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo systemctl start serial-getty@ttyS0.service"); gettErr != nil {
+						logrus.Warnf("Failed to start serial-getty@ttyS0 via SSH: %v", gettErr)
+					} else {
+						logrus.Infof("Started serial-getty@ttyS0 via SSH — serial detection should work for subsequent iterations")
+					}
+					logrus.Warnf("SSH fallback succeeded for iteration %d — VM is healthy but serial-getty did not start (ttyS0 device likely skipped by systemd)", i)
 			}
 		} else if vmConfig.VMConfig.Platform == stormvmconfig.PlatformAzure {
 			time.Sleep(15 * time.Second)
