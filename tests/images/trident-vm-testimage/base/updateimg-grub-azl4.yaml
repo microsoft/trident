@@ -84,6 +84,11 @@ os:
     - source: trident-bin/trident
       destination: /usr/bin/trident
       permissions: "755"
+    # AZL4 lacks a /usr/bin/hostname binary; the pytest framework smoke-
+    # tests SSH with `hostname`, so we ship a tiny shim.
+    - source: files/hostname-shim.sh
+      destination: /usr/local/bin/hostname
+      permissions: "755"
     - source: files/sudoers-wheel
       destination: /etc/sudoers.d/wheel
     - source: files/99-dhcp-eth0.network
