@@ -34,6 +34,19 @@ const SYSTEMD_CONFEXT: &str = "systemd-confext";
 /// Returns whether the given OS configuration requires changes to be made to
 /// the OS.
 fn os_changes_required(ctx: &EngineContext) -> bool {
+    os_modifier_required(ctx) || should_carry_over_hostname(ctx)
+}
+
+/// Returns whether applying the requested OS configuration requires the
+/// external OS Modifier binary.
+///
+/// This is the subset of changes that cannot be applied natively by Trident.
+/// Hostname carry-over (`should_carry_over_hostname`) is intentionally
+/// excluded — it is a single-file write handled directly in
+/// `configure_for_reboot`. Distros without an OS Modifier RPM (e.g. AZL4)
+/// can therefore still complete A/B updates whose only OS-level change is
+/// preserving the existing hostname.
+fn os_modifier_required(ctx: &EngineContext) -> bool {
     let new_os_config = &ctx.spec.os;
     let old_os_config = &ctx.spec_old.os;
     match ctx.servicing_type {
@@ -49,7 +62,6 @@ fn os_changes_required(ctx: &EngineContext) -> bool {
                     .is_empty()
                 || !new_os_config.sysexts.is_empty()
                 || !new_os_config.confexts.is_empty()
-                || should_carry_over_hostname(ctx)
         }
         ServicingType::RuntimeUpdate => {
             // If sysexts or confexts are newly configured (i.e. they were not
@@ -127,7 +139,7 @@ impl Subsystem for OsConfigSubsystem {
 
     fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {
         // If the os-modifier binary is required but not present, return an error.
-        if os_changes_required(ctx) && !Path::new(OS_MODIFIER_BINARY_PATH).exists() {
+        if os_modifier_required(ctx) && !Path::new(OS_MODIFIER_BINARY_PATH).exists() {
             return Err(TridentError::new(
                 ExecutionEnvironmentMisconfigurationError::FindOSModifierBinary {
                     binary_path: OS_MODIFIER_BINARY_PATH.to_string(),
@@ -193,6 +205,26 @@ impl OsConfigSubsystem {
     /// Build OS Modifier configuration and call OS Modifier on servicing types
     /// that require a reboot (A/B update or clean install).
     fn configure_for_reboot(&self, ctx: &EngineContext) -> Result<(), TridentError> {
+        // Fast path: if the only OS-level change is hostname carry-over, we
+        // don't need to invoke OS Modifier at all. Write /etc/hostname
+        // directly so distros without the os-modifier RPM (e.g. AZL4) can
+        // complete A/B updates that don't otherwise touch OS config.
+        if !os_modifier_required(ctx) {
+            if should_carry_over_hostname(ctx) {
+                if let Some(hostname) = self.prev_hostname.as_deref() {
+                    debug!(
+                        "Carrying over hostname '{hostname}' natively (OS Modifier not required)"
+                    );
+                    fs::write(HOSTNAME_PATH, format!("{hostname}\n")).structured(
+                        ServicingError::WriteHostname {
+                            path: HOSTNAME_PATH.into(),
+                        },
+                    )?;
+                }
+            }
+            return Ok(());
+        }
+
         let mut os_modifier_config = OSModifierConfig::default();
 
         if !ctx.spec.os.users.is_empty() {
@@ -478,6 +510,64 @@ mod tests {
         assert!(os_changes_required(&ctx));
         ctx.spec.internal_params = serde_yaml::from_str("disableHostnameCarryOver: true").unwrap();
         assert!(!os_changes_required(&ctx));
+    }
+
+    /// Hostname carry-over alone should not require the OS Modifier binary —
+    /// Trident applies it natively. This is the AZL4 unblocker: AZL4 ships no
+    /// `azurelinux-image-tools-osmodifier` RPM, so any path that would
+    /// previously fail validation when the only "change" was carry-over now
+    /// passes.
+    #[test]
+    fn test_os_modifier_not_required_for_hostname_carry_over_only() {
+        use super::{os_changes_required, os_modifier_required};
+
+        let mk_ctx = || EngineContext {
+            servicing_type: ServicingType::AbUpdate,
+            spec: HostConfiguration {
+                os: Os {
+                    netplan: None,
+                    selinux: Selinux::default(),
+                    users: vec![],
+                    additional_files: vec![],
+                    hostname: None,
+                    modules: vec![],
+                    services: Services::default(),
+                    kernel_command_line: KernelCommandLine::default(),
+                    sysexts: vec![],
+                    confexts: vec![],
+                    uefi_fallback: UefiFallbackMode::default(),
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // AbUpdate with no explicit os.* changes and carry-over enabled (default):
+        // os_changes_required is true (we still need to write hostname),
+        // but os_modifier_required is false (we don't need the binary).
+        let ctx = mk_ctx();
+        assert!(os_changes_required(&ctx));
+        assert!(!os_modifier_required(&ctx));
+
+        // Adding any non-hostname-carry-over field must flip os_modifier_required.
+        let mut ctx_with_user = mk_ctx();
+        ctx_with_user.spec.os.users.push(User {
+            name: "test".to_string(),
+            password: Password::Locked,
+            ..Default::default()
+        });
+        assert!(os_modifier_required(&ctx_with_user));
+
+        let mut ctx_with_hostname = mk_ctx();
+        ctx_with_hostname.spec.os.hostname = Some("explicit".to_string());
+        assert!(os_modifier_required(&ctx_with_hostname));
+
+        // Disabling carry-over with no other config: nothing requires the binary.
+        let mut ctx_no_carry = mk_ctx();
+        ctx_no_carry.spec.internal_params =
+            serde_yaml::from_str("disableHostnameCarryOver: true").unwrap();
+        assert!(!os_modifier_required(&ctx_no_carry));
+        assert!(!os_changes_required(&ctx_no_carry));
     }
 
     #[test]
