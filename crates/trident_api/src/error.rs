@@ -711,6 +711,9 @@ pub enum ServicingError {
     #[error("Failed to write an additional file '{file_name}'")]
     WriteAdditionalFile { file_name: String },
 
+    #[error("Failed to write hostname to {path}")]
+    WriteHostname { path: String },
+
     #[error("Failed to write Netplan config")]
     WriteNetplanConfig,
 }
