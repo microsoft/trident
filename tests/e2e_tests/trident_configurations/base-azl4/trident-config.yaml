@@ -38,41 +38,25 @@ storage:
         options: umask=0077
     - deviceId: root
       mountPoint: /
-scripts:
-  postConfigure:
-    - name: testing-privilege
-      runOn:
-        - clean-install
-        - ab-update
-      content: echo 'testing-user ALL=(ALL:ALL) NOPASSWD:ALL' > /etc/sudoers.d/testing-user
-os:
-  selinux:
-    mode: disabled
-  netplan:
-    version: 2
-    ethernets:
-      vmeths:
-        match:
-          name: eth*
-        dhcp4: true
-  users:
-    - name: testing-user
-      sshPublicKeys: []
-      sshMode: key-only
 # AZL4 baseline scenario for the pytest E2E framework. Mirrors the AZL3
-# `base/` scenario as closely as possible so the same test markers apply.
+# `base/` scenario as closely as possible while staying inside what PR-4's
+# native hostname-carry-over fast path can serve.
 #
-# Differences from `base/`:
+# Why no `os:` section yet:
+#   The MOS install ISO (built from tests/images/trident-mos/iso.yaml)
+#   does not include /usr/bin/osmodifier. PR-5 bakes osmodifier into the
+#   target image so post-install Trident operations (update, runtime
+#   apply) can drive os.users / os.selinux / os.netplan via osmodifier,
+#   but the install-time validation runs in the MOS environment which
+#   currently lacks the binary. Until the MOS ISO is rebuilt with
+#   azurelinux-image-tools-osmodifier installed (a small follow-up), the
+#   install path must stick to PR-4's hostname-only fast path.
+#
+# Once the MOS includes osmodifier, this file can grow to mirror `base/`
+# more completely (os.users, os.selinux, os.netplan).
+#
+# Other differences from base/:
 #   - No swap or /home partitions (kept simple for the first AZL4 scenario;
 #     swap support is its own follow-up and /home isn't load-bearing here).
-#   - `os.netplan.ethernets.vmeths.match.name` uses `eth*` instead of
-#     `enp*` because the AZL4 testimage boots with `net.ifnames=0` (the
-#     virtdeploy QEMU NIC arrives as `eth0`, not `enp0s2`).
-#   - `os.selinux.mode: disabled`. The AZL4 testimage builds with
-#     selinux disabled (no policy loaded) to match how the manual M1 work
-#     was validated; once we land an SELinux-enforcing scenario we'll
-#     copy this into a `base-azl4-selinux` variant.
-#
-# This config drives os.users/os.netplan/os.selinux through Trident, so
-# the test image must have /usr/bin/osmodifier present. PR-5 bakes that
-# in via additionalFiles until the AZL4 osmodifier RPM is published.
+#   - No postConfigure sudo grant: the testing-user is added to wheel by
+#     the testimage MIC config and /etc/sudoers.d/wheel grants nopasswd.
