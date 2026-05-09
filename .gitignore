@@ -369,3 +369,4 @@ vendor/
 /tools/virt-deploy-metadata.json
 # AZL4 trident binary baked into test image (built locally)
 tests/images/trident-vm-testimage/base/trident-bin/
+tests/images/trident-vm-testimage/base/osmodifier-bin/
