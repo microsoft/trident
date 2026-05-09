@@ -1,0 +1,9 @@
+# Azure Linux 4.0 Alpha 2 staging repo used by tests/images/azl4-qemu-guest.yaml.
+#
+# Once AZL4 promotes from staging to a stable feed, replace the URL.
+[azl4-alpha2]
+name=Azure Linux 4.0 Alpha 2
+baseurl=https://stcontroltowerdevjwisitg.blob.core.windows.net/alpha2-prod/base/x86_64
+gpgcheck=0
+enabled=1
+skip_if_unavailable=False
