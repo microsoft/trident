@@ -1,0 +1,55 @@
+image:
+  url: http://NETLAUNCH_HOST_ADDRESS/files/regular.cosi
+  sha384: ignored
+storage:
+  disks:
+    - id: os
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+      partitionTableType: gpt
+      partitions:
+        - id: root-a
+          type: root
+          size: 8G
+        - id: root-b
+          type: root
+          size: 8G
+        - id: esp
+          type: esp
+          size: 1G
+        - id: trident
+          type: linux-generic
+          size: 1G
+    - id: disk2
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+      partitionTableType: gpt
+      partitions: []
+  abUpdate:
+    volumePairs:
+      - id: root
+        volumeAId: root-a
+        volumeBId: root-b
+  filesystems:
+    - deviceId: trident
+      source: new
+      mountPoint: /var/lib/trident
+    - deviceId: esp
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+    - deviceId: root
+      mountPoint: /
+# AZL4 baseline scenario for the pytest E2E framework.
+#
+# Differences from `base/`:
+#   - No swap or /home partitions (kept simple for the first AZL4 scenario;
+#     swap support is its own follow-up and /home isn't load-bearing here)
+#   - Empty `os:` section. The trident-vm-grub-testimage-azl4 image bakes
+#     in the testing-user, sshd, networking, and selinux=disabled at MIC
+#     build time, so Trident does not need to apply any OS config.
+#   - No netplan: AZL4 ships netplan as a package but our test image uses
+#     systemd-networkd directly. Driving netplan from Trident would also
+#     trigger the os-modifier path which only PR-4's hostname carry-over
+#     fast path can avoid; broader os.users / os.selinux / netplan support
+#     is on the roadmap (replace os-modifier).
+#   - No postConfigure sudo grant: the image already grants wheel via
+#     /etc/sudoers.d/wheel and adds testing-user to wheel.
