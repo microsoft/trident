@@ -74,7 +74,6 @@ require {
         type lib_t;
         type load_policy_t;
         type locale_t;
-        type locate_exec_t;
         type lost_found_t;
         type lvm_metadata_t;
         type lvm_runtime_t;
@@ -373,7 +372,12 @@ allow trident_t ldconfig_cache_t:file { getattr relabelto };
 allow trident_t lib_t:file { create relabelto rename setattr unlink write };
 allow trident_t locale_t:dir { add_name relabelto remove_name rmdir setattr write };
 allow trident_t locale_t:file { link relabelto rename setattr unlink write };
-allow trident_t locate_exec_t:file getattr;
+optional_policy(`
+    require {
+        type locate_exec_t;
+    }
+    allow trident_t locate_exec_t:file getattr;
+')
 optional_policy(`
     require {
         type logrotate_unit_t;
