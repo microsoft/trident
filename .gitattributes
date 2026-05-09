@@ -1,0 +1,21 @@
+* text=auto eol=lf
+
+# Anything that gets executed inside an image must keep LF endings; CRLF
+# on shebang lines breaks the interpreter lookup with `bad interpreter:
+# /bin/bash^M`.
+*.sh text eol=lf
+*.py text eol=lf
+*.service text eol=lf
+*.network text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+
+# Binary artifacts — never normalize.
+*.vhdx binary
+*.cosi binary
+*.qcow2 binary
+*.iso binary
+*.raw binary
+*.png binary
+*.jpg binary
+*.zst binary
