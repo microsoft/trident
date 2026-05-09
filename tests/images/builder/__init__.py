@@ -16,6 +16,9 @@ class BaseImage(Enum):
     BAREMETAL = BaseImageData("baremetal", Path("artifacts/baremetal.vhdx"))
     CORE_SELINUX = BaseImageData("core_selinux", Path("artifacts/core_selinux.vhdx"))
     QEMU_GUEST = BaseImageData("qemu_guest", Path("artifacts/qemu_guest.vhdx"))
+    AZL4_QEMU_GUEST = BaseImageData(
+        "azl4_qemu_guest", Path("artifacts/azl4_qemu_guest.vhdx")
+    )
     CORE_ARM64 = BaseImageData("core_arm64", Path("artifacts/core_arm64.vhdx"))
     MINIMAL = BaseImageData("minimal", Path("artifacts/minimal.vhdx"))
     MINIMAL_AARCH64 = BaseImageData(
