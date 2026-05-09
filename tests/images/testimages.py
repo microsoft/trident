@@ -73,6 +73,26 @@ DEFINED_IMAGES: List[ImageConfig] = [
         ssh_key="files/id_rsa.pub",
     ),
     ImageConfig(
+        # AZL4 (Fedora-derived) variant of trident-vm-grub-testimage.
+        # Uses a locally-built AZL4 base VHDX (see README) and bakes the
+        # Trident binary in via additionalFiles since the trident-service
+        # RPM is not yet packaged for AZL4.
+        "trident-vm-grub-testimage-azl4",
+        base_image=BaseImage.AZL4_QEMU_GUEST,
+        config="trident-vm-testimage",
+        config_file="base/updateimg-grub-azl4.yaml",
+        ssh_key="files/id_rsa.pub",
+        # No trident-service RPM for AZL4 yet — the binary is delivered
+        # via additionalFiles. extra_dependencies enforces the file is
+        # in place before the image is built.
+        requires_trident=False,
+        extra_dependencies=[
+            Path(
+                "tests/images/trident-vm-testimage/base/trident-bin/trident"
+            ),
+        ],
+    ),
+    ImageConfig(
         "trident-vm-grub-verity-testimage",
         base_image=BaseImage.QEMU_GUEST,
         config="trident-vm-testimage",

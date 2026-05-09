@@ -367,3 +367,5 @@ vendor/
 # Virtdeploy files
 /tools/vm-netlaunch.yaml
 /tools/virt-deploy-metadata.json
+# AZL4 trident binary baked into test image (built locally)
+tests/images/trident-vm-testimage/base/trident-bin/
