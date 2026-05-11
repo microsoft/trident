@@ -23,7 +23,7 @@ func FetchLogs(vmConfig stormvmconfig.AllVMConfig, outputPath string) error {
 
 	// Best effort: capture block device UUIDs for initramfs debugging
 	logrus.Tracef("Capturing blkid output for initramfs diagnostics")
-	if blkidOut, blkidErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo blkid | sudo tee /tmp/blkid.log"); blkidErr == nil {
+	if blkidOut, blkidErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo blkid | sudo tee /tmp/blkid.log && sudo chmod 644 /tmp/blkid.log"); blkidErr == nil {
 		logrus.Tracef("blkid output: %s", blkidOut)
 		stormssh.ScpDownloadFile(vmConfig.VMConfig, vmIP, "/tmp/blkid.log", outputPath+"/blkid.log")
 	}
@@ -36,7 +36,7 @@ func FetchLogs(vmConfig stormvmconfig.AllVMConfig, outputPath string) error {
 
 	// Best effort: capture dracut-related journal entries for initramfs boot analysis
 	logrus.Tracef("Capturing dracut journal entries")
-	if _, dracutErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo journalctl --no-pager -u dracut* -u systemd-udevd > /tmp/dracut-journal.log 2>&1 && sudo chmod 644 /tmp/dracut-journal.log"); dracutErr == nil {
+	if _, dracutErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo journalctl --no-pager -u 'dracut*' -u systemd-udevd > /tmp/dracut-journal.log 2>&1 && sudo chmod 644 /tmp/dracut-journal.log"); dracutErr == nil {
 		stormssh.ScpDownloadFile(vmConfig.VMConfig, vmIP, "/tmp/dracut-journal.log", outputPath+"/dracut-journal.log")
 	}
 
