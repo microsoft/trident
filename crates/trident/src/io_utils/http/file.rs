@@ -234,17 +234,25 @@ impl HttpFile {
     fn create_oci_client() -> OciClient {
         let https_proxy = env::var("HTTPS_PROXY")
             .or_else(|_| env::var("https_proxy"))
-            .ok();
+            .ok()
+            .filter(|v| !v.trim().is_empty());
         let http_proxy = env::var("HTTP_PROXY")
             .or_else(|_| env::var("http_proxy"))
-            .ok();
-        let no_proxy = env::var("NO_PROXY").or_else(|_| env::var("no_proxy")).ok();
+            .ok()
+            .filter(|v| !v.trim().is_empty());
+        let no_proxy = env::var("NO_PROXY")
+            .or_else(|_| env::var("no_proxy"))
+            .ok()
+            .filter(|v| !v.trim().is_empty());
 
         if https_proxy.is_some() || http_proxy.is_some() {
+            let http_status = if http_proxy.is_some() {
+                "<set>"
+            } else {
+                "<unset>"
+            };
             debug!(
-                "Configuring OCI client with proxy (HTTPS_PROXY={}, HTTP_PROXY={})",
-                https_proxy.as_deref().unwrap_or("<unset>"),
-                http_proxy.as_deref().unwrap_or("<unset>"),
+                "Configuring OCI client with proxy (HTTPS_PROXY=<set>, HTTP_PROXY={http_status})"
             );
         }
 
