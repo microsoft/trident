@@ -32,14 +32,14 @@ func FetchLogs(vmConfig stormvmconfig.AllVMConfig, outputPath string) error {
 
 	// Best effort: capture initramfs contents to detect stale UUID references
 	logrus.Tracef("Capturing lsinitrd output for initramfs diagnostics")
-	if _, lsinitrdErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo lsinitrd 2>/dev/null > /tmp/lsinitrd.log 2>&1 && sudo chmod 644 /tmp/lsinitrd.log"); lsinitrdErr == nil {
-		stormssh.ScpDownloadFile(vmConfig.VMConfig, vmIP, "/tmp/lsinitrd.log", outputPath+"/lsinitrd.log")
+	if lsinitrdOut, lsinitrdErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo lsinitrd 2>/dev/null"); lsinitrdErr == nil {
+		os.WriteFile(filepath.Join(outputPath, "lsinitrd.log"), []byte(lsinitrdOut), 0644)
 	}
 
 	// Best effort: capture dracut-related journal entries for initramfs boot analysis
 	logrus.Tracef("Capturing dracut journal entries")
-	if _, dracutErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo journalctl --no-pager -u 'dracut*' -u systemd-udevd > /tmp/dracut-journal.log 2>&1 && sudo chmod 644 /tmp/dracut-journal.log"); dracutErr == nil {
-		stormssh.ScpDownloadFile(vmConfig.VMConfig, vmIP, "/tmp/dracut-journal.log", outputPath+"/dracut-journal.log")
+	if dracutOut, dracutErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo journalctl --no-pager -u 'dracut*' -u systemd-udevd 2>/dev/null"); dracutErr == nil {
+		os.WriteFile(filepath.Join(outputPath, "dracut-journal.log"), []byte(dracutOut), 0644)
 	}
 
 	// Download crashdumps (simplified)
