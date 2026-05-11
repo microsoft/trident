@@ -73,14 +73,24 @@ stages:
           - bash: chmod +x $(TRIDENT_SOURCE_DIR)/bin/*
             displayName: "Make go tools executable"
 
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download SELinux base image"
+            inputs:
+              buildType: current
+              artifactName: image-selinux-base
+              targetPath: "$(TRIDENT_SOURCE_DIR)/artifacts"
+
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download SELinux update image"
+            inputs:
+              buildType: current
+              artifactName: image-selinux-update
+              targetPath: "$(TRIDENT_SOURCE_DIR)/artifacts/test-image"
+
           - bash: |
               set -eux
-              mkdir -p artifacts/iso artifacts/test-image
-
-              # Download the built images from pipeline artifacts
-              echo "Downloading SELinux test images..."
-              cp $(System.ArtifactsDirectory)/image-selinux-base/trident-selinux-testimage.qcow2 artifacts/
-              cp $(System.ArtifactsDirectory)/image-selinux-update/trident-selinux-testimage-update.cosi artifacts/test-image/usrverity.cosi
+              ls -lh artifacts/
+              ls -lh artifacts/test-image/
             workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: "Download SELinux test images"
 
