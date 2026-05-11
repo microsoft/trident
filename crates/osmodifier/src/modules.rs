@@ -40,8 +40,8 @@ pub fn configure(ctx: &OsModifierContext, modules: &[Module]) -> Result<(), Erro
                     load_lines.push(module.name.clone());
                 }
                 // Set options if provided
-                if let Some(ref opts) = module.options {
-                    update_options(&mut options_lines, &module.name, opts);
+                if !module.options.is_empty() {
+                    update_options(&mut options_lines, &module.name, &module.options);
                 }
             }
             LoadMode::Auto => {
@@ -49,13 +49,13 @@ pub fn configure(ctx: &OsModifierContext, modules: &[Module]) -> Result<(), Erro
                 // Remove from blacklist if present
                 remove_blacklist(&mut disabled_lines, &module.name);
                 // Set options if provided
-                if let Some(ref opts) = module.options {
-                    update_options(&mut options_lines, &module.name, opts);
+                if !module.options.is_empty() {
+                    update_options(&mut options_lines, &module.name, &module.options);
                 }
             }
             LoadMode::Disable => {
                 debug!("Module '{}': set to disabled", module.name);
-                if module.options.is_some() {
+                if !module.options.is_empty() {
                     bail!(
                         "Module '{}' is disabled but has options set — this is not allowed",
                         module.name
@@ -75,10 +75,8 @@ pub fn configure(ctx: &OsModifierContext, modules: &[Module]) -> Result<(), Erro
                 let is_disabled = disabled_lines
                     .iter()
                     .any(|l| l.trim() == format!("blacklist {}", module.name));
-                if !is_disabled {
-                    if let Some(ref opts) = module.options {
-                        update_options(&mut options_lines, &module.name, opts);
-                    }
+                if !is_disabled && !module.options.is_empty() {
+                    update_options(&mut options_lines, &module.name, &module.options);
                 }
             }
         }

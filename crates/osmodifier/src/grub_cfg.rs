@@ -6,7 +6,7 @@
 //! Used by the `update_default_grub` flow to extract boot args from the
 //! generated grub.cfg and sync them back to /etc/default/grub.
 
-use std::{fs, path::Path, process::Command};
+use std::{fs, process::Command};
 
 use anyhow::{bail, Context, Error};
 use log::{debug, info, trace};
