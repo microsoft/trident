@@ -33,7 +33,7 @@ transitions that are not included in the production trident-selinux package.
 This package must NOT be installed in production images.
 
 %build
-mkdir selinux
+mkdir -p selinux
 cp -p packaging/selinux-policy-trident-test/%{modulename}.fc selinux/
 cp -p packaging/selinux-policy-trident-test/%{modulename}.if selinux/
 cp -p packaging/selinux-policy-trident-test/%{modulename}.te selinux/

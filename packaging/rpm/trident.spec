@@ -245,7 +245,7 @@ export TRIDENT_VERSION="%{trident_version}"
 %endif
 cargo build --release
 
-mkdir selinux
+mkdir -p selinux
 cp -p packaging/selinux-policy-trident/trident.fc selinux/
 cp -p packaging/selinux-policy-trident/trident.if selinux/
 cp -p packaging/selinux-policy-trident/trident.te selinux/
