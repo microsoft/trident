@@ -423,6 +423,9 @@ stages:
 
       # SELinux policy validation — tests update with public policy only
       - template: stages/testing_selinux/selinux-update-testing.yml
+        parameters:
+          micBuildType: ${{ parameters.micBuildType }}
+          micVersion: ${{ parameters.micVersion }}
 
   # TESTING stages for AZL-VALIDATION
   - ${{ if eq(parameters.stageType, 'azl-validation') }}:

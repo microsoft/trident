@@ -17,6 +17,20 @@ parameters:
     type: object
     default: []
 
+  - name: micBuildType
+    displayName: MIC Build Type
+    type: string
+    values:
+      - dev
+      - preview
+      - release
+    default: release
+
+  - name: micVersion
+    displayName: MIC Version
+    type: string
+    default: "*.*.*"
+
 stages:
   - stage: BuildSELinuxTestImages
     displayName: Build SELinux Test Images
@@ -32,6 +46,9 @@ stages:
           label: selinux-testimage
           makeTarget: artifacts/trident-selinux-testimage.qcow2
           baseimgType: qemu_guest
+          micBuildType: ${{ parameters.micBuildType }}
+          micVersion: ${{ parameters.micVersion }}
+          useStagedSshKeys: true
 
   - stage: SELinuxUpdateValidation
     displayName: SELinux Policy Update Validation
