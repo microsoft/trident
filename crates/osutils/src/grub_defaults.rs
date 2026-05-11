@@ -332,6 +332,39 @@ mod tests {
     }
 
     #[test]
+    fn test_atomic_write_creates_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("etc-default-grub");
+        atomic_write(&target, b"GRUB_DEFAULT=0\n").unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"GRUB_DEFAULT=0\n");
+    }
+
+    #[test]
+    fn test_atomic_write_replaces_existing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("etc-default-grub");
+        fs::write(&target, b"OLD CONTENT").unwrap();
+        atomic_write(&target, b"NEW CONTENT").unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"NEW CONTENT");
+    }
+
+    #[test]
+    fn test_atomic_write_leaves_no_partial_files() {
+        // After a successful atomic_write, the parent directory should
+        // contain exactly the target file -- no leftover temp files.
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("grub");
+        atomic_write(&target, b"GRUB_TIMEOUT=10\n").unwrap();
+
+        let entries: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(entries.len(), 1, "Expected only the target file, got: {:?}", entries);
+        assert_eq!(entries[0], "grub");
+    }
+
+    #[test]
     fn test_read_and_get() {
         let f = write_temp_grub(
             r#"# Comment line
