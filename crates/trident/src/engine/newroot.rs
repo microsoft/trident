@@ -22,7 +22,6 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use crate::engine::EngineContext;
 
 /// NewrootMount represents all the necessary mounting points for newroot and
 /// the nested execmount to exit the chroot jail. It is also responsible for
