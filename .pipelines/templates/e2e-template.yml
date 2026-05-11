@@ -421,6 +421,9 @@ stages:
           micVersion: ${{ parameters.micVersion }}
           testSecureBoot: ${{ parameters.testSecureBoot }}
 
+      # SELinux policy validation — tests update with public policy only
+      - template: stages/testing_selinux/selinux-update-testing.yml
+
   # TESTING stages for AZL-VALIDATION
   - ${{ if eq(parameters.stageType, 'azl-validation') }}:
       # VM Testing (host, post_merge)
