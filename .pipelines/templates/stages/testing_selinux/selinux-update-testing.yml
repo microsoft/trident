@@ -44,6 +44,7 @@ stages:
     dependsOn:
       - BuildSELinuxTestImages
       - BuildingTools
+      - TridentTestImg_trident_installer
 
     jobs:
       # Run the SELinux update validation test
@@ -86,6 +87,13 @@ stages:
               buildType: current
               artifactName: image-selinux-update
               targetPath: "$(TRIDENT_SOURCE_DIR)/artifacts/test-image"
+
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download installer ISO"
+            inputs:
+              buildType: current
+              artifactName: trident-installer
+              targetPath: "$(TRIDENT_SOURCE_DIR)/artifacts/iso"
 
           - bash: |
               set -eux
