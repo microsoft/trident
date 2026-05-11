@@ -31,7 +31,7 @@ stages:
         parameters:
           label: selinux-testimage
           makeTarget: artifacts/trident-selinux-testimage.qcow2
-          baseimgType: core
+          baseimgType: qemu_guest
 
   - stage: SELinuxUpdateValidation
     displayName: SELinux Policy Update Validation
