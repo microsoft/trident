@@ -88,10 +88,15 @@ stages:
 
           - bash: |
               set -eux
-              ls -lh artifacts/
-              ls -lh artifacts/test-image/
+              cd artifacts/test-image
+
+              # Rename COSIs to match what usr-verity trident-config.yaml expects
+              ls -lh
+              mv *_0.cosi usrverity.cosi
+              mv *_1.cosi usrverity_v2.cosi
+              ls -lh
             workingDirectory: $(TRIDENT_SOURCE_DIR)
-            displayName: "Download SELinux test images"
+            displayName: "Rename COSIs for usr-verity config"
 
           - bash: |
               set -eux
@@ -109,7 +114,7 @@ stages:
 
               TRIDENT_CONFIG="$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/trident_configurations/usr-verity/trident-config.yaml"
               SIGNING_CERT=""
-              CA_CERT_PATH="$(System.ArtifactsDirectory)/selinux-base/ca_cert.pem"
+              CA_CERT_PATH="$(TRIDENT_SOURCE_DIR)/artifacts/test-image/ca_cert.pem"
               if [ -f "$CA_CERT_PATH" ]; then
                 SIGNING_CERT="--signing-cert $CA_CERT_PATH"
               fi
