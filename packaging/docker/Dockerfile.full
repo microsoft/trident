@@ -8,7 +8,6 @@ WORKDIR /work
 
 COPY packaging/rpm/trident.spec .
 COPY packaging ./packaging
-COPY artifacts/osmodifier /usr/src/azl/SOURCES/osmodifier
 
 COPY .cargo/config.toml ./.cargo/config.toml
 COPY Cargo.toml .

@@ -39,6 +39,7 @@ rand = {workspace = true, optional = true}
 
 pytest_gen = { path = "../pytest_gen" }
 pytest = { path = "../pytest", optional = true }
+osmodifier = { path = "../osmodifier" }
 trident_api = { path = "../trident_api" }
 sysdefs = { path = "../sysdefs" }
 

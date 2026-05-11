@@ -142,24 +142,7 @@ target/release/trident target/release/trident-acl-agent: .cargo/config | version
 		TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
 		cargo build --release --features dangerous-options,grpc-preview -p trident -p trident-acl-agent
 
-TOOLKIT_DIR="azure-linux-image-tools/toolkit"
-AZL_TOOLS_OUT_DIR="$(TOOLKIT_DIR)/out/tools"
 ARTIFACTS_DIR="artifacts"
-
-# Build OSModifier from a local clone of azure-linux-image-tools.
-# Make sure the repo has been cloned manually, via:
-#
-# git clone https://github.com/microsoft/azure-linux-image-tools
-
-artifacts/osmodifier: packaging/docker/Dockerfile-osmodifier.azl3
-	@docker build -t trident/osmodifier-build:latest \
-		-f packaging/docker/Dockerfile-osmodifier.azl3 \
-		.
-	@mkdir -p "$(ARTIFACTS_DIR)"
-	@id=$$(docker create trident/osmodifier-build:latest) && \
-	    docker cp -q $$id:/work/azure-linux-image-tools/toolkit/out/tools/osmodifier $@ || \
-	    docker rm -v $$id
-	@touch $@
 
 .PHONY: azl3-builder-image clean-azl3-builder-image build-azl3
 azl3-builder-image:
@@ -185,7 +168,7 @@ target/azl3/release/trident target/azl3/release/trident-acl-agent: version-vars 
 		cargo build --color always --target-dir target/azl3 --release --features dangerous-options,grpc-preview -p trident -p trident-acl-agent
 
 # This will do a proper build on azl3, exactly as the pipelines would, with the custom registry and all.
-bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full packaging/systemd/*.service packaging/rpm/trident.spec artifacts/osmodifier packaging/selinux-policy-trident/* version-vars
+bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full packaging/systemd/*.service packaging/rpm/trident.spec packaging/selinux-policy-trident/* version-vars
 	$(eval CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN := $(shell az account get-access-token --query "join(' ', ['Bearer', accessToken])" --output tsv))
 
 	@mkdir -p bin/
@@ -207,7 +190,7 @@ bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full packaging/systemd
 	@tar xf $@ -C bin/
 
 # This one does a fast trick-build where we build locally and inject the binary into the container to add it to the RPM.
-bin/trident-rpms.tar.gz: packaging/docker/Dockerfile.azl3 packaging/systemd/*.service packaging/rpm/trident.spec artifacts/osmodifier target/release/trident target/release/trident-acl-agent packaging/selinux-policy-trident/*
+bin/trident-rpms.tar.gz: packaging/docker/Dockerfile.azl3 packaging/systemd/*.service packaging/rpm/trident.spec target/release/trident target/release/trident-acl-agent packaging/selinux-policy-trident/*
 	@mkdir -p bin/
 	@if [ ! -f bin/trident ] || ! cmp -s target/release/trident bin/trident; then \
 		cp target/release/trident bin/trident; \

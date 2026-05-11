@@ -22,7 +22,7 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use crate::{OS_MODIFIER_BINARY_PATH, OS_MODIFIER_NEWROOT_PATH};
+use crate::engine::EngineContext;
 
 /// NewrootMount represents all the necessary mounting points for newroot and
 /// the nested execmount to exit the chroot jail. It is also responsible for
@@ -82,21 +82,7 @@ impl NewrootMount {
         newroot_mount.mount_tmpfs("/tmp")?;
         newroot_mount.mount_tmpfs("/run")?;
 
-        if Path::new(OS_MODIFIER_BINARY_PATH).exists() {
-            // Bind mount the execroot binary to the newroot
-            debug!("Bind mounting osmodifier binary into newroot");
-            let mount_path = path::join_relative(newroot_mount.path(), OS_MODIFIER_NEWROOT_PATH);
-
-            fs::write(&mount_path, b"").structured(ServicingError::MountExecrootBinary)?;
-
-            MountBuilder::default()
-                .flags(MountFlags::BIND)
-                .mount(OS_MODIFIER_BINARY_PATH, &mount_path)
-                .structured(ServicingError::MountExecrootBinary)?;
-            newroot_mount.mounts.push(mount_path);
-        } else {
-            debug!("Skipping bind mount of osmodifier binary into newroot");
-        }
+        // OS modifier is now a library — no binary bind mount needed.
 
         Ok(newroot_mount)
     }

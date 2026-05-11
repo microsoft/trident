@@ -70,6 +70,7 @@ tonic-middleware = { workspace = true }
 
 # Local Crate Dependencies
 sysdefs = { path = "../sysdefs" }
+osmodifier = { path = "../osmodifier" }
 osutils = { path = "../osutils" }
 trident_api = { path = "../trident_api" }
 trident-proto = { path = "../trident-proto", features = ["server", "log"] }

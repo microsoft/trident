@@ -1,15 +1,14 @@
-use std::{fs, io::Write, path::Path};
+use std::{fs, path::Path};
 
 use anyhow::{bail, Context, Error};
 use log::{debug, info, trace};
-use tempfile::NamedTempFile;
 use uuid::Uuid;
 
+use osmodifier::{BootConfig, IdentifiedPartition, Overlay, OsModifierContext, Verity};
 use osutils::{
     blkid,
     grub::GrubConfig,
     grub_mkconfig::GrubMkConfigScript,
-    osmodifier::{self, BootConfig, IdentifiedPartition, Overlay, Verity},
     osrelease::{AzureLinuxRelease, Distro},
 };
 use trident_api::{
@@ -36,7 +35,7 @@ fn update_grub_config_esp(grub_config_path: &Path, boot_fs_uuid: &Uuid) -> Resul
     grub_config.write()
 }
 
-pub(super) fn update_configs(ctx: &EngineContext, os_modifier_path: &Path) -> Result<(), Error> {
+pub(super) fn update_configs(ctx: &EngineContext) -> Result<(), Error> {
     // Get the root block device path
     let root_device_path = ctx
         .get_root_block_device_path()
@@ -68,7 +67,6 @@ pub(super) fn update_configs(ctx: &EngineContext, os_modifier_path: &Path) -> Re
         Distro::AzureLinux(AzureLinuxRelease::AzL3) => {
             update_grub_config_azl3(
                 ctx,
-                os_modifier_path,
                 &root_device_path,
                 &boot_grub_config_path,
             )?;
@@ -94,7 +92,6 @@ pub(super) fn update_configs(ctx: &EngineContext, os_modifier_path: &Path) -> Re
 /// Updates the GRUB config for Azure Linux 3.0 using OS modifier.
 fn update_grub_config_azl3(
     ctx: &EngineContext,
-    os_modifier_path: &Path,
     root_device_path: &Path,
     boot_grub_config_path: &Path,
 ) -> Result<(), Error> {
@@ -122,7 +119,8 @@ fn update_grub_config_azl3(
         grub_config
     );
 
-    osmodifier::update_grub(os_modifier_path)?;
+    let osmod_ctx = OsModifierContext::default();
+    osmodifier::update_default_grub(&osmod_ctx)?;
 
     let updated_grub_config = fs::read_to_string(boot_grub_config_path)?;
     trace!(
@@ -225,27 +223,8 @@ fn update_grub_config_azl3(
         root_device: Some(root_device_str.to_string()),
     };
 
-    let boot_config_yaml = serde_yaml::to_string(&config).context("Failed to serialize to YAML")?;
-
-    // Create a temporary file and write the config to it
-    let mut tmpfile = NamedTempFile::new().context("Failed to create a temporary file")?;
-    tmpfile
-        .write_all(boot_config_yaml.as_bytes())
-        .context(format!(
-            "Failed to write boot config to temporary file at {:?}",
-            tmpfile.path()
-        ))?;
-    tmpfile.flush().context(format!(
-        "Failed to flush temporary file at {:?}",
-        tmpfile.path()
-    ))?;
-
-    osmodifier::run(os_modifier_path, tmpfile.path()).with_context(|| {
-        format!(
-            "Failed to run OS modifier to update GRUB config with temporary config file at {:?}",
-            tmpfile.path()
-        )
-    })?;
+    osmodifier::modify_boot(&osmod_ctx, &config)
+        .context("Failed to apply boot configuration modifications")?;
 
     debug!("Finished updating GRUB config for Azure Linux 3.0 with OS modifier");
 
@@ -262,10 +241,7 @@ pub(crate) mod functional_test {
     use const_format::formatcp;
     use maplit::btreemap;
 
-    use crate::{
-        engine::{boot::get_update_esp_dir_name, storage::raid},
-        OS_MODIFIER_BINARY_PATH,
-    };
+    use crate::engine::{boot::get_update_esp_dir_name, storage::raid};
 
     use osutils::{
         block_devices,
@@ -601,7 +577,7 @@ pub(crate) mod functional_test {
 
         let _a = setup_mock_grub_configs(ctx);
 
-        update_configs(ctx, Path::new(OS_MODIFIER_BINARY_PATH))
+        update_configs(ctx)
     }
 
     #[functional_test(feature = "helpers")]
@@ -673,7 +649,7 @@ pub(crate) mod functional_test {
 
         let _a = setup_mock_grub_configs(&ctx);
 
-        update_configs(&ctx, Path::new(OS_MODIFIER_BINARY_PATH)).unwrap();
+        update_configs(&ctx).unwrap();
     }
 
     #[functional_test(feature = "helpers")]
@@ -760,7 +736,7 @@ pub(crate) mod functional_test {
 
         let _a = setup_mock_grub_configs(&ctx);
 
-        update_configs(&ctx, Path::new(OS_MODIFIER_BINARY_PATH)).unwrap();
+        update_configs(&ctx).unwrap();
     }
 
     #[functional_test(feature = "helpers")]

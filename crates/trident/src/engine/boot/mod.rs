@@ -12,7 +12,7 @@ use trident_api::{
     status::AbVolumeSelection,
 };
 
-use crate::{engine::Subsystem, OS_MODIFIER_NEWROOT_PATH};
+use crate::engine::Subsystem;
 
 use super::EngineContext;
 
@@ -40,7 +40,7 @@ impl Subsystem for BootSubsystem {
             return Ok(());
         }
 
-        grub::update_configs(ctx, Path::new(OS_MODIFIER_NEWROOT_PATH))
+        grub::update_configs(ctx)
             .structured(ServicingError::UpdateGrubConfigs)?;
 
         Ok(())

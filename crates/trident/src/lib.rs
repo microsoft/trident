@@ -89,12 +89,6 @@ const TRIDENT_BINARY_PATH: &str = "/usr/bin/trident";
 /// Launcher binary path.
 const LAUNCHER_BINARY_PATH: &str = "/usr/bin/launcher";
 
-/// OS Modifier (EMU) binary path.
-const OS_MODIFIER_BINARY_PATH: &str = "/usr/bin/osmodifier";
-
-/// Path to OS Modifier on the newroot.
-const OS_MODIFIER_NEWROOT_PATH: &str = "/tmp/osmodifier";
-
 /// Path to the Trident background log for the current servicing.
 pub const TRIDENT_BACKGROUND_LOG_PATH: &str = "/var/log/trident-full.log";
 
