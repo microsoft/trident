@@ -30,6 +30,37 @@ func Rollback(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfig.AllVM
 	return innerUpdateLoop(testConfig, vmConfig, true)
 }
 
+// runTridentUpdateService invokes a trident update operation via the
+// trident-update@.service systemd template unit. This runs trident as
+// trident_t (via systemd domain transition) rather than unconfined_t
+// (via direct SSH execution), matching the production SELinux path.
+//
+// The operation parameter should be "stage" or "finalize".
+func runTridentUpdateService(vmConfig stormvmconfig.VMConfig, vmIP string, updateConfig string, tridentLoggingArg string, operation string) (string, error) {
+	serviceName := fmt.Sprintf("trident-update@%s.service", operation)
+
+	// Write the environment file that the service unit reads
+	envContent := fmt.Sprintf("UPDATE_CONFIG=%s\nTRIDENT_LOG_LEVEL=%s\n", updateConfig, tridentLoggingArg)
+	writeEnvCmd := fmt.Sprintf("printf '%%s' '%s' | sudo tee /var/lib/trident/update-env > /dev/null", envContent)
+	if _, err := stormssh.SshCommand(vmConfig, vmIP, writeEnvCmd); err != nil {
+		return "", fmt.Errorf("failed to write update-env for %s: %w", operation, err)
+	}
+
+	// Reset any previous failed state so the service can be started again
+	resetCmd := fmt.Sprintf("sudo systemctl reset-failed %s 2>/dev/null; true", serviceName)
+	stormssh.SshCommand(vmConfig, vmIP, resetCmd)
+
+	// Start the service and wait for it to complete
+	startCmd := fmt.Sprintf("sudo systemctl start %s 2>&1", serviceName)
+	_, startErr := stormssh.SshCommandCombinedOutput(vmConfig, vmIP, startCmd)
+
+	// Capture the service output from the journal
+	journalCmd := fmt.Sprintf("sudo journalctl -u %s --no-pager -o cat 2>&1", serviceName)
+	journalOutput, _ := stormssh.SshCommandCombinedOutput(vmConfig, vmIP, journalCmd)
+
+	return journalOutput, startErr
+}
+
 func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig, rollback bool) error {
 	// Create context to ensure goroutines exit cleanly
 	ctx, cancel := context.WithCancel(context.Background())
@@ -225,7 +256,7 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 		}
 
 		logrus.Tracef("Running Trident update staging command on VM")
-		combinedStagingOutput, stageErr := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, fmt.Sprintf("sudo trident grpc-client update %s %s --allowed-operations stage", tridentLoggingArg, updateConfig))
+		combinedStagingOutput, stageErr := runTridentUpdateService(vmConfig.VMConfig, vmIP, updateConfig, tridentLoggingArg, "stage")
 		if testConfig.Verbose {
 			logrus.Tracef("Staging output for iteration %d:\n%s", i, combinedStagingOutput)
 		}
@@ -285,7 +316,7 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 			logrus.Tracef("Pre-reboot uptime --since for iteration %d: %s", i, preRebootUptime)
 		}
 
-		combinedFinalizeOutput, finalizeErr := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, fmt.Sprintf("sudo trident grpc-client update %s %s --allowed-operations finalize", tridentLoggingArg, updateConfig))
+		combinedFinalizeOutput, finalizeErr := runTridentUpdateService(vmConfig.VMConfig, vmIP, updateConfig, tridentLoggingArg, "finalize")
 		if testConfig.Verbose {
 			logrus.Tracef("Finalize output for iteration %d:\n%s\n%v", i, combinedFinalizeOutput, finalizeErr)
 		}
