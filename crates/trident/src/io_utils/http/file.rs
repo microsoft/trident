@@ -230,29 +230,34 @@ impl HttpFile {
         RegistryAuth::Anonymous
     }
 
+    /// Read a proxy environment variable, trying uppercase then lowercase,
+    /// and normalizing empty/whitespace-only values to None.
+    fn read_proxy_env(upper: &str, lower: &str) -> Option<String> {
+        env::var(upper)
+            .or_else(|_| env::var(lower))
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+    }
+
     /// Create an OCI client configured with proxy settings from the environment.
     fn create_oci_client() -> OciClient {
-        let https_proxy = env::var("HTTPS_PROXY")
-            .or_else(|_| env::var("https_proxy"))
-            .ok()
-            .filter(|v| !v.trim().is_empty());
-        let http_proxy = env::var("HTTP_PROXY")
-            .or_else(|_| env::var("http_proxy"))
-            .ok()
-            .filter(|v| !v.trim().is_empty());
-        let no_proxy = env::var("NO_PROXY")
-            .or_else(|_| env::var("no_proxy"))
-            .ok()
-            .filter(|v| !v.trim().is_empty());
+        let https_proxy = Self::read_proxy_env("HTTPS_PROXY", "https_proxy");
+        let http_proxy = Self::read_proxy_env("HTTP_PROXY", "http_proxy");
+        let no_proxy = Self::read_proxy_env("NO_PROXY", "no_proxy");
 
         if https_proxy.is_some() || http_proxy.is_some() {
-            let http_status = if http_proxy.is_some() {
-                "<set>"
-            } else {
-                "<unset>"
-            };
             debug!(
-                "Configuring OCI client with proxy (HTTPS_PROXY=<set>, HTTP_PROXY={http_status})"
+                "Configuring OCI client with proxy (HTTPS_PROXY={}, HTTP_PROXY={})",
+                if https_proxy.is_some() {
+                    "<set>"
+                } else {
+                    "<unset>"
+                },
+                if http_proxy.is_some() {
+                    "<set>"
+                } else {
+                    "<unset>"
+                },
             );
         }
 
