@@ -391,7 +391,11 @@ func (cfg QemuConfig) WaitForLogin(vmName string, outputPath string, verbose boo
 		// Try a few times to get the DHCP lease — the VM may still be acquiring one.
 		var ips []string
 		for attempt := 0; attempt < 10; attempt++ {
-			ips, _ = cfg.getQemuVmIpAddresses(vmName)
+			var leaseErr error
+			ips, leaseErr = cfg.getQemuVmIpAddresses(vmName)
+			if leaseErr != nil {
+				logrus.Debugf("DHCP lease query attempt %d failed: %v", attempt, leaseErr)
+			}
 			if len(ips) > 0 {
 				break
 			}
@@ -455,6 +459,6 @@ func analyzeSerialLog(serial string) error {
 func innerWaitForLogin(vmSerialLog string, verbose bool, iteration int, localSerialLog string) error {
 	// 180 seconds gives headroom for slow boots under resource pressure at scale.
 	// A normal Azure Linux boot takes 10-30 seconds; the extra margin accounts for
-	// host CPU contention when many QEMU VMs run on the same agent.
+	// host CPU contention from other processes or parallel pipeline tasks.
 	return stormutils.WaitForLoginMessageInSerialLog(vmSerialLog, verbose, iteration, localSerialLog, time.Second*180)
 }
