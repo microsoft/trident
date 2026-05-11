@@ -33,3 +33,16 @@ rpm2cpio trident.rpm | cpio -idmv
 popd
 
 mv "$TMP_DIR/usr/bin/trident" $OUTPUT_PATH
+
+# Extract trident-acl-agent binary from the acl-agent sub-package RPM
+ACL_AGENT_RPM=$(find $RPM_DIR | grep -P "trident-acl-agent-\d.*\.${RPM_ARCH}\.rpm" || true)
+if [ -n "$ACL_AGENT_RPM" ]; then
+  ACL_TMP_DIR=$(mktemp -d)
+  cp "$ACL_AGENT_RPM" "$ACL_TMP_DIR/trident-acl-agent.rpm"
+
+  pushd "$ACL_TMP_DIR"
+  rpm2cpio trident-acl-agent.rpm | cpio -idmv
+  popd
+
+  mv "$ACL_TMP_DIR/usr/bin/trident-acl-agent" $OUTPUT_PATH
+fi

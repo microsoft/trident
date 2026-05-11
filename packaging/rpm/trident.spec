@@ -62,13 +62,13 @@ Requires:       (%{name}-selinux if selinux-policy-%{selinuxtype})
 # Optional dependencies for various optional features
 
 # For network configuration (os.network, managementOs.network)
-Suggests:       netplan        
+Suggests:       netplan
 # For RAID support (storage.raid)
-Suggests:       mdadm          
+Suggests:       mdadm
 # For encryption support (storage.encryption)
-Suggests:       tpm2-tools     
+Suggests:       tpm2-tools
 Suggests:       cryptsetup
-# For integrity support (storage.verity)     
+# For integrity support (storage.verity)
 Suggests:       veritysetup
 # For mounting NTFS filesystems
 Suggests:       ntfs-3g
@@ -214,6 +214,18 @@ be removed once the fix is merged in AZL 4.0.
 
 # ------------------------------------------------------------------------------
 
+%package acl-agent
+Summary:        Trident ACL Agent
+Requires:       %{name}
+
+%description acl-agent
+The Trident ACL Agent triggers updates of ACL images.
+
+%files acl-agent
+%{_bindir}/%{name}-acl-agent
+
+# ------------------------------------------------------------------------------
+
 %if %{undefined rpm_ver}
 # Use cargo with source and vendor tarballs for distro build
 %prep
@@ -242,7 +254,7 @@ export TRIDENT_VERSION="%{version}-%{release}"
 # Use %{trident_version} for Trident repo build
 export TRIDENT_VERSION="%{trident_version}"
 %endif
-cargo build --release
+cargo build --release -p trident -p trident-acl-agent
 
 mkdir selinux
 cp -p packaging/selinux-policy-trident/trident.fc selinux/
@@ -277,6 +289,7 @@ cargo test --all --no-fail-fast -- --skip test_run_systemd_check --skip test_pre
 install -D -m 755 %{SOURCE1} %{buildroot}%{_bindir}/osmodifier
 %endif
 install -D -m 755 target/release/%{name} %{buildroot}/%{_bindir}/%{name}
+install -D -m 755 target/release/%{name}-acl-agent %{buildroot}/%{_bindir}/%{name}-acl-agent
 
 # Copy Trident SELinux policy module to /usr/share/selinux/packages
 install -D -m 0644 %{name}.pp.bz2 %{buildroot}%{_datadir}/selinux/packages/%{selinuxtype}/%{name}.pp.bz2
