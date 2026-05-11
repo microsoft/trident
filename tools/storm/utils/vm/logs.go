@@ -30,6 +30,8 @@ func FetchLogs(vmConfig stormvmconfig.AllVMConfig, outputPath string) error {
 		if err := os.WriteFile(filepath.Join(outputPath, "blkid.log"), []byte(blkidOut), 0644); err != nil {
 			logrus.Warnf("Failed to write blkid.log: %v", err)
 		}
+	} else {
+		logrus.Warnf("Failed to capture blkid output: %v", blkidErr)
 	}
 
 	// Best effort: capture initramfs contents to detect stale UUID references
@@ -38,6 +40,8 @@ func FetchLogs(vmConfig stormvmconfig.AllVMConfig, outputPath string) error {
 		if err := os.WriteFile(filepath.Join(outputPath, "lsinitrd.log"), []byte(lsinitrdOut), 0644); err != nil {
 			logrus.Warnf("Failed to write lsinitrd.log: %v", err)
 		}
+	} else {
+		logrus.Warnf("Failed to capture lsinitrd output: %v", lsinitrdErr)
 	}
 
 	// Best effort: capture dracut-related journal entries for initramfs boot analysis
@@ -46,6 +50,8 @@ func FetchLogs(vmConfig stormvmconfig.AllVMConfig, outputPath string) error {
 		if err := os.WriteFile(filepath.Join(outputPath, "dracut-journal.log"), []byte(dracutOut), 0644); err != nil {
 			logrus.Warnf("Failed to write dracut-journal.log: %v", err)
 		}
+	} else {
+		logrus.Warnf("Failed to capture dracut journal: %v", dracutErr)
 	}
 
 	// Download crashdumps (simplified)

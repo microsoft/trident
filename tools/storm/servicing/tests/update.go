@@ -358,8 +358,10 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 					// Check serial log for dracut-initqueue timeout patterns that indicate
 					// stale disk UUIDs in initramfs (see bug 15086).
 					// Use the saved copy since WaitForLogin truncates the original.
-					savedSerialLog := filepath.Join(testConfig.OutputPath, fmt.Sprintf("%03d-serial.log", i))
-					checkSerialLogForDracutIssues(savedSerialLog, i)
+					if testConfig.OutputPath != "" {
+						savedSerialLog := filepath.Join(testConfig.OutputPath, fmt.Sprintf("%03d-serial.log", i))
+						checkSerialLogForDracutIssues(savedSerialLog, i)
+					}
 					return fmt.Errorf("VM did not come back up after update for iteration %d: %w", i, err)
 				}
 				logrus.Warnf("SSH fallback succeeded for iteration %d — VM is healthy but serial-getty did not start (ttyS0 device likely skipped by systemd)", i)
