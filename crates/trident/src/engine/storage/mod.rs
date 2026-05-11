@@ -81,10 +81,10 @@ pub(super) fn initialize_block_devices(ctx: &EngineContext) -> Result<(), Triden
     // that no longer exist (bug 15086).
     info!("Triggering udev rescan after block device setup to clear stale device entries");
     if let Err(e) = udevadm::trigger() {
-        warn!("udevadm trigger failed (non-fatal): {e}");
+        warn!("udevadm trigger failed: {e}");
     }
     if let Err(e) = udevadm::settle() {
-        warn!("udevadm settle failed (non-fatal): {e}");
+        warn!("udevadm settle failed: {e}");
     }
 
     Ok(())
