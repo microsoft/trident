@@ -45,6 +45,7 @@ stages:
       - BuildSELinuxTestImages
       - BuildingTools
       - TridentTestImg_trident_installer
+      - TridentTestImg_trident_testimage
 
     jobs:
       # Run the SELinux update validation test
@@ -65,15 +66,16 @@ stages:
         steps:
           - template: ../common_tasks/checkout_trident.yml
 
-          - task: DownloadPipelineArtifact@2
-            displayName: "Download Go tools"
-            inputs:
-              buildType: current
-              artifactName: go-tools
-              targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
-          - bash: chmod +x $(TRIDENT_SOURCE_DIR)/bin/*
-            displayName: "Make go tools executable"
+          # Download installer ISO, Go tools, and set up test images
+          - template: ../testing_common/download-test-images.yml
+            parameters:
+              installerISO: trident-installer
+              tridentTestImage: trident-testimage
+              tridentTestImageVerity: skip
+              tridentTestImageUsrVerity: skip
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
 
+          # Download SELinux-specific test images (built in BuildSELinuxTestImages)
           - task: DownloadPipelineArtifact@2
             displayName: "Download SELinux base image"
             inputs:
@@ -87,13 +89,6 @@ stages:
               buildType: current
               artifactName: image-selinux-update
               targetPath: "$(TRIDENT_SOURCE_DIR)/artifacts/test-image"
-
-          - task: DownloadPipelineArtifact@2
-            displayName: "Download installer ISO"
-            inputs:
-              buildType: current
-              artifactName: trident-installer
-              targetPath: "$(TRIDENT_SOURCE_DIR)/artifacts/iso"
 
           - bash: |
               set -eux
