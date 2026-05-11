@@ -87,6 +87,17 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 		return fmt.Errorf("failed to get VM IP: %w", err)
 	}
 
+	// Proactively start serial-getty@ttyS0 after initial deployment.
+	// Due to a known systemd/udev race condition (https://github.com/systemd/systemd/issues/10850),
+	// ~2% of boots skip dev-ttyS0.device, preventing serial-getty from starting.
+	// Starting it here (no-op if already running) ensures serial log detection
+	// works for the first update iteration.
+	if vmConfig.VMConfig.Platform == stormvmconfig.PlatformQEMU {
+		if _, gettErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo systemctl start serial-getty@ttyS0.service"); gettErr != nil {
+			logrus.Tracef("serial-getty@ttyS0 start attempt after deploy: %v", gettErr)
+		}
+	}
+
 	// Run several commands to update/specialize update config files on VM
 	logrus.Tracef("Updating config files")
 	configChanges :=
@@ -147,9 +158,29 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 			}
 
 			if i%10 == 0 {
-				// For every 10th update, reboot the VM (QEMU only)
+				// For every 10th update, reboot the VM (QEMU only).
+				// RebootQemuVm calls WaitForLogin which has a DHCP lease fallback,
+				// but if serial-getty didn't start (systemd#10850), we need the
+				// same SSH fallback + proactive serial-getty restart as the
+				// post-finalize reboot path.
 				if err := vmConfig.QemuConfig.RebootQemuVm(vmConfig.VMConfig.Name, i, testConfig.OutputPath, testConfig.Verbose); err != nil {
-					return fmt.Errorf("failed to reboot QEMU VM before update attempt #%d: %w", i, err)
+					logrus.Warnf("RebootQemuVm failed for iteration %d, attempting SSH fallback: %v", i, err)
+					sshOk := false
+					for j := 0; j < 10; j++ {
+						if _, sshErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "uptime --since"); sshErr == nil {
+							sshOk = true
+							break
+						}
+						time.Sleep(3 * time.Second)
+					}
+					if !sshOk {
+						return fmt.Errorf("failed to reboot QEMU VM before update attempt #%d: %w", i, err)
+					}
+					logrus.Warnf("SSH fallback succeeded for 10th-iteration reboot at iteration %d", i)
+				}
+				// Ensure serial-getty is running after the reboot (see systemd#10850).
+				if _, gettErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo systemctl start serial-getty@ttyS0.service"); gettErr != nil {
+					logrus.Tracef("serial-getty@ttyS0 start attempt after 10th-iteration reboot: %v", gettErr)
 				}
 				if err := vmConfig.QemuConfig.TruncateLog(vmConfig.VMConfig.Name); err != nil {
 					return fmt.Errorf("failed to truncate log file before update attempt #%d: %w", i, err)
@@ -243,6 +274,17 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 		}
 
 		logrus.Tracef("Running Trident update finalize command on VM")
+
+		// Capture "uptime --since" before the finalize reboot. After reboot, the SSH
+		// fallback (used when serial-getty fails to start) compares this value with
+		// the post-reboot "uptime --since" to definitively confirm the VM rebooted,
+		// rather than relying on an arbitrary uptime threshold.
+		preRebootUptime := ""
+		if uptimeOut, uptimeErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "uptime --since"); uptimeErr == nil {
+			preRebootUptime = strings.TrimSpace(uptimeOut)
+			logrus.Tracef("Pre-reboot uptime --since for iteration %d: %s", i, preRebootUptime)
+		}
+
 		combinedFinalizeOutput, finalizeErr := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, fmt.Sprintf("sudo trident grpc-client update %s %s --allowed-operations finalize", tridentLoggingArg, updateConfig))
 		if testConfig.Verbose {
 			logrus.Tracef("Finalize output for iteration %d:\n%s\n%v", i, combinedFinalizeOutput, finalizeErr)
@@ -252,14 +294,67 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 		if vmConfig.VMConfig.Platform == stormvmconfig.PlatformQEMU {
 			err := vmConfig.QemuConfig.WaitForLogin(vmConfig.VMConfig.Name, testConfig.OutputPath, testConfig.Verbose, i)
 			if err != nil {
-				if captureErr := stormutils.CaptureScreenshot(
-					vmConfig.VMConfig.Name,
-					testConfig.OutputPath,
-					fmt.Sprintf("%03d-vm-failure-after-update.png", i),
-				); captureErr != nil {
-					logrus.Warnf("failed to capture screenshot: %v", captureErr)
+				// Serial login detection failed — the "login:" prompt did not appear
+				// in the serial log within the timeout period.
+				//
+				// Root cause: serial-getty@ttyS0.service depends on systemd's
+				// dev-ttyS0.device unit, which is auto-generated when udev reports
+				// /dev/ttyS0. If udev is slightly slow creating the device node,
+				// systemd's ConditionPathExists=/dev/ttyS0 check fails and the
+				// device unit is skipped — so serial-getty never starts and no
+				// "login:" appears on the serial console, even though the VM is
+				// fully healthy with working networking.
+				//
+				// This is a known systemd race condition (~2% of boots):
+				//   https://github.com/systemd/systemd/issues/10850
+				//
+				// Fallback: verify the VM rebooted by comparing "uptime --since"
+				// before and after the reboot. If the value changed, the VM is
+				// confirmed alive and we can proceed.
+				logrus.Warnf("Serial login detection failed for iteration %d, attempting SSH fallback: %v", i, err)
+
+				sshFallbackSuccess := false
+				for j := 0; j < 10; j++ {
+					output, sshErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "uptime --since")
+					if sshErr == nil {
+						postRebootUptime := strings.TrimSpace(output)
+						if preRebootUptime != "" && postRebootUptime != preRebootUptime {
+							logrus.Infof("SSH fallback: VM rebooted (uptime --since changed from %q to %q)", preRebootUptime, postRebootUptime)
+							sshFallbackSuccess = true
+							break
+						} else if preRebootUptime == "" {
+							// No pre-reboot uptime captured — accept any SSH response
+							logrus.Infof("SSH fallback: VM reachable via SSH (uptime --since: %s, no pre-reboot baseline)", postRebootUptime)
+							sshFallbackSuccess = true
+							break
+						}
+						logrus.Warnf("SSH fallback: uptime --since unchanged (%q) — VM may not have rebooted yet", postRebootUptime)
+					}
+					time.Sleep(3 * time.Second)
 				}
-				return fmt.Errorf("VM did not come back up after update for iteration %d: %w", i, err)
+
+				if !sshFallbackSuccess {
+					// VM is genuinely unreachable — capture diagnostics
+					if captureErr := stormutils.CaptureScreenshot(
+						vmConfig.VMConfig.Name,
+						testConfig.OutputPath,
+						fmt.Sprintf("%03d-vm-failure-after-update.png", i),
+					); captureErr != nil {
+						logrus.Warnf("failed to capture screenshot: %v", captureErr)
+					}
+					return fmt.Errorf("VM did not come back up after update for iteration %d: %w", i, err)
+				}
+				logrus.Warnf("SSH fallback succeeded for iteration %d — VM is healthy but serial-getty did not start (ttyS0 device likely skipped by systemd)", i)
+			}
+
+			// Proactively ensure serial-getty@ttyS0 is running after every boot.
+			// This is a no-op if already running. When systemd skips
+			// dev-ttyS0.device due to the udev race condition described above
+			// (https://github.com/systemd/systemd/issues/10850), this restarts
+			// serial-getty so subsequent iterations detect "login:" normally
+			// via the serial log, avoiding repeated SSH fallbacks.
+			if _, gettErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo systemctl start serial-getty@ttyS0.service"); gettErr != nil {
+				logrus.Tracef("serial-getty@ttyS0 start attempt: %v (may already be running)", gettErr)
 			}
 		} else if vmConfig.VMConfig.Platform == stormvmconfig.PlatformAzure {
 			time.Sleep(15 * time.Second)
