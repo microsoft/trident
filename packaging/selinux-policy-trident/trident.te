@@ -207,26 +207,10 @@ typeattribute trident_t can_change_object_identity;
 # Defines transition from trident_t to fsadm_t domain when Trident executes fsadm tool (i.e. mkfs)
 type_transition trident_t fsadm_exec_t:process fsadm_t;
 
-# Defines transition from ci_unconfined_t to trident_t when Steamboat executes Trident, as well as
-# specific permissions necessary for Steamboat testing
-optional_policy(`
-    require {
-        type ci_unconfined_t;
-        role ci_unconfined_r;
-    }
-    type_transition ci_unconfined_t trident_exec_t:process trident_t;
-    allow ci_unconfined_t trident_exec_t:file { getattr open read execute };
-    allow trident_t trident_exec_t:file entrypoint;
-    role ci_unconfined_r types trident_t;
+# NOTE: Test-only transitions (Steamboat CI and interactive unconfined) have been
+# moved to the trident-test SELinux module (packaging/selinux-policy-trident-test/).
+# They are NOT included in the production trident-selinux RPM.
 
-    allow trident_t ci_unconfined_t:fd use;
-    seutil_run_setfiles(trident_t, ci_unconfined_r);
-')
-
-# Allow transition between unconfined_t and trident_t domains; necessary for an interactive run
-optional_policy(`
-    unconfined_run_to(trident_t, trident_exec_t)
-')
 
 #============= trident_t ==============
 # Gives trident_t the following elevated privileges:

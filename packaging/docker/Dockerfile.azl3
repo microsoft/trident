@@ -7,6 +7,7 @@ RUN tdnf install -y rpmdevtools openssl-devel clang-devel protobuf-devel rust se
 WORKDIR /work
 
 COPY packaging/rpm/trident.spec .
+COPY packaging/rpm/trident-test-selinux.spec .
 COPY packaging ./packaging
 COPY bin/trident ./target/release/trident
 COPY artifacts/osmodifier /usr/src/azl/SOURCES/osmodifier
@@ -23,4 +24,5 @@ RUN \
     --define="trident_version $TRIDENT_VERSION" \
     --define="rpm_ver $RPM_VER" \
     --define="rpm_rel $RPM_REL" && \
+    rpmbuild -bb --build-in-place trident-test-selinux.spec && \
     tar -czvf trident-rpms.tar.gz -C /usr/src/azl ./RPMS

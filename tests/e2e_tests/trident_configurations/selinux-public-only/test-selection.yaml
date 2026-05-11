@@ -1,0 +1,14 @@
+compatible:
+  - base
+# This test config validates that trident works with only the public SELinux
+# policy (trident-selinux) without the test policy (trident-test-selinux).
+#
+# It uses the same disk layout as 'base' but is intended to run on an image
+# built WITHOUT trident-test-selinux installed.
+#
+# NOTE: The storm-trident test harness runs trident via SSH (unconfined_t),
+# which requires the unconfined_run_to transition in trident-test-selinux.
+# Until the test harness supports systemd-activated trident invocation,
+# this config should be run on an image that includes the test SELinux policy.
+# The value of this config is as a placeholder for future public-policy-only
+# validation once the test infrastructure supports it.

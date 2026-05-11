@@ -127,6 +127,7 @@ os:
       - selinux-policy
       - systemd-udev
       - trident
+      - trident-test-selinux
       - veritysetup
       - vim
       - WALinuxAgent

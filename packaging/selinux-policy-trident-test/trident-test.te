@@ -1,0 +1,40 @@
+policy_module(trident-test, 1.0.0)
+
+########################################
+#
+# Test-only SELinux policy for Trident
+#
+# This module provides additional permissions needed only in test/CI
+# environments. It layers on top of the base trident policy module
+# (trident.pp) and must NOT be installed in production images.
+#
+# Permissions included:
+#   - Steamboat/CI exec transition (ci_unconfined_t -> trident_t)
+#   - Interactive unconfined transition (for manual debugging)
+#
+
+require {
+    type trident_t;
+    type trident_exec_t;
+}
+
+# Defines transition from ci_unconfined_t to trident_t when Steamboat executes Trident, as well as
+# specific permissions necessary for Steamboat testing
+optional_policy(`
+    require {
+        type ci_unconfined_t;
+        role ci_unconfined_r;
+    }
+    type_transition ci_unconfined_t trident_exec_t:process trident_t;
+    allow ci_unconfined_t trident_exec_t:file { getattr open read execute };
+    allow trident_t trident_exec_t:file entrypoint;
+    role ci_unconfined_r types trident_t;
+
+    allow trident_t ci_unconfined_t:fd use;
+    seutil_run_setfiles(trident_t, ci_unconfined_r);
+')
+
+# Allow transition between unconfined_t and trident_t domains; necessary for an interactive run
+optional_policy(`
+    unconfined_run_to(trident_t, trident_exec_t)
+')
