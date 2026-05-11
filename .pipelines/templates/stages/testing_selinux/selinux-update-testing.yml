@@ -18,33 +18,37 @@ parameters:
     default: []
 
 stages:
-  - stage: SELinuxUpdateValidation
-    displayName: SELinux Policy Update Validation
+  - stage: BuildSELinuxTestImages
+    displayName: Build SELinux Test Images
     dependsOn:
       - PrepareSSHKeys
       - GetTridentBinaries_rpms_amd64
-      - BuildingTools
       - ${{ each stage in parameters.dependsOnStages }}:
           - ${{ stage }}
 
     jobs:
-      # Build the SELinux test images
-      - template: ../trident_images/trident-testimg-template.yml
+      - template: ../trident_images/build-image.yml
         parameters:
-          target: artifacts/trident-selinux-testimage.qcow2
           label: selinux-base
+          makeTarget: artifacts/trident-selinux-testimage.qcow2
+          baseimgType: core
 
-      - template: ../trident_images/trident-testimg-template.yml
+      - template: ../trident_images/build-image.yml
         parameters:
-          target: artifacts/trident-selinux-testimage-update.cosi
           label: selinux-update
+          makeTarget: artifacts/trident-selinux-testimage-update.cosi
+          baseimgType: core
 
+  - stage: SELinuxUpdateValidation
+    displayName: SELinux Policy Update Validation
+    dependsOn:
+      - BuildSELinuxTestImages
+      - BuildingTools
+
+    jobs:
       # Run the SELinux update validation test
       - job: SELinuxUpdateTest
         displayName: SELinux Update Test
-        dependsOn:
-          - TridentTestImg_selinux_base
-          - TridentTestImg_selinux_update
         timeoutInMinutes: 30
         pool:
           type: linux
@@ -68,8 +72,8 @@ stages:
 
               # Download the built images from pipeline artifacts
               echo "Downloading SELinux test images..."
-              cp $(System.ArtifactsDirectory)/selinux-base/trident-selinux-testimage.qcow2 artifacts/
-              cp $(System.ArtifactsDirectory)/selinux-update/trident-selinux-testimage-update.cosi artifacts/test-image/usrverity.cosi
+              cp $(System.ArtifactsDirectory)/image-selinux-base/trident-selinux-testimage.qcow2 artifacts/
+              cp $(System.ArtifactsDirectory)/image-selinux-update/trident-selinux-testimage-update.cosi artifacts/test-image/usrverity.cosi
             workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: "Download SELinux test images"
 
