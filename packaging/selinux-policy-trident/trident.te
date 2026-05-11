@@ -30,13 +30,8 @@ require {
         type boot_t;
         type bpf_t;
         type bootloader_t;
-        type cgroup_t;
         type chfn_exec_t;
         type chkpwd_exec_t;
-        type chronyc_exec_t;
-        type chronyd_unit_t;
-        type chronyd_var_lib_t;
-        type chronyd_var_log_t;
 
         type container_conf_home_t;
         type container_unit_t;
@@ -62,9 +57,6 @@ require {
         type fuse_device_t;
         type fusefs_t;
         type getty_exec_t;
-        type gpg_agent_exec_t;
-        type gpg_pinentry_exec_t;
-        type gpg_secret_t;
         type groupadd_exec_t;
         type home_root_t;
         type http_cache_port_t;
@@ -77,15 +69,11 @@ require {
         type iptables_unit_t;
         type kernel_t;
         type kmod_exec_t;
-        type krb5kdc_exec_t;
         type ld_so_t;
         type ldconfig_cache_t;
         type lib_t;
         type load_policy_t;
         type locale_t;
-        type locate_exec_t;
-        type logrotate_unit_t;
-        type logrotate_var_lib_t;
         type lost_found_t;
         type lvm_metadata_t;
         type lvm_runtime_t;
@@ -101,18 +89,12 @@ require {
         type mount_exec_t;
         type mptctl_device_t;
         type net_conf_t;
-        type ntpd_exec_t;
-        type ntpd_unit_t;
-        type oddjob_mkhomedir_exec_t;
         type power_unit_t;
         type proc_t;
         type proc_kcore_t;
         type proc_mdstat_t;
         type proc_net_t;
         type root_t;
-        type rpm_t;
-        type rpm_script_t;
-        type rpm_unit_t;
         type security_t;
         type setfiles_t;
         type semanage_t;
@@ -128,7 +110,6 @@ require {
         type sshd_key_t;
         type sshd_keygen_unit_t;
         type sshd_unit_t;
-        type sudo_exec_t;
         type sulogin_exec_t;
         type sysctl_fs_t;
         type sysctl_kernel_t;
@@ -198,7 +179,6 @@ require {
         type user_tmp_t;
         type user_devpts_t;
         type usr_t;
-        type uuidd_exec_t;
         type var_run_t;
 
         # Define object classes that SELinux can protect
@@ -290,13 +270,26 @@ allow trident_t audisp_remote_exec_t:file getattr;
 allow trident_t boot_t:dir { mounton create relabelto };
 allow trident_t boot_t:file relabelto;
 allow trident_t bpf_t:dir search;
-allow trident_t cgroup_t:filesystem getattr;
+optional_policy(`
+    require {
+        type cgroup_t;
+    }
+    allow trident_t cgroup_t:filesystem getattr;
+')
 allow trident_t chfn_exec_t:file getattr;
 allow trident_t chkpwd_exec_t:file getattr;
-allow trident_t chronyc_exec_t:file getattr;
-allow trident_t chronyd_unit_t:file getattr;
-allow trident_t chronyd_var_lib_t:dir { getattr open read relabelto };
-allow trident_t chronyd_var_log_t:dir { getattr open read relabelto };
+optional_policy(`
+    require {
+        type chronyc_exec_t;
+        type chronyd_unit_t;
+        type chronyd_var_lib_t;
+        type chronyd_var_log_t;
+    }
+    allow trident_t chronyc_exec_t:file getattr;
+    allow trident_t chronyd_unit_t:file getattr;
+    allow trident_t chronyd_var_lib_t:dir { getattr open read relabelto };
+    allow trident_t chronyd_var_log_t:dir { getattr open read relabelto };
+')
 allow trident_t container_conf_home_t:dir search; # Allow access to ~/.docker directory
 allow trident_t container_conf_home_t:file { open read }; # Allow access to ~/.docker/config.json
 allow trident_t container_unit_t:file getattr;
@@ -334,8 +327,14 @@ allow trident_t fuse_device_t:chr_file { read write open };
 allow trident_t fusefs_t:dir getattr;
 allow trident_t fusefs_t:filesystem { mount unmount getattr };
 allow trident_t getty_exec_t:file getattr;
-allow trident_t gpg_pinentry_exec_t:file getattr;
-allow trident_t gpg_secret_t:file getattr;
+optional_policy(`
+    require {
+        type gpg_pinentry_exec_t;
+        type gpg_secret_t;
+    }
+    allow trident_t gpg_pinentry_exec_t:file getattr;
+    allow trident_t gpg_secret_t:file getattr;
+')
 allow trident_t groupadd_exec_t:file getattr;
 allow trident_t home_root_t:dir { mounton read relabelto add_name create relabelfrom setattr write };
 allow trident_t home_root_t:file { create getattr ioctl open relabelfrom setattr read write };
@@ -359,7 +358,12 @@ allow trident_t kernel_t:process setsched;
 allow trident_t kernel_t:system { module_request ipc_info };
 allow trident_t kernel_t:unix_dgram_socket sendto;
 allow trident_t kmod_exec_t:file { execute execute_no_trans getattr map open read relabelto setattr unlink write };
-allow trident_t krb5kdc_exec_t:file getattr;
+optional_policy(`
+    require {
+        type krb5kdc_exec_t;
+    }
+    allow trident_t krb5kdc_exec_t:file getattr;
+')
 allow trident_t lastlog_t:file relabelto;
 allow trident_t ld_so_t:file { execute_no_trans relabelto setattr unlink write };
 allow trident_t ldconfig_cache_t:dir { getattr open read search relabelto };
@@ -367,9 +371,20 @@ allow trident_t ldconfig_cache_t:file { getattr relabelto };
 allow trident_t lib_t:file { create relabelto rename setattr unlink write };
 allow trident_t locale_t:dir { add_name relabelto remove_name rmdir setattr write };
 allow trident_t locale_t:file { link relabelto rename setattr unlink write };
-allow trident_t locate_exec_t:file getattr;
-allow trident_t logrotate_unit_t:file getattr;
-allow trident_t logrotate_var_lib_t:dir { getattr open read relabelto };
+optional_policy(`
+    require {
+        type locate_exec_t;
+    }
+    allow trident_t locate_exec_t:file getattr;
+')
+optional_policy(`
+    require {
+        type logrotate_unit_t;
+        type logrotate_var_lib_t;
+    }
+    allow trident_t logrotate_unit_t:file getattr;
+    allow trident_t logrotate_var_lib_t:dir { getattr open read relabelto };
+')
 allow trident_t lost_found_t:dir { getattr open read relabelto };
 allow trident_t lvm_metadata_t:dir { getattr open read };
 allow trident_t lvm_runtime_t:dir { add_name open read remove_name search write };
@@ -385,9 +400,20 @@ allow trident_t modules_object_t:file { getattr map open read relabelto setattr 
 allow trident_t mount_exec_t:file { execute execute_no_trans getattr map open read relabelto setattr unlink write };
 allow trident_t mptctl_device_t:chr_file getattr;
 allow trident_t net_conf_t:file { relabelto setattr unlink };
-allow trident_t ntpd_exec_t:file { execute getattr };
-allow trident_t ntpd_unit_t:file getattr;
-allow trident_t oddjob_mkhomedir_exec_t:file getattr;
+optional_policy(`
+    require {
+        type ntpd_exec_t;
+        type ntpd_unit_t;
+    }
+    allow trident_t ntpd_exec_t:file { execute getattr };
+    allow trident_t ntpd_unit_t:file getattr;
+')
+optional_policy(`
+    require {
+        type oddjob_mkhomedir_exec_t;
+    }
+    allow trident_t oddjob_mkhomedir_exec_t:file getattr;
+')
 allow trident_t power_unit_t:file { getattr open read relabelto setattr unlink };
 allow trident_t proc_t:dir read;
 allow trident_t proc_t:file { getattr open read ioctl };
@@ -397,11 +423,18 @@ allow trident_t proc_mdstat_t:file { getattr open read };
 allow trident_t proc_net_t:file { open read };
 allow trident_t root_t:dir { add_name create mounton write };
 allow trident_t root_t:file { create getattr map open read relabelfrom write };
-allow trident_t rpm_unit_t:file getattr;
-allow trident_t rpm_var_cache_t:dir relabelto;
-allow trident_t rpm_var_cache_t:file relabelto;
-allow trident_t rpm_var_lib_t:dir { add_name relabelto };
-allow trident_t rpm_var_lib_t:file { create relabelto setattr write };
+optional_policy(`
+    require {
+        type rpm_unit_t;
+        type rpm_var_cache_t;
+        type rpm_var_lib_t;
+    }
+    allow trident_t rpm_unit_t:file getattr;
+    allow trident_t rpm_var_cache_t:dir relabelto;
+    allow trident_t rpm_var_cache_t:file relabelto;
+    allow trident_t rpm_var_lib_t:dir { add_name relabelto };
+    allow trident_t rpm_var_lib_t:file { create relabelto setattr write };
+')
 allow trident_t security_t:file { map write };
 allow trident_t security_t:filesystem getattr;
 allow trident_t security_t:security read_policy;
@@ -514,8 +547,14 @@ allow trident_t user_tmp_t:file { getattr open read };
 allow trident_t user_devpts_t:chr_file { ioctl read write };
 allow trident_t usr_t:dir { add_name create read relabelto remove_name rmdir setattr write relabelto mounton };
 allow trident_t usr_t:file { create execute execute_no_trans getattr ioctl link open read relabelto rename setattr unlink write };
-allow trident_t uuidd_exec_t:file getattr;
-allow trident_t uuidd_var_lib_t:dir relabelto;
+optional_policy(`
+    require {
+        type uuidd_exec_t;
+        type uuidd_var_lib_t;
+    }
+    allow trident_t uuidd_exec_t:file getattr;
+    allow trident_t uuidd_var_lib_t:dir relabelto;
+')
 allow trident_t var_t:dir { mounton relabelto };
 allow trident_t var_lib_t:dir relabelto;
 allow trident_t var_lib_t:file relabelto;
@@ -593,9 +632,16 @@ auth_exec_pam(trident_t)
 auth_login_entry_type(trident_t)
 auth_read_lastlog(trident_t)
 auth_read_login_records(trident_t)
-domain_entry_file(trident_t, gpg_agent_exec_t)
-gpg_entry_type(trident_t)
-gpg_list_user_secrets(trident_t)
+optional_policy(`
+    require {
+        type gpg_agent_exec_t;
+        type gpg_secret_t;
+    }
+    allow trident_t gpg_agent_exec_t:file { getattr open read execute entrypoint map };
+    allow trident_t gpg_secret_t:dir list_dir_perms;
+    allow trident_t gpg_secret_t:file read_file_perms;
+    allow trident_t gpg_secret_t:lnk_file read_lnk_file_perms;
+')
 su_exec(trident_t)
 usermanage_check_exec_passwd(trident_t)
 userdom_list_user_home_dirs(trident_t)
@@ -608,11 +654,24 @@ userdom_relabelto_user_home_dirs(trident_t)
 # System Services and Daemons
 ###########################################
 bootloader_exec(trident_t)
-chronyd_exec(trident_t)
-chronyd_read_config(trident_t)
-chronyd_read_key_files(trident_t)
+optional_policy(`
+    require {
+        type chronyd_exec_t;
+        type chronyd_etc_t;
+        type chronyd_keys_t;
+    }
+    allow trident_t chronyd_exec_t:file { getattr open read execute execute_no_trans map };
+    allow trident_t chronyd_etc_t:dir list_dir_perms;
+    allow trident_t chronyd_etc_t:file read_file_perms;
+    allow trident_t chronyd_keys_t:file read_file_perms;
+')
 clock_exec(trident_t)
-create_files_pattern(trident_t, cgroup_t, cgroup_t)
+optional_policy(`
+    require {
+        type cgroup_t;
+    }
+    create_files_pattern(trident_t, cgroup_t, cgroup_t)
+')
 cron_exec(trident_t)
 cron_exec_crontab(trident_t)
 cron_read_system_spool(trident_t)
@@ -626,7 +685,12 @@ domain_read_all_domains_state(trident_t)
 hostname_exec(trident_t)
 init_domtrans(trident_t)
 init_rw_stream_sockets(trident_t)
-logrotate_exec(trident_t)
+optional_policy(`
+    require {
+        type logrotate_exec_t;
+    }
+    allow trident_t logrotate_exec_t:file { getattr open read execute execute_no_trans map };
+')
 ssh_domtrans(trident_t)
 ssh_domtrans_keygen(trident_t)
 ssh_manage_home_files(trident_t)
@@ -684,7 +748,12 @@ fs_manage_tmpfs_dirs(trident_t)
 fs_manage_tmpfs_symlinks(trident_t)
 fs_mounton_tmpfs(trident_t)
 fs_read_iso9660_files(trident_t)
-fs_watch_memory_pressure(trident_t)
+optional_policy(`
+    require {
+        type cgroup_t;
+    }
+    allow trident_t cgroup_t:file { ioctl read write getattr setattr lock append open };
+')
 mount_list_runtime(trident_t)
 
 ###########################################
@@ -747,10 +816,20 @@ udev_relabel_rules_files(trident_t)
 ###########################################
 # Package Management
 ###########################################
-rpm_delete_db(trident_t)
-rpm_exec(trident_t)
-rpm_read_cache(trident_t)
-rpm_read_db(trident_t)
+optional_policy(`
+    require {
+        type rpm_exec_t;
+        type rpm_var_cache_t;
+        type rpm_var_lib_t;
+    }
+    allow trident_t rpm_var_lib_t:dir { manage_dir_perms relabelto };
+    allow trident_t rpm_var_lib_t:file { manage_file_perms map relabelto };
+    allow trident_t rpm_var_lib_t:lnk_file { read_lnk_file_perms };
+    allow trident_t rpm_exec_t:file { getattr open read execute execute_no_trans map };
+    allow trident_t rpm_var_cache_t:dir list_dir_perms;
+    allow trident_t rpm_var_cache_t:file read_file_perms;
+    allow trident_t rpm_var_cache_t:lnk_file { read_lnk_file_perms };
+')
 
 ###########################################
 # Device Management
@@ -796,24 +875,40 @@ udev_read_state(trident_t)
 ###########################################
 # System Command Execution
 ###########################################
-can_exec(trident_t, sudo_exec_t)
+optional_policy(`
+    require {
+        type sudo_exec_t;
+    }
+    allow trident_t sudo_exec_t:file { getattr open read execute execute_no_trans map };
+')
 corecmd_manage_bin_files(trident_t)
 corecmd_bin_entry_type(trident_t)
 corecmd_shell_entry_type(trident_t)
 corecmd_search_bin(trident_t)
 corecmd_exec_bin(trident_t)
-kerberos_exec_kadmind(trident_t)
-kerberos_read_config(trident_t)
+optional_policy(`
+    require {
+        type kadmind_exec_t;
+        type krb5_conf_t;
+    }
+    allow trident_t kadmind_exec_t:file { getattr open read execute execute_no_trans map };
+    allow trident_t krb5_conf_t:dir list_dir_perms;
+    allow trident_t krb5_conf_t:file read_file_perms;
+')
 libs_exec_ldconfig(trident_t)
 libs_manage_lib_dirs(trident_t)
 modutils_read_module_config(trident_t)
-uuidd_manage_lib_dirs(trident_t)
+optional_policy(`
+    require {
+        type uuidd_var_lib_t;
+    }
+    allow trident_t uuidd_var_lib_t:dir manage_dir_perms;
+')
 optional_policy(`
     require {
         type tcsd_var_lib_t;
     }
-    allow trident_t tcsd_var_lib_t:dir relabelto;
-    tcsd_manage_lib_dirs(trident_t)
+    allow trident_t tcsd_var_lib_t:dir { manage_dir_perms relabelto };
 ')
 
 ###########################################
@@ -843,7 +938,12 @@ optional_policy(`
     miscfiles_read_generic_certs(trident_t)
 ')
 optional_policy(`
-    xserver_read_xkb_libs(trident_t)
+    require {
+        type xkb_var_lib_t;
+    }
+    allow trident_t xkb_var_lib_t:dir list_dir_perms;
+    allow trident_t xkb_var_lib_t:file read_file_perms;
+    allow trident_t xkb_var_lib_t:lnk_file read_lnk_file_perms;
 ')
 
 ####################
@@ -914,17 +1014,23 @@ allow systemd_pcrphase_t tmpfs_t:dir { getattr open read search };
 allow systemd_pcrphase_t tmpfs_t:file { getattr lock open setattr write };
 
 #============= rpm_t ==============
-allow rpm_t unlabeled_t:dir { add_name getattr remove_name search write };
-allow rpm_t unlabeled_t:file { create getattr ioctl open read rename write };
-allow rpm_t rpm_script_t:process { noatsecure rlimitinh siginh };
+optional_policy(`
+    require {
+        type rpm_t;
+        type rpm_script_t;
+    }
+    allow rpm_t unlabeled_t:dir { add_name getattr remove_name search write };
+    allow rpm_t unlabeled_t:file { create getattr ioctl open read rename write };
+    allow rpm_t rpm_script_t:process { noatsecure rlimitinh siginh };
 
-#============= rpm_script_t ==============
-# Allow RPM scripts to read SELinux policy (we currently apply trident.pp as a module in the Trident spec)
-allow rpm_script_t security_t:security read_policy;
+    #============= rpm_script_t ==============
+    # Allow RPM scripts to read SELinux policy (we currently apply trident.pp as a module in the Trident spec)
+    allow rpm_script_t security_t:security read_policy;
 
-allow rpm_script_t kernel_t:fd use;
-allow rpm_script_t unlabeled_t:dir { add_name getattr remove_name search write };
-allow rpm_script_t unlabeled_t:file { create getattr ioctl open read rename write };
+    allow rpm_script_t kernel_t:fd use;
+    allow rpm_script_t unlabeled_t:dir { add_name getattr remove_name search write };
+    allow rpm_script_t unlabeled_t:file { create getattr ioctl open read rename write };
+')
 
 #============= semanage_t ==============
 allow semanage_t proc_t:filesystem getattr;
@@ -959,7 +1065,12 @@ allow udev_t trident_var_lib_t:file getattr;
 files_read_generic_tmp_files(udev_t)
 
 #============= udevadm_t ==============
-allow udevadm_t cgroup_t:filesystem getattr;
+optional_policy(`
+    require {
+        type cgroup_t;
+    }
+    allow udevadm_t cgroup_t:filesystem getattr;
+')
 allow udevadm_t self:netlink_route_socket { bind create getattr getopt nlmsg_read read setopt write };
 allow udevadm_t self:udp_socket { create ioctl };
 allow udevadm_t self:capability { sys_admin };
@@ -983,7 +1094,12 @@ udev_manage_runtime_dirs(udevadm_t)
 udev_manage_runtime_files(udevadm_t)
 
 # Read symbolic links in cgroup directories and search sysfs
-read_lnk_files_pattern(udevadm_t, cgroup_t, cgroup_t)
+optional_policy(`
+    require {
+        type cgroup_t;
+    }
+    read_lnk_files_pattern(udevadm_t, cgroup_t, cgroup_t)
+')
 dev_search_sysfs(udevadm_t)
 
 #============= unlabeled_t ==============
