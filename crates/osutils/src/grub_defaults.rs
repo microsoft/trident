@@ -9,6 +9,7 @@
 
 use std::collections::HashMap;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Error};
@@ -197,12 +198,38 @@ impl GrubDefaults {
             format!("{}\n", content)
         };
 
-        fs::write(path, &content)
+        atomic_write(path, content.as_bytes())
             .with_context(|| format!("Failed to write '{}'", path.display()))?;
 
         trace!("Wrote GRUB defaults to '{}'", path.display());
         Ok(())
     }
+}
+
+/// Atomically write `bytes` to `path`.
+///
+/// Writes to a sibling temp file, fsyncs it, and renames over the target.
+/// On POSIX, rename within the same filesystem is atomic, so any crash
+/// between truncate and final write leaves the original file intact.
+///
+/// This matters for `/etc/default/grub`: a partial write can render the
+/// next `grub2-mkconfig` invocation broken and brick the boot path.
+fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), Error> {
+    let parent = path
+        .parent()
+        .with_context(|| format!("Path '{}' has no parent directory", path.display()))?;
+
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)
+        .with_context(|| format!("Failed to create temp file in '{}'", parent.display()))?;
+    tmp.write_all(bytes)
+        .with_context(|| format!("Failed to write temp file for '{}'", path.display()))?;
+    tmp.as_file()
+        .sync_all()
+        .with_context(|| format!("Failed to fsync temp file for '{}'", path.display()))?;
+    tmp.persist(path)
+        .map_err(|e| e.error)
+        .with_context(|| format!("Failed to atomically rename into '{}'", path.display()))?;
+    Ok(())
 }
 
 /// Run `grub2-mkconfig` to regenerate the GRUB configuration.
