@@ -1,14 +1,17 @@
 use std::{
+    env,
     io::{Error as IoError, ErrorKind as IoErrorKind, Read, Result as IoResult, Seek},
     time::Duration,
 };
 
 #[cfg(feature = "dangerous-options")]
-use std::{env, io::BufReader};
+use std::io::BufReader;
 
 use anyhow::{ensure, Context, Error};
 use log::{debug, trace, warn};
-use oci_client::{secrets::RegistryAuth, Client as OciClient, Reference, RegistryOperation};
+use oci_client::{
+    client::ClientConfig, secrets::RegistryAuth, Client as OciClient, Reference, RegistryOperation,
+};
 use reqwest::{
     blocking::{Client, ClientBuilder},
     header::{ACCEPT_RANGES, AUTHORIZATION},
@@ -63,7 +66,7 @@ impl HttpFile {
             })?)
             .with_context(|| format!("Failed to parse URL '{url}'"))?;
 
-        let oci_client = OciClient::default();
+        let oci_client = Self::create_oci_client();
         let rt = Runtime::new().context("Failed to create Tokio runtime")?;
         let token = Self::retrieve_access_token(&img_ref, &rt, &oci_client)?;
         let digest = Self::retrieve_artifact_digest(&img_ref, &rt, &oci_client)?;
@@ -227,6 +230,46 @@ impl HttpFile {
         RegistryAuth::Anonymous
     }
 
+    /// Read a proxy environment variable, trying uppercase then lowercase,
+    /// and normalizing empty/whitespace-only values to None.
+    fn read_proxy_env(upper: &str, lower: &str) -> Option<String> {
+        env::var(upper)
+            .or_else(|_| env::var(lower))
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+    }
+
+    /// Create an OCI client configured with proxy settings from the environment.
+    fn create_oci_client() -> OciClient {
+        let https_proxy = Self::read_proxy_env("HTTPS_PROXY", "https_proxy");
+        let http_proxy = Self::read_proxy_env("HTTP_PROXY", "http_proxy");
+        let no_proxy = Self::read_proxy_env("NO_PROXY", "no_proxy");
+
+        if https_proxy.is_some() || http_proxy.is_some() {
+            debug!(
+                "Configuring OCI client with proxy (HTTPS_PROXY={}, HTTP_PROXY={})",
+                if https_proxy.is_some() {
+                    "<set>"
+                } else {
+                    "<unset>"
+                },
+                if http_proxy.is_some() {
+                    "<set>"
+                } else {
+                    "<unset>"
+                },
+            );
+        }
+
+        let config = ClientConfig {
+            https_proxy,
+            http_proxy,
+            no_proxy,
+            ..Default::default()
+        };
+        OciClient::new(config)
+    }
+
     /// Retrieve artifact digest, which is necessary to send HTTP request to container registry.
     fn retrieve_artifact_digest(
         img_ref: &Reference,
@@ -241,7 +284,8 @@ impl HttpFile {
                     format!("Failed to retrieve tag from OCI URL '{}'", img_ref.whole())
                 })?;
                 // Attempt to retrieve digest from manifest
-                let manifest = client.pull_image_manifest(img_ref, &RegistryAuth::Anonymous);
+                let auth = Self::get_docker_auth(img_ref);
+                let manifest = client.pull_image_manifest(img_ref, &auth);
                 let (oci_image_manifest, _) = runtime.block_on(manifest).with_context(||
                     format!(
                         "Repository '{}' does not exist in registry '{}' or tag '{tag}' not found in repository",
@@ -428,7 +472,7 @@ mod tests {
 
     #[test]
     fn test_retrieve_access_token() {
-        let client = OciClient::default();
+        let client = HttpFile::create_oci_client();
         let rt = Runtime::new().unwrap();
         let url = "oci://docker.io/library/hello-world:latest".to_string();
         let img_ref = url
@@ -440,7 +484,7 @@ mod tests {
 
     #[test]
     fn test_retrieve_artifact_digest() {
-        let client = OciClient::default();
+        let client = HttpFile::create_oci_client();
         let rt = Runtime::new().unwrap();
         // TODO(12732): Fix this test to use test COSI file instead of hello-world image
         let url = "oci://docker.io/library/hello-world@sha256:940c619fbd418f9b2b1b63e25d8861f9cc1b46e3fc8b018ccfe8b78f19b8cc4f".to_string();
