@@ -8,6 +8,7 @@ pub fn settle() -> Result<(), Error> {
     Dependency::Udevadm
         .cmd()
         .arg("settle")
+        .arg("--timeout=30")
         .run_and_check()
         .context("Failed settle udev setup")
 }

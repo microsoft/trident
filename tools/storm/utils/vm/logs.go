@@ -23,7 +23,7 @@ func FetchLogs(vmConfig stormvmconfig.AllVMConfig, outputPath string) error {
 
 	// Best effort: capture block device UUIDs for initramfs debugging
 	logrus.Tracef("Capturing blkid output for initramfs diagnostics")
-	if blkidOut, blkidErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo blkid | sudo tee /tmp/blkid.log && sudo chmod 644 /tmp/blkid.log"); blkidErr == nil {
+	if blkidOut, blkidErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo bash -o pipefail -c 'blkid | tee /tmp/blkid.log' && sudo chmod 644 /tmp/blkid.log"); blkidErr == nil {
 		logrus.Tracef("blkid output: %s", blkidOut)
 		stormssh.ScpDownloadFile(vmConfig.VMConfig, vmIP, "/tmp/blkid.log", outputPath+"/blkid.log")
 	}
