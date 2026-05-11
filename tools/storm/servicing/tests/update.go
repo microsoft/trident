@@ -39,8 +39,14 @@ func Rollback(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfig.AllVM
 func runTridentUpdateService(vmConfig stormvmconfig.VMConfig, vmIP string, updateConfig string, tridentLoggingArg string, operation string) (string, error) {
 	serviceName := fmt.Sprintf("trident-update@%s.service", operation)
 
+	// Extract verbosity level from tridentLoggingArg (e.g., "-v WARN" -> "WARN")
+	verbosity := "WARN"
+	if strings.Contains(tridentLoggingArg, "DEBUG") {
+		verbosity = "DEBUG"
+	}
+
 	// Write the environment file that the service unit reads
-	envContent := fmt.Sprintf("UPDATE_CONFIG=%s\nTRIDENT_LOG_LEVEL=%s\n", updateConfig, tridentLoggingArg)
+	envContent := fmt.Sprintf("UPDATE_CONFIG=%s\nTRIDENT_VERBOSITY=%s\n", updateConfig, verbosity)
 	writeEnvCmd := fmt.Sprintf("printf '%%s' '%s' | sudo tee /var/lib/trident/update-env > /dev/null", envContent)
 	if _, err := stormssh.SshCommand(vmConfig, vmIP, writeEnvCmd); err != nil {
 		return "", fmt.Errorf("failed to write update-env for %s: %w", operation, err)
