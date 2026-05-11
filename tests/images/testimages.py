@@ -104,14 +104,6 @@ DEFINED_IMAGES: List[ImageConfig] = [
         ssh_key="../../trident-vm-testimage/base/files/id_rsa.pub",
     ),
     ImageConfig(
-        "trident-selinux-testimage-update",
-        base_image=BaseImage.QEMU_GUEST,
-        config="trident-selinux-testimage",
-        config_file="base/updateimg.yaml",
-        requires_ukify=True,
-        ssh_key="../../trident-vm-testimage/base/files/id_rsa.pub",
-    ),
-    ImageConfig(
         "trident-vm-grub-verity-azure-testimage",
         base_image=BaseImage.CORE_SELINUX,
         config="trident-vm-testimage",

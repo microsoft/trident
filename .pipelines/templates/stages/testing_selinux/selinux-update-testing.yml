@@ -29,14 +29,8 @@ stages:
     jobs:
       - template: ../trident_images/build-image.yml
         parameters:
-          label: selinux-base
+          label: selinux-testimage
           makeTarget: artifacts/trident-selinux-testimage.qcow2
-          baseimgType: core
-
-      - template: ../trident_images/build-image.yml
-        parameters:
-          label: selinux-update
-          makeTarget: artifacts/trident-selinux-testimage-update.cosi
           baseimgType: core
 
   - stage: SELinuxUpdateValidation
@@ -86,17 +80,10 @@ stages:
               targetPath: "$(TRIDENT_SOURCE_DIR)/artifacts/iso"
 
           - task: DownloadPipelineArtifact@2
-            displayName: "Download SELinux base image"
+            displayName: "Download SELinux test images"
             inputs:
               buildType: current
-              artifactName: image-selinux-base
-              targetPath: "$(TRIDENT_SOURCE_DIR)/artifacts"
-
-          - task: DownloadPipelineArtifact@2
-            displayName: "Download SELinux update image"
-            inputs:
-              buildType: current
-              artifactName: image-selinux-update
+              artifactName: image-selinux-testimage
               targetPath: "$(TRIDENT_SOURCE_DIR)/artifacts/test-image"
 
           - bash: |
