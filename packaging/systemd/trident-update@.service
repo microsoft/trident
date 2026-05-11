@@ -7,3 +7,6 @@ Type=oneshot
 EnvironmentFile=/var/lib/trident/update-env
 ExecStart=trident grpc-client update -v ${TRIDENT_VERBOSITY} ${UPDATE_CONFIG} --allowed-operations %i
 TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

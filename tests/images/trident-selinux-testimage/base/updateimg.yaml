@@ -1,0 +1,154 @@
+# SELinux validation update image.
+# Paired with baseimg.yaml — uses enforcing SELinux with public policy only.
+storage:
+  bootType: efi
+
+  disks:
+    - partitionTableType: gpt
+      maxSize: 7G
+      partitions:
+        - id: esp
+          type: esp
+          size: 8M
+
+        - id: boot
+          size: 256M
+
+        - id: root
+          size: 4G
+
+        - id: root-hash
+          size: 128M
+
+        - id: var
+          size: 1G
+
+        - id: trident-overlay
+          size: 32M
+
+        - id: srv
+          size: 1G
+
+        - id: home
+          size: 32M
+
+  verity:
+    - id: rootverity
+      name: root
+      dataDeviceId: root
+      hashDeviceId: root-hash
+      dataDeviceMountIdType: uuid
+      hashDeviceMountIdType: uuid
+
+  filesystems:
+    - deviceId: esp
+      type: fat32
+      mountPoint:
+        options: umask=0077
+        path: /boot/efi
+
+    - deviceId: boot
+      type: ext4
+      mountPoint:
+        path: /boot
+
+    - deviceId: rootverity
+      type: ext4
+      mountPoint:
+        path: /
+        options: defaults,ro
+
+    - deviceId: var
+      type: ext4
+      mountPoint:
+        path: /var
+
+    - deviceId: trident-overlay
+      type: ext4
+      mountPoint:
+        path: /var/lib/trident-overlay
+
+    - deviceId: srv
+      type: ext4
+      mountPoint:
+        path: /srv
+
+    - deviceId: home
+      type: ext4
+      mountPoint:
+        path: /home
+
+os:
+  bootloader:
+    resetType: hard-reset
+  hostname: trident-selinux-testimg
+
+  selinux:
+    mode: enforcing
+
+  kernelCommandLine:
+    extraCommandLine:
+      - console=tty0
+      - console=tty1
+      - console=ttyS0
+      - rd.debug
+      - loglevel=6
+      - log_buf_len=1M
+      - systemd.journald.forward_to_console=1
+
+  packages:
+    install:
+      - curl
+      - device-mapper
+      - dnf
+      - dracut-overlayfs
+      - efibootmgr
+      - grub2-efi-binary-noprefix
+      - iproute
+      - iptables
+      - jq
+      - kexec-tools
+      - lsof
+      - lvm2
+      - netplan
+      - openssh-server
+      - selinux-policy
+      - systemd-udev
+      - trident-service
+      # NOTE: trident-test-selinux is intentionally NOT installed.
+      - veritysetup
+      - vim
+      - WALinuxAgent
+    remove:
+      - grub2-efi-binary
+
+  additionalFiles:
+    - source: ../../trident-vm-testimage/base/files/etc-mount.service
+      destination: /etc/systemd/system/etc-mount.service
+    - source: ../../trident-vm-testimage/base/files/etc-mount.sh
+      destination: /usr/local/bin/etc-mount.sh
+    - source: ../../trident-vm-testimage/base/files/sudoers-wheel
+      destination: /etc/sudoers.d/wheel
+    - source: ../../trident-vm-testimage/base/files/99-dhcp-eth0.network
+      destination: /etc/systemd/network/99-dhcp-eth0.network
+    - source: ../../trident-vm-testimage/base/files/use-grpc-client-commit.conf
+      destination: /etc/systemd/system/trident.service.d/override.conf
+
+  services:
+    enable:
+      - etc-mount
+      - kdump
+      - trident
+      - tridentd.socket
+
+  users:
+    - name: testuser
+      secondaryGroups:
+        - wheel
+
+scripts:
+  postCustomization:
+    - path: ../../trident-vm-testimage/base/scripts/post-install.sh
+    - path: ../../trident-vm-testimage/base/scripts/ssh-move-host-keys.sh
+    - path: ../../trident-vm-testimage/base/scripts/update-os-release.sh
+    - path: ../../trident-vm-testimage/base/scripts/duid-type-to-link-layer.sh

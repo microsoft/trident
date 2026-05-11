@@ -89,7 +89,6 @@ and its dependencies for managing the lifecycle of Azure Linux hosts.
 %endif
 %{_unitdir}/%{name}d.service
 %{_unitdir}/%{name}d.socket
-%{_unitdir}/%{name}-update@.service
 
 %post
 %systemd_post %{name}d.socket
@@ -291,8 +290,6 @@ install -D -m 644 packaging/systemd/%{name}-network.service %{buildroot}%{_unitd
 # Daemon socket and service
 install -D -m 644 packaging/systemd/%{name}d.socket %{buildroot}%{_unitdir}/%{name}d.socket
 install -D -m 644 packaging/systemd/%{name}d.service %{buildroot}%{_unitdir}/%{name}d.service
-# Update service template (not enabled by default; used by test infrastructure)
-install -D -m 644 packaging/systemd/%{name}-update@.service %{buildroot}%{_unitdir}/%{name}-update@.service
 
 mkdir -p %{buildroot}/etc/%{name}
 

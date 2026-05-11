@@ -1,0 +1,182 @@
+# SELinux validation base image.
+# Based on baseimg-usr-verity.yaml but with SELinux ENFORCING and only the
+# public trident-selinux policy (no trident-test-selinux). Validates that
+# the production SELinux policy is sufficient for the systemd-activated
+# update path.
+storage:
+  bootType: efi
+
+  disks:
+    - partitionTableType: gpt
+      partitions:
+        - id: esp
+          type: esp
+          label: esp
+          size: 512M
+
+        - id: boot-a
+          size: 256M
+
+        - id: boot-b
+          size: 256M
+
+        - id: root-a
+          size: 4G
+
+        - id: root-b
+          size: 4G
+
+        - id: usr-a
+          size: 1G
+
+        - id: usr-b
+          size: 1G
+
+        - id: usr-hash-a
+          size: 128M
+
+        - id: usr-hash-b
+          size: 128M
+
+        - id: trident
+          label: trident
+          size: 512M
+
+        - id: home
+          label: home
+          size: 1G
+
+        - id: srv
+          label: srv
+          size: 128M
+
+  verity:
+    - id: usrverity
+      name: usr
+      dataDeviceId: usr-a
+      hashDeviceId: usr-hash-a
+      dataDeviceMountIdType: uuid
+      hashDeviceMountIdType: uuid
+
+  filesystems:
+    - deviceId: esp
+      type: fat32
+      mountPoint:
+        idType: part-label
+        path: /boot/efi
+        options: umask=0077
+
+    - deviceId: boot-a
+      type: ext4
+      mountPoint:
+        idType: uuid
+        path: /boot
+
+    - deviceId: usrverity
+      type: ext4
+      mountPoint:
+        path: /usr
+        options: defaults,ro
+
+    - deviceId: root-a
+      type: ext4
+      mountPoint:
+        idType: uuid
+        path: /
+
+    - deviceId: trident
+      type: ext4
+      mountPoint:
+        idType: part-label
+        path: /var/lib/trident
+
+    - deviceId: home
+      type: ext4
+      mountPoint:
+        idType: part-label
+        path: /home
+
+    - deviceId: srv
+      type: ext4
+      mountPoint:
+        idType: part-label
+        path: /srv
+
+os:
+  bootloader:
+    resetType: hard-reset
+  hostname: trident-selinux-testimg
+
+  selinux:
+    mode: enforcing
+
+  uki:
+    mode: create
+  kernelCommandLine:
+    extraCommandLine:
+      - console=tty0
+      - console=tty1
+      - console=ttyS0
+      - rd.debug
+      - loglevel=6
+      - log_buf_len=1M
+      - systemd.journald.forward_to_console=1
+      - rd.hostonly=0
+
+  packages:
+    install:
+      - device-mapper
+      - dnf
+      - efibootmgr
+      - iproute
+      - iptables
+      - jq
+      - kexec-tools
+      - lvm2
+      - openssh-server
+      - selinux-policy
+      - systemd-boot
+      - systemd-udev
+      - trident-service
+      # NOTE: trident-test-selinux is intentionally NOT installed.
+      # This image validates the production SELinux policy alone.
+      - veritysetup
+      - vim
+      - netplan
+    remove:
+      - grub2-efi-binary
+
+  additionalFiles:
+    - source: ../../trident-vm-testimage/base/files/99-dhcp-eth0.network
+      destination: /etc/systemd/network/99-dhcp-eth0.network
+    - source: ../../trident-vm-testimage/base/files/sudoers-wheel
+      destination: /etc/sudoers.d/wheel
+      # Trident update service template — runs updates via systemd domain
+      # transition (init_t -> trident_t), exercising the production SELinux path.
+    - source: ../../../../packaging/systemd/trident-update@.service
+      destination: /usr/lib/systemd/system/trident-update@.service
+
+  services:
+    enable:
+      - kdump
+      - trident
+      - tridentd.socket
+
+  users:
+    - name: testuser
+      sshPublicKeyPaths:
+        - ../../trident-vm-testimage/base/files/id_rsa.pub
+      secondaryGroups:
+        - wheel
+
+scripts:
+  postCustomization:
+    - path: ../../trident-vm-testimage/base/scripts/post-install.sh
+    - path: ../../trident-vm-testimage/base/scripts/update-host-status.sh
+    - path: ../../trident-vm-testimage/base/scripts/prepare-update-config-verity.sh
+      arguments:
+        - uki
+    - path: ../../trident-vm-testimage/base/scripts/duid-type-to-link-layer.sh
+
+previewFeatures:
+  - uki
