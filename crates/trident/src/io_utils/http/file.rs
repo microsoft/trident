@@ -238,9 +238,7 @@ impl HttpFile {
         let http_proxy = env::var("HTTP_PROXY")
             .or_else(|_| env::var("http_proxy"))
             .ok();
-        let no_proxy = env::var("NO_PROXY")
-            .or_else(|_| env::var("no_proxy"))
-            .ok();
+        let no_proxy = env::var("NO_PROXY").or_else(|_| env::var("no_proxy")).ok();
 
         if https_proxy.is_some() || http_proxy.is_some() {
             debug!(
