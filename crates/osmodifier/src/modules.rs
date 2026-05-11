@@ -8,7 +8,7 @@ use std::fs;
 use anyhow::{bail, Context, Error};
 use log::debug;
 
-use trident_api::config::{Module, LoadMode};
+use trident_api::config::{LoadMode, Module};
 
 use crate::OsModifierContext;
 
@@ -105,7 +105,11 @@ fn remove_blacklist(lines: &mut Vec<String>, module_name: &str) {
     lines.retain(|l| l.trim() != entry);
 }
 
-fn update_options(lines: &mut Vec<String>, module_name: &str, options: &std::collections::HashMap<String, String>) {
+fn update_options(
+    lines: &mut Vec<String>,
+    module_name: &str,
+    options: &std::collections::HashMap<String, String>,
+) {
     // Remove any existing options line for this module
     let prefix = format!("options {module_name} ");
     lines.retain(|l| !l.starts_with(&prefix) && l.trim() != format!("options {module_name}"));

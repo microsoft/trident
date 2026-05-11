@@ -38,8 +38,7 @@ impl Subsystem for BootSubsystem {
             return Ok(());
         }
 
-        grub::update_configs(ctx)
-            .structured(ServicingError::UpdateGrubConfigs)?;
+        grub::update_configs(ctx).structured(ServicingError::UpdateGrubConfigs)?;
 
         Ok(())
     }

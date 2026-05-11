@@ -93,9 +93,7 @@ impl DefaultGrub {
         old_keys: &[&str],
         new_args: &[String],
     ) -> Result<(), Error> {
-        let current = self
-            .get_variable("GRUB_CMDLINE_LINUX")
-            .unwrap_or_default();
+        let current = self.get_variable("GRUB_CMDLINE_LINUX").unwrap_or_default();
 
         let mut args: Vec<String> = current
             .split_whitespace()
@@ -117,17 +115,12 @@ impl DefaultGrub {
     /// Add extra command line arguments to GRUB_CMDLINE_LINUX without
     /// removing any existing ones.
     pub fn add_extra_cmdline(&mut self, extra: &[String]) {
-        let current = self
-            .get_variable("GRUB_CMDLINE_LINUX")
-            .unwrap_or_default();
+        let current = self.get_variable("GRUB_CMDLINE_LINUX").unwrap_or_default();
 
         let mut args: Vec<String> = if current.is_empty() {
             Vec::new()
         } else {
-            current
-                .split_whitespace()
-                .map(String::from)
-                .collect()
+            current.split_whitespace().map(String::from).collect()
         };
 
         args.extend(extra.iter().cloned());
@@ -194,10 +187,7 @@ mod tests {
         );
 
         grub.set_variable("NEW_VAR", "new_value");
-        assert_eq!(
-            grub.get_variable("NEW_VAR"),
-            Some("new_value".to_string())
-        );
+        assert_eq!(grub.get_variable("NEW_VAR"), Some("new_value".to_string()));
     }
 
     #[test]
@@ -209,11 +199,8 @@ mod tests {
             path: PathBuf::from("/etc/default/grub"),
         };
 
-        grub.update_cmdline_args(
-            &["selinux", "enforcing"],
-            &["selinux=0".to_string()],
-        )
-        .unwrap();
+        grub.update_cmdline_args(&["selinux", "enforcing"], &["selinux=0".to_string()])
+            .unwrap();
 
         let result = grub.get_variable("GRUB_CMDLINE_LINUX").unwrap();
         assert!(result.contains("quiet"));

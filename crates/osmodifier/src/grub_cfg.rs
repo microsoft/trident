@@ -18,13 +18,7 @@ use crate::OsModifierContext;
 const GRUB_CFG_PATHS: &[&str] = &["/boot/grub2/grub.cfg", "/boot/grub/grub.cfg"];
 
 /// The grub.cfg args we want to extract for syncing to /etc/default/grub.
-const SYNC_ARG_NAMES: &[&str] = &[
-    "rd.overlayfs",
-    "roothash",
-    "root",
-    "selinux",
-    "enforcing",
-];
+const SYNC_ARG_NAMES: &[&str] = &["rd.overlayfs", "roothash", "root", "selinux", "enforcing"];
 
 /// Extract boot arguments from the generated grub.cfg.
 ///
@@ -77,10 +71,7 @@ fn find_grub_cfg(ctx: &OsModifierContext) -> Result<std::path::PathBuf, Error> {
             return Ok(full);
         }
     }
-    bail!(
-        "Could not find grub.cfg at any of: {:?}",
-        GRUB_CFG_PATHS
-    )
+    bail!("Could not find grub.cfg at any of: {:?}", GRUB_CFG_PATHS)
 }
 
 /// Find the linux command line from a non-recovery menuentry in grub.cfg.
@@ -95,8 +86,7 @@ fn find_non_recovery_linux_line(content: &str) -> Result<String, Error> {
     // block, skip recovery entries, find the linux line.
     let menuentry_re = Regex::new(r#"^\s*menuentry\s+['"](.*?)['"]\s"#)
         .context("Failed to compile menuentry regex")?;
-    let linux_re = Regex::new(r"^\s*linux\s+(.+)$")
-        .context("Failed to compile linux regex")?;
+    let linux_re = Regex::new(r"^\s*linux\s+(.+)$").context("Failed to compile linux regex")?;
 
     let mut in_menuentry = false;
     let mut is_recovery = false;
@@ -158,10 +148,7 @@ fn find_non_recovery_linux_line(content: &str) -> Result<String, Error> {
 pub fn run_grub_mkconfig(ctx: &OsModifierContext) -> Result<(), Error> {
     let grub_cfg_path = find_grub_cfg(ctx)?;
 
-    info!(
-        "Running grub2-mkconfig -o '{}'",
-        grub_cfg_path.display()
-    );
+    info!("Running grub2-mkconfig -o '{}'", grub_cfg_path.display());
 
     let output = Command::new("grub2-mkconfig")
         .arg("-o")
@@ -172,9 +159,7 @@ pub fn run_grub_mkconfig(ctx: &OsModifierContext) -> Result<(), Error> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
-        bail!(
-            "grub2-mkconfig failed:\nstdout: {stdout}\nstderr: {stderr}"
-        );
+        bail!("grub2-mkconfig failed:\nstdout: {stdout}\nstderr: {stderr}");
     }
 
     debug!("grub2-mkconfig completed successfully");

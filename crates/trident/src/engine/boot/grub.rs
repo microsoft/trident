@@ -4,7 +4,7 @@ use anyhow::{bail, Context, Error};
 use log::{debug, info, trace};
 use uuid::Uuid;
 
-use osmodifier::{BootConfig, IdentifiedPartition, Overlay, OsModifierContext, Verity};
+use osmodifier::{BootConfig, IdentifiedPartition, OsModifierContext, Overlay, Verity};
 use osutils::{
     blkid,
     grub::GrubConfig,
@@ -65,11 +65,7 @@ pub(super) fn update_configs(ctx: &EngineContext) -> Result<(), Error> {
     // Update GRUB config on the boot device (volume holding /boot)
     match ctx.host_os_release.get_distro() {
         Distro::AzureLinux(AzureLinuxRelease::AzL3) => {
-            update_grub_config_azl3(
-                ctx,
-                &root_device_path,
-                &boot_grub_config_path,
-            )?;
+            update_grub_config_azl3(ctx, &root_device_path, &boot_grub_config_path)?;
         }
 
         d => bail!("Unsupported distro for GRUB config update: {d:?}"),

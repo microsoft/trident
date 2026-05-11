@@ -22,7 +22,6 @@ use trident_api::{
     BlockDeviceId,
 };
 
-
 /// NewrootMount represents all the necessary mounting points for newroot and
 /// the nested execmount to exit the chroot jail. It is also responsible for
 /// unmounting them in the correct order. NewrootMount provides information for:

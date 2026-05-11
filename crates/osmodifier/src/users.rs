@@ -3,13 +3,7 @@
 
 //! User management — create/update users, passwords, SSH keys, groups.
 
-use std::{
-    fs,
-    io::Write,
-    os::unix::fs::PermissionsExt,
-    path::Path,
-    process::Command,
-};
+use std::{fs, io::Write, os::unix::fs::PermissionsExt, path::Path, process::Command};
 
 use anyhow::{bail, Context, Error};
 use log::{debug, info};
@@ -320,8 +314,12 @@ fn write_ssh_keys(ctx: &OsModifierContext, username: &str, keys: &[String]) -> R
         .with_context(|| format!("Failed to write '{}'", auth_keys_path.display()))?;
 
     // Set file permissions to 0600
-    fs::set_permissions(&auth_keys_path, fs::Permissions::from_mode(0o600))
-        .with_context(|| format!("Failed to set permissions on '{}'", auth_keys_path.display()))?;
+    fs::set_permissions(&auth_keys_path, fs::Permissions::from_mode(0o600)).with_context(|| {
+        format!(
+            "Failed to set permissions on '{}'",
+            auth_keys_path.display()
+        )
+    })?;
 
     // Set ownership to the user
     set_ownership(ctx, username, &ssh_dir)?;
@@ -347,9 +345,7 @@ fn get_home_dir(ctx: &OsModifierContext, username: &str) -> Result<std::path::Pa
 
 fn set_ownership(ctx: &OsModifierContext, username: &str, path: &Path) -> Result<(), Error> {
     let root = ctx.root.to_str().unwrap_or("/");
-    let path_str = path
-        .to_str()
-        .context("Failed to convert path to string")?;
+    let path_str = path.to_str().context("Failed to convert path to string")?;
 
     let output = if root == "/" {
         Command::new("chown")

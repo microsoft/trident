@@ -64,30 +64,26 @@ pub fn modify_os(ctx: &OsModifierContext, config: &OSModifierConfig) -> Result<(
 
     if !config.users.is_empty() {
         info!("Configuring users");
-        users::add_or_update_users(ctx, &config.users)
-            .context("Failed to configure users")?;
+        users::add_or_update_users(ctx, &config.users).context("Failed to configure users")?;
     }
 
     if let Some(ref name) = config.hostname {
         if !name.is_empty() {
             info!("Setting hostname to '{name}'");
-            hostname::update(ctx, name)
-                .context("Failed to update hostname")?;
+            hostname::update(ctx, name).context("Failed to update hostname")?;
         }
     }
 
     if let Some(ref services) = config.services {
         if !services.enable.is_empty() || !services.disable.is_empty() {
             info!("Configuring services");
-            services::configure(ctx, services)
-                .context("Failed to configure services")?;
+            services::configure(ctx, services).context("Failed to configure services")?;
         }
     }
 
     if !config.modules.is_empty() {
         info!("Configuring kernel modules");
-        modules::configure(ctx, &config.modules)
-            .context("Failed to configure kernel modules")?;
+        modules::configure(ctx, &config.modules).context("Failed to configure kernel modules")?;
     }
 
     // Kernel command line and SELinux are handled via boot config, not here.
@@ -111,8 +107,7 @@ pub fn modify_os(ctx: &OsModifierContext, config: &OSModifierConfig) -> Result<(
             info!("Adding extra kernel command line arguments");
             default_grub::add_extra_cmdline(ctx, &kcl.extra_command_line)
                 .context("Failed to add extra kernel command line")?;
-            grub_cfg::run_grub_mkconfig(ctx)
-                .context("Failed to regenerate GRUB config")?;
+            grub_cfg::run_grub_mkconfig(ctx).context("Failed to regenerate GRUB config")?;
         }
     }
 
@@ -183,10 +178,8 @@ pub fn modify_boot(ctx: &OsModifierContext, config: &BootConfig) -> Result<(), E
             ));
         }
         let concatenated = overlay_configs.join(" ");
-        default_grub.update_cmdline_args(
-            &["rd.overlayfs"],
-            &[format!("rd.overlayfs={concatenated}")],
-        )?;
+        default_grub
+            .update_cmdline_args(&["rd.overlayfs"], &[format!("rd.overlayfs={concatenated}")])?;
         changed = true;
     }
 

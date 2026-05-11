@@ -35,8 +35,7 @@ pub fn update_config_file(ctx: &OsModifierContext, mode: &SelinuxMode) -> Result
     };
 
     // Replace the SELINUX= line
-    let re = regex::Regex::new(r"(?m)^SELINUX=.*$")
-        .context("Failed to compile SELinux regex")?;
+    let re = regex::Regex::new(r"(?m)^SELINUX=.*$").context("Failed to compile SELinux regex")?;
 
     let new_content = if re.is_match(&content) {
         re.replace(&content, &format!("SELINUX={selinux_value}"))
@@ -50,8 +49,7 @@ pub fn update_config_file(ctx: &OsModifierContext, mode: &SelinuxMode) -> Result
         "Updating SELinux config at '{}' to '{selinux_value}'",
         path.display()
     );
-    fs::write(&path, new_content)
-        .with_context(|| format!("Failed to write '{}'", path.display()))
+    fs::write(&path, new_content).with_context(|| format!("Failed to write '{}'", path.display()))
 }
 
 /// Update SELinux kernel command line args in the default GRUB config.
