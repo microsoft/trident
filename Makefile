@@ -373,7 +373,7 @@ functional-test: artifacts/trident-functest.qcow2
 # A target for pipelines that skips all setup and building steps that are not
 # required in the pipeline environment.
 .PHONY: functional-test-core
-functional-test-core: artifacts/osmodifier build-functional-test-cc generate-functional-test-manifest artifacts/trident-functest.qcow2 bin/virtdeploy
+functional-test-core: build-functional-test-cc generate-functional-test-manifest artifacts/trident-functest.qcow2 bin/virtdeploy
 	python3 -u -m \
 		pytest --color=yes \
 		--log-level=INFO \
@@ -390,7 +390,7 @@ functional-test-core: artifacts/osmodifier build-functional-test-cc generate-fun
 		--build-output $(BUILD_OUTPUT)
 
 .PHONY: patch-functional-test
-patch-functional-test: artifacts/osmodifier build-functional-test-cc generate-functional-test-manifest
+patch-functional-test: build-functional-test-cc generate-functional-test-manifest
 	python3 -u -m \
 		pytest --color=yes \
 		--log-level=INFO \
@@ -549,16 +549,14 @@ RUN_NETLAUNCH_TRIDENT_BIN ?= $(if $(filter yes,$(IS_UBUNTU_24_OR_NEWER)),target/
 RUN_NETLAUNCH_LAUNCHER_BIN ?= $(if $(filter yes,$(IS_UBUNTU_24_OR_NEWER)),target/azl3/release/trident-acl-agent,target/release/trident-acl-agent)
 
 .PHONY: run-netlaunch run-netlaunch-stream
-run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch validate artifacts/osmodifier $(RUN_NETLAUNCH_TRIDENT_BIN) $(RUN_NETLAUNCH_LAUNCHER_BIN)
+run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch validate $(RUN_NETLAUNCH_TRIDENT_BIN) $(RUN_NETLAUNCH_LAUNCHER_BIN)
 	@echo "Using trident binary: $(RUN_NETLAUNCH_TRIDENT_BIN)"
 	@mkdir -p artifacts/test-image
 	@cp $(RUN_NETLAUNCH_TRIDENT_BIN) artifacts/test-image/trident
 	@cp $(RUN_NETLAUNCH_LAUNCHER_BIN) artifacts/test-image/trident-acl-agent
-	@cp artifacts/osmodifier artifacts/test-image/
 	@bin/netlaunch \
 	    --trident-binary $(RUN_NETLAUNCH_TRIDENT_BIN) \
 	    --launcher-binary $(RUN_NETLAUNCH_LAUNCHER_BIN) \
-		--osmodifier-binary artifacts/osmodifier \
 		--rcp-agent-mode cli \
 	 	--iso $(NETLAUNCH_ISO) \
 		$(if $(NETLAUNCH_PORT),--port $(NETLAUNCH_PORT)) \
@@ -570,15 +568,13 @@ run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlau
 		--trace-file trident-metrics.jsonl \
 		$(if $(LOG_TRACE),--log-trace)
 
-run-netlaunch-stream: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch artifacts/osmodifier $(RUN_NETLAUNCH_TRIDENT_BIN)
+run-netlaunch-stream: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch $(RUN_NETLAUNCH_TRIDENT_BIN)
 	@echo "Using trident binary: $(RUN_NETLAUNCH_TRIDENT_BIN)"
 	@mkdir -p artifacts/test-image
 	@cp $(RUN_NETLAUNCH_TRIDENT_BIN) artifacts/test-image/trident
-	@cp artifacts/osmodifier artifacts/test-image/
 	@bin/netlaunch \
 	    --stream-image \
 	    --trident-binary $(RUN_NETLAUNCH_TRIDENT_BIN) \
-		--osmodifier-binary artifacts/osmodifier \
 		--rcp-agent-mode cli \
 	 	--iso $(NETLAUNCH_ISO) \
 		$(if $(NETLAUNCH_PORT),--port $(NETLAUNCH_PORT)) \

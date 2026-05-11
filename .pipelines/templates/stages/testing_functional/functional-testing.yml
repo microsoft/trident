@@ -100,12 +100,6 @@ stages:
 
           - template: ../common_tasks/update-protoc.yml
 
-          - template: ../common_tasks/download-osmodifier.yml
-            parameters:
-              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
-              osModifierBranch: ${{ parameters.osModifierBranch }}
-              targetArchitecture: amd64
-
           - bash: |
               set -eux
 
