@@ -32,7 +32,7 @@ func FetchLogs(vmConfig stormvmconfig.AllVMConfig, outputPath string) error {
 
 	// Best effort: capture initramfs contents to detect stale UUID references
 	logrus.Tracef("Capturing lsinitrd output for initramfs diagnostics")
-	if lsinitrdOut, lsinitrdErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo lsinitrd 2>/dev/null"); lsinitrdErr == nil {
+	if lsinitrdOut, lsinitrdErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo lsinitrd"); lsinitrdErr == nil {
 		os.WriteFile(filepath.Join(outputPath, "lsinitrd.log"), []byte(lsinitrdOut), 0644)
 	}
 

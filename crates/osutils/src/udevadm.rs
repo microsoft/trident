@@ -17,6 +17,7 @@ pub fn trigger() -> Result<(), Error> {
     Dependency::Udevadm
         .cmd()
         .arg("trigger")
+        .arg("--subsystem-match=block")
         .run_and_check()
         .context("Failed trigger udev")
 }

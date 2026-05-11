@@ -425,7 +425,7 @@ func (cfg QemuConfig) WaitForLogin(vmName string, outputPath string, verbose boo
 		// VM has no DHCP lease, or has a stale lease but SSH is unreachable —
 		// it's genuinely stuck (failed to boot after reboot).
 		logrus.Errorf("Failed to reach login prompt for the VM for iteration %d: %v", iteration, waitErr)
-		if err := analyzeSerialLog(cfg.SerialLog); err != nil {
+		if err := analyzeSerialLog(localSerialLog); err != nil {
 			return err
 		}
 
