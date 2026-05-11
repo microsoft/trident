@@ -188,7 +188,7 @@ pub fn modify_boot(ctx: &OsModifierContext, config: &BootConfig) -> Result<(), E
         let corruption_opt = verity
             .corruption_option
             .as_ref()
-            .map(|c| format_corruption_option(c))
+            .map(format_corruption_option)
             .unwrap_or_default();
 
         let new_args = vec![

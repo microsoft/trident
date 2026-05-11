@@ -789,7 +789,7 @@ pub(crate) mod functional_test {
 
         let _a = setup_mock_grub_configs(&ctx);
 
-        let result = update_configs(&ctx, Path::new(ROOT_MOUNT_POINT_PATH));
+        let result = update_configs(&ctx);
         assert_eq!(
             result.unwrap_err().to_string(),
             "Failed to get UUID for path '/dev/sdb2', received ''"
@@ -850,7 +850,7 @@ pub(crate) mod functional_test {
 
         let _a = setup_mock_grub_configs(&ctx);
 
-        let result = update_configs(&ctx, Path::new(ROOT_MOUNT_POINT_PATH));
+        let result = update_configs(&ctx);
 
         assert_eq!(result.unwrap_err().to_string(), "Root device path is none");
     }
