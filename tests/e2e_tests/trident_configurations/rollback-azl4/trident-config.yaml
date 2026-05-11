@@ -1,0 +1,84 @@
+image:
+  url: http://NETLAUNCH_HOST_ADDRESS/files/regular.cosi
+  sha384: ignored
+storage:
+  disks:
+    - id: os
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+      partitionTableType: gpt
+      partitions:
+        - id: root-a
+          type: root
+          size: 8G
+        - id: root-b
+          type: root
+          size: 8G
+        - id: esp
+          type: esp
+          size: 1G
+        - id: trident
+          type: linux-generic
+          size: 1G
+    - id: disk2
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+      partitionTableType: gpt
+      partitions: []
+  abUpdate:
+    volumePairs:
+      - id: root
+        volumeAId: root-a
+        volumeBId: root-b
+  filesystems:
+    - deviceId: trident
+      source: new
+      mountPoint: /var/lib/trident
+    - deviceId: esp
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+    - deviceId: root
+      mountPoint: /
+os:
+  additionalFiles:
+    - destination: /var/lib/trident/local-health-check-file.sh
+      content: |
+        echo 'This is a local health check script.'
+        exit 0
+health:
+  checks:
+    - name: invoke-rollback-from-local-script
+      runOn:
+        - clean-install
+      path: /var/lib/trident/local-health-check-file.sh
+    - name: invoke-rollback-from-script
+      runOn:
+        - clean-install
+      content: |
+        exit 1
+    - name: install-failure-systemd-check
+      runOn:
+        - clean-install
+      systemdServices:
+        - non-existent-service1.service
+        - non-existent-service2.service
+      timeoutSeconds: 15
+# AZL4 variant of the AZL3 `health-checks-install/` scenario. Adapted for the
+# PR-4 hostname-only fast path:
+#   - Empty top-level `users`/`selinux`/`netplan` so install validation does
+#     not require the OS Modifier binary to be in the MOS install ISO (which
+#     does not currently include it; once the MOS rebuild lands, both this
+#     scenario and base-azl4 can grow os.users / os.selinux / os.netplan).
+#   - `os.additionalFiles` is the one os.* field used because health.checks
+#     references `path: /var/lib/trident/local-health-check-file.sh`, which
+#     needs to be on the target filesystem. additionalFiles is processed by
+#     Trident's storage / file-deploy paths, not by OS Modifier.
+#
+# Health-check failure expectations (asserted by tests/e2e_tests/rollback_test.py):
+#   - State transitions to `not-provisioned` (clean-install has no slot to
+#     roll back to; the install just fails).
+#   - `/var/lib/trident/trident-health-check-failure-*.log` is created.
+#   - The log contains:
+#       * `"Failed health check(s)"`
+#       * `"Script 'invoke-rollback-from-script' failed"`
+#       * `"Unit non-existent-service1.service could not be found"`
+#       * `"Unit non-existent-service2.service could not be found"`
