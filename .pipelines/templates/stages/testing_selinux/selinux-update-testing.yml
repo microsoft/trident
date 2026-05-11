@@ -44,7 +44,7 @@ stages:
       - template: ../trident_images/build-image.yml
         parameters:
           label: selinux-testimage
-          makeTarget: artifacts/trident-selinux-testimage.qcow2
+          makeTarget: artifacts/trident-selinux-testimage.cosi
           baseimgType: qemu_guest
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
