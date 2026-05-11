@@ -64,7 +64,14 @@ stages:
         steps:
           - template: ../common_tasks/checkout_trident.yml
 
-          - template: ../testing_common/download-tools.yml
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download Go tools"
+            inputs:
+              buildType: current
+              artifactName: go-tools
+              targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
+          - bash: chmod +x $(TRIDENT_SOURCE_DIR)/bin/*
+            displayName: "Make go tools executable"
 
           - bash: |
               set -eux
