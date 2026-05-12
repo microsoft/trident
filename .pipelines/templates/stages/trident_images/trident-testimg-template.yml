@@ -108,6 +108,10 @@ parameters:
     type: boolean
     default: false
 
+  - name: numClones
+    type: string
+    default: ""
+
 steps:
   - template: ../common_tasks/avoid-pypi-usage.yml
 
@@ -279,6 +283,10 @@ steps:
       if [[ "${{ parameters.micArchitecture }}" != "${{ parameters.pipelineArchitecture }}" ]]; then
         # Export variable to tell Makefile and testimages to use `docker --platform`
         export MIC_ARCHITECTURE="linux/${{ parameters.micArchitecture }}"
+      fi
+
+      if [[ -n "${{ parameters.numClones }}" ]]; then
+        export NUM_CLONES="${{ parameters.numClones }}"
       fi
 
       # Compress the full image & delete the uncompressed image

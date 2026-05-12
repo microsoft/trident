@@ -73,6 +73,11 @@ parameters:
     type: number
     default: 20
 
+  - name: numClones
+    displayName: "Number of image clones to produce"
+    type: string
+    default: ""
+
 jobs:
   - job: PrepareImage_${{ replace(parameters.label, '-', '_') }}
     displayName: Prepare Image ${{ parameters.label }}
@@ -142,3 +147,4 @@ jobs:
             - ${{ parameters.baseimgType }}
           useStagedSshKeys: ${{ parameters.useStagedSshKeys }}
           downloadTrident: ${{ parameters.downloadTrident }}
+          numClones: ${{ parameters.numClones }}

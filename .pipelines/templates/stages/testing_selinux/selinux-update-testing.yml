@@ -49,6 +49,7 @@ stages:
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
           useStagedSshKeys: true
+          numClones: "2"
 
   - stage: SELinuxUpdateValidation
     displayName: SELinux Policy Update Validation
