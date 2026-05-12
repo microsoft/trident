@@ -177,17 +177,27 @@ stages:
 
           - bash: |
               set -eux
-              echo "=== Start HTTP file server for COSI files ==="
-              cd artifacts/test-image
-              python3 -m http.server 4000 > /tmp/fileserver.log 2>&1 &
-              echo "File server PID: $!"
-              sleep 2
-              echo "=== Verifying file server is serving ==="
-              curl -sf http://localhost:4000/ | head -5
-              echo "=== Files available ==="
-              ls -lh
+              echo "=== Start netlisten to serve COSI files ==="
+              ./bin/netlisten --force-color \
+                -s artifacts/test-image \
+                -p 4000 \
+                --full-logstream ./netlisten-logstream.log \
+                -m ./netlisten-metrics.jsonl > ./netlisten.log 2>&1 &
+              NETLISTEN_PID=$!
+              echo "netlisten PID: $NETLISTEN_PID"
+
+              # Wait for netlisten to start listening
+              for i in $(seq 1 10); do
+                if curl -sf http://localhost:4000/files/ > /dev/null 2>&1; then
+                  echo "netlisten is serving on port 4000"
+                  break
+                fi
+                echo "Waiting for netlisten to start (attempt $i)..."
+                sleep 2
+              done
+              curl -sf http://localhost:4000/files/ | head -5 || echo "WARNING: netlisten may not be serving"
             workingDirectory: $(TRIDENT_SOURCE_DIR)
-            displayName: "🌐 Start HTTP file server"
+            displayName: "🌐 Start netlisten file server"
 
           - bash: |
               set -eux
@@ -201,7 +211,7 @@ stages:
               ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
                 "sudo tee /var/lib/trident/update-config.yaml <<EOF
               image:
-                url: http://${GATEWAY_IP}:4000/usrverity_v2.cosi
+                url: http://${GATEWAY_IP}:4000/files/usrverity_v2.cosi
                 sha384: ignored
               internalParams:
                 allowUnusedFilesystems: true
