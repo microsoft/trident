@@ -164,8 +164,6 @@ os:
 
   users:
     - name: testuser
-      sshPublicKeyPaths:
-        - files/id_rsa.pub
       secondaryGroups:
         - wheel
 
