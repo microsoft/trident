@@ -243,8 +243,9 @@ stages:
                 'sudo journalctl -u trident-update@stage.service --no-pager' || true
 
               echo "=== SELinux audit log ==="
-              ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i "$SSH_KEY" testing-user@$HOST_IP \
-                'sudo ausearch -m avc --start recent 2>&1 || echo "No AVC denials found"' || true
+              timeout 30 ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 \
+                -i "$SSH_KEY" testing-user@$HOST_IP \
+                'sudo ausearch -m avc --start recent 2>&1 || echo "No AVC denials found"' || echo "ausearch timed out"
 
               if [ "$STAGE_RESULT" -ne 0 ]; then
                 echo "##[error]trident-update@stage.service failed with exit code $STAGE_RESULT"
