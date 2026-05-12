@@ -258,7 +258,18 @@ stages:
           - bash: |
               set -eux
               HOST_IP=$(jq -r '.virtualmachines[0].ip' $(TRIDENT_SOURCE_DIR)/tools/virt-deploy-metadata.json)
+              VM_NAME=$(jq -r '.virtualmachines[0].name' $(TRIDENT_SOURCE_DIR)/tools/virt-deploy-metadata.json)
               SSH_KEY="$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/helpers/key"
+
+              echo "=== Truncate serial log before finalize reboot ==="
+              SERIAL_LOG=$(sudo virsh dumpxml $VM_NAME | grep -oP "(?<=<log file=')[^']+")
+              if [ -n "$SERIAL_LOG" ] && [ -f "$SERIAL_LOG" ]; then
+                echo "Truncating serial log: $SERIAL_LOG"
+                sudo truncate -s 0 "$SERIAL_LOG"
+              else
+                echo "WARNING: could not find serial log, trying default path"
+                sudo truncate -s 0 /var/log/libvirt/qemu/${VM_NAME}-serial0.log 2>/dev/null || true
+              fi
 
               echo "=== Start netlisten for finalize ==="
               # Kill any leftover netlisten from previous step
