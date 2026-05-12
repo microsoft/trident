@@ -74,6 +74,7 @@ os:
       - ntfsprogs
       # selinux
       - selinux-policy
+      - trident-test-selinux
 
   services:
     enable:

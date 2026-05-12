@@ -62,6 +62,7 @@ os:
       - trident
       # Add trident selinux policy files
       - trident-selinux
+      - trident-test-selinux
       # Add trident-install.service
       - trident-install-service
 

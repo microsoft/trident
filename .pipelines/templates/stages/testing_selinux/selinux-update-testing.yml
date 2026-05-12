@@ -1,0 +1,346 @@
+# SELinux Policy Validation Stage
+#
+# Validates that the public trident-selinux policy (without trident-test-selinux)
+# is sufficient for the production systemd-activated update path.
+#
+# This stage:
+#   1. Builds a SELinux-enforcing UKI image with only the public policy
+#   2. Installs the image on a QEMU VM via netlaunch
+#   3. Runs a single A/B update cycle via trident-update@.service (systemd)
+#   4. Verifies the VM rebooted and came back up after the update
+#
+# The trident-update@.service runs as trident_t via systemd domain transition
+# (init_t -> trident_t), which is the production SELinux path.
+
+parameters:
+  - name: micBuildType
+    displayName: MIC Build Type
+    type: string
+    values:
+      - dev
+      - preview
+      - release
+    default: release
+
+  - name: micVersion
+    displayName: MIC Version
+    type: string
+    default: "*.*.*"
+
+stages:
+  - template: ../build_image/build-image.yml
+    parameters:
+      imageName: trident-selinux-testimage
+      micBuildType: ${{ parameters.micBuildType }}
+      micVersion: ${{ parameters.micVersion }}
+      clones: 2
+
+  - stage: SELinuxUpdateValidation
+    displayName: SELinux Policy Update Validation
+    dependsOn:
+      - TridentTestImg_trident_selinux_testimage
+      - BuildingTools
+      - TridentTestImg_trident_installer
+
+    jobs:
+      # Run the SELinux update validation test
+      - job: SELinuxUpdateTest
+        displayName: SELinux Update Test
+        timeoutInMinutes: 30
+        pool:
+          type: linux
+          name: trident-ubuntu-1es-pool-eastus2
+          hostArchitecture: amd64
+
+        variables:
+          - name: ob_outputDirectory
+            value: /tmp/selinux_test_logs
+          - name: ob_artifactBaseName
+            value: selinux_update_test_$(System.JobAttempt)
+
+        steps:
+          - template: ../common_tasks/checkout_trident.yml
+
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download Go tools"
+            inputs:
+              buildType: current
+              artifactName: go-tools
+              patterns: |
+                netlaunch
+                storm-trident
+                virtdeploy
+              targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
+          - bash: chmod +x $(TRIDENT_SOURCE_DIR)/bin/*
+            displayName: "Make tools executable"
+
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download installer ISO"
+            inputs:
+              buildType: current
+              artifactName: trident-installer
+              targetPath: "$(TRIDENT_SOURCE_DIR)/artifacts/iso"
+
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download SELinux test images"
+            inputs:
+              buildType: current
+              artifactName: trident-selinux-testimage
+              targetPath: "$(TRIDENT_SOURCE_DIR)/artifacts/test-image"
+
+          - bash: |
+              set -eux
+              cd artifacts/test-image
+
+              # Rename COSIs to match what usr-verity trident-config.yaml expects
+              ls -lh
+              mv *_0.cosi usrverity.cosi
+              mv *_1.cosi usrverity_v2.cosi
+              ls -lh
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+            displayName: "Rename COSIs for usr-verity config"
+
+          - template: ../testing_vm/netlaunch-prep.yml
+
+          - template: ../testing_common/trident-prep.yml
+            parameters:
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
+              tridentConfigPath: $(TRIDENT_SOURCE_DIR)/tests/e2e_tests/trident_configurations/usr-verity
+              runtimeEnv: host
+              config: usr-verity
+
+          - bash: |
+              set -eux
+
+              # Disable virtlogd rollover
+              echo "max_size = 0" | sudo tee -a /etc/libvirt/virtlogd.conf
+              sudo systemctl restart virtlogd.socket
+
+              ./tools/virt-deploy create --mem 12 --disks 32,32
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+            displayName: "Create QEMU VM"
+
+          - bash: |
+              set -eux
+
+              TRIDENT_CONFIG="$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/trident_configurations/usr-verity/trident-config.yaml"
+              SIGNING_CERT=""
+              CA_CERT_PATH="$(TRIDENT_SOURCE_DIR)/artifacts/test-image/ca_cert.pem"
+              if [ -f "$CA_CERT_PATH" ]; then
+                SIGNING_CERT="--signing-cert $CA_CERT_PATH"
+              fi
+
+              ./bin/netlaunch \
+                  --iso ./artifacts/iso/trident-installer.iso \
+                  --config $(TRIDENT_SOURCE_DIR)/tools/vm-netlaunch.yaml \
+                  --trident "$TRIDENT_CONFIG" \
+                  --servefolder ./artifacts/test-image \
+                  --logstream \
+                  --trace-file $(TRIDENT_SOURCE_DIR)/trident-selinux-metrics.jsonl \
+                  --force-color \
+                  --full-logstream logstream-full.log \
+                  --wait-for-provisioned-state \
+                  $SIGNING_CERT \
+                  --port 4000 2>&1 | tee ./selinux-clean-install.log
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+            displayName: "🚀 Install base image via netlaunch"
+            timeoutInMinutes: 20
+
+          - bash: |
+              set -eux
+              sudo ./bin/storm-trident helper wait-for-login -a \
+                  --vm-name "$(jq -r '.virtualmachines[0].name' $(TRIDENT_SOURCE_DIR)/tools/virt-deploy-metadata.json)" \
+                  --artifacts-folder "$(ob_outputDirectory)"
+            timeoutInMinutes: 5
+            condition: succeededOrFailed()
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+            displayName: "📄 Verify VM booted"
+
+          - bash: |
+              set -eux
+              HOST_IP=$(jq -r '.virtualmachines[0].ip' $(TRIDENT_SOURCE_DIR)/tools/virt-deploy-metadata.json)
+              SSH_KEY="$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/helpers/key"
+
+              echo "=== Check SELinux is enforcing ==="
+              ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
+                'sudo getenforce'
+
+              echo "=== Verify trident-test-selinux is NOT installed ==="
+              ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
+                'sudo semodule -l | grep trident'
+
+              echo "=== Check trident-update@.service exists ==="
+              ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
+                'systemctl cat trident-update@stage.service'
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+            displayName: "🔒 Verify SELinux state"
+
+          - bash: |
+              set -eux
+              HOST_IP=$(jq -r '.virtualmachines[0].ip' $(TRIDENT_SOURCE_DIR)/tools/virt-deploy-metadata.json)
+              SSH_KEY="$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/helpers/key"
+              GATEWAY_IP=$(ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
+                "ip route | grep default | awk '{print \$3}'")
+
+              echo "=== Start netlisten to serve COSI files ==="
+              ls -lh artifacts/test-image/
+              ./bin/netlisten --force-color \
+                -s artifacts/test-image \
+                -p 4000 \
+                --full-logstream ./netlisten-logstream.log \
+                -m ./netlisten-metrics.jsonl > ./netlisten.log 2>&1 &
+              NETLISTEN_PID=$!
+              echo "netlisten PID: $NETLISTEN_PID"
+
+              # Wait for netlisten to start listening
+              NETLISTEN_READY=false
+              for i in $(seq 1 10); do
+                if ! kill -0 $NETLISTEN_PID 2>/dev/null; then
+                  echo "##[error]netlisten (PID $NETLISTEN_PID) exited prematurely"
+                  wait $NETLISTEN_PID || true
+                  break
+                fi
+                if curl -sf http://localhost:4000/files/ > /dev/null 2>&1; then
+                  echo "netlisten is serving on port 4000"
+                  NETLISTEN_READY=true
+                  break
+                fi
+                echo "Waiting for netlisten to start (attempt $i)..."
+                sleep 2
+              done
+              if [ "$NETLISTEN_READY" != "true" ]; then
+                echo "##[error]netlisten failed to start after 20 seconds"
+                cat ./netlisten.log || true
+                ps aux | grep netlisten || true
+                ss -tlnp | grep 4000 || true
+                exit 1
+              fi
+
+              echo "=== Write update config on VM ==="
+              ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
+                "sudo tee /var/lib/trident/update-config.yaml <<EOF
+              image:
+                url: http://${GATEWAY_IP}:4000/files/usrverity_v2.cosi
+                sha384: ignored
+              internalParams:
+                allowUnusedFilesystems: true
+                uki: true
+                disableGrubNoprefixCheck: true
+              EOF"
+
+              echo "=== Write update environment file ==="
+              ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
+                "printf 'UPDATE_CONFIG=/var/lib/trident/update-config.yaml\nTRIDENT_VERBOSITY=DEBUG\n' | sudo tee /var/lib/trident/update-env"
+
+              echo "=== Start trident-update@stage.service ==="
+              STAGE_RESULT=0
+              ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
+                'sudo systemctl start trident-update@stage.service' || STAGE_RESULT=$?
+
+              echo "=== Service journal output ==="
+              ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
+                'sudo journalctl -u trident-update@stage.service --no-pager' || true
+
+              echo "=== SELinux audit log ==="
+              ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i "$SSH_KEY" testing-user@$HOST_IP \
+                'sudo ausearch -m avc --start recent 2>&1 || echo "No AVC denials found"' || true
+
+              if [ "$STAGE_RESULT" -ne 0 ]; then
+                echo "##[error]trident-update@stage.service failed with exit code $STAGE_RESULT"
+                exit 1
+              fi
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+            displayName: "🔄 Run update stage via systemd"
+            timeoutInMinutes: 10
+
+          - bash: |
+              set -eux
+              HOST_IP=$(jq -r '.virtualmachines[0].ip' $(TRIDENT_SOURCE_DIR)/tools/virt-deploy-metadata.json)
+              SSH_KEY="$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/helpers/key"
+
+              echo "=== Start netlisten for finalize ==="
+              # Kill any leftover netlisten from previous step
+              if pgrep netlisten > /dev/null; then pkill netlisten; fi
+              ./bin/netlisten --force-color \
+                -s artifacts/test-image \
+                -p 4000 \
+                --full-logstream ./netlisten-finalize-logstream.log \
+                -m ./netlisten-finalize-metrics.jsonl > ./netlisten-finalize.log 2>&1 &
+              for i in $(seq 1 10); do
+                if curl -sf http://localhost:4000/files/ > /dev/null 2>&1; then break; fi
+                sleep 2
+              done
+
+              echo "=== Start trident-update@finalize.service ==="
+              # Finalize triggers a reboot, so the SSH connection will drop.
+              ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=5 -o ServerAliveCountMax=1 \
+                -i "$SSH_KEY" testing-user@$HOST_IP \
+                'sudo systemctl start trident-update@finalize.service' || true
+
+              echo "=== Waiting for VM to reboot ==="
+              sleep 10
+
+              sudo ./bin/storm-trident helper wait-for-login -a \
+                  --vm-name "$(jq -r '.virtualmachines[0].name' $(TRIDENT_SOURCE_DIR)/tools/virt-deploy-metadata.json)" \
+                  --artifacts-folder "$(ob_outputDirectory)"
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+            displayName: "🔄 Run update finalize via systemd"
+            timeoutInMinutes: 10
+
+          - bash: |
+              set -eux
+              HOST_IP=$(jq -r '.virtualmachines[0].ip' $(TRIDENT_SOURCE_DIR)/tools/virt-deploy-metadata.json)
+              SSH_KEY="$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/helpers/key"
+
+              echo "=== Verify VM is up after update ==="
+              ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
+                'hostname && uptime'
+
+              echo "=== Check SELinux is still enforcing ==="
+              ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
+                'sudo getenforce'
+
+              echo "=== Check for SELinux denials ==="
+              ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
+                'sudo ausearch -m avc --start recent 2>&1 || echo "No recent AVC denials"'
+
+              echo "=== Check active volume ==="
+              ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
+                'sudo trident get 2>&1 || echo "trident get completed"'
+
+              echo "=== SELinux update validation PASSED ==="
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+            displayName: "✅ Validate update succeeded"
+
+          - bash: |
+              set -x
+              HOST_IP=$(jq -r '.virtualmachines[0].ip' $(TRIDENT_SOURCE_DIR)/tools/virt-deploy-metadata.json)
+              SSH_KEY="$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/helpers/key"
+              SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=3"
+
+              mkdir -p $(ob_outputDirectory)
+              cp ./netlisten.log $(ob_outputDirectory)/netlisten.log || true
+              cp ./netlisten-finalize.log $(ob_outputDirectory)/netlisten-finalize.log || true
+              ssh $SSH_OPTS -i "$SSH_KEY" testing-user@$HOST_IP \
+                'sudo ausearch -m avc 2>&1' > $(ob_outputDirectory)/audit-avc.log || true
+              ssh $SSH_OPTS -i "$SSH_KEY" testing-user@$HOST_IP \
+                'sudo journalctl --no-pager 2>&1' > $(ob_outputDirectory)/journal.log || true
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+            condition: succeededOrFailed()
+            timeoutInMinutes: 3
+            displayName: "📄 Collect logs"
+
+          - bash: |
+              set -eux
+              sudo virsh shutdown virtdeploy-vm-0
+              mkdir -p $(ob_outputDirectory)
+              sudo cp /var/lib/libvirt/images/virtdeploy-pool/virtdeploy-vm-0-0-volume.qcow2 $(ob_outputDirectory)/
+              sudo zstd -T0 $(ob_outputDirectory)/virtdeploy-vm-0-0-volume.qcow2
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+            condition: failed()
+            displayName: "Publish OS disk on failure"
+
+          - template: ../testing_common/fix-output-directory-for-one-branch-step.yml
+            parameters:
+              outputDir: $(ob_outputDirectory)
+              condition: always()

@@ -1,0 +1,2 @@
+# trident-test SELinux file contexts
+# No additional file contexts needed — the base trident module defines all file labels.
