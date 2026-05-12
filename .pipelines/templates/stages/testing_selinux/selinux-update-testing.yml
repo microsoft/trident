@@ -188,7 +188,7 @@ stages:
                 -s artifacts/test-image \
                 -p 4000 \
                 --full-logstream ./netlisten-logstream.log \
-                -m ./netlisten-metrics.jsonl &
+                -m ./netlisten-metrics.jsonl > ./netlisten.log 2>&1 &
               NETLISTEN_PID=$!
               echo "netlisten PID: $NETLISTEN_PID"
 
@@ -210,7 +210,7 @@ stages:
               done
               if [ "$NETLISTEN_READY" != "true" ]; then
                 echo "##[error]netlisten failed to start after 20 seconds"
-                # Check if process is still alive
+                cat ./netlisten.log || true
                 ps aux | grep netlisten || true
                 ss -tlnp | grep 4000 || true
                 exit 1
@@ -265,7 +265,7 @@ stages:
                 -s artifacts/test-image \
                 -p 4000 \
                 --full-logstream ./netlisten-finalize-logstream.log \
-                -m ./netlisten-finalize-metrics.jsonl &
+                -m ./netlisten-finalize-metrics.jsonl > ./netlisten-finalize.log 2>&1 &
               for i in $(seq 1 10); do
                 if curl -sf http://localhost:4000/files/ > /dev/null 2>&1; then break; fi
                 sleep 2
@@ -318,6 +318,8 @@ stages:
               SSH_KEY="$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/helpers/key"
 
               mkdir -p $(ob_outputDirectory)
+              cp ./netlisten.log $(ob_outputDirectory)/netlisten.log || true
+              cp ./netlisten-finalize.log $(ob_outputDirectory)/netlisten-finalize.log || true
               ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
                 'sudo ausearch -m avc 2>&1' > $(ob_outputDirectory)/audit-avc.log || true
               ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
