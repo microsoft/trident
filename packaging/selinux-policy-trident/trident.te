@@ -638,8 +638,8 @@ optional_policy(`
         type gpg_agent_exec_t;
         type gpg_secret_t;
     }
-    allow trident_t gpg_exec_t:file { ioctl read getattr lock map execute entrypoint open };
-    allow trident_t gpg_agent_exec_t:file { ioctl read getattr lock map execute entrypoint open };
+    allow trident_t gpg_exec_t:file { ioctl read getattr lock map execute execute_no_trans open };
+    allow trident_t gpg_agent_exec_t:file { ioctl read getattr lock map execute execute_no_trans open };
     allow trident_t gpg_secret_t:dir list_dir_perms;
     allow trident_t gpg_secret_t:file read_file_perms;
     allow trident_t gpg_secret_t:lnk_file read_lnk_file_perms;
