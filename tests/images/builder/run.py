@@ -148,6 +148,8 @@ def download_base_image(
     *,
     artifacts: ArtifactManifest,
     name: str,
+    blob_storage_account: Optional[str] = None,
+    blob_container: Optional[str] = None,
 ) -> None:
     image_manifest = next(
         (img for img in artifacts.base_images if img.image.name == name), None
@@ -155,7 +157,18 @@ def download_base_image(
     if image_manifest is None:
         raise ValueError(f"Image '{name}' not found in artifacts")
     log.info(f"Downloading base image '{name}' to '{image_manifest.image.path}'")
-    download.download_base_image(image_manifest)
+
+    # Import locally to avoid circular import at module load.
+    from builder import BlobImageManifest
+
+    if isinstance(image_manifest, BlobImageManifest):
+        download.download_blob_image(
+            image_manifest,
+            storage_account=blob_storage_account,
+            container=blob_container,
+        )
+    else:
+        download.download_base_image(image_manifest)
 
 
 def generate_matrix(

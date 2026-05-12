@@ -3,7 +3,7 @@ import yaml
 from dataclasses import dataclass, field, fields
 from enum import Enum
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 
 
 @dataclass
@@ -61,6 +61,34 @@ class BaseImageManifest:
     project: str = "36d030d6-1d99-4ebd-878b-09af1f4f722f"
     feed: str = "AzureLinuxArtifacts"
     glob: str = "*.vhdx"
+
+
+@dataclass
+class BlobImageManifest:
+    """Manifest for a base image fetched from Azure Storage Blob.
+
+    Used for distros that don't yet publish to an ADO universal artifact
+    feed (e.g., Azure Linux 4.0 alpha builds). The storage account name
+    and container are NOT baked in here -- they are supplied at
+    invocation time via the --blob-storage-account / --blob-container
+    flags (or the BLOB_STORAGE_ACCOUNT / BLOB_CONTAINER env vars) so the
+    pipeline can parameterize them and rotate the location without a
+    code change.
+
+    Authentication is via `az` CLI logged-in identity (`--auth-mode
+    login`). The pipeline running this must have a federated identity
+    with read access to the storage account.
+    """
+
+    image: BaseImage
+    # Blob name prefix to search under
+    # (e.g. "azure-linux/core-efi-vhdx-4.0-amd64")
+    path_prefix: str
+    # Suffix the final blob name must end with.
+    # The downloader lists all blobs under path_prefix, filters to ones
+    # ending with this suffix, and picks the lexically largest (= most
+    # recent version) to download.
+    file_suffix: str = "/image.vhdx"
 
 
 class OutputFormat(Enum):
@@ -252,7 +280,9 @@ class ArtifactManifest:
     customizer_version: str
     customizer_container: str
     customizer_container_full: str = None
-    base_images: List[BaseImageManifest] = field(default_factory=list)
+    base_images: List[Union["BaseImageManifest", "BlobImageManifest"]] = field(
+        default_factory=list
+    )
 
     def __post_init__(self):
         if self.customizer_container_full is None:
@@ -267,7 +297,9 @@ class ArtifactManifest:
         """Return a list of fields in kebab-case."""
         return [f.name.replace("_", "-") for f in fields(cls)]
 
-    def find_base_image(self, img: BaseImage) -> Optional[BaseImageManifest]:
+    def find_base_image(
+        self, img: BaseImage
+    ) -> Optional[Union["BaseImageManifest", "BlobImageManifest"]]:
         """Find a base image by its name."""
         for base_image in self.base_images:
             if base_image.image == img:
