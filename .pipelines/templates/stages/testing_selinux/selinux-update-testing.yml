@@ -293,26 +293,35 @@ stages:
               set -eux
               HOST_IP=$(jq -r '.virtualmachines[0].ip' $(TRIDENT_SOURCE_DIR)/tools/virt-deploy-metadata.json)
               SSH_KEY="$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/helpers/key"
+              SSH_CMD="ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i $SSH_KEY testing-user@$HOST_IP"
+
+              echo "=== Wait for SSH to become available ==="
+              for i in $(seq 1 30); do
+                if $SSH_CMD 'echo ssh_ready' 2>/dev/null; then
+                  echo "SSH available after $i attempts"
+                  break
+                fi
+                echo "Waiting for SSH (attempt $i/30)..."
+                sleep 5
+              done
 
               echo "=== Verify VM is up after update ==="
-              ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
-                'hostname && uptime'
+              $SSH_CMD 'hostname && uptime'
 
               echo "=== Check SELinux is still enforcing ==="
-              ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
-                'sudo getenforce'
+              $SSH_CMD 'sudo getenforce'
 
               echo "=== Check for SELinux denials ==="
-              ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
-                'sudo ausearch -m avc --start recent 2>&1 || echo "No recent AVC denials"'
+              timeout 30 $SSH_CMD \
+                'sudo ausearch -m avc --start recent 2>&1 || echo "No recent AVC denials"' || echo "ausearch timed out"
 
               echo "=== Check active volume ==="
-              ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
-                'sudo trident get 2>&1 || echo "trident get completed"'
+              $SSH_CMD 'sudo trident get 2>&1 || echo "trident get completed"'
 
               echo "=== SELinux update validation PASSED ==="
             workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: "✅ Validate update succeeded"
+            timeoutInMinutes: 5
 
           - bash: |
               set -x
