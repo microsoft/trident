@@ -68,6 +68,7 @@ stages:
               artifactName: go-tools
               patterns: |
                 netlaunch
+                netlisten
                 storm-trident
                 virtdeploy
               targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
