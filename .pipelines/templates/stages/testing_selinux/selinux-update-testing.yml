@@ -13,10 +13,6 @@
 # (init_t -> trident_t), which is the production SELinux path.
 
 parameters:
-  - name: dependsOnStages
-    type: object
-    default: []
-
   - name: micBuildType
     displayName: MIC Build Type
     type: string
@@ -32,29 +28,17 @@ parameters:
     default: "*.*.*"
 
 stages:
-  - stage: BuildSELinuxTestImages
-    displayName: Build SELinux Test Images
-    dependsOn:
-      - PrepareSSHKeys
-      - GetTridentBinaries_rpms_amd64
-      - ${{ each stage in parameters.dependsOnStages }}:
-          - ${{ stage }}
-
-    jobs:
-      - template: ../trident_images/build-image.yml
-        parameters:
-          label: selinux-testimage
-          makeTarget: artifacts/trident-selinux-testimage.cosi
-          baseimgType: qemu_guest
-          micBuildType: ${{ parameters.micBuildType }}
-          micVersion: ${{ parameters.micVersion }}
-          useStagedSshKeys: true
-          numClones: "2"
+  - template: ../build_image/build-image.yml
+    parameters:
+      imageName: trident-selinux-testimage
+      micBuildType: ${{ parameters.micBuildType }}
+      micVersion: ${{ parameters.micVersion }}
+      clones: 2
 
   - stage: SELinuxUpdateValidation
     displayName: SELinux Policy Update Validation
     dependsOn:
-      - BuildSELinuxTestImages
+      - TridentTestImg_trident_selinux_testimage
       - BuildingTools
       - TridentTestImg_trident_installer
 
@@ -101,7 +85,7 @@ stages:
             displayName: "Download SELinux test images"
             inputs:
               buildType: current
-              artifactName: image-selinux-testimage
+              artifactName: trident-selinux-testimage
               targetPath: "$(TRIDENT_SOURCE_DIR)/artifacts/test-image"
 
           - bash: |
