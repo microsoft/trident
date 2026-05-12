@@ -7,6 +7,7 @@ from builder import (
     ArtifactManifest,
     BaseImage,
     BaseImageManifest,
+    BlobImageManifest,
     ImageConfig,
     OutputFormat,
     SystemArchitecture,
@@ -74,9 +75,11 @@ DEFINED_IMAGES: List[ImageConfig] = [
     ),
     ImageConfig(
         # AZL4 (Fedora-derived) variant of trident-vm-grub-testimage.
-        # Uses a locally-built AZL4 base VHDX (see README) and bakes the
-        # Trident binary in via additionalFiles since the trident-service
-        # RPM is not yet packaged for AZL4.
+        # The base VHDX is pulled from Azure Storage (see
+        # BlobImageManifest below) since there is no AzureLinuxArtifacts
+        # ADO feed entry for AZL4 yet. The Trident binary is baked in
+        # via additionalFiles because the trident-service RPM is not
+        # yet packaged for AZL4.
         "trident-vm-grub-testimage-azl4",
         base_image=BaseImage.AZL4_QEMU_GUEST,
         config="trident-vm-testimage",
@@ -205,6 +208,15 @@ ARTIFACTS = ArtifactManifest(
             image=BaseImage.MINIMAL,
             package_name="minimal_vhdx-3.0-stable",
             version="*",
+        ),
+        BlobImageManifest(
+            # Azure Linux 4.0 core-efi VHDX, fetched from Azure Storage
+            # Blob (no ADO universal artifact feed entry exists for 4.0
+            # yet). Storage account + container are supplied at runtime
+            # via --blob-storage-account / --blob-container CLI flags
+            # or the BLOB_STORAGE_ACCOUNT / BLOB_CONTAINER env vars.
+            image=BaseImage.AZL4_QEMU_GUEST,
+            path_prefix="azure-linux/core-efi-vhdx-4.0-amd64",
         ),
     ],
 )
