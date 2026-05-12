@@ -193,6 +193,7 @@ stages:
               echo "netlisten PID: $NETLISTEN_PID"
 
               # Wait for netlisten to start listening
+              NETLISTEN_READY=false
               for i in $(seq 1 10); do
                 if ! kill -0 $NETLISTEN_PID 2>/dev/null; then
                   echo "##[error]netlisten (PID $NETLISTEN_PID) exited prematurely"
@@ -201,11 +202,19 @@ stages:
                 fi
                 if curl -sf http://localhost:4000/files/ > /dev/null 2>&1; then
                   echo "netlisten is serving on port 4000"
+                  NETLISTEN_READY=true
                   break
                 fi
                 echo "Waiting for netlisten to start (attempt $i)..."
                 sleep 2
               done
+              if [ "$NETLISTEN_READY" != "true" ]; then
+                echo "##[error]netlisten failed to start after 20 seconds"
+                # Check if process is still alive
+                ps aux | grep netlisten || true
+                ss -tlnp | grep 4000 || true
+                exit 1
+              fi
 
               echo "=== Write update config on VM ==="
               ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
