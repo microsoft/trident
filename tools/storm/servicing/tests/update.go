@@ -563,7 +563,7 @@ func checkSerialLogForDracutIssues(serialLogPath string, iteration int) {
 		pattern string
 		message string
 	}{
-		{"dracut-initqueue", "dracut-initqueue activity detected — initramfs may be waiting for a device"},
+		{"dracut-initqueue[", "dracut-initqueue warning detected — initramfs may be waiting for a device"},
 		{"Could not boot", "dracut 'Could not boot' error detected"},
 		{"Starting dracut emergency shell", "dracut emergency shell activated — boot failed in initramfs"},
 		{"Warning: /dev/disk/by", "dracut warning about /dev/disk/by-* path — possible stale UUID reference"},

@@ -461,9 +461,24 @@ func analyzeSerialLog(serial string) error {
 
 	// Check for known boot failure patterns and return a specific error
 	// if one is found, so the failure category is clear in pipeline results.
+	// Ordered most-severe/specific first so that e.g. a kernel panic after
+	// dracut starts isn't misclassified as a stale-UUID issue.
+
+	// Kernel panic — the kernel itself crashed during boot.
+	if strings.Contains(serialTail, "Kernel panic") ||
+		strings.Contains(serialTail, "end Kernel panic") {
+		return fmt.Errorf("kernel panic during boot (see serial log above)")
+	}
 
 	if strings.Contains(serialTail, "tpm tpm0: Operation Timed out") {
 		return fmt.Errorf("tpm tpm0: Operation Timed out")
+	}
+
+	// GRUB error — bootloader could not find the kernel or boot entry.
+	if strings.Contains(serialTail, "error: no such device") ||
+		strings.Contains(serialTail, "error: file not found") ||
+		strings.Contains(serialTail, "error: file '/") {
+		return fmt.Errorf("GRUB boot error (see serial log above)")
 	}
 
 	// Dracut/initramfs emergency shell — VM booted but initramfs could not
@@ -477,23 +492,11 @@ func analyzeSerialLog(serial string) error {
 
 	// Dracut-initqueue timeout — initramfs is waiting for a device that doesn't
 	// exist, typically caused by stale disk UUIDs embedded in initramfs (bug 15086).
-	// The serial log shows dracut-initqueue repeatedly trying to find the device.
-	if strings.Contains(serialTail, "dracut-initqueue") ||
+	// Patterns are specific to failure messages, not the normal unit name.
+	if strings.Contains(serialTail, "dracut-initqueue[") && strings.Contains(serialTail, "Warning") ||
 		strings.Contains(serialTail, "Timed out waiting for device") ||
 		strings.Contains(serialTail, "Could not boot") {
 		return fmt.Errorf("VM stuck in initramfs waiting for device — likely stale UUID in initramfs (bug 15086, see serial log above)")
-	}
-
-	// Kernel panic — the kernel itself crashed during boot.
-	if strings.Contains(serialTail, "Kernel panic") ||
-		strings.Contains(serialTail, "end Kernel panic") {
-		return fmt.Errorf("kernel panic during boot (see serial log above)")
-	}
-
-	// GRUB error — bootloader could not find the kernel or boot entry.
-	if strings.Contains(serialTail, "error: no such device") ||
-		strings.Contains(serialTail, "error: file") {
-		return fmt.Errorf("GRUB boot error (see serial log above)")
 	}
 
 	return nil
