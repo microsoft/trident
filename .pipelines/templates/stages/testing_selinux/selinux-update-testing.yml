@@ -118,6 +118,13 @@ stages:
 
           - template: ../testing_vm/netlaunch-prep.yml
 
+          - template: ../testing_common/trident-prep.yml
+            parameters:
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
+              tridentConfigPath: $(TRIDENT_SOURCE_DIR)/tests/e2e_tests/trident_configurations/usr-verity
+              runtimeEnv: host
+              config: usr-verity
+
           - bash: |
               set -eux
 
