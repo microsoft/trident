@@ -112,8 +112,8 @@ impl DefaultGrub {
         Ok(())
     }
 
-    /// Add extra command line arguments to GRUB_CMDLINE_LINUX without
-    /// removing any existing ones.
+    /// Add extra command line arguments to GRUB_CMDLINE_LINUX, skipping
+    /// any that are already present (idempotent).
     pub fn add_extra_cmdline(&mut self, extra: &[String]) {
         let current = self.get_variable("GRUB_CMDLINE_LINUX").unwrap_or_default();
 
@@ -123,7 +123,13 @@ impl DefaultGrub {
             current.split_whitespace().map(String::from).collect()
         };
 
-        args.extend(extra.iter().cloned());
+        for item in extra {
+            let key = item.split('=').next().unwrap_or(item);
+            // Skip if an arg with the same key already exists
+            if !args.iter().any(|a| a.split('=').next().unwrap_or(a) == key) {
+                args.push(item.clone());
+            }
+        }
 
         let new_value = args.join(" ");
         self.set_variable("GRUB_CMDLINE_LINUX", &new_value);

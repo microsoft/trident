@@ -86,13 +86,8 @@ pub fn modify_os(ctx: &OsModifierContext, config: &OSModifierConfig) -> Result<(
         modules::configure(ctx, &config.modules).context("Failed to configure kernel modules")?;
     }
 
-    // Kernel command line and SELinux are handled via boot config, not here.
-    // The Go code uses BootCustomizer for these, which requires detecting the
-    // bootloader type and working with /etc/default/grub. In trident, these
-    // are only set through the boot subsystem's modify_boot() path.
-    //
-    // However, for UKI images, SELinux mode is set via the config file directly
-    // (not via kernel cmdline). The osconfig subsystem handles this case by
+    // For UKI images, SELinux mode is set via the config file directly (not
+    // via kernel cmdline). The osconfig subsystem handles this case by
     // including selinux in the OSModifierConfig.
     if let Some(ref selinux_cfg) = config.selinux {
         if let Some(ref mode) = selinux_cfg.mode {
@@ -102,6 +97,9 @@ pub fn modify_os(ctx: &OsModifierContext, config: &OSModifierConfig) -> Result<(
         }
     }
 
+    // Extra kernel command line args are appended to /etc/default/grub and
+    // grub.cfg is regenerated. Note: modify_boot() also writes to
+    // /etc/default/grub for boot-specific config (overlays, verity, etc.).
     if let Some(ref kcl) = config.kernel_command_line {
         if !kcl.extra_command_line.is_empty() {
             info!("Adding extra kernel command line arguments");

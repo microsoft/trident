@@ -35,6 +35,11 @@ fn add_or_update_user(ctx: &OsModifierContext, user: &MICUser) -> Result<(), Err
         None => None,
     };
 
+    let is_locked = user
+        .password
+        .as_ref()
+        .is_some_and(|p| p.password_type == PasswordType::Locked);
+
     let user_exists = check_user_exists(root, &user.name)?;
 
     if user_exists {
@@ -57,10 +62,19 @@ fn add_or_update_user(ctx: &OsModifierContext, user: &MICUser) -> Result<(), Err
         // Update password if provided
         if let Some(ref hash) = hashed_password {
             update_user_password(ctx, &user.name, hash)?;
+        } else if is_locked {
+            // Lock the account by writing a locked marker to /etc/shadow
+            lock_user_password(ctx, &user.name)?;
         }
     } else {
         info!("Creating user '{}'", user.name);
-        create_user(root, user, hashed_password.as_deref())?;
+        create_user(root, user)?;
+
+        // Set password after creation via chpasswd (avoids leaking hash in
+        // /proc/cmdline that useradd -p would cause).
+        if let Some(ref hash) = hashed_password {
+            set_password_via_chpasswd(root, &user.name, hash)?;
+        }
     }
 
     // Set password expiry
@@ -134,7 +148,7 @@ fn hash_password(plaintext: &str) -> Result<String, Error> {
         .to_string())
 }
 
-fn create_user(root: &str, user: &MICUser, hashed_password: Option<&str>) -> Result<(), Error> {
+fn create_user(root: &str, user: &MICUser) -> Result<(), Error> {
     let mut cmd = if root == "/" {
         Command::new("useradd")
     } else {
@@ -145,9 +159,8 @@ fn create_user(root: &str, user: &MICUser, hashed_password: Option<&str>) -> Res
 
     cmd.arg("-m"); // Create home directory
 
-    if let Some(ref hash) = hashed_password {
-        cmd.arg("-p").arg(hash);
-    }
+    // Password is set separately via chpasswd to avoid leaking the hash
+    // through /proc/cmdline (useradd -p is world-readable).
 
     if let Some(uid) = user.uid {
         cmd.arg("-u").arg(uid.to_string());
@@ -207,8 +220,54 @@ fn update_user_password(ctx: &OsModifierContext, username: &str, hash: &str) -> 
         result.push('\n');
     }
 
-    fs::write(&shadow_path, &result)
-        .with_context(|| format!("Failed to write '{}'", shadow_path.display()))
+    atomic_write_file(&shadow_path, &result)
+}
+
+/// Set password on a newly created user via chpasswd -e (stdin), avoiding
+/// leaking the hash through /proc/cmdline.
+fn set_password_via_chpasswd(root: &str, username: &str, hash: &str) -> Result<(), Error> {
+    debug!("Setting password for new user '{username}' via chpasswd");
+    let input = format!("{username}:{hash}\n");
+
+    let mut child = if root == "/" {
+        Command::new("chpasswd")
+            .arg("-e")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+    } else {
+        Command::new("chroot")
+            .arg(root)
+            .args(["chpasswd", "-e"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+    }
+    .context("Failed to start chpasswd")?;
+
+    if let Some(ref mut stdin) = child.stdin {
+        stdin
+            .write_all(input.as_bytes())
+            .context("Failed to write to chpasswd stdin")?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .context("Failed to wait for chpasswd")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("chpasswd failed for '{username}': {stderr}");
+    }
+    Ok(())
+}
+
+/// Lock a user's password by writing the locked marker '!' into /etc/shadow.
+fn lock_user_password(ctx: &OsModifierContext, username: &str) -> Result<(), Error> {
+    debug!("Locking password for user '{username}'");
+    update_user_password(ctx, username, "!")
 }
 
 fn set_password_expiry(ctx: &OsModifierContext, username: &str, days: u64) -> Result<(), Error> {
@@ -218,13 +277,16 @@ fn set_password_expiry(ctx: &OsModifierContext, username: &str, days: u64) -> Re
     let content = fs::read_to_string(&shadow_path)
         .with_context(|| format!("Failed to read '{}'", shadow_path.display()))?;
 
+    let mut found = false;
     let updated: Vec<String> = content
         .lines()
         .map(|line| {
             let fields: Vec<&str> = line.split(':').collect();
-            if fields.len() >= 5 && fields[0] == username {
+            if fields.len() >= 2 && fields[0] == username {
+                found = true;
                 let mut new_fields: Vec<String> = fields.iter().map(|f| f.to_string()).collect();
-                // Field index 4 is the maximum password age
+                // Shadow fields: login:password:lastChange:minAge:maxAge:warn:inactive:expire:reserved
+                // Field index 4 (0-based) is the maximum password age.
                 while new_fields.len() < 5 {
                     new_fields.push(String::new());
                 }
@@ -236,13 +298,16 @@ fn set_password_expiry(ctx: &OsModifierContext, username: &str, days: u64) -> Re
         })
         .collect();
 
+    if !found {
+        bail!("User '{username}' not found in shadow file for password expiry");
+    }
+
     let mut result = updated.join("\n");
     if content.ends_with('\n') {
         result.push('\n');
     }
 
-    fs::write(&shadow_path, &result)
-        .with_context(|| format!("Failed to write '{}'", shadow_path.display()))
+    atomic_write_file(&shadow_path, &result)
 }
 
 fn set_primary_group(root: &str, username: &str, group: &str) -> Result<(), Error> {
@@ -371,6 +436,15 @@ fn set_ownership(ctx: &OsModifierContext, username: &str, path: &Path) -> Result
 
 fn set_startup_command(ctx: &OsModifierContext, username: &str, cmd: &str) -> Result<(), Error> {
     debug!("Setting startup command for '{username}' to '{cmd}'");
+
+    // Validate: colons would corrupt the colon-delimited /etc/passwd format
+    if cmd.contains(':') {
+        bail!("Startup command for user '{username}' contains ':' which would corrupt /etc/passwd");
+    }
+    if cmd.contains('\n') {
+        bail!("Startup command for user '{username}' contains a newline");
+    }
+
     let passwd_path = ctx.path("/etc/passwd");
 
     let content = fs::read_to_string(&passwd_path)
@@ -401,6 +475,37 @@ fn set_startup_command(ctx: &OsModifierContext, username: &str, cmd: &str) -> Re
         result.push('\n');
     }
 
-    fs::write(&passwd_path, &result)
-        .with_context(|| format!("Failed to write '{}'", passwd_path.display()))
+    atomic_write_file(&passwd_path, &result)
+}
+
+/// Atomically write a file by writing to a temp file and renaming.
+/// This prevents corruption from crashes mid-write.
+fn atomic_write_file(path: &std::path::Path, content: &str) -> Result<(), Error> {
+    use std::io::Write as IoWrite;
+
+    let parent = path.parent().context("Cannot determine parent directory")?;
+
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)
+        .with_context(|| format!("Failed to create temp file in '{}'", parent.display()))?;
+
+    tmp.write_all(content.as_bytes())
+        .with_context(|| format!("Failed to write temp file for '{}'", path.display()))?;
+
+    tmp.flush()
+        .with_context(|| format!("Failed to flush temp file for '{}'", path.display()))?;
+
+    // Preserve permissions from the original file if it exists
+    if let Ok(metadata) = fs::metadata(path) {
+        fs::set_permissions(tmp.path(), metadata.permissions()).with_context(|| {
+            format!(
+                "Failed to set permissions on temp file for '{}'",
+                path.display()
+            )
+        })?;
+    }
+
+    tmp.persist(path)
+        .with_context(|| format!("Failed to atomically replace '{}'", path.display()))?;
+
+    Ok(())
 }
