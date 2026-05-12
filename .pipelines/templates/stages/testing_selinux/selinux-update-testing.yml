@@ -262,7 +262,7 @@ stages:
               SSH_KEY="$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/helpers/key"
 
               echo "=== Truncate serial log before finalize reboot ==="
-              SERIAL_LOG=$(sudo virsh dumpxml $VM_NAME | grep -oP "(?<=<log file=')[^']+")
+              SERIAL_LOG=$(sudo virsh dumpxml $VM_NAME | grep -oP "(?<=<log file=')[^']+" | head -1)
               if [ -n "$SERIAL_LOG" ] && [ -f "$SERIAL_LOG" ]; then
                 echo "Truncating serial log: $SERIAL_LOG"
                 sudo truncate -s 0 "$SERIAL_LOG"
