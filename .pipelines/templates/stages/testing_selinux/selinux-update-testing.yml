@@ -177,6 +177,11 @@ stages:
 
           - bash: |
               set -eux
+              HOST_IP=$(jq -r '.virtualmachines[0].ip' $(TRIDENT_SOURCE_DIR)/tools/virt-deploy-metadata.json)
+              SSH_KEY="$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/helpers/key"
+              GATEWAY_IP=$(ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
+                "ip route | grep default | awk '{print \$3}'")
+
               echo "=== Start netlisten to serve COSI files ==="
               ./bin/netlisten --force-color \
                 -s artifacts/test-image \
@@ -195,17 +200,6 @@ stages:
                 echo "Waiting for netlisten to start (attempt $i)..."
                 sleep 2
               done
-              curl -sf http://localhost:4000/files/ | head -5 || echo "WARNING: netlisten may not be serving"
-            workingDirectory: $(TRIDENT_SOURCE_DIR)
-            displayName: "🌐 Start netlisten file server"
-
-          - bash: |
-              set -eux
-              HOST_IP=$(jq -r '.virtualmachines[0].ip' $(TRIDENT_SOURCE_DIR)/tools/virt-deploy-metadata.json)
-              SSH_KEY="$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/helpers/key"
-              # The VM's gateway is the host running netlisten on port 4000
-              GATEWAY_IP=$(ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
-                "ip route | grep default | awk '{print \$3}'")
 
               echo "=== Write update config on VM ==="
               ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
@@ -249,9 +243,21 @@ stages:
               HOST_IP=$(jq -r '.virtualmachines[0].ip' $(TRIDENT_SOURCE_DIR)/tools/virt-deploy-metadata.json)
               SSH_KEY="$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/helpers/key"
 
+              echo "=== Start netlisten for finalize ==="
+              # Kill any leftover netlisten from previous step
+              if pgrep netlisten > /dev/null; then pkill netlisten; fi
+              ./bin/netlisten --force-color \
+                -s artifacts/test-image \
+                -p 4000 \
+                --full-logstream ./netlisten-finalize-logstream.log \
+                -m ./netlisten-finalize-metrics.jsonl > ./netlisten-finalize.log 2>&1 &
+              for i in $(seq 1 10); do
+                if curl -sf http://localhost:4000/files/ > /dev/null 2>&1; then break; fi
+                sleep 2
+              done
+
               echo "=== Start trident-update@finalize.service ==="
               # Finalize triggers a reboot, so the SSH connection will drop.
-              # Use a timeout and ignore the connection drop.
               ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=5 -o ServerAliveCountMax=1 \
                 -i "$SSH_KEY" testing-user@$HOST_IP \
                 'sudo systemctl start trident-update@finalize.service' || true
