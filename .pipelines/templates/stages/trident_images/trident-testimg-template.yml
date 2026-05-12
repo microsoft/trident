@@ -108,10 +108,6 @@ parameters:
     type: boolean
     default: false
 
-  - name: numClones
-    type: string
-    default: ""
-
 steps:
   - template: ../common_tasks/avoid-pypi-usage.yml
 
@@ -285,10 +281,6 @@ steps:
         export MIC_ARCHITECTURE="linux/${{ parameters.micArchitecture }}"
       fi
 
-      if [[ -n "${{ parameters.numClones }}" ]]; then
-        export NUM_CLONES="${{ parameters.numClones }}"
-      fi
-
       # Compress the full image & delete the uncompressed image
       make ${{ parameters.target }}
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
@@ -302,18 +294,8 @@ steps:
       if [ -d "build/${{ parameters.target }}" ]; then
         sudo mv -v build/${{ parameters.target }}/* "${{ parameters.outputDirectory }}/"
       else
-        # When clones are produced, the target is e.g. artifacts/foo.cosi but
-        # the generated files are artifacts/foo_0.cosi, artifacts/foo_1.cosi, etc.
-        # Use a glob on the base name to capture all clones.
-        target="${{ parameters.target }}"
-        base="${target%.*}"
-        ext="${target##*.}"
-        clones=( ${base}_*.${ext} )
-        if [ -e "${clones[0]}" ]; then
-          sudo mv -v "${base}"_*.${ext} "${{ parameters.outputDirectory }}/"
-        else
-          sudo mv -v "${{ parameters.target }}" "${{ parameters.outputDirectory }}/"
-        fi
+        # Everything else is a file
+        sudo mv -v "${{ parameters.target }}" "${{ parameters.outputDirectory }}/"
       fi
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Copy artifacts to output directory"
