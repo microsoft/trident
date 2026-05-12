@@ -313,19 +313,21 @@ stages:
             displayName: "✅ Validate update succeeded"
 
           - bash: |
-              set -eux
+              set -x
               HOST_IP=$(jq -r '.virtualmachines[0].ip' $(TRIDENT_SOURCE_DIR)/tools/virt-deploy-metadata.json)
               SSH_KEY="$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/helpers/key"
+              SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=3"
 
               mkdir -p $(ob_outputDirectory)
               cp ./netlisten.log $(ob_outputDirectory)/netlisten.log || true
               cp ./netlisten-finalize.log $(ob_outputDirectory)/netlisten-finalize.log || true
-              ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
+              ssh $SSH_OPTS -i "$SSH_KEY" testing-user@$HOST_IP \
                 'sudo ausearch -m avc 2>&1' > $(ob_outputDirectory)/audit-avc.log || true
-              ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
+              ssh $SSH_OPTS -i "$SSH_KEY" testing-user@$HOST_IP \
                 'sudo journalctl --no-pager 2>&1' > $(ob_outputDirectory)/journal.log || true
             workingDirectory: $(TRIDENT_SOURCE_DIR)
             condition: succeededOrFailed()
+            timeoutInMinutes: 3
             displayName: "📄 Collect logs"
 
           - bash: |
