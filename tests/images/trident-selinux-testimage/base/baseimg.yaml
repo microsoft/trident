@@ -147,13 +147,13 @@ os:
       - grub2-efi-binary
 
   additionalFiles:
-    - source: ../../trident-vm-testimage/base/files/99-dhcp-eth0.network
+    - source: files/99-dhcp-eth0.network
       destination: /etc/systemd/network/99-dhcp-eth0.network
-    - source: ../../trident-vm-testimage/base/files/sudoers-wheel
+    - source: files/sudoers-wheel
       destination: /etc/sudoers.d/wheel
       # Trident update service template — runs updates via systemd domain
       # transition (init_t -> trident_t), exercising the production SELinux path.
-    - source: ../../../../packaging/systemd/trident-update@.service
+    - source: files/trident-update@.service
       destination: /usr/lib/systemd/system/trident-update@.service
 
   services:
@@ -165,18 +165,18 @@ os:
   users:
     - name: testuser
       sshPublicKeyPaths:
-        - ../../trident-vm-testimage/base/files/id_rsa.pub
+        - files/id_rsa.pub
       secondaryGroups:
         - wheel
 
 scripts:
   postCustomization:
-    - path: ../../trident-vm-testimage/base/scripts/post-install.sh
-    - path: ../../trident-vm-testimage/base/scripts/update-host-status.sh
-    - path: ../../trident-vm-testimage/base/scripts/prepare-update-config-verity.sh
+    - path: scripts/post-install.sh
+    - path: scripts/update-host-status.sh
+    - path: scripts/prepare-update-config-verity.sh
       arguments:
         - uki
-    - path: ../../trident-vm-testimage/base/scripts/duid-type-to-link-layer.sh
+    - path: scripts/duid-type-to-link-layer.sh
 
 previewFeatures:
   - uki
