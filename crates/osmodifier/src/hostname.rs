@@ -16,6 +16,6 @@ const HOSTNAME_PATH: &str = "/etc/hostname";
 pub fn update(ctx: &OsModifierContext, hostname: &str) -> Result<(), Error> {
     let path = ctx.path(HOSTNAME_PATH);
     debug!("Writing hostname '{}' to '{}'", hostname, path.display());
-    fs::write(&path, format!("{hostname}\n"))
+    fs::write(&path, hostname)
         .with_context(|| format!("Failed to write hostname to '{}'", path.display()))
 }
