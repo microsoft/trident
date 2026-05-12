@@ -185,12 +185,22 @@ stages:
                 "printf 'UPDATE_CONFIG=/var/lib/trident/update-config.yaml\nTRIDENT_VERBOSITY=DEBUG\n' | sudo tee /var/lib/trident/update-env"
 
               echo "=== Start trident-update@stage.service ==="
+              STAGE_RESULT=0
               ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
-                'sudo systemctl start trident-update@stage.service'
+                'sudo systemctl start trident-update@stage.service' || STAGE_RESULT=$?
 
-              echo "=== Stage service completed successfully ==="
+              echo "=== Service journal output ==="
               ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
-                'sudo journalctl -u trident-update@stage.service --no-pager'
+                'sudo journalctl -u trident-update@stage.service --no-pager' || true
+
+              echo "=== SELinux audit log ==="
+              ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
+                'sudo ausearch -m avc --start recent 2>&1' || true
+
+              if [ "$STAGE_RESULT" -ne 0 ]; then
+                echo "##[error]trident-update@stage.service failed with exit code $STAGE_RESULT"
+                exit 1
+              fi
             workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: "🔄 Run update stage via systemd"
             timeoutInMinutes: 10
