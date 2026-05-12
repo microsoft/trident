@@ -177,16 +177,17 @@ stages:
 
           - bash: |
               set -eux
-              echo "=== Start netlisten to serve COSI files ==="
-              ./bin/netlisten --force-color \
-                -s artifacts/test-image \
-                -p 4000 > ./netlisten.log 2>&1 &
-              echo "netlisten PID: $!"
+              echo "=== Start HTTP file server for COSI files ==="
+              cd artifacts/test-image
+              python3 -m http.server 4000 > /tmp/fileserver.log 2>&1 &
+              echo "File server PID: $!"
               sleep 2
-              echo "=== Verifying netlisten is serving ==="
-              curl -s -o /dev/null -w "%{http_code}" http://localhost:4000/files/ || true
+              echo "=== Verifying file server is serving ==="
+              curl -sf http://localhost:4000/ | head -5
+              echo "=== Files available ==="
+              ls -lh
             workingDirectory: $(TRIDENT_SOURCE_DIR)
-            displayName: "🌐 Start netlisten file server"
+            displayName: "🌐 Start HTTP file server"
 
           - bash: |
               set -eux
@@ -200,7 +201,7 @@ stages:
               ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
                 "sudo tee /var/lib/trident/update-config.yaml <<EOF
               image:
-                url: http://${GATEWAY_IP}:4000/files/usrverity_v2.cosi
+                url: http://${GATEWAY_IP}:4000/usrverity_v2.cosi
                 sha384: ignored
               internalParams:
                 allowUnusedFilesystems: true
@@ -224,9 +225,6 @@ stages:
               echo "=== SELinux audit log ==="
               ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i "$SSH_KEY" testing-user@$HOST_IP \
                 'sudo ausearch -m avc --start recent 2>&1 || echo "No AVC denials found"' || true
-
-              echo "=== netlisten log ==="
-              cat $(TRIDENT_SOURCE_DIR)/netlisten.log || true
 
               if [ "$STAGE_RESULT" -ne 0 ]; then
                 echo "##[error]trident-update@stage.service failed with exit code $STAGE_RESULT"
