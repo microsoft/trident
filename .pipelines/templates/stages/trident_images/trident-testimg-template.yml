@@ -302,8 +302,18 @@ steps:
       if [ -d "build/${{ parameters.target }}" ]; then
         sudo mv -v build/${{ parameters.target }}/* "${{ parameters.outputDirectory }}/"
       else
-        # Everything else is a file
-        sudo mv -v "${{ parameters.target }}" "${{ parameters.outputDirectory }}/"
+        # When clones are produced, the target is e.g. artifacts/foo.cosi but
+        # the generated files are artifacts/foo_0.cosi, artifacts/foo_1.cosi, etc.
+        # Use a glob on the base name to capture all clones.
+        target="${{ parameters.target }}"
+        base="${target%.*}"
+        ext="${target##*.}"
+        clones=( ${base}_*.${ext} )
+        if [ -e "${clones[0]}" ]; then
+          sudo mv -v "${base}"_*.${ext} "${{ parameters.outputDirectory }}/"
+        else
+          sudo mv -v "${{ parameters.target }}" "${{ parameters.outputDirectory }}/"
+        fi
       fi
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Copy artifacts to output directory"
