@@ -1,1 +1,0 @@
-trident offline-initialize
