@@ -183,16 +183,22 @@ stages:
                 "ip route | grep default | awk '{print \$3}'")
 
               echo "=== Start netlisten to serve COSI files ==="
+              ls -lh artifacts/test-image/
               ./bin/netlisten --force-color \
                 -s artifacts/test-image \
                 -p 4000 \
                 --full-logstream ./netlisten-logstream.log \
-                -m ./netlisten-metrics.jsonl > ./netlisten.log 2>&1 &
+                -m ./netlisten-metrics.jsonl &
               NETLISTEN_PID=$!
               echo "netlisten PID: $NETLISTEN_PID"
 
               # Wait for netlisten to start listening
               for i in $(seq 1 10); do
+                if ! kill -0 $NETLISTEN_PID 2>/dev/null; then
+                  echo "##[error]netlisten (PID $NETLISTEN_PID) exited prematurely"
+                  wait $NETLISTEN_PID || true
+                  break
+                fi
                 if curl -sf http://localhost:4000/files/ > /dev/null 2>&1; then
                   echo "netlisten is serving on port 4000"
                   break
@@ -250,7 +256,7 @@ stages:
                 -s artifacts/test-image \
                 -p 4000 \
                 --full-logstream ./netlisten-finalize-logstream.log \
-                -m ./netlisten-finalize-metrics.jsonl > ./netlisten-finalize.log 2>&1 &
+                -m ./netlisten-finalize-metrics.jsonl &
               for i in $(seq 1 10); do
                 if curl -sf http://localhost:4000/files/ > /dev/null 2>&1; then break; fi
                 sleep 2
