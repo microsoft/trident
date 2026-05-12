@@ -116,6 +116,8 @@ stages:
             workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: "Rename COSIs for usr-verity config"
 
+          - template: ../testing_vm/netlaunch-prep.yml
+
           - bash: |
               set -eux
 
