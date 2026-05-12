@@ -179,6 +179,21 @@ stages:
               set -eux
               HOST_IP=$(jq -r '.virtualmachines[0].ip' $(TRIDENT_SOURCE_DIR)/tools/virt-deploy-metadata.json)
               SSH_KEY="$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/helpers/key"
+              # The VM's gateway is the host running netlaunch on port 4000
+              GATEWAY_IP=$(ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
+                "ip route | grep default | awk '{print \$3}'")
+
+              echo "=== Write update config on VM ==="
+              ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
+                "sudo tee /var/lib/trident/update-config.yaml <<EOF
+              image:
+                url: http://${GATEWAY_IP}:4000/files/usrverity_v2.cosi
+                sha384: ignored
+              internalParams:
+                allowUnusedFilesystems: true
+                uki: true
+                disableGrubNoprefixCheck: true
+              EOF"
 
               echo "=== Write update environment file ==="
               ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
@@ -194,8 +209,8 @@ stages:
                 'sudo journalctl -u trident-update@stage.service --no-pager' || true
 
               echo "=== SELinux audit log ==="
-              ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
-                'sudo ausearch -m avc --start recent 2>&1' || true
+              ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i "$SSH_KEY" testing-user@$HOST_IP \
+                'sudo ausearch -m avc --start recent 2>&1 || echo "No AVC denials found"' || true
 
               if [ "$STAGE_RESULT" -ne 0 ]; then
                 echo "##[error]trident-update@stage.service failed with exit code $STAGE_RESULT"
