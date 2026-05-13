@@ -1,0 +1,46 @@
+policy_module(trident-encryption, 1.0.0)
+
+########################################
+#
+# Encryption & PCRlock SELinux policy for Trident
+#
+# This module provides additional permissions needed for encrypted volume
+# support (cryptsetup/LUKS) and TPM-based PCR locking. It layers on top
+# of the base trident policy module (trident.pp) and should only be
+# installed on systems that use encryption or pcrlock features.
+#
+
+require {
+    type trident_t;
+    type lvm_t;
+    type initrc_t;
+    type init_t;
+    type tpm_device_t;
+    type tmp_t;
+    type systemd_pcrphase_t;
+    type systemd_pcrphase_exec_t;
+    type tmpfs_t;
+}
+
+#============= trident_t ==============
+# Execute systemd-pcrphase for PCR lock measurements
+allow trident_t systemd_pcrphase_exec_t:file { execute execute_no_trans getattr map open read };
+
+# TPM device access for encryption key operations
+dev_rw_tpm(trident_t)
+
+#============= lvm_t ==============
+# Necessary for Trident to create encrypted volumes
+allow lvm_t trident_t:sem { associate read unix_read unix_write write };
+allow lvm_t initrc_t:sem { associate read unix_read unix_write write };
+
+# Necessary for cryptsetup luksOpen to succeed
+allow lvm_t init_t:key search;
+allow lvm_t tpm_device_t:chr_file write;
+
+# Necessary for veritysetup to be able to read a key file in /tmp
+allow lvm_t tmp_t:file { getattr ioctl open read };
+
+#============= systemd_pcrphase_t ==============
+allow systemd_pcrphase_t tmpfs_t:dir { getattr open read search };
+allow systemd_pcrphase_t tmpfs_t:file { getattr lock open setattr write };

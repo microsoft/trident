@@ -148,8 +148,6 @@ require {
         type systemd_networkd_runtime_t;
         type systemd_notify_exec_t;
         type systemd_passwd_agent_exec_t;
-        type systemd_pcrphase_t;
-        type systemd_pcrphase_exec_t;
         type systemd_pstore_exec_t;
         type systemd_resolved_exec_t;
         type systemd_rfkill_exec_t;
@@ -489,7 +487,8 @@ allow trident_t systemd_networkd_runtime_t:dir { add_name getattr open read remo
 allow trident_t systemd_networkd_runtime_t:file { create getattr open read rename setattr unlink write };
 allow trident_t systemd_notify_exec_t:file getattr;
 allow trident_t systemd_passwd_agent_exec_t:file { execute getattr map open read relabelto setattr unlink write };
-allow trident_t systemd_pcrphase_exec_t:file { execute execute_no_trans getattr map open read };
+# NOTE: systemd_pcrphase_exec_t permissions have been moved to the
+# trident-encryption SELinux module (packaging/selinux-policy-trident-encryption/).
 allow trident_t pstore_t:dir search;
 allow trident_t systemd_pstore_exec_t:file { execute getattr };
 allow trident_t systemd_resolved_exec_t:file { execute getattr };
@@ -835,7 +834,7 @@ dev_read_urand(trident_t)
 dev_relabelfrom_generic_chr_files(trident_t)
 dev_relabelfrom_vfio_dev(trident_t)
 dev_rw_nvram(trident_t)
-dev_rw_tpm(trident_t)
+# NOTE: dev_rw_tpm moved to trident-encryption SELinux module.
 dev_rw_vhost(trident_t)
 dev_search_sysfs(trident_t)
 dev_write_sysfs(trident_t)
@@ -970,23 +969,16 @@ optional_policy(`
 ')
 
 #============= lvm_t ==============
-# This is necessary for Trident to create encrypted volumes
-allow lvm_t trident_t:sem { associate read unix_read unix_write write };
-allow lvm_t initrc_t:sem { associate read unix_read unix_write write };
-
-# These permissions are necessary for cryptsetup luksOpen to succeed.
-allow lvm_t init_t:key search; # Allows LVM to write to search the kernel keyring.
-allow lvm_t tpm_device_t:chr_file write; # Allows LVM to write to the TPM device.
-
-# This is necessary for veritysetup to be able to read a key file in /tmp.
-allow lvm_t tmp_t:file { getattr ioctl open read };
+# NOTE: Encryption-related lvm_t permissions (sem, key, tpm, tmp) have been
+# moved to the trident-encryption SELinux module
+# (packaging/selinux-policy-trident-encryption/).
 
 #============= mount_t =============
 allow mount_t trident_var_lib_t:dir mounton;
 
 #============= systemd_pcrphase_t ==============
-allow systemd_pcrphase_t tmpfs_t:dir { getattr open read search };
-allow systemd_pcrphase_t tmpfs_t:file { getattr lock open setattr write };
+# NOTE: systemd_pcrphase_t permissions have been moved to the
+# trident-encryption SELinux module (packaging/selinux-policy-trident-encryption/).
 
 #============= rpm_t ==============
 optional_policy(`

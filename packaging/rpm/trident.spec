@@ -235,6 +235,41 @@ fi
 
 # ------------------------------------------------------------------------------
 
+%package selinux-encryption
+Summary:             Trident encryption & PCRlock SELinux policy
+BuildArch:           noarch
+Requires:            %{name}-selinux
+Requires:            selinux-policy-%{selinuxtype}
+Requires(post):      selinux-policy-%{selinuxtype}
+BuildRequires:       selinux-policy-devel
+%{?selinux_requires}
+
+%description selinux-encryption
+Encryption and PCRlock SELinux policy module for Trident. Provides TPM,
+cryptsetup/LUKS, and systemd-pcrphase permissions. Only install on
+systems that use encryption or pcrlock features.
+
+%files selinux-encryption
+%{_datadir}/selinux/packages/%{selinuxtype}/%{name}-encryption.pp.bz2
+%{_datadir}/selinux/devel/include/distributed/%{name}-encryption.if
+%ghost %verify(not md5 size mode mtime) %{_sharedstatedir}/selinux/%{selinuxtype}/active/modules/200/%{name}-encryption
+
+%pre selinux-encryption
+%selinux_relabel_pre -s %{selinuxtype}
+
+%post selinux-encryption
+%selinux_modules_install -s %{selinuxtype} %{_datadir}/selinux/packages/%{selinuxtype}/%{name}-encryption.pp.bz2
+
+%postun selinux-encryption
+if [ $1 -eq 0 ]; then
+    %selinux_modules_uninstall -s %{selinuxtype} %{name}-encryption
+fi
+
+%posttrans selinux-encryption
+%selinux_relabel_post -s %{selinuxtype}
+
+# ------------------------------------------------------------------------------
+
 %package static-pcrlock-files
 Summary:        Statically defined .pcrlock files
 Requires:       %{name}
@@ -296,6 +331,15 @@ cp -p packaging/selinux-policy-trident-raid/trident-raid.te selinux/
 make -f %{_datadir}/selinux/devel/Makefile %{name}-raid.pp
 bzip2 -9 %{name}-raid.pp
 
+# Build encryption SELinux policy module
+rm -f selinux/*
+cp -p packaging/selinux-policy-trident-encryption/trident-encryption.fc selinux/
+cp -p packaging/selinux-policy-trident-encryption/trident-encryption.if selinux/
+cp -p packaging/selinux-policy-trident-encryption/trident-encryption.te selinux/
+
+make -f %{_datadir}/selinux/devel/Makefile %{name}-encryption.pp
+bzip2 -9 %{name}-encryption.pp
+
 %check
 # Test the trident variable for the appropriate version
 %if %{undefined rpm_ver}
@@ -329,6 +373,10 @@ install -D -p -m 0644 packaging/selinux-policy-trident/%{name}.if %{buildroot}%{
 # Copy Trident RAID SELinux policy module
 install -D -m 0644 %{name}-raid.pp.bz2 %{buildroot}%{_datadir}/selinux/packages/%{selinuxtype}/%{name}-raid.pp.bz2
 install -D -p -m 0644 packaging/selinux-policy-trident-raid/%{name}-raid.if %{buildroot}%{_datadir}/selinux/devel/include/distributed/%{name}-raid.if
+
+# Copy Trident encryption SELinux policy module
+install -D -m 0644 %{name}-encryption.pp.bz2 %{buildroot}%{_datadir}/selinux/packages/%{selinuxtype}/%{name}-encryption.pp.bz2
+install -D -p -m 0644 packaging/selinux-policy-trident-encryption/%{name}-encryption.if %{buildroot}%{_datadir}/selinux/devel/include/distributed/%{name}-encryption.if
 
 mkdir -p %{buildroot}%{_unitdir}
 install -D -m 644 packaging/systemd/%{name}.service %{buildroot}%{_unitdir}/%{name}.service
