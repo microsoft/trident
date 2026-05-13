@@ -296,6 +296,18 @@ stages:
               sudo ./bin/storm-trident helper wait-for-login -a \
                   --vm-name "$(jq -r '.virtualmachines[0].name' $(TRIDENT_SOURCE_DIR)/tools/virt-deploy-metadata.json)" \
                   --artifacts-folder "$(ob_outputDirectory)"
+
+              echo "=== Wait for VM network to come up ==="
+              VM_IP=$(sudo virsh domifaddr $VM_NAME 2>/dev/null | grep -oP '\d+\.\d+\.\d+\.\d+' | head -1)
+              echo "VM IP: $VM_IP"
+              for i in $(seq 1 30); do
+                if ping -c 1 -W 2 $VM_IP > /dev/null 2>&1; then
+                  echo "VM responding to ping (attempt $i)"
+                  break
+                fi
+                echo "Waiting for VM network (attempt $i/30)..."
+                sleep 3
+              done
             workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: "🔄 Run update finalize via systemd"
             timeoutInMinutes: 10
