@@ -213,8 +213,8 @@ type_transition trident_t fsadm_exec_t:process fsadm_t;
 # dac_override and dac_read_search - allow access files and directories without necessary DAC permissions
 # sys_ptrace - allow trident_t to trace or debug other processes
 # sys_rawio - allow trident_t to perform I/O operations directly on hardware devices
+# Core runtime permissions for provisioning, storage orchestration, network reconfiguration, and host updates.
 allow trident_t self:capability { dac_override dac_read_search sys_ptrace sys_rawio };
-
 allow trident_t self:alg_socket { accept bind create read write };
 allow trident_t self:capability { audit_write chown mknod net_admin sys_chroot sys_resource sys_admin fowner fsetid sys_boot ipc_lock sys_nice linux_immutable sys_module setgid setuid };
 allow trident_t self:fifo_file manage_fifo_file_perms;
@@ -239,6 +239,7 @@ allow trident_t trident_var_lib_t:file { getattr setattr create open read write 
 # Allow Trident to relabel its executable
 allow trident_t trident_exec_t:file relabelto;
 
+# Inspect service metadata and package state Trident encounters while reconciling a host image.
 allow trident_t audit_spool_t:dir { getattr open read relabelto };
 allow trident_t auditctl_exec_t:file getattr;
 allow trident_t auditd_exec_t:file getattr;
@@ -278,6 +279,7 @@ allow trident_t crack_db_t:dir { getattr open search read };
 allow trident_t crack_db_t:file getattr;
 allow trident_t crack_db_t:lnk_file getattr;
 allow trident_t crack_exec_t:file getattr;
+# Traverse mixed filesystem labels and home roots while relabeling provisioned files.
 allow trident_t cron_spool_t:dir { read relabelto };
 allow trident_t crond_unit_t:file { getattr read open ioctl };
 allow trident_t dbusd_unit_t:file getattr;
@@ -318,6 +320,7 @@ optional_policy(`
 allow trident_t groupadd_exec_t:file getattr;
 allow trident_t home_root_t:dir { mounton read relabelto add_name create relabelfrom setattr write };
 allow trident_t home_root_t:file { create getattr ioctl open relabelfrom setattr read write };
+# Reach init, kernel, storage, and proxy helpers while applying OS updates and customizations.
 allow trident_t http_cache_port_t:tcp_socket name_connect; # Allow Trident to initiate connection to HTTP proxy port
 allow trident_t http_port_t:tcp_socket name_connect;
 allow trident_t init_exec_t:file { execute getattr map open read relabelto setattr unlink write };
@@ -394,6 +397,7 @@ optional_policy(`
     }
     allow trident_t oddjob_mkhomedir_exec_t:file getattr;
 ')
+# Update procfs state, accounts, and SSH assets during provisioning and repair flows.
 allow trident_t power_unit_t:file { getattr open read relabelto setattr unlink };
 allow trident_t proc_t:dir read;
 allow trident_t proc_t:file { getattr open read ioctl };
@@ -440,6 +444,7 @@ allow trident_t sshd_key_t:file { getattr manage_file_perms }; # Allow Trident t
 allow trident_t sshd_keygen_unit_t:file getattr;
 allow trident_t sshd_unit_t:file getattr;
 allow trident_t sulogin_exec_t:file { execute getattr map open read relabelto setattr unlink write };
+# Run sysctl and systemd helpers while regenerating host configuration after an update.
 allow trident_t sysctl_fs_t:dir search;
 allow trident_t sysctl_fs_t:file { getattr ioctl open read };
 allow trident_t sysctl_kernel_t:dir search;
@@ -498,6 +503,7 @@ allow trident_t systemd_stdio_bridge_exec_t:file getattr;
 allow trident_t systemd_sysctl_exec_t:file { execute getattr map open read relabelto setattr unlink write };
 allow trident_t systemd_sysusers_exec_t:file { execute getattr map open read relabelto setattr unlink write };
 allow trident_t systemd_tmpfiles_exec_t:file { execute getattr map open read relabelto setattr unlink write };
+# Manage transient, unlabeled, and /usr-/var-backed content Trident creates during upgrades.
 allow trident_t systemd_unit_t:dir { read add_name create write reparent rename setattr relabelfrom };
 allow trident_t systemd_unit_t:file { getattr ioctl link open read relabelto relabelfrom rename setattr unlink write create };
 allow trident_t systemd_unit_t:lnk_file { getattr read create relabelfrom };
@@ -550,7 +556,7 @@ allow trident_t var_run_t:sock_file write;
 allow trident_t var_spool_t:dir relabelto;
 allow trident_t wtmp_t:file relabelto;
 
-# Optional policies for modifying cloud-init settings
+# Inspect and update cloud-init state during first-boot provisioning.
 optional_policy(`
     require {
         type cloud_init_exec_t;
@@ -599,6 +605,7 @@ optional_policy(`
 ###########################################
 # Authentication and User Management
 ###########################################
+# Manage users, passwords, and home directories during OS provisioning.
 auth_create_faillog_files(trident_t)
 auth_exec_pam(trident_t)
 auth_login_entry_type(trident_t)
@@ -625,6 +632,7 @@ userdom_relabelto_user_home_dirs(trident_t)
 ###########################################
 # System Services and Daemons
 ###########################################
+# Start helpers and inspect daemon state while Trident configures host services.
 # NOTE: bootloader_exec moved to trident-grub SELinux module.
 optional_policy(`
     require {
@@ -683,6 +691,7 @@ optional_policy(`
 ###########################################
 # File System Operations
 ###########################################
+# Read, mount, and relabel filesystems while staging A/B updates and extensions.
 # NOTE: files_create_boot_dirs and files_manage_boot_files moved to trident-grub SELinux module.
 files_list_kernel_modules(trident_t)
 files_list_spool(trident_t)
@@ -731,6 +740,7 @@ mount_list_runtime(trident_t)
 ###########################################
 # Network Management
 ###########################################
+# Reconfigure host networking, DHCP data, and firewall rules during provisioning.
 iptables_exec(trident_t)
 iptables_read_config(trident_t)
 iptables_status(trident_t)
@@ -743,6 +753,7 @@ sysnet_write_config(trident_t)
 ###########################################
 # Storage Management
 ###########################################
+# Manage loop, LVM, and filesystem helpers while laying down root and extension volumes.
 dev_rw_loop_control(trident_t)
 dev_rw_lvm_control(trident_t)
 lvm_exec(trident_t)
@@ -759,6 +770,7 @@ storage_raw_write_fixed_disk(trident_t)
 ###########################################
 # SELinux Management
 ###########################################
+# Relabel updated filesystem content and reload policy after provisioning or upgrade steps.
 corecmd_relabel_bin_files(trident_t)
 files_relabel_etc_files(trident_t)
 files_relabel_kernel_modules(trident_t)
@@ -788,6 +800,7 @@ udev_relabel_rules_files(trident_t)
 ###########################################
 # Package Management
 ###########################################
+# Read and update RPM metadata while installing or validating host packages.
 optional_policy(`
     require {
         type rpm_exec_t;
@@ -806,6 +819,7 @@ optional_policy(`
 ###########################################
 # Device Management
 ###########################################
+# Discover hardware and adjust device state as Trident prepares storage and boot media.
 corenet_getattr_ppp_dev(trident_t)
 corenet_read_tun_tap_dev(trident_t)
 dev_getattr_acpi_bios_dev(trident_t)
@@ -847,6 +861,7 @@ udev_read_state(trident_t)
 ###########################################
 # System Command Execution
 ###########################################
+# Execute core host utilities in place during provisioning and customization workflows.
 optional_policy(`
     require {
         type sudo_exec_t;
@@ -886,6 +901,7 @@ optional_policy(`
 ###########################################
 # Logging and Monitoring
 ###########################################
+# Read existing logs and emit diagnostics for servicing operations.
 logging_read_audit_config(trident_t)
 logging_read_audit_log(trident_t)
 logging_relabelto_devlog_sock_files(trident_t)
@@ -897,6 +913,7 @@ logging_manage_generic_logs(trident_t)
 ###########################################
 # Miscellaneous
 ###########################################
+# Read optional platform assets that may appear on different image variants.
 optional_policy(`
     miscfiles_read_generic_tls_privkey(trident_t)
 ')
@@ -927,6 +944,7 @@ optional_policy(`
 # SELinux module (packaging/selinux-policy-trident-raid/).
 
 #============= cloud_init_t ==============
+# Let cloud-init finish first-boot setup on files Trident creates under /usr and unlabeled paths.
 optional_policy(`
     require {
         type cloud_init_t;
@@ -940,6 +958,7 @@ optional_policy(`
 ')
 
 #============= fsadm_t ==============
+# Allow mkfs/fsadm helpers spawned by Trident to manage EFI variables and loop-backed extension images.
 role unconfined_r types fsadm_t;
 
 # Get the attributes of efivarfs filesystems
@@ -966,6 +985,7 @@ fs_manage_tmpfs_files(fsadm_t)
 # (packaging/selinux-policy-trident-encryption/).
 
 #============= mount_t =============
+# Let the mount helper mount Trident-managed images and volumes.
 allow mount_t trident_var_lib_t:dir mounton;
 
 #============= systemd_pcrphase_t ==============
@@ -1000,14 +1020,17 @@ libs_manage_lib_dirs(semanage_t)
 libs_manage_lib_files(semanage_t)
 
 #============= setfiles_t ==============
+# Let setfiles relabel special files Trident lays down during updates.
 allow setfiles_t proc_t:filesystem getattr;
 allow setfiles_t unlabeled_t:file { map open read };
 allow setfiles_t container_var_lib_t:blk_file relabelto;
 
 #============= systemd_generator_t ==============
+# Let systemd generators read home-root state after Trident provisions users and units.
 allow systemd_generator_t home_root_t:dir read;
 
 #============= udev_t ==============
+# Allow udev helpers triggered by Trident storage changes to inspect provisioning state and extension images.
 optional_policy(`
     require {
         type cloud_init_t;
@@ -1024,6 +1047,7 @@ allow udev_t trident_var_lib_t:file getattr;
 files_read_generic_tmp_files(udev_t)
 
 #============= udevadm_t ==============
+# Allow udevadm runs initiated by Trident to rescan devices and rebuild runtime metadata.
 optional_policy(`
     require {
         type cgroup_t;
@@ -1062,4 +1086,5 @@ optional_policy(`
 dev_search_sysfs(udevadm_t)
 
 #============= unlabeled_t ==============
+# Associate tmpfs-backed content with unlabeled_t while Trident is relabeling fresh filesystems.
 fs_associate_tmpfs(unlabeled_t)
