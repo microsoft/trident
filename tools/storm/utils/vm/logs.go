@@ -1,6 +1,8 @@
 package vm
 
 import (
+	"os"
+	"path/filepath"
 	stormssh "tridenttools/storm/utils/ssh"
 	stormvmconfig "tridenttools/storm/utils/vm/config"
 
@@ -20,6 +22,38 @@ func FetchLogs(vmConfig stormvmconfig.AllVMConfig, outputPath string) error {
 		logrus.Tracef("Downloading journal log from VM '%s' to local machine", vmConfig.VMConfig.Name)
 		stormssh.ScpDownloadFile(vmConfig.VMConfig, vmIP, "/tmp/journal.log", outputPath+"/journal.log")
 	}
+
+	// Best effort: capture block device UUIDs for initramfs debugging
+	logrus.Tracef("Capturing blkid output for initramfs diagnostics")
+	if blkidOut, blkidErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo blkid"); blkidErr == nil {
+		logrus.Tracef("blkid output: %s", blkidOut)
+		if err := os.WriteFile(filepath.Join(outputPath, "blkid.log"), []byte(blkidOut), 0644); err != nil {
+			logrus.Warnf("Failed to write blkid.log: %v", err)
+		}
+	} else {
+		logrus.Warnf("Failed to capture blkid output: %v", blkidErr)
+	}
+
+	// Best effort: capture initramfs contents to detect stale UUID references
+	logrus.Tracef("Capturing lsinitrd output for initramfs diagnostics")
+	if lsinitrdOut, lsinitrdErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo lsinitrd"); lsinitrdErr == nil {
+		if err := os.WriteFile(filepath.Join(outputPath, "lsinitrd.log"), []byte(lsinitrdOut), 0644); err != nil {
+			logrus.Warnf("Failed to write lsinitrd.log: %v", err)
+		}
+	} else {
+		logrus.Warnf("Failed to capture lsinitrd output: %v", lsinitrdErr)
+	}
+
+	// Best effort: capture dracut-related journal entries for initramfs boot analysis
+	logrus.Tracef("Capturing dracut journal entries")
+	if dracutOut, dracutErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo journalctl --no-pager -u 'dracut*' -u systemd-udevd 2>/dev/null"); dracutErr == nil {
+		if err := os.WriteFile(filepath.Join(outputPath, "dracut-journal.log"), []byte(dracutOut), 0644); err != nil {
+			logrus.Warnf("Failed to write dracut-journal.log: %v", err)
+		}
+	} else {
+		logrus.Warnf("Failed to capture dracut journal: %v", dracutErr)
+	}
+
 	// Download crashdumps (simplified)
 	logrus.Tracef("Check for crash dumps on VM")
 	crashDumpOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "ls /var/crash/*")

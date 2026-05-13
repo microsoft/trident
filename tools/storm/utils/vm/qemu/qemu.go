@@ -425,7 +425,7 @@ func (cfg QemuConfig) WaitForLogin(vmName string, outputPath string, verbose boo
 		// VM has no DHCP lease, or has a stale lease but SSH is unreachable —
 		// it's genuinely stuck (failed to boot after reboot).
 		logrus.Errorf("Failed to reach login prompt for the VM for iteration %d: %v", iteration, waitErr)
-		if err := analyzeSerialLog(cfg.SerialLog); err != nil {
+		if err := analyzeSerialLog(localSerialLog); err != nil {
 			return err
 		}
 
@@ -447,12 +447,58 @@ func (cfg QemuConfig) WaitForLogin(vmName string, outputPath string, verbose boo
 }
 
 func analyzeSerialLog(serial string) error {
-	// Read the last line of the serial log
 	lastLines, err := exec.Command("tail", "-n", "100", serial).Output()
-	// Watch for specific failures and create error messages accordingly
-	if err == nil && strings.Contains(string(lastLines), "tpm tpm0: Operation Timed out") {
+	if err != nil {
+		logrus.Warnf("Failed to read serial log tail: %v", err)
+		return nil
+	}
+	serialTail := string(lastLines)
+
+	// Always print the serial log tail on failure to aid diagnosis.
+	// Without this output, boot failures are nearly impossible to root-cause
+	// because the serial log is only available inside large pipeline artifacts.
+	logrus.Infof("Serial log tail (last 100 lines):\n%s", serialTail)
+
+	// Check for known boot failure patterns and return a specific error
+	// if one is found, so the failure category is clear in pipeline results.
+	// Ordered most-severe/specific first so that e.g. a kernel panic after
+	// dracut starts isn't misclassified as a stale-UUID issue.
+
+	// Kernel panic — the kernel itself crashed during boot.
+	if strings.Contains(serialTail, "Kernel panic") ||
+		strings.Contains(serialTail, "end Kernel panic") {
+		return fmt.Errorf("kernel panic during boot (see serial log above)")
+	}
+
+	if strings.Contains(serialTail, "tpm tpm0: Operation Timed out") {
 		return fmt.Errorf("tpm tpm0: Operation Timed out")
 	}
+
+	// GRUB error — bootloader could not find the kernel or boot entry.
+	if strings.Contains(serialTail, "error: no such device") ||
+		strings.Contains(serialTail, "error: file not found") ||
+		strings.Contains(serialTail, "error: file '/") {
+		return fmt.Errorf("GRUB boot error (see serial log above)")
+	}
+
+	// Dracut/initramfs emergency shell — VM booted but initramfs could not
+	// mount the root filesystem or a required module was missing.
+	// See ADO#10589 for an example caused by dracut temp-dir name collision.
+	if strings.Contains(serialTail, "Entering emergency mode") ||
+		strings.Contains(serialTail, "dracut-emergency") ||
+		strings.Contains(serialTail, "Cannot open shared object file") {
+		return fmt.Errorf("VM stuck in initramfs emergency shell (see serial log above)")
+	}
+
+	// Dracut-initqueue timeout — initramfs is waiting for a device that doesn't
+	// exist, typically caused by stale disk UUIDs embedded in initramfs (bug 15086).
+	// Patterns are specific to failure messages, not the normal unit name.
+	if strings.Contains(serialTail, "dracut-initqueue[") && strings.Contains(serialTail, "Warning") ||
+		strings.Contains(serialTail, "Timed out waiting for device") ||
+		strings.Contains(serialTail, "Could not boot") {
+		return fmt.Errorf("VM stuck in initramfs waiting for device — likely stale UUID in initramfs (bug 15086, see serial log above)")
+	}
+
 	return nil
 }
 

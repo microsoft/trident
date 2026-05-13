@@ -285,6 +285,19 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 			logrus.Tracef("Pre-reboot uptime --since for iteration %d: %s", i, preRebootUptime)
 		}
 
+		// Capture block device state before finalize/reboot for initramfs diagnostics.
+		// If dracut embedded stale UUIDs, comparing pre-reboot blkid with post-reboot
+		// lsinitrd can prove the mismatch.
+		if testConfig.OutputPath != "" {
+			padIteration := fmt.Sprintf("%03d", i)
+			if blkidOut, blkidErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo blkid"); blkidErr == nil {
+				blkidPath := filepath.Join(testConfig.OutputPath, padIteration+"-pre-reboot-blkid.log")
+				if writeErr := os.WriteFile(blkidPath, []byte(blkidOut), 0644); writeErr != nil {
+					logrus.Warnf("Failed to write pre-reboot blkid log: %v", writeErr)
+				}
+			}
+		}
+
 		combinedFinalizeOutput, finalizeErr := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, fmt.Sprintf("sudo trident grpc-client update %s %s --allowed-operations finalize", tridentLoggingArg, updateConfig))
 		if testConfig.Verbose {
 			logrus.Tracef("Finalize output for iteration %d:\n%s\n%v", i, combinedFinalizeOutput, finalizeErr)
@@ -341,6 +354,13 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 						fmt.Sprintf("%03d-vm-failure-after-update.png", i),
 					); captureErr != nil {
 						logrus.Warnf("failed to capture screenshot: %v", captureErr)
+					}
+					// Check serial log for dracut-initqueue timeout patterns that indicate
+					// stale disk UUIDs in initramfs (see bug 15086).
+					// Use the saved copy since WaitForLogin truncates the original.
+					if testConfig.OutputPath != "" {
+						savedSerialLog := filepath.Join(testConfig.OutputPath, fmt.Sprintf("%03d-serial.log", i))
+						checkSerialLogForDracutIssues(savedSerialLog, i)
 					}
 					return fmt.Errorf("VM did not come back up after update for iteration %d: %w", i, err)
 				}
@@ -523,4 +543,37 @@ func validateRollback(cfg stormvmconfig.VMConfig, vmIP string) error {
 
 	logrus.Info("Rollback validation succeeded")
 	return nil
+}
+
+// checkSerialLogForDracutIssues scans the serial log for patterns that indicate
+// initramfs is stuck waiting for a device, which is the symptom of bug 15086
+// (stale disk UUIDs embedded in initramfs by dracut).
+func checkSerialLogForDracutIssues(serialLogPath string, iteration int) {
+	if serialLogPath == "" {
+		return
+	}
+	data, err := os.ReadFile(serialLogPath)
+	if err != nil {
+		logrus.Warnf("Could not read serial log for dracut analysis: %v", err)
+		return
+	}
+	content := string(data)
+
+	dracutPatterns := []struct {
+		pattern string
+		message string
+	}{
+		{"dracut-initqueue[", "dracut-initqueue warning detected — initramfs may be waiting for a device"},
+		{"Could not boot", "dracut 'Could not boot' error detected"},
+		{"Starting dracut emergency shell", "dracut emergency shell activated — boot failed in initramfs"},
+		{"Warning: /dev/disk/by", "dracut warning about /dev/disk/by-* path — possible stale UUID reference"},
+		{"rd.break", "rd.break detected — initramfs dropped to debug shell"},
+		{"Timed out waiting for device", "dracut timed out waiting for device — likely stale UUID in initramfs (bug 15086)"},
+	}
+
+	for _, dp := range dracutPatterns {
+		if strings.Contains(content, dp.pattern) {
+			logrus.Errorf("INITRAMFS DIAGNOSTIC (iteration %d): %s (matched '%s' in serial log)", iteration, dp.message, dp.pattern)
+		}
+	}
 }

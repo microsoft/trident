@@ -1,11 +1,12 @@
 use std::{io::Write, os::unix::fs::PermissionsExt, path::Path};
 
 use anyhow::{Context, Error};
+use log::debug;
 use tempfile::NamedTempFile;
 
 use trident_api::error::{ReportError, ServicingError, TridentError};
 
-use crate::dependencies::Dependency;
+use crate::{dependencies::Dependency, udevadm};
 
 /// Verity workaround script
 ///
@@ -44,7 +45,22 @@ fi
 ///
 /// If mkinitrd is available, it will be used. Azl 3.0 doesn't have mkinitrd anymore, so dracut is
 /// used instead.
+///
+/// A udev rescan is performed before regenerating. The primary rescan happens
+/// earlier in storage::initialize_block_devices(), but this ensures dracut sees clean state even
+/// if that earlier rescan was skipped or failed.
 pub fn execute(debug: bool) -> Result<(), TridentError> {
+    // Ensure the kernel's device table is current before dracut scans it.
+    // The primary udev rescan runs after block device setup (storage/mod.rs), but we repeat
+    // it here in case mkinitrd is called from a different path or the earlier rescan failed.
+    debug!("Triggering udev rescan before initrd regeneration");
+    if let Err(e) = udevadm::trigger() {
+        debug!("udevadm trigger failed, continuing: {e}");
+    }
+    if let Err(e) = udevadm::settle() {
+        debug!("udevadm settle failed, continuing: {e}");
+    }
+
     if Path::new("/usr/bin/mkinitrd").exists() {
         Dependency::Mkinitrd
             .cmd()
