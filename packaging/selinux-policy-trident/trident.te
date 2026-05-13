@@ -562,7 +562,11 @@ optional_policy(`
     allow trident_t cloud_init_state_t:file getattr;
 ')
 
-# Policies below must be optional for Steamboat
+# Optional policies for types that may not exist on all images.
+# Trident encounters these files/dirs during OS provisioning and relabeling.
+# These types are defined by packages that may or may not be installed
+# (e.g., bluetooth, colord, dhcpd). The policies are optional so SELinux
+# ignores them when the referenced types don't exist on the target system.
 optional_policy(`
     require {
         type trident_t;
