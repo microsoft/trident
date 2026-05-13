@@ -251,9 +251,6 @@ def sign_boot_artifacts(
         if not artifact_type:
             artifact_type = get_artifact_type_from_name(unsigned_path.name)
 
-        signed_path.parent.mkdir(parents=True, exist_ok=True)
-        signed_path.parent.chmod(0o700)
-
         log.info(
             f"Signing file of type '{artifact_type}' at {unsigned_path} to {signed_path}"
         )
