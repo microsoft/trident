@@ -265,6 +265,9 @@ impl GrubConfig {
     pub fn update_search(&mut self, uuid: &Uuid) -> Result<(), Error> {
         let re = Regex::new(r"(?m)^(\s*)search -n -u [\w-]+ -s$").unwrap();
         let re2 = Regex::new(r"(?m)^(\s*)search --no-floppy --fs-uuid --set=root [\w-]+$").unwrap();
+        // AZL4 / Fedora-style stubs omit --no-floppy (EFI machines have no
+        // floppy drives, so the option is redundant). Accept both forms.
+        let re3 = Regex::new(r"(?m)^(\s*)search --fs-uuid --set=root [\w-]+$").unwrap();
 
         if re.is_match(&self.contents) {
             self.contents = re
@@ -275,6 +278,13 @@ impl GrubConfig {
                 .replace(
                     &self.contents,
                     &format!("${{1}}search --no-floppy --fs-uuid --set=root {uuid}"),
+                )
+                .to_string();
+        } else if re3.is_match(&self.contents) {
+            self.contents = re3
+                .replace(
+                    &self.contents,
+                    &format!("${{1}}search --fs-uuid --set=root {uuid}"),
                 )
                 .to_string();
         } else {
