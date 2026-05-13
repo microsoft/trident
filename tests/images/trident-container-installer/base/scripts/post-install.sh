@@ -9,7 +9,7 @@ if [ ! -d /etc/trident ]; then
 fi
 ln -s -T /trident_cdrom/trident-config.yaml /etc/trident/config.yaml
 
-if [ ! -d /etc/systemd/system/trident-install.service.d ]; then
-    mkdir /etc/systemd/system/trident-install.service.d
+if [ ! -d /etc/systemd/system/trident-container.service.d ]; then
+    mkdir /etc/systemd/system/trident-container.service.d
 fi
-ln -s -T /trident_cdrom/trident-override.conf /etc/systemd/system/trident-install.service.d/override.conf
+ln -s -T /trident_cdrom/trident-override.conf /etc/systemd/system/trident-container.service.d/override.conf

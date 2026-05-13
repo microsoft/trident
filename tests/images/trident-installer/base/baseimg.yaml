@@ -27,12 +27,9 @@ storage:
 os:
   bootloader:
     resetType: hard-reset
-  hostname: trident-direct-streaming-mos-testimage
+  hostname: trident-mos-testimage
 
   packages:
-    update:
-      - systemd
-
     install:
       - binutils
       - curl
@@ -45,33 +42,29 @@ os:
       - lsof
       - mdadm
       - netplan
-      # Support for mounting NTFS filesystems
+      # Optional dependencies for NTFS
       - ntfs-3g
-      # Support for creating NTFS filesystems
       - ntfsprogs
       - openssh-server
+      # Package required for systemd-pcrlock & PCR-based encryption; can be removed once AZL 4.0
+      # merges a fix to provide statically defined files inside the same package as the
+      # systemd-pcrlock binary, i.e. systemd-udev.
+      - trident-static-pcrlock-files
       - squashfs-tools
       - tar
       - tpm2-tools
-      - veritysetup
-      - vim
-      # Support for building SELinux module and debugging
-      - selinux-policy-devel
-      - setools-console
-      # Add trident and tridentd
       - trident
-      # Add trident selinux policy files
-      - trident-selinux
-      # Add trident-install.service
-      - trident-install-service
+      - vim
+      - veritysetup
+      - selinux-policy
+      - selinux-policy-devel
+      - audit
 
   services:
     enable:
       - sshd
-      - rcp-agent
-      - tridentd.socket
-    disable:
       - trident-install
+      - tridentd.socket
 
   additionalFiles:
     - source: files/getty@.service
@@ -80,32 +73,24 @@ os:
       destination: /usr/lib/systemd/system/serial-getty@.service
     - source: files/root.profile
       destination: /root/.profile
-
-    # Netlaunch RCP files
-    - source: ../../../../bin/rcp-agent
-      destination: /usr/bin/rcp-agent
-    - source: ../../../../tools/cmd/rcp-agent/rcp-agent.service
-      destination: /usr/lib/systemd/system/rcp-agent.service
+    - source: files/trident-install.service
+      destination: /usr/lib/systemd/system/trident-install.service
 
   selinux:
     mode: enforcing
 
 scripts:
   postCustomization:
-    - path: post-install-direct-streaming.sh
+    - path: post-install.sh
 
 iso:
   additionalFiles:
-    # Add pre-trident script to be run early by rcp-agent
-    - source: files/pre-trident-script.sh
-      destination: /pre-trident-script.sh
-    # Add overridable default config for rcp-agent
-    - source: files/rcp-agent.yaml
-      destination: /rcp-agent.yaml
-
+    - source: files/config-placeholder.yaml
+      destination: /trident-config.yaml
+    - source: files/override-placeholder.conf
+      destination: /trident-override.conf
   kernelCommandLine:
     extraCommandLine:
       - console=tty0
       - console=ttyS0
       - rd.luks=0
-      - selinux=1
