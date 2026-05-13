@@ -141,8 +141,8 @@ steps:
 
       # Move Trident RPMs to bin/RPMS/ (builder expects bin/RPMS/*.rpm)
       if [ -d "$(Build.ArtifactStagingDirectory)/trident" ]; then
-        mkdir -p bin/RPMS/x86_64
-        mv "$(Build.ArtifactStagingDirectory)/trident"/*.rpm bin/RPMS/x86_64/
+        mkdir -p bin/RPMS
+        find "$(Build.ArtifactStagingDirectory)/trident" -name '*.rpm' -exec mv {} bin/RPMS/ \;
         rm -rf "$(Build.ArtifactStagingDirectory)/trident"
       fi
     displayName: "Prepare and move requirements"

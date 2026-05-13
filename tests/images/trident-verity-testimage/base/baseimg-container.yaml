@@ -139,7 +139,6 @@ os:
     - etc-mount
     - sshd
     - trident-container
-    - sshd
 
 scripts:
   postCustomization:
