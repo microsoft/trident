@@ -231,7 +231,7 @@ stages:
 
               echo "=== Write update environment file ==="
               ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
-                "printf 'UPDATE_CONFIG=/var/lib/trident/update-config.yaml\nTRIDENT_VERBOSITY=DEBUG\n' | sudo tee /var/lib/trident/update-env"
+                "printf 'UPDATE_CONFIG=/var/lib/trident/update-config.yaml\n' | sudo tee /var/lib/trident/update-env"
 
               echo "=== Start trident-update@stage.service ==="
               STAGE_RESULT=0
