@@ -64,7 +64,9 @@ def _get_pesign_certificate_arg() -> str:
             ["pesign", "--help"], capture_output=True, text=True, check=False
         )
         help_output = f"{result.stdout}\n{result.stderr}"
-        _PESIGN_CERT_ARG = "--certficate" if "--certficate" in help_output else "--certificate"
+        _PESIGN_CERT_ARG = (
+            "--certficate" if "--certficate" in help_output else "--certificate"
+        )
         log.debug(f"Using pesign certificate argument: {_PESIGN_CERT_ARG}")
 
     return _PESIGN_CERT_ARG
@@ -431,9 +433,7 @@ def sign_verity_hash(
                 capture_output=True,
                 text=True,
             )
-            log.debug(
-                f"Certs for {unsigned_verity_hash_path}:\n{result.stdout}"
-            )
+            log.debug(f"Certs for {unsigned_verity_hash_path}:\n{result.stdout}")
         except subprocess.CalledProcessError as e:
             log.error(f"Failed to print certs for {unsigned_verity_hash_path}: {e}")
 
@@ -469,7 +469,8 @@ def sign_pe_artifact(
 
     with temp_dir(sudo=True) as tmpdir:
         tmp_signed_artifact = (
-            tmpdir / f"{unsigned_artifact_path.stem}.signed{unsigned_artifact_path.suffix}"
+            tmpdir
+            / f"{unsigned_artifact_path.stem}.signed{unsigned_artifact_path.suffix}"
         )
         tmp_unsigned_artifact = (
             tmpdir
