@@ -231,22 +231,51 @@ impl GrubConfig {
     }
 
     /// Update the search command in the GRUB config.
+    ///
+    /// Three variants of the GRUB stub `search` line exist in practice:
+    ///
+    /// 1. The upstream legacy form: `search -n -u <UUID> -s`
+    /// 2. AZL3 / standard form: `search --no-floppy --fs-uuid --set=root <UUID>`
+    /// 3. AZL4 MIC-generated form: `search --fs-uuid --set=root <UUID>`
+    ///    (the `--no-floppy` option is redundant on EFI machines, so AZL4's
+    ///    grub stub omits it.)
+    ///
+    /// We rewrite *every* matching line with the corresponding form so that
+    /// stubs containing more than one variant (rare but possible during
+    /// distribution transitions) all get the new UUID. We bail only if no
+    /// regex matched any line.
     pub fn update_search(&mut self, uuid: &Uuid) -> Result<(), Error> {
         let re = Regex::new(r"(?m)^(\s*)search -n -u [\w-]+ -s$").unwrap();
         let re2 = Regex::new(r"(?m)^(\s*)search --no-floppy --fs-uuid --set=root [\w-]+$").unwrap();
+        let re3 = Regex::new(r"(?m)^(\s*)search --fs-uuid --set=root [\w-]+$").unwrap();
 
+        let mut matched = false;
         if re.is_match(&self.contents) {
             self.contents = re
-                .replace(&self.contents, &format!("${{1}}search -n -u {uuid} -s"))
+                .replace_all(&self.contents, &format!("${{1}}search -n -u {uuid} -s"))
                 .to_string();
-        } else if re2.is_match(&self.contents) {
+            matched = true;
+        }
+        if re2.is_match(&self.contents) {
             self.contents = re2
-                .replace(
+                .replace_all(
                     &self.contents,
                     &format!("${{1}}search --no-floppy --fs-uuid --set=root {uuid}"),
                 )
                 .to_string();
-        } else {
+            matched = true;
+        }
+        if re3.is_match(&self.contents) {
+            self.contents = re3
+                .replace_all(
+                    &self.contents,
+                    &format!("${{1}}search --fs-uuid --set=root {uuid}"),
+                )
+                .to_string();
+            matched = true;
+        }
+
+        if !matched {
             bail!(
                 "Unable to find search command in '{}'",
                 &self.path.display()
@@ -951,6 +980,78 @@ mod tests {
         grub_config
             .update_search(&Uuid::parse_str("c380c8e5-88ec-4c3e-85bb-aa1e4d667dff").unwrap())
             .unwrap();
+    }
+
+    #[test]
+    fn test_update_search_azl3_form() {
+        // AZL3 stubs use `search --no-floppy --fs-uuid --set=root <UUID>`.
+        let mut grub_config = GrubConfig {
+            path: PathBuf::new(),
+            contents: indoc::indoc! { r#"
+                set timeout=0
+                search --no-floppy --fs-uuid --set=root deadbeef-cafe-babe-0000-111122223333
+            "# }
+            .to_owned(),
+            linux_command_line: None,
+        };
+
+        let new_uuid = Uuid::parse_str("9e6a9d2c-b7fe-4359-ac45-18b505e29d8c").unwrap();
+        grub_config.update_search(&new_uuid).unwrap();
+
+        assert!(grub_config.contents.contains(&format!(
+            "search --no-floppy --fs-uuid --set=root {new_uuid}"
+        )));
+        assert!(!grub_config.contents.contains("deadbeef"));
+    }
+
+    #[test]
+    fn test_update_search_azl4_form() {
+        // AZL4 MIC-generated stubs omit --no-floppy.
+        let mut grub_config = GrubConfig {
+            path: PathBuf::new(),
+            contents: indoc::indoc! { r#"
+                set timeout=0
+                search --fs-uuid --set=root deadbeef-cafe-babe-0000-111122223333
+            "# }
+            .to_owned(),
+            linux_command_line: None,
+        };
+
+        let new_uuid = Uuid::parse_str("9e6a9d2c-b7fe-4359-ac45-18b505e29d8c").unwrap();
+        grub_config.update_search(&new_uuid).unwrap();
+
+        assert!(grub_config
+            .contents
+            .contains(&format!("search --fs-uuid --set=root {new_uuid}")));
+        assert!(!grub_config.contents.contains("deadbeef"));
+        // Must not accidentally insert --no-floppy.
+        assert!(!grub_config.contents.contains("--no-floppy"));
+    }
+
+    #[test]
+    fn test_update_search_mixed_forms() {
+        // If both AZL3 and AZL4 forms appear (e.g. an image whose stub
+        // includes vendored fragments), both must be rewritten.
+        let mut grub_config = GrubConfig {
+            path: PathBuf::new(),
+            contents: indoc::indoc! { r#"
+                search --no-floppy --fs-uuid --set=root oldoldold-cafe-babe-0000-aaaabbbbcccc
+                search --fs-uuid --set=root oldoldold-cafe-babe-0000-aaaabbbbcccc
+            "# }
+            .to_owned(),
+            linux_command_line: None,
+        };
+
+        let new_uuid = Uuid::parse_str("9e6a9d2c-b7fe-4359-ac45-18b505e29d8c").unwrap();
+        grub_config.update_search(&new_uuid).unwrap();
+
+        assert!(!grub_config.contents.contains("oldoldold"));
+        assert!(grub_config.contents.contains(&format!(
+            "search --no-floppy --fs-uuid --set=root {new_uuid}"
+        )));
+        assert!(grub_config
+            .contents
+            .contains(&format!("search --fs-uuid --set=root {new_uuid}")));
     }
 
     #[test]
