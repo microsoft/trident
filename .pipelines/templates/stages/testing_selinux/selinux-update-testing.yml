@@ -217,17 +217,23 @@ stages:
                 exit 1
               fi
 
-              echo "=== Write update config on VM ==="
+              echo "=== Create update config from install config ==="
+              TRIDENT_CONFIG="$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/trident_configurations/usr-verity/trident-config.yaml"
+
+              # Start with the install config, replace the image URL for the update COSI
+              cp "$TRIDENT_CONFIG" /tmp/update-config.yaml
+              sudo yq -i ".image.url = \"http://${GATEWAY_IP}:4000/files/usrverity_v2.cosi\"" /tmp/update-config.yaml
+              sudo yq -i '.internalParams.allowUnusedFilesystems = true' /tmp/update-config.yaml
+              sudo yq -i '.internalParams.uki = true' /tmp/update-config.yaml
+              sudo yq -i '.internalParams.disableGrubNoprefixCheck = true' /tmp/update-config.yaml
+
+              echo "=== Update config ==="
+              cat /tmp/update-config.yaml
+
+              echo "=== Copy update config to VM ==="
+              scp -o StrictHostKeyChecking=no -i "$SSH_KEY" /tmp/update-config.yaml testing-user@$HOST_IP:/tmp/update-config.yaml
               ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
-                "sudo tee /var/lib/trident/update-config.yaml <<EOF
-              image:
-                url: http://${GATEWAY_IP}:4000/files/usrverity_v2.cosi
-                sha384: ignored
-              internalParams:
-                allowUnusedFilesystems: true
-                uki: true
-                disableGrubNoprefixCheck: true
-              EOF"
+                'sudo cp /tmp/update-config.yaml /var/lib/trident/update-config.yaml'
 
               echo "=== Write update environment file ==="
               ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" testing-user@$HOST_IP \
