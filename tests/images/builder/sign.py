@@ -6,7 +6,7 @@ import yaml
 import threading
 
 from pathlib import Path
-from typing import List
+from typing import Optional
 
 from builder.context_managers import temp_dir
 
@@ -207,7 +207,6 @@ def publish_ca_certificate(ca_nss_key_db: Path, output_dir: Path):
 def sign_boot_artifacts(
     ca_nss_key_db: Path,
     leaf_key_name: str,
-    items_to_sign: List[str],
     inject_files_yaml_path: Path,
     output_artifacts_dir: Path,
 ):
@@ -217,105 +216,74 @@ def sign_boot_artifacts(
     Args:
         ca_nss_key_db: Path to the NSS key database for the CA certificate
         leaf_key_name: Name of the leaf certificate
-        items_to_sign: List of items to sign
         inject_files_yaml_path: Full path to inject-files.yaml
         output_artifacts_dir: Dir where artifacts are output by Image Customizer
     """
-    # Print contents of inject_files_yaml_path
     with open(inject_files_yaml_path, "r") as f:
         data = f.read()
 
     log.debug(f"Contents of {inject_files_yaml_path}:\n{data}")
     inject_files_config = yaml.safe_load(data)
 
-    # Map artifact types to file-matching regex
-    item_regex = {
-        IC_ARTIFACT_NAME_UKIS: r"vmlinuz.*\.efi",
-        IC_ARTIFACT_NAME_SHIM: r"bootx64\.efi",
-        IC_ARTIFACT_NAME_SYSTEMD_BOOT: r"systemd-bootx64\.efi",
-        IC_ARTIFACT_NAME_VERITY_HASH: r".*hash.*",
-    }
+    for entry in inject_files_config.get("injectFiles", []):
+        artifact_type = entry.get("type", "")
+        signed_path_str = entry.get("source")
+        unsigned_path_str = entry.get("unsignedSource", "")
 
-    # Print items to sign
-    log.debug(f"Items to sign: {items_to_sign}")
+        if not signed_path_str:
+            raise RuntimeError(f"Missing source in inject-files entry: {entry}")
 
-    # Handle signing for each item that requires it
-    for item in items_to_sign:
-        regex = item_regex.get(item)
-        if not regex:
-            continue
+        if not unsigned_path_str:
+            # MIC v1.1+ uses the same path for unsigned and signed files.
+            unsigned_path_str = signed_path_str
 
-        # Find unsigned and signed artifact filepaths matching this regex
-        unsigned_artifact_path = get_artifact_path(
-            inject_files_config, output_artifacts_dir, regex, False
+        signed_rel_path = (
+            signed_path_str[2:] if signed_path_str.startswith("./") else signed_path_str
         )
-        signed_artifact_path = get_artifact_path(
-            inject_files_config, output_artifacts_dir, regex, True
+        unsigned_rel_path = (
+            unsigned_path_str[2:]
+            if unsigned_path_str.startswith("./")
+            else unsigned_path_str
         )
+        signed_path = output_artifacts_dir.absolute() / signed_rel_path
+        unsigned_path = output_artifacts_dir.absolute() / unsigned_rel_path
 
-        # Create parent directory of signed artifact if it doesn't exist
-        signed_artifact_path.parent.mkdir(parents=True, exist_ok=True)
-        signed_artifact_path.parent.chmod(0o700)
+        if not artifact_type:
+            artifact_type = get_artifact_type_from_name(unsigned_path.name)
 
-        # Specify if item is verity-hash since it requires a different signing logic
-        if item == IC_ARTIFACT_NAME_VERITY_HASH:
-            log.info(
-                f"Signing verity hash file {unsigned_artifact_path} to {signed_artifact_path}"
-            )
+        signed_path.parent.mkdir(parents=True, exist_ok=True)
+        signed_path.parent.chmod(0o700)
+
+        log.info(
+            f"Signing file of type '{artifact_type}' at {unsigned_path} to {signed_path}"
+        )
+        if artifact_type == IC_ARTIFACT_NAME_VERITY_HASH:
             sign_verity_hash(
                 ca_nss_key_db,
                 leaf_key_name,
-                unsigned_artifact_path,
-                signed_artifact_path,
+                unsigned_path,
+                signed_path,
             )
         else:
-            log.info(
-                f"Signing {item} file {unsigned_artifact_path} to {signed_artifact_path}"
-            )
             sign_pe_artifact(
                 ca_nss_key_db,
                 leaf_key_name,
-                unsigned_artifact_path,
-                signed_artifact_path,
+                unsigned_path,
+                signed_path,
             )
 
 
-def get_artifact_path(
-    inject_files_config: dict,
-    output_artifacts_dir: Path,
-    file_regex: str,
-    signed: bool,
-) -> Path:
-    """
-    Loads inject-files.yaml, searches each entry for a field matching the regex,
-    and returns the normalized full path to the artifact.
+def get_artifact_type_from_name(name: str) -> Optional[str]:
+    if re.match(r"vmlinuz.*\.efi", name):
+        return IC_ARTIFACT_NAME_UKIS
+    if re.match(r"bootx64\.efi", name):
+        return IC_ARTIFACT_NAME_SHIM
+    if re.match(r"systemd-bootx64\.efi", name):
+        return IC_ARTIFACT_NAME_SYSTEMD_BOOT
+    if re.match(r".*hash.*", name):
+        return IC_ARTIFACT_NAME_VERITY_HASH
 
-    Args:
-        inject_files_config: Dictionary loaded from the YAML file
-        output_artifacts_dir: Directory where artifacts are stored
-        file_regex: Regex to match artifact file names
-        signed: If True, returns the signed artifact path, i.e. "source"; otherwise, returns the
-        unsigned artifact path, i.e. "unsignedSource"
-
-    Returns:
-        Full artifact path as string if found.
-
-    Raises:
-        Exception: RuntimeError if artifact not found.
-    """
-    pattern = re.compile(file_regex)
-
-    for entry in inject_files_config.get("injectFiles", []):
-        if signed:
-            source_type = "source"
-        else:
-            source_type = "unsignedSource"
-        source_name = entry.get(source_type, "")
-        if pattern.fullmatch(os.path.basename(source_name)):
-            rel_path = source_name[2:] if source_name.startswith("./") else source_name
-            return output_artifacts_dir.absolute() / rel_path
-
-    raise RuntimeError(f"No matching entry found for pattern '{file_regex}'")
+    return None
 
 
 def sign_verity_hash(
