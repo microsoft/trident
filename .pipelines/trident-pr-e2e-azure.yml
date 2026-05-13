@@ -26,11 +26,6 @@ resources:
       type: git
       name: platform-tests
 
-    - repository: test-images
-      type: git
-      name: test-images
-      ref: refs/heads/main
-
     - repository: platform-pipelines
       type: git
       name: platform-pipelines
