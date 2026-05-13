@@ -305,8 +305,17 @@ stages:
               VM_NAME=$(jq -r '.virtualmachines[0].name' $(TRIDENT_SOURCE_DIR)/tools/virt-deploy-metadata.json)
               SSH_KEY="$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/helpers/key"
 
+              echo "=== Host-side diagnostics ==="
+              echo "--- VM domain state ---"
+              sudo virsh domstate $VM_NAME || true
+              echo "--- VM domain interfaces ---"
+              sudo virsh domifaddr $VM_NAME || true
+              echo "--- Host bridge/network ---"
+              ip addr show | grep -A2 'virbr\|192.168' || true
+              echo "--- Host ARP table ---"
+              arp -an 2>/dev/null || ip neigh show || true
+
               echo "=== Resolve VM IP after reboot ==="
-              # The VM may get a new DHCP lease after reboot. Query libvirt for the current IP.
               HOST_IP=""
               for i in $(seq 1 30); do
                 HOST_IP=$(sudo virsh domifaddr $VM_NAME 2>/dev/null | grep -oP '\d+\.\d+\.\d+\.\d+' | head -1)
@@ -319,8 +328,18 @@ stages:
               done
               if [ -z "$HOST_IP" ]; then
                 echo "##[error]Could not resolve VM IP after reboot"
+                echo "--- virsh domiflist ---"
+                sudo virsh domiflist $VM_NAME || true
+                echo "--- virsh net-dhcp-leases ---"
+                sudo virsh net-dhcp-leases default || true
+                echo "--- Last 50 lines of serial log ---"
+                SERIAL_LOG=$(sudo virsh dumpxml $VM_NAME | grep -oP "(?<=<log file=')[^']+" | head -1)
+                tail -50 "$SERIAL_LOG" 2>/dev/null || true
                 exit 1
               fi
+
+              echo "=== Verify connectivity ==="
+              ping -c 2 -W 3 $HOST_IP || echo "WARNING: ping failed"
 
               SSH_CMD="ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i $SSH_KEY testing-user@$HOST_IP"
 
@@ -337,8 +356,14 @@ stages:
               echo "=== Verify VM is up after update ==="
               $SSH_CMD 'hostname && uptime'
 
+              echo "=== VM network info ==="
+              $SSH_CMD 'ip addr show; ip route show' || true
+
               echo "=== Check SELinux is still enforcing ==="
               $SSH_CMD 'sudo getenforce'
+
+              echo "=== SELinux loaded modules ==="
+              $SSH_CMD 'sudo semodule -l | grep trident' || true
 
               echo "=== Check for SELinux denials ==="
               timeout 30 $SSH_CMD \
@@ -346,6 +371,12 @@ stages:
 
               echo "=== Check active volume ==="
               $SSH_CMD 'sudo trident get 2>&1 || echo "trident get completed"'
+
+              echo "=== Trident service status ==="
+              $SSH_CMD 'sudo systemctl status trident.service tridentd.socket trident-update@stage.service trident-update@finalize.service 2>&1' || true
+
+              echo "=== Recent journal (last 50 lines) ==="
+              $SSH_CMD 'sudo journalctl --no-pager -n 50' || true
 
               echo "=== SELinux update validation PASSED ==="
             workingDirectory: $(TRIDENT_SOURCE_DIR)
