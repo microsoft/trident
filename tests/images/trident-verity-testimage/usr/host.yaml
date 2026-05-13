@@ -104,6 +104,7 @@ os:
 
   services:
     enable:
+      - sshd
       - trident
       - tridentd.socket
   uki:

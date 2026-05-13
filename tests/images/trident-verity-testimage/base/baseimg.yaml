@@ -135,6 +135,7 @@ os:
   services:
     enable:
       - etc-mount
+      - sshd
       - trident
       - tridentd.socket
 
