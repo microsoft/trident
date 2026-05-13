@@ -1,0 +1,46 @@
+policy_module(trident-grub, 1.0.0)
+
+########################################
+#
+# GRUB & dracut SELinux policy for Trident
+#
+# This module provides additional permissions needed for GRUB-based boot
+# management and dracut initrd regeneration. It layers on top of the base
+# trident policy module (trident.pp) and should only be installed on
+# systems that use GRUB as their bootloader (not UKI/systemd-boot).
+#
+
+require {
+    type trident_t;
+    type boot_t;
+}
+
+#============= trident_t ==============
+# Execute bootloader tools (grub-install, grub-mkconfig, etc.)
+bootloader_exec(trident_t)
+
+# Manage /boot directory (kernel, initrd, grub configs)
+allow trident_t boot_t:dir { mounton create relabelto };
+allow trident_t boot_t:file relabelto;
+
+# Create and manage boot directories and files
+files_create_boot_dirs(trident_t)
+files_manage_boot_files(trident_t)
+
+#============= loadkeys_t ==============
+# loadkeys is used during dracut initrd generation for console keyboard config.
+optional_policy(`
+    require {
+        type trident_t;
+        type loadkeys_exec_t;
+    }
+    allow trident_t loadkeys_exec_t:file { execute getattr map open read relabelto setattr unlink write };
+')
+optional_policy(`
+    require {
+        type trident_t;
+        type loadkeys_t;
+    }
+    files_read_default_symlinks(loadkeys_t)
+    fs_search_tmpfs(loadkeys_t)
+')

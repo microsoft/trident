@@ -27,9 +27,7 @@ require {
         type auditctl_exec_t;
         type auditd_exec_t;
         type auditd_unit_t;
-        type boot_t;
         type bpf_t;
-        type bootloader_t;
         type chfn_exec_t;
         type chkpwd_exec_t;
 
@@ -249,8 +247,8 @@ allow trident_t auditd_unit_t:file getattr;
 allow trident_t admin_passwd_exec_t:file getattr;
 allow trident_t anacron_exec_t:file getattr;
 allow trident_t audisp_remote_exec_t:file getattr;
-allow trident_t boot_t:dir { mounton create relabelto };
-allow trident_t boot_t:file relabelto;
+# NOTE: boot_t permissions have been moved to the trident-grub SELinux module
+# (packaging/selinux-policy-trident-grub/).
 allow trident_t bpf_t:dir search;
 optional_policy(`
     require {
@@ -586,13 +584,9 @@ optional_policy(`
     }
     allow trident_t dhcpd_unit_t:file getattr;
 ')
-optional_policy(`
-    require {
-        type trident_t;
-        type loadkeys_exec_t;
-    }
-    allow trident_t loadkeys_exec_t:file { execute getattr map open read relabelto setattr unlink write };
-')
+# NOTE: loadkeys_exec_t permissions have been moved to the trident-grub
+# SELinux module (packaging/selinux-policy-trident-grub/).
+
 # NOTE: RAID policies (mdadm) have been moved to the trident-raid SELinux
 # module (packaging/selinux-policy-trident-raid/). Install the
 # trident-selinux-raid package on systems that use RAID storage.
@@ -627,7 +621,7 @@ userdom_relabelto_user_home_dirs(trident_t)
 ###########################################
 # System Services and Daemons
 ###########################################
-bootloader_exec(trident_t)
+# NOTE: bootloader_exec moved to trident-grub SELinux module.
 optional_policy(`
     require {
         type chronyd_exec_t;
@@ -685,11 +679,11 @@ optional_policy(`
 ###########################################
 # File System Operations
 ###########################################
-files_create_boot_dirs(trident_t)
+# NOTE: files_create_boot_dirs and files_manage_boot_files moved to trident-grub SELinux module.
 files_list_kernel_modules(trident_t)
 files_list_spool(trident_t)
 files_list_var(trident_t)
-files_manage_boot_files(trident_t)
+# NOTE: files_manage_boot_files moved to trident-grub SELinux module.
 files_manage_etc_dirs(trident_t)
 files_manage_etc_symlinks(trident_t)
 files_mounton_runtime_dirs(trident_t)
@@ -959,14 +953,8 @@ fs_manage_tmpfs_dirs(fsadm_t)
 fs_manage_tmpfs_files(fsadm_t)
 
 #============= loadkeys_t ==============
-optional_policy(`
-    require {
-        type trident_t;
-        type loadkeys_t;
-    }
-    files_read_default_symlinks(loadkeys_t)
-    fs_search_tmpfs(loadkeys_t)
-')
+# NOTE: loadkeys_t permissions have been moved to the trident-grub
+# SELinux module (packaging/selinux-policy-trident-grub/).
 
 #============= lvm_t ==============
 # NOTE: Encryption-related lvm_t permissions (sem, key, tpm, tmp) have been

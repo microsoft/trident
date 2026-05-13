@@ -270,6 +270,41 @@ fi
 
 # ------------------------------------------------------------------------------
 
+%package selinux-grub
+Summary:             Trident GRUB & dracut SELinux policy
+BuildArch:           noarch
+Requires:            %{name}-selinux
+Requires:            selinux-policy-%{selinuxtype}
+Requires(post):      selinux-policy-%{selinuxtype}
+BuildRequires:       selinux-policy-devel
+%{?selinux_requires}
+
+%description selinux-grub
+GRUB and dracut SELinux policy module for Trident. Provides bootloader
+execution, /boot management, and loadkeys permissions needed for
+GRUB-based boot. Not needed on UKI/systemd-boot systems.
+
+%files selinux-grub
+%{_datadir}/selinux/packages/%{selinuxtype}/%{name}-grub.pp.bz2
+%{_datadir}/selinux/devel/include/distributed/%{name}-grub.if
+%ghost %verify(not md5 size mode mtime) %{_sharedstatedir}/selinux/%{selinuxtype}/active/modules/200/%{name}-grub
+
+%pre selinux-grub
+%selinux_relabel_pre -s %{selinuxtype}
+
+%post selinux-grub
+%selinux_modules_install -s %{selinuxtype} %{_datadir}/selinux/packages/%{selinuxtype}/%{name}-grub.pp.bz2
+
+%postun selinux-grub
+if [ $1 -eq 0 ]; then
+    %selinux_modules_uninstall -s %{selinuxtype} %{name}-grub
+fi
+
+%posttrans selinux-grub
+%selinux_relabel_post -s %{selinuxtype}
+
+# ------------------------------------------------------------------------------
+
 %package static-pcrlock-files
 Summary:        Statically defined .pcrlock files
 Requires:       %{name}
@@ -340,6 +375,15 @@ cp -p packaging/selinux-policy-trident-encryption/trident-encryption.te selinux/
 make -f %{_datadir}/selinux/devel/Makefile %{name}-encryption.pp
 bzip2 -9 %{name}-encryption.pp
 
+# Build GRUB SELinux policy module
+rm -f selinux/*
+cp -p packaging/selinux-policy-trident-grub/trident-grub.fc selinux/
+cp -p packaging/selinux-policy-trident-grub/trident-grub.if selinux/
+cp -p packaging/selinux-policy-trident-grub/trident-grub.te selinux/
+
+make -f %{_datadir}/selinux/devel/Makefile %{name}-grub.pp
+bzip2 -9 %{name}-grub.pp
+
 %check
 # Test the trident variable for the appropriate version
 %if %{undefined rpm_ver}
@@ -377,6 +421,10 @@ install -D -p -m 0644 packaging/selinux-policy-trident-raid/%{name}-raid.if %{bu
 # Copy Trident encryption SELinux policy module
 install -D -m 0644 %{name}-encryption.pp.bz2 %{buildroot}%{_datadir}/selinux/packages/%{selinuxtype}/%{name}-encryption.pp.bz2
 install -D -p -m 0644 packaging/selinux-policy-trident-encryption/%{name}-encryption.if %{buildroot}%{_datadir}/selinux/devel/include/distributed/%{name}-encryption.if
+
+# Copy Trident GRUB SELinux policy module
+install -D -m 0644 %{name}-grub.pp.bz2 %{buildroot}%{_datadir}/selinux/packages/%{selinuxtype}/%{name}-grub.pp.bz2
+install -D -p -m 0644 packaging/selinux-policy-trident-grub/%{name}-grub.if %{buildroot}%{_datadir}/selinux/devel/include/distributed/%{name}-grub.if
 
 mkdir -p %{buildroot}%{_unitdir}
 install -D -m 644 packaging/systemd/%{name}.service %{buildroot}%{_unitdir}/%{name}.service
