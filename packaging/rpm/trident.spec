@@ -200,6 +200,41 @@ fi
 
 # ------------------------------------------------------------------------------
 
+%package selinux-raid
+Summary:             Trident RAID SELinux policy
+BuildArch:           noarch
+Requires:            %{name}-selinux
+Requires:            selinux-policy-%{selinuxtype}
+Requires(post):      selinux-policy-%{selinuxtype}
+BuildRequires:       selinux-policy-devel
+%{?selinux_requires}
+
+%description selinux-raid
+RAID SELinux policy module for Trident. Provides mdadm and bootloader
+permissions needed for RAID storage configurations. Only install on
+systems that use RAID.
+
+%files selinux-raid
+%{_datadir}/selinux/packages/%{selinuxtype}/%{name}-raid.pp.bz2
+%{_datadir}/selinux/devel/include/distributed/%{name}-raid.if
+%ghost %verify(not md5 size mode mtime) %{_sharedstatedir}/selinux/%{selinuxtype}/active/modules/200/%{name}-raid
+
+%pre selinux-raid
+%selinux_relabel_pre -s %{selinuxtype}
+
+%post selinux-raid
+%selinux_modules_install -s %{selinuxtype} %{_datadir}/selinux/packages/%{selinuxtype}/%{name}-raid.pp.bz2
+
+%postun selinux-raid
+if [ $1 -eq 0 ]; then
+    %selinux_modules_uninstall -s %{selinuxtype} %{name}-raid
+fi
+
+%posttrans selinux-raid
+%selinux_relabel_post -s %{selinuxtype}
+
+# ------------------------------------------------------------------------------
+
 %package static-pcrlock-files
 Summary:        Statically defined .pcrlock files
 Requires:       %{name}
@@ -252,6 +287,15 @@ cp -p packaging/selinux-policy-trident/trident.te selinux/
 make -f %{_datadir}/selinux/devel/Makefile %{name}.pp
 bzip2 -9 %{name}.pp
 
+# Build RAID SELinux policy module
+rm -f selinux/*
+cp -p packaging/selinux-policy-trident-raid/trident-raid.fc selinux/
+cp -p packaging/selinux-policy-trident-raid/trident-raid.if selinux/
+cp -p packaging/selinux-policy-trident-raid/trident-raid.te selinux/
+
+make -f %{_datadir}/selinux/devel/Makefile %{name}-raid.pp
+bzip2 -9 %{name}-raid.pp
+
 %check
 # Test the trident variable for the appropriate version
 %if %{undefined rpm_ver}
@@ -280,7 +324,11 @@ install -D -m 755 target/release/%{name} %{buildroot}/%{_bindir}/%{name}
 
 # Copy Trident SELinux policy module to /usr/share/selinux/packages
 install -D -m 0644 %{name}.pp.bz2 %{buildroot}%{_datadir}/selinux/packages/%{selinuxtype}/%{name}.pp.bz2
-install -D -p -m 0644 selinux/%{name}.if %{buildroot}%{_datadir}/selinux/devel/include/distributed/%{name}.if
+install -D -p -m 0644 packaging/selinux-policy-trident/%{name}.if %{buildroot}%{_datadir}/selinux/devel/include/distributed/%{name}.if
+
+# Copy Trident RAID SELinux policy module
+install -D -m 0644 %{name}-raid.pp.bz2 %{buildroot}%{_datadir}/selinux/packages/%{selinuxtype}/%{name}-raid.pp.bz2
+install -D -p -m 0644 packaging/selinux-policy-trident-raid/%{name}-raid.if %{buildroot}%{_datadir}/selinux/devel/include/distributed/%{name}-raid.if
 
 mkdir -p %{buildroot}%{_unitdir}
 install -D -m 644 packaging/systemd/%{name}.service %{buildroot}%{_unitdir}/%{name}.service

@@ -594,18 +594,9 @@ optional_policy(`
     }
     allow trident_t loadkeys_exec_t:file { execute getattr map open read relabelto setattr unlink write };
 ')
-optional_policy(`
-    require {
-        type trident_t;
-        type mdadm_exec_t;
-        type mdadm_unit_t;
-        type mdadm_runtime_t;
-    }
-    allow trident_t mdadm_exec_t:file { open read getattr map relabelto setattr unlink write execute execute_no_trans };
-    allow trident_t mdadm_unit_t:file { getattr open read relabelto setattr unlink };
-    allow trident_t mdadm_runtime_t:dir { add_name remove_name search write };
-    raid_manage_mdadm_runtime_files(trident_t)
-')
+# NOTE: RAID policies (mdadm) have been moved to the trident-raid SELinux
+# module (packaging/selinux-policy-trident-raid/). Install the
+# trident-selinux-raid package on systems that use RAID storage.
 
 #============= interfaces ==============
 ###########################################
@@ -935,8 +926,8 @@ optional_policy(`
 # Additional permissions given to external domains
 #
 #============= bootloader_t ==============
-# List the contents of generic tmpfs directories; required for RAID
-fs_list_tmpfs(bootloader_t)
+# NOTE: bootloader_t tmpfs access for RAID has been moved to the trident-raid
+# SELinux module (packaging/selinux-policy-trident-raid/).
 
 #============= cloud_init_t ==============
 optional_policy(`

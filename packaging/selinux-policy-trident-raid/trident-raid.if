@@ -1,0 +1,8 @@
+## <summary>RAID SELinux interfaces for Trident</summary>
+## <desc>
+##   <p>
+##     This module provides no public interfaces.
+##     It exists only to satisfy the SELinux build toolchain requirement
+##     for a .if file alongside the .te and .fc files.
+##   </p>
+## </desc>

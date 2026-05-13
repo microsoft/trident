@@ -1,0 +1,32 @@
+policy_module(trident-raid, 1.0.0)
+
+########################################
+#
+# RAID SELinux policy for Trident
+#
+# This module provides additional permissions needed for RAID support.
+# It layers on top of the base trident policy module (trident.pp)
+# and should only be installed on systems that use RAID storage.
+#
+
+require {
+    type trident_t;
+    type bootloader_t;
+}
+
+# Allow trident to execute mdadm, manage its unit files, and write to
+# its runtime directory.
+optional_policy(`
+    require {
+        type mdadm_exec_t;
+        type mdadm_unit_t;
+        type mdadm_runtime_t;
+    }
+    allow trident_t mdadm_exec_t:file { open read getattr map relabelto setattr unlink write execute execute_no_trans };
+    allow trident_t mdadm_unit_t:file { getattr open read relabelto setattr unlink };
+    allow trident_t mdadm_runtime_t:dir { add_name remove_name search write };
+    raid_manage_mdadm_runtime_files(trident_t)
+')
+
+# List the contents of generic tmpfs directories; required for RAID
+fs_list_tmpfs(bootloader_t)
