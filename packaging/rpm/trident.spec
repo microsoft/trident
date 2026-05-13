@@ -305,6 +305,42 @@ fi
 
 # ------------------------------------------------------------------------------
 
+%package selinux-cloud-init
+Summary:             Trident cloud-init SELinux policy
+BuildArch:           noarch
+Requires:            %{name}-selinux
+Requires:            selinux-policy-%{selinuxtype}
+Requires(post):      selinux-policy-%{selinuxtype}
+BuildRequires:       selinux-policy-devel
+%{?selinux_requires}
+
+%description selinux-cloud-init
+Cloud-init SELinux policy module for Trident. Provides permissions for
+trident to interact with cloud-init during provisioning, and for
+cloud-init to manage files trident creates. Install on any system
+that uses cloud-init.
+
+%files selinux-cloud-init
+%{_datadir}/selinux/packages/%{selinuxtype}/%{name}-cloud-init.pp.bz2
+%{_datadir}/selinux/devel/include/distributed/%{name}-cloud-init.if
+%ghost %verify(not md5 size mode mtime) %{_sharedstatedir}/selinux/%{selinuxtype}/active/modules/200/%{name}-cloud-init
+
+%pre selinux-cloud-init
+%selinux_relabel_pre -s %{selinuxtype}
+
+%post selinux-cloud-init
+%selinux_modules_install -s %{selinuxtype} %{_datadir}/selinux/packages/%{selinuxtype}/%{name}-cloud-init.pp.bz2
+
+%postun selinux-cloud-init
+if [ $1 -eq 0 ]; then
+    %selinux_modules_uninstall -s %{selinuxtype} %{name}-cloud-init
+fi
+
+%posttrans selinux-cloud-init
+%selinux_relabel_post -s %{selinuxtype}
+
+# ------------------------------------------------------------------------------
+
 %package static-pcrlock-files
 Summary:        Statically defined .pcrlock files
 Requires:       %{name}
@@ -384,6 +420,15 @@ cp -p packaging/selinux-policy-trident-grub/trident-grub.te selinux/
 make -f %{_datadir}/selinux/devel/Makefile %{name}-grub.pp
 bzip2 -9 %{name}-grub.pp
 
+# Build cloud-init SELinux policy module
+rm -f selinux/*
+cp -p packaging/selinux-policy-trident-cloud-init/trident-cloud-init.fc selinux/
+cp -p packaging/selinux-policy-trident-cloud-init/trident-cloud-init.if selinux/
+cp -p packaging/selinux-policy-trident-cloud-init/trident-cloud-init.te selinux/
+
+make -f %{_datadir}/selinux/devel/Makefile %{name}-cloud-init.pp
+bzip2 -9 %{name}-cloud-init.pp
+
 %check
 # Test the trident variable for the appropriate version
 %if %{undefined rpm_ver}
@@ -425,6 +470,10 @@ install -D -p -m 0644 packaging/selinux-policy-trident-encryption/%{name}-encryp
 # Copy Trident GRUB SELinux policy module
 install -D -m 0644 %{name}-grub.pp.bz2 %{buildroot}%{_datadir}/selinux/packages/%{selinuxtype}/%{name}-grub.pp.bz2
 install -D -p -m 0644 packaging/selinux-policy-trident-grub/%{name}-grub.if %{buildroot}%{_datadir}/selinux/devel/include/distributed/%{name}-grub.if
+
+# Copy Trident cloud-init SELinux policy module
+install -D -m 0644 %{name}-cloud-init.pp.bz2 %{buildroot}%{_datadir}/selinux/packages/%{selinuxtype}/%{name}-cloud-init.pp.bz2
+install -D -p -m 0644 packaging/selinux-policy-trident-cloud-init/%{name}-cloud-init.if %{buildroot}%{_datadir}/selinux/devel/include/distributed/%{name}-cloud-init.if
 
 mkdir -p %{buildroot}%{_unitdir}
 install -D -m 644 packaging/systemd/%{name}.service %{buildroot}%{_unitdir}/%{name}.service

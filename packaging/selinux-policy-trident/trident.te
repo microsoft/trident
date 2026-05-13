@@ -556,17 +556,8 @@ allow trident_t var_run_t:sock_file write;
 allow trident_t var_spool_t:dir relabelto;
 allow trident_t wtmp_t:file relabelto;
 
-# Inspect and update cloud-init state during first-boot provisioning.
-optional_policy(`
-    require {
-        type cloud_init_exec_t;
-        type cloud_init_state_t;
-    }
-    allow trident_t cloud_init_exec_t:file getattr;
-    allow trident_t cloud_init_state_t:dir { list_dir_perms relabelto };
-    allow trident_t cloud_init_state_t:lnk_file read_lnk_file_perms;
-    allow trident_t cloud_init_state_t:file getattr;
-')
+# NOTE: cloud-init policies have been moved to the trident-cloud-init SELinux
+# module (packaging/selinux-policy-trident-cloud-init/).
 
 # Optional policies for types that may not exist on all images.
 # Trident encounters these files/dirs during OS provisioning and relabeling.
@@ -680,13 +671,7 @@ systemd_read_user_runtime_units_files(trident_t)
 systemd_dbus_chat_logind(trident_t)
 systemd_read_user_unit_files(trident_t)
 
-# Optional read access to cloud init state
-optional_policy(`
-    require {
-        type cloud_init_t;
-    }
-    ps_process_pattern(trident_t, cloud_init_t) # equivalent to cloud_init_read_state(trident_t)
-')
+# NOTE: cloud-init process state reading moved to trident-cloud-init SELinux module.
 
 ###########################################
 # File System Operations
@@ -944,18 +929,7 @@ optional_policy(`
 # SELinux module (packaging/selinux-policy-trident-raid/).
 
 #============= cloud_init_t ==============
-# Let cloud-init finish first-boot setup on files Trident creates under /usr and unlabeled paths.
-optional_policy(`
-    require {
-        type cloud_init_t;
-    }
-    allow cloud_init_t unlabeled_t:dir { add_name getattr remove_name search write };
-    allow cloud_init_t unlabeled_t:file { create getattr ioctl open read rename write };
-    allow cloud_init_t usr_t:dir { add_name create remove_name write };
-
-    files_exec_usr_files(cloud_init_t)
-    files_manage_usr_files(cloud_init_t)
-')
+# NOTE: cloud_init_t policies moved to trident-cloud-init SELinux module.
 
 #============= fsadm_t ==============
 # Allow mkfs/fsadm helpers spawned by Trident to manage EFI variables and loop-backed extension images.
@@ -1031,13 +1005,7 @@ allow systemd_generator_t home_root_t:dir read;
 
 #============= udev_t ==============
 # Allow udev helpers triggered by Trident storage changes to inspect provisioning state and extension images.
-optional_policy(`
-    require {
-        type cloud_init_t;
-    }
-    allow udev_t cloud_init_t:fd use;
-    allow udev_t cloud_init_t:fifo_file { append write getattr };
-')
+# NOTE: cloud_init_t udev permissions moved to trident-cloud-init SELinux module.
 allow udev_t lvm_t:process { noatsecure rlimitinh siginh };
 allow udev_t unlabeled_t:file getattr;
 

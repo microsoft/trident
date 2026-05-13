@@ -1,0 +1,46 @@
+policy_module(trident-cloud-init, 1.0.0)
+
+########################################
+#
+# Cloud-init SELinux policy for Trident
+#
+# This module provides permissions for trident to interact with cloud-init
+# during first-boot provisioning, and for cloud-init to manage files that
+# trident creates. Install on any Azure Linux system that uses cloud-init.
+#
+
+require {
+    type trident_t;
+    type cloud_init_t;
+    type cloud_init_exec_t;
+    type cloud_init_state_t;
+    type unlabeled_t;
+    type usr_t;
+    type udev_t;
+}
+
+#============= trident_t ==============
+# Inspect cloud-init binary and state during provisioning and relabeling.
+allow trident_t cloud_init_exec_t:file getattr;
+allow trident_t cloud_init_state_t:dir { list_dir_perms relabelto };
+allow trident_t cloud_init_state_t:lnk_file read_lnk_file_perms;
+allow trident_t cloud_init_state_t:file getattr;
+
+# Read cloud-init process state to coordinate provisioning sequence.
+ps_process_pattern(trident_t, cloud_init_t)
+
+#============= cloud_init_t ==============
+# Let cloud-init finish first-boot setup on files Trident creates under /usr
+# and unlabeled paths (before relabeling completes).
+allow cloud_init_t unlabeled_t:dir { add_name getattr remove_name search write };
+allow cloud_init_t unlabeled_t:file { create getattr ioctl open read rename write };
+allow cloud_init_t usr_t:dir { add_name create remove_name write };
+
+files_exec_usr_files(cloud_init_t)
+files_manage_usr_files(cloud_init_t)
+
+#============= udev_t ==============
+# Allow udev to use cloud-init file descriptors and FIFOs during device
+# events triggered by Trident storage changes.
+allow udev_t cloud_init_t:fd use;
+allow udev_t cloud_init_t:fifo_file { append write getattr };
