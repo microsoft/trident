@@ -45,3 +45,12 @@ allow lvm_t tmp_t:file { getattr ioctl open read };
 # Record PCR phase state in tmpfs while measuring encrypted boot progress.
 allow systemd_pcrphase_t tmpfs_t:dir { getattr open read search };
 allow systemd_pcrphase_t tmpfs_t:file { getattr lock open setattr write };
+
+#============= tcsd (TPM daemon) ==============
+# Manage TPM daemon state directories during provisioning.
+optional_policy(`
+    require {
+        type tcsd_var_lib_t;
+    }
+    allow trident_t tcsd_var_lib_t:dir { manage_dir_perms relabelto };
+')

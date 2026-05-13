@@ -602,12 +602,13 @@ auth_exec_pam(trident_t)
 auth_login_entry_type(trident_t)
 auth_read_lastlog(trident_t)
 auth_read_login_records(trident_t)
+# Inspect GPG agent binary and secrets during filesystem relabeling.
 optional_policy(`
     require {
         type gpg_agent_exec_t;
         type gpg_secret_t;
     }
-    allow trident_t gpg_agent_exec_t:file { getattr open read execute entrypoint map };
+    allow trident_t gpg_agent_exec_t:file { getattr open read map };
     allow trident_t gpg_secret_t:dir list_dir_perms;
     allow trident_t gpg_secret_t:file read_file_perms;
     allow trident_t gpg_secret_t:lnk_file read_lnk_file_perms;
@@ -625,13 +626,14 @@ userdom_relabelto_user_home_dirs(trident_t)
 ###########################################
 # Start helpers and inspect daemon state while Trident configures host services.
 # NOTE: bootloader_exec moved to trident-grub SELinux module.
+# Inspect chronyd binary and config during filesystem relabeling.
 optional_policy(`
     require {
         type chronyd_exec_t;
         type chronyd_etc_t;
         type chronyd_keys_t;
     }
-    allow trident_t chronyd_exec_t:file { getattr open read execute execute_no_trans map };
+    allow trident_t chronyd_exec_t:file { getattr open read map };
     allow trident_t chronyd_etc_t:dir list_dir_perms;
     allow trident_t chronyd_etc_t:file read_file_perms;
     allow trident_t chronyd_keys_t:file read_file_perms;
@@ -656,11 +658,12 @@ domain_read_all_domains_state(trident_t)
 hostname_exec(trident_t)
 init_domtrans(trident_t)
 init_rw_stream_sockets(trident_t)
+# Inspect logrotate binary during filesystem relabeling.
 optional_policy(`
     require {
         type logrotate_exec_t;
     }
-    allow trident_t logrotate_exec_t:file { getattr open read execute execute_no_trans map };
+    allow trident_t logrotate_exec_t:file { getattr open read map };
 ')
 ssh_domtrans(trident_t)
 ssh_domtrans_keygen(trident_t)
@@ -847,23 +850,25 @@ udev_read_state(trident_t)
 # System Command Execution
 ###########################################
 # Execute core host utilities in place during provisioning and customization workflows.
+# Inspect sudo binary during filesystem relabeling.
 optional_policy(`
     require {
         type sudo_exec_t;
     }
-    allow trident_t sudo_exec_t:file { getattr open read execute execute_no_trans map };
+    allow trident_t sudo_exec_t:file { getattr open read map };
 ')
 corecmd_manage_bin_files(trident_t)
 corecmd_bin_entry_type(trident_t)
 corecmd_shell_entry_type(trident_t)
 corecmd_search_bin(trident_t)
 corecmd_exec_bin(trident_t)
+# Inspect kerberos binary and config during filesystem relabeling.
 optional_policy(`
     require {
         type kadmind_exec_t;
         type krb5_conf_t;
     }
-    allow trident_t kadmind_exec_t:file { getattr open read execute execute_no_trans map };
+    allow trident_t kadmind_exec_t:file { getattr open read map };
     allow trident_t krb5_conf_t:dir list_dir_perms;
     allow trident_t krb5_conf_t:file read_file_perms;
 ')
@@ -876,12 +881,7 @@ optional_policy(`
     }
     allow trident_t uuidd_var_lib_t:dir manage_dir_perms;
 ')
-optional_policy(`
-    require {
-        type tcsd_var_lib_t;
-    }
-    allow trident_t tcsd_var_lib_t:dir { manage_dir_perms relabelto };
-')
+# NOTE: tcsd_var_lib_t moved to trident-encryption SELinux module (TPM-related).
 
 ###########################################
 # Logging and Monitoring
@@ -902,23 +902,16 @@ logging_manage_generic_logs(trident_t)
 optional_policy(`
     miscfiles_read_generic_tls_privkey(trident_t)
 ')
-optional_policy(`
-    miscfiles_read_man_pages(trident_t)
-')
+# NOTE: miscfiles_read_man_pages removed — audit2allow artifact, trident
+# does not read man pages.
 optional_policy(`
     miscfiles_read_localization(trident_t)
 ')
 optional_policy(`
     miscfiles_read_generic_certs(trident_t)
 ')
-optional_policy(`
-    require {
-        type xkb_var_lib_t;
-    }
-    allow trident_t xkb_var_lib_t:dir list_dir_perms;
-    allow trident_t xkb_var_lib_t:file read_file_perms;
-    allow trident_t xkb_var_lib_t:lnk_file read_lnk_file_perms;
-')
+# NOTE: xkb_var_lib_t removed — audit2allow artifact, trident does not
+# configure keyboard layouts.
 
 ####################
 #
