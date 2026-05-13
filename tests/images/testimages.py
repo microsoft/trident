@@ -47,6 +47,7 @@ DEFINED_IMAGES: List[ImageConfig] = [
         "trident-container-installer",
         config="trident-container-installer",
         output_format=OutputFormat.ISO,
+        requires_trident=False,
     ),
     ImageConfig(
         "trident-direct-streaming-installer-amd64",
