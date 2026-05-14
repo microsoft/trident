@@ -90,9 +90,7 @@ DEFINED_IMAGES: List[ImageConfig] = [
         # in place before the image is built.
         requires_trident=False,
         extra_dependencies=[
-            Path(
-                "tests/images/trident-vm-testimage/base/trident-bin/trident"
-            ),
+            Path("tests/images/trident-vm-testimage/base/trident-bin/trident"),
         ],
     ),
     ImageConfig(
