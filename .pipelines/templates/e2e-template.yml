@@ -151,8 +151,8 @@ stages:
     parameters:
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
-  # Build Trident installer ISO (host)
-  - template: stages/build_image/build-image.yml
+  # Build Trident installer ISO (host) — A/B TEST: using old @test-images path
+  - template: stages/build_image/build-image-old-test-images.yml
     parameters:
       imageName: trident-installer
       micBuildType: ${{ parameters.micBuildType }}
@@ -161,7 +161,7 @@ stages:
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # Build Trident split (stage and finalize separated) installer ISO (host)
-  - template: stages/build_image/build-image.yml
+  - template: stages/build_image/build-image-old-test-images.yml
     parameters:
       imageName: trident-split-installer
       micBuildType: ${{ parameters.micBuildType }}
@@ -169,8 +169,8 @@ stages:
       clones: 1
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
-  # Build Trident installer ISO (container)
-  - template: stages/build_image/build-image.yml
+  # Build Trident installer ISO (container) — A/B TEST: using old @test-images path
+  - template: stages/build_image/build-image-old-test-images.yml
     parameters:
       imageName: trident-container-installer
       runtimeEnv: "container"
