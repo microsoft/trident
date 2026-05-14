@@ -1868,7 +1868,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "indoc",
+ "inventory",
  "log",
+ "pytest",
+ "pytest_gen",
  "regex",
  "serde",
  "serde_yaml",
