@@ -19,3 +19,4 @@
 *.png binary
 *.jpg binary
 *.zst binary
+*.patch text eol=lf

@@ -14,7 +14,7 @@ TRIDENT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 # Source of truth for the pin — keep this in sync with
 # .pipelines/templates/stages/build_image/build-pinned-mic.yml.
 PIN_URL="${MIC_PIN_URL:-https://github.com/microsoft/azurelinux-image-tools.git}"
-PIN_SHA="${MIC_PIN_SHA:-9b7f9806b8c8a0e7c9bea0b69f4d4a4f9e5c1e23}"
+PIN_SHA="${MIC_PIN_SHA:-e0d1deb8a810c8cbd0f19cfaa1fa42768e6f53b9}"
 CONTAINER_TAG="${MIC_CONTAINER_TAG:-imagecustomizer:azl4-pinned}"
 
 WORKDIR="${WORKDIR:-$(mktemp -d)}"
