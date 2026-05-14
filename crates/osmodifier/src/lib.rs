@@ -230,3 +230,107 @@ fn format_corruption_option(opt: &CorruptionOption) -> String {
         CorruptionOption::Restart => "restart-on-corruption".to_string(),
     }
 }
+
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
+    use super::*;
+    use std::collections::HashMap;
+    use std::fs;
+    use tempfile::tempdir;
+
+    use pytest_gen::functional_test;
+    use trident_api::config::{LoadMode, Module, Services};
+
+    #[functional_test(feature = "core")]
+    fn test_modify_os_hostname_and_modules() {
+        let tmp = tempdir().unwrap();
+        fs::create_dir_all(tmp.path().join("etc")).unwrap();
+
+        let ctx = OsModifierContext {
+            root: tmp.path().to_path_buf(),
+        };
+
+        let config = OSModifierConfig {
+            hostname: Some("integration-test-host".to_string()),
+            modules: vec![Module {
+                name: "vfio_pci".to_string(),
+                load_mode: LoadMode::Always,
+                options: HashMap::new(),
+            }],
+            ..Default::default()
+        };
+
+        modify_os(&ctx, &config).unwrap();
+
+        // Verify hostname
+        let hostname = fs::read_to_string(tmp.path().join("etc/hostname")).unwrap();
+        assert_eq!(hostname.trim(), "integration-test-host");
+
+        // Verify module loaded
+        let load_conf =
+            fs::read_to_string(tmp.path().join("etc/modules-load.d/modules-load.conf")).unwrap();
+        assert!(
+            load_conf.contains("vfio_pci"),
+            "Expected vfio_pci in modules-load.conf"
+        );
+    }
+
+    #[functional_test(feature = "core")]
+    fn test_modify_os_empty_config() {
+        let tmp = tempdir().unwrap();
+        let ctx = OsModifierContext {
+            root: tmp.path().to_path_buf(),
+        };
+
+        let config = OSModifierConfig::default();
+
+        // Empty config should be a no-op
+        modify_os(&ctx, &config).unwrap();
+    }
+
+    #[functional_test(feature = "core")]
+    fn test_modify_os_with_services() {
+        let tmp = tempdir().unwrap();
+        fs::create_dir_all(tmp.path().join("etc")).unwrap();
+
+        // Create a minimal systemd tree with a synthetic service
+        let unit_dir = tmp.path().join("usr/lib/systemd/system");
+        fs::create_dir_all(&unit_dir).unwrap();
+        fs::create_dir_all(tmp.path().join("etc/systemd/system/multi-user.target.wants")).unwrap();
+        fs::write(
+            unit_dir.join("test-integration.service"),
+            "[Unit]\nDescription=Test\n\n[Service]\nType=oneshot\nExecStart=/bin/true\n\n[Install]\nWantedBy=multi-user.target\n",
+        )
+        .unwrap();
+
+        let ctx = OsModifierContext {
+            root: tmp.path().to_path_buf(),
+        };
+
+        let config = OSModifierConfig {
+            hostname: Some("svc-test-host".to_string()),
+            services: Some(Services {
+                enable: vec!["test-integration.service".to_string()],
+                disable: vec![],
+            }),
+            ..Default::default()
+        };
+
+        modify_os(&ctx, &config).unwrap();
+
+        // Verify hostname
+        let hostname = fs::read_to_string(tmp.path().join("etc/hostname")).unwrap();
+        assert_eq!(hostname.trim(), "svc-test-host");
+
+        // Verify service enabled — symlink may be dangling (target is absolute /usr/...
+        // but only exists under the temp root), so check is_symlink() not exists()
+        let symlink = tmp
+            .path()
+            .join("etc/systemd/system/multi-user.target.wants/test-integration.service");
+        assert!(
+            symlink.is_symlink(),
+            "Service should be enabled (symlink at {})",
+            symlink.display()
+        );
+    }
+}
