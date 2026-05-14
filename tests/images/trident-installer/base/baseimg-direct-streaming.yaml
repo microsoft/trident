@@ -92,7 +92,9 @@ os:
 
 scripts:
   postCustomization:
-    - path: post-install-direct-streaming.sh
+    - path: post-install.sh
+      arguments:
+        - "stream-image-test"
 
 iso:
   additionalFiles:
