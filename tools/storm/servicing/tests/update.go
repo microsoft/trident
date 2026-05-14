@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 	stormsvcconfig "tridenttools/storm/servicing/utils/config"
 	stormutils "tridenttools/storm/utils"
@@ -18,22 +19,23 @@ import (
 	stormvm "tridenttools/storm/utils/vm"
 	stormvmconfig "tridenttools/storm/utils/vm/config"
 
+	"github.com/microsoft/storm"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 )
 
-func UpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig) error {
-	return innerUpdateLoop(testConfig, vmConfig, false)
+func UpdateLoop(tc storm.TestCase, testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig) error {
+	return innerUpdateLoop(tc, testConfig, vmConfig, false)
 }
 
-func Rollback(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig) error {
-	return innerUpdateLoop(testConfig, vmConfig, true)
+func Rollback(tc storm.TestCase, testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig) error {
+	return innerUpdateLoop(tc, testConfig, vmConfig, true)
 }
 
-func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig, rollback bool) error {
-	// Create context to ensure goroutines exit cleanly
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+func innerUpdateLoop(tc storm.TestCase, testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig, rollback bool) error {
+	// Use the framework-provided context. Storm cancels this when the test
+	// case finishes, which automatically terminates any child goroutines.
+	ctx := tc.Context()
 
 	logrus.Tracef("Stop existing update servers if any")
 	// Kill any running update servers
@@ -63,11 +65,20 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 	cosiFileBase := cosiFile[strings.LastIndex(cosiFile, "/")+1:]
 
 	logrus.Tracef("Start update servers (netlisten)")
-	// Start update servers (netlisten)
+	// Start update servers (netlisten) — tracked via the framework WaitGroup
+	// so storm waits for them to exit when the test case closes.
 	aStartedChannel := make(chan bool)
-	go stormnetlisten.StartNetListenAndWait(ctx, testConfig.UpdatePortA, fmt.Sprintf("%s/update-a", testConfig.ArtifactsDir), "logstream-full-update-a.log", aStartedChannel)
+	tc.BackgroundWaitGroup().Add(1)
+	go func() {
+		defer tc.BackgroundWaitGroup().Done()
+		stormnetlisten.StartNetListenAndWait(ctx, testConfig.UpdatePortA, fmt.Sprintf("%s/update-a", testConfig.ArtifactsDir), "logstream-full-update-a.log", aStartedChannel)
+	}()
 	bStartedChannel := make(chan bool)
-	go stormnetlisten.StartNetListenAndWait(ctx, testConfig.UpdatePortB, fmt.Sprintf("%s/update-b", testConfig.ArtifactsDir), "logstream-full-update-b.log", bStartedChannel)
+	tc.BackgroundWaitGroup().Add(1)
+	go func() {
+		defer tc.BackgroundWaitGroup().Done()
+		stormnetlisten.StartNetListenAndWait(ctx, testConfig.UpdatePortB, fmt.Sprintf("%s/update-b", testConfig.ArtifactsDir), "logstream-full-update-b.log", bStartedChannel)
+	}()
 	// Wait for both update servers to start
 	<-aStartedChannel
 	<-bStartedChannel
@@ -189,24 +200,50 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 		}
 
 		logrus.Tracef("Setting up SSH proxy ports for update servers")
-		aStartedChannel := make(chan bool)
-		go stormssh.StartSshProxyPortAndWait(ctx, testConfig.UpdatePortA, vmIP, vmConfig.VMConfig.User, vmConfig.VMConfig.SshPrivateKeyPath, aStartedChannel)
-		bStartedChannel := make(chan bool)
-		go stormssh.StartSshProxyPortAndWait(ctx, testConfig.UpdatePortB, vmIP, vmConfig.VMConfig.User, vmConfig.VMConfig.SshPrivateKeyPath, bStartedChannel)
+		// SSH reverse tunnels are needed only during staging and finalize (COSI download).
+		// Use a per-iteration context so proxies are cleanly stopped after finalize,
+		// preventing goroutine accumulation across iterations.
+		proxyCtx, proxyCancel := context.WithCancel(ctx)
+		var proxyWg sync.WaitGroup
+		proxyCleanedUp := false
+		cleanupProxies := func() {
+			if proxyCleanedUp {
+				return
+			}
+			proxyCleanedUp = true
+			proxyCancel()
+			proxyWg.Wait()
+		}
+
+		proxyWg.Add(2)
+		aStartedChannel := make(chan bool, 1)
+		go func() {
+			defer proxyWg.Done()
+			stormssh.StartSshProxyPortAndWait(proxyCtx, testConfig.UpdatePortA, vmIP, vmConfig.VMConfig.User, vmConfig.VMConfig.SshPrivateKeyPath, aStartedChannel)
+		}()
+		bStartedChannel := make(chan bool, 1)
+		go func() {
+			defer proxyWg.Done()
+			stormssh.StartSshProxyPortAndWait(proxyCtx, testConfig.UpdatePortB, vmIP, vmConfig.VMConfig.User, vmConfig.VMConfig.SshPrivateKeyPath, bStartedChannel)
+		}()
 		// Wait for both SSH proxy ports to be ready
-		<-aStartedChannel
-		<-bStartedChannel
+		if !<-aStartedChannel || !<-bStartedChannel {
+			cleanupProxies()
+			return fmt.Errorf("failed to start SSH proxy ports for iteration %d", i)
+		}
 
 		logrus.Tracef("Checking for crash dumps on host")
 		crashDumpOutput, err := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "ls /var/crash/*")
 		if err == nil {
 			logrus.Debugf("Crash files found on host during iteration %d: %s", i, crashDumpOutput)
 			logrus.Error("Crash files found on host")
+			cleanupProxies()
 			return fmt.Errorf("crash files found on host during iteration %d", i)
 		}
 
 		if rollback && i == 1 {
 			if err := prepareRollback(vmConfig, vmIP, updateConfig, expectedVolume, i); err != nil {
+				cleanupProxies()
 				return fmt.Errorf("failed to prepare rollback for iteration %d: %w", i, err)
 			}
 		}
@@ -232,13 +269,16 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 
 		stageLogLocalTmpFile, err := os.CreateTemp("", "staged-trident-full")
 		if err != nil {
+			cleanupProxies()
 			return fmt.Errorf("failed to create temp staging log file: %w", err)
 		}
 		stageLogLocalTmpPath := stageLogLocalTmpFile.Name()
-		defer os.Remove(stageLogLocalTmpPath)
+		stageLogLocalTmpFile.Close()
 
 		err = stormssh.ScpDownloadFile(vmConfig.VMConfig, vmIP, "/var/log/trident-full.log", stageLogLocalTmpPath)
 		if err != nil {
+			os.Remove(stageLogLocalTmpPath)
+			cleanupProxies()
 			return fmt.Errorf("failed to download staged trident log: %w", err)
 		}
 
@@ -246,6 +286,8 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 			logrus.Tracef("Download staging trident logs for iteration %d", i)
 			stageLogPath := filepath.Join(testConfig.OutputPath, fmt.Sprintf("%s-staged-trident-full.log", fmt.Sprintf("%03d", i)))
 			if err := exec.Command("cp", stageLogLocalTmpPath, stageLogPath).Run(); err != nil {
+				os.Remove(stageLogLocalTmpPath)
+				cleanupProxies()
 				return fmt.Errorf("failed to copy staged trident log to output path: %w", err)
 			}
 			if err := os.Chmod(stageLogPath, 0644); err != nil {
@@ -257,6 +299,8 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 		}
 
 		if stageErr != nil {
+			os.Remove(stageLogLocalTmpPath)
+			cleanupProxies()
 			if egrepOut, err := exec.Command("/bin/sh", "-c", fmt.Sprintf("grep 'target is busy' %s | grep umount", stageLogLocalTmpPath)).CombinedOutput(); err == nil {
 				// Check for known unmount failure and signal
 				logrus.Errorf("umount failure (iteration %d: %v): %s", i, stageErr, egrepOut)
@@ -272,6 +316,9 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 			logrus.Errorf("No update servicing required (iteration %d: %v): %s", i, stageErr, cosiDownloadOut)
 			return fmt.Errorf("no update servicing required (iteration %d: %v)", i, stageErr)
 		}
+
+		// Clean up staging temp file now rather than accumulating defers
+		os.Remove(stageLogLocalTmpPath)
 
 		logrus.Tracef("Running Trident update finalize command on VM")
 
@@ -302,6 +349,11 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 		if testConfig.Verbose {
 			logrus.Tracef("Finalize output for iteration %d:\n%s\n%v", i, combinedFinalizeOutput, finalizeErr)
 		}
+
+		// SSH reverse tunnels are no longer needed — finalize re-reads the COSI
+		// file, so tunnels must stay alive through finalize. Stop them now before
+		// the reboot to avoid orphaned SSH processes.
+		cleanupProxies()
 
 		logrus.Tracef("Wait for VM to come back up after finalize reboot")
 		if vmConfig.VMConfig.Platform == stormvmconfig.PlatformQEMU {
@@ -546,8 +598,12 @@ func validateRollback(cfg stormvmconfig.VMConfig, vmIP string) error {
 }
 
 // checkSerialLogForDracutIssues scans the serial log for patterns that indicate
-// initramfs is stuck waiting for a device, which is the symptom of bug 15086
-// (stale disk UUIDs embedded in initramfs by dracut).
+// initramfs had issues. It distinguishes between:
+//   - Genuine initramfs failures (emergency shell, timeout) where the VM never
+//     reached systemd
+//   - Transient initramfs warnings that resolved (dracut-initqueue delay) where
+//     the VM booted past initramfs into systemd but may be unreachable for other
+//     reasons (e.g., sshd not started, network issue)
 func checkSerialLogForDracutIssues(serialLogPath string, iteration int) {
 	if serialLogPath == "" {
 		return
@@ -559,21 +615,41 @@ func checkSerialLogForDracutIssues(serialLogPath string, iteration int) {
 	}
 	content := string(data)
 
+	// Check if the VM booted past initramfs into systemd. The presence of
+	// systemd PID 1 messages after initramfs means the root filesystem was
+	// mounted and systemd took over. Dracut warnings in this case are
+	// transient — they delayed boot but didn't prevent it.
+	bootedToSystemd := strings.Contains(content, "systemd[1]: Finished systemd-remount-fs.service") ||
+		strings.Contains(content, "systemd[1]: Reached target local-fs.target")
+
 	dracutPatterns := []struct {
-		pattern string
-		message string
+		pattern  string
+		message  string
+		definite bool // true = definitely stuck in initramfs (not a transient warning)
 	}{
-		{"dracut-initqueue[", "dracut-initqueue warning detected — initramfs may be waiting for a device"},
-		{"Could not boot", "dracut 'Could not boot' error detected"},
-		{"Starting dracut emergency shell", "dracut emergency shell activated — boot failed in initramfs"},
-		{"Warning: /dev/disk/by", "dracut warning about /dev/disk/by-* path — possible stale UUID reference"},
-		{"rd.break", "rd.break detected — initramfs dropped to debug shell"},
-		{"Timed out waiting for device", "dracut timed out waiting for device — likely stale UUID in initramfs (bug 15086)"},
+		{"Could not boot", "dracut 'Could not boot' error detected", true},
+		{"Starting dracut emergency shell", "dracut emergency shell activated — boot failed in initramfs", true},
+		{"Entering emergency mode", "initramfs or systemd entered emergency mode", false},
+		{"Timed out waiting for device", "dracut timed out waiting for device — likely stale UUID in initramfs (bug 15086)", true},
+		{"dracut-initqueue[", "dracut-initqueue warning detected — initramfs may be waiting for a device", false},
+		{"Warning: /dev/disk/by", "dracut warning about /dev/disk/by-* path — possible stale UUID reference", false},
+		{"rd.break", "rd.break detected — initramfs dropped to debug shell", false},
 	}
 
+	matchCount := 0
 	for _, dp := range dracutPatterns {
 		if strings.Contains(content, dp.pattern) {
-			logrus.Errorf("INITRAMFS DIAGNOSTIC (iteration %d): %s (matched '%s' in serial log)", iteration, dp.message, dp.pattern)
+			matchCount++
+			if bootedToSystemd && !dp.definite {
+				// VM booted past initramfs — dracut warning was transient.
+				logrus.Warnf("INITRAMFS NOTE (iteration %d): %s — but VM booted past initramfs into systemd (matched '%s' in serial log)", iteration, dp.message, dp.pattern)
+			} else {
+				logrus.Errorf("INITRAMFS DIAGNOSTIC (iteration %d): %s (matched '%s' in serial log)", iteration, dp.message, dp.pattern)
+			}
 		}
+	}
+
+	if matchCount > 0 && bootedToSystemd {
+		logrus.Warnf("INITRAMFS SUMMARY (iteration %d): VM reached systemd despite %d dracut warning(s) — failure is likely SSH/network unreachability, not initramfs", iteration, matchCount)
 	}
 }
