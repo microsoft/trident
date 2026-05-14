@@ -1,0 +1,72 @@
+# AZL4 variant of build-image.yml.
+#
+# Forked from build-image.yml on 2026-05-13. Calls build-image-template-azl4.yml
+# (which uses the pinned MIC container + blob-sourced base VHDX) instead of the
+# external test-images repo template.
+#
+# TODO(azl4-merge-back): Merge this back into build-image.yml with an
+# `azureLinuxVersion` parameter switch once AZL4 has feed-published base VHDXes,
+# RPMs, and a released MIC container.
+
+parameters:
+  - name: imageName
+    type: string
+
+  - name: clones
+    displayName: "Number of clones to generate"
+    type: number
+    default: 2
+
+  - name: dependsOnTrident
+    type: boolean
+    default: true
+
+  - name: dependsOnStage
+    type: string
+    default: ""
+
+stages:
+  - stage: TridentTestImg_${{ replace(parameters.imageName, '-', '_') }}
+    displayName: Build ${{ parameters.imageName }}
+    ${{ if parameters.dependsOnTrident }}:
+      dependsOn:
+        # AZL4 doesn't have RPM publication so we depend on the
+        # trident-binaries artifact (which the GetTridentBinaries stage
+        # produces and copies to artifacts/binaries/trident).
+        - GetTridentBinaries_rpms_amd64
+        - ${{ if ne(parameters.dependsOnStage, '') }}:
+          - ${{ parameters.dependsOnStage }}
+    ${{ elseif ne(parameters.dependsOnStage, '') }}:
+      dependsOn:
+        - ${{ parameters.dependsOnStage }}
+
+    jobs:
+      - job: BuildTridentTestImgAzl4
+        displayName: Build (AZL4 pinned MIC)
+        # Pinned MIC container build adds ~5 min cold-cache. Bump the timeout
+        # accordingly. TODO(azl4-release): lower back to 20 min once we use a
+        # released MIC container.
+        timeoutInMinutes: 30
+        pool:
+          type: linux
+
+        variables:
+          ob_outputDirectory: /tmp/output
+          ob_artifactBaseName: ${{ parameters.imageName }}
+
+        steps:
+          - template: ../common_tasks/checkout_trident.yml
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              buildType: current
+              artifactName: trident-binaries
+              targetPath: "$(Build.ArtifactStagingDirectory)/trident-binaries"
+            displayName: Download Trident binaries
+            condition: eq('${{ parameters.dependsOnTrident }}', true)
+
+          - template: build-image-template-azl4.yml
+            parameters:
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
+              imageName: ${{ parameters.imageName }}
+              clones: ${{ parameters.clones }}

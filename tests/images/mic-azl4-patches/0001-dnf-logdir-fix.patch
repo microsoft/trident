@@ -1,0 +1,42 @@
+From: Brian Telfer <britel@microsoft.com>
+Subject: [PATCH] dnf: Pass --setopt=logdir=/tmp during info queries
+
+dnf unconditionally opens /var/log/dnf.log for writing during info
+operations. After MIC partition resize, the image rootfs is remounted
+read-only, so the dnf info call fails with:
+    Cannot open log file: (30) - Read-only file system [/var/log/dnf5.log]
+which makes IsPackageInstalled return false for all queries, breaking
+bootloader detection on AZL4 base images.
+
+This is the same one-line fix already present in Vince Perri's
+user/vinceaperri/azl4-support branch (microsoft/azurelinux-image-tools
+PR #698). Carried as a Trident-side patch on top of the pinned
+multi-distro-grub commit (9b7f9806b) until PR #698 lands and
+propagates into multi-distro-grub.
+
+Drop this patch the moment the pinned MIC SHA in PINNED.md is bumped
+past Vince's fix.
+
+Co-authored-by: Vince Perri <vinceaperri@users.noreply.github.com>
+
+---
+ toolkit/tools/pkg/imagecustomizerlib/packagemanager_dnf.go | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/toolkit/tools/pkg/imagecustomizerlib/packagemanager_dnf.go b/toolkit/tools/pkg/imagecustomizerlib/packagemanager_dnf.go
+index 5a8e2c1..b1f7e4a 100644
+--- a/toolkit/tools/pkg/imagecustomizerlib/packagemanager_dnf.go
++++ b/toolkit/tools/pkg/imagecustomizerlib/packagemanager_dnf.go
+@@ -183,7 +183,9 @@ func (pm *dnfPackageManager) createOutputCallback() func(string) {
+ }
+ 
+ func (pm *dnfPackageManager) isPackageInstalled(imageChroot safechroot.ChrootInterface, packageName string) bool {
+-	err := shell.NewExecBuilder("dnf", "info", "--installed", packageName).
++	// dnf unconditionally opens /var/log/dnf.log for writing during info operations, so set logdir to a location we
++	// know is always writable, even in read-only chroots.
++	err := shell.NewExecBuilder("dnf", "info", "--setopt=logdir=/tmp", "--installed", packageName).
+ 		LogLevel(logrus.TraceLevel, logrus.DebugLevel).
+ 		Chroot(imageChroot.ChrootDir()).
+ 		Execute()
+-- 
+2.43.0

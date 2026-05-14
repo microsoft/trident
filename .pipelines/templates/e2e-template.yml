@@ -230,6 +230,23 @@ stages:
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
+  # Build the AZL4 test image (pinned-MIC path).
+  #
+  # TODO(azl4-release): Drop the bespoke build-image-azl4.yml call once AZL4
+  # has feed-published base VHDXes, RPMs, and a released MIC container.
+  # Then this can be a plain build-image.yml call with an azureLinuxVersion
+  # parameter, matching the other testimage stages.
+  #
+  # TODO(azl4-rollout): Gate this behind an explicit pipeline parameter
+  # (e.g. `runAzl4`) once the pinned-MIC side-task has proven stable in CI.
+  # Right now it always runs so we get signal; if it's too noisy in early
+  # rollouts, parameterize and default to false.
+  - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
+      - template: stages/build_image/build-image-azl4.yml
+        parameters:
+          imageName: trident-vm-grub-testimage-azl4
+          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+
   # Build AzL installer ISO (attended and unattended)
   - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure'), eq(parameters.stageType, 'azl-validation')) }}:
       - template: stages/azl_installer/azl-installer.yml
