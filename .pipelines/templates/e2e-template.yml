@@ -196,16 +196,16 @@ stages:
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
-  # Build Trident test image for root-verity (host)
-  - template: stages/build_image/build-image.yml
+  # Build Trident test image for root-verity (host) — A/B TEST: using old @test-images path
+  - template: stages/build_image/build-image-old-test-images.yml
     parameters:
       imageName: trident-verity-testimage
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
-  # Build Trident test image for root-verity (container)
-  - template: stages/build_image/build-image.yml
+  # Build Trident test image for root-verity (container) — A/B TEST: using old @test-images path
+  - template: stages/build_image/build-image-old-test-images.yml
     parameters:
       imageName: trident-container-verity-testimage
       runtimeEnv: "container"
