@@ -1,0 +1,100 @@
+# TODO(azl4-release): Drop this template once AZL4 ships in a released MIC
+# container at mcr.microsoft.com/azurelinux/imagecustomizer. At that point
+# the standard build-image-template.yml path can be used with --container
+# pointing at the released tag. Tracking: tests/images/mic-azl4-patches/README.md
+#
+# Side-task that builds a pinned imagecustomizer container and osmodifier
+# binary from microsoft/azurelinux-image-tools at a known-working SHA, plus
+# any local patches required to make AZL4 produce a COSI end-to-end. Output
+# is loaded into the local Docker daemon as ${{ parameters.containerTag }}
+# and the osmodifier binary is staged where the testimage YAML expects it.
+
+parameters:
+  - name: tridentSourceDirectory
+    type: string
+
+  # Keep these defaults in sync with
+  # tests/images/mic-azl4-patches/build-pinned-mic.sh
+  - name: pinnedUrl
+    type: string
+    default: "https://github.com/microsoft/azurelinux-image-tools.git"
+
+  # SHA on user/vinceaperri/multi-distro-grub validated by Trident's PR-5
+  # E2E run on 2026-05-12. Bump only after re-validating end-to-end.
+  - name: pinnedSha
+    type: string
+    default: "9b7f9806b8c8a0e7c9bea0b69f4d4a4f9e5c1e23"
+
+  - name: containerTag
+    type: string
+    default: "imagecustomizer:azl4-pinned"
+
+steps:
+  - bash: |
+      set -euxo pipefail
+
+      # TODO(azl4-release): drop the entire `tdnf install azure-cli` /
+      # `apt install` block once the runner image ships az CLI by default.
+      # Until then we install it inline because builder.download.download_blob_image
+      # calls `az storage blob download`.
+      if which tdnf >/dev/null 2>&1; then
+        sudo tdnf install -y azure-cli git go golang docker
+        sudo systemctl start docker
+      else
+        curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+        sudo apt update
+        sudo apt -y install git golang-go docker.io
+      fi
+    displayName: "Install pinned-MIC build prerequisites"
+    retryCountOnTaskFailure: 3
+
+  - bash: |
+      set -euxo pipefail
+
+      WORKDIR="$(Agent.TempDirectory)/azl4-mic-pinned"
+      rm -rf "$WORKDIR"
+      git clone --filter=blob:none "${{ parameters.pinnedUrl }}" "$WORKDIR"
+      cd "$WORKDIR"
+      git checkout "${{ parameters.pinnedSha }}"
+
+      # Apply every patch under tests/images/mic-azl4-patches/. Each carries
+      # a single upstream-PR-pending fix; see that directory's README.
+      PATCH_DIR="${{ parameters.tridentSourceDirectory }}/tests/images/mic-azl4-patches"
+      for patch in "$PATCH_DIR"/*.patch; do
+        echo "applying $(basename "$patch")"
+        git apply --check "$patch"
+        git apply "$patch"
+      done
+
+      # Build the imagecustomizer Go binary.
+      ( cd toolkit/tools/imagecustomizer && go build -o ../../out/tools/imagecustomizer . )
+
+      # TODO(azl4-release): drop this LICENSES staging once upstream's
+      # build-container.sh doesn't require it.
+      mkdir -p toolkit/out/LICENSES
+      cp LICENSE toolkit/out/LICENSES/ 2>/dev/null || true
+
+      # Build the container with BuildKit (required for the secret-mount in
+      # upstream's Dockerfile).
+      DOCKER_BUILDKIT=1 ./toolkit/tools/imagecustomizer/container/build-container.sh \
+        -t "${{ parameters.containerTag }}" -a amd64
+
+      # Build the osmodifier binary from the same pinned source, staged where
+      # tests/images/trident-vm-testimage/base/updateimg-grub-azl4.yaml
+      # additionalFiles entry expects it.
+      #
+      # TODO(azl4-osmodifier-rpm): replace this bin-copy with an osmodifier
+      # RPM install once one is available for AZL4. Today there's no RPM,
+      # so we ship the binary inline via additionalFiles. See PR-4 for the
+      # corresponding hostname carry-over migration off osmodifier, which
+      # is gradually whittling down what osmodifier is needed for.
+      OSMOD_DEST="${{ parameters.tridentSourceDirectory }}/tests/images/trident-vm-testimage/base/osmodifier-bin"
+      mkdir -p "$OSMOD_DEST"
+      ( cd toolkit/tools/osmodifier && go build -o "$OSMOD_DEST/osmodifier" . )
+      chmod +x "$OSMOD_DEST/osmodifier"
+
+      echo "Pinned MIC container loaded:"
+      docker images | grep "${{ parameters.containerTag }}" || true
+      echo "osmodifier staged at: $OSMOD_DEST/osmodifier"
+    displayName: "Build pinned MIC container and osmodifier"
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
