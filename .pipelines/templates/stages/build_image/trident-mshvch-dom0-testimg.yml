@@ -32,11 +32,12 @@ stages:
       - name: baseimg_version
         value: DEFAULT
       - group: coreos_mariner_hci_staging_lisa_kva_functional_tests_service_principal
+      - name: TEST_IMAGES_DIR
+        value: $(Pipeline.Workspace)/s/test-images
 
     steps:
-    # Disabled in .pipelines/templates/e2e-template.yml.
-    # Update this stage for the test-images migration before re-enabling it.
-    - script: |
-        echo "Disabled pending migration updates before this stage can be re-enabled."
-        exit 1
-      displayName: Disabled pending migration
+    - template: .pipelines/templates/mshvch-dom0-image-build-template.yml@test-images
+      parameters:
+        outputDirectory: $(ob_outputDirectory)
+        artifactBaseName: $(ob_artifactBaseName)
+        testImagesRepo: test-images
