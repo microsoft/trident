@@ -23,7 +23,7 @@ parameters:
   # E2E run on 2026-05-12. Bump only after re-validating end-to-end.
   - name: pinnedSha
     type: string
-    default: "9b7f9806b8c8a0e7c9bea0b69f4d4a4f9e5c1e23"
+    default: "e0d1deb8a810c8cbd0f19cfaa1fa42768e6f53b9"
 
   - name: containerTag
     type: string
