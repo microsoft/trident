@@ -1,19 +1,19 @@
 # Trident Container Test Image
 
-This image an extension of the base bare metal images and includes various helper utilities along with Docker runtime. It also adds openssh-server to allow for remote access.
+This image is an extension of the base baremetal image and includes various
+helper utilities along with Docker runtime. It also adds openssh-server to
+allow for remote access.
+
+This image does **not** include Trident RPMs — Trident runs from a container
+loaded at runtime.
 
 ## Building
 
-To build the base image and per-partition compressed images, run:
+From the repo root, run:
 
 ```bash
-make trident-container-testimage
+python3 tests/images/testimages.py build trident-container-testimage
 ```
 
-It will populate the partition files as follows:
-
-```text
-build/trident-container-testimage
-├── esp.raw.zst
-└── root.raw.zst
-```
+Output is written to `artifacts/trident-container-testimage.cosi` by default.
+Use `--output-dir <path>` to change the output location.

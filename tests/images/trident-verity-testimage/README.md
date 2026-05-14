@@ -1,32 +1,25 @@
 # Trident Verity Test Image
 
-This image is used for testing Trident on Mariner with `dm-verity` enabled. It
+This image is used for testing Trident on Azure Linux with `dm-verity` enabled. It
 is based on the baremetal image and adds Trident as well as its dependencies. It
 also adds openssh-server to allow for remote access. In addition to the [Trident
 Test Image](../trident-testimage/README.md), this image is configured to use
 dm-verity.
 
-## Additional Prerequisites
+## Prerequisites
 
-- Artifacts
-  - **Trident RPMs**: expected in `base/trident/*.rpm`. Can be downloaded with
-    `make download-trident-rpms`
+- **Trident RPMs** in `bin/RPMS/`. Build them with:
+  ```bash
+  make bin/trident-rpms.tar.gz
+  ```
 
 ## Building
 
-To build the base image and per-partition compressed images, run:
+From the repo root, run:
 
 ```bash
-make trident-verity-testimage
+python3 tests/images/testimages.py build trident-verity-testimage
 ```
 
-It will populate the partition files as follows:
-
-```text
-build/trident-verity-testimage
-├── esp.raw.zst
-├── boot.raw.zst
-├── root.raw.zst
-├── root-hash.raw.zst
-└── var.raw.zst
-```
+Output is written to `artifacts/trident-verity-testimage.cosi` by default. Use
+`--output-dir <path>` to change the output location.
