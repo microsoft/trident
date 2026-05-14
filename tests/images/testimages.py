@@ -24,6 +24,31 @@ DEFAULT_IMAGE_CUSTOMIZER_VERSION = "latest"
 
 
 DEFINED_IMAGES: List[ImageConfig] = [
+    # Installer images
+    ImageConfig(
+        "trident-installer",
+        config="trident-installer",
+        output_format=OutputFormat.ISO,
+    ),
+    ImageConfig(
+        "trident-split-installer",
+        config="trident-installer",
+        config_file="base/baseimg-split.yaml",
+        output_format=OutputFormat.ISO,
+    ),
+    ImageConfig(
+        "trident-installer-arm64",
+        config="trident-installer",
+        output_format=OutputFormat.ISO,
+        base_image=BaseImage.CORE_ARM64,
+        architecture=SystemArchitecture.ARM64,
+    ),
+    ImageConfig(
+        "trident-container-installer",
+        config="trident-container-installer",
+        output_format=OutputFormat.ISO,
+        requires_trident=False,
+    ),
     ImageConfig(
         "trident-direct-streaming-installer-amd64",
         config="trident-installer",
@@ -38,11 +63,44 @@ DEFINED_IMAGES: List[ImageConfig] = [
         base_image=BaseImage.CORE_ARM64,
         architecture=SystemArchitecture.ARM64,
     ),
+    # Test images
     ImageConfig(
         "trident-functest",
         output_format=OutputFormat.QCOW2,
         requires_trident=False,
     ),
+    ImageConfig("trident-testimage"),
+    ImageConfig(
+        "trident-testimage-arm64",
+        config="trident-testimage",
+        base_image=BaseImage.CORE_ARM64,
+        architecture=SystemArchitecture.ARM64,
+    ),
+    ImageConfig("trident-verity-testimage"),
+    ImageConfig(
+        "trident-usrverity-testimage",
+        config="trident-verity-testimage",
+        config_file="usr/host.yaml",
+        requires_ukify=True,
+    ),
+    ImageConfig(
+        "trident-container-verity-testimage",
+        config="trident-verity-testimage",
+        config_file="base/baseimg-container.yaml",
+        requires_trident=False,
+    ),
+    ImageConfig(
+        "trident-container-usrverity-testimage",
+        config="trident-verity-testimage",
+        config_file="usr/container.yaml",
+        requires_ukify=True,
+        requires_trident=False,
+    ),
+    ImageConfig(
+        "trident-container-testimage",
+        requires_trident=False,
+    ),
+    # Direct streaming images
     ImageConfig(
         "azurelinux-direct-streaming-testimage-amd64",
         config="azurelinux-direct-streaming-testimage",
@@ -55,6 +113,7 @@ DEFINED_IMAGES: List[ImageConfig] = [
         base_image=BaseImage.CORE_ARM64,
         architecture=SystemArchitecture.ARM64,
     ),
+    # AZL installer
     ImageConfig(
         "azl-installer",
         config_file=Path("installer-iso.yaml"),
@@ -65,6 +124,7 @@ DEFINED_IMAGES: List[ImageConfig] = [
             Path("tests/images/azl-installer/iso/images/trident-testimage.cosi"),
         ],
     ),
+    # VM test images
     ImageConfig(
         "trident-vm-grub-testimage",
         base_image=BaseImage.QEMU_GUEST,

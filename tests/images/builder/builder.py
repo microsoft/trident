@@ -443,7 +443,6 @@ def build_signed_image(
     sign.sign_boot_artifacts(
         ca_nss_key_db,
         leaf_key_name,
-        image.get_items_to_sign(),
         inject_files_yaml_path,
         output_artifacts_dir,
     )

@@ -6,7 +6,7 @@ import yaml
 import threading
 
 from pathlib import Path
-from typing import List
+from typing import Optional
 
 from builder.context_managers import temp_dir
 
@@ -37,6 +37,39 @@ IC_ARTIFACT_NAME_UKIS = "ukis"
 IC_ARTIFACT_NAME_SHIM = "shim"
 IC_ARTIFACT_NAME_SYSTEMD_BOOT = "systemd-boot"
 IC_ARTIFACT_NAME_VERITY_HASH = "verity-hash"
+
+_KERNEL_FLAG_SUPPORTED = None
+_PESIGN_CERT_ARG = None
+
+
+def _efikeygen_supports_kernel_flag() -> bool:
+    global _KERNEL_FLAG_SUPPORTED
+
+    if _KERNEL_FLAG_SUPPORTED is None:
+        result = subprocess.run(
+            ["efikeygen", "--help"], capture_output=True, text=True, check=False
+        )
+        help_output = f"{result.stdout}\n{result.stderr}"
+        _KERNEL_FLAG_SUPPORTED = "--kernel" in help_output
+        log.debug(f"efikeygen --kernel support: {_KERNEL_FLAG_SUPPORTED}")
+
+    return _KERNEL_FLAG_SUPPORTED
+
+
+def _get_pesign_certificate_arg() -> str:
+    global _PESIGN_CERT_ARG
+
+    if _PESIGN_CERT_ARG is None:
+        result = subprocess.run(
+            ["pesign", "--help"], capture_output=True, text=True, check=False
+        )
+        help_output = f"{result.stdout}\n{result.stderr}"
+        _PESIGN_CERT_ARG = (
+            "--certficate" if "--certficate" in help_output else "--certificate"
+        )
+        log.debug(f"Using pesign certificate argument: {_PESIGN_CERT_ARG}")
+
+    return _PESIGN_CERT_ARG
 
 
 def generate_ca_certificate(tmp_dir: Path):
@@ -99,22 +132,23 @@ def generate_leaf_certificate(ca_nss_key_db: Path, id: str):
     # Generate unique leaf key name
     leaf_key_name = f"{KEY_NAME}_{id}"
 
+    cmd = [
+        "efikeygen",
+        "-n",
+        leaf_key_name,
+        "-c",
+        f"CN={KEY_CN} {id}",
+        "--signer",
+        CA_NAME,
+        "-d",
+        str(ca_nss_key_db),
+    ]
+
+    if _efikeygen_supports_kernel_flag():
+        cmd.append("--kernel")
+
     # Generate signing key/cert, signed by CA in the shared DB
-    subprocess.run(
-        [
-            "efikeygen",
-            "-n",
-            leaf_key_name,
-            "-c",
-            f"CN={KEY_CN} {id}",
-            "--signer",
-            CA_NAME,
-            "-d",
-            str(ca_nss_key_db),
-            "--kernel",
-        ],
-        check=True,
-    )
+    subprocess.run(cmd, check=True)
 
     log.debug(
         f"Process with PID {threading.get_ident()} generated leaf key {leaf_key_name} in {ca_nss_key_db}"
@@ -173,7 +207,6 @@ def publish_ca_certificate(ca_nss_key_db: Path, output_dir: Path):
 def sign_boot_artifacts(
     ca_nss_key_db: Path,
     leaf_key_name: str,
-    items_to_sign: List[str],
     inject_files_yaml_path: Path,
     output_artifacts_dir: Path,
 ):
@@ -183,105 +216,71 @@ def sign_boot_artifacts(
     Args:
         ca_nss_key_db: Path to the NSS key database for the CA certificate
         leaf_key_name: Name of the leaf certificate
-        items_to_sign: List of items to sign
         inject_files_yaml_path: Full path to inject-files.yaml
         output_artifacts_dir: Dir where artifacts are output by Image Customizer
     """
-    # Print contents of inject_files_yaml_path
     with open(inject_files_yaml_path, "r") as f:
         data = f.read()
 
     log.debug(f"Contents of {inject_files_yaml_path}:\n{data}")
     inject_files_config = yaml.safe_load(data)
 
-    # Map artifact types to file-matching regex
-    item_regex = {
-        IC_ARTIFACT_NAME_UKIS: r"vmlinuz.*\.efi",
-        IC_ARTIFACT_NAME_SHIM: r"bootx64\.efi",
-        IC_ARTIFACT_NAME_SYSTEMD_BOOT: r"systemd-bootx64\.efi",
-        IC_ARTIFACT_NAME_VERITY_HASH: r".*hash.*",
-    }
+    for entry in inject_files_config.get("injectFiles", []):
+        artifact_type = entry.get("type", "")
+        signed_path_str = entry.get("source")
+        unsigned_path_str = entry.get("unsignedSource", "")
 
-    # Print items to sign
-    log.debug(f"Items to sign: {items_to_sign}")
+        if not signed_path_str:
+            raise RuntimeError(f"Missing source in inject-files entry: {entry}")
 
-    # Handle signing for each item that requires it
-    for item in items_to_sign:
-        regex = item_regex.get(item)
-        if not regex:
-            continue
+        if not unsigned_path_str:
+            # MIC v1.1+ uses the same path for unsigned and signed files.
+            unsigned_path_str = signed_path_str
 
-        # Find unsigned and signed artifact filepaths matching this regex
-        unsigned_artifact_path = get_artifact_path(
-            inject_files_config, output_artifacts_dir, regex, False
+        signed_rel_path = (
+            signed_path_str[2:] if signed_path_str.startswith("./") else signed_path_str
         )
-        signed_artifact_path = get_artifact_path(
-            inject_files_config, output_artifacts_dir, regex, True
+        unsigned_rel_path = (
+            unsigned_path_str[2:]
+            if unsigned_path_str.startswith("./")
+            else unsigned_path_str
         )
+        signed_path = output_artifacts_dir.absolute() / signed_rel_path
+        unsigned_path = output_artifacts_dir.absolute() / unsigned_rel_path
 
-        # Create parent directory of signed artifact if it doesn't exist
-        signed_artifact_path.parent.mkdir(parents=True, exist_ok=True)
-        signed_artifact_path.parent.chmod(0o700)
+        if not artifact_type:
+            artifact_type = get_artifact_type_from_name(unsigned_path.name)
 
-        # Specify if item is verity-hash since it requires a different signing logic
-        if item == IC_ARTIFACT_NAME_VERITY_HASH:
-            log.info(
-                f"Signing verity hash file {unsigned_artifact_path} to {signed_artifact_path}"
-            )
+        log.info(
+            f"Signing file of type '{artifact_type}' at {unsigned_path} to {signed_path}"
+        )
+        if artifact_type == IC_ARTIFACT_NAME_VERITY_HASH:
             sign_verity_hash(
                 ca_nss_key_db,
                 leaf_key_name,
-                unsigned_artifact_path,
-                signed_artifact_path,
+                unsigned_path,
+                signed_path,
             )
         else:
-            log.info(
-                f"Signing {item} file {unsigned_artifact_path} to {signed_artifact_path}"
-            )
             sign_pe_artifact(
                 ca_nss_key_db,
                 leaf_key_name,
-                unsigned_artifact_path,
-                signed_artifact_path,
+                unsigned_path,
+                signed_path,
             )
 
 
-def get_artifact_path(
-    inject_files_config: dict,
-    output_artifacts_dir: Path,
-    file_regex: str,
-    signed: bool,
-) -> Path:
-    """
-    Loads inject-files.yaml, searches each entry for a field matching the regex,
-    and returns the normalized full path to the artifact.
+def get_artifact_type_from_name(name: str) -> Optional[str]:
+    if re.match(r"vmlinuz.*\.efi", name):
+        return IC_ARTIFACT_NAME_UKIS
+    if re.match(r"bootx64\.efi", name):
+        return IC_ARTIFACT_NAME_SHIM
+    if re.match(r"systemd-bootx64\.efi", name):
+        return IC_ARTIFACT_NAME_SYSTEMD_BOOT
+    if re.match(r".*hash.*", name):
+        return IC_ARTIFACT_NAME_VERITY_HASH
 
-    Args:
-        inject_files_config: Dictionary loaded from the YAML file
-        output_artifacts_dir: Directory where artifacts are stored
-        file_regex: Regex to match artifact file names
-        signed: If True, returns the signed artifact path, i.e. "source"; otherwise, returns the
-        unsigned artifact path, i.e. "unsignedSource"
-
-    Returns:
-        Full artifact path as string if found.
-
-    Raises:
-        Exception: RuntimeError if artifact not found.
-    """
-    pattern = re.compile(file_regex)
-
-    for entry in inject_files_config.get("injectFiles", []):
-        if signed:
-            source_type = "source"
-        else:
-            source_type = "unsignedSource"
-        source_name = entry.get(source_type, "")
-        if pattern.fullmatch(os.path.basename(source_name)):
-            rel_path = source_name[2:] if source_name.startswith("./") else source_name
-            return output_artifacts_dir.absolute() / rel_path
-
-    raise RuntimeError(f"No matching entry found for pattern '{file_regex}'")
+    return None
 
 
 def sign_verity_hash(
@@ -302,16 +301,31 @@ def sign_verity_hash(
     Raises:
         Exception: If pesign fails.
     """
-    # Create parent directory of signed artifact if it doesn't exist
+    log.debug(
+        f"Process with PID {threading.get_ident()} is signing {unsigned_verity_hash_path}"
+    )
 
     signed_verity_hash_path.parent.mkdir(parents=True, exist_ok=True)
     signed_verity_hash_path.parent.chmod(0o700)
 
-    with temp_dir() as tmpdir:
-        # Sign the verity hash file
+    with temp_dir(sudo=True) as tmpdir:
+        tmp_signed_artifact = (
+            tmpdir
+            / f"{unsigned_verity_hash_path.stem}.signed{unsigned_verity_hash_path.suffix}"
+        )
+        tmp_unsigned_artifact = (
+            tmpdir
+            / f"{unsigned_verity_hash_path.stem}.unsigned{unsigned_verity_hash_path.suffix}"
+        )
         key_path = tmpdir / "key.p12"
         key_crt_path = tmpdir / "key.crt"
-        # Export PKCS12 key
+
+        subprocess.run(
+            ["sudo", "cp", str(unsigned_verity_hash_path), str(tmp_unsigned_artifact)],
+            check=True,
+        )
+
+        log.debug(f"Exporting PKCS12 key to {key_path}")
         subprocess.run(
             [
                 "pk12util",
@@ -326,7 +340,8 @@ def sign_verity_hash(
             ],
             check=True,
         )
-        # Extract cert
+
+        log.debug(f"Extracting cert from PKCS12 key to {key_crt_path}")
         subprocess.run(
             [
                 "openssl",
@@ -343,7 +358,9 @@ def sign_verity_hash(
             check=True,
         )
 
-        # smime sign
+        log.debug(
+            f"Signing verity hash file at {tmp_unsigned_artifact} using openssl smime"
+        )
         subprocess.run(
             [
                 "openssl",
@@ -352,7 +369,7 @@ def sign_verity_hash(
                 "-noattr",
                 "-binary",
                 "-in",
-                str(unsigned_verity_hash_path),
+                str(tmp_unsigned_artifact),
                 "-signer",
                 str(key_crt_path),
                 "-passin",
@@ -360,25 +377,37 @@ def sign_verity_hash(
                 "-outform",
                 "der",
                 "-out",
-                str(signed_verity_hash_path),
+                str(tmp_signed_artifact),
             ],
             check=True,
         )
 
-        # Print certs for debug/validation as in bash
+        try:
+            result = subprocess.run(
+                [
+                    "openssl",
+                    "pkcs7",
+                    "-inform",
+                    "DER",
+                    "-in",
+                    str(tmp_signed_artifact),
+                    "-print_certs",
+                    "-text",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            log.debug(f"Certs for {unsigned_verity_hash_path}:\n{result.stdout}")
+        except subprocess.CalledProcessError as e:
+            log.error(f"Failed to print certs for {unsigned_verity_hash_path}: {e}")
+
         subprocess.run(
-            [
-                "openssl",
-                "pkcs7",
-                "-inform",
-                "DER",
-                "-in",
-                str(signed_verity_hash_path),
-                "-print_certs",
-                "-text",
-            ],
+            ["sudo", "cp", str(tmp_signed_artifact), str(signed_verity_hash_path)],
             check=True,
         )
+
+    log.debug(f"Signed verity-hash artifact generated at {signed_verity_hash_path}")
 
 
 def sign_pe_artifact(
@@ -403,21 +432,43 @@ def sign_pe_artifact(
         f"Process with PID {threading.get_ident()} is signing {unsigned_artifact_path} to {signed_artifact_path}"
     )
 
-    # Sign as a PE binary
-    subprocess.run(
-        [
-            "pesign",
-            "--certdir",
-            str(ca_nss_key_db),
-            "--certificate",
-            leaf_key_name,
-            "--sign",
-            "--in",
-            str(unsigned_artifact_path),
-            "--out",
-            str(signed_artifact_path),
-            "--force",
-        ],
-        check=True,
-    )
+    with temp_dir(sudo=True) as tmpdir:
+        tmp_signed_artifact = (
+            tmpdir
+            / f"{unsigned_artifact_path.stem}.signed{unsigned_artifact_path.suffix}"
+        )
+        tmp_unsigned_artifact = (
+            tmpdir
+            / f"{unsigned_artifact_path.stem}.unsigned{unsigned_artifact_path.suffix}"
+        )
+
+        subprocess.run(
+            ["sudo", "cp", str(unsigned_artifact_path), str(tmp_unsigned_artifact)],
+            check=True,
+        )
+
+        cert_arg = _get_pesign_certificate_arg()
+
+        subprocess.run(
+            [
+                "pesign",
+                "--certdir",
+                str(ca_nss_key_db),
+                cert_arg,
+                leaf_key_name,
+                "--sign",
+                "--in",
+                str(tmp_unsigned_artifact),
+                "--out",
+                str(tmp_signed_artifact),
+                "--force",
+            ],
+            check=True,
+        )
+
+        subprocess.run(
+            ["sudo", "cp", str(tmp_signed_artifact), str(signed_artifact_path)],
+            check=True,
+        )
+
     log.debug(f"Artifact signed to {signed_artifact_path}")
