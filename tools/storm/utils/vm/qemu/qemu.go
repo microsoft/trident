@@ -413,6 +413,10 @@ func (cfg QemuConfig) WaitForLogin(vmName string, outputPath string, verbose boo
 				// VM has a stale DHCP lease but is unreachable — it genuinely
 				// failed to boot (not a serial-getty race condition).
 				logrus.Warnf("VM '%s' has DHCP lease (IP: %s) but SSH port is unreachable — stale lease from previous boot, VM failed to come back up", vmName, ips[0])
+
+				// Gather additional diagnostics to help identify why the VM
+				// is unreachable despite appearing to boot.
+				cfg.captureUnreachableVmDiagnostics(vmName, ips[0], iteration, outputPath)
 			} else {
 				conn.Close()
 				logrus.Warnf("VM '%s' has DHCP lease (IP: %s) and SSH port is reachable — VM booted but serial-getty did not start (systemd race: https://github.com/systemd/systemd/issues/10850)", vmName, ips[0])
@@ -507,4 +511,93 @@ func innerWaitForLogin(vmSerialLog string, verbose bool, iteration int, localSer
 	// A normal Azure Linux boot takes 10-30 seconds; the extra margin accounts for
 	// host CPU contention from other processes or parallel pipeline tasks.
 	return stormutils.WaitForLoginMessageInSerialLog(vmSerialLog, verbose, iteration, localSerialLog, time.Second*180)
+}
+
+// captureUnreachableVmDiagnostics gathers information about a VM that booted
+// (has a DHCP lease, virsh shows running) but whose SSH port is unreachable.
+// This helps identify whether the issue is networking, sshd, or a late boot
+// failure (e.g. kernel panic after early systemd).
+func (cfg QemuConfig) captureUnreachableVmDiagnostics(vmName string, ip string, iteration int, outputPath string) {
+	padIter := fmt.Sprintf("%03d", iteration)
+	logrus.Infof("=== UNREACHABLE VM DIAGNOSTICS (iteration %d) ===", iteration)
+
+	// 1. virsh domifaddr — check if the VM actually has a network interface with an IP
+	//    (vs relying on the stale DHCP lease from dnsmasq)
+	if domifOut, err := exec.Command("virsh", "domifaddr", vmName, "--source", "agent").CombinedOutput(); err == nil {
+		logrus.Infof("VM interface addresses (guest-agent): %s", domifOut)
+	} else {
+		// Guest agent likely not running; try the lease source
+		if domifOut2, err2 := exec.Command("virsh", "domifaddr", vmName, "--source", "lease").CombinedOutput(); err2 == nil {
+			logrus.Infof("VM interface addresses (lease): %s", domifOut2)
+		} else {
+			logrus.Warnf("virsh domifaddr failed (agent: %v, lease: %v)", err, err2)
+		}
+	}
+
+	// 2. ARP table — check if the host can see the VM's MAC at the expected IP
+	if arpOut, err := exec.Command("ip", "neigh", "show", ip).CombinedOutput(); err == nil {
+		logrus.Infof("ARP entry for %s: %s", ip, strings.TrimSpace(string(arpOut)))
+	}
+
+	// 3. Ping — can we reach the VM at the network layer?
+	if pingOut, err := exec.Command("ping", "-c", "3", "-W", "2", ip).CombinedOutput(); err == nil {
+		logrus.Infof("Ping %s: reachable", ip)
+	} else {
+		logrus.Warnf("Ping %s: unreachable — %s", ip, strings.TrimSpace(string(pingOut)))
+	}
+
+	// 4. Port scan — check if any port is open (not just 22)
+	for _, port := range []int{22, 80, 443, 111} {
+		addr := fmt.Sprintf("%s:%d", ip, port)
+		conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
+		if err == nil {
+			conn.Close()
+			logrus.Infof("TCP port %d: OPEN", port)
+		} else {
+			logrus.Infof("TCP port %d: closed/filtered", port)
+		}
+	}
+
+	// 5. Full serial log — save the ENTIRE serial log, not just the last 100 lines.
+	//    The tail misses everything after ~5 seconds of kernel time (networking,
+	//    sshd startup, potential late panics).
+	if outputPath != "" {
+		fullSerialDst := filepath.Join(outputPath, padIter+"-full-serial-unreachable.log")
+		if err := exec.Command("cp", cfg.SerialLog, fullSerialDst).Run(); err == nil {
+			// Count lines to show how much was captured
+			if wcOut, wcErr := exec.Command("wc", "-l", fullSerialDst).Output(); wcErr == nil {
+				logrus.Infof("Full serial log saved: %s (%s lines)", fullSerialDst, strings.TrimSpace(strings.Split(string(wcOut), " ")[0]))
+			} else {
+				logrus.Infof("Full serial log saved: %s", fullSerialDst)
+			}
+		} else {
+			logrus.Warnf("Failed to save full serial log: %v", err)
+		}
+	}
+
+	// 6. virsh console — try to run commands inside the VM via the serial console.
+	//    This bypasses network entirely and can tell us if sshd/networking started.
+	consoleCommands := []struct {
+		cmd  string
+		desc string
+	}{
+		{"systemctl is-system-running", "systemd boot state"},
+		{"systemctl status sshd --no-pager -l", "sshd service status"},
+		{"ip addr show", "network interfaces"},
+		{"journalctl -b --no-pager -p err -u sshd -u systemd-networkd -u NetworkManager | tail -20", "error journal for networking/sshd"},
+	}
+
+	for _, cc := range consoleCommands {
+		// Use virsh to send commands through the console. This requires the VM
+		// to have a login shell on the serial console, which it may not if
+		// serial-getty didn't start. Try anyway — if it works, we get gold.
+		shellCmd := fmt.Sprintf("echo '%s' | timeout 10 virsh console --force %s 2>&1 | tail -30", cc.cmd, vmName)
+		if out, err := exec.Command("/bin/sh", "-c", shellCmd).CombinedOutput(); err == nil {
+			logrus.Infof("virsh console (%s):\n%s", cc.desc, strings.TrimSpace(string(out)))
+		} else {
+			logrus.Debugf("virsh console (%s) failed: %v", cc.desc, err)
+		}
+	}
+
+	logrus.Infof("=== END UNREACHABLE VM DIAGNOSTICS ===")
 }
