@@ -296,7 +296,11 @@ mod functional_test {
         // Create a minimal systemd tree with a synthetic service
         let unit_dir = tmp.path().join("usr/lib/systemd/system");
         fs::create_dir_all(&unit_dir).unwrap();
-        fs::create_dir_all(tmp.path().join("etc/systemd/system/multi-user.target.wants")).unwrap();
+        fs::create_dir_all(
+            tmp.path()
+                .join("etc/systemd/system/multi-user.target.wants"),
+        )
+        .unwrap();
         fs::write(
             unit_dir.join("test-integration.service"),
             "[Unit]\nDescription=Test\n\n[Service]\nType=oneshot\nExecStart=/bin/true\n\n[Install]\nWantedBy=multi-user.target\n",

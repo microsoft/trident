@@ -113,7 +113,9 @@ mod functional_test {
         configure(&ctx, &services).unwrap();
 
         // Verify the symlink was created — may be dangling since target is absolute
-        let wants_dir = tmp.path().join("etc/systemd/system/multi-user.target.wants");
+        let wants_dir = tmp
+            .path()
+            .join("etc/systemd/system/multi-user.target.wants");
         let service_link = wants_dir.join("test-osmodifier.service");
         assert!(
             service_link.is_symlink(),

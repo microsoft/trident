@@ -85,7 +85,11 @@ mod functional_test {
         let tmp = tempdir().unwrap();
         let etc = tmp.path().join("etc/selinux");
         fs::create_dir_all(&etc).unwrap();
-        fs::write(etc.join("config"), "SELINUX=permissive\nSELINUXTYPE=targeted\n").unwrap();
+        fs::write(
+            etc.join("config"),
+            "SELINUX=permissive\nSELINUXTYPE=targeted\n",
+        )
+        .unwrap();
 
         let ctx = OsModifierContext {
             root: tmp.path().to_path_buf(),
@@ -133,7 +137,10 @@ mod functional_test {
         };
 
         let result = update_config_file(&ctx, &SelinuxMode::Enforcing);
-        assert!(result.is_err(), "Should fail when SELinux config is missing");
+        assert!(
+            result.is_err(),
+            "Should fail when SELinux config is missing"
+        );
     }
 
     #[functional_test(feature = "core")]
@@ -141,11 +148,7 @@ mod functional_test {
         let tmp = tempdir().unwrap();
         let etc = tmp.path().join("etc/default");
         fs::create_dir_all(&etc).unwrap();
-        fs::write(
-            etc.join("grub"),
-            "GRUB_CMDLINE_LINUX=\"quiet selinux=0\"\n",
-        )
-        .unwrap();
+        fs::write(etc.join("grub"), "GRUB_CMDLINE_LINUX=\"quiet selinux=0\"\n").unwrap();
 
         let ctx = OsModifierContext {
             root: tmp.path().to_path_buf(),
