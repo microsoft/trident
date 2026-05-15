@@ -102,6 +102,21 @@ stages:
                 virtdeploy
               targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
 
+          # Install libvirt / qemu / OVMF and configure libvirt access. Without
+          # this, virt-deploy fails creating bridge interfaces ("Operation not
+          # permitted") on the OneBranch Ubuntu runner.
+          - template: netlaunch-prep.yml
+
+          # Inject the test SSH public key (helpers/key.pub) into the trident
+          # config so the post-install VM is reachable for validation.
+          - template: ../testing_common/trident-prep.yml
+            parameters:
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
+              tridentConfigPath: $(TRIDENT_SOURCE_DIR)/$(tridentConfigPath)
+              runtimeEnv: host
+              config: ${{ parameters.tridentConfiguration }}
+              imageName: trident-testimage
+
           - bash: |
               set -euxo pipefail
 
