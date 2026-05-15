@@ -116,6 +116,7 @@ os:
       - console=ttyS0
       - rd.debug
       - loglevel=6
+      - rd.systemd.log_level=debug
       - log_buf_len=1M
       - systemd.journald.forward_to_console=1
       - rd.hostonly=0
