@@ -342,6 +342,11 @@ func (cfg QemuConfig) TruncateLog(vmName string) error {
 
 func (cfg QemuConfig) WaitForLogin(vmName string, outputPath string, verbose bool, iteration int) error {
 	localSerialLog := "./serial.log"
+	// Truncate the local serial log so it only contains output from THIS
+	// iteration's boot, not accumulated output from all previous iterations.
+	if err := os.Truncate(localSerialLog, 0); err != nil && !os.IsNotExist(err) {
+		logrus.Warnf("Failed to truncate local serial log before iteration %d: %v", iteration, err)
+	}
 	// Wait for login prompt to appear in the serial log and save the log to localSerialLog
 	waitErr := innerWaitForLogin(cfg.SerialLog, verbose, iteration, localSerialLog)
 	// Copy serial log to output directory if specified
