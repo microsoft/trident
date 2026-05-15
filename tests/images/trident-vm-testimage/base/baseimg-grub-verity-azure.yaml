@@ -110,7 +110,6 @@ os:
       - rd.debug
       - loglevel=6
       - rd.systemd.log_level=debug
-      - rd.systemd.log_target=console
       - log_buf_len=1M
       - systemd.journald.forward_to_console=1
 
