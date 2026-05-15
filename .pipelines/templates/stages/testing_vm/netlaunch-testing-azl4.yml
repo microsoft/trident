@@ -114,9 +114,12 @@ stages:
               mkdir -p "$SERVE_DIR"
 
               # The artifact may contain the file with the imageName as
-              # prefix; tolerate both layouts.
+              # prefix; tolerate both layouts. The clone-index suffix
+              # (`_0.cosi`) is what testimages.py produces when called
+              # with the default --clones >= 1.
               COSI_SRC=""
               for candidate in \
+                  "$(Build.ArtifactStagingDirectory)/cosi-azl4/trident-vm-grub-testimage-azl4_0.cosi" \
                   "$(Build.ArtifactStagingDirectory)/cosi-azl4/trident-vm-grub-testimage-azl4.cosi" \
                   "$(Build.ArtifactStagingDirectory)/cosi-azl4/regular.cosi"; do
                 if [ -f "$candidate" ]; then
