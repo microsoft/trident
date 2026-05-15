@@ -33,18 +33,41 @@ steps:
   - bash: |
       set -euxo pipefail
 
-      # TODO(azl4-release): drop the entire `tdnf install azure-cli` /
-      # `apt install` block once the runner image ships az CLI by default.
-      # Until then we install it inline because builder.download.download_blob_image
-      # calls `az storage blob download`.
+      # The OneBranch AzL3 runner has azure-cli, git, docker, and go pre-installed
+      # but docker daemon may be inactive and buildx is not in the plugin path.
+      # The Ubuntu runner has docker but not docker buildx by default either.
+      #
+      # TODO(azl4-release): drop the whole prerequisite-staging block once
+      # the runner image ships docker buildx out of the box (or once we
+      # stop needing to build the MIC container ourselves).
       if which tdnf >/dev/null 2>&1; then
-        sudo tdnf install -y azure-cli git go golang docker
-        sudo systemctl start docker
+        sudo systemctl start docker || true
+        # `golang` may already be installed via capability match; tolerate
+        # "already installed" + tolerate missing if a newer base image
+        # renamed the package.
+        sudo tdnf install -y golang || true
       else
-        curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
-        sudo apt update
-        sudo apt -y install git golang-go docker.io
+        sudo apt-get update
+        sudo apt-get -y install golang-go docker.io
+        sudo systemctl start docker || true
+        # Ubuntu runner may lack az CLI; if so install it.
+        if ! command -v az >/dev/null 2>&1; then
+          curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+        fi
       fi
+
+      # Install docker buildx (required for the BuildKit secret-mount in
+      # the upstream MIC Dockerfile). Neither AzL3 nor Ubuntu runner has
+      # it by default. Pinned to a release tag for reproducibility.
+      if ! docker buildx version >/dev/null 2>&1; then
+        mkdir -p ~/.docker/cli-plugins
+        BUILDX_VER="v0.18.0"
+        curl -sSL \
+          "https://github.com/docker/buildx/releases/download/${BUILDX_VER}/buildx-${BUILDX_VER}.linux-amd64" \
+          -o ~/.docker/cli-plugins/docker-buildx
+        chmod +x ~/.docker/cli-plugins/docker-buildx
+      fi
+      docker buildx version
     displayName: "Install pinned-MIC build prerequisites"
     retryCountOnTaskFailure: 3
 
