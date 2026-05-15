@@ -71,7 +71,7 @@ steps:
   - bash: |
       set -euxo pipefail
       TRIDENT_BIN_SRC="$(Build.ArtifactStagingDirectory)/trident-binaries"
-      TRIDENT_BIN_DEST="$(System.DefaultWorkingDirectory)/tests/images/trident-vm-testimage/base/trident-bin"
+      TRIDENT_BIN_DEST="${{ parameters.tridentSourceDirectory }}/tests/images/trident-vm-testimage/base/trident-bin"
 
       if [ ! -f "$TRIDENT_BIN_SRC/trident" ]; then
         echo "trident binary not found at $TRIDENT_BIN_SRC/trident"
