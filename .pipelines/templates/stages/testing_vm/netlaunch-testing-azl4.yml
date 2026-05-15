@@ -1,0 +1,213 @@
+# AZL4 BM-simulated netlaunch test stage.
+#
+# Drives an AZL3 MOS installer ISO + AZL4 COSI through netlaunch to validate
+# that the AZL4 COSI (from PR-5) can be installed by Trident onto a fresh
+# virtdeploy VM. This is the BM-simulated path: Trident runs from the live
+# MOS environment (AZL3), `trident install` partitions the disk and streams
+# the AZL4 COSI to it, the target boots into AZL4.
+#
+# Differences from netlaunch-testing.yml:
+#   * No test matrix. Hardcoded to the `base-azl4` configuration in
+#     tests/e2e_tests/trident_configurations/.
+#   * Host runtimeEnv only. Container variant is a follow-on.
+#   * No ACR push. The AZL4 COSI is served locally by netlaunch.
+#   * No SELinux check. AZL4 SELinux integration is its own follow-on.
+#   * No matrix-driven test execution after install. First iteration only
+#     validates that the VM provisions and is reachable over SSH.
+#
+# TODO(azl4-merge-back): Once AZL4 has a published trident-service RPM and
+# all the bits below (SELinux, container path, metrics) are wired up for
+# AZL4, fold this back into netlaunch-testing.yml as an additional matrix
+# entry.
+
+parameters:
+  - name: installerISOArtifact
+    type: string
+    # AZL3 MOS ISO is the live OS Trident runs from. It does not need to
+    # match the target OS version since the target comes from the COSI.
+    default: "trident-installer"
+
+  - name: cosiArtifact
+    type: string
+    # Artifact published by stages/build_image/build-image-azl4.yml. The
+    # actual COSI file inside is trident-vm-grub-testimage-azl4.cosi.
+    default: "trident-vm-grub-testimage-azl4"
+
+  - name: tridentConfiguration
+    type: string
+    # Lives at tests/e2e_tests/trident_configurations/base-azl4/.
+    default: "base-azl4"
+
+  - name: dependsOnStage
+    type: string
+    default: ""
+
+stages:
+  - stage: NetlaunchTesting_AZL4
+    displayName: Netlaunch Testing - AZL4 (BM-simulated)
+    dependsOn:
+      - BuildingTools
+      - TridentTestImg_trident_installer
+      - TridentTestImg_trident_vm_grub_testimage_azl4
+      - ${{ if ne(parameters.dependsOnStage, '') }}:
+          - ${{ parameters.dependsOnStage }}
+
+    jobs:
+      - job: NetlaunchAzl4
+        displayName: Netlaunch (AZL3 ISO + AZL4 COSI)
+        timeoutInMinutes: 30
+        pool:
+          type: linux
+          name: trident-ubuntu-1es-pool-eastus2
+          hostArchitecture: amd64
+
+        variables:
+          - name: ob_outputDirectory
+            value: /tmp/deployment_logs_azl4
+          - name: ob_artifactBaseName
+            value: "netlaunch-testing-azl4"
+
+          - name: tridentConfigPath
+            value: tests/e2e_tests/trident_configurations/${{ parameters.tridentConfiguration }}
+
+          - name: netlaunchPort
+            value: 4001
+
+        steps:
+          - template: ../common_tasks/checkout_trident.yml
+
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download AZL3 installer ISO"
+            inputs:
+              buildType: current
+              artifactName: "${{ parameters.installerISOArtifact }}"
+              targetPath: "$(TRIDENT_SOURCE_DIR)/artifacts/iso"
+
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download AZL4 COSI"
+            inputs:
+              buildType: current
+              artifactName: "${{ parameters.cosiArtifact }}"
+              targetPath: "$(Build.ArtifactStagingDirectory)/cosi-azl4"
+
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download go-tools"
+            inputs:
+              buildType: current
+              artifactName: "go-tools"
+              patterns: |
+                netlaunch
+                netlisten
+                storm-trident
+                virtdeploy
+              targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
+
+          - bash: |
+              set -euxo pipefail
+
+              chmod +x "$(TRIDENT_SOURCE_DIR)"/bin/{netlaunch,netlisten,storm-trident,virtdeploy}
+
+              # Stage the AZL4 COSI as regular.cosi where netlaunch will
+              # serve it. The trident-config for base-azl4 references
+              # http://NETLAUNCH_HOST_ADDRESS/files/regular.cosi.
+              SERVE_DIR="$(TRIDENT_SOURCE_DIR)/artifacts/test-image"
+              mkdir -p "$SERVE_DIR"
+
+              # The artifact may contain the file with the imageName as
+              # prefix; tolerate both layouts.
+              COSI_SRC=""
+              for candidate in \
+                  "$(Build.ArtifactStagingDirectory)/cosi-azl4/trident-vm-grub-testimage-azl4.cosi" \
+                  "$(Build.ArtifactStagingDirectory)/cosi-azl4/regular.cosi"; do
+                if [ -f "$candidate" ]; then
+                  COSI_SRC="$candidate"
+                  break
+                fi
+              done
+
+              if [ -z "$COSI_SRC" ]; then
+                echo "Could not find AZL4 COSI. Artifact contents:"
+                find "$(Build.ArtifactStagingDirectory)/cosi-azl4" -type f | head -20
+                exit 1
+              fi
+
+              cp "$COSI_SRC" "$SERVE_DIR/regular.cosi"
+              ls -alh "$SERVE_DIR"
+              ls -alh "$(TRIDENT_SOURCE_DIR)/artifacts/iso"
+              ls -alh "$(TRIDENT_SOURCE_DIR)/bin"
+            displayName: "Stage AZL4 COSI as regular.cosi"
+
+          - bash: |
+              set -eux
+              # Disable virtlogd rollover so we keep full logs.
+              echo "max_size = 0" | sudo tee -a /etc/libvirt/virtlogd.conf
+              sudo systemctl restart virtlogd.socket
+
+              ./tools/virt-deploy create --mem 12 --disks 32,32
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+            displayName: "Create virt-deploy VM"
+
+          - bash: |
+              set -euxo pipefail
+
+              TRIDENT_CONFIG="$(TRIDENT_SOURCE_DIR)/$(tridentConfigPath)/trident-config.yaml"
+
+              ./bin/netlaunch \
+                  --iso ./artifacts/iso/${{ parameters.installerISOArtifact }}.iso \
+                  --config $(TRIDENT_SOURCE_DIR)/tools/vm-netlaunch.yaml \
+                  --trident "$TRIDENT_CONFIG" \
+                  --servefolder ./artifacts/test-image \
+                  --logstream \
+                  --force-color \
+                  --full-logstream logstream-full.log \
+                  --wait-for-provisioned-state \
+                  --port $(netlaunchPort) 2>&1 | tee ./clean-install-azl4.log
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+            displayName: "🚀 Run netlaunch (AZL3 ISO installs AZL4 COSI)"
+            timeoutInMinutes: 20
+
+          - bash: |
+              set -eux
+              sudo ./bin/storm-trident helper wait-for-login -a \
+                  --vm-name "$(jq -r '.virtualmachines[0].name' $(TRIDENT_SOURCE_DIR)/tools/virt-deploy-metadata.json)" \
+                  --artifacts-folder "$(ob_outputDirectory)"
+            timeoutInMinutes: 5
+            condition: succeededOrFailed()
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+            displayName: "📄 Wait for target OS to be reachable"
+
+          - bash: |
+              set -eux
+              ./bin/storm-trident script capture-screenshot \
+                  --screenshot-filename "install-azl4.png" \
+                  --artifacts-folder "$(ob_outputDirectory)"
+            displayName: "📷 Capture screenshot"
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+            condition: succeededOrFailed()
+
+          - bash: |
+              set -eux
+              sudo ./bin/storm-trident helper display-logs -a \
+                  --serial-log-artifact-file-name "azl4-install-target-os-A-serial.log" \
+                  --trident-trace-log-file "$(TRIDENT_SOURCE_DIR)/logstream-full.log" \
+                  --artifacts-folder "$(ob_outputDirectory)"
+            displayName: "📄 Display install logs"
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+            condition: succeededOrFailed()
+
+          - bash: |
+              set -eux
+              sudo virsh shutdown virtdeploy-vm-0 || true
+              mkdir -p $(ob_outputDirectory)
+              sudo cp /var/lib/libvirt/images/virtdeploy-pool/virtdeploy-vm-0-0-volume.qcow2 $(ob_outputDirectory)/ || true
+              sudo zstd -T0 $(ob_outputDirectory)/virtdeploy-vm-0-0-volume.qcow2 || true
+              sudo cp $(TRIDENT_SOURCE_DIR)/tests/e2e_tests/helpers/key $(ob_outputDirectory) || true
+              sudo chmod 777 $(ob_outputDirectory)/key || true
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+            condition: failed()
+            displayName: "Publish OS disk on failure"
+
+          - template: ../testing_common/fix-output-directory-for-one-branch-step.yml
+            parameters:
+              outputDir: $(ob_outputDirectory)
+              condition: always()
