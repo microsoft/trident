@@ -251,7 +251,7 @@ func (cfg QemuConfig) createQemuVM(name string, bootImage string, useVirtInstall
 			"--vcpus", "2",
 			"--os-variant", "generic",
 			"--import",
-			"--disk", fmt.Sprintf("%s,bus=virtio", bootImage),
+			"--disk", fmt.Sprintf("%s,bus=sata", bootImage),
 			"--network", "default",
 			"--noautoconsole",
 			"--serial", fmt.Sprintf("file,path=%s", cfg.SerialLog),
