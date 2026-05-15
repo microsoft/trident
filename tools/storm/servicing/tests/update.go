@@ -109,6 +109,21 @@ func innerUpdateLoop(tc storm.TestCase, testConfig stormsvcconfig.TestConfig, vm
 		}
 	}
 
+	// Enable systemd debug logging in initramfs for all subsequent boots.
+	// This captures device-unit state transitions (plugged→dead) and mount
+	// state machine events that are invisible at default log levels, which
+	// is needed to diagnose the sporadic sysroot.mount hang (systemd#35329).
+	if vmConfig.VMConfig.Platform == stormvmconfig.PlatformQEMU {
+		debugCmd := `sudo grubby --update-kernel=ALL --args="rd.systemd.log_level=debug" 2>/dev/null || ` +
+			`sudo sed -i 's/\(kernelopts=.*\)/\1 rd.systemd.log_level=debug/' /boot/grub2/grubenv 2>/dev/null || ` +
+			`echo "grubby/grubenv not available, skipping debug logging"`
+		if debugOut, debugErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, debugCmd); debugErr != nil {
+			logrus.Tracef("Failed to add rd.systemd.log_level=debug to kernel cmdline: %v (%s)", debugErr, debugOut)
+		} else {
+			logrus.Infof("Added rd.systemd.log_level=debug to kernel cmdline for initramfs diagnostics")
+		}
+	}
+
 	// Run several commands to update/specialize update config files on VM
 	logrus.Tracef("Updating config files")
 	configChanges :=
