@@ -106,6 +106,8 @@ stages:
       includeAzure: ${{ parameters.includeAzure }}
       includeUKI: ${{ parameters.includeUKI }}
       dependsOnStage: CreateBaseImageConfig
+      micBuildType: dev
+      micVersion: user/bfjelds/mjolnir/verity-upholds-workaround
       # Split 256 workers into 4 batches of 64 to stay under ADO's per-phase
       # YAML expansion limit. Each batch becomes a separate parallel job group.
       workerBatches:
