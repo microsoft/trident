@@ -64,11 +64,15 @@ os:
 
   kernelCommandLine:
     # Mirrors AZL3 baseimg-grub.yaml; same console + debug settings so
-    # serial output works the same on both flavors.
+    # serial output works the same on both flavors. `net.ifnames=0`
+    # keeps interface naming as eth0/eth1/... so the
+    # `99-dhcp-eth0.network` systemd-networkd config matches the only
+    # virtio NIC the qemu test VM ships with.
     extraCommandLine:
       - console=tty0
       - console=tty1
       - console=ttyS0
+      - net.ifnames=0
       - rd.debug
       - loglevel=6
       - log_buf_len=1M
