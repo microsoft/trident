@@ -247,6 +247,17 @@ stages:
           imageName: trident-vm-grub-testimage-azl4
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
+      # AZL4 BM-simulated netlaunch test. Uses the AZL3 MOS installer ISO
+      # (built by TridentTestImg_trident_installer below) plus the AZL4
+      # COSI built above. Trident runs from the live MOS environment and
+      # installs the AZL4 COSI onto a fresh virtdeploy VM disk. This is
+      # the same flow we proved out manually on karhu-ubuntu.
+      #
+      # TODO(azl4-vm-offline-init): VM offline-init path (qcow2 base + A/B
+      # update / rollback) is shelved on user/britel/azl4-6-vm-testing
+      # pending a fix for trident offline-initialize in the MIC AZL4 chroot.
+      - template: stages/testing_vm/netlaunch-testing-azl4.yml
+
   # Build AzL installer ISO (attended and unattended)
   - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure'), eq(parameters.stageType, 'azl-validation')) }}:
       - template: stages/azl_installer/azl-installer.yml
