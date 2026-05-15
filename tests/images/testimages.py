@@ -94,6 +94,23 @@ DEFINED_IMAGES: List[ImageConfig] = [
         ],
     ),
     ImageConfig(
+        # AZL4 BASE qcow2: a bootable disk with the AZL4 OS plus trident
+        # installed, so storm-trident rollback testing can boot a VM and
+        # immediately drive A/B updates targeting the .cosi above.
+        # Mirrors AZL3's `make artifacts/trident-vm-grub-testimage.qcow2`
+        # path. See baseimg-grub-azl4.yaml for the layout / package set.
+        "trident-vm-grub-testimage-azl4-base",
+        base_image=BaseImage.AZL4_QEMU_GUEST,
+        config="trident-vm-testimage",
+        config_file="base/baseimg-grub-azl4.yaml",
+        output_format=OutputFormat.QCOW2,
+        ssh_key="files/id_rsa.pub",
+        requires_trident=False,
+        extra_dependencies=[
+            Path("tests/images/trident-vm-testimage/base/trident-bin/trident"),
+        ],
+    ),
+    ImageConfig(
         "trident-vm-grub-verity-testimage",
         base_image=BaseImage.QEMU_GUEST,
         config="trident-vm-testimage",
