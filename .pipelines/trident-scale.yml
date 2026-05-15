@@ -27,10 +27,18 @@ parameters:
     type: string
     default: "3.0"
 
-  - name: numberOfWorkers
-    displayName: Number of worker to run tests on (max of 256)
-    type: number
-    default: 256
+  - name: workerBatches
+    displayName: "Worker batches — each entry creates a parallel job group with {size} workers (max 64 per batch to stay under ADO YAML expansion limits)"
+    type: object
+    default:
+      - id: 0
+        size: 64
+      - id: 1
+        size: 64
+      - id: 2
+        size: 64
+      - id: 3
+        size: 64
 
   - name: numberOfUpdateIterations
     displayName: Number of times each worker invokes A/B Update
@@ -107,7 +115,7 @@ extends:
           baseImagePipelineBuildId: ${{ parameters.baseImagePipelineBuildId }}
           baseImageArm64PipelineBuildId: ${{ parameters.baseImageArm64PipelineBuildId }}
           baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
-          numberOfWorkers: ${{ parameters.numberOfWorkers }}
+          workerBatches: ${{ parameters.workerBatches }}
           numberOfUpdateIterations: ${{ parameters.numberOfUpdateIterations }}
           forceTridentRebuild: ${{ parameters.forceTridentRebuild }}
           includeQemu: true

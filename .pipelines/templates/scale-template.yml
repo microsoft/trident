@@ -37,10 +37,18 @@ parameters:
     type: boolean
     default: false
 
-  - name: numberOfWorkers
-    displayName: Number of worker to run tests on (max of 256)
-    type: number
-    default: 256
+  - name: workerBatches
+    displayName: "Worker batches — each entry creates a parallel job group with {size} workers (max 64 per batch to stay under ADO YAML expansion limits)"
+    type: object
+    default:
+      - id: 0
+        size: 64
+      - id: 1
+        size: 64
+      - id: 2
+        size: 64
+      - id: 3
+        size: 64
 
   - name: numberOfUpdateIterations
     displayName: Number of times each worker invokes A/B Update
@@ -98,7 +106,6 @@ stages:
     parameters:
       rollbackTesting: false
       updateIterationCount: ${{ parameters.numberOfUpdateIterations }}
-      workers: ${{ parameters.numberOfWorkers }}
       updateCheckTimeoutInMinutes: 200 # Generally need less than a minute per update, so with buffer, this should be updateIterationCount * 2
       verboseLogging: ${{ parameters.verboseLogging }}
       baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
@@ -106,14 +113,4 @@ stages:
       includeAzure: ${{ parameters.includeAzure }}
       includeUKI: ${{ parameters.includeUKI }}
       dependsOnStage: CreateBaseImageConfig
-      # Split 256 workers into 4 batches of 64 to stay under ADO's per-phase
-      # YAML expansion limit. Each batch becomes a separate parallel job group.
-      workerBatches:
-        - id: 0
-          size: 64
-        - id: 1
-          size: 64
-        - id: 2
-          size: 64
-        - id: 3
-          size: 64
+      workerBatches: ${{ parameters.workerBatches }}
