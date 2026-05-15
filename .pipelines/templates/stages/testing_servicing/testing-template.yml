@@ -270,3 +270,8 @@ jobs:
         condition: failed()
         displayName: "Publish logs and OS disk on failure"
         timeoutInMinutes: 5
+
+      - template: ../testing_common/fix-output-directory-for-one-branch-step.yml
+        parameters:
+          outputDir: $(ob_outputDirectory)
+          condition: always()
