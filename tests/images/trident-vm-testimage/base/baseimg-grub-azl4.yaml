@@ -19,7 +19,10 @@ storage:
       partitions:
         - id: esp
           type: esp
-          size: 16M
+          # 64M (vs AZL3's 16M) because AZL4 ships larger grub/shim
+          # binaries (~5MB grubx64.efi) and trident's offline-init
+          # copies them to both /boot/efi/EFI/AZLA and /AZLB.
+          size: 64M
 
         - id: root-a
           size: 4G
@@ -106,10 +109,23 @@ os:
       - sshd
       - systemd-networkd
       - systemd-resolved
+      # Trident socket-activated daemon. Storm-trident drives all
+      # update/commit/rollback through `trident grpc-client ...` which
+      # talks to this socket.
+      - tridentd.socket
+      # Oneshot trident commit at boot. Marks A/B update commits when
+      # they complete after reboot.
+      - trident.service
+      # AZL4-specific first-boot oneshot: populates the hoststatus
+      # table in the datastore. AZL3 does this in the MIC chroot via
+      # update-host-status.sh; AZL4 can't (see scripts: comment below)
+      # so we defer it to first boot of the real system.
+      - trident-firstboot-init.service
 
   additionalFiles:
-    # TODO(azl4-rpm): replace with `packages.install: - trident-service`
-    # once the RPM is published.
+    # TODO(azl4-rpm): replace these binary copies and unit-file copies
+    # with `packages.install: - trident-service` once the RPM is
+    # published for AZL4.
     - source: trident-bin/trident
       destination: /usr/bin/trident
       permissions: "755"
@@ -119,6 +135,22 @@ os:
     - source: osmodifier-bin/osmodifier
       destination: /usr/bin/osmodifier
       permissions: "755"
+
+    # Trident systemd units. AZL3 gets these from the trident-service
+    # RPM; AZL4 doesn't have that RPM yet so we ship them inline. The
+    # contents come straight from packaging/systemd/ in this repo so a
+    # source change requires a re-build of the qcow2 to pick up.
+    - source: ../../../../packaging/systemd/trident.service
+      destination: /usr/lib/systemd/system/trident.service
+    - source: ../../../../packaging/systemd/tridentd.service
+      destination: /usr/lib/systemd/system/tridentd.service
+    - source: ../../../../packaging/systemd/tridentd.socket
+      destination: /usr/lib/systemd/system/tridentd.socket
+    # AZL4-specific firstboot init unit (not in packaging/systemd/
+    # because AZL3 doesn't need it).
+    - source: files/trident-firstboot-init.service
+      destination: /usr/lib/systemd/system/trident-firstboot-init.service
+
     # AZL4 lacks a /usr/bin/hostname binary; the pytest framework
     # smoke-tests SSH with `hostname`, so we ship a tiny shim.
     - source: files/hostname-shim.sh

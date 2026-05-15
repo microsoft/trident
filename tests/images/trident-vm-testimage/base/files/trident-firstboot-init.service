@@ -1,0 +1,25 @@
+[Unit]
+Description=Trident first-boot datastore initialization (AZL4)
+After=local-fs.target
+Before=multi-user.target trident.service
+ConditionPathExists=!/var/lib/trident/.firstboot-init-done
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# trident offline-initialize populates the hoststatus table in the
+# datastore from current disk state. AZL3's image build does this in
+# the MIC chroot via tests/images/trident-vm-testimage/base/scripts/
+# update-host-status.sh. AZL4 can't do it in the MIC chroot because
+# trident's offline init checks fail there ("Prism chroot environment
+# not as expected"), so we run it at first boot of the real system
+# instead.
+#
+# --disk /dev/vda is required: trident's offline-init defaults to
+# /dev/sda, but virtio guests (storm-trident's libvirt VMs, the
+# pipeline test fleet) expose the boot disk as /dev/vda.
+ExecStart=/usr/bin/trident offline-initialize --disk /dev/vda
+ExecStartPost=/usr/bin/touch /var/lib/trident/.firstboot-init-done
+
+[Install]
+WantedBy=multi-user.target
