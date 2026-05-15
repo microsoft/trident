@@ -1,0 +1,153 @@
+# Base image config for trident-vm-grub-testimage-azl4.
+#
+# This builds the BOOTABLE base qcow2 that storm-trident rollback tests
+# start the VM from. After this qcow2 boots, trident is installed and ready
+# to drive A/B updates to the .cosi produced by updateimg-grub-azl4.yaml.
+#
+# Layout mirrors AZL3's baseimg-grub.yaml (A/B partitions) but uses
+# AZL4-specific package names (dnf5, grub2-efi-x64, shim, etc.) matching
+# the updateimg-grub-azl4.yaml flavor.
+#
+# TODO(azl4-rpm): Drop the trident + osmodifier additionalFiles entries
+# once an AZL4 trident-service RPM and azurelinux-image-tools-osmodifier
+# RPM are published. Until then we bake the binaries inline.
+
+storage:
+  disks:
+    - partitionTableType: gpt
+      maxSize: 10G
+      partitions:
+        - id: esp
+          type: esp
+          size: 16M
+
+        - id: root-a
+          size: 4G
+
+        - id: root-b
+          size: 4G
+
+        - id: trident
+          size: 1G
+
+        - id: srv
+          size: grow
+
+  bootType: efi
+
+  filesystems:
+    - deviceId: esp
+      type: fat32
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+
+    - deviceId: root-a
+      type: ext4
+      mountPoint: /
+
+    - deviceId: trident
+      type: ext4
+      mountPoint: /var/lib/trident
+
+    - deviceId: srv
+      type: ext4
+      mountPoint: /srv
+
+os:
+  bootloader:
+    resetType: hard-reset
+  hostname: trident-vm-testimg
+
+  selinux:
+    mode: disabled
+
+  kernelCommandLine:
+    # Mirrors AZL3 baseimg-grub.yaml; same console + debug settings so
+    # serial output works the same on both flavors.
+    extraCommandLine:
+      - console=tty0
+      - console=tty1
+      - console=ttyS0
+      - rd.debug
+      - loglevel=6
+      - log_buf_len=1M
+      - systemd.journald.forward_to_console=1
+
+  packages:
+    install:
+      # AZL4 equivalents of the AZL3 set. See updateimg-grub-azl4.yaml
+      # for the rationale on each substitution.
+      - curl
+      - dnf5
+      - efibootmgr
+      - grub2-efi-x64
+      - grub2-efi-x64-modules
+      - grub2-tools
+      - grub2-tools-efi
+      - iproute
+      - iptables-nft
+      - jq
+      - lsof
+      - netplan
+      - openssh-server
+      - shim
+      - sudo
+      - systemd-networkd
+      - systemd-resolved
+      - vim
+
+  services:
+    enable:
+      - sshd
+      - systemd-networkd
+      - systemd-resolved
+
+  additionalFiles:
+    # TODO(azl4-rpm): replace with `packages.install: - trident-service`
+    # once the RPM is published.
+    - source: trident-bin/trident
+      destination: /usr/bin/trident
+      permissions: "755"
+    # TODO(azl4-osmodifier-rpm): replace with
+    # `packages.install: - azurelinux-image-tools-osmodifier`
+    # once the RPM is published.
+    - source: osmodifier-bin/osmodifier
+      destination: /usr/bin/osmodifier
+      permissions: "755"
+    # AZL4 lacks a /usr/bin/hostname binary; the pytest framework
+    # smoke-tests SSH with `hostname`, so we ship a tiny shim.
+    - source: files/hostname-shim.sh
+      destination: /usr/local/bin/hostname
+      permissions: "755"
+    - source: files/sudoers-wheel
+      destination: /etc/sudoers.d/wheel
+    - source: files/99-dhcp-eth0.network
+      destination: /etc/systemd/network/99-dhcp-eth0.network
+    - source: files/regen-sshd-keys.service
+      destination: /etc/systemd/system/regen-sshd-keys.service
+
+  users:
+    - name: testing-user
+      sshPublicKeyPaths:
+        - files/id_rsa.pub
+      secondaryGroups:
+        - wheel
+
+scripts:
+  postCustomization:
+    # AZL3's baseimg-grub.yaml runs update-host-status.sh and
+    # prepare-update-config.sh here. Both invoke `trident` inside the
+    # MIC chroot to bake host status into the qcow2 at image-build time.
+    #
+    # We intentionally omit them on AZL4. Storm-trident captures host
+    # status via SSH at first boot anyway; the MIC-chroot path is a
+    # build-time optimization (faster first boot), not a correctness
+    # requirement.
+    #
+    # Trident's offline init does fail today in the MIC AZL4 chroot
+    # ("Prism chroot environment not as expected"), which is a separate
+    # workstream once first-boot capture stops being sufficient.
+    - path: scripts/post-install.sh
+    - path: scripts/ssh-move-host-keys-azl4.sh
+    - path: scripts/enable-regen-sshd-keys.sh
