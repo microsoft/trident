@@ -1,6 +1,13 @@
 image:
   url: http://NETLAUNCH_HOST_ADDRESS/files/regular.cosi
   sha384: ignored
+internalParams:
+  # AZL4 doesn't ship grub2-efi-binary-noprefix (no longer needed; grub
+  # is built without a hardcoded prefix). Trident's noprefix check
+  # otherwise bails because grubx64-noprefix.efi isn't in the COSI's
+  # boot image. PR-1 added this opt-in flag; auto-detection by distro
+  # is a follow-on.
+  disableGrubNoprefixCheck: true
 storage:
   disks:
     - id: os
