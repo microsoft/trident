@@ -107,15 +107,14 @@ stages:
           # permitted") on the OneBranch Ubuntu runner.
           - template: netlaunch-prep.yml
 
-          # Inject the test SSH public key (helpers/key.pub) into the trident
-          # config so the post-install VM is reachable for validation.
-          - template: ../testing_common/trident-prep.yml
-            parameters:
-              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
-              tridentConfigPath: $(TRIDENT_SOURCE_DIR)/$(tridentConfigPath)
-              runtimeEnv: host
-              config: ${{ parameters.tridentConfiguration }}
-              imageName: trident-testimage
+          # NOTE: we intentionally do NOT run testing_common/trident-prep.yml.
+          # That template runs edit_host_config.py, which injects the test
+          # SSH key into trident-config's os.users section. The AZL4
+          # `base-azl4` trident-config omits the os: section entirely
+          # because the AZL3 MOS installer ISO has no /usr/bin/osmodifier,
+          # so trident can't drive os.users at install time. Instead we
+          # use the per-image SSH key that testimages.py baked into the
+          # AZL4 COSI at MIC time (set up below).
 
           - bash: |
               set -euxo pipefail
@@ -151,6 +150,32 @@ stages:
 
               cp "$COSI_SRC" "$SERVE_DIR/regular.cosi"
               ls -alh "$SERVE_DIR"
+
+              # Install the COSI-baked private SSH key as the test
+              # framework's helpers/key. testimages.py generates a fresh
+              # SSH keypair per build and bakes the public key into the
+              # COSI for the testing-user. The matching private key is
+              # published as a sibling artifact. Without this swap, the
+              # downstream wait-for-login can't reach the post-install VM.
+              KEY_SRC=""
+              for candidate in \
+                  "$(Build.ArtifactStagingDirectory)/cosi-azl4/key_trident-vm-grub-testimage-azl4_0_private.pem" \
+                  "$(Build.ArtifactStagingDirectory)/cosi-azl4/key_trident-vm-grub-testimage-azl4_private.pem"; do
+                if [ -f "$candidate" ]; then
+                  KEY_SRC="$candidate"
+                  break
+                fi
+              done
+              if [ -z "$KEY_SRC" ]; then
+                echo "Could not find COSI-baked SSH key. Artifact contents:"
+                find "$(Build.ArtifactStagingDirectory)/cosi-azl4" -type f
+                exit 1
+              fi
+              cp "$KEY_SRC" "$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/helpers/key"
+              chmod 600 "$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/helpers/key"
+              # Convert to PEM if not already (matches what trident-prep
+              # does for AZL3 keys).
+              ssh-keygen -p -m PEM -f "$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/helpers/key" -N "" || true
               ls -alh "$(TRIDENT_SOURCE_DIR)/artifacts/iso"
               ls -alh "$(TRIDENT_SOURCE_DIR)/bin"
             displayName: "Stage AZL4 COSI as regular.cosi"
