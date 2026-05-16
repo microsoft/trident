@@ -33,9 +33,6 @@ VM_SSH_NODE_CACHE_KEY = "vm_ssh_node"
 
 FT_BASE_IMAGE = TRIDENT_REPO_DIR_PATH / "artifacts" / "trident-functest.qcow2"
 
-"""Target location of the osmodifier binary in the test host."""
-OS_MODIFIER_BIN_TARGET_PATH = Path("/usr/bin/osmodifier")
-
 
 def pytest_addoption(parser):
     """Defines additional command line options for the tests."""
@@ -70,13 +67,6 @@ def pytest_addoption(parser):
         "--force-upload",
         action="store_true",
         help="Force upload of tests even if no change was detected.",
-    )
-
-    parser.addoption(
-        "--osmodifier",
-        help="Path to the osmodifier binary to copy into the test host.",
-        default=TRIDENT_REPO_DIR_PATH / "artifacts" / "osmodifier",
-        type=Path,
     )
 
 
@@ -355,12 +345,7 @@ def vm(request, ssh_key_path, known_hosts_path) -> SshNode:
         known_hosts_path=known_hosts_path,
     )
 
-    # Upload OS modifier binary to the VM.
-    osmodifier_path = request.config.getoption("--osmodifier")
-    logging.info(f"Copying osmodifier from {osmodifier_path} to VM")
-    ssh_node.copy(osmodifier_path, Path("osmodifier"))
-    ssh_node.execute("chmod +x osmodifier")
-    ssh_node.execute(f"sudo mv osmodifier {OS_MODIFIER_BIN_TARGET_PATH}")
+    # OS modifier is now compiled into the trident binary — no separate upload needed.
 
     if build_output:
         upload_test_binaries(build_output, force_upload, ssh_node)

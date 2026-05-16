@@ -89,6 +89,7 @@ impl<T> DependencyResultExt<T> for Result<T, Box<DependencyError>> {
 #[strum(serialize_all = "lowercase")]
 pub enum Dependency {
     Blkid,
+    Chown,
     Cryptsetup,
     Dd,
     Df,
@@ -98,6 +99,9 @@ pub enum Dependency {
     Efibootmgr,
     Eject,
     Findmnt,
+    #[strum(serialize = "grub2-mkconfig")]
+    Grub2Mkconfig,
+    Id,
     Iptables,
     Journalctl,
     Losetup,
@@ -118,6 +122,8 @@ pub enum Dependency {
     Swapoff,
     Swapon,
     Systemctl,
+    Useradd,
+    Usermod,
     #[strum(serialize = "systemd-confext")]
     SystemdConfext,
     #[strum(serialize = "systemd-cryptenroll")]

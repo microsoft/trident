@@ -1,0 +1,27 @@
+[package]
+name = "osmodifier"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "MIT"
+description = "OS modifier library - applies OS configuration changes (users, hostname, services, modules, boot config, SELinux)"
+
+[dependencies]
+anyhow = { workspace = true }
+inventory = { workspace = true }
+log = { workspace = true }
+regex = { workspace = true }
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+tempfile = { workspace = true }
+
+pytest = { path = "../pytest" }
+pytest_gen = { path = "../pytest_gen" }
+trident_api = { path = "../trident_api" }
+osutils = { path = "../osutils" }
+
+[dev-dependencies]
+indoc = { workspace = true }
+
+[features]
+functional-test = []

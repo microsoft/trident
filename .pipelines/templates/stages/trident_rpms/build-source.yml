@@ -101,12 +101,6 @@ stages:
               - template: ../common_tasks/cargo-auth.yml
                 parameters:
                   cargoConfigPath: $(TRIDENT_SOURCE_DIR)/.cargo/config.toml
-              - template: ../common_tasks/download-osmodifier.yml
-                parameters:
-                  tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
-                  targetArchitecture: ${{ parameters.targetArchitecture }}
-                  osModifierBranch: ${{ parameters.osModifierBranch }}
-                  osModifierBuildType: ${{ parameters.osModifierBuildType }}
               - template: release.yml
                 parameters:
                   targetArchitecture: ${{ parameters.targetArchitecture }}
@@ -144,12 +138,6 @@ stages:
                   set -eux
                   sudo systemctl start docker
                 displayName: Start Docker
-              - template: ../common_tasks/download-osmodifier.yml
-                parameters:
-                  tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
-                  targetArchitecture: ${{ parameters.targetArchitecture }}
-                  osModifierBranch: ${{ parameters.osModifierBranch }}
-                  osModifierBuildType: ${{ parameters.osModifierBuildType }}
               - template: release.yml
                 parameters:
                   targetArchitecture: ${{ parameters.targetArchitecture }}

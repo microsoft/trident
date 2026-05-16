@@ -1863,6 +1863,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "osmodifier"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "indoc",
+ "inventory",
+ "log",
+ "osutils",
+ "pytest",
+ "pytest_gen",
+ "regex",
+ "serde",
+ "serde_yaml",
+ "tempfile",
+ "trident_api",
+]
+
+[[package]]
 name = "osutils"
 version = "0.1.0"
 dependencies = [
@@ -3433,6 +3451,7 @@ dependencies = [
  "netplan-types",
  "nix",
  "oci-client",
+ "osmodifier",
  "osutils",
  "procfs",
  "prost-types",
