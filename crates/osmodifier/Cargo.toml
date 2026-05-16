@@ -18,6 +18,7 @@ tempfile = { workspace = true }
 pytest = { path = "../pytest" }
 pytest_gen = { path = "../pytest_gen" }
 trident_api = { path = "../trident_api" }
+osutils = { path = "../osutils" }
 
 [dev-dependencies]
 indoc = { workspace = true }

@@ -7,6 +7,7 @@ use std::{fs, io::Write, os::unix::fs::PermissionsExt, path::Path, process::Comm
 
 use anyhow::{bail, Context, Error};
 use log::{debug, info};
+use osutils::Dependency;
 
 use crate::{
     config::{MICUser, PasswordType},
@@ -104,21 +105,24 @@ fn add_or_update_user(ctx: &OsModifierContext, user: &MICUser) -> Result<(), Err
 }
 
 fn check_user_exists(root: &str, username: &str) -> Result<bool, Error> {
-    let status = if root == "/" {
-        Command::new("id").arg("-u").arg(username).status()
+    let output = if root == "/" {
+        Dependency::Id.cmd().args(["-u", username]).output()
     } else {
-        Command::new("chroot")
+        Dependency::Chroot
+            .cmd()
             .arg(root)
             .args(["id", "-u", username])
-            .status()
+            .output()
     }
     .with_context(|| format!("Failed to check if user '{username}' exists"))?;
 
-    Ok(status.success())
+    Ok(output.success())
 }
 
 fn hash_password(plaintext: &str) -> Result<String, Error> {
-    // Use openssl to hash the password, matching the Go implementation
+    // TODO: Convert to Dependency::Openssl once the Command wrapper supports
+    // stdin piping. Currently uses std::process::Command directly because
+    // openssl passwd reads the password from stdin.
     let mut child = Command::new("openssl")
         .args(["passwd", "-6", "-stdin"])
         .stdin(std::process::Stdio::piped())
@@ -150,9 +154,9 @@ fn hash_password(plaintext: &str) -> Result<String, Error> {
 
 fn create_user(root: &str, user: &MICUser) -> Result<(), Error> {
     let mut cmd = if root == "/" {
-        Command::new("useradd")
+        Dependency::Useradd.cmd()
     } else {
-        let mut c = Command::new("chroot");
+        let mut c = Dependency::Chroot.cmd();
         c.arg(root).arg("useradd");
         c
     };
@@ -176,14 +180,8 @@ fn create_user(root: &str, user: &MICUser) -> Result<(), Error> {
 
     cmd.arg(&user.name);
 
-    let output = cmd
-        .output()
-        .with_context(|| format!("Failed to execute useradd for '{}'", user.name))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("useradd failed for '{}': {stderr}", user.name);
-    }
+    cmd.run_and_check()
+        .with_context(|| format!("Failed to create user '{}'", user.name))?;
 
     Ok(())
 }
@@ -226,6 +224,8 @@ fn update_user_password(ctx: &OsModifierContext, username: &str, hash: &str) -> 
 /// Set password on a newly created user via chpasswd -e (stdin), avoiding
 /// leaking the hash through /proc/cmdline.
 fn set_password_via_chpasswd(root: &str, username: &str, hash: &str) -> Result<(), Error> {
+    // TODO: Convert to Dependency::{Chpasswd,Chroot} once the Command wrapper
+    // supports stdin piping. chpasswd reads username:hash from stdin.
     debug!("Setting password for new user '{username}' via chpasswd");
     let input = format!("{username}:{hash}\n");
 
@@ -312,44 +312,40 @@ fn set_password_expiry(ctx: &OsModifierContext, username: &str, days: u64) -> Re
 
 fn set_primary_group(root: &str, username: &str, group: &str) -> Result<(), Error> {
     debug!("Setting primary group for '{username}' to '{group}'");
-    let output = if root == "/" {
-        Command::new("usermod")
+    if root == "/" {
+        Dependency::Usermod
+            .cmd()
             .args(["-g", group, username])
-            .output()
+            .run_and_check()
     } else {
-        Command::new("chroot")
+        Dependency::Chroot
+            .cmd()
             .arg(root)
             .args(["usermod", "-g", group, username])
-            .output()
+            .run_and_check()
     }
     .with_context(|| format!("Failed to set primary group for '{username}'"))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("usermod -g failed for '{username}': {stderr}");
-    }
     Ok(())
 }
 
 fn set_secondary_groups(root: &str, username: &str, groups: &[String]) -> Result<(), Error> {
     let groups_str = groups.join(",");
     debug!("Setting secondary groups for '{username}' to '{groups_str}'");
-    let output = if root == "/" {
-        Command::new("usermod")
+    if root == "/" {
+        Dependency::Usermod
+            .cmd()
             .args(["-a", "-G", &groups_str, username])
-            .output()
+            .run_and_check()
     } else {
-        Command::new("chroot")
+        Dependency::Chroot
+            .cmd()
             .arg(root)
             .args(["usermod", "-a", "-G", &groups_str, username])
-            .output()
+            .run_and_check()
     }
     .with_context(|| format!("Failed to set secondary groups for '{username}'"))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("usermod -a -G failed for '{username}': {stderr}");
-    }
     Ok(())
 }
 
@@ -412,25 +408,23 @@ fn set_ownership(ctx: &OsModifierContext, username: &str, path: &Path) -> Result
     let root = ctx.root.to_str().unwrap_or("/");
     let path_str = path.to_str().context("Failed to convert path to string")?;
 
-    let output = if root == "/" {
-        Command::new("chown")
+    if root == "/" {
+        Dependency::Chown
+            .cmd()
             .args([&format!("{username}:{username}"), path_str])
-            .output()
+            .run_and_check()
     } else {
         // For non-root context, strip the root prefix for chroot
         let relative = path.strip_prefix(&ctx.root).unwrap_or(path);
         let rel_str = relative.to_str().context("path to string")?;
-        Command::new("chroot")
+        Dependency::Chroot
+            .cmd()
             .arg(root)
             .args(["chown", &format!("{username}:{username}"), rel_str])
-            .output()
+            .run_and_check()
     }
     .with_context(|| format!("Failed to chown '{}'", path.display()))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("chown failed for '{}': {stderr}", path.display());
-    }
     Ok(())
 }
 

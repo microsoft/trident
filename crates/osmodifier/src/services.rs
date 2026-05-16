@@ -3,10 +3,9 @@
 
 //! Service management — enable and disable systemd services.
 
-use std::process::Command;
-
 use anyhow::{Context, Error};
 use log::{debug, warn};
+use osutils::Dependency;
 
 use trident_api::config::Services;
 
@@ -29,15 +28,11 @@ fn enable_service(ctx: &OsModifierContext, service: &str) -> Result<(), Error> {
     debug!("Enabling service '{service}'");
     let root = ctx.root.to_str().unwrap_or("/");
 
-    let output = Command::new("systemctl")
+    Dependency::Systemctl
+        .cmd()
         .args(["--root", root, "enable", service])
-        .output()
-        .with_context(|| format!("Failed to execute systemctl enable {service}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("Failed to enable service '{service}': {stderr}");
-    }
+        .run_and_check()
+        .with_context(|| format!("Failed to enable service '{service}'"))?;
 
     Ok(())
 }
@@ -46,26 +41,23 @@ fn disable_service(ctx: &OsModifierContext, service: &str) -> Result<(), Error> 
     // Check if the service is enabled first
     let root = ctx.root.to_str().unwrap_or("/");
 
-    let check = Command::new("systemctl")
+    let check = Dependency::Systemctl
+        .cmd()
         .args(["--root", root, "is-enabled", service])
         .output()
         .with_context(|| format!("Failed to check if service '{service}' is enabled"))?;
 
-    if !check.status.success() {
+    if !check.success() {
         warn!("Service '{service}' is not enabled, skipping disable");
         return Ok(());
     }
 
     debug!("Disabling service '{service}'");
-    let output = Command::new("systemctl")
+    Dependency::Systemctl
+        .cmd()
         .args(["--root", root, "disable", service])
-        .output()
-        .with_context(|| format!("Failed to execute systemctl disable {service}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("Failed to disable service '{service}': {stderr}");
-    }
+        .run_and_check()
+        .with_context(|| format!("Failed to disable service '{service}'"))?;
 
     Ok(())
 }

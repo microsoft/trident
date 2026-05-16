@@ -6,10 +6,11 @@
 //! Used by the `update_default_grub` flow to extract boot args from the
 //! generated grub.cfg and sync them back to /etc/default/grub.
 
-use std::{fs, process::Command};
+use std::fs;
 
 use anyhow::{bail, Context, Error};
 use log::{debug, info, trace};
+use osutils::Dependency;
 use regex::Regex;
 
 use crate::OsModifierContext;
@@ -150,17 +151,12 @@ pub fn run_grub_mkconfig(ctx: &OsModifierContext) -> Result<(), Error> {
 
     info!("Running grub2-mkconfig -o '{}'", grub_cfg_path.display());
 
-    let output = Command::new("grub2-mkconfig")
+    Dependency::Grub2Mkconfig
+        .cmd()
         .arg("-o")
         .arg(&grub_cfg_path)
-        .output()
+        .run_and_check()
         .context("Failed to execute grub2-mkconfig")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        bail!("grub2-mkconfig failed:\nstdout: {stdout}\nstderr: {stderr}");
-    }
 
     debug!("grub2-mkconfig completed successfully");
     Ok(())

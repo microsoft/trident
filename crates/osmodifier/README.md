@@ -117,6 +117,29 @@ modifications (SELinux, overlays, verity) happen at different stages of the
 Trident image build pipeline. Separating them avoids passing unused
 configuration and makes the call sites clearer.
 
+### System tool access via Dependency enum
+
+External tool invocations use the trident `osutils::Dependency` enum instead
+of calling `std::process::Command` directly. This provides consistent binary
+resolution (via `which`), structured error reporting, and a centralized
+inventory of runtime dependencies.
+
+| Dependency variant | Used in |
+|--------------------|---------|
+| `Systemctl` | `services.rs` — enable/disable services |
+| `Grub2Mkconfig` | `grub_cfg.rs` — regenerate GRUB config |
+| `Chroot` | `users.rs` — run tools inside a mounted root |
+| `Id` | `users.rs` — check if a user exists |
+| `Useradd` | `users.rs` — create new users |
+| `Usermod` | `users.rs` — modify groups |
+| `Chown` | `users.rs` — set file ownership |
+
+Two tools still use `std::process::Command` directly because the Dependency
+`Command` wrapper does not yet support stdin piping:
+
+- **`openssl passwd`** (`hash_password`) — reads plaintext from stdin
+- **`chpasswd -e`** (`set_password_via_chpasswd`) — reads `user:hash` from stdin
+
 ## Keeping the Port in Sync
 
 When the Go osmodifier code changes upstream, compare the diff against the
