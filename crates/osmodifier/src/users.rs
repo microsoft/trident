@@ -24,8 +24,6 @@ pub fn add_or_update_users(ctx: &OsModifierContext, users: &[MICUser]) -> Result
 }
 
 fn add_or_update_user(ctx: &OsModifierContext, user: &MICUser) -> Result<(), Error> {
-    let root = ctx.root.to_str().unwrap_or("/");
-
     // Hash the password if needed
     let hashed_password = match &user.password {
         Some(pwd) => match pwd.password_type {
@@ -41,7 +39,7 @@ fn add_or_update_user(ctx: &OsModifierContext, user: &MICUser) -> Result<(), Err
         .as_ref()
         .is_some_and(|p| p.password_type == PasswordType::Locked);
 
-    let user_exists = check_user_exists(root, &user.name)?;
+    let user_exists = check_user_exists(&user.name)?;
 
     if user_exists {
         debug!("User '{}' already exists, updating", user.name);
@@ -69,12 +67,12 @@ fn add_or_update_user(ctx: &OsModifierContext, user: &MICUser) -> Result<(), Err
         }
     } else {
         info!("Creating user '{}'", user.name);
-        create_user(root, user)?;
+        create_user(user)?;
 
         // Set password after creation via chpasswd (avoids leaking hash in
         // /proc/cmdline that useradd -p would cause).
         if let Some(ref hash) = hashed_password {
-            set_password_via_chpasswd(root, &user.name, hash)?;
+            set_password_via_chpasswd(&user.name, hash)?;
         }
     }
 
@@ -85,10 +83,10 @@ fn add_or_update_user(ctx: &OsModifierContext, user: &MICUser) -> Result<(), Err
 
     // Update groups
     if let Some(ref primary) = user.primary_group {
-        set_primary_group(root, &user.name, primary)?;
+        set_primary_group(&user.name, primary)?;
     }
     if !user.secondary_groups.is_empty() {
-        set_secondary_groups(root, &user.name, &user.secondary_groups)?;
+        set_secondary_groups(&user.name, &user.secondary_groups)?;
     }
 
     // SSH keys
@@ -104,17 +102,12 @@ fn add_or_update_user(ctx: &OsModifierContext, user: &MICUser) -> Result<(), Err
     Ok(())
 }
 
-fn check_user_exists(root: &str, username: &str) -> Result<bool, Error> {
-    let output = if root == "/" {
-        Dependency::Id.cmd().args(["-u", username]).output()
-    } else {
-        Dependency::Chroot
-            .cmd()
-            .arg(root)
-            .args(["id", "-u", username])
-            .output()
-    }
-    .with_context(|| format!("Failed to check if user '{username}' exists"))?;
+fn check_user_exists(username: &str) -> Result<bool, Error> {
+    let output = Dependency::Id
+        .cmd()
+        .args(["-u", username])
+        .output()
+        .with_context(|| format!("Failed to check if user '{username}' exists"))?;
 
     Ok(output.success())
 }
@@ -152,14 +145,8 @@ fn hash_password(plaintext: &str) -> Result<String, Error> {
         .to_string())
 }
 
-fn create_user(root: &str, user: &MICUser) -> Result<(), Error> {
-    let mut cmd = if root == "/" {
-        Dependency::Useradd.cmd()
-    } else {
-        let mut c = Dependency::Chroot.cmd();
-        c.arg(root).arg("useradd");
-        c
-    };
+fn create_user(user: &MICUser) -> Result<(), Error> {
+    let mut cmd = Dependency::Useradd.cmd();
 
     cmd.arg("-m"); // Create home directory
 
@@ -223,29 +210,19 @@ fn update_user_password(ctx: &OsModifierContext, username: &str, hash: &str) -> 
 
 /// Set password on a newly created user via chpasswd -e (stdin), avoiding
 /// leaking the hash through /proc/cmdline.
-fn set_password_via_chpasswd(root: &str, username: &str, hash: &str) -> Result<(), Error> {
-    // TODO: Convert to Dependency::{Chpasswd,Chroot} once the Command wrapper
-    // supports stdin piping. chpasswd reads username:hash from stdin.
+fn set_password_via_chpasswd(username: &str, hash: &str) -> Result<(), Error> {
+    // TODO: Convert to Dependency::Chpasswd once the Command wrapper supports
+    // stdin piping. chpasswd reads username:hash from stdin.
     debug!("Setting password for new user '{username}' via chpasswd");
     let input = format!("{username}:{hash}\n");
 
-    let mut child = if root == "/" {
-        Command::new("chpasswd")
-            .arg("-e")
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-    } else {
-        Command::new("chroot")
-            .arg(root)
-            .args(["chpasswd", "-e"])
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-    }
-    .context("Failed to start chpasswd")?;
+    let mut child = Command::new("chpasswd")
+        .arg("-e")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .context("Failed to start chpasswd")?;
 
     if let Some(ref mut stdin) = child.stdin {
         stdin
@@ -310,41 +287,25 @@ fn set_password_expiry(ctx: &OsModifierContext, username: &str, days: u64) -> Re
     atomic_write_file(&shadow_path, &result)
 }
 
-fn set_primary_group(root: &str, username: &str, group: &str) -> Result<(), Error> {
+fn set_primary_group(username: &str, group: &str) -> Result<(), Error> {
     debug!("Setting primary group for '{username}' to '{group}'");
-    if root == "/" {
-        Dependency::Usermod
-            .cmd()
-            .args(["-g", group, username])
-            .run_and_check()
-    } else {
-        Dependency::Chroot
-            .cmd()
-            .arg(root)
-            .args(["usermod", "-g", group, username])
-            .run_and_check()
-    }
-    .with_context(|| format!("Failed to set primary group for '{username}'"))?;
+    Dependency::Usermod
+        .cmd()
+        .args(["-g", group, username])
+        .run_and_check()
+        .with_context(|| format!("Failed to set primary group for '{username}'"))?;
 
     Ok(())
 }
 
-fn set_secondary_groups(root: &str, username: &str, groups: &[String]) -> Result<(), Error> {
+fn set_secondary_groups(username: &str, groups: &[String]) -> Result<(), Error> {
     let groups_str = groups.join(",");
     debug!("Setting secondary groups for '{username}' to '{groups_str}'");
-    if root == "/" {
-        Dependency::Usermod
-            .cmd()
-            .args(["-a", "-G", &groups_str, username])
-            .run_and_check()
-    } else {
-        Dependency::Chroot
-            .cmd()
-            .arg(root)
-            .args(["usermod", "-a", "-G", &groups_str, username])
-            .run_and_check()
-    }
-    .with_context(|| format!("Failed to set secondary groups for '{username}'"))?;
+    Dependency::Usermod
+        .cmd()
+        .args(["-a", "-G", &groups_str, username])
+        .run_and_check()
+        .with_context(|| format!("Failed to set secondary groups for '{username}'"))?;
 
     Ok(())
 }
@@ -405,25 +366,13 @@ fn get_home_dir(ctx: &OsModifierContext, username: &str) -> Result<std::path::Pa
 }
 
 fn set_ownership(ctx: &OsModifierContext, username: &str, path: &Path) -> Result<(), Error> {
-    let root = ctx.root.to_str().unwrap_or("/");
     let path_str = path.to_str().context("Failed to convert path to string")?;
 
-    if root == "/" {
-        Dependency::Chown
-            .cmd()
-            .args([&format!("{username}:{username}"), path_str])
-            .run_and_check()
-    } else {
-        // For non-root context, strip the root prefix for chroot
-        let relative = path.strip_prefix(&ctx.root).unwrap_or(path);
-        let rel_str = relative.to_str().context("path to string")?;
-        Dependency::Chroot
-            .cmd()
-            .arg(root)
-            .args(["chown", &format!("{username}:{username}"), rel_str])
-            .run_and_check()
-    }
-    .with_context(|| format!("Failed to chown '{}'", path.display()))?;
+    Dependency::Chown
+        .cmd()
+        .args([&format!("{username}:{username}"), path_str])
+        .run_and_check()
+        .with_context(|| format!("Failed to chown '{}'", path.display()))?;
 
     Ok(())
 }

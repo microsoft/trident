@@ -25,9 +25,10 @@ pub use config::*;
 
 /// Execution context for OS modifier operations.
 ///
-/// All filesystem paths are resolved relative to `root`. When trident has
-/// chrooted into newroot, `root` should be `/`. When operating on an offline
-/// image mounted at a specific path, set `root` accordingly.
+/// All filesystem paths are resolved relative to `root`. Trident always
+/// runs osmodifier after chrooting into newroot, so `root` is `/` in
+/// production. The non-`/` option exists only for unit tests that
+/// operate on a temp directory.
 pub struct OsModifierContext {
     /// Root directory for all filesystem operations.
     pub root: PathBuf,

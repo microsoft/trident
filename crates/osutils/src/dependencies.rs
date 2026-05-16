@@ -90,7 +90,6 @@ impl<T> DependencyResultExt<T> for Result<T, Box<DependencyError>> {
 pub enum Dependency {
     Blkid,
     Chown,
-    Chroot,
     Cryptsetup,
     Dd,
     Df,

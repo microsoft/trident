@@ -59,13 +59,14 @@ instead of being parsed from stderr.
 ### No chroot / safechroot
 
 The Go code uses `safechroot` to enter a chroot environment before making
-modifications. The Rust version operates on a mounted root directory via
-`OsModifierContext`, prefixing all paths with the root directory.
+modifications. The Rust version assumes it is already running inside the
+chroot (trident manages the chroot lifecycle at a higher level). File
+operations use `OsModifierContext` for path resolution; system tool
+invocations (`useradd`, `usermod`, etc.) run directly against `/`.
 
-**Reasoning:** Trident already manages the chroot lifecycle at a higher level.
-Duplicating chroot enter/exit in osmodifier would conflict with the outer
-chroot management. Path-prefixing achieves the same isolation without the
-complexity.
+**Reasoning:** Trident always chroots into newroot before calling osmodifier.
+Duplicating chroot enter/exit here would conflict with the outer chroot
+management and add unnecessary complexity.
 
 ### Inlined imagecustomizerlib logic
 
@@ -128,7 +129,6 @@ inventory of runtime dependencies.
 |--------------------|---------|
 | `Systemctl` | `services.rs` — enable/disable services |
 | `Grub2Mkconfig` | `grub_cfg.rs` — regenerate GRUB config |
-| `Chroot` | `users.rs` — run tools inside a mounted root |
 | `Id` | `users.rs` — check if a user exists |
 | `Useradd` | `users.rs` — create new users |
 | `Usermod` | `users.rs` — modify groups |
