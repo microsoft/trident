@@ -703,7 +703,7 @@ fn generate_boot_filepaths(temp_mount_dir: &Path, is_uki: bool) -> Result<Vec<Pa
             vendor_path
         } else {
             // Log what we searched to help diagnose image packaging issues
-            let searched = vec![
+            let searched = [
                 grub_efi_noprefix_path.display().to_string(),
                 grub_efi_default_path.display().to_string(),
                 format!("{}/*/{}", efi_dir.display(), GRUB_EFI),
