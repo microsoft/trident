@@ -1485,7 +1485,6 @@ mod tests {
             generate_boot_filepaths(temp_mount_dir.path(), false)
                 .unwrap_err()
                 .root_cause()
-                .to_string()
         );
 
         // Test case 5: Run generate_boot_filepaths() with a grub EFI executable with noprefix name
