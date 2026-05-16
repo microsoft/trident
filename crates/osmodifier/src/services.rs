@@ -5,7 +5,7 @@
 
 use anyhow::{Context, Error};
 use log::{debug, warn};
-use osutils::Dependency;
+use osutils::dependencies::Dependency;
 
 use trident_api::config::Services;
 
@@ -171,3 +171,4 @@ mod functional_test {
         );
     }
 }
+

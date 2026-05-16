@@ -10,7 +10,7 @@ use std::fs;
 
 use anyhow::{bail, Context, Error};
 use log::{debug, info, trace};
-use osutils::Dependency;
+use osutils::dependencies::Dependency;
 use regex::Regex;
 
 use crate::OsModifierContext;
@@ -204,3 +204,4 @@ mod tests {
         assert!(find_non_recovery_linux_line(grub_cfg).is_err());
     }
 }
+

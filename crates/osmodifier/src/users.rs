@@ -7,7 +7,7 @@ use std::{fs, io::Write, os::unix::fs::PermissionsExt, path::Path, process::Comm
 
 use anyhow::{bail, Context, Error};
 use log::{debug, info};
-use osutils::Dependency;
+use osutils::dependencies::Dependency;
 
 use crate::{
     config::{MICUser, PasswordType},
@@ -452,3 +452,4 @@ fn atomic_write_file(path: &std::path::Path, content: &str) -> Result<(), Error>
 
     Ok(())
 }
+
