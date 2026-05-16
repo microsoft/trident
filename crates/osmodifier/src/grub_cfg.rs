@@ -204,7 +204,3 @@ mod tests {
         assert!(find_non_recovery_linux_line(grub_cfg).is_err());
     }
 }
-
-
-
-

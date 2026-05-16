@@ -171,7 +171,3 @@ mod functional_test {
         );
     }
 }
-
-
-
-

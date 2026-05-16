@@ -365,7 +365,7 @@ fn get_home_dir(ctx: &OsModifierContext, username: &str) -> Result<std::path::Pa
     bail!("Could not find home directory for user '{username}' in /etc/passwd")
 }
 
-fn set_ownership(ctx: &OsModifierContext, username: &str, path: &Path) -> Result<(), Error> {
+fn set_ownership(_ctx: &OsModifierContext, username: &str, path: &Path) -> Result<(), Error> {
     let path_str = path.to_str().context("Failed to convert path to string")?;
 
     Dependency::Chown
@@ -452,7 +452,3 @@ fn atomic_write_file(path: &std::path::Path, content: &str) -> Result<(), Error>
 
     Ok(())
 }
-
-
-
-
