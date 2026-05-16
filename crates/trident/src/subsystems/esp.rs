@@ -294,10 +294,7 @@ fn copy_file_artifacts(
         // In non-UKI mode, bail if grub_noprefix.efi is not found in the image.
         // AZL4+ does not ship grub2-efi-binary-noprefix (AZL3-specific convention),
         // so automatically skip this check for AZL4 and later.
-        let is_azl4_or_later = ctx
-            .image_os_release()
-            .get_distro()
-            .is_azl4();
+        let is_azl4_or_later = ctx.image_os_release().get_distro().is_azl4();
         ensure!(
             grub_noprefix
                 || is_azl4_or_later
@@ -649,7 +646,6 @@ fn find_efi_binary_in_vendor_dirs(efi_dir: &Path, binary_name: &str) -> Option<P
     None
 }
 
-
 /// Generates a list of filepaths to the boot files that need to be copied to implement file-based
 /// update of ESP, relative to the mounted directory.
 ///
@@ -696,9 +692,7 @@ fn generate_boot_filepaths(temp_mount_dir: &Path, is_uki: bool) -> Result<Vec<Pa
     let grub_efi_noprefix_path = efi_dir
         .join(EFI_DEFAULT_BIN_DIRECTORY)
         .join(GRUB_NOPREFIX_EFI);
-    let grub_efi_default_path = efi_dir
-        .join(EFI_DEFAULT_BIN_DIRECTORY)
-        .join(GRUB_EFI);
+    let grub_efi_default_path = efi_dir.join(EFI_DEFAULT_BIN_DIRECTORY).join(GRUB_EFI);
 
     let selected_grub_binary_path =
         if grub_efi_noprefix_path.exists() && grub_efi_noprefix_path.is_file() {
@@ -712,7 +706,7 @@ fn generate_boot_filepaths(temp_mount_dir: &Path, is_uki: bool) -> Result<Vec<Pa
             let searched = vec![
                 grub_efi_noprefix_path.display().to_string(),
                 grub_efi_default_path.display().to_string(),
-                format!("{}/*/{}",  efi_dir.display(), GRUB_EFI),
+                format!("{}/*/{}", efi_dir.display(), GRUB_EFI),
             ];
             bail!(
                 "Failed to find GRUB EFI executable. Searched: {}",

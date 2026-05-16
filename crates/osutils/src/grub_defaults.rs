@@ -164,9 +164,9 @@ impl GrubDefaults {
         let tokens: Vec<String> = shell_split(&current)
             .into_iter()
             .filter(|token| {
-                !names.iter().any(|name| {
-                    token == *name || token.starts_with(&format!("{}=", name))
-                })
+                !names
+                    .iter()
+                    .any(|name| token == *name || token.starts_with(&format!("{}=", name)))
             })
             .collect();
 
@@ -235,10 +235,7 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), Error> {
 /// Run `grub2-mkconfig` to regenerate the GRUB configuration.
 pub fn regenerate_grub_config(output_path: impl AsRef<Path>) -> Result<(), Error> {
     let output_path = output_path.as_ref();
-    info!(
-        "Regenerating GRUB config at '{}'",
-        output_path.display()
-    );
+    info!("Regenerating GRUB config at '{}'", output_path.display());
 
     std::process::Command::new("grub2-mkconfig")
         .arg("-o")
@@ -259,7 +256,9 @@ pub fn regenerate_grub_config(output_path: impl AsRef<Path>) -> Result<(), Error
 ///
 /// Finds the first non-recovery `linux` line and extracts its arguments.
 /// This replicates what os-modifier's `extractValuesFromGrubConfig` does.
-pub fn extract_cmdline_from_grub_cfg(grub_cfg_path: &Path) -> Result<HashMap<String, Option<String>>, Error> {
+pub fn extract_cmdline_from_grub_cfg(
+    grub_cfg_path: &Path,
+) -> Result<HashMap<String, Option<String>>, Error> {
     let content = fs::read_to_string(grub_cfg_path)
         .with_context(|| format!("Failed to read '{}'", grub_cfg_path.display()))?;
 
@@ -312,7 +311,10 @@ pub fn extract_cmdline_from_bls_entries(
 ) -> Result<HashMap<String, Option<String>>, Error> {
     let mut entries: Vec<PathBuf> = fs::read_dir(loader_entries_dir)
         .with_context(|| {
-            format!("Failed to read BLS entries dir '{}'", loader_entries_dir.display())
+            format!(
+                "Failed to read BLS entries dir '{}'",
+                loader_entries_dir.display()
+            )
         })?
         .filter_map(|e| e.ok())
         .map(|e| e.path())
@@ -408,7 +410,12 @@ mod tests {
             .unwrap()
             .map(|e| e.unwrap().file_name())
             .collect();
-        assert_eq!(entries.len(), 1, "Expected only the target file, got: {:?}", entries);
+        assert_eq!(
+            entries.len(),
+            1,
+            "Expected only the target file, got: {:?}",
+            entries
+        );
         assert_eq!(entries[0], "grub");
     }
 
@@ -457,11 +464,14 @@ GRUB_DISABLE_RECOVERY=true
         );
 
         let mut grub = GrubDefaults::read(f.path()).unwrap();
-        grub.update_cmdline_args("GRUB_CMDLINE_LINUX", &[
-            ("root", "/dev/sda5"),
-            ("selinux", "0"),
-            ("rd.overlayfs", "lower,upper,work,/dev/sda3"),
-        ]);
+        grub.update_cmdline_args(
+            "GRUB_CMDLINE_LINUX",
+            &[
+                ("root", "/dev/sda5"),
+                ("selinux", "0"),
+                ("rd.overlayfs", "lower,upper,work,/dev/sda3"),
+            ],
+        );
 
         let args = grub.get_cmdline_args("GRUB_CMDLINE_LINUX");
         assert_eq!(args.get("root"), Some(&Some("/dev/sda5".to_string())));
@@ -571,18 +581,24 @@ GRUB_DEFAULT=saved
         assert_eq!(var, "GRUB_CMDLINE_LINUX_DEFAULT");
 
         // Update with Trident's typical boot args
-        grub.update_cmdline_args(var, &[
-            ("root", "/dev/sda2"),
-            ("selinux", "1"),
-            ("enforcing", "1"),
-            ("rd.overlayfs", "lower,upper,work,/dev/sda5"),
-        ]);
+        grub.update_cmdline_args(
+            var,
+            &[
+                ("root", "/dev/sda2"),
+                ("selinux", "1"),
+                ("enforcing", "1"),
+                ("rd.overlayfs", "lower,upper,work,/dev/sda5"),
+            ],
+        );
 
         let args = grub.get_cmdline_args(var);
         assert_eq!(args.get("root"), Some(&Some("/dev/sda2".to_string())));
         assert_eq!(args.get("selinux"), Some(&Some("1".to_string())));
         assert_eq!(args.get("enforcing"), Some(&Some("1".to_string())));
-        assert_eq!(args.get("rd.overlayfs"), Some(&Some("lower,upper,work,/dev/sda5".to_string())));
+        assert_eq!(
+            args.get("rd.overlayfs"),
+            Some(&Some("lower,upper,work,/dev/sda5".to_string()))
+        );
         // Original args preserved
         assert_eq!(args.get("console"), Some(&Some("ttyS0".to_string())));
         assert_eq!(args.get("rd.shell"), Some(&Some("0".to_string())));
@@ -597,8 +613,10 @@ GRUB_DEFAULT=saved
         assert!(written.contains("GRUB_CMDLINE_LINUX_DEFAULT="));
         assert!(written.contains("GRUB_ENABLE_BLSCFG="));
         // Should NOT contain GRUB_CMDLINE_LINUX (without _DEFAULT)
-        assert!(!written.contains("
-GRUB_CMDLINE_LINUX="));
+        assert!(!written.contains(
+            "
+GRUB_CMDLINE_LINUX="
+        ));
     }
 
     #[test]
@@ -618,7 +636,10 @@ blscfg
         // extract_cmdline_from_grub_cfg should return an error since there's no
         // linux line in a BLS-only grub.cfg
         let result = extract_cmdline_from_grub_cfg(f.path());
-        assert!(result.is_err(), "BLS-only grub.cfg should not have linux lines");
+        assert!(
+            result.is_err(),
+            "BLS-only grub.cfg should not have linux lines"
+        );
     }
 
     #[test]
@@ -649,9 +670,13 @@ grub_class azurelinux
                 }
             }
         }
-        assert_eq!(args.get("root"), Some(&Some("UUID=3190eea2-a4b1-4399-9679-e0840cf8eb75".to_string())));
+        assert_eq!(
+            args.get("root"),
+            Some(&Some(
+                "UUID=3190eea2-a4b1-4399-9679-e0840cf8eb75".to_string()
+            ))
+        );
         assert_eq!(args.get("console"), Some(&Some("ttyS0".to_string())));
         assert_eq!(args.get("ro"), Some(&None));
     }
-
 }

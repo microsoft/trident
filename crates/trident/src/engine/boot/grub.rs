@@ -77,11 +77,7 @@ pub(super) fn update_configs(ctx: &EngineContext, os_modifier_path: &Path) -> Re
         }
 
         Distro::AzureLinux(AzureLinuxRelease::AzL4) => {
-            update_grub_config_native(
-                ctx,
-                &root_device_path,
-                &boot_grub_config_path,
-            )?;
+            update_grub_config_native(ctx, &root_device_path, &boot_grub_config_path)?;
         }
 
         d => bail!("Unsupported distro for GRUB config update: {d:?}"),
@@ -262,7 +258,6 @@ fn update_grub_config_azl3(
     Ok(())
 }
 
-
 /// Updates the GRUB config for Azure Linux 4.0+ natively without os-modifier.
 ///
 /// This function replaces the external `os-modifier` tool by directly
@@ -318,8 +313,7 @@ fn update_grub_config_native(
 
     // Read /etc/default/grub
     let mut grub = grub_defaults::GrubDefaults::read(
-        Path::new(crate::engine::constants::ROOT_MOUNT_POINT_PATH)
-            .join("etc/default/grub"),
+        Path::new(crate::engine::constants::ROOT_MOUNT_POINT_PATH).join("etc/default/grub"),
     )
     .context("Failed to read /etc/default/grub")?;
 
@@ -413,10 +407,7 @@ fn update_grub_config_native(
     }
 
     // Apply all updates to the correct GRUB variable
-    let update_refs: Vec<(&str, &str)> = updates
-        .iter()
-        .map(|(k, v)| (*k, v.as_str()))
-        .collect();
+    let update_refs: Vec<(&str, &str)> = updates.iter().map(|(k, v)| (*k, v.as_str())).collect();
     grub.update_cmdline_args(cmdline_var, &update_refs);
 
     // Write back
