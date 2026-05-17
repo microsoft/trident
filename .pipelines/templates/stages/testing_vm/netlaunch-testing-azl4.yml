@@ -195,6 +195,16 @@ stages:
 
               TRIDENT_CONFIG="$(TRIDENT_SOURCE_DIR)/$(tridentConfigPath)/trident-config.yaml"
 
+              # Run netlaunch in the background so we can monitor its log
+              # for the install-success marker. The base-azl4 cosi does
+              # not yet ship trident systemd units (trident.service,
+              # tridentd.socket) so the installed AZL4 system never
+              # phones home post-reboot. netlaunch's ListenLoop always
+              # waits for at least one phone-home regardless of flags,
+              # so we treat the in-MOS "Rebooting system" log line as
+              # our completion signal and terminate netlaunch cleanly.
+              # Phone-home wiring belongs with the VM-testing work where
+              # the trident systemd stack lands.
               ./bin/netlaunch \
                   --iso ./artifacts/iso/${{ parameters.installerISOArtifact }}.iso \
                   --config $(TRIDENT_SOURCE_DIR)/tools/vm-netlaunch.yaml \
@@ -204,15 +214,52 @@ stages:
                   --force-color \
                   --full-logstream logstream-full.log \
                   --only-print-exit-code \
-                  --port $(netlaunchPort) 2>&1 | tee ./clean-install-azl4.log
+                  --port $(netlaunchPort) > ./clean-install-azl4.log 2>&1 &
+              NETLAUNCH_PID=$!
+              echo "netlaunch pid: $NETLAUNCH_PID"
+
+              # Watch for the install-success marker for up to 12 minutes.
+              # Real install completes in 1-3 minutes once netlaunch
+              # finishes booting the MOS ISO via HTTP boot. UEFI HTTP
+              # boot can occasionally need 5+ minutes, so 12 minutes is
+              # generous.
+              DEADLINE=$((SECONDS + 720))
+              INSTALL_OK=0
+              while [ $SECONDS -lt $DEADLINE ]; do
+                if ! kill -0 $NETLAUNCH_PID 2>/dev/null; then
+                  echo "netlaunch exited on its own"
+                  wait $NETLAUNCH_PID || true
+                  break
+                fi
+                if grep -q "Rebooting system" ./clean-install-azl4.log 2>/dev/null; then
+                  echo "install completed (saw 'Rebooting system' marker)"
+                  INSTALL_OK=1
+                  break
+                fi
+                sleep 10
+              done
+
+              # Always show the netlaunch log tail for diagnostics
+              echo "--- netlaunch log tail ---"
+              tail -50 ./clean-install-azl4.log || true
+
+              if [ $INSTALL_OK -eq 1 ]; then
+                echo "Killing netlaunch (install completed; not waiting for phone-home)"
+                kill $NETLAUNCH_PID 2>/dev/null || true
+                # Give it a moment to flush and exit
+                sleep 5
+                kill -9 $NETLAUNCH_PID 2>/dev/null || true
+                exit 0
+              fi
+
+              echo "Install marker not observed within timeout"
+              kill $NETLAUNCH_PID 2>/dev/null || true
+              exit 1
             workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: "🚀 Run netlaunch (AZL3 ISO installs AZL4 COSI)"
-            # Install itself completes in ~70s. Without
-            # --wait-for-provisioned-state we don't block on the post-reboot
-            # phone-home (the base-azl4 cosi doesn't ship trident.service yet,
-            # so that phone-home never arrives). Keep the timeout generous to
-            # absorb runner cold starts and the AZL4 boot fall-through.
-            timeoutInMinutes: 20
+            # 14 minutes covers the 12-minute install-success watcher
+            # plus a couple minutes of slack.
+            timeoutInMinutes: 14
 
           - bash: |
               set -eux
