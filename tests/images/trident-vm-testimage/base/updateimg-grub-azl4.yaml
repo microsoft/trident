@@ -125,3 +125,10 @@ scripts:
     - path: scripts/post-install.sh
     - path: scripts/ssh-move-host-keys-azl4.sh
     - path: scripts/enable-regen-sshd-keys.sh
+    # Strip SELinux labels from all files. See the script header for the
+    # full rationale, but in short: the AZL4 base VHDX bakes in AZL4
+    # SELinux contexts that Trident-from-AZL3-MOS can't preserve during
+    # install (MOS's loaded policy rejects unknown contexts via
+    # setxattr). Stripping at cosi build time sidesteps the cascade.
+    # Must run LAST so other postCustomization scripts don't re-label.
+    - path: scripts/strip-selinux-xattrs.sh
