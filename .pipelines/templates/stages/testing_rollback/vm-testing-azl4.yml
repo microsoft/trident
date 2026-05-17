@@ -128,7 +128,12 @@ stages:
               ARTIFACTS=$(Build.ArtifactStagingDirectory)/storm-input
               mkdir -p "$ARTIFACTS"
 
-              # Find the qcow2 (may be _0.qcow2 or bare)
+              # storm-trident's qemu deploy looks for a qcow2 matching the
+              # regex `^trident-vm-.*-testimage.qcow2$` (see
+              # tools/storm/utils/vm/qemu/qemu.go:34). Our build artifact
+              # is named trident-vm-grub-testimage-azl4-base.qcow2 which
+              # doesn't match (-base.qcow2 not -testimage.qcow2 at end).
+              # Stage it under a name that matches.
               QCOW_SRC=""
               for c in \
                   "$(Build.ArtifactStagingDirectory)/base-qcow/trident-vm-grub-testimage-azl4-base_0.qcow2" \
@@ -140,9 +145,11 @@ stages:
                 find "$(Build.ArtifactStagingDirectory)/base-qcow" -type f
                 exit 1
               fi
-              cp "$QCOW_SRC" "$ARTIFACTS/regular.qcow2"
+              cp "$QCOW_SRC" "$ARTIFACTS/trident-vm-azl4-base-testimage.qcow2"
 
-              # Find the cosi (same logic as BM-sim stage)
+              # storm-trident's rollback test looks for any *.cosi in the
+              # artifacts dir (see tools/storm/rollback/tests/rollback.go:29).
+              # No rename needed beyond the clone-index suffix.
               COSI_SRC=""
               for c in \
                   "$(Build.ArtifactStagingDirectory)/update-cosi/trident-vm-grub-testimage-azl4_0.cosi" \
@@ -154,7 +161,7 @@ stages:
                 find "$(Build.ArtifactStagingDirectory)/update-cosi" -type f
                 exit 1
               fi
-              cp "$COSI_SRC" "$ARTIFACTS/regular.cosi"
+              cp "$COSI_SRC" "$ARTIFACTS/trident-vm-azl4-update-testimage.cosi"
 
               ls -lh "$ARTIFACTS"
             displayName: "Stage artifacts for storm-trident"
