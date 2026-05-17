@@ -203,10 +203,15 @@ stages:
                   --logstream \
                   --force-color \
                   --full-logstream logstream-full.log \
-                  --wait-for-provisioned-state \
+                  --only-print-exit-code \
                   --port $(netlaunchPort) 2>&1 | tee ./clean-install-azl4.log
             workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: "🚀 Run netlaunch (AZL3 ISO installs AZL4 COSI)"
+            # Install itself completes in ~70s. Without
+            # --wait-for-provisioned-state we don't block on the post-reboot
+            # phone-home (the base-azl4 cosi doesn't ship trident.service yet,
+            # so that phone-home never arrives). Keep the timeout generous to
+            # absorb runner cold starts and the AZL4 boot fall-through.
             timeoutInMinutes: 20
 
           - bash: |
