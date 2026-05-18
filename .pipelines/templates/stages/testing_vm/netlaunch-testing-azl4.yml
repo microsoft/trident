@@ -175,7 +175,12 @@ stages:
               chmod 600 "$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/helpers/key"
               # Convert to PEM if not already (matches what trident-prep
               # does for AZL3 keys).
-              ssh-keygen -p -m PEM -f "$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/helpers/key" -N "" || true
+              # Convert the per-build SSH key to PEM if it isn't already.
+              # `ssh-keygen -p -P "" -N "" -m PEM -f ...` is a no-op on
+              # already-PEM keys and explicitly tells ssh-keygen that
+              # the existing passphrase is empty (so it doesn't read
+              # stdin if it can't guess).
+              ssh-keygen -p -P "" -N "" -m PEM -f "$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/helpers/key"
               ls -alh "$(TRIDENT_SOURCE_DIR)/artifacts/iso"
               ls -alh "$(TRIDENT_SOURCE_DIR)/bin"
             displayName: "Stage AZL4 COSI as regular.cosi"
@@ -201,11 +206,18 @@ stages:
               # tridentd.socket) so the installed AZL4 system never
               # phones home post-reboot. netlaunch's ListenLoop always
               # waits for at least one phone-home regardless of flags,
-              # so we treat the in-MOS "Rebooting system" log line as
-              # our completion signal and terminate netlaunch cleanly.
-              # Phone-home wiring belongs with the VM-testing work where
-              # the trident systemd stack lands.
-              ./bin/netlaunch \
+              # so we treat trident's own "Rebooting system" log line
+              # (emitted by crates/trident/src/reboot.rs from the install
+              # success path) as our completion signal and terminate
+              # netlaunch cleanly. Phone-home wiring belongs with the
+              # VM-testing work where the trident systemd stack lands.
+              #
+              # netlaunch is launched with `setsid` so we can signal the
+              # whole process group on shutdown — otherwise the child
+              # HTTP/TFTP server processes get reparented to PID 1 and
+              # may leak ports / qcow2 file locks to the next job on the
+              # same agent.
+              setsid ./bin/netlaunch \
                   --iso ./artifacts/iso/${{ parameters.installerISOArtifact }}.iso \
                   --config $(TRIDENT_SOURCE_DIR)/tools/vm-netlaunch.yaml \
                   --trident "$TRIDENT_CONFIG" \
@@ -216,23 +228,38 @@ stages:
                   --only-print-exit-code \
                   --port $(netlaunchPort) > ./clean-install-azl4.log 2>&1 &
               NETLAUNCH_PID=$!
-              echo "netlaunch pid: $NETLAUNCH_PID"
+              NETLAUNCH_PGID="$NETLAUNCH_PID"
+              echo "netlaunch pid: $NETLAUNCH_PID (pgid $NETLAUNCH_PGID)"
 
               # Watch for the install-success marker for up to 12 minutes.
               # Real install completes in 1-3 minutes once netlaunch
               # finishes booting the MOS ISO via HTTP boot. UEFI HTTP
               # boot can occasionally need 5+ minutes, so 12 minutes is
               # generous.
+              #
+              # The marker regex is tightened to trident's own
+              # log-record prefix to avoid false-positives from any
+              # kernel / systemd / dracut "Restarting system" line that
+              # might fire on an error path before trident itself
+              # actually completes.
+              REBOOT_RE='trident[^[:space:]]*[[:space:]]+(INFO|WARN)[[:space:]].*Rebooting system'
+              FATAL_RE='kernel panic|dracut:.*FATAL|Emergency mode|emergency!'
               DEADLINE=$((SECONDS + 720))
               INSTALL_OK=0
               while [ $SECONDS -lt $DEADLINE ]; do
-                if ! kill -0 $NETLAUNCH_PID 2>/dev/null; then
-                  echo "netlaunch exited on its own"
-                  wait $NETLAUNCH_PID || true
+                if grep -Eq "$FATAL_RE" ./clean-install-azl4.log 2>/dev/null; then
+                  echo "FATAL marker observed before install success — aborting"
                   break
                 fi
-                if grep -q "Rebooting system" ./clean-install-azl4.log 2>/dev/null; then
-                  echo "install completed (saw 'Rebooting system' marker)"
+                if ! kill -0 $NETLAUNCH_PID 2>/dev/null; then
+                  echo "netlaunch exited on its own"
+                  if wait $NETLAUNCH_PID; then
+                    INSTALL_OK=1
+                  fi
+                  break
+                fi
+                if grep -Eq "$REBOOT_RE" ./clean-install-azl4.log 2>/dev/null; then
+                  echo "install completed (saw trident 'Rebooting system' marker)"
                   INSTALL_OK=1
                   break
                 fi
@@ -244,16 +271,28 @@ stages:
               tail -50 ./clean-install-azl4.log || true
 
               if [ $INSTALL_OK -eq 1 ]; then
-                echo "Killing netlaunch (install completed; not waiting for phone-home)"
-                kill $NETLAUNCH_PID 2>/dev/null || true
-                # Give it a moment to flush and exit
-                sleep 5
-                kill -9 $NETLAUNCH_PID 2>/dev/null || true
+                echo "Killing netlaunch process group (install completed; not waiting for phone-home)"
+                # SIGTERM the whole group; netlaunch's children include
+                # an HTTP/TFTP server we need to release the port on.
+                kill -TERM -"$NETLAUNCH_PGID" 2>/dev/null || true
+                # Generous grace so --full-logstream finishes flushing
+                # to logstream-full.log (which the failure-diagnostic
+                # display-logs step uploads).
+                for _ in 1 2 3 4 5 6 7 8 9 10; do
+                  if ! kill -0 $NETLAUNCH_PID 2>/dev/null; then
+                    break
+                  fi
+                  sleep 1
+                done
+                kill -KILL -"$NETLAUNCH_PGID" 2>/dev/null || true
+                wait $NETLAUNCH_PID 2>/dev/null || true
                 exit 0
               fi
 
-              echo "Install marker not observed within timeout"
-              kill $NETLAUNCH_PID 2>/dev/null || true
+              echo "Install marker not observed within timeout (or fatal seen)"
+              kill -TERM -"$NETLAUNCH_PGID" 2>/dev/null || true
+              sleep 5
+              kill -KILL -"$NETLAUNCH_PGID" 2>/dev/null || true
               exit 1
             workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: "🚀 Run netlaunch (AZL3 ISO installs AZL4 COSI)"
@@ -267,7 +306,13 @@ stages:
                   --vm-name "$(jq -r '.virtualmachines[0].name' $(TRIDENT_SOURCE_DIR)/tools/virt-deploy-metadata.json)" \
                   --artifacts-folder "$(ob_outputDirectory)"
             timeoutInMinutes: 5
-            condition: succeededOrFailed()
+            # `succeeded()` (not `succeededOrFailed()`) so a failed
+            # SSH-up after a "successful" netlaunch actually fails the
+            # stage. Combined with the tightened install marker above,
+            # this closes the structural bias-toward-green where the
+            # netlaunch wrapper could exit 0 on a false-positive log
+            # line and let everything downstream gloss over the failure.
+            condition: succeeded()
             workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: "📄 Wait for target OS to be reachable"
 
@@ -297,7 +342,10 @@ stages:
               sudo cp /var/lib/libvirt/images/virtdeploy-pool/virtdeploy-vm-0-0-volume.qcow2 $(ob_outputDirectory)/ || true
               sudo zstd -T0 $(ob_outputDirectory)/virtdeploy-vm-0-0-volume.qcow2 || true
               sudo cp $(TRIDENT_SOURCE_DIR)/tests/e2e_tests/helpers/key $(ob_outputDirectory) || true
-              sudo chmod 777 $(ob_outputDirectory)/key || true
+              # Owner-only readable. Previously this was `chmod 777`
+              # which produced a SARIF-flaggable artifact even though
+              # the key is per-build ephemeral.
+              sudo chmod 600 $(ob_outputDirectory)/key || true
             workingDirectory: $(TRIDENT_SOURCE_DIR)
             condition: failed()
             displayName: "Publish OS disk on failure"
