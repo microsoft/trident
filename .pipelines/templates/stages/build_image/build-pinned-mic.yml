@@ -13,18 +13,6 @@ parameters:
   - name: tridentSourceDirectory
     type: string
 
-  # Keep these defaults in sync with
-  # tests/images/mic-azl4-patches/build-pinned-mic.sh
-  - name: pinnedUrl
-    type: string
-    default: "https://github.com/microsoft/azurelinux-image-tools.git"
-
-  # SHA on user/vinceaperri/multi-distro-grub validated by Trident's PR-5
-  # E2E run on 2026-05-12. Bump only after re-validating end-to-end.
-  - name: pinnedSha
-    type: string
-    default: "e0d1deb8a810c8cbd0f19cfaa1fa42768e6f53b9"
-
   - name: containerTag
     type: string
     default: "imagecustomizer:azl4-pinned"
@@ -32,6 +20,20 @@ parameters:
 steps:
   - bash: |
       set -euxo pipefail
+
+      # Source the pin from tests/images/mic-azl4-patches/PINNED.env so
+      # this template and the equivalent local script
+      # (mic-azl4-patches/build-pinned-mic.sh) cannot drift.
+      PIN_ENV="${{ parameters.tridentSourceDirectory }}/tests/images/mic-azl4-patches/PINNED.env"
+      if [ ! -f "$PIN_ENV" ]; then
+        echo "ERROR: $PIN_ENV not found"
+        exit 1
+      fi
+      # shellcheck disable=SC1090
+      . "$PIN_ENV"
+      : "${MIC_PIN_URL:?PINNED.env missing MIC_PIN_URL}"
+      : "${MIC_PIN_SHA:?PINNED.env missing MIC_PIN_SHA}"
+      : "${BUILDX_VER:?PINNED.env missing BUILDX_VER}"
 
       # The OneBranch AzL3 runner has azure-cli, git, docker, and go pre-installed
       # but docker daemon may be inactive and buildx is not in the plugin path.
@@ -50,22 +52,50 @@ steps:
         sudo apt-get update
         sudo apt-get -y install golang-go docker.io
         sudo systemctl start docker || true
-        # Ubuntu runner may lack az CLI; if so install it.
+        # Ubuntu runner may lack az CLI. Install via Microsoft's apt repo
+        # with a checked-in keyring instead of `curl | sudo bash`, which
+        # would let an aka.ms redirect change or CDN compromise execute
+        # arbitrary code as root on the agent.
         if ! command -v az >/dev/null 2>&1; then
-          curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+          sudo apt-get -y install ca-certificates curl apt-transport-https lsb-release gnupg
+          # Microsoft apt repo signing key. URL is the published key
+          # location; key fingerprint is verified by apt at install time.
+          curl -sLS https://packages.microsoft.com/keys/microsoft.asc \
+            | sudo gpg --dearmor --yes -o /etc/apt/keyrings/microsoft.gpg
+          sudo chmod go+r /etc/apt/keyrings/microsoft.gpg
+          # shellcheck disable=SC1091
+          . /etc/os-release
+          AZ_REPO="${VERSION_CODENAME}"
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/microsoft.gpg] \
+https://packages.microsoft.com/repos/azure-cli/ $AZ_REPO main" \
+            | sudo tee /etc/apt/sources.list.d/azure-cli.list >/dev/null
+          sudo apt-get update
+          sudo apt-get -y install azure-cli
         fi
       fi
 
       # Install docker buildx (required for the BuildKit secret-mount in
       # the upstream MIC Dockerfile). Neither AzL3 nor Ubuntu runner has
-      # it by default. Pinned to a release tag for reproducibility.
+      # it by default. Pinned to a release tag for reproducibility AND
+      # verified against the release's published checksums.txt so a
+      # tag-move on the upstream GitHub release cannot substitute a
+      # different binary.
       if ! docker buildx version >/dev/null 2>&1; then
         mkdir -p ~/.docker/cli-plugins
-        BUILDX_VER="v0.18.0"
-        curl -sSL \
+        TMPDIR="$(mktemp -d)"
+        curl -fsSL \
           "https://github.com/docker/buildx/releases/download/${BUILDX_VER}/buildx-${BUILDX_VER}.linux-amd64" \
-          -o ~/.docker/cli-plugins/docker-buildx
-        chmod +x ~/.docker/cli-plugins/docker-buildx
+          -o "$TMPDIR/docker-buildx"
+        curl -fsSL \
+          "https://github.com/docker/buildx/releases/download/${BUILDX_VER}/checksums.txt" \
+          -o "$TMPDIR/checksums.txt"
+        ( cd "$TMPDIR" && \
+          grep "buildx-${BUILDX_VER}.linux-amd64\$" checksums.txt \
+            | sed "s|buildx-${BUILDX_VER}.linux-amd64|docker-buildx|" \
+            | sha256sum -c - )
+        chmod +x "$TMPDIR/docker-buildx"
+        mv "$TMPDIR/docker-buildx" ~/.docker/cli-plugins/docker-buildx
+        rm -rf "$TMPDIR"
       fi
       docker buildx version
     displayName: "Install pinned-MIC build prerequisites"
@@ -74,11 +104,18 @@ steps:
   - bash: |
       set -euxo pipefail
 
+      # Source the pin again (each step is a fresh shell).
+      PIN_ENV="${{ parameters.tridentSourceDirectory }}/tests/images/mic-azl4-patches/PINNED.env"
+      # shellcheck disable=SC1090
+      . "$PIN_ENV"
+      : "${MIC_PIN_URL:?PINNED.env missing MIC_PIN_URL}"
+      : "${MIC_PIN_SHA:?PINNED.env missing MIC_PIN_SHA}"
+
       WORKDIR="$(Agent.TempDirectory)/azl4-mic-pinned"
       rm -rf "$WORKDIR"
-      git clone --filter=blob:none "${{ parameters.pinnedUrl }}" "$WORKDIR"
+      git clone --filter=blob:none "$MIC_PIN_URL" "$WORKDIR"
       cd "$WORKDIR"
-      git checkout "${{ parameters.pinnedSha }}"
+      git checkout "$MIC_PIN_SHA"
 
       # Apply every patch under tests/images/mic-azl4-patches/. Each carries
       # a single upstream-PR-pending fix; see that directory's README.

@@ -17,8 +17,10 @@ is consumed by the AZL4 test image build via `--container imagecustomizer:azl4-p
 
 When Vince merges his stack (or any of the patches below is upstream):
 
-1. Update `pinnedSha` in `.pipelines/templates/stages/build_image/build-pinned-mic.yml`
-   to the merge commit on `main`.
+1. Update `MIC_PIN_SHA` in `PINNED.env` to the merge commit on `main`.
+   `PINNED.env` is the single source of truth for the pin and is
+   sourced by both `.pipelines/templates/stages/build_image/build-pinned-mic.yml`
+   and the local `build-pinned-mic.sh`.
 2. Delete every patch in this directory that's already covered by the new pin.
    Each patch's commit message points at the upstream PR it carries.
 3. Eventually, when AZL4 ships in a released MIC container, delete this whole

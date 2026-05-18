@@ -146,11 +146,15 @@ DEFINED_IMAGES: List[ImageConfig] = [
         config_file="base/updateimg-grub-azl4.yaml",
         ssh_key="files/id_rsa.pub",
         # No trident-service RPM for AZL4 yet — the binary is delivered
-        # via additionalFiles. extra_dependencies enforces the file is
-        # in place before the image is built.
+        # via additionalFiles. extra_dependencies enforces both binaries
+        # are in place before the image is built (osmodifier is delivered
+        # the same way until an AZL4 RPM exists; see
+        # tests/images/trident-vm-testimage/base/updateimg-grub-azl4.yaml
+        # for the additionalFiles entries that consume both paths).
         requires_trident=False,
         extra_dependencies=[
             Path("tests/images/trident-vm-testimage/base/trident-bin/trident"),
+            Path("tests/images/trident-vm-testimage/base/osmodifier-bin/osmodifier"),
         ],
     ),
     ImageConfig(

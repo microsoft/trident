@@ -14,7 +14,7 @@ PR #698). Carried as a Trident-side patch on top of the pinned
 multi-distro-grub commit (9b7f9806b) until PR #698 lands and
 propagates into multi-distro-grub.
 
-Drop this patch the moment the pinned MIC SHA in PINNED.md is bumped
+Drop this patch the moment the pinned MIC SHA in PINNED.env is bumped
 past Vince's fix.
 
 Co-authored-by: Vince Perri <vinceaperri@users.noreply.github.com>

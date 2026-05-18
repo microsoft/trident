@@ -3,7 +3,7 @@ from pathlib import Path
 import json
 from typing import List, Optional
 
-from builder import ImageConfig, RpmSources, ArtifactManifest
+from builder import ArtifactManifest, BlobImageManifest, ImageConfig, RpmSources
 from .builder import build_image
 from .convert import convert_image
 from . import download
@@ -157,9 +157,6 @@ def download_base_image(
     if image_manifest is None:
         raise ValueError(f"Image '{name}' not found in artifacts")
     log.info(f"Downloading base image '{name}' to '{image_manifest.image.path}'")
-
-    # Import locally to avoid circular import at module load.
-    from builder import BlobImageManifest
 
     if isinstance(image_manifest, BlobImageManifest):
         download.download_blob_image(

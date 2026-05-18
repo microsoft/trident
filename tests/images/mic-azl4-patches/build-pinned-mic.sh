@@ -11,11 +11,19 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TRIDENT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
-# Source of truth for the pin — keep this in sync with
-# .pipelines/templates/stages/build_image/build-pinned-mic.yml.
-PIN_URL="${MIC_PIN_URL:-https://github.com/microsoft/azurelinux-image-tools.git}"
-PIN_SHA="${MIC_PIN_SHA:-e0d1deb8a810c8cbd0f19cfaa1fa42768e6f53b9}"
-CONTAINER_TAG="${MIC_CONTAINER_TAG:-imagecustomizer:azl4-pinned}"
+# Source of truth for the pin: PINNED.env in this directory. Both this
+# script and .pipelines/templates/stages/build_image/build-pinned-mic.yml
+# source from the same file so they cannot drift.
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/PINNED.env"
+: "${MIC_PIN_URL:?PINNED.env missing MIC_PIN_URL}"
+: "${MIC_PIN_SHA:?PINNED.env missing MIC_PIN_SHA}"
+: "${MIC_CONTAINER_TAG:?PINNED.env missing MIC_CONTAINER_TAG}"
+
+# Local-only overrides for hacking on the pin without editing PINNED.env.
+PIN_URL="${MIC_PIN_URL_OVERRIDE:-$MIC_PIN_URL}"
+PIN_SHA="${MIC_PIN_SHA_OVERRIDE:-$MIC_PIN_SHA}"
+CONTAINER_TAG="${MIC_CONTAINER_TAG_OVERRIDE:-$MIC_CONTAINER_TAG}"
 
 WORKDIR="${WORKDIR:-$(mktemp -d)}"
 echo "[pinned-mic] workdir: $WORKDIR"

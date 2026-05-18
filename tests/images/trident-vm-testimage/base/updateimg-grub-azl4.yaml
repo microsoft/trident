@@ -78,20 +78,32 @@ os:
       secondaryGroups:
         - wheel
   additionalFiles:
-    # Bake the patched Trident binary into /usr/bin/trident.
+    # Bake the patched Trident binary into /usr/local/bin/trident.
+    #
     # Path is resolved relative to this YAML file. Pipeline / local builds
     # are expected to drop the binary at trident-bin/trident before invoking
     # testimages.py build (see README in this directory).
+    #
+    # We deliberately use /usr/local/bin (not /usr/bin) so that when the
+    # AZL4 trident-service RPM eventually ships and installs to
+    # /usr/bin/trident, the RPM install is non-destructive: the package
+    # binary wins on PATH lookup (per FHS, /usr/local/bin sits before
+    # /usr/bin only in user shells; system PATH defaults put /usr/bin
+    # first), which is the correct outcome — once the RPM is the supply
+    # chain, additionalFiles should not be silently overriding it. To
+    # confirm which copy is in use at runtime, check
+    # `readlink -f $(command -v trident)`.
     - source: trident-bin/trident
-      destination: /usr/bin/trident
+      destination: /usr/local/bin/trident
       permissions: "755"
-    # Bake the OS Modifier binary into /usr/bin/osmodifier.
+    # Bake the OS Modifier binary into /usr/local/bin/osmodifier.
     # AZL4 does not yet ship azurelinux-image-tools-osmodifier as an RPM,
     # but Vince Perri's MIC AZL4 branch builds an AZL4-aware binary.
     # Drop the build at osmodifier-bin/osmodifier alongside the trident
     # binary; this ride-along disappears once the AZL4 RPM is published.
+    # See the comment above on /usr/local/bin placement.
     - source: osmodifier-bin/osmodifier
-      destination: /usr/bin/osmodifier
+      destination: /usr/local/bin/osmodifier
       permissions: "755"
     # AZL4 lacks a /usr/bin/hostname binary; the pytest framework smoke-
     # tests SSH with `hostname`, so we ship a tiny shim.

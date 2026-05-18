@@ -237,11 +237,11 @@ stages:
   # Then this can be a plain build-image.yml call with an azureLinuxVersion
   # parameter, matching the other testimage stages.
   #
-  # TODO(azl4-rollout): Gate this behind an explicit pipeline parameter
-  # (e.g. `runAzl4`) once the pinned-MIC side-task has proven stable in CI.
-  # Right now it always runs so we get signal; if it's too noisy in early
-  # rollouts, parameterize and default to false.
-  - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure')) }}:
+  # Gating mirrors the AzL installer ISO below so AZL4 build runs in every
+  # stage type that gates a trunk merge. Previously this only ran on
+  # pr-e2e / ci / pr-e2e-azure, which silently skipped AZL4 in
+  # azl-validation / full-validation — exactly the stage you'd want it.
+  - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure'), eq(parameters.stageType, 'azl-validation'), eq(parameters.stageType, 'full-validation')) }}:
       - template: stages/build_image/build-image-azl4.yml
         parameters:
           imageName: trident-vm-grub-testimage-azl4
