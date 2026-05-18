@@ -197,6 +197,21 @@ pub fn get_disk_uuid(disk: &Path) -> Result<Option<OsUuid>, Error> {
     Ok(Some(uuid))
 }
 
+/// Sets the disk-id (GPT header DiskGUID) of the given disk via sfdisk.
+pub fn set_disk_uuid(disk: &Path, uuid: &str) -> Result<(), Error> {
+    Dependency::Sfdisk
+        .cmd()
+        .arg("--disk-id")
+        .arg(disk)
+        .arg(uuid)
+        .run_and_check()
+        .context(format!(
+            "Failed to set disk-id on {} to {uuid}",
+            disk.display()
+        ))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

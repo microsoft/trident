@@ -47,6 +47,7 @@ stages:
     displayName: Netlaunch Testing - AZL4 (BM-simulated)
     dependsOn:
       - BuildingTools
+      - PrepareSSHKeys
       - TridentTestImg_trident_installer
       - TridentTestImg_trident_vm_grub_testimage_azl4
       - ${{ if ne(parameters.dependsOnStage, '') }}:
@@ -89,6 +90,22 @@ stages:
               buildType: current
               artifactName: "${{ parameters.cosiArtifact }}"
               targetPath: "$(Build.ArtifactStagingDirectory)/cosi-azl4"
+
+          # PrepareSSHKeys produces the shared 'ssh-keys' artifact whose
+          # id_rsa.pub is baked into the AZL4 COSI at MIC build time (see
+          # build-image-template-azl4.yml). The matching private key
+          # `ssh-keys/id_rsa` is what we use locally to SSH into the
+          # post-install AZL4 VM. Until 2026-05-17 we generated a fresh
+          # per-build keypair inside testimages.py and published the
+          # private half alongside the COSI, but the qcow2 + cosi builds
+          # for VM-testing need to share a key (the same VM A/B-updates
+          # from qcow2 to cosi), so we standardized on the shared artifact.
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download shared SSH key"
+            inputs:
+              buildType: current
+              artifactName: "ssh-keys"
+              targetPath: "$(Build.ArtifactStagingDirectory)/ssh-keys"
 
           - task: DownloadPipelineArtifact@2
             displayName: "Download go-tools"
@@ -151,24 +168,15 @@ stages:
               cp "$COSI_SRC" "$SERVE_DIR/regular.cosi"
               ls -alh "$SERVE_DIR"
 
-              # Install the COSI-baked private SSH key as the test
-              # framework's helpers/key. testimages.py generates a fresh
-              # SSH keypair per build and bakes the public key into the
-              # COSI for the testing-user. The matching private key is
-              # published as a sibling artifact. Without this swap, the
-              # downstream wait-for-login can't reach the post-install VM.
-              KEY_SRC=""
-              for candidate in \
-                  "$(Build.ArtifactStagingDirectory)/cosi-azl4/key_trident-vm-grub-testimage-azl4_0_private.pem" \
-                  "$(Build.ArtifactStagingDirectory)/cosi-azl4/key_trident-vm-grub-testimage-azl4_private.pem"; do
-                if [ -f "$candidate" ]; then
-                  KEY_SRC="$candidate"
-                  break
-                fi
-              done
-              if [ -z "$KEY_SRC" ]; then
-                echo "Could not find COSI-baked SSH key. Artifact contents:"
-                find "$(Build.ArtifactStagingDirectory)/cosi-azl4" -type f
+              # Install the shared SSH private key (from the
+              # PrepareSSHKeys artifact) as the test framework's
+              # helpers/key. Its matching public key was baked into the
+              # AZL4 COSI at MIC build time, so post-install we can SSH
+              # into the target as testing-user with this key.
+              KEY_SRC="$(Build.ArtifactStagingDirectory)/ssh-keys/id_rsa"
+              if [ ! -f "$KEY_SRC" ]; then
+                echo "Could not find shared SSH key at $KEY_SRC. Artifact contents:"
+                find "$(Build.ArtifactStagingDirectory)/ssh-keys" -type f
                 exit 1
               fi
               cp "$KEY_SRC" "$(TRIDENT_SOURCE_DIR)/tests/e2e_tests/helpers/key"

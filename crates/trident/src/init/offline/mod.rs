@@ -11,7 +11,7 @@ use anyhow::{bail, Error};
 use log::{debug, info, trace, warn};
 use maplit::hashmap;
 
-use osutils::lsblk;
+use osutils::{lsblk, sfdisk};
 use sysdefs::partition_types::DiscoverablePartitionType;
 use trident_api::{
     config::{
@@ -256,12 +256,52 @@ fn generate_host_status(
         .structured(ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment)
         .message("Failed to find root device in lsblk output")?;
 
-    let disk_uuid = lsblk_device
+    let disk_uuid = match lsblk_device
         .ptuuid
         .clone()
         .and_then(|ptuuid| ptuuid.as_uuid())
-        .structured(ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment)
-        .message("No UUID found for root device")?;
+    {
+        Some(uuid) => uuid,
+        None => {
+            // lsblk did not surface a PTUUID. This can happen inside
+            // some MIC versions (notably the AZL4-pinned MIC) where
+            // the loop device exposes partition children but the GPT
+            // disk-id is either unset on the partition table or not
+            // populated by lsblk's PTUUID column. Fall back to sfdisk,
+            // and if that also reports no disk-id, assign a fresh one
+            // and persist it so the resulting image carries it
+            // forward to runtime.
+            let disk_dev_path = PathBuf::from("/dev").join(&lsblk_device.name);
+            warn!(
+                "lsblk did not report a PTUUID for {}; falling back to sfdisk",
+                disk_dev_path.display()
+            );
+            let from_sfdisk = sfdisk::get_disk_uuid(&disk_dev_path)
+                .structured(ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment)
+                .message("Failed to read GPT disk-id via sfdisk")?
+                .and_then(|u| u.as_uuid());
+            match from_sfdisk {
+                Some(uuid) => uuid,
+                None => {
+                    let new_uuid = uuid::Uuid::new_v4();
+                    warn!(
+                        "No GPT disk-id present on {}; assigning {}",
+                        disk_dev_path.display(),
+                        new_uuid
+                    );
+                    sfdisk::set_disk_uuid(&disk_dev_path, &new_uuid.to_string())
+                        .structured(
+                            ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment,
+                        )
+                        .message(format!(
+                            "Failed to assign GPT disk-id on {}",
+                            disk_dev_path.display()
+                        ))?;
+                    new_uuid
+                }
+            }
+        }
+    };
 
     lsblk_device.children.sort_by_key(|p| p.partn);
 
