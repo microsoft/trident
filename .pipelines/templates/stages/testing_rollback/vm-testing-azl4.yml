@@ -119,6 +119,13 @@ stages:
               cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* ~/.ssh/
               chmod -R 700 ~/.ssh/
               mkdir -p $(ob_outputDirectory)
+
+              # Both the qcow2 base build and the COSI build stage the
+              # shared 'ssh-keys' artifact into their MIC trees (see
+              # .pipelines/templates/stages/build_image/build-image-template-azl4.yml).
+              # So the pipeline-wide PrepareSSHKeys id_rsa we just
+              # copied to ~/.ssh/ matches both A-side and B-side of
+              # the test VM. No per-build key swap needed.
               ls -l ~/.ssh/
 
               # storm-trident expects the artifacts laid out under

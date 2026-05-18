@@ -94,6 +94,40 @@ steps:
       tridentSourceDirectory: ${{ parameters.tridentSourceDirectory }}
       containerTag: ${{ parameters.micContainerTag }}
 
+  # Stage the pipeline-wide SSH key into the testimage tree before
+  # MIC runs. testimages.py's generate_ssh_keys() generates a new
+  # keypair UNLESS files/id_rsa.pub already exists at the source path
+  # — in which case it reuses it. By dropping the shared key from the
+  # PrepareSSHKeys artifact here, both the qcow2 base build and the
+  # COSI build end up with the same key baked into testuser's
+  # authorized_keys, so storm-trident's A/B update test can SSH into
+  # both A-side and B-side after the update reboot.
+  #
+  # The matching private key lives at ssh-keys/id_rsa from the
+  # PrepareSSHKeys stage. storm-trident's rollback stage picks it up
+  # the same way for AZL3 builds.
+  - task: DownloadPipelineArtifact@2
+    displayName: "Download shared SSH keys"
+    inputs:
+      buildType: current
+      artifactName: "ssh-keys"
+      targetPath: "$(Build.ArtifactStagingDirectory)/ssh-keys"
+
+  - bash: |
+      set -euxo pipefail
+      SSH_PUB_SRC="$(Build.ArtifactStagingDirectory)/ssh-keys/id_rsa.pub"
+      SSH_PUB_DEST="${{ parameters.tridentSourceDirectory }}/tests/images/trident-vm-testimage/base/files/id_rsa.pub"
+      if [ ! -f "$SSH_PUB_SRC" ]; then
+        echo "shared SSH public key not found at $SSH_PUB_SRC"
+        find "$(Build.ArtifactStagingDirectory)/ssh-keys" -type f
+        exit 1
+      fi
+      cp "$SSH_PUB_SRC" "$SSH_PUB_DEST"
+      echo "Staged shared SSH public key:"
+      cat "$SSH_PUB_DEST"
+    displayName: "Stage shared SSH key into testimage tree"
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
+
   # Download the AZL4 core-efi base VHDX from blob storage. Authenticates via
   # the federated identity attached to the service connection — no storage
   # keys handled here.

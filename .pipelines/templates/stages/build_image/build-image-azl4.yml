@@ -34,10 +34,17 @@ stages:
         # trident-binaries artifact (which the GetTridentBinaries stage
         # produces and copies to artifacts/binaries/trident).
         - GetTridentBinaries_rpms_amd64
+        # PrepareSSHKeys produces the shared 'ssh-keys' artifact.
+        # build-image-template-azl4.yml stages it into the testimage
+        # tree so qcow2 + cosi builds share the same SSH keypair,
+        # which lets storm-trident SSH into both A/B sides after
+        # update.
+        - PrepareSSHKeys
         - ${{ if ne(parameters.dependsOnStage, '') }}:
           - ${{ parameters.dependsOnStage }}
     ${{ elseif ne(parameters.dependsOnStage, '') }}:
       dependsOn:
+        - PrepareSSHKeys
         - ${{ parameters.dependsOnStage }}
 
     jobs:
