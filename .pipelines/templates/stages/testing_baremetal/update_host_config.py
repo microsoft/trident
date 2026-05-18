@@ -68,9 +68,11 @@ def update_trident_host_config(
     daemon_override = ""
 
     if https_proxy:
-        proxy_section = f'\n[Service]\nEnvironment="HTTPS_PROXY={https_proxy}"\n'
+        # Escape '%' as '%%' for systemd unit files (percent is a specifier prefix).
+        escaped_proxy = https_proxy.replace("%", "%%")
+        proxy_section = f'\n[Service]\nEnvironment="HTTPS_PROXY={escaped_proxy}"\n'
         boot_override += proxy_section
-        daemon_override = f'[Service]\nEnvironment="HTTPS_PROXY={https_proxy}"\n'
+        daemon_override = f'[Service]\nEnvironment="HTTPS_PROXY={escaped_proxy}"\n'
 
     additional_files = os.setdefault("additionalFiles", [])
     additional_files.append(

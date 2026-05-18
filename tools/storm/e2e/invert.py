@@ -87,7 +87,7 @@ def main():
     for hw, rts in data.items():
         for rt, pls in rts.items():
             for pl, names in pls.items():
-                for name in names or []:
+                for name in names:
                     # Apply renames
                     hw_rename = hw_renames.get(hw, hw)
                     pl_rename = pl_renames.get(pl)

@@ -28,15 +28,36 @@ fn run_trident(
     // Log proxy environment for diagnostics (helps debug baremetal proxy issues)
     info!(
         "Proxy env: HTTPS_PROXY={}, HTTP_PROXY={}, NO_PROXY={}",
-        std::env::var("HTTPS_PROXY")
+        if std::env::var("HTTPS_PROXY")
             .or_else(|_| std::env::var("https_proxy"))
-            .unwrap_or_else(|_| "<unset>".into()),
-        std::env::var("HTTP_PROXY")
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .is_some()
+        {
+            "<set>"
+        } else {
+            "<unset>"
+        },
+        if std::env::var("HTTP_PROXY")
             .or_else(|_| std::env::var("http_proxy"))
-            .unwrap_or_else(|_| "<unset>".into()),
-        std::env::var("NO_PROXY")
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .is_some()
+        {
+            "<set>"
+        } else {
+            "<unset>"
+        },
+        if std::env::var("NO_PROXY")
             .or_else(|_| std::env::var("no_proxy"))
-            .unwrap_or_else(|_| "<unset>".into()),
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .is_some()
+        {
+            "<set>"
+        } else {
+            "<unset>"
+        },
     );
 
     // Catch exit fast commands

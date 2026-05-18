@@ -247,9 +247,21 @@ impl HttpFile {
 
         debug!(
             "OCI client proxy config: HTTPS_PROXY={}, HTTP_PROXY={}, NO_PROXY={}",
-            https_proxy.as_deref().unwrap_or("<unset>"),
-            http_proxy.as_deref().unwrap_or("<unset>"),
-            no_proxy.as_deref().unwrap_or("<unset>"),
+            if https_proxy.is_some() {
+                "<set>"
+            } else {
+                "<unset>"
+            },
+            if http_proxy.is_some() {
+                "<set>"
+            } else {
+                "<unset>"
+            },
+            if no_proxy.is_some() {
+                "<set>"
+            } else {
+                "<unset>"
+            },
         );
 
         let config = ClientConfig {
