@@ -17,6 +17,7 @@ def update_trident_host_config(
     interface_mac: Optional[str] = None,
     network_gateway: Optional[str] = None,
     use_dhcp: bool = False,
+    https_proxy: Optional[str] = None,
 ):
     logging.info("Updating Host Configuration section of trident.yaml")
     os = host_configuration.setdefault("os", {})
@@ -54,12 +55,20 @@ def update_trident_host_config(
 
     # Add an override for the trident service to wait for the network
     # interface to be online before starting.
+    override_content = (
+        "[Unit]\n" f"Requires={wait_online_service}\n" f"After={wait_online_service}\n"
+    )
+
+    # If a proxy is configured, add it to the service environment so it
+    # persists across reboots. Without this, the trident daemon cannot
+    # reach external OCI registries during A/B updates.
+    if https_proxy:
+        override_content += "\n[Service]\n" f'Environment="HTTPS_PROXY={https_proxy}"\n'
+
     os.setdefault("additionalFiles", []).append(
         {
             "destination": "/etc/systemd/system/trident.service.d/override.conf",
-            "content": "[Unit]\n"
-            f"Requires={wait_online_service}\n"
-            f"After={wait_online_service}\n",
+            "content": override_content,
         }
     )
 
@@ -169,6 +178,11 @@ def main():
     )
     parser.add_argument("--use-dhcp", default=False, help="Configure DHCP.")
     parser.add_argument(
+        "--https-proxy",
+        default=None,
+        help="HTTPS proxy URL to inject into the trident systemd service environment.",
+    )
+    parser.add_argument(
         "-o",
         "--output",
         default=None,
@@ -190,6 +204,7 @@ def main():
         interface_mac=args.oam_mac,
         network_gateway=args.oam_gateway,
         use_dhcp=args.use_dhcp,
+        https_proxy=args.https_proxy,
     )
 
     output_path = args.output or args.trident_yaml
