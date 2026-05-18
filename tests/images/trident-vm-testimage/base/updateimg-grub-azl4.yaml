@@ -72,7 +72,7 @@ os:
       - systemd-networkd
       - systemd-resolved
   users:
-    - name: testing-user
+    - name: testuser
       sshPublicKeyPaths:
         - files/id_rsa.pub
       secondaryGroups:
