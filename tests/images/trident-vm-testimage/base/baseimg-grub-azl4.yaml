@@ -141,13 +141,7 @@ os:
       destination: /usr/lib/systemd/system/tridentd.service
     - source: ../../../../packaging/systemd/tridentd.socket
       destination: /usr/lib/systemd/system/tridentd.socket
-<<<<<<< HEAD
-    # AZL4-specific firstboot init unit (not in packaging/systemd/
-    # because AZL3 doesn't need it).
-    - source: files/trident-firstboot-init.service
-      destination: /usr/lib/systemd/system/trident-firstboot-init.service
 
-=======
     # AZL4 lacks a /usr/bin/hostname binary; the pytest framework
     # smoke-tests SSH with `hostname`, so we ship a tiny shim.
     - source: files/hostname-shim.sh

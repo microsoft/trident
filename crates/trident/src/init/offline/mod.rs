@@ -263,17 +263,17 @@ fn generate_host_status(
     {
         Some(uuid) => uuid,
         None => {
-            // lsblk did not surface a PTUUID. This can happen inside
-            // some MIC versions (notably the AZL4-pinned MIC) where
-            // the loop device exposes partition children but the GPT
-            // disk-id is either unset on the partition table or not
-            // populated by lsblk's PTUUID column. Fall back to sfdisk,
-            // and if that also reports no disk-id, assign a fresh one
-            // and persist it so the resulting image carries it
-            // forward to runtime.
+            // lsblk didn't surface a PTUUID. This can happen in chroot
+            // environments (e.g. image-customizer / MIC) where the
+            // exposed loop device has partition children but the GPT
+            // disk-id either isn't set on the partition table or isn't
+            // populated by lsblk's PTUUID column. Fall back to sfdisk
+            // (which reads the GPT directly), and if that also reports
+            // no disk-id, mint one and persist it so the resulting
+            // image carries it forward to runtime.
             let disk_dev_path = PathBuf::from("/dev").join(&lsblk_device.name);
             warn!(
-                "lsblk did not report a PTUUID for {}; falling back to sfdisk",
+                "PTUUID not reported by lsblk for {}; falling back to sfdisk",
                 disk_dev_path.display()
             );
             let from_sfdisk = sfdisk::get_disk_uuid(&disk_dev_path)
@@ -309,17 +309,17 @@ fn generate_host_status(
     let disk_dev_path = PathBuf::from("/dev").join(&lsblk_device.name);
 
     // For each partition, ensure we have a usable PARTUUID. Mirror the
-    // disk-id fallback above: prefer lsblk, then sfdisk, then assign a
-    // fresh one. Some MIC versions (notably the AZL4-pinned MIC) don't
-    // surface PARTUUID columns via lsblk --output-all, and may also
-    // leave them unset on the underlying GPT.
+    // disk-id fallback above: prefer lsblk, then sfdisk, then mint a
+    // fresh one and persist it via sfdisk. Some chroot environments
+    // don't surface PARTUUID via lsblk --output-all and may also leave
+    // the value unset on the underlying GPT.
     for (i, part) in lsblk_device.children.iter_mut().enumerate() {
         if part.part_uuid.as_ref().and_then(|u| u.as_uuid()).is_some() {
             continue;
         }
         let partn = part.partn.unwrap_or((i + 1) as u32) as usize;
         warn!(
-            "lsblk did not report PARTUUID for partition {} on {}; falling back to sfdisk",
+            "PARTUUID not reported by lsblk for partition {} on {}; falling back to sfdisk",
             partn,
             disk_dev_path.display()
         );
@@ -331,34 +331,58 @@ fn generate_host_status(
                 "Failed to read GPT info via sfdisk for {}",
                 disk_dev_path.display()
             ))?;
-        let part_uuid = match sf_info
+        if let Some(existing) = sf_info
             .partitions
             .iter()
             .find(|p| p.number == partn)
             .and_then(|p| p.id.as_uuid())
         {
-            Some(uuid) => uuid,
-            None => {
-                let new_uuid = uuid::Uuid::new_v4();
-                warn!(
-                    "Partition {} on {} has no PARTUUID; assigning {}",
-                    partn,
-                    disk_dev_path.display(),
-                    new_uuid
-                );
-                sfdisk::set_part_uuid(&disk_dev_path, partn, &new_uuid.to_string())
-                    .structured(
-                        ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment,
-                    )
-                    .message(format!(
-                        "Failed to assign PARTUUID on partition {} of {}",
-                        partn,
-                        disk_dev_path.display()
-                    ))?;
-                new_uuid
-            }
-        };
-        part.part_uuid = Some(part_uuid.to_string().as_str().into());
+            // Use the canonical form sfdisk reported, not a re-rendered
+            // copy — sfdisk normalizes UUIDs to upper-case on disk and
+            // downstream /dev/disk/by-partuuid/ lookups must match.
+            part.part_uuid = Some(existing.to_string().into());
+            continue;
+        }
+
+        let new_uuid = uuid::Uuid::new_v4();
+        warn!(
+            "Partition {} on {} has no PARTUUID; assigning {}",
+            partn,
+            disk_dev_path.display(),
+            new_uuid
+        );
+        sfdisk::set_part_uuid(&disk_dev_path, partn, &new_uuid.to_string())
+            .structured(ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment)
+            .message(format!(
+                "Failed to assign PARTUUID on partition {} of {}",
+                partn,
+                disk_dev_path.display()
+            ))?;
+
+        // Re-read to get sfdisk's canonical on-disk form (upper-case)
+        // rather than stamping our locally-generated lower-case Uuid.
+        // Avoids a subtle case-mismatch with udev's
+        // /dev/disk/by-partuuid/ symlinks.
+        let written_uuid = sfdisk::SfDisk::get_info(&disk_dev_path)
+            .structured(ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment)
+            .message(format!(
+                "Failed to re-read GPT info via sfdisk for {} after writing partition UUID",
+                disk_dev_path.display()
+            ))?
+            .partitions
+            .iter()
+            .find(|p| p.number == partn)
+            .and_then(|p| p.id.as_uuid())
+            .ok_or_else(|| {
+                TridentError::new(
+                    ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment,
+                )
+            })
+            .message(format!(
+                "sfdisk reported no PARTUUID for partition {} after writing {}",
+                partn, new_uuid
+            ))?;
+        part.part_uuid = Some(written_uuid.to_string().into());
     }
 
     // Get partition paths created from combining Prism history and lsblk output.

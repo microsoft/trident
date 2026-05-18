@@ -198,9 +198,23 @@ pub fn get_disk_uuid(disk: &Path) -> Result<Option<OsUuid>, Error> {
 }
 
 /// Sets the disk-id (GPT header DiskGUID) of the given disk via sfdisk.
+///
+/// `uuid` must parse as a valid GUID; this is checked before invoking
+/// sfdisk so an accidental flag-like string (e.g. `--foo`) is rejected
+/// here rather than mis-interpreted by sfdisk as an option.
+///
+/// `--no-reread` + `--no-tell-kernel` are passed because the typical
+/// caller is `trident offline-initialize` inside MIC's chroot, where
+/// the disk's partitions are bind-mounted into the chroot. Requesting
+/// `BLKRRPART` on a disk with mounted partitions returns EBUSY; we
+/// only care about updating the on-disk GPT here.
 pub fn set_disk_uuid(disk: &Path, uuid: &str) -> Result<(), Error> {
+    uuid::Uuid::parse_str(uuid)
+        .with_context(|| format!("'{uuid}' is not a valid GUID for sfdisk --disk-id"))?;
     Dependency::Sfdisk
         .cmd()
+        .arg("--no-reread")
+        .arg("--no-tell-kernel")
         .arg("--disk-id")
         .arg(disk)
         .arg(uuid)
@@ -214,9 +228,18 @@ pub fn set_disk_uuid(disk: &Path, uuid: &str) -> Result<(), Error> {
 
 /// Sets the GPT partition UUID for a specific partition by number on the
 /// given disk.
+///
+/// `uuid` is validated as a GUID first to avoid sfdisk mis-interpreting
+/// a flag-like argument. `--no-reread` / `--no-tell-kernel` mirror
+/// [`set_disk_uuid`] for safety inside MIC chroots with mounted
+/// partitions.
 pub fn set_part_uuid(disk: &Path, partition_number: usize, uuid: &str) -> Result<(), Error> {
+    uuid::Uuid::parse_str(uuid)
+        .with_context(|| format!("'{uuid}' is not a valid GUID for sfdisk --part-uuid"))?;
     Dependency::Sfdisk
         .cmd()
+        .arg("--no-reread")
+        .arg("--no-tell-kernel")
         .arg("--part-uuid")
         .arg(disk)
         .arg(partition_number.to_string())

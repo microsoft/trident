@@ -21,17 +21,39 @@
 
 set -euo pipefail
 
-# Find the kernel version installed in this image; there should be
-# exactly one.
-KVER=$(ls /usr/lib/modules | head -1)
-if [ -z "$KVER" ]; then
-    echo "ERROR: no kernel modules dir under /usr/lib/modules"
-    exit 1
-fi
+# Find the kernel version installed in this image. We require exactly
+# one — `ls | head -1` would silently pick the wrong one if any future
+# AZL4 variant ships multiple (kernel + kernel-hyperv, extramodules-*,
+# etc.). Fail loudly rather than generate an initramfs for the wrong
+# kernel: the failure mode of that misstep is "boot hangs waiting for
+# /dev/disk/by-uuid/<root>", which is the exact bug this script is
+# meant to prevent.
+KVERS=( /usr/lib/modules/* )
+case ${#KVERS[@]} in
+    0)
+        echo "ERROR: no kernel modules dir under /usr/lib/modules" >&2
+        exit 1
+        ;;
+    1)
+        KVER=$(basename "${KVERS[0]}")
+        ;;
+    *)
+        echo "ERROR: expected exactly one kernel under /usr/lib/modules, found:" >&2
+        printf '  %s\n' "${KVERS[@]}" >&2
+        exit 1
+        ;;
+esac
 echo "Regenerating initramfs for kernel $KVER with --no-hostonly"
 
+# `--no-hostonly` includes all storage modules; `--no-hostonly-cmdline`
+# prevents dracut from baking the build-host's /proc/cmdline parameters
+# into the initramfs (which would fight the qcow2's grub cmdline at
+# runtime); `--reproducible` keeps the output bit-stable across builds
+# so we can detect spurious regenerations.
 dracut \
     --no-hostonly \
+    --no-hostonly-cmdline \
+    --reproducible \
     --add-drivers "ahci ata_piix sata_sil sata_nv sata_via sd_mod" \
     --force \
     --kver "$KVER"

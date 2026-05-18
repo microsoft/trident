@@ -117,7 +117,13 @@ stages:
               chmod +x $(TRIDENT_SOURCE_DIR)/bin/netlisten
               chmod +x $(TRIDENT_SOURCE_DIR)/bin/storm-trident
               cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* ~/.ssh/
-              chmod -R 700 ~/.ssh/
+              # Targeted permissions on the keys we just staged. Avoid
+              # `chmod -R 700 ~/.ssh/` because self-hosted agents may
+              # reuse the directory across jobs and we shouldn't trample
+              # other tooling's known_hosts / config / id_*.
+              chmod 700 ~/.ssh/ || true
+              chmod 600 ~/.ssh/id_rsa
+              chmod 644 ~/.ssh/id_rsa.pub
               mkdir -p $(ob_outputDirectory)
 
               # Both the qcow2 base build and the COSI build stage the
