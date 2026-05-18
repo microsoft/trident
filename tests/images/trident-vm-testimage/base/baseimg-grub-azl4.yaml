@@ -182,6 +182,7 @@ scripts:
     # `disk` argument is a runtime label, not a build-time assertion);
     # the fix lives in crates/trident/src/init/offline/mod.rs.
     - path: scripts/update-host-status-azl4.sh
+    - path: scripts/enable-trident-service-azl4.sh
     - path: scripts/ssh-move-host-keys-azl4.sh
     - path: scripts/enable-regen-sshd-keys.sh
     # Rebuild initramfs with --no-hostonly + extra SATA drivers so the
