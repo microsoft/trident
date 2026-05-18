@@ -212,6 +212,23 @@ pub fn set_disk_uuid(disk: &Path, uuid: &str) -> Result<(), Error> {
     Ok(())
 }
 
+/// Sets the GPT partition UUID for a specific partition by number on the
+/// given disk.
+pub fn set_part_uuid(disk: &Path, partition_number: usize, uuid: &str) -> Result<(), Error> {
+    Dependency::Sfdisk
+        .cmd()
+        .arg("--part-uuid")
+        .arg(disk)
+        .arg(partition_number.to_string())
+        .arg(uuid)
+        .run_and_check()
+        .context(format!(
+            "Failed to set partition UUID on {} partition {partition_number} to {uuid}",
+            disk.display()
+        ))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
