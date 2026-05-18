@@ -71,6 +71,16 @@ os:
       - sshd
       - systemd-networkd
       - systemd-resolved
+      # Trident socket-activated daemon. Storm-trident drives all
+      # update/commit/rollback through `trident grpc-client ...` which
+      # talks to this socket.
+      - tridentd.socket
+      # Oneshot trident commit at boot. Marks A/B update commits when
+      # they complete after reboot. The MIC `services.enable` stanza
+      # alone has not been sufficient to wire this in our AZL4 builds;
+      # postCustomization script enable-trident-service-azl4.sh
+      # belt-and-braces creates the multi-user.target.wants symlink.
+      - trident.service
   users:
     - name: testuser
       sshPublicKeyPaths:
@@ -117,6 +127,17 @@ os:
     - source: files/regen-sshd-keys.service
       destination: /etc/systemd/system/regen-sshd-keys.service
 
+    # Trident systemd units. AZL3 gets these from the trident-service
+    # RPM; AZL4 doesn't have that RPM yet, so we ship them inline in
+    # both base and update images so post-A/B-update boots have the
+    # trident-commit oneshot available on volume-b.
+    - source: ../../../../packaging/systemd/trident.service
+      destination: /usr/lib/systemd/system/trident.service
+    - source: ../../../../packaging/systemd/tridentd.service
+      destination: /usr/lib/systemd/system/tridentd.service
+    - source: ../../../../packaging/systemd/tridentd.socket
+      destination: /usr/lib/systemd/system/tridentd.socket
+
 scripts:
   postCustomization:
     # AZL3 image scripts are largely safe on AZL4, but a couple touch
@@ -125,6 +146,12 @@ scripts:
     - path: scripts/post-install.sh
     - path: scripts/ssh-move-host-keys-azl4.sh
     - path: scripts/enable-regen-sshd-keys.sh
+    # Belt-and-braces enable of trident.service. services.enable in MIC
+    # AZL4 didn't create the multi-user.target.wants symlink reliably;
+    # this script does it explicitly. Without it, the post-A/B-update
+    # reboot can't run `trident commit`, leaving servicingState stuck at
+    # ab-update-finalized.
+    - path: scripts/enable-trident-service-azl4.sh
     # Strip SELinux labels from all files. See the script header for the
     # full rationale, but in short: the AZL4 base VHDX bakes in AZL4
     # SELinux contexts that Trident-from-AZL3-MOS can't preserve during
