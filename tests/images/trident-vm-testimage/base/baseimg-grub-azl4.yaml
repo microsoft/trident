@@ -116,11 +116,6 @@ os:
       # Oneshot trident commit at boot. Marks A/B update commits when
       # they complete after reboot.
       - trident.service
-      # AZL4-specific first-boot oneshot: populates the hoststatus
-      # table in the datastore. AZL3 does this in the MIC chroot via
-      # update-host-status.sh; AZL4 can't (see scripts: comment below)
-      # so we defer it to first boot of the real system.
-      - trident-firstboot-init.service
 
   additionalFiles:
     # TODO(azl4-rpm): replace these binary copies and unit-file copies
@@ -146,11 +141,13 @@ os:
       destination: /usr/lib/systemd/system/tridentd.service
     - source: ../../../../packaging/systemd/tridentd.socket
       destination: /usr/lib/systemd/system/tridentd.socket
+<<<<<<< HEAD
     # AZL4-specific firstboot init unit (not in packaging/systemd/
     # because AZL3 doesn't need it).
     - source: files/trident-firstboot-init.service
       destination: /usr/lib/systemd/system/trident-firstboot-init.service
 
+=======
     # AZL4 lacks a /usr/bin/hostname binary; the pytest framework
     # smoke-tests SSH with `hostname`, so we ship a tiny shim.
     - source: files/hostname-shim.sh
@@ -172,19 +169,19 @@ os:
 
 scripts:
   postCustomization:
-    # AZL3's baseimg-grub.yaml runs update-host-status.sh and
-    # prepare-update-config.sh here. Both invoke `trident` inside the
-    # MIC chroot to bake host status into the qcow2 at image-build time.
-    #
-    # We intentionally omit them on AZL4. Storm-trident captures host
-    # status via SSH at first boot anyway; the MIC-chroot path is a
-    # build-time optimization (faster first boot), not a correctness
-    # requirement.
-    #
-    # Trident's offline init does fail today in the MIC AZL4 chroot
-    # ("Prism chroot environment not as expected"), which is a separate
-    # workstream once first-boot capture stops being sufficient.
+    # Mirrors AZL3's baseimg-grub.yaml ordering: post-install runs
+    # first, then we bake the trident datastore at build time (so first
+    # boot is fast and storm-trident can immediately drive updates),
+    # then ssh + network housekeeping, then initrd rebuild + xattr
+    # strip last.
     - path: scripts/post-install.sh
+    # Bake trident's hoststatus into the datastore at build time. AZL3
+    # does this via update-host-status.sh; AZL4 uses the same pattern
+    # via update-host-status-azl4.sh. Requires trident's offline-init
+    # to tolerate the absence of /dev/sda inside MIC's chroot (the
+    # `disk` argument is a runtime label, not a build-time assertion);
+    # the fix lives in crates/trident/src/init/offline/mod.rs.
+    - path: scripts/update-host-status-azl4.sh
     - path: scripts/ssh-move-host-keys-azl4.sh
     - path: scripts/enable-regen-sshd-keys.sh
     # Rebuild initramfs with --no-hostonly + extra SATA drivers so the

@@ -494,12 +494,21 @@ pub fn execute(
 
         trace!("Prism history contents:\n{history_file}");
 
+        // Note: `disk` is the *runtime* device path that will be written
+        // into the datastore (e.g. /dev/sda). At build time inside Prism's
+        // chroot, this path generally does not exist because the disk is
+        // exposed as a loop device (the actual build-time device is
+        // auto-detected below by walking lsblk for the mount at "/").
+        // Older code asserted that `disk` exist at build time, but that
+        // check tested the wrong invariant and broke AZL4 image builds
+        // where MIC does not bind a /dev/sda node into the chroot.
         let disk_path = Path::new(disk);
         if !disk_path.exists() {
-            return Err(TridentError::new(
-                ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment,
-            ))
-            .message(format!("Prism chroot environment doesn't contain {disk}"));
+            debug!(
+                "Runtime disk path {} not present in build environment; \
+                 this is expected when running inside MIC's chroot.",
+                disk_path.display()
+            );
         }
 
         let history: Vec<PrismHistoryEntry> =
