@@ -245,21 +245,12 @@ impl HttpFile {
         let http_proxy = Self::read_proxy_env("HTTP_PROXY", "http_proxy");
         let no_proxy = Self::read_proxy_env("NO_PROXY", "no_proxy");
 
-        if https_proxy.is_some() || http_proxy.is_some() {
-            debug!(
-                "Configuring OCI client with proxy (HTTPS_PROXY={}, HTTP_PROXY={})",
-                if https_proxy.is_some() {
-                    "<set>"
-                } else {
-                    "<unset>"
-                },
-                if http_proxy.is_some() {
-                    "<set>"
-                } else {
-                    "<unset>"
-                },
-            );
-        }
+        debug!(
+            "OCI client proxy config: HTTPS_PROXY={}, HTTP_PROXY={}, NO_PROXY={}",
+            https_proxy.as_deref().unwrap_or("<unset>"),
+            http_proxy.as_deref().unwrap_or("<unset>"),
+            no_proxy.as_deref().unwrap_or("<unset>"),
+        );
 
         let config = ClientConfig {
             https_proxy,

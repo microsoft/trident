@@ -53,24 +53,40 @@ def update_trident_host_config(
     if wait_online_service not in enable_services:
         enable_services.append(wait_online_service)
 
-    # Add an override for the trident service to wait for the network
-    # interface to be online before starting.
-    override_content = (
+    # Build the override content for the trident systemd services.
+    # trident.service is the boot-time commit oneshot; tridentd.service is
+    # the socket-activated daemon that handles gRPC requests (including A/B
+    # updates that pull from OCI registries).
+    #
+    # The boot service needs a [Unit] dependency on the network-wait service.
+    # Both services get HTTPS_PROXY when a proxy is configured so that any
+    # future network operations work regardless of which unit performs them.
+
+    boot_override = (
         "[Unit]\n" f"Requires={wait_online_service}\n" f"After={wait_online_service}\n"
     )
+    daemon_override = ""
 
-    # If a proxy is configured, add it to the service environment so it
-    # persists across reboots. Without this, the trident daemon cannot
-    # reach external OCI registries during A/B updates.
     if https_proxy:
-        override_content += "\n[Service]\n" f'Environment="HTTPS_PROXY={https_proxy}"\n'
+        proxy_section = f'\n[Service]\nEnvironment="HTTPS_PROXY={https_proxy}"\n'
+        boot_override += proxy_section
+        daemon_override = f'[Service]\nEnvironment="HTTPS_PROXY={https_proxy}"\n'
 
-    os.setdefault("additionalFiles", []).append(
+    additional_files = os.setdefault("additionalFiles", [])
+    additional_files.append(
         {
             "destination": "/etc/systemd/system/trident.service.d/override.conf",
-            "content": override_content,
+            "content": boot_override,
         }
     )
+
+    if daemon_override:
+        additional_files.append(
+            {
+                "destination": "/etc/systemd/system/tridentd.service.d/override.conf",
+                "content": daemon_override,
+            }
+        )
 
     logging.info("Updating os disks device in trident.yaml")
     disks = host_configuration.get("storage").get("disks")
