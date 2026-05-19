@@ -74,11 +74,6 @@ func (cfg QemuConfig) CleanupQemuVM(vmName string) error {
 }
 
 func (cfg QemuConfig) RebootQemuVm(vmName string, iteration int, outputPath string, verbose bool) error {
-	logrus.Tracef("Truncate log files before reboot")
-	if err := cfg.TruncateLog(vmName); err != nil {
-		return fmt.Errorf("failed to truncate log file: %w", err)
-	}
-
 	lv, domain, err := getLibvirtDomainByname(vmName)
 	if err != nil {
 		return fmt.Errorf("failed to lookup domain by name '%s': %w", vmName, err)
@@ -98,11 +93,31 @@ func (cfg QemuConfig) RebootQemuVm(vmName string, iteration int, outputPath stri
 			break // Domain is shut off, exit loop
 		}
 	}
+
+	// Truncate the serial log AFTER the VM is fully shut off. Truncating
+	// before shutdown causes a race: the VM writes shutdown messages after
+	// truncation, polluting the next boot's serial log and making it look
+	// like the VM produced no output.
+	logrus.Tracef("Truncate log files after shutdown, before restart")
+	if err := cfg.TruncateLog(vmName); err != nil {
+		return fmt.Errorf("failed to truncate log file: %w", err)
+	}
+
 	logrus.Tracef("Domain '%s' is shut down, starting it again", vmName)
 	err = lv.DomainCreate(domain)
 	if err != nil {
 		return fmt.Errorf("failed to start domain '%s': %w", vmName, err)
 	}
+
+	// Verify the domain is actually running before waiting for login.
+	domainState, _, err := lv.DomainGetState(domain, 0)
+	if err != nil {
+		return fmt.Errorf("failed to get domain state after start: %w", err)
+	}
+	if domainState != int32(libvirt.DomainRunning) {
+		return fmt.Errorf("domain '%s' is not running after start (state: %d)", vmName, domainState)
+	}
+
 	logrus.Tracef("Waiting for VM '%s' to come back up after reboot", vmName)
 	err = cfg.WaitForLogin(vmName, outputPath, verbose, iteration)
 	if err != nil {
@@ -450,6 +465,26 @@ func (cfg QemuConfig) WaitForLogin(vmName string, outputPath string, verbose boo
 			logrus.Errorf("Failed to run 'df -h': %v", err)
 		} else {
 			logrus.Infof("Disk usage:\n%s", dfOut)
+		}
+
+		// Host resource diagnostics — resource exhaustion on the QEMU host
+		// can cause VMs to fail to boot (no CPU time, OOM, disk full).
+		freeOut, freeErr := exec.Command("free", "-h").Output()
+		if freeErr != nil {
+			logrus.Warnf("Failed to run 'free -h': %v", freeErr)
+		} else {
+			logrus.Infof("Host memory:\n%s", freeOut)
+		}
+		loadOut, loadErr := exec.Command("cat", "/proc/loadavg").Output()
+		if loadErr != nil {
+			logrus.Warnf("Failed to read /proc/loadavg: %v", loadErr)
+		} else {
+			logrus.Infof("Host load average: %s", loadOut)
+		}
+		// Count running QEMU processes to detect oversubscription
+		qemuCountOut, qemuErr := exec.Command("/bin/sh", "-c", "pgrep -c qemu || echo 0").Output()
+		if qemuErr == nil {
+			logrus.Infof("Running QEMU processes: %s", strings.TrimSpace(string(qemuCountOut)))
 		}
 	}
 	return waitErr

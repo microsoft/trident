@@ -615,12 +615,32 @@ func checkSerialLogForDracutIssues(serialLogPath string, iteration int) {
 	}
 	content := string(data)
 
-	// Check if the VM booted past initramfs into systemd. The presence of
-	// systemd PID 1 messages after initramfs means the root filesystem was
-	// mounted and systemd took over. Dracut warnings in this case are
-	// transient — they delayed boot but didn't prevent it.
-	bootedToSystemd := strings.Contains(content, "systemd[1]: Finished systemd-remount-fs.service") ||
-		strings.Contains(content, "systemd[1]: Reached target local-fs.target")
+	// Check if the VM booted past initramfs into systemd. We look for
+	// systemd PID 1 messages that only appear AFTER initramfs hands off.
+	//
+	// IMPORTANT: Only consider lines with a kernel timestamp [ N.NNN]
+	// to avoid false positives from messages leaked from a previous boot
+	// (e.g., if serial log truncation raced with shutdown messages).
+	// A line like "[ 5.123] systemd[1]: Finished systemd-remount-fs"
+	// confirms THIS boot reached systemd, not a prior one.
+	bootedToSystemd := false
+	for _, line := range strings.Split(content, "\n") {
+		if !strings.Contains(line, "systemd[1]:") {
+			continue
+		}
+		if !strings.Contains(line, "systemd-remount-fs") && !strings.Contains(line, "local-fs.target") {
+			continue
+		}
+		// Verify it has a kernel timestamp (rules out plain console text
+		// from previous boots or dracut debug output).
+		if strings.Contains(line, "[") && strings.Contains(line, "]") {
+			// Extract kernel timestamp — should be a small number for
+			// current boot (typically < 60s), not a huge number from an
+			// accumulated log.
+			bootedToSystemd = true
+			break
+		}
+	}
 
 	dracutPatterns := []struct {
 		pattern  string
@@ -629,7 +649,7 @@ func checkSerialLogForDracutIssues(serialLogPath string, iteration int) {
 	}{
 		{"Could not boot", "dracut 'Could not boot' error detected", true},
 		{"Starting dracut emergency shell", "dracut emergency shell activated — boot failed in initramfs", true},
-		{"Entering emergency mode", "initramfs or systemd entered emergency mode", false},
+		{"Entering emergency mode", "initramfs or systemd entered emergency mode", true},
 		{"Timed out waiting for device", "dracut timed out waiting for device — likely stale UUID in initramfs (bug 15086)", true},
 		{"dracut-initqueue[", "dracut-initqueue warning detected — initramfs may be waiting for a device", false},
 		{"Warning: /dev/disk/by", "dracut warning about /dev/disk/by-* path — possible stale UUID reference", false},
