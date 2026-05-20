@@ -35,11 +35,24 @@ pub fn update_config_file(ctx: &OsModifierContext, mode: &SelinuxMode) -> Result
     };
 
     // Replace the SELINUX= line
-    let re = regex::Regex::new(r"(?m)^SELINUX=.*$").context("Failed to compile SELinux regex")?;
+    let new_line = format!("SELINUX={selinux_value}");
+    let mut found = false;
+    let new_content: String = content
+        .lines()
+        .map(|line| {
+            if line.trim_start().starts_with("SELINUX=") {
+                found = true;
+                new_line.clone()
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
 
-    let new_content = if re.is_match(&content) {
-        re.replace(&content, &format!("SELINUX={selinux_value}"))
-            .to_string()
+    let new_content = if found {
+        new_content
     } else {
         // Append if not present
         format!("{content}\nSELINUX={selinux_value}\n")
