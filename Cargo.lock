@@ -1873,7 +1873,6 @@ dependencies = [
  "osutils",
  "pytest",
  "pytest_gen",
- "regex",
  "serde",
  "serde_yaml",
  "tempfile",
