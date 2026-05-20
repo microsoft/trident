@@ -162,14 +162,104 @@ Two tools still use `std::process::Command` directly because the Dependency
 
 ## Keeping the Port in Sync
 
-When the Go osmodifier code changes upstream, compare the diff against the
-corresponding Rust module using the file mapping table above. Pay special
-attention to:
+The Rust port must track behavioral changes in the Go source. This section
+provides everything needed to identify and apply upstream changes.
 
-- New fields added to config structs in `osmodifierapi/`
-- New modification steps in `modifierutils.go`
-- Changes to GRUB parsing logic in `modifydefaultgrub.go`
-- Changes to user/service/module handling in `imagecustomizerlib/`
+### Checking for upstream changes
+
+From the azure-linux-image-tools repo, diff each Go source against the commit
+recorded in the File Mapping table:
+
+```bash
+# Example: check for changes to modifydefaultgrub.go since the port
+cd azure-linux-image-tools
+git log --oneline f4de1a0..HEAD -- toolkit/tools/pkg/osmodifierlib/modifydefaultgrub.go
+
+# Diff all ported files at once
+git diff f4de1a0..HEAD -- \
+  toolkit/tools/pkg/osmodifierlib/osmodifier.go \
+  toolkit/tools/pkg/osmodifierlib/modifierutils.go \
+  toolkit/tools/pkg/osmodifierlib/modifydefaultgrub.go \
+  toolkit/tools/osmodifierapi/os.go \
+  toolkit/tools/osmodifierapi/overlay.go \
+  toolkit/tools/osmodifierapi/verity.go \
+  toolkit/tools/osmodifierapi/identifiedpartition.go
+
+git diff 8bd4ef3..HEAD -- \
+  toolkit/tools/pkg/imagecustomizerlib/customizeusers.go \
+  toolkit/tools/pkg/imagecustomizerlib/customizehostname.go \
+  toolkit/tools/pkg/imagecustomizerlib/kernelmoduleutils.go
+
+git diff dc90945..HEAD -- \
+  toolkit/tools/pkg/imagecustomizerlib/customizeservices.go
+```
+
+After syncing, update the Go commit and date columns in the File Mapping table.
+
+### Function mapping
+
+The Rust port does not mirror Go's function names 1:1. This table maps Go
+functions to their Rust equivalents:
+
+| Go function | Go file | Rust function | Rust file |
+|-------------|---------|---------------|-----------|
+| `doModifications()` | `modifierutils.go` | `modify_os()` | `lib.rs` |
+| `modifyDefaultGrub()` | `modifydefaultgrub.go` | `update_default_grub()` | `lib.rs` |
+| `extractValuesFromGrubConfig()` | `modifydefaultgrub.go` | `extract_boot_args_from_grub_cfg()` | `grub_cfg.rs` |
+| `FindNonRecoveryLinuxLine()` | `grubcfgutils.go` | `find_non_recovery_linux_lines()` | `grub_cfg.rs` |
+| `ParseCommandLineArgs()` | `grubcfgutils.go` | inline `split_whitespace` + `split_once('=')` | `grub_cfg.rs` |
+| `UpdateKernelCommandLineArgs()` | `bootcustomizer.go` | `DefaultGrub::update_cmdline_args()` | `default_grub.rs` |
+| `AddKernelCommandLine()` | `bootcustomizer.go` | `DefaultGrub::add_extra_cmdline()` | `default_grub.rs` |
+| `SetRootDevice()` | `bootcustomizer.go` | `DefaultGrub::set_variable("GRUB_DEVICE", ...)` | `default_grub.rs` |
+| `AddOrUpdateUsers()` | `customizeusers.go` | `users::add_or_update_users()` | `users.rs` |
+| `UpdateHostname()` | `customizehostname.go` | `hostname::update()` | `hostname.rs` |
+| `EnableOrDisableServices()` | `customizeservices.go` | `services::configure()` | `services.rs` |
+| `IsServiceEnabled()` | `internal/systemd/systemd.go` | inline in `disable_service()` | `services.rs` |
+| `LoadOrDisableModules()` | `kernelmoduleutils.go` | `modules::configure()` | `modules.rs` |
+| `updateModulesOptions()` | `kernelmoduleutils.go` | `update_options()` | `modules.rs` |
+| `UpdateSELinuxCommandLineForEMU()` | `grubcfgutils.go` | `selinux::update_grub_cmdline()` | `selinux.rs` |
+| `UpdateSELinuxModeInConfigFile()` | `grubcfgutils.go` | `selinux::update_config_file()` | `selinux.rs` |
+| `updateGrubConfigForOverlay()` | `modifierutils.go` | inline in `modify_boot()` | `lib.rs` |
+| `updateDefaultGrubForVerity()` | `modifierutils.go` | inline in `modify_boot()` | `lib.rs` |
+
+### Go code NOT ported (out of scope)
+
+These Go functions/packages are used by osmodifier but are handled differently
+in the Rust version and should NOT be ported:
+
+| Go code | Reason not ported |
+|---------|-------------------|
+| `internal/grub/grubtokenizer.go` | Full grub tokenizer — Rust uses simplified string parsing (see "Simplified grub.cfg parsing" above) |
+| `internal/safechroot/` | Chroot management — trident handles chroot at a higher level |
+| `osmodifier/main.go` | CLI entry point — Rust is a library, not a binary |
+| `BootCustomizer` struct | Go's boot config orchestrator — Rust uses `DefaultGrub` struct directly |
+| `DistroHandler` | Distro detection — trident assumes Azure Linux |
+| `ReadGrub2ConfigFile()` | Distro-specific grub.cfg path lookup — Rust hardcodes the two standard paths |
+
+### What to watch for in upstream changes
+
+| Change type | Where to look | Impact |
+|-------------|---------------|--------|
+| New config fields | `osmodifierapi/*.go` | Add to `config.rs` structs |
+| New modification steps | `modifierutils.go` `doModifications()` | Add to `lib.rs` `modify_os()` or `modify_boot()` |
+| New grub sync args | `modifydefaultgrub.go` `grubArgs` | Add to `grub_cfg.rs` `SYNC_ARG_NAMES` |
+| GRUB parsing changes | `grubcfgutils.go` | Update `grub_cfg.rs` — check if the change requires tokenizer features |
+| New systemd/module logic | `customizeservices.go`, `kernelmoduleutils.go` | Update `services.rs` or `modules.rs` |
+| SELinux changes | `modifierutils.go` (SELinux functions) | Update `selinux.rs` |
+| New user fields | `customizeusers.go` | Update `users.rs` and `config.rs` `MICUser` |
+| Validation changes | `osmodifierapi/*.go` `IsValid()` | Note: Rust does NOT port Go's `IsValid()` validation — trident validates at a different layer |
+
+### Intentional divergences (do not "fix")
+
+These behavioral differences from Go are deliberate and should be preserved:
+
+- **No chroot**: Rust assumes it runs inside chroot already
+- **Secure password handling**: `chpasswd -e` via stdin (Go uses `useradd -p`)
+- **Atomic file writes**: `tempfile::persist()` for `/etc/shadow`, `/etc/passwd`
+- **Startup command validation**: Rejects `:` and `\n` (Go does not validate)
+- **Split API**: `modify_os()` / `modify_boot()` instead of single entry point
+- **No `IsValid()` validation**: Config validation happens elsewhere in trident
+- **No file-based passwords or SSH key paths**: Not needed in trident's context
 
 ## Port Fidelity Fixes (2026-05-20)
 
