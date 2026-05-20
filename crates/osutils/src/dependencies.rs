@@ -90,6 +90,7 @@ impl<T> DependencyResultExt<T> for Result<T, Box<DependencyError>> {
 pub enum Dependency {
     Blkid,
     Chown,
+    Chpasswd,
     Cryptsetup,
     Dd,
     Df,
@@ -115,6 +116,7 @@ pub enum Dependency {
     Mount,
     Mountpoint,
     Netplan,
+    Openssl,
     Partx,
     Resize2fs,
     Setfiles,

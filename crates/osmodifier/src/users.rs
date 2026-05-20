@@ -113,10 +113,14 @@ fn check_user_exists(username: &str) -> Result<bool, Error> {
 }
 
 fn hash_password(plaintext: &str) -> Result<String, Error> {
-    // TODO: Convert to Dependency::Openssl once the Command wrapper supports
-    // stdin piping. Currently uses std::process::Command directly because
-    // openssl passwd reads the password from stdin.
-    let mut child = Command::new("openssl")
+    // Use Dependency::Openssl to resolve the binary path for consistent
+    // detection, but use std::process::Command for stdin piping which
+    // the Dependency Command wrapper doesn't yet support.
+    let openssl_path = Dependency::Openssl
+        .path()
+        .context("openssl is required for password hashing")?;
+
+    let mut child = Command::new(openssl_path)
         .args(["passwd", "-6", "-stdin"])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -211,12 +215,17 @@ fn update_user_password(ctx: &OsModifierContext, username: &str, hash: &str) -> 
 /// Set password on a newly created user via chpasswd -e (stdin), avoiding
 /// leaking the hash through /proc/cmdline.
 fn set_password_via_chpasswd(username: &str, hash: &str) -> Result<(), Error> {
-    // TODO: Convert to Dependency::Chpasswd once the Command wrapper supports
-    // stdin piping. chpasswd reads username:hash from stdin.
+    // Use Dependency::Chpasswd to resolve the binary path for consistent
+    // detection, but use std::process::Command for stdin piping which
+    // the Dependency Command wrapper doesn't yet support.
+    let chpasswd_path = Dependency::Chpasswd
+        .path()
+        .context("chpasswd is required for setting user passwords")?;
+
     debug!("Setting password for new user '{username}' via chpasswd");
     let input = format!("{username}:{hash}\n");
 
-    let mut child = Command::new("chpasswd")
+    let mut child = Command::new(chpasswd_path)
         .arg("-e")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -423,8 +432,13 @@ fn set_startup_command(ctx: &OsModifierContext, username: &str, cmd: &str) -> Re
 
 /// Atomically write a file by writing to a temp file and renaming.
 /// This prevents corruption from crashes mid-write.
+///
+/// Preserves permissions and uid/gid ownership from the original file.
+/// Note: SELinux labels and extended attributes are not preserved because
+/// osmodifier runs inside the target root before SELinux enforcement.
 fn atomic_write_file(path: &std::path::Path, content: &str) -> Result<(), Error> {
     use std::io::Write as IoWrite;
+    use std::os::unix::fs::MetadataExt;
 
     let parent = path.parent().context("Cannot determine parent directory")?;
 
@@ -437,8 +451,23 @@ fn atomic_write_file(path: &std::path::Path, content: &str) -> Result<(), Error>
     tmp.flush()
         .with_context(|| format!("Failed to flush temp file for '{}'", path.display()))?;
 
-    // Preserve permissions from the original file if it exists
+    // Preserve ownership and permissions from the original file if it exists.
+    // Ownership must be set before permissions because chown can clear
+    // setuid/setgid bits.
     if let Ok(metadata) = fs::metadata(path) {
+        use std::os::fd::AsFd;
+        nix::unistd::fchown(
+            tmp.as_file().as_fd(),
+            Some(nix::unistd::Uid::from_raw(metadata.uid())),
+            Some(nix::unistd::Gid::from_raw(metadata.gid())),
+        )
+        .with_context(|| {
+            format!(
+                "Failed to set ownership on temp file for '{}'",
+                path.display()
+            )
+        })?;
+
         fs::set_permissions(tmp.path(), metadata.permissions()).with_context(|| {
             format!(
                 "Failed to set permissions on temp file for '{}'",

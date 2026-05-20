@@ -52,6 +52,8 @@ Requires:       util-linux
 Requires:       dosfstools
 Requires:       efibootmgr
 Requires:       lsof
+Requires:       openssl
+Requires:       shadow-utils
 Requires:       systemd >= 255
 Requires:       systemd-udev
 Requires:       (%{name}-selinux if selinux-policy-%{selinuxtype})
@@ -71,6 +73,8 @@ Suggests:       veritysetup
 Suggests:       ntfs-3g
 # For creating NTFS filesystems
 Suggests:       ntfsprogs
+# For GRUB boot configuration (os.kernelCommandLine, boot config)
+Suggests:       grub2-tools
 
 
 %description
