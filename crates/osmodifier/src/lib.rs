@@ -232,6 +232,65 @@ fn format_corruption_option(opt: &CorruptionOption) -> String {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn path_default_root_returns_absolute_path_unchanged() {
+        let ctx = OsModifierContext::default();
+        assert_eq!(ctx.path("/etc/hostname"), PathBuf::from("/etc/hostname"));
+    }
+
+    #[test]
+    fn path_default_root_returns_relative_path_unchanged() {
+        let ctx = OsModifierContext::default();
+        assert_eq!(ctx.path("relative/file"), PathBuf::from("relative/file"));
+    }
+
+    #[test]
+    fn path_custom_root_strips_leading_slash_and_joins() {
+        let ctx = OsModifierContext {
+            root: PathBuf::from("/tmp/testroot"),
+        };
+        assert_eq!(
+            ctx.path("/etc/hostname"),
+            PathBuf::from("/tmp/testroot/etc/hostname")
+        );
+    }
+
+    #[test]
+    fn path_custom_root_joins_relative_path_directly() {
+        let ctx = OsModifierContext {
+            root: PathBuf::from("/tmp/testroot"),
+        };
+        assert_eq!(
+            ctx.path("relative/file"),
+            PathBuf::from("/tmp/testroot/relative/file")
+        );
+    }
+
+    #[test]
+    fn path_custom_root_nested_absolute_path() {
+        let ctx = OsModifierContext {
+            root: PathBuf::from("/tmp/testroot"),
+        };
+        assert_eq!(
+            ctx.path("/usr/lib/systemd/system"),
+            PathBuf::from("/tmp/testroot/usr/lib/systemd/system")
+        );
+    }
+
+    #[test]
+    fn path_custom_root_single_slash() {
+        let ctx = OsModifierContext {
+            root: PathBuf::from("/tmp/testroot"),
+        };
+        // A bare "/" should resolve to the root itself
+        assert_eq!(ctx.path("/"), PathBuf::from("/tmp/testroot"));
+    }
+}
+
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
     use super::*;
