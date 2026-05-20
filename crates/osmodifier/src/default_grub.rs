@@ -215,4 +215,168 @@ mod tests {
         assert!(!result.contains("enforcing=1"));
         assert!(!result.contains("selinux=1"));
     }
+
+    #[test]
+    fn test_update_cmdline_args_empty_initial() {
+        let mut grub = DefaultGrub {
+            lines: vec![r#"GRUB_CMDLINE_LINUX="""#.to_string()],
+            path: PathBuf::from("/etc/default/grub"),
+        };
+
+        grub.update_cmdline_args(&[], &["selinux=1".to_string()])
+            .unwrap();
+
+        let result = grub.get_variable("GRUB_CMDLINE_LINUX").unwrap();
+        assert_eq!(result, "selinux=1");
+    }
+
+    #[test]
+    fn test_update_cmdline_args_missing_variable() {
+        // If GRUB_CMDLINE_LINUX doesn't exist, it should be created
+        let mut grub = DefaultGrub {
+            lines: vec!["GRUB_TIMEOUT=0".to_string()],
+            path: PathBuf::from("/etc/default/grub"),
+        };
+
+        grub.update_cmdline_args(&[], &["selinux=1".to_string()])
+            .unwrap();
+
+        let result = grub.get_variable("GRUB_CMDLINE_LINUX").unwrap();
+        assert_eq!(result, "selinux=1");
+        // Original variable should be preserved
+        assert_eq!(grub.get_variable("GRUB_TIMEOUT"), Some("0".to_string()));
+    }
+
+    #[test]
+    fn test_add_extra_cmdline_basic() {
+        let mut grub = DefaultGrub {
+            lines: vec![r#"GRUB_CMDLINE_LINUX="quiet""#.to_string()],
+            path: PathBuf::from("/etc/default/grub"),
+        };
+
+        grub.add_extra_cmdline(&["console=tty0".to_string(), "console=ttyS0".to_string()]);
+
+        let result = grub.get_variable("GRUB_CMDLINE_LINUX").unwrap();
+        assert!(result.contains("quiet"));
+        assert!(result.contains("console=tty0"));
+        assert!(result.contains("console=ttyS0"));
+    }
+
+    #[test]
+    fn test_add_extra_cmdline_idempotent() {
+        let mut grub = DefaultGrub {
+            lines: vec![r#"GRUB_CMDLINE_LINUX="quiet selinux=1""#.to_string()],
+            path: PathBuf::from("/etc/default/grub"),
+        };
+
+        // Adding selinux again should be skipped (same key)
+        grub.add_extra_cmdline(&["selinux=0".to_string()]);
+
+        let result = grub.get_variable("GRUB_CMDLINE_LINUX").unwrap();
+        assert!(result.contains("selinux=1"), "Original should be kept");
+        assert!(
+            !result.contains("selinux=0"),
+            "Duplicate key should be skipped"
+        );
+    }
+
+    #[test]
+    fn test_add_extra_cmdline_empty_initial() {
+        let mut grub = DefaultGrub {
+            lines: vec![],
+            path: PathBuf::from("/etc/default/grub"),
+        };
+
+        grub.add_extra_cmdline(&["console=tty0".to_string()]);
+
+        let result = grub.get_variable("GRUB_CMDLINE_LINUX").unwrap();
+        assert_eq!(result, "console=tty0");
+    }
+
+    #[test]
+    fn test_comments_preserved() {
+        let mut grub = DefaultGrub {
+            lines: vec![
+                "# This is a comment".to_string(),
+                r#"GRUB_TIMEOUT=5"#.to_string(),
+                "# Another comment".to_string(),
+                r#"GRUB_CMDLINE_LINUX="quiet""#.to_string(),
+            ],
+            path: PathBuf::from("/etc/default/grub"),
+        };
+
+        grub.set_variable("GRUB_TIMEOUT", "0");
+
+        assert_eq!(grub.lines[0], "# This is a comment");
+        assert_eq!(grub.lines[2], "# Another comment");
+        assert_eq!(grub.get_variable("GRUB_TIMEOUT"), Some("0".to_string()));
+    }
+
+    #[test]
+    fn test_write_round_trip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let grub_path = tmp.path().join("etc/default");
+        fs::create_dir_all(&grub_path).unwrap();
+        fs::write(
+            grub_path.join("grub"),
+            "GRUB_TIMEOUT=5\nGRUB_CMDLINE_LINUX=\"quiet selinux=1\"\n",
+        )
+        .unwrap();
+
+        let ctx = OsModifierContext {
+            root: tmp.path().to_path_buf(),
+        };
+
+        // Read, modify, write
+        let mut grub = DefaultGrub::read(&ctx).unwrap();
+        grub.set_variable("GRUB_TIMEOUT", "0");
+        grub.write().unwrap();
+
+        // Read again and verify
+        let grub2 = DefaultGrub::read(&ctx).unwrap();
+        assert_eq!(grub2.get_variable("GRUB_TIMEOUT"), Some("0".to_string()));
+        assert_eq!(
+            grub2.get_variable("GRUB_CMDLINE_LINUX"),
+            Some("quiet selinux=1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_single_quoted_value() {
+        let grub = DefaultGrub {
+            lines: vec!["GRUB_DEVICE='/dev/sda1'".to_string()],
+            path: PathBuf::from("/etc/default/grub"),
+        };
+
+        assert_eq!(
+            grub.get_variable("GRUB_DEVICE"),
+            Some("/dev/sda1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_real_world_azl3_default_grub() {
+        // Modeled after the AZL 3.0 /etc/default/grub
+        let grub = DefaultGrub {
+            lines: vec![
+                r#"GRUB_TIMEOUT=0"#.to_string(),
+                r#"GRUB_DISTRIBUTOR="AzureLinux""#.to_string(),
+                r#"GRUB_DISABLE_SUBMENU=y"#.to_string(),
+                r#"GRUB_TERMINAL_OUTPUT="console""#.to_string(),
+                r#"GRUB_CMDLINE_LINUX="      rd.auto=1 net.ifnames=0 lockdown=integrity ""#
+                    .to_string(),
+                r#"GRUB_CMDLINE_LINUX_DEFAULT=" $kernelopts""#.to_string(),
+            ],
+            path: PathBuf::from("/etc/default/grub"),
+        };
+
+        let cmdline = grub.get_variable("GRUB_CMDLINE_LINUX").unwrap();
+        assert!(cmdline.contains("rd.auto=1"));
+        assert!(cmdline.contains("lockdown=integrity"));
+
+        assert_eq!(
+            grub.get_variable("GRUB_DISTRIBUTOR"),
+            Some("AzureLinux".to_string())
+        );
+    }
 }

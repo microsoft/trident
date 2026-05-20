@@ -162,9 +162,26 @@ pub fn run_grub_mkconfig(ctx: &OsModifierContext) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
+
+    // ---------------------------------------------------------------
+    // Helper: write a grub.cfg in a temp dir and call the public API
+    // ---------------------------------------------------------------
+    fn extract_from_grub_cfg_str(content: &str) -> Result<(Vec<String>, Option<String>), Error> {
+        let tmp = tempdir().unwrap();
+        let grub_dir = tmp.path().join("boot/grub2");
+        std::fs::create_dir_all(&grub_dir).unwrap();
+        std::fs::write(grub_dir.join("grub.cfg"), content).unwrap();
+        let ctx = OsModifierContext {
+            root: tmp.path().to_path_buf(),
+        };
+        extract_boot_args_from_grub_cfg(&ctx)
+    }
+
+    // ======================= find_non_recovery_linux_lines =======================
 
     #[test]
-    fn test_find_non_recovery_linux_lines() {
+    fn test_basic_non_recovery_with_recovery_entry() {
         let grub_cfg = indoc::indoc! {r#"
             set timeout=5
             menuentry 'Azure Linux' --class azurelinux {
@@ -183,12 +200,11 @@ mod tests {
         assert!(result.contains("root=/dev/sda2"));
         assert!(result.contains("selinux=1"));
         assert!(result.contains("rd.overlayfs="));
-        // Recovery entry should be excluded
         assert!(!result.contains("single"));
     }
 
     #[test]
-    fn test_find_non_recovery_linux_lines_no_recovery() {
+    fn test_single_non_recovery_entry() {
         let grub_cfg = indoc::indoc! {r#"
             menuentry 'Linux' {
                 linux /boot/vmlinuz root=/dev/sda1
@@ -201,15 +217,25 @@ mod tests {
     }
 
     #[test]
-    fn test_no_linux_line() {
+    fn test_no_linux_line_errors() {
         let grub_cfg = "set timeout=5\n";
         assert!(find_non_recovery_linux_lines(grub_cfg).is_err());
     }
 
     #[test]
+    fn test_only_recovery_entries_errors() {
+        let grub_cfg = indoc::indoc! {r#"
+            menuentry 'Linux (recovery)' {
+                linux /boot/vmlinuz root=/dev/sda1 single
+            }
+        "#};
+        assert!(find_non_recovery_linux_lines(grub_cfg).is_err());
+    }
+
+    #[test]
     fn test_recovery_detection_is_case_sensitive() {
-        // Go uses case-sensitive "recovery" check. "Recovery" should NOT
-        // be filtered as recovery.
+        // Go uses case-sensitive "recovery" check.
+        // "Recovery" (capital R) does NOT contain lowercase "recovery".
         let grub_cfg = indoc::indoc! {r#"
             menuentry 'Linux Recovery Mode' {
                 linux /boot/vmlinuz root=/dev/sda1 single
@@ -220,18 +246,11 @@ mod tests {
         "#};
 
         let lines = find_non_recovery_linux_lines(grub_cfg).unwrap();
-        // "Recovery" (capital R) should not match — only lowercase "recovery"
-        // is filtered by the Go code. However, the title here is "Linux Recovery Mode"
-        // which does NOT contain lowercase "recovery", so both entries are kept.
-        // Wait — actually "Recovery" does not contain "recovery" (case-sensitive).
-        // So we get 2 linux lines.
-        assert_eq!(lines.len(), 2);
+        assert_eq!(lines.len(), 2, "uppercase 'Recovery' should not be filtered");
     }
 
     #[test]
-    fn test_multiple_non_recovery_linux_lines() {
-        // Go expects exactly 1 non-recovery linux line.
-        // extract_boot_args_from_grub_cfg should error on multiple.
+    fn test_multiple_non_recovery_entries() {
         let grub_cfg = indoc::indoc! {r#"
             menuentry 'Linux A' {
                 linux /boot/vmlinuz root=/dev/sda1
@@ -246,7 +265,7 @@ mod tests {
     }
 
     #[test]
-    fn test_linux_line_captures_args_after_keyword() {
+    fn test_linux_line_captures_full_args() {
         let grub_cfg = indoc::indoc! {r#"
             menuentry 'Linux' {
                 linux /boot/vmlinuz root=/dev/sda2 selinux=1
@@ -254,8 +273,242 @@ mod tests {
         "#};
 
         let lines = find_non_recovery_linux_lines(grub_cfg).unwrap();
-        // Should capture everything after "linux " — including the kernel path
         assert!(lines[0].starts_with("/boot/vmlinuz"));
         assert!(lines[0].contains("selinux=1"));
+    }
+
+    #[test]
+    fn test_tab_indented_grub_cfg() {
+        // Real grub.cfg uses tabs, not spaces
+        let grub_cfg = "menuentry 'Linux' {\n\tlinux /boot/vmlinuz root=/dev/sda2 selinux=1\n\tinitrd /boot/initrd.img\n}\n";
+
+        let lines = find_non_recovery_linux_lines(grub_cfg).unwrap();
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("root=/dev/sda2"));
+    }
+
+    #[test]
+    fn test_double_quoted_menuentry_title() {
+        let grub_cfg = indoc::indoc! {r#"
+            menuentry "Azure Linux" {
+                linux /boot/vmlinuz root=/dev/sda1
+            }
+            menuentry "Azure Linux (recovery)" {
+                linux /boot/vmlinuz root=/dev/sda1 single
+            }
+        "#};
+
+        let lines = find_non_recovery_linux_lines(grub_cfg).unwrap();
+        assert_eq!(lines.len(), 1);
+        assert!(!lines[0].contains("single"));
+    }
+
+    #[test]
+    fn test_real_world_azl2_grub_cfg() {
+        // Modeled after the AZL 2.0 grub.cfg which uses $variables
+        let grub_cfg = indoc::indoc! {r#"
+            set timeout=0
+            set bootprefix=/boot
+            search -n -u 33beac00-b378-4b0c-b0cb-d5dcebf2cf57 -s
+
+            load_env -f $bootprefix/mariner.cfg
+
+            set rootdevice=PARTUUID=c17c558b-068b-459c-92cb-f218d14b44a1
+
+            menuentry "CBL-Mariner" {
+            	linux $bootprefix/$mariner_linux       rd.auto=1 root=$rootdevice $mariner_cmdline lockdown=integrity selinux=0 $systemd_cmdline   $kernelopts
+            	if [ -f $bootprefix/$mariner_initrd ]; then
+            		initrd $bootprefix/$mariner_initrd
+            	fi
+            }
+        "#};
+
+        let lines = find_non_recovery_linux_lines(grub_cfg).unwrap();
+        assert_eq!(lines.len(), 1);
+        // The linux line should capture the full args including $variables
+        assert!(lines[0].contains("selinux=0"));
+        assert!(lines[0].contains("root=$rootdevice"));
+    }
+
+    #[test]
+    fn test_menuentry_without_linux_line() {
+        // A menuentry that has no linux command — should not contribute a result
+        let grub_cfg = indoc::indoc! {r#"
+            menuentry 'Empty Entry' {
+                set gfxpayload=keep
+            }
+            menuentry 'Real Entry' {
+                linux /boot/vmlinuz root=/dev/sda1
+            }
+        "#};
+
+        let lines = find_non_recovery_linux_lines(grub_cfg).unwrap();
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("root=/dev/sda1"));
+    }
+
+    #[test]
+    fn test_linux_outside_menuentry_ignored() {
+        // A "linux" keyword outside any menuentry should be ignored
+        let grub_cfg = indoc::indoc! {r#"
+            linux /boot/stray-vmlinuz root=/dev/stray
+            menuentry 'Linux' {
+                linux /boot/vmlinuz root=/dev/sda1
+            }
+        "#};
+
+        let lines = find_non_recovery_linux_lines(grub_cfg).unwrap();
+        // The stray linux line outside menuentry should be captured because
+        // our parser doesn't track brace depth — it just looks for the
+        // menuentry keyword to set state. The stray line comes before any
+        // menuentry, so in_menuentry is false. Only the one inside should match.
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("root=/dev/sda1"));
+    }
+
+    // ======================= extract_boot_args_from_grub_cfg =======================
+
+    #[test]
+    fn test_extract_args_basic() {
+        let grub_cfg = indoc::indoc! {r#"
+            menuentry 'Azure Linux' {
+                linux /boot/vmlinuz root=/dev/sda2 selinux=1 enforcing=1 rd.overlayfs=/a,/b,/c,/dev/sda3
+            }
+        "#};
+
+        let (args, root_device) = extract_from_grub_cfg_str(grub_cfg).unwrap();
+
+        assert_eq!(root_device, Some("/dev/sda2".to_string()));
+        assert!(args.contains(&"selinux=1".to_string()));
+        assert!(args.contains(&"enforcing=1".to_string()));
+        assert!(args.iter().any(|a| a.starts_with("rd.overlayfs=")));
+        // root should NOT be in args (it goes to root_device)
+        assert!(!args.iter().any(|a| a.starts_with("root=")));
+    }
+
+    #[test]
+    fn test_extract_args_no_root() {
+        let grub_cfg = indoc::indoc! {r#"
+            menuentry 'Linux' {
+                linux /boot/vmlinuz selinux=1
+            }
+        "#};
+
+        let (args, root_device) = extract_from_grub_cfg_str(grub_cfg).unwrap();
+
+        assert_eq!(root_device, None);
+        assert!(args.contains(&"selinux=1".to_string()));
+    }
+
+    #[test]
+    fn test_extract_args_ignores_unknown_args() {
+        let grub_cfg = indoc::indoc! {r#"
+            menuentry 'Linux' {
+                linux /boot/vmlinuz quiet root=/dev/sda1 loglevel=3 selinux=1 splash
+            }
+        "#};
+
+        let (args, root_device) = extract_from_grub_cfg_str(grub_cfg).unwrap();
+
+        assert_eq!(root_device, Some("/dev/sda1".to_string()));
+        assert_eq!(args, vec!["selinux=1"]);
+        // quiet, loglevel, splash should NOT appear
+    }
+
+    #[test]
+    fn test_extract_errors_on_multiple_non_recovery_entries() {
+        // Go expects exactly 1 non-recovery linux line
+        let grub_cfg = indoc::indoc! {r#"
+            menuentry 'Linux A' {
+                linux /boot/vmlinuz root=/dev/sda1
+            }
+            menuentry 'Linux B' {
+                linux /boot/vmlinuz root=/dev/sda2
+            }
+        "#};
+
+        let result = extract_from_grub_cfg_str(grub_cfg);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("expected 1"),
+            "Error should mention expecting 1 line, got: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn test_extract_args_with_roothash() {
+        let grub_cfg = indoc::indoc! {r#"
+            menuentry 'Linux' {
+                linux /boot/vmlinuz root=/dev/mapper/root roothash=abc123 selinux=1 enforcing=1
+            }
+        "#};
+
+        let (args, root_device) = extract_from_grub_cfg_str(grub_cfg).unwrap();
+
+        assert_eq!(root_device, Some("/dev/mapper/root".to_string()));
+        assert!(args.contains(&"roothash=abc123".to_string()));
+        assert!(args.contains(&"selinux=1".to_string()));
+        assert!(args.contains(&"enforcing=1".to_string()));
+    }
+
+    #[test]
+    fn test_extract_args_empty_result() {
+        // No sync-worthy args
+        let grub_cfg = indoc::indoc! {r#"
+            menuentry 'Linux' {
+                linux /boot/vmlinuz quiet loglevel=3
+            }
+        "#};
+
+        let (args, root_device) = extract_from_grub_cfg_str(grub_cfg).unwrap();
+        assert!(args.is_empty());
+        assert_eq!(root_device, None);
+    }
+
+    #[test]
+    fn test_extract_missing_grub_cfg_errors() {
+        let tmp = tempdir().unwrap();
+        let ctx = OsModifierContext {
+            root: tmp.path().to_path_buf(),
+        };
+        assert!(extract_boot_args_from_grub_cfg(&ctx).is_err());
+    }
+
+    #[test]
+    fn test_extract_finds_grub2_path() {
+        let tmp = tempdir().unwrap();
+        let grub_dir = tmp.path().join("boot/grub2");
+        std::fs::create_dir_all(&grub_dir).unwrap();
+        std::fs::write(
+            grub_dir.join("grub.cfg"),
+            "menuentry 'L' {\n\tlinux /vmlinuz root=/dev/sda1\n}\n",
+        )
+        .unwrap();
+        let ctx = OsModifierContext {
+            root: tmp.path().to_path_buf(),
+        };
+
+        let (_, root) = extract_boot_args_from_grub_cfg(&ctx).unwrap();
+        assert_eq!(root, Some("/dev/sda1".to_string()));
+    }
+
+    #[test]
+    fn test_extract_finds_grub_fallback_path() {
+        let tmp = tempdir().unwrap();
+        // Only /boot/grub/ (not grub2/)
+        let grub_dir = tmp.path().join("boot/grub");
+        std::fs::create_dir_all(&grub_dir).unwrap();
+        std::fs::write(
+            grub_dir.join("grub.cfg"),
+            "menuentry 'L' {\n\tlinux /vmlinuz root=/dev/sdb1\n}\n",
+        )
+        .unwrap();
+        let ctx = OsModifierContext {
+            root: tmp.path().to_path_buf(),
+        };
+
+        let (_, root) = extract_boot_args_from_grub_cfg(&ctx).unwrap();
+        assert_eq!(root, Some("/dev/sdb1".to_string()));
     }
 }
