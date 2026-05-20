@@ -109,7 +109,6 @@ fn first_word(line: &str) -> Option<&str> {
 /// - Returns all matches; caller decides whether to require exactly one.
 fn find_non_recovery_linux_lines(content: &str) -> Result<Vec<String>, Error> {
     let mut in_menuentry = false;
-    let mut is_recovery = false;
     let mut linux_lines = Vec::new();
 
     for line in content.lines() {
@@ -124,9 +123,7 @@ fn find_non_recovery_linux_lines(content: &str) -> Result<Vec<String>, Error> {
             // The second token is the title string (including quotes).
             // We check the rest of the line after "menuentry" for "recovery".
             let after_keyword = line[line.find("menuentry").unwrap() + "menuentry".len()..].trim();
-            is_recovery = after_keyword.contains("recovery");
-
-            if is_recovery {
+            if after_keyword.contains("recovery") {
                 in_menuentry = false;
             }
         } else if in_menuentry && keyword == "linux" {

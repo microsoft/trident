@@ -53,7 +53,7 @@ fn disable_service(ctx: &OsModifierContext, service: &str) -> Result<(), Error> 
         .with_context(|| format!("Failed to check if service '{service}' is enabled"))?;
 
     if !check.success() {
-        let stdout = String::from_utf8_lossy(&check.stdout);
+        let stdout = check.output();
         if stdout.trim() != "disabled" {
             bail!("Failed to check if service '{service}' is enabled (service may not exist)");
         }
