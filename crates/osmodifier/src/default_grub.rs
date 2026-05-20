@@ -254,10 +254,7 @@ mod tests {
             path: PathBuf::from("/etc/default/grub"),
         };
 
-        grub.add_extra_cmdline(&[
-            "console=tty0".to_string(),
-            "loglevel=3".to_string(),
-        ]);
+        grub.add_extra_cmdline(&["console=tty0".to_string(), "loglevel=3".to_string()]);
 
         let result = grub.get_variable("GRUB_CMDLINE_LINUX").unwrap();
         assert!(result.contains("quiet"));
