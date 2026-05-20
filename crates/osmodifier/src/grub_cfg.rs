@@ -100,6 +100,22 @@ fn first_word(line: &str) -> Option<&str> {
     line.split_whitespace().next()
 }
 
+/// Extract the quoted title from the text after the `menuentry` keyword.
+/// Handles both single and double quotes. Returns the content between the
+/// first pair of matching quotes, or None if no quoted string is found.
+/// This mirrors Go's check of `line.Tokens[1].RawContent` — specifically
+/// the title token, not the entire line.
+fn extract_quoted_title(after_menuentry: &str) -> Option<&str> {
+    let s = after_menuentry.trim();
+    let quote = s.chars().next()?;
+    if quote != '\'' && quote != '"' {
+        return None;
+    }
+    let inner = &s[1..];
+    let end = inner.find(quote)?;
+    Some(&inner[..end])
+}
+
 /// Find the linux command lines from non-recovery menuentry blocks in grub.cfg.
 ///
 /// Mirrors Go `FindNonRecoveryLinuxLine` in grubcfgutils.go:
@@ -120,11 +136,13 @@ fn find_non_recovery_linux_lines(content: &str) -> Result<Vec<String>, Error> {
         if keyword == "menuentry" {
             in_menuentry = true;
             // Go checks: strings.Contains(line.Tokens[1].RawContent, "recovery")
-            // The second token is the title string (including quotes).
-            // We check the rest of the line after "menuentry" for "recovery".
+            // The second token is the quoted title string. Extract just the title
+            // to avoid false positives on class names like "--class recovery-icon".
             let after_keyword = line[line.find("menuentry").unwrap() + "menuentry".len()..].trim();
-            if after_keyword.contains("recovery") {
-                in_menuentry = false;
+            if let Some(title) = extract_quoted_title(after_keyword) {
+                if title.contains("recovery") {
+                    in_menuentry = false;
+                }
             }
         } else if in_menuentry && keyword == "linux" {
             // Capture everything after the "linux" keyword.
@@ -305,6 +323,24 @@ mod tests {
         let lines = find_non_recovery_linux_lines(grub_cfg).unwrap();
         assert_eq!(lines.len(), 1);
         assert!(!lines[0].contains("single"));
+    }
+
+    #[test]
+    fn test_recovery_in_class_not_in_title() {
+        // "recovery" in --class flag should NOT filter the entry.
+        // Go checks only the title token (Tokens[1].RawContent).
+        let grub_cfg = indoc::indoc! {r#"
+            menuentry 'Azure Linux' --class recovery-icon {
+                linux /boot/vmlinuz root=/dev/sda1
+            }
+        "#};
+
+        let lines = find_non_recovery_linux_lines(grub_cfg).unwrap();
+        assert_eq!(
+            lines.len(),
+            1,
+            "recovery in class name should not filter the entry"
+        );
     }
 
     #[test]

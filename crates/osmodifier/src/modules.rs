@@ -120,49 +120,49 @@ fn update_options(
     let prefix = format!("options {module_name} ");
     let bare = format!("options {module_name}");
 
-    // Find and update existing options line, preserving options not in the new map.
-    // This matches Go's updateModulesOptions behavior.
-    let mut found = false;
-    for line in lines.iter_mut() {
+    // Collect all existing options from ALL matching lines for this module,
+    // then remove those lines. This avoids leaving stale duplicate lines.
+    let mut existing_opts: Vec<String> = Vec::new();
+    lines.retain(|line| {
         if line.starts_with(&prefix) || line.trim() == bare {
-            found = true;
+            // Collect existing option fields from this line
             let fields: Vec<&str> = line.split_whitespace().collect();
-            let mut seen = std::collections::HashSet::new();
-            let mut new_line = format!("options {module_name}");
-
-            // Update existing option values, preserve options not in the new map.
             for field in fields.iter().skip(2) {
-                if let Some((key, _)) = field.split_once('=') {
-                    if let Some(new_val) = options.get(key) {
-                        new_line.push_str(&format!(" {key}={new_val}"));
-                        seen.insert(key.to_string());
-                    } else {
-                        // Keep existing options as-is
-                        new_line.push_str(&format!(" {field}"));
-                    }
-                }
+                existing_opts.push(field.to_string());
             }
+            false // remove this line
+        } else {
+            true // keep
+        }
+    });
 
-            // Append new options not already in the line.
-            for (key, val) in options {
-                if !seen.contains(key.as_str()) {
-                    new_line.push_str(&format!(" {key}={val}"));
-                }
+    // Build the merged options line.
+    let mut seen = std::collections::HashSet::new();
+    let mut new_line = format!("options {module_name}");
+
+    // Preserve existing options, updating values from the new map.
+    for field in &existing_opts {
+        if let Some((key, _)) = field.split_once('=') {
+            if let Some(new_val) = options.get(key) {
+                new_line.push_str(&format!(" {key}={new_val}"));
+                seen.insert(key.to_string());
+            } else {
+                new_line.push_str(&format!(" {field}"));
             }
-
-            *line = new_line;
-            break;
+        } else {
+            // Preserve bare options (no '='), e.g. "nomodeset"
+            new_line.push_str(&format!(" {field}"));
         }
     }
 
-    // If no existing line, add a new one.
-    if !found && !options.is_empty() {
-        let mut new_line = format!("options {module_name}");
-        for (k, v) in options {
-            new_line.push_str(&format!(" {k}={v}"));
+    // Append new options not already in the line.
+    for (key, val) in options {
+        if !seen.contains(key.as_str()) {
+            new_line.push_str(&format!(" {key}={val}"));
         }
-        lines.push(new_line);
     }
+
+    lines.push(new_line);
 }
 
 fn ensure_dir(ctx: &OsModifierContext, path: &str) -> Result<(), Error> {

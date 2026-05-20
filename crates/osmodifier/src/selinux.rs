@@ -34,13 +34,13 @@ pub fn update_config_file(ctx: &OsModifierContext, mode: &SelinuxMode) -> Result
         SelinuxMode::Disabled => "disabled",
     };
 
-    // Replace the SELINUX= line
+    // Replace the first SELINUX= line only (matching Go's re.replace first-match).
     let new_line = format!("SELINUX={selinux_value}");
     let mut found = false;
     let new_content: String = content
         .lines()
         .map(|line| {
-            if line.trim_start().starts_with("SELINUX=") {
+            if !found && line.trim_start().starts_with("SELINUX=") {
                 found = true;
                 new_line.clone()
             } else {
