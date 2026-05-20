@@ -246,7 +246,11 @@ mod tests {
         "#};
 
         let lines = find_non_recovery_linux_lines(grub_cfg).unwrap();
-        assert_eq!(lines.len(), 2, "uppercase 'Recovery' should not be filtered");
+        assert_eq!(
+            lines.len(),
+            2,
+            "uppercase 'Recovery' should not be filtered"
+        );
     }
 
     #[test]
