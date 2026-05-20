@@ -3,8 +3,8 @@
 
 //! Service management — enable and disable systemd services.
 
-use anyhow::{Context, Error};
-use log::{debug, warn};
+use anyhow::{bail, Context, Error};
+use log::debug;
 use osutils::dependencies::Dependency;
 
 use trident_api::config::Services;
@@ -38,7 +38,12 @@ fn enable_service(ctx: &OsModifierContext, service: &str) -> Result<(), Error> {
 }
 
 fn disable_service(ctx: &OsModifierContext, service: &str) -> Result<(), Error> {
-    // Check if the service is enabled first
+    // Go uses `systemd.IsServiceEnabled` as an existence check before disabling.
+    // `systemctl is-enabled` returns:
+    //   enabled:  exit 0, stdout = "enabled"
+    //   disabled: exit 1, stdout = "disabled"
+    //   error:    exit 1, stdout = "" (e.g., service doesn't exist)
+    // Go errors on the third case; proceeds to disable for both enabled and disabled.
     let root = ctx.root.to_str().unwrap_or("/");
 
     let check = Dependency::Systemctl
@@ -48,8 +53,10 @@ fn disable_service(ctx: &OsModifierContext, service: &str) -> Result<(), Error> 
         .with_context(|| format!("Failed to check if service '{service}' is enabled"))?;
 
     if !check.success() {
-        warn!("Service '{service}' is not enabled, skipping disable");
-        return Ok(());
+        let stdout = String::from_utf8_lossy(&check.stdout);
+        if stdout.trim() != "disabled" {
+            bail!("Failed to check if service '{service}' is enabled (service may not exist)");
+        }
     }
 
     debug!("Disabling service '{service}'");

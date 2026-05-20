@@ -71,11 +71,18 @@ pub fn configure(ctx: &OsModifierContext, modules: &[Module]) -> Result<(), Erro
             }
             LoadMode::Inherit => {
                 debug!("Module '{}': inherit (update options only)", module.name);
-                // Only update options if module is not disabled
-                let is_disabled = disabled_lines
-                    .iter()
-                    .any(|l| l.trim() == format!("blacklist {}", module.name));
-                if !is_disabled && !module.options.is_empty() {
+                // Go errors if a disabled module has options in Inherit/Default mode.
+                if !module.options.is_empty() {
+                    let is_disabled = disabled_lines
+                        .iter()
+                        .any(|l| l.trim() == format!("blacklist {}", module.name));
+                    if is_disabled {
+                        bail!(
+                            "Module '{}' is disabled but has options set — \
+                             specify auto or always as loadMode to override setting in base image",
+                            module.name
+                        );
+                    }
                     update_options(&mut options_lines, &module.name, &module.options);
                 }
             }
@@ -110,14 +117,51 @@ fn update_options(
     module_name: &str,
     options: &std::collections::HashMap<String, String>,
 ) {
-    // Remove any existing options line for this module
     let prefix = format!("options {module_name} ");
-    lines.retain(|l| !l.starts_with(&prefix) && l.trim() != format!("options {module_name}"));
+    let bare = format!("options {module_name}");
 
-    // Build new options line
-    if !options.is_empty() {
-        let opts_str: Vec<String> = options.iter().map(|(k, v)| format!("{k}={v}")).collect();
-        lines.push(format!("options {module_name} {}", opts_str.join(" ")));
+    // Find and update existing options line, preserving options not in the new map.
+    // This matches Go's updateModulesOptions behavior.
+    let mut found = false;
+    for line in lines.iter_mut() {
+        if line.starts_with(&prefix) || line.trim() == bare {
+            found = true;
+            let fields: Vec<&str> = line.split_whitespace().collect();
+            let mut seen = std::collections::HashSet::new();
+            let mut new_line = format!("options {module_name}");
+
+            // Update existing option values, preserve options not in the new map.
+            for field in fields.iter().skip(2) {
+                if let Some((key, _)) = field.split_once('=') {
+                    if let Some(new_val) = options.get(key) {
+                        new_line.push_str(&format!(" {key}={new_val}"));
+                        seen.insert(key.to_string());
+                    } else {
+                        // Keep existing options as-is
+                        new_line.push_str(&format!(" {field}"));
+                    }
+                }
+            }
+
+            // Append new options not already in the line.
+            for (key, val) in options {
+                if !seen.contains(key.as_str()) {
+                    new_line.push_str(&format!(" {key}={val}"));
+                }
+            }
+
+            *line = new_line;
+            break;
+        }
+    }
+
+    // If no existing line, add a new one.
+    if !found && !options.is_empty() {
+        let mut new_line = format!("options {module_name}");
+        for (k, v) in options {
+            new_line.push_str(&format!(" {k}={v}"));
+        }
+        lines.push(new_line);
     }
 }
 
@@ -305,6 +349,75 @@ mod functional_test {
         assert!(
             disabled_conf.contains("blacklist br_netfilter"),
             "Disabled module should appear in blacklist"
+        );
+    }
+
+    #[functional_test(feature = "core", negative = true)]
+    fn test_configure_modules_inherit_disabled_with_options_fails() {
+        let tmp = tempdir().unwrap();
+        let ctx = make_ctx(&tmp);
+
+        // First disable the module
+        let disable = vec![Module {
+            name: "floppy".to_string(),
+            load_mode: LoadMode::Disable,
+            options: HashMap::new(),
+        }];
+        configure(&ctx, &disable).unwrap();
+
+        // Then try Inherit with options — should fail (matches Go behavior)
+        let mut opts = HashMap::new();
+        opts.insert("bad".to_string(), "option".to_string());
+
+        let inherit = vec![Module {
+            name: "floppy".to_string(),
+            load_mode: LoadMode::Inherit,
+            options: opts,
+        }];
+
+        let result = configure(&ctx, &inherit);
+        assert!(
+            result.is_err(),
+            "Inherit mode with options on a disabled module should fail"
+        );
+    }
+
+    #[functional_test(feature = "core")]
+    fn test_configure_modules_options_preserve_existing() {
+        let tmp = tempdir().unwrap();
+        let ctx = make_ctx(&tmp);
+
+        // First set with option A
+        let mut opts1 = HashMap::new();
+        opts1.insert("opt_a".to_string(), "1".to_string());
+
+        let modules1 = vec![Module {
+            name: "testmod".to_string(),
+            load_mode: LoadMode::Always,
+            options: opts1,
+        }];
+        configure(&ctx, &modules1).unwrap();
+
+        // Then update with option B only — option A should be preserved
+        let mut opts2 = HashMap::new();
+        opts2.insert("opt_b".to_string(), "2".to_string());
+
+        let modules2 = vec![Module {
+            name: "testmod".to_string(),
+            load_mode: LoadMode::Always,
+            options: opts2,
+        }];
+        configure(&ctx, &modules2).unwrap();
+
+        let options_conf =
+            fs::read_to_string(tmp.path().join("etc/modprobe.d/module-options.conf")).unwrap();
+        assert!(
+            options_conf.contains("opt_a=1"),
+            "Existing option should be preserved, got: {options_conf}"
+        );
+        assert!(
+            options_conf.contains("opt_b=2"),
+            "New option should be added, got: {options_conf}"
         );
     }
 }
