@@ -10,7 +10,6 @@ description = "OS modifier library - applies OS configuration changes (users, ho
 anyhow = { workspace = true }
 inventory = { workspace = true }
 log = { workspace = true }
-regex = { workspace = true }
 serde = { workspace = true }
 serde_yaml = { workspace = true }
 tempfile = { workspace = true }
