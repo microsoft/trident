@@ -17,6 +17,7 @@ def update_trident_host_config(
     interface_mac: Optional[str] = None,
     network_gateway: Optional[str] = None,
     use_dhcp: bool = False,
+    https_proxy: Optional[str] = None,
 ):
     logging.info("Updating Host Configuration section of trident.yaml")
     os = host_configuration.setdefault("os", {})
@@ -52,16 +53,42 @@ def update_trident_host_config(
     if wait_online_service not in enable_services:
         enable_services.append(wait_online_service)
 
-    # Add an override for the trident service to wait for the network
-    # interface to be online before starting.
-    os.setdefault("additionalFiles", []).append(
+    # Build the override content for the trident systemd services.
+    # trident.service is the boot-time commit oneshot; tridentd.service is
+    # the socket-activated daemon that handles gRPC requests (including A/B
+    # updates that pull from OCI registries).
+    #
+    # The boot service needs a [Unit] dependency on the network-wait service.
+    # Both services get HTTPS_PROXY when a proxy is configured so that any
+    # future network operations work regardless of which unit performs them.
+
+    boot_override = (
+        "[Unit]\n" f"Requires={wait_online_service}\n" f"After={wait_online_service}\n"
+    )
+    daemon_override = ""
+
+    if https_proxy:
+        # Escape '%' as '%%' for systemd unit files (percent is a specifier prefix).
+        escaped_proxy = https_proxy.replace("%", "%%")
+        proxy_section = f'\n[Service]\nEnvironment="HTTPS_PROXY={escaped_proxy}"\n'
+        boot_override += proxy_section
+        daemon_override = f'[Service]\nEnvironment="HTTPS_PROXY={escaped_proxy}"\n'
+
+    additional_files = os.setdefault("additionalFiles", [])
+    additional_files.append(
         {
             "destination": "/etc/systemd/system/trident.service.d/override.conf",
-            "content": "[Unit]\n"
-            f"Requires={wait_online_service}\n"
-            f"After={wait_online_service}\n",
+            "content": boot_override,
         }
     )
+
+    if daemon_override:
+        additional_files.append(
+            {
+                "destination": "/etc/systemd/system/tridentd.service.d/override.conf",
+                "content": daemon_override,
+            }
+        )
 
     logging.info("Updating os disks device in trident.yaml")
     disks = host_configuration.get("storage").get("disks")
@@ -169,6 +196,11 @@ def main():
     )
     parser.add_argument("--use-dhcp", default=False, help="Configure DHCP.")
     parser.add_argument(
+        "--https-proxy",
+        default=None,
+        help="HTTPS proxy URL to inject into the trident systemd service environment.",
+    )
+    parser.add_argument(
         "-o",
         "--output",
         default=None,
@@ -190,6 +222,7 @@ def main():
         interface_mac=args.oam_mac,
         network_gateway=args.oam_gateway,
         use_dhcp=args.use_dhcp,
+        https_proxy=args.https_proxy,
     )
 
     output_path = args.output or args.trident_yaml

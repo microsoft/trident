@@ -25,6 +25,27 @@ fn run_trident(
     // Log version ASAP
     info!("Trident version: {}", trident::TRIDENT_VERSION);
 
+    // Log proxy environment for diagnostics (helps debug baremetal proxy issues)
+    let proxy_status = |var: &str| -> &'static str {
+        let lower = var.to_lowercase();
+        if std::env::var(var)
+            .or_else(|_| std::env::var(&lower))
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .is_some()
+        {
+            "<set>"
+        } else {
+            "<unset>"
+        }
+    };
+    info!(
+        "Proxy env: HTTPS_PROXY={}, HTTP_PROXY={}, NO_PROXY={}",
+        proxy_status("HTTPS_PROXY"),
+        proxy_status("HTTP_PROXY"),
+        proxy_status("NO_PROXY"),
+    );
+
     // Catch exit fast commands
     match &args.command {
         Commands::Validate { config } => {

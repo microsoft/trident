@@ -211,7 +211,8 @@ stages:
                     --oam-ip "$(baremetal_controller.oam_ip)" \
                     --oam-gateway "$(baremetal_controller.oam_gateway)" \
                     --interface-name "$(baremetal_controller.oam_interface)" \
-                    --oam-mac "$(baremetal_controller.oam_mac)"
+                    --oam-mac "$(baremetal_controller.oam_mac)" \
+                    --https-proxy "$(baremetal_controller.https_proxy)"
               cat $(TRIDENT_SOURCE_DIR)/$(TRIDENT_CONFIG_FILE)
             env:
               SYSTEM_ACCESSTOKEN: $(System.AccessToken)
@@ -221,14 +222,18 @@ stages:
           - bash: |
               set -eux
 
+              # Escape '%' as '%%' for systemd unit specifiers (proxy URLs may contain percent-encoded chars)
+              HTTPS_PROXY_RAW="$(baremetal_controller.https_proxy)"
+              ESCAPED_PROXY="${HTTPS_PROXY_RAW//\%/%%}"
+
               SERVICE_OVERRIDE=""
               if [ "${{ parameters.runtimeEnv }}" == "host" ]; then 
                 SERVICE_OVERRIDE="[Service]
-                  Environment=\"HTTPS_PROXY=$(baremetal_controller.https_proxy)\""
+                  Environment=\"HTTPS_PROXY=${ESCAPED_PROXY}\""
               else
                 # When running containerized Trident, we must directly embed the proxy in the docker command
                 SERVICE_OVERRIDE="[Service]
-                  Environment=\"HTTPS_PROXY=$(baremetal_controller.https_proxy)\"
+                  Environment=\"HTTPS_PROXY=${ESCAPED_PROXY}\"
                   ExecStart=
                   ExecStart=docker run \\
                     --env HTTPS_PROXY \\
