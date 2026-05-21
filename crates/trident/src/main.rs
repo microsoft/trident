@@ -26,38 +26,24 @@ fn run_trident(
     info!("Trident version: {}", trident::TRIDENT_VERSION);
 
     // Log proxy environment for diagnostics (helps debug baremetal proxy issues)
+    let proxy_status = |var: &str| -> &'static str {
+        let lower = var.to_lowercase();
+        if std::env::var(var)
+            .or_else(|_| std::env::var(&lower))
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .is_some()
+        {
+            "<set>"
+        } else {
+            "<unset>"
+        }
+    };
     info!(
         "Proxy env: HTTPS_PROXY={}, HTTP_PROXY={}, NO_PROXY={}",
-        if std::env::var("HTTPS_PROXY")
-            .or_else(|_| std::env::var("https_proxy"))
-            .ok()
-            .filter(|v| !v.trim().is_empty())
-            .is_some()
-        {
-            "<set>"
-        } else {
-            "<unset>"
-        },
-        if std::env::var("HTTP_PROXY")
-            .or_else(|_| std::env::var("http_proxy"))
-            .ok()
-            .filter(|v| !v.trim().is_empty())
-            .is_some()
-        {
-            "<set>"
-        } else {
-            "<unset>"
-        },
-        if std::env::var("NO_PROXY")
-            .or_else(|_| std::env::var("no_proxy"))
-            .ok()
-            .filter(|v| !v.trim().is_empty())
-            .is_some()
-        {
-            "<set>"
-        } else {
-            "<unset>"
-        },
+        proxy_status("HTTPS_PROXY"),
+        proxy_status("HTTP_PROXY"),
+        proxy_status("NO_PROXY"),
     );
 
     // Catch exit fast commands
