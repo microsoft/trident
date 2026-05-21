@@ -165,7 +165,7 @@ mod functional_test {
             root: tmp.path().to_path_buf(),
         };
 
-        // Disable without enabling first — should succeed (warn and skip)
+        // Disable without enabling first — should succeed (idempotent)
         let services = Services {
             enable: vec![],
             disable: vec!["test-osmodifier.service".to_string()],
