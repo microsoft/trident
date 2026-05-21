@@ -327,8 +327,10 @@ fn set_password_expiry(ctx: &OsModifierContext, username: &str, days: u64) -> Re
                     }
                 };
 
-                // Set account expiration date (field 7) = lastChange + days
-                // This matches Go's Chage() which writes to the expiration field.
+                // Set account expiration date (field 7) = lastChange + days.
+                // Note: Go's Chage() comment says "chage -M" (max password age, field 4)
+                // but actually writes to the expiration field (field 7). We match Go's
+                // actual behavior, not its misleading comment. See installutils.go:643.
                 new_fields[EXPIRATION_FIELD] = (last_change + days as i64).to_string();
                 new_fields.join(":")
             } else {
