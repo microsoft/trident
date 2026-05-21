@@ -410,7 +410,7 @@ fn set_startup_command(ctx: &OsModifierContext, username: &str, cmd: &str) -> Re
     if cmd.contains(':') {
         bail!("Startup command for user '{username}' contains ':' which would corrupt /etc/passwd");
     }
-    if cmd.contains('\n') {
+    if cmd.contains('\n') || cmd.contains('\r') {
         bail!("Startup command for user '{username}' contains a newline");
     }
 
