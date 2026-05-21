@@ -241,8 +241,9 @@ stages:
             # Run CodeQL for this in CI only
             runCodeql: true
 
-  # dom0 is failing for not known reasons ... comment out for now to unblock, longterm this may
-  # be removed from Trident pipelines alltogether in favor of being only test-images
+  # dom0 is failing for not known reasons ... comment out for now to unblock.
+  # If this stage is re-enabled later, update the disabled template first to finish
+  # the migration away from the old test-images repository references.
   # - ${{ if or(eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e')) }}:
   #   # Build Trident test image (dom0: mshv+ch)
   #   - template: stages/build_image/trident-mshvch-dom0-testimg.yml

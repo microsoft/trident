@@ -1,5 +1,8 @@
+# Add the necessary directories for the audit logs so that auditd can start
+mkdir -p /var/log/audit
+
 # Use more intuitive path for the ISO mount
-ln -s /run/initramfs/live /trident_cdrom
+ln -s -T /run/initramfs/live /trident_cdrom
 
 # Load the config from the CDROM so that the user can patch it
 if [ ! -d /etc/trident ]; then
@@ -7,7 +10,12 @@ if [ ! -d /etc/trident ]; then
 fi
 
 if [ "$1" != "stream-image-test" ]; then
-    ln -s /trident_cdrom/trident-config.yaml /etc/trident/config.yaml
+    ln -s -T /trident_cdrom/trident-config.yaml /etc/trident/config.yaml
+
+    if [ ! -d /etc/systemd/system/trident-install.service.d ]; then
+        mkdir -p /etc/systemd/system/trident-install.service.d
+    fi
+    ln -s -T /trident_cdrom/trident-override.conf /etc/systemd/system/trident-install.service.d/override.conf
 else
     # The stream image test purposefully does not have /etc/trident/config.yaml, so remove
     # this condition from the systemd service to avoid it failing to start
@@ -20,4 +28,4 @@ if [ ! -d /etc/rcp-agent ]; then
 fi
 
 # Link rcp-agent config from the ISO
-ln -s /trident_cdrom/rcp-agent.yaml /etc/rcp-agent/config.yaml
+ln -s -T /trident_cdrom/rcp-agent.yaml /etc/rcp-agent/config.yaml

@@ -1,4 +1,3 @@
-# TODO: Migrate test images to Trident repository and build them locally #16117
 parameters:
   - name: tridentSourceDirectory
     type: string
@@ -69,7 +68,9 @@ steps:
       set -eux
 
       if which tdnf; then
-        sudo tdnf install -y veritysetup
+        # nss-tools provides certutil while pesign provides efikeygen & pesign,
+        # which are required for producing a signed image to enable SecureBoot
+        sudo tdnf install -y veritysetup nss-tools pesign
         sudo systemctl start docker
       else
         # Ubuntu is used for building and testing of VM images suitable for
@@ -140,8 +141,8 @@ steps:
 
       # Move Trident RPMs to bin/RPMS/ (builder expects bin/RPMS/*.rpm)
       if [ -d "$(Build.ArtifactStagingDirectory)/trident" ]; then
-        mkdir -p bin/RPMS/x86_64
-        mv "$(Build.ArtifactStagingDirectory)/trident"/*.rpm bin/RPMS/x86_64/
+        mkdir -p bin/RPMS
+        find "$(Build.ArtifactStagingDirectory)/trident" -name '*.rpm' -exec mv {} bin/RPMS/ \;
         rm -rf "$(Build.ArtifactStagingDirectory)/trident"
       fi
     displayName: "Prepare and move requirements"

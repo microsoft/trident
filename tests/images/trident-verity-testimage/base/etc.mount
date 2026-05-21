@@ -1,0 +1,10 @@
+[Unit]
+Description=/etc Overlay Mount
+DefaultDependencies=no
+Conflicts=shutdown.target
+
+[Mount]
+What=overlay
+Where=/etc
+Type=overlay
+Options=lowerdir=/etc,upperdir=/var/lib/trident-overlay/etc/upper,workdir=/var/lib/trident-overlay/etc/work,rw

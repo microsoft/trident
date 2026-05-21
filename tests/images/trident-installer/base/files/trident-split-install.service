@@ -1,0 +1,13 @@
+[Unit]
+Description=Trident Install Service
+After=network.target network-online.target systemd-udev-settle.service
+
+[Service]
+ExecStart=echo stage
+ExecStart=trident install --verbosity DEBUG --allowed-operations stage
+ExecStart=echo finalize
+ExecStart=trident install --verbosity DEBUG --allowed-operations finalize
+Type=oneshot
+
+[Install]
+WantedBy=multi-user.target

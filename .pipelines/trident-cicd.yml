@@ -40,11 +40,6 @@ resources:
       name: platform-pipelines
       ref: refs/heads/main
 
-    - repository: test-images
-      type: git
-      name: test-images
-      ref: refs/heads/main
-
     - repository: platform-telemetry
       name: platform-telemetry
       type: git
