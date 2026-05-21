@@ -29,8 +29,7 @@ fn add_or_update_user(ctx: &OsModifierContext, user: &MICUser) -> Result<(), Err
         Some(pwd) => match pwd.password_type {
             PasswordType::PlainText => Some(hash_password(&pwd.value)?),
             PasswordType::Hashed => {
-                validate_shadow_value(&pwd.value)
-                    .context("Invalid hashed password value")?;
+                validate_shadow_value(&pwd.value).context("Invalid hashed password value")?;
                 Some(pwd.value.clone())
             }
             PasswordType::Locked => None,
