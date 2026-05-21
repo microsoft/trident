@@ -28,7 +28,11 @@ fn add_or_update_user(ctx: &OsModifierContext, user: &MICUser) -> Result<(), Err
     let hashed_password = match &user.password {
         Some(pwd) => match pwd.password_type {
             PasswordType::PlainText => Some(hash_password(&pwd.value)?),
-            PasswordType::Hashed => Some(pwd.value.clone()),
+            PasswordType::Hashed => {
+                validate_shadow_value(&pwd.value)
+                    .context("Invalid hashed password value")?;
+                Some(pwd.value.clone())
+            }
             PasswordType::Locked => None,
         },
         None => None,
@@ -110,6 +114,18 @@ fn check_user_exists(username: &str) -> Result<bool, Error> {
         .with_context(|| format!("Failed to check if user '{username}' exists"))?;
 
     Ok(output.success())
+}
+
+/// Validate that a value is safe to write into /etc/shadow or pass to chpasswd.
+/// Colons would corrupt the colon-delimited format; newlines would break line parsing.
+fn validate_shadow_value(value: &str) -> Result<(), Error> {
+    if value.contains(':') {
+        bail!("Value contains ':' which would corrupt /etc/shadow format");
+    }
+    if value.contains('\n') || value.contains('\r') {
+        bail!("Value contains newline which would corrupt /etc/shadow format");
+    }
+    Ok(())
 }
 
 fn hash_password(plaintext: &str) -> Result<String, Error> {
@@ -377,9 +393,11 @@ fn get_home_dir(ctx: &OsModifierContext, username: &str) -> Result<std::path::Pa
 fn set_ownership(_ctx: &OsModifierContext, username: &str, path: &Path) -> Result<(), Error> {
     let path_str = path.to_str().context("Failed to convert path to string")?;
 
+    // Use "username:" (trailing colon, no group) so chown sets the group to
+    // the user's login group rather than assuming a same-named group exists.
     Dependency::Chown
         .cmd()
-        .args([&format!("{username}:{username}"), path_str])
+        .args([&format!("{username}:"), path_str])
         .run_and_check()
         .with_context(|| format!("Failed to chown '{}'", path.display()))?;
 

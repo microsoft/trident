@@ -25,9 +25,9 @@ pub fn configure(ctx: &OsModifierContext, modules: &[Module]) -> Result<(), Erro
     let disabled_path = ctx.path(MODPROBE_DISABLED_CONF);
     let options_path = ctx.path(MODPROBE_OPTIONS_CONF);
 
-    let mut load_lines = read_config_lines(ctx, MODULES_LOAD_CONF);
-    let mut disabled_lines = read_config_lines(ctx, MODPROBE_DISABLED_CONF);
-    let mut options_lines = read_config_lines(ctx, MODPROBE_OPTIONS_CONF);
+    let mut load_lines = read_config_lines(ctx, MODULES_LOAD_CONF)?;
+    let mut disabled_lines = read_config_lines(ctx, MODPROBE_DISABLED_CONF)?;
+    let mut options_lines = read_config_lines(ctx, MODPROBE_OPTIONS_CONF)?;
 
     for module in modules {
         match module.load_mode {
@@ -100,11 +100,13 @@ pub fn configure(ctx: &OsModifierContext, modules: &[Module]) -> Result<(), Erro
     Ok(())
 }
 
-fn read_config_lines(ctx: &OsModifierContext, path: &str) -> Vec<String> {
+fn read_config_lines(ctx: &OsModifierContext, path: &str) -> Result<Vec<String>, Error> {
     let full = ctx.path(path);
-    fs::read_to_string(&full)
-        .map(|s| s.lines().map(String::from).collect())
-        .unwrap_or_default()
+    match fs::read_to_string(&full) {
+        Ok(s) => Ok(s.lines().map(String::from).collect()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(e) => Err(e).with_context(|| format!("Failed to read '{}'", full.display())),
+    }
 }
 
 fn remove_blacklist(lines: &mut Vec<String>, module_name: &str) {
