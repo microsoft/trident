@@ -74,7 +74,7 @@ Suggests:       ntfs-3g
 # For creating NTFS filesystems
 Suggests:       ntfsprogs
 # For GRUB boot configuration (os.kernelCommandLine, boot config)
-Suggests:       grub2
+Suggests:       grub2-tools
 
 
 %description
