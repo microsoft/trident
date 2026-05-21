@@ -239,21 +239,21 @@ The following table lists the expected mount points for each partition type, as
 defined in the [Discoverable Partition Specification
 (DPS)](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/):
 
-| Mount Path    | Valid Mount Paths                |
-| ------------- | -------------------------------- |
-| esp           | `/boot` or `/efi` or `/boot/efi` |
-| root          | `/`                              |
-| swap          | None                             |
-| root-verity   | None                             |
-| home          | `/home`                          |
-| var           | `/var`                           |
-| usr           | `/usr`                           |
-| usr-verity    | None                             |
-| tmp           | `/var/tmp`                       |
-| linux-generic | Any path                         |
-| srv           | `/srv`                           |
-| xbootldr      | `/boot`                          |
-| unknown       | Any path                         |
+| Mount Path                                    | Valid Mount Paths                |
+| --------------------------------------------- | -------------------------------- |
+| esp                                           | `/boot` or `/efi` or `/boot/efi` |
+| root                                          | `/`                              |
+| swap                                          | None                             |
+| root-verity                                   | None                             |
+| home                                          | `/home`                          |
+| var                                           | `/var`                           |
+| usr                                           | `/usr`                           |
+| usr-verity                                    | None                             |
+| tmp                                           | `/var/tmp`                       |
+| linux-generic                                 | Any path                         |
+| srv                                           | `/srv`                           |
+| xbootldr                                      | `/boot`                          |
+| unknown(00000000-0000-0000-0000-000000000000) | Any path                         |
 
 ## Partition Type Matching Hash Partition
 
