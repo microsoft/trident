@@ -75,12 +75,16 @@ pub fn update_grub_cmdline(
     mode: &SelinuxMode,
 ) -> Result<(), Error> {
     let new_args = match mode {
-        SelinuxMode::Enforcing => vec!["selinux=1".to_string(), "enforcing=1".to_string()],
-        SelinuxMode::Permissive => vec!["selinux=1".to_string(), "enforcing=0".to_string()],
+        SelinuxMode::Enforcing => vec!["security=selinux".to_string(), "selinux=1".to_string()],
+        SelinuxMode::Permissive => vec![
+            "security=selinux".to_string(),
+            "selinux=1".to_string(),
+            "enforcing=0".to_string(),
+        ],
         SelinuxMode::Disabled => vec!["selinux=0".to_string()],
     };
 
-    default_grub.update_cmdline_args(&["selinux", "enforcing"], &new_args)
+    default_grub.update_cmdline_args(&["security", "selinux", "enforcing"], &new_args)
 }
 
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
@@ -173,12 +177,16 @@ mod functional_test {
 
         let content = fs::read_to_string(etc.join("grub")).unwrap();
         assert!(
+            content.contains("security=selinux"),
+            "Expected security=selinux in grub, got: {content}"
+        );
+        assert!(
             content.contains("selinux=1"),
             "Expected selinux=1 in grub, got: {content}"
         );
         assert!(
-            content.contains("enforcing=1"),
-            "Expected enforcing=1 in grub, got: {content}"
+            !content.contains("enforcing=1"),
+            "Enforcing mode should NOT add enforcing=1 (matches Go Enforcing, not ForceEnforcing)"
         );
         assert!(
             !content.contains("selinux=0"),

@@ -94,7 +94,7 @@ fn add_or_update_user(ctx: &OsModifierContext, user: &MICUser) -> Result<(), Err
 
     // SSH keys
     if !user.ssh_public_keys.is_empty() {
-        write_ssh_keys(ctx, &user.name, &user.ssh_public_keys)?;
+        write_ssh_keys(ctx, &user.name, &user.ssh_public_keys, user_exists)?;
     }
 
     // Startup command
@@ -273,31 +273,73 @@ fn lock_user_password(ctx: &OsModifierContext, username: &str) -> Result<(), Err
 
 fn set_password_expiry(ctx: &OsModifierContext, username: &str, days: u64) -> Result<(), Error> {
     debug!("Setting password expiry for '{username}' to {days} days");
+
+    // Validate range matching Go's PasswordExpiresDaysIsValid (upper bound only;
+    // trident's API uses u64 so -1 "never expires" is not reachable here).
+    const UPPER_BOUND: u64 = 99999;
+    if days > UPPER_BOUND {
+        bail!("invalid value for password_expires_days ({days}), must be <= {UPPER_BOUND}");
+    }
+
     let shadow_path = ctx.path("/etc/shadow");
 
     let content = fs::read_to_string(&shadow_path)
         .with_context(|| format!("Failed to read '{}'", shadow_path.display()))?;
 
+    // Shadow field indices (0-based):
+    // 0=login, 1=password, 2=lastChange, 3=minAge, 4=maxAge,
+    // 5=warnPeriod, 6=inactivity, 7=expiration, 8=reserved
+    const TOTAL_FIELDS: usize = 9;
+    const LAST_CHANGE_FIELD: usize = 2;
+    const EXPIRATION_FIELD: usize = 7;
+
     let mut found = false;
+    let mut parse_err: Option<String> = None;
     let updated: Vec<String> = content
         .lines()
         .map(|line| {
             let fields: Vec<&str> = line.split(':').collect();
-            if fields.len() >= 2 && fields[0] == username {
+            if !fields.is_empty() && fields[0] == username {
+                if fields.len() != TOTAL_FIELDS {
+                    parse_err = Some(format!(
+                        "invalid shadow entry for user '{}': expected {} fields, found {}",
+                        username,
+                        TOTAL_FIELDS,
+                        fields.len()
+                    ));
+                    return line.to_string();
+                }
                 found = true;
                 let mut new_fields: Vec<String> = fields.iter().map(|f| f.to_string()).collect();
-                // Shadow fields: login:password:lastChange:minAge:maxAge:warn:inactive:expire:reserved
-                // Field index 4 (0-based) is the maximum password age.
-                while new_fields.len() < 5 {
-                    new_fields.push(String::new());
+
+                // Ensure lastChange field is populated
+                if new_fields[LAST_CHANGE_FIELD].is_empty() {
+                    new_fields[LAST_CHANGE_FIELD] = days_since_unix_epoch().to_string();
                 }
-                new_fields[4] = days.to_string();
+                let last_change: i64 = match new_fields[LAST_CHANGE_FIELD].parse() {
+                    Ok(v) => v,
+                    Err(_) => {
+                        parse_err = Some(format!(
+                            "failed to parse lastChange field '{}' for user '{username}'",
+                            new_fields[LAST_CHANGE_FIELD]
+                        ));
+                        return line.to_string();
+                    }
+                };
+
+                // Set account expiration date (field 7) = lastChange + days
+                // This matches Go's Chage() which writes to the expiration field.
+                new_fields[EXPIRATION_FIELD] = (last_change + days as i64).to_string();
                 new_fields.join(":")
             } else {
                 line.to_string()
             }
         })
         .collect();
+
+    if let Some(err) = parse_err {
+        bail!("{err}");
+    }
 
     if !found {
         bail!("User '{username}' not found in shadow file for password expiry");
@@ -309,6 +351,16 @@ fn set_password_expiry(ctx: &OsModifierContext, username: &str, days: u64) -> Re
     }
 
     atomic_write_file(&shadow_path, &result)
+}
+
+/// Return the number of days since the Unix epoch (1970-01-01).
+fn days_since_unix_epoch() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    secs / 86400
 }
 
 fn set_primary_group(username: &str, group: &str) -> Result<(), Error> {
@@ -334,7 +386,12 @@ fn set_secondary_groups(username: &str, groups: &[String]) -> Result<(), Error> 
     Ok(())
 }
 
-fn write_ssh_keys(ctx: &OsModifierContext, username: &str, keys: &[String]) -> Result<(), Error> {
+fn write_ssh_keys(
+    ctx: &OsModifierContext,
+    username: &str,
+    keys: &[String],
+    include_existing: bool,
+) -> Result<(), Error> {
     // Determine home directory
     let home = get_home_dir(ctx, username)?;
     let ssh_dir = home.join(".ssh");
@@ -354,8 +411,32 @@ fn write_ssh_keys(ctx: &OsModifierContext, username: &str, keys: &[String]) -> R
     fs::set_permissions(&ssh_dir, fs::Permissions::from_mode(0o700))
         .with_context(|| format!("Failed to set permissions on '{}'", ssh_dir.display()))?;
 
+    // For existing users, preserve existing authorized_keys (matching Go's
+    // ProvisionUserSSHCerts which passes userExists as includeExistingKeys).
+    let mut all_keys: Vec<String> = Vec::new();
+    if include_existing {
+        match fs::read_to_string(&auth_keys_path) {
+            Ok(existing) => {
+                for line in existing.lines() {
+                    if !line.is_empty() {
+                        all_keys.push(line.to_string());
+                    }
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // No existing keys — that's fine
+            }
+            Err(e) => {
+                return Err(e)
+                    .with_context(|| format!("Failed to read '{}'", auth_keys_path.display()));
+            }
+        }
+    }
+
+    all_keys.extend(keys.iter().cloned());
+
     // Write authorized_keys
-    let content = keys.join("\n") + "\n";
+    let content = all_keys.join("\n") + "\n";
     fs::write(&auth_keys_path, &content)
         .with_context(|| format!("Failed to write '{}'", auth_keys_path.display()))?;
 

@@ -112,10 +112,23 @@ impl DefaultGrub {
         Ok(())
     }
 
-    /// Add extra command line arguments to GRUB_CMDLINE_LINUX, skipping
-    /// any that are already present (idempotent).
+    /// Add extra command line arguments to GRUB_CMDLINE_LINUX_DEFAULT.
+    ///
+    /// Appends args to the `_DEFAULT` variable (not `GRUB_CMDLINE_LINUX`) so
+    /// they apply only to the default boot entry, not recovery entries.
+    /// This matches Go's `addExtraCommandLineToDefaultGrubFile` behavior.
+    ///
+    /// Args are appended without dedup, matching Go's text-insert approach.
+    /// GRUB evaluates later args after earlier ones, so intentional overrides
+    /// (e.g., an extra `foo=new` overriding an existing `foo=old`) work.
     pub fn add_extra_cmdline(&mut self, extra: &[String]) {
-        let current = self.get_variable("GRUB_CMDLINE_LINUX").unwrap_or_default();
+        if extra.is_empty() {
+            return;
+        }
+
+        let current = self
+            .get_variable("GRUB_CMDLINE_LINUX_DEFAULT")
+            .unwrap_or_default();
 
         let mut args: Vec<String> = if current.is_empty() {
             Vec::new()
@@ -123,16 +136,10 @@ impl DefaultGrub {
             current.split_whitespace().map(String::from).collect()
         };
 
-        for item in extra {
-            let key = item.split('=').next().unwrap_or(item);
-            // Skip if an arg with the same key already exists
-            if !args.iter().any(|a| a.split('=').next().unwrap_or(a) == key) {
-                args.push(item.clone());
-            }
-        }
+        args.extend(extra.iter().cloned());
 
         let new_value = args.join(" ");
-        self.set_variable("GRUB_CMDLINE_LINUX", &new_value);
+        self.set_variable("GRUB_CMDLINE_LINUX_DEFAULT", &new_value);
     }
 }
 
@@ -256,27 +263,48 @@ mod tests {
 
         grub.add_extra_cmdline(&["console=tty0".to_string(), "loglevel=3".to_string()]);
 
-        let result = grub.get_variable("GRUB_CMDLINE_LINUX").unwrap();
-        assert!(result.contains("quiet"));
+        // Should write to GRUB_CMDLINE_LINUX_DEFAULT, not GRUB_CMDLINE_LINUX
+        let result = grub.get_variable("GRUB_CMDLINE_LINUX_DEFAULT").unwrap();
         assert!(result.contains("console=tty0"));
         assert!(result.contains("loglevel=3"));
+        // GRUB_CMDLINE_LINUX should be unchanged
+        assert_eq!(
+            grub.get_variable("GRUB_CMDLINE_LINUX"),
+            Some("quiet".to_string())
+        );
     }
 
     #[test]
-    fn test_add_extra_cmdline_idempotent() {
+    fn test_add_extra_cmdline_appends_to_existing_default() {
         let mut grub = DefaultGrub {
-            lines: vec![r#"GRUB_CMDLINE_LINUX="quiet selinux=1""#.to_string()],
+            lines: vec![
+                r#"GRUB_CMDLINE_LINUX="quiet""#.to_string(),
+                r#"GRUB_CMDLINE_LINUX_DEFAULT="rd.auto=1""#.to_string(),
+            ],
             path: PathBuf::from("/etc/default/grub"),
         };
 
-        // Adding selinux again should be skipped (same key)
+        grub.add_extra_cmdline(&["console=tty0".to_string()]);
+
+        let result = grub.get_variable("GRUB_CMDLINE_LINUX_DEFAULT").unwrap();
+        assert!(result.contains("rd.auto=1"), "Existing args preserved");
+        assert!(result.contains("console=tty0"), "New arg appended");
+    }
+
+    #[test]
+    fn test_add_extra_cmdline_no_dedup() {
+        // Go does not dedup — intentional overrides must be allowed
+        let mut grub = DefaultGrub {
+            lines: vec![r#"GRUB_CMDLINE_LINUX_DEFAULT="selinux=1""#.to_string()],
+            path: PathBuf::from("/etc/default/grub"),
+        };
+
         grub.add_extra_cmdline(&["selinux=0".to_string()]);
 
-        let result = grub.get_variable("GRUB_CMDLINE_LINUX").unwrap();
-        assert!(result.contains("selinux=1"), "Original should be kept");
+        let result = grub.get_variable("GRUB_CMDLINE_LINUX_DEFAULT").unwrap();
         assert!(
-            !result.contains("selinux=0"),
-            "Duplicate key should be skipped"
+            result.contains("selinux=0"),
+            "Override arg should be appended"
         );
     }
 
@@ -289,7 +317,7 @@ mod tests {
 
         grub.add_extra_cmdline(&["console=tty0".to_string()]);
 
-        let result = grub.get_variable("GRUB_CMDLINE_LINUX").unwrap();
+        let result = grub.get_variable("GRUB_CMDLINE_LINUX_DEFAULT").unwrap();
         assert_eq!(result, "console=tty0");
     }
 
