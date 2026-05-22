@@ -78,14 +78,22 @@ make bin/rcp-agent       # Remote control plane agent
 make artifacts/osmodifier
 ```
 
-### 4. Download Base Image
+### 4. Generate SSH Keys
+
+Several scenarios require an SSH key pair in `artifacts/`:
+
+```bash
+make artifacts/id_rsa
+```
+
+### 5. Download Base Image
 
 ```bash
 # Downloads baremetal.vhdx from MCR
 ./tests/images/testimages.py download-image baremetal
 ```
 
-### 5. Build COSI Images
+### 6. Build COSI Images
 
 Build the test COSI images that Trident will install/update:
 
@@ -100,7 +108,7 @@ sudo ./tests/images/testimages.py build trident-verity-testimage --output-dir ./
 The images use the Image Customizer container from
 `mcr.microsoft.com/azurelinux/imagecustomizer:latest`.
 
-### 6. Build the Installer ISO
+### 7. Build the Installer ISO
 
 The management OS ISO is used by `netlaunch` to boot the VM and run Trident:
 
@@ -109,6 +117,14 @@ make bin/trident-mos.iso
 ```
 
 This builds an Azure Linux ISO with Trident and its dependencies baked in.
+
+### 8. Build Trident RPMs (for VM-based scenarios)
+
+The servicing and rollback scenarios require Trident RPMs baked into VM images:
+
+```bash
+make bin/trident-rpms.tar.gz
+```
 
 ## Running a Clean Install with netlaunch
 
@@ -199,7 +215,7 @@ bin/storm-trident helper rebuild-raid --ssh-host <VM_IP> ...
 
 Run `bin/storm-trident helper --help` to see all available helpers.
 
-## Running E2E Validation Tests
+## Running E2E Validation Tests (pytest)
 
 After an install or update, validate the host state with the pytest suite:
 
@@ -234,14 +250,195 @@ Available configurations include: `simple`, `base`, `combined`,
 The full matrix of which configurations run in which pipeline tier is defined in
 `tests/e2e_tests/target-configurations.yaml`.
 
-## Running a Full E2E Scenario with storm-trident
+## E2E Scenarios with storm-trident
 
 For automated multi-step scenarios (install → update → validate → rollback),
-use storm-trident's scenario mode. The scenarios are defined in
-`tools/storm/e2e/` and are what the CI pipelines run:
+use storm-trident's scenario mode. All E2E scenarios use the Storm framework and
+share the same underlying code.
+
+### Listing Scenarios
 
 ```bash
-bin/storm-trident scenario <scenario-name> [flags]
+# List all E2E scenarios
+bin/storm-trident list scenarios -t e2e
+
+# Filter by hardware and runtime
+bin/storm-trident list scenarios -t e2e -t vm        # VM scenarios only
+bin/storm-trident list scenarios -t e2e -t container  # Container runtime only
 ```
 
-Run `bin/storm-trident scenario --help` to see available scenarios.
+### Scenario Naming
+
+All E2E scenarios follow the naming convention:
+
+```
+<config>_<hardware>-<runtime>
+```
+
+Where:
+- `<config>` is the name of the host config (e.g., `base`, `simple`,
+  `usrverity`).
+- `<hardware>` is either `vm` (virtual machine) or `bm` (bare metal).
+- `<runtime>` is either `host` (runs directly on the host) or `container`
+  (runs inside a container).
+
+For example: `base_vm-host`, `combined_vm-container`.
+
+### Running a Scenario
+
+```bash
+bin/storm-trident run <scenario-name> -- <parameters>
+```
+
+To see available parameters for any scenario:
+
+```bash
+bin/storm-trident run <scenario-name> -- --help
+```
+
+Common parameters:
+
+| Flag | Description |
+|------|-------------|
+| `--iso` | Path to the installer ISO |
+| `-i, --test-image-dir` | Directory containing test COSI images (default: `./artifacts/test-image`) |
+| `--logstream-file` | File to write logstream to (default: `logstream-full.log`) |
+| `--tracestream-file` | File to write tracestream to |
+| `--signing-cert` | Path to certificate for VM EFI variables |
+| `--dump-ssh-key` | Dump SSH private key to a file for debugging |
+| `--vm-wait-for-login-timeout` | Timeout for VM login prompt |
+| `--test-ring` | Test ring to filter test cases |
+
+### Test Rings
+
+E2E scenarios are organized into test rings that control how frequently they run:
+
+- **pr-e2e**: Run on every pull request (innermost ring)
+- **post_merge**: Run after merge to main
+- **daily**: Run daily
+- **weekly**: Run weekly
+- **full-validation**: Run for release validation (outermost ring)
+
+Rings are cumulative — all scenarios in inner rings also run when an outer ring
+is executed.
+
+## Servicing Scenario
+
+The servicing scenario tests multi-update workflows on a pre-built VM image. It
+deploys a VM from a QCOW2 image, then runs an update loop with rollback testing.
+
+### Test Cases
+
+The servicing scenario runs these test cases in order:
+
+1. **publish-sig-image** — Publishes the image to Azure SIG (Azure platform only,
+   skipped for QEMU)
+2. **deploy-vm** — Creates and boots a QEMU VM from a QCOW2 artifact
+3. **check-deployment** — Verifies the VM deployed successfully
+4. **update-loop** — Runs repeated A/B updates, staging and finalizing each one
+5. **rollback** — Tests rollback after update (when `--rollback` is enabled)
+6. **collect-logs** — Fetches logs from the VM
+7. **cleanup-vm** — Destroys the VM
+
+### Running Locally
+
+```bash
+bin/storm-trident run servicing -- \
+    --artifacts-dir ./artifacts \
+    --output-path /tmp/servicing-output \
+    --platform qemu \
+    --ssh-private-key-path ./artifacts/id_rsa \
+    --verbose
+```
+
+Key flags:
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--artifacts-dir` | Directory containing VM images and COSI files | `/tmp` |
+| `--output-path` | Output directory for logs | `./output` |
+| `--platform` | `qemu` or `azure` | `qemu` |
+| `--ssh-private-key-path` | Path to SSH private key | `~/.ssh/id_rsa` |
+| `--rollback` | Enable rollback testing | `false` |
+| `--retry-count` | Number of update retry attempts | `3` |
+| `--verbose` | Enable verbose logging | `false` |
+| `--force-cleanup` | Force VM cleanup on exit | `false` |
+
+## Rollback Scenario
+
+The rollback scenario tests manual rollback and runtime updates end-to-end. It
+builds a modified QCOW2 with extensions, runs A/B and runtime updates, then
+rolls back through each one verifying state at every step.
+
+### What It Tests
+
+1. Start a VM with sysext extension v1
+2. Verify extension is active, active volume is A
+3. Run an A/B update with sysext extension v2 and new netplan
+4. Verify extension is v2, netplan is correct, active volume is B
+5. Run a runtime update with sysext extension v3 and new netplan
+6. Verify extension is v3, active volume is still B
+7. Run a runtime update removing sysext and netplan
+8. Verify extension and netplan are gone
+9. Roll back runtime update #2 → verify v3 is restored
+10. Roll back runtime update #1 → verify v2 is restored
+11. Roll back A/B update → verify v1, active volume is A
+
+### Building Dependencies
+
+```bash
+# Choose the test image
+TEST_IMAGE_NAME="trident-vm-usr-verity-testimage"
+# Alternative: TEST_IMAGE_NAME="trident-vm-grub-verity-testimage"
+# (grub variant skips extension testing since IC cannot add extensions to the
+# original QCOW2)
+
+# Build storm-trident
+make bin/storm-trident
+
+# Build the test sysext extension images
+pushd ./artifacts
+../bin/storm-trident script build-extension-images --build-sysexts --num-clones 3
+popd
+
+# Build Trident RPMs
+sudo rm -f bin/trident-rpms.tar.gz
+sudo rm -rf bin/RPMS
+make bin/trident-rpms.tar.gz
+
+# Clean any previous test images
+sudo rm -f artifacts/trident-vm-*-testimage.qcow2 artifacts/trident-vm-*-testimage.cosi
+
+# Build the required test images (COSI + QCOW2)
+make artifacts/$TEST_IMAGE_NAME.cosi
+make artifacts/$TEST_IMAGE_NAME.qcow2
+
+# Generate SSH keys (if not already present)
+make artifacts/id_rsa
+```
+
+### Running Locally
+
+```bash
+sudo ./bin/storm-trident run rollback -w --verbose \
+    --artifacts-dir ./artifacts/ \
+    --output-path /tmp/output \
+    --platform qemu \
+    --ssh-private-key-path ./artifacts/id_rsa \
+    --ssh-public-key-path ./artifacts/id_rsa.pub
+```
+
+Optional skip flags:
+
+| Flag | Description |
+|------|-------------|
+| `--skip-runtime-updates` | Skip runtime update testing |
+| `--skip-manual-rollbacks` | Skip manual rollback testing |
+| `--skip-extension-testing` | Skip extension testing |
+| `--skip-netplan-runtime-testing` | Skip netplan runtime update testing |
+
+:::note
+When using `trident-vm-grub-verity-testimage`, add `--skip-extension-testing`
+since Image Customizer cannot add extensions to the original QCOW2 for that
+image type.
+:::
