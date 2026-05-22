@@ -1,25 +1,25 @@
 # Pinned MIC source for AZL4 builds
 
-Azure Linux 4.0 support in the Image Customizer (MIC) lives across a stack of
-open PRs in `microsoft/azurelinux-image-tools`. None of them are merged yet,
-and there is no released `mcr.microsoft.com/azurelinux/imagecustomizer`
-container that knows AZL4. So the Trident CI pipeline can't build the AZL4
-test image with the standard `:latest` container.
+Azure Linux 4.0 support landed on `microsoft/azurelinux-image-tools` `main`
+in [PR #698](https://github.com/microsoft/azurelinux-image-tools/pull/698)
+(merge commit `c582ba91...`, 2026-05-21). There is not yet a released
+`mcr.microsoft.com/azurelinux/imagecustomizer` container that includes it
+(latest tag at the time of this writing is v1.3.0), so the Trident CI
+pipeline still can't build the AZL4 test image with the standard `:latest`
+container.
 
-This directory pins the MIC source at a known-working SHA + a local patch set.
-The CI side-task at
-`.pipelines/templates/stages/build_image/build-pinned-mic.yml` clones the
-upstream repo at the pinned SHA, applies these patches, builds the
-`imagecustomizer` binary, and then builds the container locally. The result
-is consumed by the AZL4 test image build via `--container imagecustomizer:azl4-pinned`.
+This directory pins the MIC source at a known-working SHA. The CI side-task
+at `.pipelines/templates/stages/build_image/build-pinned-mic.yml` clones the
+upstream repo at the pinned SHA, applies any local patches in this directory
+(currently none), builds the `imagecustomizer` binary, and then builds the
+container locally. The result is consumed by the AZL4 test image build via
+`--container imagecustomizer:azl4-pinned`.
 
 ## How to bump the pin
 
-When Vince merges his stack (or any of the patches below is upstream):
-
-1. Update `MIC_PIN_SHA` in `PINNED.env` to the merge commit on `main`.
-   `PINNED.env` is the single source of truth for the pin and is
-   sourced by both `.pipelines/templates/stages/build_image/build-pinned-mic.yml`
+1. Update `MIC_PIN_SHA` in `PINNED.env` to the target commit on `main`.
+   `PINNED.env` is the single source of truth for the pin and is sourced by
+   both `.pipelines/templates/stages/build_image/build-pinned-mic.yml`
    and the local `build-pinned-mic.sh`.
 2. Delete every patch in this directory that's already covered by the new pin.
    Each patch's commit message points at the upstream PR it carries.
@@ -30,17 +30,18 @@ When Vince merges his stack (or any of the patches below is upstream):
 
 ## Patches
 
-| File | Carries | Upstream PR |
-|---|---|---|
-| `0001-dnf-logdir-fix.patch` | `dnf info --setopt=logdir=/tmp` so package detection works on the read-only post-resize rootfs | [microsoft/azurelinux-image-tools#698](https://github.com/microsoft/azurelinux-image-tools/pull/698) |
+None currently. The previous patch (`0001-dnf-logdir-fix.patch`) is
+superseded by [#698](https://github.com/microsoft/azurelinux-image-tools/pull/698)
+which replaced the `dnf info --installed` call with `rpm -q` upstream,
+solving the same read-only-logdir bug.
 
 ## Why a patch set instead of a fork
 
 Holding a personal fork of `azurelinux-image-tools` means we're on the hook to
 keep rebasing it. A patch set against a pinned SHA is friction-free as long as
-patches are small and stable — which they are today (one upstreamable
-one-liner). If we end up carrying more than ~5 patches or anything invasive,
-fork.
+patches stay small and stable, which has held so far (we've carried zero to
+one one-liner at a time). If we end up carrying more than ~5 patches or
+anything invasive, fork.
 
 ## How to test changes locally
 

@@ -32,11 +32,18 @@ git clone --filter=blob:none "$PIN_URL" "$WORKDIR"
 cd "$WORKDIR"
 git checkout "$PIN_SHA"
 
-for patch in "$SCRIPT_DIR"/*.patch; do
-    echo "[pinned-mic] applying $(basename "$patch")"
-    git apply --check "$patch"
-    git apply "$patch"
-done
+shopt -s nullglob
+patches=( "$SCRIPT_DIR"/*.patch )
+shopt -u nullglob
+if (( ${#patches[@]} == 0 )); then
+    echo "[pinned-mic] no patches to apply"
+else
+    for patch in "${patches[@]}"; do
+        echo "[pinned-mic] applying $(basename "$patch")"
+        git apply --check "$patch"
+        git apply "$patch"
+    done
+fi
 
 echo "[pinned-mic] building imagecustomizer binary"
 ( cd toolkit/tools/imagecustomizer && go build -o ../../out/tools/imagecustomizer . )

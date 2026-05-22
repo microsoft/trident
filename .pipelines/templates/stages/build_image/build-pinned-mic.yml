@@ -118,13 +118,21 @@ https://packages.microsoft.com/repos/azure-cli/ $AZ_REPO main" \
       git checkout "$MIC_PIN_SHA"
 
       # Apply every patch under tests/images/mic-azl4-patches/. Each carries
-      # a single upstream-PR-pending fix; see that directory's README.
+      # a single upstream-PR-pending fix; see that directory's README. The
+      # directory may be empty once all carried patches have landed upstream.
       PATCH_DIR="${{ parameters.tridentSourceDirectory }}/tests/images/mic-azl4-patches"
-      for patch in "$PATCH_DIR"/*.patch; do
-        echo "applying $(basename "$patch")"
-        git apply --check "$patch"
-        git apply "$patch"
-      done
+      shopt -s nullglob
+      patches=( "$PATCH_DIR"/*.patch )
+      shopt -u nullglob
+      if (( ${#patches[@]} == 0 )); then
+        echo "no patches to apply"
+      else
+        for patch in "${patches[@]}"; do
+          echo "applying $(basename "$patch")"
+          git apply --check "$patch"
+          git apply "$patch"
+        done
+      fi
 
       # Build the imagecustomizer Go binary.
       ( cd toolkit/tools/imagecustomizer && go build -o ../../out/tools/imagecustomizer . )
