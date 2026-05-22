@@ -5,9 +5,9 @@ sidebar_position: 6
 # E2E Tests
 
 E2E tests validate complete Trident install-and-update workflows using
-`netlaunch` to boot a VM from an installer ISO, followed by pytest validation
-of the resulting host state. They are defined by Host Configurations and test
-selections in `tests/e2e_tests/trident_configurations/`.
+`netlaunch` to boot a QEMU VM from an installer ISO, followed by pytest
+validation of the resulting host state. They are defined by Host Configurations
+and test selections in `tests/e2e_tests/trident_configurations/`.
 
 E2E tests are orchestrated by two systems:
 
@@ -22,20 +22,28 @@ E2E tests are orchestrated by two systems:
 For VM-image-based servicing and rollback tests that don't use netlaunch, see
 [Servicing Tests](Servicing-Tests.md) and [Rollback Tests](Rollback-Tests.md).
 
-## Overview
+## COSI Image Types
 
-A typical E2E test run follows this flow:
+E2E tests validate three COSI image types, each testing a different bootloader
+and integrity configuration:
 
-1. **Build** COSI images (install and update images) using Image Customizer.
-2. **Build** an installer ISO (the management OS that boots and runs Trident).
-3. **Create** a QEMU/libvirt VM with empty disks.
-4. **Install** the OS using `netlaunch`, which boots the VM from the ISO, serves
-   the COSI image and Host Configuration over HTTP, and streams Trident logs.
-5. **Validate** the installation using the pytest e2e suite.
-6. **Update** the OS using `storm-trident` A/B update helper, which uploads a
-   new Host Configuration and COSI image, triggers `trident update`, and waits
-   for reboot.
-7. **Validate** the update using the pytest e2e suite.
+| Image | Output File | Bootloader | Integrity | Configurations |
+|-------|------------|-----------|-----------|----------------|
+| `trident-testimage` | `regular.cosi` | grub2 | None | base, encrypted-partition, encrypted-raid, encrypted-swap, extensions, health-checks-install, misc, raid-big, raid-mirrored, raid-resync-small, raid-small, simple, split |
+| `trident-verity-testimage` | `verity.cosi` | grub2 | Root dm-verity | root-verity |
+| `trident-usrverity-testimage` | `usrverity.cosi` | systemd-boot | `/usr` dm-verity (UKI) | combined, memory-constraint-combined, rerun, usr-verity, usr-verity-raid |
+
+**`regular.cosi`** — Standard grub2-based image with no integrity protection.
+Uses `grub2-efi-binary-noprefix`, includes `trident-service` and
+`tridentd.socket`. This is the baseline image for most E2E configurations.
+
+**`verity.cosi`** — Root filesystem is protected by dm-verity, making `/`
+read-only. Uses grub2 with a separate `/var` partition and an `/etc` overlay
+service for runtime state. Includes `veritysetup` and `dracut-overlayfs`.
+
+**`usrverity.cosi`** — The `/usr` filesystem is protected by dm-verity, with
+a Unified Kernel Image (UKI) and systemd-boot as the bootloader. This is a
+preview feature (`previewFeatures: uki`). Requires `ukify` on the build host.
 
 ## Prerequisites
 
@@ -55,6 +63,9 @@ A typical E2E test run follows this flow:
 See [Dependencies](Dependencies.md) for full build dependency details including
 protobuf compiler requirements.
 
+Unless otherwise noted, commands are run from the repository root. Pytest
+commands are run from `tests/e2e_tests`.
+
 ## Building Dependencies
 
 ### 1. Build Trident
@@ -71,6 +82,7 @@ make go-tools
 
 # Or build individually:
 make bin/netlaunch       # Boots VM from ISO, serves config over HTTP
+make bin/netlisten       # Serves COSI images for A/B updates
 make bin/storm-trident   # E2E test orchestrator
 make bin/virtdeploy      # VM lifecycle management
 make bin/isopatch        # Injects files into ISOs
@@ -83,55 +95,58 @@ make bin/rcp-agent       # Remote control plane agent
 make artifacts/osmodifier
 ```
 
-### 4. Download Base Image
+### 4. Generate SSH Keys
+
+```bash
+make artifacts/id_rsa
+```
+
+### 5. Download Base Image
 
 ```bash
 # Downloads baremetal.vhdx from MCR
 ./tests/images/testimages.py download-image baremetal
 ```
 
-### 5. Build COSI Images
+### 6. Build COSI Images
 
-Build the test COSI images that Trident will install/update:
+Build the test COSI images that Trident will install and update. A/B updates
+require two images with unique filesystem UUIDs — Trident rejects updates where
+the new image matches the installed one. Use `--clones 2` to produce two images,
+then rename them into `artifacts/test-image/`:
 
 ```bash
-# Build the regular test image
-sudo ./tests/images/testimages.py build trident-testimage --output-dir ./artifacts/test-image
+mkdir -p artifacts/test-image
 
-# Build the verity test image (for verity configurations)
-sudo ./tests/images/testimages.py build trident-verity-testimage --output-dir ./artifacts/test-image
+# Build two clones (produces trident-testimage_0.cosi and trident-testimage_1.cosi)
+sudo ./tests/images/testimages.py build trident-testimage \
+    --output-dir ./artifacts/test-image --clones 2
 
-# Build the usr-verity test image (for UKI/systemd-boot configurations)
-sudo ./tests/images/testimages.py build trident-usrverity-testimage --output-dir ./artifacts/test-image
+# Rename clones to the filenames referenced by Host Configurations
+mv artifacts/test-image/trident-testimage_0.cosi artifacts/test-image/regular.cosi
+mv artifacts/test-image/trident-testimage_1.cosi artifacts/test-image/regular_v2.cosi
+```
+
+Repeat for other image types as needed:
+
+```bash
+# Verity image (for root-verity configuration)
+sudo ./tests/images/testimages.py build trident-verity-testimage \
+    --output-dir ./artifacts/test-image --clones 2
+mv artifacts/test-image/trident-verity-testimage_0.cosi artifacts/test-image/verity.cosi
+mv artifacts/test-image/trident-verity-testimage_1.cosi artifacts/test-image/verity_v2.cosi
+
+# UKI/usr-verity image (for usr-verity, combined configurations)
+sudo ./tests/images/testimages.py build trident-usrverity-testimage \
+    --output-dir ./artifacts/test-image --clones 2
+mv artifacts/test-image/trident-usrverity-testimage_0.cosi artifacts/test-image/usrverity.cosi
+mv artifacts/test-image/trident-usrverity-testimage_1.cosi artifacts/test-image/usrverity_v2.cosi
 ```
 
 The images use the Image Customizer container from
 `mcr.microsoft.com/azurelinux/imagecustomizer:latest`.
 
-### COSI Image Types
-
-E2E tests validate three COSI image types, each testing a different bootloader
-and integrity configuration:
-
-| Image | Output File | Bootloader | Integrity | Config |
-|-------|------------|-----------|-----------|--------|
-| `trident-testimage` | `regular.cosi` | grub2 | None | `tests/images/trident-testimage/base/baseimg.yaml` |
-| `trident-verity-testimage` | `verity.cosi` | grub2 | Root dm-verity | `tests/images/trident-verity-testimage/base/baseimg.yaml` |
-| `trident-usrverity-testimage` | `usrverity.cosi` | systemd-boot | `/usr` dm-verity (UKI) | `tests/images/trident-verity-testimage/usr/host.yaml` |
-
-**`regular.cosi`** — Standard grub2-based image with no integrity protection.
-Uses `grub2-efi-binary-noprefix`, includes `trident-service` and
-`tridentd.socket`. This is the baseline image for most E2E configurations.
-
-**`verity.cosi`** — Root filesystem is protected by dm-verity, making `/`
-read-only. Uses grub2 with a separate `/var` partition and an `/etc` overlay
-service for runtime state. Includes `veritysetup` and `dracut-overlayfs`.
-
-**`usrverity.cosi`** — The `/usr` filesystem is protected by dm-verity, with
-a Unified Kernel Image (UKI) and systemd-boot as the bootloader. This is a
-preview feature (`previewFeatures: uki`). Requires `ukify` on the build host.
-
-### 6. Build the Installer ISO
+### 7. Build the Installer ISO
 
 The management OS ISO is used by `netlaunch` to boot the VM and run Trident:
 
@@ -139,15 +154,21 @@ The management OS ISO is used by `netlaunch` to boot the VM and run Trident:
 make bin/trident-mos.iso
 ```
 
-This builds an Azure Linux ISO with Trident and its dependencies baked in.
+## Running a Clean Install
 
-## Running a Clean Install with netlaunch
+### 1. Create the QEMU VM
 
-`netlaunch` orchestrates a bare-metal-style install: it boots a QEMU VM from the
-installer ISO, serves the Host Configuration and COSI image over HTTP, and
-streams Trident's logs back to the terminal.
+Use `virtdeploy` to create a VM with empty disks:
 
-### 1. Create a Host Configuration
+```bash
+sudo bin/virtdeploy create-one --disks 32,8
+```
+
+This creates a QEMU/libvirt VM and writes `tools/vm-netlaunch.yaml` with the
+VM UUID. The `--disks` flag specifies disk sizes in GB (here, 32 GB for the OS
+disk and 8 GB for a secondary disk).
+
+### 2. Create a Host Configuration
 
 Use the starter configuration as a template:
 
@@ -159,31 +180,53 @@ This copies `tests/e2e_tests/trident_configurations/simple/trident-config.yaml`
 to `input/trident.yaml`. Edit it to add your SSH public key under
 `os.users[0].sshPublicKeys`.
 
-The Host Configuration references `http://NETLAUNCH_HOST_ADDRESS/files/regular.cosi`
-as the image URL. `netlaunch` automatically replaces `NETLAUNCH_HOST_ADDRESS`
-with its own IP and port at runtime.
-
-### 2. Run netlaunch
+Alternatively, copy a configuration directly from any test configuration
+directory:
 
 ```bash
-make run-netlaunch
+mkdir -p input
+cp tests/e2e_tests/trident_configurations/<config>/trident-config.yaml input/trident.yaml
 ```
 
-This will:
+The Host Configuration references image URLs like
+`http://NETLAUNCH_HOST_ADDRESS/files/regular.cosi`. Netlaunch automatically
+replaces `NETLAUNCH_HOST_ADDRESS` with its own `<host-IP>:<port>` at runtime,
+so the VM can reach the files served by netlaunch.
+
+### 3. Run netlaunch
+
+```bash
+NETLAUNCH_PORT=4000 make run-netlaunch
+```
+
+:::important
+Set `NETLAUNCH_PORT` to a fixed port (e.g., `4000`). A/B updates use
+`netlisten` to serve update images, and it must listen on the **same port** as
+netlaunch — the host configuration on the VM retains the original
+`<host>:<port>` URL from the install.
+:::
+
+Netlaunch will:
+
 - Validate the Host Configuration
-- Boot a QEMU VM from the installer ISO
+- Symlink `tools/vm-netlaunch.yaml` to `input/netlaunch.yaml`
+- Boot the QEMU VM from the installer ISO
 - Serve `artifacts/test-image/` over HTTP (including COSI images)
 - Patch the Host Configuration with the server address
 - Stream Trident's install logs to the terminal
-- Wait for the VM to reboot into the installed OS
+
+Netlaunch blocks until the install completes and the VM reboots into the
+installed OS. Do not stop it until you see the VM reboot. The VM IP address
+is printed in the output (typically `192.168.242.2` for the default
+`192.168.242.0/24` network).
 
 To use a custom ISO or config:
 
 ```bash
-NETLAUNCH_ISO=path/to/custom.iso TRIDENT_CONFIG=path/to/config.yaml make run-netlaunch
+NETLAUNCH_PORT=4000 NETLAUNCH_ISO=path/to/custom.iso TRIDENT_CONFIG=path/to/config.yaml make run-netlaunch
 ```
 
-### 3. Watch the VM console (optional)
+### 4. Watch the VM console (optional)
 
 In a separate terminal:
 
@@ -191,72 +234,139 @@ In a separate terminal:
 make watch-virtdeploy
 ```
 
-## Running an A/B Update with storm-trident
+## Running E2E Validation (pytest)
 
-After a successful install, use `storm-trident` to perform an A/B update.
-The `ab-update` helper requires SSH credentials — you must supply the key path
-explicitly (there is no default):
+After an install or update, validate the host state with the pytest suite.
+Run from the `tests/e2e_tests` directory:
+
+### After Clean Install
 
 ```bash
-bin/storm-trident helper ab-update \
-    --ssh-host <VM_IP> \
-    --ssh-key <PATH_TO_SSH_PRIVATE_KEY> \
-    --ssh-user testing-user \
+cd tests/e2e_tests
+python3 -u -m pytest -m daily --capture=no \
+    -H <VM_IP> \
+    -R host \
+    -C trident_configurations/<config> \
+    -K ../../artifacts/id_rsa \
+    -v
+```
+
+### After A/B Update
+
+```bash
+cd tests/e2e_tests
+python3 -u -m pytest -m daily --capture=no \
+    -H <VM_IP> \
+    -R host \
+    -C trident_configurations/<config> \
+    -K ../../artifacts/id_rsa \
+    -A volume-b \
+    -v
+```
+
+### Flags
+
+| Flag | Long Form | Description | Default |
+|------|-----------|-------------|---------|
+| `-m daily` | | Pytest marker filter — selects the `daily` test ring | (required) |
+| `--capture=no` | | Disables output capture (avoids conflicts with fabric SSH) | `fd` |
+| `-H` | `--host` | IP address or hostname of the target VM | (required) |
+| `-R` | `--runtime-env` | Runtime environment: `host` or `container` | `host` |
+| `-C` | `--configuration` | Path to configuration directory | (required) |
+| `-K` | `--keypath` | Path to SSH private key | `tests/e2e_tests/helpers/key` |
+| `-A` | `--ab-active-volume` | Active A/B volume: `volume-a` or `volume-b` | `volume-a` |
+| `-S` | `--expected-host-status-state` | Expected Trident servicing state | `provisioned` |
+| `-v` | `--verbose` | Verbose test output | off |
+
+:::note
+The default key path (`tests/e2e_tests/helpers/key`) is not checked into the
+repo. Always pass `-K` explicitly with your key path, or create a symlink at
+the default location.
+:::
+
+## Running an A/B Update
+
+After a successful clean install, perform an A/B update using `netlisten` to
+serve the update image and `storm-trident` to orchestrate the update.
+
+### 1. Start netlisten
+
+In a separate terminal, start `netlisten` to serve the update images. It
+**must** use the same port that netlaunch used during install:
+
+```bash
+sudo bin/netlisten \
+    -s artifacts/test-image \
+    -p 4000 \
+    -m trident-ab-update-metrics.jsonl \
+    -b logstream-ab-update.log
+```
+
+### 2. Run storm-trident A/B update
+
+```bash
+sudo bin/storm-trident helper ab-update -- \
+    artifacts/id_rsa \
+    <VM_IP> \
+    testing-user \
+    host \
     -c /var/lib/trident/config.yaml \
     -v 2 \
     -s -f
 ```
 
-For netlaunch-based installs, the SSH key is typically the one you added to the
-Host Configuration (e.g., `~/.ssh/id_rsa`).
+The `ab-update` helper takes four positional arguments followed by flags:
 
-Flags:
-- `--ssh-host`: IP address of the VM (printed by netlaunch after install)
-- `--ssh-key`: Path to the SSH private key used for VM access
-- `-c`: Path to the Host Configuration file on the VM
-- `-v`: Version number for the update image
-- `-s`: Stage the update
-- `-f`: Finalize the update (triggers reboot)
+| Argument | Description |
+|----------|-------------|
+| `<private-key-path>` | Path to the SSH private key |
+| `<host>` | IP address of the VM |
+| `<user>` | SSH user on the VM |
+| `<trident-runtime-type>` | `host` or `container` |
 
-Other useful storm-trident helpers:
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-c` | Path to the Host Configuration file **on the VM** | (required) |
+| `-v` | Version number for the update image (appended as `_v<N>` suffix) | (required) |
+| `-s` | Stage the A/B update | `false` |
+| `-f` | Finalize the A/B update (triggers reboot) | `false` |
+| `-p` | SSH port | `22` |
+| `-t` | SSH connection timeout in seconds | `600` |
 
-```bash
-# Manual rollback
-bin/storm-trident helper manual-rollback --ssh-host <VM_IP> ...
+**Success looks like:**
 
-# Check SELinux status
-bin/storm-trident helper check-selinux --ssh-host <VM_IP> ...
-
-# Display Trident logs
-bin/storm-trident helper display-logs --ssh-host <VM_IP> ...
-
-# Rebuild RAID
-bin/storm-trident helper rebuild-raid --ssh-host <VM_IP> ...
+```
+=== SUMMARY of storm-trident::helper::ab-update ===
+  get-config...........: PASS
+  update-hc............: PASS
+  trigger-update.......: PASS
+  check-trident-service: PASS
+  check-diagnostics....: PASS
+=== RESULT ===
+OK: passed: 5; total: 5
 ```
 
-Run `bin/storm-trident helper --help` to see all available helpers.
+After the update succeeds, run the [post-update pytest validation](#after-ab-update)
+with `-A volume-b`.
 
-## Running E2E Validation Tests (pytest)
-
-After an install or update, validate the host state with the pytest suite:
+### Other storm-trident helpers
 
 ```bash
-cd tests/e2e_tests
-python3 -m pytest \
-    -H <VM_IP> \
-    -C trident_configurations/simple \
-    -v
+bin/storm-trident helper manual-rollback -- <key> <host> <user> <runtime> ...
+bin/storm-trident helper check-selinux -- <key> <host> <user> <runtime> ...
+bin/storm-trident helper display-logs -- <key> <host> <user> <runtime> ...
+bin/storm-trident helper rebuild-raid -- <key> <host> <user> <runtime> ...
 ```
 
-Flags:
-- `-H`: IP address or hostname of the target machine
-- `-C`: Path to the configuration directory (contains `trident-config.yaml` and
-  `test-selection.yaml`)
-- `-K`: Path to SSH key (defaults to `tests/e2e_tests/helpers/key`). This file
-  is not checked into the repo — you must create or symlink it before running,
-  or pass `-K` explicitly with your key path.
-- `-R`: Runtime environment — `host` or `container` (default: `host`)
-- `-A`: Active A/B volume — `volume-a` or `volume-b` (default: `volume-a`)
+Run `bin/storm-trident helper <name> -- --help` to see available flags.
+
+## Cleanup
+
+Destroy the QEMU VM and network:
+
+```bash
+sudo bin/virtdeploy clean
+```
 
 ## Test Configurations
 
@@ -264,11 +374,7 @@ Pre-defined test configurations live in `tests/e2e_tests/trident_configurations/
 Each subdirectory contains:
 
 - `trident-config.yaml`: The Host Configuration to install
-- `test-selection.yaml`: Which test markers to enable
-
-Available configurations include: `simple`, `base`, `combined`,
-`encrypted-partition`, `encrypted-raid`, `extensions`, `raid-mirrored`,
-`root-verity`, `usr-verity`, `split`, and more.
+- `test-selection.yaml`: Which test markers to enable (e.g., `compatible: [base]`)
 
 The full matrix of which configurations run in which pipeline tier is defined in
 `tests/e2e_tests/target-configurations.yaml`.
@@ -292,18 +398,11 @@ bin/storm-trident list scenarios -t e2e -t container  # Container runtime only
 
 ### Scenario Naming
 
-All E2E scenarios follow the naming convention:
+All E2E scenarios follow the naming convention `<config>_<hardware>-<runtime>`:
 
-```
-<config>_<hardware>-<runtime>
-```
-
-Where:
-- `<config>` is the name of the host config (e.g., `base`, `simple`,
-  `usrverity`).
-- `<hardware>` is either `vm` (virtual machine) or `bm` (bare metal).
-- `<runtime>` is either `host` (runs directly on the host) or `container`
-  (runs inside a container).
+- `<config>`: Name of the host config (e.g., `base`, `simple`, `usrverity`)
+- `<hardware>`: `vm` (virtual machine) or `bm` (bare metal)
+- `<runtime>`: `host` (runs directly on the host) or `container` (runs inside a container)
 
 For example: `base_vm-host`, `combined_vm-container`.
 
@@ -313,7 +412,7 @@ For example: `base_vm-host`, `combined_vm-container`.
 bin/storm-trident run <scenario-name> -- <parameters>
 ```
 
-To see available parameters for any scenario:
+To see available parameters:
 
 ```bash
 bin/storm-trident run <scenario-name> -- --help
@@ -369,23 +468,14 @@ and determines when each should run. The key components:
        <runtime>: <lowest_pipeline_ring>
   ```
 
-  For example:
-
-  ```yaml
-  base:
-    vm:
-      host: pr-e2e
-  ```
-
 - **Special config parameters**: Configurations can be customized with YAML keys
   defined in `TridentE2EHostConfigParams` (in `tools/storm/e2e/scenario/trident.go`),
   such as `maxExpectedFailures` for configs that may have intermittent failures.
 
 ### Matrix Generation in Pipelines
 
-The `e2e-matrix` script (in `tools/storm/e2e/matrix_script.go`) generates ADO
-pipeline job matrices from discovered scenarios. It takes a test ring as input
-and outputs one matrix per hardware/runtime combination as ADO variables:
+The `e2e-matrix` script generates ADO pipeline job matrices from discovered
+scenarios:
 
 ```bash
 bin/storm-trident script e2e-matrix pr-e2e
@@ -393,15 +483,6 @@ bin/storm-trident script e2e-matrix pr-e2e
 
 Variable names follow the pattern `TEST_MATRIX_E2E_<HARDWARE>_<RUNTIME>` (e.g.,
 `TEST_MATRIX_E2E_VM_HOST`).
-
-### Pipeline Execution
-
-E2E tests in CI are orchestrated by two pipeline templates:
-
-- `.pipelines/templates/stages/testing_e2e/storm_e2e.yml` — entry point that
-  invokes matrix generation and dispatches test execution jobs.
-- `.pipelines/templates/stages/testing_e2e/test_execution_template.yml` — runs
-  individual E2E scenarios from the generated matrix.
 
 ### E2E Test Code
 
