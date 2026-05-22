@@ -11,6 +11,7 @@ Legend:
 - 🔜: Planned feature. Not implemented yet.
 - ⚠️: Refer to relevant notes for details.
 - ❌: Not supported.
+- ➖: Not applicable.
 
 ## Servicing Features
 
@@ -24,8 +25,8 @@ Legend:
 | ⚙️ Bootloader    | Grub2                                   | ✅       | ✅       | ✅      | ✅           |
 | ⚙️ Bootloader    | Systemd-boot                            | ☑️       | ☑️       | ☑️      | ✅           |
 | 🔄 Lifecycle     | Onboard system for updates              | ✅       | ✅       | ✅      | ❌           |
-| 🔄 Lifecycle     | Rollback (grub)                         | ✅       | ✅       | ✅      | ❌           |
-| 🔄 Lifecycle     | Rollback (systemd-boot/UKI)             | ☑️       | ☑️       | ☑️      | ❌           |
+| 🔄 Lifecycle     | Rollback (grub)                         | ➖       | ✅       | ✅      | ❌           |
+| 🔄 Lifecycle     | Rollback (systemd-boot/UKI)             | ➖       | ☑️       | ☑️      | ❌           |
 | 🔏 Integrity     | Secure Boot                             | ✅       | ✅       | ✅      | ✅           |
 | 🔏 Integrity     | UKI                                     | ☑️       | ☑️       | ☑️      | ✅           |
 | 🔏 Integrity     | Root-verity (grub)                      | ⚠️[2]    | ⚠️[2]    | ⚠️[2]   | ✅           |
