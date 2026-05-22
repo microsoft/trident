@@ -16,38 +16,27 @@ with Image Customizer from the `qemu_guest` base image.
 ## VM Image Types
 
 The servicing scenario expects a QCOW2 image matching the pattern
-`trident-vm-*-testimage.qcow2` in the artifacts directory. Each image type
-tests a different bootloader and integrity configuration:
+`trident-vm-*-testimage.qcow2` in the artifacts directory. The pipeline-tested
+image types are:
 
-| Image | Bootloader | Integrity | UKI | Config File | Notes |
-|-------|-----------|-----------|-----|-------------|-------|
-| `trident-vm-grub-testimage` | grub2 | None | No | `updateimg-grub.yaml` | Standard grub without verity |
-| `trident-vm-grub-verity-testimage` | grub2 | Root verity | No | `updateimg-grub-verity.yaml` | Root filesystem is dm-verity protected; `/var` on separate partition |
-| `trident-vm-root-verity-testimage` | systemd-boot | Root verity | Yes | `baseimg-root-verity.yaml` | UKI with root verity; requires `ukify` on build host |
-| `trident-vm-usr-verity-testimage` | systemd-boot | `/usr` verity | Yes | `baseimg-usr-verity.yaml` | UKI with `/usr` verity; requires `ukify` on build host |
-| `trident-vm-grub-testimage-arm64` | grub2 | None | No | `updateimg-grub.yaml` | ARM64 variant; uses `core_arm64` base image |
-| `trident-vm-grub-verity-testimage-arm64` | grub2 | Root verity | No | `updateimg-grub-verity.yaml` | ARM64 variant with root verity |
+| Image | Bootloader | Integrity | UKI | Config File |
+|-------|-----------|-----------|-----|-------------|
+| `trident-vm-grub-verity-testimage` | grub2 | Root verity | No | `updateimg-grub-verity.yaml` |
+| `trident-vm-usr-verity-testimage` | systemd-boot | `/usr` verity | Yes | `baseimg-usr-verity.yaml` |
 
 All image configs live under `tests/images/trident-vm-testimage/base/`. The
-base image for amd64 variants is `qemu_guest` (downloaded from MCR); arm64
-variants use `core_arm64`.
+base image is `qemu_guest`.
 
-:::info Azure-only image
-`trident-vm-grub-verity-azure-testimage` uses the `core_selinux` base image
-and `updateimg-grub-verity-azure.yaml`. It is designed for Azure VMs and is not
-compatible with local QEMU testing.
-:::
+**`trident-vm-grub-verity-testimage`** uses grub2 with root dm-verity. The root
+filesystem is read-only and integrity-protected, with `/var` on a separate
+partition and an `/etc` overlay service for runtime state. It uses the
+`updateimg-grub-verity.yaml` config which includes SSH access, network
+configuration, and sudoers for the test user.
 
-### Update Images vs Base Images
-
-The config files follow two patterns:
-
-- **`updateimg-*`** configs (grub, grub-verity) are update-oriented: they
-  include SSH access, network configuration, sudoers, and a service override
-  for the test user. These are used for the standard servicing update loop.
-- **`baseimg-*`** configs (root-verity, usr-verity) define the full runtime
-  layout with UKI, systemd-boot, and verity. These are used for verity-based
-  servicing tests.
+**`trident-vm-usr-verity-testimage`** uses systemd-boot with a Unified Kernel
+Image (UKI) and `/usr` dm-verity. This is a preview feature
+(`previewFeatures: uki`) that requires `ukify` on the build host. It uses the
+`baseimg-usr-verity.yaml` config which defines the full runtime layout.
 
 ### COSI Update Images
 
@@ -67,11 +56,16 @@ The update loop alternates between these two images across iterations.
 - **Linux host** with root access
 - **libvirt and QEMU** installed and configured
 - **Docker** (for building images with Image Customizer)
-- **[oras](https://oras.land/)** CLI (for downloading base images from MCR)
 - **Go 1.24+** (for building Go tools)
 - **Rust** (latest stable, for building Trident)
 
-See [Dependencies](Dependencies.md) for full details.
+The `qemu_guest` base image is not publicly available on MCR. It is downloaded
+from an internal Azure DevOps artifacts feed by the Makefile target
+`$(QEMU_GUEST_IMAGE)`. You need `az` CLI configured with access to the
+`mariner-org` ADO organization, or you can obtain the image from a pipeline
+artifact.
+
+See [Dependencies](Dependencies.md) for full build dependency details.
 
 ## Building Dependencies
 
@@ -97,28 +91,25 @@ make artifacts/id_rsa
 
 ### 4. Download Base Image
 
+The `qemu_guest` base image is downloaded automatically by the QCOW2 Makefile
+targets via `az artifacts universal download`. Ensure you have `az` CLI
+configured:
+
 ```bash
-# Downloads qemu_guest.vhdx from MCR
-./tests/images/testimages.py download-image qemu_guest
+az login
 ```
 
 ### 5. Build the VM Image
 
-Choose an image type and build both COSI and QCOW2:
+Choose an image type and build the QCOW2:
 
 ```bash
-# For standard grub (no verity):
-make artifacts/trident-vm-grub-testimage.qcow2
-
 # For grub with root verity:
 make artifacts/trident-vm-grub-verity-testimage.qcow2
 
-# For UKI with usr verity (requires ukify):
+# For UKI with usr verity (requires ukify on build host):
 make artifacts/trident-vm-usr-verity-testimage.qcow2
 ```
-
-The Makefile targets handle building both the QCOW2 (initial VM image) and
-any required COSI update images.
 
 ### 6. Prepare Update Images
 
@@ -127,10 +118,12 @@ Place COSI files in the update directories:
 ```bash
 mkdir -p artifacts/update-a artifacts/update-b
 
+# Build the COSI image for your chosen image type
+sudo ./tests/images/testimages.py build trident-vm-grub-verity-testimage --output-dir ./artifacts
+
 # Copy the COSI images for the update loop
-# (use the COSI images that match your test image type)
-cp artifacts/trident-vm-grub-testimage.cosi artifacts/update-a/
-cp artifacts/trident-vm-grub-testimage.cosi artifacts/update-b/
+cp artifacts/trident-vm-grub-verity-testimage.cosi artifacts/update-a/
+cp artifacts/trident-vm-grub-verity-testimage.cosi artifacts/update-b/
 ```
 
 ## Running the Servicing Scenario
