@@ -129,9 +129,18 @@ make functional-test FILTER="custom/test_trident_e2e.py -k test_name"
 
 ## E2E Testing
 
-E2E tests validate complete Trident workflows — clean install, A/B update,
-rollback, and more — on real QEMU virtual machines using production-like COSI
-images. E2E tests use `netlaunch` for installations and `storm-trident` for
-orchestrating multi-step servicing scenarios.
+E2E tests validate complete Trident install-and-update workflows using
+`netlaunch` to boot a VM from an installer ISO, followed by pytest validation.
 
 See [E2E Tests](E2E-Tests.md) for full setup and run instructions.
+
+## Servicing and Rollback Testing
+
+Servicing and rollback tests use pre-built VM images (defined in
+`tests/images/trident-vm-testimage/`) to test multi-update workflows and
+manual rollback chains without using `netlaunch` or an installer ISO.
+
+- [Servicing Tests](Servicing-Tests.md) — multi-update loop with optional
+  rollback via `storm-trident run servicing`
+- [Rollback Tests](Rollback-Tests.md) — full rollback chain (A/B + runtime
+  updates) via `storm-trident run rollback`
