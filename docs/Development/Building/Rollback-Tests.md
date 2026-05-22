@@ -33,12 +33,14 @@ that supports full extension testing. When using this image, you **must** pass
 generates the correct Image Customizer config with `os.uki.mode: passthrough`.
 
 **`trident-vm-grub-verity-testimage`** uses grub2 with root dm-verity. It does
-not support extensions, so you must pass `--skip-extension-testing` when using
-this image type.
+not support extensions or runtime updates, so you must pass
+`--skip-extension-testing`, `--skip-runtime-updates`, and
+`--skip-netplan-runtime-testing` when using this image type.
 
 ## What It Tests
 
-The rollback scenario exercises a multi-step update-and-rollback sequence:
+The full rollback scenario (`trident-vm-usr-verity-testimage`) exercises a
+multi-step update-and-rollback sequence:
 
 1. Start a VM with sysext extension v1
 2. Verify extension is active, active volume is A
@@ -51,6 +53,15 @@ The rollback scenario exercises a multi-step update-and-rollback sequence:
 9. Roll back runtime update #2 → verify v3 is restored
 10. Roll back runtime update #1 → verify v2 is restored
 11. Roll back A/B update → verify v1, active volume is A
+
+When using `trident-vm-grub-verity-testimage`, steps 1–2 and 5–10 are skipped
+(no extensions, no runtime updates, no runtime rollbacks). The test exercises
+only A/B update and A/B rollback:
+
+1. Start a VM (no extensions)
+2. Run an A/B update
+3. Verify active volume is B
+4. Roll back A/B update → verify active volume is A
 
 ## Prerequisites
 
