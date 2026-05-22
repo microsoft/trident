@@ -61,7 +61,7 @@ The update loop alternates between these two images across iterations.
 - **Go 1.24+** (for building Go tools)
 - **Rust** (latest stable, for building Trident)
 
-See [Dependencies](Dependencies.md) for full build dependency details.
+See [Dependencies](../Building/Dependencies.md) for full build dependency details.
 
 ## Building Dependencies
 

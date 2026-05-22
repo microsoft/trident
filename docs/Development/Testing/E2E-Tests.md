@@ -60,7 +60,7 @@ preview feature (`previewFeatures: uki`). Requires `ukify` on the build host.
   pip3 install fabric pyyaml pytest
   ```
 
-See [Dependencies](Dependencies.md) for full build dependency details including
+See [Dependencies](../Building/Dependencies.md) for full build dependency details including
 protobuf compiler requirements.
 
 Unless otherwise noted, commands are run from the repository root. Pytest

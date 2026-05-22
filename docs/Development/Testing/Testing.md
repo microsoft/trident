@@ -54,3 +54,8 @@ manual rollback chains without using `netlaunch` or an installer ISO.
   rollback via `storm-trident run servicing`
 - [Rollback Tests](Rollback-Tests.md) — full rollback chain (A/B + runtime
   updates) via `storm-trident run rollback`
+
+## Code Coverage
+
+See [Coverage](Coverage.md) for instructions on generating and viewing code
+coverage reports.
