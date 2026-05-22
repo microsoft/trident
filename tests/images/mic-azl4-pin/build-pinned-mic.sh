@@ -1,6 +1,6 @@
 #!/bin/bash
 # TODO: drop this script once AZL4 ships in a released MIC container.
-# See tests/images/mic-azl4-patches/README.md for the unpinning playbook.
+# See tests/images/mic-azl4-pin/README.md for the unpinning playbook.
 #
 # Builds the pinned MIC container locally and runs a smoke test against
 # the AZL4 base VHDX expected at artifacts/azl4_qemu_guest.vhdx. Intended
@@ -31,19 +31,6 @@ echo "[pinned-mic] workdir: $WORKDIR"
 git clone --filter=blob:none "$PIN_URL" "$WORKDIR"
 cd "$WORKDIR"
 git checkout "$PIN_SHA"
-
-shopt -s nullglob
-patches=( "$SCRIPT_DIR"/*.patch )
-shopt -u nullglob
-if (( ${#patches[@]} == 0 )); then
-    echo "[pinned-mic] no patches to apply"
-else
-    for patch in "${patches[@]}"; do
-        echo "[pinned-mic] applying $(basename "$patch")"
-        git apply --check "$patch"
-        git apply "$patch"
-    done
-fi
 
 echo "[pinned-mic] building imagecustomizer binary"
 ( cd toolkit/tools/imagecustomizer && go build -o ../../out/tools/imagecustomizer . )

@@ -219,4 +219,4 @@ automatically; FICs are removed with the parent UAMI.
 When AZL4 ships in a released MIC container and the
 `AzureLinuxArtifacts` ADO feed publishes AZL4 base VHDXes, this whole
 connection can be deleted along with the pinned-MIC side-task. Tracking:
-`tests/images/mic-azl4-patches/README.md`.
+`tests/images/mic-azl4-pin/README.md`.

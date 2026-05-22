@@ -1,11 +1,10 @@
 # TODO(azl4-release): Drop this template once AZL4 ships in a released MIC
 # container at mcr.microsoft.com/azurelinux/imagecustomizer. At that point
 # the standard build-image-template.yml path can be used with --container
-# pointing at the released tag. Tracking: tests/images/mic-azl4-patches/README.md
+# pointing at the released tag. Tracking: tests/images/mic-azl4-pin/README.md
 #
 # Side-task that builds a pinned imagecustomizer container and osmodifier
-# binary from microsoft/azurelinux-image-tools at a known-working SHA, plus
-# any local patches required to make AZL4 produce a COSI end-to-end. Output
+# binary from microsoft/azurelinux-image-tools at a known-working SHA. Output
 # is loaded into the local Docker daemon as ${{ parameters.containerTag }}
 # and the osmodifier binary is staged where the testimage YAML expects it.
 
@@ -21,10 +20,10 @@ steps:
   - bash: |
       set -euxo pipefail
 
-      # Source the pin from tests/images/mic-azl4-patches/PINNED.env so
+      # Source the pin from tests/images/mic-azl4-pin/PINNED.env so
       # this template and the equivalent local script
-      # (mic-azl4-patches/build-pinned-mic.sh) cannot drift.
-      PIN_ENV="${{ parameters.tridentSourceDirectory }}/tests/images/mic-azl4-patches/PINNED.env"
+      # (mic-azl4-pin/build-pinned-mic.sh) cannot drift.
+      PIN_ENV="${{ parameters.tridentSourceDirectory }}/tests/images/mic-azl4-pin/PINNED.env"
       if [ ! -f "$PIN_ENV" ]; then
         echo "ERROR: $PIN_ENV not found"
         exit 1
@@ -105,7 +104,7 @@ https://packages.microsoft.com/repos/azure-cli/ $AZ_REPO main" \
       set -euxo pipefail
 
       # Source the pin again (each step is a fresh shell).
-      PIN_ENV="${{ parameters.tridentSourceDirectory }}/tests/images/mic-azl4-patches/PINNED.env"
+      PIN_ENV="${{ parameters.tridentSourceDirectory }}/tests/images/mic-azl4-pin/PINNED.env"
       # shellcheck disable=SC1090
       . "$PIN_ENV"
       : "${MIC_PIN_URL:?PINNED.env missing MIC_PIN_URL}"
@@ -116,23 +115,6 @@ https://packages.microsoft.com/repos/azure-cli/ $AZ_REPO main" \
       git clone --filter=blob:none "$MIC_PIN_URL" "$WORKDIR"
       cd "$WORKDIR"
       git checkout "$MIC_PIN_SHA"
-
-      # Apply every patch under tests/images/mic-azl4-patches/. Each carries
-      # a single upstream-PR-pending fix; see that directory's README. The
-      # directory may be empty once all carried patches have landed upstream.
-      PATCH_DIR="${{ parameters.tridentSourceDirectory }}/tests/images/mic-azl4-patches"
-      shopt -s nullglob
-      patches=( "$PATCH_DIR"/*.patch )
-      shopt -u nullglob
-      if (( ${#patches[@]} == 0 )); then
-        echo "no patches to apply"
-      else
-        for patch in "${patches[@]}"; do
-          echo "applying $(basename "$patch")"
-          git apply --check "$patch"
-          git apply "$patch"
-        done
-      fi
 
       # Build the imagecustomizer Go binary.
       ( cd toolkit/tools/imagecustomizer && go build -o ../../out/tools/imagecustomizer . )
