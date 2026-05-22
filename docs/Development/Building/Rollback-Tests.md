@@ -47,13 +47,13 @@ The rollback scenario exercises a multi-step update-and-rollback sequence:
 - **Linux host** with root access
 - **libvirt and QEMU** installed and configured
 - **Docker** (for building images with Image Customizer)
+- **[oras](https://oras.land/)** CLI (for downloading base images from MCR)
 - **Go 1.24+** (for building Go tools)
 - **Rust** (latest stable, for building Trident)
 
-The `qemu_guest` base image is not publicly available on MCR. It is downloaded
-from an internal Azure DevOps artifacts feed by the Makefile. You need `az` CLI
-configured with access to the `mariner-org` ADO organization, or you can obtain
-the image from a pipeline artifact.
+The `qemu_guest` base image is needed for building VM test images. See
+[Servicing Tests — Create the qemu\_guest Base Image](Servicing-Tests.md#4-create-the-qemu_guest-base-image)
+for instructions on creating it from the publicly available `baremetal` image.
 
 See [Dependencies](Dependencies.md) for full details.
 
@@ -83,8 +83,10 @@ sudo rm -f artifacts/trident-vm-*-testimage.qcow2 artifacts/trident-vm-*-testima
 # Generate SSH keys (needed by the QCOW2 build)
 make artifacts/id_rsa
 
-# Ensure az CLI is logged in (needed to download qemu_guest base image)
-az login
+# Create qemu_guest base image (if not already present)
+# See: Servicing Tests doc, step 4
+./tests/images/testimages.py download-image baremetal
+# ... then run the Image Customizer conversion
 
 # Build the required test images (COSI + QCOW2)
 make artifacts/$TEST_IMAGE_NAME.cosi

@@ -25,7 +25,8 @@ image types are:
 | `trident-vm-usr-verity-testimage` | systemd-boot | `/usr` verity | Yes | `baseimg-usr-verity.yaml` |
 
 All image configs live under `tests/images/trident-vm-testimage/base/`. The
-base image is `qemu_guest`.
+base image is `qemu_guest` (see [step 4](#4-create-the-qemu_guest-base-image)
+for how to create it).
 
 **`trident-vm-grub-verity-testimage`** uses grub2 with root dm-verity. The root
 filesystem is read-only and integrity-protected, with `/var` on a separate
@@ -56,14 +57,9 @@ The update loop alternates between these two images across iterations.
 - **Linux host** with root access
 - **libvirt and QEMU** installed and configured
 - **Docker** (for building images with Image Customizer)
+- **[oras](https://oras.land/)** CLI (for downloading base images from MCR)
 - **Go 1.24+** (for building Go tools)
 - **Rust** (latest stable, for building Trident)
-
-The `qemu_guest` base image is not publicly available on MCR. It is downloaded
-from an internal Azure DevOps artifacts feed by the Makefile target
-`$(QEMU_GUEST_IMAGE)`. You need `az` CLI configured with access to the
-`mariner-org` ADO organization, or you can obtain the image from a pipeline
-artifact.
 
 See [Dependencies](Dependencies.md) for full build dependency details.
 
@@ -89,15 +85,58 @@ make bin/netlisten
 make artifacts/id_rsa
 ```
 
-### 4. Download Base Image
+### 4. Create the qemu\_guest Base Image
 
-The `qemu_guest` base image is downloaded automatically by the QCOW2 Makefile
-targets via `az artifacts universal download`. Ensure you have `az` CLI
-configured:
+The VM test images are built from a `qemu_guest` base image. If you have access
+to the internal ADO artifacts feed, the Makefile downloads it automatically
+(requires `az login`). Otherwise, you can create it from the publicly available
+`baremetal` image by swapping MegaRAID drivers for VirtIO:
 
 ```bash
-az login
+# Download the baremetal base image from MCR
+./tests/images/testimages.py download-image baremetal
 ```
+
+Create an Image Customizer config to convert baremetal → qemu\_guest:
+
+```yaml
+# mic-baremetal-to-qemu-guest.yaml
+os:
+  bootloader:
+    resetType: hard-reset
+  hostname: azure-linux
+  kernelCommandLine:
+    extraCommandLine:
+    - console=tty0
+    - console=ttyS0
+  selinux:
+    mode: disabled
+  packages:
+    remove:
+    - dracut-hostonly
+    - dracut-megaraid
+    - selinux-policy
+    install:
+    - dracut-virtio
+    - qemu-guest-agent
+```
+
+Run the conversion:
+
+```bash
+sudo docker run --rm --privileged \
+    -v /dev:/dev -v $(pwd):/repo \
+    mcr.microsoft.com/azurelinux/imagecustomizer:latest \
+    --build-dir /build \
+    --image-file /repo/artifacts/baremetal.vhdx \
+    --output-image-file /repo/artifacts/qemu_guest.vhdx \
+    --output-image-format vhdx \
+    --config-file /repo/mic-baremetal-to-qemu-guest.yaml
+```
+
+This swaps `dracut-megaraid` for `dracut-virtio` (VirtIO block/net/console
+drivers), adds `qemu-guest-agent`, and disables SELinux. Image Customizer
+automatically regenerates the initramfs with the new drivers.
 
 ### 5. Build the VM Image
 
@@ -107,7 +146,7 @@ Choose an image type and build the QCOW2:
 # For grub with root verity:
 make artifacts/trident-vm-grub-verity-testimage.qcow2
 
-# For UKI with usr verity (requires ukify on build host):
+# For UKI with usr verity:
 make artifacts/trident-vm-usr-verity-testimage.qcow2
 ```
 
