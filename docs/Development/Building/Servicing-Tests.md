@@ -114,20 +114,19 @@ make artifacts/trident-vm-usr-verity-testimage.qcow2
 ### 6. Prepare Update Images
 
 The update loop needs two distinct COSI images — Trident rejects updates where
-the new image has the same filesystem UUIDs as the currently installed one. In
-production, these would be different versions of the OS image.
-
-Place COSI files in the update directories:
+the new image has the same filesystem UUIDs as the currently installed one.
+Use `--clones 2` to build two images with unique UUIDs:
 
 ```bash
 mkdir -p artifacts/update-a artifacts/update-b
 
-# Build the COSI image for your chosen image type
-sudo ./tests/images/testimages.py build trident-vm-grub-verity-testimage --output-dir ./artifacts
+# Build two clones of the COSI image (produces _0 and _1 suffixed files)
+sudo ./tests/images/testimages.py build trident-vm-grub-verity-testimage \
+    --output-dir ./artifacts --clones 2
 
-# Copy the COSI images for the update loop
-cp artifacts/trident-vm-grub-verity-testimage.cosi artifacts/update-a/
-cp artifacts/trident-vm-grub-verity-testimage.cosi artifacts/update-b/
+# Move the clones into the update directories
+mv artifacts/trident-vm-grub-verity-testimage_0.cosi artifacts/update-a/
+mv artifacts/trident-vm-grub-verity-testimage_1.cosi artifacts/update-b/
 ```
 
 :::note
