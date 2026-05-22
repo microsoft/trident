@@ -113,6 +113,10 @@ make artifacts/trident-vm-usr-verity-testimage.qcow2
 
 ### 6. Prepare Update Images
 
+The update loop needs two distinct COSI images — Trident rejects updates where
+the new image has the same filesystem UUIDs as the currently installed one. In
+production, these would be different versions of the OS image.
+
 Place COSI files in the update directories:
 
 ```bash
@@ -126,10 +130,19 @@ cp artifacts/trident-vm-grub-verity-testimage.cosi artifacts/update-a/
 cp artifacts/trident-vm-grub-verity-testimage.cosi artifacts/update-b/
 ```
 
+:::note
+Both the QCOW2 and COSI images must be built from the same base image. Trident
+validates that the COSI's `VARIANT_ID` in `/etc/os-release` matches the host's.
+A mismatch (e.g., `baremetal` COSI on a `qemu-guest` VM) will fail with
+"Mismatched OS release VARIANT_ID".
+:::
+
 ## Running the Servicing Scenario
 
+The servicing scenario requires root access for VM creation via `virt-install`:
+
 ```bash
-bin/storm-trident run servicing -- \
+sudo bin/storm-trident run servicing -- \
     --artifacts-dir ./artifacts \
     --output-path /tmp/servicing-output \
     --platform qemu \
