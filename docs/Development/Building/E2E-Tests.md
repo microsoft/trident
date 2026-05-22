@@ -279,6 +279,10 @@ python3 -u -m pytest -m daily --capture=no \
 
 ### After A/B Update
 
+The `-A` flag specifies which volume is active after the update. Volumes
+alternate with each update: a clean install boots `volume-a`, the first A/B
+update switches to `volume-b`, the next back to `volume-a`, and so on.
+
 ```bash
 cd tests/e2e_tests
 python3 -u -m pytest -m daily --capture=no \
@@ -286,9 +290,12 @@ python3 -u -m pytest -m daily --capture=no \
     -R host \
     -C trident_configurations/<config> \
     -K ../../artifacts/id_rsa \
-    -A volume-b \
+    -A <active-volume> \
     -v
 ```
+
+Where `<active-volume>` is `volume-b` after the first update, `volume-a` after
+the second, and so on.
 
 ### Flags
 
