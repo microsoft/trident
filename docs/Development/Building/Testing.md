@@ -126,3 +126,12 @@ To run a subset of tests, use the `FILTER` variable:
 ```bash
 make functional-test FILTER="custom/test_trident_e2e.py -k test_name"
 ```
+
+## E2E Testing
+
+E2E tests validate complete Trident workflows — clean install, A/B update,
+rollback, and more — on real QEMU virtual machines using production-like COSI
+images. E2E tests use `netlaunch` for installations and `storm-trident` for
+orchestrating multi-step servicing scenarios.
+
+See [E2E Tests](E2E-Tests.md) for full setup and run instructions.
