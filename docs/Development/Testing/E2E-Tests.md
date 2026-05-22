@@ -164,20 +164,7 @@ mv artifacts/test-image/trident-usrverity-testimage_1.cosi artifacts/test-image/
 The images use the Image Customizer container from
 `mcr.microsoft.com/azurelinux/imagecustomizer:latest`.
 
-### 8. Extract Image Customizer
-
-The MOS ISO build uses the Image Customizer binary directly (not the
-container). Extract it from the container image:
-
-```bash
-mkdir -p artifacts
-id=$(docker create mcr.microsoft.com/azurelinux/imagecustomizer:latest)
-docker cp "$id:/usr/bin/imagecustomizer" artifacts/imagecustomizer
-docker rm "$id"
-chmod +x artifacts/imagecustomizer
-```
-
-### 9. Build the Installer ISO
+### 8. Build the Installer ISO
 
 The management OS ISO is used by `netlaunch` to boot the VM and run Trident:
 
