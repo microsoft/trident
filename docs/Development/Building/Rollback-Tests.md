@@ -13,18 +13,28 @@ back in sequence.
 
 ## VM Image Types
 
-The rollback scenario supports the same VM image types as
-[servicing tests](Servicing-Tests.md#vm-image-types), but is typically run
-with verity-enabled images that support extensions:
+The rollback scenario is typically run with verity-enabled images that support
+extensions:
 
-| Image | Bootloader | Extensions | Use Case |
-|-------|-----------|------------|----------|
-| `trident-vm-usr-verity-testimage` | systemd-boot (UKI) | Sysexts supported | **Recommended** — tests full rollback chain including extensions |
-| `trident-vm-grub-verity-testimage` | grub2 | Not supported | Tests rollback without extensions (use `--skip-extension-testing`) |
+| Image | Bootloader | Integrity | UKI | Extensions | `--uki` flag |
+|-------|-----------|-----------|-----|------------|--------------|
+| `trident-vm-usr-verity-testimage` | systemd-boot | `/usr` verity | Yes | Sysexts supported | Required |
+| `trident-vm-grub-verity-testimage` | grub2 | Root verity | No | Not supported | Not needed |
 
-All image configs live under `tests/images/trident-vm-testimage/base/`. See
-[Servicing Tests](Servicing-Tests.md#vm-image-types) for the complete image
-type reference.
+All image configs live under `tests/images/trident-vm-testimage/base/`. The
+base image is `qemu_guest` (see
+[Servicing Tests — Create the qemu\_guest Base Image](Servicing-Tests.md#4-create-the-qemu_guest-base-image)
+for how to create it from the publicly available `baremetal` image on MCR).
+
+**`trident-vm-usr-verity-testimage`** (recommended) uses systemd-boot with a
+Unified Kernel Image (UKI) and `/usr` dm-verity. This is the only image type
+that supports full extension testing. When using this image, you **must** pass
+`--uki` to `storm-trident run rollback` so that the `prepare-qcow2` step
+generates the correct Image Customizer config with `os.uki.mode: passthrough`.
+
+**`trident-vm-grub-verity-testimage`** uses grub2 with root dm-verity. It does
+not support extensions, so you must pass `--skip-extension-testing` when using
+this image type.
 
 ## What It Tests
 
@@ -51,86 +61,129 @@ The rollback scenario exercises a multi-step update-and-rollback sequence:
 - **Go 1.24+** (for building Go tools)
 - **Rust** (latest stable, for building Trident)
 
-The `qemu_guest` base image is needed for building VM test images. See
-[Servicing Tests — Create the qemu\_guest Base Image](Servicing-Tests.md#4-create-the-qemu_guest-base-image)
-for instructions on creating it from the publicly available `baremetal` image.
-
-See [Dependencies](Dependencies.md) for full details.
+See [Dependencies](Dependencies.md) for full build dependency details.
 
 ## Building Dependencies
 
+### 1. Build Trident and RPMs
+
 ```bash
-# Choose the test image
-TEST_IMAGE_NAME="trident-vm-usr-verity-testimage"
-# Alternative: TEST_IMAGE_NAME="trident-vm-grub-verity-testimage"
+make build
+make bin/trident-rpms.tar.gz
+```
 
-# Build storm-trident
+### 2. Build Go Tools
+
+```bash
 make bin/storm-trident
+make bin/netlisten
+```
 
-# Build the test sysext extension images (3 versions for rollback chain)
+### 3. Generate SSH Keys
+
+```bash
+make artifacts/id_rsa
+```
+
+### 4. Create the qemu\_guest Base Image
+
+Follow the instructions in
+[Servicing Tests — Create the qemu\_guest Base Image](Servicing-Tests.md#4-create-the-qemu_guest-base-image)
+to download the `baremetal` image from MCR and convert it to `qemu_guest.vhdx`
+using Image Customizer.
+
+### 5. Build Extension Images
+
+The rollback chain tests three versions of sysext extensions:
+
+```bash
+mkdir -p artifacts
 pushd ./artifacts
 ../bin/storm-trident script build-extension-images --build-sysexts --num-clones 3
 popd
+```
 
-# Build Trident RPMs (baked into the VM image)
-sudo rm -f bin/trident-rpms.tar.gz
-sudo rm -rf bin/RPMS
-make bin/trident-rpms.tar.gz
+### 6. Build the VM Image
+
+Choose an image type and build both COSI and QCOW2:
+
+```bash
+# For UKI with usr verity (recommended — full extension testing):
+TEST_IMAGE_NAME="trident-vm-usr-verity-testimage"
+
+# Alternative: grub with root verity (no extension testing):
+# TEST_IMAGE_NAME="trident-vm-grub-verity-testimage"
 
 # Clean any previous test images
 sudo rm -f artifacts/trident-vm-*-testimage.qcow2 artifacts/trident-vm-*-testimage.cosi
 
-# Generate SSH keys (needed by the QCOW2 build)
-make artifacts/id_rsa
-
-# Create qemu_guest base image (if not already present)
-# See: Servicing Tests doc, step 4
-./tests/images/testimages.py download-image baremetal
-# ... then run the Image Customizer conversion
-
-# Build the required test images (COSI + QCOW2)
-make artifacts/$TEST_IMAGE_NAME.cosi
+# Build the COSI and QCOW2
+sudo ./tests/images/testimages.py build $TEST_IMAGE_NAME --output-dir ./artifacts
 make artifacts/$TEST_IMAGE_NAME.qcow2
 ```
 
-## Running Locally
+## Running the Rollback Scenario
+
+The rollback scenario requires root access for VM creation via `virt-install`:
 
 ```bash
+# For UKI images (trident-vm-usr-verity-testimage):
 sudo ./bin/storm-trident run rollback -w --verbose \
     --artifacts-dir ./artifacts/ \
-    --output-path /tmp/output \
+    --output-path /tmp/rollback-output \
     --platform qemu \
     --ssh-private-key-path ./artifacts/id_rsa \
-    --ssh-public-key-path ./artifacts/id_rsa.pub
+    --ssh-public-key-path ./artifacts/id_rsa.pub \
+    --uki
 ```
 
-### Skip Flags
-
-Individual parts of the rollback chain can be skipped:
-
-| Flag | Description |
-|------|-------------|
-| `--skip-runtime-updates` | Skip runtime update testing |
-| `--skip-manual-rollbacks` | Skip manual rollback testing |
-| `--skip-extension-testing` | Skip extension (sysext) testing |
-| `--skip-netplan-runtime-testing` | Skip netplan runtime update testing |
+```bash
+# For grub-verity images (trident-vm-grub-verity-testimage):
+sudo ./bin/storm-trident run rollback -w --verbose \
+    --artifacts-dir ./artifacts/ \
+    --output-path /tmp/rollback-output \
+    --platform qemu \
+    --ssh-private-key-path ./artifacts/id_rsa \
+    --ssh-public-key-path ./artifacts/id_rsa.pub \
+    --skip-extension-testing
+```
 
 :::warning
-When using `trident-vm-grub-verity-testimage`, add `--skip-extension-testing`
-since Image Customizer cannot add extensions to the original QCOW2 for that
-image type.
+The `--uki` flag is **required** for UKI images. Without it, the `prepare-qcow2`
+step will fail because Image Customizer requires explicit UKI handling
+(`os.uki.mode`) when the base image contains Unified Kernel Images.
 :::
+
+### Flags
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--artifacts-dir` | Directory containing VM images, COSI, and extensions | `./artifacts` |
+| `--output-path` | Output directory for logs | `./output` |
+| `--platform` | `qemu` or `azure` | `qemu` |
+| `--ssh-private-key-path` | Path to SSH private key | `~/.ssh/id_rsa` |
+| `--ssh-public-key-path` | Path to SSH public key | `~/.ssh/id_rsa.pub` |
+| `--uki` | Image uses UKI (adds `os.uki.mode: passthrough` to IC config) | `false` |
+| `--skip-runtime-updates` | Skip runtime update testing | `false` |
+| `--skip-manual-rollbacks` | Skip manual rollback testing | `false` |
+| `--skip-extension-testing` | Skip extension (sysext) testing | `false` |
+| `--skip-netplan-runtime-testing` | Skip netplan runtime update testing | `false` |
+| `--force-cleanup` | Force VM cleanup on exit | `false` |
 
 ### Test Cases
 
-The rollback scenario runs these test cases:
+The rollback scenario runs these test cases in order:
 
-1. **prepare-qcow2** — Modifies the QCOW2 to include the v1 sysext extension
+1. **prepare-qcow2** — Modifies the QCOW2 using Image Customizer to inject the
+   v1 sysext extension and enable `systemd-sysext`. For UKI images, adds
+   `os.uki.mode: passthrough` to preserve existing UKIs.
 2. **deploy-vm** — Creates and boots a QEMU VM from the prepared QCOW2
-3. **check-deployment** — Verifies the VM booted successfully
+3. **check-deployment** — Verifies the VM booted successfully and is accessible
+   via SSH
 4. **multi-rollback** — Runs the full update → runtime update → rollback chain
+   described in [What It Tests](#what-it-tests)
 5. **skip-to-ab-rollback** — Tests skipping runtime rollbacks and going directly
    to A/B rollback
 6. **split-rollback** — Tests split-phase (stage then finalize) rollback
-7. **collect-logs** — Fetches Trident logs from the VM
+7. **collect-logs** — Fetches Trident logs from the VM via SSH
 8. **cleanup-vm** — Destroys the QEMU VM
