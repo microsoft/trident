@@ -145,13 +145,14 @@ sudo ./bin/storm-trident run rollback -w --verbose \
     --platform qemu \
     --ssh-private-key-path ./artifacts/id_rsa \
     --ssh-public-key-path ./artifacts/id_rsa.pub \
+    --uki \
     --skip-extension-testing
 ```
 
-:::warning
-The `--uki` flag is **required** for UKI images. Without it, the `prepare-qcow2`
-step will fail because Image Customizer requires explicit UKI handling
-(`os.uki.mode`) when the base image contains Unified Kernel Images.
+:::note
+The `--uki` flag is required for both image types. Without it, the
+`prepare-qcow2` step will fail because Image Customizer requires explicit UKI
+handling (`os.uki.mode`) when the base image contains Unified Kernel Images.
 :::
 
 ### Flags
