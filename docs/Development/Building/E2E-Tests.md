@@ -95,20 +95,33 @@ make bin/rcp-agent       # Remote control plane agent
 make artifacts/osmodifier
 ```
 
-### 4. Generate SSH Keys
+### 4. Build Trident RPMs
+
+The test images include Trident packages built from your local tree. This step
+builds the RPMs into `bin/RPMS/`, which `testimages.py` passes to Image
+Customizer via `--rpm-source`:
+
+```bash
+make bin/trident-rpms.tar.gz
+```
+
+This requires Docker and uses the Trident packaging Dockerfile to produce
+RPMs from your compiled binary and osmodifier.
+
+### 5. Generate SSH Keys
 
 ```bash
 make artifacts/id_rsa
 ```
 
-### 5. Download Base Image
+### 6. Download Base Image
 
 ```bash
 # Downloads baremetal.vhdx from MCR
 ./tests/images/testimages.py download-image baremetal
 ```
 
-### 6. Build COSI Images
+### 7. Build COSI Images
 
 Build the test COSI images that Trident will install and update. A/B updates
 require two images with unique filesystem UUIDs — Trident rejects updates where
@@ -146,7 +159,7 @@ mv artifacts/test-image/trident-usrverity-testimage_1.cosi artifacts/test-image/
 The images use the Image Customizer container from
 `mcr.microsoft.com/azurelinux/imagecustomizer:latest`.
 
-### 7. Build the Installer ISO
+### 8. Build the Installer ISO
 
 The management OS ISO is used by `netlaunch` to boot the VM and run Trident:
 
