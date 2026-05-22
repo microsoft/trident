@@ -18,14 +18,14 @@ Legend:
 | --------------- | --------------------------------------- | ------- | ------- | ------ | ----------- |
 | 🚀 Runtime       | Native binary                           | ✅       | ✅       | ✅      | ✅           |
 | 🚀 Runtime       | Containerized                           | ✅       | ❌       | ✅      | ✅           |
-| 🚀 Runtime       | gRPC API                                | 🔜       | ❌       | 🔜      | ✅           |
+| 🚀 Runtime       | gRPC API                                | ☑️       | ❌       | ✅      | ✅           |
 | ⚙️ Bootloader    | UEFI [1]                                | ✅       | ✅       | ✅      | ✅           |
 | ⚙️ Bootloader    | GPT partitioning                        | ✅       | ✅       | ✅      | ✅           |
 | ⚙️ Bootloader    | Grub2                                   | ✅       | ✅       | ✅      | ✅           |
 | ⚙️ Bootloader    | Systemd-boot                            | ☑️       | ☑️       | ☑️      | ✅           |
 | 🔄 Lifecycle     | Onboard system for updates              | ✅       | ✅       | ✅      | ❌           |
 | 🔄 Lifecycle     | Rollback (grub)                         | ✅       | ✅       | ✅      | ❌           |
-| 🔄 Lifecycle     | Rollback (systemd-boot/UKI)             | 🔜       | 🔜       | 🔜      | ❌           |
+| 🔄 Lifecycle     | Rollback (systemd-boot/UKI)             | ☑️       | ☑️       | ☑️      | ❌           |
 | 🔏 Integrity     | Secure Boot                             | ✅       | ✅       | ✅      | ✅           |
 | 🔏 Integrity     | UKI                                     | ☑️       | ☑️       | ☑️      | ✅           |
 | 🔏 Integrity     | Root-verity (grub)                      | ⚠️[2]    | ⚠️[2]    | ⚠️[2]   | ✅           |
@@ -34,6 +34,7 @@ Legend:
 | 💽 Storage       | Block device creation                   | ✅       | 🔜       | ❌      | ✅           |
 | 💽 Storage       | Image streaming (local)                 | ✅       | 🔜       | ✅      | ✅           |
 | 💽 Storage       | Image streaming (HTTPS)                 | ✅       | 🔜       | ✅      | ✅           |
+| 💽 Storage       | Image streaming (OCI registry)          | ✅       | 🔜       | ✅      | ✅           |
 | 💽 Storage       | Multiboot                               | ☑️       | ❌       | ✅[3]   | ❌           |
 | 💽 Storage       | Partition adoption                      | ☑️       | ❌       | ✅[3]   | ❌           |
 | 💽 Storage       | Software RAID                           | ✅       | ❌       | ✅[3]   | ❌           |
@@ -46,6 +47,7 @@ Legend:
 | 📝 OS Config     | SSH configuration                       | ✅[5]    | ❌       | ✅[5]   | ❌           |
 | 📝 OS Config     | Initrd regeneration (grub)              | ✅       | ❌       | ✅      | ❌           |
 | 📝 OS Config     | Initrd regeneration (UKI)               | ❌       | ❌       | ❌      | ❌           |
+| 📦 Extensions    | Sysexts and confexts                    | ✅       | ❌       | ✅      | ❌           |
 | 🛡️ Security      | SELinux Configuration                   | ✅       | ❌       | ✅      | ❌           |
 | 🪛 Customization | User provided-scripts                   | ✅       | ❌       | ✅      | 🔜           |
 | 🛠️ Development   | Offline validation                      | ✅       | 🔜       | 🔜      | ❌           |

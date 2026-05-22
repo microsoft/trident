@@ -47,8 +47,11 @@ servicing.
   accounts](How-To-Guides/Configure-Users.md), SSH, and SELinux policies.
 - [Execution of user-provided scripts](Tutorials/Running-Custom-Scripts.md) for
   custom OS image modifications.
-- Reliable rollback to the previous OS version in case of servicing issues.
 - Unified Kernel Image (UKI) support (preview).
+
+**Servicing Features:**
+
+- Reliable rollback to the previous OS version in case of servicing issues.
 
 Trident supports servicing both bare-metal hosts and virtual machines.
 

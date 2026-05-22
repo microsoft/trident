@@ -35,6 +35,8 @@ installation and servicing operations. The CLI supports the following commands:
 - [`diagnose`](How-To-Guides/Generate-Diagnostics-Bundle.md): Generates a
   diagnostics bundle containing system information, logs, and configuration data
   for troubleshooting and support purposes.
+- [`rollback`](../Explanation/Manual-Rollback.md): Triggers a manual rollback to
+  a previous OS state. Supports both A/B rollback and runtime rollback.
 
 Please consult [CLI reference](Reference/Trident-CLI.md) for detailed
 information on each command and its usage.
