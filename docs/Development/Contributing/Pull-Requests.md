@@ -36,7 +36,6 @@ When making a PR you are attempting to merge, make sure that:
 - Unit tests pass. (`make test`) (See: [Testing](../Building/Testing.md))
 - Functional tests pass. (`make functional-test`)
 - Local make targets work.
-  - `make rpm`
   - `make docker-build`
 - Coverage is above the baseline. (See: [Coverage](../Building/Coverage.md))
 

@@ -4,7 +4,7 @@ sidebar_position: 5
 
 # Functional Tests
 
-Functional testing is a `pytest` test suite (rooted in `functional_tests/`) for
+Functional testing is a `pytest` test suite (rooted in `tests/functional_tests/`) for
 tests that are meant to be run in an isolated environment. Functional testing is
 comprised of:
 
@@ -27,11 +27,10 @@ how they are implemented.
 ## Native Python Tests
 
 Native Python tests are pytest tests that are written in Python. They live in
-python files in the `functional_tests/custom` directory.
+python files in the `tests/functional_tests/custom` directory.
 
 Generally, these leverage the `vm` fixture, which is an Azure Linux VM that has been
-created using `virt-deploy` and `netlaunch`. The `vm` fixture is defined in
-`conftest.py`.
+created using `virt-deploy`. The `vm` fixture is defined in `conftest.py`.
 
 ## Rust-Based Tests
 
@@ -60,6 +59,8 @@ inventory::submit!{pytest::TestCaseMetadata {
     module: module_path!(),
     function: #function,
     negative: #negative,
+    xfail: #xfail,
+    skip: #skip,
     feature: #feature,
     type_: #test_type,
 }}
@@ -87,6 +88,8 @@ inventory::submit!{pytest::TestCaseMetadata {
     module: module_path!(), // This will be `crate::module1::moduleN::functional_test`
     function: "test_case",
     negative: false,
+    xfail: None,
+    skip: None,
     feature: "",
     type_: "",
 }}
@@ -125,7 +128,7 @@ exist within the test binaries.
 
 The `pytest` crate collects all the test cases, and builds a tree representing
 rust's modules, and all the test cases within them. This tree is then serialized
-into a JSON file called `ft.json`, and placed in the `functional_tests/`
+into a JSON file called `ft.json`, and placed in the `tests/functional_tests/`
 directory.
 
 The underlying structure of the JSON file is:

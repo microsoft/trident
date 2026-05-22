@@ -18,8 +18,11 @@ Trident's dependencies.
 - Ubuntu/Debian:
 
   ```bash
-  sudo apt install build-essential pkg-config libssl-dev libclang-dev protobuf-compiler
+  sudo apt install build-essential pkg-config libssl-dev libclang-dev protobuf-compiler ca-certificates
   ```
+
+  For RPM builds, additional packages are needed: `rpmdevtools`, `sed`,
+  `perl`, and `selinux-policy-devel`.
 
 - Docker (follow the instructions at [Install Docker Engine on Ubuntu](https://docs.docker.com/engine/install/ubuntu/))
 

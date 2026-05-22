@@ -40,6 +40,16 @@ potential errors that might occur on a host and/or in Trident:
     system misconfiguration. E.g. `DatastoreError` is within this category
     since loading or writing to a datastore might fail for a variety of reasons.
 
+6. `HealthChecks` identifies errors that occur during health check
+    evaluation after a servicing operation completes. E.g. when a configured
+    health check fails after an update, indicating the deployment may need
+    to be rolled back.
+
+7. `UnsupportedConfiguration` identifies errors that occur when the
+    requested configuration is valid but not yet supported by Trident. E.g.
+    when a Host Configuration requests a feature combination that has not
+    been implemented.
+
 ## Adding a new error type
 
 1. When adding a new error type, e.g. when implementing new functionality or
