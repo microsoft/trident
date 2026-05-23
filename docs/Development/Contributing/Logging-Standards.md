@@ -197,10 +197,11 @@ and should probably address, we issue a non-fatal error with an `ERROR` log.
 
 *Example 1.*
 
-The code snippet below refers to a scenario where the customer is requesting to
-ignore the hash of an image in the Host Configuration. Before deploying the
-image onto the block device, Trident produces a `WARN` log because streaming an
-unverified payload onto a block device is a potential security concern.
+The illustrative code snippet below refers to a scenario where the customer is
+requesting to ignore the hash of an image in the Host Configuration. Before
+deploying the image onto the block device, Trident should produce a `WARN` log
+because streaming an unverified payload onto a block device is a potential
+security concern.
 
 ```rust
 match image.sha384 {
