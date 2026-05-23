@@ -68,23 +68,10 @@ pub(super) fn update_configs(ctx: &EngineContext) -> Result<(), Error> {
     // Use the *image* distro (the OS being installed), not the host (MOS ISO).
     match ctx.image_distro() {
         Distro::AzureLinux(AzureLinuxRelease::AzL3) => {
-            update_grub_config_azl3(
-                ctx,
-                os_modifier_path,
-                &root_device_path,
-                &boot_grub_config_path,
-            )?;
+            update_grub_config_azl3(ctx, &root_device_path, &boot_grub_config_path)?;
         }
         Distro::AzureLinux(AzureLinuxRelease::AzL4) => {
             update_grub_config_native(ctx, &root_device_path, &boot_grub_config_path)?;
-        }
-
-        Distro::AzureLinux(AzureLinuxRelease::AzL4) => {
-            update_grub_config_native(
-                ctx,
-                &root_device_path,
-                &boot_grub_config_path,
-            )?;
         }
 
         d => bail!("Unsupported distro for GRUB config update: {d:?}"),
