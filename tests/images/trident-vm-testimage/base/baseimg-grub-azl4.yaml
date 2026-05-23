@@ -155,7 +155,7 @@ os:
       destination: /etc/systemd/system/regen-sshd-keys.service
 
   users:
-    - name: testuser
+    - name: testing-user
       sshPublicKeyPaths:
         - files/id_rsa.pub
       secondaryGroups:

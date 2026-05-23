@@ -82,7 +82,7 @@ os:
       # belt-and-braces creates the multi-user.target.wants symlink.
       - trident.service
   users:
-    - name: testuser
+    - name: testing-user
       sshPublicKeyPaths:
         - files/id_rsa.pub
       secondaryGroups:
@@ -104,7 +104,7 @@ os:
     # confirm which copy is in use at runtime, check
     # `readlink -f $(command -v trident)`.
     - source: trident-bin/trident
-      destination: /usr/local/bin/trident
+      destination: /usr/bin/trident
       permissions: "755"
     # Bake the OS Modifier binary into /usr/local/bin/osmodifier.
     # AZL4 does not yet ship azurelinux-image-tools-osmodifier as an RPM,
@@ -113,7 +113,7 @@ os:
     # binary; this ride-along disappears once the AZL4 RPM is published.
     # See the comment above on /usr/local/bin placement.
     - source: osmodifier-bin/osmodifier
-      destination: /usr/local/bin/osmodifier
+      destination: /usr/bin/osmodifier
       permissions: "755"
     # AZL4 lacks a /usr/bin/hostname binary; the pytest framework smoke-
     # tests SSH with `hostname`, so we ship a tiny shim.
