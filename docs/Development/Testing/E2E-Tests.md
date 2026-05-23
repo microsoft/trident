@@ -52,7 +52,7 @@ preview feature (`previewFeatures: uki`). Requires `ukify` on the build host.
   group)
 - **Docker** (for building images with Image Customizer)
 - **[oras](https://oras.land/)** CLI (for downloading base images from MCR)
-- **Go 1.24+** (for building Go tools)
+- **Go 1.25+** (for building Go tools)
 - **Rust** (latest stable, for building Trident)
 - **Python 3.8+** with packages:
 
@@ -466,16 +466,23 @@ Common parameters:
 
 ### Test Rings
 
-E2E scenarios are organized into test rings that control how frequently they run:
+E2E scenarios are organized into test rings that control how frequently they run.
+The valid `--test-ring` values are:
 
 - **pr-e2e**: Run on every pull request (innermost ring)
-- **post_merge**: Run after merge to main
-- **daily**: Run daily
-- **weekly**: Run weekly
+- **ci**: Run after merge to main (post-merge)
+- **pre**: Run during pre-release validation
 - **full-validation**: Run for release validation (outermost ring)
 
 Rings are cumulative — all scenarios in inner rings also run when an outer ring
 is executed.
+
+:::note
+The `tests/e2e_tests/target-configurations.yaml` file uses pipeline-frequency
+labels (`pullrequest`, `post_merge`, `daily`, `weekly`) which `invert.py` maps
+to the ring constants above: `pullrequest` → `pr-e2e`, `post_merge` → `ci`,
+`daily`/`weekly` → `full-validation`.
+:::
 
 ### How E2E Discovery Works
 
@@ -486,7 +493,7 @@ and determines when each should run. The key components:
   `tests/e2e_tests/trident_configurations/`, and the mapping of which
   configurations run in which test rings is defined in
   `tests/e2e_tests/target-configurations.yaml`.
-- **Discovery function**: `DiscoverTridentE2EScenarios` in
+- **Discovery function**: `DiscoverTridentScenarios` in
   `tools/storm/e2e/discover.go` produces instances of `TridentE2EScenario`
   (from `tools/storm/e2e/scenario/trident.go`) for each valid combination of
   Host Configuration, hardware type, and runtime.

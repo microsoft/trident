@@ -25,11 +25,13 @@ Trident's dependencies.
   Building Go tools that use gRPC (e.g., `netlaunch`, `storm-trident`) requires
   `protoc` 3.15+ for proto3 optional field support. On Ubuntu 22.04 and earlier,
   the apt `protobuf-compiler` package is too old (3.12). Install a newer version
-  manually:
+  manually (example shown for x86\_64; adjust the archive name for other
+  architectures):
 
   ```bash
   PROTOC_VERSION=28.3
-  curl -sL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip -o /tmp/protoc.zip
+  PROTOC_ARCH=linux-x86_64  # use linux-aarch_64 for arm64
+  curl -sL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-${PROTOC_ARCH}.zip -o /tmp/protoc.zip
   sudo unzip -o /tmp/protoc.zip -d /usr/local
   rm /tmp/protoc.zip
   ```

@@ -97,6 +97,11 @@ to the internal ADO artifacts feed, the Makefile downloads it automatically
 ./tests/images/testimages.py download-image baremetal
 ```
 
+:::tip Internal shortcut
+If you have access to the internal Azure DevOps artifacts feed, you can download
+`qemu_guest` directly: `./tests/images/testimages.py download-image qemu_guest`
+:::
+
 Create an Image Customizer config to convert baremetal → qemu\_guest:
 
 ```yaml
@@ -224,3 +229,5 @@ The servicing scenario runs these test cases in order:
 | `--verbose` | Enable verbose logging | `false` |
 | `--force-cleanup` | Force VM cleanup on exit | `false` |
 | `--test-case-to-run` | Run a specific test case only | `all` |
+| `--expected-volume` | Expected active volume after update | `volume-a` |
+| `--rollback-retry-count` | Number of rollback retry attempts | `3` |

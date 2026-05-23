@@ -144,7 +144,6 @@ sudo ./bin/storm-trident run rollback -w --verbose \
     --output-path /tmp/rollback-output \
     --platform qemu \
     --ssh-private-key-path ./artifacts/id_rsa \
-    --ssh-public-key-path ./artifacts/id_rsa.pub \
     --uki
 ```
 
@@ -155,34 +154,35 @@ sudo ./bin/storm-trident run rollback -w --verbose \
     --output-path /tmp/rollback-output \
     --platform qemu \
     --ssh-private-key-path ./artifacts/id_rsa \
-    --ssh-public-key-path ./artifacts/id_rsa.pub \
-    --uki \
     --skip-extension-testing \
     --skip-runtime-updates \
     --skip-netplan-runtime-testing
 ```
 
 :::note
-The `--uki` flag is required for both image types. Without it, the
-`prepare-qcow2` step will fail because Image Customizer requires explicit UKI
-handling (`os.uki.mode`) when the base image contains Unified Kernel Images.
+The `--uki` flag is required for UKI-based images (e.g.,
+`trident-vm-usr-verity-testimage`). Without it, the `prepare-qcow2` step will
+fail because Image Customizer requires explicit UKI handling (`os.uki.mode`)
+when the base image contains Unified Kernel Images. Do not use `--uki` with
+grub-based images.
 :::
 
 ### Flags
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--artifacts-dir` | Directory containing VM images, COSI, and extensions | `./artifacts` |
+| `--artifacts-dir` | Directory containing VM images, COSI, and extensions | `/tmp` |
 | `--output-path` | Output directory for logs | `./output` |
 | `--platform` | `qemu` or `azure` | `qemu` |
 | `--ssh-private-key-path` | Path to SSH private key | `~/.ssh/id_rsa` |
-| `--ssh-public-key-path` | Path to SSH public key | `~/.ssh/id_rsa.pub` |
 | `--uki` | Image uses UKI (adds `os.uki.mode: passthrough` to IC config) | `false` |
+| `--verbose` | Enable verbose logging | `false` |
 | `--skip-runtime-updates` | Skip runtime update testing | `false` |
 | `--skip-manual-rollbacks` | Skip manual rollback testing | `false` |
 | `--skip-extension-testing` | Skip extension (sysext) testing | `false` |
 | `--skip-netplan-runtime-testing` | Skip netplan runtime update testing | `false` |
 | `--force-cleanup` | Force VM cleanup on exit | `false` |
+| `--test-case-to-run` | Run a specific test case only | `all` |
 
 ### Test Cases
 

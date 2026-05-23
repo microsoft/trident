@@ -62,6 +62,9 @@ and a base image also from MCR.
 
 ## Building Test Dependencies
 
+These dependencies are built automatically by `make functional-test`, but you
+can build them individually if needed:
+
 ```bash
 # Build virtdeploy (VM management tool)
 make bin/virtdeploy
