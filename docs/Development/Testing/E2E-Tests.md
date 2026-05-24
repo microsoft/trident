@@ -9,7 +9,7 @@ E2E tests validate complete Trident install-and-update workflows using
 validation of the resulting host state. They are defined by Host Configurations
 and test selections in `tests/e2e_tests/trident_configurations/`.
 
-E2E tests are orchestrated by two systems:
+E2E tests are orchestrated by three systems:
 
 - **storm-trident** (`bin/storm-trident`): A Go-based test orchestrator built on
   the [Storm](https://github.com/microsoft/storm) framework. It manages VM
@@ -18,6 +18,11 @@ E2E tests are orchestrated by two systems:
 - **pytest e2e suite** (`tests/e2e_tests/`): A Python test suite that validates
   the host state after servicing operations (partitions, filesystems, boot
   order, etc.) by connecting to the VM over SSH.
+- **Test configurations** (`tests/e2e_tests/trident_configurations/`): A
+  declarative system that pairs Host Configurations with test selections. Each
+  configuration directory defines *what* to install (disk layout, filesystems,
+  features) and *which tests* to run against it, enabling the same pytest suite
+  to validate many different Trident deployment scenarios.
 
 For VM-image-based servicing and rollback tests that don't use netlaunch, see
 [Servicing Tests](Servicing-Tests.md) and [Rollback Tests](Rollback-Tests.md).
@@ -403,14 +408,171 @@ sudo bin/virtdeploy clean
 
 ## Test Configurations
 
-Pre-defined test configurations live in `tests/e2e_tests/trident_configurations/`.
-Each subdirectory contains:
+Test configurations live in `tests/e2e_tests/trident_configurations/`. Each
+subdirectory defines a complete test scenario — what to install and which tests
+to run against it.
 
-- `trident-config.yaml`: The Host Configuration to install
-- `test-selection.yaml`: Which test markers to enable (e.g., `compatible: [base]`)
+### Directory Structure
 
-The full matrix of which configurations run in which pipeline tier is defined in
-`tests/e2e_tests/target-configurations.yaml`.
+```
+tests/e2e_tests/trident_configurations/
+├── base/
+│   ├── trident-config.yaml    # Host Configuration for Trident
+│   └── test-selection.yaml    # Which tests to run
+├── combined/
+├── encrypted-partition/
+├── misc/
+├── simple/
+├── usr-verity/
+└── ...
+```
+
+Each configuration directory contains two files:
+
+- **`trident-config.yaml`**: The Host Configuration that Trident uses to
+  provision the system. Defines disk layout, partitions, filesystems, A/B update
+  volume pairs, users, SELinux mode, kernel parameters, and other OS settings.
+  Image URLs use the placeholder `NETLAUNCH_HOST_ADDRESS`, which netlaunch
+  replaces at runtime.
+- **`test-selection.yaml`**: Declares which pytest test categories are
+  compatible with this configuration, with optional per-ring overrides to
+  add or remove tests at different pipeline stages.
+
+### Test Selection
+
+The `test-selection.yaml` file controls which tests run for a given
+configuration. Each test file declares a pytest marker (e.g., `base`,
+`encryption`, `verity`) via `pytestmark`, and the test selection's `compatible`
+list references these markers.
+
+**Available test markers:**
+
+| Marker | Test File | What It Validates |
+|--------|-----------|-------------------|
+| `base` | `base_test.py` | Connection, partitions, users, UEFI boot entries |
+| `encryption` | `encryption_test.py` | LUKS encrypted partitions and swap |
+| `verity` | `verity_test.py` | dm-verity root or `/usr` integrity |
+| `extensions` | `extensions_test.py` | System extension (sysext/confext) servicing |
+| `rollback` | `rollback_test.py` | Health-check triggered rollback |
+| `ab_update_staged` | `ab_update_staged_test.py` | Staged A/B update state |
+
+**Basic test selection** — list the compatible markers:
+
+```yaml
+# tests/e2e_tests/trident_configurations/misc/test-selection.yaml
+compatible:
+  - base
+```
+
+This selects all tests marked `@pytest.mark.base` (from `base_test.py`).
+
+**Multi-marker selection** — configurations that exercise multiple features
+list all applicable markers:
+
+```yaml
+# tests/e2e_tests/trident_configurations/combined/test-selection.yaml
+compatible:
+  - base
+  - usr_verity
+  - encryption
+  - uki
+```
+
+**Per-ring overrides** — test selections can be refined for each pipeline ring.
+Rings are cumulative (each inherits from the previous), so overrides only need
+to specify differences:
+
+```yaml
+compatible:
+  - marker1
+  - marker2
+  - marker3
+weekly:
+  remove:
+    - file2.py::function_name1    # Remove a specific test function
+daily:
+  remove:
+    - marker3                      # Remove an entire marker category
+post_merge:
+  remove:
+    - marker2
+  add:
+    - file2.py::function_name1    # Add back a specific test function
+pullrequest:
+  remove:
+    - file2.py::function_name1
+```
+
+Overrides support both marker names (affecting all tests with that marker) and
+specific test functions using `file.py::function_name` syntax.
+
+### How Test Selection Works
+
+The `conftest.py` `pytest_collection_modifyitems` hook processes
+`test-selection.yaml` at collection time:
+
+1. All markers listed in `compatible` are added to matching tests.
+2. Ring-level overrides (`weekly`, `daily`, `post_merge`, `pullrequest`,
+   `validation`) are applied cumulatively — each ring inherits the test set from
+   the previous ring, then applies its own `add`/`remove` operations.
+3. When pytest runs with `-m daily`, only tests that received the `daily` marker
+   through this process are selected.
+
+### Pipeline Scheduling
+
+The file `tests/e2e_tests/target-configurations.yaml` maps each configuration
+to the hardware types, runtimes, and pipeline frequencies where it should run:
+
+```yaml
+virtualMachine:
+  host:
+    pullrequest:        # Runs on every PR
+      - base
+      - misc
+      - simple
+      - ...
+    post_merge:         # Runs after merge to main
+      - base
+      - misc
+      - ...
+    daily:              # Runs nightly
+      - base
+      - misc
+      - ...
+bareMetal:
+  host:
+    daily:
+      - base
+      - ...
+```
+
+The `invert.py` script in `tools/storm/e2e/` transforms this file into
+`configurations/configurations.yaml`, which storm-trident embeds at build time
+for scenario discovery.
+
+### Configuration Summary
+
+| Configuration | Image | Key Features |
+|--------------|-------|-------------|
+| `base` | `regular.cosi` | Standard grub2 install, baseline validation |
+| `simple` | `regular.cosi` | Minimal single-root partition layout |
+| `misc` | `regular.cosi` | NTFS partition, kernel modules, extra services, kernel command line |
+| `split` | `regular.cosi` | Separate `/boot` partition |
+| `encrypted-partition` | `regular.cosi` | LUKS-encrypted root partition |
+| `encrypted-raid` | `regular.cosi` | LUKS encryption with RAID |
+| `encrypted-swap` | `regular.cosi` | LUKS-encrypted swap partition |
+| `raid-small` | `regular.cosi` | RAID-1 mirrored root (small disks) |
+| `raid-mirrored` | `regular.cosi` | RAID-1 mirrored root |
+| `raid-big` | `regular.cosi` | RAID with large disks |
+| `raid-resync-small` | `regular.cosi` | RAID resync behavior |
+| `extensions` | `regular.cosi` | System extensions (sysext/confext) |
+| `health-checks-install` | `regular.cosi` | Health-check and rollback on install |
+| `root-verity` | `verity.cosi` | dm-verity protected root filesystem |
+| `usr-verity` | `usrverity.cosi` | dm-verity `/usr`, UKI, systemd-boot |
+| `combined` | `usrverity.cosi` | UKI + encryption + verity combined |
+| `memory-constraint-combined` | `usrverity.cosi` | Combined features under memory pressure |
+| `rerun` | `usrverity.cosi` | Re-run idempotency validation |
+| `usr-verity-raid` | `usrverity.cosi` | UKI + verity with RAID |
 
 ## Automated E2E Scenarios
 
