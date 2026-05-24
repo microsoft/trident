@@ -11,7 +11,7 @@ from a QCOW2 image that already has Trident and an OS installed, then run
 repeated A/B updates with optional rollback testing.
 
 The VM images are defined in `tests/images/trident-vm-testimage/` and built
-with Image Customizer from the `qemu_guest` base image.
+with Image Customizer from a `qemu_guest` base image downloaded from MCR.
 
 ## VM Image Types
 
@@ -25,8 +25,8 @@ image types are:
 | `trident-vm-usr-verity-testimage` | systemd-boot | `/usr` verity | Yes | `baseimg-usr-verity.yaml` |
 
 All image configs live under `tests/images/trident-vm-testimage/base/`. The
-base image is `qemu_guest` (see [step 4](#4-create-the-qemu_guest-base-image)
-for how to create it).
+base image is `qemu_guest` (see [step 4](#4-download-the-qemu_guest-base-image)
+for how to obtain it).
 
 **`trident-vm-grub-verity-testimage`** uses grub2 with root dm-verity. The root
 filesystem is read-only and integrity-protected, with `/var` on a separate
@@ -85,63 +85,28 @@ make bin/netlisten
 make artifacts/id_rsa
 ```
 
-### 4. Create the qemu\_guest Base Image
+### 4. Download the qemu\_guest Base Image
 
-The VM test images are built from a `qemu_guest` base image. If you have access
-to the internal ADO artifacts feed, the Makefile downloads it automatically
-(requires `az login`). Otherwise, you can create it from the publicly available
-`baremetal` image by swapping MegaRAID drivers for VirtIO:
+The VM test images are built from a `qemu_guest` base image. Download the
+`minimal-os` image from MCR and rename it to `qemu_guest.vhdx`:
 
 ```bash
-# Download the baremetal base image from MCR
-./tests/images/testimages.py download-image baremetal
+mkdir -p artifacts
+oras pull mcr.microsoft.com/azurelinux/3.0/image/minimal-os:latest \
+    --output ./artifacts --platform linux/amd64
+mv artifacts/image.vhdx artifacts/qemu_guest.vhdx
 ```
+
+The `minimal-os` image is a publicly available Azure Linux 3.0 base image that
+works as a drop-in `qemu_guest` replacement. Image Customizer installs all
+required packages (including VirtIO drivers and SSH) during the VM image build
+step, so the base image's pre-installed package set does not matter.
 
 :::tip Internal shortcut
-If you have access to the internal Azure DevOps artifacts feed, you can download
-`qemu_guest` directly: `./tests/images/testimages.py download-image qemu_guest`
+If you have access to the internal Azure DevOps artifacts feed, the Makefile
+downloads `qemu_guest` automatically (requires `az login`). You can also
+download it directly: `./tests/images/testimages.py download-image qemu_guest`
 :::
-
-Create an Image Customizer config to convert baremetal → qemu\_guest:
-
-```yaml
-# mic-baremetal-to-qemu-guest.yaml
-os:
-  bootloader:
-    resetType: hard-reset
-  hostname: azure-linux
-  kernelCommandLine:
-    extraCommandLine:
-    - console=tty0
-    - console=ttyS0
-  selinux:
-    mode: disabled
-  packages:
-    remove:
-    - dracut-hostonly
-    - dracut-megaraid
-    - selinux-policy
-    install:
-    - dracut-virtio
-    - qemu-guest-agent
-```
-
-Run the conversion:
-
-```bash
-sudo docker run --rm --privileged \
-    -v /dev:/dev -v $(pwd):/repo \
-    mcr.microsoft.com/azurelinux/imagecustomizer:latest \
-    --build-dir /build \
-    --image-file /repo/artifacts/baremetal.vhdx \
-    --output-image-file /repo/artifacts/qemu_guest.vhdx \
-    --output-image-format vhdx \
-    --config-file /repo/mic-baremetal-to-qemu-guest.yaml
-```
-
-This swaps `dracut-megaraid` for `dracut-virtio` (VirtIO block/net/console
-drivers), adds `qemu-guest-agent`, and disables SELinux. Image Customizer
-automatically regenerates the initramfs with the new drivers.
 
 ### 5. Build the VM Image
 
@@ -180,8 +145,6 @@ mv artifacts/trident-vm-grub-verity-testimage_1.cosi \
 :::note
 Both the QCOW2 and COSI images must be built from the same base image. Trident
 validates that the COSI's `VARIANT_ID` in `/etc/os-release` matches the host's.
-A mismatch (e.g., `baremetal` COSI on a `qemu-guest` VM) will fail with
-"Mismatched OS release VARIANT_ID".
 :::
 
 ## Running the Servicing Scenario
