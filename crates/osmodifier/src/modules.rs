@@ -61,7 +61,10 @@ pub fn configure(ctx: &OsModifierContext, modules: &[Module]) -> Result<(), Erro
                         module.name
                     );
                 }
-                // Remove from auto-load list
+                // Remove from auto-load list. This is an intentional fidelity
+                // fix vs Go — Go only adds the blacklist entry and leaves any
+                // existing load entry intact, producing contradictory state
+                // when transitioning Always→Disable.
                 load_lines.retain(|l| l.trim() != module.name);
                 // Add to blacklist if not present
                 let blacklist_entry = format!("blacklist {}", module.name);

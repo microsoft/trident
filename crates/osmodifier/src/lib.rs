@@ -25,10 +25,11 @@ pub use config::*;
 
 /// Execution context for OS modifier operations.
 ///
-/// All filesystem paths are resolved relative to `root`. Trident always
-/// runs osmodifier after chrooting into newroot, so `root` is `/` in
-/// production. The non-`/` option exists only for unit tests that
-/// operate on a temp directory.
+/// All filesystem paths are resolved relative to `root`. Trident generally
+/// runs osmodifier inside a chroot of newroot, so `root` is `/` in
+/// production. The MOS configuration path invokes osmodifier without a
+/// chroot, setting `root` explicitly. The non-`/` option also supports
+/// unit tests that operate on a temp directory.
 pub struct OsModifierContext {
     /// Root directory for all filesystem operations.
     pub root: PathBuf,
@@ -60,6 +61,12 @@ impl OsModifierContext {
 ///
 /// This replaces the Go `osmodifier --config-file` codepath for
 /// [`OSModifierConfig`].
+///
+/// **Caller invariant:** `modify_os` writes to `/etc/default/grub` and runs
+/// `grub2-mkconfig` when `extra_command_line` is present. On UKI systems this
+/// is a no-op but wasteful. Callers must gate this function behind a
+/// bootloader-type check (trident's boot subsystem does this — see
+/// `boot/mod.rs` which returns early for UKI before calling `modify_boot`).
 pub fn modify_os(ctx: &OsModifierContext, config: &OSModifierConfig) -> Result<(), Error> {
     debug!("Applying OS modifications");
 
@@ -89,7 +96,10 @@ pub fn modify_os(ctx: &OsModifierContext, config: &OSModifierConfig) -> Result<(
 
     // For UKI images, SELinux mode is set via the config file directly (not
     // via kernel cmdline). The osconfig subsystem handles this case by
-    // including selinux in the OSModifierConfig.
+    // including selinux in the OSModifierConfig. The UKI vs GRUB dispatch
+    // is implicit via the caller — see the caller invariant on this function.
+    // If UKI-awareness needs to become explicit inside this crate, consider
+    // a `BootTarget` enum (precedent: `osutils/src/bootloaders.rs`).
     if let Some(ref selinux_cfg) = config.selinux {
         if let Some(ref mode) = selinux_cfg.mode {
             info!("Updating SELinux config file to mode '{mode:?}'");

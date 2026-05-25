@@ -26,7 +26,10 @@ pub fn configure(ctx: &OsModifierContext, services: &Services) -> Result<(), Err
 
 fn enable_service(ctx: &OsModifierContext, service: &str) -> Result<(), Error> {
     debug!("Enabling service '{service}'");
-    let root = ctx.root.to_str().unwrap_or("/");
+    let root = ctx
+        .root
+        .to_str()
+        .context("Root path is not valid UTF-8")?;
 
     Dependency::Systemctl
         .cmd()
@@ -44,7 +47,10 @@ fn disable_service(ctx: &OsModifierContext, service: &str) -> Result<(), Error> 
     //   disabled: exit 1, stdout = "disabled"
     //   error:    exit 1, stdout = "" (e.g., service doesn't exist)
     // Go errors on the third case; proceeds to disable for both enabled and disabled.
-    let root = ctx.root.to_str().unwrap_or("/");
+    let root = ctx
+        .root
+        .to_str()
+        .context("Root path is not valid UTF-8")?;
 
     let check = Dependency::Systemctl
         .cmd()

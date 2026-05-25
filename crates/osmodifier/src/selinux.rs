@@ -14,6 +14,12 @@ use crate::{default_grub::DefaultGrub, OsModifierContext};
 const SELINUX_CONFIG_PATH: &str = "/etc/selinux/config";
 
 /// Update the SELinux mode in /etc/selinux/config.
+///
+/// Called from two paths that do NOT overlap at runtime:
+/// - `modify_os` → for UKI images (SELinux set via config file only)
+/// - `modify_boot` → for GRUB images (SELinux set in both config file and cmdline)
+/// Idempotent — safe if both paths were ever called, but the caller invariants
+/// on `modify_os`/`modify_boot` prevent this.
 pub fn update_config_file(ctx: &OsModifierContext, mode: &SelinuxMode) -> Result<(), Error> {
     let path = ctx.path(SELINUX_CONFIG_PATH);
 

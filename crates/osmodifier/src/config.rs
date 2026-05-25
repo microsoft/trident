@@ -13,7 +13,7 @@ use trident_api::config::{KernelCommandLine, Module, Selinux, Services};
 ///
 /// Covers users, hostname, modules, services, kernel command line, and SELinux.
 #[derive(Serialize, Deserialize, Default, Debug)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OSModifierConfig {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub users: Vec<MICUser>,
@@ -35,6 +35,11 @@ pub struct OSModifierConfig {
 }
 
 /// Password type for user configuration.
+///
+/// Go has 5 variants (PlainText, Hashed, PlainTextFile, HashedFile, plus
+/// locked-via-empty). This crate only needs 3 because trident passes
+/// passwords via the API config, never as file paths. File-path variants
+/// are not supported.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum PasswordType {
@@ -45,7 +50,7 @@ pub enum PasswordType {
 
 /// User password configuration.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MICPassword {
     #[serde(rename = "type")]
     pub password_type: PasswordType,
@@ -54,7 +59,7 @@ pub struct MICPassword {
 
 /// User configuration in the MIC (Microsoft Image Customizer) format.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MICUser {
     pub name: String,
 

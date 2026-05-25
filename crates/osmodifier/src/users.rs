@@ -14,6 +14,20 @@ use crate::{
     OsModifierContext,
 };
 
+// Shadow file field indices (0-based, colon-delimited).
+const SHADOW_FIELD_PASSWORD: usize = 1;
+const SHADOW_FIELD_LAST_CHANGE: usize = 2;
+const SHADOW_FIELD_EXPIRATION: usize = 7;
+const SHADOW_TOTAL_FIELDS: usize = 9;
+
+// Passwd file field indices (0-based, colon-delimited).
+const PASSWD_FIELD_HOME: usize = 5;
+const PASSWD_FIELD_SHELL: usize = 6;
+
+// SSH permissions.
+const SSH_DIR_MODE: u32 = 0o700;
+const AUTHORIZED_KEYS_MODE: u32 = 0o600;
+
 /// Add or update all configured users.
 pub fn add_or_update_users(ctx: &OsModifierContext, users: &[MICUser]) -> Result<(), Error> {
     for user in users {
@@ -76,6 +90,10 @@ fn add_or_update_user(ctx: &OsModifierContext, user: &MICUser) -> Result<(), Err
         // /proc/cmdline that useradd -p would cause).
         if let Some(ref hash) = hashed_password {
             set_password_via_chpasswd(&user.name, hash)?;
+        } else if is_locked {
+            // Explicitly lock rather than relying on useradd's default shadow
+            // entry (which happens to be `!!` on AZL but is not guaranteed).
+            lock_user_password(ctx, &user.name)?;
         }
     }
 
@@ -84,9 +102,12 @@ fn add_or_update_user(ctx: &OsModifierContext, user: &MICUser) -> Result<(), Err
         set_password_expiry(ctx, &user.name, days)?;
     }
 
-    // Update groups
+    // Update groups (only run usermod -g for existing users — for new users
+    // the primary group was already set via useradd -g).
     if let Some(ref primary) = user.primary_group {
-        set_primary_group(&user.name, primary)?;
+        if user_exists {
+            set_primary_group(&user.name, primary)?;
+        }
     }
     if !user.secondary_groups.is_empty() {
         set_secondary_groups(&user.name, &user.secondary_groups)?;
@@ -110,9 +131,24 @@ fn check_user_exists(username: &str) -> Result<bool, Error> {
         .cmd()
         .args(["-u", username])
         .output()
-        .with_context(|| format!("Failed to check if user '{username}' exists"))?;
+        .with_context(|| format!("Failed to run 'id' for user '{username}'"))?;
 
-    Ok(output.success())
+    if output.success() {
+        return Ok(true);
+    }
+
+    // Go's UserExists discriminates "no such user" from real errors.
+    // Only treat the expected "no such user" stderr as not-found;
+    // propagate everything else (permission denied, command-not-found, etc.).
+    let stderr = output.error_output().to_lowercase();
+    if stderr.contains("no such user") {
+        return Ok(false);
+    }
+
+    bail!(
+        "Unexpected error checking if user '{username}' exists: {}",
+        output.error_output()
+    )
 }
 
 /// Validate that a value is safe to write into /etc/shadow or pass to chpasswd.
@@ -207,7 +243,7 @@ fn update_user_password(ctx: &OsModifierContext, username: &str, hash: &str) -> 
             if fields.len() >= 2 && fields[0] == username {
                 found = true;
                 let mut new_fields: Vec<String> = fields.iter().map(|f| f.to_string()).collect();
-                new_fields[1] = hash.to_string();
+                new_fields[SHADOW_FIELD_PASSWORD] = hash.to_string();
                 new_fields.join(":")
             } else {
                 line.to_string()
@@ -265,10 +301,15 @@ fn set_password_via_chpasswd(username: &str, hash: &str) -> Result<(), Error> {
     Ok(())
 }
 
-/// Lock a user's password by writing the locked marker '!' into /etc/shadow.
+/// Lock a user's password by writing the locked marker into /etc/shadow.
+///
+/// Uses `*` (not `!`) because Azure Linux's sshd is built with `UsePAM=no`,
+/// where `!` means "fully disabled including SSH key login" but `*` means
+/// "password disabled, SSH key login still works." Matches Go's
+/// `UpdateUserPassword` behavior.
 fn lock_user_password(ctx: &OsModifierContext, username: &str) -> Result<(), Error> {
     debug!("Locking password for user '{username}'");
-    update_user_password(ctx, username, "!")
+    update_user_password(ctx, username, "*")
 }
 
 fn set_password_expiry(ctx: &OsModifierContext, username: &str, days: u64) -> Result<(), Error> {
@@ -289,9 +330,6 @@ fn set_password_expiry(ctx: &OsModifierContext, username: &str, days: u64) -> Re
     // Shadow field indices (0-based):
     // 0=login, 1=password, 2=lastChange, 3=minAge, 4=maxAge,
     // 5=warnPeriod, 6=inactivity, 7=expiration, 8=reserved
-    const TOTAL_FIELDS: usize = 9;
-    const LAST_CHANGE_FIELD: usize = 2;
-    const EXPIRATION_FIELD: usize = 7;
 
     let mut found = false;
     let mut parse_err: Option<String> = None;
@@ -300,11 +338,11 @@ fn set_password_expiry(ctx: &OsModifierContext, username: &str, days: u64) -> Re
         .map(|line| {
             let fields: Vec<&str> = line.split(':').collect();
             if !fields.is_empty() && fields[0] == username {
-                if fields.len() != TOTAL_FIELDS {
+                if fields.len() != SHADOW_TOTAL_FIELDS {
                     parse_err = Some(format!(
                         "invalid shadow entry for user '{}': expected {} fields, found {}",
                         username,
-                        TOTAL_FIELDS,
+                        SHADOW_TOTAL_FIELDS,
                         fields.len()
                     ));
                     return line.to_string();
@@ -313,15 +351,15 @@ fn set_password_expiry(ctx: &OsModifierContext, username: &str, days: u64) -> Re
                 let mut new_fields: Vec<String> = fields.iter().map(|f| f.to_string()).collect();
 
                 // Ensure lastChange field is populated
-                if new_fields[LAST_CHANGE_FIELD].is_empty() {
-                    new_fields[LAST_CHANGE_FIELD] = days_since_unix_epoch().to_string();
+                if new_fields[SHADOW_FIELD_LAST_CHANGE].is_empty() {
+                    new_fields[SHADOW_FIELD_LAST_CHANGE] = days_since_unix_epoch().to_string();
                 }
-                let last_change: i64 = match new_fields[LAST_CHANGE_FIELD].parse() {
+                let last_change: i64 = match new_fields[SHADOW_FIELD_LAST_CHANGE].parse() {
                     Ok(v) => v,
                     Err(_) => {
                         parse_err = Some(format!(
                             "failed to parse lastChange field '{}' for user '{username}'",
-                            new_fields[LAST_CHANGE_FIELD]
+                            new_fields[SHADOW_FIELD_LAST_CHANGE]
                         ));
                         return line.to_string();
                     }
@@ -331,7 +369,7 @@ fn set_password_expiry(ctx: &OsModifierContext, username: &str, days: u64) -> Re
                 // Note: Go's Chage() comment says "chage -M" (max password age, field 4)
                 // but actually writes to the expiration field (field 7). We match Go's
                 // actual behavior, not its misleading comment. See installutils.go:643.
-                new_fields[EXPIRATION_FIELD] = (last_change + days as i64).to_string();
+                new_fields[SHADOW_FIELD_EXPIRATION] = (last_change + days as i64).to_string();
                 new_fields.join(":")
             } else {
                 line.to_string()
@@ -410,7 +448,7 @@ fn write_ssh_keys(
         .with_context(|| format!("Failed to create '{}'", ssh_dir.display()))?;
 
     // Set directory permissions to 0700
-    fs::set_permissions(&ssh_dir, fs::Permissions::from_mode(0o700))
+    fs::set_permissions(&ssh_dir, fs::Permissions::from_mode(SSH_DIR_MODE))
         .with_context(|| format!("Failed to set permissions on '{}'", ssh_dir.display()))?;
 
     // For existing users, preserve existing authorized_keys (matching Go's
@@ -443,7 +481,7 @@ fn write_ssh_keys(
         .with_context(|| format!("Failed to write '{}'", auth_keys_path.display()))?;
 
     // Set file permissions to 0600
-    fs::set_permissions(&auth_keys_path, fs::Permissions::from_mode(0o600)).with_context(|| {
+    fs::set_permissions(&auth_keys_path, fs::Permissions::from_mode(AUTHORIZED_KEYS_MODE)).with_context(|| {
         format!(
             "Failed to set permissions on '{}'",
             auth_keys_path.display()
@@ -465,7 +503,7 @@ fn get_home_dir(ctx: &OsModifierContext, username: &str) -> Result<std::path::Pa
     for line in content.lines() {
         let fields: Vec<&str> = line.split(':').collect();
         if fields.len() >= 6 && fields[0] == username {
-            return Ok(ctx.path(fields[5]));
+            return Ok(ctx.path(fields[PASSWD_FIELD_HOME]));
         }
     }
 
@@ -510,7 +548,7 @@ fn set_startup_command(ctx: &OsModifierContext, username: &str, cmd: &str) -> Re
             if fields.len() >= 7 && fields[0] == username {
                 found = true;
                 let mut new_fields: Vec<String> = fields.iter().map(|f| f.to_string()).collect();
-                new_fields[6] = cmd.to_string();
+                new_fields[PASSWD_FIELD_SHELL] = cmd.to_string();
                 new_fields.join(":")
             } else {
                 line.to_string()
@@ -551,6 +589,13 @@ fn atomic_write_file(path: &std::path::Path, content: &str) -> Result<(), Error>
     tmp.flush()
         .with_context(|| format!("Failed to flush temp file for '{}'", path.display()))?;
 
+    // fsync the temp file before rename to ensure data is on disk. Without
+    // this, a power loss between rename and dirty-page flush could leave the
+    // file zero-length (e.g., /etc/shadow → locked out of all accounts).
+    tmp.as_file()
+        .sync_all()
+        .with_context(|| format!("Failed to fsync temp file for '{}'", path.display()))?;
+
     // Preserve ownership and permissions from the original file if it exists.
     // Ownership must be set before permissions because chown can clear
     // setuid/setgid bits.
@@ -578,6 +623,14 @@ fn atomic_write_file(path: &std::path::Path, content: &str) -> Result<(), Error>
 
     tmp.persist(path)
         .with_context(|| format!("Failed to atomically replace '{}'", path.display()))?;
+
+    // Sync parent directory to ensure the rename (directory entry update) is
+    // durable. Without this, the old file could reappear after power loss.
+    if let Some(parent) = path.parent() {
+        if let Ok(dir) = std::fs::File::open(parent) {
+            let _ = dir.sync_all();
+        }
+    }
 
     Ok(())
 }

@@ -71,6 +71,13 @@ pub fn extract_boot_args_from_grub_cfg(
 
         if SYNC_ARG_NAMES.contains(&name) {
             if let Some(v) = value {
+                // Skip variable references (e.g., root=$rootdevice). Go's
+                // ParseCommandLineArgs detects VAR_EXPANSION tokens and clears
+                // the value; we match by skipping the token entirely.
+                if v.starts_with('$') {
+                    trace!("Skipping variable reference: {token}");
+                    continue;
+                }
                 if name == "root" {
                     root_device = Some(v.to_string());
                 } else {
@@ -377,6 +384,26 @@ mod tests {
         // The linux line should capture the full args including $variables
         assert!(lines[0].contains("selinux=0"));
         assert!(lines[0].contains("root=$rootdevice"));
+    }
+
+    #[test]
+    fn test_extract_skips_variable_references() {
+        // root=$rootdevice should NOT produce a GRUB_DEVICE write
+        let grub_cfg = indoc::indoc! {r#"
+            menuentry "CBL-Mariner" {
+            	linux /boot/vmlinuz root=$rootdevice selinux=0
+            }
+        "#};
+
+        let (args, root_device) = extract_from_grub_cfg_str(grub_cfg).unwrap();
+        assert_eq!(
+            root_device, None,
+            "Variable reference root=$rootdevice should be skipped"
+        );
+        assert!(
+            args.contains(&"selinux=0".to_string()),
+            "Non-variable args should still be captured"
+        );
     }
 
     #[test]
