@@ -25,11 +25,10 @@ pub use config::*;
 
 /// Execution context for OS modifier operations.
 ///
-/// All filesystem paths are resolved relative to `root`. Trident generally
-/// runs osmodifier inside a chroot of newroot, so `root` is `/` in
-/// production. The MOS configuration path invokes osmodifier without a
-/// chroot, setting `root` explicitly. The non-`/` option also supports
-/// unit tests that operate on a temp directory.
+/// All filesystem paths are resolved relative to `root`. In production,
+/// `root` is always `/` — both the chroot'd boot path and the MOS
+/// configuration path use `OsModifierContext::default()`. The non-`/`
+/// option exists for unit tests that operate on a temp directory.
 pub struct OsModifierContext {
     /// Root directory for all filesystem operations.
     pub root: PathBuf,
