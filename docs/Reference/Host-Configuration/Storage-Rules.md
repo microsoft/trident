@@ -239,7 +239,7 @@ The following table lists the expected mount points for each partition type, as
 defined in the [Discoverable Partition Specification
 (DPS)](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/):
 
-| Mount Path                                    | Valid Mount Paths                |
+| Partition Type                                | Valid Mount Paths                |
 | --------------------------------------------- | -------------------------------- |
 | esp                                           | `/boot` or `/efi` or `/boot/efi` |
 | root                                          | `/`                              |
