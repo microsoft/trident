@@ -481,7 +481,11 @@ fn write_ssh_keys(
         .with_context(|| format!("Failed to write '{}'", auth_keys_path.display()))?;
 
     // Set file permissions to 0600
-    fs::set_permissions(&auth_keys_path, fs::Permissions::from_mode(AUTHORIZED_KEYS_MODE)).with_context(|| {
+    fs::set_permissions(
+        &auth_keys_path,
+        fs::Permissions::from_mode(AUTHORIZED_KEYS_MODE),
+    )
+    .with_context(|| {
         format!(
             "Failed to set permissions on '{}'",
             auth_keys_path.display()
