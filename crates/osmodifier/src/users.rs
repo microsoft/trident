@@ -179,7 +179,7 @@ fn hash_password(plaintext: &str) -> Result<String, Error> {
         .spawn()
         .context("Failed to start openssl passwd")?;
 
-    if let Some(ref mut stdin) = child.stdin {
+    if let Some(mut stdin) = child.stdin.take() {
         stdin
             .write_all(plaintext.as_bytes())
             .context("Failed to write password to openssl stdin")?;
@@ -284,7 +284,7 @@ fn set_password_via_chpasswd(username: &str, hash: &str) -> Result<(), Error> {
         .spawn()
         .context("Failed to start chpasswd")?;
 
-    if let Some(ref mut stdin) = child.stdin {
+    if let Some(mut stdin) = child.stdin.take() {
         stdin
             .write_all(input.as_bytes())
             .context("Failed to write to chpasswd stdin")?;
