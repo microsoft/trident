@@ -25,7 +25,7 @@ Set SELinux to disabled. The mode is set by appending `selinux=0` to the kernel 
 
 ### Permissive
 
-Set SELinux to permissive. The mode is set by appending `selinux=1 enforcing=0` to the kernel command line and setting `SELINUX=permissive` in `/etc/selinux/config`.
+Set SELinux to permissive. The mode is set by appending `security=selinux selinux=1 enforcing=0` to the kernel command line and setting `SELINUX=permissive` in `/etc/selinux/config`.
 
 | Characteristic | Value        |
 | -------------- | ------------ |
@@ -34,7 +34,7 @@ Set SELinux to permissive. The mode is set by appending `selinux=1 enforcing=0` 
 
 ### Enforcing
 
-Set SELinux to enforcing. The mode is set by appending `selinux=1` to the kernel command line and setting `SELINUX=enforcing` in `/etc/selinux/config`. The enforcing/permissive decision is controlled by the config file, allowing runtime changes via `setenforce`.
+Set SELinux to enforcing. The mode is set by appending `security=selinux selinux=1` to the kernel command line and setting `SELINUX=enforcing` in `/etc/selinux/config`. The `security=selinux` arg tells the kernel which LSM to activate. The enforcing/permissive decision is controlled by the config file, allowing runtime changes via `setenforce`.
 
 | Characteristic | Value       |
 | -------------- | ----------- |
