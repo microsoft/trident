@@ -352,7 +352,13 @@ fn set_password_expiry(ctx: &OsModifierContext, username: &str, days: u64) -> Re
 
                 // Ensure lastChange field is populated
                 if new_fields[SHADOW_FIELD_LAST_CHANGE].is_empty() {
-                    new_fields[SHADOW_FIELD_LAST_CHANGE] = days_since_unix_epoch()?.to_string();
+                    match days_since_unix_epoch() {
+                        Ok(d) => new_fields[SHADOW_FIELD_LAST_CHANGE] = d.to_string(),
+                        Err(e) => {
+                            parse_err = Some(format!("{e:#}"));
+                            return line.to_string();
+                        }
+                    }
                 }
                 let last_change: i64 = match new_fields[SHADOW_FIELD_LAST_CHANGE].parse() {
                     Ok(v) => v,
