@@ -352,7 +352,7 @@ fn set_password_expiry(ctx: &OsModifierContext, username: &str, days: u64) -> Re
 
                 // Ensure lastChange field is populated
                 if new_fields[SHADOW_FIELD_LAST_CHANGE].is_empty() {
-                    new_fields[SHADOW_FIELD_LAST_CHANGE] = days_since_unix_epoch().to_string();
+                    new_fields[SHADOW_FIELD_LAST_CHANGE] = days_since_unix_epoch()?.to_string();
                 }
                 let last_change: i64 = match new_fields[SHADOW_FIELD_LAST_CHANGE].parse() {
                     Ok(v) => v,
@@ -394,13 +394,13 @@ fn set_password_expiry(ctx: &OsModifierContext, username: &str, days: u64) -> Re
 }
 
 /// Return the number of days since the Unix epoch (1970-01-01).
-fn days_since_unix_epoch() -> i64 {
+fn days_since_unix_epoch() -> Result<i64, Error> {
     use std::time::{SystemTime, UNIX_EPOCH};
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
+        .context("System clock is set before the Unix epoch")?
         .as_secs() as i64;
-    secs / 86400
+    Ok(secs / 86400)
 }
 
 fn set_primary_group(username: &str, group: &str) -> Result<(), Error> {
