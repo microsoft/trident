@@ -1875,7 +1875,6 @@ dependencies = [
  "pytest",
  "pytest_gen",
  "serde",
- "serde_yaml",
  "tempfile",
  "trident_api",
 ]
