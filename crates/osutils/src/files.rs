@@ -243,14 +243,33 @@ pub fn atomic_write_file(path: &Path, content: &str) -> Result<(), Error> {
         })?;
     }
 
-    tmp.persist(path)
-        .with_context(|| format!("Failed to atomically replace '{}'", path.display()))?;
-
-    // Sync parent directory to ensure the rename (directory entry update) is
-    // durable. Without this, the old file could reappear after power loss.
-    if let Some(parent) = path.parent() {
-        if let Ok(dir) = fs::File::open(parent) {
-            let _ = dir.sync_all();
+    match tmp.persist(path) {
+        Ok(_) => {
+            // Sync parent directory to ensure the rename (directory entry
+            // update) is durable. Without this, the old file could reappear
+            // after power loss.
+            if let Some(parent) = path.parent() {
+                if let Ok(dir) = fs::File::open(parent) {
+                    let _ = dir.sync_all();
+                }
+            }
+        }
+        Err(e) => {
+            // Rename can fail with EACCES in certain chroot/mount
+            // configurations (e.g., directories on bind-mounted or
+            // overlay filesystems). Fall back to a direct write. The
+            // temp file is cleaned up when `e.file` drops.
+            log::warn!(
+                "Atomic rename failed for '{}' ({}), falling back to direct write",
+                path.display(),
+                e.error
+            );
+            fs::write(path, content).with_context(|| {
+                format!(
+                    "Failed to write '{}' (fallback after rename failure)",
+                    path.display()
+                )
+            })?;
         }
     }
 
