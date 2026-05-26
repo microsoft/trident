@@ -272,11 +272,15 @@ impl Display for PartitionType {
     /// Formats known partition types using systemd-repart names and unknown
     /// partition types as `unknown(<uuid>)` to preserve UUID visibility.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Self::Unknown(uuid) = self {
-            write!(f, "unknown({uuid})")
-        } else {
-            write!(f, "{}", self.to_sdrepart_part_type())
+        // On alternate format, show unknown partition types as `unknown(<uuid>)`.
+        if f.alternate() {
+            if let Self::Unknown(uuid) = self {
+                return write!(f, "unknown({uuid})");
+            }
         }
+
+        // On regular format, show the partition type as a simple string.
+        write!(f, "{}", self.to_sdrepart_part_type())
     }
 }
 
