@@ -269,8 +269,9 @@ impl From<PartitionType> for DiscoverablePartitionType {
 }
 
 impl Display for PartitionType {
-    /// Formats known partition types using systemd-repart names and unknown
-    /// partition types as `unknown(<uuid>)` to preserve UUID visibility.
+    /// Formats partition types using systemd-repart names for regular `{}`
+    /// output; unknown partition types print as `unknown`, or as
+    /// `unknown(<uuid>)` when using alternate `{:#}` formatting.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // On alternate format, show unknown partition types as `unknown(<uuid>)`.
         if f.alternate() {
