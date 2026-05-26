@@ -21,7 +21,90 @@ They are used to test:
   - Operations that manipulate disks, RAID arrays, mounts, filesystems, etc.
   - Operations that modify the OS in any way.
 
-This document aims to explain the architecture of how functional tests work, and
+## Prerequisites
+
+Functional tests run inside a libvirt/QEMU virtual machine. You need:
+
+- **Linux host** with root access (functional tests manipulate disks, mounts,
+  etc.)
+- **libvirt and QEMU** installed and configured
+- **Docker** (to run Image Customizer for building the test VM image)
+- **[oras](https://oras.land/)** CLI (to download base images from MCR)
+- **Go 1.24+** (to build `virtdeploy`)
+- **Python 3.8+** with test packages:
+
+  ```bash
+  pip3 install -r tests/functional_tests/requirements.txt
+  ```
+
+## Building the Test VM Image
+
+The functional test VM image is an Azure Linux 3 QCOW2 image built with
+[Image Customizer](https://github.com/microsoft/azure-linux-image-tools). The
+build uses a container from MCR (`mcr.microsoft.com/azurelinux/imagecustomizer:latest`)
+and a base image also from MCR.
+
+1. **Download the base image:**
+
+   ```bash
+   # Downloads baremetal.vhdx from mcr.microsoft.com/azurelinux/3.0/image/baremetal:latest
+   ./tests/images/testimages.py download-image baremetal
+   ```
+
+2. **Build the functional test image:**
+
+   ```bash
+   sudo ./tests/images/testimages.py build trident-functest --output-dir ./artifacts
+   ```
+
+   This produces `artifacts/trident-functest.qcow2`. The image configuration is
+   defined in `tests/images/trident-functest/base/baseimg.yaml`.
+
+## Building Test Dependencies
+
+These dependencies are built automatically by `make functional-test`, but you
+can build them individually if needed:
+
+```bash
+# Build virtdeploy (VM management tool)
+make bin/virtdeploy
+
+# Build osmodifier
+make artifacts/osmodifier
+
+# Build the functional test binaries with code coverage instrumentation
+make build-functional-test-cc
+
+# Generate the test manifest (ft.json)
+make generate-functional-test-manifest
+```
+
+## Running the Tests
+
+Run the full functional test suite:
+
+```bash
+make functional-test
+```
+
+This will create a VM using `virtdeploy`, upload the test binaries, and run all
+tests via pytest.
+
+To rerun tests on an already-running VM (faster iteration):
+
+```bash
+make patch-functional-test
+```
+
+To run a subset of tests, use the `FILTER` variable:
+
+```bash
+make functional-test FILTER="custom/test_trident_e2e.py -k test_name"
+```
+
+## Architecture
+
+This section explains the architecture of how functional tests work and
 how they are implemented.
 
 ## Native Python Tests
