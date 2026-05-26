@@ -51,7 +51,7 @@ for more detailed guidelines on how to use the background log file.
 
 For each command that can be run with Trident, the customer can adjust the log
 level, i.e. the verbosity level, to one of the following six values: `OFF`,
-`ERROR`, the **default** `WARN`, `INFO`, `DEBUG`, and `TRACE`.
+`ERROR`, `WARN`, `INFO`, the **default** `DEBUG`, and `TRACE`.
 
 The last five correspond to the actual functions in the `log` crate that the
 developers can use to write logs in Trident:
@@ -197,15 +197,16 @@ and should probably address, we issue a non-fatal error with an `ERROR` log.
 
 *Example 1.*
 
-The code snippet below refers to a scenario where the customer is requesting to
-ignore the hash of an image in the Host Configuration. Before deploying the
-image onto the block device, Trident produces a `WARN` log because streaming an
-unverified payload onto a block device is a potential security concern.
+The illustrative code snippet below refers to a scenario where the customer is
+requesting to ignore the hash of an image in the Host Configuration. Before
+deploying the image onto the block device, Trident should produce a `WARN` log
+because streaming an unverified payload onto a block device is a potential
+security concern.
 
 ```rust
-match image.sha256 {
-    ImageSha256::Ignored => {
-        warn!("Ignoring SHA256 for image from '{}'", image_url);
+match image.sha384 {
+    ImageSha384::Ignored => {
+        warn!("Ignoring SHA384 for image from '{}'", image_url);
     }
     ...
 }
@@ -316,7 +317,7 @@ is optional since Trident logging the next step is a confrmation in itself.)
 
 *Example 1.*
 
-The snippet below comes from the logic in `osutils/src/grub_mkconfig.rs` where
+The snippet below comes from the logic in `crates/osutils/src/grub_mkconfig.rs` where
 a new grub-mkconfig script is being written on the host. Here, we're using a
 `DEBUG` log to report the path at which the script is being written, since it's
 too low-level to be relevant to the overwhelming majority of the customers. At

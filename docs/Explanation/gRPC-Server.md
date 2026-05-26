@@ -47,6 +47,8 @@ flowchart LR
     Client["gRPC Client"] -- Unix Socket --> Server["Trident Daemon\n(tridentd)"]
     Server --> Version["VersionService"]
     Server --> Streaming["StreamingService"]
+    Server --> Update["UpdateService"]
+    Server --> Commit["CommitService"]
 :::
 
 ### Unix Domain Socket
@@ -117,6 +119,31 @@ streaming works.
 ```protobuf
 service StreamingService {
   rpc StreamDisk(StreamDiskRequest) returns (stream ServicingResponse);
+}
+```
+
+### UpdateService
+
+Performs an A/B update on a Trident-managed system. The service supports running
+the full update, or executing the stage and finalize phases independently for
+two-step servicing workflows.
+
+```protobuf
+service UpdateService {
+  rpc Update(UpdateRequest) returns (stream ServicingResponse);
+  rpc UpdateStage(StageUpdateRequest) returns (stream ServicingResponse);
+  rpc UpdateFinalize(FinalizeUpdateRequest) returns (stream ServicingResponse);
+}
+```
+
+### CommitService
+
+Certifies the current OS deployment as successful and updates the boot order
+accordingly. This is the gRPC equivalent of `trident commit`.
+
+```protobuf
+service CommitService {
+  rpc Commit(CommitRequest) returns (stream ServicingResponse);
 }
 ```
 

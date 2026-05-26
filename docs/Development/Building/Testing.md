@@ -6,8 +6,9 @@ sidebar_position: 3
 
 ## Code Checks
 
-To ensure code quality and consistency, we use Rust's `clippy` linting tool. You
-can run it with the following command:
+To ensure code quality and consistency, run `make check`. This verifies
+formatting (`cargo fmt --check`), runs `cargo check` with all features, and
+then runs `clippy` with `-D warnings`:
 
 ```bash
 make check
@@ -44,8 +45,8 @@ The tests themselves are located in the Rust code under `cfg`
 attributes:
 
 ```rust
-#[cfg(feature = "functional-tests")]
-mod functional_tests {
+#[cfg(feature = "functional-test")]
+mod functional_test {
     // ...
 }
 ```

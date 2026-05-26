@@ -18,8 +18,12 @@ Trident's dependencies.
 - Ubuntu/Debian:
 
   ```bash
-  sudo apt install build-essential pkg-config libssl-dev libclang-dev protobuf-compiler
+  sudo apt install build-essential pkg-config libssl-dev libclang-dev protobuf-compiler ca-certificates unzip
   ```
+
+  For RPM builds (run inside the Azure Linux build container, not on the
+  Ubuntu host), additional packages are needed: `rpmdevtools`, `sed`,
+  `perl`, and `selinux-policy-devel`.
 
 - Docker (follow the instructions at [Install Docker Engine on Ubuntu](https://docs.docker.com/engine/install/ubuntu/))
 

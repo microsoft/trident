@@ -9,7 +9,7 @@ For Runtime updates, an update modifies OS components like sysexts and confexts 
 ## API to Support Rollback
 
 * `trident rollback` is provided to rollback the last update (note that this could be either a Runtime update or an A/B update)
-* `trident rollback -ab` can be used to rollback the last A/B update and boot into the inactive OS
+* `trident rollback --ab` can be used to rollback the last A/B update and boot into the inactive OS
 * `trident rollback --runtime` can be used to only rollback the last update if it was a runtime update
 * `trident rollback --check` can be used to determine what rollback will be invoked (output will be one of: `ab`, `runtime`, or `none`)
 * `trident get rollback-chain` can be used to see a yaml list of Host Statuses that can be rolled back to

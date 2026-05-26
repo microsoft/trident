@@ -47,7 +47,8 @@ sysexts contain files in `/opt`).
 
 ### SELinux
 
-Servicing of sysexts is not currently compatible with SELinux in systemd 255, as
-mounting the sysext overlays will result in `/usr` and `/opt` being mislabeled.
-Therefore, [SELinux](../Reference/Host-Configuration/API-Reference/Selinux.md)
-should be configured to `disabled` in the Host Configuration.
+Servicing of sysexts and confexts is not currently compatible with SELinux in
+systemd 255, as mounting the extension overlays will result in `/usr` and `/opt`
+(for sysexts) or `/etc` (for confexts) being mislabeled. Therefore,
+[SELinux](../Reference/Host-Configuration/API-Reference/Selinux.md) should be
+configured to `disabled` in the Host Configuration when using extensions.
