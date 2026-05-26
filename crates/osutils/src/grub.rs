@@ -60,7 +60,7 @@ fn extract_quoted_title(after_menuentry: &str) -> Option<&str> {
 /// brace depth. On systems with multiple kernels, `grub2-mkconfig`
 /// produces a top-level menuentry plus a `submenu 'Advanced options ...'`
 /// block. Both Go's `FindNonRecoveryLinuxLine` and this function will find
-/// >1 linux line, which may cause callers that expect exactly one to
+/// \>1 linux line, which may cause callers that expect exactly one to
 /// error. This is acceptable because AZL images built by trident have
 /// exactly one kernel installed.
 pub fn find_non_recovery_linux_lines(content: &str) -> Result<Vec<String>, Error> {
