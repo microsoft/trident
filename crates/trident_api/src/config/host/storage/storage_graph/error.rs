@@ -83,7 +83,7 @@ pub enum StorageGraphBuildError {
 
     #[error(
         "Referrer {} of kind '{kind}' references partition \
-            '{partition_id}' of invalid type '{partition_type}', acceptable \
+            '{partition_id}' of invalid type '{partition_type:#}', acceptable \
             types are: {valid_types}",
         pretty_node_id(.node_identifier)
     )]
@@ -97,7 +97,7 @@ pub enum StorageGraphBuildError {
 
     #[error(
         "Referrer {} of kind '{kind}' has a special reference of kind '{special_ref_kind}' which \
-            references partition '{partition_id}' of invalid type '{partition_type}', acceptable \
+            references partition '{partition_id}' of invalid type '{partition_type:#}', acceptable \
             types are: {valid_types}",
         pretty_node_id(.node_identifier)
     )]
@@ -175,9 +175,9 @@ pub enum StorageGraphBuildError {
     },
 
     #[error(
-        "Verity device '{node_id}' has a data device with partition type '{data_dev_partition_type}', \
-        which expects the hash device partition type to be '{expected_type}', but the type is \
-        '{hash_dev_partition_type}'."
+        "Verity device '{node_id}' has a data device with partition type '{data_dev_partition_type:#}', \
+        which expects the hash device partition type to be '{expected_type:#}', but the type is \
+        '{hash_dev_partition_type:#}'."
     )]
     InvalidVerityHashPartitionType {
         node_id: String,
