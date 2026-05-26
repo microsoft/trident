@@ -94,7 +94,9 @@ impl DefaultGrub {
         old_keys: &[&str],
         new_args: &[String],
     ) -> Result<(), Error> {
-        let current = self.get_variable(GRUB_VAR_CMDLINE_LINUX).unwrap_or_default();
+        let current = self
+            .get_variable(GRUB_VAR_CMDLINE_LINUX)
+            .unwrap_or_default();
 
         let mut args: Vec<String> = current
             .split_whitespace()
