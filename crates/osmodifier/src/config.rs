@@ -239,10 +239,7 @@ fn validate_hostname(hostname: &str) -> Result<(), anyhow::Error> {
         if label.starts_with('-') || label.ends_with('-') {
             bail!("invalid hostname ({hostname})");
         }
-        if !label
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-')
-        {
+        if !label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
             bail!("invalid hostname ({hostname})");
         }
     }
