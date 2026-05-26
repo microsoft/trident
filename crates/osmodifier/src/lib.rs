@@ -8,6 +8,7 @@
 //! directory (defaulting to `/`).
 
 pub mod config;
+pub mod constants;
 mod default_grub;
 mod grub_cfg;
 mod hostname;
@@ -137,13 +138,10 @@ pub fn update_default_grub(ctx: &OsModifierContext) -> Result<(), Error> {
 
     let mut default_grub = default_grub::DefaultGrub::read(ctx)?;
 
-    default_grub.update_cmdline_args(
-        &["rd.overlayfs", "roothash", "root", "selinux", "enforcing"],
-        &args,
-    )?;
+    default_grub.update_cmdline_args(constants::SYNC_ARG_NAMES, &args)?;
 
     if let Some(root) = root_device {
-        default_grub.set_variable("GRUB_DEVICE", &root);
+        default_grub.set_variable(constants::GRUB_VAR_DEVICE, &root);
     }
 
     default_grub.write()?;
@@ -219,7 +217,7 @@ pub fn modify_boot(ctx: &OsModifierContext, config: &BootConfig) -> Result<(), E
 
     if let Some(ref root_device) = config.root_device {
         debug!("Setting root device to '{root_device}'");
-        default_grub.set_variable("GRUB_DEVICE", root_device);
+        default_grub.set_variable(constants::GRUB_VAR_DEVICE, root_device);
         changed = true;
     }
 

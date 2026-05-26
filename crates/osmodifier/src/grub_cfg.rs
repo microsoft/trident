@@ -17,13 +17,11 @@ use anyhow::{bail, Context, Error};
 use log::{debug, info, trace};
 use osutils::dependencies::Dependency;
 
+use crate::constants::SYNC_ARG_NAMES;
 use crate::OsModifierContext;
 
 /// Possible grub.cfg locations, tried in order.
 const GRUB_CFG_PATHS: &[&str] = &["/boot/grub2/grub.cfg", "/boot/grub/grub.cfg"];
-
-/// The grub.cfg args we want to extract for syncing to /etc/default/grub.
-const SYNC_ARG_NAMES: &[&str] = &["rd.overlayfs", "roothash", "root", "selinux", "enforcing"];
 
 /// Extract boot arguments from the generated grub.cfg.
 ///

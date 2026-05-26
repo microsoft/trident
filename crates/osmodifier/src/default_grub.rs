@@ -12,6 +12,7 @@ use std::{fs, path::PathBuf};
 use anyhow::{Context, Error};
 use log::{debug, trace};
 
+use crate::constants::{GRUB_VAR_CMDLINE_LINUX, GRUB_VAR_CMDLINE_LINUX_DEFAULT};
 use crate::OsModifierContext;
 
 const DEFAULT_GRUB_PATH: &str = "/etc/default/grub";
@@ -93,7 +94,7 @@ impl DefaultGrub {
         old_keys: &[&str],
         new_args: &[String],
     ) -> Result<(), Error> {
-        let current = self.get_variable("GRUB_CMDLINE_LINUX").unwrap_or_default();
+        let current = self.get_variable(GRUB_VAR_CMDLINE_LINUX).unwrap_or_default();
 
         let mut args: Vec<String> = current
             .split_whitespace()
@@ -107,7 +108,7 @@ impl DefaultGrub {
         args.extend(new_args.iter().cloned());
 
         let new_value = args.join(" ");
-        self.set_variable("GRUB_CMDLINE_LINUX", &new_value);
+        self.set_variable(GRUB_VAR_CMDLINE_LINUX, &new_value);
 
         Ok(())
     }
@@ -127,7 +128,7 @@ impl DefaultGrub {
         }
 
         let current = self
-            .get_variable("GRUB_CMDLINE_LINUX_DEFAULT")
+            .get_variable(GRUB_VAR_CMDLINE_LINUX_DEFAULT)
             .unwrap_or_default();
 
         let mut args: Vec<String> = if current.is_empty() {
@@ -139,7 +140,7 @@ impl DefaultGrub {
         args.extend(extra.iter().cloned());
 
         let new_value = args.join(" ");
-        self.set_variable("GRUB_CMDLINE_LINUX_DEFAULT", &new_value);
+        self.set_variable(GRUB_VAR_CMDLINE_LINUX_DEFAULT, &new_value);
     }
 }
 
