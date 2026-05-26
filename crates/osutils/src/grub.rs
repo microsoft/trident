@@ -32,8 +32,28 @@ fn extract_quoted_title(after_menuentry: &str) -> Option<&str> {
     Some(&inner[..end])
 }
 
-/// Find `linux` directive lines from non-recovery menuentries in grub.cfg
-/// content.
+/// Count unquoted `{` and `}` characters in a line, skipping characters
+/// inside single or double quotes. Returns `(open_count, close_count)`.
+fn count_braces(line: &str) -> (usize, usize) {
+    let mut opens = 0usize;
+    let mut closes = 0usize;
+    let mut in_quote: Option<char> = None;
+
+    for ch in line.chars() {
+        match in_quote {
+            Some(q) if ch == q => in_quote = None,
+            Some(_) => {}
+            None if ch == '\'' || ch == '"' => in_quote = Some(ch),
+            None if ch == '{' => opens += 1,
+            None if ch == '}' => closes += 1,
+            _ => {}
+        }
+    }
+    (opens, closes)
+}
+
+/// Find `linux` directive lines from top-level non-recovery menuentries in
+/// grub.cfg content.
 ///
 /// This is a **read-only** parser that walks the raw grub.cfg text
 /// line-by-line looking for `menuentry` keywords, checks the quoted title
@@ -54,38 +74,77 @@ fn extract_quoted_title(after_menuentry: &str) -> Option<&str> {
 /// menuentry blocks and filters recovery entries. It operates on a raw
 /// `&str` and does not modify anything.
 ///
-/// # Known limitation (matches Go)
+/// # Submenu handling
 ///
-/// This parser does not track `submenu { ... }` block nesting or `{`/`}`
-/// brace depth. On systems with multiple kernels, `grub2-mkconfig`
-/// produces a top-level menuentry plus a `submenu 'Advanced options ...'`
-/// block. Both Go's `FindNonRecoveryLinuxLine` and this function will find
-/// \>1 linux line, which may cause callers that expect exactly one to
-/// error. This is acceptable because AZL images built by trident have
-/// exactly one kernel installed.
+/// On systems with multiple kernels, `grub2-mkconfig` produces a
+/// top-level menuentry for the default kernel plus a
+/// `submenu 'Advanced options ...'` block containing additional
+/// menuentries (including recovery variants). This parser tracks brace
+/// depth and skips `submenu { ... }` blocks entirely, so only top-level
+/// menuentries contribute `linux` lines.
+///
+/// This goes beyond the Go implementation's `FindNonRecoveryLinuxLine`,
+/// which does not track submenus and would return >1 line on multi-kernel
+/// systems.
 pub fn find_non_recovery_linux_lines(content: &str) -> Result<Vec<String>, Error> {
-    let mut in_menuentry = false;
+    let mut depth: usize = 0;
+    let mut in_top_level_menuentry = false;
+    let mut in_submenu = false;
+    let mut submenu_start_depth: usize = 0;
     let mut linux_lines = Vec::new();
 
     for line in content.lines() {
-        let keyword = match first_word(line) {
-            Some(w) => w,
-            None => continue,
-        };
+        let keyword = first_word(line);
+        let (opens, closes) = count_braces(line);
 
-        if keyword == "menuentry" {
-            in_menuentry = true;
-            let after_keyword = line[line.find("menuentry").unwrap() + "menuentry".len()..].trim();
-            if let Some(title) = extract_quoted_title(after_keyword) {
-                if title.contains("recovery") {
-                    in_menuentry = false;
+        // If inside a submenu block, just track depth until we exit.
+        if in_submenu {
+            depth += opens;
+            depth = depth.saturating_sub(closes);
+            if depth <= submenu_start_depth {
+                in_submenu = false;
+            }
+            continue;
+        }
+
+        if let Some(kw) = keyword {
+            if kw == "submenu" {
+                // Enter submenu — skip everything inside it.
+                in_submenu = true;
+                submenu_start_depth = depth;
+                depth += opens;
+                depth = depth.saturating_sub(closes);
+                // Edge case: opening and closing brace on same line
+                if depth <= submenu_start_depth {
+                    in_submenu = false;
+                }
+                continue;
+            }
+
+            if kw == "menuentry" && depth == 0 {
+                in_top_level_menuentry = true;
+                let after_keyword =
+                    line[line.find("menuentry").unwrap() + "menuentry".len()..].trim();
+                if let Some(title) = extract_quoted_title(after_keyword) {
+                    if title.contains("recovery") {
+                        in_top_level_menuentry = false;
+                    }
+                }
+            } else if in_top_level_menuentry && kw == "linux" {
+                let after_linux = line[line.find("linux").unwrap() + "linux".len()..].trim();
+                if !after_linux.is_empty() {
+                    linux_lines.push(after_linux.to_string());
                 }
             }
-        } else if in_menuentry && keyword == "linux" {
-            let after_linux = line[line.find("linux").unwrap() + "linux".len()..].trim();
-            if !after_linux.is_empty() {
-                linux_lines.push(after_linux.to_string());
-            }
+        }
+
+        // Update depth after processing the line's keywords.
+        depth += opens;
+        depth = depth.saturating_sub(closes);
+
+        // If we just closed the top-level menuentry block, reset state.
+        if depth == 0 {
+            in_top_level_menuentry = false;
         }
     }
 
@@ -1363,5 +1422,143 @@ mod tests {
         let lines = find_non_recovery_linux_lines(grub_cfg).unwrap();
         assert_eq!(lines.len(), 1);
         assert!(lines[0].contains("root=/dev/sda1"));
+    }
+
+    // ============= submenu handling =============
+
+    #[test]
+    fn test_submenu_entries_are_skipped() {
+        // Standard grub2-mkconfig output with one kernel: top-level entry
+        // plus an "Advanced options" submenu containing the same entry and
+        // a recovery variant.
+        let grub_cfg = indoc::indoc! {r#"
+            menuentry 'Azure Linux' --class azurelinux {
+            	linux /boot/vmlinuz-6.6.60 root=UUID=abc selinux=1
+            	initrd /boot/initramfs-6.6.60.img
+            }
+            submenu 'Advanced options for Azure Linux' --class azurelinux {
+            	menuentry 'Azure Linux, with Linux 6.6.60' --class azurelinux {
+            		linux /boot/vmlinuz-6.6.60 root=UUID=abc selinux=1
+            		initrd /boot/initramfs-6.6.60.img
+            	}
+            	menuentry 'Azure Linux, with Linux 6.6.60 (recovery mode)' --class azurelinux {
+            		linux /boot/vmlinuz-6.6.60 root=UUID=abc single
+            		initrd /boot/initramfs-6.6.60.img
+            	}
+            }
+        "#};
+
+        let lines = find_non_recovery_linux_lines(grub_cfg).unwrap();
+        assert_eq!(
+            lines.len(),
+            1,
+            "submenu entries should be skipped, only top-level entry counts"
+        );
+        assert!(lines[0].contains("root=UUID=abc"));
+        assert!(lines[0].contains("selinux=1"));
+    }
+
+    #[test]
+    fn test_multi_kernel_submenu() {
+        // Two kernels installed: grub2-mkconfig produces one top-level
+        // entry for the newest kernel and a submenu with all variants.
+        let grub_cfg = indoc::indoc! {r#"
+            menuentry 'Azure Linux' --class azurelinux {
+            	linux /boot/vmlinuz-6.6.60 root=UUID=abc selinux=1
+            	initrd /boot/initramfs-6.6.60.img
+            }
+            submenu 'Advanced options for Azure Linux' --class azurelinux {
+            	menuentry 'Azure Linux, with Linux 6.6.60' --class azurelinux {
+            		linux /boot/vmlinuz-6.6.60 root=UUID=abc selinux=1
+            		initrd /boot/initramfs-6.6.60.img
+            	}
+            	menuentry 'Azure Linux, with Linux 6.6.60 (recovery mode)' --class azurelinux {
+            		linux /boot/vmlinuz-6.6.60 root=UUID=abc single
+            		initrd /boot/initramfs-6.6.60.img
+            	}
+            	menuentry 'Azure Linux, with Linux 6.6.51' --class azurelinux {
+            		linux /boot/vmlinuz-6.6.51 root=UUID=abc selinux=1
+            		initrd /boot/initramfs-6.6.51.img
+            	}
+            	menuentry 'Azure Linux, with Linux 6.6.51 (recovery mode)' --class azurelinux {
+            		linux /boot/vmlinuz-6.6.51 root=UUID=abc single
+            		initrd /boot/initramfs-6.6.51.img
+            	}
+            }
+        "#};
+
+        let lines = find_non_recovery_linux_lines(grub_cfg).unwrap();
+        assert_eq!(
+            lines.len(),
+            1,
+            "only the top-level menuentry's linux line should be returned"
+        );
+        assert!(
+            lines[0].contains("vmlinuz-6.6.60"),
+            "should capture the newest (top-level) kernel"
+        );
+    }
+
+    #[test]
+    fn test_submenu_before_top_level_entry() {
+        // Unusual ordering: submenu appears before the top-level entry.
+        let grub_cfg = indoc::indoc! {r#"
+            submenu 'Advanced options' {
+            	menuentry 'Linux old' {
+            		linux /boot/vmlinuz-old root=/dev/sda1
+            	}
+            }
+            menuentry 'Linux' {
+            	linux /boot/vmlinuz root=/dev/sda2 selinux=1
+            }
+        "#};
+
+        let lines = find_non_recovery_linux_lines(grub_cfg).unwrap();
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("root=/dev/sda2"));
+    }
+
+    #[test]
+    fn test_submenu_only_errors() {
+        // Only a submenu with no top-level menuentries — should error.
+        let grub_cfg = indoc::indoc! {r#"
+            submenu 'Advanced options' {
+            	menuentry 'Linux' {
+            		linux /boot/vmlinuz root=/dev/sda1
+            	}
+            }
+        "#};
+
+        assert!(find_non_recovery_linux_lines(grub_cfg).is_err());
+    }
+
+    #[test]
+    fn test_braces_in_quoted_title_not_counted() {
+        // Braces inside the quoted title should not affect depth tracking.
+        let grub_cfg = indoc::indoc! {r#"
+            menuentry 'Azure Linux {debug}' {
+            	linux /boot/vmlinuz root=/dev/sda1
+            }
+        "#};
+
+        let lines = find_non_recovery_linux_lines(grub_cfg).unwrap();
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("root=/dev/sda1"));
+    }
+
+    // ============= count_braces =============
+
+    #[test]
+    fn test_count_braces_basic() {
+        assert_eq!(count_braces("menuentry 'Linux' {"), (1, 0));
+        assert_eq!(count_braces("}"), (0, 1));
+        assert_eq!(count_braces("no braces here"), (0, 0));
+    }
+
+    #[test]
+    fn test_count_braces_skips_quoted() {
+        // Braces inside quotes should not be counted.
+        assert_eq!(count_braces("menuentry 'title {x}' {"), (1, 0));
+        assert_eq!(count_braces(r#"menuentry "title {x}" {"#), (1, 0));
     }
 }
