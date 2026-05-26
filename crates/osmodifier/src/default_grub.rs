@@ -65,21 +65,24 @@ impl DefaultGrub {
         None
     }
 
-    /// Set a variable value. If the variable exists, update it in place.
-    /// If not, append it.
+    /// Set a variable value. If the variable exists, update it in place,
+    /// preserving the original line's leading whitespace and quote style.
+    /// If not, append it with double quotes (the GRUB default).
     pub fn set_variable(&mut self, name: &str, value: &str) {
         let prefix = format!("{name}=");
-        let new_line = format!("{name}=\"{value}\"");
 
         for line in &mut self.lines {
             if line.trim().starts_with(&prefix) {
-                *line = new_line;
+                let leading_ws = &line[..line.len() - line.trim_start().len()];
+                let after_eq = line.trim().strip_prefix(&prefix).unwrap_or("");
+                let quote = detect_quote_char(after_eq);
+                *line = format!("{leading_ws}{name}={quote}{value}{quote}");
                 return;
             }
         }
 
-        // Not found — append
-        self.lines.push(new_line);
+        // Not found — append with double quotes (GRUB convention)
+        self.lines.push(format!("{name}=\"{value}\""));
     }
 
     /// Update kernel command line args in GRUB_CMDLINE_LINUX.
@@ -140,6 +143,19 @@ impl DefaultGrub {
 
         let new_value = args.join(" ");
         self.set_variable("GRUB_CMDLINE_LINUX_DEFAULT", &new_value);
+    }
+}
+
+/// Detect the quote character used around a value string.
+/// Returns `"` for double-quoted, `'` for single-quoted, or `"` as the
+/// default when the value is unquoted (so new writes are always safely quoted).
+fn detect_quote_char(s: &str) -> char {
+    let s = s.trim();
+    if s.starts_with('\'') && s.ends_with('\'') {
+        '\''
+    } else {
+        // Double-quoted, unquoted, or empty — default to double quote.
+        '"'
     }
 }
 
@@ -380,6 +396,68 @@ mod tests {
             grub.get_variable("GRUB_DEVICE"),
             Some("/dev/sda1".to_string())
         );
+    }
+
+    #[test]
+    fn test_detect_quote_char() {
+        assert_eq!(detect_quote_char(r#""hello""#), '"');
+        assert_eq!(detect_quote_char("'hello'"), '\'');
+        assert_eq!(detect_quote_char("noquotes"), '"');
+        assert_eq!(detect_quote_char(""), '"');
+    }
+
+    #[test]
+    fn test_set_variable_preserves_single_quotes() {
+        let mut grub = DefaultGrub {
+            lines: vec!["GRUB_DEVICE='/dev/sda1'".to_string()],
+            path: PathBuf::from("/etc/default/grub"),
+        };
+
+        grub.set_variable("GRUB_DEVICE", "/dev/sdb1");
+        assert_eq!(grub.lines[0], "GRUB_DEVICE='/dev/sdb1'");
+        assert_eq!(
+            grub.get_variable("GRUB_DEVICE"),
+            Some("/dev/sdb1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_set_variable_preserves_leading_whitespace() {
+        let mut grub = DefaultGrub {
+            lines: vec![
+                "  GRUB_TIMEOUT=5".to_string(),
+                "\tGRUB_DEVICE=\"/dev/sda1\"".to_string(),
+            ],
+            path: PathBuf::from("/etc/default/grub"),
+        };
+
+        grub.set_variable("GRUB_TIMEOUT", "0");
+        assert_eq!(grub.lines[0], "  GRUB_TIMEOUT=\"0\"");
+
+        grub.set_variable("GRUB_DEVICE", "/dev/sdb1");
+        assert_eq!(grub.lines[1], "\tGRUB_DEVICE=\"/dev/sdb1\"");
+    }
+
+    #[test]
+    fn test_set_variable_preserves_both_indent_and_quotes() {
+        let mut grub = DefaultGrub {
+            lines: vec!["    GRUB_DEVICE='/dev/sda1'".to_string()],
+            path: PathBuf::from("/etc/default/grub"),
+        };
+
+        grub.set_variable("GRUB_DEVICE", "/dev/sdb1");
+        assert_eq!(grub.lines[0], "    GRUB_DEVICE='/dev/sdb1'");
+    }
+
+    #[test]
+    fn test_set_variable_append_uses_double_quotes() {
+        let mut grub = DefaultGrub {
+            lines: vec!["# empty config".to_string()],
+            path: PathBuf::from("/etc/default/grub"),
+        };
+
+        grub.set_variable("NEW_VAR", "new_value");
+        assert_eq!(grub.lines[1], r#"NEW_VAR="new_value""#);
     }
 
     #[test]
