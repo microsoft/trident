@@ -34,7 +34,7 @@ When making a PR you are attempting to merge, make sure that:
 - The build works and cargo-clippy is happy. (`make check`)
 - API docs are up to date. (`make build-api-docs`)
 - Unit tests pass. (`make test`) (See: [Testing](../Testing/Testing.md))
-- Functional tests pass. (`make functional-test`)
+- [Functional tests](../Testing/Functional-Tests.md) pass. (`make functional-test`)
 - Local make targets work.
   - `make docker-build`
 - Coverage is above the baseline. (See: [Coverage](../Testing/Coverage.md))
