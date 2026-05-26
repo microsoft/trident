@@ -192,6 +192,71 @@ where
         })
 }
 
+/// Atomically replace `path` with `content`.
+///
+/// Writes to a temp file in the same directory, fsyncs, preserves ownership
+/// and permissions from the original file (if it exists), then renames. This
+/// guarantees that readers never see a partial write.
+pub fn atomic_write_file(path: &Path, content: &str) -> Result<(), Error> {
+    use std::os::unix::fs::MetadataExt;
+
+    let parent = path.parent().context("Cannot determine parent directory")?;
+
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)
+        .with_context(|| format!("Failed to create temp file in '{}'", parent.display()))?;
+
+    tmp.write_all(content.as_bytes())
+        .with_context(|| format!("Failed to write temp file for '{}'", path.display()))?;
+
+    tmp.flush()
+        .with_context(|| format!("Failed to flush temp file for '{}'", path.display()))?;
+
+    // fsync the temp file before rename to ensure data is on disk. Without
+    // this, a power loss between rename and dirty-page flush could leave the
+    // file zero-length.
+    tmp.as_file()
+        .sync_all()
+        .with_context(|| format!("Failed to fsync temp file for '{}'", path.display()))?;
+
+    // Preserve ownership and permissions from the original file if it exists.
+    // Ownership must be set before permissions because chown can clear
+    // setuid/setgid bits.
+    if let Ok(metadata) = fs::metadata(path) {
+        use std::os::fd::AsFd;
+        nix::unistd::fchown(
+            tmp.as_file().as_fd(),
+            Some(nix::unistd::Uid::from_raw(metadata.uid())),
+            Some(nix::unistd::Gid::from_raw(metadata.gid())),
+        )
+        .with_context(|| {
+            format!(
+                "Failed to set ownership on temp file for '{}'",
+                path.display()
+            )
+        })?;
+
+        fs::set_permissions(tmp.path(), metadata.permissions()).with_context(|| {
+            format!(
+                "Failed to set permissions on temp file for '{}'",
+                path.display()
+            )
+        })?;
+    }
+
+    tmp.persist(path)
+        .with_context(|| format!("Failed to atomically replace '{}'", path.display()))?;
+
+    // Sync parent directory to ensure the rename (directory entry update) is
+    // durable. Without this, the old file could reappear after power loss.
+    if let Some(parent) = path.parent() {
+        if let Ok(dir) = fs::File::open(parent) {
+            let _ = dir.sync_all();
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -345,5 +410,49 @@ mod tests {
                 dir.display()
             );
         });
+    }
+
+    #[test]
+    fn test_atomic_write_creates_new_file() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("new_file.conf");
+
+        atomic_write_file(&path, "hello\n").unwrap();
+
+        assert_eq!(fs::read_to_string(&path).unwrap(), "hello\n");
+    }
+
+    #[test]
+    fn test_atomic_write_replaces_existing_file() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("existing.conf");
+        fs::write(&path, "old content\n").unwrap();
+
+        atomic_write_file(&path, "new content\n").unwrap();
+
+        assert_eq!(fs::read_to_string(&path).unwrap(), "new content\n");
+    }
+
+    #[test]
+    fn test_atomic_write_preserves_permissions() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("perms.conf");
+        fs::write(&path, "original\n").unwrap();
+        fs::set_permissions(&path, Permissions::from_mode(0o640)).unwrap();
+
+        atomic_write_file(&path, "updated\n").unwrap();
+
+        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o640, "Expected mode 0640, got {mode:04o}");
+    }
+
+    #[test]
+    fn test_atomic_write_empty_content() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("empty.conf");
+
+        atomic_write_file(&path, "").unwrap();
+
+        assert_eq!(fs::read_to_string(&path).unwrap(), "");
     }
 }
