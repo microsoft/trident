@@ -3,7 +3,7 @@
 
 //! User management — create/update users, passwords, SSH keys, groups.
 
-use std::{fs, io::Write, os::unix::fs::PermissionsExt, path::Path, process::Command};
+use std::{fs, os::unix::fs::PermissionsExt, path::Path};
 
 use anyhow::{bail, Context, Error};
 use log::{debug, info};
@@ -164,40 +164,16 @@ fn validate_shadow_value(value: &str) -> Result<(), Error> {
 }
 
 fn hash_password(plaintext: &str) -> Result<String, Error> {
-    // Use Dependency::Openssl to resolve the binary path for consistent
-    // detection, but use std::process::Command for stdin piping which
-    // the Dependency Command wrapper doesn't yet support.
-    let openssl_path = Dependency::Openssl
-        .path()
-        .context("openssl is required for password hashing")?;
+    let output = Dependency::Openssl
+        .cmd()
+        .with_arg("passwd")
+        .with_arg("-6")
+        .with_arg("-stdin")
+        .with_stdin(plaintext.as_bytes())
+        .output_and_check()
+        .context("Failed to hash password with openssl")?;
 
-    let mut child = Command::new(openssl_path)
-        .args(["passwd", "-6", "-stdin"])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .context("Failed to start openssl passwd")?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(plaintext.as_bytes())
-            .context("Failed to write password to openssl stdin")?;
-    }
-
-    let output = child
-        .wait_with_output()
-        .context("Failed to wait for openssl passwd")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("openssl passwd failed: {stderr}");
-    }
-
-    Ok(String::from_utf8(output.stdout)
-        .context("openssl passwd produced non-UTF-8 output")?
-        .trim()
-        .to_string())
+    Ok(output.trim().to_string())
 }
 
 fn create_user(user: &MICUser) -> Result<(), Error> {
@@ -266,38 +242,16 @@ fn update_user_password(ctx: &OsModifierContext, username: &str, hash: &str) -> 
 /// Set password on a newly created user via chpasswd -e (stdin), avoiding
 /// leaking the hash through /proc/cmdline.
 fn set_password_via_chpasswd(username: &str, hash: &str) -> Result<(), Error> {
-    // Use Dependency::Chpasswd to resolve the binary path for consistent
-    // detection, but use std::process::Command for stdin piping which
-    // the Dependency Command wrapper doesn't yet support.
-    let chpasswd_path = Dependency::Chpasswd
-        .path()
-        .context("chpasswd is required for setting user passwords")?;
-
     debug!("Setting password for new user '{username}' via chpasswd");
     let input = format!("{username}:{hash}\n");
 
-    let mut child = Command::new(chpasswd_path)
-        .arg("-e")
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .context("Failed to start chpasswd")?;
+    Dependency::Chpasswd
+        .cmd()
+        .with_arg("-e")
+        .with_stdin(input.into_bytes())
+        .run_and_check()
+        .with_context(|| format!("Failed to set password for '{username}' via chpasswd"))?;
 
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(input.as_bytes())
-            .context("Failed to write to chpasswd stdin")?;
-    }
-
-    let output = child
-        .wait_with_output()
-        .context("Failed to wait for chpasswd")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("chpasswd failed for '{username}': {stderr}");
-    }
     Ok(())
 }
 

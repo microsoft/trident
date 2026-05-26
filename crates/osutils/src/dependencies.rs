@@ -1,10 +1,10 @@
 use std::{
     borrow::Cow,
     ffi::{OsStr, OsString},
-    io,
+    io::{self, Write},
     os::unix::process::ExitStatusExt,
     path::PathBuf,
-    process::{Command as StdCommand, Output},
+    process::{Command as StdCommand, Output, Stdio},
 };
 
 use log::trace;
@@ -153,6 +153,8 @@ pub enum Dependency {
     #[cfg(test)]
     DoesNotExist,
     #[cfg(test)]
+    Cat,
+    #[cfg(test)]
     Echo,
     #[cfg(test)]
     False,
@@ -207,6 +209,7 @@ impl Dependency {
             dependency: *self,
             args: vec![],
             envs: vec![],
+            stdin_data: None,
         }
     }
 }
@@ -215,6 +218,7 @@ pub struct Command {
     dependency: Dependency,
     args: Vec<OsString>,
     envs: Vec<(OsString, OsString)>,
+    stdin_data: Option<Vec<u8>>,
 }
 
 impl Command {
@@ -249,6 +253,18 @@ impl Command {
         self
     }
 
+    /// Set data to pipe to the command's stdin.
+    pub fn stdin(&mut self, data: impl Into<Vec<u8>>) -> &mut Self {
+        self.stdin_data = Some(data.into());
+        self
+    }
+
+    /// Owned-builder variant of [`stdin`](Self::stdin).
+    pub fn with_stdin(mut self, data: impl Into<Vec<u8>>) -> Self {
+        self.stdin(data);
+        self
+    }
+
     pub fn envs<I, K, V>(&mut self, vars: I) -> &mut Command
     where
         I: IntoIterator<Item = (K, V)>,
@@ -275,7 +291,7 @@ impl Command {
     }
 
     fn render_command(&self) -> String {
-        if self.args.is_empty() {
+        let base = if self.args.is_empty() {
             self.dependency.to_string()
         } else {
             format!(
@@ -292,6 +308,11 @@ impl Command {
                     .collect::<Vec<_>>()
                     .join(" "),
             )
+        };
+        if self.stdin_data.is_some() {
+            format!("{base} (with stdin)")
+        } else {
+            base
         }
     }
 
@@ -301,12 +322,59 @@ impl Command {
         cmd.envs(self.envs.clone());
         let rendered_command = self.render_command();
         trace!("Executing '{rendered_command}'");
-        let output = cmd
-            .output()
-            .map_err(|inner| DependencyError::CouldNotExecute {
-                dependency: self.dependency,
-                inner,
+
+        let output = if let Some(ref stdin_data) = self.stdin_data {
+            cmd.stdin(Stdio::piped());
+            cmd.stdout(Stdio::piped());
+            cmd.stderr(Stdio::piped());
+
+            let mut child =
+                cmd.spawn()
+                    .map_err(|inner| DependencyError::CouldNotExecute {
+                        dependency: self.dependency,
+                        inner,
+                    })?;
+
+            // Write stdin on a separate thread to avoid deadlock if the child
+            // fills its stdout/stderr pipe before consuming all input.
+            let child_stdin = child.stdin.take();
+            let payload = stdin_data.clone();
+            let writer = std::thread::spawn(move || -> io::Result<()> {
+                if let Some(mut handle) = child_stdin {
+                    handle.write_all(&payload)?;
+                    // handle is dropped here, closing stdin so the child sees EOF
+                }
+                Ok(())
+            });
+
+            let output = child.wait_with_output().map_err(|inner| {
+                DependencyError::CouldNotExecute {
+                    dependency: self.dependency,
+                    inner,
+                }
             })?;
+
+            // Collect stdin write result. BrokenPipe is not fatal — the child
+            // may have exited early, and its exit status / stderr carries the
+            // real diagnostic.
+            if let Err(write_err) = writer.join().unwrap_or(Ok(())) {
+                if write_err.kind() != io::ErrorKind::BrokenPipe && output.status.success() {
+                    return Err(Box::new(DependencyError::CouldNotExecute {
+                        dependency: self.dependency,
+                        inner: write_err,
+                    }));
+                }
+            }
+
+            output
+        } else {
+            cmd.output()
+                .map_err(|inner| DependencyError::CouldNotExecute {
+                    dependency: self.dependency,
+                    inner,
+                })?
+        };
+
         let output = CommandOutput {
             rendered_command: rendered_command.clone(),
             dependency: self.dependency,
@@ -499,5 +567,65 @@ mod tests {
             DependencyError::ExecutionFailed { .. }
         ));
         assert_eq!(output.explain_exit(), "exited with status: 1");
+    }
+
+    #[test]
+    fn test_stdin_piped_to_cat() {
+        let output = Dependency::Cat
+            .cmd()
+            .with_stdin(b"hello from stdin".to_vec())
+            .output_and_check()
+            .unwrap();
+        assert_eq!(output, "hello from stdin");
+    }
+
+    #[test]
+    fn test_stdin_empty() {
+        let output = Dependency::Cat
+            .cmd()
+            .with_stdin(Vec::new())
+            .output_and_check()
+            .unwrap();
+        assert_eq!(output, "");
+    }
+
+    #[test]
+    fn test_stdin_with_failing_command() {
+        let result = Dependency::False
+            .cmd()
+            .with_stdin(b"ignored".to_vec())
+            .output()
+            .unwrap();
+        assert!(!result.success());
+        assert!(matches!(
+            *result.check().unwrap_err(),
+            DependencyError::ExecutionFailed { .. }
+        ));
+    }
+
+    #[test]
+    fn test_render_command_with_stdin() {
+        let cmd = Dependency::Cat.cmd().with_stdin(b"secret".to_vec());
+        assert_eq!(cmd.render_command(), "cat (with stdin)");
+    }
+
+    #[test]
+    fn test_render_command_with_args_and_stdin() {
+        let cmd = Dependency::Echo
+            .cmd()
+            .with_arg("-n")
+            .with_stdin(b"data".to_vec());
+        assert_eq!(cmd.render_command(), "echo -n (with stdin)");
+    }
+
+    #[test]
+    fn test_stdin_replaces_previous() {
+        let output = Dependency::Cat
+            .cmd()
+            .with_stdin(b"first".to_vec())
+            .with_stdin(b"second".to_vec())
+            .output_and_check()
+            .unwrap();
+        assert_eq!(output, "second");
     }
 }
