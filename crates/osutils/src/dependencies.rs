@@ -328,12 +328,12 @@ impl Command {
             cmd.stdout(Stdio::piped());
             cmd.stderr(Stdio::piped());
 
-            let mut child =
-                cmd.spawn()
-                    .map_err(|inner| DependencyError::CouldNotExecute {
-                        dependency: self.dependency,
-                        inner,
-                    })?;
+            let mut child = cmd
+                .spawn()
+                .map_err(|inner| DependencyError::CouldNotExecute {
+                    dependency: self.dependency,
+                    inner,
+                })?;
 
             // Write stdin on a separate thread to avoid deadlock if the child
             // fills its stdout/stderr pipe before consuming all input.
@@ -347,12 +347,13 @@ impl Command {
                 Ok(())
             });
 
-            let output = child.wait_with_output().map_err(|inner| {
-                DependencyError::CouldNotExecute {
-                    dependency: self.dependency,
-                    inner,
-                }
-            })?;
+            let output =
+                child
+                    .wait_with_output()
+                    .map_err(|inner| DependencyError::CouldNotExecute {
+                        dependency: self.dependency,
+                        inner,
+                    })?;
 
             // Collect stdin write result. BrokenPipe is not fatal — the child
             // may have exited early, and its exit status / stderr carries the
