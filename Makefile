@@ -142,24 +142,7 @@ target/release/trident target/release/trident-acl-agent: .cargo/config | version
 		TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
 		cargo build --release --features dangerous-options,grpc-preview -p trident -p trident-acl-agent
 
-TOOLKIT_DIR="azure-linux-image-tools/toolkit"
-AZL_TOOLS_OUT_DIR="$(TOOLKIT_DIR)/out/tools"
 ARTIFACTS_DIR="artifacts"
-
-# Build OSModifier from a local clone of azure-linux-image-tools.
-# Make sure the repo has been cloned manually, via:
-#
-# git clone https://github.com/microsoft/azure-linux-image-tools
-
-artifacts/osmodifier: packaging/docker/Dockerfile-osmodifier.azl3
-	@docker build -t trident/osmodifier-build:latest \
-		-f packaging/docker/Dockerfile-osmodifier.azl3 \
-		.
-	@mkdir -p "$(ARTIFACTS_DIR)"
-	@id=$$(docker create trident/osmodifier-build:latest) && \
-	    docker cp -q $$id:/work/azure-linux-image-tools/toolkit/out/tools/osmodifier $@ || \
-	    docker rm -v $$id
-	@touch $@
 
 .PHONY: azl3-builder-image clean-azl3-builder-image build-azl3
 azl3-builder-image:
@@ -185,7 +168,7 @@ target/azl3/release/trident target/azl3/release/trident-acl-agent: version-vars 
 		cargo build --color always --target-dir target/azl3 --release --features dangerous-options,grpc-preview -p trident -p trident-acl-agent
 
 # This will do a proper build on azl3, exactly as the pipelines would, with the custom registry and all.
-bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full packaging/systemd/*.service packaging/rpm/trident.spec artifacts/osmodifier packaging/selinux-policy-trident/* version-vars
+bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full packaging/systemd/*.service packaging/rpm/trident.spec packaging/selinux-policy-trident/* version-vars
 	$(eval CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN := $(shell az account get-access-token --query "join(' ', ['Bearer', accessToken])" --output tsv))
 
 	@mkdir -p bin/
@@ -207,7 +190,7 @@ bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full packaging/systemd
 	@tar xf $@ -C bin/
 
 # This one does a fast trick-build where we build locally and inject the binary into the container to add it to the RPM.
-bin/trident-rpms.tar.gz: packaging/docker/Dockerfile.azl3 packaging/systemd/*.service packaging/rpm/trident.spec artifacts/osmodifier target/release/trident target/release/trident-acl-agent packaging/selinux-policy-trident/*
+bin/trident-rpms.tar.gz: packaging/docker/Dockerfile.azl3 packaging/systemd/*.service packaging/rpm/trident.spec target/release/trident target/release/trident-acl-agent packaging/selinux-policy-trident/*
 	@mkdir -p bin/
 	@if [ ! -f bin/trident ] || ! cmp -s target/release/trident bin/trident; then \
 		cp target/release/trident bin/trident; \
@@ -390,7 +373,7 @@ functional-test: artifacts/trident-functest.qcow2
 # A target for pipelines that skips all setup and building steps that are not
 # required in the pipeline environment.
 .PHONY: functional-test-core
-functional-test-core: artifacts/osmodifier build-functional-test-cc generate-functional-test-manifest artifacts/trident-functest.qcow2 bin/virtdeploy
+functional-test-core: build-functional-test-cc generate-functional-test-manifest artifacts/trident-functest.qcow2 bin/virtdeploy
 	python3 -u -m \
 		pytest --color=yes \
 		--log-level=INFO \
@@ -407,7 +390,7 @@ functional-test-core: artifacts/osmodifier build-functional-test-cc generate-fun
 		--build-output $(BUILD_OUTPUT)
 
 .PHONY: patch-functional-test
-patch-functional-test: artifacts/osmodifier build-functional-test-cc generate-functional-test-manifest
+patch-functional-test: build-functional-test-cc generate-functional-test-manifest
 	python3 -u -m \
 		pytest --color=yes \
 		--log-level=INFO \
@@ -566,16 +549,14 @@ RUN_NETLAUNCH_TRIDENT_BIN ?= $(if $(filter yes,$(IS_UBUNTU_24_OR_NEWER)),target/
 RUN_NETLAUNCH_LAUNCHER_BIN ?= $(if $(filter yes,$(IS_UBUNTU_24_OR_NEWER)),target/azl3/release/trident-acl-agent,target/release/trident-acl-agent)
 
 .PHONY: run-netlaunch run-netlaunch-stream
-run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch validate artifacts/osmodifier $(RUN_NETLAUNCH_TRIDENT_BIN) $(RUN_NETLAUNCH_LAUNCHER_BIN)
+run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch validate $(RUN_NETLAUNCH_TRIDENT_BIN) $(RUN_NETLAUNCH_LAUNCHER_BIN)
 	@echo "Using trident binary: $(RUN_NETLAUNCH_TRIDENT_BIN)"
 	@mkdir -p artifacts/test-image
 	@cp $(RUN_NETLAUNCH_TRIDENT_BIN) artifacts/test-image/trident
 	@cp $(RUN_NETLAUNCH_LAUNCHER_BIN) artifacts/test-image/trident-acl-agent
-	@cp artifacts/osmodifier artifacts/test-image/
 	@bin/netlaunch \
 	    --trident-binary $(RUN_NETLAUNCH_TRIDENT_BIN) \
 	    --launcher-binary $(RUN_NETLAUNCH_LAUNCHER_BIN) \
-		--osmodifier-binary artifacts/osmodifier \
 		--rcp-agent-mode cli \
 	 	--iso $(NETLAUNCH_ISO) \
 		$(if $(NETLAUNCH_PORT),--port $(NETLAUNCH_PORT)) \
@@ -587,15 +568,13 @@ run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlau
 		--trace-file trident-metrics.jsonl \
 		$(if $(LOG_TRACE),--log-trace)
 
-run-netlaunch-stream: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch artifacts/osmodifier $(RUN_NETLAUNCH_TRIDENT_BIN)
+run-netlaunch-stream: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch $(RUN_NETLAUNCH_TRIDENT_BIN)
 	@echo "Using trident binary: $(RUN_NETLAUNCH_TRIDENT_BIN)"
 	@mkdir -p artifacts/test-image
 	@cp $(RUN_NETLAUNCH_TRIDENT_BIN) artifacts/test-image/trident
-	@cp artifacts/osmodifier artifacts/test-image/
 	@bin/netlaunch \
 	    --stream-image \
 	    --trident-binary $(RUN_NETLAUNCH_TRIDENT_BIN) \
-		--osmodifier-binary artifacts/osmodifier \
 		--rcp-agent-mode cli \
 	 	--iso $(NETLAUNCH_ISO) \
 		$(if $(NETLAUNCH_PORT),--port $(NETLAUNCH_PORT)) \

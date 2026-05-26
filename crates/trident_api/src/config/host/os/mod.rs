@@ -124,14 +124,18 @@ pub enum SelinuxMode {
 
     /// # Permissive
     ///
-    /// Set SELinux to permissive. The mode is set by appending `selinux=1
-    /// enforcing=0` to the kernel command line.
+    /// Set SELinux to permissive. The mode is set by appending `security=selinux
+    /// selinux=1 enforcing=0` to the kernel command line and setting
+    /// `SELINUX=permissive` in `/etc/selinux/config`.
     Permissive,
 
     /// # Enforcing
     ///
-    /// Set SELinux to enforcing. The mode is set by appending `selinux=1
-    /// enforcing=1` to the kernel command line.
+    /// Set SELinux to enforcing. The mode is set by appending `security=selinux
+    /// selinux=1` to the kernel command line and setting `SELINUX=enforcing` in
+    /// `/etc/selinux/config`. The `security=selinux` arg tells the kernel which
+    /// LSM to activate. The enforcing/permissive decision is controlled by the
+    /// config file, allowing runtime changes via `setenforce`.
     Enforcing,
 }
 

@@ -4,11 +4,9 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
-use log::{debug, trace};
+use log::trace;
 use regex::Regex;
 use uuid::Uuid;
-
-use trident_api::config::SelinuxMode;
 
 /// Represents the GRUB configuration file. Support simple validation and
 /// retrieving and updating values. Temporary solution until we switch to more
@@ -55,35 +53,6 @@ impl GrubConfig {
         }
 
         Ok(())
-    }
-
-    /// Lazy approach at setting SELinux to permissive
-    ///
-    /// Will be removed in the future
-    /// TODO(6775): re-enable selinux
-    pub fn set_selinux_mode(&mut self, mode: SelinuxMode) {
-        if !self.contents.contains("selinux=1") {
-            // If "selinux=1" is not found, handle accordingly
-            debug!(
-                "selinux setting not found in kernel command line, skipping selinux mode change"
-            );
-            return;
-        }
-
-        match mode {
-            SelinuxMode::Disabled => {
-                debug!("Setting SELinux to disabled");
-                self.contents = self.contents.replace("selinux=1", "selinux=0");
-            }
-            SelinuxMode::Permissive => {
-                debug!("Setting SELinux to permissive");
-                self.contents = self.contents.replace("selinux=1", "selinux=1 enforcing=0");
-            }
-            SelinuxMode::Enforcing => {
-                debug!("Setting SELinux to enforcing");
-                self.contents = self.contents.replace("selinux=1", "selinux=1 enforcing=1");
-            }
-        }
     }
 
     /// Find the linux command line in the GRUB config.

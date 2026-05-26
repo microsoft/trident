@@ -26,7 +26,6 @@ pub mod mkinitrd;
 pub mod mount;
 pub mod mountpoint;
 pub mod netplan;
-pub mod osmodifier;
 pub mod osrelease;
 pub mod overlay;
 pub mod path;

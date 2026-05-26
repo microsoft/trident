@@ -5,7 +5,7 @@ use crate::markdown::table::MdTable;
 use super::{get_part_types, RuleDefinition};
 
 pub(super) fn valid_mount_paths() -> RuleDefinition {
-    let mut table = MdTable::new(vec!["Mount Path", "Valid Mount Paths"]);
+    let mut table = MdTable::new(vec!["Partition Type", "Valid Mount Paths"]);
 
     for pt in get_part_types() {
         table.add_row(vec![

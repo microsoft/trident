@@ -6,7 +6,7 @@ use std::{
 use anyhow::{bail, Context, Error};
 use log::{debug, warn};
 
-use osutils::osmodifier::{MICPassword, MICUser, PasswordType};
+use osmodifier::{MICPassword, MICUser, PasswordType};
 use trident_api::config::{Password, SshMode, User};
 
 const SSHD_CONFIG_FILE: &str = "/etc/ssh/sshd_config";

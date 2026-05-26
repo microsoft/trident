@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use log::debug;
 use strum::IntoEnumIterator;
 
@@ -12,7 +10,7 @@ use trident_api::{
     status::AbVolumeSelection,
 };
 
-use crate::{engine::Subsystem, OS_MODIFIER_NEWROOT_PATH};
+use crate::engine::Subsystem;
 
 use super::EngineContext;
 
@@ -40,8 +38,7 @@ impl Subsystem for BootSubsystem {
             return Ok(());
         }
 
-        grub::update_configs(ctx, Path::new(OS_MODIFIER_NEWROOT_PATH))
-            .structured(ServicingError::UpdateGrubConfigs)?;
+        grub::update_configs(ctx).structured(ServicingError::UpdateGrubConfigs)?;
 
         Ok(())
     }

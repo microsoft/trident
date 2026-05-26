@@ -34,8 +34,6 @@ Source0:        https://github.com/microsoft/trident/archive/refs/tags/v%{versio
 #   tar -czf %%{name}-%%{version}-cargo.tar.gz vendor/
 #
 Source1:        %{name}-%{version}-cargo.tar.gz
-%else
-Source1:        osmodifier
 %endif
 
 BuildRequires:  openssl-devel
@@ -45,9 +43,8 @@ BuildRequires:  systemd-units
 BuildRequires:  rust
 
 %if %{undefined rpm_ver}
-# For distro build, require cargo to build and osmodifier
+# For distro build, require cargo to build
 BuildRequires:  cargo
-Requires:       azurelinux-image-tools-osmodifier
 %endif
 
 Requires:       e2fsprogs
@@ -55,6 +52,8 @@ Requires:       util-linux
 Requires:       dosfstools
 Requires:       efibootmgr
 Requires:       lsof
+Requires:       openssl
+Requires:       shadow-utils
 Requires:       systemd >= 255
 Requires:       systemd-udev
 Requires:       (%{name}-selinux if selinux-policy-%{selinuxtype})
@@ -74,6 +73,8 @@ Suggests:       veritysetup
 Suggests:       ntfs-3g
 # For creating NTFS filesystems
 Suggests:       ntfsprogs
+# For GRUB boot configuration (os.kernelCommandLine, boot config)
+Suggests:       grub2-tools
 
 
 %description
@@ -83,10 +84,6 @@ and its dependencies for managing the lifecycle of Azure Linux hosts.
 %files
 %{_bindir}/%{name}
 %dir /etc/%{name}
-%if %{defined rpm_ver}
-# For Trident repo build, package osmodifier included via `Source1`
-%{_bindir}/osmodifier
-%endif
 %{_unitdir}/%{name}d.service
 %{_unitdir}/%{name}d.socket
 
@@ -283,11 +280,6 @@ cargo test --all --no-fail-fast -- --skip test_run_systemd_check --skip test_pre
 %endif
 
 %install
-%if %{defined rpm_ver}
-# For Trident repo build, package osmodifier included via `Source1`.
-# Distro RPM will use distro osmodifier RPM via Requires directive.
-install -D -m 755 %{SOURCE1} %{buildroot}%{_bindir}/osmodifier
-%endif
 install -D -m 755 target/release/%{name} %{buildroot}/%{_bindir}/%{name}
 install -D -m 755 target/release/%{name}-acl-agent %{buildroot}/%{_bindir}/%{name}-acl-agent
 

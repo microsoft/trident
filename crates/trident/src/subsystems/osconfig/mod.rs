@@ -3,19 +3,17 @@ use std::{fs, path::Path};
 use anyhow::Context;
 use log::{debug, error, info, warn};
 
-use osutils::{osmodifier::OSModifierConfig, path};
+use osmodifier::{OSModifierConfig, OsModifierContext};
+use osutils::path;
 use trident_api::{
     config::{ManagementOs, Services, SshMode},
     constants::internal_params::DISABLE_HOSTNAME_CARRY_OVER,
-    error::{ExecutionEnvironmentMisconfigurationError, ReportError, ServicingError, TridentError},
+    error::{ReportError, ServicingError, TridentError},
     is_default,
     status::ServicingType,
 };
 
-use crate::{
-    engine::{EngineContext, Subsystem, RUNS_ON_ALL},
-    OS_MODIFIER_BINARY_PATH, OS_MODIFIER_NEWROOT_PATH,
-};
+use crate::engine::{EngineContext, Subsystem, RUNS_ON_ALL};
 
 mod users;
 
@@ -125,17 +123,8 @@ impl Subsystem for OsConfigSubsystem {
         Ok(ServicingType::NoActiveServicing)
     }
 
-    fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {
-        // If the os-modifier binary is required but not present, return an error.
-        if os_changes_required(ctx) && !Path::new(OS_MODIFIER_BINARY_PATH).exists() {
-            return Err(TridentError::new(
-                ExecutionEnvironmentMisconfigurationError::FindOSModifierBinary {
-                    binary_path: OS_MODIFIER_BINARY_PATH.to_string(),
-                    config: self.name().to_string(),
-                },
-            ));
-        }
-
+    fn validate_host_config(&self, _ctx: &EngineContext) -> Result<(), TridentError> {
+        // OS modifier is now a library crate, no external binary needed.
         Ok(())
     }
 
@@ -262,8 +251,7 @@ impl OsConfigSubsystem {
             os_modifier_config.selinux = Some(ctx.spec.os.selinux.clone());
         }
 
-        os_modifier_config
-            .call_os_modifier(Path::new(OS_MODIFIER_NEWROOT_PATH))
+        osmodifier::modify_os(&OsModifierContext::default(), &os_modifier_config)
             .structured(ServicingError::RunOsModifier)
     }
 
@@ -289,8 +277,7 @@ impl OsConfigSubsystem {
                 services: Some(services),
                 ..Default::default()
             };
-            return os_modifier_config
-                .call_os_modifier(Path::new(OS_MODIFIER_BINARY_PATH))
+            return osmodifier::modify_os(&OsModifierContext::default(), &os_modifier_config)
                 .structured(ServicingError::RunOsModifier);
         }
         Ok(())
@@ -314,16 +301,10 @@ impl Subsystem for MosConfigSubsystem {
             return Ok(());
         }
 
-        // If the os-modifier binary is required but not present, return an error.
-        if mos_config_requires_os_modifier(&ctx.spec.management_os)
-            && !Path::new(OS_MODIFIER_BINARY_PATH).exists()
-        {
-            return Err(TridentError::new(
-                ExecutionEnvironmentMisconfigurationError::FindOSModifierBinary {
-                    binary_path: OS_MODIFIER_BINARY_PATH.to_string(),
-                    config: self.name().to_string(),
-                },
-            ));
+        // OS modifier is now a library crate, no external binary needed.
+        if mos_config_requires_os_modifier(&ctx.spec.management_os) {
+            // Validation still passes — we just don't need to check for a binary.
+            debug!("MOS config requires OS modifications (now handled by library)");
         }
 
         Ok(())
@@ -339,10 +320,6 @@ impl Subsystem for MosConfigSubsystem {
             return Ok(());
         }
 
-        // Get the path to the os-modifier binary. We've already validated that
-        // it exists when required in 'validate_host_config'.
-        let os_modifier_path = Path::new(OS_MODIFIER_BINARY_PATH);
-
         if !ctx.spec.management_os.users.is_empty() {
             info!("Setting up users for management OS");
             let os_modifier_config = OSModifierConfig {
@@ -350,8 +327,7 @@ impl Subsystem for MosConfigSubsystem {
                     .structured(ServicingError::SetUpUsers)?,
                 ..Default::default()
             };
-            os_modifier_config
-                .call_os_modifier(os_modifier_path)
+            osmodifier::modify_os(&OsModifierContext::default(), &os_modifier_config)
                 .structured(ServicingError::RunOsModifier)?;
 
             // If the config enables SSH for any MOS user, then we changed the
@@ -700,8 +676,6 @@ mod tests {
 mod functional_test {
     use super::*;
 
-    use sys_mount::{MountBuilder, MountFlags, Unmount, UnmountFlags};
-
     use pytest_gen::functional_test;
     use trident_api::config::{HostConfiguration, Os};
 
@@ -728,14 +702,7 @@ mod functional_test {
         };
         assert!(os_changes_required(&ctx));
 
-        fs::write(OS_MODIFIER_NEWROOT_PATH, b"").unwrap();
-        let _mount = MountBuilder::default()
-            .flags(MountFlags::BIND)
-            .mount(OS_MODIFIER_BINARY_PATH, OS_MODIFIER_NEWROOT_PATH)
-            .unwrap()
-            .into_unmount_drop(UnmountFlags::empty());
-
-        // Configure OsConfig subsystem
+        // Configure OsConfig subsystem (osmodifier is now a library, no binary mount needed)
         let mut os_config_subsystem = OsConfigSubsystem::default();
         let _ = os_config_subsystem.configure(&ctx);
 
@@ -769,14 +736,8 @@ mod functional_test {
         };
         assert!(os_changes_required(&ctx));
 
-        fs::write(OS_MODIFIER_NEWROOT_PATH, b"").unwrap();
-        let _mount = MountBuilder::default()
-            .flags(MountFlags::BIND)
-            .mount(OS_MODIFIER_BINARY_PATH, OS_MODIFIER_NEWROOT_PATH)
-            .unwrap()
-            .into_unmount_drop(UnmountFlags::empty());
-
         // Configure OsConfig subsystem and set prev_hostname parameter
+        // (osmodifier is now a library, no binary mount needed)
         let mut os_config_subsystem = OsConfigSubsystem {
             prev_hostname: Some("carry-over-hostname".into()),
         };

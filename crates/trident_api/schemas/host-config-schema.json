@@ -1368,7 +1368,7 @@
         },
         {
           "title": "Permissive",
-          "description": "Set SELinux to permissive. The mode is set by appending `selinux=1 enforcing=0` to the kernel command line.",
+          "description": "Set SELinux to permissive. The mode is set by appending `security=selinux selinux=1 enforcing=0` to the kernel command line and setting `SELINUX=permissive` in `/etc/selinux/config`.",
           "type": "string",
           "enum": [
             "permissive"
@@ -1376,7 +1376,7 @@
         },
         {
           "title": "Enforcing",
-          "description": "Set SELinux to enforcing. The mode is set by appending `selinux=1 enforcing=1` to the kernel command line.",
+          "description": "Set SELinux to enforcing. The mode is set by appending `security=selinux selinux=1` to the kernel command line and setting `SELINUX=enforcing` in `/etc/selinux/config`. The `security=selinux` arg tells the kernel which LSM to activate. The enforcing/permissive decision is controlled by the config file, allowing runtime changes via `setenforce`.",
           "type": "string",
           "enum": [
             "enforcing"
