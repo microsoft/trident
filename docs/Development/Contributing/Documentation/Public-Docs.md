@@ -55,15 +55,15 @@ When linking to resources, use relative paths to the `/docs/resources` directory
 Prefer the use of mermaid diagrams embedded in markdown files. This allows for
 easy editing and version control of diagrams.
 
-```markdown
-:::mermaid
+````markdown
+```mermaid
 flowchart TD
     A[Hard] -->|Text| B(Round)
     B --> C{Decision}
     C -->|One| D[Result 1]
     C -->|Two| E[Result 2]
-:::
 ```
+````
 
 ### Internal Links
 

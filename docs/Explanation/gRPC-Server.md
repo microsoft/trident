@@ -42,14 +42,14 @@ Rust gRPC framework built on top of the Tokio async runtime. The API is defined
 in Protocol Buffer files under the `proto/` directory and compiled into Rust
 types by the `trident-proto` crate.
 
-:::mermaid
+```mermaid
 flowchart LR
     Client["gRPC Client"] -- Unix Socket --> Server["Trident Daemon\n(tridentd)"]
     Server --> Version["VersionService"]
     Server --> Streaming["StreamingService"]
     Server --> Update["UpdateService"]
     Server --> Commit["CommitService"]
-:::
+```
 
 ### Unix Domain Socket
 
