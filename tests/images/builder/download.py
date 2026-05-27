@@ -124,9 +124,7 @@ def download_blob_image(
     all_names = json.loads(list_proc.stdout)
     suffix = image.file_suffix
     eligible = [
-        n
-        for n in all_names
-        if n.endswith(suffix) and _BLOB_NAME_VERSION_RE.search(n)
+        n for n in all_names if n.endswith(suffix) and _BLOB_NAME_VERSION_RE.search(n)
     ]
     if not eligible:
         raise RuntimeError(
