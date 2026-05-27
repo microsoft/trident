@@ -25,13 +25,13 @@ increase provisioning time. Streaming solves both problems:
 
 ## Pipeline Stages
 
-:::mermaid
+```mermaid
 flowchart LR
     Remote["Remote Source<br/>(HTTP / OCI)"] --> HttpSubFile["HTTP Range<br/>Reader"]
     HttpSubFile --> Hash["SHA-384<br/>Hasher"]
     Hash --> Decompress["ZSTD<br/>Decompressor"]
     Decompress --> Disk["Target<br/>Partition"]
-:::
+```
 
 ### Remote Source
 
