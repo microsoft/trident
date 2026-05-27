@@ -362,6 +362,16 @@ fn set_password_expiry(ctx: &OsModifierContext, username: &str, days: u64) -> Re
                     }
                 }
 
+                // Validate that lastChange is numeric — password aging
+                // depends on it even though we no longer use it directly.
+                if new_fields[SHADOW_FIELD_LAST_CHANGE].parse::<i64>().is_err() {
+                    parse_err = Some(format!(
+                        "failed to parse lastChange field '{}' for user '{username}'",
+                        new_fields[SHADOW_FIELD_LAST_CHANGE]
+                    ));
+                    return line.to_string();
+                }
+
                 // Set maxAge (field 4) = number of days the password is valid.
                 // This is equivalent to `chage -M <days>`. The previous Go
                 // implementation incorrectly wrote to the account expiration
