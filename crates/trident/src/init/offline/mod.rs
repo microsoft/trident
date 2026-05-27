@@ -374,9 +374,7 @@ fn generate_host_status(
             .find(|p| p.number == partn)
             .and_then(|p| p.id.as_uuid())
             .ok_or_else(|| {
-                TridentError::new(
-                    ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment,
-                )
+                TridentError::new(ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment)
             })
             .message(format!(
                 "sfdisk reported no PARTUUID for partition {} after writing {}",

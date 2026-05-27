@@ -38,7 +38,6 @@ const AZURE_LINUX_3_OS_RELEASE: &str = indoc::indoc! {
     "#,
 };
 
-
 /// Azure Linux 4.0 sample os-release file.
 const AZURE_LINUX_4_OS_RELEASE: &str = indoc::indoc! {
     r#"

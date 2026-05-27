@@ -507,7 +507,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn test_parse_extension_release() {
         let data = indoc::indoc! {
