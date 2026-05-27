@@ -339,8 +339,15 @@ mod tests {
 
     #[test]
     fn hostname_invalid_total_too_long() {
-        // 256 chars without dots exceeds the 255 limit
-        let name = format!("{}.{}", "a".repeat(63), "b".repeat(193));
+        // Each label is <= 63 chars, but the full hostname exceeds 255 chars.
+        let name = format!(
+            "{}.{}.{}.{}.{}",
+            "a".repeat(63),
+            "b".repeat(63),
+            "c".repeat(63),
+            "d".repeat(63),
+            "e".repeat(4)
+        );
         assert!(validate_hostname(&name).is_err());
     }
 
