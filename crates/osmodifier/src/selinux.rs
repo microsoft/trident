@@ -9,7 +9,7 @@ use anyhow::{bail, Context, Error};
 use log::debug;
 use trident_api::config::SelinuxMode;
 
-use crate::{default_grub::DefaultGrub, OsModifierContext};
+use crate::{constants::SELINUX_CMDLINE_ARG_NAMES, default_grub::DefaultGrub, OsModifierContext};
 
 const SELINUX_CONFIG_PATH: &str = "/etc/selinux/config";
 
@@ -91,7 +91,7 @@ pub fn update_grub_cmdline(
         SelinuxMode::Disabled => vec!["selinux=0".to_string()],
     };
 
-    default_grub.update_cmdline_args(&["security", "selinux", "enforcing"], &new_args)
+    default_grub.update_cmdline_args(SELINUX_CMDLINE_ARG_NAMES, &new_args)
 }
 
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
