@@ -136,6 +136,14 @@ fn count_braces(line: &str) -> (usize, usize) {
     (opens, closes)
 }
 
+/// Subtract `closes` from `depth`, bailing on underflow which indicates
+/// malformed grub.cfg with unbalanced braces.
+fn checked_depth(depth: usize, closes: usize) -> Result<usize, Error> {
+    depth
+        .checked_sub(closes)
+        .context("malformed grub.cfg: unbalanced braces (more '}' than '{')")
+}
+
 /// Find `linux` directive lines from top-level non-recovery menuentries in
 /// grub.cfg content.
 ///
@@ -171,8 +179,7 @@ fn find_non_recovery_linux_lines(content: &str) -> Result<Vec<String>, Error> {
 
         // If inside a submenu block, just track depth until we exit.
         if in_submenu {
-            depth += opens;
-            depth = depth.saturating_sub(closes);
+            depth = checked_depth(depth + opens, closes)?;
             if depth <= submenu_start_depth {
                 in_submenu = false;
             }
@@ -184,8 +191,7 @@ fn find_non_recovery_linux_lines(content: &str) -> Result<Vec<String>, Error> {
                 // Enter submenu — skip everything inside it.
                 in_submenu = true;
                 submenu_start_depth = depth;
-                depth += opens;
-                depth = depth.saturating_sub(closes);
+                depth = checked_depth(depth + opens, closes)?;
                 // Edge case: opening and closing brace on same line
                 if depth <= submenu_start_depth {
                     in_submenu = false;
@@ -211,8 +217,7 @@ fn find_non_recovery_linux_lines(content: &str) -> Result<Vec<String>, Error> {
         }
 
         // Update depth after processing the line's keywords.
-        depth += opens;
-        depth = depth.saturating_sub(closes);
+        depth = checked_depth(depth + opens, closes)?;
 
         // If we just closed the top-level menuentry block, reset state.
         if depth == 0 {
