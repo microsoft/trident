@@ -24,7 +24,7 @@ extensions:
 All image configs live under `tests/images/trident-vm-testimage/base/`. The
 base image is `qemu_guest` (see
 [Servicing Tests — Download the qemu\_guest Base Image](Servicing-Tests.md#4-download-the-qemu_guest-base-image)
-for how to create it from the publicly available `baremetal` image on MCR).
+for how to download it from the publicly available `minimal-os` image on MCR).
 
 **`trident-vm-usr-verity-testimage`** (recommended) uses systemd-boot with a
 Unified Kernel Image (UKI) and `/usr` dm-verity. This is the only image type
@@ -100,8 +100,7 @@ make artifacts/id_rsa
 
 Follow the instructions in
 [Servicing Tests — Download the qemu\_guest Base Image](Servicing-Tests.md#4-download-the-qemu_guest-base-image)
-to download the `baremetal` image from MCR and convert it to `qemu_guest.vhdx`
-using Image Customizer.
+to download the `minimal-os` image from MCR and rename it to `qemu_guest.vhdx`.
 
 ### 5. Build Extension Images
 
