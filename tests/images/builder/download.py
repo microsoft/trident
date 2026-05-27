@@ -57,7 +57,7 @@ def download_base_image(image: BaseImageManifest) -> None:
 # The regex narrows the attack surface to "names matching this shape"
 # while still letting us track the latest published version. Tracked
 # longer-term in the AZL4 supply-chain governance discussion.
-_BLOB_NAME_VERSION_RE = re.compile(r"/(\d{4}-?\d{2}-?\d{2}[^/]*)/")
+_BLOB_NAME_VERSION_RE = re.compile(r"/([^/]*\d{4}-?\d{2}-?\d{2}[^/]*)/")
 
 
 def download_blob_image(
