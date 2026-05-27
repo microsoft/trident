@@ -20,9 +20,81 @@ const GRUB_CFG_PATHS: &[&str] = &["/boot/grub2/grub.cfg", "/boot/grub/grub.cfg"]
 /// The grub.cfg args we want to extract for syncing to /etc/default/grub.
 const SYNC_ARG_NAMES: &[&str] = &["rd.overlayfs", "roothash", "root", "selinux", "enforcing"];
 
-// ---------------------------------------------------------------------------
-// Menuentry-aware grub.cfg parsing
-// ---------------------------------------------------------------------------
+/// Extract boot arguments from the generated grub.cfg.
+///
+/// Returns a tuple of (args_to_sync, optional_root_device).
+/// `args_to_sync` contains entries like `["selinux=1", "rd.overlayfs=..."]`.
+/// `root_device` is extracted separately because it maps to GRUB_DEVICE
+/// rather than GRUB_CMDLINE_LINUX.
+///
+/// Mirrors Go `extractValuesFromGrubConfig` in modifydefaultgrub.go.
+pub fn extract_boot_args_from_grub_cfg(
+    ctx: &OsModifierContext,
+) -> Result<(Vec<String>, Option<String>), Error> {
+    let grub_cfg_path = find_grub_cfg(ctx)?;
+    let content = fs::read_to_string(&grub_cfg_path)
+        .with_context(|| format!("Failed to read '{}'", grub_cfg_path.display()))?;
+
+    trace!("grub.cfg content:\n{content}");
+
+    // Find the non-recovery linux command lines.
+    // Go expects exactly one; error otherwise.
+    let linux_lines = find_non_recovery_linux_lines(&content)?;
+    if linux_lines.len() != 1 {
+        bail!(
+            "expected 1 non-recovery linux line, found {}",
+            linux_lines.len()
+        );
+    }
+    let linux_line = &linux_lines[0];
+    debug!("Found linux line: {linux_line}");
+
+    // Parse args from the linux line (skip first token which is the kernel path).
+    let args_str = linux_line
+        .split_whitespace()
+        .skip(1) // skip kernel path (e.g., /boot/vmlinuz)
+        .collect::<Vec<_>>();
+
+    let mut values = Vec::new();
+    let mut root_device = None;
+
+    for token in &args_str {
+        let (name, value) = match token.split_once('=') {
+            Some((n, v)) => (n, Some(v)),
+            None => (*token, None),
+        };
+
+        if SYNC_ARG_NAMES.contains(&name) {
+            if let Some(v) = value {
+                // Skip variable references (e.g., root=$rootdevice). Go's
+                // ParseCommandLineArgs detects VAR_EXPANSION tokens and clears
+                // the value; we match by skipping the token entirely.
+                if v.starts_with('$') {
+                    trace!("Skipping variable reference: {token}");
+                    continue;
+                }
+                if name == "root" {
+                    root_device = Some(v.to_string());
+                } else {
+                    values.push(format!("{name}={v}"));
+                }
+            }
+        }
+    }
+
+    Ok((values, root_device))
+}
+
+/// Find the grub.cfg file on the filesystem.
+fn find_grub_cfg(ctx: &OsModifierContext) -> Result<std::path::PathBuf, Error> {
+    for path in GRUB_CFG_PATHS {
+        let full = ctx.path(path);
+        if full.exists() {
+            return Ok(full);
+        }
+    }
+    bail!("Could not find grub.cfg at any of: {:?}", GRUB_CFG_PATHS)
+}
 
 /// Return the first whitespace-delimited word from a line, or None if the
 /// line is empty / whitespace-only.
@@ -153,86 +225,6 @@ fn find_non_recovery_linux_lines(content: &str) -> Result<Vec<String>, Error> {
     }
 
     Ok(linux_lines)
-}
-
-// ---------------------------------------------------------------------------
-// Boot arg extraction
-// ---------------------------------------------------------------------------
-
-/// Extract boot arguments from the generated grub.cfg.
-///
-/// Returns a tuple of (args_to_sync, optional_root_device).
-/// `args_to_sync` contains entries like `["selinux=1", "rd.overlayfs=..."]`.
-/// `root_device` is extracted separately because it maps to GRUB_DEVICE
-/// rather than GRUB_CMDLINE_LINUX.
-///
-/// Mirrors Go `extractValuesFromGrubConfig` in modifydefaultgrub.go.
-pub fn extract_boot_args_from_grub_cfg(
-    ctx: &OsModifierContext,
-) -> Result<(Vec<String>, Option<String>), Error> {
-    let grub_cfg_path = find_grub_cfg(ctx)?;
-    let content = fs::read_to_string(&grub_cfg_path)
-        .with_context(|| format!("Failed to read '{}'", grub_cfg_path.display()))?;
-
-    trace!("grub.cfg content:\n{content}");
-
-    // Find the non-recovery linux command lines.
-    // Go expects exactly one; error otherwise.
-    let linux_lines = find_non_recovery_linux_lines(&content)?;
-    if linux_lines.len() != 1 {
-        bail!(
-            "expected 1 non-recovery linux line, found {}",
-            linux_lines.len()
-        );
-    }
-    let linux_line = &linux_lines[0];
-    debug!("Found linux line: {linux_line}");
-
-    // Parse args from the linux line (skip first token which is the kernel path).
-    let args_str = linux_line
-        .split_whitespace()
-        .skip(1) // skip kernel path (e.g., /boot/vmlinuz)
-        .collect::<Vec<_>>();
-
-    let mut values = Vec::new();
-    let mut root_device = None;
-
-    for token in &args_str {
-        let (name, value) = match token.split_once('=') {
-            Some((n, v)) => (n, Some(v)),
-            None => (*token, None),
-        };
-
-        if SYNC_ARG_NAMES.contains(&name) {
-            if let Some(v) = value {
-                // Skip variable references (e.g., root=$rootdevice). Go's
-                // ParseCommandLineArgs detects VAR_EXPANSION tokens and clears
-                // the value; we match by skipping the token entirely.
-                if v.starts_with('$') {
-                    trace!("Skipping variable reference: {token}");
-                    continue;
-                }
-                if name == "root" {
-                    root_device = Some(v.to_string());
-                } else {
-                    values.push(format!("{name}={v}"));
-                }
-            }
-        }
-    }
-
-    Ok((values, root_device))
-}
-
-/// Find the grub.cfg file on the filesystem.
-fn find_grub_cfg(ctx: &OsModifierContext) -> Result<std::path::PathBuf, Error> {
-    for path in GRUB_CFG_PATHS {
-        let full = ctx.path(path);
-        if full.exists() {
-            return Ok(full);
-        }
-    }
-    bail!("Could not find grub.cfg at any of: {:?}", GRUB_CFG_PATHS)
 }
 
 /// Run grub2-mkconfig to regenerate the GRUB configuration.
