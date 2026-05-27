@@ -147,15 +147,13 @@ impl DefaultGrub {
 }
 
 /// Detect the quote character used around a value string.
-/// Returns `"` for double-quoted, `'` for single-quoted, or `"` as the
-/// default when the value is unquoted (so new writes are always safely quoted).
+/// Checks only the leading character so that trailing content (e.g., an
+/// inline `# comment`) does not prevent single-quote detection.
+/// Returns `'` for single-quoted, `"` for everything else (the GRUB default).
 fn detect_quote_char(s: &str) -> char {
-    let s = s.trim();
-    if s.starts_with('\'') && s.ends_with('\'') {
-        '\''
-    } else {
-        // Double-quoted, unquoted, or empty — default to double quote.
-        '"'
+    match s.trim_start().chars().next() {
+        Some('\'') => '\'',
+        _ => '"',
     }
 }
 
@@ -447,6 +445,13 @@ mod tests {
 
         grub.set_variable("GRUB_DEVICE", "/dev/sdb1");
         assert_eq!(grub.lines[0], "    GRUB_DEVICE='/dev/sdb1'");
+    }
+
+    #[test]
+    fn test_detect_quote_char_with_trailing_content() {
+        // Inline comment after single-quoted value should still detect single quote
+        assert_eq!(detect_quote_char("'value' # comment"), '\'');
+        assert_eq!(detect_quote_char("\"value\" # comment"), '"');
     }
 
     #[test]
