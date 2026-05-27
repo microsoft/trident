@@ -803,24 +803,8 @@ starter-configuration:
 	@echo "\033[33mCreated \033[36m$(TRIDENT_CONFIG)\033[33m. Please review and modify as needed! :)"
 	@echo "\033[33mDon't forget to add your SSH public key to the Host Configuration!"
 
-MIC_PACKAGE_NAME ?= imagecustomizer
-MIC_PACKAGE_VERSION ?= *
-artifacts/imagecustomizer:
-	@mkdir -p artifacts
-	@az artifacts universal download \
-	    --organization "https://dev.azure.com/mariner-org/" \
-	    --project "36d030d6-1d99-4ebd-878b-09af1f4f722f" \
-	    --scope project \
-	    --feed "AzureLinuxArtifacts" \
-	    --name '$(MIC_PACKAGE_NAME)' \
-	    --version '$(MIC_PACKAGE_VERSION)' \
-	    --path artifacts/
-	@chmod +x artifacts/imagecustomizer
-	@touch artifacts/imagecustomizer
-
 bin/trident-mos.iso: \
 	artifacts/baremetal.vhdx \
-	artifacts/imagecustomizer \
 	packaging/systemd/trident-install.service \
 	tests/images/trident-mos/iso.yaml \
 	tests/images/trident-mos/files/* \
@@ -830,15 +814,17 @@ bin/trident-mos.iso: \
 	bin/rcp-agent
 	@echo "Rebuilding Trident MOS ISO: $@ from $< because of: $?"
 	@mkdir -p bin
-	BUILD_DIR=`mktemp -d` && \
-		trap 'sudo rm -rf $$BUILD_DIR' EXIT; \
-		sudo ./artifacts/imagecustomizer \
-			--log-level=debug \
-			--build-dir $$BUILD_DIR \
-			--image-file $< \
-			--output-image-file $@ \
-			--config-file tests/images/trident-mos/iso.yaml \
-			--output-image-format iso
+	docker run --rm \
+		--privileged \
+		-v ".:/repo:z" \
+		-v "/dev:/dev" \
+		${MIC_CONTAINER_IMAGE} \
+		--log-level=debug \
+		--build-dir /build \
+		--image-file /repo/$< \
+		--output-image-file /repo/$@ \
+		--config-file /repo/tests/images/trident-mos/iso.yaml \
+		--output-image-format iso
 
 .PHONY: recreate-verity-image
 recreate-verity-image: bin/trident-rpms.tar.gz
