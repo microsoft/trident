@@ -173,8 +173,8 @@ fn hash_password(plaintext: &str) -> Result<String, Error> {
         .raw_output_and_check()
         .context("Failed to hash password with openssl")?;
 
-    let stdout = String::from_utf8(raw.stdout)
-        .context("openssl passwd produced non-UTF-8 output")?;
+    let stdout =
+        String::from_utf8(raw.stdout).context("openssl passwd produced non-UTF-8 output")?;
 
     Ok(stdout.trim().to_string())
 }
