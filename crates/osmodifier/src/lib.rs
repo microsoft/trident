@@ -67,6 +67,7 @@ impl OsModifierContext {
 /// bootloader-type check (trident's boot subsystem does this — see
 /// `boot/mod.rs` which returns early for UKI before calling `modify_boot`).
 pub fn modify_os(ctx: &OsModifierContext, config: &OSModifierConfig) -> Result<(), Error> {
+    config.validate().context("Invalid OS modifier config")?;
     debug!("Applying OS modifications");
 
     if !config.users.is_empty() {
@@ -161,6 +162,7 @@ pub fn update_default_grub(ctx: &OsModifierContext) -> Result<(), Error> {
 /// [`BootConfig`]. Updates /etc/default/grub and regenerates via
 /// grub2-mkconfig.
 pub fn modify_boot(ctx: &OsModifierContext, config: &BootConfig) -> Result<(), Error> {
+    config.validate().context("Invalid boot config")?;
     info!("Applying boot configuration modifications");
 
     let mut default_grub = default_grub::DefaultGrub::read(ctx)?;
