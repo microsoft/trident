@@ -131,18 +131,22 @@ def extract_and_mount_cosi(
     image_mount.sort(key=lambda x: len(x[0].parts))
 
     for mount_point, image_path in image_mount:
-        effective_mount_point = root_path / mount_point.relative_to("/")
+        # VERY IMPORTANT SAFETY CHECK TO AVOID WEIRD ISSUES!
+        # Resolve before containment check so `..` traversal in the
+        # attacker-controlled mountPoint cannot escape root_path.
+        effective_mount_point = (root_path / mount_point.relative_to("/")).resolve()
+        if not effective_mount_point.is_relative_to(root_path.resolve()):
+            raise ValueError(
+                "Mount point escapes root_path, COSI metadata is malformed"
+            )
 
-        # VERY IMPORTANT SAFETY CHECKS TO AVOID WEIRD ISSUES!
-        assert effective_mount_point.is_absolute()
-        # Python 3.8 compatibility: check if effective_mount_point is under root_path
-        try:
-            effective_mount_point.relative_to(root_path)
-        except ValueError:
-            raise AssertionError("Mount point must be inside root_path")
+        image_path = (extract_path / image_path).resolve()
 
-        mount_point.mkdir(parents=True, exist_ok=True)
-        image_path = extract_path / image_path
+        if not image_path.is_relative_to(extract_path.resolve()):
+            raise ValueError(
+                "Invalid path outside extraction directory, COSI metadata is malformed"
+            )
+
         if not image_path.exists():
             raise FileNotFoundError(f"Image path does not exist: {image_path}")
 
