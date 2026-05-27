@@ -366,8 +366,7 @@ impl Command {
                 match writer.join().expect("stdin writer thread panicked") {
                     Ok(()) => {}
                     Err(write_err) => {
-                        if write_err.kind() != io::ErrorKind::BrokenPipe
-                            && output.status.success()
+                        if write_err.kind() != io::ErrorKind::BrokenPipe && output.status.success()
                         {
                             return Err(Box::new(DependencyError::CouldNotExecute {
                                 dependency: dep,
