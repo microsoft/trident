@@ -127,7 +127,7 @@ pub fn modify_os(ctx: &OsModifierContext, config: &OSModifierConfig) -> Result<(
 ///
 /// This replaces the Go `osmodifier --update-grub` codepath:
 /// 1. Reads the generated grub.cfg
-/// 2. Extracts overlayfs, verity, root, selinux, enforcing args
+/// 2. Extracts the args listed in [`constants::SYNC_ARG_NAMES`]
 /// 3. Stamps those values into /etc/default/grub
 /// 4. Runs grub2-mkconfig to regenerate
 pub fn update_default_grub(ctx: &OsModifierContext) -> Result<(), Error> {
