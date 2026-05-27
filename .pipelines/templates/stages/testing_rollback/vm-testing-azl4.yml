@@ -199,6 +199,7 @@ stages:
                 --artifacts-dir $(Build.ArtifactStagingDirectory)/storm-input \
                 --output-path $(ob_outputDirectory) \
                 --platform qemu \
+                --user testing-user \
                 --ssh-private-key-path $(SSH_PRIVATE_KEY_PATH) \
                 --ssh-public-key-path $(SSH_PUBLIC_KEY_PATH) \
                 --force-cleanup
