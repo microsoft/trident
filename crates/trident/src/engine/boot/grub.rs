@@ -1,8 +1,7 @@
-use std::{collections::HashMap, fs, io::Write, path::Path};
+use std::{collections::HashMap, fs, path::Path};
 
 use anyhow::{bail, Context, Error};
 use log::{debug, info, trace, warn};
-use tempfile::NamedTempFile;
 use uuid::Uuid;
 
 use osmodifier::{BootConfig, IdentifiedPartition, OsModifierContext, Overlay, Verity};
@@ -456,7 +455,6 @@ pub(crate) mod functional_test {
     use crate::{
         engine::{boot::get_update_esp_dir_name, storage::raid},
         osimage::{mock::MockOsImage, OsImage},
-        OS_MODIFIER_BINARY_PATH,
     };
 
     use osutils::{
