@@ -20,7 +20,14 @@ pub(crate) const GRUB_VAR_DEVICE: &str = "GRUB_DEVICE";
 /// Used by both `grub_cfg::extract_boot_args_from_grub_cfg` (to pick which
 /// args to capture) and `update_default_grub` (to specify which existing
 /// args to replace).
-pub(crate) const SYNC_ARG_NAMES: &[&str] = &["rd.overlayfs", "roothash", "root", "security", "selinux", "enforcing"];
+pub(crate) const SYNC_ARG_NAMES: &[&str] = &[
+    "rd.overlayfs",
+    "roothash",
+    "root",
+    "security",
+    "selinux",
+    "enforcing",
+];
 
 /// Kernel command-line arg names managed by SELinux configuration.
 ///
