@@ -8,7 +8,7 @@
 //! directory (defaulting to `/`).
 
 pub mod config;
-pub mod constants;
+mod constants;
 mod default_grub;
 mod grub_cfg;
 mod hostname;
