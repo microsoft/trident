@@ -164,16 +164,19 @@ fn validate_shadow_value(value: &str) -> Result<(), Error> {
 }
 
 fn hash_password(plaintext: &str) -> Result<String, Error> {
-    let output = Dependency::Openssl
+    let raw = Dependency::Openssl
         .cmd()
         .with_arg("passwd")
         .with_arg("-6")
         .with_arg("-stdin")
         .with_stdin(plaintext.as_bytes())
-        .output_and_check()
+        .raw_output_and_check()
         .context("Failed to hash password with openssl")?;
 
-    Ok(output.trim().to_string())
+    let stdout = String::from_utf8(raw.stdout)
+        .context("openssl passwd produced non-UTF-8 output")?;
+
+    Ok(stdout.trim().to_string())
 }
 
 fn create_user(user: &MICUser) -> Result<(), Error> {
