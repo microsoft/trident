@@ -335,39 +335,50 @@ impl Command {
                     inner,
                 })?;
 
-            // Write stdin on a separate thread to avoid deadlock if the child
+            // Write stdin on a scoped thread to avoid deadlock if the child
             // fills its stdout/stderr pipe before consuming all input.
+            // Using thread::scope lets us borrow stdin_data (no clone) and
+            // ensures panics are surfaced rather than silently swallowed.
             let child_stdin = child.stdin.take();
-            let payload = stdin_data.clone();
-            let writer = std::thread::spawn(move || -> io::Result<()> {
-                if let Some(mut handle) = child_stdin {
-                    handle.write_all(&payload)?;
-                    // handle is dropped here, closing stdin so the child sees EOF
+            let dep = self.dependency;
+
+            std::thread::scope(|s| {
+                let writer = s.spawn(|| -> io::Result<()> {
+                    if let Some(mut handle) = child_stdin {
+                        handle.write_all(stdin_data)?;
+                        // handle is dropped here, closing stdin so the child sees EOF
+                    }
+                    Ok(())
+                });
+
+                let output =
+                    child
+                        .wait_with_output()
+                        .map_err(|inner| DependencyError::CouldNotExecute {
+                            dependency: dep,
+                            inner,
+                        })?;
+
+                // Collect stdin write result. A panic in the writer thread will
+                // be re-raised here. BrokenPipe is not fatal — the child may
+                // have exited early, and its exit status / stderr carries the
+                // real diagnostic.
+                match writer.join().expect("stdin writer thread panicked") {
+                    Ok(()) => {}
+                    Err(write_err) => {
+                        if write_err.kind() != io::ErrorKind::BrokenPipe
+                            && output.status.success()
+                        {
+                            return Err(Box::new(DependencyError::CouldNotExecute {
+                                dependency: dep,
+                                inner: write_err,
+                            }));
+                        }
+                    }
                 }
-                Ok(())
-            });
 
-            let output =
-                child
-                    .wait_with_output()
-                    .map_err(|inner| DependencyError::CouldNotExecute {
-                        dependency: self.dependency,
-                        inner,
-                    })?;
-
-            // Collect stdin write result. BrokenPipe is not fatal — the child
-            // may have exited early, and its exit status / stderr carries the
-            // real diagnostic.
-            if let Err(write_err) = writer.join().unwrap_or(Ok(())) {
-                if write_err.kind() != io::ErrorKind::BrokenPipe && output.status.success() {
-                    return Err(Box::new(DependencyError::CouldNotExecute {
-                        dependency: self.dependency,
-                        inner: write_err,
-                    }));
-                }
-            }
-
-            output
+                Ok(output)
+            })?
         } else {
             cmd.output()
                 .map_err(|inner| DependencyError::CouldNotExecute {
