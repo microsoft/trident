@@ -31,6 +31,7 @@ pub enum ExecutionEnvironmentMisconfigurationError {
     CheckRootPrivileges,
 
     #[error("Failed to find OS Modifier binary at '{binary_path}' required by '{config}'")]
+    #[serde(rename = "find-os-modifier-binary")]
     FindOSModifierBinary { binary_path: String, config: String },
 
     #[error("Failed to find required binary '{binary}'")]
@@ -477,6 +478,7 @@ pub enum ServicingError {
     },
 
     #[error("Failed to perform file-based deployment of ESP images")]
+    #[serde(rename = "deploy-esp-images")]
     DeployESPImages,
 
     #[error("Failed to deploy images")]
