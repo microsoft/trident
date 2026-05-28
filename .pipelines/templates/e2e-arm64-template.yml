@@ -37,10 +37,6 @@ parameters:
       - forceBuild
       - prebuilt
 
-  - name: osModifierBranch
-    type: string
-    default: "main"
-
   - name: baseImageArtifactStage
     type: string
     default: ""
@@ -67,7 +63,6 @@ stages:
       tridentArtifactName: trident-binaries
       codeCoverage: false
       tridentBuildOptions: ${{ parameters.tridentBuildOptions }}
-      osModifierBranch: ${{ parameters.osModifierBranch }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
       targetArchitecture: arm64
 

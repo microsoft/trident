@@ -18,11 +18,6 @@ parameters:
     type: string
     default: "*.*.*"
 
-  - name: osModifierBranch
-    displayName: OSModifier branch to build from (if not main)
-    type: string
-    default: "main"
-
 stages:
     - template: stages/base_image_config/create-base-image-config-artifact.yml
     - template: e2e-template.yml
@@ -32,13 +27,11 @@ stages:
         tridentBuildOptions: forceBuild
         micBuildType: ${{ parameters.micBuildType }}
         micVersion: ${{ parameters.micVersion }}
-        osModifierBranch: ${{ parameters.osModifierBranch }}
         baseImageArtifactStage: CreateBaseImageConfig
     - template: e2e-arm64-template.yml
       parameters:
         stageType: ci
         tridentBuildOptions: forceBuild
-        osModifierBranch: ${{ parameters.osModifierBranch }}
         baseImageArtifactStage: CreateBaseImageConfig
         micBuildType: ${{ parameters.micBuildType }}
         micVersion: ${{ parameters.micVersion }}

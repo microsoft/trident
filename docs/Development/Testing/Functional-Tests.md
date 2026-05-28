@@ -69,9 +69,6 @@ can build them individually if needed:
 # Build virtdeploy (VM management tool)
 make bin/virtdeploy
 
-# Build osmodifier
-make artifacts/osmodifier
-
 # Build the functional test binaries with code coverage instrumentation
 make build-functional-test-cc
 

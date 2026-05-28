@@ -398,9 +398,6 @@ func injectRcpAgentConfig(
 	if err := registerNamedRcpFile(rcpAgentConfBuilder, "trident", "/usr/bin/trident", localRcpConf.LocalTridentPath); err != nil {
 		return err
 	}
-	if err := registerNamedRcpFile(rcpAgentConfBuilder, "osmodifier", "/usr/bin/osmodifier", localRcpConf.LocalOsmodifierPath); err != nil {
-		return err
-	}
 	if err := registerNamedRcpFile(rcpAgentConfBuilder, "launcher", "/usr/bin/launcher", localRcpConf.LocalLauncherPath); err != nil {
 		return err
 	}

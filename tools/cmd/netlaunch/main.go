@@ -18,25 +18,24 @@ import (
 )
 
 var (
-	netlaunchConfigFile  string
-	tridentConfigFile    string
-	iso                  string
-	logstream            bool
-	listenPort           uint16
-	remoteAddressFile    string
-	serveFolder          string
-	maxFailures          uint
-	traceFile            string
-	forceColor           bool
-	waitForProvisioned   bool
-	onlyPrintExitCode    bool
-	secureBoot           bool
-	signingCert          string
-	rcpMode              string
-	tridentBinaryPath    string
-	launcherBinaryPath   string
-	osmodifierBinaryPath string
-	streamImage          bool
+	netlaunchConfigFile string
+	tridentConfigFile   string
+	iso                 string
+	logstream           bool
+	listenPort          uint16
+	remoteAddressFile   string
+	serveFolder         string
+	maxFailures         uint
+	traceFile           string
+	forceColor          bool
+	waitForProvisioned  bool
+	onlyPrintExitCode   bool
+	secureBoot          bool
+	signingCert         string
+	rcpMode             string
+	tridentBinaryPath   string
+	launcherBinaryPath  string
+	streamImage         bool
 )
 
 const (
@@ -81,9 +80,6 @@ var rootCmd = &cobra.Command{
 		} else {
 			if tridentBinaryPath != "" {
 				log.Fatal("Trident binary path specified without RCP mode")
-			}
-			if osmodifierBinaryPath != "" {
-				log.Fatal("Osmodifier binary path specified without RCP mode")
 			}
 			if streamImage {
 				log.Fatal("Stream image specified without RCP mode")
@@ -131,10 +127,6 @@ var rootCmd = &cobra.Command{
 				config.Rcp.LocalLauncherPath = &launcherBinaryPath
 			}
 
-			if osmodifierBinaryPath != "" {
-				config.Rcp.LocalOsmodifierPath = &osmodifierBinaryPath
-			}
-
 			config.Rcp.UseStreamImage = streamImage
 		}
 
@@ -174,7 +166,6 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&rcpMode, "rcp-agent-mode", "", "", "RCP agent mode to use (grpc|cli). If not specified, the rcp-agent is not used.")
 	rootCmd.PersistentFlags().StringVarP(&tridentBinaryPath, "trident-binary", "", "", "Optional path to Trident binary to be copied into the VM, requires RCP mode.")
 	rootCmd.PersistentFlags().StringVarP(&launcherBinaryPath, "launcher-binary", "", "", "Optional path to Launcher binary to be copied into the VM, requires RCP mode.")
-	rootCmd.PersistentFlags().StringVarP(&osmodifierBinaryPath, "osmodifier-binary", "", "", "Optional path to Osmodifier binary to be copied into the VM, requires RCP mode.")
 	rootCmd.PersistentFlags().BoolVarP(&streamImage, "stream-image", "", false, "Use stream image for installation instead of the default method, requires RCP mode.")
 	rootCmd.Flags().StringVarP(&iso, "iso", "i", "", "ISO for Netlaunch testing")
 	rootCmd.MarkFlagRequired("iso-template")

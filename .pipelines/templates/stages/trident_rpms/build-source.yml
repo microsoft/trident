@@ -6,10 +6,6 @@ parameters:
     type: boolean
     default: true
 
-  - name: osModifierBranch
-    type: string
-    default: "main"
-
   - name: dependsOnStage
     type: string
     default: ""
@@ -19,14 +15,6 @@ parameters:
     values:
       - amd64
       - arm64
-
-  - name: osModifierBuildType
-    displayName: OSModifier build type to download from osmodifier pipelines
-    type: string
-    values:
-      - dev
-      - preview
-    default: preview
 
   - name: runCodeql
     type: boolean

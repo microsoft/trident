@@ -94,12 +94,6 @@ make bin/isopatch        # Injects files into ISOs
 make bin/rcp-agent       # Remote control plane agent
 ```
 
-### 3. Build osmodifier
-
-```bash
-make artifacts/osmodifier
-```
-
 ### 4. Build Trident RPMs
 
 The test images include Trident packages built from your local tree. This step
@@ -111,7 +105,7 @@ make bin/trident-rpms.tar.gz
 ```
 
 This requires Docker and uses the Trident packaging Dockerfile to produce
-RPMs from your compiled binary and osmodifier.
+RPMs from your compiled binary.
 
 ### 5. Generate SSH Keys
 

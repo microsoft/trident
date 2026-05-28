@@ -30,10 +30,6 @@ pub enum ExecutionEnvironmentMisconfigurationError {
     #[error("Failed to run due to missing root privileges")]
     CheckRootPrivileges,
 
-    #[error("Failed to find OS Modifier binary at '{binary_path}' required by '{config}'")]
-    #[serde(rename = "find-os-modifier-binary")]
-    FindOSModifierBinary { binary_path: String, config: String },
-
     #[error("Failed to find required binary '{binary}'")]
     MissingBinary { binary: &'static str },
 
