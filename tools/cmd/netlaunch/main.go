@@ -18,25 +18,24 @@ import (
 )
 
 var (
-	netlaunchConfigFile  string
-	tridentConfigFile    string
-	iso                  string
-	logstream            bool
-	listenPort           uint16
-	remoteAddressFile    string
-	serveFolder          string
-	maxFailures          uint
-	traceFile            string
-	forceColor           bool
-	waitForProvisioned   bool
-	onlyPrintExitCode    bool
-	secureBoot           bool
-	signingCert          string
-	rcpMode              string
-	tridentBinaryPath    string
-	launcherBinaryPath   string
-	osmodifierBinaryPath string
-	streamImage          bool
+	netlaunchConfigFile string
+	tridentConfigFile   string
+	iso                 string
+	logstream           bool
+	listenPort          uint16
+	remoteAddressFile   string
+	serveFolder         string
+	maxFailures         uint
+	traceFile           string
+	forceColor          bool
+	waitForProvisioned  bool
+	onlyPrintExitCode   bool
+	secureBoot          bool
+	signingCert         string
+	rcpMode             string
+	tridentBinaryPath   string
+	launcherBinaryPath  string
+	streamImage         bool
 )
 
 const (
@@ -82,9 +81,6 @@ var rootCmd = &cobra.Command{
 			if tridentBinaryPath != "" {
 				log.Fatal("Trident binary path specified without RCP mode")
 			}
-			if osmodifierBinaryPath != "" {
-				log.Fatal("Osmodifier binary path specified without RCP mode")
-			}
 			if streamImage {
 				log.Fatal("Stream image specified without RCP mode")
 			}
@@ -129,10 +125,6 @@ var rootCmd = &cobra.Command{
 
 			if launcherBinaryPath != "" {
 				config.Rcp.LocalLauncherPath = &launcherBinaryPath
-			}
-
-			if osmodifierBinaryPath != "" {
-				config.Rcp.LocalOsmodifierPath = &osmodifierBinaryPath
 			}
 
 			config.Rcp.UseStreamImage = streamImage
