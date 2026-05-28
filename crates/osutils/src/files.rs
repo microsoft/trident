@@ -200,8 +200,8 @@ where
 
 /// Read the current process umask from `/proc/self/status` (thread-safe).
 fn read_umask() -> Result<u32, Error> {
-    let status = fs::read_to_string("/proc/self/status")
-        .context("Failed to read /proc/self/status")?;
+    let status =
+        fs::read_to_string("/proc/self/status").context("Failed to read /proc/self/status")?;
     for line in status.lines() {
         if let Some(val) = line.strip_prefix("Umask:") {
             return u32::from_str_radix(val.trim(), 8)
@@ -271,16 +271,14 @@ pub fn atomic_write_file(path: &Path, content: &str) -> Result<(), Error> {
             })?;
         }
         Err(e) => {
-            return Err(Error::new(e).context(format!(
-                "Failed to read metadata for '{}'",
-                path.display()
-            )));
+            return Err(
+                Error::new(e).context(format!("Failed to read metadata for '{}'", path.display()))
+            );
         }
     }
 
-    tmp.persist(path).map_err(|e| {
-        anyhow!("Atomic rename failed for '{}': {}", path.display(), e.error)
-    })?;
+    tmp.persist(path)
+        .map_err(|e| anyhow!("Atomic rename failed for '{}': {}", path.display(), e.error))?;
 
     // Sync parent directory to ensure the rename (directory entry update)
     // is durable. Without this, the old file could reappear after power loss.
