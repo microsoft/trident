@@ -460,14 +460,13 @@ pub fn atomic_write_file(path: &Path, content: &str) -> Result<(), Error> {
             // root cause rather than silently relying on the fallback.
             log_rename_failure_diagnostics(e.file.path(), path, &e.error);
 
-            // Fall back to a direct write. The temp file is cleaned up
-            // when `e.file` drops.
-            fs::write(path, content).with_context(|| {
-                format!(
-                    "Failed to write '{}' (fallback after rename failure)",
-                    path.display()
-                )
-            })?;
+            // TODO: Restore fallback once root cause is understood.
+            // Temporarily fail hard so pipeline logs capture diagnostics.
+            bail!(
+                "Atomic rename failed for '{}': {} — see diagnostic logs above for details",
+                path.display(),
+                e.error
+            );
         }
     }
 
