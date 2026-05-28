@@ -10,6 +10,7 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Context, Error};
+use nix::sys::stat::{umask, Mode};
 use nix::unistd::{self, Gid, Uid};
 use tempfile::NamedTempFile;
 
@@ -246,8 +247,12 @@ pub fn atomic_write_file(path: &Path, content: &str) -> Result<(), Error> {
             })?;
         }
         Err(e) if e.kind() == ErrorKind::NotFound => {
-            // New file: apply 0644 default (matches fs::write's 0666 & typical umask).
-            fs::set_permissions(tmp.path(), Permissions::from_mode(0o644)).with_context(|| {
+            // New file: apply 0666 masked by the process umask, matching
+            // fs::write / open(O_CREAT, 0666) behavior.
+            let old = umask(Mode::empty());
+            umask(old); // restore immediately
+            let mode = 0o666 & !old.bits();
+            fs::set_permissions(tmp.path(), Permissions::from_mode(mode)).with_context(|| {
                 format!(
                     "Failed to set default permissions on temp file for '{}'",
                     path.display()
@@ -443,16 +448,23 @@ mod tests {
     }
 
     #[test]
-    fn test_atomic_write_new_file_gets_default_permissions() {
+    fn test_atomic_write_new_file_respects_umask() {
+        use nix::sys::stat::{umask, Mode};
+
         let tmp = tempdir().unwrap();
         let path = tmp.path().join("new_default.conf");
+
+        // Snapshot the current umask so we know what to expect.
+        let cur = umask(Mode::empty());
+        umask(cur);
+        let expected = 0o666 & !cur.bits();
 
         atomic_write_file(&path, "hello\n").unwrap();
 
         let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
         assert_eq!(
-            mode, 0o644,
-            "New file should get 0644 default, got {mode:04o}"
+            mode, expected,
+            "New file should get 0666 & !umask ({expected:04o}), got {mode:04o}"
         );
     }
 
