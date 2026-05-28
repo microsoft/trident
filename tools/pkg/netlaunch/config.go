@@ -84,10 +84,6 @@ type RcpConfiguration struct {
 	// If not specified, no Trident binary will be copied.
 	LocalTridentPath *string `yaml:"localTridentPath,omitempty"`
 
-	// An optional path to a local osmodifier binary to copy into the remote host.
-	// If not specified, no Osmodifier binary will be copied.
-	LocalOsmodifierPath *string `yaml:"localOsmodifierPath,omitempty"`
-
 	// An optional path to a local launcher binary to copy into the remote host.
 	// If not specified, no launcher binary will be copied.
 	LocalLauncherPath *string `yaml:"localLauncherPath,omitempty"`

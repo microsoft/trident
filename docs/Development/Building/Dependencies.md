@@ -11,7 +11,7 @@ Trident's dependencies.
 ### Compilers
 
 - Rust: latest stable
-- Go: 1.25+ (for osmodifier)
+- Go: 1.25+
 
 ### Packages
 

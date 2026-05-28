@@ -77,10 +77,6 @@ parameters:
     type: number
     default: 3
 
-  - name: osModifierBranch
-    type: string
-    default: "main"
-
   - name: baremetalTestsEnabled
     type: boolean
     default: true
@@ -109,7 +105,6 @@ stages:
         tridentArtifactName: trident-binaries
         codeCoverage: false
         tridentBuildOptions: ${{ parameters.tridentBuildOptions }}
-        osModifierBranch: ${{ parameters.osModifierBranch }}
         dependsOnStage: ${{ parameters.baseImageArtifactStage }}
         targetArchitecture: amd64
 
@@ -129,7 +124,6 @@ stages:
   - ${{ if eq(parameters.stageType, 'ci') }}:
       - template: stages/validate_makefile/dev-build.yml
         parameters:
-          osModifierBranch: ${{ parameters.osModifierBranch }}
           ${{ if eq(parameters.stageType, 'ci') }}:
             # Run CodeQL for this in CI only
             runCodeql: true
@@ -370,7 +364,6 @@ stages:
       - template: stages/testing_functional/functional-testing.yml
         parameters:
           downloadPrebuiltImage: false
-          osModifierBranch: ${{ parameters.osModifierBranch }}
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
       # VM Testing (host, post_merge)

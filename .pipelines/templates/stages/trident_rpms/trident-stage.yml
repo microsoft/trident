@@ -32,10 +32,6 @@ parameters:
       - forceBuild
       - prebuilt
 
-  - name: osModifierBranch
-    type: string
-    default: "main"
-
   - name: dependsOnStage
     type: string
     default: ""
@@ -56,14 +52,8 @@ stages:
         parameters:
           tridentArtifactName: ${{ parameters.tridentArtifactName }}
           codeCoverage: ${{ parameters.codeCoverage }}
-          osModifierBranch: ${{ parameters.osModifierBranch }}
           dependsOnStage: ${{ parameters.dependsOnStage }}
           targetArchitecture: ${{ parameters.targetArchitecture }}
-          # trident-cicd-for-prism should run against the latest main build of osmodifier.
-          ${{ if eq(parameters.stageType, 'ci') }}:
-            osModifierBuildType: dev
-          ${{ else }}:
-            osModifierBuildType: preview
           ${{ if eq(parameters.stageType, 'ci') }}:
             # Run CodeQL for this in CI only
             runCodeql: true

@@ -13,11 +13,6 @@ parameters:
     type: string
     default: "*.*.*"
 
-  - name: osModifierBranch
-    displayName: OSModifier branch to use for dev build type
-    type: string
-    default: "main"
-
 schedules:
   - cron: "0 9 * * *" # avoid trident-prerelease time
     displayName: Daily build
@@ -57,4 +52,3 @@ extends:
         parameters:
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
-          osModifierBranch: ${{ parameters.osModifierBranch }}

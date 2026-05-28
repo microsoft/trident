@@ -1,8 +1,4 @@
 parameters:
-  - name: osModifierBranch
-    type: string
-    default: "main"
-
   - name: dependsOnStage
     type: string
     default: ""
