@@ -299,6 +299,25 @@ fn log_rename_failure_diagnostics(tmp_path: &Path, target_path: &Path, error: &s
             );
         }
     }
+
+    // Log the process's own SELinux context.
+    match fs::read_to_string("/proc/self/attr/current") {
+        Ok(ctx) => log::warn!("  process SELinux context: {}", ctx.trim()),
+        Err(e) => log::warn!("  process SELinux context: (unavailable: {e})"),
+    }
+
+    // Log the process's UID/GID and capabilities.
+    log::warn!(
+        "  process uid={}, euid={}, gid={}, egid={}",
+        unsafe { libc::getuid() },
+        unsafe { libc::geteuid() },
+        unsafe { libc::getgid() },
+        unsafe { libc::getegid() },
+    );
+
+    // Dump recent SELinux AVC denials from the audit log.
+    // These show the exact policy rule that blocked the operation.
+    log_selinux_audit_denials(tmp_path, target_path);
 }
 
 /// Map common errno values to symbolic names for readability.
@@ -344,6 +363,72 @@ fn unescape_mountinfo(s: &str) -> String {
         }
     }
     result
+}
+
+/// Search the audit log for recent SELinux AVC denials related to our paths.
+///
+/// Reads `/var/log/audit/audit.log` directly (no dependency on `ausearch`).
+/// Filters for `type=AVC` denials mentioning the temp or target path names,
+/// or the parent directory. Logs the last 20 matching lines.
+fn log_selinux_audit_denials(tmp_path: &Path, target_path: &Path) {
+    let audit_content = match fs::read_to_string("/var/log/audit/audit.log") {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("  SELinux audit log: could not read /var/log/audit/audit.log: {e}");
+            return;
+        }
+    };
+
+    // Build search terms from the paths involved.
+    let mut search_terms: Vec<String> = Vec::new();
+    if let Some(name) = tmp_path.file_name() {
+        search_terms.push(name.to_string_lossy().into_owned());
+    }
+    if let Some(name) = target_path.file_name() {
+        search_terms.push(name.to_string_lossy().into_owned());
+    }
+    if let Some(parent) = target_path.parent() {
+        search_terms.push(parent.to_string_lossy().into_owned());
+    }
+
+    let matching: Vec<&str> = audit_content
+        .lines()
+        .filter(|line| {
+            line.contains("type=AVC")
+                && line.contains("denied")
+                && search_terms.iter().any(|term| line.contains(term.as_str()))
+        })
+        .collect();
+
+    if matching.is_empty() {
+        // Fall back to showing any recent AVC denials (last 10).
+        let all_avc: Vec<&str> = audit_content
+            .lines()
+            .filter(|line| line.contains("type=AVC") && line.contains("denied"))
+            .collect();
+        let recent = &all_avc[all_avc.len().saturating_sub(10)..];
+        if recent.is_empty() {
+            log::warn!("  SELinux audit: no AVC denials found in audit log");
+        } else {
+            log::warn!(
+                "  SELinux audit: no denials matching our paths; showing last {} general AVC denials:",
+                recent.len()
+            );
+            for line in recent {
+                log::warn!("    {line}");
+            }
+        }
+    } else {
+        let recent = &matching[matching.len().saturating_sub(20)..];
+        log::warn!(
+            "  SELinux audit: {} AVC denials matching our paths (showing last {}):",
+            matching.len(),
+            recent.len()
+        );
+        for line in recent {
+            log::warn!("    {line}");
+        }
+    }
 }
 
 /// Read the security.selinux extended attribute from a path, if present.
