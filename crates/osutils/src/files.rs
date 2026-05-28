@@ -218,29 +218,45 @@ pub fn atomic_write_file(path: &Path, content: &str) -> Result<(), Error> {
         .sync_all()
         .with_context(|| format!("Failed to fsync temp file for '{}'", path.display()))?;
 
-    // Preserve ownership and permissions from the original file if it exists.
-    // Ownership must be set before permissions because chown can clear
-    // setuid/setgid bits.
-    if let Ok(metadata) = fs::metadata(path) {
-        use std::os::fd::AsFd;
-        nix::unistd::fchown(
-            tmp.as_file().as_fd(),
-            Some(nix::unistd::Uid::from_raw(metadata.uid())),
-            Some(nix::unistd::Gid::from_raw(metadata.gid())),
-        )
-        .with_context(|| {
-            format!(
-                "Failed to set ownership on temp file for '{}'",
-                path.display()
+    // Preserve ownership and permissions from the original file, or apply
+    // sensible defaults (0644) for new files so they match fs::write behavior.
+    match fs::metadata(path) {
+        Ok(metadata) => {
+            use std::os::fd::AsFd;
+            nix::unistd::fchown(
+                tmp.as_file().as_fd(),
+                Some(nix::unistd::Uid::from_raw(metadata.uid())),
+                Some(nix::unistd::Gid::from_raw(metadata.gid())),
             )
-        })?;
+            .with_context(|| {
+                format!(
+                    "Failed to set ownership on temp file for '{}'",
+                    path.display()
+                )
+            })?;
 
-        fs::set_permissions(tmp.path(), metadata.permissions()).with_context(|| {
-            format!(
-                "Failed to set permissions on temp file for '{}'",
+            fs::set_permissions(tmp.path(), metadata.permissions()).with_context(|| {
+                format!(
+                    "Failed to set permissions on temp file for '{}'",
+                    path.display()
+                )
+            })?;
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // New file: apply 0644 default (matches fs::write's 0666 & typical umask).
+            fs::set_permissions(tmp.path(), Permissions::from_mode(0o644)).with_context(|| {
+                format!(
+                    "Failed to set default permissions on temp file for '{}'",
+                    path.display()
+                )
+            })?;
+        }
+        Err(e) => {
+            return Err(anyhow::Error::new(e).context(format!(
+                "Failed to read metadata for '{}'",
                 path.display()
-            )
-        })?;
+            )));
+        }
     }
 
     tmp.persist(path).map_err(|e| {
@@ -421,6 +437,20 @@ mod tests {
         atomic_write_file(&path, "hello\n").unwrap();
 
         assert_eq!(fs::read_to_string(&path).unwrap(), "hello\n");
+    }
+
+    #[test]
+    fn test_atomic_write_new_file_gets_default_permissions() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("new_default.conf");
+
+        atomic_write_file(&path, "hello\n").unwrap();
+
+        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            mode, 0o644,
+            "New file should get 0644 default, got {mode:04o}"
+        );
     }
 
     #[test]
