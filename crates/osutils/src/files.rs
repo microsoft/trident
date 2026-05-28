@@ -253,7 +253,7 @@ fn log_rename_failure_diagnostics(tmp_path: &Path, target_path: &Path, error: &s
                 // using Path::starts_with for component-aware comparison.
                 let best_mount = mountinfo
                     .lines()
-                    .filter_map(|line| parse_mountinfo_mount_point(line))
+                    .filter_map(parse_mountinfo_mount_point)
                     .filter(|mp| canonical.starts_with(mp))
                     .max_by_key(|mp| mp.as_os_str().len());
 
