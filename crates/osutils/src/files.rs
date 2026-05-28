@@ -1,6 +1,6 @@
 use std::{
     fs::{self, File, Permissions},
-    io::{self, ErrorKind, Read, Write},
+    io::{ErrorKind, Read, Write},
     os::{
         fd::AsFd,
         linux::fs::MetadataExt,
@@ -10,7 +10,6 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Context, Error};
-use nix::sys::stat::{umask, Mode};
 use nix::unistd::{self, Gid, Uid};
 use tempfile::NamedTempFile;
 
@@ -199,6 +198,19 @@ where
         })
 }
 
+/// Read the current process umask from `/proc/self/status` (thread-safe).
+fn read_umask() -> Result<u32, Error> {
+    let status = fs::read_to_string("/proc/self/status")
+        .context("Failed to read /proc/self/status")?;
+    for line in status.lines() {
+        if let Some(val) = line.strip_prefix("Umask:") {
+            return u32::from_str_radix(val.trim(), 8)
+                .context("Failed to parse umask from /proc/self/status");
+        }
+    }
+    bail!("Umask field not found in /proc/self/status")
+}
+
 /// Atomically replace `path` with `content`.
 ///
 /// Writes to a temp file in the same directory, fsyncs, preserves ownership
@@ -224,7 +236,7 @@ pub fn atomic_write_file(path: &Path, content: &str) -> Result<(), Error> {
         .with_context(|| format!("Failed to fsync temp file for '{}'", path.display()))?;
 
     // Preserve ownership and permissions from the original file, or apply
-    // sensible defaults (0644) for new files so they match fs::write behavior.
+    // 0666 & !umask for new files to match fs::write / open(O_CREAT) behavior.
     match fs::metadata(path) {
         Ok(metadata) => {
             unistd::fchown(
@@ -248,10 +260,9 @@ pub fn atomic_write_file(path: &Path, content: &str) -> Result<(), Error> {
         }
         Err(e) if e.kind() == ErrorKind::NotFound => {
             // New file: apply 0666 masked by the process umask, matching
-            // fs::write / open(O_CREAT, 0666) behavior.
-            let old = umask(Mode::empty());
-            umask(old); // restore immediately
-            let mode = 0o666 & !old.bits();
+            // fs::write / open(O_CREAT, 0666) behavior. Read umask from
+            // /proc/self/status to avoid the thread-unsafe umask(2) dance.
+            let mode = 0o666 & !read_umask()?;
             fs::set_permissions(tmp.path(), Permissions::from_mode(mode)).with_context(|| {
                 format!(
                     "Failed to set default permissions on temp file for '{}'",
@@ -449,15 +460,10 @@ mod tests {
 
     #[test]
     fn test_atomic_write_new_file_respects_umask() {
-        use nix::sys::stat::{umask, Mode};
-
         let tmp = tempdir().unwrap();
         let path = tmp.path().join("new_default.conf");
 
-        // Snapshot the current umask so we know what to expect.
-        let cur = umask(Mode::empty());
-        umask(cur);
-        let expected = 0o666 & !cur.bits();
+        let expected = 0o666 & !read_umask().unwrap();
 
         atomic_write_file(&path, "hello\n").unwrap();
 
