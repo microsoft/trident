@@ -1,11 +1,17 @@
 use std::{
     fs::{self, File, Permissions},
-    io::{Read, Write},
-    os::{linux::fs::MetadataExt, unix::fs::PermissionsExt},
+    io::{self, ErrorKind, Read, Write},
+    os::{
+        fd::AsFd,
+        linux::fs::MetadataExt,
+        unix::fs::{MetadataExt as UnixMetadataExt, PermissionsExt},
+    },
     path::{Path, PathBuf},
 };
 
-use anyhow::{bail, Context, Error};
+use anyhow::{anyhow, bail, Context, Error};
+use nix::unistd::{self, Gid, Uid};
+use tempfile::NamedTempFile;
 
 /// Creates a file and all parent directories if they don't exist
 pub fn create_file<S>(path: S) -> Result<File, Error>
@@ -198,11 +204,9 @@ where
 /// and permissions from the original file (if it exists), then renames. This
 /// guarantees that readers never see a partial write.
 pub fn atomic_write_file(path: &Path, content: &str) -> Result<(), Error> {
-    use std::os::unix::fs::MetadataExt;
-
     let parent = path.parent().context("Cannot determine parent directory")?;
 
-    let mut tmp = tempfile::NamedTempFile::new_in(parent)
+    let mut tmp = NamedTempFile::new_in(parent)
         .with_context(|| format!("Failed to create temp file in '{}'", parent.display()))?;
 
     tmp.write_all(content.as_bytes())
@@ -222,11 +226,10 @@ pub fn atomic_write_file(path: &Path, content: &str) -> Result<(), Error> {
     // sensible defaults (0644) for new files so they match fs::write behavior.
     match fs::metadata(path) {
         Ok(metadata) => {
-            use std::os::fd::AsFd;
-            nix::unistd::fchown(
+            unistd::fchown(
                 tmp.as_file().as_fd(),
-                Some(nix::unistd::Uid::from_raw(metadata.uid())),
-                Some(nix::unistd::Gid::from_raw(metadata.gid())),
+                Some(Uid::from_raw(metadata.uid())),
+                Some(Gid::from_raw(metadata.gid())),
             )
             .with_context(|| {
                 format!(
@@ -242,7 +245,7 @@ pub fn atomic_write_file(path: &Path, content: &str) -> Result<(), Error> {
                 )
             })?;
         }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+        Err(e) if e.kind() == ErrorKind::NotFound => {
             // New file: apply 0644 default (matches fs::write's 0666 & typical umask).
             fs::set_permissions(tmp.path(), Permissions::from_mode(0o644)).with_context(|| {
                 format!(
@@ -252,7 +255,7 @@ pub fn atomic_write_file(path: &Path, content: &str) -> Result<(), Error> {
             })?;
         }
         Err(e) => {
-            return Err(anyhow::Error::new(e).context(format!(
+            return Err(Error::new(e).context(format!(
                 "Failed to read metadata for '{}'",
                 path.display()
             )));
@@ -260,13 +263,13 @@ pub fn atomic_write_file(path: &Path, content: &str) -> Result<(), Error> {
     }
 
     tmp.persist(path).map_err(|e| {
-        anyhow::anyhow!("Atomic rename failed for '{}': {}", path.display(), e.error)
+        anyhow!("Atomic rename failed for '{}': {}", path.display(), e.error)
     })?;
 
     // Sync parent directory to ensure the rename (directory entry update)
     // is durable. Without this, the old file could reappear after power loss.
     if let Some(parent) = path.parent() {
-        if let Ok(dir) = fs::File::open(parent) {
+        if let Ok(dir) = File::open(parent) {
             let _ = dir.sync_all();
         }
     }
