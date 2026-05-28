@@ -216,6 +216,11 @@ fn read_umask() -> Result<u32, Error> {
 /// Writes to a temp file in the same directory, fsyncs, preserves ownership
 /// and permissions from the original file (if it exists), then renames. This
 /// guarantees that readers never see a partial write.
+///
+/// **Note:** Extended attributes (including SELinux labels) are *not*
+/// preserved because the rename replaces the original inode. Callers that
+/// need the original SELinux context should run `restorecon` after this
+/// function returns.
 pub fn atomic_write_file(path: &Path, content: &str) -> Result<(), Error> {
     let parent = path.parent().context("Cannot determine parent directory")?;
 
@@ -280,8 +285,9 @@ pub fn atomic_write_file(path: &Path, content: &str) -> Result<(), Error> {
     tmp.persist(path)
         .map_err(|e| anyhow!("Atomic rename failed for '{}': {}", path.display(), e.error))?;
 
-    // Sync parent directory to ensure the rename (directory entry update)
-    // is durable. Without this, the old file could reappear after power loss.
+    // Best-effort sync of the parent directory so the rename (directory entry
+    // update) is durable across power loss. If this fails the file content is
+    // still correct — only the rename durability guarantee is weakened.
     if let Some(parent) = path.parent() {
         if let Ok(dir) = File::open(parent) {
             let _ = dir.sync_all();
