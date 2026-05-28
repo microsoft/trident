@@ -229,9 +229,7 @@ fn log_rename_failure_diagnostics(tmp_path: &Path, target_path: &Path, error: &s
             log::warn!("  Same device: dev={td:#x} (target parent dev={pd:#x})");
         }
         _ => {
-            log::warn!(
-                "  Could not compare devices: tmp={tmp_dev:?}, target_parent={tgt_dev:?}"
-            );
+            log::warn!("  Could not compare devices: tmp={tmp_dev:?}, target_parent={tgt_dev:?}");
         }
     }
 
@@ -382,7 +380,10 @@ fn xattr_security_selinux(path: &Path) -> Option<String> {
     };
 
     if read < 0 {
-        return Some(format!("error on second read: {}", std::io::Error::last_os_error()));
+        return Some(format!(
+            "error on second read: {}",
+            std::io::Error::last_os_error()
+        ));
     }
 
     buf.truncate(read as usize);
