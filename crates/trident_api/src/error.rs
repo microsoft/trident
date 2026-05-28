@@ -474,6 +474,7 @@ pub enum ServicingError {
     },
 
     #[error("Failed to perform file-based deployment of ESP images")]
+    #[serde(rename = "deploy-esp-images")]
     DeployESPImages,
 
     #[error("Failed to deploy images")]
