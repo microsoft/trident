@@ -243,23 +243,15 @@ pub fn atomic_write_file(path: &Path, content: &str) -> Result<(), Error> {
         })?;
     }
 
-    match tmp.persist(path) {
-        Ok(_) => {
-            // Sync parent directory to ensure the rename (directory entry
-            // update) is durable. Without this, the old file could reappear
-            // after power loss.
-            if let Some(parent) = path.parent() {
-                if let Ok(dir) = fs::File::open(parent) {
-                    let _ = dir.sync_all();
-                }
-            }
-        }
-        Err(e) => {
-            bail!(
-                "Atomic rename failed for '{}': {}",
-                path.display(),
-                e.error
-            );
+    tmp.persist(path).map_err(|e| {
+        anyhow::anyhow!("Atomic rename failed for '{}': {}", path.display(), e.error)
+    })?;
+
+    // Sync parent directory to ensure the rename (directory entry update)
+    // is durable. Without this, the old file could reappear after power loss.
+    if let Some(parent) = path.parent() {
+        if let Ok(dir) = fs::File::open(parent) {
+            let _ = dir.sync_all();
         }
     }
 
