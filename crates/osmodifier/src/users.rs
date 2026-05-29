@@ -17,7 +17,7 @@ use crate::{
 // Shadow file field indices (0-based, colon-delimited).
 const SHADOW_FIELD_PASSWORD: usize = 1;
 const SHADOW_FIELD_LAST_CHANGE: usize = 2;
-const SHADOW_FIELD_EXPIRATION: usize = 7;
+const SHADOW_FIELD_MAX_AGE: usize = 4;
 const SHADOW_TOTAL_FIELDS: usize = 9;
 
 // Passwd file field indices (0-based, colon-delimited).
@@ -307,7 +307,8 @@ fn set_password_expiry(ctx: &OsModifierContext, username: &str, days: u64) -> Re
                 found = true;
                 let mut new_fields: Vec<String> = fields.iter().map(|f| f.to_string()).collect();
 
-                // Ensure lastChange field is populated
+                // Ensure lastChange field is populated so password aging
+                // has a reference point for when the clock started.
                 if new_fields[SHADOW_FIELD_LAST_CHANGE].is_empty() {
                     match days_since_unix_epoch() {
                         Ok(d) => new_fields[SHADOW_FIELD_LAST_CHANGE] = d.to_string(),
@@ -317,22 +318,23 @@ fn set_password_expiry(ctx: &OsModifierContext, username: &str, days: u64) -> Re
                         }
                     }
                 }
-                let last_change: i64 = match new_fields[SHADOW_FIELD_LAST_CHANGE].parse() {
-                    Ok(v) => v,
-                    Err(_) => {
-                        parse_err = Some(format!(
-                            "failed to parse lastChange field '{}' for user '{username}'",
-                            new_fields[SHADOW_FIELD_LAST_CHANGE]
-                        ));
-                        return line.to_string();
-                    }
-                };
 
-                // Set account expiration date (field 7) = lastChange + days.
-                // Note: Go's Chage() comment says "chage -M" (max password age, field 4)
-                // but actually writes to the expiration field (field 7). We match Go's
-                // actual behavior, not its misleading comment. See installutils.go:643.
-                new_fields[SHADOW_FIELD_EXPIRATION] = (last_change + days as i64).to_string();
+                // Validate that lastChange is numeric — password aging
+                // depends on it even though we no longer use it directly.
+                if new_fields[SHADOW_FIELD_LAST_CHANGE].parse::<i64>().is_err() {
+                    parse_err = Some(format!(
+                        "failed to parse lastChange field '{}' for user '{username}'",
+                        new_fields[SHADOW_FIELD_LAST_CHANGE]
+                    ));
+                    return line.to_string();
+                }
+
+                // Set maxAge (field 4) = number of days the password is valid.
+                // This is equivalent to `chage -M <days>`. The previous Go
+                // implementation incorrectly wrote to the account expiration
+                // field (field 7), which would disable the entire account
+                // rather than enforce password rotation.
+                new_fields[SHADOW_FIELD_MAX_AGE] = days.to_string();
                 new_fields.join(":")
             } else {
                 line.to_string()
