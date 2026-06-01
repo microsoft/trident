@@ -398,6 +398,81 @@ pub fn find_previous_uki(esp_dir_path: &Path) -> Result<PathBuf, TridentError> {
     }
 }
 
+/// Path within the image ESP where ACL stores verity addon templates for A/B slots.
+const VERITY_ADDON_TEMPLATES_DIR: &str = "acl/uki-addons";
+
+/// Filename of the active verity addon placed in the UKI's `.extra.d/` directory.
+const VERITY_ADDON_FILENAME: &str = "verity.addon.efi";
+
+/// After staging the UKI, activate the correct verity addon for the target
+/// A/B volume. ACL images ship with slot-A active by default and include
+/// templates for both slots in `acl/uki-addons/` on the ESP image.
+///
+/// This is ACL-specific: if no verity addon templates exist on the image
+/// (i.e. a non-ACL image), this function is a silent no-op. However, if
+/// templates exist but the selected slot's template is missing, an error
+/// is returned to prevent booting with the wrong slot's PARTUUIDs.
+pub fn activate_verity_addon_for_target_volume(
+    image_esp_mount: &Path,
+    mount_point: &Path,
+    esp_mount_path: &Path,
+    target_volume: AbVolumeSelection,
+) -> Result<(), Error> {
+    let template_dir = image_esp_mount.join(VERITY_ADDON_TEMPLATES_DIR);
+    if !template_dir.exists() {
+        // Image does not use PARTUUID-based verity addons (non-ACL or older ACL).
+        trace!(
+            "No verity addon template directory at '{}', skipping",
+            template_dir.display()
+        );
+        return Ok(());
+    }
+
+    let template_name = match target_volume {
+        AbVolumeSelection::VolumeA => "verity-a.addon.efi",
+        AbVolumeSelection::VolumeB => "verity-b.addon.efi",
+    };
+
+    let template_path = template_dir.join(template_name);
+    ensure!(
+        template_path.exists(),
+        "Verity addon template '{}' not found in '{}' — cannot activate {:?}",
+        template_name,
+        template_dir.display(),
+        target_volume
+    );
+
+    let staging_addon_dir = join_relative(mount_point, esp_mount_path)
+        .join(UKI_DIRECTORY)
+        .join(TMP_UKI_ADDON_DIR_NAME);
+
+    if !staging_addon_dir.exists() {
+        fs::create_dir_all(&staging_addon_dir).with_context(|| {
+            format!(
+                "Failed to create staged addon directory '{}'",
+                staging_addon_dir.display()
+            )
+        })?;
+    }
+
+    let dest = staging_addon_dir.join(VERITY_ADDON_FILENAME);
+    debug!(
+        "Activating verity addon for {:?}: '{}' → '{}'",
+        target_volume,
+        template_path.display(),
+        dest.display()
+    );
+    fs::copy(&template_path, &dest).with_context(|| {
+        format!(
+            "Failed to copy verity addon template '{}' to '{}'",
+            template_path.display(),
+            dest.display()
+        )
+    })?;
+
+    Ok(())
+}
+
 /// Construct the previous UKI filename and set it as the default boot entry.
 pub fn use_previous_uki_as_default(esp_dir_path: &Path) -> Result<(), TridentError> {
     let previous_uki_entry_path = find_previous_uki(esp_dir_path)?;
@@ -859,5 +934,200 @@ mod tests {
         assert_eq!(entry_name, "vmlinuz-100-azla2.efi");
         assert!(uki_dir.join("vmlinuz-100-azla2.efi").exists());
         assert!(!uki_dir.join("vmlinuz-100-azla2.efi.extra.d").exists());
+    }
+
+    // ── activate_verity_addon_for_target_volume tests ──────────────────────
+
+    /// Helper: creates a mock image ESP with verity addon templates.
+    fn setup_image_with_verity_templates(
+        image_esp: &Path,
+    ) -> (PathBuf, PathBuf) {
+        let template_dir = image_esp.join(VERITY_ADDON_TEMPLATES_DIR);
+        fs::create_dir_all(&template_dir).unwrap();
+        let a_path = template_dir.join("verity-a.addon.efi");
+        let b_path = template_dir.join("verity-b.addon.efi");
+        fs::write(&a_path, b"verity-a-content").unwrap();
+        fs::write(&b_path, b"verity-b-content").unwrap();
+        (a_path, b_path)
+    }
+
+    /// Activating for VolumeA copies verity-a template into the staged addon dir.
+    #[test]
+    fn test_activate_verity_addon_volume_a() {
+        let image_esp = tempdir().unwrap();
+        setup_image_with_verity_templates(image_esp.path());
+
+        let mount_point = tempdir().unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH))
+            .unwrap();
+
+        // Create the staged addon dir as stage_uki_on_esp would
+        let staged_addon_dir = join_relative(mount_point.path(), DEFAULT_ESP_MOUNT_POINT_PATH)
+            .join(UKI_DIRECTORY)
+            .join(TMP_UKI_ADDON_DIR_NAME);
+        fs::create_dir_all(&staged_addon_dir).unwrap();
+
+        activate_verity_addon_for_target_volume(
+            image_esp.path(),
+            mount_point.path(),
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+            AbVolumeSelection::VolumeA,
+        )
+        .unwrap();
+
+        let active = staged_addon_dir.join(VERITY_ADDON_FILENAME);
+        assert!(active.exists());
+        assert_eq!(fs::read(&active).unwrap(), b"verity-a-content");
+    }
+
+    /// Activating for VolumeB copies verity-b template into the staged addon dir.
+    #[test]
+    fn test_activate_verity_addon_volume_b() {
+        let image_esp = tempdir().unwrap();
+        setup_image_with_verity_templates(image_esp.path());
+
+        let mount_point = tempdir().unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH))
+            .unwrap();
+
+        let staged_addon_dir = join_relative(mount_point.path(), DEFAULT_ESP_MOUNT_POINT_PATH)
+            .join(UKI_DIRECTORY)
+            .join(TMP_UKI_ADDON_DIR_NAME);
+        fs::create_dir_all(&staged_addon_dir).unwrap();
+
+        activate_verity_addon_for_target_volume(
+            image_esp.path(),
+            mount_point.path(),
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+            AbVolumeSelection::VolumeB,
+        )
+        .unwrap();
+
+        let active = staged_addon_dir.join(VERITY_ADDON_FILENAME);
+        assert!(active.exists());
+        assert_eq!(fs::read(&active).unwrap(), b"verity-b-content");
+    }
+
+    /// No template directory at all → silent no-op (backward compat with non-ACL).
+    #[test]
+    fn test_activate_verity_addon_no_template_dir() {
+        let image_esp = tempdir().unwrap();
+        // No acl/uki-addons/ directory
+
+        let mount_point = tempdir().unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH))
+            .unwrap();
+
+        // Should succeed silently
+        activate_verity_addon_for_target_volume(
+            image_esp.path(),
+            mount_point.path(),
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+            AbVolumeSelection::VolumeA,
+        )
+        .unwrap();
+
+        // No addon dir should have been created
+        let staged_addon_dir = join_relative(mount_point.path(), DEFAULT_ESP_MOUNT_POINT_PATH)
+            .join(UKI_DIRECTORY)
+            .join(TMP_UKI_ADDON_DIR_NAME);
+        assert!(!staged_addon_dir.exists());
+    }
+
+    /// Template directory exists but selected slot template is missing → error.
+    #[test]
+    fn test_activate_verity_addon_missing_selected_template() {
+        let image_esp = tempdir().unwrap();
+        let template_dir = image_esp.path().join(VERITY_ADDON_TEMPLATES_DIR);
+        fs::create_dir_all(&template_dir).unwrap();
+        // Only write verity-a, not verity-b
+        fs::write(template_dir.join("verity-a.addon.efi"), b"a-content").unwrap();
+
+        let mount_point = tempdir().unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH))
+            .unwrap();
+
+        let result = activate_verity_addon_for_target_volume(
+            image_esp.path(),
+            mount_point.path(),
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+            AbVolumeSelection::VolumeB,
+        );
+
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().to_string().contains("verity-b.addon.efi"),
+            "Error should mention the missing template"
+        );
+    }
+
+    /// Creates the staged addon dir when templates exist but no addon dir was staged.
+    #[test]
+    fn test_activate_verity_addon_creates_addon_dir() {
+        let image_esp = tempdir().unwrap();
+        setup_image_with_verity_templates(image_esp.path());
+
+        let mount_point = tempdir().unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH))
+            .unwrap();
+
+        // Do NOT pre-create the staged addon dir
+        activate_verity_addon_for_target_volume(
+            image_esp.path(),
+            mount_point.path(),
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+            AbVolumeSelection::VolumeB,
+        )
+        .unwrap();
+
+        let staged_addon_dir = join_relative(mount_point.path(), DEFAULT_ESP_MOUNT_POINT_PATH)
+            .join(UKI_DIRECTORY)
+            .join(TMP_UKI_ADDON_DIR_NAME);
+        assert!(staged_addon_dir.join(VERITY_ADDON_FILENAME).exists());
+        assert_eq!(
+            fs::read(staged_addon_dir.join(VERITY_ADDON_FILENAME)).unwrap(),
+            b"verity-b-content"
+        );
+    }
+
+    /// Other addons in the staged dir are preserved when activating verity addon.
+    #[test]
+    fn test_activate_verity_addon_preserves_other_addons() {
+        let image_esp = tempdir().unwrap();
+        setup_image_with_verity_templates(image_esp.path());
+
+        let mount_point = tempdir().unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH))
+            .unwrap();
+
+        let staged_addon_dir = join_relative(mount_point.path(), DEFAULT_ESP_MOUNT_POINT_PATH)
+            .join(UKI_DIRECTORY)
+            .join(TMP_UKI_ADDON_DIR_NAME);
+        fs::create_dir_all(&staged_addon_dir).unwrap();
+        // Pre-existing addon that should not be touched
+        fs::write(
+            staged_addon_dir.join("firstboot.addon.efi"),
+            b"firstboot-data",
+        )
+        .unwrap();
+
+        activate_verity_addon_for_target_volume(
+            image_esp.path(),
+            mount_point.path(),
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+            AbVolumeSelection::VolumeA,
+        )
+        .unwrap();
+
+        // Verity addon should be activated
+        assert_eq!(
+            fs::read(staged_addon_dir.join(VERITY_ADDON_FILENAME)).unwrap(),
+            b"verity-a-content"
+        );
+        // Other addon should be untouched
+        assert_eq!(
+            fs::read(staged_addon_dir.join("firstboot.addon.efi")).unwrap(),
+            b"firstboot-data"
+        );
     }
 }
