@@ -187,6 +187,9 @@ fn validate_filesystems(os_image: &OsImage, ctx: &EngineContext) -> Result<(), T
 
 /// Validates that all filesystems within an OS image have unique FS UUIDs. Additionally, validates
 /// that A/B volume pairs have distinct FS UUIDs.
+///
+/// The A/B cross-check is skipped for ACL, which uses identical FS UUIDs across A/B slots by
+/// design (partitions are distinguished by PARTUUID instead).
 fn validate_filesystem_uniqueness(
     os_image: &OsImage,
     ctx: &EngineContext,
@@ -202,8 +205,9 @@ fn validate_filesystem_uniqueness(
         }
     }
 
-    // For A/B Update, check that no A/B volumes share filesystem UUIDs
-    if ctx.servicing_type == ServicingType::AbUpdate {
+    // For A/B Update, check that no A/B volumes share filesystem UUIDs.
+    // ACL uses the same FS UUID for both A/B slots — partitions are identified by PARTUUID.
+    if ctx.servicing_type == ServicingType::AbUpdate && !ctx.image_distro().is_acl() {
         if let Some(ab) = &ctx.spec.storage.ab_update {
             for pair in ab.volume_pairs.iter() {
                 if let Some(mp_info) = ctx.spec.storage.device_id_to_mount_point_info(&pair.id) {
