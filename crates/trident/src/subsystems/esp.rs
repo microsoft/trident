@@ -290,6 +290,21 @@ fn copy_file_artifacts(
 
         // Copy the UKI from the image into the ESP directory
         uki::stage_uki_on_esp(temp_mount_dir, mount_point, &ctx.esp_mount_path)?;
+
+        // For ACL A/B images, activate the verity addon matching the target slot.
+        // The image ships with slot A's addon active; this swaps it when updating
+        // to slot B (or confirms slot A for clean installs). Non-ACL images have
+        // no template directory and this is a no-op.
+        if ctx.image_distro().is_acl() {
+            if let Some(target_volume) = ctx.get_ab_update_volume() {
+                uki::activate_verity_addon_for_target_volume(
+                    temp_mount_dir,
+                    mount_point,
+                    &ctx.esp_mount_path,
+                    target_volume,
+                )?;
+            }
+        }
     } else {
         // In non-UKI mode, bail if grub_noprefix.efi is not found in the image.
         ensure!(
