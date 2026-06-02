@@ -61,7 +61,7 @@ procfs = "0.17.0"
 prost = "0.14.1"
 prost-types = "0.14.1"
 quote = "1.0.37"
-rand = "0.9.0"
+rand = "0.9.3"
 rayon = "1.10"
 regex = "1.11.1"
 reqwest = { version = "0.12.9", features = [
