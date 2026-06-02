@@ -1132,7 +1132,7 @@ func findUkiAddons(ukiDir string, ukiName string, espMountPoint string) []metada
 			continue
 		}
 
-		log.WithField("path", addonFsPath).Debug("Found UKI addon")
+		log.WithField("path", addonFsPath).Debugf("Found UKI addon: %s", cmdline)
 		addons = append(addons, metadata.UkiAddon{
 			Path:    addonFsPath,
 			Cmdline: cmdline,
