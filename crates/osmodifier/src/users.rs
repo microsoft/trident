@@ -14,6 +14,8 @@ use crate::{
     OsModifierContext,
 };
 
+use osutils::files::atomic_write_file;
+
 // Shadow file field indices (0-based, colon-delimited).
 const SHADOW_FIELD_PASSWORD: usize = 1;
 const SHADOW_FIELD_LAST_CHANGE: usize = 2;
@@ -535,71 +537,4 @@ fn set_startup_command(ctx: &OsModifierContext, username: &str, cmd: &str) -> Re
     }
 
     atomic_write_file(&passwd_path, &result)
-}
-
-/// Atomically write a file by writing to a temp file and renaming.
-/// This prevents corruption from crashes mid-write.
-///
-/// Preserves permissions and uid/gid ownership from the original file.
-/// Note: SELinux labels and extended attributes are not preserved because
-/// osmodifier runs inside the target root before SELinux enforcement.
-fn atomic_write_file(path: &std::path::Path, content: &str) -> Result<(), Error> {
-    use std::io::Write as IoWrite;
-    use std::os::unix::fs::MetadataExt;
-
-    let parent = path.parent().context("Cannot determine parent directory")?;
-
-    let mut tmp = tempfile::NamedTempFile::new_in(parent)
-        .with_context(|| format!("Failed to create temp file in '{}'", parent.display()))?;
-
-    tmp.write_all(content.as_bytes())
-        .with_context(|| format!("Failed to write temp file for '{}'", path.display()))?;
-
-    tmp.flush()
-        .with_context(|| format!("Failed to flush temp file for '{}'", path.display()))?;
-
-    // fsync the temp file before rename to ensure data is on disk. Without
-    // this, a power loss between rename and dirty-page flush could leave the
-    // file zero-length (e.g., /etc/shadow → locked out of all accounts).
-    tmp.as_file()
-        .sync_all()
-        .with_context(|| format!("Failed to fsync temp file for '{}'", path.display()))?;
-
-    // Preserve ownership and permissions from the original file if it exists.
-    // Ownership must be set before permissions because chown can clear
-    // setuid/setgid bits.
-    if let Ok(metadata) = fs::metadata(path) {
-        use std::os::fd::AsFd;
-        nix::unistd::fchown(
-            tmp.as_file().as_fd(),
-            Some(nix::unistd::Uid::from_raw(metadata.uid())),
-            Some(nix::unistd::Gid::from_raw(metadata.gid())),
-        )
-        .with_context(|| {
-            format!(
-                "Failed to set ownership on temp file for '{}'",
-                path.display()
-            )
-        })?;
-
-        fs::set_permissions(tmp.path(), metadata.permissions()).with_context(|| {
-            format!(
-                "Failed to set permissions on temp file for '{}'",
-                path.display()
-            )
-        })?;
-    }
-
-    tmp.persist(path)
-        .with_context(|| format!("Failed to atomically replace '{}'", path.display()))?;
-
-    // Sync parent directory to ensure the rename (directory entry update) is
-    // durable. Without this, the old file could reappear after power loss.
-    if let Some(parent) = path.parent() {
-        if let Ok(dir) = std::fs::File::open(parent) {
-            let _ = dir.sync_all();
-        }
-    }
-
-    Ok(())
 }

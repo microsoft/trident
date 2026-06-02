@@ -1,11 +1,17 @@
 use std::{
     fs::{self, File, Permissions},
-    io::{Read, Write},
-    os::{linux::fs::MetadataExt, unix::fs::PermissionsExt},
+    io::{ErrorKind, Read, Write},
+    os::{
+        fd::AsFd,
+        linux::fs::MetadataExt,
+        unix::fs::{MetadataExt as UnixMetadataExt, PermissionsExt},
+    },
     path::{Path, PathBuf},
 };
 
-use anyhow::{bail, Context, Error};
+use anyhow::{anyhow, bail, Context, Error};
+use nix::unistd::{self, Gid, Uid};
+use tempfile::NamedTempFile;
 
 /// Creates a file and all parent directories if they don't exist
 pub fn create_file<S>(path: S) -> Result<File, Error>
@@ -192,6 +198,105 @@ where
         })
 }
 
+/// Read the current process umask from `/proc/self/status` (thread-safe).
+fn read_umask() -> Result<u32, Error> {
+    let status =
+        fs::read_to_string("/proc/self/status").context("Failed to read /proc/self/status")?;
+    for line in status.lines() {
+        if let Some(val) = line.strip_prefix("Umask:") {
+            return u32::from_str_radix(val.trim(), 8)
+                .context("Failed to parse umask from /proc/self/status");
+        }
+    }
+    bail!("Umask field not found in /proc/self/status")
+}
+
+/// Atomically replace `path` with `content`.
+///
+/// Writes to a temp file in the same directory, fsyncs, preserves ownership
+/// and permissions from the original file (if it exists), then renames. This
+/// guarantees that readers never see a partial write.
+///
+/// **Note:** Extended attributes (including SELinux labels) are *not*
+/// preserved because the rename replaces the original inode. Callers that
+/// need the original SELinux context should run `restorecon` after this
+/// function returns.
+pub fn atomic_write_file(path: &Path, content: &str) -> Result<(), Error> {
+    let parent = path.parent().context("Cannot determine parent directory")?;
+
+    let mut tmp = NamedTempFile::new_in(parent)
+        .with_context(|| format!("Failed to create temp file in '{}'", parent.display()))?;
+
+    tmp.write_all(content.as_bytes())
+        .with_context(|| format!("Failed to write temp file for '{}'", path.display()))?;
+
+    tmp.flush()
+        .with_context(|| format!("Failed to flush temp file for '{}'", path.display()))?;
+
+    // fsync the temp file before rename to ensure data is on disk. Without
+    // this, a power loss between rename and dirty-page flush could leave the
+    // file zero-length.
+    tmp.as_file()
+        .sync_all()
+        .with_context(|| format!("Failed to fsync temp file for '{}'", path.display()))?;
+
+    // Preserve ownership and permissions from the original file, or apply
+    // 0666 & !umask for new files to match fs::write / open(O_CREAT) behavior.
+    match fs::metadata(path) {
+        Ok(metadata) => {
+            unistd::fchown(
+                tmp.as_file().as_fd(),
+                Some(Uid::from_raw(metadata.uid())),
+                Some(Gid::from_raw(metadata.gid())),
+            )
+            .with_context(|| {
+                format!(
+                    "Failed to set ownership on temp file for '{}'",
+                    path.display()
+                )
+            })?;
+
+            fs::set_permissions(tmp.path(), metadata.permissions()).with_context(|| {
+                format!(
+                    "Failed to set permissions on temp file for '{}'",
+                    path.display()
+                )
+            })?;
+        }
+        Err(e) if e.kind() == ErrorKind::NotFound => {
+            // New file: apply 0666 masked by the process umask, matching
+            // fs::write / open(O_CREAT, 0666) behavior. Read umask from
+            // /proc/self/status to avoid the thread-unsafe umask(2) dance.
+            let mode = 0o666 & !read_umask()?;
+            fs::set_permissions(tmp.path(), Permissions::from_mode(mode)).with_context(|| {
+                format!(
+                    "Failed to set default permissions on temp file for '{}'",
+                    path.display()
+                )
+            })?;
+        }
+        Err(e) => {
+            return Err(
+                Error::new(e).context(format!("Failed to read metadata for '{}'", path.display()))
+            );
+        }
+    }
+
+    tmp.persist(path)
+        .map_err(|e| anyhow!("Atomic rename failed for '{}': {}", path.display(), e.error))?;
+
+    // Best-effort sync of the parent directory so the rename (directory entry
+    // update) is durable across power loss. If this fails the file content is
+    // still correct — only the rename durability guarantee is weakened.
+    if let Some(parent) = path.parent() {
+        if let Ok(dir) = File::open(parent) {
+            let _ = dir.sync_all();
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -345,5 +450,65 @@ mod tests {
                 dir.display()
             );
         });
+    }
+
+    #[test]
+    fn test_atomic_write_creates_new_file() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("new_file.conf");
+
+        atomic_write_file(&path, "hello\n").unwrap();
+
+        assert_eq!(fs::read_to_string(&path).unwrap(), "hello\n");
+    }
+
+    #[test]
+    fn test_atomic_write_new_file_respects_umask() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("new_default.conf");
+
+        let expected = 0o666 & !read_umask().unwrap();
+
+        atomic_write_file(&path, "hello\n").unwrap();
+
+        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            mode, expected,
+            "New file should get 0666 & !umask ({expected:04o}), got {mode:04o}"
+        );
+    }
+
+    #[test]
+    fn test_atomic_write_replaces_existing_file() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("existing.conf");
+        fs::write(&path, "old content\n").unwrap();
+
+        atomic_write_file(&path, "new content\n").unwrap();
+
+        assert_eq!(fs::read_to_string(&path).unwrap(), "new content\n");
+    }
+
+    #[test]
+    fn test_atomic_write_preserves_permissions() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("perms.conf");
+        fs::write(&path, "original\n").unwrap();
+        fs::set_permissions(&path, Permissions::from_mode(0o640)).unwrap();
+
+        atomic_write_file(&path, "updated\n").unwrap();
+
+        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o640, "Expected mode 0640, got {mode:04o}");
+    }
+
+    #[test]
+    fn test_atomic_write_empty_content() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("empty.conf");
+
+        atomic_write_file(&path, "").unwrap();
+
+        assert_eq!(fs::read_to_string(&path).unwrap(), "");
     }
 }
