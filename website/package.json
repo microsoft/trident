@@ -37,7 +37,8 @@
   "overrides": {
     "serve-handler": {
       "path-to-regexp": "3.3.0"
-    }
+    },
+    "qs": "6.15.2"
   },
   "browserslist": {
     "production": [
