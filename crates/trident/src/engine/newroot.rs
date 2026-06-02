@@ -232,11 +232,16 @@ impl NewrootMount {
                         })?;
                     },
                     _ => {
+                        // ensure temp_fsid is an option
+                        let mut options = mp.options.to_string_vec();
+                        if !options.contains(&"temp_fsid".to_string()) {
+                            options.push("temp_fsid".into());
+                        }
                         mount::mount(
                             device_path,
                             &target_path,
                             MountFileSystemType::Auto,
-                            &mp.options.to_string_vec(),
+                            &options,
                         )
                         .context(format!(
                             "Failed to mount block device '{}' with device path '{}' to '{}'",
