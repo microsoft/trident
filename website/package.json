@@ -38,7 +38,8 @@
     "serve-handler": {
       "path-to-regexp": "3.3.0"
     },
-    "qs": "6.15.2"
+    "qs": "6.15.2",
+    "postcss": "8.5.10"
   },
   "browserslist": {
     "production": [
