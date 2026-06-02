@@ -360,6 +360,19 @@ pub(crate) struct BootloaderEntry {
 
     #[allow(dead_code)]
     pub cmdline: String,
+
+    #[allow(dead_code)]
+    #[serde(default)]
+    pub addons: Vec<UkiAddon>,
+}
+
+#[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
+pub(crate) struct UkiAddon {
+    #[allow(dead_code)]
+    pub path: String,
+
+    #[allow(dead_code)]
+    pub cmdline: String,
 }
 
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq, Display)]

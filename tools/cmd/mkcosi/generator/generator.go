@@ -1085,15 +1085,61 @@ func findUkiEntries(espMountPath string, espMountPoint string) []metadata.System
 			continue
 		}
 
+		// Scan for UKI addons in <uki>.extra.d/
+		addons := findUkiAddons(ukiDir, name, espMountPoint)
+
 		entries = append(entries, metadata.SystemDBootEntry{
 			Type:    metadata.SystemDBootEntryTypeUkiStandalone,
 			Path:    absFsPath,
 			Kernel:  kernel,
 			Cmdline: cmdline,
+			Addons:  addons,
 		})
 	}
 
 	return entries
+}
+
+// findUkiAddons scans the <ukiName>.extra.d/ directory for UKI addon files
+// (*.addon.efi) and extracts their .cmdline PE sections. systemd-stub loads
+// these addons at boot and appends their cmdline args to the UKI's own cmdline.
+func findUkiAddons(ukiDir string, ukiName string, espMountPoint string) []metadata.UkiAddon {
+	addonDirName := ukiName + ".extra.d"
+	addonHostDir := filepath.Join(ukiDir, addonDirName)
+
+	addonEntries, err := os.ReadDir(addonHostDir)
+	if err != nil {
+		// No .extra.d directory is normal for UKIs without addons
+		return nil
+	}
+
+	var addons []metadata.UkiAddon
+	for _, ae := range addonEntries {
+		if ae.IsDir() {
+			continue
+		}
+		aName := ae.Name()
+		if !strings.HasSuffix(strings.ToLower(aName), ".addon.efi") {
+			continue
+		}
+
+		addonHostPath := filepath.Join(addonHostDir, aName)
+		addonFsPath := filepath.Join(espMountPoint, "EFI", "Linux", addonDirName, aName)
+
+		cmdline := extractUkiSection(addonHostPath, ".cmdline")
+		if cmdline == "" {
+			log.WithField("path", addonFsPath).Debug("Skipping addon with no .cmdline section")
+			continue
+		}
+
+		log.WithField("path", addonFsPath).Debug("Found UKI addon")
+		addons = append(addons, metadata.UkiAddon{
+			Path:    addonFsPath,
+			Cmdline: cmdline,
+		})
+	}
+
+	return addons
 }
 
 // extractUkiSection extracts a named PE section from a UKI .efi file using

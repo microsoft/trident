@@ -65,6 +65,12 @@ type SystemDBootEntry struct {
 	Path    string               `json:"path"`
 	Cmdline string               `json:"cmdline"`
 	Kernel  string               `json:"kernel"`
+	Addons  []UkiAddon           `json:"addons,omitempty"`
+}
+
+type UkiAddon struct {
+	Path    string `json:"path"`
+	Cmdline string `json:"cmdline"`
 }
 
 type Compression struct {
