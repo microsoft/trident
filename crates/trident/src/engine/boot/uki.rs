@@ -937,9 +937,7 @@ mod tests {
     // ── activate_verity_addon_for_target_volume tests ──────────────────────
 
     /// Helper: creates a mock image ESP with verity addon templates.
-    fn setup_image_with_verity_templates(
-        image_esp: &Path,
-    ) -> (PathBuf, PathBuf) {
+    fn setup_image_with_verity_templates(image_esp: &Path) -> (PathBuf, PathBuf) {
         let template_dir = image_esp.join(VERITY_ADDON_TEMPLATES_DIR);
         fs::create_dir_all(&template_dir).unwrap();
         let a_path = template_dir.join("verity-a.addon.efi");
@@ -956,8 +954,7 @@ mod tests {
         setup_image_with_verity_templates(image_esp.path());
 
         let mount_point = tempdir().unwrap();
-        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH))
-            .unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)).unwrap();
 
         // Create the staged addon dir as stage_uki_on_esp would
         let staged_addon_dir = join_relative(mount_point.path(), DEFAULT_ESP_MOUNT_POINT_PATH)
@@ -985,8 +982,7 @@ mod tests {
         setup_image_with_verity_templates(image_esp.path());
 
         let mount_point = tempdir().unwrap();
-        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH))
-            .unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)).unwrap();
 
         let staged_addon_dir = join_relative(mount_point.path(), DEFAULT_ESP_MOUNT_POINT_PATH)
             .join(UKI_DIRECTORY)
@@ -1013,8 +1009,7 @@ mod tests {
         // No acl/uki-addons/ directory
 
         let mount_point = tempdir().unwrap();
-        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH))
-            .unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)).unwrap();
 
         // Should succeed silently
         activate_verity_addon_for_target_volume(
@@ -1042,8 +1037,7 @@ mod tests {
         fs::write(template_dir.join("verity-a.addon.efi"), b"a-content").unwrap();
 
         let mount_point = tempdir().unwrap();
-        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH))
-            .unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)).unwrap();
 
         let result = activate_verity_addon_for_target_volume(
             image_esp.path(),
@@ -1054,7 +1048,10 @@ mod tests {
 
         assert!(result.is_err());
         assert!(
-            result.unwrap_err().to_string().contains("verity-b.addon.efi"),
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("verity-b.addon.efi"),
             "Error should mention the missing template"
         );
     }
@@ -1066,8 +1063,7 @@ mod tests {
         setup_image_with_verity_templates(image_esp.path());
 
         let mount_point = tempdir().unwrap();
-        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH))
-            .unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)).unwrap();
 
         // Do NOT pre-create the staged addon dir
         activate_verity_addon_for_target_volume(
@@ -1095,8 +1091,7 @@ mod tests {
         setup_image_with_verity_templates(image_esp.path());
 
         let mount_point = tempdir().unwrap();
-        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH))
-            .unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)).unwrap();
 
         let staged_addon_dir = join_relative(mount_point.path(), DEFAULT_ESP_MOUNT_POINT_PATH)
             .join(UKI_DIRECTORY)
