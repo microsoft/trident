@@ -86,7 +86,7 @@ syn = { version = "2.0.90", features = ["full"] }
 sys-mount = { version = "3.0.1", default-features = false } # Disable loop device feature
 sysinfo = "0.30.13"
 systemd-journal-logger = "2.2.2"
-tar = "0.4.43"
+tar = "0.4.46"
 tempfile = "3.14.0"
 tera = "1.20.0"
 textwrap = "0.16.2"
