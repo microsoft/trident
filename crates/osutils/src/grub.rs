@@ -236,9 +236,9 @@ impl GrubConfig {
     ///
     /// 1. The upstream legacy form: `search -n -u <UUID> -s`
     /// 2. AZL3 / standard form: `search --no-floppy --fs-uuid --set=root <UUID>`
-    /// 3. AZL4 MIC-generated form: `search --fs-uuid --set=root <UUID>`
-    ///    (the `--no-floppy` option is redundant on EFI machines, so AZL4's
-    ///    grub stub omits it.)
+    /// 3. AZL4 / Fedora-based form: `search --fs-uuid --set=root <UUID>`
+    ///    (`--no-floppy` is a Mariner-specific convention; Fedora's grub2
+    ///    scripts don't emit it, and it's redundant on EFI machines.)
     ///
     /// We rewrite *every* matching line with the corresponding form so that
     /// stubs containing more than one variant (rare but possible during
@@ -1006,7 +1006,7 @@ mod tests {
 
     #[test]
     fn test_update_search_azl4_form() {
-        // AZL4 MIC-generated stubs omit --no-floppy.
+        // AZL4 (Fedora-based) stubs omit --no-floppy.
         let mut grub_config = GrubConfig {
             path: PathBuf::new(),
             contents: indoc::indoc! { r#"
@@ -1030,8 +1030,10 @@ mod tests {
 
     #[test]
     fn test_update_search_mixed_forms() {
-        // If both AZL3 and AZL4 forms appear (e.g. an image whose stub
-        // includes vendored fragments), both must be rewritten.
+        // Validates that all three regex paths fire independently. While a
+        // single grub stub typically contains one search form, cross-version
+        // A/B updates (e.g. AZL3->AZL4) may leave different formats across
+        // the boot and ESP grub configs over the machine's lifecycle.
         let mut grub_config = GrubConfig {
             path: PathBuf::new(),
             contents: indoc::indoc! { r#"
