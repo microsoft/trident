@@ -19,7 +19,7 @@ use osutils::{
 use trident_api::{
     config::UefiFallbackMode,
     constants::{
-        internal_params::RAW_COSI_STORAGE,
+        internal_params::{DISABLE_GRUB_NOPREFIX_CHECK, RAW_COSI_STORAGE},
         EFI_DEFAULT_BIN_DIRECTORY, EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY,
         GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
     },
@@ -277,7 +277,7 @@ fn copy_file_artifacts(
     }
 
     // Call helper func to copy boot files from temp_mount_dir to esp_dir_path
-    let used_noprefix =
+    let grub_noprefix =
         copy_boot_files(temp_mount_dir, &esp_dir_path, boot_files).context(format!(
             "Failed to copy boot files from directory {} to directory {}",
             temp_mount_dir.display(),
@@ -290,7 +290,10 @@ fn copy_file_artifacts(
 
         // Copy the UKI from the image into the ESP directory
         uki::stage_uki_on_esp(temp_mount_dir, mount_point, &ctx.esp_mount_path)?;
-    } else if ctx.image_distro().is_azl3() && !used_noprefix {
+    } else if ctx.image_distro().is_azl3()
+        && !grub_noprefix
+        && !ctx.spec.internal_params.get_flag(DISABLE_GRUB_NOPREFIX_CHECK)
+    {
         // AZL3 ships two GRUB variants: grub2-efi-binary (prefix-relative
         // config lookup) and grub2-efi-binary-noprefix (root-device-relative
         // config lookup). Trident's A/B update path requires the noprefix
@@ -557,7 +560,7 @@ fn copy_boot_files(
     esp_dir: &Path,
     boot_files: Vec<PathBuf>,
 ) -> Result<bool, Error> {
-    let mut used_noprefix = false;
+    let mut no_prefix = false;
     // Copy the specified files from temp_mount_path to esp_dir_path
     for boot_file in boot_files.iter() {
         let source_path = temp_mount_dir.join(boot_file);
@@ -596,11 +599,11 @@ fn copy_boot_files(
                     .context("Failed to convert path to string")?,
             )
             .context("Failed to rename grub-noprefix efi")?;
-            used_noprefix = true;
+            no_prefix = true;
         }
     }
 
-    Ok(used_noprefix)
+    Ok(no_prefix)
 }
 
 /// Search EFI vendor directories for a specific binary.
