@@ -62,6 +62,7 @@ impl NewrootMount {
         host_config: &HostConfiguration,
         partition_paths: &BTreeMap<BlockDeviceId, PathBuf>,
         update_volume: AbVolumeSelection,
+        staging_usr_roothash: Option<&str>,
     ) -> Result<Self, TridentError> {
         // Get the path where the newroot should be mounted
         let new_root_path = get_new_root_path();
@@ -76,7 +77,7 @@ impl NewrootMount {
         let mut newroot_mount = NewrootMount::new(new_root_path);
 
         newroot_mount
-            .mount_newroot_partitions(host_config, partition_paths, update_volume)
+            .mount_newroot_partitions(host_config, partition_paths, update_volume, staging_usr_roothash)
             .message("Failed to mount all partitions in newroot")?;
 
         // Mount tmpfs for /tmp and /run
@@ -139,6 +140,7 @@ impl NewrootMount {
         host_config: &HostConfiguration,
         partition_paths: &BTreeMap<BlockDeviceId, PathBuf>,
         update_volume: AbVolumeSelection,
+        staging_usr_roothash: Option<&str>,
     ) -> Result<(), TridentError> {
         let mut block_device_paths = partition_paths.clone();
 
@@ -168,7 +170,7 @@ impl NewrootMount {
         }
 
         // Check for ACL BTRFS UUID collision before mounting.
-        let acl_collision_uuid = detect_acl_btrfs_uuid_collision(update_volume);
+        let acl_collision_uuid = detect_acl_btrfs_uuid_collision(update_volume, staging_usr_roothash);
 
         // Mount all block devices in the newroot
         mount_points_map(host_config)
@@ -398,7 +400,10 @@ const ACL_USR_B_PARTUUID: &str = "e03dd35c-7c2d-4a47-b3fe-27f15780a57c";
 /// - The system is not ACL (PARTUUIDs not found)
 /// - The partitions don't have BTRFS filesystems
 /// - The filesystem UUIDs are different (no collision)
-fn detect_acl_btrfs_uuid_collision(update_volume: AbVolumeSelection) -> Option<OsUuid> {
+fn detect_acl_btrfs_uuid_collision(
+    update_volume: AbVolumeSelection,
+    staging_usr_roothash: Option<&str>,
+) -> Option<OsUuid> {
     let (active_partuuid, update_partuuid) = match update_volume {
         AbVolumeSelection::VolumeA => (ACL_USR_B_PARTUUID, ACL_USR_A_PARTUUID),
         AbVolumeSelection::VolumeB => (ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID),
@@ -420,15 +425,63 @@ fn detect_acl_btrfs_uuid_collision(update_volume: AbVolumeSelection) -> Option<O
     let active_uuid = active_dev.fsuuid?;
     let update_uuid = update_dev.fsuuid?;
 
-    if active_uuid == update_uuid {
-        debug!(
-            "ACL BTRFS UUID collision detected: active and update USR partitions \
-             share filesystem UUID '{active_uuid}'"
-        );
-        Some(active_uuid)
-    } else {
-        None
+    if active_uuid != update_uuid {
+        return None;
     }
+
+    debug!(
+        "ACL BTRFS UUID collision detected: active and update USR partitions \
+         share filesystem UUID '{active_uuid}'"
+    );
+
+    // When a staging root hash is available, verify that the active USR
+    // partition has the same verity root hash. This provides a cryptographic
+    // guarantee that the filesystems are byte-identical, not just a UUID match.
+    if let Some(staging_hash) = staging_usr_roothash {
+        match read_active_usr_roothash() {
+            Some(active_hash) => {
+                let staging_normalized = staging_hash.trim().to_lowercase();
+                let active_normalized = active_hash.trim().to_lowercase();
+                if staging_normalized == active_normalized {
+                    debug!(
+                        "Verity root hash verification passed: active and staging USR \
+                         partitions have matching root hash ({}...)",
+                        &staging_normalized[..staging_normalized.len().min(16)]
+                    );
+                } else {
+                    warn!(
+                        "Verity root hash mismatch: active USR has '{}...', staging has '{}...'. \
+                         Refusing bind-mount despite UUID collision.",
+                        &active_normalized[..active_normalized.len().min(16)],
+                        &staging_normalized[..staging_normalized.len().min(16)]
+                    );
+                    return None;
+                }
+            }
+            None => {
+                warn!(
+                    "Cannot read active USR verity root hash from /proc/cmdline. \
+                     Refusing bind-mount despite UUID collision."
+                );
+                return None;
+            }
+        }
+    }
+
+    Some(active_uuid)
+}
+
+/// Reads the active USR verity root hash from `/proc/cmdline`.
+///
+/// ACL UKI images include a `usrhash=<hex>` parameter in the kernel command
+/// line (contributed by the verity addon). Returns `None` if the parameter
+/// is not present or `/proc/cmdline` cannot be read.
+fn read_active_usr_roothash() -> Option<String> {
+    let cmdline = fs::read_to_string("/proc/cmdline").ok()?;
+    cmdline
+        .split_whitespace()
+        .find_map(|field| field.strip_prefix("usrhash="))
+        .map(|hash| hash.to_owned())
 }
 
 /// Returns an ordered map of mount points to their corresponding FileSystem objects.
@@ -920,7 +973,7 @@ mod functional_test {
 
         let mut newroot_mount = NewrootMount::new(mount_point.to_owned());
         newroot_mount
-            .mount_newroot_partitions(&ctx.spec, &ctx.partition_paths, AbVolumeSelection::VolumeA)
+            .mount_newroot_partitions(&ctx.spec, &ctx.partition_paths, AbVolumeSelection::VolumeA, None)
             .unwrap();
 
         // Validate that the device has been successfully mounted
@@ -1019,7 +1072,7 @@ mod functional_test {
         // Test recursive mounting
         let mut newroot_mount2 = NewrootMount::new(root_mount_dir.path().to_owned());
         newroot_mount2
-            .mount_newroot_partitions(&ctx.spec, &ctx.partition_paths, AbVolumeSelection::VolumeA)
+            .mount_newroot_partitions(&ctx.spec, &ctx.partition_paths, AbVolumeSelection::VolumeA, None)
             .unwrap();
 
         assert!(root_mount_dir
@@ -1127,7 +1180,8 @@ mod functional_test {
                 .mount_newroot_partitions(
                     &ctx.spec,
                     &ctx.partition_paths,
-                    AbVolumeSelection::VolumeA
+                    AbVolumeSelection::VolumeA,
+                    None,
                 )
                 .unwrap_err()
                 .kind(),
@@ -1150,7 +1204,8 @@ mod functional_test {
                 .mount_newroot_partitions(
                     &ctx.spec,
                     &ctx.partition_paths,
-                    AbVolumeSelection::VolumeA
+                    AbVolumeSelection::VolumeA,
+                    None,
                 )
                 .unwrap_err()
                 .kind(),
@@ -1243,7 +1298,8 @@ mod functional_test {
                 .mount_newroot_partitions(
                     &ctx.spec,
                     &ctx.partition_paths,
-                    AbVolumeSelection::VolumeA
+                    AbVolumeSelection::VolumeA,
+                    None,
                 )
                 .expect_err(
                     "Expected mount_new_root to fail because of populated directory as path"
@@ -1335,7 +1391,7 @@ mod functional_test {
         let mut newroot_mount = NewrootMount::new(temp_mount_dir.path().to_owned());
         // Mount NTFS partition
         newroot_mount
-            .mount_newroot_partitions(&ctx.spec, &ctx.partition_paths, AbVolumeSelection::VolumeA)
+            .mount_newroot_partitions(&ctx.spec, &ctx.partition_paths, AbVolumeSelection::VolumeA, None)
             .unwrap();
 
         // If device is a file, fetch the name of loop device that was mounted at mount point;
@@ -1374,7 +1430,7 @@ mod functional_test {
         let mut newroot_mount2 = NewrootMount::new(temp_mount_dir2.path().to_owned());
         // Re-mount the NTFS partition
         newroot_mount2
-            .mount_newroot_partitions(&ctx.spec, &ctx.partition_paths, AbVolumeSelection::VolumeA)
+            .mount_newroot_partitions(&ctx.spec, &ctx.partition_paths, AbVolumeSelection::VolumeA, None)
             .unwrap();
 
         // Validate that the device has been successfully mounted
