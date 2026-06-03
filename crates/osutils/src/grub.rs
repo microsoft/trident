@@ -239,43 +239,30 @@ impl GrubConfig {
     /// 3. AZL4 / Fedora-based form: `search --fs-uuid --set=root <UUID>`
     ///    (`--no-floppy` is a Mariner-specific convention; Fedora's grub2
     ///    scripts don't emit it, and it's redundant on EFI machines.)
-    ///
-    /// We rewrite *every* matching line with the corresponding form so that
-    /// stubs containing more than one variant (rare but possible during
-    /// distribution transitions) all get the new UUID. We bail only if no
-    /// regex matched any line.
     pub fn update_search(&mut self, uuid: &Uuid) -> Result<(), Error> {
         let re = Regex::new(r"(?m)^(\s*)search -n -u [\w-]+ -s$").unwrap();
         let re2 = Regex::new(r"(?m)^(\s*)search --no-floppy --fs-uuid --set=root [\w-]+$").unwrap();
         let re3 = Regex::new(r"(?m)^(\s*)search --fs-uuid --set=root [\w-]+$").unwrap();
 
-        let mut matched = false;
         if re.is_match(&self.contents) {
             self.contents = re
-                .replace_all(&self.contents, &format!("${{1}}search -n -u {uuid} -s"))
+                .replace(&self.contents, &format!("${{1}}search -n -u {uuid} -s"))
                 .to_string();
-            matched = true;
-        }
-        if re2.is_match(&self.contents) {
+        } else if re2.is_match(&self.contents) {
             self.contents = re2
-                .replace_all(
+                .replace(
                     &self.contents,
                     &format!("${{1}}search --no-floppy --fs-uuid --set=root {uuid}"),
                 )
                 .to_string();
-            matched = true;
-        }
-        if re3.is_match(&self.contents) {
+        } else if re3.is_match(&self.contents) {
             self.contents = re3
-                .replace_all(
+                .replace(
                     &self.contents,
                     &format!("${{1}}search --fs-uuid --set=root {uuid}"),
                 )
                 .to_string();
-            matched = true;
-        }
-
-        if !matched {
+        } else {
             bail!(
                 "Unable to find search command in '{}'",
                 &self.path.display()
