@@ -1,4 +1,4 @@
-use std::{path::PathBuf, time::Instant};
+use std::{path::{Path, PathBuf}, time::Instant};
 
 use log::{debug, info, warn};
 
@@ -59,6 +59,17 @@ pub(super) fn stage_update(
     verity::stop_trident_servicing_devices(&ctx.spec).structured(ServicingError::CleanupVerity)?;
 
     storage::initialize_block_devices(&ctx)?;
+
+    // Extract the staging USR verity root hash from the COSI image metadata.
+    // This is used to cryptographically verify that the active and staging USR
+    // partitions have identical content before allowing a bind-mount workaround
+    // for the BTRFS kernel UUID collision on ACL.
+    let staging_usr_roothash = ctx.image.as_ref().and_then(|img| {
+        img.filesystems()
+            .find(|fs| fs.mount_point == Path::new("/usr"))
+            .and_then(|fs| fs.verity.as_ref().map(|v| v.roothash.clone()))
+    });
+
     let newroot_mount = NewrootMount::create_and_mount(
         &ctx.spec,
         &ctx.partition_paths,
@@ -66,6 +77,7 @@ pub(super) fn stage_update(
             .structured(InternalError::Internal(
                 "No update volume despite there being an A/B update in progress",
             ))?,
+        staging_usr_roothash.as_deref(),
     )?;
 
     engine::provision(subsystems, &ctx, newroot_mount.path())?;
