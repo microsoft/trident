@@ -1,4 +1,7 @@
-use std::{path::{Path, PathBuf}, time::Instant};
+use std::{
+    path::{Path, PathBuf},
+    time::Instant,
+};
 
 use log::{debug, info, warn};
 

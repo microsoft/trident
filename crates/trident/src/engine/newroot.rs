@@ -77,7 +77,12 @@ impl NewrootMount {
         let mut newroot_mount = NewrootMount::new(new_root_path);
 
         newroot_mount
-            .mount_newroot_partitions(host_config, partition_paths, update_volume, staging_usr_roothash)
+            .mount_newroot_partitions(
+                host_config,
+                partition_paths,
+                update_volume,
+                staging_usr_roothash,
+            )
             .message("Failed to mount all partitions in newroot")?;
 
         // Mount tmpfs for /tmp and /run
@@ -170,7 +175,8 @@ impl NewrootMount {
         }
 
         // Check for ACL BTRFS UUID collision before mounting.
-        let acl_collision_uuid = detect_acl_btrfs_uuid_collision(update_volume, staging_usr_roothash);
+        let acl_collision_uuid =
+            detect_acl_btrfs_uuid_collision(update_volume, staging_usr_roothash);
 
         // Mount all block devices in the newroot
         mount_points_map(host_config)
@@ -973,7 +979,12 @@ mod functional_test {
 
         let mut newroot_mount = NewrootMount::new(mount_point.to_owned());
         newroot_mount
-            .mount_newroot_partitions(&ctx.spec, &ctx.partition_paths, AbVolumeSelection::VolumeA, None)
+            .mount_newroot_partitions(
+                &ctx.spec,
+                &ctx.partition_paths,
+                AbVolumeSelection::VolumeA,
+                None,
+            )
             .unwrap();
 
         // Validate that the device has been successfully mounted
@@ -1072,7 +1083,12 @@ mod functional_test {
         // Test recursive mounting
         let mut newroot_mount2 = NewrootMount::new(root_mount_dir.path().to_owned());
         newroot_mount2
-            .mount_newroot_partitions(&ctx.spec, &ctx.partition_paths, AbVolumeSelection::VolumeA, None)
+            .mount_newroot_partitions(
+                &ctx.spec,
+                &ctx.partition_paths,
+                AbVolumeSelection::VolumeA,
+                None,
+            )
             .unwrap();
 
         assert!(root_mount_dir
@@ -1391,7 +1407,12 @@ mod functional_test {
         let mut newroot_mount = NewrootMount::new(temp_mount_dir.path().to_owned());
         // Mount NTFS partition
         newroot_mount
-            .mount_newroot_partitions(&ctx.spec, &ctx.partition_paths, AbVolumeSelection::VolumeA, None)
+            .mount_newroot_partitions(
+                &ctx.spec,
+                &ctx.partition_paths,
+                AbVolumeSelection::VolumeA,
+                None,
+            )
             .unwrap();
 
         // If device is a file, fetch the name of loop device that was mounted at mount point;
@@ -1430,7 +1451,12 @@ mod functional_test {
         let mut newroot_mount2 = NewrootMount::new(temp_mount_dir2.path().to_owned());
         // Re-mount the NTFS partition
         newroot_mount2
-            .mount_newroot_partitions(&ctx.spec, &ctx.partition_paths, AbVolumeSelection::VolumeA, None)
+            .mount_newroot_partitions(
+                &ctx.spec,
+                &ctx.partition_paths,
+                AbVolumeSelection::VolumeA,
+                None,
+            )
             .unwrap();
 
         // Validate that the device has been successfully mounted
