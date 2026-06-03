@@ -35,3 +35,49 @@ To build the update images, run:
 | ----------- | --------------------------------------- | ----------------------------------- |
 | Regular     | `make trident-vm-grub-testimage`        | `artifacts/trident-vm-grub-testimage/*` |
 | With verity | `make trident-vm-grub-verity-testimage` | `artifacts/trident-vm-grub-testimage/*` |
+
+## AZL4 variant (`trident-vm-grub-testimage-azl4`)
+
+A Fedora-derived (Azure Linux 4.0) variant lives alongside the AZL3 image
+above. It uses `base/updateimg-grub-azl4.yaml` instead of
+`base/updateimg-grub.yaml` and consumes `BaseImage.AZL4_QEMU_GUEST`.
+
+### Two extra prerequisites for AZL4
+
+1. **AZL4 base VHDX.** No prebuilt AZL4 VHDX is available in the ADO
+   Artifacts feed yet, so build one locally with Image Customizer:
+
+   ```bash
+   sudo imagecustomizer create \
+     --config-file path/to/azl4-qemu-guest.yaml \
+     --rpm-source path/to/azl4.repo \
+     --tools-file path/to/azl4-tools.tar.gz \
+     --build-dir /tmp/azl4-base-build \
+     --output-image-file artifacts/azl4_qemu_guest.vhdx \
+     --output-image-format vhdx \
+     --distro azurelinux --distro-version 4.0
+   ```
+
+   See `wiki/playbooks/trident-azl4-e2e-manual.md` in the karhu repo for
+   a ready-to-paste base config and the alpha2 repo URL.
+
+   When an AZL4 VHDX lands in the ADO feed, add a `BaseImageManifest`
+   entry for `AZL4_QEMU_GUEST` in `testimages.py` so `cli download`
+   fetches it the same way it does the AZL3 bases.
+
+2. **Trident binary baked in.** The AZL4 image bakes
+   `/usr/bin/trident` via `additionalFiles` because there is no
+   `trident-service` RPM packaged for AZL4 yet. Drop the built binary
+   at `base/trident-bin/trident` before invoking the builder:
+
+   ```bash
+   mkdir -p base/trident-bin
+   cp <built-trident-binary> base/trident-bin/trident
+   chmod +x base/trident-bin/trident
+   ```
+
+   The binary should be built from a stack including the AZL4 enabling
+   branches: `azl4-1-grub-native` + `azl4-2-esp-layouts` +
+   `azl4-3-configure-bls` + `azl4-4-osconfig-hostname`. Once those land
+   on main, a plain main build suffices. The `base/trident-bin/`
+   directory is gitignored.

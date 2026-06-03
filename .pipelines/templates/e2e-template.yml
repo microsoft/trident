@@ -224,6 +224,44 @@ stages:
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
+  # Build the AZL4 test image (pinned-MIC path).
+  #
+  # TODO(azl4-release): Drop the bespoke build-image-azl4.yml call once AZL4
+  # has feed-published base VHDXes, RPMs, and a released MIC container.
+  # Then this can be a plain build-image.yml call with an azureLinuxVersion
+  # parameter, matching the other testimage stages.
+  #
+  # Gating mirrors the AzL installer ISO below so AZL4 build runs in every
+  # stage type that gates a trunk merge. Previously this only ran on
+  # pr-e2e / ci / pr-e2e-azure, which silently skipped AZL4 in
+  # azl-validation / full-validation — exactly the stage you'd want it.
+  - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure'), eq(parameters.stageType, 'azl-validation'), eq(parameters.stageType, 'full-validation')) }}:
+      - template: stages/build_image/build-image-azl4.yml
+        parameters:
+          imageName: trident-vm-grub-testimage-azl4
+          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+
+      # AZL4 base qcow2 — boot point for the VM offline-init / rollback
+      # path. Same build template as the COSI above; output_format
+      # differs (QCOW2 vs COSI) per the testimages.py registration.
+      - template: stages/build_image/build-image-azl4.yml
+        parameters:
+          imageName: trident-vm-grub-testimage-azl4-base
+          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+
+      # AZL4 BM-simulated netlaunch test. Uses the AZL3 MOS installer ISO
+      # (built by TridentTestImg_trident_installer below) plus the AZL4
+      # COSI built above. Trident runs from the live MOS environment and
+      # installs the AZL4 COSI onto a fresh virtdeploy VM disk. This is
+      # the same flow we proved out manually on karhu-ubuntu.
+      - template: stages/testing_vm/netlaunch-testing-azl4.yml
+
+      # AZL4 VM offline-init rollback test. The base qcow2 already has
+      # trident's datastore populated by its first-boot offline-init
+      # oneshot, so storm-trident can drive A/B update + rollback against
+      # the AZL4 COSI without the MOS bridge.
+      - template: stages/testing_rollback/vm-testing-azl4.yml
+
   # Build AzL installer ISO (attended and unattended)
   - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure'), eq(parameters.stageType, 'azl-validation')) }}:
       - template: stages/azl_installer/azl-installer.yml
