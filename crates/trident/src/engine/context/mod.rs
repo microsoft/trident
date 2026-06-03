@@ -441,8 +441,16 @@ impl EngineContext {
     }
 
     /// Retrieves the distribution of the OS image.
+    ///
+    /// Prefers the image's own os-release (e.g., from the COSI being installed).
+    /// Falls back to the host os-release when no image is available (functional
+    /// tests, runtime operations outside an install flow).
     pub(crate) fn image_distro(&self) -> Distro {
-        self.image_os_release().get_distro()
+        let distro = self.image_os_release().get_distro();
+        match distro {
+            Distro::Other => self.host_os_release.get_distro(),
+            d => d,
+        }
     }
 }
 
