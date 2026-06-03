@@ -353,6 +353,37 @@ impl Distro {
         self == &Distro::AzureLinux(AzureLinuxRelease::AzL4)
     }
 
+    /// Returns true for AZL4 and any later Azure Linux release.
+    ///
+    /// Use this when gating behavior on features that landed in AZL4 and
+    /// are expected to remain present in subsequent major releases (e.g.
+    /// AZL4 dropped the `grub2-efi-binary-noprefix` packaging convention;
+    /// AZL5+ is expected to keep that change). Strict `is_azl4()` would
+    /// silently regress to the AZL3 code path when AZL5 ships.
+    ///
+    /// The decision is based on the `AzureLinuxRelease` ordering AND, for
+    /// versions newer than what the parser recognizes, the numeric major
+    /// component of `version_id`. New major releases that the parser
+    /// hasn't been taught yet will fall through to `AzureLinuxRelease::Other`,
+    /// so we re-check `version_id` directly.
+    pub fn is_azl4_or_later(&self, version_id: Option<&str>) -> bool {
+        if let Distro::AzureLinux(rel) = self {
+            if matches!(rel, AzureLinuxRelease::AzL4) {
+                return true;
+            }
+            // Parser doesn't know this version yet; inspect version_id.
+            if matches!(rel, AzureLinuxRelease::Other) {
+                if let Some(major) = version_id
+                    .and_then(|v| v.split('.').next())
+                    .and_then(|m| m.parse::<u32>().ok())
+                {
+                    return major >= 4;
+                }
+            }
+        }
+        false
+    }
+
     pub fn is_acl(&self) -> bool {
         self == &Distro::AzureContainerLinux
     }
