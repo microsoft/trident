@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{bail, Context, Error};
+use anyhow::{bail, ensure, Context, Error};
 use log::{debug, trace, warn};
 use reqwest::Url;
 use tempfile::{NamedTempFile, TempDir};
@@ -290,18 +290,20 @@ fn copy_file_artifacts(
 
         // Copy the UKI from the image into the ESP directory
         uki::stage_uki_on_esp(temp_mount_dir, mount_point, &ctx.esp_mount_path)?;
-    } else if ctx.image_distro().is_azl3()
-        && !grub_noprefix
-        && !ctx.spec.internal_params.get_flag(DISABLE_GRUB_NOPREFIX_CHECK)
-    {
+    } else if ctx.image_distro().is_azl3() {
         // AZL3 ships two GRUB variants: grub2-efi-binary (prefix-relative
         // config lookup) and grub2-efi-binary-noprefix (root-device-relative
         // config lookup). Trident's A/B update path requires the noprefix
         // variant. If the image shipped the wrong one, fail early rather
         // than producing an unbootable machine.
-        bail!(
-            "AZL3 image does not contain {GRUB_NOPREFIX_EFI}. \
-            Trident requires the grub2-efi-binary-noprefix package on AZL3."
+        ensure!(
+            grub_noprefix
+                || ctx
+                    .spec
+                    .internal_params
+                    .get_flag(DISABLE_GRUB_NOPREFIX_CHECK),
+            "Cannot locate {GRUB_NOPREFIX_EFI} in the boot image. \
+                Verify if the grub2-efi-binary-noprefix package was installed on the booted image.",
         );
     }
 
