@@ -1393,11 +1393,11 @@ mod tests {
         // Call helper func to create mock boot files in temp_mount_dir
         create_boot_files(temp_mount_dir.path(), &file_names, "test-content");
         // Call helper func to copy boot files from temp_mount_dir to esp_dir
-        let used_noprefix =
+        let noprefix =
             copy_boot_files(temp_mount_dir.path(), esp_dir.path(), file_names.clone()).unwrap();
 
         assert!(
-            used_noprefix,
+            noprefix,
             "grub-noprefix.efi is in the list of files, so it should be detected"
         );
 
