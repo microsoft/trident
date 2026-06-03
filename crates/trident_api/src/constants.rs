@@ -227,6 +227,10 @@ pub mod internal_params {
     /// Block Trident from closing encrypted volumes at the start of provisioning.
     pub const NO_CLOSE_ENCRYPTED_VOLUMES: &str = "noCloseEncryptedVolumes";
 
+    /// Force an A/B update even when the OS image SHA384 has not changed.
+    /// Useful for testing A/B update flows with the same COSI repeatedly.
+    pub const FORCE_AB_UPDATE: &str = "forceAbUpdate";
+
     /// Block Trident from transitioning to the new OS after finalizing.
     pub const NO_TRANSITION: &str = "noTransition";
 

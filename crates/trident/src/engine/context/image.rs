@@ -2,6 +2,7 @@ use log::debug;
 
 use trident_api::{
     config::{HostConfigurationDynamicValidationError, ImageSha384},
+    constants::internal_params::FORCE_AB_UPDATE,
     error::{InvalidInputError, TridentError},
 };
 
@@ -24,11 +25,16 @@ impl EngineContext {
             }
 
             // Update if the sha384 has changed (including if one is 'ignored'), or both are ignored but
-            // the URL has changed.
-            (Some(old_os_image), Some(new_os_image)) => Ok(old_os_image.sha384
-                != new_os_image.sha384
-                || old_os_image.sha384 == ImageSha384::Ignored
-                    && old_os_image.url != new_os_image.url),
+            // the URL has changed. Also update if forceAbUpdate is set.
+            (Some(old_os_image), Some(new_os_image)) => {
+                if self.spec.internal_params.get_flag(FORCE_AB_UPDATE) {
+                    debug!("Force A/B update requested via internalParams");
+                    return Ok(true);
+                }
+                Ok(old_os_image.sha384 != new_os_image.sha384
+                    || old_os_image.sha384 == ImageSha384::Ignored
+                        && old_os_image.url != new_os_image.url)
+            }
 
             (Some(_), None) => {
                 // Return an error if the old spec requests an OS image but the new spec does not.
