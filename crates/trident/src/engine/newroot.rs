@@ -11,7 +11,10 @@ use log::{debug, error, trace, warn};
 use sys_mount::{MountBuilder, MountFlags};
 
 use osutils::{files, filesystems::MountFileSystemType, findmnt::FindMnt, lsblk, mount, path};
-use sysdefs::filesystems::{KernelFilesystemType, RealFilesystemType};
+use sysdefs::{
+    filesystems::{KernelFilesystemType, RealFilesystemType},
+    osuuid::OsUuid,
+};
 use trident_api::{
     config::{FileSystem, HostConfiguration},
     constants::{
@@ -164,6 +167,9 @@ impl NewrootMount {
             }
         }
 
+        // Check for ACL BTRFS UUID collision before mounting.
+        let acl_collision_uuid = detect_acl_btrfs_uuid_collision(update_volume);
+
         // Mount all block devices in the newroot
         mount_points_map(host_config)
             .iter()
@@ -201,6 +207,38 @@ impl NewrootMount {
                 })?;
 
                 let fs_type = block_device.fstype.and_then(|fs_type| KernelFilesystemType::from(fs_type.as_str()).try_as_real());
+
+                // ACL-specific: if the staging device has a BTRFS filesystem UUID that
+                // collides with the active USR partition, bind-mount from the host's
+                // /usr instead. The verity-protected filesystem is read-only and the
+                // content is identical when UUIDs match, so the bind mount provides
+                // equivalent content for chroot provisioning.
+                if let Some(ref collision_uuid) = acl_collision_uuid {
+                    if fs_type == Some(RealFilesystemType::Btrfs)
+                        && block_device.fsuuid.as_ref() == Some(collision_uuid)
+                    {
+                        let active_usr = Path::new("/usr");
+                        warn!(
+                            "Block device '{}' has BTRFS filesystem UUID '{}' which collides \
+                             with the active ACL USR partition. Bind-mounting '{}' to '{}' instead.",
+                            target_id,
+                            collision_uuid,
+                            active_usr.display(),
+                            target_path.display()
+                        );
+                        do_bind_mount(active_usr, &target_path, MountFlags::RDONLY)
+                            .with_context(|| {
+                                format!(
+                                    "Failed to bind mount '{}' to '{}' \
+                                     for ACL BTRFS UUID collision workaround",
+                                    active_usr.display(),
+                                    target_path.display(),
+                                )
+                            })?;
+                        self.add_mount(target_path.clone());
+                        return Ok(());
+                    }
+                }
 
                 // If a filesystem is of type NTFS and the device is already mounted, need to use a
                 // private bind mount instead, b/c NTFS doesn't support multiple mounts.
@@ -336,6 +374,60 @@ fn should_be_bind_mounted(fs_type: Option<RealFilesystemType>) -> bool {
         | RealFilesystemType::Udf
         | RealFilesystemType::Vfat
         | RealFilesystemType::Xfs => false,
+    }
+}
+
+// ACL (Azure Container Linux) UKI disk layout defines fixed PARTUUIDs for
+// the USR A/B data partitions. These are from acl-scripts disk_layout_uki.json.
+const ACL_USR_A_PARTUUID: &str = "7130c94a-213a-4e5a-8e26-6cce9662f132";
+const ACL_USR_B_PARTUUID: &str = "e03dd35c-7c2d-4a47-b3fe-27f15780a57c";
+
+/// Detects a BTRFS filesystem UUID collision on ACL's USR A/B partitions.
+///
+/// BTRFS maintains a kernel-global UUID registry and refuses to mount a filesystem
+/// whose UUID is already registered by another mounted device. During A/B updates
+/// where the COSI image shares filesystem UUIDs with the active OS, the staging
+/// verity device cannot be mounted.
+///
+/// This function checks whether the active and update USR partitions (identified by
+/// their well-known ACL PARTUUIDs) have the same BTRFS filesystem UUID. If so, it
+/// returns the colliding UUID so the caller can substitute a bind mount from the
+/// active `/usr`.
+///
+/// Returns `None` if:
+/// - The system is not ACL (PARTUUIDs not found)
+/// - The partitions don't have BTRFS filesystems
+/// - The filesystem UUIDs are different (no collision)
+fn detect_acl_btrfs_uuid_collision(update_volume: AbVolumeSelection) -> Option<OsUuid> {
+    let (active_partuuid, update_partuuid) = match update_volume {
+        AbVolumeSelection::VolumeA => (ACL_USR_B_PARTUUID, ACL_USR_A_PARTUUID),
+        AbVolumeSelection::VolumeB => (ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID),
+    };
+
+    let active_path = format!("/dev/disk/by-partuuid/{active_partuuid}");
+    let update_path = format!("/dev/disk/by-partuuid/{update_partuuid}");
+
+    let active_dev = lsblk::get(&active_path).ok()?;
+    let update_dev = lsblk::get(&update_path).ok()?;
+
+    if active_dev.fstype.as_deref()? != "btrfs" {
+        return None;
+    }
+    if update_dev.fstype.as_deref()? != "btrfs" {
+        return None;
+    }
+
+    let active_uuid = active_dev.fsuuid?;
+    let update_uuid = update_dev.fsuuid?;
+
+    if active_uuid == update_uuid {
+        debug!(
+            "ACL BTRFS UUID collision detected: active and update USR partitions \
+             share filesystem UUID '{active_uuid}'"
+        );
+        Some(active_uuid)
+    } else {
+        None
     }
 }
 
