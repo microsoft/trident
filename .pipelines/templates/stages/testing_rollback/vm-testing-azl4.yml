@@ -1,0 +1,222 @@
+# AZL4 VM offline-init rollback test stage.
+#
+# Complement to testing_vm/netlaunch-testing-azl4.yml (BM-simulated install).
+# This stage exercises the VM offline-init path: pre-baked AZL4 qcow2 boots
+# directly, then storm-trident drives A/B update from the AZL4 COSI and
+# tests rollback.
+#
+# Inputs (both built by other AZL4 stages in this pipeline):
+#   - trident-vm-grub-testimage-azl4-base.qcow2  (base qcow2 with trident
+#     systemd units + first-boot offline-init oneshot)
+#   - trident-vm-grub-testimage-azl4.cosi        (update target, same cosi
+#     the BM-sim stage uses for fresh installs)
+#
+# Differences from testing_rollback/testing-template.yml:
+#   * No test matrix. One configuration: AZL4 rollback.
+#   * No extension testing (--skip-extension-testing). The AZL4 cosi
+#     doesn't ship the sysext machinery yet.
+#   * No netplan runtime testing (--skip-netplan-runtime-testing).
+#     base-azl4 trident-config omits the os: section because the AZL3
+#     MOS install path doesn't have osmodifier available; the qcow2
+#     base shouldn't need netplan runtime tweaks either.
+#   * No manual rollback testing (--skip-manual-rollbacks) for first
+#     iteration; add once basic A/B works.
+#   * No runtime updates (--skip-runtime-updates) for first iteration.
+#
+# When AZL4 grows a trident-service RPM, sysext / netplan / runtime
+# variants will reuse the AZL3 testing-template.yml as a matrix entry.
+
+parameters:
+  - name: baseQcowArtifact
+    type: string
+    default: "trident-vm-grub-testimage-azl4-base"
+
+  - name: cosiArtifact
+    type: string
+    default: "trident-vm-grub-testimage-azl4"
+
+  - name: dependsOnStage
+    type: string
+    default: ""
+
+  - name: verboseLogging
+    type: boolean
+    default: true
+
+  - name: pool
+    type: string
+    default: "trident-ubuntu-1es-pool-eastus2"
+
+stages:
+  - stage: RollbackTesting_AZL4
+    displayName: Rollback Testing - AZL4 (VM offline-init)
+    dependsOn:
+      - BuildingTools
+      - PrepareSSHKeys
+      - TridentTestImg_trident_vm_grub_testimage_azl4
+      - TridentTestImg_trident_vm_grub_testimage_azl4_base
+      - ${{ if ne(parameters.dependsOnStage, '') }}:
+          - ${{ parameters.dependsOnStage }}
+
+    variables:
+      - group: servicing_testing_params
+      - name: SSH_PRIVATE_KEY_PATH
+        value: "$HOME/.ssh/id_rsa"
+      - name: SSH_PUBLIC_KEY_PATH
+        value: "$(SSH_PRIVATE_KEY_PATH).pub"
+
+    jobs:
+      - job: RollbackTestingAzl4
+        displayName: Rollback Testing AZL4
+        timeoutInMinutes: 30
+        pool:
+          type: linux
+          name: ${{ parameters.pool }}
+          hostArchitecture: amd64
+
+        variables:
+          ob_outputDirectory: /tmp/deployment_logs_azl4_rollback
+          ob_artifactBaseName: "rollback-testing-azl4"
+
+        steps:
+          - template: ../common_tasks/checkout_trident.yml
+
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download AZL4 base qcow2"
+            inputs:
+              buildType: current
+              artifactName: "${{ parameters.baseQcowArtifact }}"
+              targetPath: "$(Build.ArtifactStagingDirectory)/base-qcow"
+
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download AZL4 update COSI"
+            inputs:
+              buildType: current
+              artifactName: "${{ parameters.cosiArtifact }}"
+              targetPath: "$(Build.ArtifactStagingDirectory)/update-cosi"
+
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download SSH keys"
+            inputs:
+              buildType: current
+              artifactName: "ssh-keys"
+              targetPath: "$(Build.ArtifactStagingDirectory)/ssh"
+
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download go-tools"
+            inputs:
+              buildType: current
+              artifactName: "go-tools"
+              patterns: |
+                netlisten
+                storm-trident
+              targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
+
+          - bash: |
+              set -euxo pipefail
+              chmod +x $(TRIDENT_SOURCE_DIR)/bin/netlisten
+              chmod +x $(TRIDENT_SOURCE_DIR)/bin/storm-trident
+              cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* ~/.ssh/
+              # Targeted permissions on the keys we just staged. Avoid
+              # `chmod -R 700 ~/.ssh/` because self-hosted agents may
+              # reuse the directory across jobs and we shouldn't trample
+              # other tooling's known_hosts / config / id_*.
+              chmod 700 ~/.ssh/ || true
+              chmod 600 ~/.ssh/id_rsa
+              chmod 644 ~/.ssh/id_rsa.pub
+              mkdir -p $(ob_outputDirectory)
+
+              # Both the qcow2 base build and the COSI build stage the
+              # shared 'ssh-keys' artifact into their MIC trees (see
+              # .pipelines/templates/stages/build_image/build-image-template-azl4.yml).
+              # So the pipeline-wide PrepareSSHKeys id_rsa we just
+              # copied to ~/.ssh/ matches both A-side and B-side of
+              # the test VM. No per-build key swap needed.
+              ls -l ~/.ssh/
+
+              # storm-trident expects the artifacts laid out under
+              # one directory. testimages.py output uses a clone-index
+              # suffix; rename to the conventional names storm-trident
+              # script prepare-images would produce.
+              ARTIFACTS=$(Build.ArtifactStagingDirectory)/storm-input
+              mkdir -p "$ARTIFACTS"
+
+              # storm-trident's qemu deploy looks for a qcow2 matching the
+              # regex `^trident-vm-.*-testimage.qcow2$` (see
+              # tools/storm/utils/vm/qemu/qemu.go:34). Our build artifact
+              # is named trident-vm-grub-testimage-azl4-base.qcow2 which
+              # doesn't match (-base.qcow2 not -testimage.qcow2 at end).
+              # Stage it under a name that matches.
+              QCOW_SRC=""
+              for c in \
+                  "$(Build.ArtifactStagingDirectory)/base-qcow/trident-vm-grub-testimage-azl4-base_0.qcow2" \
+                  "$(Build.ArtifactStagingDirectory)/base-qcow/trident-vm-grub-testimage-azl4-base.qcow2"; do
+                if [ -f "$c" ]; then QCOW_SRC="$c"; break; fi
+              done
+              if [ -z "$QCOW_SRC" ]; then
+                echo "Could not find AZL4 base qcow2. Contents:"
+                find "$(Build.ArtifactStagingDirectory)/base-qcow" -type f
+                exit 1
+              fi
+              cp "$QCOW_SRC" "$ARTIFACTS/trident-vm-azl4-base-testimage.qcow2"
+
+              # storm-trident's rollback test looks for any *.cosi in the
+              # artifacts dir (see tools/storm/rollback/tests/rollback.go:29).
+              # No rename needed beyond the clone-index suffix.
+              COSI_SRC=""
+              for c in \
+                  "$(Build.ArtifactStagingDirectory)/update-cosi/trident-vm-grub-testimage-azl4_0.cosi" \
+                  "$(Build.ArtifactStagingDirectory)/update-cosi/trident-vm-grub-testimage-azl4.cosi"; do
+                if [ -f "$c" ]; then COSI_SRC="$c"; break; fi
+              done
+              if [ -z "$COSI_SRC" ]; then
+                echo "Could not find AZL4 update COSI. Contents:"
+                find "$(Build.ArtifactStagingDirectory)/update-cosi" -type f
+                exit 1
+              fi
+              cp "$COSI_SRC" "$ARTIFACTS/trident-vm-azl4-update-testimage.cosi"
+
+              ls -lh "$ARTIFACTS"
+            displayName: "Stage artifacts for storm-trident"
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+
+          - bash: |
+              set -euxo pipefail
+
+              STORM_DYNAMIC_FLAGS=""
+              if [ "${{ parameters.verboseLogging }}" == "True" ]; then
+                STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --verbose"
+              fi
+
+              # First-iteration AZL4 skips: see file header for rationale.
+              STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS \
+                --skip-extension-testing \
+                --skip-netplan-runtime-testing \
+                --skip-manual-rollbacks \
+                --skip-runtime-updates"
+
+              sudo ./bin/storm-trident run rollback -a $STORM_DYNAMIC_FLAGS \
+                --artifacts-dir $(Build.ArtifactStagingDirectory)/storm-input \
+                --output-path $(ob_outputDirectory) \
+                --platform qemu \
+                --user testing-user \
+                --ssh-private-key-path $(SSH_PRIVATE_KEY_PATH) \
+                --ssh-public-key-path $(SSH_PUBLIC_KEY_PATH) \
+                --force-cleanup
+            displayName: "🚀 Storm-trident rollback test (AZL4)"
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+            timeoutInMinutes: 20
+
+          - bash: |
+              set -eux
+              sudo zstd -T0 $(Build.ArtifactStagingDirectory)/booted.qcow2 || true
+              sudo mv $(Build.ArtifactStagingDirectory)/booted.qcow2.zst $(ob_outputDirectory)/ || true
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+            condition: failed()
+            displayName: "Publish OS disk on failure"
+            timeoutInMinutes: 5
+
+          - template: ../testing_common/fix-output-directory-for-one-branch-step.yml
+            parameters:
+              outputDir: $(ob_outputDirectory)
+              condition: always()
