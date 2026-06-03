@@ -257,19 +257,8 @@ pub fn update_uki_boot_files(
     }
 
     let uki_dest_path = esp_uki_directory.join(format!("vmlinuz-{}-{uki_suffix}", max_index + 1));
-    let entry_name = uki_dest_path
-        .file_name() // TODO: should be `file_stem` but systemd-boot doesn't seem to be following the spec.
-        .structured(InternalError::Internal("Failed to get file stem"))?
-        .to_str()
-        .structured(InternalError::Internal("Boot entry name isn't valid UTF-8"))?
-        .to_string();
 
-    debug!("Renaming staged UKI file to '{}'", uki_dest_path.display());
-    fs::rename(esp_uki_directory.join(TMP_UKI_NAME), &uki_dest_path)
-        .structured(ServicingError::UpdateUki)
-        .message("Failed to rename staged UKI")?;
-
-    // If there is a staged UKI addon directory, rename it as well to match the new UKI filename.
+    // If there is a staged UKI addon directory, rename it to match the new UKI filename.
     let staging_addon_dir = esp_uki_directory.join(TMP_UKI_ADDON_DIR_NAME);
     if staging_addon_dir.exists() {
         if !staging_addon_dir.is_dir() {
@@ -290,6 +279,19 @@ pub fn update_uki_boot_files(
             .context("Failed to rename staged UKI addon directory")
             .structured(ServicingError::UpdateUki)?;
     }
+
+    // Now place the new UKI file itself.
+    let entry_name = uki_dest_path
+        .file_name() // TODO: should be `file_stem` but systemd-boot doesn't seem to be following the spec.
+        .structured(InternalError::Internal("Failed to get file stem"))?
+        .to_str()
+        .structured(InternalError::Internal("Boot entry name isn't valid UTF-8"))?
+        .to_string();
+
+    debug!("Renaming staged UKI file to '{}'", uki_dest_path.display());
+    fs::rename(esp_uki_directory.join(TMP_UKI_NAME), &uki_dest_path)
+        .structured(ServicingError::UpdateUki)
+        .message("Failed to rename staged UKI")?;
 
     Ok(entry_name)
 }
