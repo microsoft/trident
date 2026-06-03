@@ -277,11 +277,12 @@ fn copy_file_artifacts(
     }
 
     // Call helper func to copy boot files from temp_mount_dir to esp_dir_path
-    copy_boot_files(temp_mount_dir, &esp_dir_path, boot_files).context(format!(
-        "Failed to copy boot files from directory {} to directory {}",
-        temp_mount_dir.display(),
-        esp_dir_path.display()
-    ))?;
+    let used_noprefix =
+        copy_boot_files(temp_mount_dir, &esp_dir_path, boot_files).context(format!(
+            "Failed to copy boot files from directory {} to directory {}",
+            temp_mount_dir.display(),
+            esp_dir_path.display()
+        ))?;
 
     if ctx.is_uki().unstructured("UKI setting unknown")? {
         // Prepare ESP directory structure for UKI boot
@@ -289,9 +290,16 @@ fn copy_file_artifacts(
 
         // Copy the UKI from the image into the ESP directory
         uki::stage_uki_on_esp(temp_mount_dir, mount_point, &ctx.esp_mount_path)?;
-    } else {
-        // generate_boot_filepaths already found a working GRUB binary
-        // (noprefix, standard, or vendor-dir). No further check needed.
+    } else if ctx.image_distro().is_azl3() && !used_noprefix {
+        // AZL3 ships two GRUB variants: grub2-efi-binary (prefix-relative
+        // config lookup) and grub2-efi-binary-noprefix (root-device-relative
+        // config lookup). Trident's A/B update path requires the noprefix
+        // variant. If the image shipped the wrong one, fail early rather
+        // than producing an unbootable machine.
+        bail!(
+            "AZL3 image does not contain {GRUB_NOPREFIX_EFI}. \
+            Trident requires the grub2-efi-binary-noprefix package on AZL3."
+        );
     }
 
     Ok(())
@@ -548,7 +556,8 @@ fn copy_boot_files(
     temp_mount_dir: &Path,
     esp_dir: &Path,
     boot_files: Vec<PathBuf>,
-) -> Result<(), Error> {
+) -> Result<bool, Error> {
+    let mut used_noprefix = false;
     // Copy the specified files from temp_mount_path to esp_dir_path
     for boot_file in boot_files.iter() {
         let source_path = temp_mount_dir.join(boot_file);
@@ -587,10 +596,11 @@ fn copy_boot_files(
                     .context("Failed to convert path to string")?,
             )
             .context("Failed to rename grub-noprefix efi")?;
+            used_noprefix = true;
         }
     }
 
-    Ok(())
+    Ok(used_noprefix)
 }
 
 /// Search EFI vendor directories for a specific binary.
@@ -1378,7 +1388,13 @@ mod tests {
         // Call helper func to create mock boot files in temp_mount_dir
         create_boot_files(temp_mount_dir.path(), &file_names, "test-content");
         // Call helper func to copy boot files from temp_mount_dir to esp_dir
-        copy_boot_files(temp_mount_dir.path(), esp_dir.path(), file_names.clone()).unwrap();
+        let used_noprefix =
+            copy_boot_files(temp_mount_dir.path(), esp_dir.path(), file_names.clone()).unwrap();
+
+        assert!(
+            used_noprefix,
+            "grub-noprefix.efi is in the list of files, so it should be detected"
+        );
 
         for file_name in file_names.clone() {
             // Create full path of source_path
