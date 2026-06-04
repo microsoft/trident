@@ -86,13 +86,13 @@ pub(super) fn update_configs(ctx: &EngineContext) -> Result<(), Error> {
     ))
 }
 
-/// Updates the GRUB config for Azure Linux 3.0 using OS modifier.
+/// Updates the GRUB config for Azure Linux using OS modifier.
 fn update_grub_config(
     ctx: &EngineContext,
     root_device_path: &Path,
     boot_grub_config_path: &Path,
 ) -> Result<(), Error> {
-    // For azl 3.0, we need to disable cloud-init's network configuration when Trident is
+    // For azl 3.0+, we need to disable cloud-init's network configuration when Trident is
     // configuring the network. This is done by setting the 'network-config' kernel parameter
     // to 'disabled'.
     if ctx.spec.os.netplan.is_some() {
@@ -104,7 +104,7 @@ fn update_grub_config(
             .context("Failed to disable default cloud-init network config")?;
     }
 
-    debug!("Updating GRUB config for Azure Linux 3.0 with OS modifier");
+    debug!("Updating GRUB config with OS modifier");
 
     // OS modifier will read values of verity, selinux, root device, and overlay from original GRUB config
     // stamp them into /etc/default/grub and regenerate the GRUB config using grub-mkconfig.
@@ -223,7 +223,7 @@ fn update_grub_config(
     osmodifier::modify_boot(&osmod_ctx, &config)
         .context("Failed to apply boot configuration modifications")?;
 
-    debug!("Finished updating GRUB config for Azure Linux 3.0 with OS modifier");
+    debug!("Finished updating GRUB config with OS modifier");
 
     Ok(())
 }
