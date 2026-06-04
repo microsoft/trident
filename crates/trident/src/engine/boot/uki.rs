@@ -37,11 +37,21 @@ fn uki_suffix(ctx: &EngineContext) -> String {
     }
 }
 
-/// Returns the slot identifier for the target volume (the slot being updated).
-fn target_slot_id(ctx: &EngineContext) -> &'static str {
+/// Returns the slot+os-index identifier for the target volume being updated
+/// (e.g. "azla0" or "azlb1"). Used to match UKI filenames for cleanup.
+fn target_slot_os_id(ctx: &EngineContext) -> String {
     match ctx.ab_active_volume {
-        Some(AbVolumeSelection::VolumeA) => UKI_SLOT_B,
-        None | Some(AbVolumeSelection::VolumeB) => UKI_SLOT_A,
+        Some(AbVolumeSelection::VolumeA) => format!("{UKI_SLOT_B}{}", ctx.install_index),
+        None | Some(AbVolumeSelection::VolumeB) => format!("{UKI_SLOT_A}{}", ctx.install_index),
+    }
+}
+
+/// Returns the slot+os-index identifier for the active/rollback volume
+/// (e.g. "azlb0" when active is B). Used to verify trident owns the other slot.
+fn active_slot_os_id(ctx: &EngineContext) -> String {
+    match ctx.ab_active_volume {
+        Some(AbVolumeSelection::VolumeA) => format!("{UKI_SLOT_A}{}", ctx.install_index),
+        None | Some(AbVolumeSelection::VolumeB) => format!("{UKI_SLOT_B}{}", ctx.install_index),
     }
 }
 
@@ -191,16 +201,16 @@ fn remove_uki_and_addons(path: &Path) -> Result<(), Error> {
 /// Cleans up old UKIs for the target slot before staging a new one, freeing
 /// ESP space.
 ///
-/// When staging a UKI for slot X, the old slot X UKI is being replaced and
-/// can be removed. The other slot's UKI is the active/rollback and must stay.
+/// When staging a UKI for slot X on OS N, the old slot X/OS N UKI is being
+/// replaced and can be removed. Other slots and other OS indices are preserved.
 ///
 /// Removes:
-/// 1. Trident-managed UKIs matching the target slot (e.g. all `azla` files
-///    when staging for slot A, regardless of install index).
+/// 1. Trident-managed UKIs matching the target slot+os-index (e.g. all `azla0`
+///    files when staging for slot A OS 0, regardless of update index).
 /// 2. Non-trident-managed (original install) UKIs, but only when a
-///    trident-managed UKI for the *other* slot already exists — meaning
-///    trident has taken over boot management and the original install UKI
-///    is no longer the sole rollback.
+///    trident-managed UKI for the *active* slot+os-index already exists —
+///    meaning trident has taken over boot management and the original install
+///    UKI is no longer the sole rollback.
 pub fn cleanup_ukis_before_staging(
     ctx: &EngineContext,
     mount_point: &Path,
@@ -211,12 +221,14 @@ pub fn cleanup_ukis_before_staging(
         return Ok(());
     }
 
-    let target_slot = target_slot_id(ctx);
+    let target_slot = target_slot_os_id(ctx);
+    let active_slot = active_slot_os_id(ctx);
     let trident_ukis = enumerate_trident_managed_ukis(&esp_uki_directory)?;
 
-    // 1. Remove trident-managed UKIs for the target slot (all install indices).
+    // 1. Remove trident-managed UKIs for the target slot+os-index
+    //    (all update indices, e.g. vmlinuz-100-azla0.efi, vmlinuz-102-azla0.efi).
     for (_index, suffix, path) in &trident_ukis {
-        if suffix.contains(target_slot) {
+        if suffix.contains(&target_slot) {
             debug!(
                 "Pre-staging cleanup: removing old target-slot UKI '{}'",
                 path.display()
@@ -226,17 +238,13 @@ pub fn cleanup_ukis_before_staging(
     }
 
     // 2. Remove non-trident-managed UKIs only if trident already manages the
-    //    other slot (proving trident owns boot and the original is superseded).
-    let other_slot = if target_slot == UKI_SLOT_A {
-        UKI_SLOT_B
-    } else {
-        UKI_SLOT_A
-    };
-    let has_other_slot_uki = trident_ukis
+    //    active slot+os-index (proving trident owns boot for this OS instance
+    //    and the original is superseded as rollback).
+    let has_active_slot_uki = trident_ukis
         .iter()
-        .any(|(_index, suffix, _)| suffix.contains(other_slot));
+        .any(|(_index, suffix, _)| suffix.contains(&active_slot));
 
-    if has_other_slot_uki {
+    if has_active_slot_uki {
         let non_trident_ukis = enumerate_non_trident_managed_ukis(&esp_uki_directory)?;
         for (_version, path) in non_trident_ukis {
             debug!(
