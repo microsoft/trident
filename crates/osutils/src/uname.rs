@@ -82,7 +82,13 @@ mod tests {
     #[test]
     fn test_parse_simple() {
         let v = KernelVersion::parse("5.15").unwrap();
-        assert_eq!(v, KernelVersion { major: 5, minor: 15 });
+        assert_eq!(
+            v,
+            KernelVersion {
+                major: 5,
+                minor: 15
+            }
+        );
         assert!(!v.supports_btrfs_temp_fsuid());
     }
 
