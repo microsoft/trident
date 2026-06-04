@@ -233,6 +233,9 @@ impl NewrootMount {
                         match resolution {
                             AclBtrfsCollisionResolution::TempFsuid { .. } => {
                                 // Kernel >=6.7: mount the staging device with temp_fsuid.
+                                // NOTE: This codepath is aspirational. We believe it will
+                                // work, but until trident A/B update and ACL run on a
+                                // kernel >6.6, it is untested in production.
                                 let mut options = mp.options.to_string_vec();
                                 options.push("temp_fsuid".to_string());
                                 warn!(
