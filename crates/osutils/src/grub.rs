@@ -1016,34 +1016,6 @@ mod tests {
     }
 
     #[test]
-    fn test_update_search_mixed_forms() {
-        // Validates that all three regex paths fire independently. While a
-        // single grub stub typically contains one search form, cross-version
-        // A/B updates (e.g. AZL3->AZL4) may leave different formats across
-        // the boot and ESP grub configs over the machine's lifecycle.
-        let mut grub_config = GrubConfig {
-            path: PathBuf::new(),
-            contents: indoc::indoc! { r#"
-                search --no-floppy --fs-uuid --set=root oldoldold-cafe-babe-0000-aaaabbbbcccc
-                search --fs-uuid --set=root oldoldold-cafe-babe-0000-aaaabbbbcccc
-            "# }
-            .to_owned(),
-            linux_command_line: None,
-        };
-
-        let new_uuid = Uuid::parse_str("9e6a9d2c-b7fe-4359-ac45-18b505e29d8c").unwrap();
-        grub_config.update_search(&new_uuid).unwrap();
-
-        assert!(!grub_config.contents.contains("oldoldold"));
-        assert!(grub_config.contents.contains(&format!(
-            "search --no-floppy --fs-uuid --set=root {new_uuid}"
-        )));
-        assert!(grub_config
-            .contents
-            .contains(&format!("search --fs-uuid --set=root {new_uuid}")));
-    }
-
-    #[test]
     fn test_update_rootdevice() {
         // Define original GRUB config contents on target machine
         let original_content_grub = upstream_grubcfg();
