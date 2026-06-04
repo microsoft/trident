@@ -1616,6 +1616,10 @@ mod tests {
         );
     }
 }
+
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
     use super::*;
 
     use std::{path::PathBuf, str::FromStr};
