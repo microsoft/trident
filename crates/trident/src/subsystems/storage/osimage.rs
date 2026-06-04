@@ -371,9 +371,7 @@ fn validate_acl_duplicate_uuid(
         let known_partuuids: Vec<&str> = vec![ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID];
         let has_acl_usr_partuuid = partitions.any(|p| {
             let part_uuid_str = p.info.part_uuid.to_string().to_lowercase();
-            known_partuuids
-                .iter()
-                .any(|known| *known == part_uuid_str)
+            known_partuuids.iter().any(|known| *known == part_uuid_str)
         });
 
         if !has_acl_usr_partuuid {
