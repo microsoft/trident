@@ -25,11 +25,23 @@ pub const TMP_UKI_NAME: &str = "vmlinuz-0.efi.staged";
 pub const UKI_DIRECTORY: &str = formatcp!("{ESP_EFI_DIRECTORY}/Linux");
 const TMP_UKI_ADDON_DIR_NAME: &str = formatcp!("{TMP_UKI_NAME}{UKI_ADDON_DIR_SUFFIX}");
 
+/// Slot identifier embedded in trident-managed UKI filenames.
+const UKI_SLOT_A: &str = "azla";
+const UKI_SLOT_B: &str = "azlb";
+
 /// Returns the UKI file suffix, given the current active volume and install index.
 fn uki_suffix(ctx: &EngineContext) -> String {
     match ctx.ab_active_volume {
-        Some(AbVolumeSelection::VolumeA) => format!("azlb{}.efi", ctx.install_index),
-        None | Some(AbVolumeSelection::VolumeB) => format!("azla{}.efi", ctx.install_index),
+        Some(AbVolumeSelection::VolumeA) => format!("{UKI_SLOT_B}{}.efi", ctx.install_index),
+        None | Some(AbVolumeSelection::VolumeB) => format!("{UKI_SLOT_A}{}.efi", ctx.install_index),
+    }
+}
+
+/// Returns the slot identifier for the target volume (the slot being updated).
+fn target_slot_id(ctx: &EngineContext) -> &'static str {
+    match ctx.ab_active_volume {
+        Some(AbVolumeSelection::VolumeA) => UKI_SLOT_B,
+        None | Some(AbVolumeSelection::VolumeB) => UKI_SLOT_A,
     }
 }
 
@@ -160,6 +172,84 @@ pub fn prepare_esp_for_uki(root_mount_point: &Path, esp_mount_path: &Path) -> Re
     Ok(())
 }
 
+/// Removes a UKI file and its associated addon directory if present.
+fn remove_uki_and_addons(path: &Path) -> Result<(), Error> {
+    fs::remove_file(path)
+        .with_context(|| format!("Failed to remove UKI file '{}'", path.display()))?;
+    let addon_dir = uki::uki_addon_dir(path);
+    if addon_dir.exists() && addon_dir.is_dir() {
+        fs::remove_dir_all(&addon_dir).with_context(|| {
+            format!(
+                "Failed to remove UKI addon directory '{}'",
+                addon_dir.display()
+            )
+        })?;
+    }
+    Ok(())
+}
+
+/// Cleans up old UKIs for the target slot before staging a new one, freeing
+/// ESP space.
+///
+/// When staging a UKI for slot X, the old slot X UKI is being replaced and
+/// can be removed. The other slot's UKI is the active/rollback and must stay.
+///
+/// Removes:
+/// 1. Trident-managed UKIs matching the target slot (e.g. all `azla` files
+///    when staging for slot A, regardless of install index).
+/// 2. Non-trident-managed (original install) UKIs, but only when a
+///    trident-managed UKI for the *other* slot already exists — meaning
+///    trident has taken over boot management and the original install UKI
+///    is no longer the sole rollback.
+pub fn cleanup_ukis_before_staging(
+    ctx: &EngineContext,
+    mount_point: &Path,
+    esp_mount_path: &Path,
+) -> Result<(), Error> {
+    let esp_uki_directory = join_relative(mount_point, esp_mount_path).join(UKI_DIRECTORY);
+    if !esp_uki_directory.exists() {
+        return Ok(());
+    }
+
+    let target_slot = target_slot_id(ctx);
+    let trident_ukis = enumerate_trident_managed_ukis(&esp_uki_directory)?;
+
+    // 1. Remove trident-managed UKIs for the target slot (all install indices).
+    for (_index, suffix, path) in &trident_ukis {
+        if suffix.contains(target_slot) {
+            debug!(
+                "Pre-staging cleanup: removing old target-slot UKI '{}'",
+                path.display()
+            );
+            remove_uki_and_addons(path)?;
+        }
+    }
+
+    // 2. Remove non-trident-managed UKIs only if trident already manages the
+    //    other slot (proving trident owns boot and the original is superseded).
+    let other_slot = if target_slot == UKI_SLOT_A {
+        UKI_SLOT_B
+    } else {
+        UKI_SLOT_A
+    };
+    let has_other_slot_uki = trident_ukis
+        .iter()
+        .any(|(_index, suffix, _)| suffix.contains(other_slot));
+
+    if has_other_slot_uki {
+        let non_trident_ukis = enumerate_non_trident_managed_ukis(&esp_uki_directory)?;
+        for (_version, path) in non_trident_ukis {
+            debug!(
+                "Pre-staging cleanup: removing superseded original UKI '{}'",
+                path.display()
+            );
+            remove_uki_and_addons(&path)?;
+        }
+    }
+
+    Ok(())
+}
+
 /// Enumerates existing UKIs managed by Trident (defined by naming convention: vmlinuz-<index>-azl<a|b><number>.efi)
 /// in the given directory, returning their indices, suffixes, and paths.
 fn enumerate_trident_managed_ukis(
@@ -187,7 +277,9 @@ fn enumerate_trident_managed_ukis(
             .and_then(|filename| filename.strip_prefix("vmlinuz-"))
             .and_then(|f| f.split_once('-'))
             .filter(|(_, suffix)| {
-                suffix.contains("staged") || suffix.contains("azla") || suffix.contains("azlb")
+                suffix.contains("staged")
+                    || suffix.contains(UKI_SLOT_A)
+                    || suffix.contains(UKI_SLOT_B)
             })
             .and_then(|(index, suffix)| Some((index.parse::<usize>().ok()?, suffix.to_string())))
         {
@@ -321,7 +413,7 @@ fn enumerate_non_trident_managed_ukis(
         if let Some(version) = filename
             .to_str()
             .and_then(|filename| filename.strip_prefix("vmlinuz-"))
-            .filter(|f| !f.contains("azla") && !f.contains("azlb"))
+            .filter(|f| !f.contains(UKI_SLOT_A) && !f.contains(UKI_SLOT_B))
             .and_then(|filename| filename.strip_suffix(".efi"))
         {
             match version.parse() {

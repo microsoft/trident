@@ -288,6 +288,10 @@ fn copy_file_artifacts(
         // Prepare ESP directory structure for UKI boot
         uki::prepare_esp_for_uki(mount_point, &ctx.esp_mount_path)?;
 
+        // Clean up old UKIs for the target slot to free ESP space before
+        // staging the new UKI.
+        uki::cleanup_ukis_before_staging(ctx, mount_point, &ctx.esp_mount_path)?;
+
         // Copy the UKI from the image into the ESP directory
         uki::stage_uki_on_esp(temp_mount_dir, mount_point, &ctx.esp_mount_path)?;
 
