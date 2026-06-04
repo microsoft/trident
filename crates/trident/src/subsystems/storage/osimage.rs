@@ -369,7 +369,7 @@ fn validate_acl_duplicate_uuid(
 
     // Optional: If COSI partition metadata is available, validate that the staging
     // USR partition PARTUUID matches a known ACL USR slot.
-    if let Some(partitions) = os_image.partitions() {
+    if let Some(mut partitions) = os_image.partitions() {
         let known_partuuids: Vec<&str> = vec![ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID];
         let has_acl_usr_partuuid = partitions.any(|p| {
             let part_uuid_str = p.info.part_uuid.to_string().to_lowercase();
