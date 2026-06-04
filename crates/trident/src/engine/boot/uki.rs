@@ -237,14 +237,17 @@ pub fn cleanup_ukis_before_staging(
         }
     }
 
-    // 2. Remove non-trident-managed UKIs only if trident already manages the
-    //    active slot+os-index (proving trident owns boot for this OS instance
-    //    and the original is superseded as rollback).
+    // 2. Remove non-trident-managed UKIs only if:
+    //    - This is install_index 0 (the OS that placed the original UKI), AND
+    //    - Trident already manages the active slot (proving the original is
+    //      superseded as rollback).
+    //    In multiboot, install_index > 0 never owns the original UKI — it has
+    //    OS 0's partition refs baked in and can't boot other OS instances.
     let has_active_slot_uki = trident_ukis
         .iter()
         .any(|(_index, suffix, _)| suffix.contains(&active_slot));
 
-    if has_active_slot_uki {
+    if has_active_slot_uki && ctx.install_index == 0 {
         let non_trident_ukis = enumerate_non_trident_managed_ukis(&esp_uki_directory)?;
         for (_version, path) in non_trident_ukis {
             debug!(
