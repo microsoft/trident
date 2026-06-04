@@ -91,10 +91,12 @@ steps:
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
 
   # Pull the released MIC container from MCR. AZL4 support is included
-  # in imagecustomizer >= 1.4.0.
+  # in imagecustomizer >= 1.4.0. Tag it locally so testimages.py can
+  # reference it by short name.
   - bash: |
       set -euxo pipefail
       docker pull "mcr.microsoft.com/azurelinux/${{ parameters.micContainerTag }}"
+      docker tag "mcr.microsoft.com/azurelinux/${{ parameters.micContainerTag }}" "${{ parameters.micContainerTag }}"
     displayName: "Pull MIC container from MCR"
 
   # Stage the pipeline-wide SSH key into the testimage tree before
