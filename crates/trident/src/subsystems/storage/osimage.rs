@@ -247,10 +247,13 @@ fn validate_filesystem_uniqueness(
                                     and inactive volume filesystem UUID '{inactive_volume_fs_uuid}'", pair.id);
                             if active_volume_fs_uuid == inactive_volume_fs_uuid {
                                 if ctx.image_distro().is_acl() {
+                                    let active_usr_roothash =
+                                        crate::engine::acl::read_active_usr_roothash();
                                     validate_acl_duplicate_uuid(
                                         os_image,
                                         &mp_info.mount_point.path,
                                         &inactive_volume_fs_uuid,
+                                        active_usr_roothash,
                                     )?;
                                 } else {
                                     return Err(TridentError::new(
@@ -288,8 +291,9 @@ fn validate_acl_duplicate_uuid(
     os_image: &OsImage,
     mount_point: &Path,
     fs_uuid: &OsUuid,
+    active_usr_roothash: Option<String>,
 ) -> Result<(), TridentError> {
-    use crate::engine::acl::{self, ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID};
+    use crate::engine::acl::{ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID};
 
     let mount_str = mount_point.to_string_lossy();
     let uuid_str = fs_uuid.to_string();
@@ -329,7 +333,7 @@ fn validate_acl_duplicate_uuid(
     };
 
     // 3. Active system must have a usrhash= in /proc/cmdline.
-    let active_hash = match acl::read_active_usr_roothash() {
+    let active_hash = match active_usr_roothash {
         Some(h) if !h.is_empty() => h,
         _ => {
             return Err(TridentError::new(
@@ -1429,11 +1433,189 @@ mod tests {
             })
         );
     }
-}
 
-#[cfg(feature = "functional-test")]
-#[cfg_attr(not(test), allow(unused_imports, dead_code))]
-mod functional_test {
+    // --- ACL duplicate UUID validation tests ---
+    //
+    // These test `validate_acl_duplicate_uuid` directly, which is the function
+    // that decides whether a duplicate FS UUID on an ACL image is safe (verity
+    // hashes match) or not.
+
+    const ACL_TEST_HASH: &str = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+
+    /// Helper: build a MockOsImage with a single /usr image that optionally has verity.
+    fn acl_mock_image(roothash: Option<&str>) -> MockOsImage {
+        MockOsImage {
+            source: url::Url::parse(OSIMAGE_DUMMY_SOURCE).unwrap(),
+            os_arch: SystemArchitecture::Amd64,
+            os_release: OsRelease {
+                id: Some("azurelinux".to_string()),
+                variant_id: Some("azurecontainerlinux".to_string()),
+                ..OsRelease::default()
+            },
+            images: vec![MockImage {
+                mount_point: PathBuf::from("/usr"),
+                fs_type: OsImageFileSystemType::Ext4,
+                fs_uuid: OsUuid::Uuid(
+                    Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap(),
+                ),
+                part_type: DiscoverablePartitionType::LinuxGeneric,
+                verity: roothash.map(|h| MockVerity {
+                    roothash: h.to_string(),
+                }),
+            }],
+            is_uki: false,
+            partitioning_info: None,
+        }
+    }
+
+    #[test]
+    fn test_acl_duplicate_uuid_matching_hash_success() {
+        let mock = acl_mock_image(Some(ACL_TEST_HASH));
+        let os_image = OsImage::mock(mock);
+        let result = validate_acl_duplicate_uuid(
+            &os_image,
+            Path::new("/usr"),
+            &OsUuid::Uuid(Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap()),
+            Some(ACL_TEST_HASH.to_string()),
+        );
+        assert!(result.is_ok(), "expected success, got: {:?}", result);
+    }
+
+    #[test]
+    fn test_acl_duplicate_uuid_matching_hash_case_insensitive() {
+        let mock = acl_mock_image(Some(ACL_TEST_HASH));
+        let os_image = OsImage::mock(mock);
+        let result = validate_acl_duplicate_uuid(
+            &os_image,
+            Path::new("/usr"),
+            &OsUuid::Uuid(Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap()),
+            Some(ACL_TEST_HASH.to_uppercase()),
+        );
+        assert!(
+            result.is_ok(),
+            "expected case-insensitive match, got: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_acl_duplicate_uuid_wrong_mount_point() {
+        let mut mock = acl_mock_image(Some(ACL_TEST_HASH));
+        mock.images[0].mount_point = PathBuf::from("/");
+        let os_image = OsImage::mock(mock);
+        let err = validate_acl_duplicate_uuid(
+            &os_image,
+            Path::new("/"),
+            &OsUuid::Uuid(Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap()),
+            Some(ACL_TEST_HASH.to_string()),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(
+                err.kind(),
+                ErrorKind::InvalidInput(
+                    InvalidInputError::DuplicateFsUuidAclVerificationFailed { reason, .. }
+                ) if reason.contains("only allowed on /usr")
+            ),
+            "expected wrong mount point error, got: {:?}",
+            err.kind()
+        );
+    }
+
+    #[test]
+    fn test_acl_duplicate_uuid_no_staging_verity_hash() {
+        let mock = acl_mock_image(None);
+        let os_image = OsImage::mock(mock);
+        let err = validate_acl_duplicate_uuid(
+            &os_image,
+            Path::new("/usr"),
+            &OsUuid::Uuid(Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap()),
+            Some(ACL_TEST_HASH.to_string()),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(
+                err.kind(),
+                ErrorKind::InvalidInput(
+                    InvalidInputError::DuplicateFsUuidAclVerificationFailed { reason, .. }
+                ) if reason.contains("no verity root hash")
+            ),
+            "expected no verity hash error, got: {:?}",
+            err.kind()
+        );
+    }
+
+    #[test]
+    fn test_acl_duplicate_uuid_mismatched_hash() {
+        let mock = acl_mock_image(Some(ACL_TEST_HASH));
+        let os_image = OsImage::mock(mock);
+        let different_hash =
+            "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+        let err = validate_acl_duplicate_uuid(
+            &os_image,
+            Path::new("/usr"),
+            &OsUuid::Uuid(Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap()),
+            Some(different_hash.to_string()),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(
+                err.kind(),
+                ErrorKind::InvalidInput(
+                    InvalidInputError::DuplicateFsUuidAclVerificationFailed { reason, .. }
+                ) if reason.contains("mismatch")
+            ),
+            "expected hash mismatch error, got: {:?}",
+            err.kind()
+        );
+    }
+
+    #[test]
+    fn test_acl_duplicate_uuid_no_active_hash() {
+        let mock = acl_mock_image(Some(ACL_TEST_HASH));
+        let os_image = OsImage::mock(mock);
+        let err = validate_acl_duplicate_uuid(
+            &os_image,
+            Path::new("/usr"),
+            &OsUuid::Uuid(Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap()),
+            None,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(
+                err.kind(),
+                ErrorKind::InvalidInput(
+                    InvalidInputError::DuplicateFsUuidAclVerificationFailed { reason, .. }
+                ) if reason.contains("usrhash=")
+            ),
+            "expected no active hash error, got: {:?}",
+            err.kind()
+        );
+    }
+
+    #[test]
+    fn test_acl_duplicate_uuid_empty_active_hash() {
+        let mock = acl_mock_image(Some(ACL_TEST_HASH));
+        let os_image = OsImage::mock(mock);
+        let err = validate_acl_duplicate_uuid(
+            &os_image,
+            Path::new("/usr"),
+            &OsUuid::Uuid(Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap()),
+            Some(String::new()),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(
+                err.kind(),
+                ErrorKind::InvalidInput(
+                    InvalidInputError::DuplicateFsUuidAclVerificationFailed { reason, .. }
+                ) if reason.contains("usrhash=")
+            ),
+            "expected empty active hash error, got: {:?}",
+            err.kind()
+        );
+    }
+}
     use super::*;
 
     use std::{path::PathBuf, str::FromStr};
