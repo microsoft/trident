@@ -204,6 +204,16 @@ pub enum InvalidInputError {
     )]
     DuplicateFsUuidAbUpdate { pair_id: String, uuid: String },
 
+    #[error(
+        "ACL A/B update has duplicate FS UUID {uuid} on mount point {mount_point} \
+        but cannot verify content identity: {reason}"
+    )]
+    DuplicateFsUuidAclVerificationFailed {
+        uuid: String,
+        mount_point: String,
+        reason: String,
+    },
+
     #[error("Cannot find history file")]
     HistoryFileNotFound,
 

@@ -385,10 +385,8 @@ fn should_be_bind_mounted(fs_type: Option<RealFilesystemType>) -> bool {
     }
 }
 
-// ACL (Azure Container Linux) UKI disk layout defines fixed PARTUUIDs for
-// the USR A/B data partitions. These are from acl-scripts disk_layout_uki.json.
-const ACL_USR_A_PARTUUID: &str = "7130c94a-213a-4e5a-8e26-6cce9662f132";
-const ACL_USR_B_PARTUUID: &str = "e03dd35c-7c2d-4a47-b3fe-27f15780a57c";
+// ACL constants and helpers are in the shared acl module.
+use super::acl::{self, ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID};
 
 /// Detects a BTRFS filesystem UUID collision on ACL's USR A/B partitions.
 ///
@@ -444,7 +442,7 @@ fn detect_acl_btrfs_uuid_collision(
     // partition has the same verity root hash. This provides a cryptographic
     // guarantee that the filesystems are byte-identical, not just a UUID match.
     if let Some(staging_hash) = staging_usr_roothash {
-        match read_active_usr_roothash() {
+        match acl::read_active_usr_roothash() {
             Some(active_hash) => {
                 let staging_normalized = staging_hash.trim().to_lowercase();
                 let active_normalized = active_hash.trim().to_lowercase();
@@ -475,19 +473,6 @@ fn detect_acl_btrfs_uuid_collision(
     }
 
     Some(active_uuid)
-}
-
-/// Reads the active USR verity root hash from `/proc/cmdline`.
-///
-/// ACL UKI images include a `usrhash=<hex>` parameter in the kernel command
-/// line (contributed by the verity addon). Returns `None` if the parameter
-/// is not present or `/proc/cmdline` cannot be read.
-fn read_active_usr_roothash() -> Option<String> {
-    let cmdline = fs::read_to_string("/proc/cmdline").ok()?;
-    cmdline
-        .split_whitespace()
-        .find_map(|field| field.strip_prefix("usrhash="))
-        .map(|hash| hash.to_owned())
 }
 
 /// Returns an ordered map of mount points to their corresponding FileSystem objects.

@@ -27,6 +27,8 @@ use crate::{
     osimage::{OsImage, OsImageFileSystemType},
 };
 
+use sysdefs::osuuid::OsUuid;
+
 use super::EngineContext;
 
 /// Validates that the Host Configuration aligns with the OS image metadata.
@@ -206,8 +208,7 @@ fn validate_filesystem_uniqueness(
     }
 
     // For A/B Update, check that no A/B volumes share filesystem UUIDs.
-    // ACL uses the same FS UUID for both A/B slots — partitions are identified by PARTUUID.
-    if ctx.servicing_type == ServicingType::AbUpdate && !ctx.image_distro().is_acl() {
+    if ctx.servicing_type == ServicingType::AbUpdate {
         if let Some(ab) = &ctx.spec.storage.ab_update {
             for pair in ab.volume_pairs.iter() {
                 if let Some(mp_info) = ctx.spec.storage.device_id_to_mount_point_info(&pair.id) {
@@ -243,12 +244,20 @@ fn validate_filesystem_uniqueness(
                             trace!("Checking A/B volume pair '{}'. Found active volume filesystem UUID '{active_volume_fs_uuid}'\
                                     and inactive volume filesystem UUID '{inactive_volume_fs_uuid}'", pair.id);
                             if active_volume_fs_uuid == inactive_volume_fs_uuid {
-                                return Err(TridentError::new(
-                                    InvalidInputError::DuplicateFsUuidAbUpdate {
-                                        pair_id: pair.id.to_string(),
-                                        uuid: inactive_volume_fs_uuid.to_string(),
-                                    },
-                                ));
+                                if ctx.image_distro().is_acl() {
+                                    validate_acl_duplicate_uuid(
+                                        os_image,
+                                        &mp_info.mount_point.path,
+                                        &inactive_volume_fs_uuid,
+                                    )?;
+                                } else {
+                                    return Err(TridentError::new(
+                                        InvalidInputError::DuplicateFsUuidAbUpdate {
+                                            pair_id: pair.id.to_string(),
+                                            uuid: inactive_volume_fs_uuid.to_string(),
+                                        },
+                                    ));
+                                }
                             }
                         } else {
                             warn!("Could not find filesystem UUID for active volume of A/B volume pair '{}'", pair.id);
@@ -258,6 +267,124 @@ fn validate_filesystem_uniqueness(
             }
         }
     }
+    Ok(())
+}
+
+/// Validates that an ACL A/B update with a duplicate filesystem UUID is safe.
+///
+/// ACL BTRFS images may intentionally share filesystem UUIDs between the A and B
+/// slots when built from the same source. This is safe only when:
+///
+/// 1. The duplicate is on the `/usr` mount point (ACL's verity-protected USR partition)
+/// 2. The staging image has a verity root hash in its COSI metadata
+/// 3. The active system's `/proc/cmdline` has a matching `usrhash=` parameter
+/// 4. The normalized root hashes match — proving byte-identical content via merkle tree
+///
+/// If COSI partition metadata is available, the function also validates that the
+/// staging USR partition's PARTUUID matches a known ACL USR slot.
+fn validate_acl_duplicate_uuid(
+    os_image: &OsImage,
+    mount_point: &Path,
+    fs_uuid: &OsUuid,
+) -> Result<(), TridentError> {
+    use crate::engine::acl::{self, ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID};
+
+    let mount_str = mount_point.to_string_lossy();
+    let uuid_str = fs_uuid.to_string();
+
+    // 1. Only /usr is allowed to have duplicate UUIDs on ACL.
+    if mount_point != Path::new("/usr") {
+        return Err(TridentError::new(
+            InvalidInputError::DuplicateFsUuidAclVerificationFailed {
+                uuid: uuid_str,
+                mount_point: mount_str.to_string(),
+                reason: "duplicate FS UUID is only allowed on /usr for ACL".to_string(),
+            },
+        ));
+    }
+
+    // 2. Staging image must have a verity root hash.
+    let staging_fs = os_image
+        .filesystems()
+        .find(|f| f.mount_point == mount_point);
+    let staging_roothash = staging_fs
+        .as_ref()
+        .and_then(|f| f.verity.as_ref())
+        .map(|v| v.roothash.as_str());
+
+    let staging_hash = match staging_roothash {
+        Some(h) if !h.is_empty() => h,
+        _ => {
+            return Err(TridentError::new(
+                InvalidInputError::DuplicateFsUuidAclVerificationFailed {
+                    uuid: uuid_str,
+                    mount_point: mount_str.to_string(),
+                    reason: "staging /usr image has no verity root hash in COSI metadata"
+                        .to_string(),
+                },
+            ));
+        }
+    };
+
+    // 3. Active system must have a usrhash= in /proc/cmdline.
+    let active_hash = match acl::read_active_usr_roothash() {
+        Some(h) if !h.is_empty() => h,
+        _ => {
+            return Err(TridentError::new(
+                InvalidInputError::DuplicateFsUuidAclVerificationFailed {
+                    uuid: uuid_str,
+                    mount_point: mount_str.to_string(),
+                    reason: "cannot read active USR verity root hash from /proc/cmdline \
+                             (usrhash= parameter not found)"
+                        .to_string(),
+                },
+            ));
+        }
+    };
+
+    // 4. Hashes must match (case-insensitive, trimmed).
+    let staging_normalized = staging_hash.trim().to_lowercase();
+    let active_normalized = active_hash.trim().to_lowercase();
+    if staging_normalized != active_normalized {
+        return Err(TridentError::new(
+            InvalidInputError::DuplicateFsUuidAclVerificationFailed {
+                uuid: uuid_str,
+                mount_point: mount_str.to_string(),
+                reason: format!(
+                    "verity root hash mismatch: staging has '{}...', active has '{}...'",
+                    &staging_normalized[..staging_normalized.len().min(16)],
+                    &active_normalized[..active_normalized.len().min(16)]
+                ),
+            },
+        ));
+    }
+
+    debug!(
+        "ACL duplicate FS UUID '{}' on /usr is safe: verity root hashes match ({}...)",
+        uuid_str,
+        &staging_normalized[..staging_normalized.len().min(16)]
+    );
+
+    // Optional: If COSI partition metadata is available, validate that the staging
+    // USR partition PARTUUID matches a known ACL USR slot.
+    if let Some(partitions) = os_image.partitions() {
+        let known_partuuids: Vec<&str> = vec![ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID];
+        let has_acl_usr_partuuid = partitions.any(|p| {
+            let part_uuid_str = p.info.part_uuid.to_string().to_lowercase();
+            p.info.part_type.is_acl_usr()
+                && known_partuuids
+                    .iter()
+                    .any(|known| *known == part_uuid_str)
+        });
+
+        if !has_acl_usr_partuuid {
+            warn!(
+                "ACL COSI partition metadata does not contain a known ACL USR PARTUUID. \
+                 Update is allowed (verity hashes match) but disk layout may be unexpected."
+            );
+        }
+    }
+
     Ok(())
 }
 
