@@ -1455,9 +1455,7 @@ mod tests {
             images: vec![MockImage {
                 mount_point: PathBuf::from("/usr"),
                 fs_type: OsImageFileSystemType::Ext4,
-                fs_uuid: OsUuid::Uuid(
-                    Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap(),
-                ),
+                fs_uuid: OsUuid::Uuid(Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap()),
                 part_type: DiscoverablePartitionType::LinuxGeneric,
                 verity: roothash.map(|h| MockVerity {
                     roothash: h.to_string(),
@@ -1549,8 +1547,7 @@ mod tests {
     fn test_acl_duplicate_uuid_mismatched_hash() {
         let mock = acl_mock_image(Some(ACL_TEST_HASH));
         let os_image = OsImage::mock(mock);
-        let different_hash =
-            "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+        let different_hash = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
         let err = validate_acl_duplicate_uuid(
             &os_image,
             Path::new("/usr"),
