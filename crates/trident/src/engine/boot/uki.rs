@@ -182,10 +182,22 @@ pub fn prepare_esp_for_uki(root_mount_point: &Path, esp_mount_path: &Path) -> Re
     Ok(())
 }
 
-/// Removes a UKI file and its associated addon directory if present.
+/// Removes a UKI file and its associated addon directory (if present).
+/// Treats `NotFound` as success for idempotency — a partially-failed previous
+/// cleanup should not prevent the addon directory from being cleaned.
 fn remove_uki_and_addons(path: &Path) -> Result<(), Error> {
-    fs::remove_file(path)
-        .with_context(|| format!("Failed to remove UKI file '{}'", path.display()))?;
+    match fs::remove_file(path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            trace!("UKI file '{}' already removed, continuing", path.display());
+        }
+        Err(e) => {
+            return Err(
+                anyhow::Error::new(e)
+                    .context(format!("Failed to remove UKI file '{}'", path.display())),
+            );
+        }
+    }
     let addon_dir = uki::uki_addon_dir(path);
     if addon_dir.exists() && addon_dir.is_dir() {
         fs::remove_dir_all(&addon_dir).with_context(|| {
@@ -199,7 +211,8 @@ fn remove_uki_and_addons(path: &Path) -> Result<(), Error> {
 }
 
 /// Cleans up old UKIs for the target slot before staging a new one, freeing
-/// ESP space.
+/// ESP space.  This runs for all UKI-based A/B updates (not just ACL) because
+/// ESP space constraints are a general concern.
 ///
 /// When staging a UKI for slot X on OS N, the old slot X/OS N UKI is being
 /// replaced and can be removed. Other slots and other OS indices are preserved.
@@ -222,13 +235,15 @@ pub fn cleanup_ukis_before_staging(
     }
 
     let target_slot = target_slot_os_id(ctx);
+    let target_suffix = format!("{target_slot}.efi");
     let active_slot = active_slot_os_id(ctx);
+    let active_suffix = format!("{active_slot}.efi");
     let trident_ukis = enumerate_trident_managed_ukis(&esp_uki_directory)?;
 
     // 1. Remove trident-managed UKIs for the target slot+os-index
     //    (all update indices, e.g. vmlinuz-100-azla0.efi, vmlinuz-102-azla0.efi).
     for (_index, suffix, path) in &trident_ukis {
-        if suffix.contains(&target_slot) {
+        if *suffix == target_suffix {
             debug!(
                 "Pre-staging cleanup: removing old target-slot UKI '{}'",
                 path.display()
@@ -245,7 +260,7 @@ pub fn cleanup_ukis_before_staging(
     //    OS 0's partition refs baked in and can't boot other OS instances.
     let has_active_slot_uki = trident_ukis
         .iter()
-        .any(|(_index, suffix, _)| suffix.contains(&active_slot));
+        .any(|(_index, suffix, _)| *suffix == active_suffix);
 
     if has_active_slot_uki && ctx.install_index == 0 {
         let non_trident_ukis = enumerate_non_trident_managed_ukis(&esp_uki_directory)?;
@@ -1227,5 +1242,128 @@ mod tests {
             fs::read(staged_addon_dir.join("firstboot.addon.efi")).unwrap(),
             b"firstboot-data"
         );
+    }
+
+    /// Helper: creates an ESP directory structure with UKI files and returns
+    /// the mock root mount point (tempdir) and the UKI directory path.
+    fn setup_esp_for_cleanup(ukis: &[&str]) -> (tempfile::TempDir, PathBuf) {
+        let mount = tempdir().unwrap();
+        let esp_uki_dir =
+            join_relative(mount.path(), DEFAULT_ESP_MOUNT_POINT_PATH).join(UKI_DIRECTORY);
+        fs::create_dir_all(&esp_uki_dir).unwrap();
+        for name in ukis {
+            File::create(esp_uki_dir.join(name)).unwrap();
+        }
+        (mount, esp_uki_dir)
+    }
+
+    /// Validates that cleanup removes only UKIs matching the target slot+os-index
+    /// (exact suffix match), not UKIs for other slots or OS indices.
+    #[test]
+    fn test_cleanup_ukis_removes_target_slot_only() {
+        // Active = VolumeA, install_index = 0 → target = azlb0, active = azla0
+        let ctx = make_ctx(Some(AbVolumeSelection::VolumeA), 0);
+        let (mount, uki_dir) = setup_esp_for_cleanup(&[
+            "vmlinuz-100-azlb0.efi", // target slot → should be removed
+            "vmlinuz-101-azla0.efi", // active slot → should survive
+            "vmlinuz-102-azlb1.efi", // different OS index → should survive
+            "vmlinuz-103-azla1.efi", // different OS index → should survive
+        ]);
+
+        cleanup_ukis_before_staging(
+            &ctx,
+            mount.path(),
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+        )
+        .unwrap();
+
+        assert!(!uki_dir.join("vmlinuz-100-azlb0.efi").exists());
+        assert!(uki_dir.join("vmlinuz-101-azla0.efi").exists());
+        assert!(uki_dir.join("vmlinuz-102-azlb1.efi").exists());
+        assert!(uki_dir.join("vmlinuz-103-azla1.efi").exists());
+    }
+
+    /// Validates that suffix matching is exact — `azla0` must not match
+    /// `azla01.efi` or `azla00.efi` (multiboot with ≥10 instances).
+    #[test]
+    fn test_cleanup_ukis_exact_suffix_no_substring_match() {
+        // Active = VolumeB, install_index = 0 → target = azla0, active = azlb0
+        let ctx = make_ctx(Some(AbVolumeSelection::VolumeB), 0);
+        let (mount, uki_dir) = setup_esp_for_cleanup(&[
+            "vmlinuz-100-azla0.efi",  // target → should be removed
+            "vmlinuz-101-azla01.efi", // OS index 01, NOT 0 → should survive
+            "vmlinuz-102-azla00.efi", // OS index 00, NOT 0 → should survive
+            "vmlinuz-103-azla10.efi", // OS index 10 → should survive
+        ]);
+
+        cleanup_ukis_before_staging(
+            &ctx,
+            mount.path(),
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+        )
+        .unwrap();
+
+        assert!(!uki_dir.join("vmlinuz-100-azla0.efi").exists());
+        assert!(uki_dir.join("vmlinuz-101-azla01.efi").exists());
+        assert!(uki_dir.join("vmlinuz-102-azla00.efi").exists());
+        assert!(uki_dir.join("vmlinuz-103-azla10.efi").exists());
+    }
+
+    /// Validates that cleanup removes multiple UKIs with different update
+    /// indices but the same target slot+os-index.
+    #[test]
+    fn test_cleanup_ukis_removes_all_target_update_indices() {
+        let ctx = make_ctx(Some(AbVolumeSelection::VolumeA), 0);
+        let (mount, uki_dir) = setup_esp_for_cleanup(&[
+            "vmlinuz-100-azlb0.efi", // target → remove
+            "vmlinuz-102-azlb0.efi", // target → remove
+            "vmlinuz-104-azlb0.efi", // target → remove
+            "vmlinuz-101-azla0.efi", // active → keep
+        ]);
+
+        cleanup_ukis_before_staging(
+            &ctx,
+            mount.path(),
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+        )
+        .unwrap();
+
+        assert!(!uki_dir.join("vmlinuz-100-azlb0.efi").exists());
+        assert!(!uki_dir.join("vmlinuz-102-azlb0.efi").exists());
+        assert!(!uki_dir.join("vmlinuz-104-azlb0.efi").exists());
+        assert!(uki_dir.join("vmlinuz-101-azla0.efi").exists());
+    }
+
+    /// Validates that `remove_uki_and_addons` is idempotent — removing a
+    /// file that no longer exists succeeds rather than returning an error.
+    #[test]
+    fn test_remove_uki_and_addons_idempotent() {
+        let dir = tempdir().unwrap();
+        let uki_path = dir.path().join("vmlinuz-100-azla0.efi");
+        File::create(&uki_path).unwrap();
+
+        // First removal should succeed
+        remove_uki_and_addons(&uki_path).unwrap();
+        assert!(!uki_path.exists());
+
+        // Second removal should also succeed (idempotent)
+        remove_uki_and_addons(&uki_path).unwrap();
+    }
+
+    /// Validates that `remove_uki_and_addons` removes both the UKI and its
+    /// addon directory, and succeeds when the UKI file is already gone but
+    /// the addon directory still exists.
+    #[test]
+    fn test_remove_uki_and_addons_with_addon_dir() {
+        let dir = tempdir().unwrap();
+        let uki_path = dir.path().join("vmlinuz-100-azla0.efi");
+        File::create(&uki_path).unwrap();
+        let addon_dir = uki::uki_addon_dir(&uki_path);
+        fs::create_dir_all(&addon_dir).unwrap();
+        fs::write(addon_dir.join("cmdline.addon.efi"), b"addon").unwrap();
+
+        remove_uki_and_addons(&uki_path).unwrap();
+        assert!(!uki_path.exists());
+        assert!(!addon_dir.exists());
     }
 }

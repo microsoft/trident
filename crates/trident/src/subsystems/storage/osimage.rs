@@ -291,7 +291,8 @@ fn validate_acl_duplicate_uuid(
     fs_uuid: &OsUuid,
     active_usr_roothash: Option<String>,
 ) -> Result<(), TridentError> {
-    use crate::engine::acl::{ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID};
+    use crate::engine::acl;
+    use acl::{ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID};
 
     let mount_str = mount_point.to_string_lossy();
     let uuid_str = fs_uuid.to_string();
@@ -347,17 +348,15 @@ fn validate_acl_duplicate_uuid(
     };
 
     // 4. Hashes must match (case-insensitive, trimmed).
-    let staging_normalized = staging_hash.trim().to_lowercase();
-    let active_normalized = active_hash.trim().to_lowercase();
-    if staging_normalized != active_normalized {
+    if !acl::verity_hashes_match(staging_hash, &active_hash) {
         return Err(TridentError::new(
             InvalidInputError::DuplicateFsUuidAclVerificationFailed {
                 uuid: uuid_str,
                 mount_point: mount_str.to_string(),
                 reason: format!(
                     "verity root hash mismatch: staging has '{}...', active has '{}...'",
-                    &staging_normalized[..staging_normalized.len().min(16)],
-                    &active_normalized[..active_normalized.len().min(16)]
+                    acl::hash_preview(staging_hash),
+                    acl::hash_preview(&active_hash)
                 ),
             },
         ));
@@ -366,7 +365,7 @@ fn validate_acl_duplicate_uuid(
     debug!(
         "ACL duplicate FS UUID '{}' on /usr is safe: verity root hashes match ({}...)",
         uuid_str,
-        &staging_normalized[..staging_normalized.len().min(16)]
+        acl::hash_preview(staging_hash)
     );
 
     // Optional: If COSI partition metadata is available, validate that the staging
