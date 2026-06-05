@@ -426,10 +426,7 @@ use super::acl::{self, ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID};
 /// (introduced in Linux 6.7). Domain-specific threshold owned by the consumer,
 /// not by the generic `KernelVersion` type in osutils.
 const BTRFS_TEMP_FSUID_MIN_KERNEL: osutils::uname::KernelVersion =
-    osutils::uname::KernelVersion {
-        major: 6,
-        minor: 7,
-    };
+    osutils::uname::KernelVersion { major: 6, minor: 7 };
 
 /// How to resolve a BTRFS UUID collision on ACL's USR A/B partitions.
 #[derive(Debug)]
