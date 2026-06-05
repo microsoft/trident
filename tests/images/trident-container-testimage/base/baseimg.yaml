@@ -29,6 +29,9 @@ os:
     resetType: hard-reset
   hostname: trident-container-testimg
 
+  selinux:
+    mode: permissive
+
   kernelCommandLine:
     # Replicates BM base image settings, that would otherwise be lost
     extraCommandLine:
