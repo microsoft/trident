@@ -8,6 +8,11 @@ Type=oneshot
 ExecStartPre=/bin/bash -c "set -e; if ! docker image ls | grep -q 'trident/trident'; then docker load --input /var/lib/trident/trident-container.tar.gz; fi"
 # TODO: Remove line to enable SELinux, when bug #9508 is fixed.
 ExecStartPre=/bin/bash -c "sudo setenforce 0" 
+# Wait for containerd's task gRPC service before `docker run`: containerd.service
+# is Type=simple, so systemd can start docker (and this unit) before containerd
+# has registered io.containerd.grpc.v1.tasks, which makes `docker run` fail with
+# "containerd.services.tasks.v1.Tasks: not implemented". Poll until it is ready.
+ExecStartPre=/bin/bash -c 'for i in $(seq 1 60); do ctr tasks ls >/dev/null 2>&1 && exit 0; sleep 1; done; echo "timed out waiting for containerd task service" >&2; exit 1'
 ExecStart=docker run --name trident_container --pull=never --rm --privileged -v /etc/trident:/etc/trident -v /var/lib/trident:/var/lib/trident -v /var/log:/var/log -v /:/host -v /dev:/dev -v /run:/run -v /sys:/sys --pid host --ipc host trident/trident:latest commit --verbosity DEBUG
 StandardOutput=journal+console
 StandardError=journal+console
