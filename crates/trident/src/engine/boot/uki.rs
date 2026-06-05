@@ -192,10 +192,8 @@ fn remove_uki_and_addons(path: &Path) -> Result<(), Error> {
             trace!("UKI file '{}' already removed, continuing", path.display());
         }
         Err(e) => {
-            return Err(
-                anyhow::Error::new(e)
-                    .context(format!("Failed to remove UKI file '{}'", path.display())),
-            );
+            return Err(anyhow::Error::new(e)
+                .context(format!("Failed to remove UKI file '{}'", path.display())));
         }
     }
     let addon_dir = uki::uki_addon_dir(path);
@@ -1268,12 +1266,8 @@ mod tests {
             "vmlinuz-103-azla1.efi", // different OS index → should survive
         ]);
 
-        cleanup_ukis_before_staging(
-            &ctx,
-            mount.path(),
-            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
-        )
-        .unwrap();
+        cleanup_ukis_before_staging(&ctx, mount.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH))
+            .unwrap();
 
         assert!(!uki_dir.join("vmlinuz-100-azlb0.efi").exists());
         assert!(uki_dir.join("vmlinuz-101-azla0.efi").exists());
@@ -1294,12 +1288,8 @@ mod tests {
             "vmlinuz-103-azla10.efi", // OS index 10 → should survive
         ]);
 
-        cleanup_ukis_before_staging(
-            &ctx,
-            mount.path(),
-            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
-        )
-        .unwrap();
+        cleanup_ukis_before_staging(&ctx, mount.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH))
+            .unwrap();
 
         assert!(!uki_dir.join("vmlinuz-100-azla0.efi").exists());
         assert!(uki_dir.join("vmlinuz-101-azla01.efi").exists());
@@ -1319,12 +1309,8 @@ mod tests {
             "vmlinuz-101-azla0.efi", // active → keep
         ]);
 
-        cleanup_ukis_before_staging(
-            &ctx,
-            mount.path(),
-            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
-        )
-        .unwrap();
+        cleanup_ukis_before_staging(&ctx, mount.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH))
+            .unwrap();
 
         assert!(!uki_dir.join("vmlinuz-100-azlb0.efi").exists());
         assert!(!uki_dir.join("vmlinuz-102-azlb0.efi").exists());
