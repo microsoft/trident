@@ -441,34 +441,41 @@ fn detect_acl_btrfs_uuid_collision(
     // When a staging root hash is available, verify that the active USR
     // partition has the same verity root hash. This provides a cryptographic
     // guarantee that the filesystems are byte-identical, not just a UUID match.
-    if let Some(staging_hash) = staging_usr_roothash {
-        match acl::read_active_usr_roothash() {
-            Some(active_hash) => {
-                let staging_normalized = staging_hash.trim().to_lowercase();
-                let active_normalized = active_hash.trim().to_lowercase();
-                if staging_normalized == active_normalized {
-                    debug!(
-                        "Verity root hash verification passed: active and staging USR \
-                         partitions have matching root hash ({}...)",
-                        &staging_normalized[..staging_normalized.len().min(16)]
-                    );
-                } else {
-                    warn!(
-                        "Verity root hash mismatch: active USR has '{}...', staging has '{}...'. \
-                         Refusing bind-mount despite UUID collision.",
-                        &active_normalized[..active_normalized.len().min(16)],
-                        &staging_normalized[..staging_normalized.len().min(16)]
-                    );
-                    return None;
-                }
-            }
-            None => {
+    let Some(staging_hash) = staging_usr_roothash else {
+        // No staging hash available — cannot verify content identity.
+        // Refusing the bind-mount is the safe choice: proceeding without
+        // verification could mount different content at /usr.
+        warn!(
+            "No staging USR verity root hash provided. \
+             Refusing bind-mount — cannot verify content identity."
+        );
+        return None;
+    };
+
+    match acl::read_active_usr_roothash() {
+        Some(active_hash) => {
+            if acl::verity_hashes_match(staging_hash, &active_hash) {
+                debug!(
+                    "Verity root hash verification passed: active and staging USR \
+                     partitions have matching root hash ({}...)",
+                    acl::hash_preview(staging_hash)
+                );
+            } else {
                 warn!(
-                    "Cannot read active USR verity root hash from /proc/cmdline. \
-                     Refusing bind-mount despite UUID collision."
+                    "Verity root hash mismatch: active USR has '{}...', staging has '{}...'. \
+                     Refusing bind-mount despite UUID collision.",
+                    acl::hash_preview(&active_hash),
+                    acl::hash_preview(staging_hash)
                 );
                 return None;
             }
+        }
+        None => {
+            warn!(
+                "Cannot read active USR verity root hash from /proc/cmdline. \
+                 Refusing bind-mount despite UUID collision."
+            );
+            return None;
         }
     }
 
