@@ -141,20 +141,29 @@ fn extract_options_from_bls_entries(ctx: &OsModifierContext) -> Result<Vec<Strin
         if let Some(ref t) = title {
             let lower = t.to_lowercase();
             if lower.contains("rescue") || lower.contains("recovery") {
-                trace!("Skipping BLS rescue/recovery entry: {}", conf_path.display());
+                trace!(
+                    "Skipping BLS rescue/recovery entry: {}",
+                    conf_path.display()
+                );
                 continue;
             }
         }
 
         if let Some(opts) = options {
-            debug!("Using BLS entry '{}': options = {opts}", conf_path.display());
+            debug!(
+                "Using BLS entry '{}': options = {opts}",
+                conf_path.display()
+            );
             // Return as a synthetic "linux" line: prepend a dummy kernel path
             // so the downstream parser (which skips the first token) works.
             return Ok(vec![format!("/boot/vmlinuz {opts}")]);
         }
     }
 
-    bail!("no non-recovery BLS entry found in '{}'", entries_dir.display())
+    bail!(
+        "no non-recovery BLS entry found in '{}'",
+        entries_dir.display()
+    )
 }
 
 /// Return the first whitespace-delimited word from a line, or None if the
@@ -870,11 +879,7 @@ mod tests {
 
         let grub_dir = tmp.path().join("boot/grub2");
         std::fs::create_dir_all(&grub_dir).unwrap();
-        std::fs::write(
-            grub_dir.join("grub.cfg"),
-            "set timeout=5\nblscfg\n",
-        )
-        .unwrap();
+        std::fs::write(grub_dir.join("grub.cfg"), "set timeout=5\nblscfg\n").unwrap();
 
         let bls_dir = tmp.path().join("boot/loader/entries");
         std::fs::create_dir_all(&bls_dir).unwrap();
@@ -922,11 +927,7 @@ mod tests {
 
         let grub_dir = tmp.path().join("boot/grub2");
         std::fs::create_dir_all(&grub_dir).unwrap();
-        std::fs::write(
-            grub_dir.join("grub.cfg"),
-            "set timeout=5\nblscfg\n",
-        )
-        .unwrap();
+        std::fs::write(grub_dir.join("grub.cfg"), "set timeout=5\nblscfg\n").unwrap();
 
         // Empty BLS entries dir
         let bls_dir = tmp.path().join("boot/loader/entries");
