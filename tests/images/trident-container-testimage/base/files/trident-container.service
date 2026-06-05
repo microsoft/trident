@@ -1,7 +1,6 @@
 [Unit]
 Description=Trident Agent
-Requires=docker.service
-Wants=containerd.service
+Requires=docker.service containerd.service
 After=network.target network-online.target systemd-udev-settle.service docker.service containerd.service
 
 [Service]
