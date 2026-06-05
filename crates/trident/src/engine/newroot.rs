@@ -18,7 +18,8 @@ use sysdefs::{
 use trident_api::{
     config::{FileSystem, HostConfiguration},
     constants::{
-        NONE_MOUNT_POINT, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_FALLBACK_PATH, UPDATE_ROOT_PATH,
+        internal_params, NONE_MOUNT_POINT, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_FALLBACK_PATH,
+        UPDATE_ROOT_PATH,
     },
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::AbVolumeSelection,
@@ -175,8 +176,13 @@ impl NewrootMount {
         }
 
         // Check for ACL BTRFS UUID collision and determine resolution strategy.
-        let acl_collision_resolution =
-            resolve_acl_btrfs_uuid_collision(update_volume, staging_usr_roothash);
+        let acl_collision_resolution = resolve_acl_btrfs_uuid_collision(
+            update_volume,
+            staging_usr_roothash,
+            host_config
+                .internal_params
+                .get_flag(internal_params::ENABLE_AZL4),
+        );
 
         // Mount all block devices in the newroot
         mount_points_map(host_config)
@@ -438,7 +444,8 @@ enum AclBtrfsCollisionResolution {
 }
 
 /// Detects a BTRFS filesystem UUID collision on ACL's USR A/B partitions and
-/// determines how to resolve it based on the running kernel version.
+/// determines how to resolve it based on the running kernel version and
+/// the `enableAzl4` internal parameter.
 ///
 /// BTRFS maintains a kernel-global UUID registry and refuses to mount a filesystem
 /// whose UUID is already registered by another mounted device. During A/B updates
@@ -446,44 +453,51 @@ enum AclBtrfsCollisionResolution {
 /// verity device cannot be mounted directly.
 ///
 /// Resolution strategy:
-/// - Kernel ≥6.7: use `mount -o temp_fsuid` (mounts the real staging device)
-/// - Kernel <6.7: bind-mount from active `/usr` (requires verity hash match)
+/// - `enable_azl4` + Kernel ≥6.7: use `mount -o temp_fsuid` (mounts the real staging device)
+/// - Otherwise: bind-mount from active `/usr` (requires verity hash match)
 ///
 /// Returns `None` if no collision exists or if the bind-mount path is unsafe.
 fn resolve_acl_btrfs_uuid_collision(
     update_volume: AbVolumeSelection,
     staging_usr_roothash: Option<&str>,
+    enable_azl4: bool,
 ) -> Option<AclBtrfsCollisionResolution> {
     // 1. Detect whether a UUID collision exists.
     let collision_uuid = detect_acl_btrfs_uuid_collision(update_volume)?;
 
     // 2. Determine resolution strategy based on kernel version.
-    let kernel_version = osutils::uname::KernelVersion::running()
-        .map_err(|e| warn!("Failed to determine kernel version: {e}"))
-        .ok()
-        .flatten();
+    //    The temp_fsuid path requires the enableAzl4 internal param to be set.
+    //    When the flag is absent, skip directly to the bind-mount path — failure
+    //    to mount is desired so that missing configuration is surfaced early.
+    if enable_azl4 {
+        let kernel_version = osutils::uname::KernelVersion::running()
+            .map_err(|e| warn!("Failed to determine kernel version: {e}"))
+            .ok()
+            .flatten();
 
-    if let Some(kv) = kernel_version {
-        debug!(
-            "Running kernel {}.{}, BTRFS temp_fsuid supported: {}",
-            kv.major,
-            kv.minor,
-            kv.supports_btrfs_temp_fsuid()
-        );
-        if kv.supports_btrfs_temp_fsuid() {
-            // Kernel ≥6.7: mount the staging device directly with temp_fsuid.
-            // No verity hash check needed — we're mounting the real staging content.
-            return Some(AclBtrfsCollisionResolution::TempFsuid { collision_uuid });
+        if let Some(kv) = kernel_version {
+            debug!(
+                "Running kernel {}.{}, BTRFS temp_fsuid supported: {}",
+                kv.major,
+                kv.minor,
+                kv.supports_btrfs_temp_fsuid()
+            );
+            if kv.supports_btrfs_temp_fsuid() {
+                // Kernel ≥6.7: mount the staging device directly with temp_fsuid.
+                // No verity hash check needed — we're mounting the real staging content.
+                return Some(AclBtrfsCollisionResolution::TempFsuid { collision_uuid });
+            }
+        } else {
+            warn!(
+                "Could not parse kernel version; falling back to bind-mount strategy \
+                 for ACL BTRFS UUID collision"
+            );
         }
-    } else {
-        warn!(
-            "Could not parse kernel version; falling back to bind-mount strategy \
-             for ACL BTRFS UUID collision"
-        );
     }
 
-    // 3. Kernel <6.7 (or unknown): bind-mount from active /usr.
-    //    This requires verity hash verification to prove content is identical.
+    // 3. Kernel <6.7, unknown kernel, or enableAzl4 not set: bind-mount from
+    //    active /usr. This requires verity hash verification to prove content
+    //    is identical.
     if !verify_acl_bind_mount_safety(staging_usr_roothash) {
         return None;
     }
