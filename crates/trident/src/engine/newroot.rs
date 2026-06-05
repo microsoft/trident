@@ -223,25 +223,16 @@ impl NewrootMount {
                 let fs_type = block_device.fstype.and_then(|fs_type| KernelFilesystemType::from(fs_type.as_str()).try_as_real());
 
                 // ACL-specific: if the staging device has a BTRFS filesystem UUID that
-                // collides with the active USR partition, resolve based on kernel version:
-                // - Kernel >=6.7: mount with -o temp_fsuid (staging device directly)
-                // - Kernel <6.7: bind-mount from active /usr (verity-verified identical)
+                // collides with the active USR partition, resolve based on strategy:
+                // - enableAzl4 + kernel >=6.7: mount with -o temp_fsuid (staging device directly)
+                // - Otherwise: bind-mount from active /usr (verity-verified identical)
                 if let Some(ref resolution) = acl_collision_resolution {
-                    let collision_uuid = match resolution {
-                        AclBtrfsCollisionResolution::TempFsuid { collision_uuid } => collision_uuid,
-                        AclBtrfsCollisionResolution::BindMountActiveUsr { collision_uuid } => {
-                            collision_uuid
-                        }
-                    };
+                    let collision_uuid = resolution.collision_uuid();
                     if fs_type == Some(RealFilesystemType::Btrfs)
                         && block_device.fsuuid.as_ref() == Some(collision_uuid)
                     {
                         match resolution {
                             AclBtrfsCollisionResolution::TempFsuid { .. } => {
-                                // Kernel >=6.7: mount the staging device with temp_fsuid.
-                                // NOTE: This codepath is aspirational. We believe it will
-                                // work, but until trident A/B update and ACL run on a
-                                // kernel >6.6, it is untested in production.
                                 let mut options = mp.options.to_string_vec();
                                 options.push("temp_fsuid".to_string());
                                 warn!(
@@ -265,7 +256,6 @@ impl NewrootMount {
                                 ))?;
                             }
                             AclBtrfsCollisionResolution::BindMountActiveUsr { .. } => {
-                                // Kernel <6.7: bind-mount from active /usr.
                                 let active_usr = Path::new("/usr");
                                 warn!(
                                     "Block device '{}' has BTRFS filesystem UUID '{}' which \
@@ -432,6 +422,15 @@ fn should_be_bind_mounted(fs_type: Option<RealFilesystemType>) -> bool {
 // ACL constants and helpers are in the shared acl module.
 use super::acl::{self, ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID};
 
+/// Minimum kernel version required for the BTRFS `temp_fsuid` mount option
+/// (introduced in Linux 6.7). Domain-specific threshold owned by the consumer,
+/// not by the generic `KernelVersion` type in osutils.
+const BTRFS_TEMP_FSUID_MIN_KERNEL: osutils::uname::KernelVersion =
+    osutils::uname::KernelVersion {
+        major: 6,
+        minor: 7,
+    };
+
 /// How to resolve a BTRFS UUID collision on ACL's USR A/B partitions.
 #[derive(Debug)]
 enum AclBtrfsCollisionResolution {
@@ -441,6 +440,16 @@ enum AclBtrfsCollisionResolution {
     /// Kernel <6.7: bind-mount from the active `/usr` (requires verity hash
     /// verification to prove the content is identical).
     BindMountActiveUsr { collision_uuid: OsUuid },
+}
+
+impl AclBtrfsCollisionResolution {
+    fn collision_uuid(&self) -> &OsUuid {
+        match self {
+            Self::TempFsuid { collision_uuid } | Self::BindMountActiveUsr { collision_uuid } => {
+                collision_uuid
+            }
+        }
+    }
 }
 
 /// Detects a BTRFS filesystem UUID collision on ACL's USR A/B partitions and
@@ -470,27 +479,33 @@ fn resolve_acl_btrfs_uuid_collision(
     //    When the flag is absent, skip directly to the bind-mount path — failure
     //    to mount is desired so that missing configuration is surfaced early.
     if enable_azl4 {
-        let kernel_version = osutils::uname::KernelVersion::running()
-            .map_err(|e| warn!("Failed to determine kernel version: {e}"))
-            .ok()
-            .flatten();
+        let kernel_version = match osutils::uname::KernelVersion::running() {
+            Ok(kv) => kv,
+            Err(e) => {
+                // DR-003: distinguish uname execution failure from parse failure.
+                warn!("Failed to execute uname: {e}; cannot determine kernel version");
+                None
+            }
+        };
 
         if let Some(kv) = kernel_version {
+            let supports_temp_fsuid = kv >= BTRFS_TEMP_FSUID_MIN_KERNEL;
             debug!(
                 "Running kernel {}.{}, BTRFS temp_fsuid supported: {}",
-                kv.major,
-                kv.minor,
-                kv.supports_btrfs_temp_fsuid()
+                kv.major, kv.minor, supports_temp_fsuid
             );
-            if kv.supports_btrfs_temp_fsuid() {
+            if supports_temp_fsuid {
                 // Kernel ≥6.7: mount the staging device directly with temp_fsuid.
-                // No verity hash check needed — we're mounting the real staging content.
+                // Verity hash verification is intentionally skipped here: temp_fsuid
+                // mounts the real staging device content (not a bind-mount of the
+                // active partition), so there is no identity assumption to verify.
                 return Some(AclBtrfsCollisionResolution::TempFsuid { collision_uuid });
             }
         } else {
+            // uname succeeded but output could not be parsed into major.minor.
             warn!(
-                "Could not parse kernel version; falling back to bind-mount strategy \
-                 for ACL BTRFS UUID collision"
+                "Could not parse kernel version from uname output; \
+                 falling back to bind-mount strategy for ACL BTRFS UUID collision"
             );
         }
     }
