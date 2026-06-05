@@ -12,6 +12,9 @@ pub fn kernel_release() -> Result<String, Error> {
 }
 
 /// Parsed kernel version with major and minor components.
+///
+/// Implements `Ord` so callers can compare against feature thresholds
+/// (e.g., `kv >= KernelVersion { major: 6, minor: 7 }`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct KernelVersion {
     pub major: u32,
@@ -37,15 +40,12 @@ impl KernelVersion {
     }
 
     /// Returns the kernel version of the running system.
+    ///
+    /// Returns `Err` if the `uname` command fails to execute, or `Ok(None)`
+    /// if the output cannot be parsed into a major.minor version.
     pub fn running() -> Result<Option<Self>, Error> {
         let release = kernel_release()?;
         Ok(Self::parse(&release))
-    }
-
-    /// Returns true if this kernel version supports the BTRFS `temp_fsuid`
-    /// mount option, which was introduced in Linux 6.7.
-    pub fn supports_btrfs_temp_fsuid(&self) -> bool {
-        (self.major, self.minor) >= (6, 7)
     }
 }
 
@@ -62,21 +62,21 @@ mod tests {
     fn test_parse_azl_kernel() {
         let v = KernelVersion::parse("6.6.78.2-1.cm2").unwrap();
         assert_eq!(v, KernelVersion { major: 6, minor: 6 });
-        assert!(!v.supports_btrfs_temp_fsuid());
+        assert!(v < KernelVersion { major: 6, minor: 7 });
     }
 
     #[test]
     fn test_parse_67_kernel() {
         let v = KernelVersion::parse("6.7.0-1.cm2").unwrap();
         assert_eq!(v, KernelVersion { major: 6, minor: 7 });
-        assert!(v.supports_btrfs_temp_fsuid());
+        assert!(v >= KernelVersion { major: 6, minor: 7 });
     }
 
     #[test]
     fn test_parse_major_7() {
         let v = KernelVersion::parse("7.0.0").unwrap();
         assert_eq!(v, KernelVersion { major: 7, minor: 0 });
-        assert!(v.supports_btrfs_temp_fsuid());
+        assert!(v >= KernelVersion { major: 6, minor: 7 });
     }
 
     #[test]
@@ -89,7 +89,7 @@ mod tests {
                 minor: 15
             }
         );
-        assert!(!v.supports_btrfs_temp_fsuid());
+        assert!(v < KernelVersion { major: 6, minor: 7 });
     }
 
     #[test]
