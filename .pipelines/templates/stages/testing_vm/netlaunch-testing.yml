@@ -310,7 +310,6 @@ stages:
                   "${{ parameters.runtimeEnv }}" \
                   --audit-file $(ob_outputDirectory)/audit.log \
             timeoutInMinutes: 5
-            condition: and(succeeded(), eq('${{ parameters.runtimeEnv }}', 'host'))
             displayName: "📄 Check for SELinux failures"
             workingDirectory: $(TRIDENT_SOURCE_DIR)
 
