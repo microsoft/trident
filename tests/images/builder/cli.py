@@ -184,30 +184,25 @@ def setup_parser_download_image(
 ) -> None:
     parser_download_img = subparsers.add_parser(
         SubCommand.DOWNLOAD_IMAGE.value,
-        help="Download a base image (from the Azure DevOps feed, or from "
-        "Azure Storage Blob for distros without a published feed).",
+        help="Download a base image.",
     )
     parser_download_img.set_defaults(artifacts=artifacts)
     parser_download_img.add_argument(
         "image",
-        help="The image to download",
+        help="The image to download.",
         choices=[c.image.name for c in artifacts.base_images],
     )
     parser_download_img.add_argument(
         "--blob-storage-account",
         default=os.environ.get("BLOB_STORAGE_ACCOUNT"),
-        help="Azure Storage account name to pull blob-sourced base images "
-        "from. Required when downloading an image whose manifest is a "
-        "BlobImageManifest. Falls back to the BLOB_STORAGE_ACCOUNT env "
-        "var. Not used for ADO-feed base images.",
+        help="Azure Storage account name for blob-sourced images. "
+        "Env: BLOB_STORAGE_ACCOUNT.",
     )
     parser_download_img.add_argument(
         "--blob-container",
         default=os.environ.get("BLOB_CONTAINER"),
-        help="Azure Storage container name to pull blob-sourced base "
-        "images from. Required when downloading an image whose manifest "
-        "is a BlobImageManifest. Falls back to the BLOB_CONTAINER env "
-        "var. Not used for ADO-feed base images.",
+        help="Azure Storage container name for blob-sourced images. "
+        "Env: BLOB_CONTAINER.",
     )
 
 
