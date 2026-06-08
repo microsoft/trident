@@ -41,24 +41,12 @@ storage:
     - deviceId: root
       mountPoint: /
 # AZL4 baseline scenario for the pytest E2E framework. Mirrors the AZL3
-# `base/` scenario as closely as possible while staying inside what PR-4's
-# native hostname-carry-over fast path can serve.
+# `base/` scenario with these differences:
 #
-# Why no `os:` section yet:
-#   The MOS install ISO (built from tests/images/trident-mos/iso.yaml)
-#   does not include /usr/bin/osmodifier. PR-5 bakes osmodifier into the
-#   target image so post-install Trident operations (update, runtime
-#   apply) can drive os.users / os.selinux / os.netplan via osmodifier,
-#   but the install-time validation runs in the MOS environment which
-#   currently lacks the binary. Until the MOS ISO is rebuilt with
-#   azurelinux-image-tools-osmodifier installed (a small follow-up), the
-#   install path must stick to PR-4's hostname-only fast path.
-#
-# Once the MOS includes osmodifier, this file can grow to mirror `base/`
-# more completely (os.users, os.selinux, os.netplan).
-#
-# Other differences from base/:
-#   - No swap or /home partitions (kept simple for the first AZL4 scenario;
-#     swap support is its own follow-up and /home isn't load-bearing here).
-#   - No postConfigure sudo grant: the testing-user is added to wheel by
-#     the testimage MIC config and /etc/sudoers.d/wheel grants nopasswd.
+#   - No `os:` section: users, SSH keys, networking, and sudoers are
+#     baked into the test image at MIC build time. Can grow to mirror
+#     `base/` more completely as AZL4 testing matures.
+#   - No swap or /home partitions (kept simple for the first AZL4
+#     scenario).
+#   - No postConfigure sudo grant: testing-user is added to wheel by
+#     the testimage MIC config.
