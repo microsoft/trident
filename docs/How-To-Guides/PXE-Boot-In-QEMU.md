@@ -22,11 +22,14 @@
 
    ```bash
    mkdir initrd-work && cd initrd-work
-   zcat ../initrd.img | cpio -idm --no-absolute-filenames
+   zstdcat ../initrd.img | cpio -idm --no-absolute-filenames
    cp ../trident.yaml etc/trident/config.yaml
-   find . | cpio -o -H newc | gzip > ../tftp/initrd.img
+   find . | cpio -o -H newc | zstd > ../tftp/initrd.img
    cd .. && rm -rf initrd-work
    ```
+
+   > **Note:** Trident initrds are zstd-compressed. If your image uses gzip
+   > instead, replace `zstdcat` with `zcat` and `zstd` with `gzip`.
 
    For details on the Host Configuration format, see the
    [Host Configuration reference](../Reference/Host-Configuration/Sample-Host-Configuration.md).
