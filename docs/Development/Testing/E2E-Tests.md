@@ -255,13 +255,19 @@ make bin/trident-mos.iso
 **Container runtime:**
 
 ```bash
+make artifacts/trident-container-installer.iso
+```
+
+This downloads `artifacts/trident-container-installer.iso` from the latest
+pipeline build. The container installer ISO includes Docker and a
+`trident-container.service` but does not include Trident RPMs.
+
+To build the ISO locally instead (e.g., when iterating on image changes):
+
+```bash
 sudo ./tests/images/testimages.py build trident-container-installer \
     --output-dir ./artifacts
 ```
-
-This builds `artifacts/trident-container-installer.iso` using Image Customizer.
-The container installer ISO includes Docker and a `trident-container.service`
-but does not include Trident RPMs.
 
 ## Running a Clean Install
 
