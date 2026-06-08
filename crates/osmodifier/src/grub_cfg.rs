@@ -117,7 +117,7 @@ fn extract_options_from_bls_entries(ctx: &OsModifierContext) -> Result<Vec<Strin
         .with_context(|| format!("Failed to read BLS entries dir '{}'", entries_dir.display()))?
         .filter_map(|e| e.ok())
         .map(|e| e.path())
-        .filter(|p| p.extension().map_or(false, |ext| ext == "conf"))
+        .filter(|p| p.extension().is_some_and(|ext| ext == "conf"))
         .collect();
 
     conf_files.sort();
