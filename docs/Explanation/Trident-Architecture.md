@@ -52,7 +52,7 @@ graph TB
 
     Engine --> Subsystems
 
-    subgraph "System Tools"
+    subgraph SysTools ["System Tools"]
         direction LR
         REPART[systemd-repart]
         MDADM[mdadm]
@@ -61,7 +61,7 @@ graph TB
         SYSTEMD[systemd]
     end
 
-    Subsystems --> System Tools
+    Subsystems --> SysTools
 ```
 
 ## Execution Modes
