@@ -23,12 +23,19 @@ describes the desired state of the target OS. Trident compares this against the
 current state and determines the necessary actions to reconcile them.
 
 ```mermaid
-graph TB
-    HC["Host Configuration\n(YAML)"] --> Engine["Trident Engine"]
-    COSI["COSI Image\n(file / HTTPS / OCI)"] --> Engine
+flowchart LR
+    USER["User / Orchestrator"] --> HC["Host Configuration\n(YAML)"]
+    USER --> COSI["COSI Image\n(file / HTTPS / OCI)"]
 
-    Engine <--> DS["DataStore (SQLite)\nHost Status · History"]
-    Engine --> SysTools["System Tools\nsystemd-repart · mdadm\ncryptsetup · grub2 · systemd"]
+    HC --> Engine["Trident\nEngine"]
+    COSI --> Engine
+
+    Engine --> Subsystems["Subsystems\nStorage · Boot · OS Config\nNetwork · SELinux · Hooks · ..."]
+
+    Subsystems <--> DS["DataStore\n(state)"]
+    Subsystems --> SysTools["System Tools\nsystemd-repart · mdadm\ncryptsetup · grub2 · ..."]
+
+    SysTools --> TARGET["Target OS\n(desired state achieved)"]
 ```
 
 ## Execution Modes
