@@ -75,6 +75,7 @@ iso:
       destination: /trident-override.conf
   kernelCommandLine:
     extraCommandLine:
+      - enforcing=0
       - console=tty0
       - console=ttyS0
       - rd.luks=0
