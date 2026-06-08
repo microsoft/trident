@@ -224,17 +224,14 @@ stages:
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
-  # Build the AZL4 test image (pinned-MIC path).
+  # Build the AZL4 test images.
   #
-  # TODO(azl4-release): Drop the bespoke build-image-azl4.yml call once AZL4
-  # has feed-published base VHDXes, RPMs, and a released MIC container.
-  # Then this can be a plain build-image.yml call with an azureLinuxVersion
-  # parameter, matching the other testimage stages.
+  # Uses build-image-azl4.yml (MCR MIC + blob-sourced base VHDX) instead
+  # of the standard build-image.yml path. See build-image-azl4.yml for
+  # the merge-back TODO.
   #
-  # Gating mirrors the AzL installer ISO below so AZL4 build runs in every
-  # stage type that gates a trunk merge. Previously this only ran on
-  # pr-e2e / ci / pr-e2e-azure, which silently skipped AZL4 in
-  # azl-validation / full-validation — exactly the stage you'd want it.
+  # Gating mirrors the AzL installer ISO below so AZL4 builds run in
+  # every stage type that gates a trunk merge.
   - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure'), eq(parameters.stageType, 'azl-validation'), eq(parameters.stageType, 'full-validation')) }}:
       - template: stages/build_image/build-image-azl4.yml
         parameters:
