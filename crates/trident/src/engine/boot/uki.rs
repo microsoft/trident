@@ -252,15 +252,22 @@ pub fn cleanup_ukis_before_staging(
 
     // 2. Remove non-trident-managed UKIs only if:
     //    - This is install_index 0 (the OS that placed the original UKI), AND
-    //    - Trident already manages the active slot (proving the original is
-    //      superseded as rollback).
+    //    - Trident already manages BOTH slots (active and target had UKIs
+    //      before this cleanup). This ensures the original install UKI is
+    //      preserved as a rollback target until Trident has established A/B
+    //      coverage. Without this, a failed staging after deleting the original
+    //      leaves only one Trident UKI and find_previous_uki cannot locate a
+    //      rollback entry.
     //    In multiboot, install_index > 0 never owns the original UKI — it has
     //    OS 0's partition refs baked in and can't boot other OS instances.
     let has_active_slot_uki = trident_ukis
         .iter()
         .any(|(_index, suffix, _)| *suffix == active_suffix);
+    let has_target_slot_uki = trident_ukis
+        .iter()
+        .any(|(_index, suffix, _)| *suffix == target_suffix);
 
-    if has_active_slot_uki && ctx.install_index == 0 {
+    if has_active_slot_uki && has_target_slot_uki && ctx.install_index == 0 {
         let non_trident_ukis = enumerate_non_trident_managed_ukis(&esp_uki_directory)?;
         for (_version, path) in non_trident_ukis {
             debug!(
