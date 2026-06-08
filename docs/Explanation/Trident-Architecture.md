@@ -24,44 +24,11 @@ current state and determines the necessary actions to reconcile them.
 
 ```mermaid
 graph TB
-    HC["Host Configuration\n(YAML)"] --> Engine
+    HC["Host Configuration\n(YAML)"] --> Engine["Trident Engine"]
     COSI["COSI Image\n(file / HTTPS / OCI)"] --> Engine
 
-    subgraph Engine ["Trident Engine"]
-        SELECT{"Select\nServicing Type"}
-        PREPARE["Prepare"]
-        PROVISION["Provision"]
-        CONFIGURE["Configure"]
-        SELECT --> PREPARE --> PROVISION --> CONFIGURE
-    end
-
     Engine <--> DS["DataStore (SQLite)\nHost Status · History"]
-
-    subgraph Subsystems
-        direction LR
-        STORAGE[Storage]
-        BOOT[Boot]
-        ESP_SS[ESP]
-        OSIMAGE[OS Image]
-        OSCONFIG[OS Config]
-        NET[Network]
-        SEL[SELinux]
-        EXT[Extensions]
-        HOOKS[Hooks]
-    end
-
-    Engine --> Subsystems
-
-    subgraph SysTools ["System Tools"]
-        direction LR
-        REPART[systemd-repart]
-        MDADM[mdadm]
-        CRYPT[cryptsetup]
-        GRUB[grub2]
-        SYSTEMD[systemd]
-    end
-
-    Subsystems --> SysTools
+    Engine --> SysTools["System Tools\nsystemd-repart · mdadm\ncryptsetup · grub2 · systemd"]
 ```
 
 ## Execution Modes
@@ -82,7 +49,7 @@ of how Trident is invoked.
 
 ```mermaid
 flowchart TB
-    subgraph Entry Points
+    subgraph EntryPoints ["Entry Points"]
         CLI["trident CLI\n(install / update / commit / ...)"]
         GRPC_CLIENT["gRPC Client"]
         ORCH["External Orchestrator"]
@@ -99,7 +66,15 @@ flowchart TB
     SOCKET --> SERVICES
     SERVICES --> ENGINE
 
-    ENGINE["Trident Engine"]
+    subgraph ENGINE ["Trident Engine"]
+        SELECT{"Select\nServicing Type"}
+        PREPARE["Prepare"]
+        PROVISION["Provision"]
+        CONFIGURE["Configure"]
+        SELECT --> PREPARE --> PROVISION --> CONFIGURE
+    end
+
+    ENGINE <--> DS["DataStore\n(SQLite)"]
 
     subgraph Subsystems
         direction LR
@@ -115,7 +90,6 @@ flowchart TB
     end
 
     ENGINE --> Subsystems
-    ENGINE <--> DS["DataStore\n(SQLite)"]
 ```
 
 ## Engine
