@@ -50,8 +50,7 @@ parameters:
   - name: blobServiceConnection
     type: string
     # NB: this must be a service connection that exists in the ADO project.
-    # Trident infra needs to create it manually (Karhu can't); see the PR-5
-    # follow-up validation report for the runbook.
+    # Created manually by trident infra team.
     default: "trident-azl4-blob-reader"
 
   - name: micContainerTag
