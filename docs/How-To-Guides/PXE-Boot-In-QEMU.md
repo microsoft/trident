@@ -22,7 +22,7 @@
 
    ```bash
    mkdir initrd-work && cd initrd-work
-   zcat ../initrd.img | cpio -idm
+   zcat ../initrd.img | cpio -idm --no-absolute-filenames
    cp ../trident.yaml etc/trident/config.yaml
    find . | cpio -o -H newc | gzip > ../tftp/initrd.img
    cd .. && rm -rf initrd-work
