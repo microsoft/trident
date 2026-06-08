@@ -1,12 +1,8 @@
 image:
   url: http://NETLAUNCH_HOST_ADDRESS/files/regular.cosi
   sha384: ignored
-# Note: AZL4 doesn't ship grub2-efi-binary-noprefix. We deliberately do
-# not set `internalParams.disableGrubNoprefixCheck` here — trident
-# auto-detects AZL4 (via `is_azl4_or_later` in
-# crates/trident/src/subsystems/esp.rs) and skips the check itself, so
-# this scenario exercises the auto-detection path that real customers
-# will hit.
+# AZL4 does not ship grub2-efi-binary-noprefix. Trident handles this
+# automatically — no disableGrubNoprefixCheck override needed.
 storage:
   disks:
     - id: os
