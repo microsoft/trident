@@ -7,6 +7,7 @@ from builder import (
     ArtifactManifest,
     BaseImage,
     BaseImageManifest,
+    BlobImageManifest,
     ImageConfig,
     OutputFormat,
     SystemArchitecture,
@@ -133,6 +134,47 @@ DEFINED_IMAGES: List[ImageConfig] = [
         ssh_key="files/id_rsa.pub",
     ),
     ImageConfig(
+        # AZL4 (Fedora-derived) variant of trident-vm-grub-testimage.
+        # The base VHDX is pulled from Azure Storage (see
+        # BlobImageManifest below) since there is no AzureLinuxArtifacts
+        # ADO feed entry for AZL4 yet. The Trident binary is baked in
+        # via additionalFiles because the trident-service RPM is not
+        # yet packaged for AZL4.
+        "trident-vm-grub-testimage-azl4",
+        base_image=BaseImage.AZL4_QEMU_GUEST,
+        config="trident-vm-testimage",
+        config_file="base/updateimg-grub-azl4.yaml",
+        ssh_key="files/id_rsa.pub",
+        # No trident-service RPM for AZL4 yet — the binary is delivered
+        # via additionalFiles. extra_dependencies enforces both binaries
+        # are in place before the image is built (osmodifier is delivered
+        # the same way until an AZL4 RPM exists; see
+        # tests/images/trident-vm-testimage/base/updateimg-grub-azl4.yaml
+        # for the additionalFiles entries that consume both paths).
+        requires_trident=False,
+        extra_dependencies=[
+            Path("tests/images/trident-vm-testimage/base/trident-bin/trident"),
+            Path("tests/images/trident-vm-testimage/base/osmodifier-bin/osmodifier"),
+        ],
+    ),
+    ImageConfig(
+        # AZL4 BASE qcow2: a bootable disk with the AZL4 OS plus trident
+        # installed, so storm-trident rollback testing can boot a VM and
+        # immediately drive A/B updates targeting the .cosi above.
+        # Mirrors AZL3's `make artifacts/trident-vm-grub-testimage.qcow2`
+        # path. See baseimg-grub-azl4.yaml for the layout / package set.
+        "trident-vm-grub-testimage-azl4-base",
+        base_image=BaseImage.AZL4_QEMU_GUEST,
+        config="trident-vm-testimage",
+        config_file="base/baseimg-grub-azl4.yaml",
+        output_format=OutputFormat.QCOW2,
+        ssh_key="files/id_rsa.pub",
+        requires_trident=False,
+        extra_dependencies=[
+            Path("tests/images/trident-vm-testimage/base/trident-bin/trident"),
+        ],
+    ),
+    ImageConfig(
         "trident-vm-grub-verity-testimage",
         base_image=BaseImage.QEMU_GUEST,
         config="trident-vm-testimage",
@@ -245,6 +287,23 @@ ARTIFACTS = ArtifactManifest(
             image=BaseImage.MINIMAL,
             package_name="minimal_vhdx-3.0-stable",
             version="*",
+        ),
+        BlobImageManifest(
+            # Azure Linux 4.0 base VHDX from the AZL preview gallery's
+            # backing storage. Pinned to a specific daily build — bump
+            # the version segment in path_prefix to pick up a newer one.
+            #
+            # Source gallery:
+            #   azlpubDevGallery2mruiyvi / azure-linux-4-daily-x64
+            #   subscription e4ab81f8-030f-4593-a8f2-3ea2c7630a19
+            #   RG azl-acg-preview-publishing
+            #
+            # Storage account + container are supplied at runtime via
+            # --blob-storage-account / --blob-container CLI flags or
+            # the BLOB_STORAGE_ACCOUNT / BLOB_CONTAINER env vars.
+            image=BaseImage.AZL4_QEMU_GUEST,
+            path_prefix="staging/azure-linux-4-daily-x64/4.0.2026051502",
+            file_suffix=".vhdfixed",
         ),
     ],
 )

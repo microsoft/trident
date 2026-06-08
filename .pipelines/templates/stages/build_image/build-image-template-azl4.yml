@@ -1,0 +1,167 @@
+# AZL4 variant of build-image-template.yml.
+#
+# Forked from build-image-template.yml on 2026-05-13. The AZL3 path pulls the
+# base VHDX from the AzureLinuxArtifacts ADO feed and the Trident RPM from the
+# trident-binaries pipeline artifact, then runs `testimages.py build`. AZL4
+# uses different acquisition paths:
+#
+#   1. Base VHDX comes from the AZL preview gallery's backing storage
+#      (azlpubdev2mruiyvi/images-dev). See the BlobImageManifest
+#      registration in tests/images/testimages.py.
+#
+#   2. There is no Trident RPM for AZL4 yet. The binary is baked in via
+#      additionalFiles in tests/images/trident-vm-testimage/base/updateimg-grub-azl4.yaml.
+#
+# TODO(azl4-merge-back): Fold this template back into build-image-template.yml
+# once the AZL4 base VHDX and trident-service RPM acquisition paths are
+# standardized. The base VHDX may stay as a blob download; the RPM will
+# come from an AZL4 package repo.
+
+parameters:
+  - name: tridentSourceDirectory
+    type: string
+
+  - name: imageName
+    type: string
+
+  - name: clones
+    type: number
+    default: 1
+    displayName: Number of clones to create
+
+  # The AZL4 base VHDX is sourced from the Azure Linux preview gallery's
+  # backing storage account. The pipeline service connection at
+  # $(BLOB_SERVICE_CONNECTION) must have `Storage Blob Data Reader` on
+  # this account. See tests/images/SERVICE-CONNECTION-RUNBOOK.md.
+  - name: blobStorageAccount
+    type: string
+    default: "azlpubdev2mruiyvi"
+
+  - name: blobContainer
+    type: string
+    default: "images-dev"
+
+  - name: blobSubscription
+    type: string
+    # Subscription where the storage account lives. The SC's default
+    # subscription may differ — we explicitly set context before download.
+    default: "e4ab81f8-030f-4593-a8f2-3ea2c7630a19"
+
+  - name: blobServiceConnection
+    type: string
+    # NB: this must be a service connection that exists in the ADO project.
+    # Trident infra needs to create it manually (Karhu can't); see the PR-5
+    # follow-up validation report for the runbook.
+    default: "trident-azl4-blob-reader"
+
+  - name: micContainerTag
+    type: string
+    default: "imagecustomizer:1.4.0-1"
+
+steps:
+  - template: ../common_tasks/avoid-pypi-usage.yml
+
+  - template: common/sfi-enforce-isolation-with-etc-hosts.yaml@platform-pipelines
+
+  # Stage the Trident binary that gets baked into the COSI via additionalFiles.
+  # The trident-binaries artifact comes from the same upstream Trident build
+  # stage the AZL3 path uses; we just copy the binary rather than installing
+  # an RPM.
+  #
+  # TODO(azl4-rpm): replace this binary copy with an RPM install once the
+  # trident-service RPM is packaged for AZL4 (same TODO as in
+  # tests/images/testimages.py registration).
+  - bash: |
+      set -euxo pipefail
+      TRIDENT_BIN_SRC="$(Build.ArtifactStagingDirectory)/trident-binaries"
+      TRIDENT_BIN_DEST="${{ parameters.tridentSourceDirectory }}/tests/images/trident-vm-testimage/base/trident-bin"
+
+      if [ ! -f "$TRIDENT_BIN_SRC/trident" ]; then
+        echo "trident binary not found at $TRIDENT_BIN_SRC/trident"
+        echo "Available artifacts:"
+        find "$TRIDENT_BIN_SRC" -type f 2>/dev/null | head -20 || true
+        exit 1
+      fi
+
+      mkdir -p "$TRIDENT_BIN_DEST"
+      cp "$TRIDENT_BIN_SRC/trident" "$TRIDENT_BIN_DEST/trident"
+      chmod +x "$TRIDENT_BIN_DEST/trident"
+      file "$TRIDENT_BIN_DEST/trident"
+    displayName: "Stage Trident binary into testimage tree"
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
+
+  # Pull the released MIC container from MCR. AZL4 support is included
+  # in imagecustomizer >= 1.4.0. Tag it locally so testimages.py can
+  # reference it by short name.
+  - bash: |
+      set -euxo pipefail
+      docker pull "mcr.microsoft.com/azurelinux/${{ parameters.micContainerTag }}"
+      docker tag "mcr.microsoft.com/azurelinux/${{ parameters.micContainerTag }}" "${{ parameters.micContainerTag }}"
+    displayName: "Pull MIC container from MCR"
+
+  # Stage the pipeline-wide SSH key into the testimage tree before
+  # MIC runs. testimages.py's generate_ssh_keys() generates a new
+  # keypair UNLESS files/id_rsa.pub already exists at the source path
+  # — in which case it reuses it. By dropping the shared key from the
+  # PrepareSSHKeys artifact here, both the qcow2 base build and the
+  # COSI build end up with the same key baked into testuser's
+  # authorized_keys, so storm-trident's A/B update test can SSH into
+  # both A-side and B-side after the update reboot.
+  #
+  # The matching private key lives at ssh-keys/id_rsa from the
+  # PrepareSSHKeys stage. storm-trident's rollback stage picks it up
+  # the same way for AZL3 builds.
+  - task: DownloadPipelineArtifact@2
+    displayName: "Download shared SSH keys"
+    inputs:
+      buildType: current
+      artifactName: "ssh-keys"
+      targetPath: "$(Build.ArtifactStagingDirectory)/ssh-keys"
+
+  - bash: |
+      set -euxo pipefail
+      SSH_PUB_SRC="$(Build.ArtifactStagingDirectory)/ssh-keys/id_rsa.pub"
+      SSH_PUB_DEST="${{ parameters.tridentSourceDirectory }}/tests/images/trident-vm-testimage/base/files/id_rsa.pub"
+      if [ ! -f "$SSH_PUB_SRC" ]; then
+        echo "shared SSH public key not found at $SSH_PUB_SRC"
+        find "$(Build.ArtifactStagingDirectory)/ssh-keys" -type f
+        exit 1
+      fi
+      cp "$SSH_PUB_SRC" "$SSH_PUB_DEST"
+      echo "Staged shared SSH public key:"
+      cat "$SSH_PUB_DEST"
+    displayName: "Stage shared SSH key into testimage tree"
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
+
+  # Download the AZL4 base VHDX from the preview gallery's backing storage.
+  # Authenticates via the federated identity attached to the service
+  # connection — no storage keys handled here.
+  #
+  # The SC's default subscription (Polar_ImageTools_Staging) differs from
+  # the storage account's subscription (ControlTower_Test). We must switch
+  # context so `az storage blob list` resolves the account correctly.
+  - task: AzureCLI@2
+    displayName: "Download AZL4 base VHDX from blob"
+    inputs:
+      azureSubscription: ${{ parameters.blobServiceConnection }}
+      scriptType: bash
+      scriptLocation: inlineScript
+      workingDirectory: ${{ parameters.tridentSourceDirectory }}
+      inlineScript: |
+        set -euxo pipefail
+        az account set --subscription "${{ parameters.blobSubscription }}"
+        python3 ./tests/images/testimages.py download-image azl4_qemu_guest \
+            --blob-storage-account "${{ parameters.blobStorageAccount }}" \
+            --blob-container "${{ parameters.blobContainer }}"
+        ls -la artifacts/azl4_qemu_guest.vhdx
+
+  - bash: |
+      set -euxo pipefail
+      python3 ./tests/images/testimages.py build \
+          "${{ parameters.imageName }}" \
+          --container "${{ parameters.micContainerTag }}" \
+          --output-dir "$(ob_outputDirectory)" \
+          --no-download \
+          --clones ${{ parameters.clones }}
+    displayName: "Build ${{ parameters.imageName }}"
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
