@@ -1,10 +1,10 @@
 # AZL4 BM-simulated netlaunch test stage.
 #
 # Drives an AZL3 MOS installer ISO + AZL4 COSI through netlaunch to validate
-# that the AZL4 COSI (from PR-5) can be installed by Trident onto a fresh
-# virtdeploy VM. This is the BM-simulated path: Trident runs from the live
-# MOS environment (AZL3), `trident install` partitions the disk and streams
-# the AZL4 COSI to it, the target boots into AZL4.
+# that the AZL4 COSI can be installed by Trident onto a fresh virtdeploy VM.
+# Trident runs from the live MOS environment (AZL3), `trident install`
+# partitions the disk and streams the AZL4 COSI to it, the target boots
+# into AZL4.
 #
 # Differences from netlaunch-testing.yml:
 #   * No test matrix. Hardcoded to the `base-azl4` configuration in
