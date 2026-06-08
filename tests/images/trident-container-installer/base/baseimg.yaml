@@ -40,6 +40,7 @@ os:
       - mdadm
       - moby-engine
       - openssh-server
+      - selinux-policy
       - squashfs-tools
       - tar
       - vim
@@ -53,6 +54,8 @@ os:
       destination: /root/.profile
     - source: files/trident-container.service
       destination: /usr/lib/systemd/system/trident-container.service
+    - source: files/containerd-mmap-fix.cil
+      destination: /usr/share/selinux/packages/containerd-mmap-fix.cil
 
   services:
     enable:
@@ -62,6 +65,7 @@ os:
 scripts:
   postCustomization:
     - path: scripts/post-install.sh
+    - path: scripts/load-containerd-selinux-fix.sh
 
 iso:
   additionalFiles:
@@ -71,7 +75,6 @@ iso:
       destination: /trident-override.conf
   kernelCommandLine:
     extraCommandLine:
-      - enforcing=0
       - console=tty0
       - console=ttyS0
       - rd.luks=0

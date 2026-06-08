@@ -66,12 +66,15 @@ os:
 
       - docker-cli
       - moby-engine
+      - selinux-policy
       - squashfs-tools
       - tar
 
   additionalFiles:
   - source: files/trident-container.service
     destination: /usr/lib/systemd/system/trident-container.service
+  - source: files/containerd-mmap-fix.cil
+    destination: /usr/share/selinux/packages/containerd-mmap-fix.cil
 
   services:
     enable:
@@ -81,3 +84,4 @@ os:
 scripts:
   postCustomization:
   - path: scripts/post-install.sh
+  - path: scripts/load-containerd-selinux-fix.sh
