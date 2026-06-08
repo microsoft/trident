@@ -79,12 +79,9 @@ Where:
     - `docs`: For documentation only & doc generation changes.
   - Otherwise:
     - `engineering`: For changes to our CI, pipelines, publishing, build system,
-      makefile, dockerfile, specfile, stable refactors, adding/modifying tests,
-      and changes to dependencies. Basically anything that customers don't see nor
-      directly care about.
-  - See [ECF Dev
-    Guide](https://dev.azure.com/mariner-org/ECF/_git/ecf-docs?version=GBmain&path=/TeamDocs/dev-guide.md&_a=preview)
-    for more info.
+       makefile, dockerfile, specfile, stable refactors, adding/modifying tests,
+       and changes to dependencies. Basically anything that customers don't see nor
+       directly care about.
 - Optional labels are covered in [PR Labels](#pr-labels). *These are generally
   only used in drafts!*
 
@@ -115,18 +112,15 @@ it's not worth the effort.
 
 ### PR Labels
 
-> **NOTES:**
+> **NOTE:**
 >
-> - Devops has no built in support for labelling PRs, so these should be
-> prefixed to titles. **Always wrap labels in square brackets `[...]`** to make
-> them easy to identify and parse.
 > - These should generally be **marked as DRAFT**.
 
 Opening PRs is useful for many reasons beyond just immediately merging code. For
 example: sharing proposals, requesting feedback, or starting discussions in a
 way that is close to the code and allows for comments to be added on specific
-things. For these scenarios, we use the following prefix labels to indicate the
-intent:
+things. For these scenarios, we use the following prefix labels in the PR title
+to indicate the intent:
 
 - `[UNBLOCK]`: A PR with a change that unblocks other work or a customer, but is
   not considered a proper fix.
@@ -144,10 +138,10 @@ intent:
 - `[TEST]`: A test PR that should not be reviewed or merged. Should be deleted
   once the test is complete.
 
-## Abandoning PRs and Cleaning Up
+## Closing PRs and Cleaning Up
 
-If you're no longer working on a PR, please abandon it. This will remove it from
+If you're no longer working on a PR, please close it. This will remove it from
 the queue of PRs to review. If a PR has been untouched for a while, it
-should be abandoned. It may be re-opened later if work resumes.
+should be closed. It may be re-opened later if work resumes.
 
 Please remove any labels that are no longer relevant.
