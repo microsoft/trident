@@ -62,16 +62,12 @@ health:
         - non-existent-service1.service
         - non-existent-service2.service
       timeoutSeconds: 15
-# AZL4 variant of the AZL3 `health-checks-install/` scenario. Adapted for the
-# PR-4 hostname-only fast path:
-#   - Empty top-level `users`/`selinux`/`netplan` so install validation does
-#     not require the OS Modifier binary to be in the MOS install ISO (which
-#     does not currently include it; once the MOS rebuild lands, both this
-#     scenario and base-azl4 can grow os.users / os.selinux / os.netplan).
-#   - `os.additionalFiles` is the one os.* field used because health.checks
-#     references `path: /var/lib/trident/local-health-check-file.sh`, which
-#     needs to be on the target filesystem. additionalFiles is processed by
-#     Trident's storage / file-deploy paths, not by OS Modifier.
+# AZL4 variant of the AZL3 `health-checks-install/` scenario.
+#   - No `users`/`selinux`/`netplan` — these are baked into the test image
+#     at MIC build time.
+#   - `os.additionalFiles` is used because health.checks references
+#     `path: /var/lib/trident/local-health-check-file.sh`, which needs to
+#     be on the target filesystem.
 #
 # Health-check failure expectations (asserted by tests/e2e_tests/rollback_test.py):
 #   - State transitions to `not-provisioned` (clean-install has no slot to
