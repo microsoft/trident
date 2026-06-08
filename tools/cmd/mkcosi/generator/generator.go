@@ -4,6 +4,7 @@ package generator
 import (
 	"bytes"
 	"crypto/sha512"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -1109,7 +1110,11 @@ func findUkiAddons(ukiDir string, ukiName string, espMountPoint string) []metada
 
 	addonEntries, err := os.ReadDir(addonHostDir)
 	if err != nil {
-		// No .extra.d directory is normal for UKIs without addons
+		if errors.Is(err, os.ErrNotExist) {
+			// No .extra.d directory is normal for UKIs without addons
+			return nil
+		}
+		log.WithError(err).Warnf("Failed to read UKI addon directory %s", addonHostDir)
 		return nil
 	}
 

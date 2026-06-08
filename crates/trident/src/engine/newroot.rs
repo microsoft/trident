@@ -222,7 +222,8 @@ impl NewrootMount {
                 // content is identical when UUIDs match, so the bind mount provides
                 // equivalent content for chroot provisioning.
                 if let Some(ref collision_uuid) = acl_collision_uuid {
-                    if fs_type == Some(RealFilesystemType::Btrfs)
+                    if path == Path::new("/usr")
+                        && fs_type == Some(RealFilesystemType::Btrfs)
                         && block_device.fsuuid.as_ref() == Some(collision_uuid)
                     {
                         let active_usr = Path::new("/usr");
