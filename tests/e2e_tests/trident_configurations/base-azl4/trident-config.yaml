@@ -18,6 +18,12 @@ storage:
         - id: esp
           type: esp
           size: 1G
+        - id: swap
+          type: swap
+          size: 2G
+        - id: home
+          type: home
+          size: 1G
         - id: trident
           type: linux-generic
           size: 1G
@@ -34,19 +40,35 @@ storage:
     - deviceId: trident
       source: new
       mountPoint: /var/lib/trident
+    - deviceId: home
+      source: new
+      mountPoint: /home
     - deviceId: esp
       mountPoint:
         path: /boot/efi
         options: umask=0077
     - deviceId: root
       mountPoint: /
-# AZL4 baseline scenario for the pytest E2E framework. Mirrors the AZL3
-# `base/` scenario with these differences:
-#
-#   - No `os:` section: users, SSH keys, networking, and sudoers are
-#     baked into the test image at MIC build time. Can grow to mirror
-#     `base/` more completely as AZL4 testing matures.
-#   - No swap or /home partitions (kept simple for the first AZL4
-#     scenario).
-#   - No postConfigure sudo grant: testing-user is added to wheel by
-#     the testimage MIC config.
+  swap:
+    - swap
+scripts:
+  postConfigure:
+    - name: testing-privilege
+      runOn:
+        - clean-install
+        - ab-update
+      content: echo 'testing-user ALL=(ALL:ALL) NOPASSWD:ALL' > /etc/sudoers.d/testing-user
+os:
+  selinux:
+    mode: enforcing
+  netplan:
+    version: 2
+    ethernets:
+      vmeths:
+        match:
+          name: enp*
+        dhcp4: true
+  users:
+    - name: testing-user
+      sshPublicKeys: []
+      sshMode: key-only
