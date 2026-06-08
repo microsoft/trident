@@ -60,9 +60,14 @@ Trident RPMs).
 
 | Image | Output File | Bootloader | Integrity | Configurations |
 |-------|------------|-----------|-----------|----------------|
-| `trident-container-testimage` | `container.cosi` | grub2 | None | base, encrypted-partition, encrypted-raid, encrypted-swap, extensions, health-checks-install, misc, raid-mirrored, raid-resync-small, raid-small, simple |
-| `trident-container-verity-testimage` | `container-verity.cosi` | grub2 | Root dm-verity | root-verity |
-| `trident-container-usrverity-testimage` | `container-usrverity.cosi` | systemd-boot | `/usr` dm-verity (UKI) | combined, rerun, usr-verity, usr-verity-raid |
+| `trident-container-testimage` | `regular.cosi` | grub2 | None | base, encrypted-partition, encrypted-raid, encrypted-swap, extensions, health-checks-install, misc, raid-mirrored, raid-resync-small, raid-small, simple |
+| `trident-container-verity-testimage` | `verity.cosi` | grub2 | Root dm-verity | root-verity |
+| `trident-container-usrverity-testimage` | `usrverity.cosi` | systemd-boot | `/usr` dm-verity (UKI) | combined, rerun, usr-verity, usr-verity-raid |
+
+Container images use the **same output filenames** as their host counterparts
+(`regular.cosi`, `verity.cosi`, `usrverity.cosi`). This matches the pipeline's
+`storm-trident helper prepare-images` behavior and means Host Configuration
+image URLs work unchanged for both runtimes.
 
 Container test images do **not** include Trident RPMs — Trident runs from a
 Docker container (`trident-container.tar.gz`) loaded at runtime. The images
@@ -207,7 +212,9 @@ mv artifacts/test-image/trident-usrverity-testimage_1.cosi artifacts/test-image/
 #### Container Runtime Images
 
 Container images include Docker and a `trident-container.service` but omit
-Trident RPMs — Trident runs from the container tarball instead:
+Trident RPMs — Trident runs from the container tarball instead. Rename the
+output files to match the host image filenames so Host Configuration image
+URLs work unchanged:
 
 ```bash
 mkdir -p artifacts/test-image
@@ -215,20 +222,20 @@ mkdir -p artifacts/test-image
 # Regular container image
 sudo ./tests/images/testimages.py build trident-container-testimage \
     --output-dir ./artifacts/test-image --clones 2
-mv artifacts/test-image/trident-container-testimage_0.cosi artifacts/test-image/container.cosi
-mv artifacts/test-image/trident-container-testimage_1.cosi artifacts/test-image/container_v2.cosi
+mv artifacts/test-image/trident-container-testimage_0.cosi artifacts/test-image/regular.cosi
+mv artifacts/test-image/trident-container-testimage_1.cosi artifacts/test-image/regular_v2.cosi
 
 # Verity container image (for root-verity configuration)
 sudo ./tests/images/testimages.py build trident-container-verity-testimage \
     --output-dir ./artifacts/test-image --clones 2
-mv artifacts/test-image/trident-container-verity-testimage_0.cosi artifacts/test-image/container-verity.cosi
-mv artifacts/test-image/trident-container-verity-testimage_1.cosi artifacts/test-image/container-verity_v2.cosi
+mv artifacts/test-image/trident-container-verity-testimage_0.cosi artifacts/test-image/verity.cosi
+mv artifacts/test-image/trident-container-verity-testimage_1.cosi artifacts/test-image/verity_v2.cosi
 
 # UKI/usr-verity container image (for usr-verity, combined configurations)
 sudo ./tests/images/testimages.py build trident-container-usrverity-testimage \
     --output-dir ./artifacts/test-image --clones 2
-mv artifacts/test-image/trident-container-usrverity-testimage_0.cosi artifacts/test-image/container-usrverity.cosi
-mv artifacts/test-image/trident-container-usrverity-testimage_1.cosi artifacts/test-image/container-usrverity_v2.cosi
+mv artifacts/test-image/trident-container-usrverity-testimage_0.cosi artifacts/test-image/usrverity.cosi
+mv artifacts/test-image/trident-container-usrverity-testimage_1.cosi artifacts/test-image/usrverity_v2.cosi
 ```
 
 The images use the Image Customizer container from
@@ -286,8 +293,7 @@ make starter-configuration
 ```
 
 This copies `tests/e2e_tests/trident_configurations/simple/trident-config.yaml`
-to `input/trident.yaml`. Edit it to add your SSH public key under
-`os.users[0].sshPublicKeys`.
+to `input/trident.yaml`.
 
 Alternatively, copy a configuration directly from any test configuration
 directory:
@@ -297,16 +303,39 @@ mkdir -p input
 cp tests/e2e_tests/trident_configurations/<config>/trident-config.yaml input/trident.yaml
 ```
 
+#### Add your SSH public key
+
+The test configurations ship with an empty `sshPublicKeys` list. Add your
+public key so pytest can SSH into the VM after install:
+
+```yaml
+os:
+  users:
+    - name: testing-user
+      sshPublicKeys:
+        - <contents of artifacts/id_rsa.pub>
+      sshMode: key-only
+```
+
+:::tip
+If you generated keys with `make artifacts/id_rsa`, paste the contents of
+`artifacts/id_rsa.pub` into the list.
+:::
+
+#### Image URLs
+
 The Host Configuration references image URLs like
 `http://NETLAUNCH_HOST_ADDRESS/files/regular.cosi`. Netlaunch automatically
 replaces `NETLAUNCH_HOST_ADDRESS` with its own `<host-IP>:<port>` at runtime,
 so the VM can reach the files served by netlaunch.
 
-:::note Container runtime Host Configuration
+Because both host and container COSI images are renamed to the same output
+filenames (see [Build COSI Images](#8-build-cosi-images)), the image URLs in
+the Host Configuration work unchanged for both runtimes.
+
+:::note Container runtime — additional configuration
 For the **container** runtime, the Host Configuration must include an
-`additionalFiles` entry to copy the Trident container tarball onto the VM.
-Storm-trident and the pipeline's `edit_host_config.py` add this automatically
-when `--runtimeEnv container` is specified:
+`additionalFiles` entry to copy the Trident container tarball onto the VM:
 
 ```yaml
 os:
@@ -315,8 +344,8 @@ os:
       destination: /var/lib/trident/trident-container.tar.gz
 ```
 
-If running manually with the container runtime, add this entry to your Host
-Configuration.
+Storm-trident and the pipeline's `edit_host_config.py` add this automatically
+when `--runtimeEnv container` is specified. It is only needed for manual runs.
 :::
 
 ### 3. Run netlaunch
