@@ -2,20 +2,20 @@
 #
 # Forked from build-image-template.yml on 2026-05-13. The AZL3 path pulls the
 # base VHDX from the AzureLinuxArtifacts ADO feed and the Trident RPM from the
-# trident-binaries pipeline artifact, then runs `testimages.py build`. None of
-# that works for AZL4 today because:
+# trident-binaries pipeline artifact, then runs `testimages.py build`. AZL4
+# uses different acquisition paths:
 #
-#   1. There is no AzureLinuxArtifacts feed entry for AZL4 base VHDX. We
-#      download from the AZL preview gallery's backing storage account
-#      (azlpubdev2mruiyvi/images-dev) instead. See the BlobImageManifest
+#   1. Base VHDX comes from the AZL preview gallery's backing storage
+#      (azlpubdev2mruiyvi/images-dev). See the BlobImageManifest
 #      registration in tests/images/testimages.py.
 #
-#   2. There is no Trident RPM for AZL4. The binary is baked in via
+#   2. There is no Trident RPM for AZL4 yet. The binary is baked in via
 #      additionalFiles in tests/images/trident-vm-testimage/base/updateimg-grub-azl4.yaml.
 #
-# TODO(azl4-merge-back): When AZL4 has feed-published base VHDXes and RPMs,
-# fold this template back into build-image-template.yml by adding a
-# `azureLinuxVersion: "4.0"` branch.
+# TODO(azl4-merge-back): Fold this template back into build-image-template.yml
+# once the AZL4 base VHDX and trident-service RPM acquisition paths are
+# standardized. The base VHDX may stay as a blob download; the RPM will
+# come from an AZL4 package repo.
 
 parameters:
   - name: tridentSourceDirectory

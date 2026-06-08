@@ -5,8 +5,10 @@
 # external test-images repo template.
 #
 # TODO(azl4-merge-back): Merge this back into build-image.yml with an
-# `azureLinuxVersion` parameter switch once AZL4 has feed-published base VHDXes
-# and RPMs.
+# `azureLinuxVersion` parameter switch once AZL4 base VHDX acquisition
+# and trident-service RPM packaging are resolved. The base VHDX may
+# continue to come from blob storage (not the AzureLinuxArtifacts ADO
+# feed); the RPM will come from an AZL4 package repo, not ADO.
 
 parameters:
   - name: imageName

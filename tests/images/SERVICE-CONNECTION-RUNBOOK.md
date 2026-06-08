@@ -220,6 +220,6 @@ automatically; FICs are removed with the parent UAMI.
 | Created | 2026-05-14 |
 | Updated | 2026-06-01 (re-scoped from `maritimusgithubstorage` to `azlpubdev2mruiyvi`) |
 
-When the `AzureLinuxArtifacts` ADO feed publishes AZL4 base VHDXes,
-this connection can be deleted — the standard `BaseImageManifest`
-download path will handle it.
+When AZL4 base VHDX acquisition is standardized (either via the
+`AzureLinuxArtifacts` ADO feed or a permanent blob location), this
+connection can be re-evaluated.
