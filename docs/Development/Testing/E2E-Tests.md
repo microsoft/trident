@@ -155,8 +155,8 @@ make docker-build
 make artifacts/test-image/trident-container.tar.gz
 ```
 
-This produces `trident/trident:latest` locally and saves it as a gzipped
-tarball. The container installer ISO's management OS loads this image into
+This produces `trident/trident:latest` locally and saves it as a
+zstd-compressed tarball. The container installer ISO's management OS loads this image into
 Docker on the target VM during install.
 
 ### 6. Generate SSH Keys
