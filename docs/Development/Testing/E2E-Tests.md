@@ -11,13 +11,13 @@ and test selections in `tests/e2e_tests/trident_configurations/`.
 
 Trident supports two **runtime environments**:
 
-- **Host** — The Trident binary runs directly on the host OS. The installer ISO
-  (`trident-mos.iso`) and test COSI images include Trident RPMs.
-- **Container** — The Trident binary runs inside a Docker container on the host
-  OS. The container image (`trident-container.tar.gz`) is served alongside the
-  COSI images and loaded at runtime. Container scenarios use a different
-  installer ISO (`trident-container-installer.iso`) and different COSI test
-  images that include Docker but omit Trident RPMs.
+- **Host** — The Trident binary runs directly on the servicing OS. The installer
+  ISO (`trident-mos.iso`) and test COSI images include Trident RPMs.
+- **Container** — The Trident binary runs inside a Docker container on the
+  servicing OS. The container image (`trident-container.tar.gz`) is served
+  alongside the COSI images and loaded at runtime. Container scenarios use a
+  different installer ISO (`trident-container-installer.iso`) and different COSI
+  test images that include Docker but omit Trident RPMs.
 
 Both runtimes use the same test configurations, pytest suite, and storm-trident
 orchestrator — only the build artifacts and a few flags differ. This page covers
@@ -247,20 +247,14 @@ make bin/trident-mos.iso
 
 **Container runtime:**
 
-The container installer ISO is not built locally — it is downloaded from the
-pipeline:
-
 ```bash
-make download-trident-container-installer-iso
+sudo ./tests/images/testimages.py build trident-container-installer \
+    --output-dir ./artifacts
 ```
 
-This downloads the latest successful `trident-container-installer.iso` from the
-CI pipeline to `artifacts/trident-container-installer.iso`. To download from a
-specific pipeline run, set `RUN_ID`:
-
-```bash
-make download-trident-container-installer-iso RUN_ID=<run-id>
-```
+This builds `artifacts/trident-container-installer.iso` using Image Customizer.
+The container installer ISO includes Docker and a `trident-container.service`
+but does not include Trident RPMs.
 
 ## Running a Clean Install
 
@@ -268,20 +262,16 @@ make download-trident-container-installer-iso RUN_ID=<run-id>
 
 Use `virtdeploy` to create a VM with empty disks:
 
-**Host runtime:**
-
-```bash
-sudo bin/virtdeploy create-one --disks 32,8
-```
-
-**Container runtime:**
-
-Container scenarios require more memory (at least 11 GiB) because the VM must
-run Docker alongside Trident:
-
 ```bash
 sudo bin/virtdeploy create-one --disks 32,8 --mem 12
 ```
+
+:::note
+Container scenarios require at least 11 GiB of memory because the VM must run
+Docker alongside Trident. The `--mem 12` flag above accommodates both runtimes.
+If running host-only, the default memory is sufficient and `--mem` can be
+omitted.
+:::
 
 This creates a QEMU/libvirt VM and writes `tools/vm-netlaunch.yaml` with the
 VM UUID. The `--disks` flag specifies disk sizes in GB (here, 32 GB for the OS
