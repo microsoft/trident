@@ -536,17 +536,66 @@ sequenceDiagram
 Trident wraps standard Linux utilities rather than reimplementing their
 functionality:
 
-| Tool               | Used For                                        |
-| ------------------ | ----------------------------------------------- |
-| `systemd-repart`   | Declarative partition management                |
-| `mdadm`            | Software RAID creation and management           |
-| `cryptsetup`       | LUKS disk encryption                            |
-| `veritysetup`      | dm-verity integrity verification                |
-| `grub-install`     | GRUB2 bootloader installation                   |
-| `grub-mkconfig`    | GRUB configuration generation                   |
-| `systemctl`        | systemd service management                      |
-| `udevadm`          | Device event handling and settling              |
-| `lsblk` / `blkid`  | Block device discovery and identification       |
-| `chroot`           | Isolated OS configuration of staged filesystems |
-| `setfiles`         | SELinux filesystem relabeling                   |
+**Storage & Partitioning:**
+
+| Tool | Used For |
+|------|----------|
+| `systemd-repart` | Declarative partition management |
+| `sfdisk` | Low-level partition table manipulation |
+| `partx` | Kernel partition table re-reading |
+| `mdadm` | Software RAID creation and management |
+| `mkfs` | Filesystem creation |
+| `resize2fs` | ext filesystem resizing |
+| `e2fsck` | ext filesystem consistency checks |
+| `tune2fs` | ext filesystem parameter tuning |
+| `mkswap` | Swap area creation |
+| `swapon` / `swapoff` | Swap activation and deactivation |
+| `wipefs` | Filesystem signature removal |
+| `dd` | Raw block-level data copying |
+| `losetup` | Loop device management |
+
+**Encryption & Integrity:**
+
+| Tool | Used For |
+|------|----------|
+| `cryptsetup` | LUKS disk encryption |
+| `systemd-cryptenroll` | LUKS token enrollment (TPM2, FIDO2) |
+| `veritysetup` | dm-verity integrity verification |
+| `openssl` | Certificate and key operations |
+| `tpm2_clear` / `tpm2_pcrread` | TPM2 device management and PCR inspection |
+| `systemd-pcrlock` | Predictive PCR measurement locking |
+
+**Boot:**
+
+| Tool | Used For |
+|------|----------|
+| `grub2-mkconfig` | GRUB2 configuration generation |
+| `efibootmgr` | UEFI boot entry management |
+| `efivar` | UEFI variable access |
+| `dracut` / `mkinitrd` | Initramfs generation |
+| `systemd-firstboot` | Initial system identity setup |
+
+**System & Device Management:**
+
+| Tool | Used For |
+|------|----------|
+| `systemctl` | systemd service management |
+| `systemd-sysext` / `systemd-confext` | System and configuration extensions |
+| `udevadm` | Device event handling and settling |
+| `lsblk` / `blkid` | Block device discovery and identification |
+| `findmnt` / `mount` / `umount` / `mountpoint` | Filesystem mount operations |
+| `lsof` | Open file detection (safe unmount checks) |
+| `eject` | Removable media ejection |
+| `uname` | Kernel version detection |
+| `df` | Filesystem space reporting |
+
+**OS Configuration:**
+
+| Tool | Used For |
+|------|----------|
+| `useradd` / `usermod` / `chpasswd` | User and credential management |
+| `setfiles` | SELinux filesystem relabeling |
+| `netplan` | Network configuration |
+| `iptables` | Firewall rule management |
+| `journalctl` | System log collection (diagnostics) |
 
