@@ -190,8 +190,9 @@ fn validate_filesystems(os_image: &OsImage, ctx: &EngineContext) -> Result<(), T
 /// Validates that all filesystems within an OS image have unique FS UUIDs. Additionally, validates
 /// that A/B volume pairs have distinct FS UUIDs.
 ///
-/// The A/B cross-check is skipped for ACL, which uses identical FS UUIDs across A/B slots by
-/// design (partitions are distinguished by PARTUUID instead).
+/// For ACL images, duplicate FS UUIDs across A/B slots are permitted if verity verification
+/// confirms byte-identical content (see [`validate_acl_duplicate_uuid`]). Non-ACL images with
+/// duplicate A/B FS UUIDs are rejected.
 fn validate_filesystem_uniqueness(
     os_image: &OsImage,
     ctx: &EngineContext,
@@ -283,8 +284,10 @@ fn validate_filesystem_uniqueness(
 /// 3. The active system's `/proc/cmdline` has a matching `usrhash=` parameter
 /// 4. The normalized root hashes match — proving byte-identical content via merkle tree
 ///
-/// If COSI partition metadata is available, the function also validates that the
-/// staging USR partition's PARTUUID matches a known ACL USR slot.
+/// If COSI partition metadata is available, the function also checks whether any
+/// partition's PARTUUID matches a known ACL USR slot (A or B). Since these
+/// PARTUUIDs are globally unique in the GPT, a match on any partition confirms
+/// the image contains the expected ACL USR layout.
 fn validate_acl_duplicate_uuid(
     os_image: &OsImage,
     mount_point: &Path,
