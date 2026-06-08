@@ -8,9 +8,9 @@
 # AZL4-specific package names (dnf5, grub2-efi-x64, shim, etc.) matching
 # the updateimg-grub-azl4.yaml flavor.
 #
-# TODO(azl4-rpm): Drop the trident + osmodifier additionalFiles entries
-# once an AZL4 trident-service RPM and azurelinux-image-tools-osmodifier
-# RPM are published. Until then we bake the binaries inline.
+# TODO(azl4-rpm): Drop the trident additionalFiles entries
+# once an AZL4 trident-service RPM is published. Until then we bake
+# the binary inline.
 
 storage:
   disks:
@@ -123,12 +123,6 @@ os:
     # published for AZL4.
     - source: trident-bin/trident
       destination: /usr/bin/trident
-      permissions: "755"
-    # TODO(azl4-osmodifier-rpm): replace with
-    # `packages.install: - azurelinux-image-tools-osmodifier`
-    # once the RPM is published.
-    - source: osmodifier-bin/osmodifier
-      destination: /usr/bin/osmodifier
       permissions: "755"
 
     # Trident systemd units. AZL3 gets these from the trident-service
