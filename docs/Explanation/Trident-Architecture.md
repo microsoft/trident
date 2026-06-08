@@ -303,9 +303,6 @@ A `--check` flag is available to preview what rollback operation would be
 performed without executing it. Like `update`, rollback supports
 `--allowed-operations` to control stage/finalize phases independently.
 
-Rollback can only be triggered from the `Provisioned`,
-`ManualRollbackAbStaged`, or `ManualRollbackRuntimeStaged` servicing states.
-
 ### `trident diagnose`
 
 Generates a diagnostic support bundle as a compressed tarball. Collects:
