@@ -275,8 +275,55 @@ consistency, and dependency availability.
 
 ### `trident get`
 
-Retrieves the current [Host Configuration, status, or last error](../Reference/Trident-CLI.md#get)
-information from the datastore.
+Retrieves information from the datastore. The subcommand accepts a `kind`
+argument (defaults to `status`):
+
+| Kind | Description |
+|------|-------------|
+| `status` | Current Host Status (default) |
+| `configuration` | Active Host Configuration |
+| `last-error` | Last recorded fatal error |
+| `rollback-chain` | Full history of available rollback points |
+| `rollback-target` | The specific state that would be restored by a rollback |
+
+Output can be directed to a file with `--outfile`.
+
+### `trident rollback`
+
+Triggers a manual rollback to the previous system state. Supports two modes:
+
+1. **Runtime Rollback** (`--runtime`) — Reverts runtime configuration changes
+   without rebooting. Only available when the last operation was a runtime
+   update.
+2. **A/B Rollback** (`--ab`) — Switches the active/inactive volume pair back,
+   effectively reverting to the previous OS version. Requires a reboot to take
+   effect.
+
+A `--check` flag is available to preview what rollback operation would be
+performed without executing it. Like `update`, rollback supports
+`--allowed-operations` to control stage/finalize phases independently.
+
+Rollback can only be triggered from the `Provisioned`,
+`ManualRollbackAbStaged`, or `ManualRollbackRuntimeStaged` servicing states.
+
+### `trident diagnose`
+
+Generates a diagnostic support bundle as a compressed tarball. Collects:
+
+- Trident logs and datastore state
+- System information
+- Optionally, full system journal and dmesg output (`--journal`)
+- Optionally, SELinux audit logs (`--selinux`)
+
+The bundle is saved to the path specified by `--output` and can be shared for
+troubleshooting.
+
+### `trident stream-disk` (gRPC client only)
+
+Streams a disk image from a URL directly to the target device. This command is
+available only through the gRPC client interface and is used for low-level
+image deployment scenarios. Accepts an optional `--hash` parameter for manifest
+integrity verification.
 
 ## A/B Update Mechanism
 
