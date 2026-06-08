@@ -6,7 +6,7 @@ sidebar_position: 1
 
 Trident is an image-based OS lifecycle agent providing atomic
 [installation](../How-To-Guides/Perform-a-Clean-Install.md),
-[A/B updates](../Reference/Glossary.md#ab-updates), and runtime configuration
+[A/B updates](../Reference/Glossary.md#ab-update), and runtime configuration
 management. This document explains the architectural components, design
 principles, and operational workflows.
 
@@ -465,7 +465,7 @@ storage:       # Storage layout: disks, partitions, RAID, encryption
 os:            # OS settings: users, SELinux, network, services
 image:         # COSI image URL and integrity hash
 scripts:       # Custom pre/post automation hooks
-management_os: # Servicing OS settings
+managementOs: # Servicing OS settings
 ```
 
 The engine compares a new Host Configuration against the stored Host Status to
