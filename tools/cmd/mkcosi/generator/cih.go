@@ -268,21 +268,15 @@ func populateCIHFilesystemMetadata(cosiMeta *metadata.MetadataJson, partInfos []
 	return nil
 }
 
-// extractUsrhashFromUKIEntries searches the UKI boot entries and their addons
-// for a "usrhash=<hex>" kernel command-line parameter and returns the hash
-// value. Returns an empty string if not found.
+// extractUsrhashFromUKIEntries searches the UKI boot entries for a
+// "usrhash=<hex>" kernel command-line parameter and returns the hash value.
+// Addon cmdlines are already folded into the entry's Cmdline by the generator.
+// Returns an empty string if not found.
 func extractUsrhashFromUKIEntries(entries []metadata.SystemDBootEntry) string {
 	for _, entry := range entries {
 		for _, field := range strings.Fields(entry.Cmdline) {
 			if after, found := strings.CutPrefix(field, "usrhash="); found {
 				return after
-			}
-		}
-		for _, addon := range entry.Addons {
-			for _, field := range strings.Fields(addon.Cmdline) {
-				if after, found := strings.CutPrefix(field, "usrhash="); found {
-					return after
-				}
 			}
 		}
 	}
