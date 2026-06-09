@@ -18,12 +18,6 @@ storage:
         - id: esp
           type: esp
           size: 1G
-        - id: swap
-          type: swap
-          size: 2G
-        - id: home
-          type: home
-          size: 1G
         - id: trident
           type: linux-generic
           size: 1G
@@ -40,28 +34,9 @@ storage:
     - deviceId: trident
       source: new
       mountPoint: /var/lib/trident
-    - deviceId: home
-      source: new
-      mountPoint: /home
     - deviceId: esp
       mountPoint:
         path: /boot/efi
         options: umask=0077
     - deviceId: root
       mountPoint: /
-  swap:
-    - swap
-scripts:
-  postConfigure:
-    - name: testing-privilege
-      runOn:
-        - clean-install
-        - ab-update
-      content: echo 'testing-user ALL=(ALL:ALL) NOPASSWD:ALL' > /etc/sudoers.d/testing-user
-os:
-  selinux:
-    mode: disabled
-  users:
-    - name: testing-user
-      sshPublicKeys: []
-      sshMode: key-only
