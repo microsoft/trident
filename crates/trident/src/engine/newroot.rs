@@ -10,7 +10,7 @@ use anyhow::{anyhow, bail, ensure, Context, Error};
 use log::{debug, error, trace, warn};
 use sys_mount::{MountBuilder, MountFlags};
 
-use osutils::{files, filesystems::MountFileSystemType, findmnt::FindMnt, lsblk, mount, path};
+use osutils::{block_devices, files, filesystems::MountFileSystemType, findmnt::FindMnt, lsblk, mount, path};
 use sysdefs::{
     filesystems::{KernelFilesystemType, RealFilesystemType},
     osuuid::OsUuid,
@@ -414,8 +414,12 @@ fn detect_acl_btrfs_uuid_collision(
         AbVolumeSelection::VolumeB => (ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID),
     };
 
-    let active_path = format!("/dev/disk/by-partuuid/{active_partuuid}");
-    let update_path = format!("/dev/disk/by-partuuid/{update_partuuid}");
+    let active_path = block_devices::part_uuid_path(
+        uuid::Uuid::parse_str(active_partuuid).expect("ACL PARTUUID constant is valid"),
+    );
+    let update_path = block_devices::part_uuid_path(
+        uuid::Uuid::parse_str(update_partuuid).expect("ACL PARTUUID constant is valid"),
+    );
 
     let active_dev = lsblk::get(&active_path).ok()?;
     let update_dev = lsblk::get(&update_path).ok()?;
