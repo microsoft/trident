@@ -7,7 +7,7 @@ use log::{debug, info, warn};
 
 use osutils::{chroot, container};
 use trident_api::{
-    constants::{internal_params::NO_TRANSITION, ROOT_MOUNT_POINT_PATH},
+    constants::{internal_params::NO_TRANSITION, ROOT_MOUNT_POINT_PATH, USR_MOUNT_POINT_PATH},
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{HostStatus, ServicingState, ServicingType},
 };
@@ -69,7 +69,7 @@ pub(super) fn stage_update(
     // for the BTRFS kernel UUID collision on ACL.
     let staging_usr_roothash = ctx.image.as_ref().and_then(|img| {
         img.filesystems()
-            .find(|fs| fs.mount_point == Path::new("/usr"))
+            .find(|fs| fs.mount_point == Path::new(USR_MOUNT_POINT_PATH))
             .and_then(|fs| fs.verity.as_ref().map(|v| v.roothash.clone()))
     });
 
