@@ -24,7 +24,7 @@ use trident_api::{
 };
 
 use crate::{
-    engine::boot::ESP_EXTRACTION_DIRECTORY,
+    engine::{acl, boot::ESP_EXTRACTION_DIRECTORY},
     osimage::{OsImage, OsImageFileSystemType},
 };
 
@@ -246,7 +246,7 @@ fn validate_filesystem_uniqueness(
                             if active_volume_fs_uuid == inactive_volume_fs_uuid {
                                 if ctx.image_distro().is_acl() {
                                     let active_usr_roothash =
-                                        crate::engine::acl::read_active_usr_roothash();
+                                        acl::VerityRootHash::from_proc_cmdline();
                                     validate_acl_duplicate_uuid(
                                         os_image,
                                         &mp_info.mount_point.path,
@@ -291,9 +291,8 @@ fn validate_acl_duplicate_uuid(
     os_image: &OsImage,
     mount_point: &Path,
     fs_uuid: &OsUuid,
-    active_usr_roothash: Option<String>,
+    active_usr_roothash: Option<acl::VerityRootHash>,
 ) -> Result<(), TridentError> {
-    use crate::engine::acl;
     use acl::{ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID};
 
     let mount_str = mount_point.to_string_lossy();
@@ -317,11 +316,11 @@ fn validate_acl_duplicate_uuid(
     let staging_roothash = staging_fs
         .as_ref()
         .and_then(|f| f.verity.as_ref())
-        .map(|v| v.roothash.as_str());
+        .and_then(|v| acl::VerityRootHash::new(&v.roothash));
 
     let staging_hash = match staging_roothash {
-        Some(h) if !h.is_empty() => h,
-        _ => {
+        Some(h) => h,
+        None => {
             return Err(TridentError::new(
                 InvalidInputError::DuplicateFsUuidAclVerificationFailed {
                     uuid: uuid_str,
@@ -335,8 +334,8 @@ fn validate_acl_duplicate_uuid(
 
     // 3. Active system must have a usrhash= in /proc/cmdline.
     let active_hash = match active_usr_roothash {
-        Some(h) if !h.is_empty() => h,
-        _ => {
+        Some(h) => h,
+        None => {
             return Err(TridentError::new(
                 InvalidInputError::DuplicateFsUuidAclVerificationFailed {
                     uuid: uuid_str,
@@ -349,16 +348,16 @@ fn validate_acl_duplicate_uuid(
         }
     };
 
-    // 4. Hashes must match (case-insensitive, trimmed).
-    if !acl::verity_hashes_match(staging_hash, &active_hash) {
+    // 4. Hashes must match (case-insensitive, trimmed — handled by VerityRootHash).
+    if staging_hash != active_hash {
         return Err(TridentError::new(
             InvalidInputError::DuplicateFsUuidAclVerificationFailed {
                 uuid: uuid_str,
                 mount_point: mount_str.to_string(),
                 reason: format!(
                     "verity root hash mismatch: staging has '{}...', active has '{}...'",
-                    acl::hash_preview(staging_hash),
-                    acl::hash_preview(&active_hash)
+                    staging_hash.preview(),
+                    active_hash.preview()
                 ),
             },
         ));
@@ -367,7 +366,7 @@ fn validate_acl_duplicate_uuid(
     debug!(
         "ACL duplicate FS UUID '{}' on /usr is safe: verity root hashes match ({}...)",
         uuid_str,
-        acl::hash_preview(staging_hash)
+        staging_hash.preview()
     );
 
     // Optional: If COSI partition metadata is available, validate that the staging

@@ -453,20 +453,28 @@ fn detect_acl_btrfs_uuid_collision(
         return None;
     };
 
-    match acl::read_active_usr_roothash() {
-        Some(active_hash) => {
-            if acl::verity_hashes_match(staging_hash, &active_hash) {
+    let staging = match acl::VerityRootHash::new(staging_hash) {
+        Some(h) => h,
+        None => {
+            warn!("Staging USR verity root hash is empty. Refusing bind-mount.");
+            return None;
+        }
+    };
+
+    match acl::VerityRootHash::from_proc_cmdline() {
+        Some(active) => {
+            if staging == active {
                 debug!(
                     "Verity root hash verification passed: active and staging USR \
                      partitions have matching root hash ({}...)",
-                    acl::hash_preview(staging_hash)
+                    staging.preview()
                 );
             } else {
                 warn!(
                     "Verity root hash mismatch: active USR has '{}...', staging has '{}...'. \
                      Refusing bind-mount despite UUID collision.",
-                    acl::hash_preview(&active_hash),
-                    acl::hash_preview(staging_hash)
+                    active.preview(),
+                    staging.preview()
                 );
                 return None;
             }

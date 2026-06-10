@@ -165,6 +165,16 @@ pub const AB_VOLUME_A_NAME: &str = "A";
 /// A/B Volume B Name
 pub const AB_VOLUME_B_NAME: &str = "B";
 
+/// UKI filename slot identifier for A/B volume A.
+/// Derived from [`AZURE_LINUX_INSTALL_ID_PREFIX`] + [`AB_VOLUME_A_NAME`], lowercased.
+/// Must stay in sync with those constants.
+pub const UKI_SLOT_A: &str = "azla";
+
+/// UKI filename slot identifier for A/B volume B.
+/// Derived from [`AZURE_LINUX_INSTALL_ID_PREFIX`] + [`AB_VOLUME_B_NAME`], lowercased.
+/// Must stay in sync with those constants.
+pub const UKI_SLOT_B: &str = "azlb";
+
 // ACL (Azure Container Linux) UKI disk layout defines fixed PARTUUIDs for the
 // USR A/B data partitions. These are from acl-scripts disk_layout_uki.json.
 

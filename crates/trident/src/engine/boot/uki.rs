@@ -18,6 +18,7 @@ use trident_api::error::{
     InternalError, ReportError, ServicingError, TridentError, TridentResultExt,
 };
 use trident_api::{constants::ESP_EFI_DIRECTORY, status::AbVolumeSelection};
+use trident_api::constants::{UKI_SLOT_A, UKI_SLOT_B};
 
 use crate::engine::EngineContext;
 
@@ -25,10 +26,6 @@ use crate::engine::EngineContext;
 pub const TMP_UKI_NAME: &str = "vmlinuz-0.efi.staged";
 pub const UKI_DIRECTORY: &str = formatcp!("{ESP_EFI_DIRECTORY}/Linux");
 const TMP_UKI_ADDON_DIR_NAME: &str = formatcp!("{TMP_UKI_NAME}{UKI_ADDON_DIR_SUFFIX}");
-
-/// Slot identifier embedded in trident-managed UKI filenames.
-const UKI_SLOT_A: &str = "azla";
-const UKI_SLOT_B: &str = "azlb";
 
 /// Returns the UKI file suffix, given the current active volume and install index.
 fn uki_suffix(ctx: &EngineContext) -> String {

@@ -41,6 +41,7 @@ pub mod tune2fs;
 pub mod udevadm;
 pub mod uki;
 pub mod uname;
+pub mod verity_roothash;
 pub mod veritysetup;
 pub mod virt;
 pub mod wipefs;
