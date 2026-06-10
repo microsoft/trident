@@ -292,7 +292,6 @@ fn validate_acl_duplicate_uuid(
     fs_uuid: &OsUuid,
     active_usr_roothash: Option<VerityRootHash>,
 ) -> Result<(), TridentError> {
-
     let mount_str = mount_point.to_string_lossy();
     let uuid_str = fs_uuid.to_string();
 
