@@ -707,12 +707,17 @@ mod tests {
             ..Default::default()
         };
 
-        let mut subsystem = OsConfigSubsystem { prev_hostname: None };
+        let mut subsystem = OsConfigSubsystem {
+            prev_hostname: None,
+        };
         // With is_direct_streaming=true the guard returns Ok(()) before
         // attempting fs::copy of /etc/machine-id, which would fail in a
         // unit-test environment.
         let result = subsystem.provision(&ctx, Path::new("/nonexistent/mount"));
-        assert!(result.is_ok(), "provision should succeed (skip) during direct streaming");
+        assert!(
+            result.is_ok(),
+            "provision should succeed (skip) during direct streaming"
+        );
         assert!(
             subsystem.prev_hostname.is_none(),
             "hostname carry-over should not run during direct streaming"
@@ -744,12 +749,17 @@ mod tests {
             ..Default::default()
         };
 
-        let mut subsystem = OsConfigSubsystem { prev_hostname: None };
+        let mut subsystem = OsConfigSubsystem {
+            prev_hostname: None,
+        };
         // With is_direct_streaming=true the guard returns Ok(()) before
         // calling osmodifier::modify_os, which would fail in a unit-test
         // environment.
         let result = subsystem.configure(&ctx);
-        assert!(result.is_ok(), "configure should succeed (skip) during direct streaming");
+        assert!(
+            result.is_ok(),
+            "configure should succeed (skip) during direct streaming"
+        );
     }
 
     /// Verify that MosConfigSubsystem::prepare returns Ok immediately when
@@ -781,7 +791,10 @@ mod tests {
         // calling osmodifier::modify_os, which would fail in a unit-test
         // environment.
         let result = subsystem.prepare(&ctx);
-        assert!(result.is_ok(), "prepare should succeed (skip) during direct streaming");
+        assert!(
+            result.is_ok(),
+            "prepare should succeed (skip) during direct streaming"
+        );
     }
 }
 
