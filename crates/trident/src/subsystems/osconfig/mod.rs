@@ -130,6 +130,11 @@ impl Subsystem for OsConfigSubsystem {
 
     #[tracing::instrument(name = "osconfig_provision", skip_all)]
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
+        if ctx.is_direct_streaming {
+            debug!("Skipping OS config provisioning because direct streaming is in use");
+            return Ok(());
+        }
+
         if ctx.servicing_type == ServicingType::AbUpdate {
             // Copy the current machine-id to the target root mount point to
             // preserve machine identity across servicing.
@@ -155,6 +160,11 @@ impl Subsystem for OsConfigSubsystem {
 
     #[tracing::instrument(name = "osconfig_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
+        if ctx.is_direct_streaming {
+            debug!("Skipping OS configuration because direct streaming is in use");
+            return Ok(());
+        }
+
         if ctx.is_uki()? && ctx.storage_graph.root_fs_is_verity() {
             error!("Skipping OS configuration changes requested in Host Configuration because UKI root-verity is in use.");
             return Ok(());
@@ -311,6 +321,11 @@ impl Subsystem for MosConfigSubsystem {
     }
 
     fn prepare(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
+        if ctx.is_direct_streaming {
+            debug!("Skipping MOS config preparation because direct streaming is in use");
+            return Ok(());
+        }
+
         if ctx.servicing_type != ServicingType::CleanInstall {
             debug!(
                 "Skipping step 'Prepare' for subsystem '{}' during servicing type '{:?}'",
