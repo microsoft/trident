@@ -10,7 +10,9 @@ use anyhow::{anyhow, bail, ensure, Context, Error};
 use log::{debug, error, trace, warn};
 use sys_mount::{MountBuilder, MountFlags};
 
-use osutils::{block_devices, files, filesystems::MountFileSystemType, findmnt::FindMnt, lsblk, mount, path};
+use osutils::{
+    block_devices, files, filesystems::MountFileSystemType, findmnt::FindMnt, lsblk, mount, path,
+};
 use sysdefs::{
     filesystems::{KernelFilesystemType, RealFilesystemType},
     osuuid::OsUuid,

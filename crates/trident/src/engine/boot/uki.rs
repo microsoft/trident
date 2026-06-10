@@ -18,7 +18,9 @@ use trident_api::error::{
     InternalError, ReportError, ServicingError, TridentError, TridentResultExt,
 };
 use trident_api::{
-    constants::{AB_VOLUME_A_NAME, AB_VOLUME_B_NAME, AZURE_LINUX_INSTALL_ID_PREFIX, ESP_EFI_DIRECTORY},
+    constants::{
+        AB_VOLUME_A_NAME, AB_VOLUME_B_NAME, AZURE_LINUX_INSTALL_ID_PREFIX, ESP_EFI_DIRECTORY,
+    },
     status::AbVolumeSelection,
 };
 
@@ -312,9 +314,7 @@ fn enumerate_trident_managed_ukis(
             .filter(|(_, suffix)| {
                 let slot_a = uki_slot(AB_VOLUME_A_NAME);
                 let slot_b = uki_slot(AB_VOLUME_B_NAME);
-                suffix.contains("staged")
-                    || suffix.contains(&slot_a)
-                    || suffix.contains(&slot_b)
+                suffix.contains("staged") || suffix.contains(&slot_a) || suffix.contains(&slot_b)
             })
             .and_then(|(index, suffix)| Some((index.parse::<usize>().ok()?, suffix.to_string())))
         {

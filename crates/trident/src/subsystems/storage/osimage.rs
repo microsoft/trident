@@ -245,8 +245,7 @@ fn validate_filesystem_uniqueness(
                                     and inactive volume filesystem UUID '{inactive_volume_fs_uuid}'", pair.id);
                             if active_volume_fs_uuid == inactive_volume_fs_uuid {
                                 if ctx.image_distro().is_acl() {
-                                    let active_usr_roothash =
-                                        VerityRootHash::from_proc_cmdline();
+                                    let active_usr_roothash = VerityRootHash::from_proc_cmdline();
                                     validate_acl_duplicate_uuid(
                                         os_image,
                                         &mp_info.mount_point.path,
