@@ -1471,7 +1471,7 @@ mod tests {
             &os_image,
             Path::new("/usr"),
             &OsUuid::Uuid(Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap()),
-            Some(ACL_TEST_HASH.to_string()),
+            VerityRootHash::new(ACL_TEST_HASH),
         );
         assert!(result.is_ok(), "expected success, got: {:?}", result);
     }
@@ -1484,7 +1484,7 @@ mod tests {
             &os_image,
             Path::new("/usr"),
             &OsUuid::Uuid(Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap()),
-            Some(ACL_TEST_HASH.to_uppercase()),
+            VerityRootHash::new(&ACL_TEST_HASH.to_uppercase()),
         );
         assert!(
             result.is_ok(),
@@ -1502,7 +1502,7 @@ mod tests {
             &os_image,
             Path::new("/"),
             &OsUuid::Uuid(Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap()),
-            Some(ACL_TEST_HASH.to_string()),
+            VerityRootHash::new(ACL_TEST_HASH),
         )
         .unwrap_err();
         assert!(
@@ -1525,7 +1525,7 @@ mod tests {
             &os_image,
             Path::new("/usr"),
             &OsUuid::Uuid(Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap()),
-            Some(ACL_TEST_HASH.to_string()),
+            VerityRootHash::new(ACL_TEST_HASH),
         )
         .unwrap_err();
         assert!(
@@ -1549,7 +1549,7 @@ mod tests {
             &os_image,
             Path::new("/usr"),
             &OsUuid::Uuid(Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap()),
-            Some(different_hash.to_string()),
+            VerityRootHash::new(different_hash),
         )
         .unwrap_err();
         assert!(
@@ -1595,7 +1595,7 @@ mod tests {
             &os_image,
             Path::new("/usr"),
             &OsUuid::Uuid(Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap()),
-            Some(String::new()),
+            VerityRootHash::new(""),
         )
         .unwrap_err();
         assert!(
