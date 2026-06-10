@@ -5,10 +5,7 @@
 
 use std::fs;
 
-// ACL UKI disk layout defines fixed PARTUUIDs for the USR A/B data partitions.
-// These are from acl-scripts disk_layout_uki.json.
-pub const ACL_USR_A_PARTUUID: &str = "7130c94a-213a-4e5a-8e26-6cce9662f132";
-pub const ACL_USR_B_PARTUUID: &str = "e03dd35c-7c2d-4a47-b3fe-27f15780a57c";
+pub use trident_api::constants::{ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID};
 
 /// Reads the active USR verity root hash from `/proc/cmdline`.
 ///

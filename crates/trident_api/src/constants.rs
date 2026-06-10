@@ -165,6 +165,15 @@ pub const AB_VOLUME_A_NAME: &str = "A";
 /// A/B Volume B Name
 pub const AB_VOLUME_B_NAME: &str = "B";
 
+// ACL (Azure Container Linux) UKI disk layout defines fixed PARTUUIDs for the
+// USR A/B data partitions. These are from acl-scripts disk_layout_uki.json.
+
+/// ACL USR partition A PARTUUID
+pub const ACL_USR_A_PARTUUID: &str = "7130c94a-213a-4e5a-8e26-6cce9662f132";
+
+/// ACL USR partition B PARTUUID
+pub const ACL_USR_B_PARTUUID: &str = "e03dd35c-7c2d-4a47-b3fe-27f15780a57c";
+
 /// Read-only mount option.
 pub const MOUNT_OPTION_READ_ONLY: &str = "ro";
 

@@ -7,6 +7,7 @@ use const_format::formatcp;
 use log::{debug, error, trace, warn};
 
 use osutils::lsblk;
+use sysdefs::osuuid::OsUuid;
 use trident_api::{
     config::FileSystemSource,
     constants::{
@@ -26,8 +27,6 @@ use crate::{
     engine::boot::ESP_EXTRACTION_DIRECTORY,
     osimage::{OsImage, OsImageFileSystemType},
 };
-
-use sysdefs::osuuid::OsUuid;
 
 use super::EngineContext;
 

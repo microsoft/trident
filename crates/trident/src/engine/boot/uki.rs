@@ -1,5 +1,6 @@
 use std::{
     fs,
+    io::ErrorKind,
     path::{Path, PathBuf},
 };
 
@@ -187,14 +188,10 @@ pub fn prepare_esp_for_uki(root_mount_point: &Path, esp_mount_path: &Path) -> Re
 /// cleanup should not prevent the addon directory from being cleaned.
 fn remove_uki_and_addons(path: &Path) -> Result<(), Error> {
     match fs::remove_file(path) {
-        Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+        Err(e) if e.kind() == ErrorKind::NotFound => {
             trace!("UKI file '{}' already removed, continuing", path.display());
         }
-        Err(e) => {
-            return Err(anyhow::Error::new(e)
-                .context(format!("Failed to remove UKI file '{}'", path.display())));
-        }
+        e => e.with_context(|| format!("Failed to remove UKI file '{}'", path.display()))?,
     }
     let addon_dir = uki::uki_addon_dir(path);
     if addon_dir.exists() && addon_dir.is_dir() {
