@@ -17,8 +17,10 @@ use osutils::{
 use trident_api::error::{
     InternalError, ReportError, ServicingError, TridentError, TridentResultExt,
 };
-use trident_api::{constants::ESP_EFI_DIRECTORY, status::AbVolumeSelection};
-use trident_api::constants::{UKI_SLOT_A, UKI_SLOT_B};
+use trident_api::{
+    constants::{ESP_EFI_DIRECTORY, UKI_SLOT_A, UKI_SLOT_B},
+    status::AbVolumeSelection,
+};
 
 use crate::engine::EngineContext;
 
