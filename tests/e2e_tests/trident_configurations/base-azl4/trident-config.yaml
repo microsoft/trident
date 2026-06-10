@@ -40,3 +40,8 @@ storage:
         options: umask=0077
     - deviceId: root
       mountPoint: /
+os:
+  users:
+    - name: testing-user
+      sshPublicKeys: []
+      sshMode: key-only
