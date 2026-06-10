@@ -56,7 +56,7 @@ Requires:       openssl
 Requires:       shadow-utils
 Requires:       systemd >= 255
 Requires:       systemd-udev
-Requires:       (%{name}-selinux = %{version}-%{release} if selinux-policy-%{selinuxtype})
+Requires:       (%{name}-selinux if selinux-policy-%{selinuxtype})
 
 # Optional dependencies for various optional features
 
@@ -100,7 +100,7 @@ and its dependencies for managing the lifecycle of Azure Linux hosts.
 
 %package provisioning
 Summary:        Trident files for the provisioning OS
-Requires:       %{name} = %{version}-%{release}
+Requires:       %{name}
 
 %description provisioning
 Trident files for the provisioning OS
@@ -121,7 +121,7 @@ Trident files for the provisioning OS
 
 %package service
 Summary:        Trident files for SystemD update and commit services
-Requires:       %{name} = %{version}-%{release}
+Requires:       %{name}
 Conflicts:      %{name}-install-service
 
 %description service
@@ -143,7 +143,7 @@ Trident files for SystemD commit services
 
 %package install-service
 Summary:        Trident files for SystemD install service
-Requires:       %{name} = %{version}-%{release}
+Requires:       %{name}
 Conflicts:      %{name}-service
 
 %description install-service
@@ -199,7 +199,7 @@ fi
 
 %package static-pcrlock-files
 Summary:        Statically defined .pcrlock files
-Requires:       %{name} = %{version}-%{release}
+Requires:       %{name}
 
 %description static-pcrlock-files
 Statically defined .pcrlock files for PCR-based encryption. This is a workaround needed because AZL
@@ -213,7 +213,7 @@ be removed once the fix is merged in AZL 4.0.
 
 %package acl-agent
 Summary:        Trident ACL Agent
-Requires:       %{name} = %{version}-%{release}
+Requires:       %{name}
 
 %description acl-agent
 The Trident ACL Agent triggers updates of ACL images.
