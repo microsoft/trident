@@ -2,10 +2,7 @@ use log::debug;
 use strum::IntoEnumIterator;
 
 use trident_api::{
-    constants::{
-        AB_VOLUME_A_NAME, AB_VOLUME_B_NAME,
-        AZURE_LINUX_INSTALL_ID_PREFIX, VAR_TMP_PATH,
-    },
+    constants::{AB_VOLUME_A_NAME, AB_VOLUME_B_NAME, AZURE_LINUX_INSTALL_ID_PREFIX, VAR_TMP_PATH},
     error::{ReportError, ServicingError, TridentError},
     status::AbVolumeSelection,
 };

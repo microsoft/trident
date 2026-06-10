@@ -5,9 +5,7 @@ use log::{debug, info, trace};
 use rayon::prelude::*;
 
 use osutils::{filesystems::MkfsFileSystemType, mkfs};
-use trident_api::{
-    status::ServicingType, BlockDeviceId,
-};
+use trident_api::{status::ServicingType, BlockDeviceId};
 
 use crate::engine::{context::filesystem::FileSystemData, EngineContext};
 

@@ -15,9 +15,7 @@ use osutils::{
 use trident_api::{
     config::{HostConfiguration, Operations},
     constants::{
-        internal_params::{
-            DISABLE_MEDIA_EJECTION, ENABLE_UKI_SUPPORT, NO_TRANSITION,
-        },
+        internal_params::{DISABLE_MEDIA_EJECTION, ENABLE_UKI_SUPPORT, NO_TRANSITION},
         ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_PATH,
     },
     error::{
@@ -76,7 +74,13 @@ pub(crate) fn clean_install(
     let mut subsystems = SUBSYSTEMS.lock().unwrap();
 
     // Stage clean install
-    let root_mount = stage_clean_install(&mut subsystems, state, host_config, image, is_direct_streaming)?;
+    let root_mount = stage_clean_install(
+        &mut subsystems,
+        state,
+        host_config,
+        image,
+        is_direct_streaming,
+    )?;
 
     if !allowed_operations.has_finalize() {
         info!("Finalizing of clean install not requested, skipping finalizing and reboot");
@@ -94,7 +98,12 @@ pub(crate) fn clean_install(
         root_mount.unmount_all()?;
         Ok(ExitKind::Done)
     } else {
-        finalize_clean_install(state, Some(root_mount), Some(clean_install_start_time), is_direct_streaming)
+        finalize_clean_install(
+            state,
+            Some(root_mount),
+            Some(clean_install_start_time),
+            is_direct_streaming,
+        )
     }
 }
 

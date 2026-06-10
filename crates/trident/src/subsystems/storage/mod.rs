@@ -8,9 +8,7 @@ use log::{debug, error, warn};
 use osutils::lsblk;
 use trident_api::{
     config::HostConfigurationDynamicValidationError,
-    constants::internal_params::{
-        ALLOW_HC_STORAGE_CHANGE, RELAXED_COSI_VALIDATION,
-    },
+    constants::internal_params::{ALLOW_HC_STORAGE_CHANGE, RELAXED_COSI_VALIDATION},
     error::{
         InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt,
         UnsupportedConfigurationError,

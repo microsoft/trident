@@ -1,10 +1,7 @@
 use log::{debug, info};
 
 use osutils::mkinitrd;
-use trident_api::{
-    constants::internal_params::DRACUT_DEBUG,
-    error::TridentError,
-};
+use trident_api::{constants::internal_params::DRACUT_DEBUG, error::TridentError};
 
 use crate::engine::{EngineContext, Subsystem};
 

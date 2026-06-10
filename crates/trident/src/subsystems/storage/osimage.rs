@@ -10,9 +10,7 @@ use osutils::lsblk;
 use trident_api::{
     config::FileSystemSource,
     constants::{
-        internal_params::{
-            ALLOW_UNUSED_FILESYSTEMS_IN_COSI, DISABLE_FS_BLOCK_DEVICE_SIZE_CHECK,
-        },
+        internal_params::{ALLOW_UNUSED_FILESYSTEMS_IN_COSI, DISABLE_FS_BLOCK_DEVICE_SIZE_CHECK},
         BOOT_MOUNT_POINT_PATH,
     },
     error::{
