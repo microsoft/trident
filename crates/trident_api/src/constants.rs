@@ -167,14 +167,13 @@ pub const AB_VOLUME_B_NAME: &str = "B";
 
 /// UKI filename slot identifier for A/B volume A.
 /// Derived from [`AZURE_LINUX_INSTALL_ID_PREFIX`] + [`AB_VOLUME_A_NAME`], lowercased.
-/// Must stay in sync with those constants.
+/// Must stay in sync with those constants (enforced by test below).
 pub const UKI_SLOT_A: &str = "azla";
 
 /// UKI filename slot identifier for A/B volume B.
 /// Derived from [`AZURE_LINUX_INSTALL_ID_PREFIX`] + [`AB_VOLUME_B_NAME`], lowercased.
-/// Must stay in sync with those constants.
+/// Must stay in sync with those constants (enforced by test below).
 pub const UKI_SLOT_B: &str = "azlb";
-
 // ACL (Azure Container Linux) UKI disk layout defines fixed PARTUUIDs for the
 // USR A/B data partitions. These are from acl-scripts disk_layout_uki.json.
 
@@ -308,4 +307,19 @@ pub mod internal_params {
     /// many seconds.
     pub const STREAM_SLOW_SPEED_REPORTING_INTERVAL_SECONDS: &str =
         "streamSlowSpeedReportingIntervalSeconds";
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn uki_slot_consts_match_derived_values() {
+        let expected_a =
+            format!("{}{}", AZURE_LINUX_INSTALL_ID_PREFIX, AB_VOLUME_A_NAME).to_lowercase();
+        let expected_b =
+            format!("{}{}", AZURE_LINUX_INSTALL_ID_PREFIX, AB_VOLUME_B_NAME).to_lowercase();
+        assert_eq!(UKI_SLOT_A, expected_a, "UKI_SLOT_A drifted from parent consts");
+        assert_eq!(UKI_SLOT_B, expected_b, "UKI_SLOT_B drifted from parent consts");
+    }
 }
