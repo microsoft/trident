@@ -12,7 +12,7 @@ use trident_api::{
     config::FileSystemSource,
     constants::{
         internal_params::{ALLOW_UNUSED_FILESYSTEMS_IN_COSI, DISABLE_FS_BLOCK_DEVICE_SIZE_CHECK},
-        BOOT_MOUNT_POINT_PATH,
+        ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID, BOOT_MOUNT_POINT_PATH,
     },
     error::{
         InternalError, InvalidInputError, ReportError, ServicingError, TridentError,
@@ -292,7 +292,6 @@ fn validate_acl_duplicate_uuid(
     fs_uuid: &OsUuid,
     active_usr_roothash: Option<VerityRootHash>,
 ) -> Result<(), TridentError> {
-    use trident_api::constants::{ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID};
 
     let mount_str = mount_point.to_string_lossy();
     let uuid_str = fs_uuid.to_string();

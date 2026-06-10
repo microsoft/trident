@@ -12,6 +12,7 @@ use sys_mount::{MountBuilder, MountFlags};
 
 use osutils::{
     block_devices, files, filesystems::MountFileSystemType, findmnt::FindMnt, lsblk, mount, path,
+    verity_roothash::VerityRootHash,
 };
 use sysdefs::{
     filesystems::{KernelFilesystemType, RealFilesystemType},
@@ -20,7 +21,8 @@ use sysdefs::{
 use trident_api::{
     config::{FileSystem, HostConfiguration},
     constants::{
-        NONE_MOUNT_POINT, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_FALLBACK_PATH, UPDATE_ROOT_PATH,
+        ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID, NONE_MOUNT_POINT, ROOT_MOUNT_POINT_PATH,
+        UPDATE_ROOT_FALLBACK_PATH, UPDATE_ROOT_PATH,
     },
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::AbVolumeSelection,
@@ -387,9 +389,6 @@ fn should_be_bind_mounted(fs_type: Option<RealFilesystemType>) -> bool {
         | RealFilesystemType::Xfs => false,
     }
 }
-
-use osutils::verity_roothash::VerityRootHash;
-use trident_api::constants::{ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID};
 
 /// Detects a BTRFS filesystem UUID collision on ACL's USR A/B partitions.
 ///
