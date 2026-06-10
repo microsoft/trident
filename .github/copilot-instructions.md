@@ -8,29 +8,33 @@ reviewers (see [Reviewer etiquette](#reviewer-etiquette-nits--architecture)
 for when to surface them).
 
 ## PR Review Scope
+
 - Only comment on issues that are **specific to the diff** (avoid generic best-practice reminders).
 - Avoid repeating the same point across multiple files. If one example demonstrates a pattern, mention it once and reference the pattern.
 - **ALWAYS check previous reviews** before commenting. Do NOT repeat points that have already been made in previous reviews if they have been acknowledged, dismissed, or closed.
 
-## What to focus on (in priority order)
-1) Correctness and logic bugs
-2) Security issues (input validation, authz/authn, secrets, injection)
-3) Performance regressions (hot paths only)
-4) API/contract changes and backward compatibility
-5) Test gaps only when risk is high or behavior changed
+### What to focus on (in priority order)
+
+1. Correctness and logic bugs
+2. Security issues (input validation, authz/authn, secrets, injection)
+3. Performance regressions (hot paths only)
+4. API/contract changes and backward compatibility
+5. Test gaps only when risk is high or behavior changed
 
 ## What to avoid
+
 - Do NOT suggest stylistic refactors unless they fix a bug or prevent a clear maintenance issue.
 - Do NOT request documentation unless public APIs changed.
 - Do NOT comment on naming unless it causes real ambiguity.
 - Do NOT suggest "add null checks" if the code is already guarded or types guarantee non-null.
 
-## Output style
+### Output style
+
 - Prefer fewer, higher-signal comments.
 - Use this structure when leaving feedback:
-  - **Issue** (why it matters)
-  - **Evidence** (where in diff / what behavior)
-  - **Suggestion** (concrete fix)
+    - **Issue** (why it matters)
+    - **Evidence** (where in diff / what behavior)
+    - **Suggestion** (concrete fix)
 
 ## Nits (Rust, applies to writers and reviewers)
 
@@ -79,9 +83,9 @@ is not a license to ignore the rule in new code.
    (both from `TridentResultExt`/`ReportError`). Once a result is a
    `TridentError`, prefer `.message(…)` over `.context(…)`.
 9. **`anyhow::Result` is fine in helper modules** (`osutils`, subsystem
-    internals) whose callers handle errors with `anyhow` already. Don't return
-    `anyhow::Error` from APIs whose callers need to discriminate variants —
-    return a structured `TridentError` so the variant is preserved end-to-end.
+   internals) whose callers handle errors with `anyhow` already. Don't return
+   `anyhow::Error` from APIs whose callers need to discriminate variants —
+   return a structured `TridentError` so the variant is preserved end-to-end.
 10. **Avoid `unwrap()`/`expect()`/`panic!` in non-test code.** Accepted
     patterns: (a) lift to `TridentError` via `.structured(…).message(…)`;
     (b) `.expect("invariant: …")` documenting a static invariant.
@@ -110,14 +114,14 @@ is not a license to ignore the rule in new code.
 15. **Prefer `.unwrap()`/`.unwrap_err()` over `assert!(x.is_ok())` /
     `assert!(x.is_err())`** — the panic surfaces the underlying error.
     For variant assertions: `assert!(matches!(err, ErrorKind::Foo { .. }),
-    "got {err:?}")`.
+"got {err:?}")`.
 16. **Use `indoc!`/`formatdoc!` for multi-line literals** in tests; both are
     already on the workspace dep list.
 
 ### Serde / config types (`trident_api::config`)
 
 17. **Public config types derive `Serialize, Deserialize, Debug, Default,
-    Clone, PartialEq, Eq`** (in that ordering when adding new ones) and use
+Clone, PartialEq, Eq`** (in that ordering when adding new ones) and use
     `deny_unknown_fields`. **Casing convention:** structs use
     `#[serde(rename_all = "camelCase", deny_unknown_fields)]` for their fields;
     enums use `#[serde(rename_all = "kebab-case", deny_unknown_fields)]` for
@@ -156,7 +160,7 @@ is not a license to ignore the rule in new code.
     `trident_api::constants` (or `osutils::*`'s relevant module). Reach for
     `trident_api::constants::internal_params::*` for tunables that are also
     surfaced as host-config knobs.
-24. **Comments explain *why*, not *what*.** A doc that restates the function
+24. **Comments explain _why_, not _what_.** A doc that restates the function
     name is noise; a doc that names the invariant or links to the relevant
     design section is signal.
 
@@ -169,17 +173,17 @@ issues that **is** worth flagging in review.
 
 ### Crate map (lowest to highest)
 
-| Crate                | Layer                       | Owns                                                                                                                                                  | Depends on                          |
-|----------------------|-----------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------|
-| `sysdefs`            | System definitions          | High-level definitions of generic computing concepts — machines, operating systems, sometimes specific OSes. Holds the axiomatic types/enums/constants (architectures, filesystems, partition-type GUIDs, TPM2, OS UUIDs). **No I/O, no behavior, no dependencies.** | nothing                             |
-| `trident-proto`      | Wire types                  | gRPC/protobuf-generated types for Trident's control surface.                                                                                          | tonic/prost                         |
-| `trident_api`        | Public API / contract       | **How Trident talks to the world.** The wire/file contract callers use to *tell Trident what to do* (`HostConfiguration` + validation) and what Trident *reports back* (`HostStatus`, `TridentError`/`ErrorKind`). Also cross-crate constants (`trident_api::constants`). | `sysdefs`, `trident-proto`          |
-| `osutils`            | OS-interaction wrappers     | Thin, single-purpose wrappers around system tools/syscalls (`lsblk`, `mkfs`, `mount`, `systemd`, `grub`, `repart`, `chroot`, `efivar`, …). **No business logic, no policy decisions.** | `sysdefs`, `trident_api`            |
-| `osmodifier`         | OS configuration applier    | Native-Rust replacement for the Go `osmodifier`; applies OS-config changes (hostname, modules, services, users, selinux, grub) under a chrooted root. | (largely standalone)                |
-| `trident`            | Business logic / binary     | The actual servicing engine — orchestrator, subsystems (`storage`, `osconfig`, `network`, `selinux`, `extensions`, `initrd`, `esp`, `management`, `hooks`), `engine` (clean install / A-B / runtime update / rollback), CLI, server, datastore, logging, gRPC client. | everything below                    |
-| `trident-acl-agent`  | Update client (Harpoon)     | Omaha-protocol client that fetches updated `HostConfiguration` documents for Trident.                                                                 | `trident-proto`                     |
-| `docbuilder`         | Tooling                     | Builds markdown docs from the `HostConfiguration` schema, the CLI definitions, and architecture pages. **Not on the runtime path.**                   | `trident_api` (with feature flags)  |
-| `pytest` / `pytest_gen` | Test tooling              | Proc-macro + runtime that lets Rust functions register themselves as Python `pytest` cases for functional/E2E test discovery.                         | —                                   |
+| Crate                   | Layer                    | Owns                                                                                                                                                                                                                                                                      | Depends on                         |
+| ----------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| `sysdefs`               | System definitions       | High-level definitions of generic computing concepts — machines, operating systems, sometimes specific OSes. Holds the axiomatic types/enums/constants (architectures, filesystems, partition-type GUIDs, TPM2, OS UUIDs). **No I/O, no behavior, no dependencies.**      | nothing                            |
+| `trident-proto`         | Wire types               | gRPC/protobuf-generated types for Trident's control surface.                                                                                                                                                                                                              | tonic/prost                        |
+| `trident_api`           | Public API / contract    | **How Trident talks to the world.** The wire/file contract callers use to _tell Trident what to do_ (`HostConfiguration` + validation) and what Trident _reports back_ (`HostStatus`, `TridentError`/`ErrorKind`). Also cross-crate constants (`trident_api::constants`). | `sysdefs`, `trident-proto`         |
+| `osutils`               | OS-interaction wrappers  | Thin, single-purpose wrappers around system tools/syscalls (`lsblk`, `mkfs`, `mount`, `systemd`, `grub`, `repart`, `chroot`, `efivar`, …). **No business logic, no policy decisions.**                                                                                    | `sysdefs`, `trident_api`           |
+| `osmodifier`            | OS configuration applier | Native-Rust replacement for the Go `osmodifier`; applies OS-config changes (hostname, modules, services, users, selinux, grub) under a chrooted root.                                                                                                                     | (largely standalone)               |
+| `trident`               | Business logic / binary  | The actual servicing engine — orchestrator, subsystems (`storage`, `osconfig`, `network`, `selinux`, `extensions`, `initrd`, `esp`, `management`, `hooks`), `engine` (clean install / A-B / runtime update / rollback), CLI, server, datastore, logging, gRPC client.     | everything below                   |
+| `trident-acl-agent`     | Update client (Harpoon)  | Omaha-protocol client that fetches updated `HostConfiguration` documents for Trident.                                                                                                                                                                                     | `trident-proto`                    |
+| `docbuilder`            | Tooling                  | Builds markdown docs from the `HostConfiguration` schema, the CLI definitions, and architecture pages. **Not on the runtime path.**                                                                                                                                       | `trident_api` (with feature flags) |
+| `pytest` / `pytest_gen` | Test tooling             | Proc-macro + runtime that lets Rust functions register themselves as Python `pytest` cases for functional/E2E test discovery.                                                                                                                                             | —                                  |
 
 ### Where does this code go?
 
@@ -191,8 +195,8 @@ Apply these questions in order; stop at the first "yes":
 2. **Is it part of the on-the-wire Trident control protocol?** →
    `trident-proto` (regenerated from `proto/`).
 3. **Is it part of how Trident talks to the world?** — the schema callers
-   use to *tell Trident what to do* (Host Configuration / validation) or
-   what Trident *replies* (Host Status, error contract), or a constant
+   use to _tell Trident what to do_ (Host Configuration / validation) or
+   what Trident _replies_ (Host Status, error contract), or a constant
    shared across multiple crates → `trident_api`.
 4. **Is it a thin wrapper around a system tool, syscall, or `/proc`/`/sys`
    read?** (e.g. "run `mkfs.ext4`", "parse `lsblk -J`", "read efivars") →
@@ -295,7 +299,7 @@ Specifically:
 - **Never block a PR on a nit alone.** Mark nit-only comments as
   non-blocking, or fold them into a broader comment whose primary point is
   substantive.
-- **Layering violations are blocking when they introduce a *new* dependency
+- **Layering violations are blocking when they introduce a _new_ dependency
   across layers** (e.g., a new `std::process::Command::new(...)` outside
   `osutils`, or inside `osutils` bypassing the `Dependency` enum; a new
   `osutils` function that takes a `HostConfiguration` and decides what to
