@@ -2,7 +2,6 @@ use anyhow::{ensure, Context, Error};
 
 use log::{debug, info};
 use osutils::block_devices;
-use trident_api::constants::internal_params::RAW_COSI_STORAGE;
 
 use crate::engine::EngineContext;
 
@@ -25,7 +24,7 @@ pub fn create_partitions(ctx: &mut EngineContext) -> Result<(), Error> {
 
     info!("Starting repartitioning process");
 
-    if !ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
+    if !ctx.is_direct_streaming {
         // Regular Host Configuration flow.
         for disk in &resolved_disks {
             debug!("Creating partitions on disk '{}'", disk.id);

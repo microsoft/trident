@@ -18,7 +18,7 @@ use trident_api::{
         OsImage as ConfigOsImage,
     },
     constants::internal_params::{
-        HTTP_CONNECTION_TIMEOUT_SECONDS, ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS, RAW_COSI_STORAGE,
+        HTTP_CONNECTION_TIMEOUT_SECONDS, ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS,
         WAIT_FOR_SYSTEMD_NETWORKD,
     },
     error::{
@@ -124,6 +124,7 @@ pub enum ExitKind {
 pub struct Trident {
     host_config: Option<HostConfiguration>,
     orchestrator: Option<OrchestratorConnection>,
+    is_direct_streaming: bool,
 }
 
 impl Trident {
@@ -232,6 +233,7 @@ impl Trident {
         Ok(Self {
             host_config,
             orchestrator,
+            is_direct_streaming: false,
         })
     }
 
@@ -400,6 +402,7 @@ impl Trident {
             spec: host_status.spec.clone(),
             spec_old: host_status.spec_old.clone(),
             servicing_type: ServicingType::NoActiveServicing,
+            is_direct_streaming: false,
             ab_active_volume: host_status.ab_active_volume,
             partition_paths: host_status.partition_paths.clone(),
             disk_uuids: host_status.disk_uuids.clone(),
@@ -438,6 +441,8 @@ impl Trident {
             .structured(InternalError::Internal(
                 "install called without Host Configuration set",
             ))?;
+
+        let is_direct_streaming = self.is_direct_streaming;
 
         self.execute_and_record_error(datastore, |datastore| {
             host_config
@@ -500,6 +505,7 @@ impl Trident {
                         &allowed_operations,
                         multiboot,
                         image,
+                        is_direct_streaming,
                     )
                     .message("Failed to execute a clean install")
                     .map(|ek| (ek, image_hash, ServicingType::CleanInstall))
@@ -520,7 +526,7 @@ impl Trident {
                         // clean install, if requested.
                         debug!("There is a clean install staged on the host");
                         if allowed_operations.has_finalize() {
-                            engine::finalize_clean_install(datastore, None, None)
+                            engine::finalize_clean_install(datastore, None, None, is_direct_streaming)
                                 .message("Failed to finalize clean install")
                                 .map(|ek| (ek, image_hash.clone(), ServicingType::CleanInstall))
                         } else {
@@ -542,6 +548,7 @@ impl Trident {
                             &allowed_operations,
                             multiboot,
                             image,
+                            is_direct_streaming,
                         )
                         .message("Failed to execute a clean install")
                         .map(|ek| (ek, image_hash, ServicingType::CleanInstall))
@@ -718,10 +725,6 @@ impl Trident {
             .validate()
             .map_err(|e| TridentError::new(InternalError::from(e)))?;
 
-        // Set RAW_COSI_STORAGE internal parameter to true to indicate
-        // that the Host Configuration was derived from a raw COSI image.
-        config.internal_params.set_flag(RAW_COSI_STORAGE);
-
         stream::update_target_disk_path(
             &mut config,
             original_disk_size,
@@ -729,6 +732,7 @@ impl Trident {
         )?;
 
         self.host_config = Some(config);
+        self.is_direct_streaming = true;
 
         self.install(datastore, Operations::all(), false, Some(image))
     }

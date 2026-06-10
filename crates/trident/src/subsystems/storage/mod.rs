@@ -9,7 +9,7 @@ use osutils::lsblk;
 use trident_api::{
     config::HostConfigurationDynamicValidationError,
     constants::internal_params::{
-        ALLOW_HC_STORAGE_CHANGE, RAW_COSI_STORAGE, RELAXED_COSI_VALIDATION,
+        ALLOW_HC_STORAGE_CHANGE, RELAXED_COSI_VALIDATION,
     },
     error::{
         InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt,
@@ -180,8 +180,8 @@ impl Subsystem for StorageSubsystem {
             return Ok(());
         }
 
-        if ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
-            debug!("Skipping storage configuration because raw COSI storage mode is enabled");
+        if ctx.is_direct_streaming {
+            debug!("Skipping storage configuration because direct streaming is enabled");
             return Ok(());
         }
 

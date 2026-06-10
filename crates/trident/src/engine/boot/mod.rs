@@ -3,7 +3,7 @@ use strum::IntoEnumIterator;
 
 use trident_api::{
     constants::{
-        internal_params::RAW_COSI_STORAGE, AB_VOLUME_A_NAME, AB_VOLUME_B_NAME,
+        AB_VOLUME_A_NAME, AB_VOLUME_B_NAME,
         AZURE_LINUX_INSTALL_ID_PREFIX, VAR_TMP_PATH,
     },
     error::{ReportError, ServicingError, TridentError},
@@ -33,8 +33,8 @@ impl Subsystem for BootSubsystem {
             return Ok(());
         }
 
-        if ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
-            debug!("Skipping bootloader configuration because raw COSI storage mode is in use");
+        if ctx.is_direct_streaming {
+            debug!("Skipping bootloader configuration because direct streaming is in use");
             return Ok(());
         }
 

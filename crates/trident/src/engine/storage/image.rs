@@ -10,7 +10,6 @@ use log::{debug, info, trace, warn};
 
 use osutils::{e2fsck, lsblk, resize2fs};
 use trident_api::{
-    constants::internal_params::RAW_COSI_STORAGE,
     error::{
         InternalError, InvalidInputError, ReportError, ServicingError, TridentError,
         TridentResultExt,
@@ -31,7 +30,7 @@ use crate::{
 pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
     // Depending on the type of servicing, get the list of filesystems and
     // partitions sourced from the OS image that we need to deploy.
-    let (fs_from_img, partitions_from_img) = if !ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE)
+    let (fs_from_img, partitions_from_img) = if !ctx.is_direct_streaming
     {
         // For regular servicing, we only care about filesystems declared in the
         // Host Configuration.
@@ -70,7 +69,7 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
             .map(|fs| (fs.mount_point.to_owned(), fs))
             .collect::<HashMap<_, _>>();
 
-        if ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
+        if ctx.is_direct_streaming {
             tmp.insert(
                 ctx.esp_mount_path.as_path().into(),
                 os_img
@@ -218,7 +217,7 @@ fn filesystems_from_image(
         };
 
         if img_fs.mount_point_path() == ctx.esp_mount_path.as_path()
-            && !ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE)
+            && !ctx.is_direct_streaming
         {
             debug!(
                 "Skipping deployment of filesystem [{}] sourced from OS Image, as it is the ESP.",

@@ -11,7 +11,7 @@ use trident_api::{
     config::FileSystemSource,
     constants::{
         internal_params::{
-            ALLOW_UNUSED_FILESYSTEMS_IN_COSI, DISABLE_FS_BLOCK_DEVICE_SIZE_CHECK, RAW_COSI_STORAGE,
+            ALLOW_UNUSED_FILESYSTEMS_IN_COSI, DISABLE_FS_BLOCK_DEVICE_SIZE_CHECK,
         },
         BOOT_MOUNT_POINT_PATH,
     },
@@ -45,8 +45,8 @@ pub fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentError> {
         return Ok(());
     };
 
-    if ctx.spec.internal_params.get_flag(RAW_COSI_STORAGE) {
-        debug!("Skipping COSI and Host Configuration cross-validation because raw COSI is in use");
+    if ctx.is_direct_streaming {
+        debug!("Skipping COSI and Host Configuration cross-validation because direct streaming is in use");
         return Ok(());
     }
 

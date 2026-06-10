@@ -51,6 +51,7 @@ pub struct EngineContextParams {
     pub spec: HostConfiguration,
     pub spec_old: HostConfiguration,
     pub servicing_type: ServicingType,
+    pub is_direct_streaming: bool,
     pub partition_paths: BTreeMap<BlockDeviceId, PathBuf>,
     pub ab_active_volume: Option<AbVolumeSelection>,
     pub disk_uuids: HashMap<BlockDeviceId, uuid::Uuid>,
@@ -67,6 +68,12 @@ pub struct EngineContext {
 
     /// Type of servicing that Trident is executing on the host.
     pub servicing_type: ServicingType,
+
+    /// Whether the engine is running a direct streaming install from a raw COSI
+    /// image. When true, the image is deployed as-is and host-specific
+    /// post-install mutations (bootloader, initrd, SELinux, fstab, etc.) are
+    /// skipped.
+    pub is_direct_streaming: bool,
 
     /// The path associated with each partition in the Host Configuration.
     pub partition_paths: BTreeMap<BlockDeviceId, PathBuf>,
@@ -117,6 +124,7 @@ impl Default for EngineContext {
             spec: Default::default(),
             spec_old: Default::default(),
             servicing_type: Default::default(),
+            is_direct_streaming: false,
             partition_paths: Default::default(),
             ab_active_volume: Default::default(),
             disk_uuids: Default::default(),
@@ -154,6 +162,7 @@ impl EngineContext {
             spec: params.spec,
             spec_old: params.spec_old,
             servicing_type: params.servicing_type,
+            is_direct_streaming: params.is_direct_streaming,
             ab_active_volume: params.ab_active_volume,
             partition_paths: params.partition_paths,
             disk_uuids: params.disk_uuids,
