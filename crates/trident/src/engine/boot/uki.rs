@@ -18,7 +18,7 @@ use trident_api::error::{
     InternalError, ReportError, ServicingError, TridentError, TridentResultExt,
 };
 use trident_api::{
-    constants::{ESP_EFI_DIRECTORY, UKI_SLOT_A, UKI_SLOT_B},
+    constants::{AB_VOLUME_A_NAME, AB_VOLUME_B_NAME, AZURE_LINUX_INSTALL_ID_PREFIX, ESP_EFI_DIRECTORY},
     status::AbVolumeSelection,
 };
 
@@ -29,30 +29,39 @@ pub const TMP_UKI_NAME: &str = "vmlinuz-0.efi.staged";
 pub const UKI_DIRECTORY: &str = formatcp!("{ESP_EFI_DIRECTORY}/Linux");
 const TMP_UKI_ADDON_DIR_NAME: &str = formatcp!("{TMP_UKI_NAME}{UKI_ADDON_DIR_SUFFIX}");
 
-/// Returns the UKI file suffix, given the current active volume and install index.
+/// Returns the lowercased UKI slot name for a given A/B volume
+/// (e.g. `"azla"` for VolumeA). Derived from the install-id prefix + volume name.
+fn uki_slot(volume: &str) -> String {
+    format!("{AZURE_LINUX_INSTALL_ID_PREFIX}{volume}").to_lowercase()
+}
+
+/// Returns the UKI filename for the target (update) slot.
 fn uki_suffix(ctx: &EngineContext) -> String {
-    match ctx.ab_active_volume {
-        Some(AbVolumeSelection::VolumeA) => format!("{UKI_SLOT_B}{}.efi", ctx.install_index),
-        None | Some(AbVolumeSelection::VolumeB) => format!("{UKI_SLOT_A}{}.efi", ctx.install_index),
-    }
+    let slot = match ctx.ab_active_volume {
+        Some(AbVolumeSelection::VolumeA) => uki_slot(AB_VOLUME_B_NAME),
+        None | Some(AbVolumeSelection::VolumeB) => uki_slot(AB_VOLUME_A_NAME),
+    };
+    format!("{slot}{}.efi", ctx.install_index)
 }
 
 /// Returns the slot+os-index identifier for the target volume being updated
 /// (e.g. "azla0" or "azlb1"). Used to match UKI filenames for cleanup.
 fn target_slot_os_id(ctx: &EngineContext) -> String {
-    match ctx.ab_active_volume {
-        Some(AbVolumeSelection::VolumeA) => format!("{UKI_SLOT_B}{}", ctx.install_index),
-        None | Some(AbVolumeSelection::VolumeB) => format!("{UKI_SLOT_A}{}", ctx.install_index),
-    }
+    let slot = match ctx.ab_active_volume {
+        Some(AbVolumeSelection::VolumeA) => uki_slot(AB_VOLUME_B_NAME),
+        None | Some(AbVolumeSelection::VolumeB) => uki_slot(AB_VOLUME_A_NAME),
+    };
+    format!("{slot}{}", ctx.install_index)
 }
 
 /// Returns the slot+os-index identifier for the active/rollback volume
 /// (e.g. "azlb0" when active is B). Used to verify trident owns the other slot.
 fn active_slot_os_id(ctx: &EngineContext) -> String {
-    match ctx.ab_active_volume {
-        Some(AbVolumeSelection::VolumeA) => format!("{UKI_SLOT_A}{}", ctx.install_index),
-        None | Some(AbVolumeSelection::VolumeB) => format!("{UKI_SLOT_B}{}", ctx.install_index),
-    }
+    let slot = match ctx.ab_active_volume {
+        Some(AbVolumeSelection::VolumeA) => uki_slot(AB_VOLUME_A_NAME),
+        None | Some(AbVolumeSelection::VolumeB) => uki_slot(AB_VOLUME_B_NAME),
+    };
+    format!("{slot}{}", ctx.install_index)
 }
 
 /// Return whether there is a staged UKI file on the ESP.
@@ -301,9 +310,11 @@ fn enumerate_trident_managed_ukis(
             .and_then(|filename| filename.strip_prefix("vmlinuz-"))
             .and_then(|f| f.split_once('-'))
             .filter(|(_, suffix)| {
+                let slot_a = uki_slot(AB_VOLUME_A_NAME);
+                let slot_b = uki_slot(AB_VOLUME_B_NAME);
                 suffix.contains("staged")
-                    || suffix.contains(UKI_SLOT_A)
-                    || suffix.contains(UKI_SLOT_B)
+                    || suffix.contains(&slot_a)
+                    || suffix.contains(&slot_b)
             })
             .and_then(|(index, suffix)| Some((index.parse::<usize>().ok()?, suffix.to_string())))
         {
@@ -437,7 +448,11 @@ fn enumerate_non_trident_managed_ukis(
         if let Some(version) = filename
             .to_str()
             .and_then(|filename| filename.strip_prefix("vmlinuz-"))
-            .filter(|f| !f.contains(UKI_SLOT_A) && !f.contains(UKI_SLOT_B))
+            .filter(|f| {
+                let slot_a = uki_slot(AB_VOLUME_A_NAME);
+                let slot_b = uki_slot(AB_VOLUME_B_NAME);
+                !f.contains(&slot_a) && !f.contains(&slot_b)
+            })
             .and_then(|filename| filename.strip_suffix(".efi"))
         {
             match version.parse() {
