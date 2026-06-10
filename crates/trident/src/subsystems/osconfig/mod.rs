@@ -684,6 +684,105 @@ mod tests {
             "Empty AbUpdate context with internal_flag.DISABLE_HOSTNAME_CARRY_OVER should not carry over hostname"
         );
     }
+
+    /// Verify that OsConfigSubsystem::provision returns Ok immediately when
+    /// is_direct_streaming is true, even when the servicing type would
+    /// normally trigger filesystem operations (machine-id copy, hostname
+    /// carry-over).
+    #[test]
+    fn test_osconfig_provision_skipped_during_direct_streaming() {
+        use super::{OsConfigSubsystem, Subsystem};
+        use std::path::Path;
+
+        let ctx = EngineContext {
+            is_direct_streaming: true,
+            servicing_type: ServicingType::AbUpdate,
+            spec: HostConfiguration {
+                os: Os {
+                    hostname: Some("should-not-be-copied".to_string()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut subsystem = OsConfigSubsystem { prev_hostname: None };
+        // With is_direct_streaming=true the guard returns Ok(()) before
+        // attempting fs::copy of /etc/machine-id, which would fail in a
+        // unit-test environment.
+        let result = subsystem.provision(&ctx, Path::new("/nonexistent/mount"));
+        assert!(result.is_ok(), "provision should succeed (skip) during direct streaming");
+        assert!(
+            subsystem.prev_hostname.is_none(),
+            "hostname carry-over should not run during direct streaming"
+        );
+    }
+
+    /// Verify that OsConfigSubsystem::configure returns Ok immediately when
+    /// is_direct_streaming is true, even when os_changes_required would be
+    /// true.
+    #[test]
+    fn test_osconfig_configure_skipped_during_direct_streaming() {
+        use super::{OsConfigSubsystem, Subsystem};
+
+        let ctx = EngineContext {
+            is_direct_streaming: true,
+            servicing_type: ServicingType::CleanInstall,
+            spec: HostConfiguration {
+                os: Os {
+                    users: vec![User {
+                        name: "test-user".to_string(),
+                        password: Password::Locked,
+                        ..Default::default()
+                    }],
+                    hostname: Some("test-host".to_string()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut subsystem = OsConfigSubsystem { prev_hostname: None };
+        // With is_direct_streaming=true the guard returns Ok(()) before
+        // calling osmodifier::modify_os, which would fail in a unit-test
+        // environment.
+        let result = subsystem.configure(&ctx);
+        assert!(result.is_ok(), "configure should succeed (skip) during direct streaming");
+    }
+
+    /// Verify that MosConfigSubsystem::prepare returns Ok immediately when
+    /// is_direct_streaming is true, even when management_os.users would
+    /// normally trigger osmodifier calls and sshd restart.
+    #[test]
+    fn test_mosconfig_prepare_skipped_during_direct_streaming() {
+        use super::{MosConfigSubsystem, Subsystem};
+
+        let ctx = EngineContext {
+            is_direct_streaming: true,
+            servicing_type: ServicingType::CleanInstall,
+            spec: HostConfiguration {
+                management_os: ManagementOs {
+                    users: vec![User {
+                        name: "mos-user".to_string(),
+                        password: Password::Locked,
+                        ..Default::default()
+                    }],
+                    netplan: None,
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut subsystem = MosConfigSubsystem;
+        // With is_direct_streaming=true the guard returns Ok(()) before
+        // calling osmodifier::modify_os, which would fail in a unit-test
+        // environment.
+        let result = subsystem.prepare(&ctx);
+        assert!(result.is_ok(), "prepare should succeed (skip) during direct streaming");
+    }
 }
 
 #[cfg(feature = "functional-test")]
