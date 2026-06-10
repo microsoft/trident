@@ -6,7 +6,7 @@ use std::{
 use const_format::formatcp;
 use log::{debug, error, trace, warn};
 
-use osutils::lsblk;
+use osutils::{lsblk, verity_roothash::VerityRootHash};
 use sysdefs::osuuid::OsUuid;
 use trident_api::{
     config::FileSystemSource,
@@ -24,7 +24,7 @@ use trident_api::{
 };
 
 use crate::{
-    engine::{acl, boot::ESP_EXTRACTION_DIRECTORY},
+    engine::boot::ESP_EXTRACTION_DIRECTORY,
     osimage::{OsImage, OsImageFileSystemType},
 };
 
@@ -246,7 +246,7 @@ fn validate_filesystem_uniqueness(
                             if active_volume_fs_uuid == inactive_volume_fs_uuid {
                                 if ctx.image_distro().is_acl() {
                                     let active_usr_roothash =
-                                        acl::VerityRootHash::from_proc_cmdline();
+                                        VerityRootHash::from_proc_cmdline();
                                     validate_acl_duplicate_uuid(
                                         os_image,
                                         &mp_info.mount_point.path,
@@ -291,9 +291,9 @@ fn validate_acl_duplicate_uuid(
     os_image: &OsImage,
     mount_point: &Path,
     fs_uuid: &OsUuid,
-    active_usr_roothash: Option<acl::VerityRootHash>,
+    active_usr_roothash: Option<VerityRootHash>,
 ) -> Result<(), TridentError> {
-    use acl::{ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID};
+    use trident_api::constants::{ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID};
 
     let mount_str = mount_point.to_string_lossy();
     let uuid_str = fs_uuid.to_string();
@@ -316,7 +316,7 @@ fn validate_acl_duplicate_uuid(
     let staging_roothash = staging_fs
         .as_ref()
         .and_then(|f| f.verity.as_ref())
-        .and_then(|v| acl::VerityRootHash::new(&v.roothash));
+        .and_then(|v| VerityRootHash::new(&v.roothash));
 
     let staging_hash = match staging_roothash {
         Some(h) => h,

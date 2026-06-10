@@ -35,7 +35,6 @@ use crate::{
 
 // Engine functionality
 pub mod ab_update;
-pub(crate) mod acl;
 pub mod bootentries;
 mod clean_install;
 mod context;

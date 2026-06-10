@@ -386,8 +386,8 @@ fn should_be_bind_mounted(fs_type: Option<RealFilesystemType>) -> bool {
     }
 }
 
-// ACL constants and helpers are in the shared acl module.
-use super::acl::{self, ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID};
+use osutils::verity_roothash::VerityRootHash;
+use trident_api::constants::{ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID};
 
 /// Detects a BTRFS filesystem UUID collision on ACL's USR A/B partitions.
 ///
@@ -457,7 +457,7 @@ fn detect_acl_btrfs_uuid_collision(
         return None;
     };
 
-    let staging = match acl::VerityRootHash::new(staging_hash) {
+    let staging = match VerityRootHash::new(staging_hash) {
         Some(h) => h,
         None => {
             warn!("Staging USR verity root hash is empty. Refusing bind-mount.");
@@ -465,7 +465,7 @@ fn detect_acl_btrfs_uuid_collision(
         }
     };
 
-    match acl::VerityRootHash::from_proc_cmdline() {
+    match VerityRootHash::from_proc_cmdline() {
         Some(active) => {
             if staging == active {
                 debug!(
