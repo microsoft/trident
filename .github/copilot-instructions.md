@@ -113,8 +113,7 @@ is not a license to ignore the rule in new code.
     boundaries.
 15. **Prefer `.unwrap()`/`.unwrap_err()` over `assert!(x.is_ok())` /
     `assert!(x.is_err())`** — the panic surfaces the underlying error.
-    For variant assertions: `assert!(matches!(err, ErrorKind::Foo { .. }),
-"got {err:?}")`.
+    For variant assertions: `assert!(matches!(err, ErrorKind::Foo { .. }), "got {err:?}")`.
 16. **Use `indoc!`/`formatdoc!` for multi-line literals** in tests; both are
     already on the workspace dep list.
 
