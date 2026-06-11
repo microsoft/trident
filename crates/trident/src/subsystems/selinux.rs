@@ -86,8 +86,8 @@ impl Subsystem for SelinuxSubsystem {
             return Ok(());
         }
 
-        if ctx.is_direct_streaming {
-            warn!("Direct streaming is enabled, skipping SELinux configuration");
+        if ctx.is_stream_image {
+            warn!("Stream-image is enabled, skipping SELinux configuration");
             return Ok(());
         }
 

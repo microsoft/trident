@@ -22,8 +22,8 @@ impl Subsystem for InitrdSubsystem {
             debug!("Skipping initrd regeneration because UKI is in use");
             return Ok(());
         }
-        if ctx.is_direct_streaming {
-            debug!("Skipping initrd regeneration because direct streaming is in use");
+        if ctx.is_stream_image {
+            debug!("Skipping initrd regeneration because Stream-image is in use");
             return Ok(());
         }
 

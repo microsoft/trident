@@ -124,7 +124,7 @@ pub enum ExitKind {
 pub struct Trident {
     host_config: Option<HostConfiguration>,
     orchestrator: Option<OrchestratorConnection>,
-    is_direct_streaming: bool,
+    is_stream_image: bool,
 }
 
 impl Trident {
@@ -233,7 +233,7 @@ impl Trident {
         Ok(Self {
             host_config,
             orchestrator,
-            is_direct_streaming: false,
+            is_stream_image: false,
         })
     }
 
@@ -402,7 +402,7 @@ impl Trident {
             spec: host_status.spec.clone(),
             spec_old: host_status.spec_old.clone(),
             servicing_type: ServicingType::NoActiveServicing,
-            is_direct_streaming: false,
+            is_stream_image: false,
             ab_active_volume: host_status.ab_active_volume,
             partition_paths: host_status.partition_paths.clone(),
             disk_uuids: host_status.disk_uuids.clone(),
@@ -442,7 +442,7 @@ impl Trident {
                 "install called without Host Configuration set",
             ))?;
 
-        let is_direct_streaming = self.is_direct_streaming;
+        let is_stream_image = self.is_stream_image;
 
         self.execute_and_record_error(datastore, |datastore| {
             host_config
@@ -505,7 +505,7 @@ impl Trident {
                         &allowed_operations,
                         multiboot,
                         image,
-                        is_direct_streaming,
+                        is_stream_image,
                     )
                     .message("Failed to execute a clean install")
                     .map(|ek| (ek, image_hash, ServicingType::CleanInstall))
@@ -530,7 +530,7 @@ impl Trident {
                                 datastore,
                                 None,
                                 None,
-                                is_direct_streaming,
+                                is_stream_image,
                             )
                             .message("Failed to finalize clean install")
                             .map(|ek| (ek, image_hash.clone(), ServicingType::CleanInstall))
@@ -553,7 +553,7 @@ impl Trident {
                             &allowed_operations,
                             multiboot,
                             image,
-                            is_direct_streaming,
+                            is_stream_image,
                         )
                         .message("Failed to execute a clean install")
                         .map(|ek| (ek, image_hash, ServicingType::CleanInstall))
@@ -737,7 +737,7 @@ impl Trident {
         )?;
 
         self.host_config = Some(config);
-        self.is_direct_streaming = true;
+        self.is_stream_image = true;
 
         self.install(datastore, Operations::all(), false, Some(image))
     }

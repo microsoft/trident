@@ -178,8 +178,8 @@ impl Subsystem for StorageSubsystem {
             return Ok(());
         }
 
-        if ctx.is_direct_streaming {
-            debug!("Skipping storage configuration because direct streaming is enabled");
+        if ctx.is_stream_image {
+            debug!("Skipping storage configuration because Stream-image is enabled");
             return Ok(());
         }
 

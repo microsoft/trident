@@ -46,7 +46,7 @@ pub(crate) fn clean_install(
     allowed_operations: &Operations,
     multiboot: bool,
     image: OsImage,
-    is_direct_streaming: bool,
+    is_stream_image: bool,
 ) -> Result<ExitKind, TridentError> {
     info!("Starting clean install");
     tracing::info!(metric_name = "clean_install_start", value = true);
@@ -79,7 +79,7 @@ pub(crate) fn clean_install(
         state,
         host_config,
         image,
-        is_direct_streaming,
+        is_stream_image,
     )?;
 
     if !allowed_operations.has_finalize() {
@@ -102,7 +102,7 @@ pub(crate) fn clean_install(
             state,
             Some(root_mount),
             Some(clean_install_start_time),
-            is_direct_streaming,
+            is_stream_image,
         )
     }
 }
@@ -174,7 +174,7 @@ fn stage_clean_install(
     state: &mut DataStore,
     host_config: &HostConfiguration,
     image: OsImage,
-    is_direct_streaming: bool,
+    is_stream_image: bool,
 ) -> Result<NewrootMount, TridentError> {
     // Best effort to measure memory, CPU, and network usage during execution
     let monitor = match monitor_metrics::MonitorMetrics::new("stage_clean_install".to_string()) {
@@ -193,7 +193,7 @@ fn stage_clean_install(
         spec: host_config.clone(),
         spec_old: Default::default(),
         servicing_type: ServicingType::CleanInstall,
-        is_direct_streaming,
+        is_stream_image,
         ab_active_volume: None,
         partition_paths: Default::default(), // Will be initialized later
         disk_uuids: Default::default(),      // Will be initialized later
@@ -290,7 +290,7 @@ pub(crate) fn finalize_clean_install(
     state: &mut DataStore,
     new_root: Option<NewrootMount>,
     clean_install_start_time: Option<Instant>,
-    is_direct_streaming: bool,
+    is_stream_image: bool,
 ) -> Result<ExitKind, TridentError> {
     info!("Finalizing clean install");
 
@@ -298,7 +298,7 @@ pub(crate) fn finalize_clean_install(
         spec: state.host_status().spec.clone(),
         spec_old: state.host_status().spec_old.clone(),
         servicing_type: ServicingType::CleanInstall,
-        is_direct_streaming,
+        is_stream_image,
         ab_active_volume: state.host_status().ab_active_volume,
         partition_paths: state.host_status().partition_paths.clone(),
         disk_uuids: state.host_status().disk_uuids.clone(),
@@ -322,7 +322,7 @@ pub(crate) fn finalize_clean_install(
     // On clean install, need to verify that the AZLA entry exists in the configured ESP mount path under the new root.
     let esp_path = join_relative(new_root.path(), ctx.esp_mount_path.as_path());
 
-    if !ctx.is_direct_streaming {
+    if !ctx.is_stream_image {
         bootentries::create_and_update_boot_variables(&ctx, &esp_path)?;
         // Analogous to how UEFI variables are configured, finalize must start configuring
         // UEFI fallback, and a successful commit will finish it.
@@ -339,7 +339,7 @@ pub(crate) fn finalize_clean_install(
     })?;
 
     // Persist the datastore to the new root
-    if !ctx.is_direct_streaming {
+    if !ctx.is_stream_image {
         state.persist(&join_relative(
             new_root.path(),
             &state.host_status().spec.trident.datastore_path,
@@ -356,7 +356,7 @@ pub(crate) fn finalize_clean_install(
     }
 
     // Persist the Trident background log and metrics file to the new root
-    if !ctx.is_direct_streaming {
+    if !ctx.is_stream_image {
         engine::persist_background_log_and_metrics(
             &state.host_status().spec.trident.datastore_path,
             Some(new_root.path()),

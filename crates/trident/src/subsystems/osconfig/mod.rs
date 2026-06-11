@@ -130,8 +130,8 @@ impl Subsystem for OsConfigSubsystem {
 
     #[tracing::instrument(name = "osconfig_provision", skip_all)]
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
-        if ctx.is_direct_streaming {
-            debug!("Skipping OS config provisioning because direct streaming is in use");
+        if ctx.is_stream_image {
+            debug!("Skipping OS config provisioning because Stream-image is in use");
             return Ok(());
         }
 
@@ -160,8 +160,8 @@ impl Subsystem for OsConfigSubsystem {
 
     #[tracing::instrument(name = "osconfig_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        if ctx.is_direct_streaming {
-            debug!("Skipping OS configuration because direct streaming is in use");
+        if ctx.is_stream_image {
+            debug!("Skipping OS configuration because Stream-image is in use");
             return Ok(());
         }
 
@@ -321,8 +321,8 @@ impl Subsystem for MosConfigSubsystem {
     }
 
     fn prepare(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        if ctx.is_direct_streaming {
-            debug!("Skipping MOS config preparation because direct streaming is in use");
+        if ctx.is_stream_image {
+            debug!("Skipping MOS config preparation because Stream-image is in use");
             return Ok(());
         }
 
@@ -686,16 +686,16 @@ mod tests {
     }
 
     /// Verify that OsConfigSubsystem::provision returns Ok immediately when
-    /// is_direct_streaming is true, even when the servicing type would
+    /// is_stream_image is true, even when the servicing type would
     /// normally trigger filesystem operations (machine-id copy, hostname
     /// carry-over).
     #[test]
-    fn test_osconfig_provision_skipped_during_direct_streaming() {
+    fn test_osconfig_provision_skipped_during_stream_image() {
         use super::{OsConfigSubsystem, Subsystem};
         use std::path::Path;
 
         let ctx = EngineContext {
-            is_direct_streaming: true,
+            is_stream_image: true,
             servicing_type: ServicingType::AbUpdate,
             spec: HostConfiguration {
                 os: Os {
@@ -710,29 +710,29 @@ mod tests {
         let mut subsystem = OsConfigSubsystem {
             prev_hostname: None,
         };
-        // With is_direct_streaming=true the guard returns Ok(()) before
+        // With is_stream_image=true the guard returns Ok(()) before
         // attempting fs::copy of /etc/machine-id, which would fail in a
         // unit-test environment.
         let result = subsystem.provision(&ctx, Path::new("/nonexistent/mount"));
         assert!(
             result.is_ok(),
-            "provision should succeed (skip) during direct streaming"
+            "provision should succeed (skip) during Stream-image"
         );
         assert!(
             subsystem.prev_hostname.is_none(),
-            "hostname carry-over should not run during direct streaming"
+            "hostname carry-over should not run during Stream-image"
         );
     }
 
     /// Verify that OsConfigSubsystem::configure returns Ok immediately when
-    /// is_direct_streaming is true, even when os_changes_required would be
+    /// is_stream_image is true, even when os_changes_required would be
     /// true.
     #[test]
-    fn test_osconfig_configure_skipped_during_direct_streaming() {
+    fn test_osconfig_configure_skipped_during_stream_image() {
         use super::{OsConfigSubsystem, Subsystem};
 
         let ctx = EngineContext {
-            is_direct_streaming: true,
+            is_stream_image: true,
             servicing_type: ServicingType::CleanInstall,
             spec: HostConfiguration {
                 os: Os {
@@ -752,25 +752,25 @@ mod tests {
         let mut subsystem = OsConfigSubsystem {
             prev_hostname: None,
         };
-        // With is_direct_streaming=true the guard returns Ok(()) before
+        // With is_stream_image=true the guard returns Ok(()) before
         // calling osmodifier::modify_os, which would fail in a unit-test
         // environment.
         let result = subsystem.configure(&ctx);
         assert!(
             result.is_ok(),
-            "configure should succeed (skip) during direct streaming"
+            "configure should succeed (skip) during Stream-image"
         );
     }
 
     /// Verify that MosConfigSubsystem::prepare returns Ok immediately when
-    /// is_direct_streaming is true, even when management_os.users would
+    /// is_stream_image is true, even when management_os.users would
     /// normally trigger osmodifier calls and sshd restart.
     #[test]
-    fn test_mosconfig_prepare_skipped_during_direct_streaming() {
+    fn test_mosconfig_prepare_skipped_during_stream_image() {
         use super::{MosConfigSubsystem, Subsystem};
 
         let ctx = EngineContext {
-            is_direct_streaming: true,
+            is_stream_image: true,
             servicing_type: ServicingType::CleanInstall,
             spec: HostConfiguration {
                 management_os: ManagementOs {
@@ -787,13 +787,13 @@ mod tests {
         };
 
         let mut subsystem = MosConfigSubsystem;
-        // With is_direct_streaming=true the guard returns Ok(()) before
+        // With is_stream_image=true the guard returns Ok(()) before
         // calling osmodifier::modify_os, which would fail in a unit-test
         // environment.
         let result = subsystem.prepare(&ctx);
         assert!(
             result.is_ok(),
-            "prepare should succeed (skip) during direct streaming"
+            "prepare should succeed (skip) during Stream-image"
         );
     }
 }

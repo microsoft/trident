@@ -30,8 +30,8 @@ impl Subsystem for BootSubsystem {
             return Ok(());
         }
 
-        if ctx.is_direct_streaming {
-            debug!("Skipping bootloader configuration because direct streaming is in use");
+        if ctx.is_stream_image {
+            debug!("Skipping bootloader configuration because Stream-image is in use");
             return Ok(());
         }
 

@@ -51,7 +51,7 @@ impl Subsystem for EspSubsystem {
         // Perform file-based deployment of ESP images, if needed, after filesystems have been
         // mounted and initialized.
 
-        if !ctx.is_direct_streaming {
+        if !ctx.is_stream_image {
             deploy_esp(ctx, mount_path)?;
         }
 

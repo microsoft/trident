@@ -49,7 +49,7 @@ pub(crate) fn update(
         spec: host_config.clone(),
         spec_old: state.host_status().spec.clone(),
         servicing_type: ServicingType::NoActiveServicing,
-        is_direct_streaming: false,
+        is_stream_image: false,
         partition_paths: state.host_status().partition_paths.clone(),
         ab_active_volume: state.host_status().ab_active_volume,
         disk_uuids: state.host_status().disk_uuids.clone(),

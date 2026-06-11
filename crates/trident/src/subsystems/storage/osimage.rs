@@ -43,8 +43,8 @@ pub fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentError> {
         return Ok(());
     };
 
-    if ctx.is_direct_streaming {
-        debug!("Skipping COSI and Host Configuration cross-validation because direct streaming is in use");
+    if ctx.is_stream_image {
+        debug!("Skipping COSI and Host Configuration cross-validation because Stream-image is in use");
         return Ok(());
     }
 

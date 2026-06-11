@@ -56,7 +56,7 @@ fn block_devices_needing_fs_creation(
             FileSystemData::Image(ifs)
                 if ctx.servicing_type == ServicingType::CleanInstall
                     && fs.mount_point_path() == Some(ctx.esp_mount_path.as_path())
-                    && !ctx.is_direct_streaming
+                    && !ctx.is_stream_image
                     && !ctx
                         .storage_graph
                         .is_adopted(&ifs.device_id)

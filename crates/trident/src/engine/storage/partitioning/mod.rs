@@ -24,7 +24,7 @@ pub fn create_partitions(ctx: &mut EngineContext) -> Result<(), Error> {
 
     info!("Starting repartitioning process");
 
-    if !ctx.is_direct_streaming {
+    if !ctx.is_stream_image {
         // Regular Host Configuration flow.
         for disk in &resolved_disks {
             debug!("Creating partitions on disk '{}'", disk.id);

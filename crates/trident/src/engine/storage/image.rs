@@ -30,7 +30,7 @@ use crate::{
 pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
     // Depending on the type of servicing, get the list of filesystems and
     // partitions sourced from the OS image that we need to deploy.
-    let (fs_from_img, partitions_from_img) = if !ctx.is_direct_streaming {
+    let (fs_from_img, partitions_from_img) = if !ctx.is_stream_image {
         // For regular servicing, we only care about filesystems declared in the
         // Host Configuration.
         (
@@ -68,7 +68,7 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
             .map(|fs| (fs.mount_point.to_owned(), fs))
             .collect::<HashMap<_, _>>();
 
-        if ctx.is_direct_streaming {
+        if ctx.is_stream_image {
             tmp.insert(
                 ctx.esp_mount_path.as_path().into(),
                 os_img
@@ -215,7 +215,7 @@ fn filesystems_from_image(
             continue;
         };
 
-        if img_fs.mount_point_path() == ctx.esp_mount_path.as_path() && !ctx.is_direct_streaming {
+        if img_fs.mount_point_path() == ctx.esp_mount_path.as_path() && !ctx.is_stream_image {
             debug!(
                 "Skipping deployment of filesystem [{}] sourced from OS Image, as it is the ESP.",
                 filesystem.description()
