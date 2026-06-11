@@ -368,22 +368,13 @@ pub fn update_uki_boot_files(
         .structured(ServicingError::EnumerateUkis)?;
     let uki_suffix = uki_suffix(ctx);
 
+    // Remove any leftover UKIs for the target slot (idempotent safety net —
+    // cleanup_ukis_before_staging should have already removed these) and
+    // compute the highest existing update index for the new filename.
     let mut max_index = 99;
     for (index, suffix, path) in existing_ukis {
         if suffix == uki_suffix {
-            fs::remove_file(&path)
-                .with_context(|| format!("Failed to remove existing UKI file '{}'", path.display()))
-                .structured(ServicingError::UpdateUki)?;
-
-            // Remove any related addon directory as well if it exists.
-            let addon_dir = uki::uki_addon_dir(&path);
-            if addon_dir.exists() && addon_dir.is_dir() {
-                fs::remove_dir_all(&addon_dir)
-                    .with_context(|| {
-                        format!("Failed to remove addon directory '{}'", addon_dir.display())
-                    })
-                    .structured(ServicingError::UpdateUki)?;
-            }
+            remove_uki_and_addons(&path).structured(ServicingError::UpdateUki)?;
         } else {
             max_index = max_index.max(index);
         }
