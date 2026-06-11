@@ -21,9 +21,6 @@ storage:
         - id: swap
           type: swap
           size: 2G
-        - id: home
-          type: home
-          size: 1G
         - id: trident
           type: linux-generic
           size: 1G
@@ -40,9 +37,6 @@ storage:
     - deviceId: trident
       source: new
       mountPoint: /var/lib/trident
-    - deviceId: home
-      source: new
-      mountPoint: /home
     - deviceId: esp
       mountPoint:
         path: /boot/efi
@@ -51,6 +45,12 @@ storage:
       mountPoint: /
   swap:
     - swap
+# /home partition omitted: the COSI bakes a user home directory onto
+# root via MIC os.users. Trident's newroot mount rejects non-empty
+# mount points, so a separate /home partition conflicts with the
+# pre-existing /home/<user>. AZL3 avoids this by only testing /home
+# in container mode. Container mode support for AZL4 is tracked as
+# a follow-up.
 scripts:
   postConfigure:
     - name: testing-privilege
