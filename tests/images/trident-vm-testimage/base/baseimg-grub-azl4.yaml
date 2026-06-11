@@ -19,10 +19,7 @@ storage:
       partitions:
         - id: esp
           type: esp
-          # 64M (vs AZL3's 16M) because AZL4 ships larger grub/shim
-          # binaries (~5MB grubx64.efi) and trident's offline-init
-          # copies them to both /boot/efi/EFI/AZLA and /AZLB.
-          size: 64M
+          size: 32M
 
         - id: root-a
           size: 4G
