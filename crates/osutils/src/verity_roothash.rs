@@ -9,8 +9,9 @@ use std::fs;
 
 /// A dm-verity root hash, normalized to lowercase with whitespace trimmed.
 ///
-/// An empty string is not a valid hash — comparisons against or with an empty
-/// `VerityRootHash` always return `false`.
+/// Construction via [`VerityRootHash::new`] returns `None` for empty or
+/// whitespace-only input, so a valid `VerityRootHash` always contains a
+/// non-empty hash string.
 #[derive(Debug, Clone, Eq)]
 pub struct VerityRootHash(String);
 
