@@ -24,6 +24,9 @@ use trident_api::{
 
 use crate::engine::EngineContext;
 
+/// UKI filename prefix used by both Trident-managed and preexisting UKIs.
+const UKI_FILENAME_PREFIX: &str = "vmlinuz-";
+
 /// Temporary name for the UKI file before renaming.
 pub const TMP_UKI_NAME: &str = "vmlinuz-0.efi.staged";
 pub const UKI_DIRECTORY: &str = formatcp!("{ESP_EFI_DIRECTORY}/Linux");
@@ -307,7 +310,7 @@ fn enumerate_trident_managed_ukis(
 
         if let Some((index, suffix)) = filename
             .to_str()
-            .and_then(|filename| filename.strip_prefix("vmlinuz-"))
+            .and_then(|filename| filename.strip_prefix(UKI_FILENAME_PREFIX))
             .and_then(|f| f.split_once('-'))
             .filter(|(_, suffix)| {
                 let slot_a = uki_slot(AB_VOLUME_A_NAME);
@@ -381,7 +384,7 @@ pub fn update_uki_boot_files(
         }
     }
 
-    let uki_dest_path = esp_uki_directory.join(format!("vmlinuz-{}-{uki_suffix}", max_index + 1));
+    let uki_dest_path = esp_uki_directory.join(format!("{UKI_FILENAME_PREFIX}{}-{uki_suffix}", max_index + 1));
 
     // If there is a staged UKI addon directory, rename it to match the new UKI filename.
     let staging_addon_dir = esp_uki_directory.join(TMP_UKI_ADDON_DIR_NAME);
@@ -445,7 +448,7 @@ fn enumerate_non_trident_managed_ukis(
 
         if let Some(version) = filename
             .to_str()
-            .and_then(|filename| filename.strip_prefix("vmlinuz-"))
+            .and_then(|filename| filename.strip_prefix(UKI_FILENAME_PREFIX))
             .filter(|f| {
                 let slot_a = uki_slot(AB_VOLUME_A_NAME);
                 let slot_b = uki_slot(AB_VOLUME_B_NAME);

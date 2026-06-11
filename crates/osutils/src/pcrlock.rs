@@ -752,8 +752,8 @@ where
         );
         let mut addon_entries: Vec<_> = fs::read_dir(&uki_addon_path)
             .context("Failed to read UKI addons directory")?
-            .filter_map(|e| e.ok())
-            .collect();
+            .collect::<Result<Vec<_>, _>>()
+            .context("Failed to read entry in UKI addons directory")?;
         // Ensure ordering of addons matches systemd-boot's ordering by sorting by file name
         addon_entries.sort_by_key(|e| e.file_name());
         for entry in addon_entries {

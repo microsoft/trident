@@ -22,6 +22,7 @@ use trident_api::{
     config::{FileSystem, HostConfiguration},
     constants::{
         ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID, NONE_MOUNT_POINT, ROOT_MOUNT_POINT_PATH,
+        USR_MOUNT_POINT_PATH,
         UPDATE_ROOT_FALLBACK_PATH, UPDATE_ROOT_PATH,
     },
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
@@ -226,7 +227,7 @@ impl NewrootMount {
                 // content is identical when UUIDs match, so the bind mount provides
                 // equivalent content for chroot provisioning.
                 if let Some(ref collision_uuid) = acl_collision_uuid {
-                    if *path == Path::new("/usr")
+                    if *path == Path::new(USR_MOUNT_POINT_PATH)
                         && fs_type == Some(RealFilesystemType::Btrfs)
                         && block_device.fsuuid.as_ref() == Some(collision_uuid)
                     {
@@ -425,10 +426,15 @@ fn detect_acl_btrfs_uuid_collision(
     let active_dev = lsblk::get(&active_path).ok()?;
     let update_dev = lsblk::get(&update_path).ok()?;
 
-    if active_dev.fstype.as_deref()? != "btrfs" {
+    let active_fstype = active_dev.fstype.as_deref()
+        .and_then(|fs| KernelFilesystemType::from(fs).try_as_real());
+    let update_fstype = update_dev.fstype.as_deref()
+        .and_then(|fs| KernelFilesystemType::from(fs).try_as_real());
+
+    if active_fstype != Some(RealFilesystemType::Btrfs) {
         return None;
     }
-    if update_dev.fstype.as_deref()? != "btrfs" {
+    if update_fstype != Some(RealFilesystemType::Btrfs) {
         return None;
     }
 
@@ -458,12 +464,9 @@ fn detect_acl_btrfs_uuid_collision(
         return None;
     };
 
-    let staging = match VerityRootHash::new(staging_hash) {
-        Some(h) => h,
-        None => {
-            warn!("Staging USR verity root hash is empty. Refusing bind-mount.");
-            return None;
-        }
+    let Some(staging) = VerityRootHash::new(staging_hash) else {
+        warn!("Staging USR verity root hash is empty. Refusing bind-mount.");
+        return None;
     };
 
     match VerityRootHash::from_proc_cmdline() {
