@@ -131,7 +131,7 @@ impl Subsystem for OsConfigSubsystem {
     #[tracing::instrument(name = "osconfig_provision", skip_all)]
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
         if ctx.is_stream_image {
-            debug!("Skipping OS config provisioning because Stream-image is in use");
+            debug!("Skipping OS config provisioning because stream-image is in use");
             return Ok(());
         }
 
@@ -161,7 +161,7 @@ impl Subsystem for OsConfigSubsystem {
     #[tracing::instrument(name = "osconfig_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
         if ctx.is_stream_image {
-            debug!("Skipping OS configuration because Stream-image is in use");
+            debug!("Skipping OS configuration because stream-image is in use");
             return Ok(());
         }
 
@@ -322,7 +322,7 @@ impl Subsystem for MosConfigSubsystem {
 
     fn prepare(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
         if ctx.is_stream_image {
-            debug!("Skipping MOS config preparation because Stream-image is in use");
+            debug!("Skipping MOS config preparation because stream-image is in use");
             return Ok(());
         }
 
@@ -716,11 +716,11 @@ mod tests {
         let result = subsystem.provision(&ctx, Path::new("/nonexistent/mount"));
         assert!(
             result.is_ok(),
-            "provision should succeed (skip) during Stream-image"
+            "provision should succeed (skip) during stream-image"
         );
         assert!(
             subsystem.prev_hostname.is_none(),
-            "hostname carry-over should not run during Stream-image"
+            "hostname carry-over should not run during stream-image"
         );
     }
 
@@ -758,7 +758,7 @@ mod tests {
         let result = subsystem.configure(&ctx);
         assert!(
             result.is_ok(),
-            "configure should succeed (skip) during Stream-image"
+            "configure should succeed (skip) during stream-image"
         );
     }
 
@@ -793,7 +793,7 @@ mod tests {
         let result = subsystem.prepare(&ctx);
         assert!(
             result.is_ok(),
-            "prepare should succeed (skip) during Stream-image"
+            "prepare should succeed (skip) during stream-image"
         );
     }
 }

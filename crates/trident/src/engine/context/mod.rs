@@ -69,7 +69,7 @@ pub struct EngineContext {
     /// Type of servicing that Trident is executing on the host.
     pub servicing_type: ServicingType,
 
-    /// Whether the engine is running a Stream-image install from a raw COSI
+    /// Whether the engine is running a stream-image install from a raw COSI
     /// image. When true, the image is deployed as-is and host-specific
     /// post-install mutations (bootloader, initrd, SELinux, fstab, etc.) are
     /// skipped.
