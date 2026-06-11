@@ -27,6 +27,9 @@ use crate::engine::EngineContext;
 /// UKI filename prefix used by both Trident-managed and preexisting UKIs.
 const UKI_FILENAME_PREFIX: &str = "vmlinuz-";
 
+/// Marker in UKI filenames that identifies a staged (not yet finalized) UKI.
+const UKI_STAGED_MARKER: &str = "staged";
+
 /// Temporary name for the UKI file before renaming.
 pub const TMP_UKI_NAME: &str = "vmlinuz-0.efi.staged";
 pub const UKI_DIRECTORY: &str = formatcp!("{ESP_EFI_DIRECTORY}/Linux");
@@ -315,7 +318,7 @@ fn enumerate_trident_managed_ukis(
             .filter(|(_, suffix)| {
                 let slot_a = uki_slot(AB_VOLUME_A_NAME);
                 let slot_b = uki_slot(AB_VOLUME_B_NAME);
-                suffix.contains("staged") || suffix.contains(&slot_a) || suffix.contains(&slot_b)
+                suffix.contains(UKI_STAGED_MARKER) || suffix.contains(&slot_a) || suffix.contains(&slot_b)
             })
             .and_then(|(index, suffix)| Some((index.parse::<usize>().ok()?, suffix.to_string())))
         {
