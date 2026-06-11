@@ -14,13 +14,11 @@ use osutils::{
     efivar,
     uki::{self, UKI_ADDON_DIR_SUFFIX, UKI_ADDON_FILE_SUFFIX},
 };
-use trident_api::error::{
-    InternalError, ReportError, ServicingError, TridentError, TridentResultExt,
-};
 use trident_api::{
     constants::{
         AB_VOLUME_A_NAME, AB_VOLUME_B_NAME, AZURE_LINUX_INSTALL_ID_PREFIX, ESP_EFI_DIRECTORY,
     },
+    error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::AbVolumeSelection,
 };
 
