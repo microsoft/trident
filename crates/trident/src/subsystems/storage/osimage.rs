@@ -44,7 +44,7 @@ pub fn validate_host_config(ctx: &EngineContext) -> Result<(), TridentError> {
     };
 
     if ctx.is_stream_image {
-        debug!("Skipping COSI and Host Configuration cross-validation because stream-image is in use");
+        debug!("Skipping COSI and Host Configuration cross-validation during stream-image");
         return Ok(());
     }
 

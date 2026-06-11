@@ -131,7 +131,7 @@ impl Subsystem for OsConfigSubsystem {
     #[tracing::instrument(name = "osconfig_provision", skip_all)]
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
         if ctx.is_stream_image {
-            debug!("Skipping OS config provisioning because stream-image is in use");
+            debug!("Skipping OS config provisioning during stream-image");
             return Ok(());
         }
 
@@ -161,7 +161,7 @@ impl Subsystem for OsConfigSubsystem {
     #[tracing::instrument(name = "osconfig_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
         if ctx.is_stream_image {
-            debug!("Skipping OS configuration because stream-image is in use");
+            debug!("Skipping OS configuration during stream-image");
             return Ok(());
         }
 
@@ -322,7 +322,7 @@ impl Subsystem for MosConfigSubsystem {
 
     fn prepare(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
         if ctx.is_stream_image {
-            debug!("Skipping MOS config preparation because stream-image is in use");
+            debug!("Skipping MOS config preparation during stream-image");
             return Ok(());
         }
 

@@ -31,7 +31,7 @@ impl Subsystem for BootSubsystem {
         }
 
         if ctx.is_stream_image {
-            debug!("Skipping bootloader configuration because stream-image is in use");
+            debug!("Skipping bootloader configuration during stream-image");
             return Ok(());
         }
 

@@ -179,7 +179,7 @@ impl Subsystem for StorageSubsystem {
         }
 
         if ctx.is_stream_image {
-            debug!("Skipping storage configuration because stream-image is enabled");
+            debug!("Skipping storage configuration during stream-image");
             return Ok(());
         }
 

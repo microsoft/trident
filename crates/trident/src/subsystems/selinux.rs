@@ -87,7 +87,7 @@ impl Subsystem for SelinuxSubsystem {
         }
 
         if ctx.is_stream_image {
-            warn!("stream-image is enabled, skipping SELinux configuration");
+            warn!("Skipping SELinux configuration during stream-image");
             return Ok(());
         }
 

@@ -23,7 +23,7 @@ impl Subsystem for InitrdSubsystem {
             return Ok(());
         }
         if ctx.is_stream_image {
-            debug!("Skipping initrd regeneration because stream-image is in use");
+            debug!("Skipping initrd regeneration during stream-image");
             return Ok(());
         }
 
