@@ -422,10 +422,14 @@ fn detect_acl_btrfs_uuid_collision(
     let active_path = block_devices::part_uuid_path(active_partuuid);
     let update_path = block_devices::part_uuid_path(update_partuuid);
 
-    let Ok(active_dev) = lsblk::get(&active_path) else {
+    let Some(active_dev) =
+        lsblk::try_get(&active_path).context("Failed to query active ACL USR partition")?
+    else {
         return Ok(None);
     };
-    let Ok(update_dev) = lsblk::get(&update_path) else {
+    let Some(update_dev) =
+        lsblk::try_get(&update_path).context("Failed to query update ACL USR partition")?
+    else {
         return Ok(None);
     };
 

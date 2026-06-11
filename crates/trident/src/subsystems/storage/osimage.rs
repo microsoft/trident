@@ -310,23 +310,28 @@ fn validate_acl_duplicate_uuid(
     let staging_fs = os_image
         .filesystems()
         .find(|f| f.mount_point == mount_point);
+    let Some(staging_fs) = staging_fs else {
+        return Err(TridentError::new(
+            InvalidInputError::DuplicateFsUuidAclVerificationFailed {
+                uuid: uuid_str,
+                mount_point: mount_str.to_string(),
+                reason: "no /usr filesystem found in COSI image metadata".to_string(),
+            },
+        ));
+    };
     let staging_roothash = staging_fs
+        .verity
         .as_ref()
-        .and_then(|f| f.verity.as_ref())
         .and_then(|v| VerityRootHash::new(&v.roothash));
-
-    let staging_hash = match staging_roothash {
-        Some(h) => h,
-        None => {
-            return Err(TridentError::new(
-                InvalidInputError::DuplicateFsUuidAclVerificationFailed {
-                    uuid: uuid_str,
-                    mount_point: mount_str.to_string(),
-                    reason: "staging /usr image has no verity root hash in COSI metadata"
-                        .to_string(),
-                },
-            ));
-        }
+    let Some(staging_hash) = staging_roothash else {
+        return Err(TridentError::new(
+            InvalidInputError::DuplicateFsUuidAclVerificationFailed {
+                uuid: uuid_str,
+                mount_point: mount_str.to_string(),
+                reason: "staging /usr filesystem has no verity root hash in COSI metadata"
+                    .to_string(),
+            },
+        ));
     };
 
     // 3. Active system must have a usrhash= in /proc/cmdline.
