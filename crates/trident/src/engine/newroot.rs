@@ -22,9 +22,8 @@ use sysdefs::{
 use trident_api::{
     config::{FileSystem, HostConfiguration},
     constants::{
-        NONE_MOUNT_POINT, ROOT_MOUNT_POINT_PATH,
+        NONE_MOUNT_POINT, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_FALLBACK_PATH, UPDATE_ROOT_PATH,
         USR_MOUNT_POINT_PATH,
-        UPDATE_ROOT_FALLBACK_PATH, UPDATE_ROOT_PATH,
     },
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::AbVolumeSelection,
@@ -423,9 +422,13 @@ fn detect_acl_btrfs_uuid_collision(
     let active_dev = lsblk::get(&active_path).ok()?;
     let update_dev = lsblk::get(&update_path).ok()?;
 
-    let active_fstype = active_dev.fstype.as_deref()
+    let active_fstype = active_dev
+        .fstype
+        .as_deref()
         .and_then(|fs| KernelFilesystemType::from(fs).try_as_real());
-    let update_fstype = update_dev.fstype.as_deref()
+    let update_fstype = update_dev
+        .fstype
+        .as_deref()
         .and_then(|fs| KernelFilesystemType::from(fs).try_as_real());
 
     if active_fstype != Some(RealFilesystemType::Btrfs) {

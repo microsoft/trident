@@ -370,9 +370,7 @@ fn validate_acl_duplicate_uuid(
     // USR partition PARTUUID matches a known ACL USR slot.
     if let Some(mut partitions) = os_image.partitions() {
         let known_partuuids = [acl::USR_A_PARTUUID, acl::USR_B_PARTUUID];
-        let has_acl_usr_partuuid = partitions.any(|p| {
-            known_partuuids.contains(&p.info.part_uuid)
-        });
+        let has_acl_usr_partuuid = partitions.any(|p| known_partuuids.contains(&p.info.part_uuid));
 
         if !has_acl_usr_partuuid {
             warn!(

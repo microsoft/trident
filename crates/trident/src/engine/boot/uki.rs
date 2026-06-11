@@ -318,7 +318,9 @@ fn enumerate_trident_managed_ukis(
             .filter(|(_, suffix)| {
                 let slot_a = uki_slot(AB_VOLUME_A_NAME);
                 let slot_b = uki_slot(AB_VOLUME_B_NAME);
-                suffix.contains(UKI_STAGED_MARKER) || suffix.contains(&slot_a) || suffix.contains(&slot_b)
+                suffix.contains(UKI_STAGED_MARKER)
+                    || suffix.contains(&slot_a)
+                    || suffix.contains(&slot_b)
             })
             .and_then(|(index, suffix)| Some((index.parse::<usize>().ok()?, suffix.to_string())))
         {
@@ -387,7 +389,10 @@ pub fn update_uki_boot_files(
         }
     }
 
-    let uki_dest_path = esp_uki_directory.join(format!("{UKI_FILENAME_PREFIX}{}-{uki_suffix}", max_index + 1));
+    let uki_dest_path = esp_uki_directory.join(format!(
+        "{UKI_FILENAME_PREFIX}{}-{uki_suffix}",
+        max_index + 1
+    ));
 
     // If there is a staged UKI addon directory, rename it to match the new UKI filename.
     let staging_addon_dir = esp_uki_directory.join(TMP_UKI_ADDON_DIR_NAME);

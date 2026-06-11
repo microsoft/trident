@@ -7,11 +7,7 @@ use uuid::Uuid;
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
-use crate::{
-    constants::PARTITION_SIZE_GROW,
-    primitives::bytes::ByteCount,
-    BlockDeviceId,
-};
+use crate::{constants::PARTITION_SIZE_GROW, primitives::bytes::ByteCount, BlockDeviceId};
 
 #[cfg(feature = "schemars")]
 use crate::schema::{block_device_id_schema, unit_enum_with_untagged_variant};

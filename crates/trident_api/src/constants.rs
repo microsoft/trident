@@ -164,7 +164,6 @@ pub const AB_VOLUME_A_NAME: &str = "A";
 /// A/B Volume B Name
 pub const AB_VOLUME_B_NAME: &str = "B";
 
-
 /// Read-only mount option.
 pub const MOUNT_OPTION_READ_ONLY: &str = "ro";
 
@@ -188,7 +187,6 @@ pub const VALID_CONFEXT_DIRECTORIES: [&str; 3] = [
     "/usr/lib/confexts",
     "/usr/local/lib/confexts",
 ];
-
 
 /// Internal-only overrides
 pub mod internal_params {
