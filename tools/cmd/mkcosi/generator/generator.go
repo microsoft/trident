@@ -1115,6 +1115,8 @@ func findUkiAddonCmdlines(ukiDir string, ukiName string, espMountPoint string) [
 	addonDirName := ukiName + ".extra.d"
 	addonHostDir := filepath.Join(ukiDir, addonDirName)
 
+	// os.ReadDir returns entries sorted lexicographically by name, matching
+	// systemd processing order.
 	addonEntries, err := os.ReadDir(addonHostDir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
