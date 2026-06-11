@@ -7,12 +7,12 @@ use const_format::formatcp;
 use log::{debug, error, trace, warn};
 
 use osutils::{lsblk, verity_roothash::VerityRootHash};
-use sysdefs::osuuid::OsUuid;
+use sysdefs::{acl, osuuid::OsUuid};
 use trident_api::{
     config::FileSystemSource,
     constants::{
         internal_params::{ALLOW_UNUSED_FILESYSTEMS_IN_COSI, DISABLE_FS_BLOCK_DEVICE_SIZE_CHECK},
-        ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID, BOOT_MOUNT_POINT_PATH,
+        BOOT_MOUNT_POINT_PATH,
     },
     error::{
         InternalError, InvalidInputError, ReportError, ServicingError, TridentError,
@@ -369,10 +369,9 @@ fn validate_acl_duplicate_uuid(
     // Optional: If COSI partition metadata is available, validate that the staging
     // USR partition PARTUUID matches a known ACL USR slot.
     if let Some(mut partitions) = os_image.partitions() {
-        let known_partuuids: Vec<&str> = vec![ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID];
+        let known_partuuids = [acl::USR_A_PARTUUID, acl::USR_B_PARTUUID];
         let has_acl_usr_partuuid = partitions.any(|p| {
-            let part_uuid_str = p.info.part_uuid.to_string().to_lowercase();
-            known_partuuids.iter().any(|known| *known == part_uuid_str)
+            known_partuuids.contains(&p.info.part_uuid)
         });
 
         if !has_acl_usr_partuuid {

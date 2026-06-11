@@ -15,13 +15,14 @@ use osutils::{
     verity_roothash::VerityRootHash,
 };
 use sysdefs::{
+    acl,
     filesystems::{KernelFilesystemType, RealFilesystemType},
     osuuid::OsUuid,
 };
 use trident_api::{
     config::{FileSystem, HostConfiguration},
     constants::{
-        ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID, NONE_MOUNT_POINT, ROOT_MOUNT_POINT_PATH,
+        NONE_MOUNT_POINT, ROOT_MOUNT_POINT_PATH,
         USR_MOUNT_POINT_PATH,
         UPDATE_ROOT_FALLBACK_PATH, UPDATE_ROOT_PATH,
     },
@@ -412,16 +413,12 @@ fn detect_acl_btrfs_uuid_collision(
     staging_usr_roothash: Option<&str>,
 ) -> Option<OsUuid> {
     let (active_partuuid, update_partuuid) = match update_volume {
-        AbVolumeSelection::VolumeA => (ACL_USR_B_PARTUUID, ACL_USR_A_PARTUUID),
-        AbVolumeSelection::VolumeB => (ACL_USR_A_PARTUUID, ACL_USR_B_PARTUUID),
+        AbVolumeSelection::VolumeA => (acl::USR_B_PARTUUID, acl::USR_A_PARTUUID),
+        AbVolumeSelection::VolumeB => (acl::USR_A_PARTUUID, acl::USR_B_PARTUUID),
     };
 
-    let active_path = block_devices::part_uuid_path(
-        uuid::Uuid::parse_str(active_partuuid).expect("ACL PARTUUID constant is valid"),
-    );
-    let update_path = block_devices::part_uuid_path(
-        uuid::Uuid::parse_str(update_partuuid).expect("ACL PARTUUID constant is valid"),
-    );
+    let active_path = block_devices::part_uuid_path(active_partuuid);
+    let update_path = block_devices::part_uuid_path(update_partuuid);
 
     let active_dev = lsblk::get(&active_path).ok()?;
     let update_dev = lsblk::get(&update_path).ok()?;
