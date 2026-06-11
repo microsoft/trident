@@ -526,14 +526,9 @@ impl Trident {
                         // clean install, if requested.
                         debug!("There is a clean install staged on the host");
                         if allowed_operations.has_finalize() {
-                            engine::finalize_clean_install(
-                                datastore,
-                                None,
-                                None,
-                                is_stream_image,
-                            )
-                            .message("Failed to finalize clean install")
-                            .map(|ek| (ek, image_hash.clone(), ServicingType::CleanInstall))
+                            engine::finalize_clean_install(datastore, None, None, is_stream_image)
+                                .message("Failed to finalize clean install")
+                                .map(|ek| (ek, image_hash.clone(), ServicingType::CleanInstall))
                         } else {
                             debug!(
                                 "There is a clean install staged on the host, but allowed \

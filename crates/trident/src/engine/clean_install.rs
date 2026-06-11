@@ -74,13 +74,8 @@ pub(crate) fn clean_install(
     let mut subsystems = SUBSYSTEMS.lock().unwrap();
 
     // Stage clean install
-    let root_mount = stage_clean_install(
-        &mut subsystems,
-        state,
-        host_config,
-        image,
-        is_stream_image,
-    )?;
+    let root_mount =
+        stage_clean_install(&mut subsystems, state, host_config, image, is_stream_image)?;
 
     if !allowed_operations.has_finalize() {
         info!("Finalizing of clean install not requested, skipping finalizing and reboot");
