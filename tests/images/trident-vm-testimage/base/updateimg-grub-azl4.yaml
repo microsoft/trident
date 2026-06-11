@@ -5,7 +5,7 @@ storage:
       partitionTableType: gpt
       partitions:
         - id: esp
-          size: 64M
+          size: 16M
           type: esp
         - id: root
           size: 4G
