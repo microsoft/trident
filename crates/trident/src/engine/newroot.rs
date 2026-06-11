@@ -181,7 +181,8 @@ impl NewrootMount {
 
         // Check for ACL BTRFS UUID collision before mounting.
         let acl_collision_uuid =
-            detect_acl_btrfs_uuid_collision(update_volume, staging_usr_roothash);
+            detect_acl_btrfs_uuid_collision(update_volume, staging_usr_roothash)
+                .structured(ServicingError::MountNewroot)?;
 
         // Mount all block devices in the newroot
         mount_points_map(host_config)
@@ -403,14 +404,16 @@ fn should_be_bind_mounted(fs_type: Option<RealFilesystemType>) -> bool {
 /// returns the colliding UUID so the caller can substitute a bind mount from the
 /// active `/usr`.
 ///
-/// Returns `None` if:
-/// - The system is not ACL (PARTUUIDs not found)
-/// - The partitions don't have BTRFS filesystems
-/// - The filesystem UUIDs are different (no collision)
+/// Returns:
+/// - `Ok(Some(uuid))` — collision detected and verity-verified; use bind mount
+/// - `Ok(None)` — no collision (not ACL, not BTRFS, or different UUIDs)
+/// - `Err(...)` — collision detected but content identity could not be verified;
+///   mounting will fail so the caller should surface this error rather than
+///   letting BTRFS produce a confusing kernel-level error
 fn detect_acl_btrfs_uuid_collision(
     update_volume: AbVolumeSelection,
     staging_usr_roothash: Option<&str>,
-) -> Option<OsUuid> {
+) -> Result<Option<OsUuid>, Error> {
     let (active_partuuid, update_partuuid) = match update_volume {
         AbVolumeSelection::VolumeA => (acl::USR_B_PARTUUID, acl::USR_A_PARTUUID),
         AbVolumeSelection::VolumeB => (acl::USR_A_PARTUUID, acl::USR_B_PARTUUID),
@@ -419,8 +422,12 @@ fn detect_acl_btrfs_uuid_collision(
     let active_path = block_devices::part_uuid_path(active_partuuid);
     let update_path = block_devices::part_uuid_path(update_partuuid);
 
-    let active_dev = lsblk::get(&active_path).ok()?;
-    let update_dev = lsblk::get(&update_path).ok()?;
+    let Ok(active_dev) = lsblk::get(&active_path) else {
+        return Ok(None);
+    };
+    let Ok(update_dev) = lsblk::get(&update_path) else {
+        return Ok(None);
+    };
 
     let active_fstype = active_dev
         .fstype
@@ -432,17 +439,18 @@ fn detect_acl_btrfs_uuid_collision(
         .and_then(|fs| KernelFilesystemType::from(fs).try_as_real());
 
     if active_fstype != Some(RealFilesystemType::Btrfs) {
-        return None;
+        return Ok(None);
     }
     if update_fstype != Some(RealFilesystemType::Btrfs) {
-        return None;
+        return Ok(None);
     }
 
-    let active_uuid = active_dev.fsuuid?;
-    let update_uuid = update_dev.fsuuid?;
+    let (Some(active_uuid), Some(update_uuid)) = (active_dev.fsuuid, update_dev.fsuuid) else {
+        return Ok(None);
+    };
 
     if active_uuid != update_uuid {
-        return None;
+        return Ok(None);
     }
 
     debug!(
@@ -454,19 +462,19 @@ fn detect_acl_btrfs_uuid_collision(
     // partition has the same verity root hash. This provides a cryptographic
     // guarantee that the filesystems are byte-identical, not just a UUID match.
     let Some(staging_hash) = staging_usr_roothash else {
-        // No staging hash available — cannot verify content identity.
-        // Refusing the bind-mount is the safe choice: proceeding without
-        // verification could mount different content at /usr.
-        warn!(
-            "No staging USR verity root hash provided. \
-             Refusing bind-mount — cannot verify content identity."
+        bail!(
+            "ACL BTRFS UUID collision detected (filesystem UUID '{active_uuid}') but no \
+             staging USR verity root hash is available to verify content identity. \
+             Cannot safely bind-mount or directly mount the USR partition."
         );
-        return None;
     };
 
     let Some(staging) = VerityRootHash::new(staging_hash) else {
-        warn!("Staging USR verity root hash is empty. Refusing bind-mount.");
-        return None;
+        bail!(
+            "ACL BTRFS UUID collision detected (filesystem UUID '{active_uuid}') but \
+             staging USR verity root hash is empty. \
+             Cannot safely bind-mount or directly mount the USR partition."
+        );
     };
 
     match VerityRootHash::from_proc_cmdline() {
@@ -478,25 +486,25 @@ fn detect_acl_btrfs_uuid_collision(
                     staging.preview()
                 );
             } else {
-                warn!(
-                    "Verity root hash mismatch: active USR has '{}...', staging has '{}...'. \
-                     Refusing bind-mount despite UUID collision.",
+                bail!(
+                    "ACL BTRFS UUID collision detected (filesystem UUID '{active_uuid}') \
+                     but verity root hash mismatch: active USR has '{}...', staging has '{}...'. \
+                     Cannot safely bind-mount or directly mount the USR partition.",
                     active.preview(),
                     staging.preview()
                 );
-                return None;
             }
         }
         None => {
-            warn!(
-                "Cannot read active USR verity root hash from /proc/cmdline. \
-                 Refusing bind-mount despite UUID collision."
+            bail!(
+                "ACL BTRFS UUID collision detected (filesystem UUID '{active_uuid}') \
+                 but cannot read active USR verity root hash from /proc/cmdline. \
+                 Cannot safely bind-mount or directly mount the USR partition."
             );
-            return None;
         }
     }
 
-    Some(active_uuid)
+    Ok(Some(active_uuid))
 }
 
 /// Returns an ordered map of mount points to their corresponding FileSystem objects.
