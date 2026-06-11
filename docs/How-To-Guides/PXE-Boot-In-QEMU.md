@@ -15,14 +15,24 @@
    cp bootx64.efi grubx64.efi grub.cfg vmlinuz tftp/
    ```
 
-3. Using _patch.py_ from the [argus-toolkit
-   repository](https://dev.azure.com/mariner-org/ECF/_git/argus-toolkit), insert your own
-   _trident.yaml_ into the initrd. You can read more about this YAML configuration in the main
-   README.
+3. Insert your own Host Configuration into the initrd. Trident reads its
+   configuration from `/etc/trident/config.yaml` inside the initramfs. To
+   replace the placeholder configuration with your own, unpack the initrd,
+   copy your file in, and repack it:
 
    ```bash
-   python3 initrd.img tftp/initird.img trident.yaml
+   mkdir initrd-work && cd initrd-work
+   zstdcat ../initrd.img | cpio -idm --no-absolute-filenames
+   cp ../trident.yaml etc/trident/config.yaml
+   find . | cpio -o -H newc | zstd > ../tftp/initrd.img
+   cd .. && rm -rf initrd-work
    ```
+
+   > **Note:** Trident initrds are zstd-compressed. If your image uses gzip
+   > instead, replace `zstdcat` with `zcat` and `zstd` with `gzip`.
+
+   For details on the Host Configuration format, see the
+   [Host Configuration reference](../Reference/Host-Configuration/Sample-Host-Configuration.md).
 
 4. Create `disk.img` to use as an emulated hard drive:
 
