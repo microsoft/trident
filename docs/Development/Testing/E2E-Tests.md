@@ -9,6 +9,20 @@ E2E tests validate complete Trident install-and-update workflows using
 validation of the resulting host state. They are defined by Host Configurations
 and test selections in `tests/e2e_tests/trident_configurations/`.
 
+Trident supports two **runtime environments**:
+
+- **Host** — The Trident binary runs directly on the servicing OS. The installer
+  ISO (`trident-mos.iso`) and test COSI images include Trident RPMs.
+- **Container** — The Trident binary runs inside a Docker container on the
+  servicing OS. The container image (`trident-container.tar.gz`) is served
+  alongside the COSI images and loaded at runtime. Container scenarios use a
+  different installer ISO (`trident-container-installer.iso`) and different COSI
+  test images that include Docker but omit Trident RPMs.
+
+Both runtimes use the same test configurations, pytest suite, and storm-trident
+orchestrator — only the build artifacts and a few flags differ. This page covers
+both; differences are called out where they apply.
+
 E2E tests are orchestrated by three systems:
 
 - **storm-trident** (`bin/storm-trident`): A Go-based test orchestrator built on
@@ -29,14 +43,35 @@ For VM-image-based servicing and rollback tests that don't use netlaunch, see
 
 ## COSI Image Types
 
-E2E tests validate three COSI image types, each testing a different bootloader
-and integrity configuration:
+E2E tests validate multiple COSI image types, each testing a different
+bootloader and integrity configuration. Each image type has a **host** variant
+(includes Trident RPMs) and a **container** variant (includes Docker, omits
+Trident RPMs).
+
+### Host Runtime Images
 
 | Image | Output File | Bootloader | Integrity | Configurations |
 |-------|------------|-----------|-----------|----------------|
 | `trident-testimage` | `regular.cosi` | grub2 | None | base, encrypted-partition, encrypted-raid, encrypted-swap, extensions, health-checks-install, misc, raid-big, raid-mirrored, raid-resync-small, raid-small, simple, split |
 | `trident-verity-testimage` | `verity.cosi` | grub2 | Root dm-verity | root-verity |
 | `trident-usrverity-testimage` | `usrverity.cosi` | systemd-boot | `/usr` dm-verity (UKI) | combined, memory-constraint-combined, rerun, usr-verity, usr-verity-raid |
+
+### Container Runtime Images
+
+| Image | Output File | Bootloader | Integrity | Configurations |
+|-------|------------|-----------|-----------|----------------|
+| `trident-container-testimage` | `regular.cosi` | grub2 | None | base, encrypted-partition, encrypted-raid, encrypted-swap, extensions, health-checks-install, misc, raid-mirrored, raid-resync-small, raid-small, simple |
+| `trident-container-verity-testimage` | `verity.cosi` | grub2 | Root dm-verity | root-verity |
+| `trident-container-usrverity-testimage` | `usrverity.cosi` | systemd-boot | `/usr` dm-verity (UKI) | combined, rerun, usr-verity, usr-verity-raid |
+
+Container images use the **same output filenames** as their host counterparts
+(`regular.cosi`, `verity.cosi`, `usrverity.cosi`). This matches the pipeline's
+`storm-trident helper prepare-images` behavior and means Host Configuration
+image URLs work unchanged for both runtimes.
+
+Container test images do **not** include Trident RPMs — Trident runs from a
+Docker container (`trident-container.tar.gz`) loaded at runtime. The images
+include Docker and a `trident-container.service` systemd unit.
 
 **`regular.cosi`** — Standard grub2-based image with no integrity protection.
 Uses `grub2-efi-binary-noprefix`, includes `trident-service` and
@@ -96,9 +131,9 @@ make bin/rcp-agent       # Remote control plane agent
 
 ### 4. Build Trident RPMs
 
-The test images include Trident packages built from your local tree. This step
-builds the RPMs into `bin/RPMS/`, which `testimages.py` passes to Image
-Customizer via `--rpm-source`:
+The **host** test images include Trident packages built from your local tree.
+This step builds the RPMs into `bin/RPMS/`, which `testimages.py` passes to
+Image Customizer via `--rpm-source`:
 
 ```bash
 make bin/trident-rpms.tar.gz
@@ -107,25 +142,44 @@ make bin/trident-rpms.tar.gz
 This requires Docker and uses the Trident packaging Dockerfile to produce
 RPMs from your compiled binary.
 
-### 5. Generate SSH Keys
+### 5. Build Trident Container Image (container runtime only)
+
+For the **container** runtime, build a Docker image containing Trident and
+export it as a tarball that netlaunch serves to the VM:
+
+```bash
+# Build the Docker image from the Trident RPMs
+make docker-build
+
+# Export as tarball to artifacts/test-image/
+make artifacts/test-image/trident-container.tar.gz
+```
+
+This produces `trident/trident:latest` locally and saves it as a
+zstd-compressed tarball. The container installer ISO's management OS loads this image into
+Docker on the target VM during install.
+
+### 6. Generate SSH Keys
 
 ```bash
 make artifacts/id_rsa
 ```
 
-### 6. Download Base Image
+### 7. Download Base Image
 
 ```bash
 # Downloads baremetal.vhdx from MCR
 ./tests/images/testimages.py download-image baremetal
 ```
 
-### 7. Build COSI Images
+### 8. Build COSI Images
 
 Build the test COSI images that Trident will install and update. A/B updates
 require two images with unique filesystem UUIDs — Trident rejects updates where
 the new image matches the installed one. Use `--clones 2` to produce two images,
-then rename them into `artifacts/test-image/`:
+then rename them into `artifacts/test-image/`.
+
+#### Host Runtime Images
 
 ```bash
 mkdir -p artifacts/test-image
@@ -155,16 +209,59 @@ mv artifacts/test-image/trident-usrverity-testimage_0.cosi artifacts/test-image/
 mv artifacts/test-image/trident-usrverity-testimage_1.cosi artifacts/test-image/usrverity_v2.cosi
 ```
 
+#### Container Runtime Images
+
+Container images include Docker and a `trident-container.service` but omit
+Trident RPMs — Trident runs from the container tarball instead. Rename the
+output files to match the host image filenames so Host Configuration image
+URLs work unchanged:
+
+```bash
+mkdir -p artifacts/test-image
+
+# Regular container image
+sudo ./tests/images/testimages.py build trident-container-testimage \
+    --output-dir ./artifacts/test-image --clones 2
+mv artifacts/test-image/trident-container-testimage_0.cosi artifacts/test-image/regular.cosi
+mv artifacts/test-image/trident-container-testimage_1.cosi artifacts/test-image/regular_v2.cosi
+
+# Verity container image (for root-verity configuration)
+sudo ./tests/images/testimages.py build trident-container-verity-testimage \
+    --output-dir ./artifacts/test-image --clones 2
+mv artifacts/test-image/trident-container-verity-testimage_0.cosi artifacts/test-image/verity.cosi
+mv artifacts/test-image/trident-container-verity-testimage_1.cosi artifacts/test-image/verity_v2.cosi
+
+# UKI/usr-verity container image (for usr-verity, combined configurations)
+sudo ./tests/images/testimages.py build trident-container-usrverity-testimage \
+    --output-dir ./artifacts/test-image --clones 2
+mv artifacts/test-image/trident-container-usrverity-testimage_0.cosi artifacts/test-image/usrverity.cosi
+mv artifacts/test-image/trident-container-usrverity-testimage_1.cosi artifacts/test-image/usrverity_v2.cosi
+```
+
 The images use the Image Customizer container from
 `mcr.microsoft.com/azurelinux/imagecustomizer:latest`.
 
-### 8. Build the Installer ISO
+### 9. Build the Installer ISO
 
-The management OS ISO is used by `netlaunch` to boot the VM and run Trident:
+The management OS ISO is used by `netlaunch` to boot the VM and run Trident.
+Each runtime has its own installer ISO:
+
+**Host runtime:**
 
 ```bash
 make bin/trident-mos.iso
 ```
+
+**Container runtime:**
+
+```bash
+sudo ./tests/images/testimages.py build trident-container-installer \
+    --output-dir ./artifacts
+```
+
+This builds `artifacts/trident-container-installer.iso` using Image Customizer.
+The container installer ISO includes Docker and a `trident-container.service`
+but does not include Trident RPMs.
 
 ## Running a Clean Install
 
@@ -173,8 +270,15 @@ make bin/trident-mos.iso
 Use `virtdeploy` to create a VM with empty disks:
 
 ```bash
-sudo bin/virtdeploy create-one --disks 32,8
+sudo bin/virtdeploy create-one --disks 32,8 --mem 12
 ```
+
+:::note
+Container scenarios require at least 11 GiB of memory because the VM must run
+Docker alongside Trident. The `--mem 12` flag above accommodates both runtimes.
+If running host-only, the default memory is sufficient and `--mem` can be
+omitted.
+:::
 
 This creates a QEMU/libvirt VM and writes `tools/vm-netlaunch.yaml` with the
 VM UUID. The `--disks` flag specifies disk sizes in GB (here, 32 GB for the OS
@@ -189,8 +293,7 @@ make starter-configuration
 ```
 
 This copies `tests/e2e_tests/trident_configurations/simple/trident-config.yaml`
-to `input/trident.yaml`. Edit it to add your SSH public key under
-`os.users[0].sshPublicKeys`.
+to `input/trident.yaml`.
 
 Alternatively, copy a configuration directly from any test configuration
 directory:
@@ -200,16 +303,69 @@ mkdir -p input
 cp tests/e2e_tests/trident_configurations/<config>/trident-config.yaml input/trident.yaml
 ```
 
+#### Add your SSH public key
+
+The test configurations ship with an empty `sshPublicKeys` list. Add your
+public key so pytest can SSH into the VM after install:
+
+```yaml
+os:
+  users:
+    - name: testing-user
+      sshPublicKeys:
+        - <contents of artifacts/id_rsa.pub>
+      sshMode: key-only
+```
+
+:::tip
+If you generated keys with `make artifacts/id_rsa`, paste the contents of
+`artifacts/id_rsa.pub` into the list.
+:::
+
+#### Image URLs
+
 The Host Configuration references image URLs like
 `http://NETLAUNCH_HOST_ADDRESS/files/regular.cosi`. Netlaunch automatically
 replaces `NETLAUNCH_HOST_ADDRESS` with its own `<host-IP>:<port>` at runtime,
 so the VM can reach the files served by netlaunch.
 
+Because both host and container COSI images are renamed to the same output
+filenames (see [Build COSI Images](#8-build-cosi-images)), the image URLs in
+the Host Configuration work unchanged for both runtimes.
+
+:::note Container runtime — additional configuration
+For the **container** runtime, the Host Configuration must include an
+`additionalFiles` entry to copy the Trident container tarball onto the VM:
+
+```yaml
+os:
+  additionalFiles:
+    - source: /var/lib/trident/trident-container.tar.gz
+      destination: /var/lib/trident/trident-container.tar.gz
+```
+
+Storm-trident and the pipeline's `edit_host_config.py` add this automatically
+when `--runtimeEnv container` is specified. It is only needed for manual runs.
+:::
+
 ### 3. Run netlaunch
+
+**Host runtime:**
 
 ```bash
 NETLAUNCH_PORT=4000 make run-netlaunch
 ```
+
+**Container runtime:**
+
+```bash
+NETLAUNCH_PORT=4000 make run-netlaunch-container-images
+```
+
+This uses `artifacts/trident-container-installer.iso` as the installer ISO and
+requires `artifacts/test-image/trident-container.tar.gz` to be present. The
+container tarball is served alongside the COSI images so the management OS can
+load it into Docker on the target VM.
 
 :::important
 Set `NETLAUNCH_PORT` to a fixed port (e.g., `4000`). A/B updates use
@@ -263,6 +419,18 @@ python3 -u -m pytest -m daily --capture=no \
     -v
 ```
 
+For container runtime, change `-R host` to `-R container`:
+
+```bash
+cd tests/e2e_tests
+python3 -u -m pytest -m daily --capture=no \
+    -H <VM_IP> \
+    -R container \
+    -C trident_configurations/<config> \
+    -K ../../artifacts/id_rsa \
+    -v
+```
+
 ### After A/B Update
 
 The `-A` flag specifies which volume is active after the update. Volumes
@@ -303,6 +471,11 @@ repo. Always pass `-K` explicitly with your key path, or create a symlink at
 the default location.
 :::
 
+:::note SELinux checks
+The `check-selinux` storm-trident helper only runs for the **host** runtime.
+It is skipped for container scenarios.
+:::
+
 ## Running an A/B Update
 
 After a successful clean install, perform an A/B update using `netlisten` to
@@ -329,6 +502,20 @@ sudo bin/storm-trident helper ab-update -- \
     <VM_IP> \
     testing-user \
     host \
+    -c /var/lib/trident/config.yaml \
+    -v 2 \
+    -s -f
+```
+
+For container runtime, change the fourth positional argument from `host` to
+`container`:
+
+```bash
+sudo bin/storm-trident helper ab-update -- \
+    artifacts/id_rsa \
+    <VM_IP> \
+    testing-user \
+    container \
     -c /var/lib/trident/config.yaml \
     -v 2 \
     -s -f
@@ -520,10 +707,28 @@ virtualMachine:
       - base
       - misc
       - ...
+  container:
+    pullrequest:
+      - base
+      - combined
+      - ...
+    post_merge:
+      - base
+      - combined
+      - ...
+    daily:
+      - base
+      - combined
+      - ...
 bareMetal:
   host:
     daily:
       - base
+      - ...
+  container:
+    daily:
+      - base
+      - combined
       - ...
 ```
 
