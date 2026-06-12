@@ -422,6 +422,12 @@ fn detect_acl_btrfs_uuid_collision(
     let active_path = block_devices::part_uuid_path(active_partuuid);
     let update_path = block_devices::part_uuid_path(update_partuuid);
 
+    // On non-ACL systems these PARTUUID paths won't exist. Check before
+    // calling lsblk so we return Ok(None) instead of a confusing error.
+    if !active_path.exists() || !update_path.exists() {
+        return Ok(None);
+    }
+
     let Some(active_dev) =
         lsblk::try_get(&active_path).context("Failed to query active ACL USR partition")?
     else {
