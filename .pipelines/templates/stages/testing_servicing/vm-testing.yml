@@ -93,6 +93,43 @@ stages:
         jobs:
           - template: generate-ssh-keys.yml
 
+      - ${{ if eq(parameters.includeAzl4, true) }}:
+          - stage: BuildImagesAzl4
+            displayName: Build Base and Update Images for AZL4
+            dependsOn:
+              - PrepareSSHKeys
+              - GetTridentBinaries_rpms_amd64
+              - ${{ if ne(parameters.dependsOnStage, '') }}:
+                  - ${{ parameters.dependsOnStage }}
+
+            jobs:
+              - template: ../trident_images/build-image.yml
+                parameters:
+                  label: "grub-azl4-base"
+                  makeTarget: "artifacts/trident-vm-grub-testimage-azl4.qcow2"
+                  baseimgAzlVersion: "4.0-preview"
+                  micBuildType: ${{ parameters.micBuildType }}
+                  micVersion: ${{ parameters.micVersion }}
+                  useStagedSshKeys: true
+
+              - template: ../trident_images/build-image.yml
+                parameters:
+                  label: "grub-azl4-update-a"
+                  makeTarget: "artifacts/trident-vm-grub-testimage-azl4.cosi"
+                  baseimgAzlVersion: "4.0-preview"
+                  micBuildType: ${{ parameters.micBuildType }}
+                  micVersion: ${{ parameters.micVersion }}
+                  useStagedSshKeys: true
+
+              - template: ../trident_images/build-image.yml
+                parameters:
+                  label: "grub-azl4-update-b"
+                  makeTarget: "artifacts/trident-vm-grub-testimage-azl4.cosi"
+                  baseimgAzlVersion: "4.0-preview"
+                  micBuildType: ${{ parameters.micBuildType }}
+                  micVersion: ${{ parameters.micVersion }}
+                  useStagedSshKeys: true
+
       - ${{ if eq(parameters.includeQemu, true) }}:
           - stage: BuildImagesQemu
             displayName: Build Base and Update Images for QEMU
@@ -223,6 +260,8 @@ stages:
               - BuildImagesAzure
           - ${{ if eq(parameters.includeUKI, true) }}:
               - BuildImagesUKI
+          - ${{ if eq(parameters.includeAzl4, true) }}:
+              - BuildImagesAzl4
 
     variables:
       - group: servicing_testing_params
@@ -234,6 +273,20 @@ stages:
         value: "trident-vm-grub-verity-testimage-$(System.DefinitionId)"
 
     jobs:
+      - ${{ if eq(parameters.includeAzl4, true) }}:
+          - ${{ each batch in parameters.workerBatches }}:
+              - template: testing-template.yml
+                parameters:
+                  updateIterationCount: ${{ parameters.updateIterationCount }}
+                  rollbackTesting: ${{ parameters.rollbackTesting }}
+                  workers: ${{ batch.size }}
+                  batchId: ${{ batch.id }}
+                  updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
+                  verboseLogging: ${{ parameters.verboseLogging }}
+                  platform: qemu
+                  flavor: grub-azl4
+                  testSecureBoot: ${{ parameters.testSecureBoot }}
+
       - ${{ if eq(parameters.includeQemu, true) }}:
           - ${{ each batch in parameters.workerBatches }}:
               - template: testing-template.yml
