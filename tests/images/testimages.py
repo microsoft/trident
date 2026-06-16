@@ -124,7 +124,7 @@ DEFINED_IMAGES: List[ImageConfig] = [
             Path("tests/images/azl-installer/iso/images/trident-testimage.cosi"),
         ],
     ),
-    # VM test images
+    # VM test images (azl3)
     ImageConfig(
         "trident-vm-grub-testimage",
         base_image=BaseImage.QEMU_GUEST,
@@ -177,6 +177,23 @@ DEFINED_IMAGES: List[ImageConfig] = [
         ssh_key="files/id_rsa.pub",
         architecture=SystemArchitecture.ARM64,
     ),
+    # VM test images (azl4)
+    ImageConfig(
+        "trident-vm-grub-testimage-azl4",
+        base_image=BaseImage.AZL4_QEMU_GUEST,
+        config="trident-vm-testimage",
+        config_file="base/updateimg-grub.yaml",
+        ssh_key="files/id_rsa.pub",
+    ),
+    ImageConfig(
+        "trident-vm-grub-testimage-azl4",
+        base_image=BaseImage.AZL4_QEMU_GUEST,
+        config="trident-vm-testimage",
+        config_file="base/baseimg-grub.yaml",
+        ssh_key="files/id_rsa.pub",
+        output_format=OutputFormat.QCOW2,
+    ),
+    # stream-image test images
     ImageConfig(
         "ubuntu-direct-streaming-testimage-2204-amd64",
         base_image=BaseImage.UBUNTU_2204_AMD64,

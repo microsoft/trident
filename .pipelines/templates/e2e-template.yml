@@ -96,6 +96,13 @@ parameters:
     type: boolean
     default: true
 
+  - name: azlVersionsToTest
+    displayName: "Include qemu azl4 testing"
+    type: object
+    default:
+      - "4.0-preview"
+      - "3.0"
+
 stages:
   - ${{ if ne( parameters.tridentBuildOptions, 'prebuilt') }}:
     # Trident Build/Download, azl-validation will use trident RPMs from AZL build
@@ -145,84 +152,94 @@ stages:
     parameters:
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
-  # Build Trident installer ISO (host)
-  - template: stages/build_image/build-image.yml
-    parameters:
-      imageName: trident-installer
-      micBuildType: ${{ parameters.micBuildType }}
-      micVersion: ${{ parameters.micVersion }}
-      clones: 1
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+  - ${{ foreach azlVersion in parameters.azlVersionsToTest }}:
+    # Build Trident installer ISO (host)
+    - template: stages/build_image/build-image.yml
+      parameters:
+        imageName: trident-installer
+        micBuildType: ${{ parameters.micBuildType }}
+        micVersion: ${{ parameters.micVersion }}
+        clones: 1
+        dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+        azureLinuxVersion: ${{ azlVersion }}
 
-  # Build Trident split (stage and finalize separated) installer ISO (host)
-  - template: stages/build_image/build-image.yml
-    parameters:
-      imageName: trident-split-installer
-      micBuildType: ${{ parameters.micBuildType }}
-      micVersion: ${{ parameters.micVersion }}
-      clones: 1
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+    # Build Trident split (stage and finalize separated) installer ISO (host)
+    - template: stages/build_image/build-image.yml
+      parameters:
+        imageName: trident-split-installer
+        micBuildType: ${{ parameters.micBuildType }}
+        micVersion: ${{ parameters.micVersion }}
+        clones: 1
+        dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+        azureLinuxVersion: ${{ azlVersion }}
 
-  # Build Trident installer ISO (container)
-  - template: stages/build_image/build-image.yml
-    parameters:
-      imageName: trident-container-installer
-      runtimeEnv: "container"
-      micBuildType: ${{ parameters.micBuildType }}
-      micVersion: ${{ parameters.micVersion }}
-      clones: 1
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+    # Build Trident installer ISO (container)
+    - template: stages/build_image/build-image.yml
+      parameters:
+        imageName: trident-container-installer
+        runtimeEnv: "container"
+        micBuildType: ${{ parameters.micBuildType }}
+        micVersion: ${{ parameters.micVersion }}
+        clones: 1
+        dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+        azureLinuxVersion: ${{ azlVersion }}
 
-  # Build Trident test image (regular)
-  - template: stages/build_image/build-image.yml
-    parameters:
-      imageName: trident-testimage
-      micBuildType: ${{ parameters.micBuildType }}
-      micVersion: ${{ parameters.micVersion }}
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+    # Build Trident test image (regular)
+    - template: stages/build_image/build-image.yml
+      parameters:
+        imageName: trident-testimage
+        micBuildType: ${{ parameters.micBuildType }}
+        micVersion: ${{ parameters.micVersion }}
+        dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+        azureLinuxVersion: ${{ azlVersion }}
 
-  # Build Trident test image (container)
-  - template: stages/build_image/build-image.yml
-    parameters:
-      imageName: trident-container-testimage
-      runtimeEnv: "container"
-      micBuildType: ${{ parameters.micBuildType }}
-      micVersion: ${{ parameters.micVersion }}
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+    # Build Trident test image (container)
+    - template: stages/build_image/build-image.yml
+      parameters:
+        imageName: trident-container-testimage
+        runtimeEnv: "container"
+        micBuildType: ${{ parameters.micBuildType }}
+        micVersion: ${{ parameters.micVersion }}
+        dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+        azureLinuxVersion: ${{ azlVersion }}
 
-  # Build Trident test image for root-verity (host)
-  - template: stages/build_image/build-image.yml
-    parameters:
-      imageName: trident-verity-testimage
-      micBuildType: ${{ parameters.micBuildType }}
-      micVersion: ${{ parameters.micVersion }}
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+    # Build Trident test image for root-verity (host)
+    - template: stages/build_image/build-image.yml
+      parameters:
+        imageName: trident-verity-testimage
+        micBuildType: ${{ parameters.micBuildType }}
+        micVersion: ${{ parameters.micVersion }}
+        dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+        azureLinuxVersion: ${{ azlVersion }}
 
-  # Build Trident test image for root-verity (container)
-  - template: stages/build_image/build-image.yml
-    parameters:
-      imageName: trident-container-verity-testimage
-      runtimeEnv: "container"
-      micBuildType: ${{ parameters.micBuildType }}
-      micVersion: ${{ parameters.micVersion }}
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+    # Build Trident test image for root-verity (container)
+    - template: stages/build_image/build-image.yml
+      parameters:
+        imageName: trident-container-verity-testimage
+        runtimeEnv: "container"
+        micBuildType: ${{ parameters.micBuildType }}
+        micVersion: ${{ parameters.micVersion }}
+        dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+        azureLinuxVersion: ${{ azlVersion }}
 
-  # Build Trident test image for usr-verity (host)
-  - template: stages/build_image/build-image.yml
-    parameters:
-      imageName: trident-usrverity-testimage
-      micBuildType: ${{ parameters.micBuildType }}
-      micVersion: ${{ parameters.micVersion }}
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+    # Build Trident test image for usr-verity (host)
+    - template: stages/build_image/build-image.yml
+      parameters:
+        imageName: trident-usrverity-testimage
+        micBuildType: ${{ parameters.micBuildType }}
+        micVersion: ${{ parameters.micVersion }}
+        dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+        azureLinuxVersion: ${{ azlVersion }}
 
-  # Build Trident test image for usr-verity (container)
-  - template: stages/build_image/build-image.yml
-    parameters:
-      imageName: trident-container-usrverity-testimage
-      runtimeEnv: "container"
-      micBuildType: ${{ parameters.micBuildType }}
-      micVersion: ${{ parameters.micVersion }}
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+    # Build Trident test image for usr-verity (container)
+    - template: stages/build_image/build-image.yml
+      parameters:
+        imageName: trident-container-usrverity-testimage
+        runtimeEnv: "container"
+        micBuildType: ${{ parameters.micBuildType }}
+        micVersion: ${{ parameters.micVersion }}
+        dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+        azureLinuxVersion: ${{ azlVersion }}
 
   # Build AzL installer ISO (attended and unattended)
   - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pr-e2e-azure'), eq(parameters.stageType, 'azl-validation')) }}:
