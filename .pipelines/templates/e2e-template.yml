@@ -245,6 +245,7 @@ stages:
   # Test Runtime Updates and Rollback on VMs
   - template: stages/testing_rollback/vm-testing.yml
     parameters:
+      includeAzl4: true
       includeQemu: true
       includeUKI: true
       micBuildType: ${{ parameters.micBuildType }}
@@ -260,6 +261,7 @@ stages:
   # Test Servicing on VMs
   - template: stages/testing_servicing/vm-testing.yml
     parameters:
+      includeAzl4: true
       includeQemu: true
       includeUKI: true
       includeAzure: ${{ parameters.includeAzure }}
