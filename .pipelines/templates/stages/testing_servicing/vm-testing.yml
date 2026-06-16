@@ -51,6 +51,11 @@ parameters:
     type: boolean
     default: false
 
+  - name: includeAzl4
+    displayName: "Include qemu azl4 testing"
+    type: boolean
+    default: false
+
   - name: includeAzure
     displayName: "Include Azure testing"
     type: boolean
