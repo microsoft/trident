@@ -1,6 +1,7 @@
 import argparse
 from enum import Enum
 import logging
+import os
 from pathlib import Path
 
 from typing import List
@@ -183,13 +184,25 @@ def setup_parser_download_image(
 ) -> None:
     parser_download_img = subparsers.add_parser(
         SubCommand.DOWNLOAD_IMAGE.value,
-        help="Download a base image from the Azure DevOps feed",
+        help="Download a base image.",
     )
     parser_download_img.set_defaults(artifacts=artifacts)
     parser_download_img.add_argument(
         "image",
-        help="The image to download",
+        help="The image to download.",
         choices=[c.image.name for c in artifacts.base_images],
+    )
+    parser_download_img.add_argument(
+        "--blob-storage-account",
+        default=os.environ.get("BLOB_STORAGE_ACCOUNT"),
+        help="Azure Storage account name for blob-sourced images. "
+        "Env: BLOB_STORAGE_ACCOUNT.",
+    )
+    parser_download_img.add_argument(
+        "--blob-container",
+        default=os.environ.get("BLOB_CONTAINER"),
+        help="Azure Storage container name for blob-sourced images. "
+        "Env: BLOB_CONTAINER.",
     )
 
 
@@ -285,6 +298,8 @@ def run_cmd(
         run.download_base_image(
             artifacts=args.artifacts,
             name=args.image,
+            blob_storage_account=args.blob_storage_account,
+            blob_container=args.blob_container,
         )
     elif subcommand == SubCommand.MATRIX:
         run.generate_matrix(
