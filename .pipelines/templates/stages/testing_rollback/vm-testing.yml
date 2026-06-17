@@ -79,7 +79,7 @@ stages:
                   - ${{ parameters.dependsOnStage }}
 
             jobs:
-              - template: ../testing_servicing/build-image.yml
+              - template: ../trident_images/build-image.yml
                 parameters:
                   label: "qemu-grub-base"
                   makeTarget: "artifacts/trident-vm-grub-testimage.qcow2"
@@ -89,7 +89,7 @@ stages:
                   micVersion: ${{ parameters.micVersion }}
                   useStagedSshKeys: true
 
-              - template: ../testing_servicing/build-image.yml
+              - template: ../trident_images/build-image.yml
                 parameters:
                   label: "qemu-grub-update-a"
                   makeTarget: "artifacts/trident-vm-grub-testimage.cosi"
@@ -109,7 +109,7 @@ stages:
                   - ${{ parameters.dependsOnStage }}
 
             jobs:
-              - template: ../testing_servicing/build-image.yml
+              - template: ../trident_images/build-image.yml
                 parameters:
                   label: "grub-azl4-base"
                   makeTarget: "artifacts/trident-vm-grub-testimage-azl4.qcow2"
@@ -118,7 +118,7 @@ stages:
                   micVersion: ${{ parameters.micVersion }}
                   useStagedSshKeys: true
 
-              - template: ../testing_servicing/build-image.yml
+              - template: ../trident_images/build-image.yml
                 parameters:
                   label: "grub-azl4-update-a"
                   makeTarget: "artifacts/trident-vm-grub-testimage-azl4.cosi"
