@@ -750,8 +750,13 @@ where
             "UKI addon path '{}' exists, so generating .pcrlock file to measure it as well",
             uki_addon_path.display()
         );
-        for entry in fs::read_dir(&uki_addon_path).context("Failed to read UKI addons directory")? {
-            let entry = entry.context("Failed to get entry in UKI addons directory")?;
+        let mut addon_entries: Vec<_> = fs::read_dir(&uki_addon_path)
+            .context("Failed to read UKI addons directory")?
+            .collect::<Result<Vec<_>, _>>()
+            .context("Failed to read entry in UKI addons directory")?;
+        // Ensure ordering of addons matches systemd-boot's ordering by sorting by file name
+        addon_entries.sort_by_key(|e| e.file_name());
+        for entry in addon_entries {
             let path = entry.path();
 
             // Ensure that only files following the correct naming convention are processed.

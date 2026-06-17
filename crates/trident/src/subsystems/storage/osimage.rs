@@ -6,7 +6,8 @@ use std::{
 use const_format::formatcp;
 use log::{debug, error, trace, warn};
 
-use osutils::lsblk;
+use osutils::{lsblk, verity_roothash::VerityRootHash};
+use sysdefs::{acl, osuuid::OsUuid};
 use trident_api::{
     config::FileSystemSource,
     constants::{
@@ -187,6 +188,10 @@ fn validate_filesystems(os_image: &OsImage, ctx: &EngineContext) -> Result<(), T
 
 /// Validates that all filesystems within an OS image have unique FS UUIDs. Additionally, validates
 /// that A/B volume pairs have distinct FS UUIDs.
+///
+/// For ACL images, duplicate FS UUIDs across A/B slots are permitted if verity verification
+/// confirms byte-identical content (see [`validate_acl_duplicate_uuid`]). Non-ACL images with
+/// duplicate A/B FS UUIDs are rejected.
 fn validate_filesystem_uniqueness(
     os_image: &OsImage,
     ctx: &EngineContext,
@@ -202,7 +207,7 @@ fn validate_filesystem_uniqueness(
         }
     }
 
-    // For A/B Update, check that no A/B volumes share filesystem UUIDs
+    // For A/B Update, check that no A/B volumes share filesystem UUIDs.
     if ctx.servicing_type == ServicingType::AbUpdate {
         if let Some(ab) = &ctx.spec.storage.ab_update {
             for pair in ab.volume_pairs.iter() {
@@ -239,12 +244,22 @@ fn validate_filesystem_uniqueness(
                             trace!("Checking A/B volume pair '{}'. Found active volume filesystem UUID '{active_volume_fs_uuid}'\
                                     and inactive volume filesystem UUID '{inactive_volume_fs_uuid}'", pair.id);
                             if active_volume_fs_uuid == inactive_volume_fs_uuid {
-                                return Err(TridentError::new(
-                                    InvalidInputError::DuplicateFsUuidAbUpdate {
-                                        pair_id: pair.id.to_string(),
-                                        uuid: inactive_volume_fs_uuid.to_string(),
-                                    },
-                                ));
+                                if ctx.image_distro().is_acl() {
+                                    let active_usr_roothash = VerityRootHash::from_proc_cmdline();
+                                    validate_acl_duplicate_uuid(
+                                        os_image,
+                                        &mp_info.mount_point.path,
+                                        &inactive_volume_fs_uuid,
+                                        active_usr_roothash,
+                                    )?;
+                                } else {
+                                    return Err(TridentError::new(
+                                        InvalidInputError::DuplicateFsUuidAbUpdate {
+                                            pair_id: pair.id.to_string(),
+                                            uuid: inactive_volume_fs_uuid.to_string(),
+                                        },
+                                    ));
+                                }
                             }
                         } else {
                             warn!("Could not find filesystem UUID for active volume of A/B volume pair '{}'", pair.id);
@@ -254,6 +269,122 @@ fn validate_filesystem_uniqueness(
             }
         }
     }
+    Ok(())
+}
+
+/// Validates that an ACL A/B update with a duplicate filesystem UUID is safe.
+///
+/// ACL BTRFS images may intentionally share filesystem UUIDs between the A and B
+/// slots when built from the same source. This is safe only when:
+///
+/// 1. The duplicate is on the `/usr` mount point (ACL's verity-protected USR partition)
+/// 2. The staging image has a verity root hash in its COSI metadata
+/// 3. The active system's `/proc/cmdline` has a matching `usrhash=` parameter
+/// 4. The normalized root hashes match — proving byte-identical content via merkle tree
+///
+/// If COSI partition metadata is available, the function also checks whether any
+/// partition's PARTUUID matches a known ACL USR slot (A or B). Since these
+/// PARTUUIDs are globally unique in the GPT, a match on any partition confirms
+/// the image contains the expected ACL USR layout.
+fn validate_acl_duplicate_uuid(
+    os_image: &OsImage,
+    mount_point: &Path,
+    fs_uuid: &OsUuid,
+    active_usr_roothash: Option<VerityRootHash>,
+) -> Result<(), TridentError> {
+    let mount_str = mount_point.to_string_lossy();
+    let uuid_str = fs_uuid.to_string();
+
+    // 1. Only /usr is allowed to have duplicate UUIDs on ACL.
+    if mount_point != Path::new("/usr") {
+        return Err(TridentError::new(
+            InvalidInputError::DuplicateFsUuidAclVerificationFailed {
+                uuid: uuid_str,
+                mount_point: mount_str.to_string(),
+                reason: "duplicate FS UUID is only allowed on /usr for ACL".to_string(),
+            },
+        ));
+    }
+
+    // 2. Staging image must have a verity root hash.
+    let staging_fs = os_image
+        .filesystems()
+        .find(|f| f.mount_point == mount_point);
+    let Some(staging_fs) = staging_fs else {
+        return Err(TridentError::new(
+            InvalidInputError::DuplicateFsUuidAclVerificationFailed {
+                uuid: uuid_str,
+                mount_point: mount_str.to_string(),
+                reason: "no /usr filesystem found in COSI image metadata".to_string(),
+            },
+        ));
+    };
+    let staging_roothash = staging_fs
+        .verity
+        .as_ref()
+        .and_then(|v| VerityRootHash::new(&v.roothash));
+    let Some(staging_hash) = staging_roothash else {
+        return Err(TridentError::new(
+            InvalidInputError::DuplicateFsUuidAclVerificationFailed {
+                uuid: uuid_str,
+                mount_point: mount_str.to_string(),
+                reason: "staging /usr filesystem has no verity root hash in COSI metadata"
+                    .to_string(),
+            },
+        ));
+    };
+
+    // 3. Active system must have a usrhash= in /proc/cmdline.
+    let active_hash = match active_usr_roothash {
+        Some(h) => h,
+        None => {
+            return Err(TridentError::new(
+                InvalidInputError::DuplicateFsUuidAclVerificationFailed {
+                    uuid: uuid_str,
+                    mount_point: mount_str.to_string(),
+                    reason: "cannot read active USR verity root hash from /proc/cmdline \
+                             (usrhash= parameter not found)"
+                        .to_string(),
+                },
+            ));
+        }
+    };
+
+    // 4. Hashes must match (case-insensitive, trimmed — handled by VerityRootHash).
+    if staging_hash != active_hash {
+        return Err(TridentError::new(
+            InvalidInputError::DuplicateFsUuidAclVerificationFailed {
+                uuid: uuid_str,
+                mount_point: mount_str.to_string(),
+                reason: format!(
+                    "verity root hash mismatch: staging has '{}...', active has '{}...'",
+                    staging_hash.preview(),
+                    active_hash.preview()
+                ),
+            },
+        ));
+    }
+
+    debug!(
+        "ACL duplicate FS UUID '{}' on /usr is safe: verity root hashes match ({}...)",
+        uuid_str,
+        staging_hash.preview()
+    );
+
+    // Optional: If COSI partition metadata is available, validate that the staging
+    // USR partition PARTUUID matches a known ACL USR slot.
+    if let Some(mut partitions) = os_image.partitions() {
+        let known_partuuids = [acl::USR_A_PARTUUID, acl::USR_B_PARTUUID];
+        let has_acl_usr_partuuid = partitions.any(|p| known_partuuids.contains(&p.info.part_uuid));
+
+        if !has_acl_usr_partuuid {
+            warn!(
+                "ACL COSI partition metadata does not contain a known ACL USR PARTUUID. \
+                 Update is allowed (verity hashes match) but disk layout may be unexpected."
+            );
+        }
+    }
+
     Ok(())
 }
 
@@ -1297,6 +1428,185 @@ mod tests {
                 fs_size: ByteCount::from(too_big_partition_size.to_bytes().unwrap()),
                 device_size: ByteCount::from(required_partition_size.to_bytes().unwrap()),
             })
+        );
+    }
+
+    // --- ACL duplicate UUID validation tests ---
+    //
+    // These test `validate_acl_duplicate_uuid` directly, which is the function
+    // that decides whether a duplicate FS UUID on an ACL image is safe (verity
+    // hashes match) or not.
+
+    const ACL_TEST_HASH: &str = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+
+    /// Helper: build a MockOsImage with a single /usr image that optionally has verity.
+    fn acl_mock_image(roothash: Option<&str>) -> MockOsImage {
+        MockOsImage {
+            source: url::Url::parse(OSIMAGE_DUMMY_SOURCE).unwrap(),
+            os_arch: SystemArchitecture::Amd64,
+            os_release: OsRelease {
+                id: Some("azurelinux".to_string()),
+                variant_id: Some("azurecontainerlinux".to_string()),
+                ..OsRelease::default()
+            },
+            images: vec![MockImage {
+                mount_point: PathBuf::from("/usr"),
+                fs_type: OsImageFileSystemType::Ext4,
+                fs_uuid: OsUuid::Uuid(Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap()),
+                part_type: DiscoverablePartitionType::LinuxGeneric,
+                verity: roothash.map(|h| MockVerity {
+                    roothash: h.to_string(),
+                }),
+            }],
+            is_uki: false,
+            partitioning_info: None,
+        }
+    }
+
+    #[test]
+    fn test_acl_duplicate_uuid_matching_hash_success() {
+        let mock = acl_mock_image(Some(ACL_TEST_HASH));
+        let os_image = OsImage::mock(mock);
+        let result = validate_acl_duplicate_uuid(
+            &os_image,
+            Path::new("/usr"),
+            &OsUuid::Uuid(Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap()),
+            VerityRootHash::new(ACL_TEST_HASH),
+        );
+        assert!(result.is_ok(), "expected success, got: {:?}", result);
+    }
+
+    #[test]
+    fn test_acl_duplicate_uuid_matching_hash_case_insensitive() {
+        let mock = acl_mock_image(Some(ACL_TEST_HASH));
+        let os_image = OsImage::mock(mock);
+        let result = validate_acl_duplicate_uuid(
+            &os_image,
+            Path::new("/usr"),
+            &OsUuid::Uuid(Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap()),
+            VerityRootHash::new(&ACL_TEST_HASH.to_uppercase()),
+        );
+        assert!(
+            result.is_ok(),
+            "expected case-insensitive match, got: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_acl_duplicate_uuid_wrong_mount_point() {
+        let mut mock = acl_mock_image(Some(ACL_TEST_HASH));
+        mock.images[0].mount_point = PathBuf::from("/");
+        let os_image = OsImage::mock(mock);
+        let err = validate_acl_duplicate_uuid(
+            &os_image,
+            Path::new("/"),
+            &OsUuid::Uuid(Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap()),
+            VerityRootHash::new(ACL_TEST_HASH),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(
+                err.kind(),
+                ErrorKind::InvalidInput(
+                    InvalidInputError::DuplicateFsUuidAclVerificationFailed { reason, .. }
+                ) if reason.contains("only allowed on /usr")
+            ),
+            "expected wrong mount point error, got: {:?}",
+            err.kind()
+        );
+    }
+
+    #[test]
+    fn test_acl_duplicate_uuid_no_staging_verity_hash() {
+        let mock = acl_mock_image(None);
+        let os_image = OsImage::mock(mock);
+        let err = validate_acl_duplicate_uuid(
+            &os_image,
+            Path::new("/usr"),
+            &OsUuid::Uuid(Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap()),
+            VerityRootHash::new(ACL_TEST_HASH),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(
+                err.kind(),
+                ErrorKind::InvalidInput(
+                    InvalidInputError::DuplicateFsUuidAclVerificationFailed { reason, .. }
+                ) if reason.contains("no verity root hash")
+            ),
+            "expected no verity hash error, got: {:?}",
+            err.kind()
+        );
+    }
+
+    #[test]
+    fn test_acl_duplicate_uuid_mismatched_hash() {
+        let mock = acl_mock_image(Some(ACL_TEST_HASH));
+        let os_image = OsImage::mock(mock);
+        let different_hash = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+        let err = validate_acl_duplicate_uuid(
+            &os_image,
+            Path::new("/usr"),
+            &OsUuid::Uuid(Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap()),
+            VerityRootHash::new(different_hash),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(
+                err.kind(),
+                ErrorKind::InvalidInput(
+                    InvalidInputError::DuplicateFsUuidAclVerificationFailed { reason, .. }
+                ) if reason.contains("mismatch")
+            ),
+            "expected hash mismatch error, got: {:?}",
+            err.kind()
+        );
+    }
+
+    #[test]
+    fn test_acl_duplicate_uuid_no_active_hash() {
+        let mock = acl_mock_image(Some(ACL_TEST_HASH));
+        let os_image = OsImage::mock(mock);
+        let err = validate_acl_duplicate_uuid(
+            &os_image,
+            Path::new("/usr"),
+            &OsUuid::Uuid(Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap()),
+            None,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(
+                err.kind(),
+                ErrorKind::InvalidInput(
+                    InvalidInputError::DuplicateFsUuidAclVerificationFailed { reason, .. }
+                ) if reason.contains("usrhash=")
+            ),
+            "expected no active hash error, got: {:?}",
+            err.kind()
+        );
+    }
+
+    #[test]
+    fn test_acl_duplicate_uuid_empty_active_hash() {
+        let mock = acl_mock_image(Some(ACL_TEST_HASH));
+        let os_image = OsImage::mock(mock);
+        let err = validate_acl_duplicate_uuid(
+            &os_image,
+            Path::new("/usr"),
+            &OsUuid::Uuid(Uuid::parse_str("a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8").unwrap()),
+            VerityRootHash::new(""),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(
+                err.kind(),
+                ErrorKind::InvalidInput(
+                    InvalidInputError::DuplicateFsUuidAclVerificationFailed { reason, .. }
+                ) if reason.contains("usrhash=")
+            ),
+            "expected empty active hash error, got: {:?}",
+            err.kind()
         );
     }
 }

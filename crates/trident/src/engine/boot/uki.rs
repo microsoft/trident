@@ -1,5 +1,6 @@
 use std::{
     fs,
+    io::ErrorKind,
     path::{Path, PathBuf},
 };
 
@@ -13,24 +14,60 @@ use osutils::{
     efivar,
     uki::{self, UKI_ADDON_DIR_SUFFIX, UKI_ADDON_FILE_SUFFIX},
 };
-use trident_api::error::{
-    InternalError, ReportError, ServicingError, TridentError, TridentResultExt,
+use trident_api::{
+    constants::{
+        AB_VOLUME_A_NAME, AB_VOLUME_B_NAME, AZURE_LINUX_INSTALL_ID_PREFIX, ESP_EFI_DIRECTORY,
+    },
+    error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
+    status::AbVolumeSelection,
 };
-use trident_api::{constants::ESP_EFI_DIRECTORY, status::AbVolumeSelection};
 
 use crate::engine::EngineContext;
+
+/// UKI filename prefix used by both Trident-managed and preexisting UKIs.
+const UKI_FILENAME_PREFIX: &str = "vmlinuz-";
+
+/// Marker in UKI filenames that identifies a staged (not yet finalized) UKI.
+const UKI_STAGED_MARKER: &str = "staged";
 
 /// Temporary name for the UKI file before renaming.
 pub const TMP_UKI_NAME: &str = "vmlinuz-0.efi.staged";
 pub const UKI_DIRECTORY: &str = formatcp!("{ESP_EFI_DIRECTORY}/Linux");
 const TMP_UKI_ADDON_DIR_NAME: &str = formatcp!("{TMP_UKI_NAME}{UKI_ADDON_DIR_SUFFIX}");
 
-/// Returns the UKI file suffix, given the current active volume and install index.
+/// Returns the lowercased UKI slot name for a given A/B volume
+/// (e.g. `"azla"` for VolumeA). Derived from the install-id prefix + volume name.
+fn uki_slot(volume: &str) -> String {
+    format!("{AZURE_LINUX_INSTALL_ID_PREFIX}{volume}").to_lowercase()
+}
+
+/// Returns the UKI filename for the target (update) slot.
 fn uki_suffix(ctx: &EngineContext) -> String {
-    match ctx.ab_active_volume {
-        Some(AbVolumeSelection::VolumeA) => format!("azlb{}.efi", ctx.install_index),
-        None | Some(AbVolumeSelection::VolumeB) => format!("azla{}.efi", ctx.install_index),
-    }
+    let slot = match ctx.ab_active_volume {
+        Some(AbVolumeSelection::VolumeA) => uki_slot(AB_VOLUME_B_NAME),
+        None | Some(AbVolumeSelection::VolumeB) => uki_slot(AB_VOLUME_A_NAME),
+    };
+    format!("{slot}{}.efi", ctx.install_index)
+}
+
+/// Returns the slot+os-index identifier for the target volume being updated
+/// (e.g. "azla0" or "azlb1"). Used to match UKI filenames for cleanup.
+fn target_slot_os_id(ctx: &EngineContext) -> String {
+    let slot = match ctx.ab_active_volume {
+        Some(AbVolumeSelection::VolumeA) => uki_slot(AB_VOLUME_B_NAME),
+        None | Some(AbVolumeSelection::VolumeB) => uki_slot(AB_VOLUME_A_NAME),
+    };
+    format!("{slot}{}", ctx.install_index)
+}
+
+/// Returns the slot+os-index identifier for the active/rollback volume
+/// (e.g. "azlb0" when active is B). Used to verify trident owns the other slot.
+fn active_slot_os_id(ctx: &EngineContext) -> String {
+    let slot = match ctx.ab_active_volume {
+        Some(AbVolumeSelection::VolumeA) => uki_slot(AB_VOLUME_A_NAME),
+        None | Some(AbVolumeSelection::VolumeB) => uki_slot(AB_VOLUME_B_NAME),
+    };
+    format!("{slot}{}", ctx.install_index)
 }
 
 /// Return whether there is a staged UKI file on the ESP.
@@ -160,6 +197,98 @@ pub fn prepare_esp_for_uki(root_mount_point: &Path, esp_mount_path: &Path) -> Re
     Ok(())
 }
 
+/// Removes a UKI file and its associated addon directory (if present).
+/// Treats `NotFound` as success for idempotency — a partially-failed previous
+/// cleanup should not prevent the addon directory from being cleaned.
+fn remove_uki_and_addons(path: &Path) -> Result<(), Error> {
+    match fs::remove_file(path) {
+        Err(e) if e.kind() == ErrorKind::NotFound => {
+            trace!("UKI file '{}' already removed, continuing", path.display());
+        }
+        e => e.with_context(|| format!("Failed to remove UKI file '{}'", path.display()))?,
+    }
+    let addon_dir = uki::uki_addon_dir(path);
+    if addon_dir.exists() && addon_dir.is_dir() {
+        fs::remove_dir_all(&addon_dir).with_context(|| {
+            format!(
+                "Failed to remove UKI addon directory '{}'",
+                addon_dir.display()
+            )
+        })?;
+    }
+    Ok(())
+}
+
+/// Cleans up old UKIs for the target slot before staging a new one, freeing
+/// ESP space.  This runs for all UKI-based A/B updates (not just ACL) because
+/// ESP space constraints are a general concern.
+///
+/// When staging a UKI for slot X on OS N, the old slot X/OS N UKI is being
+/// replaced and can be removed. Other slots and other OS indices are preserved.
+///
+/// Removes:
+/// 1. Trident-managed UKIs matching the target slot+os-index (e.g. all `azla0`
+///    files when staging for slot A OS 0, regardless of update index).
+/// 2. Non-trident-managed (original install) UKIs, but only when a
+///    trident-managed UKI for the *active* slot+os-index already exists —
+///    meaning trident has taken over boot management and the original install
+///    UKI is no longer the sole rollback.
+pub fn cleanup_ukis_before_staging(
+    ctx: &EngineContext,
+    mount_point: &Path,
+    esp_mount_path: &Path,
+) -> Result<(), Error> {
+    let esp_uki_directory = join_relative(mount_point, esp_mount_path).join(UKI_DIRECTORY);
+    if !esp_uki_directory.exists() {
+        return Ok(());
+    }
+
+    let target_slot = target_slot_os_id(ctx);
+    let target_suffix = format!("{target_slot}.efi");
+    let active_slot = active_slot_os_id(ctx);
+    let active_suffix = format!("{active_slot}.efi");
+    let trident_ukis = enumerate_trident_managed_ukis(&esp_uki_directory)?;
+
+    // 1. Remove trident-managed UKIs for the target slot+os-index
+    //    (all update indices, e.g. vmlinuz-100-azla0.efi, vmlinuz-102-azla0.efi).
+    for (_index, suffix, path) in &trident_ukis {
+        if *suffix == target_suffix {
+            debug!(
+                "Pre-staging cleanup: removing old target-slot UKI '{}'",
+                path.display()
+            );
+            remove_uki_and_addons(path)?;
+        }
+    }
+
+    // 2. Remove non-trident-managed UKIs only if:
+    //    - This is install_index 0 (the OS that placed the original UKI), AND
+    //    - Trident already manages the active slot (proving the original is
+    //      superseded as rollback).
+    //    In multiboot, install_index > 0 never owns the original UKI — it has
+    //    OS 0's partition refs baked in and can't boot other OS instances.
+    //    Note: this intentionally does NOT require both slots to be managed.
+    //    The ESP (~125 MB) cannot hold 3 UKIs (~50 MB each), so the original
+    //    must be removed before staging to free space. Staging already breaks
+    //    rollback to the original, so deleting it here is acceptable.
+    let has_active_slot_uki = trident_ukis
+        .iter()
+        .any(|(_index, suffix, _)| *suffix == active_suffix);
+
+    if has_active_slot_uki && ctx.install_index == 0 {
+        let non_trident_ukis = enumerate_non_trident_managed_ukis(&esp_uki_directory)?;
+        for (_version, path) in non_trident_ukis {
+            debug!(
+                "Pre-staging cleanup: removing superseded original UKI '{}'",
+                path.display()
+            );
+            remove_uki_and_addons(&path)?;
+        }
+    }
+
+    Ok(())
+}
+
 /// Enumerates existing UKIs managed by Trident (defined by naming convention: vmlinuz-<index>-azl<a|b><number>.efi)
 /// in the given directory, returning their indices, suffixes, and paths.
 fn enumerate_trident_managed_ukis(
@@ -184,10 +313,14 @@ fn enumerate_trident_managed_ukis(
 
         if let Some((index, suffix)) = filename
             .to_str()
-            .and_then(|filename| filename.strip_prefix("vmlinuz-"))
+            .and_then(|filename| filename.strip_prefix(UKI_FILENAME_PREFIX))
             .and_then(|f| f.split_once('-'))
             .filter(|(_, suffix)| {
-                suffix.contains("staged") || suffix.contains("azla") || suffix.contains("azlb")
+                let slot_a = uki_slot(AB_VOLUME_A_NAME);
+                let slot_b = uki_slot(AB_VOLUME_B_NAME);
+                suffix.contains(UKI_STAGED_MARKER)
+                    || suffix.contains(&slot_a)
+                    || suffix.contains(&slot_b)
             })
             .and_then(|(index, suffix)| Some((index.parse::<usize>().ok()?, suffix.to_string())))
         {
@@ -235,28 +368,22 @@ pub fn update_uki_boot_files(
         .structured(ServicingError::EnumerateUkis)?;
     let uki_suffix = uki_suffix(ctx);
 
+    // Remove any leftover UKIs for the target slot (idempotent safety net —
+    // cleanup_ukis_before_staging should have already removed these) and
+    // compute the highest existing update index for the new filename.
     let mut max_index = 99;
     for (index, suffix, path) in existing_ukis {
         if suffix == uki_suffix {
-            fs::remove_file(&path)
-                .with_context(|| format!("Failed to remove existing UKI file '{}'", path.display()))
-                .structured(ServicingError::UpdateUki)?;
-
-            // Remove any related addon directory as well if it exists.
-            let addon_dir = uki::uki_addon_dir(&path);
-            if addon_dir.exists() && addon_dir.is_dir() {
-                fs::remove_dir_all(&addon_dir)
-                    .with_context(|| {
-                        format!("Failed to remove addon directory '{}'", addon_dir.display())
-                    })
-                    .structured(ServicingError::UpdateUki)?;
-            }
+            remove_uki_and_addons(&path).structured(ServicingError::UpdateUki)?;
         } else {
             max_index = max_index.max(index);
         }
     }
 
-    let uki_dest_path = esp_uki_directory.join(format!("vmlinuz-{}-{uki_suffix}", max_index + 1));
+    let uki_dest_path = esp_uki_directory.join(format!(
+        "{UKI_FILENAME_PREFIX}{}-{uki_suffix}",
+        max_index + 1
+    ));
 
     // If there is a staged UKI addon directory, rename it to match the new UKI filename.
     let staging_addon_dir = esp_uki_directory.join(TMP_UKI_ADDON_DIR_NAME);
@@ -320,8 +447,12 @@ fn enumerate_non_trident_managed_ukis(
 
         if let Some(version) = filename
             .to_str()
-            .and_then(|filename| filename.strip_prefix("vmlinuz-"))
-            .filter(|f| !f.contains("azla") && !f.contains("azlb"))
+            .and_then(|filename| filename.strip_prefix(UKI_FILENAME_PREFIX))
+            .filter(|f| {
+                let slot_a = uki_slot(AB_VOLUME_A_NAME);
+                let slot_b = uki_slot(AB_VOLUME_B_NAME);
+                !f.contains(&slot_a) && !f.contains(&slot_b)
+            })
             .and_then(|filename| filename.strip_suffix(".efi"))
         {
             match version.parse() {
@@ -396,6 +527,81 @@ pub fn find_previous_uki(esp_dir_path: &Path) -> Result<PathBuf, TridentError> {
             message: "Failed to find more than 1 UKI entries",
         }))
     }
+}
+
+/// Path within the image ESP where ACL stores verity addon templates for A/B slots.
+const VERITY_ADDON_TEMPLATES_DIR: &str = "acl/uki-addons";
+
+/// Filename of the active verity addon placed in the UKI's `.extra.d/` directory.
+const VERITY_ADDON_FILENAME: &str = "verity.addon.efi";
+
+/// After staging the UKI, activate the correct verity addon for the target
+/// A/B volume. ACL images ship with slot-A active by default and include
+/// templates for both slots in `acl/uki-addons/` on the ESP image.
+///
+/// This is ACL-specific: if no verity addon templates exist on the image
+/// (i.e. a non-ACL image), this function is a silent no-op. However, if
+/// templates exist but the selected slot's template is missing, an error
+/// is returned to prevent booting with the wrong slot's PARTUUIDs.
+pub fn activate_verity_addon_for_target_volume(
+    image_esp_mount: &Path,
+    mount_point: &Path,
+    esp_mount_path: &Path,
+    target_volume: AbVolumeSelection,
+) -> Result<(), Error> {
+    let template_dir = image_esp_mount.join(VERITY_ADDON_TEMPLATES_DIR);
+    if !template_dir.exists() {
+        // Image does not use PARTUUID-based verity addons (non-ACL or older ACL).
+        trace!(
+            "No verity addon template directory at '{}', skipping",
+            template_dir.display()
+        );
+        return Ok(());
+    }
+
+    let template_name = match target_volume {
+        AbVolumeSelection::VolumeA => "verity-a.addon.efi",
+        AbVolumeSelection::VolumeB => "verity-b.addon.efi",
+    };
+
+    let template_path = template_dir.join(template_name);
+    ensure!(
+        template_path.exists(),
+        "Verity addon template '{}' not found in '{}' — cannot activate {:?}",
+        template_name,
+        template_dir.display(),
+        target_volume
+    );
+
+    let staging_addon_dir = join_relative(mount_point, esp_mount_path)
+        .join(UKI_DIRECTORY)
+        .join(TMP_UKI_ADDON_DIR_NAME);
+
+    if !staging_addon_dir.exists() {
+        fs::create_dir_all(&staging_addon_dir).with_context(|| {
+            format!(
+                "Failed to create staged addon directory '{}'",
+                staging_addon_dir.display()
+            )
+        })?;
+    }
+
+    let dest = staging_addon_dir.join(VERITY_ADDON_FILENAME);
+    debug!(
+        "Activating verity addon for {:?}: '{}' → '{}'",
+        target_volume,
+        template_path.display(),
+        dest.display()
+    );
+    fs::copy(&template_path, &dest).with_context(|| {
+        format!(
+            "Failed to copy verity addon template '{}' to '{}'",
+            template_path.display(),
+            dest.display()
+        )
+    })?;
+
+    Ok(())
 }
 
 /// Construct the previous UKI filename and set it as the default boot entry.
@@ -859,5 +1065,306 @@ mod tests {
         assert_eq!(entry_name, "vmlinuz-100-azla2.efi");
         assert!(uki_dir.join("vmlinuz-100-azla2.efi").exists());
         assert!(!uki_dir.join("vmlinuz-100-azla2.efi.extra.d").exists());
+    }
+
+    // ── activate_verity_addon_for_target_volume tests ──────────────────────
+
+    /// Helper: creates a mock image ESP with verity addon templates.
+    fn setup_image_with_verity_templates(image_esp: &Path) -> (PathBuf, PathBuf) {
+        let template_dir = image_esp.join(VERITY_ADDON_TEMPLATES_DIR);
+        fs::create_dir_all(&template_dir).unwrap();
+        let a_path = template_dir.join("verity-a.addon.efi");
+        let b_path = template_dir.join("verity-b.addon.efi");
+        fs::write(&a_path, b"verity-a-content").unwrap();
+        fs::write(&b_path, b"verity-b-content").unwrap();
+        (a_path, b_path)
+    }
+
+    /// Activating for VolumeA copies verity-a template into the staged addon dir.
+    #[test]
+    fn test_activate_verity_addon_volume_a() {
+        let image_esp = tempdir().unwrap();
+        setup_image_with_verity_templates(image_esp.path());
+
+        let mount_point = tempdir().unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)).unwrap();
+
+        // Create the staged addon dir as stage_uki_on_esp would
+        let staged_addon_dir = join_relative(mount_point.path(), DEFAULT_ESP_MOUNT_POINT_PATH)
+            .join(UKI_DIRECTORY)
+            .join(TMP_UKI_ADDON_DIR_NAME);
+        fs::create_dir_all(&staged_addon_dir).unwrap();
+
+        activate_verity_addon_for_target_volume(
+            image_esp.path(),
+            mount_point.path(),
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+            AbVolumeSelection::VolumeA,
+        )
+        .unwrap();
+
+        let active = staged_addon_dir.join(VERITY_ADDON_FILENAME);
+        assert!(active.exists());
+        assert_eq!(fs::read(&active).unwrap(), b"verity-a-content");
+    }
+
+    /// Activating for VolumeB copies verity-b template into the staged addon dir.
+    #[test]
+    fn test_activate_verity_addon_volume_b() {
+        let image_esp = tempdir().unwrap();
+        setup_image_with_verity_templates(image_esp.path());
+
+        let mount_point = tempdir().unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)).unwrap();
+
+        let staged_addon_dir = join_relative(mount_point.path(), DEFAULT_ESP_MOUNT_POINT_PATH)
+            .join(UKI_DIRECTORY)
+            .join(TMP_UKI_ADDON_DIR_NAME);
+        fs::create_dir_all(&staged_addon_dir).unwrap();
+
+        activate_verity_addon_for_target_volume(
+            image_esp.path(),
+            mount_point.path(),
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+            AbVolumeSelection::VolumeB,
+        )
+        .unwrap();
+
+        let active = staged_addon_dir.join(VERITY_ADDON_FILENAME);
+        assert!(active.exists());
+        assert_eq!(fs::read(&active).unwrap(), b"verity-b-content");
+    }
+
+    /// No template directory at all → silent no-op (backward compat with non-ACL).
+    #[test]
+    fn test_activate_verity_addon_no_template_dir() {
+        let image_esp = tempdir().unwrap();
+        // No acl/uki-addons/ directory
+
+        let mount_point = tempdir().unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)).unwrap();
+
+        // Should succeed silently
+        activate_verity_addon_for_target_volume(
+            image_esp.path(),
+            mount_point.path(),
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+            AbVolumeSelection::VolumeA,
+        )
+        .unwrap();
+
+        // No addon dir should have been created
+        let staged_addon_dir = join_relative(mount_point.path(), DEFAULT_ESP_MOUNT_POINT_PATH)
+            .join(UKI_DIRECTORY)
+            .join(TMP_UKI_ADDON_DIR_NAME);
+        assert!(!staged_addon_dir.exists());
+    }
+
+    /// Template directory exists but selected slot template is missing → error.
+    #[test]
+    fn test_activate_verity_addon_missing_selected_template() {
+        let image_esp = tempdir().unwrap();
+        let template_dir = image_esp.path().join(VERITY_ADDON_TEMPLATES_DIR);
+        fs::create_dir_all(&template_dir).unwrap();
+        // Only write verity-a, not verity-b
+        fs::write(template_dir.join("verity-a.addon.efi"), b"a-content").unwrap();
+
+        let mount_point = tempdir().unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)).unwrap();
+
+        let result = activate_verity_addon_for_target_volume(
+            image_esp.path(),
+            mount_point.path(),
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+            AbVolumeSelection::VolumeB,
+        );
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("verity-b.addon.efi"),
+            "Error should mention the missing template"
+        );
+    }
+
+    /// Creates the staged addon dir when templates exist but no addon dir was staged.
+    #[test]
+    fn test_activate_verity_addon_creates_addon_dir() {
+        let image_esp = tempdir().unwrap();
+        setup_image_with_verity_templates(image_esp.path());
+
+        let mount_point = tempdir().unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)).unwrap();
+
+        // Do NOT pre-create the staged addon dir
+        activate_verity_addon_for_target_volume(
+            image_esp.path(),
+            mount_point.path(),
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+            AbVolumeSelection::VolumeB,
+        )
+        .unwrap();
+
+        let staged_addon_dir = join_relative(mount_point.path(), DEFAULT_ESP_MOUNT_POINT_PATH)
+            .join(UKI_DIRECTORY)
+            .join(TMP_UKI_ADDON_DIR_NAME);
+        assert!(staged_addon_dir.join(VERITY_ADDON_FILENAME).exists());
+        assert_eq!(
+            fs::read(staged_addon_dir.join(VERITY_ADDON_FILENAME)).unwrap(),
+            b"verity-b-content"
+        );
+    }
+
+    /// Other addons in the staged dir are preserved when activating verity addon.
+    #[test]
+    fn test_activate_verity_addon_preserves_other_addons() {
+        let image_esp = tempdir().unwrap();
+        setup_image_with_verity_templates(image_esp.path());
+
+        let mount_point = tempdir().unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)).unwrap();
+
+        let staged_addon_dir = join_relative(mount_point.path(), DEFAULT_ESP_MOUNT_POINT_PATH)
+            .join(UKI_DIRECTORY)
+            .join(TMP_UKI_ADDON_DIR_NAME);
+        fs::create_dir_all(&staged_addon_dir).unwrap();
+        // Pre-existing addon that should not be touched
+        fs::write(
+            staged_addon_dir.join("firstboot.addon.efi"),
+            b"firstboot-data",
+        )
+        .unwrap();
+
+        activate_verity_addon_for_target_volume(
+            image_esp.path(),
+            mount_point.path(),
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+            AbVolumeSelection::VolumeA,
+        )
+        .unwrap();
+
+        // Verity addon should be activated
+        assert_eq!(
+            fs::read(staged_addon_dir.join(VERITY_ADDON_FILENAME)).unwrap(),
+            b"verity-a-content"
+        );
+        // Other addon should be untouched
+        assert_eq!(
+            fs::read(staged_addon_dir.join("firstboot.addon.efi")).unwrap(),
+            b"firstboot-data"
+        );
+    }
+
+    /// Helper: creates an ESP directory structure with UKI files and returns
+    /// the mock root mount point (tempdir) and the UKI directory path.
+    fn setup_esp_for_cleanup(ukis: &[&str]) -> (tempfile::TempDir, PathBuf) {
+        let mount = tempdir().unwrap();
+        let esp_uki_dir =
+            join_relative(mount.path(), DEFAULT_ESP_MOUNT_POINT_PATH).join(UKI_DIRECTORY);
+        fs::create_dir_all(&esp_uki_dir).unwrap();
+        for name in ukis {
+            File::create(esp_uki_dir.join(name)).unwrap();
+        }
+        (mount, esp_uki_dir)
+    }
+
+    /// Validates that cleanup removes only UKIs matching the target slot+os-index
+    /// (exact suffix match), not UKIs for other slots or OS indices.
+    #[test]
+    fn test_cleanup_ukis_removes_target_slot_only() {
+        // Active = VolumeA, install_index = 0 → target = azlb0, active = azla0
+        let ctx = make_ctx(Some(AbVolumeSelection::VolumeA), 0);
+        let (mount, uki_dir) = setup_esp_for_cleanup(&[
+            "vmlinuz-100-azlb0.efi", // target slot → should be removed
+            "vmlinuz-101-azla0.efi", // active slot → should survive
+            "vmlinuz-102-azlb1.efi", // different OS index → should survive
+            "vmlinuz-103-azla1.efi", // different OS index → should survive
+        ]);
+
+        cleanup_ukis_before_staging(&ctx, mount.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH))
+            .unwrap();
+
+        assert!(!uki_dir.join("vmlinuz-100-azlb0.efi").exists());
+        assert!(uki_dir.join("vmlinuz-101-azla0.efi").exists());
+        assert!(uki_dir.join("vmlinuz-102-azlb1.efi").exists());
+        assert!(uki_dir.join("vmlinuz-103-azla1.efi").exists());
+    }
+
+    /// Validates that suffix matching is exact — `azla0` must not match
+    /// `azla01.efi` or `azla00.efi` (multiboot with ≥10 instances).
+    #[test]
+    fn test_cleanup_ukis_exact_suffix_no_substring_match() {
+        // Active = VolumeB, install_index = 0 → target = azla0, active = azlb0
+        let ctx = make_ctx(Some(AbVolumeSelection::VolumeB), 0);
+        let (mount, uki_dir) = setup_esp_for_cleanup(&[
+            "vmlinuz-100-azla0.efi",  // target → should be removed
+            "vmlinuz-101-azla01.efi", // OS index 01, NOT 0 → should survive
+            "vmlinuz-102-azla00.efi", // OS index 00, NOT 0 → should survive
+            "vmlinuz-103-azla10.efi", // OS index 10 → should survive
+        ]);
+
+        cleanup_ukis_before_staging(&ctx, mount.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH))
+            .unwrap();
+
+        assert!(!uki_dir.join("vmlinuz-100-azla0.efi").exists());
+        assert!(uki_dir.join("vmlinuz-101-azla01.efi").exists());
+        assert!(uki_dir.join("vmlinuz-102-azla00.efi").exists());
+        assert!(uki_dir.join("vmlinuz-103-azla10.efi").exists());
+    }
+
+    /// Validates that cleanup removes multiple UKIs with different update
+    /// indices but the same target slot+os-index.
+    #[test]
+    fn test_cleanup_ukis_removes_all_target_update_indices() {
+        let ctx = make_ctx(Some(AbVolumeSelection::VolumeA), 0);
+        let (mount, uki_dir) = setup_esp_for_cleanup(&[
+            "vmlinuz-100-azlb0.efi", // target → remove
+            "vmlinuz-102-azlb0.efi", // target → remove
+            "vmlinuz-104-azlb0.efi", // target → remove
+            "vmlinuz-101-azla0.efi", // active → keep
+        ]);
+
+        cleanup_ukis_before_staging(&ctx, mount.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH))
+            .unwrap();
+
+        assert!(!uki_dir.join("vmlinuz-100-azlb0.efi").exists());
+        assert!(!uki_dir.join("vmlinuz-102-azlb0.efi").exists());
+        assert!(!uki_dir.join("vmlinuz-104-azlb0.efi").exists());
+        assert!(uki_dir.join("vmlinuz-101-azla0.efi").exists());
+    }
+
+    /// Validates that `remove_uki_and_addons` is idempotent — removing a
+    /// file that no longer exists succeeds rather than returning an error.
+    #[test]
+    fn test_remove_uki_and_addons_idempotent() {
+        let dir = tempdir().unwrap();
+        let uki_path = dir.path().join("vmlinuz-100-azla0.efi");
+        File::create(&uki_path).unwrap();
+
+        // First removal should succeed
+        remove_uki_and_addons(&uki_path).unwrap();
+        assert!(!uki_path.exists());
+
+        // Second removal should also succeed (idempotent)
+        remove_uki_and_addons(&uki_path).unwrap();
+    }
+
+    /// Validates that `remove_uki_and_addons` removes both the UKI and its
+    /// addon directory, and succeeds when the UKI file is already gone but
+    /// the addon directory still exists.
+    #[test]
+    fn test_remove_uki_and_addons_with_addon_dir() {
+        let dir = tempdir().unwrap();
+        let uki_path = dir.path().join("vmlinuz-100-azla0.efi");
+        File::create(&uki_path).unwrap();
+        let addon_dir = uki::uki_addon_dir(&uki_path);
+        fs::create_dir_all(&addon_dir).unwrap();
+        fs::write(addon_dir.join("cmdline.addon.efi"), b"addon").unwrap();
+
+        remove_uki_and_addons(&uki_path).unwrap();
+        assert!(!uki_path.exists());
+        assert!(!addon_dir.exists());
     }
 }

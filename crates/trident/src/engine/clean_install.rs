@@ -220,6 +220,7 @@ fn stage_clean_install(
         host_config,
         &ctx.partition_paths,
         AbVolumeSelection::VolumeA,
+        None,
     )?;
     ctx.install_index =
         install_index::next_install_index(newroot_mount.path(), ctx.esp_mount_path.as_path())?;
@@ -311,6 +312,7 @@ pub(crate) fn finalize_clean_install(
                 .structured(InternalError::Internal(
                     "No update volume despite there being a clean install in progress",
                 ))?,
+            None,
         )?,
     };
 

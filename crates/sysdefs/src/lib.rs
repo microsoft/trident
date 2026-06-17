@@ -6,6 +6,7 @@
 //! contain minimal or no behavior at all.
 //!
 
+pub mod acl;
 pub mod arch;
 pub mod filesystems;
 pub mod osuuid;

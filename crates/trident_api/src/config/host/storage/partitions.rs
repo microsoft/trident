@@ -1,17 +1,14 @@
 use std::{fmt::Display, num::ParseIntError, str::FromStr};
 
 use serde::{Deserialize, Serialize};
+use sysdefs::acl::USR_PARTITION_TYPE_UUID;
 use sysdefs::partition_types::DiscoverablePartitionType;
 use uuid::Uuid;
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
-use crate::{
-    constants::{ACL_USR_PARTITION_TYPE_UUID, PARTITION_SIZE_GROW},
-    primitives::bytes::ByteCount,
-    BlockDeviceId,
-};
+use crate::{constants::PARTITION_SIZE_GROW, primitives::bytes::ByteCount, BlockDeviceId};
 
 #[cfg(feature = "schemars")]
 use crate::schema::{block_device_id_schema, unit_enum_with_untagged_variant};
@@ -181,12 +178,12 @@ pub enum PartitionType {
 impl PartitionType {
     /// Returns the ACL partition type that is treated as USR-like in storage validation.
     pub fn acl_usr() -> Self {
-        Self::Unknown(ACL_USR_PARTITION_TYPE_UUID)
+        Self::Unknown(USR_PARTITION_TYPE_UUID)
     }
 
     /// Returns true when this partition type is the ACL USR-equivalent partition type.
     pub fn is_acl_usr(&self) -> bool {
-        matches!(self, Self::Unknown(uuid) if *uuid == ACL_USR_PARTITION_TYPE_UUID)
+        matches!(self, Self::Unknown(uuid) if *uuid == USR_PARTITION_TYPE_UUID)
     }
 
     /// Helper function that returns PartititionType as a string. Return values
@@ -222,7 +219,7 @@ impl PartitionType {
             Self::Usr => Some(PartitionType::UsrVerity),
 
             // Special case for ACL.
-            Self::Unknown(ACL_USR_PARTITION_TYPE_UUID) => Some(PartitionType::UsrVerity),
+            Self::Unknown(USR_PARTITION_TYPE_UUID) => Some(PartitionType::UsrVerity),
 
             // We permit the use of the generic Linux partition type for verity
             // partitions because it is the default type.

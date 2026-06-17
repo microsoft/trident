@@ -288,8 +288,31 @@ fn copy_file_artifacts(
         // Prepare ESP directory structure for UKI boot
         uki::prepare_esp_for_uki(mount_point, &ctx.esp_mount_path)?;
 
+        // Clean up old UKIs for the target slot before staging the new one.
+        // Pre-staging cleanup is necessary because the ESP may not have space
+        // for both old and new UKIs simultaneously (128 MB constraint). The
+        // trade-off: a crash between cleanup and staging removes the target
+        // slot's old UKI with no replacement, but the active slot's UKI is
+        // preserved so the system remains bootable via A/B fallback.
+        uki::cleanup_ukis_before_staging(ctx, mount_point, &ctx.esp_mount_path)?;
+
         // Copy the UKI from the image into the ESP directory
         uki::stage_uki_on_esp(temp_mount_dir, mount_point, &ctx.esp_mount_path)?;
+
+        // For ACL A/B images, activate the verity addon matching the target slot.
+        // The image ships with slot A's addon active; this swaps it when updating
+        // to slot B (or confirms slot A for clean installs). Non-ACL images have
+        // no template directory and this is a no-op.
+        if ctx.image_distro().is_acl() {
+            if let Some(target_volume) = ctx.get_ab_update_volume() {
+                uki::activate_verity_addon_for_target_volume(
+                    temp_mount_dir,
+                    mount_point,
+                    &ctx.esp_mount_path,
+                    target_volume,
+                )?;
+            }
+        }
     } else {
         // In non-UKI mode, bail if grub_noprefix.efi is not found in the image.
         ensure!(

@@ -10,12 +10,20 @@ use anyhow::{anyhow, bail, ensure, Context, Error};
 use log::{debug, error, trace, warn};
 use sys_mount::{MountBuilder, MountFlags};
 
-use osutils::{files, filesystems::MountFileSystemType, findmnt::FindMnt, lsblk, mount, path};
-use sysdefs::filesystems::{KernelFilesystemType, RealFilesystemType};
+use osutils::{
+    block_devices, files, filesystems::MountFileSystemType, findmnt::FindMnt, lsblk, mount, path,
+    verity_roothash::VerityRootHash,
+};
+use sysdefs::{
+    acl,
+    filesystems::{KernelFilesystemType, RealFilesystemType},
+    osuuid::OsUuid,
+};
 use trident_api::{
     config::{FileSystem, HostConfiguration},
     constants::{
         NONE_MOUNT_POINT, ROOT_MOUNT_POINT_PATH, UPDATE_ROOT_FALLBACK_PATH, UPDATE_ROOT_PATH,
+        USR_MOUNT_POINT_PATH,
     },
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::AbVolumeSelection,
@@ -59,6 +67,7 @@ impl NewrootMount {
         host_config: &HostConfiguration,
         partition_paths: &BTreeMap<BlockDeviceId, PathBuf>,
         update_volume: AbVolumeSelection,
+        staging_usr_roothash: Option<&str>,
     ) -> Result<Self, TridentError> {
         // Get the path where the newroot should be mounted
         let new_root_path = get_new_root_path();
@@ -73,7 +82,12 @@ impl NewrootMount {
         let mut newroot_mount = NewrootMount::new(new_root_path);
 
         newroot_mount
-            .mount_newroot_partitions(host_config, partition_paths, update_volume)
+            .mount_newroot_partitions(
+                host_config,
+                partition_paths,
+                update_volume,
+                staging_usr_roothash,
+            )
             .message("Failed to mount all partitions in newroot")?;
 
         // Mount tmpfs for /tmp and /run
@@ -136,6 +150,7 @@ impl NewrootMount {
         host_config: &HostConfiguration,
         partition_paths: &BTreeMap<BlockDeviceId, PathBuf>,
         update_volume: AbVolumeSelection,
+        staging_usr_roothash: Option<&str>,
     ) -> Result<(), TridentError> {
         let mut block_device_paths = partition_paths.clone();
 
@@ -163,6 +178,11 @@ impl NewrootMount {
                 block_device_paths.insert(pair.id.clone(), path.clone());
             }
         }
+
+        // Check for ACL BTRFS UUID collision before mounting.
+        let acl_collision_uuid =
+            detect_acl_btrfs_uuid_collision(update_volume, staging_usr_roothash)
+                .structured(ServicingError::MountNewroot)?;
 
         // Mount all block devices in the newroot
         mount_points_map(host_config)
@@ -201,6 +221,39 @@ impl NewrootMount {
                 })?;
 
                 let fs_type = block_device.fstype.and_then(|fs_type| KernelFilesystemType::from(fs_type.as_str()).try_as_real());
+
+                // ACL-specific: if the staging device has a BTRFS filesystem UUID that
+                // collides with the active USR partition, bind-mount from the host's
+                // /usr instead. The verity-protected filesystem is read-only and the
+                // content is identical when UUIDs match, so the bind mount provides
+                // equivalent content for chroot provisioning.
+                if let Some(ref collision_uuid) = acl_collision_uuid {
+                    if *path == Path::new(USR_MOUNT_POINT_PATH)
+                        && fs_type == Some(RealFilesystemType::Btrfs)
+                        && block_device.fsuuid.as_ref() == Some(collision_uuid)
+                    {
+                        let active_usr = Path::new("/usr");
+                        warn!(
+                            "Block device '{}' has BTRFS filesystem UUID '{}' which collides \
+                             with the active ACL USR partition. Bind-mounting '{}' to '{}' instead.",
+                            target_id,
+                            collision_uuid,
+                            active_usr.display(),
+                            target_path.display()
+                        );
+                        do_bind_mount(active_usr, &target_path, MountFlags::RDONLY)
+                            .with_context(|| {
+                                format!(
+                                    "Failed to bind mount '{}' to '{}' \
+                                     for ACL BTRFS UUID collision workaround",
+                                    active_usr.display(),
+                                    target_path.display(),
+                                )
+                            })?;
+                        self.add_mount(target_path.clone());
+                        return Ok(());
+                    }
+                }
 
                 // If a filesystem is of type NTFS and the device is already mounted, need to use a
                 // private bind mount instead, b/c NTFS doesn't support multiple mounts.
@@ -337,6 +390,131 @@ fn should_be_bind_mounted(fs_type: Option<RealFilesystemType>) -> bool {
         | RealFilesystemType::Vfat
         | RealFilesystemType::Xfs => false,
     }
+}
+
+/// Detects a BTRFS filesystem UUID collision on ACL's USR A/B partitions.
+///
+/// BTRFS maintains a kernel-global UUID registry and refuses to mount a filesystem
+/// whose UUID is already registered by another mounted device. During A/B updates
+/// where the COSI image shares filesystem UUIDs with the active OS, the staging
+/// verity device cannot be mounted.
+///
+/// This function checks whether the active and update USR partitions (identified by
+/// their well-known ACL PARTUUIDs) have the same BTRFS filesystem UUID. If so, it
+/// returns the colliding UUID so the caller can substitute a bind mount from the
+/// active `/usr`.
+///
+/// Returns:
+/// - `Ok(Some(uuid))` — collision detected and verity-verified; use bind mount
+/// - `Ok(None)` — no collision (not ACL, not BTRFS, or different UUIDs)
+/// - `Err(...)` — collision detected but content identity could not be verified;
+///   mounting will fail so the caller should surface this error rather than
+///   letting BTRFS produce a confusing kernel-level error
+fn detect_acl_btrfs_uuid_collision(
+    update_volume: AbVolumeSelection,
+    staging_usr_roothash: Option<&str>,
+) -> Result<Option<OsUuid>, Error> {
+    let (active_partuuid, update_partuuid) = match update_volume {
+        AbVolumeSelection::VolumeA => (acl::USR_B_PARTUUID, acl::USR_A_PARTUUID),
+        AbVolumeSelection::VolumeB => (acl::USR_A_PARTUUID, acl::USR_B_PARTUUID),
+    };
+
+    let active_path = block_devices::part_uuid_path(active_partuuid);
+    let update_path = block_devices::part_uuid_path(update_partuuid);
+
+    // On non-ACL systems these PARTUUID paths won't exist. Check before
+    // calling lsblk so we return Ok(None) instead of a confusing error.
+    if !active_path.exists() || !update_path.exists() {
+        return Ok(None);
+    }
+
+    let Some(active_dev) =
+        lsblk::try_get(&active_path).context("Failed to query active ACL USR partition")?
+    else {
+        return Ok(None);
+    };
+    let Some(update_dev) =
+        lsblk::try_get(&update_path).context("Failed to query update ACL USR partition")?
+    else {
+        return Ok(None);
+    };
+
+    let active_fstype = active_dev
+        .fstype
+        .as_deref()
+        .and_then(|fs| KernelFilesystemType::from(fs).try_as_real());
+    let update_fstype = update_dev
+        .fstype
+        .as_deref()
+        .and_then(|fs| KernelFilesystemType::from(fs).try_as_real());
+
+    if active_fstype != Some(RealFilesystemType::Btrfs) {
+        return Ok(None);
+    }
+    if update_fstype != Some(RealFilesystemType::Btrfs) {
+        return Ok(None);
+    }
+
+    let (Some(active_uuid), Some(update_uuid)) = (active_dev.fsuuid, update_dev.fsuuid) else {
+        return Ok(None);
+    };
+
+    if active_uuid != update_uuid {
+        return Ok(None);
+    }
+
+    debug!(
+        "ACL BTRFS UUID collision detected: active and update USR partitions \
+         share filesystem UUID '{active_uuid}'"
+    );
+
+    // When a staging root hash is available, verify that the active USR
+    // partition has the same verity root hash. This provides a cryptographic
+    // guarantee that the filesystems are byte-identical, not just a UUID match.
+    let Some(staging_hash) = staging_usr_roothash else {
+        bail!(
+            "ACL BTRFS UUID collision detected (filesystem UUID '{active_uuid}') but no \
+             staging USR verity root hash is available to verify content identity. \
+             Cannot safely bind-mount or directly mount the USR partition."
+        );
+    };
+
+    let Some(staging) = VerityRootHash::new(staging_hash) else {
+        bail!(
+            "ACL BTRFS UUID collision detected (filesystem UUID '{active_uuid}') but \
+             staging USR verity root hash is empty. \
+             Cannot safely bind-mount or directly mount the USR partition."
+        );
+    };
+
+    match VerityRootHash::from_proc_cmdline() {
+        Some(active) => {
+            if staging == active {
+                debug!(
+                    "Verity root hash verification passed: active and staging USR \
+                     partitions have matching root hash ({}...)",
+                    staging.preview()
+                );
+            } else {
+                bail!(
+                    "ACL BTRFS UUID collision detected (filesystem UUID '{active_uuid}') \
+                     but verity root hash mismatch: active USR has '{}...', staging has '{}...'. \
+                     Cannot safely bind-mount or directly mount the USR partition.",
+                    active.preview(),
+                    staging.preview()
+                );
+            }
+        }
+        None => {
+            bail!(
+                "ACL BTRFS UUID collision detected (filesystem UUID '{active_uuid}') \
+                 but cannot read active USR verity root hash from /proc/cmdline. \
+                 Cannot safely bind-mount or directly mount the USR partition."
+            );
+        }
+    }
+
+    Ok(Some(active_uuid))
 }
 
 /// Returns an ordered map of mount points to their corresponding FileSystem objects.
@@ -828,7 +1006,12 @@ mod functional_test {
 
         let mut newroot_mount = NewrootMount::new(mount_point.to_owned());
         newroot_mount
-            .mount_newroot_partitions(&ctx.spec, &ctx.partition_paths, AbVolumeSelection::VolumeA)
+            .mount_newroot_partitions(
+                &ctx.spec,
+                &ctx.partition_paths,
+                AbVolumeSelection::VolumeA,
+                None,
+            )
             .unwrap();
 
         // Validate that the device has been successfully mounted
@@ -927,7 +1110,12 @@ mod functional_test {
         // Test recursive mounting
         let mut newroot_mount2 = NewrootMount::new(root_mount_dir.path().to_owned());
         newroot_mount2
-            .mount_newroot_partitions(&ctx.spec, &ctx.partition_paths, AbVolumeSelection::VolumeA)
+            .mount_newroot_partitions(
+                &ctx.spec,
+                &ctx.partition_paths,
+                AbVolumeSelection::VolumeA,
+                None,
+            )
             .unwrap();
 
         assert!(root_mount_dir
@@ -1035,7 +1223,8 @@ mod functional_test {
                 .mount_newroot_partitions(
                     &ctx.spec,
                     &ctx.partition_paths,
-                    AbVolumeSelection::VolumeA
+                    AbVolumeSelection::VolumeA,
+                    None,
                 )
                 .unwrap_err()
                 .kind(),
@@ -1058,7 +1247,8 @@ mod functional_test {
                 .mount_newroot_partitions(
                     &ctx.spec,
                     &ctx.partition_paths,
-                    AbVolumeSelection::VolumeA
+                    AbVolumeSelection::VolumeA,
+                    None,
                 )
                 .unwrap_err()
                 .kind(),
@@ -1151,7 +1341,8 @@ mod functional_test {
                 .mount_newroot_partitions(
                     &ctx.spec,
                     &ctx.partition_paths,
-                    AbVolumeSelection::VolumeA
+                    AbVolumeSelection::VolumeA,
+                    None,
                 )
                 .expect_err(
                     "Expected mount_new_root to fail because of populated directory as path"
@@ -1243,7 +1434,12 @@ mod functional_test {
         let mut newroot_mount = NewrootMount::new(temp_mount_dir.path().to_owned());
         // Mount NTFS partition
         newroot_mount
-            .mount_newroot_partitions(&ctx.spec, &ctx.partition_paths, AbVolumeSelection::VolumeA)
+            .mount_newroot_partitions(
+                &ctx.spec,
+                &ctx.partition_paths,
+                AbVolumeSelection::VolumeA,
+                None,
+            )
             .unwrap();
 
         // If device is a file, fetch the name of loop device that was mounted at mount point;
@@ -1282,7 +1478,12 @@ mod functional_test {
         let mut newroot_mount2 = NewrootMount::new(temp_mount_dir2.path().to_owned());
         // Re-mount the NTFS partition
         newroot_mount2
-            .mount_newroot_partitions(&ctx.spec, &ctx.partition_paths, AbVolumeSelection::VolumeA)
+            .mount_newroot_partitions(
+                &ctx.spec,
+                &ctx.partition_paths,
+                AbVolumeSelection::VolumeA,
+                None,
+            )
             .unwrap();
 
         // Validate that the device has been successfully mounted

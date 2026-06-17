@@ -4,6 +4,7 @@ package generator
 import (
 	"bytes"
 	"crypto/sha512"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -1085,15 +1086,71 @@ func findUkiEntries(espMountPath string, espMountPoint string) []metadata.System
 			continue
 		}
 
+		// Scan for UKI addons in <uki>.extra.d/ and fold their cmdlines
+		// into the entry's Cmdline. systemd-stub does this at boot time;
+		// we mirror it here so the metadata carries the effective cmdline
+		// without extending the COSI spec with addon-specific fields.
+		addonCmdlines := findUkiAddonCmdlines(ukiDir, name, espMountPoint)
+		effectiveCmdline := cmdline
+		for _, ac := range addonCmdlines {
+			effectiveCmdline += " " + ac
+		}
+
 		entries = append(entries, metadata.SystemDBootEntry{
 			Type:    metadata.SystemDBootEntryTypeUkiStandalone,
 			Path:    absFsPath,
 			Kernel:  kernel,
-			Cmdline: cmdline,
+			Cmdline: strings.TrimSpace(effectiveCmdline),
 		})
 	}
 
 	return entries
+}
+
+// findUkiAddonCmdlines scans the <ukiName>.extra.d/ directory for UKI addon
+// files (*.addon.efi) and extracts their .cmdline PE sections. Returns the
+// cmdline strings so the caller can fold them into the UKI entry's Cmdline,
+// mirroring what systemd-stub does at boot time.
+func findUkiAddonCmdlines(ukiDir string, ukiName string, espMountPoint string) []string {
+	addonDirName := ukiName + ".extra.d"
+	addonHostDir := filepath.Join(ukiDir, addonDirName)
+
+	// os.ReadDir returns entries sorted lexicographically by name, matching
+	// systemd processing order.
+	addonEntries, err := os.ReadDir(addonHostDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			// No .extra.d directory is normal for UKIs without addons
+			return nil
+		}
+		log.WithError(err).Warnf("Failed to read UKI addon directory %s", addonHostDir)
+		return nil
+	}
+
+	var cmdlines []string
+	for _, ae := range addonEntries {
+		if ae.IsDir() {
+			continue
+		}
+		aName := ae.Name()
+		if !strings.HasSuffix(strings.ToLower(aName), ".addon.efi") {
+			continue
+		}
+
+		addonHostPath := filepath.Join(addonHostDir, aName)
+		addonFsPath := filepath.Join(espMountPoint, "EFI", "Linux", addonDirName, aName)
+
+		cmdline := extractUkiSection(addonHostPath, ".cmdline")
+		if cmdline == "" {
+			log.WithField("path", addonFsPath).Debug("Skipping addon with no .cmdline section")
+			continue
+		}
+
+		log.WithField("path", addonFsPath).Debugf("Found UKI addon cmdline: %s", cmdline)
+		cmdlines = append(cmdlines, cmdline)
+	}
+
+	return cmdlines
 }
 
 // extractUkiSection extracts a named PE section from a UKI .efi file using

@@ -1,5 +1,4 @@
 use const_format::formatcp;
-use uuid::Uuid;
 
 // Configuration constants
 
@@ -189,9 +188,6 @@ pub const VALID_CONFEXT_DIRECTORIES: [&str; 3] = [
     "/usr/local/lib/confexts",
 ];
 
-/// ACL USR partition type UUID.
-pub const ACL_USR_PARTITION_TYPE_UUID: Uuid = uuid::uuid!("5dfbf5f4-2848-4bac-aa5e-0d9a20b745a6");
-
 /// Internal-only overrides
 pub mod internal_params {
     /// Allow unused images in a COSI file.
@@ -226,6 +222,10 @@ pub mod internal_params {
 
     /// Block Trident from closing encrypted volumes at the start of provisioning.
     pub const NO_CLOSE_ENCRYPTED_VOLUMES: &str = "noCloseEncryptedVolumes";
+
+    /// Force an A/B update even when the OS image SHA384 has not changed.
+    /// Useful for testing A/B update flows with the same COSI repeatedly.
+    pub const FORCE_AB_UPDATE: &str = "forceAbUpdate";
 
     /// Block Trident from transitioning to the new OS after finalizing.
     pub const NO_TRANSITION: &str = "noTransition";
