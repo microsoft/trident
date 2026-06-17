@@ -200,7 +200,10 @@ DEFINED_IMAGES: List[ImageConfig] = [
         "trident-vm-grub-testimage-azl4",
         base_image=BaseImage.AZL4_QEMU_GUEST,
         config="trident-vm-testimage",
-        output_and_config={OutputFormat.COSI: "base/updateimg-grub.yaml"},
+        output_and_config={
+            OutputFormat.COSI: "base/updateimg-grub-azl4.yaml",
+            OutputFormat.QCOW2: "base/baseimg-grub-azl4.yaml",
+        },
         ssh_key="files/id_rsa.pub",
     ),
     # stream-image test images
