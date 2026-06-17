@@ -152,7 +152,7 @@ stages:
     parameters:
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
-  - ${{ foreach azlVersion in parameters.azlVersionsToTest }}:
+  - ${{ each azlVersion in parameters.azlVersionsToTest }}:
     # Build Trident installer ISO (host)
     - template: stages/build_image/build-image.yml
       parameters:
