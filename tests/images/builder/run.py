@@ -119,7 +119,7 @@ def build(
             container_image,
             image.id,
             image.base_image.path,
-            image.output_format.ic_name(),
+            image.output_format().ic_name(),
             output_dir / image.file_name(),
             image_architecture,
             dry_run,
