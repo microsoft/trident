@@ -166,6 +166,7 @@ steps:
           ls -la artifacts/azl4_qemu_guest.vhdx
           mkdir -p $(Build.ArtifactStagingDirectory)/images
           mv artifacts/azl4_qemu_guest.vhdx $(Build.ArtifactStagingDirectory)/images/
+          ls -la $(Build.ArtifactStagingDirectory)/images/azl4_qemu_guest.vhdx
 
   - bash: |
       set -ex
