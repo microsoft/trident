@@ -40,7 +40,7 @@ parameters:
     displayName: Image flavor
     type: string
     values:
-      - grub-azl4
+      - grubazl4
       - qemu
       - azure
       - uki

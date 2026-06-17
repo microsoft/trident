@@ -111,7 +111,7 @@ stages:
             jobs:
               - template: ../trident_images/build-image.yml
                 parameters:
-                  label: "grub-azl4-base"
+                  label: "grubazl4-base"
                   makeTarget: "artifacts/trident-vm-grub-testimage-azl4.qcow2"
                   baseimgAzlVersion: "4.0-preview"
                   baseimgType: qemu_guest
@@ -121,7 +121,7 @@ stages:
 
               - template: ../trident_images/build-image.yml
                 parameters:
-                  label: "grub-azl4-update-a"
+                  label: "grubazl4-update-a"
                   makeTarget: "artifacts/trident-vm-grub-testimage-azl4.cosi"
                   baseimgAzlVersion: "4.0-preview"
                   baseimgType: qemu_guest
@@ -170,7 +170,7 @@ stages:
               updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
               verboseLogging: ${{ parameters.verboseLogging }}
               platform: qemu
-              flavor: grub-azl4
+              flavor: grubazl4
               micBuildType: ${{ parameters.micBuildType }}
               micVersion: ${{ parameters.micVersion }}
               testSecureBoot: ${{ parameters.testSecureBoot }}
