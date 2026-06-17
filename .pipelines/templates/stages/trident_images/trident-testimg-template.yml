@@ -109,6 +109,30 @@ parameters:
     type: boolean
     default: false
 
+  # The AZL4 base VHDX is sourced from the Azure Linux preview gallery's
+  # backing storage account. The pipeline service connection at
+  # $(BLOB_SERVICE_CONNECTION) must have `Storage Blob Data Reader` on
+  # this account. See tests/images/SERVICE-CONNECTION-RUNBOOK.md.
+  - name: blobStorageAccount
+    type: string
+    default: "azlpubdev2mruiyvi"
+
+  - name: blobContainer
+    type: string
+    default: "images-dev"
+
+  - name: blobSubscription
+    type: string
+    # Subscription where the storage account lives. The SC's default
+    # subscription may differ — we explicitly set context before download.
+    default: "e4ab81f8-030f-4593-a8f2-3ea2c7630a19"
+
+  - name: blobServiceConnection
+    type: string
+    # NB: this must be a service connection that exists in the ADO project.
+    # Created manually by trident infra team.
+    default: "trident-azl4-blob-reader"
+
 steps:
   - template: ../common_tasks/avoid-pypi-usage.yml
 
@@ -220,6 +244,15 @@ steps:
             baseImageType: ${{ baseimgType }}
             imageVersion: ${{ parameters.baseimgVersion }}
             azureLinuxVersion: ${{ parameters.baseimgAzureLinuxVersion }}
+        # For dev builds, the RPMs are not necessarily published, so download them here. The
+        # parameter is set based on a runtime variable, so we cannot use ${{ if }}, so the
+        # template is always run and contains logic to skip if not needed.
+        - template: common/rpms-download-template.yaml@platform-pipelines
+          parameters:
+            rpmsVersion: ${{ parameters.rpmsVersion }}
+            azureLinuxVersion: ${{ parameters.baseimgAzureLinuxVersion }}
+            runtimeBuildType: ${{ parameters.baseimgBuildType }}
+
       - ${{ else }}:
         # Download the AZL4 base VHDX from the preview gallery's backing storage.
         # Authenticates via the federated identity attached to the service
@@ -242,15 +275,6 @@ steps:
                   --blob-storage-account "${{ parameters.blobStorageAccount }}" \
                   --blob-container "${{ parameters.blobContainer }}"
               ls -la artifacts/azl4_qemu_guest.vhdx
-
-  # For dev builds, the RPMs are not necessarily published, so download them here. The
-  # parameter is set based on a runtime variable, so we cannot use ${{ if }}, so the
-  # template is always run and contains logic to skip if not needed.
-  - template: common/rpms-download-template.yaml@platform-pipelines
-    parameters:
-      rpmsVersion: ${{ parameters.rpmsVersion }}
-      azureLinuxVersion: ${{ parameters.baseimgAzureLinuxVersion }}
-      runtimeBuildType: ${{ parameters.baseimgBuildType }}
 
   - bash: |
       set -ex
