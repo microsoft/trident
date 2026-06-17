@@ -22,8 +22,12 @@ def list_configs(
     *, configs: List[ImageConfig], filter_type: Optional[str] = None
 ) -> None:
     for config in configs:
-        if filter_type is None or config.output_format.ext() == filter_type:
+        if filter_type is None:
             print(config.name)
+
+        for output_format in config.output_and_config:
+            if filter_type == output_format.ext():
+                print(config.name)
 
 
 def list_files(*, configs: List[ImageConfig], output_dir: Path) -> None:
@@ -82,6 +86,7 @@ def build(
     artifacts: ArtifactManifest,
     configs: List[ImageConfig],
     name: str,
+    output_type: Optional[str],
     container_name: str,
     output_dir: Path,
     clones: int,
@@ -92,6 +97,16 @@ def build(
 ) -> None:
     image = find_image(configs, name)
     log.info(f"Building image '{image.name}'")
+
+    if output_type is not None:
+        image.set_output_type(output_type)
+        log.info(
+            f"Building image with output type '{image.runtime_output_format.ic_name()}'"
+        )
+    else:
+        log.info(
+            f"Building image with default output type '{image.output_format().ic_name()}'"
+        )
 
     container_image: Optional[str] = container_name
     if container_image is None:

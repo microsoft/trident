@@ -13,7 +13,6 @@ from builder import (
     run,
 )
 
-
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("trident-testimages")
 
@@ -117,6 +116,12 @@ def setup_parser_build(
 
     parser_build.add_argument(
         "image", help="The image to build", choices=[c.name for c in configs]
+    )
+    parser_build.add_argument(
+        "--output-type",
+        default=None,
+        type=str,
+        help="Specify output type for image configs. if unspecified, the first output type defined in the image config will be used",
     )
     parser_build.add_argument(
         "--output-dir",
@@ -276,6 +281,7 @@ def run_cmd(
             artifacts=args.artifacts,
             configs=configs,
             name=args.image,
+            output_type=args.output_type,
             container_name=args.container,
             output_dir=args.output_dir,
             clones=args.clones,

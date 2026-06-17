@@ -155,7 +155,9 @@ class ImageConfig:
     requires_dhcp: bool = False
 
     # Desired output format for this image
-    output_format: OutputFormat = OutputFormat.COSI
+    output_and_config: dict[OutputFormat, str] = field(
+        default_factory=lambda: {OutputFormat.COSI: "base/baseimg.yaml"}
+    )
 
     # Extra dependencies for this image
     extra_dependencies: List[Path] = field(default_factory=list)
@@ -173,6 +175,9 @@ class ImageConfig:
     # Use ImageCustomizer convert command rather than customize
     image_customizer_convert: bool = False
 
+    # Runtime variable used to configure output format
+    runtime_output_format: Optional[OutputFormat] = None
+
     @classmethod
     def kebab_fields(cls) -> List[str]:
         """Return a list of fields in kebab-case."""
@@ -188,8 +193,10 @@ class ImageConfig:
             self.ssh_key = Path(self.ssh_key)
 
         # Update config_file to be a Path object if it's a string
-        if isinstance(self.config_file, str):
-            self.config_file = Path(self.config_file)
+        for fmt in self.output_and_config:
+            config_file = self.output_and_config[fmt]
+            if isinstance(config_file, str):
+                self.output_and_config[fmt] = Path(config_file)
 
         # Automatically set the architecture to arm64 if the base image is ARM64
         if self.base_image == BaseImage.CORE_ARM64:
@@ -214,8 +221,16 @@ class ImageConfig:
     def base_dir(self) -> Path:
         return Path(self.source) / self.config
 
+    def output_format(self) -> OutputFormat:
+        if self.runtime_output_format is not None:
+            return self.runtime_output_format
+        return next(iter(self.output_and_config))
+
+    def config_path(self) -> str:
+        return self.output_and_config[self.output_format()]
+
     def full_yaml_path(self) -> Path:
-        return self.base_dir() / self.config_file
+        return self.base_dir() / self.config_path()
 
     def dependencies(self) -> List[Path]:
         deps = [self.base_image.path]
@@ -238,7 +253,7 @@ class ImageConfig:
         """
         Returns the file name for the image.
         """
-        return f"{self.id}.{self.output_format.ext()}"
+        return f"{self.id}.{self.output_format().ext()}"
 
     def file_name_unsigned_raw(self) -> str:
         """Returns the file name for the unsigned raw image."""
@@ -253,6 +268,16 @@ class ImageConfig:
         if self.suffix is None:
             return self.name
         return f"{self.name}_{self.suffix}"
+
+    def set_output_type(self, output_type: str) -> None:
+        """Set the runtime output type based on a string."""
+        try:
+            self.runtime_output_format = OutputFormat(output_type)
+        except ValueError as e:
+            valid_formats = ", ".join([fmt.value for fmt in OutputFormat])
+            raise ValueError(
+                f"Invalid output type '{output_type}'. Valid options are: {valid_formats}"
+            ) from e
 
     def get_output_artifacts_dir(self) -> Optional[str]:
         """
