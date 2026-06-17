@@ -164,6 +164,8 @@ steps:
               --blob-storage-account "${{ parameters.blobStorageAccount }}" \
               --blob-container "${{ parameters.blobContainer }}"
           ls -la artifacts/azl4_qemu_guest.vhdx
+          mkdir -p $(Build.ArtifactStagingDirectory)/images
+          mv artifacts/azl4_qemu_guest.vhdx $(Build.ArtifactStagingDirectory)/images/
 
   - bash: |
       set -ex
