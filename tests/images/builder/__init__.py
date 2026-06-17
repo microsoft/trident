@@ -227,7 +227,13 @@ class ImageConfig:
         return next(iter(self.output_and_config))
 
     def config_path(self) -> str:
-        return self.output_and_config[self.output_format()]
+        output_type = self.output_format().ext()
+        for fmt in self.output_and_config:
+            if fmt.ext() == output_type:
+                return self.output_and_config[fmt]
+        raise RuntimeError(
+            f"Error loading image config for output format '{output_type}': '{self.output_and_config}'"
+        )
 
     def full_yaml_path(self) -> Path:
         return self.base_dir() / self.config_path()
