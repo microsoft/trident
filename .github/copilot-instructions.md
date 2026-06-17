@@ -45,26 +45,136 @@ is not a license to ignore the rule in new code.
 
 ### Imports
 
-1. **Order groups, separated by a single blank line:** (1) `std`, (2) external
-   crates, (3) other workspace crates (e.g. `osutils`, `sysdefs`, `trident_api`,
-   `trident-proto`), (4) `crate::`, (5) `super::`. Inside a single group, keep
-   `use` lines alphabetical by path.
-2. **Test modules:** the very first import inside `mod tests { … }` is
-   `use super::*;` on its own line, followed by a blank line, then the standard
-   import groups above.
-3. **Uppercase identifiers — import directly.** Types, enums, traits,
+1. **One `use` statement per top-level path, with a brace-tree for everything
+   under it.** Never write two `use` lines that share a root:
+
+    ```rust
+    // BAD
+    use std::fs;
+    use std::path::PathBuf;
+
+    // GOOD
+    use std::{fs, path::PathBuf};
+    ```
+
+    So the `std` block is a single `use std::{…};`, each external crate is a
+    single `use somecrate::{…};`, each workspace-local crate is a single
+    `use workspacecrate::{…};`, and `crate::` and `super::` each get exactly
+    one `use` per group.
+
+2. **File ordering of imports.** Order the top-of-file import region in groups
+   separated by a single blank line, alphabetical within each group:
+    1. `use std::{…};`
+    2. external crates (`anyhow`, `serde`, `tokio`, …)
+    3. workspace-local crates (`osutils`, `sysdefs`, `trident_api`,
+       `trident-proto`, …)
+    4. `use crate::{…};`
+    5. `use super::{…};`
+
+    Then a blank line, then **submodule declarations**:
+
+    ```rust
+    mod mysubmodule;
+    mod othermodule;
+    ```
+
+    Then, **only when necessary**, submodule imports:
+
+    ```rust
+    use mysubmodule::Foo;
+    use othermodule::bar;
+    ```
+
+    A full example:
+
+    ```rust
+    use std::{collections::HashMap, path::PathBuf};
+
+    use anyhow::{Context, Error};
+    use log::{debug, info};
+
+    use osutils::{files, mountpoint};
+    use trident_api::error::{TridentError, TridentResultExt};
+
+    use crate::engine::EngineContext;
+
+    use super::Subsystem;
+
+    mod inner;
+    mod helpers;
+
+    use inner::InnerThing;
+    ```
+
+3. **Test modules:** the very first line inside `mod tests { … }` is
+   `use super::*;` on its own, followed by a blank line and then the standard
+   import groups above (rules 1 and 2).
+4. **Uppercase identifiers — import directly.** Types, enums, traits,
    structs: `use foo::Bar;` → `Bar::new(…)`.
-4. **Lowercase identifiers (free functions) — import the parent module, not the
+5. **Lowercase identifiers (free functions) — import the parent module, not the
    function.** `use osutils::files;` → `files::write(…)`, **not**
    `use osutils::files::write;` → `write(…)`. This keeps call sites
    self-documenting and avoids name collisions.
-5. **Macros — import directly**, even though their names are lowercase:
+6. **Macros — import directly**, even though their names are lowercase:
    `use anyhow::{bail, ensure};` → `bail!(…)`, never `anyhow::bail!(…)` at the
    call site. Same for `log::{debug, info, warn, error, trace}`.
+7. **Strictly prefer imports over full paths at the call site.** Never:
+
+    ```rust
+    // BAD
+    let a = std::submodule::Type::new(...);
+    ```
+
+    Always:
+
+    ```rust
+    use std::submodule::Type;
+    // …
+    let a = Type::new(...);
+    ```
+
+    When two imports would collide on the same name, prefer a sensible
+    `use … as …` alias over reaching for a full path — e.g. when multiple
+    `Context` types are in scope, `use tera::Context as TeraCtx;` and then
+    `TeraCtx::new(…)` at the call site. There is no fixed naming scheme for
+    aliases; pick a short, locally-readable name case by case. Reach for a
+    fully-qualified path only when even an alias would be misleading
+    (e.g. a one-off use where the full path is the clearest documentation).
+
+8. **When a crate provides its own `Result` alias and a file uses it more
+   than ~5 times, prefer importing the alias.** Example: in a file doing a
+   lot of IO,
+
+    ```rust
+    use std::io::Result as IoResult;
+
+    fn my_func() -> IoResult<Type> { … }
+    ```
+
+    over
+
+    ```rust
+    fn my_func() -> Result<Type, IoError> { … }
+    ```
+
+    For imports that overload language primitives (`Result`, `Error`,
+    `Option`), always alias — never shadow the prelude name in a `use`
+    without an `as`. Alias naming is case-by-case (`IoResult`, `TeraCtx`, …).
+
+    **Exception: `anyhow`.** Trident handles `anyhow` errors explicitly —
+    import `anyhow::Error` and spell `Result<T, Error>` out:
+
+    ```rust
+    use anyhow::Error;
+
+    fn my_fn() -> Result<T, Error> { … }
+    ```
+
+    Don't alias `anyhow::Result`.
 
 ### Visibility & module layout
 
-6. **Default to the strictest visibility that compiles.** New items start
+9. **Default to the strictest visibility that compiles.** New items start
    private (`fn`, `struct`), graduate to `pub(super)`, then `pub(crate)`, and
    only become `pub` when they intentionally cross the crate boundary. Be
    especially skeptical of `pub` that creates a dependency between distant
@@ -73,53 +183,53 @@ is not a license to ignore the rule in new code.
 
 ### Error handling
 
-7. **Domain errors are `thiserror` enums in `trident_api::error`** (e.g.
-   `InitializationError`, `InvalidInputError`, `ServicingError`,
-   `InternalError`). Prefer adding a variant to an existing enum over
-   introducing a new one. Variants use `#[serde(rename_all = "kebab-case")]` on
-   the enum and a clear `#[error("…")]` message.
-8. **Lift `anyhow`/`Result<_, E>` into `TridentError` with
-   `.structured(<ErrorKind>)`** and attach human context with `.message("…")`
-   (both from `TridentResultExt`/`ReportError`). Once a result is a
-   `TridentError`, prefer `.message(…)` over `.context(…)`.
-9. **`anyhow::Result` is fine in helper modules** (`osutils`, subsystem
-   internals) whose callers handle errors with `anyhow` already. Don't return
-   `anyhow::Error` from APIs whose callers need to discriminate variants —
-   return a structured `TridentError` so the variant is preserved end-to-end.
-10. **Avoid `unwrap()`/`expect()`/`panic!` in non-test code.** Accepted
+10. **Domain errors are `thiserror` enums in `trident_api::error`** (e.g.
+    `InitializationError`, `InvalidInputError`, `ServicingError`,
+    `InternalError`). Prefer adding a variant to an existing enum over
+    introducing a new one. Variants use `#[serde(rename_all = "kebab-case")]` on
+    the enum and a clear `#[error("…")]` message.
+11. **Lift `anyhow`/`Result<_, E>` into `TridentError` with
+    `.structured(<ErrorKind>)`** and attach human context with `.message("…")`
+    (both from `TridentResultExt`/`ReportError`). Once a result is a
+    `TridentError`, prefer `.message(…)` over `.context(…)`.
+12. **`anyhow::Result` is fine in helper modules** (`osutils`, subsystem
+    internals) whose callers handle errors with `anyhow` already. Don't return
+    `anyhow::Error` from APIs whose callers need to discriminate variants —
+    return a structured `TridentError` so the variant is preserved end-to-end.
+13. **Avoid `unwrap()`/`expect()`/`panic!` in non-test code.** Accepted
     patterns: (a) lift to `TridentError` via `.structured(…).message(…)`;
     (b) `.expect("invariant: …")` documenting a static invariant.
-11. **Use `anyhow::Context` to build informative error chains** when each layer
+14. **Use `anyhow::Context` to build informative error chains** when each layer
     adds genuinely new information (which subject failed, which path, which
     iteration). It is **not** required at every `?` — redundant context like
     `.context("failed to do thing")` on a function literally named `do_thing`
     is noise. The point is to make authors think about whether the next reader
     of the error can reconstruct what went wrong.
-12. **When context is a `format!(...)`, use `.with_context(|| format!(…))`
+15. **When context is a `format!(...)`, use `.with_context(|| format!(…))`
     instead of `.context(format!(…))`** so the string is only built on the
     error path. Plain string literals stay on `.context("…")`.
 
 ### Logging
 
-13. **Use the `log` crate** (`use log::{debug, info, warn, error, trace};`) for
+16. **Use the `log` crate** (`use log::{debug, info, warn, error, trace};`) for
     application logging. `tracing` is reserved for the existing
     `tracestream`/journald wiring — don't introduce new `tracing::info!`
     callsites in code that's already using `log`.
 
 ### Tests
 
-14. **Inline `#[cfg(test)] mod tests { … }`** at the bottom of the file under
+17. **Inline `#[cfg(test)] mod tests { … }`** at the bottom of the file under
     test (vs. separate `tests/` files), unless the test crosses crate
     boundaries.
-15. **Prefer `.unwrap()`/`.unwrap_err()` over `assert!(x.is_ok())` /
+18. **Prefer `.unwrap()`/`.unwrap_err()` over `assert!(x.is_ok())` /
     `assert!(x.is_err())`** — the panic surfaces the underlying error.
     For variant assertions: `assert!(matches!(err, ErrorKind::Foo { .. }), "got {err:?}")`.
-16. **Use `indoc!`/`formatdoc!` for multi-line literals** in tests; both are
+19. **Use `indoc!`/`formatdoc!` for multi-line literals** in tests; both are
     already on the workspace dep list.
 
 ### Serde / config types (`trident_api::config`)
 
-17. **Public config types derive `Serialize, Deserialize, Debug, Default,
+20. **Public config types derive `Serialize, Deserialize, Debug, Default,
 Clone, PartialEq, Eq`** (in that ordering when adding new ones) and use
     `deny_unknown_fields`. **Casing convention:** structs use
     `#[serde(rename_all = "camelCase", deny_unknown_fields)]` for their fields;
@@ -128,40 +238,52 @@ Clone, PartialEq, Eq`** (in that ordering when adding new ones) and use
     e.g. status / RPC payloads.) Optional fields:
     `#[serde(default, skip_serializing_if = "Option::is_none")]`. Non-Option
     defaults: `#[serde(default, skip_serializing_if = "is_default")]`.
-18. **Gate `JsonSchema` behind the `schemars` feature:**
+21. **Gate `JsonSchema` behind the `schemars` feature:**
     `#[cfg_attr(feature = "schemars", derive(JsonSchema))]`, with the import
     `#[cfg(feature = "schemars")] use schemars::JsonSchema;`.
 
 ### Cargo & workspace hygiene
 
-19. **All third-party deps come from `[workspace.dependencies]`** — every
+22. **All third-party deps come from `[workspace.dependencies]`** — every
     crate's `Cargo.toml` says `foo = { workspace = true }`, never an inline
     version. New deps are added to the root `Cargo.toml` first.
-20. **Workspace-local deps use a `path = "..."` reference** (see existing
+23. **Workspace-local deps use a `path = "..."` reference** (see existing
     `# Local Crate Dependencies` blocks).
 
 ### Misc Rust idioms
 
-21. **Inline format args** (`format!("{name}")`, `info!("done: {count}")`) over
+24. **Inline format args** (`format!("{name}")`, `info!("done: {count}")`) over
     positional (`format!("{}", name)`). Fall back to positional only when the
     expression isn't a bare identifier or a simple `expr.field` /
     `expr.method()`.
-22. **Prefer `impl AsRef<Path>` over `&Path` / `&PathBuf`** for function
+25. **Prefer `impl AsRef<Path>` over `&Path` / `&PathBuf`** for function
     arguments that just need to read a path, unless there is a concrete reason
     not to (e.g. you actually need a `&Path` to feed a sibling API in a hot
     loop, or you want to deliberately constrain callers). Same principle for
     `impl AsRef<str>` / `impl AsRef<[u8]>` where appropriate. Inside the
     function body, immediately bind once: `let path = path.as_ref();`.
-23. **No magic numbers or magic strings.** Names like `0o755`, `300`,
+26. **No magic numbers or magic strings.** Names like `0o755`, `300`,
     `"/etc/trident/datastore"`, `"trident-overlay"` should be `const`s with
     explanatory names, scoped as tightly as the use justifies. Module-local
     constants live at the top of the file; cross-module constants belong in
     `trident_api::constants` (or `osutils::*`'s relevant module). Reach for
     `trident_api::constants::internal_params::*` for tunables that are also
     surfaced as host-config knobs.
-24. **Comments explain _why_, not _what_.** A doc that restates the function
+27. **Comments explain _why_, not _what_.** A doc that restates the function
     name is noise; a doc that names the invariant or links to the relevant
     design section is signal.
+28. **Aim for shorter expressions that remain readable.** Prefer a sensible
+    `match` over nested `if`/`else if` chains, especially when branching on
+    multiple values at once (`match (a, b) { … }`). Lean on iterators
+    (`.iter().filter().map().collect()`) when they're clearer than a manual
+    loop, but prefer loops when an iterator chain would become too cumbersome
+    or cryptic and a loop provides a more self-documenting solution. Reduce
+    duplication with a local closure (`let normalize = |s: &str| …;`) instead
+    of repeating a 3-line block four times. Avoid verbose blocks that can be
+    expressed more succinctly — but stop short of cleverness that hurts the
+    next reader (one-line iterator chains with side effects, deeply nested
+    closures). The bar is: a reasonable reviewer should read the code at
+    roughly the same speed as a more verbose version, with fewer tokens to skim.
 
 ## Architecture & structural soundness
 
