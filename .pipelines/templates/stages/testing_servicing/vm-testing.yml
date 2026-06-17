@@ -113,6 +113,7 @@ stages:
                   label: "grub-azl4-base"
                   makeTarget: "artifacts/trident-vm-grub-testimage-azl4.qcow2"
                   baseimgAzlVersion: "4.0-preview"
+                  baseimgType: qemu_guest
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
                   useStagedSshKeys: true
@@ -122,6 +123,7 @@ stages:
                   label: "grub-azl4-update-a"
                   makeTarget: "artifacts/trident-vm-grub-testimage-azl4.cosi"
                   baseimgAzlVersion: "4.0-preview"
+                  baseimgType: qemu_guest
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
                   useStagedSshKeys: true
@@ -131,6 +133,7 @@ stages:
                   label: "grub-azl4-update-b"
                   makeTarget: "artifacts/trident-vm-grub-testimage-azl4.cosi"
                   baseimgAzlVersion: "4.0-preview"
+                  baseimgType: qemu_guest
                   micBuildType: ${{ parameters.micBuildType }}
                   micVersion: ${{ parameters.micVersion }}
                   useStagedSshKeys: true
