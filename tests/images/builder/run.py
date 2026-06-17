@@ -3,7 +3,7 @@ from pathlib import Path
 import json
 from typing import List, Optional
 
-from builder import ImageConfig, RpmSources, ArtifactManifest, OutputFormat
+from builder import ArtifactManifest, BlobImageManifest, ImageConfig, RpmSources
 from .builder import build_image
 from .convert import convert_image
 from . import download
@@ -22,12 +22,8 @@ def list_configs(
     *, configs: List[ImageConfig], filter_type: Optional[str] = None
 ) -> None:
     for config in configs:
-        if filter_type is None:
+        if filter_type is None or config.output_format.ext() == filter_type:
             print(config.name)
-
-        for output_format in config.output_and_config:
-            if filter_type == output_format.ext():
-                print(config.name)
 
 
 def list_files(*, configs: List[ImageConfig], output_dir: Path) -> None:
@@ -35,11 +31,7 @@ def list_files(*, configs: List[ImageConfig], output_dir: Path) -> None:
         print(output_dir / config.file_name())
 
 
-def list_dependencies(
-    *,
-    configs: List[ImageConfig],
-    name: str,
-) -> None:
+def list_dependencies(*, configs: List[ImageConfig], name: str) -> None:
     image = find_image(configs, name)
     for dep in image.dependencies():
         print(dep)
@@ -90,7 +82,6 @@ def build(
     artifacts: ArtifactManifest,
     configs: List[ImageConfig],
     name: str,
-    output_type: Optional[str],
     container_name: str,
     output_dir: Path,
     clones: int,
@@ -101,16 +92,6 @@ def build(
 ) -> None:
     image = find_image(configs, name)
     log.info(f"Building image '{image.name}'")
-
-    if output_type is not None:
-        image.set_output_type(output_type)
-        log.info(
-            f"Building image with output type '{image.runtime_output_format.ic_name()}'"
-        )
-    else:
-        log.info(
-            f"Building image with default output type '{image.output_format().ic_name()}'"
-        )
 
     container_image: Optional[str] = container_name
     if container_image is None:
@@ -123,7 +104,7 @@ def build(
             container_image,
             image.id,
             image.base_image.path,
-            image.output_format().ic_name(),
+            image.output_format.ic_name(),
             output_dir / image.file_name(),
             image_architecture,
             dry_run,
@@ -167,6 +148,8 @@ def download_base_image(
     *,
     artifacts: ArtifactManifest,
     name: str,
+    blob_storage_account: Optional[str] = None,
+    blob_container: Optional[str] = None,
 ) -> None:
     image_manifest = next(
         (img for img in artifacts.base_images if img.image.name == name), None
@@ -174,7 +157,15 @@ def download_base_image(
     if image_manifest is None:
         raise ValueError(f"Image '{name}' not found in artifacts")
     log.info(f"Downloading base image '{name}' to '{image_manifest.image.path}'")
-    download.download_base_image(image_manifest)
+
+    if isinstance(image_manifest, BlobImageManifest):
+        download.download_blob_image(
+            image_manifest,
+            storage_account=blob_storage_account,
+            container=blob_container,
+        )
+    else:
+        download.download_base_image(image_manifest)
 
 
 def generate_matrix(
