@@ -63,6 +63,7 @@ parameters:
     values:
       - "2.0"
       - "3.0"
+      - "4.0-preview"
     default: "3.0"
 
   - name: baseimgTypes
