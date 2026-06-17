@@ -213,12 +213,35 @@ steps:
         displayName: "Download Base Image - ${{ baseimgType }}"
 
     - ${{ else }}:
-      - template: common/base-images-download-template.yaml@platform-pipelines
-        parameters:
-          buildType: ${{ parameters.baseimgBuildType }}
-          baseImageType: ${{ baseimgType }}
-          imageVersion: ${{ parameters.baseimgVersion }}
-          azureLinuxVersion: ${{ parameters.baseimgAzureLinuxVersion }}
+      - ${{ if ne(parameters.azureLinuxVersion, '4.0-preview') }}:
+        - template: common/base-images-download-template.yaml@platform-pipelines
+          parameters:
+            buildType: ${{ parameters.baseimgBuildType }}
+            baseImageType: ${{ baseimgType }}
+            imageVersion: ${{ parameters.baseimgVersion }}
+            azureLinuxVersion: ${{ parameters.baseimgAzureLinuxVersion }}
+      - ${{ else }}:
+        # Download the AZL4 base VHDX from the preview gallery's backing storage.
+        # Authenticates via the federated identity attached to the service
+        # connection — no storage keys handled here.
+        #
+        # The SC's default subscription (Polar_ImageTools_Staging) differs from
+        # the storage account's subscription (ControlTower_Test). We must switch
+        # context so `az storage blob list` resolves the account correctly.
+        - task: AzureCLI@2
+          displayName: "Download AZL4 base VHDX from blob"
+          inputs:
+            azureSubscription: ${{ parameters.blobServiceConnection }}
+            scriptType: bash
+            scriptLocation: inlineScript
+            workingDirectory: ${{ parameters.tridentSourceDirectory }}
+            inlineScript: |
+              set -euxo pipefail
+              az account set --subscription "${{ parameters.blobSubscription }}"
+              python3 ./tests/images/testimages.py download-image azl4_qemu_guest \
+                  --blob-storage-account "${{ parameters.blobStorageAccount }}" \
+                  --blob-container "${{ parameters.blobContainer }}"
+              ls -la artifacts/azl4_qemu_guest.vhdx
 
   # For dev builds, the RPMs are not necessarily published, so download them here. The
   # parameter is set based on a runtime variable, so we cannot use ${{ if }}, so the
