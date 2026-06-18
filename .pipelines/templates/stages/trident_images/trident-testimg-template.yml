@@ -278,6 +278,32 @@ steps:
               mkdir -p $(Build.ArtifactStagingDirectory)/images
               mv artifacts/azl4_qemu_guest.vhdx $(Build.ArtifactStagingDirectory)/images/
               ls -la $(Build.ArtifactStagingDirectory)/images/azl4_qemu_guest.vhdx
+      # Stage the Trident binary that gets baked into the COSI via additionalFiles.
+      # The trident-binaries artifact comes from the same upstream Trident build
+      # stage the AZL3 path uses; we just copy the binary rather than installing
+      # an RPM.
+      #
+      # TODO(azl4-rpm): replace this binary copy with an RPM install once the
+      # trident-service RPM is packaged for AZL4 (same TODO as in
+      # tests/images/testimages.py registration).
+      - bash: |
+          set -euxo pipefail
+          TRIDENT_BIN_SRC="$(Build.ArtifactStagingDirectory)/trident-binaries"
+          TRIDENT_BIN_DEST="${{ parameters.tridentSourceDirectory }}/tests/images/trident-vm-testimage/base/trident-bin"
+
+          if [ ! -f "$TRIDENT_BIN_SRC/trident" ]; then
+            echo "trident binary not found at $TRIDENT_BIN_SRC/trident"
+            echo "Available artifacts:"
+            find "$TRIDENT_BIN_SRC" -type f 2>/dev/null | head -20 || true
+            exit 1
+          fi
+
+          mkdir -p "$TRIDENT_BIN_DEST"
+          cp "$TRIDENT_BIN_SRC/trident" "$TRIDENT_BIN_DEST/trident"
+          chmod +x "$TRIDENT_BIN_DEST/trident"
+          file "$TRIDENT_BIN_DEST/trident"
+        displayName: "Stage Trident binary into testimage tree"
+        workingDirectory: ${{ parameters.tridentSourceDirectory }}
 
   - bash: |
       set -ex
