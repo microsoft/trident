@@ -288,7 +288,7 @@ steps:
       # tests/images/testimages.py registration).
       - bash: |
           set -euxo pipefail
-          TRIDENT_BIN_SRC="$(Build.ArtifactStagingDirectory)/trident-binaries"
+          TRIDENT_BIN_SRC="$(Build.ArtifactStagingDirectory)/trident"
           TRIDENT_BIN_DEST="${{ parameters.tridentSourceDirectory }}/tests/images/trident-vm-testimage/base/trident-bin"
 
           if [ ! -f "$TRIDENT_BIN_SRC/trident" ]; then
