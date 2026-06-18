@@ -6,10 +6,18 @@ from pathlib import Path
 from typing import List, Optional, Union
 
 
+class Distro(Enum):
+    AZL3 = "azl3"
+    AZL4 = "azl4"
+    OTHER = "other"
+
+
 @dataclass
 class BaseImageData:
     name: str
     path: Path
+    mcr_name: Optional[str] = None
+    distro: Distro = Distro.AZL3
 
 
 class BaseImage(Enum):
@@ -19,25 +27,28 @@ class BaseImage(Enum):
     AZL4_QEMU_GUEST = BaseImageData(
         "azl4_qemu_guest", Path("artifacts/azl4_qemu_guest.vhdx")
     )
+    # AZL4_CORE = BaseImageData(
+    #     "azl4_core", Path("artifacts/azl4_core.vhdx"), "core", Distro.AZL4
+    # )
     CORE_ARM64 = BaseImageData("core_arm64", Path("artifacts/core_arm64.vhdx"))
     MINIMAL = BaseImageData("minimal", Path("artifacts/minimal.vhdx"))
     MINIMAL_AARCH64 = BaseImageData(
         "minimal_aarch64", Path("artifacts/minimal_aarch64.vhdx")
     )
     UBUNTU_2204_AMD64 = BaseImageData(
-        "ubuntu_2204_amd64", Path("artifacts/ubuntu_2204_amd64.vhdx")
+        "ubuntu_2204_amd64", Path("artifacts/ubuntu_2204_amd64.vhdx"), Distro.OTHER
     )
     UBUNTU_2204_ARM64 = BaseImageData(
-        "ubuntu_2204_arm64", Path("artifacts/ubuntu_2204_arm64.vhdx")
+        "ubuntu_2204_arm64", Path("artifacts/ubuntu_2204_arm64.vhdx"), Distro.OTHER
     )
     UBUNTU_2404_AMD64 = BaseImageData(
-        "ubuntu_2404_amd64", Path("artifacts/ubuntu_2404_amd64.vhdx")
+        "ubuntu_2404_amd64", Path("artifacts/ubuntu_2404_amd64.vhdx"), Distro.OTHER
     )
     UBUNTU_2404_ARM64 = BaseImageData(
-        "ubuntu_2404_arm64", Path("artifacts/ubuntu_2404_arm64.vhdx")
+        "ubuntu_2404_arm64", Path("artifacts/ubuntu_2404_arm64.vhdx"), Distro.OTHER
     )
     GB200_2404_ARM64 = BaseImageData(
-        "gb200_2404_arm64", Path("artifacts/gb200_2404_arm64.vhdx")
+        "gb200_2404_arm64", Path("artifacts/gb200_2404_arm64.vhdx"), Distro.OTHER
     )
 
     @property
@@ -46,6 +57,12 @@ class BaseImage(Enum):
 
     @property
     def name(self) -> str:
+        return self.value.name
+
+    @property
+    def mcr_name(self) -> str:
+        if self.value.mcr_name is not None:
+            return self.value.mcr_name
         return self.value.name
 
     def __str__(self) -> str:
@@ -57,6 +74,7 @@ class BaseImageManifest:
     image: BaseImage
     package_name: str
     version: str
+    distro: Distro = Distro.AZL3
     org: str = "https://dev.azure.com/mariner-org/"
     project: str = "36d030d6-1d99-4ebd-878b-09af1f4f722f"
     feed: str = "AzureLinuxArtifacts"

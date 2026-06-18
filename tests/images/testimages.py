@@ -8,6 +8,7 @@ from builder import (
     BaseImage,
     BaseImageManifest,
     BlobImageManifest,
+    Distro,
     ImageConfig,
     OutputFormat,
     SystemArchitecture,
@@ -276,6 +277,12 @@ ARTIFACTS = ArtifactManifest(
             package_name="minimal_vhdx-3.0-stable",
             version="*",
         ),
+        # BaseImageManifest(
+        #     image=BaseImage.AZL4_CORE,
+        #     package_name="core_vhdx-4.0-stable",
+        #     version="*",
+        #     distro=Distro.AZL4,
+        # ),
         BlobImageManifest(
             # Azure Linux 4.0 base VHDX from the AZL preview gallery's
             # backing storage. Pinned to a specific daily build — bump

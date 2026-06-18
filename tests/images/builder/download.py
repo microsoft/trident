@@ -7,19 +7,26 @@ import shutil
 import subprocess
 import tempfile
 
-from builder import BaseImageManifest, BlobImageManifest
+from builder import BaseImageManifest, BlobImageManifest, Distro
 
 log = logging.getLogger(__name__)
 
 
 def download_base_image(image: BaseImageManifest) -> None:
+    if image.distro not in (Distro.AZL3, Distro.AZL4):
+        raise ValueError(f"Unsupported distro {image.distro} for base image download")
     """Download the base image from MCR."""
     with tempfile.TemporaryDirectory() as tempdir:
+        url = (
+            f"mcr.microsoft.com/azurelinux-beta/base/{image.image.mcr_name}:4.0"
+            if image.distro == Distro.AZL4
+            else f"mcr.microsoft.com/azurelinux/3.0/image/{image.image.name}:latest"
+        )
         subprocess.run(
             [
                 "oras",
                 "pull",
-                f"mcr.microsoft.com/azurelinux/3.0/image/{image.image.name}:latest",
+                url,
                 "--output",
                 tempdir,
                 "--platform",
