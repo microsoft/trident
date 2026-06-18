@@ -232,7 +232,7 @@ impl NewrootMount {
                         && fs_type == Some(RealFilesystemType::Btrfs)
                         && block_device.fsuuid.as_ref() == Some(collision_uuid)
                     {
-                        let active_usr = Path::new("/usr");
+                        let active_usr = Path::new(USR_MOUNT_POINT_PATH);
                         warn!(
                             "Block device '{}' has BTRFS filesystem UUID '{}' which collides \
                              with the active ACL USR partition. Bind-mounting '{}' to '{}' instead.",
@@ -415,8 +415,8 @@ fn detect_acl_btrfs_uuid_collision(
     staging_usr_roothash: Option<&str>,
 ) -> Result<Option<OsUuid>, Error> {
     let (active_partuuid, update_partuuid) = match update_volume {
-        AbVolumeSelection::VolumeA => (acl::USR_B_PARTUUID, acl::USR_A_PARTUUID),
-        AbVolumeSelection::VolumeB => (acl::USR_A_PARTUUID, acl::USR_B_PARTUUID),
+        AbVolumeSelection::VolumeA => (acl::ACL_USR_B_PARTUUID, acl::ACL_USR_A_PARTUUID),
+        AbVolumeSelection::VolumeB => (acl::ACL_USR_A_PARTUUID, acl::ACL_USR_B_PARTUUID),
     };
 
     let active_path = block_devices::part_uuid_path(active_partuuid);
