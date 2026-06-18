@@ -12,8 +12,6 @@ use trident_api::config::{LoadMode, Module};
 
 use crate::OsModifierContext;
 
-use osutils::files::atomic_write_file;
-
 const MODULES_LOAD_DIR: &str = "/etc/modules-load.d";
 const MODULES_LOAD_CONF: &str = "/etc/modules-load.d/modules-load.conf";
 const MODPROBE_DIR: &str = "/etc/modprobe.d";
@@ -186,7 +184,8 @@ fn write_config(path: &std::path::Path, lines: &[String]) -> Result<(), Error> {
         s.push('\n');
         s
     };
-    atomic_write_file(path, &content)
+    fs::write(path, &content)
+        .with_context(|| format!("Failed to write config to '{}'", path.display()))
 }
 
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]

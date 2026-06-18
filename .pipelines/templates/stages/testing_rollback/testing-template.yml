@@ -25,6 +25,7 @@ parameters:
     type: string
     values:
       - qemu-grub
+      - grubazl4
       - qemu
       - uki
 

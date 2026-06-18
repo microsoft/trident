@@ -40,6 +40,7 @@ parameters:
     displayName: Image flavor
     type: string
     values:
+      - grubazl4
       - qemu
       - azure
       - uki

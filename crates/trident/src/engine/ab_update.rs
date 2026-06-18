@@ -145,7 +145,6 @@ pub(crate) fn finalize_update(
         spec: state.host_status().spec.clone(),
         spec_old: state.host_status().spec_old.clone(),
         servicing_type: ServicingType::AbUpdate,
-        is_stream_image: false,
         ab_active_volume: state.host_status().ab_active_volume,
         partition_paths: state.host_status().partition_paths.clone(),
         disk_uuids: state.host_status().disk_uuids.clone(),

@@ -130,11 +130,6 @@ impl Subsystem for OsConfigSubsystem {
 
     #[tracing::instrument(name = "osconfig_provision", skip_all)]
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
-        if ctx.is_stream_image {
-            debug!("Skipping OS config provisioning during stream-image");
-            return Ok(());
-        }
-
         if ctx.servicing_type == ServicingType::AbUpdate {
             // Copy the current machine-id to the target root mount point to
             // preserve machine identity across servicing.
@@ -160,11 +155,6 @@ impl Subsystem for OsConfigSubsystem {
 
     #[tracing::instrument(name = "osconfig_configuration", skip_all)]
     fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        if ctx.is_stream_image {
-            debug!("Skipping OS configuration during stream-image");
-            return Ok(());
-        }
-
         if ctx.is_uki()? && ctx.storage_graph.root_fs_is_verity() {
             error!("Skipping OS configuration changes requested in Host Configuration because UKI root-verity is in use.");
             return Ok(());
@@ -321,11 +311,6 @@ impl Subsystem for MosConfigSubsystem {
     }
 
     fn prepare(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        if ctx.is_stream_image {
-            debug!("Skipping MOS config preparation during stream-image");
-            return Ok(());
-        }
-
         if ctx.servicing_type != ServicingType::CleanInstall {
             debug!(
                 "Skipping step 'Prepare' for subsystem '{}' during servicing type '{:?}'",
@@ -682,118 +667,6 @@ mod tests {
         assert!(
             !should_carry_over_hostname(&ctx),
             "Empty AbUpdate context with internal_flag.DISABLE_HOSTNAME_CARRY_OVER should not carry over hostname"
-        );
-    }
-
-    /// Verify that OsConfigSubsystem::provision returns Ok immediately when
-    /// is_stream_image is true, even when the servicing type would
-    /// normally trigger filesystem operations (machine-id copy, hostname
-    /// carry-over).
-    #[test]
-    fn test_osconfig_provision_skipped_during_stream_image() {
-        use super::{OsConfigSubsystem, Subsystem};
-        use std::path::Path;
-
-        let ctx = EngineContext {
-            is_stream_image: true,
-            servicing_type: ServicingType::AbUpdate,
-            spec: HostConfiguration {
-                os: Os {
-                    hostname: Some("should-not-be-copied".to_string()),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        let mut subsystem = OsConfigSubsystem {
-            prev_hostname: None,
-        };
-        // With is_stream_image=true the guard returns Ok(()) before
-        // attempting fs::copy of /etc/machine-id, which would fail in a
-        // unit-test environment.
-        let result = subsystem.provision(&ctx, Path::new("/nonexistent/mount"));
-        assert!(
-            result.is_ok(),
-            "provision should succeed (skip) during stream-image"
-        );
-        assert!(
-            subsystem.prev_hostname.is_none(),
-            "hostname carry-over should not run during stream-image"
-        );
-    }
-
-    /// Verify that OsConfigSubsystem::configure returns Ok immediately when
-    /// is_stream_image is true, even when os_changes_required would be
-    /// true.
-    #[test]
-    fn test_osconfig_configure_skipped_during_stream_image() {
-        use super::{OsConfigSubsystem, Subsystem};
-
-        let ctx = EngineContext {
-            is_stream_image: true,
-            servicing_type: ServicingType::CleanInstall,
-            spec: HostConfiguration {
-                os: Os {
-                    users: vec![User {
-                        name: "test-user".to_string(),
-                        password: Password::Locked,
-                        ..Default::default()
-                    }],
-                    hostname: Some("test-host".to_string()),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        let mut subsystem = OsConfigSubsystem {
-            prev_hostname: None,
-        };
-        // With is_stream_image=true the guard returns Ok(()) before
-        // calling osmodifier::modify_os, which would fail in a unit-test
-        // environment.
-        let result = subsystem.configure(&ctx);
-        assert!(
-            result.is_ok(),
-            "configure should succeed (skip) during stream-image"
-        );
-    }
-
-    /// Verify that MosConfigSubsystem::prepare returns Ok immediately when
-    /// is_stream_image is true, even when management_os.users would
-    /// normally trigger osmodifier calls and sshd restart.
-    #[test]
-    fn test_mosconfig_prepare_skipped_during_stream_image() {
-        use super::{MosConfigSubsystem, Subsystem};
-
-        let ctx = EngineContext {
-            is_stream_image: true,
-            servicing_type: ServicingType::CleanInstall,
-            spec: HostConfiguration {
-                management_os: ManagementOs {
-                    users: vec![User {
-                        name: "mos-user".to_string(),
-                        password: Password::Locked,
-                        ..Default::default()
-                    }],
-                    netplan: None,
-                },
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        let mut subsystem = MosConfigSubsystem;
-        // With is_stream_image=true the guard returns Ok(()) before
-        // calling osmodifier::modify_os, which would fail in a unit-test
-        // environment.
-        let result = subsystem.prepare(&ctx);
-        assert!(
-            result.is_ok(),
-            "prepare should succeed (skip) during stream-image"
         );
     }
 }

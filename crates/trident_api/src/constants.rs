@@ -274,6 +274,10 @@ pub mod internal_params {
     /// Mount a writable overlay for /etc for the hooks subsystem.
     pub const WRITABLE_ETC_OVERLAY_HOOKS: &str = "writableEtcOverlayHooks";
 
+    /// Enable Raw COSI mode where the storage configuration is sourced from the
+    /// COSI metadata.
+    pub const RAW_COSI_STORAGE: &str = "rawCosi";
+
     /// Threshold in megabits per second for reporting slow streaming speeds. If
     /// the streaming speed is below this threshold, it will be reported in the
     /// logs.

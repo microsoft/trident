@@ -1,0 +1,152 @@
+storage:
+  bootType: efi
+  disks:
+    - maxSize: 5G
+      partitionTableType: gpt
+      partitions:
+        - id: esp
+          size: 16M
+          type: esp
+        - id: root
+          size: 4G
+
+  filesystems:
+    - deviceId: esp
+      mountPoint:
+        options: umask=0077
+        path: /boot/efi
+      type: fat32
+    - deviceId: root
+      mountPoint: /
+      type: ext4
+
+os:
+  hostname: trident-vm-testimg
+  packages:
+    install:
+      # AZL4 equivalents of the AZL3 set in updateimg-grub.yaml.
+      # Notable differences:
+      #   - dnf5 (no `dnf` package on AZL4)
+      #   - grub2-efi-x64 + grub2-efi-x64-modules (no `-noprefix` package)
+      #   - iptables-nft (no plain `iptables` meta on AZL4 base)
+      #   - netplan available but not strictly required (Trident host config
+      #     drives target networking; we use systemd-networkd for the
+      #     management environment)
+      #   - shim added (AZL4 ships a real signed shim chain)
+      #   - trident-service intentionally omitted: no AZL4 RPM yet, the
+      #     binary is delivered via additionalFiles below.
+      - curl
+      - dnf5
+      - efibootmgr
+      - grub2-efi-x64
+      - grub2-efi-x64-modules
+      - grub2-tools
+      - grub2-tools-efi
+      - iproute
+      - iptables-nft
+      - jq
+      - lsof
+      - netplan
+      - openssh-server
+      - shim
+      - sudo
+      - systemd-networkd
+      - systemd-resolved
+      - vim
+  bootloader:
+    resetType: hard-reset
+  selinux:
+    mode: disabled
+  kernelCommandLine:
+    extraCommandLine:
+      - console=tty0
+      - console=ttyS0
+      - net.ifnames=0
+      - rd.debug
+      - loglevel=6
+      - log_buf_len=1M
+      - systemd.journald.forward_to_console=1
+  services:
+    enable:
+      - sshd
+      - systemd-networkd
+      - systemd-resolved
+      # Trident socket-activated daemon. Storm-trident drives all
+      # update/commit/rollback through `trident grpc-client ...` which
+      # talks to this socket.
+      - tridentd.socket
+      # Oneshot trident commit at boot. Marks A/B update commits when
+      # they complete after reboot. The MIC `services.enable` stanza
+      # alone has not been sufficient to wire this in our AZL4 builds;
+      # postCustomization script enable-trident-service-azl4.sh
+      # belt-and-braces creates the multi-user.target.wants symlink.
+      - trident.service
+  users:
+    - name: testuser
+      sshPublicKeyPaths:
+        - files/id_rsa.pub
+      secondaryGroups:
+        - wheel
+  additionalFiles:
+    # Bake the patched Trident binary into /usr/local/bin/trident.
+    #
+    # Path is resolved relative to this YAML file. Pipeline / local builds
+    # are expected to drop the binary at trident-bin/trident before invoking
+    # testimages.py build (see README in this directory).
+    #
+    # We deliberately use /usr/local/bin (not /usr/bin) so that when the
+    # AZL4 trident-service RPM eventually ships and installs to
+    # /usr/bin/trident, the RPM install is non-destructive: the package
+    # binary wins on PATH lookup (per FHS, /usr/local/bin sits before
+    # /usr/bin only in user shells; system PATH defaults put /usr/bin
+    # first), which is the correct outcome — once the RPM is the supply
+    # chain, additionalFiles should not be silently overriding it. To
+    # confirm which copy is in use at runtime, check
+    # `readlink -f $(command -v trident)`.
+    - source: trident-bin/trident
+      destination: /usr/bin/trident
+      permissions: "755"
+    # AZL4 lacks a /usr/bin/hostname binary; the pytest framework smoke-
+    # tests SSH with `hostname`, so we ship a tiny shim.
+    - source: files/hostname-shim.sh
+      destination: /usr/local/bin/hostname
+      permissions: "755"
+    - source: files/sudoers-wheel
+      destination: /etc/sudoers.d/wheel
+    - source: files/99-dhcp-eth0.network
+      destination: /etc/systemd/network/99-dhcp-eth0.network
+    - source: files/regen-sshd-keys.service
+      destination: /etc/systemd/system/regen-sshd-keys.service
+
+    # Trident systemd units. AZL3 gets these from the trident-service
+    # RPM; AZL4 doesn't have that RPM yet, so we ship them inline in
+    # both base and update images so post-A/B-update boots have the
+    # trident-commit oneshot available on volume-b.
+    - source: ../../../../packaging/systemd/trident.service
+      destination: /usr/lib/systemd/system/trident.service
+    - source: ../../../../packaging/systemd/tridentd.service
+      destination: /usr/lib/systemd/system/tridentd.service
+    - source: ../../../../packaging/systemd/tridentd.socket
+      destination: /usr/lib/systemd/system/tridentd.socket
+
+scripts:
+  postCustomization:
+    # AZL3 image scripts are largely safe on AZL4, but a couple touch
+    # /etc paths that read-only differently. We use AZL4-specific copies
+    # as we discover divergence.
+    - path: scripts/post-install.sh
+    - path: scripts/ssh-move-host-keys-azl4.sh
+    - path: scripts/enable-regen-sshd-keys.sh
+    # Belt-and-braces enable of trident.service. services.enable in MIC
+    # AZL4 didn't create the multi-user.target.wants symlink reliably;
+    # this script does it explicitly. Without it, the post-A/B-update
+    # reboot can't run `trident commit`, leaving servicingState stuck at
+    # ab-update-finalized.
+    - path: scripts/enable-trident-service-azl4.sh
+    # Strip SELinux labels from all files. See the script header for the
+    # full rationale, but in short: the AZL4 base VHDX bakes in AZL4
+    # SELinux contexts that Trident-from-AZL3-MOS can't preserve during
+    # install (MOS's loaded policy rejects unknown contexts via
+    # setxattr). Stripping at cosi build time sidesteps the cascade.
+    # Must run LAST so other postCustomization scripts don't re-label.
+    - path: scripts/strip-selinux-xattrs.sh

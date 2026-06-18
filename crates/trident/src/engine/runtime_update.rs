@@ -164,7 +164,6 @@ fn finalize_or_rollback_runtime_update(
         spec: target_spec,
         spec_old: old_spec,
         servicing_type: ServicingType::RuntimeUpdate,
-        is_stream_image: false,
         ab_active_volume: state.host_status().ab_active_volume,
         partition_paths: state.host_status().partition_paths.clone(),
         disk_uuids: state.host_status().disk_uuids.clone(),
