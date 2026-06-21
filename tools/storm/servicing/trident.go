@@ -78,11 +78,19 @@ func (h *TridentServicingScenario) Cleanup(ctx storm.SetupCleanupContext) error 
 }
 
 func (h *TridentServicingScenario) runTestCase(tc storm.TestCase, testFunc func(stormsvcconfig.TestConfig, stormvmconfig.AllVMConfig) error) error {
+	return h.runTestCaseWithContext(tc, func(_ storm.TestCase, cfg stormsvcconfig.TestConfig, vm stormvmconfig.AllVMConfig) error {
+		return testFunc(cfg, vm)
+	})
+}
+
+// runTestCaseWithContext passes the storm.TestCase to the test function,
+// giving it access to tc.Context() and tc.BackgroundWaitGroup() for proper
+// goroutine lifecycle management.
+func (h *TridentServicingScenario) runTestCaseWithContext(tc storm.TestCase, testFunc func(storm.TestCase, stormsvcconfig.TestConfig, stormvmconfig.AllVMConfig) error) error {
 	if tc.Name() != h.args.TestCaseToRun && h.args.TestCaseToRun != "all" {
 		tc.Skip(fmt.Sprintf("Test case '%s' does not align to TestCaseToRun '%s'", tc.Name(), h.args.TestCaseToRun))
 	} else {
 		logrus.Infof("Running test case '%s'", tc.Name())
-		// create test-specific output directory
 		testCaseSpecificConfig := h.args.TestConfig
 		testCaseSpecificConfig.OutputPath = h.args.TestConfig.OutputPath
 		if testCaseSpecificConfig.OutputPath != "" {
@@ -92,6 +100,7 @@ func (h *TridentServicingScenario) runTestCase(tc storm.TestCase, testFunc func(
 			}
 		}
 		err := testFunc(
+			tc,
 			testCaseSpecificConfig,
 			stormvmconfig.AllVMConfig{
 				VMConfig:    h.args.VMConfig,
@@ -117,7 +126,7 @@ func (h *TridentServicingScenario) checkDeployment(tc storm.TestCase) error {
 }
 
 func (h *TridentServicingScenario) updateLoop(tc storm.TestCase) error {
-	return h.runTestCase(tc, stormsvctests.UpdateLoop)
+	return h.runTestCaseWithContext(tc, stormsvctests.UpdateLoop)
 }
 
 func (h *TridentServicingScenario) rollback(tc storm.TestCase) error {
@@ -125,7 +134,7 @@ func (h *TridentServicingScenario) rollback(tc storm.TestCase) error {
 		tc.Skip("Test case 'rollback' is skipped because rollback testing is disabled")
 		return nil // No action needed if rollback is not enabled
 	}
-	return h.runTestCase(tc, stormsvctests.Rollback)
+	return h.runTestCaseWithContext(tc, stormsvctests.Rollback)
 }
 
 func (h *TridentServicingScenario) collectLogs(tc storm.TestCase) error {
