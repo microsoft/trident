@@ -32,6 +32,11 @@ parameters:
     type: boolean
     default: false
 
+  - name: includeAzl4
+    displayName: "Include qemu azl4 testing"
+    type: boolean
+    default: false
+
   - name: includeUKI
     displayName: "Include UKI testing"
     type: boolean
@@ -74,7 +79,7 @@ stages:
                   - ${{ parameters.dependsOnStage }}
 
             jobs:
-              - template: ../testing_servicing/build-image.yml
+              - template: ../trident_images/build-image.yml
                 parameters:
                   label: "qemu-grub-base"
                   makeTarget: "artifacts/trident-vm-grub-testimage.qcow2"
@@ -84,7 +89,7 @@ stages:
                   micVersion: ${{ parameters.micVersion }}
                   useStagedSshKeys: true
 
-              - template: ../testing_servicing/build-image.yml
+              - template: ../trident_images/build-image.yml
                 parameters:
                   label: "qemu-grub-update-a"
                   makeTarget: "artifacts/trident-vm-grub-testimage.cosi"
@@ -103,6 +108,8 @@ stages:
           - BuildingTools
           - ${{ if eq(parameters.includeQemuGrub, true) }}:
               - BuildImagesQemuGrub
+          - ${{ if eq(parameters.includeAzl4, true) }}:
+              - BuildImagesQemuGrubAzl4
           - ${{ if eq(parameters.includeQemu, true) }}:
               - BuildImagesQemu
           - ${{ if eq(parameters.includeUKI, true) }}:
@@ -125,6 +132,16 @@ stages:
               verboseLogging: ${{ parameters.verboseLogging }}
               platform: qemu
               flavor: qemu-grub
+              micBuildType: ${{ parameters.micBuildType }}
+              micVersion: ${{ parameters.micVersion }}
+              testSecureBoot: ${{ parameters.testSecureBoot }}
+      - ${{ if eq(parameters.includeAzl4, true) }}:
+          - template: testing-template.yml
+            parameters:
+              updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
+              verboseLogging: ${{ parameters.verboseLogging }}
+              platform: qemu
+              flavor: grubazl4
               micBuildType: ${{ parameters.micBuildType }}
               micVersion: ${{ parameters.micVersion }}
               testSecureBoot: ${{ parameters.testSecureBoot }}

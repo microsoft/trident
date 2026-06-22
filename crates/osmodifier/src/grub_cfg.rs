@@ -18,6 +18,10 @@ use crate::OsModifierContext;
 /// Possible grub.cfg locations, tried in order.
 const GRUB_CFG_PATHS: &[&str] = &["/boot/grub2/grub.cfg", "/boot/grub/grub.cfg"];
 
+/// BLS (Boot Loader Spec) entry directory. Fedora-based distros (including
+/// AZL4) store kernel boot entries here instead of inline in grub.cfg.
+const BLS_ENTRIES_DIR: &str = "/boot/loader/entries";
+
 /// Extract boot arguments from the generated grub.cfg.
 ///
 /// Returns a tuple of (args_to_sync, optional_root_device).
@@ -37,7 +41,14 @@ pub fn extract_boot_args_from_grub_cfg(
 
     // Find the non-recovery linux command lines.
     // Go expects exactly one; error otherwise.
-    let linux_lines = find_non_recovery_linux_lines(&content)?;
+    let linux_lines = match find_non_recovery_linux_lines(&content) {
+        Ok(lines) => lines,
+        Err(_) if content.contains("blscfg") => {
+            debug!("grub.cfg uses BLS (blscfg); reading boot args from BLS entries");
+            extract_options_from_bls_entries(ctx)?
+        }
+        Err(e) => return Err(e),
+    };
     if linux_lines.len() != 1 {
         bail!(
             "expected 1 non-recovery linux line, found {}",
@@ -92,6 +103,67 @@ fn find_grub_cfg(ctx: &OsModifierContext) -> Result<std::path::PathBuf, Error> {
         }
     }
     bail!("Could not find grub.cfg at any of: {:?}", GRUB_CFG_PATHS)
+}
+
+/// Read boot arguments from BLS (Boot Loader Spec) entries.
+///
+/// Scans `{root}/boot/loader/entries/*.conf`, skips entries whose title
+/// contains "rescue" or "recovery" (case-insensitive), and returns the
+/// `options` line from the first valid entry (sorted lexically, matching
+/// grub's ordering).
+fn extract_options_from_bls_entries(ctx: &OsModifierContext) -> Result<Vec<String>, Error> {
+    let entries_dir = ctx.path(BLS_ENTRIES_DIR);
+    let mut conf_files: Vec<std::path::PathBuf> = fs::read_dir(&entries_dir)
+        .with_context(|| format!("Failed to read BLS entries dir '{}'", entries_dir.display()))?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|ext| ext == "conf"))
+        .collect();
+
+    conf_files.sort();
+
+    for conf_path in &conf_files {
+        let content = fs::read_to_string(conf_path)
+            .with_context(|| format!("Failed to read BLS entry '{}'", conf_path.display()))?;
+
+        let mut title = None;
+        let mut options = None;
+
+        for line in content.lines() {
+            if let Some(value) = line.strip_prefix("title") {
+                title = Some(value.trim().to_string());
+            } else if let Some(value) = line.strip_prefix("options") {
+                options = Some(value.trim().to_string());
+            }
+        }
+
+        // Skip recovery/rescue entries.
+        if let Some(ref t) = title {
+            let lower = t.to_lowercase();
+            if lower.contains("rescue") || lower.contains("recovery") {
+                trace!(
+                    "Skipping BLS rescue/recovery entry: {}",
+                    conf_path.display()
+                );
+                continue;
+            }
+        }
+
+        if let Some(opts) = options {
+            debug!(
+                "Using BLS entry '{}': options = {opts}",
+                conf_path.display()
+            );
+            // Return as a synthetic "linux" line: prepend a dummy kernel path
+            // so the downstream parser (which skips the first token) works.
+            return Ok(vec![format!("/boot/vmlinuz {opts}")]);
+        }
+    }
+
+    bail!(
+        "no non-recovery BLS entry found in '{}'",
+        entries_dir.display()
+    )
 }
 
 /// Return the first whitespace-delimited word from a line, or None if the
@@ -756,5 +828,121 @@ mod tests {
     fn test_count_braces_skips_quoted() {
         assert_eq!(count_braces("menuentry 'title {x}' {"), (1, 0));
         assert_eq!(count_braces(r#"menuentry "title {x}" {"#), (1, 0));
+    }
+
+    // ======================= BLS entry support =======================
+
+    #[test]
+    fn test_extract_bls_fallback() {
+        let tmp = tempdir().unwrap();
+
+        // Write a BLS-style grub.cfg (contains blscfg, no inline linux lines)
+        let grub_dir = tmp.path().join("boot/grub2");
+        std::fs::create_dir_all(&grub_dir).unwrap();
+        std::fs::write(
+            grub_dir.join("grub.cfg"),
+            indoc::indoc! {r#"
+                set timeout=5
+                load_env -f /boot/grub2/grubenv
+                blscfg
+            "#},
+        )
+        .unwrap();
+
+        // Write a BLS entry
+        let bls_dir = tmp.path().join("boot/loader/entries");
+        std::fs::create_dir_all(&bls_dir).unwrap();
+        std::fs::write(
+            bls_dir.join("azl4.conf"),
+            indoc::indoc! {r#"
+                title Azure Linux 4.0 (6.6.60)
+                version 6.6.60
+                linux /boot/vmlinuz-6.6.60
+                initrd /boot/initramfs-6.6.60.img
+                options root=/dev/sda2 ro selinux=1 rd.overlayfs=lower,upper,work,/dev/sda5
+            "#},
+        )
+        .unwrap();
+
+        let ctx = OsModifierContext {
+            root: tmp.path().to_path_buf(),
+        };
+
+        let (args, root_device) = extract_boot_args_from_grub_cfg(&ctx).unwrap();
+        assert_eq!(root_device, Some("/dev/sda2".to_string()));
+        assert!(args.contains(&"selinux=1".to_string()));
+    }
+
+    #[test]
+    fn test_extract_bls_skips_recovery() {
+        let tmp = tempdir().unwrap();
+
+        let grub_dir = tmp.path().join("boot/grub2");
+        std::fs::create_dir_all(&grub_dir).unwrap();
+        std::fs::write(grub_dir.join("grub.cfg"), "set timeout=5\nblscfg\n").unwrap();
+
+        let bls_dir = tmp.path().join("boot/loader/entries");
+        std::fs::create_dir_all(&bls_dir).unwrap();
+
+        // Rescue entry (should be skipped)
+        std::fs::write(
+            bls_dir.join("rescue.conf"),
+            indoc::indoc! {r#"
+                title Azure Linux 4.0 rescue
+                version 6.6.60
+                linux /boot/vmlinuz-6.6.60
+                initrd /boot/initramfs-6.6.60.img
+                options root=/dev/sda2 ro single
+            "#},
+        )
+        .unwrap();
+
+        // Normal entry (should be used)
+        std::fs::write(
+            bls_dir.join("zzz-normal.conf"),
+            indoc::indoc! {r#"
+                title Azure Linux 4.0 (6.6.60)
+                version 6.6.60
+                linux /boot/vmlinuz-6.6.60
+                initrd /boot/initramfs-6.6.60.img
+                options root=/dev/sda2 ro selinux=1
+            "#},
+        )
+        .unwrap();
+
+        let ctx = OsModifierContext {
+            root: tmp.path().to_path_buf(),
+        };
+
+        let (args, root_device) = extract_boot_args_from_grub_cfg(&ctx).unwrap();
+        assert_eq!(root_device, Some("/dev/sda2".to_string()));
+        assert!(args.contains(&"selinux=1".to_string()));
+        // "single" from rescue entry should NOT appear
+        assert!(!args.iter().any(|a| a.contains("single")));
+    }
+
+    #[test]
+    fn test_extract_bls_no_entries() {
+        let tmp = tempdir().unwrap();
+
+        let grub_dir = tmp.path().join("boot/grub2");
+        std::fs::create_dir_all(&grub_dir).unwrap();
+        std::fs::write(grub_dir.join("grub.cfg"), "set timeout=5\nblscfg\n").unwrap();
+
+        // Empty BLS entries dir
+        let bls_dir = tmp.path().join("boot/loader/entries");
+        std::fs::create_dir_all(&bls_dir).unwrap();
+
+        let ctx = OsModifierContext {
+            root: tmp.path().to_path_buf(),
+        };
+
+        let result = extract_boot_args_from_grub_cfg(&ctx);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("no non-recovery BLS entry found"),
+            "Error should mention no BLS entries, got: {err_msg}"
+        );
     }
 }

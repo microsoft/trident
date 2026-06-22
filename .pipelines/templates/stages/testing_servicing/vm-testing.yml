@@ -51,6 +51,11 @@ parameters:
     type: boolean
     default: false
 
+  - name: includeAzl4
+    displayName: "Include qemu azl4 testing"
+    type: boolean
+    default: false
+
   - name: includeAzure
     displayName: "Include Azure testing"
     type: boolean
@@ -92,6 +97,46 @@ stages:
         displayName: Prepare SSH Keys
         jobs:
           - template: generate-ssh-keys.yml
+
+      - ${{ if eq(parameters.includeAzl4, true) }}:
+          - stage: BuildImagesQemuGrubAzl4
+            displayName: Build Base and Update Images for AZL4
+            dependsOn:
+              - PrepareSSHKeys
+              - GetTridentBinaries_rpms_amd64
+              - ${{ if ne(parameters.dependsOnStage, '') }}:
+                  - ${{ parameters.dependsOnStage }}
+
+            jobs:
+              - template: ../trident_images/build-image.yml
+                parameters:
+                  label: "grubazl4-base"
+                  makeTarget: "artifacts/trident-vm-grub-azl4-testimage.qcow2"
+                  baseimgAzlVersion: "4.0-preview"
+                  baseimgType: qemu_guest
+                  micBuildType: ${{ parameters.micBuildType }}
+                  micVersion: ${{ parameters.micVersion }}
+                  useStagedSshKeys: true
+
+              - template: ../trident_images/build-image.yml
+                parameters:
+                  label: "grubazl4-update-a"
+                  makeTarget: "artifacts/trident-vm-grub-azl4-testimage.cosi"
+                  baseimgAzlVersion: "4.0-preview"
+                  baseimgType: qemu_guest
+                  micBuildType: ${{ parameters.micBuildType }}
+                  micVersion: ${{ parameters.micVersion }}
+                  useStagedSshKeys: true
+
+              - template: ../trident_images/build-image.yml
+                parameters:
+                  label: "grubazl4-update-b"
+                  makeTarget: "artifacts/trident-vm-grub-azl4-testimage.cosi"
+                  baseimgAzlVersion: "4.0-preview"
+                  baseimgType: qemu_guest
+                  micBuildType: ${{ parameters.micBuildType }}
+                  micVersion: ${{ parameters.micVersion }}
+                  useStagedSshKeys: true
 
       - ${{ if eq(parameters.includeQemu, true) }}:
           - stage: BuildImagesQemu
@@ -223,6 +268,8 @@ stages:
               - BuildImagesAzure
           - ${{ if eq(parameters.includeUKI, true) }}:
               - BuildImagesUKI
+          - ${{ if eq(parameters.includeAzl4, true) }}:
+              - BuildImagesQemuGrubAzl4
 
     variables:
       - group: servicing_testing_params
@@ -234,6 +281,20 @@ stages:
         value: "trident-vm-grub-verity-testimage-$(System.DefinitionId)"
 
     jobs:
+      - ${{ if eq(parameters.includeAzl4, true) }}:
+          - ${{ each batch in parameters.workerBatches }}:
+              - template: testing-template.yml
+                parameters:
+                  updateIterationCount: ${{ parameters.updateIterationCount }}
+                  rollbackTesting: ${{ parameters.rollbackTesting }}
+                  workers: ${{ batch.size }}
+                  batchId: ${{ batch.id }}
+                  updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
+                  verboseLogging: ${{ parameters.verboseLogging }}
+                  platform: qemu
+                  flavor: grubazl4
+                  testSecureBoot: ${{ parameters.testSecureBoot }}
+
       - ${{ if eq(parameters.includeQemu, true) }}:
           - ${{ each batch in parameters.workerBatches }}:
               - template: testing-template.yml

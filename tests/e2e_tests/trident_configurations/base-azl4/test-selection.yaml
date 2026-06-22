@@ -1,0 +1,5 @@
+compatible:
+  - base-azl4
+  # Reuse the same pytest assertions as the AZL3 `base` scenario where
+  # appropriate. Add this scenario explicitly to test markers as we wire
+  # up pytest coverage.
