@@ -33,6 +33,13 @@ parameters:
       Specific version of the package to download, leave empty to download latest.
     default: ""
 
+  - name: distro
+    type: string
+    default: "azl3"
+    values:
+      - azl3
+      - azl4
+
 steps:
   - ${{ if eq(parameters.specificVersion, '')}}:
       - script: |
@@ -76,6 +83,16 @@ steps:
   - ${{ if startswith(parameters.packageName, 'rpms') }}:
       - script: |
           set -eux
+
+          # For azl3, get ride of *.azl4*.rpm
+          OTHER_DISTRO_RPMS="*azl4*.rpm"
+          if [ "${{ parameters.distro }}" = "azl4" ]; then
+            # For azl4, get ride of *.azl3*.rpm
+            OTHER_DISTRO_RPMS="*azl3*.rpm"
+          fi
+          # Use find to delete all RPM files that match the other distro suffix
+          find ${{ parameters.downloadLocation }} -name "${OTHER_DISTRO_RPMS}" -type f -delete
+
           # For amd64, get ride of *.aarch64.rpm
           OTHER_ARCH_SUFFIX="aarch64.rpm"
           if [ "${{ parameters.targetArchitecture }}" = "arm64" ]; then
@@ -84,6 +101,7 @@ steps:
           fi
           # Use find to delete all RPM files that match the other architecture suffix
           find ${{ parameters.downloadLocation }} -name "*.${OTHER_ARCH_SUFFIX}" -type f -delete
+
           # List remaining RPM files to help pipeline debugging
           echo "List remaining RPM files:"
           find ${{ parameters.downloadLocation }} -name "*.rpm" -type f

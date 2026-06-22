@@ -6,6 +6,13 @@ parameters:
       - arm64
       - amd64
 
+  - name: distro
+    type: string
+    default: "azl3"
+    values:
+      - azl3
+      - azl4
+
   - name: tridentRepoDirectory
     type: string
 
@@ -57,11 +64,20 @@ steps:
       rm -rf "$outdir"
       mkdir -p "$outdir"
 
+      AZL_IMAGE="$(DISTRO=${{ parameters.distro }} make azl-version-vars | grep AZL_IMAGE | cut -d '=' -f2)"
+      DISTRO_PACKAGES="$(DISTRO=${{ parameters.distro }} make azl-version-vars | grep DISTRO_PACKAGES | cut -d '=' -f2)"
+      RPM_PACKAGES="$(DISTRO=${{ parameters.distro }} make azl-version-vars | grep RPM_PACKAGES | cut -d '=' -f2)"
+      RPM_DEST="$(DISTRO=${{ parameters.distro }} make azl-version-vars | grep RPM_DEST | cut -d '=' -f2)"
+
       docker build -f ${{ parameters.tridentRepoDirectory }}/packaging/docker/Dockerfile.full -t trident/trident-build:latest \
         --secret id=registry_token,env=CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN \
         --build-arg TRIDENT_VERSION="$full_version" \
         --build-arg RPM_VER="$version"\
-        --build-arg RPM_REL="$prerelease"\
+        --build-arg RPM_REL="$prerelease.${{ parameters.distro }}"\
+        --build-arg AZL_IMAGE="$AZL_IMAGE"\
+        --build-arg DISTRO_PACKAGES="$DISTRO_PACKAGES" \
+        --build-arg RPM_PACKAGES="$RPM_PACKAGES" \
+        --build-arg RPM_DEST="$RPM_DEST" \
         --target artifact \
         --output type=local,dest="$outdir" \
         .
@@ -73,6 +89,6 @@ steps:
     workingDirectory: ${{ parameters.tridentRepoDirectory }}
     displayName: Build RPMs
 
-  - script: ./scripts/extract-binary.sh ${{ parameters.artifactDirectory }} ${{ parameters.artifactDirectory }} ${{ parameters.targetArchitecture }}
+  - script: ./scripts/extract-binary.sh ${{ parameters.artifactDirectory }} ${{ parameters.artifactDirectory }} ${{ parameters.targetArchitecture }} ${{ parameters.distro }}
     workingDirectory: ${{ parameters.tridentRepoDirectory }}
     displayName: Extract Trident binary

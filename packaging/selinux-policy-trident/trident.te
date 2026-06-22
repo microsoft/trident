@@ -2,6 +2,35 @@ policy_module(trident, 1.0.0)
 
 ########################################
 #
+# Platform compatibility (AZL3 refpolicy vs AZL4 Fedora policy)
+#
+# AZL3 uses refpolicy 2.20240226: types named *_runtime_t, interfaces named *_runtime_*
+# AZL4 uses Fedora selinux-policy 43.4: types named *_var_run_t, interfaces named *_pid_*
+#
+# We use a sentinel interface (raid_manage_mdadm_runtime_files) that exists only in
+# refpolicy to detect the platform at m4 preprocessing time, then define type-name
+# macros accordingly. Interface calls use per-call ifdef.
+#
+ifdef(`raid_manage_mdadm_runtime_files',`
+    define(`INIT_RUNTIME_T',`init_runtime_t')
+    define(`LVM_RUNTIME_T',`lvm_runtime_t')
+    define(`SYSLOGD_RUNTIME_T',`syslogd_runtime_t')
+    define(`SYSTEMD_NETWORKD_RUNTIME_T',`systemd_networkd_runtime_t')
+    define(`MDADM_RUNTIME_T',`mdadm_runtime_t')
+    define(`MOUNT_RUNTIME_T',`mount_runtime_t')
+    define(`UDEV_RUNTIME_T',`udev_runtime_t')
+',`
+    define(`INIT_RUNTIME_T',`init_var_run_t')
+    define(`LVM_RUNTIME_T',`lvm_var_run_t')
+    define(`SYSLOGD_RUNTIME_T',`syslogd_var_run_t')
+    define(`SYSTEMD_NETWORKD_RUNTIME_T',`systemd_networkd_var_run_t')
+    define(`MDADM_RUNTIME_T',`mdadm_var_run_t')
+    define(`MOUNT_RUNTIME_T',`mount_var_run_t')
+    define(`UDEV_RUNTIME_T',`udev_var_run_t')
+')
+
+########################################
+#
 # Declarations
 #
 
@@ -63,7 +92,7 @@ require {
         type http_port_t;
         type init_t;
         type init_exec_t;
-        type init_runtime_t;
+        type INIT_RUNTIME_T;
         type init_var_lib_t;
         type initctl_t;
         type iptables_unit_t;
@@ -76,7 +105,7 @@ require {
         type locale_t;
         type lost_found_t;
         type lvm_metadata_t;
-        type lvm_runtime_t;
+        type LVM_RUNTIME_T;
         type lvm_t;
         type lvm_unit_t;
         type mail_spool_t;
@@ -118,7 +147,7 @@ require {
         type sysfs_t;
         type syslog_conf_t;
         type syslogd_exec_t;
-        type syslogd_runtime_t;
+        type SYSLOGD_RUNTIME_T;
         type syslogd_unit_t;
         type systemd_analyze_exec_t;
         type systemd_backlight_exec_t;
@@ -145,7 +174,9 @@ require {
         type systemd_networkd_t;
         type systemd_networkd_unit_t;
         type systemd_networkd_exec_t;
-        type systemd_networkd_runtime_t;
+        type SYSTEMD_NETWORKD_RUNTIME_T;
+        type MOUNT_RUNTIME_T;
+        type UDEV_RUNTIME_T;
         type systemd_notify_exec_t;
         type systemd_passwd_agent_exec_t;
         type systemd_pcrphase_t;
@@ -180,6 +211,32 @@ require {
         type user_devpts_t;
         type usr_t;
         type var_run_t;
+
+
+        # Types previously implicit via interface gen_require; declared
+        # explicitly for cross-distro compatibility (AZL3 + AZL4).
+        type auditd_log_t;
+        type devlog_t;
+        type faillog_t;
+        type fixed_disk_device_t;
+        type initrc_t;
+        type lastlog_t;
+        type pstore_t;
+        type selinux_config_t;
+        type semanage_read_lock_t;
+        type semanage_store_t;
+        type semanage_trans_lock_t;
+        type setfiles_exec_t;
+        type system_dbusd_var_lib_t;
+        type system_map_t;
+        type tpm_device_t;
+        type udev_rules_t;
+        type var_lib_t;
+        type var_lock_t;
+        type var_log_t;
+        type var_spool_t;
+        type var_t;
+        type wtmp_t;
 
         # Define object classes that SELinux can protect
         class dir { add_name create getattr open read remove_name search write };
@@ -345,10 +402,10 @@ allow trident_t init_t:system { reboot reload start status };
 allow trident_t init_t:key search;
 allow trident_t init_t:unix_stream_socket connectto;
 allow trident_t initctl_t:fifo_file getattr;
-allow trident_t init_runtime_t:dir { add_name remove_name write };
-allow trident_t init_runtime_t:file { create getattr open setattr read rename unlink write };
-allow trident_t init_runtime_t:lnk_file { create unlink };
-allow trident_t init_runtime_t:service { start status };
+allow trident_t INIT_RUNTIME_T:dir { add_name remove_name write };
+allow trident_t INIT_RUNTIME_T:file { create getattr open setattr read rename unlink write };
+allow trident_t INIT_RUNTIME_T:lnk_file { create unlink };
+allow trident_t INIT_RUNTIME_T:service { start status };
 allow trident_t init_var_lib_t:dir { add_name getattr open read relabelto remove_name search write };
 allow trident_t init_var_lib_t:file { create getattr open read rename setattr unlink write };
 allow trident_t iptables_unit_t:file getattr;
@@ -387,7 +444,7 @@ optional_policy(`
 ')
 allow trident_t lost_found_t:dir { getattr open read relabelto };
 allow trident_t lvm_metadata_t:dir { getattr open read };
-allow trident_t lvm_runtime_t:dir { add_name open read remove_name search write };
+allow trident_t LVM_RUNTIME_T:dir { add_name open read remove_name search write };
 allow trident_t lvm_unit_t:file getattr;
 allow trident_t mail_spool_t:dir { list_dir_perms relabelto };
 allow trident_t memory_pressure_t:file { read open getattr setattr };
@@ -469,9 +526,15 @@ allow trident_t sysctl_vm_t:dir search;
 allow trident_t sysfs_t:filesystem { mount unmount };
 allow trident_t syslog_conf_t:file { getattr open read relabelto setattr unlink };
 allow trident_t syslogd_exec_t:file { execute getattr map open read relabelto setattr unlink write };
-allow trident_t syslogd_runtime_t:dir search;
+allow trident_t SYSLOGD_RUNTIME_T:dir search;
 allow trident_t syslogd_unit_t:file { getattr open read relabelto setattr unlink };
-allow trident_t system_cron_spool_t:dir relabelto;
+# AZL4: system_cron_spool_t does not exist
+optional_policy(`
+    require {
+        type system_cron_spool_t;
+    }
+    allow trident_t system_cron_spool_t:dir relabelto;
+')
 allow trident_t system_dbusd_var_lib_t:dir relabelto;
 allow trident_t system_dbusd_var_lib_t:lnk_file relabelto;
 allow trident_t system_map_t:file relabelto;
@@ -492,8 +555,14 @@ allow trident_t systemd_homework_exec_t:file getattr;
 allow trident_t systemd_hostnamed_exec_t:file { execute getattr };
 allow trident_t systemd_hw_exec_t:file getattr;
 allow trident_t systemd_hwdb_t:file { getattr open read relabelto setattr unlink };
-allow trident_t systemd_journal_t:file { relabelfrom_file_perms map open read relabelto };
-allow trident_t systemd_journal_t:dir relabelto;
+# AZL4: systemd_journal_t does not exist (journal handled differently)
+optional_policy(`
+    require {
+        type systemd_journal_t;
+    }
+    allow trident_t systemd_journal_t:file { relabelfrom_file_perms map open read relabelto };
+    allow trident_t systemd_journal_t:dir relabelto;
+')
 allow trident_t systemd_journalctl_exec_t:file { execute getattr map open read relabelto setattr unlink write };
 allow trident_t systemd_locale_exec_t:file getattr;
 allow trident_t systemd_logind_exec_t:file getattr;
@@ -501,8 +570,8 @@ allow trident_t systemd_machine_id_setup_exec_t:file getattr;
 allow trident_t systemd_modules_load_exec_t:file { execute getattr map open read relabelto setattr unlink write };
 allow trident_t systemd_networkd_unit_t:service { start status };
 allow trident_t systemd_networkd_exec_t:file { execute getattr };
-allow trident_t systemd_networkd_runtime_t:dir { add_name getattr open read remove_name search write };
-allow trident_t systemd_networkd_runtime_t:file { create getattr open read rename setattr unlink write };
+allow trident_t SYSTEMD_NETWORKD_RUNTIME_T:dir { add_name getattr open read remove_name search write };
+allow trident_t SYSTEMD_NETWORKD_RUNTIME_T:file { create getattr open read rename setattr unlink write };
 allow trident_t systemd_notify_exec_t:file getattr;
 allow trident_t systemd_passwd_agent_exec_t:file { execute getattr map open read relabelto setattr unlink write };
 allow trident_t systemd_pcrphase_exec_t:file { execute execute_no_trans getattr map open read };
@@ -533,9 +602,9 @@ allow trident_t tmp_t:lnk_file { create getattr read rename unlink };
 allow trident_t tmpfs_t:file { append create execute getattr ioctl link lock map mounton open read relabelto rename setattr unlink write };
 allow trident_t tmpfs_t:filesystem { getattr mount unmount };
 allow trident_t udev_exec_t:file { execute execute_no_trans getattr map open read relabelto setattr unlink write };
-allow trident_t udev_runtime_t:dir { add_name create read remove_name watch write };
-allow trident_t udev_runtime_t:file { create rename setattr unlink write };
-allow trident_t udev_runtime_t:sock_file write;
+allow trident_t UDEV_RUNTIME_T:dir { add_name create read remove_name watch write };
+allow trident_t UDEV_RUNTIME_T:file { create rename setattr unlink write };
+allow trident_t UDEV_RUNTIME_T:sock_file write;
 allow trident_t unlabeled_t:chr_file { create getattr link rename unlink };
 allow trident_t unlabeled_t:dir { create add_name getattr setattr open read remove_name search write mounton relabelfrom ioctl rename reparent rmdir };
 allow trident_t unlabeled_t:file { create getattr lock open read setattr unlink write ioctl relabelfrom append execute execute_no_trans link map relabelto rename };
@@ -615,19 +684,28 @@ optional_policy(`
         type trident_t;
         type mdadm_exec_t;
         type mdadm_unit_t;
-        type mdadm_runtime_t;
+        type MDADM_RUNTIME_T;
     }
     allow trident_t mdadm_exec_t:file { open read getattr map relabelto setattr unlink write execute execute_no_trans };
     allow trident_t mdadm_unit_t:file { getattr open read relabelto setattr unlink };
-    allow trident_t mdadm_runtime_t:dir { add_name remove_name search write };
-    raid_manage_mdadm_runtime_files(trident_t)
+    allow trident_t MDADM_RUNTIME_T:dir { add_name remove_name search write };
+    ifdef(`raid_manage_mdadm_runtime_files',`
+        raid_manage_mdadm_runtime_files(trident_t)
+    ',`
+        raid_manage_mdadm_pid(trident_t)
+    ')
 ')
 
 #============= interfaces ==============
 ###########################################
 # Authentication and User Management
 ###########################################
-auth_create_faillog_files(trident_t)
+# AZL3: auth_create_faillog_files / AZL4: auth_manage_faillog
+ifdef(`auth_create_faillog_files',`
+    auth_create_faillog_files(trident_t)
+',`
+    auth_manage_faillog(trident_t)
+')
 auth_exec_pam(trident_t)
 auth_login_entry_type(trident_t)
 auth_read_lastlog(trident_t)
@@ -648,8 +726,16 @@ su_exec(trident_t)
 usermanage_check_exec_passwd(trident_t)
 userdom_list_user_home_dirs(trident_t)
 userdom_read_user_home_content_files(trident_t)
-userdom_search_user_runtime_root(trident_t)
-userdom_relabel_generic_user_home_files(trident_t)
+# AZL3: userdom_search_user_runtime_root / AZL4: removed (covered by var_run_t allow rules)
+ifdef(`userdom_search_user_runtime_root',`
+    userdom_search_user_runtime_root(trident_t)
+')
+# AZL3: userdom_relabel_generic_user_home_files / AZL4: userdom_relabel_user_home_files
+ifdef(`userdom_relabel_generic_user_home_files',`
+    userdom_relabel_generic_user_home_files(trident_t)
+',`
+    userdom_relabel_user_home_files(trident_t)
+')
 userdom_relabelto_user_home_dirs(trident_t)
 
 ###########################################
@@ -675,13 +761,31 @@ optional_policy(`
     create_files_pattern(trident_t, cgroup_t, cgroup_t)
 ')
 cron_exec(trident_t)
-cron_exec_crontab(trident_t)
-cron_read_system_spool(trident_t)
-dbus_exec(trident_t)
+# AZL3: cron_exec_crontab / AZL4: removed (covered by cron_exec)
+ifdef(`cron_exec_crontab',`
+    cron_exec_crontab(trident_t)
+')
+# AZL3: cron_read_system_spool / AZL4: cron_manage_system_spool (superset)
+ifdef(`cron_read_system_spool',`
+    cron_read_system_spool(trident_t)
+',`
+    cron_manage_system_spool(trident_t)
+')
+# AZL3: dbus_exec / AZL4: dbus_exec_dbusd
+ifdef(`dbus_exec',`
+    dbus_exec(trident_t)
+',`
+    dbus_exec_dbusd(trident_t)
+')
 dbus_manage_lib_files(trident_t)
 dbus_read_config(trident_t)
 dbus_read_lib_files(trident_t)
-dbus_list_system_bus_runtime(trident_t)
+# AZL3: dbus_list_system_bus_runtime / AZL4: removed, use dbus_read_pid_files
+ifdef(`dbus_list_system_bus_runtime',`
+    dbus_list_system_bus_runtime(trident_t)
+',`
+    dbus_read_pid_files(trident_t)
+')
 dbus_system_bus_client(trident_t)
 domain_read_all_domains_state(trident_t)
 hostname_exec(trident_t)
@@ -696,11 +800,27 @@ optional_policy(`
 ssh_domtrans(trident_t)
 ssh_domtrans_keygen(trident_t)
 ssh_manage_home_files(trident_t)
-systemd_list_journal_dirs(trident_t)
-systemd_read_networkd_units(trident_t)
-systemd_read_user_runtime_units_files(trident_t)
+# AZL3: systemd_list_journal_dirs / AZL4: removed (no systemd_journal_t type on AZL4)
+ifdef(`systemd_list_journal_dirs',`
+    systemd_list_journal_dirs(trident_t)
+')
+# AZL3: systemd_read_networkd_units / AZL4: systemd_read_unit_files (generic)
+ifdef(`systemd_read_networkd_units',`
+    systemd_read_networkd_units(trident_t)
+',`
+    systemd_read_unit_files(trident_t)
+')
+# AZL3: systemd_read_user_runtime_units_files / AZL4: removed, covered by systemd_read_unit_files above
+ifdef(`systemd_read_user_runtime_units_files',`
+    systemd_read_user_runtime_units_files(trident_t)
+')
 systemd_dbus_chat_logind(trident_t)
-systemd_read_user_unit_files(trident_t)
+# AZL3: systemd_read_user_unit_files / AZL4: systemd_read_unit_files (generic)
+ifdef(`systemd_read_user_unit_files',`
+    systemd_read_user_unit_files(trident_t)
+',`
+    systemd_read_unit_files(trident_t)
+')
 
 # Optional read access to cloud init state
 optional_policy(`
@@ -720,7 +840,12 @@ files_list_var(trident_t)
 files_manage_boot_files(trident_t)
 files_manage_etc_dirs(trident_t)
 files_manage_etc_symlinks(trident_t)
-files_mounton_runtime_dirs(trident_t)
+# AZL3: files_mounton_runtime_dirs / AZL4: removed, inline equivalent
+ifdef(`files_mounton_runtime_dirs',`
+    files_mounton_runtime_dirs(trident_t)
+',`
+    allow trident_t var_run_t:dir mounton;
+')
 files_read_etc_files(trident_t)
 files_read_default_symlinks(trident_t)
 files_read_kernel_symbol_table(trident_t)
@@ -738,10 +863,19 @@ fstools_relabelto_entry_files(trident_t)
 fs_getattr_hugetlbfs(trident_t)
 fs_getattr_iso9660_files(trident_t)
 fs_getattr_iso9660_fs(trident_t)
-fs_getattr_pstorefs(trident_t)
-fs_getattr_tracefs(trident_t)
+# AZL3: fs_getattr_pstorefs / AZL4: removed
+ifdef(`fs_getattr_pstorefs',`
+    fs_getattr_pstorefs(trident_t)
+')
+# AZL3: fs_getattr_tracefs / AZL4: removed
+ifdef(`fs_getattr_tracefs',`
+    fs_getattr_tracefs(trident_t)
+')
 fs_getattr_xattr_fs(trident_t)
-fs_list_efivars(trident_t)
+# AZL3: fs_list_efivars / AZL4: removed
+ifdef(`fs_list_efivars',`
+    fs_list_efivars(trident_t)
+')
 fs_list_hugetlbfs(trident_t)
 fs_manage_dos_dirs(trident_t)
 fs_manage_dos_files(trident_t)
@@ -756,18 +890,34 @@ optional_policy(`
     }
     allow trident_t cgroup_t:file { ioctl read write getattr setattr lock append open };
 ')
-mount_list_runtime(trident_t)
+# AZL3: mount_list_runtime / AZL4: removed, inline equivalent
+ifdef(`mount_list_runtime',`
+    mount_list_runtime(trident_t)
+',`
+    allow trident_t MOUNT_RUNTIME_T:dir list_dir_perms;
+')
 
 ###########################################
 # Network Management
 ###########################################
 iptables_exec(trident_t)
 iptables_read_config(trident_t)
-iptables_status(trident_t)
+# AZL3: iptables_status / AZL4: iptables_systemctl
+ifdef(`iptables_status',`
+    iptables_status(trident_t)
+',`
+    iptables_systemctl(trident_t)
+')
 sysnet_exec_ifconfig(trident_t)
 sysnet_read_config(trident_t)
 sysnet_read_dhcp_config(trident_t)
-sysnet_relabel_config(trident_t)
+# AZL3: sysnet_relabel_config / AZL4: split into relabelto + relabelfrom
+ifdef(`sysnet_relabel_config',`
+    sysnet_relabel_config(trident_t)
+',`
+    sysnet_relabelto_net_conf(trident_t)
+    sysnet_relabelfrom_net_conf(trident_t)
+')
 sysnet_write_config(trident_t)
 
 ###########################################
@@ -777,9 +927,14 @@ dev_rw_loop_control(trident_t)
 dev_rw_lvm_control(trident_t)
 lvm_exec(trident_t)
 lvm_domtrans(trident_t)
-lvm_manage_runtime_files(trident_t)
+# AZL3: lvm_manage_runtime_files / AZL4: lvm_manage_var_run
+ifdef(`lvm_manage_runtime_files',`
+    lvm_manage_runtime_files(trident_t)
+',`
+    lvm_manage_var_run(trident_t)
+')
 lvm_read_config(trident_t)
-manage_files_pattern(trident_t, mount_runtime_t, mount_runtime_t)
+manage_files_pattern(trident_t, MOUNT_RUNTIME_T, MOUNT_RUNTIME_T)
 storage_getattr_fuse_dev(trident_t)
 storage_getattr_scsi_generic_dev(trident_t)
 storage_raw_read_removable_device(trident_t)
@@ -792,7 +947,12 @@ storage_raw_write_fixed_disk(trident_t)
 corecmd_relabel_bin_files(trident_t)
 files_relabel_etc_files(trident_t)
 files_relabel_kernel_modules(trident_t)
-files_relabelto_etc_runtime_files(trident_t)
+# AZL3: files_relabelto_etc_runtime_files / AZL4: removed, inline equivalent
+ifdef(`files_relabelto_etc_runtime_files',`
+    files_relabelto_etc_runtime_files(trident_t)
+',`
+    allow trident_t etc_runtime_t:file relabelto;
+')
 files_relabelto_usr_files(trident_t)
 libs_relabel_ld_so(trident_t)
 libs_relabelto_lib_files(trident_t)
@@ -813,7 +973,12 @@ seutil_read_default_contexts(trident_t)
 seutil_read_bin_policy(trident_t)
 seutil_run_setfiles(trident_t, system_r)
 seutil_run_setfiles(trident_t, unconfined_r)
-udev_relabel_rules_files(trident_t)
+# AZL3: udev_relabel_rules_files / AZL4: removed, inline equivalent
+ifdef(`udev_relabel_rules_files',`
+    udev_relabel_rules_files(trident_t)
+',`
+    allow trident_t udev_rules_t:file relabel_file_perms;
+')
 
 ###########################################
 # Package Management
@@ -837,21 +1002,47 @@ optional_policy(`
 # Device Management
 ###########################################
 corenet_getattr_ppp_dev(trident_t)
-corenet_read_tun_tap_dev(trident_t)
-dev_getattr_acpi_bios_dev(trident_t)
+# AZL3: corenet_read_tun_tap_dev / AZL4: removed
+ifdef(`corenet_read_tun_tap_dev',`
+    corenet_read_tun_tap_dev(trident_t)
+')
+# AZL3: dev_getattr_acpi_bios_dev / AZL4: dev_getattr_apm_bios_dev
+ifdef(`dev_getattr_acpi_bios_dev',`
+    dev_getattr_acpi_bios_dev(trident_t)
+',`
+    dev_getattr_apm_bios_dev(trident_t)
+')
 dev_getattr_autofs_dev(trident_t)
 dev_getattr_framebuffer_dev(trident_t)
 dev_getattr_generic_usb_dev(trident_t)
 dev_getattr_mouse_dev(trident_t)
-dev_getattr_pmqos_dev(trident_t)
-dev_getattr_sysfs(trident_t)
+# AZL3: dev_getattr_pmqos_dev / AZL4: removed
+ifdef(`dev_getattr_pmqos_dev',`
+    dev_getattr_pmqos_dev(trident_t)
+')
+# AZL3: dev_getattr_sysfs / AZL4: dev_getattr_sysfs_fs
+ifdef(`dev_getattr_sysfs',`
+    dev_getattr_sysfs(trident_t)
+',`
+    dev_getattr_sysfs_fs(trident_t)
+')
 dev_getattr_xserver_misc_dev(trident_t)
 dev_list_sysfs(trident_t)
 dev_manage_generic_blk_files(trident_t)
 dev_manage_generic_dirs(trident_t)
 dev_mounton(trident_t)
-dev_mounton_sysfs_dirs(trident_t)
-dev_read_input_dev(trident_t)
+# AZL3: dev_mounton_sysfs_dirs / AZL4: dev_mounton_sysfs
+ifdef(`dev_mounton_sysfs_dirs',`
+    dev_mounton_sysfs_dirs(trident_t)
+',`
+    dev_mounton_sysfs(trident_t)
+')
+# AZL3: dev_read_input_dev / AZL4: dev_read_input
+ifdef(`dev_read_input_dev',`
+    dev_read_input_dev(trident_t)
+',`
+    dev_read_input(trident_t)
+')
 dev_read_kmsg(trident_t)
 dev_read_rand(trident_t)
 dev_read_raw_memory(trident_t)
@@ -860,7 +1051,10 @@ dev_read_sysfs(trident_t)
 dev_read_watchdog(trident_t)
 dev_read_urand(trident_t)
 dev_relabelfrom_generic_chr_files(trident_t)
-dev_relabelfrom_vfio_dev(trident_t)
+# AZL3: dev_relabelfrom_vfio_dev / AZL4: removed
+ifdef(`dev_relabelfrom_vfio_dev',`
+    dev_relabelfrom_vfio_dev(trident_t)
+')
 dev_rw_nvram(trident_t)
 dev_rw_tpm(trident_t)
 dev_rw_vhost(trident_t)
@@ -871,7 +1065,12 @@ term_getattr_ptmx(trident_t)
 term_use_virtio_console(trident_t)
 term_getattr_pty_fs(trident_t)
 udev_manage_rules_files(trident_t)
-udev_read_runtime_files(trident_t)
+# AZL3: udev_read_runtime_files / AZL4: udev_read_pid_files
+ifdef(`udev_read_runtime_files',`
+    udev_read_runtime_files(trident_t)
+',`
+    udev_read_pid_files(trident_t)
+')
 udev_read_state(trident_t)
 
 ###########################################
@@ -918,17 +1117,34 @@ optional_policy(`
 ###########################################
 logging_read_audit_config(trident_t)
 logging_read_audit_log(trident_t)
-logging_relabelto_devlog_sock_files(trident_t)
+# AZL3: logging_relabelto_devlog_sock_files / AZL4: logging_relabel_devlog_dev
+ifdef(`logging_relabelto_devlog_sock_files',`
+    logging_relabelto_devlog_sock_files(trident_t)
+',`
+    logging_relabel_devlog_dev(trident_t)
+')
 logging_search_logs(trident_t)
-logging_stream_connect_journald_varlink(trident_t)
-logging_manage_generic_log_dirs(trident_t)
+# AZL3: logging_stream_connect_journald_varlink / AZL4: logging_stream_connect_syslog
+ifdef(`logging_stream_connect_journald_varlink',`
+    logging_stream_connect_journald_varlink(trident_t)
+',`
+    logging_stream_connect_syslog(trident_t)
+')
+# AZL3: logging_manage_generic_log_dirs / AZL4: removed (covered by logging_manage_generic_logs)
+ifdef(`logging_manage_generic_log_dirs',`
+    logging_manage_generic_log_dirs(trident_t)
+')
 logging_manage_generic_logs(trident_t)
 
 ###########################################
 # Miscellaneous
 ###########################################
 optional_policy(`
-    miscfiles_read_generic_tls_privkey(trident_t)
+    ifdef(`miscfiles_read_generic_tls_privkey',`
+        miscfiles_read_generic_tls_privkey(trident_t)
+    ',`
+        miscfiles_read_all_certs(trident_t)
+    ')
 ')
 optional_policy(`
     miscfiles_read_man_pages(trident_t)
@@ -1088,12 +1304,27 @@ modutils_read_module_deps(udevadm_t)
 sysnet_read_config(udevadm_t)
 
 # List systemd networkd runtime files
-systemd_list_networkd_runtime(udevadm_t)
+# AZL3: systemd_list_networkd_runtime / AZL4: removed, inline equivalent
+ifdef(`systemd_list_networkd_runtime',`
+    systemd_list_networkd_runtime(udevadm_t)
+',`
+    allow udevadm_t SYSTEMD_NETWORKD_RUNTIME_T:dir list_dir_perms;
+')
 
 # Manage udev rules, runtime directories, and files
 udev_manage_rules_files(udevadm_t)
-udev_manage_runtime_dirs(udevadm_t)
-udev_manage_runtime_files(udevadm_t)
+# AZL3: udev_manage_runtime_dirs / AZL4: udev_manage_pid_dirs
+ifdef(`udev_manage_runtime_dirs',`
+    udev_manage_runtime_dirs(udevadm_t)
+',`
+    udev_manage_pid_dirs(udevadm_t)
+')
+# AZL3: udev_manage_runtime_files / AZL4: udev_manage_pid_files
+ifdef(`udev_manage_runtime_files',`
+    udev_manage_runtime_files(udevadm_t)
+',`
+    udev_manage_pid_files(udevadm_t)
+')
 
 # Read symbolic links in cgroup directories and search sysfs
 optional_policy(`

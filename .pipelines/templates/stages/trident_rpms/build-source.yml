@@ -94,6 +94,12 @@ stages:
                   targetArchitecture: ${{ parameters.targetArchitecture }}
                   tridentRepoDirectory: $(TRIDENT_SOURCE_DIR)
                   artifactDirectory: "$(ob_outputDirectory)"
+              - template: release.yml
+                parameters:
+                  targetArchitecture: ${{ parameters.targetArchitecture }}
+                  tridentRepoDirectory: $(TRIDENT_SOURCE_DIR)
+                  artifactDirectory: "$(ob_outputDirectory)/azl4"
+                  distro: azl4
 
       - ${{ elseif eq( parameters.targetArchitecture, 'arm64' ) }}:
           - job: BuildTrident_${{ parameters.targetArchitecture }}
@@ -131,3 +137,9 @@ stages:
                   targetArchitecture: ${{ parameters.targetArchitecture }}
                   tridentRepoDirectory: $(TRIDENT_SOURCE_DIR)
                   artifactDirectory: "$(ob_outputDirectory)"
+              - template: release.yml
+                parameters:
+                  targetArchitecture: ${{ parameters.targetArchitecture }}
+                  tridentRepoDirectory: $(TRIDENT_SOURCE_DIR)
+                  artifactDirectory: "$(ob_outputDirectory)/azl4"
+                  distro: azl4

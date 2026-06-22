@@ -1,8 +1,12 @@
 ### This file is used in pipelines to build Trident RPMs.
 
-FROM mcr.microsoft.com/azurelinux/base/core:3.0
+ARG AZL_IMAGE=mcr.microsoft.com/azurelinux/base/core:3.0
+FROM ${AZL_IMAGE}
 
-RUN tdnf install -y rpmdevtools openssl-devel clang-devel protobuf-devel rust sed ca-certificates perl build-essential selinux-policy-devel
+ARG DISTRO_PACKAGES=build-essential
+ARG RPM_PACKAGES=
+
+RUN tdnf install -y rpmdevtools openssl-devel clang-devel protobuf-devel rust sed ca-certificates perl ${DISTRO_PACKAGES} selinux-policy-devel
 
 WORKDIR /work
 
@@ -19,10 +23,12 @@ ARG TRIDENT_VERSION=dev-build
 ARG RPM_VER=0.1.0
 ARG RPM_REL=1
 
+ARG RPM_DEST=/usr/src/azl
+
 RUN sed -i "s/^Version:.*/Version:        $RPM_VER/" trident.spec && \
     sed -i "s/^Release:.*/Release:        $RPM_REL/" trident.spec && \
     rpmbuild -bb --build-in-place trident.spec \
     --define="trident_version $TRIDENT_VERSION" \
     --define="rpm_ver $RPM_VER" \
     --define="rpm_rel $RPM_REL" && \
-    tar -czvf trident-rpms.tar.gz -C /usr/src/azl ./RPMS
+    tar -czvf trident-rpms.tar.gz -C $RPM_DEST ./RPMS

@@ -32,7 +32,7 @@ parameters:
     values:
       - amd64
       - arm64
-
+  
 stages:
   - stage: GetTridentBinaries_${{ replace(parameters.packageName, '-', '_') }}_${{ parameters.targetArchitecture }}
     displayName: Download staged ${{ parameters.packageName }} (${{ parameters.targetArchitecture }}) for ${{ parameters.stageType }}
@@ -86,6 +86,10 @@ stages:
               displayName: Install native dependencies to extract Trident binary
               retryCountOnTaskFailure: 3
 
-            - script: ./scripts/extract-binary.sh $(ob_outputDirectory) $(ob_outputDirectory) ${{ parameters.targetArchitecture }}
+            - script: ./scripts/extract-binary.sh $(ob_outputDirectory) $(ob_outputDirectory) ${{ parameters.targetArchitecture }} azl3
+              displayName: Extract Trident binary
+              workingDirectory: $(TRIDENT_SOURCE_DIR)
+
+            - script: ./scripts/extract-binary.sh $(ob_outputDirectory) $(ob_outputDirectory)/azl4 ${{ parameters.targetArchitecture }} azl4
               displayName: Extract Trident binary
               workingDirectory: $(TRIDENT_SOURCE_DIR)

@@ -139,10 +139,15 @@ steps:
         rm $(Build.ArtifactStagingDirectory)/rpms/rpms.tar.gz
       fi
 
+      DISTRO=azl3
+      if [[ "${{ parameters.azureLinuxVersion }}" == "4.0-preview" ]]; then
+        DISTRO=azl4
+      fi
+
       # Move Trident RPMs to bin/RPMS/ (builder expects bin/RPMS/*.rpm)
       if [ -d "$(Build.ArtifactStagingDirectory)/trident" ]; then
         mkdir -p bin/RPMS
-        find "$(Build.ArtifactStagingDirectory)/trident" -name '*.rpm' -exec mv {} bin/RPMS/ \;
+        find "$(Build.ArtifactStagingDirectory)/trident" -name "*${DISTRO}*.rpm" -exec mv {} bin/RPMS/ \;
         rm -rf "$(Build.ArtifactStagingDirectory)/trident"
       fi
     displayName: "Prepare and move requirements"
