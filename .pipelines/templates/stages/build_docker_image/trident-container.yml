@@ -3,6 +3,13 @@ parameters:
     type: string
     default: ""
 
+  - name: distro
+    type: string
+    default: "azl3"
+    values:
+      - azl3
+      - azl4
+
 stages:
   - stage: BuildTridentContainerImage
     displayName: Build Docker Image
@@ -37,8 +44,17 @@ stages:
             inputs:
               buildType: current
               artifactName: "trident-binaries"
-              patterns: "**/*.rpm"
+              patterns: "**/*${{ parameters.distro }}*.rpm"
               targetPath: "$(TRIDENT_SOURCE_DIR)/bin/RPMS/x86_64"
+
+          - script: |
+              set -eux
+              # azl4 RPMs are published under an azl4/ subdirectory in the artifact;
+              # flatten any nested RPMs so Dockerfile.runtime's bin/RPMS/x86_64 glob finds them.
+              find bin/RPMS/x86_64 -mindepth 2 -name '*.rpm' -type f -exec mv -t bin/RPMS/x86_64 {} +
+              find bin/RPMS/x86_64 -name '*.rpm' -type f
+            displayName: Flatten nested RPMs
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
 
           - template: ../common_tasks/preview-container.yml
             parameters:
@@ -48,8 +64,18 @@ stages:
           - script: |
               set -euxo pipefail
 
+              AZL_IMAGE="$(DISTRO=${{ parameters.distro }} make azl-version-vars | grep AZL_IMAGE | cut -d '=' -f2)"
+              RPM_PACKAGES="$(DISTRO=${{ parameters.distro }} make azl-version-vars | grep RPM_PACKAGES | cut -d '=' -f2)"
+
               mkdir -p $(ob_outputDirectory)
-              DOCKER_BUILDKIT=1 docker build -f packaging/docker/Dockerfile.runtime --progress plain -t trident/trident:latest .
+              DOCKER_BUILDKIT=1 docker build -f \
+                  packaging/docker/Dockerfile.runtime \
+                  --progress plain \
+                  -t trident/trident:latest \
+                  . \
+                  --build-arg AZL_IMAGE="$AZL_IMAGE" \
+                  --build-arg RPM_PACKAGES="$RPM_PACKAGES"
+
               docker save trident/trident:latest | gzip > $(ob_outputDirectory)/trident-container.tar.gz
             workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: Build Docker image

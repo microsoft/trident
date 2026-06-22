@@ -13,9 +13,6 @@ OVERRIDE_RUST_FEED ?= true
 
 SERVER_PORT ?= 8133
 
-# Azl3 builder docker image name
-AZL3_BUILDER_IMAGE := azl3/trident-builder:latest
-
 .PHONY: all
 all: format check test build-api-docs bin/trident-rpms.tar.gz docker-build build-functional-test coverage validate-configs
 
@@ -69,13 +66,44 @@ check-sh:
 	fi
 	@echo "NOTICE: Created local .cargo/config file."
 
+DISTRO ?= azl3
+
+.PHONY: azl-version-vars
+azl-version-vars:
+ifeq ($(DISTRO),azl3)
+	$(eval BUILDER_IMAGE := azl3/trident-builder:latest)
+	$(eval AZL_IMAGE := mcr.microsoft.com/azurelinux/base/core:3.0)
+	$(eval DISTRO_PACKAGES := build-essential)
+	$(eval RPM_PACKAGES := )
+	$(eval RPM_DEST := /usr/src/azl)
+	$(eval RUST_PACKAGE := rust-1.86.0)
+	@echo "Using Azure Linux 3 for build and runtime images."
+else ifeq ($(DISTRO),azl4)
+	$(eval BUILDER_IMAGE := azl4/trident-builder:latest)
+	$(eval AZL_IMAGE := mcr.microsoft.com/azurelinux-beta/base/core:4.0)
+	$(eval DISTRO_PACKAGES := make automake gcc gcc-c++ kernel-devel cargo)
+	$(eval RPM_PACKAGES := systemd)
+	$(eval RPM_DEST := /root/rpmbuild)
+	$(eval RUST_PACKAGE := rust)
+	@echo "Using Azure Linux 4 for build and runtime images."
+else
+	$(error "Invalid DISTRO specified: $(DISTRO). Must be 'azl3' or 'azl4'.")
+endif
+	@echo "DISTRO=$(DISTRO)"
+	@echo "BUILDER_IMAGE=$(BUILDER_IMAGE)"
+	@echo "AZL_IMAGE=$(AZL_IMAGE)"
+	@echo "DISTRO_PACKAGES=$(DISTRO_PACKAGES)"
+	@echo "RPM_PACKAGES=$(RPM_PACKAGES)"
+	@echo "RPM_DEST=$(RPM_DEST)"
+	@echo "RUST_PACKAGE=$(RUST_PACKAGE)"
+
 .PHONY: version-vars
-version-vars:
+version-vars: azl-version-vars
 	$(eval SIMULATED_BUILD_ID := 99)
 	$(eval TRIDENT_BUILD_DATE := $(shell date +%Y%m%d))
 	$(eval TRIDENT_CARGO_VERSION := $(shell python3 ./scripts/get-version.py))
 	$(eval GIT_COMMIT := v$(shell git rev-parse --short HEAD)$(shell git diff --quiet || echo '.dirty'))
-	$(eval TRIDENT_PREVIEW_VERSION := "dev.$(TRIDENT_BUILD_DATE)$(SIMULATED_BUILD_ID).$(GIT_COMMIT)")
+	$(eval TRIDENT_PREVIEW_VERSION := "dev.$(TRIDENT_BUILD_DATE)$(SIMULATED_BUILD_ID).$(GIT_COMMIT).$(DISTRO)")
 	$(eval LOCAL_BUILD_TRIDENT_VERSION := "$(TRIDENT_CARGO_VERSION)-$(TRIDENT_PREVIEW_VERSION)")
 	@echo "TRIDENT_CARGO_VERSION=$(TRIDENT_CARGO_VERSION)"
 	@echo "TRIDENT_PREVIEW_VERSION=$(TRIDENT_PREVIEW_VERSION)"
@@ -144,33 +172,47 @@ target/release/trident target/release/trident-acl-agent: .cargo/config | version
 
 ARTIFACTS_DIR="artifacts"
 
-.PHONY: azl3-builder-image clean-azl3-builder-image build-azl3
-azl3-builder-image:
-	@echo "Checking for local image $(AZL3_BUILDER_IMAGE)..."
-	@if docker image inspect $(AZL3_BUILDER_IMAGE) >/dev/null 2>&1 ; then \
-		echo "Image $(AZL3_BUILDER_IMAGE) found locally." ; \
+.PHONY: builder-image clean-builder-image
+builder-image: azl-version-vars
+	@echo "Checking for local image $(BUILDER_IMAGE)..."
+	@if docker image inspect $(BUILDER_IMAGE) >/dev/null 2>&1 ; then \
+		echo "Image $(BUILDER_IMAGE) found locally." ; \
 	else \
-		echo "Image $(AZL3_BUILDER_IMAGE) not found locally. Building..." ; \
-		docker build -t $(AZL3_BUILDER_IMAGE) -f packaging/docker/Dockerfile.azl3-builder . ; \
+		echo "Image $(BUILDER_IMAGE) not found locally. Building..." ; \
+		docker build -t $(BUILDER_IMAGE) \
+		   -f packaging/docker/Dockerfile.azl-builder \
+		   . \
+		   --build-arg AZL_IMAGE="$(AZL_IMAGE)" \
+		   --build-arg DISTRO_PACKAGES="$(DISTRO_PACKAGES)" \
+		   --build-arg RPM_PACKAGES="$(RPM_PACKAGES)" ; \
 	fi
 
-clean-azl3-builder-image:
-	@echo "Removing local image $(AZL3_BUILDER_IMAGE)..."
-	@docker rmi $(AZL3_BUILDER_IMAGE) || echo "Image $(AZL3_BUILDER_IMAGE) not found locally."
+clean-builder-image: azl-version-vars
+	@echo "Removing local image $(BUILDER_IMAGE)..."
+	@docker rmi $(BUILDER_IMAGE) || echo "Image $(BUILDER_IMAGE) not found locally."
 
-target/azl3/release/trident target/azl3/release/trident-acl-agent: version-vars | azl3-builder-image
+target/$(DISTRO)/release/trident target/$(DISTRO)/release/trident-acl-agent: azl-version-vars version-vars builder-image
 	@mkdir -p bin/
-	@mkdir -p target/azl3/
-	@echo "Building Trident for Azure Linux 3 using Docker image $(AZL3_BUILDER_IMAGE)..."
+	@mkdir -p target/$(DISTRO)/
+	@echo "Building Trident for Azure Linux ($(DISTRO)) using Docker image $(BUILDER_IMAGE)..."
 	@docker run --rm \
 		-e TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
-		-v $(PWD):/work -w /work $(AZL3_BUILDER_IMAGE) \
-		cargo build --color always --target-dir target/azl3 --release --features dangerous-options,grpc-preview -p trident -p trident-acl-agent
+		-v $(PWD):/work -w /work $(BUILDER_IMAGE) \
+		cargo build \
+		    --color always \
+			--target-dir target/$(DISTRO) \
+			--release \
+			--features dangerous-options,grpc-preview \
+			-p trident \
+			-p trident-acl-agent
 
 # This will do a proper build on azl3, exactly as the pipelines would, with the custom registry and all.
-bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full packaging/systemd/*.service packaging/rpm/trident.spec packaging/selinux-policy-trident/* version-vars
+bin/trident-rpms-%.tar.gz: packaging/docker/Dockerfile.full packaging/systemd/*.service packaging/rpm/trident.spec packaging/selinux-policy-trident/* version-vars azl-version-vars
+	@case "$@" in \
+		*$(DISTRO).tar.gz) ;; \
+		*) echo "Invalid target '$@' for DISTRO '$(DISTRO)'. Expected target ending in '$(DISTRO).tar.gz'."; exit 1 ;; \
+	esac
 	$(eval CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN := $(shell az account get-access-token --query "join(' ', ['Bearer', accessToken])" --output tsv))
-
 	@mkdir -p bin/
 	@tmpdir=$$(mktemp -d) && \
 		export CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN="$(CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN)" &&\
@@ -180,6 +222,11 @@ bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full packaging/systemd
 			--build-arg TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
 			--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)" \
 			--build-arg RPM_REL="$(TRIDENT_PREVIEW_VERSION)" \
+			--build-arg AZL_IMAGE="$(AZL_IMAGE)" \
+			--build-arg DISTRO_PACKAGES="$(DISTRO_PACKAGES)" \
+			--build-arg RPM_PACKAGES="$(RPM_PACKAGES)" \
+			--build-arg RUST_PACKAGE="$(RUST_PACKAGE)" \
+			--build-arg RPM_DEST="$(RPM_DEST)" \
 			--target artifact \
 			--output type=local,dest=$$tmpdir \
 			-f packaging/docker/Dockerfile.full \
@@ -190,19 +237,26 @@ bin/trident-rpms-azl3.tar.gz: packaging/docker/Dockerfile.full packaging/systemd
 	@tar xf $@ -C bin/
 
 # This one does a fast trick-build where we build locally and inject the binary into the container to add it to the RPM.
-bin/trident-rpms.tar.gz: packaging/docker/Dockerfile.azl3 packaging/systemd/*.service packaging/rpm/trident.spec target/release/trident target/release/trident-acl-agent packaging/selinux-policy-trident/*
+# For the fast RPM build, azl3 (the default) uses the native host build for
+# backward compatibility; other distros use the in-container distro build.
+TRIDENT_RPM_BIN_DIR := $(if $(filter azl3,$(DISTRO)),target/release,target/$(DISTRO)/release)
+
+bin/trident-rpms.tar.gz: azl-version-vars packaging/docker/Dockerfile.azl packaging/systemd/*.service packaging/rpm/trident.spec $(TRIDENT_RPM_BIN_DIR)/trident $(TRIDENT_RPM_BIN_DIR)/trident-acl-agent packaging/selinux-policy-trident/*
 	@mkdir -p bin/
-	@if [ ! -f bin/trident ] || ! cmp -s target/release/trident bin/trident; then \
-		cp target/release/trident bin/trident; \
+	@if [ ! -f bin/trident ] || ! cmp -s $(TRIDENT_RPM_BIN_DIR)/trident bin/trident; then \
+		cp $(TRIDENT_RPM_BIN_DIR)/trident bin/trident; \
 	fi
-	@if [ ! -f bin/trident-acl-agent ] || ! cmp -s target/release/trident-acl-agent bin/trident-acl-agent; then \
-		cp target/release/trident-acl-agent bin/trident-acl-agent; \
+	@if [ ! -f bin/trident-acl-agent ] || ! cmp -s $(TRIDENT_RPM_BIN_DIR)/trident-acl-agent bin/trident-acl-agent; then \
+		cp $(TRIDENT_RPM_BIN_DIR)/trident-acl-agent bin/trident-acl-agent; \
 	fi
 	@docker build -t trident/trident-build:latest \
 		--build-arg TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
 		--build-arg RPM_VER="$(TRIDENT_CARGO_VERSION)" \
 		--build-arg RPM_REL="$(TRIDENT_PREVIEW_VERSION)" \
-		-f packaging/docker/Dockerfile.azl3 \
+		--build-arg AZL_IMAGE="$(AZL_IMAGE)" \
+		--build-arg RPM_DEST="$(RPM_DEST)" \
+		--build-arg RPM_PACKAGES="$(RPM_PACKAGES)" \
+		-f packaging/docker/Dockerfile.azl \
 		.
 	@id=$$(docker create trident/trident-build:latest) && \
 	    docker cp -q $$id:/work/trident-rpms.tar.gz $@ || \
@@ -213,7 +267,7 @@ bin/trident-rpms.tar.gz: packaging/docker/Dockerfile.azl3 packaging/systemd/*.se
 STEAMBOAT_RPMS_DIR ?= ../steamboat/build/uki/out/RPMS
 
 .PHONY: copy-rpms-to-steamboat
-copy-rpms-to-steamboat: bin/trident-rpms-azl3.tar.gz
+copy-rpms-to-steamboat: azl-version-vars bin/trident-rpms-$(DISTRO).tar.gz
 	@echo "Cleaning up old Trident RPMs in Steamboat..."
 	@rm -f $(STEAMBOAT_RPMS_DIR)/trident-*
 	@echo "Copying Trident RPMs to Steamboat..."
@@ -224,7 +278,7 @@ copy-rpms-to-steamboat: bin/trident-rpms-azl3.tar.gz
 
 # Does a full build of Trident RPMs and publishes them to the TridentDev feed in Azure DevOps.
 .PHONY: publish-dev-rpms
-publish-dev-rpms: bin/trident-rpms-azl3.tar.gz
+publish-dev-rpms: azl-version-vars bin/trident-rpms-$(DISTRO).tar.gz
 	@echo "Publishing Trident dev RPMs to TridentDev/rpms-dev:$(LOCAL_BUILD_TRIDENT_VERSION)"
 	$(eval STAGING_DIR := $(shell mktemp -d))
 	@find bin/RPMS/ -type f -name '*.rpm' -exec cp {} $(STAGING_DIR)/ \;
@@ -242,8 +296,13 @@ publish-dev-rpms: bin/trident-rpms-azl3.tar.gz
 
 # Grabs bin/trident-rpms.tar.gz from the local build directory and builds a Docker image with it.
 .PHONY: docker-build
-docker-build: packaging/docker/Dockerfile.runtime bin/trident-rpms.tar.gz
-	@docker build --quiet -f packaging/docker/Dockerfile.runtime -t trident/trident:latest .
+docker-build: azl-version-vars packaging/docker/Dockerfile.runtime bin/trident-rpms.tar.gz
+	@docker build --quiet \
+	    -f packaging/docker/Dockerfile.runtime \
+		-t trident/trident:latest \
+		. \
+		--build-arg AZL_IMAGE="$(AZL_IMAGE)" \
+		--build-arg RPM_PACKAGES="$(RPM_PACKAGES)"
 
 artifacts/test-image/trident-container.tar.gz: docker-build
 	@mkdir -p artifacts/test-image
@@ -545,8 +604,8 @@ IS_UBUNTU_24_OR_NEWER := $(shell \
 	. $(OS_RELEASE_FILE) 2>/dev/null && \
 	[ "$$ID" = "ubuntu" ] && [ "$${VERSION_ID%%.*}" -ge 24 ] && echo yes)
 
-RUN_NETLAUNCH_TRIDENT_BIN ?= $(if $(filter yes,$(IS_UBUNTU_24_OR_NEWER)),target/azl3/release/trident,target/release/trident)
-RUN_NETLAUNCH_LAUNCHER_BIN ?= $(if $(filter yes,$(IS_UBUNTU_24_OR_NEWER)),target/azl3/release/trident-acl-agent,target/release/trident-acl-agent)
+RUN_NETLAUNCH_TRIDENT_BIN ?= $(if $(filter yes,$(IS_UBUNTU_24_OR_NEWER)),target/$(DISTRO)/release/trident,target/release/trident)
+RUN_NETLAUNCH_LAUNCHER_BIN ?= $(if $(filter yes,$(IS_UBUNTU_24_OR_NEWER)),target/$(DISTRO)/release/trident-acl-agent,target/release/trident-acl-agent)
 
 .PHONY: run-netlaunch run-netlaunch-stream
 run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch validate $(RUN_NETLAUNCH_TRIDENT_BIN) $(RUN_NETLAUNCH_LAUNCHER_BIN)
