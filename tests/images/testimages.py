@@ -7,6 +7,8 @@ from builder import (
     ArtifactManifest,
     BaseImage,
     BaseImageManifest,
+    BlobImageManifest,
+    Distro,
     ImageConfig,
     OutputFormat,
     SystemArchitecture,
@@ -28,45 +30,42 @@ DEFINED_IMAGES: List[ImageConfig] = [
     ImageConfig(
         "trident-installer",
         config="trident-installer",
-        output_format=OutputFormat.ISO,
+        output_and_config={OutputFormat.ISO: "base/baseimg.yaml"},
     ),
     ImageConfig(
         "trident-split-installer",
         config="trident-installer",
-        config_file="base/baseimg-split.yaml",
-        output_format=OutputFormat.ISO,
+        output_and_config={OutputFormat.ISO: "base/baseimg-split.yaml"},
     ),
     ImageConfig(
         "trident-installer-arm64",
         config="trident-installer",
-        output_format=OutputFormat.ISO,
+        output_and_config={OutputFormat.ISO: "base/baseimg.yaml"},
         base_image=BaseImage.CORE_ARM64,
         architecture=SystemArchitecture.ARM64,
     ),
     ImageConfig(
         "trident-container-installer",
         config="trident-container-installer",
-        output_format=OutputFormat.ISO,
+        output_and_config={OutputFormat.ISO: "base/baseimg.yaml"},
         requires_trident=False,
     ),
     ImageConfig(
         "trident-direct-streaming-installer-amd64",
         config="trident-installer",
-        config_file="base/baseimg-direct-streaming.yaml",
-        output_format=OutputFormat.ISO,
+        output_and_config={OutputFormat.ISO: "base/baseimg-direct-streaming.yaml"},
     ),
     ImageConfig(
         "trident-direct-streaming-installer-arm64",
         config="trident-installer",
-        config_file="base/baseimg-direct-streaming.yaml",
-        output_format=OutputFormat.ISO,
+        output_and_config={OutputFormat.ISO: "base/baseimg-direct-streaming.yaml"},
         base_image=BaseImage.CORE_ARM64,
         architecture=SystemArchitecture.ARM64,
     ),
     # Test images
     ImageConfig(
         "trident-functest",
-        output_format=OutputFormat.QCOW2,
+        output_and_config={OutputFormat.QCOW2: "base/baseimg.yaml"},
         requires_trident=False,
     ),
     ImageConfig("trident-testimage"),
@@ -80,19 +79,19 @@ DEFINED_IMAGES: List[ImageConfig] = [
     ImageConfig(
         "trident-usrverity-testimage",
         config="trident-verity-testimage",
-        config_file="usr/host.yaml",
+        output_and_config={OutputFormat.COSI: "usr/host.yaml"},
         requires_ukify=True,
     ),
     ImageConfig(
         "trident-container-verity-testimage",
         config="trident-verity-testimage",
-        config_file="base/baseimg-container.yaml",
+        output_and_config={OutputFormat.COSI: "base/baseimg-container.yaml"},
         requires_trident=False,
     ),
     ImageConfig(
         "trident-container-usrverity-testimage",
         config="trident-verity-testimage",
-        config_file="usr/container.yaml",
+        output_and_config={OutputFormat.COSI: "usr/container.yaml"},
         requires_ukify=True,
         requires_trident=False,
     ),
@@ -104,46 +103,54 @@ DEFINED_IMAGES: List[ImageConfig] = [
     ImageConfig(
         "azurelinux-direct-streaming-testimage-amd64",
         config="azurelinux-direct-streaming-testimage",
-        output_format=OutputFormat.BAREMETAL_IMAGE,
+        output_and_config={OutputFormat.BAREMETAL_IMAGE: "base/baseimg.yaml"},
     ),
     ImageConfig(
         "azurelinux-direct-streaming-testimage-arm64",
         config="azurelinux-direct-streaming-testimage",
-        output_format=OutputFormat.BAREMETAL_IMAGE,
+        output_and_config={OutputFormat.BAREMETAL_IMAGE: "base/baseimg.yaml"},
         base_image=BaseImage.CORE_ARM64,
         architecture=SystemArchitecture.ARM64,
     ),
     # AZL installer
     ImageConfig(
         "azl-installer",
-        config_file=Path("installer-iso.yaml"),
-        output_format=OutputFormat.ISO,
+        output_and_config={OutputFormat.ISO: "installer-iso.yaml"},
         requires_trident=True,
         extra_dependencies=[
             Path("tests/images/azl-installer/iso/bin/liveinstaller"),
             Path("tests/images/azl-installer/iso/images/trident-testimage.cosi"),
         ],
     ),
-    # VM test images
+    # VM test images (azl3)
     ImageConfig(
         "trident-vm-grub-testimage",
         base_image=BaseImage.QEMU_GUEST,
         config="trident-vm-testimage",
-        config_file="base/updateimg-grub.yaml",
+        output_and_config={
+            OutputFormat.COSI: "base/updateimg-grub.yaml",
+            OutputFormat.QCOW2: "base/baseimg-grub.yaml",
+        },
         ssh_key="files/id_rsa.pub",
     ),
     ImageConfig(
         "trident-vm-grub-verity-testimage",
         base_image=BaseImage.QEMU_GUEST,
         config="trident-vm-testimage",
-        config_file="base/updateimg-grub-verity.yaml",
+        output_and_config={
+            OutputFormat.COSI: "base/updateimg-grub-verity.yaml",
+            OutputFormat.QCOW2: "base/baseimg-grub-verity.yaml",
+        },
         ssh_key="files/id_rsa.pub",
     ),
     ImageConfig(
         "trident-vm-root-verity-testimage",
         base_image=BaseImage.QEMU_GUEST,
         config="trident-vm-testimage",
-        config_file="base/baseimg-root-verity.yaml",
+        output_and_config={
+            OutputFormat.COSI: "base/baseimg-root-verity.yaml",
+            OutputFormat.QCOW2: "base/baseimg-root-verity.yaml",
+        },
         requires_ukify=True,
         ssh_key="files/id_rsa.pub",
     ),
@@ -151,7 +158,10 @@ DEFINED_IMAGES: List[ImageConfig] = [
         "trident-vm-usr-verity-testimage",
         base_image=BaseImage.QEMU_GUEST,
         config="trident-vm-testimage",
-        config_file="base/baseimg-usr-verity.yaml",
+        output_and_config={
+            OutputFormat.COSI: "base/baseimg-usr-verity.yaml",
+            OutputFormat.QCOW2: "base/baseimg-usr-verity.yaml",
+        },
         requires_ukify=True,
         ssh_key="files/id_rsa.pub",
     ),
@@ -159,13 +169,20 @@ DEFINED_IMAGES: List[ImageConfig] = [
         "trident-vm-grub-verity-azure-testimage",
         base_image=BaseImage.CORE_SELINUX,
         config="trident-vm-testimage",
-        config_file="base/updateimg-grub-verity-azure.yaml",
+        output_and_config={
+            OutputFormat.COSI: "base/updateimg-grub-verity-azure.yaml",
+            OutputFormat.QCOW2: "base/baseimg-grub-verity-azure.yaml",
+            OutputFormat.VHD: "base/baseimg-grub-verity-azure.yaml",
+        },
     ),
     ImageConfig(
         "trident-vm-grub-testimage-arm64",
         base_image=BaseImage.CORE_ARM64,
         config="trident-vm-testimage",
-        config_file="base/updateimg-grub.yaml",
+        output_and_config={
+            OutputFormat.COSI: "base/updateimg-grub.yaml",
+            OutputFormat.QCOW2: "base/baseimg-grub.yaml",
+        },
         ssh_key="files/id_rsa.pub",
         architecture=SystemArchitecture.ARM64,
     ),
@@ -173,21 +190,36 @@ DEFINED_IMAGES: List[ImageConfig] = [
         "trident-vm-grub-verity-testimage-arm64",
         base_image=BaseImage.CORE_ARM64,
         config="trident-vm-testimage",
-        config_file="base/updateimg-grub-verity.yaml",
+        output_and_config={
+            OutputFormat.COSI: "base/updateimg-grub-verity.yaml",
+            OutputFormat.QCOW2: "base/baseimg-grub-verity.yaml",
+        },
         ssh_key="files/id_rsa.pub",
         architecture=SystemArchitecture.ARM64,
     ),
+    # VM test images (azl4)
+    ImageConfig(
+        "trident-vm-grub-azl4-testimage",
+        base_image=BaseImage.AZL4_QEMU_GUEST,
+        config="trident-vm-testimage",
+        output_and_config={
+            OutputFormat.COSI: "base/updateimg-grub-azl4.yaml",
+            OutputFormat.QCOW2: "base/baseimg-grub-azl4.yaml",
+        },
+        ssh_key="files/id_rsa.pub",
+    ),
+    # stream-image test images
     ImageConfig(
         "ubuntu-direct-streaming-testimage-2204-amd64",
         base_image=BaseImage.UBUNTU_2204_AMD64,
-        output_format=OutputFormat.BAREMETAL_IMAGE,
+        output_and_config={OutputFormat.BAREMETAL_IMAGE: "base/baseimg.yaml"},
         image_customizer_convert=True,
         requires_trident=False,
     ),
     ImageConfig(
         "ubuntu-direct-streaming-testimage-2204-arm64",
         base_image=BaseImage.UBUNTU_2204_ARM64,
-        output_format=OutputFormat.BAREMETAL_IMAGE,
+        output_and_config={OutputFormat.BAREMETAL_IMAGE: "base/baseimg.yaml"},
         architecture=SystemArchitecture.ARM64,
         image_customizer_convert=True,
         requires_trident=False,
@@ -195,14 +227,14 @@ DEFINED_IMAGES: List[ImageConfig] = [
     ImageConfig(
         "ubuntu-direct-streaming-testimage-2404-amd64",
         base_image=BaseImage.UBUNTU_2404_AMD64,
-        output_format=OutputFormat.BAREMETAL_IMAGE,
+        output_and_config={OutputFormat.BAREMETAL_IMAGE: "base/baseimg.yaml"},
         image_customizer_convert=True,
         requires_trident=False,
     ),
     ImageConfig(
         "ubuntu-direct-streaming-testimage-2404-arm64",
         base_image=BaseImage.UBUNTU_2404_ARM64,
-        output_format=OutputFormat.BAREMETAL_IMAGE,
+        output_and_config={OutputFormat.BAREMETAL_IMAGE: "base/baseimg.yaml"},
         architecture=SystemArchitecture.ARM64,
         image_customizer_convert=True,
         requires_trident=False,
@@ -210,7 +242,7 @@ DEFINED_IMAGES: List[ImageConfig] = [
     ImageConfig(
         "gb200-direct-streaming-testimage-2404-arm64",
         base_image=BaseImage.GB200_2404_ARM64,
-        output_format=OutputFormat.BAREMETAL_IMAGE,
+        output_and_config={OutputFormat.BAREMETAL_IMAGE: "base/baseimg.yaml"},
         architecture=SystemArchitecture.ARM64,
         image_customizer_convert=True,
         requires_trident=False,
@@ -245,6 +277,29 @@ ARTIFACTS = ArtifactManifest(
             image=BaseImage.MINIMAL,
             package_name="minimal_vhdx-3.0-stable",
             version="*",
+        ),
+        # BaseImageManifest(
+        #     image=BaseImage.AZL4_CORE,
+        #     package_name="core_vhdx-4.0-stable",
+        #     version="*",
+        #     distro=Distro.AZL4,
+        # ),
+        BlobImageManifest(
+            # Azure Linux 4.0 base VHDX from the AZL preview gallery's
+            # backing storage. Pinned to a specific daily build — bump
+            # the version segment in path_prefix to pick up a newer one.
+            #
+            # Source gallery:
+            #   azlpubDevGallery2mruiyvi / azure-linux-4-daily-x64
+            #   subscription e4ab81f8-030f-4593-a8f2-3ea2c7630a19
+            #   RG azl-acg-preview-publishing
+            #
+            # Storage account + container are supplied at runtime via
+            # --blob-storage-account / --blob-container CLI flags or
+            # the BLOB_STORAGE_ACCOUNT / BLOB_CONTAINER env vars.
+            image=BaseImage.AZL4_QEMU_GUEST,
+            path_prefix="staging/azure-linux-4-daily-x64/4.0.2026051502",
+            file_suffix=".vhdfixed",
         ),
     ],
 )
