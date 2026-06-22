@@ -81,6 +81,7 @@ os:
       # Trident socket-activated daemon. Storm-trident drives all
       # update/commit/rollback through `trident grpc-client ...` which
       # talks to this socket.
+      - trident
       - tridentd.socket
   users:
     - name: testuser
