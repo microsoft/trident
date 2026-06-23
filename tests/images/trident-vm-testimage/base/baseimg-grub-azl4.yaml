@@ -96,6 +96,7 @@ os:
       - iptables-nft
       - jq
       - lsof
+      - strace
       - netplan
       - netplan-default-backend-networkd
       - openssh-server
@@ -175,4 +176,8 @@ scripts:
     # tries to preserve them. Keeping the qcow2 label-free is defensive.
     # MUST run LAST so it sweeps any files produced by earlier scripts
     # (initrd, etc.).
+    # Diagnostic: wrap netplan + import + system-update generators with
+    # strace to capture the AZL4 generator-phase freeze. MUST run before
+    # strip-selinux-xattrs.sh so the new files are swept too.
+    - path: scripts/strace-generators.sh
     - path: scripts/strip-selinux-xattrs.sh

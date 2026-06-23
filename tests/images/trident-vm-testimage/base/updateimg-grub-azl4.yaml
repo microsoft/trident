@@ -41,6 +41,7 @@ os:
       - iptables-nft
       - jq
       - lsof
+      - strace
       - netplan
       - netplan-default-backend-networkd
       - openssh-server
@@ -117,4 +118,8 @@ scripts:
     # install (MOS's loaded policy rejects unknown contexts via
     # setxattr). Stripping at cosi build time sidesteps the cascade.
     # Must run LAST so other postCustomization scripts don't re-label.
+    # Diagnostic: wrap netplan + import + system-update generators with
+    # strace to capture the AZL4 generator-phase freeze. MUST run before
+    # strip-selinux-xattrs.sh so the new files are swept too.
+    - path: scripts/strace-generators.sh
     - path: scripts/strip-selinux-xattrs.sh
