@@ -1052,14 +1052,16 @@ all-iso: $(ISO_TARGETS)
 # prerequisites so that we can use find to get all the files in the directory.
 # https://www.gnu.org/software/make/manual/make.html#Secondary-Expansion
 .SECONDEXPANSION:
-artifacts/%.cosi artifacts/%.iso artifacts/%.vhdx: $$(shell ./tests/images/testimages.py dependencies $$*)
+artifacts/%.cosi artifacts/%.iso artifacts/%.vhdx artifacts/%.vhd artifacts/%.qcow2: $$(shell ./tests/images/testimages.py dependencies $$*)
 	@echo "Building '$*' [$@] from $<"
+	@echo "Extension is: $(subst .,,$(suffix $@))"
 	@echo "Prerequisites:"
 	@echo "$^" | tr ' ' '\n' | sed 's/^/    /'
 	@echo "Building image..."
 	sudo ./tests/images/testimages.py build \
 		$* \
 		--output-dir ./artifacts \
+		--output-type $(subst .,,$(suffix $@)) \
 		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE)) \
 		$(if $(strip $(MIC_ARCHITECTURE)),--image-architecture $(MIC_ARCHITECTURE))
 
