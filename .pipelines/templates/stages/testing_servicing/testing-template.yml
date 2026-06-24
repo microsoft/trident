@@ -40,6 +40,7 @@ parameters:
     displayName: Image flavor
     type: string
     values:
+      - grubazl4
       - qemu
       - azure
       - uki
@@ -167,7 +168,10 @@ jobs:
           fi
           if [ "${{ parameters.flavor }}" != "uki" ]; then
             if [[ "${{ parameters.testSecureBoot }}" == 'True' ]]; then
-              FLAGS="$FLAGS --secure-boot"
+              # grubazl4 is skipped: its base image does not support secure boot yet.
+              if [[ "${{ parameters.flavor }}" != 'grubazl4' ]]; then
+                FLAGS="$FLAGS --secure-boot"
+              fi
             fi
           fi
           if [ "${{ parameters.rollbackTesting }}" == "True" ]; then
