@@ -40,10 +40,8 @@ endif
 	# Note: the az-cli version in pipelines does not like --parallel, so run sequentially.
 	./scripts/test-pipeline $(PARALLEL_FLAG) -q $(BRANCH_FLAG) \
 		prism-cicd \
-		azl-cicd \
 		pr \
 		pr-e2e \
-		pr-e2e-azure \
 		ci \
 		pre \
 		rel \
