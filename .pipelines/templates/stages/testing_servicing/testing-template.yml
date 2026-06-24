@@ -168,6 +168,7 @@ jobs:
           fi
           if [ "${{ parameters.flavor }}" != "uki" ]; then
             if [[ "${{ parameters.testSecureBoot }}" == 'True' ]]; then
+              # grubazl4 is skipped: its base image does not support secure boot yet.
               if [[ "${{ parameters.flavor }}" != 'grubazl4' ]]; then
                 FLAGS="$FLAGS --secure-boot"
               fi
