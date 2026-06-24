@@ -161,6 +161,7 @@ jobs:
           fi
           if [ "${{ parameters.flavor }}" != "uki" ]; then
             if [[ "${{ parameters.testSecureBoot }}" == 'True' ]]; then
+              # grubazl4 is skipped: its base image does not support secure boot yet.
               if [[ "${{ parameters.flavor }}" != 'grubazl4' ]]; then
                 STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --secure-boot"
               fi
@@ -178,18 +179,11 @@ jobs:
             # Allow testing for non-extension scenarios
             STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --skip-extension-testing"
           fi
-          # Netplan must be skipped on grubazl4 (Azure Linux 4). Its systemd
-          # generator performs an nss-systemd group lookup that varlink-round-trips
-          # to PID 1's own userdb service, but during early boot PID 1 is
-          # synchronously blocked running generators and cannot answer, so the
-          # lookup hangs until the 90s generator timeout and the rollback boot
-          # freezes ("Failed to fork off sandboxing environment ... Protocol error"
-          # / "Freezing execution"). Skipping netplan runtime testing means Trident
-          # never writes /etc/netplan/99-trident.yaml, so the netplan generator has
-          # no config to process and never makes the deadlocking lookup. This is a
-          # test-side workaround until the systemd fix ships (azurelinux PR #17791,
-          # which sets SYSTEMD_NSS_DYNAMIC_BYPASS=1 for generators). Force it on for
-          # grubazl4 regardless of the pipeline parameter.
+          # Netplan runtime testing is skipped on grubazl4 (Azure Linux 4) to
+          # avoid an early-boot systemd generator deadlock during rollback.
+          # Fixed upstream by azurelinux PR #17791
+          # (https://github.com/microsoft/azurelinux/pull/17791/).
+          # Force it on for grubazl4 regardless of the pipeline parameter.
           if [ "${{ parameters.skipNetplanRuntimeTesting }}" == "true" ] || [ "${{ parameters.flavor }}" == "grubazl4" ]; then
             # skip netplan runtime testing
             STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --skip-netplan-runtime-testing"

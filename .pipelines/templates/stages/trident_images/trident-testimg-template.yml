@@ -109,30 +109,6 @@ parameters:
     type: boolean
     default: false
 
-  # The AZL4 base VHDX is sourced from the Azure Linux preview gallery's
-  # backing storage account. The pipeline service connection at
-  # $(BLOB_SERVICE_CONNECTION) must have `Storage Blob Data Reader` on
-  # this account. See tests/images/SERVICE-CONNECTION-RUNBOOK.md.
-  - name: blobStorageAccount
-    type: string
-    default: "azlpubdev2mruiyvi"
-
-  - name: blobContainer
-    type: string
-    default: "images-dev"
-
-  - name: blobSubscription
-    type: string
-    # Subscription where the storage account lives. The SC's default
-    # subscription may differ — we explicitly set context before download.
-    default: "e4ab81f8-030f-4593-a8f2-3ea2c7630a19"
-
-  - name: blobServiceConnection
-    type: string
-    # NB: this must be a service connection that exists in the ADO project.
-    # Created manually by trident infra team.
-    default: "trident-azl4-blob-reader"
-
 steps:
   - template: ../common_tasks/avoid-pypi-usage.yml
 
@@ -254,90 +230,15 @@ steps:
             runtimeBuildType: ${{ parameters.baseimgBuildType }}
 
       - ${{ else }}:
-        # Download the AZL4 base VHDX from the preview gallery's backing storage.
-        # Authenticates via the federated identity attached to the service
-        # connection — no storage keys handled here.
-        #
-        # The SC's default subscription (Polar_ImageTools_Staging) differs from
-        # the storage account's subscription (ControlTower_Test). We must switch
-        # context so `az storage blob list` resolves the account correctly.
-        - task: AzureCLI@2
-          displayName: "Download AZL4 base VHDX from blob"
-          inputs:
-            azureSubscription: ${{ parameters.blobServiceConnection }}
-            scriptType: bash
-            scriptLocation: inlineScript
-            workingDirectory: ${{ parameters.tridentSourceDirectory }}
-            inlineScript: |
-              set -euxo pipefail
-              az account set --subscription "${{ parameters.blobSubscription }}"
-              python3 ./tests/images/testimages.py download-image azl4_qemu_guest \
-                  --blob-storage-account "${{ parameters.blobStorageAccount }}" \
-                  --blob-container "${{ parameters.blobContainer }}"
-              ls -la artifacts/azl4_qemu_guest.vhdx
-              mkdir -p $(Build.ArtifactStagingDirectory)/images
-              mv artifacts/azl4_qemu_guest.vhdx $(Build.ArtifactStagingDirectory)/images/
-              ls -la $(Build.ArtifactStagingDirectory)/images/azl4_qemu_guest.vhdx
-      - ${{ if eq(parameters.useStagedSshKeys, true) }}:
-        # Stage SSH keys into the testimage tree so they get baked into the image
-        # and are available for tests to use.
-        - bash: |
-            set -euxo pipefail
-            SSH_DEST="${{ parameters.tridentSourceDirectory }}/tests/images/trident-vm-testimage/base/files"
-            SSH_SRC="${{ parameters.tridentSourceDirectory }}/artifacts"
+        - template: ../common_tasks/download-azl4-base-vhdx.yml
+          parameters:
+            tridentSourceDirectory: ${{ parameters.tridentSourceDirectory }}
 
-            if [ ! -f "$SSH_SRC/id_rsa.pub" ]; then
-              echo "ssh keys not found at $SSH_SRC"
-              echo "Available files:"
-              find "$SSH_SRC" -type f 2>/dev/null | head -20 || true
-              exit 1
-            fi
-
-            mkdir -p "$SSH_DEST"
-            cp "$SSH_SRC/id_rsa"* "$SSH_DEST/"
-            chmod 600 "$SSH_DEST/id_rsa"
-            chmod 644 "$SSH_DEST/id_rsa.pub"
-          displayName: "Stage SSH keys into testimage tree"
-          workingDirectory: ${{ parameters.tridentSourceDirectory }}
-
-  - bash: |
-      set -ex
-
-      base_dir='${{ parameters.tridentSourceDirectory }}/artifacts'
-
-      mkdir -p $base_dir
-      # Check if there are any .vhdx files in the images directory and move them
-      if ls "$(Build.ArtifactStagingDirectory)/images/" | grep -q ".*\.vhdx$"; then
-        mv $(Build.ArtifactStagingDirectory)/images/*.vhdx $base_dir/
-        rm -rf $(Build.ArtifactStagingDirectory)/images
-      else
-        echo "No base image found"
-        exit 1
-      fi
-
-      if ls "$(Build.ArtifactStagingDirectory)/rpms/" | grep -q "rpms.tar.gz"; then
-        mkdir -p $base_dir/rpm-overrides
-        tar -xvf $(Build.ArtifactStagingDirectory)/rpms/rpms.tar.gz \
-          --strip-components=2 \
-          -C $base_dir/rpm-overrides
-        rm $(Build.ArtifactStagingDirectory)/rpms/rpms.tar.gz
-      fi
-
-      DISTRO=azl3
-      if [[ "${{ parameters.baseimgAzureLinuxVersion }}" == "4.0-preview" ]]; then
-        DISTRO=azl4
-      fi
-
-      find $(Build.ArtifactStagingDirectory)
-      if [ -d "$(Build.ArtifactStagingDirectory)/trident" ]; then
-        rpm_dir='${{ parameters.tridentSourceDirectory }}/bin/RPMS'
-        mkdir -p $rpm_dir
-        find "$(Build.ArtifactStagingDirectory)/trident" -name "*${DISTRO}*.rpm" -exec mv {} $rpm_dir/ \;
-        rm -rf "$(Build.ArtifactStagingDirectory)/trident"
-      fi
-
-    workingDirectory: ${{ parameters.tridentSourceDirectory }}
-    displayName: "Prepare and move requirements"
+  - template: ../common_tasks/prepare-testimage-requirements.yml
+    parameters:
+      tridentSourceDirectory: ${{ parameters.tridentSourceDirectory }}
+      azureLinuxVersion: ${{ parameters.baseimgAzureLinuxVersion }}
+      stageSshKeys: ${{ parameters.useStagedSshKeys }}
 
   - script: |
       # Meta
