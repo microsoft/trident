@@ -63,6 +63,7 @@ parameters:
     values:
       - "2.0"
       - "3.0"
+      - "4.0-preview"
     default: "3.0"
 
   - name: baseimgTypes
@@ -133,21 +134,6 @@ steps:
           mkdir -p ${{ parameters.tridentSourceDirectory }}/artifacts
           cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* ${{ parameters.tridentSourceDirectory }}/artifacts/
         displayName: Copy SSH Keys
-
-  # Stage the SSH public key into the test image tree so the builder bakes it
-  # into the image. The Makefile previously did this via the files/id_rsa.pub
-  # prerequisite; those explicit image targets were removed, so the pipeline
-  # now stages the key before building. Superseded by the shared
-  # prepare-testimage-requirements template.
-  - ${{ if eq(parameters.useStagedSshKeys, true) }}:
-      - bash: |
-          set -eux
-
-          SRC="${{ parameters.tridentSourceDirectory }}/artifacts/id_rsa.pub"
-          DEST="${{ parameters.tridentSourceDirectory }}/tests/images/trident-vm-testimage/base/files"
-          mkdir -p "$DEST"
-          cp "$SRC" "$DEST/"
-        displayName: Stage SSH public key into testimage tree
 
   - script: |
       echo "##[warning]THE PIPELINE TEMPLATE trident-testimg-template.yaml IS DEPRECATED. PLEASE SWITCH TO USING testimages.py TO BUILD TEST IMAGES."
@@ -227,60 +213,32 @@ steps:
         displayName: "Download Base Image - ${{ baseimgType }}"
 
     - ${{ else }}:
-      - template: common/base-images-download-template.yaml@platform-pipelines
-        parameters:
-          buildType: ${{ parameters.baseimgBuildType }}
-          baseImageType: ${{ baseimgType }}
-          imageVersion: ${{ parameters.baseimgVersion }}
-          azureLinuxVersion: ${{ parameters.baseimgAzureLinuxVersion }}
+      - ${{ if ne(parameters.baseimgAzureLinuxVersion, '4.0-preview') }}:
+        - template: common/base-images-download-template.yaml@platform-pipelines
+          parameters:
+            buildType: ${{ parameters.baseimgBuildType }}
+            baseImageType: ${{ baseimgType }}
+            imageVersion: ${{ parameters.baseimgVersion }}
+            azureLinuxVersion: ${{ parameters.baseimgAzureLinuxVersion }}
+        # For dev builds, the RPMs are not necessarily published, so download them here. The
+        # parameter is set based on a runtime variable, so we cannot use ${{ if }}, so the
+        # template is always run and contains logic to skip if not needed.
+        - template: common/rpms-download-template.yaml@platform-pipelines
+          parameters:
+            rpmsVersion: ${{ parameters.rpmsVersion }}
+            azureLinuxVersion: ${{ parameters.baseimgAzureLinuxVersion }}
+            runtimeBuildType: ${{ parameters.baseimgBuildType }}
 
-  # For dev builds, the RPMs are not necessarily published, so download them here. The
-  # parameter is set based on a runtime variable, so we cannot use ${{ if }}, so the
-  # template is always run and contains logic to skip if not needed.
-  - template: common/rpms-download-template.yaml@platform-pipelines
+      - ${{ else }}:
+        - template: ../common_tasks/download-azl4-base-vhdx.yml
+          parameters:
+            tridentSourceDirectory: ${{ parameters.tridentSourceDirectory }}
+
+  - template: ../common_tasks/prepare-testimage-requirements.yml
     parameters:
-      rpmsVersion: ${{ parameters.rpmsVersion }}
+      tridentSourceDirectory: ${{ parameters.tridentSourceDirectory }}
       azureLinuxVersion: ${{ parameters.baseimgAzureLinuxVersion }}
-      runtimeBuildType: ${{ parameters.baseimgBuildType }}
-
-  - bash: |
-      set -ex
-
-      base_dir='${{ parameters.tridentSourceDirectory }}/artifacts'
-
-      mkdir -p $base_dir
-      # Check if there are any .vhdx files in the images directory and move them
-      if ls "$(Build.ArtifactStagingDirectory)/images/" | grep -q ".*\.vhdx$"; then
-        mv $(Build.ArtifactStagingDirectory)/images/*.vhdx $base_dir/
-        rm -rf $(Build.ArtifactStagingDirectory)/images
-      else
-        echo "No base image found"
-        exit 1
-      fi
-
-      if ls "$(Build.ArtifactStagingDirectory)/rpms/" | grep -q "rpms.tar.gz"; then
-        mkdir -p $base_dir/rpm-overrides
-        tar -xvf $(Build.ArtifactStagingDirectory)/rpms/rpms.tar.gz \
-          --strip-components=2 \
-          -C $base_dir/rpm-overrides
-        rm $(Build.ArtifactStagingDirectory)/rpms/rpms.tar.gz
-      fi
-
-      DISTRO=azl3
-      if [[ "${{ parameters.baseimgAzureLinuxVersion }}" == "4.0-preview" ]]; then
-        DISTRO=azl4
-      fi
-
-      find $(Build.ArtifactStagingDirectory)
-      if [ -d "$(Build.ArtifactStagingDirectory)/trident" ]; then
-        rpm_dir='${{ parameters.tridentSourceDirectory }}/bin/RPMS'
-        mkdir -p $rpm_dir
-        find "$(Build.ArtifactStagingDirectory)/trident" -name "*${DISTRO}*.rpm" -exec mv {} $rpm_dir/ \;
-        rm -rf "$(Build.ArtifactStagingDirectory)/trident"
-      fi
-
-    workingDirectory: ${{ parameters.tridentSourceDirectory }}
-    displayName: "Prepare and move requirements"
+      stageSshKeys: ${{ parameters.useStagedSshKeys }}
 
   - script: |
       # Meta

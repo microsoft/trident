@@ -24,6 +24,15 @@ parameters:
     type: string
     default: "*.*.*"
 
+  - name: azureLinuxVersion
+    displayName: Version of AzureLinux for the Base Image
+    type: string
+    values:
+      - "2.0"
+      - "3.0"
+      - "4.0-preview"
+    default: "3.0"
+
   - name: clones
     displayName: "Number of clones to generate"
     type: number
@@ -59,7 +68,6 @@ stages:
         variables:
           ob_outputDirectory: /tmp/output
           ob_artifactBaseName: ${{ parameters.imageName }}
-          BASEIMG_AZURE_LINUX_VERSION: "3.0"
 
         steps:
           - template: ../common_tasks/checkout_trident.yml
@@ -84,7 +92,7 @@ stages:
               baseimgBuildType: $(BASEIMG_BUILD_TYPE)
               baseimgVersion: $(BASEIMG_VERSION)
               rpmsVersion: $(RPMS_VERSION)
-              azureLinuxVersion: ${{ variables.BASEIMG_AZURE_LINUX_VERSION }}
+              azureLinuxVersion: ${{ parameters.azureLinuxVersion }}
               micBuildType: ${{ parameters.micBuildType }}
               micVersion: ${{ parameters.micVersion }}
               clones: ${{ parameters.clones }}
