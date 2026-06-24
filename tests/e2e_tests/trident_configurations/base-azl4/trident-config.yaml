@@ -1,0 +1,74 @@
+image:
+  url: http://NETLAUNCH_HOST_ADDRESS/files/regular.cosi
+  sha384: ignored
+# AZL4 does not ship grub2-efi-binary-noprefix. Trident handles this
+# automatically — no disableGrubNoprefixCheck override needed.
+storage:
+  disks:
+    - id: os
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+      partitionTableType: gpt
+      partitions:
+        - id: root-a
+          type: root
+          size: 8G
+        - id: root-b
+          type: root
+          size: 8G
+        - id: esp
+          type: esp
+          size: 1G
+        - id: swap
+          type: swap
+          size: 2G
+        - id: trident
+          type: linux-generic
+          size: 1G
+    - id: disk2
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+      partitionTableType: gpt
+      partitions: []
+  abUpdate:
+    volumePairs:
+      - id: root
+        volumeAId: root-a
+        volumeBId: root-b
+  filesystems:
+    - deviceId: trident
+      source: new
+      mountPoint: /var/lib/trident
+    - deviceId: esp
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+    - deviceId: root
+      mountPoint: /
+  swap:
+    - swap
+# /home partition omitted: the COSI bakes a user home directory onto
+# root via MIC os.users. Trident's newroot mount rejects non-empty
+# mount points, so a separate /home partition conflicts with the
+# pre-existing /home/<user>. AZL3 avoids this by only testing /home
+# in container mode. Container mode support for AZL4 is tracked as
+# a follow-up.
+scripts:
+  postConfigure:
+    - name: testing-privilege
+      runOn:
+        - clean-install
+        - ab-update
+      content: echo 'testing-user ALL=(ALL:ALL) NOPASSWD:ALL' > /etc/sudoers.d/testing-user
+os:
+  selinux:
+    mode: disabled
+  netplan:
+    version: 2
+    ethernets:
+      vmeths:
+        match:
+          name: eth*
+        dhcp4: true
+  users:
+    - name: testing-user
+      sshPublicKeys: []
+      sshMode: key-only
