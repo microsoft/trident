@@ -19,6 +19,7 @@ parameters:
     values:
       - "2.0"
       - "3.0"
+      - "4.0-preview"
     default: "3.0"
 
   - name: micBuildType
@@ -101,57 +102,32 @@ steps:
 # Note: DHCP packages are not being installed in this image template.
 # If needed use template download-dhcp.yml on test-images.
 
-  - template: common/base-images-download-template.yaml@platform-pipelines
+  - ${{ if ne(parameters.azureLinuxVersion, '4.0-preview') }}:
+    - template: common/base-images-download-template.yaml@platform-pipelines
+      parameters:
+        buildType: ${{ parameters.baseimgBuildType }}
+        baseImageType: $(baseImageType)
+        imageVersion: ${{ parameters.baseimgVersion }}
+        azureLinuxVersion: ${{ parameters.azureLinuxVersion }}
+
+    # For dev builds, the RPMs are not necessarily published, so download them here. The
+    # parameter is set based on a runtime variable, so we cannot use ${{ if }}, so the
+    # template is always run and contains logic to skip if not needed.
+    - template: common/rpms-download-template.yaml@platform-pipelines
+      parameters:
+        rpmsVersion: ${{ parameters.rpmsVersion }}
+        azureLinuxVersion: ${{ parameters.azureLinuxVersion }}
+        runtimeBuildType: ${{ parameters.baseimgBuildType }}
+  - ${{ else }}:
+    - template: ../common_tasks/download-azl4-base-vhdx.yml
+      parameters:
+        tridentSourceDirectory: ${{ parameters.tridentSourceDirectory }}
+
+  - template: ../common_tasks/prepare-testimage-requirements.yml
     parameters:
-      buildType: ${{ parameters.baseimgBuildType }}
-      baseImageType: $(baseImageType)
-      imageVersion: ${{ parameters.baseimgVersion }}
+      tridentSourceDirectory: ${{ parameters.tridentSourceDirectory }}
       azureLinuxVersion: ${{ parameters.azureLinuxVersion }}
-
-  # For dev builds, the RPMs are not necessarily published, so download them here. The
-  # parameter is set based on a runtime variable, so we cannot use ${{ if }}, so the
-  # template is always run and contains logic to skip if not needed.
-  - template: common/rpms-download-template.yaml@platform-pipelines
-    parameters:
-      rpmsVersion: ${{ parameters.rpmsVersion }}
-      azureLinuxVersion: ${{ parameters.azureLinuxVersion }}
-      runtimeBuildType: ${{ parameters.baseimgBuildType }}
-
-  - bash: |
-      set -ex
-
-      # Move base VHDX to artifacts/ (builder expects artifacts/*.vhdx)
-      mkdir -p artifacts
-      if ls "$(Build.ArtifactStagingDirectory)/images" | grep -q ".*\.vhdx$"; then
-        mv $(Build.ArtifactStagingDirectory)/images/*.vhdx artifacts/
-        rm -rf $(Build.ArtifactStagingDirectory)/images
-      else
-        echo "No base image found"
-        exit 1
-      fi
-
-      # Move dev RPM overrides to artifacts/rpm-overrides/
-      if ls "$(Build.ArtifactStagingDirectory)/rpms/" 2>/dev/null | grep -q "rpms.tar.gz"; then
-        mkdir -p artifacts/rpm-overrides
-        tar -xvf $(Build.ArtifactStagingDirectory)/rpms/rpms.tar.gz \
-          --strip-components=2 \
-          -C artifacts/rpm-overrides
-        rm $(Build.ArtifactStagingDirectory)/rpms/rpms.tar.gz
-      fi
-
-      DISTRO=azl3
-      if [[ "${{ parameters.azureLinuxVersion }}" == "4.0-preview" ]]; then
-        DISTRO=azl4
-      fi
-
-      # Move Trident RPMs to bin/RPMS/ (builder expects bin/RPMS/*.rpm)
-      if [ -d "$(Build.ArtifactStagingDirectory)/trident" ]; then
-        mkdir -p bin/RPMS
-        find "$(Build.ArtifactStagingDirectory)/trident" -name "*${DISTRO}*.rpm" -exec mv {} bin/RPMS/ \;
-        rm -rf "$(Build.ArtifactStagingDirectory)/trident"
-      fi
-    displayName: "Prepare and move requirements"
-    workingDirectory: ${{ parameters.tridentSourceDirectory }}
+      stageSshKeys: ${{ eq(parameters.azureLinuxVersion, '4.0-preview') }}
 
   - bash: |
       set -ex
