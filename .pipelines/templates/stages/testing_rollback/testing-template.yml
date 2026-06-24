@@ -25,6 +25,7 @@ parameters:
     type: string
     values:
       - qemu-grub
+      - grubazl4
       - qemu
       - uki
 
@@ -160,7 +161,10 @@ jobs:
           fi
           if [ "${{ parameters.flavor }}" != "uki" ]; then
             if [[ "${{ parameters.testSecureBoot }}" == 'True' ]]; then
-              STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --secure-boot"
+              # grubazl4 is skipped: its base image does not support secure boot yet.
+              if [[ "${{ parameters.flavor }}" != 'grubazl4' ]]; then
+                STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --secure-boot"
+              fi
             fi
           fi
           if [ "${{ parameters.skipManualRollbackTesting }}" == "true" ]; then
@@ -175,7 +179,12 @@ jobs:
             # Allow testing for non-extension scenarios
             STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --skip-extension-testing"
           fi
-          if [ "${{ parameters.skipNetplanRuntimeTesting }}" == "true" ]; then
+          # Netplan runtime testing is skipped on grubazl4 (Azure Linux 4) to
+          # avoid an early-boot systemd generator deadlock during rollback.
+          # Fixed upstream by azurelinux PR #17791
+          # (https://github.com/microsoft/azurelinux/pull/17791/).
+          # Force it on for grubazl4 regardless of the pipeline parameter.
+          if [ "${{ parameters.skipNetplanRuntimeTesting }}" == "true" ] || [ "${{ parameters.flavor }}" == "grubazl4" ]; then
             # skip netplan runtime testing
             STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --skip-netplan-runtime-testing"
           fi
