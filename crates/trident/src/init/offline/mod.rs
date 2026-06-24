@@ -11,7 +11,7 @@ use anyhow::{bail, Error};
 use log::{debug, info, trace, warn};
 use maplit::hashmap;
 
-use osutils::lsblk;
+use osutils::{lsblk, sfdisk};
 use sysdefs::partition_types::DiscoverablePartitionType;
 use trident_api::{
     config::{
@@ -256,22 +256,128 @@ fn generate_host_status(
         .structured(ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment)
         .message("Failed to find root device in lsblk output")?;
 
-    let disk_uuid = lsblk_device
+    let disk_uuid = match lsblk_device
         .ptuuid
         .clone()
         .and_then(|ptuuid| ptuuid.as_uuid())
-        .structured(ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment)
-        .message("No UUID found for root device")?;
+    {
+        Some(uuid) => uuid,
+        None => {
+            // lsblk didn't surface a PTUUID. This can happen in chroot
+            // environments (e.g. image-customizer / MIC) where the
+            // exposed loop device has partition children but the GPT
+            // disk-id either isn't set on the partition table or isn't
+            // populated by lsblk's PTUUID column. Fall back to sfdisk
+            // (which reads the GPT directly), and if that also reports
+            // no disk-id, mint one and persist it so the resulting
+            // image carries it forward to runtime.
+            let disk_dev_path = PathBuf::from("/dev").join(&lsblk_device.name);
+            warn!(
+                "PTUUID not reported by lsblk for {}; falling back to sfdisk",
+                disk_dev_path.display()
+            );
+            let from_sfdisk = sfdisk::get_disk_uuid(&disk_dev_path)
+                .structured(ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment)
+                .message("Failed to read GPT disk-id via sfdisk")?
+                .and_then(|u| u.as_uuid());
+            match from_sfdisk {
+                Some(uuid) => uuid,
+                None => {
+                    let new_uuid = uuid::Uuid::new_v4();
+                    warn!(
+                        "No GPT disk-id present on {}; assigning {}",
+                        disk_dev_path.display(),
+                        new_uuid
+                    );
+                    sfdisk::set_disk_uuid(&disk_dev_path, &new_uuid.to_string())
+                        .structured(
+                            ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment,
+                        )
+                        .message(format!(
+                            "Failed to assign GPT disk-id on {}",
+                            disk_dev_path.display()
+                        ))?;
+                    new_uuid
+                }
+            }
+        }
+    };
 
     lsblk_device.children.sort_by_key(|p| p.partn);
 
-    for (i, part) in lsblk_device.children.iter().enumerate() {
-        if part.part_uuid.is_none() {
-            return Err(TridentError::new(
-                ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment,
-            ))
-            .message(format!("No part UUID found for partition {}", i + 1));
+    // Compute disk_dev_path once for partition-UUID fallback below.
+    let disk_dev_path = PathBuf::from("/dev").join(&lsblk_device.name);
+
+    // For each partition, ensure we have a usable PARTUUID. Mirror the
+    // disk-id fallback above: prefer lsblk, then sfdisk, then mint a
+    // fresh one and persist it via sfdisk. Some chroot environments
+    // don't surface PARTUUID via lsblk --output-all and may also leave
+    // the value unset on the underlying GPT.
+    for (i, part) in lsblk_device.children.iter_mut().enumerate() {
+        if part.part_uuid.as_ref().and_then(|u| u.as_uuid()).is_some() {
+            continue;
         }
+        let partn = part.partn.unwrap_or((i + 1) as u32) as usize;
+        warn!(
+            "PARTUUID not reported by lsblk for partition {} on {}; falling back to sfdisk",
+            partn,
+            disk_dev_path.display()
+        );
+        // Re-read the disk via sfdisk -J to find any UUID already present
+        // on this partition (sfdisk reads the GPT directly).
+        let sf_info = sfdisk::SfDisk::get_info(&disk_dev_path)
+            .structured(ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment)
+            .message(format!(
+                "Failed to read GPT info via sfdisk for {}",
+                disk_dev_path.display()
+            ))?;
+        if let Some(existing) = sf_info
+            .partitions
+            .iter()
+            .find(|p| p.number == partn)
+            .and_then(|p| p.id.as_uuid())
+        {
+            // Reuse the UUID sfdisk read straight from the GPT for this
+            // partition rather than generating a new one.
+            part.part_uuid = Some(existing.to_string().into());
+            continue;
+        }
+
+        let new_uuid = uuid::Uuid::new_v4();
+        warn!(
+            "Partition {} on {} has no PARTUUID; assigning {}",
+            partn,
+            disk_dev_path.display(),
+            new_uuid
+        );
+        sfdisk::set_part_uuid(&disk_dev_path, partn, &new_uuid.to_string())
+            .structured(ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment)
+            .message(format!(
+                "Failed to assign PARTUUID on partition {} of {}",
+                partn,
+                disk_dev_path.display()
+            ))?;
+
+        // Re-read via sfdisk to confirm the write landed and to re-fetch the
+        // UUID straight from the GPT rather than trusting our in-memory copy.
+        let written_uuid = sfdisk::SfDisk::get_info(&disk_dev_path)
+            .structured(ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment)
+            .message(format!(
+                "Failed to re-read GPT info via sfdisk for {} after writing partition UUID",
+                disk_dev_path.display()
+            ))?
+            .partitions
+            .iter()
+            .find(|p| p.number == partn)
+            .and_then(|p| p.id.as_uuid())
+            .ok_or_else(|| {
+                TridentError::new(ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment)
+            })
+            .message(format!(
+                "sfdisk reported no PARTUUID for partition {} after writing {}",
+                partn, new_uuid
+            ))?;
+        part.part_uuid = Some(written_uuid.to_string().into());
     }
 
     // Get partition paths created from combining Prism history and lsblk output.
@@ -494,12 +600,21 @@ pub fn execute(
 
         trace!("Prism history contents:\n{history_file}");
 
+        // Note: `disk` is the *runtime* device path that will be written
+        // into the datastore (e.g. /dev/sda). At build time inside Prism's
+        // chroot, this path generally does not exist because the disk is
+        // exposed as a loop device (the actual build-time device is
+        // auto-detected below by walking lsblk for the mount at "/").
+        // Older code asserted that `disk` exist at build time, but that
+        // check tested the wrong invariant and broke AZL4 image builds
+        // where MIC does not bind a /dev/sda node into the chroot.
         let disk_path = Path::new(disk);
         if !disk_path.exists() {
-            return Err(TridentError::new(
-                ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment,
-            ))
-            .message(format!("Prism chroot environment doesn't contain {disk}"));
+            debug!(
+                "Runtime disk path {} not present in build environment; \
+                 this is expected when running inside MIC's chroot.",
+                disk_path.display()
+            );
         }
 
         let history: Vec<PrismHistoryEntry> =
