@@ -65,7 +65,7 @@ stages:
                   tridentRepoDirectory: $(TRIDENT_SOURCE_DIR)
 
           - job: BuildTrident_${{ parameters.targetArchitecture }}
-            displayName: Build Trident 3.0 ${{ parameters.targetArchitecture }} RPMs
+            displayName: Build Trident AzureLinux ${{ parameters.targetArchitecture }} RPMs
             pool:
               type: linux
 
@@ -94,10 +94,16 @@ stages:
                   targetArchitecture: ${{ parameters.targetArchitecture }}
                   tridentRepoDirectory: $(TRIDENT_SOURCE_DIR)
                   artifactDirectory: "$(ob_outputDirectory)"
+              - template: release.yml
+                parameters:
+                  targetArchitecture: ${{ parameters.targetArchitecture }}
+                  tridentRepoDirectory: $(TRIDENT_SOURCE_DIR)
+                  artifactDirectory: "$(ob_outputDirectory)/azl4"
+                  distro: azl4
 
       - ${{ elseif eq( parameters.targetArchitecture, 'arm64' ) }}:
           - job: BuildTrident_${{ parameters.targetArchitecture }}
-            displayName: Build Trident 3.0 ${{ parameters.targetArchitecture }} RPMs
+            displayName: Build Trident AzureLinux ${{ parameters.targetArchitecture }} RPMs
             pool:
               type: linux
               name: azl3-hci-ARM64-1es-pool-westcentralus
@@ -131,3 +137,9 @@ stages:
                   targetArchitecture: ${{ parameters.targetArchitecture }}
                   tridentRepoDirectory: $(TRIDENT_SOURCE_DIR)
                   artifactDirectory: "$(ob_outputDirectory)"
+              - template: release.yml
+                parameters:
+                  targetArchitecture: ${{ parameters.targetArchitecture }}
+                  tridentRepoDirectory: $(TRIDENT_SOURCE_DIR)
+                  artifactDirectory: "$(ob_outputDirectory)/azl4"
+                  distro: azl4

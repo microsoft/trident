@@ -251,12 +251,17 @@ steps:
         rm $(Build.ArtifactStagingDirectory)/rpms/rpms.tar.gz
       fi
 
+      DISTRO=azl3
+      if [[ "${{ parameters.baseimgAzureLinuxVersion }}" == "4.0-preview" ]]; then
+        DISTRO=azl4
+      fi
+
       find $(Build.ArtifactStagingDirectory)
       if [ -d "$(Build.ArtifactStagingDirectory)/trident" ]; then
         rpm_dir='${{ parameters.tridentSourceDirectory }}/bin/RPMS'
         mkdir -p $rpm_dir
-        cp -r $(Build.ArtifactStagingDirectory)/trident/* $rpm_dir/ || echo 'no rpms to copy'
-        rm -rf $(Build.ArtifactStagingDirectory)/trident
+        find "$(Build.ArtifactStagingDirectory)/trident" -name "*${DISTRO}*.rpm" -exec mv {} $rpm_dir/ \;
+        rm -rf "$(Build.ArtifactStagingDirectory)/trident"
       fi
 
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
