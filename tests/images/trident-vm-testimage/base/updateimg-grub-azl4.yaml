@@ -1,0 +1,117 @@
+storage:
+  bootType: efi
+  disks:
+    - maxSize: 5G
+      partitionTableType: gpt
+      partitions:
+        - id: esp
+          size: 16M
+          type: esp
+        - id: root
+          size: 4G
+
+  filesystems:
+    - deviceId: esp
+      mountPoint:
+        options: umask=0077
+        path: /boot/efi
+      type: fat32
+    - deviceId: root
+      mountPoint: /
+      type: ext4
+
+os:
+  hostname: trident-vm-testimg
+  packages:
+    install:
+      # AZL4 equivalents of the AZL3 set in updateimg-grub.yaml.
+      # Notable differences:
+      #   - dnf5 (no `dnf` package on AZL4)
+      #   - grub2-efi-x64 + grub2-efi-x64-modules (no `-noprefix` package)
+      #   - iptables-nft (no plain `iptables` meta on AZL4 base)
+      #   - shim added (AZL4 ships a real signed shim chain)
+      - curl
+      - dnf5
+      - efibootmgr
+      - grub2-efi-x64
+      - grub2-efi-x64-modules
+      - grub2-tools
+      - grub2-tools-efi
+      - iproute
+      - iptables-nft
+      - jq
+      - lsof
+      - netplan
+      - netplan-default-backend-networkd
+      - openssh-server
+      - shim
+      - sudo
+      - systemd-networkd
+      - systemd-resolved
+      - vim
+      # AZL4 systemd (258.4) moves systemd-dissect and mount.ddi from the
+      # main systemd package into the systemd-container subpackage.  mount.ddi
+      # is needed for sysext/sysconf
+      - systemd-sysext
+      - systemd-confext
+      - systemd-dissect
+      # get trident from RPM
+      - trident-service
+
+  bootloader:
+    resetType: hard-reset
+  selinux:
+    mode: disabled
+  kernelCommandLine:
+    extraCommandLine:
+      - console=tty0
+      - console=ttyS0
+      - net.ifnames=0
+      - rd.debug
+      - loglevel=6
+      - log_buf_len=1M
+      - systemd.journald.forward_to_console=1
+  services:
+    enable:
+      - sshd
+      - systemd-networkd
+      - systemd-resolved
+      # Trident socket-activated daemon. Storm-trident drives all
+      # update/commit/rollback through `trident grpc-client ...` which
+      # talks to this socket.
+      - trident
+      - tridentd.socket
+  users:
+    - name: testuser
+      sshPublicKeyPaths:
+        - files/id_rsa.pub
+      secondaryGroups:
+        - wheel
+  additionalFiles:
+    # AZL4 lacks a /usr/bin/hostname binary; the pytest framework smoke-
+    # tests SSH with `hostname`, so we ship a tiny shim.
+    - source: files/hostname-shim.sh
+      destination: /usr/local/bin/hostname
+      permissions: "755"
+    - source: files/sudoers-wheel
+      destination: /etc/sudoers.d/wheel
+    - source: files/99-dhcp-eth0.network
+      destination: /etc/systemd/network/99-dhcp-eth0.network
+    - source: files/regen-sshd-keys.service
+      destination: /etc/systemd/system/regen-sshd-keys.service
+
+scripts:
+  postCustomization:
+    # AZL3 image scripts are largely safe on AZL4, but a couple touch
+    # /etc paths that read-only differently. We use AZL4-specific copies
+    # as we discover divergence.
+    - path: scripts/post-install.sh
+    - path: scripts/ssh-move-host-keys-azl4.sh
+    - path: scripts/enable-regen-sshd-keys.sh
+    # Strip SELinux labels from all files. See the script header for the
+    # full rationale, but in short: the AZL4 base VHDX bakes in AZL4
+    # SELinux contexts that Trident-from-AZL3-MOS can't preserve during
+    # install (MOS's loaded policy rejects unknown contexts via
+    # setxattr). Stripping at cosi build time sidesteps the cascade.
+    # Must run LAST so other postCustomization scripts don't re-label.
+    - path: scripts/strip-selinux-xattrs.sh
