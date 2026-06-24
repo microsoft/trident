@@ -1,0 +1,53 @@
+parameters:
+  - name: tridentSourceDirectory
+    type: string
+
+  # The AZL4 base VHDX is sourced from the Azure Linux preview gallery
+  # backing storage account. The pipeline service connection must have
+  # `Storage Blob Data Reader` on this account.
+  # See tests/images/SERVICE-CONNECTION-RUNBOOK.md.
+  - name: blobStorageAccount
+    type: string
+    default: "azlpubdev2mruiyvi"
+
+  - name: blobContainer
+    type: string
+    default: "images-dev"
+
+  - name: blobSubscription
+    type: string
+    # Subscription where the storage account lives. The service connection
+    # default subscription may differ, so set context before download.
+    default: "e4ab81f8-030f-4593-a8f2-3ea2c7630a19"
+
+  - name: blobServiceConnection
+    type: string
+    # NB: this must be a service connection that exists in the ADO project.
+    # Created manually by trident infra team.
+    default: "trident-azl4-blob-reader"
+
+steps:
+  # Download the AZL4 base VHDX from the preview gallery backing storage.
+  # Authenticates via the federated identity attached to the service
+  # connection; no storage keys handled here.
+  #
+  # The service connection default subscription (Polar_ImageTools_Staging)
+  # differs from the storage account subscription (ControlTower_Test), so
+  # switch context so blob resolution targets the right account.
+  - task: AzureCLI@2
+    displayName: "Download AZL4 base VHDX from blob"
+    inputs:
+      azureSubscription: ${{ parameters.blobServiceConnection }}
+      scriptType: bash
+      scriptLocation: inlineScript
+      workingDirectory: ${{ parameters.tridentSourceDirectory }}
+      inlineScript: |
+        set -euxo pipefail
+        az account set --subscription "${{ parameters.blobSubscription }}"
+        python3 ./tests/images/testimages.py download-image azl4_qemu_guest \
+            --blob-storage-account "${{ parameters.blobStorageAccount }}" \
+            --blob-container "${{ parameters.blobContainer }}"
+        ls -la artifacts/azl4_qemu_guest.vhdx
+        mkdir -p $(Build.ArtifactStagingDirectory)/images
+        mv artifacts/azl4_qemu_guest.vhdx $(Build.ArtifactStagingDirectory)/images/
+        ls -la $(Build.ArtifactStagingDirectory)/images/azl4_qemu_guest.vhdx
