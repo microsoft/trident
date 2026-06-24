@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 	stormsvcconfig "tridenttools/storm/servicing/utils/config"
-	stormutils "tridenttools/storm/utils"
 	stormfile "tridenttools/storm/utils/file"
 	stormnetlisten "tridenttools/storm/utils/netlisten"
 	stormssh "tridenttools/storm/utils/ssh"
@@ -304,95 +303,8 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 		}
 
 		logrus.Tracef("Wait for VM to come back up after finalize reboot")
-		if vmConfig.VMConfig.Platform == stormvmconfig.PlatformQEMU {
-			err := vmConfig.QemuConfig.WaitForLogin(vmConfig.VMConfig.Name, testConfig.OutputPath, testConfig.Verbose, i)
-			if err != nil {
-				// Serial login detection failed — the "login:" prompt did not appear
-				// in the serial log within the timeout period.
-				//
-				// Root cause: serial-getty@ttyS0.service depends on systemd's
-				// dev-ttyS0.device unit, which is auto-generated when udev reports
-				// /dev/ttyS0. If udev is slightly slow creating the device node,
-				// systemd's ConditionPathExists=/dev/ttyS0 check fails and the
-				// device unit is skipped — so serial-getty never starts and no
-				// "login:" appears on the serial console, even though the VM is
-				// fully healthy with working networking.
-				//
-				// This is a known systemd race condition (~2% of boots):
-				//   https://github.com/systemd/systemd/issues/10850
-				//
-				// Fallback: verify the VM rebooted by comparing "uptime --since"
-				// before and after the reboot. If the value changed, the VM is
-				// confirmed alive and we can proceed.
-				logrus.Warnf("Serial login detection failed for iteration %d, attempting SSH fallback: %v", i, err)
-
-				sshFallbackSuccess := false
-				for j := 0; j < 10; j++ {
-					output, sshErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "uptime --since")
-					if sshErr == nil {
-						postRebootUptime := strings.TrimSpace(output)
-						if preRebootUptime != "" && postRebootUptime != preRebootUptime {
-							logrus.Infof("SSH fallback: VM rebooted (uptime --since changed from %q to %q)", preRebootUptime, postRebootUptime)
-							sshFallbackSuccess = true
-							break
-						} else if preRebootUptime == "" {
-							// No pre-reboot uptime captured — accept any SSH response
-							logrus.Infof("SSH fallback: VM reachable via SSH (uptime --since: %s, no pre-reboot baseline)", postRebootUptime)
-							sshFallbackSuccess = true
-							break
-						}
-						logrus.Warnf("SSH fallback: uptime --since unchanged (%q) — VM may not have rebooted yet", postRebootUptime)
-					}
-					time.Sleep(3 * time.Second)
-				}
-
-				if !sshFallbackSuccess {
-					// VM is genuinely unreachable — capture diagnostics
-					if captureErr := stormutils.CaptureScreenshot(
-						vmConfig.VMConfig.Name,
-						testConfig.OutputPath,
-						fmt.Sprintf("%03d-vm-failure-after-update.png", i),
-					); captureErr != nil {
-						logrus.Warnf("failed to capture screenshot: %v", captureErr)
-					}
-					// Check serial log for dracut-initqueue timeout patterns that indicate
-					// stale disk UUIDs in initramfs (see bug 15086).
-					// Use the saved copy since WaitForLogin truncates the original.
-					if testConfig.OutputPath != "" {
-						savedSerialLog := filepath.Join(testConfig.OutputPath, fmt.Sprintf("%03d-serial.log", i))
-						checkSerialLogForDracutIssues(savedSerialLog, i)
-					}
-					return fmt.Errorf("VM did not come back up after update for iteration %d: %w", i, err)
-				}
-				logrus.Warnf("SSH fallback succeeded for iteration %d — VM is healthy but serial-getty did not start (ttyS0 device likely skipped by systemd)", i)
-			}
-
-			// Proactively ensure serial-getty@ttyS0 is running after every boot.
-			// This is a no-op if already running. When systemd skips
-			// dev-ttyS0.device due to the udev race condition described above
-			// (https://github.com/systemd/systemd/issues/10850), this restarts
-			// serial-getty so subsequent iterations detect "login:" normally
-			// via the serial log, avoiding repeated SSH fallbacks.
-			if _, gettErr := stormssh.SshCommand(vmConfig.VMConfig, vmIP, "sudo systemctl start serial-getty@ttyS0.service"); gettErr != nil {
-				logrus.Tracef("serial-getty@ttyS0 start attempt: %v (may already be running)", gettErr)
-			}
-		} else if vmConfig.VMConfig.Platform == stormvmconfig.PlatformAzure {
-			time.Sleep(15 * time.Second)
-
-			success := false
-			for j := 0; j < 10; j++ {
-				if _, err = stormssh.SshCommand(vmConfig.VMConfig, vmIP, "hostname"); err == nil {
-					success = true
-					break
-				}
-				time.Sleep(5 * time.Second) // Wait for the VM to stabilize
-			}
-
-			if !success {
-				logrus.Info("Azure VM did not come back up after update")
-				logrus.Errorf("Azure VM did not come back up after update for iteration %d", i)
-				return fmt.Errorf("azure VM did not come back up after update for iteration %d", i)
-			}
+		if err := stormvm.WaitForLoginWithSshFallback(vmConfig, vmIP, preRebootUptime, i, testConfig.OutputPath, testConfig.Verbose); err != nil {
+			return fmt.Errorf("VM did not come back up after finalize reboot for iteration %d: %w", i, err)
 		}
 
 		logrus.Tracef("Check if VM IP has changed after update")
@@ -543,37 +455,4 @@ func validateRollback(cfg stormvmconfig.VMConfig, vmIP string) error {
 
 	logrus.Info("Rollback validation succeeded")
 	return nil
-}
-
-// checkSerialLogForDracutIssues scans the serial log for patterns that indicate
-// initramfs is stuck waiting for a device, which is the symptom of bug 15086
-// (stale disk UUIDs embedded in initramfs by dracut).
-func checkSerialLogForDracutIssues(serialLogPath string, iteration int) {
-	if serialLogPath == "" {
-		return
-	}
-	data, err := os.ReadFile(serialLogPath)
-	if err != nil {
-		logrus.Warnf("Could not read serial log for dracut analysis: %v", err)
-		return
-	}
-	content := string(data)
-
-	dracutPatterns := []struct {
-		pattern string
-		message string
-	}{
-		{"dracut-initqueue[", "dracut-initqueue warning detected — initramfs may be waiting for a device"},
-		{"Could not boot", "dracut 'Could not boot' error detected"},
-		{"Starting dracut emergency shell", "dracut emergency shell activated — boot failed in initramfs"},
-		{"Warning: /dev/disk/by", "dracut warning about /dev/disk/by-* path — possible stale UUID reference"},
-		{"rd.break", "rd.break detected — initramfs dropped to debug shell"},
-		{"Timed out waiting for device", "dracut timed out waiting for device — likely stale UUID in initramfs (bug 15086)"},
-	}
-
-	for _, dp := range dracutPatterns {
-		if strings.Contains(content, dp.pattern) {
-			logrus.Errorf("INITRAMFS DIAGNOSTIC (iteration %d): %s (matched '%s' in serial log)", iteration, dp.message, dp.pattern)
-		}
-	}
 }
