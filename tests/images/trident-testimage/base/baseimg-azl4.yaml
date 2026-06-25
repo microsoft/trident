@@ -1,0 +1,115 @@
+storage:
+  bootType: efi
+
+  disks:
+    - partitionTableType: gpt
+      maxSize: 4G
+      partitions:
+        - id: esp
+          type: esp
+          size: 8M
+
+        - id: rootfs
+          size: grow
+
+  filesystems:
+    - deviceId: esp
+      type: fat32
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+
+    - deviceId: rootfs
+      type: ext4
+      mountPoint:
+        path: /
+
+os:
+  bootloader:
+    resetType: hard-reset
+  hostname: trident-testimg
+
+  kernelCommandLine:
+    # Replicates BM base image settings, that would otherwise be lost
+    extraCommandLine:
+      - console=tty0
+      - console=ttyS0
+      - rd.info
+      - log_buf_len=1M
+
+  packages:
+    install:
+      - curl
+      # AZL4: dnf5 (no `dnf` package on AZL4)
+      - dnf5
+      # ^^^
+      - efibootmgr
+      # AZL4: grub2-efi-x64 + grub2-efi-x64-modules (no `-noprefix` package)
+      - grub2-efi-x64
+      - grub2-efi-x64-modules
+      - grub2-tools
+      - grub2-tools-efi
+      # ^^^
+      - iproute
+      # AZL4: iptables-nft (no plain `iptables` meta on AZL4 base)
+      - iptables-nft
+      # ^^^
+      - lsof
+      - mdadm
+      - netplan
+      - netplan-default-backend-networkd
+      - openssh-server
+      - tpm2-tools
+      # AZL4: shim added (AZL4 ships a real signed shim chain)
+      - shim
+      # WHY?  maybe baseimage is missing them?
+      - sudo
+      - systemd-networkd
+      - systemd-resolved
+      # AZL4 systemd (258.4) moves systemd-dissect and mount.ddi from the
+      # main systemd package into the systemd-container subpackage.  mount.ddi
+      # is needed for sysext/sysconf
+      - systemd-sysext
+      - systemd-confext
+      - systemd-dissect
+      # ^^^
+      - trident-service
+      - vim
+      - audit
+      # Packages required for functional tests, which currently use this image:
+      - device-mapper
+      - dosfstools
+      - lvm2
+      - veritysetup
+      # Optional dependencies for NTFS
+      - ntfs-3g
+      - ntfsprogs
+
+  services:
+    enable:
+      - sshd
+      - trident
+      - tridentd.socket
+
+  additionalFiles:
+    # AZL4 lacks a /usr/bin/hostname binary; the pytest framework smoke-
+    # tests SSH with `hostname`, so we ship a tiny shim.
+    - source: files/hostname-shim.sh
+      destination: /usr/local/bin/hostname
+      permissions: "755"
+    # For tests, override the public trident.service behavior and use
+    # grpc-client commit.
+    - source: files/use-grpc-client-commit.conf
+      destination: /etc/systemd/system/trident.service.d/override.conf
+
+scripts:
+  postCustomization:
+    - path: post-install.sh
+    - path: scripts/ssh-move-host-keys-azl4.sh
+    # Strip SELinux labels from all files. See the script header for the
+    # full rationale, but in short: the AZL4 base VHDX bakes in AZL4
+    # SELinux contexts that Trident-from-AZL3-MOS can't preserve during
+    # install (MOS's loaded policy rejects unknown contexts via
+    # setxattr). Stripping at cosi build time sidesteps the cascade.
+    # Must run LAST so other postCustomization scripts don't re-label.
+    - path: scripts/strip-selinux-xattrs.sh
