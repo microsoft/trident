@@ -32,14 +32,6 @@ def main():
         help="Deployment environment that will be used.",
     )
     parser.add_argument(
-        "-d",
-        "--distro",
-        type=str,
-        default="azl3",
-        choices=["azl3", "azl4"],
-        help="Distro version that will be used.",
-    )
-    parser.add_argument(
         "-p",
         "--purpose",
         type=str,
@@ -91,30 +83,6 @@ def main():
         )
 
     configurations = target_configurations[args.env][args.runtimeEnv][args.purpose]
-
-    azl4_compatible_configurations = []
-    non_azl4_compatible_configurations = []
-    for config in configurations:
-        configurations_path = Path(configurations_file).parent
-        config_path = (
-            configurations_path
-            / "trident_configurations"
-            / config
-            / "test-selection.yaml"
-        )
-        with open(config_path, "r") as config_file:
-            config_as_yaml = yaml.safe_load(config_file)
-            log.info(f"Read configuration: {config_as_yaml}.")
-            if config_as_yaml.get("compatible", []) and "azl4" in config_as_yaml.get(
-                "compatible", []
-            ):
-                azl4_compatible_configurations.append(config)
-            else:
-                non_azl4_compatible_configurations.append(config)
-    if args.distro == "azl4":
-        configurations = azl4_compatible_configurations
-    else:
-        configurations = non_azl4_compatible_configurations
 
     if args.skipEncryptionTests:
         log.info(f"Skipping encryption tests as per the argument --skipEncryptionTests")
