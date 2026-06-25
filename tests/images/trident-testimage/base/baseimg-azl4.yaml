@@ -3,11 +3,11 @@ storage:
 
   disks:
     - partitionTableType: gpt
-      maxSize: 4G
+      maxSize: 5G
       partitions:
         - id: esp
           type: esp
-          size: 8M
+          size: 16M
 
         - id: rootfs
           size: grow

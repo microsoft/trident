@@ -31,6 +31,13 @@ parameters:
     type: boolean
     default: true
 
+  - name: distro
+    type: string
+    default: "azl3"
+    values:
+      - azl3
+      - azl4
+
 
 jobs:
   - job: DefineTests
