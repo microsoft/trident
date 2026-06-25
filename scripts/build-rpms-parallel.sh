@@ -21,10 +21,29 @@
 
 set -euxo pipefail
 
+if [ "$#" -ne 4 ]; then
+  echo "Usage: $0 <full_version> <dockerfile> <artifact_dir> <work_dir>" >&2
+  exit 1
+fi
+
 full_version=$1
 dockerfile=$2
 artifact_dir=$3
 work_dir=$4
+
+# Guardrail: work_dir is rm -rf'd below, so refuse empty, root, or any
+# non-absolute path to avoid deleting an unintended directory.
+case "$work_dir" in
+  "" | "/")
+    echo "Refusing to use unsafe work_dir: '$work_dir'" >&2
+    exit 1
+    ;;
+  /*) ;;
+  *)
+    echo "work_dir must be an absolute path: '$work_dir'" >&2
+    exit 1
+    ;;
+esac
 
 # Separate into version and prerelease identifier for the RPM build.
 version=$(echo "$full_version" | cut -d'-' -f1)

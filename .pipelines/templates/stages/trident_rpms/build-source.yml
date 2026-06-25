@@ -122,10 +122,6 @@ stages:
               - template: ../common_tasks/cargo-auth.yml
                 parameters:
                   cargoConfigPath: $(TRIDENT_SOURCE_DIR)/.cargo/config.toml
-              - script: |
-                  set -eux
-                  sudo systemctl start docker
-                displayName: Start Docker
               - template: build-rpms-parallel.yml
                 parameters:
                   targetArchitecture: ${{ parameters.targetArchitecture }}
