@@ -63,7 +63,7 @@ stages:
           distro: ${{ parameters.distro }}
 
   - stage: DeploymentTesting_${{ parameters.runtimeEnv }}${{ parameters.stageSuffix }}
-    displayName: Deployment VM ${{ parameters.runtimeEnv }} Testing
+    displayName: Deployment VM ${{ parameters.runtimeEnv }} Testing (${{ parameters.distro }})
     dependsOn:
       - DefineTests_VM_${{ parameters.runtimeEnv }}${{ parameters.stageSuffix }}
       - ${{ if eq(parameters.testingRun, true) }}:
