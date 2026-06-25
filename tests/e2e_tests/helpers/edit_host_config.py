@@ -28,9 +28,12 @@ def add_key(host_config_path, public_key):
     with open(host_config_path, "r") as f:
         host_config = yaml.safe_load(f)
 
-    for index_user in range(len(host_config["os"]["users"])):
-        if host_config["os"]["users"][index_user]["name"] == "testing-user":
-            host_config["os"]["users"][index_user]["sshPublicKeys"].append(public_key)
+    if "os" in host_config and "users" in host_config.get("os", {}):
+        for index_user in range(len(host_config["os"]["users"])):
+            if host_config["os"]["users"][index_user]["name"] == "testing-user":
+                host_config["os"]["users"][index_user]["sshPublicKeys"].append(
+                    public_key
+                )
 
     with open(host_config_path, "w") as f:
         yaml.safe_dump(host_config, f)
