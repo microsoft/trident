@@ -1,0 +1,70 @@
+parameters:
+  - name: targetArchitecture
+    type: string
+    default: "amd64"
+    values:
+      - arm64
+      - amd64
+
+  - name: tridentRepoDirectory
+    type: string
+
+  # Base artifact directory. azl3 RPMs/binaries land here; azl4 lands under
+  # the azl4/ subdirectory to preserve the single-artifact dual-distro layout.
+  - name: artifactDirectory
+    type: string
+
+steps:
+  # --- Shared setup (run once for both distros) ---
+  - script: |
+      set -eux
+      TRIDENT_VERSION=$(python3 ./scripts/get-version.py "$(Build.BuildNumber)" --commit)
+      echo "##vso[task.setvariable variable=trident_version]$TRIDENT_VERSION"
+    displayName: "Setting Trident version"
+    workingDirectory: ${{ parameters.tridentRepoDirectory }}
+
+  - task: onebranch.pipeline.version@1
+    displayName: "Set build number"
+    inputs:
+      system: "Custom"
+      customVersion: $(trident_version)
+
+  - script: sudo tdnf install -y moby-buildx p7zip p7zip-plugins zstd
+    displayName: Install native dependencies
+    retryCountOnTaskFailure: 3
+
+  - script: |
+      set -eux
+      sudo systemctl start docker
+    workingDirectory: ${{ parameters.tridentRepoDirectory }}
+    displayName: Start Docker
+
+  - template: ../common_tasks/preview-container.yml
+    parameters:
+      dockerfilePath: ${{ parameters.tridentRepoDirectory }}/packaging/docker/Dockerfile.full
+      tridentSourceDirectory: ${{ parameters.tridentRepoDirectory }}
+      targetArchitecture: ${{ parameters.targetArchitecture }}
+
+  # --- Build azl3 and azl4 RPMs concurrently in a single task ---
+  # See scripts/build-rpms-parallel.sh: both docker builds run against the
+  # same BuildKit daemon as background jobs, each writing to its own dest dir
+  # and log file with explicit exit-code checks. This avoids a second ADO job
+  # (and its OneBranch/checkout/setup overhead) while overlapping the
+  # I/O-bound parts of the two builds.
+  - script: |
+      ./scripts/build-rpms-parallel.sh \
+        "$(trident_version)" \
+        "${{ parameters.tridentRepoDirectory }}/packaging/docker/Dockerfile.full" \
+        "${{ parameters.artifactDirectory }}" \
+        "$(Agent.TempDirectory)/_rpm_parallel"
+    workingDirectory: ${{ parameters.tridentRepoDirectory }}
+    displayName: Build azl3 + azl4 RPMs (parallel)
+
+  # --- Extract Trident binaries for each distro ---
+  - script: ./scripts/extract-binary.sh ${{ parameters.artifactDirectory }} ${{ parameters.artifactDirectory }} ${{ parameters.targetArchitecture }} azl3
+    workingDirectory: ${{ parameters.tridentRepoDirectory }}
+    displayName: Extract Trident binary (azl3)
+
+  - script: ./scripts/extract-binary.sh ${{ parameters.artifactDirectory }}/azl4 ${{ parameters.artifactDirectory }}/azl4 ${{ parameters.targetArchitecture }} azl4
+    workingDirectory: ${{ parameters.tridentRepoDirectory }}
+    displayName: Extract Trident binary (azl4)
