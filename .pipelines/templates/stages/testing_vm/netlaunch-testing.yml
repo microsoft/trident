@@ -60,6 +60,7 @@ stages:
           deploymentEnvironment: virtualMachine
           runtimeEnv: ${{ parameters.runtimeEnv }}
           testSecureBoot: ${{ parameters.testSecureBoot }}
+          distro: ${{ parameters.distro }}
 
   - stage: DeploymentTesting_${{ parameters.runtimeEnv }}${{ parameters.stageSuffix }}
     displayName: Deployment VM ${{ parameters.runtimeEnv }} Testing
