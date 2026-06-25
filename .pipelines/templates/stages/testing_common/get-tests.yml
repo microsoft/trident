@@ -63,6 +63,7 @@ jobs:
               --env ${{ parameters.deploymentEnvironment }} \
               --runtimeEnv ${{ parameters.runtimeEnv }} \
               --purpose ${{ parameters.buildPurpose }} \
+              --distro ${{ parameters.distro }} \
               $SKIP_ENCRYPTION_TESTS_ARG \
               --matrix-name matrixConfigurations
         name: setConfigurations
