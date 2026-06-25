@@ -19,7 +19,14 @@
 # Expects CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN in the environment
 # (populated by the CargoAuthenticate task) for the docker build secret.
 
-set -euxo pipefail
+set -euo pipefail
+
+# The two builds run as concurrent background subshells. Unconditional xtrace
+# (set -x) would interleave trace lines from both on the task's stderr and
+# undermine the per-distro log files, so gate it behind an explicit env var.
+if [ "${BUILD_RPMS_DEBUG:-}" = "1" ]; then
+  set -x
+fi
 
 if [ "$#" -ne 4 ]; then
   echo "Usage: $0 <full_version> <dockerfile> <artifact_dir> <work_dir>" >&2
