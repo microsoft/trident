@@ -113,6 +113,13 @@ scripts:
   postCustomization:
     - path: post-install.sh
     - path: scripts/ssh-move-host-keys-azl4.sh
+    # Rebuild initramfs with --no-hostonly + extra SATA drivers so the
+    # qcow2 boots regardless of which bus the consumer's libvirt config
+    # picks (storm-trident uses bus=sata; the original boot test on
+    # karhu-ubuntu used bus=virtio). MUST run BEFORE strip-selinux-xattrs
+    # because dracut writes new files with the build-time SELinux
+    # context, and we want those stripped too.
+    - path: scripts/rebuild-initrd-azl4.sh
     # Strip SELinux labels from all files. See the script header for the
     # full rationale, but in short: the AZL4 base VHDX bakes in AZL4
     # SELinux contexts that Trident-from-AZL3-MOS can't preserve during
