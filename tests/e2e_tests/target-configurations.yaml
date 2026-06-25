@@ -87,7 +87,6 @@ virtualMachine:
   host:
     daily:
       - base
-      - base-azl4
       - combined
       - encrypted-partition
       - encrypted-raid
@@ -107,7 +106,6 @@ virtualMachine:
       - usr-verity-raid
     post_merge:
       - base
-      - base-azl4
       - combined
       - encrypted-partition
       - encrypted-raid
@@ -127,7 +125,6 @@ virtualMachine:
       - usr-verity-raid
     pullrequest:
       - base
-      - base-azl4
       - combined
       - extensions
       - health-checks-install
@@ -136,14 +133,12 @@ virtualMachine:
       - raid-resync-small
       - rerun
       - root-verity
-      - rollback-azl4
       - simple
       - split
       - usr-verity
       - usr-verity-raid
     validation:
       - base
-      - base-azl4
       - combined
       - encrypted-partition
       - encrypted-raid
@@ -163,7 +158,6 @@ virtualMachine:
       - usr-verity-raid
     weekly:
       - base
-      - base-azl4
       - combined
       - encrypted-partition
       - encrypted-raid
