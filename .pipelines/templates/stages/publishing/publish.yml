@@ -54,7 +54,7 @@ stages:
             inputs:
               buildType: current
               patterns: |
-                *.rpm
+                **/*.rpm
               targetPath: /tmp/rpms
               artifactName: trident-binaries
             displayName: "Download Trident RPMs"
@@ -63,7 +63,7 @@ stages:
             inputs:
               buildType: current
               patterns: |
-                *.rpm
+                **/*.rpm
               targetPath: /tmp/rpms
               artifactName: trident-binaries-arm64
             displayName: "Download Trident RPMs (arm64)"
