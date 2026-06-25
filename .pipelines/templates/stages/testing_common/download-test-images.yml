@@ -19,6 +19,7 @@ parameters:
     values:
       - trident-container-testimage
       - trident-testimage
+      - trident-azl4-testimage
       - azurelinux-direct-streaming-testimage-amd64
       - azurelinux-direct-streaming-testimage-arm64
       - ubuntu-direct-streaming-testimage-2204-amd64

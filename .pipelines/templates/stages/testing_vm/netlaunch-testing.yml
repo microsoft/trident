@@ -39,9 +39,20 @@ parameters:
       - maritimus-dev-acr-write-umi
       - trident-dev-acr-write-umi-ECF
 
+  - name: distro
+    type: string
+    default: azl3
+    values:
+      - azl3
+      - azl4
+
+  - name: stageSuffix
+    type: string
+    default: ""
+
 stages:
-  - stage: DefineTests_VM_${{ parameters.runtimeEnv }}
-    displayName: Test List for VM:${{ parameters.runtimeEnv }}
+  - stage: DefineTests_VM_${{ parameters.runtimeEnv }}${{ parameters.stageSuffix }}
+    displayName: Test List for VM:${{ parameters.runtimeEnv }} (${{ parameters.distro }})
     jobs:
       - template: ../testing_common/get-tests.yml
         parameters:
@@ -50,26 +61,43 @@ stages:
           runtimeEnv: ${{ parameters.runtimeEnv }}
           testSecureBoot: ${{ parameters.testSecureBoot }}
 
-  - stage: DeploymentTesting_${{ parameters.runtimeEnv }}
+  - stage: DeploymentTesting_${{ parameters.runtimeEnv }}${{ parameters.stageSuffix }}
     displayName: Deployment VM ${{ parameters.runtimeEnv }} Testing
     dependsOn:
-      - DefineTests_VM_${{ parameters.runtimeEnv }}
+      - DefineTests_VM_${{ parameters.runtimeEnv }}${{ parameters.stageSuffix }}
       - ${{ if eq(parameters.testingRun, true) }}:
           - DownloadTestingElements
       - ${{ else }}:
           - BuildingTools
-          - ${{ if eq(parameters.runtimeEnv, 'container') }}:
-              - BuildTridentContainerImage
-              - TridentTestImg_trident_container_installer
-              - TridentTestImg_trident_container_testimage
-              - TridentTestImg_trident_container_verity_testimage
-              - TridentTestImg_trident_container_usrverity_testimage
-          - ${{ else }}:
-              - TridentTestImg_trident_split_installer
-              - TridentTestImg_trident_installer
-              - TridentTestImg_trident_testimage
-              - TridentTestImg_trident_verity_testimage
-              - TridentTestImg_trident_usrverity_testimage
+          - ${{ if eq(parameters.distro, 'azl3') }}:
+            - ${{ if eq(parameters.runtimeEnv, 'container') }}:
+                - BuildTridentContainerImage
+                - TridentTestImg_trident_container_installer
+                - TridentTestImg_trident_container_testimage
+                - TridentTestImg_trident_container_verity_testimage
+                - TridentTestImg_trident_container_usrverity_testimage
+            - ${{ else }}:
+                - TridentTestImg_trident_split_installer
+                - TridentTestImg_trident_installer
+                - TridentTestImg_trident_testimage
+                - TridentTestImg_trident_verity_testimage
+                - TridentTestImg_trident_usrverity_testimage
+          - ${{ if eq(parameters.distro, 'azl4') }}:
+            - ${{ if eq(parameters.runtimeEnv, 'container') }}:
+                # TODO: the following are placeholders until container supported for AZL4
+                - BuildTridentContainerImage
+                - TridentTestImg_trident_container_installer
+                - TridentTestImg_trident_container_testimage
+                - TridentTestImg_trident_container_verity_testimage
+                - TridentTestImg_trident_container_usrverity_testimage
+            - ${{ else }}:
+                - TridentTestImg_trident_installer
+                - TridentTestImg_trident_azl4_testimage
+                # TODO: the following are placeholders until the verity
+                # and usrverity test images are built for AZL4
+                - TridentTestImg_trident_split_installer
+                - TridentTestImg_trident_verity_testimage
+                - TridentTestImg_trident_usrverity_testimage
 
     jobs:
       - job: Testing
@@ -80,7 +108,7 @@ stages:
           hostArchitecture: amd64
 
         strategy:
-          matrix: $[ stageDependencies.DefineTests_VM_${{ parameters.runtimeEnv }}.DefineTests.outputs['setConfigurations.matrixConfigurations'] ]
+          matrix: $[ stageDependencies.DefineTests_VM_${{ parameters.runtimeEnv }}${{ parameters.stageSuffix }}.DefineTests.outputs['setConfigurations.matrixConfigurations'] ]
 
         variables:
           # Sourced from the matrix
@@ -90,28 +118,55 @@ stages:
           - name: tridentConfigPath
             value: tests/e2e_tests/trident_configurations/$(tridentConfigurationName)
 
-          - ${{ if eq(parameters.runtimeEnv, 'container') }}:
-              - name: installerISOName
-                value: trident-container-installer
-              - name: testImageName
-                value: trident-container-testimage
-              - name: verityTestImageName
-                value: trident-container-verity-testimage
-              - name: usrVerityTestImageName
-                value: trident-container-usrverity-testimage
-              - name: downloadTridentContainer
-                value: true
-          - ${{ else }}:
-              - name: installerISOName
-                value: trident-installer
-              - name: testImageName
-                value: trident-testimage
-              - name: verityTestImageName
-                value: trident-verity-testimage
-              - name: usrVerityTestImageName
-                value: trident-usrverity-testimage
-              - name: downloadTridentContainer
-                value: false
+          - ${{ if eq(parameters.distro, 'azl3') }}:
+            - ${{ if eq(parameters.runtimeEnv, 'container') }}:
+                - name: installerISOName
+                  value: trident-container-installer
+                - name: testImageName
+                  value: trident-container-testimage
+                - name: verityTestImageName
+                  value: trident-container-verity-testimage
+                - name: usrVerityTestImageName
+                  value: trident-container-usrverity-testimage
+                - name: downloadTridentContainer
+                  value: true
+            - ${{ else }}:
+                - name: installerISOName
+                  value: trident-installer
+                - name: testImageName
+                  value: trident-testimage
+                - name: verityTestImageName
+                  value: trident-verity-testimage
+                - name: usrVerityTestImageName
+                  value: trident-usrverity-testimage
+                - name: downloadTridentContainer
+                  value: false
+          - ${{ if eq(parameters.distro, 'azl4') }}:
+            - ${{ if eq(parameters.runtimeEnv, 'container') }}:
+                # TODO: the following variables are placeholders until container supported for AZL4
+                - name: installerISOName
+                  value: trident-container-installer
+                - name: testImageName
+                  value: trident-container-testimage
+                - name: verityTestImageName
+                  value: trident-container-verity-testimage
+                - name: usrVerityTestImageName
+                  value: trident-container-usrverity-testimage
+                - name: downloadTridentContainer
+                  value: true
+            - ${{ else }}:
+                - name: installerISOName
+                  value: trident-installer
+                - name: testImageName
+                  value: trident-azl4-testimage
+                # TODO: the following variables are placeholders until the verity
+                # and usrverity test images are built for AZL4
+                - name: verityTestImageName
+                  value: trident-verity-testimage
+                - name: usrVerityTestImageName
+                  value: trident-usrverity-testimage
+                - name: downloadTridentContainer
+                  value: false
 
           - name: ob_outputDirectory
             value: /tmp/deployment_logs
