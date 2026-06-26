@@ -2,52 +2,48 @@ parameters:
   - name: tridentSourceDirectory
     type: string
 
-  # The AZL4 base VHDX is sourced from the Azure Linux preview gallery
-  # backing storage account. The pipeline service connection must have
-  # `Storage Blob Data Reader` on this account.
-  # See tests/images/SERVICE-CONNECTION-RUNBOOK.md.
-  - name: blobStorageAccount
-    type: string
-    default: "azlpubdev2mruiyvi"
-
-  - name: blobContainer
-    type: string
-    default: "images-dev"
-
-  - name: blobSubscription
-    type: string
-    # Subscription where the storage account lives. The service connection
-    # default subscription may differ, so set context before download.
-    default: "e4ab81f8-030f-4593-a8f2-3ea2c7630a19"
-
-  - name: blobServiceConnection
-    type: string
-    # NB: this must be a service connection that exists in the ADO project.
-    # Created manually by trident infra team.
-    default: "trident-azl4-blob-reader"
-
 steps:
-  # Download the AZL4 base VHDX from the preview gallery backing storage.
-  # Authenticates via the federated identity attached to the service
-  # connection; no storage keys handled here.
-  #
-  # The service connection default subscription (Polar_ImageTools_Staging)
-  # differs from the storage account subscription (ControlTower_Test), so
-  # switch context so blob resolution targets the right account.
+  # Download a preview AZL4 base VHDX from storage account.
   - task: AzureCLI@2
     displayName: "Download AZL4 base VHDX from blob"
     inputs:
-      azureSubscription: ${{ parameters.blobServiceConnection }}
+      azureSubscription: azlinuxbmpstaging-storage-account-read
       scriptType: bash
       scriptLocation: inlineScript
       workingDirectory: ${{ parameters.tridentSourceDirectory }}
       inlineScript: |
         set -euxo pipefail
-        az account set --subscription "${{ parameters.blobSubscription }}"
-        python3 ./tests/images/testimages.py download-image azl4_qemu_guest \
-            --blob-storage-account "${{ parameters.blobStorageAccount }}" \
-            --blob-container "${{ parameters.blobContainer }}"
-        ls -la artifacts/azl4_qemu_guest.vhdx
+
         mkdir -p $(Build.ArtifactStagingDirectory)/images
-        mv artifacts/azl4_qemu_guest.vhdx $(Build.ArtifactStagingDirectory)/images/
+        az storage blob download \
+          --max-connections 10 \
+          --auth-mode login \
+          --account-name azlinuxbmpstaging \
+          --container-name azl4-qemu-guest \
+          --name azl4_qemu_guest.vhdx \
+          --file $(Build.ArtifactStagingDirectory)/images/azl4_qemu_guest.vhdx
         ls -la $(Build.ArtifactStagingDirectory)/images/azl4_qemu_guest.vhdx
+
+  # AZL4 netplan (1.1.2) is incompatible with systemd (258.4). 1.1.2 is the current
+  # release of netplan, but an unreleased refactor in main fixes the problem. Our
+  # tests depend on netplan, so workaround this for now with cached RPMs built from
+  # netplan unreleased main.
+  - task: AzureCLI@2
+    displayName: "Download preview of unreleased netplan (branch=main) RPMs from blob"
+    inputs:
+      azureSubscription: azlinuxbmpstaging-storage-account-read
+      scriptType: bash
+      scriptLocation: inlineScript
+      workingDirectory: ${{ parameters.tridentSourceDirectory }}
+      inlineScript: |
+        set -euxo pipefail
+
+        mkdir -p ${{ parameters.tridentSourceDirectory }}/bin/RPMS
+        az storage blob download-batch \
+          --max-connections 10 \
+          --auth-mode login \
+          --account-name azlinuxbmpstaging \
+          --source netplan-main \
+          --pattern "*.rpm" \
+          --destination ${{ parameters.tridentSourceDirectory }}/bin/RPMS
+        ls -la ${{ parameters.tridentSourceDirectory }}/bin/RPMS
