@@ -61,13 +61,13 @@ scripts:
 os:
   selinux:
     mode: disabled
-  netplan:
-    version: 2
-    ethernets:
-      vmeths:
-        match:
-          name: eth*
-        dhcp4: true
+  # netplan:
+  #   version: 2
+  #   ethernets:
+  #     vmeths:
+  #       match:
+  #         name: eth*
+  #       dhcp4: true
   users:
     - name: testing-user
       sshPublicKeys: []
