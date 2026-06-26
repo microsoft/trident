@@ -36,19 +36,27 @@ class BaseImage(Enum):
         "minimal_aarch64", Path("artifacts/minimal_aarch64.vhdx")
     )
     UBUNTU_2204_AMD64 = BaseImageData(
-        "ubuntu_2204_amd64", Path("artifacts/ubuntu_2204_amd64.vhdx"), Distro.OTHER
+        "ubuntu_2204_amd64",
+        Path("artifacts/ubuntu_2204_amd64.vhdx"),
+        distro=Distro.OTHER,
     )
     UBUNTU_2204_ARM64 = BaseImageData(
-        "ubuntu_2204_arm64", Path("artifacts/ubuntu_2204_arm64.vhdx"), Distro.OTHER
+        "ubuntu_2204_arm64",
+        Path("artifacts/ubuntu_2204_arm64.vhdx"),
+        distro=Distro.OTHER,
     )
     UBUNTU_2404_AMD64 = BaseImageData(
-        "ubuntu_2404_amd64", Path("artifacts/ubuntu_2404_amd64.vhdx"), Distro.OTHER
+        "ubuntu_2404_amd64",
+        Path("artifacts/ubuntu_2404_amd64.vhdx"),
+        distro=Distro.OTHER,
     )
     UBUNTU_2404_ARM64 = BaseImageData(
-        "ubuntu_2404_arm64", Path("artifacts/ubuntu_2404_arm64.vhdx"), Distro.OTHER
+        "ubuntu_2404_arm64",
+        Path("artifacts/ubuntu_2404_arm64.vhdx"),
+        distro=Distro.OTHER,
     )
     GB200_2404_ARM64 = BaseImageData(
-        "gb200_2404_arm64", Path("artifacts/gb200_2404_arm64.vhdx"), Distro.OTHER
+        "gb200_2404_arm64", Path("artifacts/gb200_2404_arm64.vhdx"), distro=Distro.OTHER
     )
 
     @property

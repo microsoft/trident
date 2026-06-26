@@ -1,6 +1,8 @@
 [Unit]
 Description=Generate sshd host keys in /var/srv on first boot
-ConditionPathExists=!/var/srv/etc/ssh/ssh_host_ed25519_key
+ConditionPathExists=|!/var/srv/etc/ssh/ssh_host_rsa_key
+ConditionPathExists=|!/var/srv/etc/ssh/ssh_host_ecdsa_key
+ConditionPathExists=|!/var/srv/etc/ssh/ssh_host_ed25519_key
 Before=sshd.service
 After=local-fs.target
 
