@@ -1,0 +1,14 @@
+[Unit]
+Description=Generate sshd host keys in /var/srv on first boot
+ConditionPathExists=!/var/srv/etc/ssh/ssh_host_ed25519_key
+Before=sshd.service
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/usr/bin/mkdir -p /var/srv/etc/ssh
+ExecStart=/usr/bin/ssh-keygen -A -f /var/srv -q
+
+[Install]
+WantedBy=multi-user.target
