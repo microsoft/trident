@@ -28,6 +28,9 @@ set -euo pipefail
 # kernel: the failure mode of that misstep is "boot hangs waiting for
 # /dev/disk/by-uuid/<root>", which is the exact bug this script is
 # meant to prevent.
+# nullglob so an empty/missing modules dir yields a zero-length array
+# (reaching the 0) arm below) instead of the literal glob pattern.
+shopt -s nullglob
 KVERS=( /usr/lib/modules/* )
 case ${#KVERS[@]} in
     0)
