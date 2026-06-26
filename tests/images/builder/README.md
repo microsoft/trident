@@ -100,7 +100,7 @@ The following commands are supported:
     python3 ./testimages.py dependencies <image_name>
     # Build an image locally
     python3 ./testimages.py build <image_name>
-    # Show key info about the image, such as name, source, config path, etc.
+    # Show key info about the image, such as name, source, base image, etc.
     python3 ./testimages.py show-image <image_name> <field>
     # Show info on key artifacts, such as the Image Customizer version or container image
     python3 ./testimages.py show-artifact
@@ -111,16 +111,22 @@ The following commands are supported:
 To build an image with Builder or test your changes to Builder, follow these steps:
 
 1. If necessary, make changes to the Builder source code.
-1. Download the base image:
+1. Download the base image. To find which base image an image builds on (as the build pipeline does), run:
+
+```bash
+    python3 ./testimages.py show-image <image_name> base-image
+```
+
+   Then download it:
 
 ```bash
     ./testimages.py download-image <base_image_name>
 ```
 
-1. If necessary, update the Image Customizer config for the image you want to build, by modifying the corresponding YAML in `test-images/platform-integration-images`. You can also find the relevant YAML by running:
+1. If necessary, update the Image Customizer config for the image you want to build, by modifying the corresponding YAML in `test-images/platform-integration-images`. To see the config YAML used for each output type, run:
 
 ```bash
-    python3 ./testimages.py show-image <image_name> config-file
+    python3 ./testimages.py show-image <image_name> output-and-config
 ```
 
 1. Build the image:

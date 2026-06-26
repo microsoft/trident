@@ -168,9 +168,6 @@ class ImageConfig:
     # Second-level dir, generally same as name
     config: str = None
 
-    # YAML config file inside the config dir
-    config_file: Path = Path("base/baseimg.yaml")
-
     # The base image to use
     base_image: BaseImage = BaseImage.BAREMETAL
 
@@ -218,11 +215,11 @@ class ImageConfig:
         if isinstance(self.ssh_key, str):
             self.ssh_key = Path(self.ssh_key)
 
-        # Update config_file to be a Path object if it's a string
+        # Normalize output_and_config values to Path objects
         for fmt in self.output_and_config:
-            config_file = self.output_and_config[fmt]
-            if isinstance(config_file, str):
-                self.output_and_config[fmt] = Path(config_file)
+            cfg = self.output_and_config[fmt]
+            if isinstance(cfg, str):
+                self.output_and_config[fmt] = Path(cfg)
 
         # Automatically set the architecture to arm64 if the base image is ARM64
         if self.base_image == BaseImage.CORE_ARM64:
