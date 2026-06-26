@@ -25,11 +25,10 @@ steps:
         ls -la $(Build.ArtifactStagingDirectory)/images/azl4_qemu_guest.vhdx
 
   # AZL4 netplan (1.1.2) is incompatible with systemd (258.4). 1.1.2 is the current
-  # release of netplan, but an unreleased refactor in main fixes the problem. Our
-  # tests depend on netplan, so workaround this for now with cached RPMs built from
-  # netplan unreleased main.
+  # release of netplan in AZL4, but netplan 1.2.1 fixes the problem. Our
+  # tests depend on netplan, so workaround this for now with cached RPMs.
   - task: AzureCLI@2
-    displayName: "Download preview of unreleased netplan (branch=main) RPMs from blob"
+    displayName: "Download override AZL4 RPMs from blob"
     inputs:
       azureSubscription: azlinuxbmpstaging-storage-account-read
       scriptType: bash
@@ -43,7 +42,7 @@ steps:
           --max-connections 10 \
           --auth-mode login \
           --account-name azlinuxbmpstaging \
-          --source netplan-main \
+          --source azl4-override-rpms \
           --pattern "*.rpm" \
           --destination ${{ parameters.tridentSourceDirectory }}/bin/RPMS
         ls -la ${{ parameters.tridentSourceDirectory }}/bin/RPMS
