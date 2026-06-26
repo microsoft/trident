@@ -127,7 +127,7 @@ steps:
     parameters:
       tridentSourceDirectory: ${{ parameters.tridentSourceDirectory }}
       azureLinuxVersion: ${{ parameters.azureLinuxVersion }}
-      stageSshKeys: ${{ eq(parameters.azureLinuxVersion, '4.0-preview') }}
+      stageSshKeys: false
 
   - bash: |
       set -ex
