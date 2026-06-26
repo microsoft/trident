@@ -9,8 +9,16 @@ import (
 )
 
 const (
-	AZL3_SFTP_SERVER_PATH = "/usr/libexec/sftp-server"
-	AZL3_SFTP_SERVER_CMD  = "sudo -n " + AZL3_SFTP_SERVER_PATH
+	// sftp-server is installed under different libexec paths depending on the
+	// distro / openssh packaging:
+	//   - AZL3 / upstream openssh:    /usr/libexec/sftp-server
+	//   - AZL4 (Fedora-based) / RHEL: /usr/libexec/openssh/sftp-server
+	//   - Debian / Ubuntu:            /usr/lib/openssh/sftp-server
+	// Exec the first path that exists so the SFTP protocol speaks over
+	// stdin/stdout regardless of where the binary lives. Hard-coding the AZL3
+	// path made SudoSFTP fail on AZL4 (binary not found -> channel closes ->
+	// "error receiving version packet from server: unexpected EOF").
+	SFTP_SERVER_CMD = `sudo -n sh -c 'for p in /usr/libexec/openssh/sftp-server /usr/libexec/sftp-server /usr/lib/openssh/sftp-server; do [ -x "$p" ] && exec "$p"; done; echo "sftp-server not found" >&2; exit 127'`
 )
 
 type SftpSudoClient struct {
@@ -46,9 +54,9 @@ func NewSftpSudoClient(client *ssh.Client, opts ...sftp.ClientOption) (*SftpSudo
 		return nil, fmt.Errorf("failed to create SSH session: %w", err)
 	}
 
-	ok, err := session.SendRequest("exec", true, ssh.Marshal(struct{ Command string }{AZL3_SFTP_SERVER_CMD}))
+	ok, err := session.SendRequest("exec", true, ssh.Marshal(struct{ Command string }{SFTP_SERVER_CMD}))
 	if err == nil && !ok {
-		err = fmt.Errorf("sftp: command %v failed", AZL3_SFTP_SERVER_CMD)
+		err = fmt.Errorf("sftp: command %v failed", SFTP_SERVER_CMD)
 	}
 	if err != nil {
 		return nil, err
