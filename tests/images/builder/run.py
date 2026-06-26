@@ -70,6 +70,8 @@ def show_image(
         out = field
     elif isinstance(field, list):
         out = "\n".join([str(i) for i in field])
+    elif isinstance(field, dict):
+        out = "\n".join(f"{getattr(k, 'value', k)}: {v}" for k, v in field.items())
     elif hasattr(field, "__str__") and callable(field.__str__):
         out = str(field)
     else:
