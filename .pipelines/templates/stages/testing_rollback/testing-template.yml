@@ -179,12 +179,7 @@ jobs:
             # Allow testing for non-extension scenarios
             STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --skip-extension-testing"
           fi
-          # Netplan runtime testing is skipped on grubazl4 (Azure Linux 4) to
-          # avoid an early-boot systemd generator deadlock during rollback.
-          # Fixed upstream by azurelinux PR #17791
-          # (https://github.com/microsoft/azurelinux/pull/17791/).
-          # Force it on for grubazl4 regardless of the pipeline parameter.
-          if [ "${{ parameters.skipNetplanRuntimeTesting }}" == "true" ] || [ "${{ parameters.flavor }}" == "grubazl4" ]; then
+          if [ "${{ parameters.skipNetplanRuntimeTesting }}" == "true" ]; then
             # skip netplan runtime testing
             STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --skip-netplan-runtime-testing"
           fi
@@ -204,7 +199,7 @@ jobs:
             --force-cleanup
         displayName: "Rollback test (${{ parameters.platform }})"
         workingDirectory: $(TRIDENT_SOURCE_DIR)
-        timeoutInMinutes: 5
+        timeoutInMinutes: 10
 
       - bash: |
           set -eux
