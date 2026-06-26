@@ -950,6 +950,7 @@ validate-pipeline-website-artifact:
 artifacts/%.cosi artifacts/%.iso artifacts/%.vhdx artifacts/%.vhd artifacts/%.qcow2: $$(shell ./tests/images/testimages.py dependencies $$*)
 	@echo "Building '$*' [$@] from $<"
 	@echo "Extension is: $(subst .,,$(suffix $@))"
+	@test "$(subst .,,$(suffix $@))" != "cosi" || echo "NOTE: customizing a COSI image (OutputFormat.COSI). If you intend a baremetal-image COSI (OutputFormat.BAREMETAL_IMAGE), invoke ./tests/images/testimages.py build $* --output-type baremetal-image directly."
 	@echo "Prerequisites:"
 	@echo "$^" | tr ' ' '\n' | sed 's/^/    /'
 	@echo "Building image..."
