@@ -113,11 +113,21 @@ os:
     # grpc-client commit.
     - source: files/use-grpc-client-commit.conf
       destination: /etc/systemd/system/trident.service.d/override.conf
+    # ssh-move-host-keys-azl4.sh points sshd HostKey at /var/srv/etc/ssh.
+    # The srv partition is created fresh on every clean install, so the
+    # host keys must be generated there on first boot (see
+    # regen-sshd-keys.service), otherwise sshd exits with no hostkeys
+    # available and nothing listens on TCP :22.
+    - source: files/regen-sshd-keys.service
+      destination: /etc/systemd/system/regen-sshd-keys.service
 
 scripts:
   postCustomization:
     - path: post-install.sh
     - path: scripts/ssh-move-host-keys-azl4.sh
+    # Enable regen-sshd-keys.service via a wants symlink so sshd has
+    # host keys in /var/srv on first boot.
+    - path: scripts/enable-regen-sshd-keys.sh
     # Rebuild initramfs with --no-hostonly + extra SATA drivers so the
     # qcow2 boots regardless of which bus the consumer's libvirt config
     # picks (storm-trident uses bus=sata; the original boot test on
