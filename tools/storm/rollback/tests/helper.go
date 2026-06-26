@@ -519,6 +519,12 @@ func (u *UpdateTest) createNetplanHostConfigSection() (map[string]interface{}, e
 	if u.NetplanVersion > 0 {
 		dummyDevices[fmt.Sprintf("dummy%d", u.NetplanVersion)] = map[string]interface{}{
 			"addresses": []string{fmt.Sprintf("192.168.%d.123/24", 100+u.NetplanVersion)},
+			// Mark the test dummy interface optional so it emits
+			// RequiredForOnline=no. Otherwise systemd-networkd-wait-online
+			// blocks on this never-routable virtual link for its full 120s
+			// timeout, delaying network-online.target -> trident.service and
+			// the post-update commit (ab-update-finalized -> provisioned).
+			"optional": true,
 		}
 	}
 	return map[string]interface{}{
