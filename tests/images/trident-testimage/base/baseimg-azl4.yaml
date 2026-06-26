@@ -99,6 +99,9 @@ os:
       - systemd-resolved
       - trident
       - tridentd.socket
+      # netplan-main (generate/configure split) defers virtual-device
+      # creation to this service; Fedora ships it preset-disabled.
+      - netplan-configure.service
 
   additionalFiles:
     # AZL4 lacks a /usr/bin/hostname binary; the pytest framework smoke-
