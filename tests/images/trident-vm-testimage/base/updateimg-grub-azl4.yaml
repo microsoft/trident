@@ -76,6 +76,9 @@ os:
       - sshd
       - systemd-networkd
       - systemd-resolved
+      # netplan-main (generate/configure split) defers virtual-device
+      # creation to this service; Fedora ships it preset-disabled.
+      - netplan-configure.service
       # Trident socket-activated daemon. Storm-trident drives all
       # update/commit/rollback through `trident grpc-client ...` which
       # talks to this socket.
