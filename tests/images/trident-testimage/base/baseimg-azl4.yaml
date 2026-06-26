@@ -61,9 +61,10 @@ os:
       # ^^^
       - lsof
       - mdadm
-      # netplan and AZL4 systemd are incompatible at boot
-      # - netplan
-      # - netplan-default-backend-networkd
+      # AZL4 netplan and AZL4 systemd are incompatible at boot ... use
+      # cached netplan RPMs built from main
+      - netplan
+      - netplan-default-backend-networkd
       - openssh-server
       - tpm2-tools
       # AZL4: shim added (AZL4 ships a real signed shim chain)
