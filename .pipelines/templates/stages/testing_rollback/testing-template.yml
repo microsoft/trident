@@ -199,7 +199,7 @@ jobs:
             --force-cleanup
         displayName: "Rollback test (${{ parameters.platform }})"
         workingDirectory: $(TRIDENT_SOURCE_DIR)
-        timeoutInMinutes: 40
+        timeoutInMinutes: 10
 
       - bash: |
           set -eux
