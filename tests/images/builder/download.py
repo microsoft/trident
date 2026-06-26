@@ -13,9 +13,9 @@ log = logging.getLogger(__name__)
 
 
 def download_base_image(image: BaseImageManifest) -> None:
+    """Download the base image from MCR."""
     if image.distro not in (Distro.AZL3, Distro.AZL4):
         raise ValueError(f"Unsupported distro {image.distro} for base image download")
-    """Download the base image from MCR."""
     with tempfile.TemporaryDirectory() as tempdir:
         url = (
             f"mcr.microsoft.com/azurelinux-beta/base/{image.image.mcr_name}:4.0"
