@@ -121,7 +121,7 @@ def setup_parser_build(
         "--output-type",
         default=None,
         type=str,
-        help="Specify output type for image configs. if unspecified, the first output type defined in the image config will be used",
+        help="Specify output type for image configs. If unspecified, the first output type defined in the image config will be used.",
     )
     parser_build.add_argument(
         "--output-dir",
