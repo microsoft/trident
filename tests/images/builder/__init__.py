@@ -254,16 +254,18 @@ class ImageConfig:
             for fmt in self.output_and_config:
                 if fmt.ext() == self.runtime_output_format.ext():
                     return fmt
+            supported = ", ".join(sorted({fmt.ext() for fmt in self.output_and_config}))
+            raise ValueError(
+                f"Output type '{self.runtime_output_format.value}' "
+                f"(extension '{self.runtime_output_format.ext()}') is not supported "
+                f"by image '{self.name}'. Supported output extensions: {supported}."
+            )
         return next(iter(self.output_and_config))
 
     def config_path(self) -> Path:
-        output_type = self.output_format().ext()
-        for fmt in self.output_and_config:
-            if fmt.ext() == output_type:
-                return self.output_and_config[fmt]
-        raise RuntimeError(
-            f"Error loading image config for output format '{output_type}': '{self.output_and_config}'"
-        )
+        # output_format() returns a key of output_and_config (or raises),
+        # so index directly.
+        return self.output_and_config[self.output_format()]
 
     def full_yaml_path(self) -> Path:
         return self.base_dir() / self.config_path()
