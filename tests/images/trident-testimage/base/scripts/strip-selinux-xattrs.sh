@@ -47,16 +47,22 @@ fail_count=0
 while IFS= read -r -d '' f; do
     # Capture stderr so we can distinguish ENODATA ("no such attribute",
     # benign — nothing to strip) from real failures (EPERM, EOPNOTSUPP).
-    err=$(setfattr -h -x security.selinux "$f" 2>&1 >/dev/null) || rc=$? && rc=${rc:-0}
-    if [ "$rc" -eq 0 ]; then
+    # Test setfattr's exit status directly in the if-condition so rc never
+    # carries a stale value between iterations, and match the benign-error
+    # strings with a shell `case` so we don't fork a grep per entry.
+    if err=$(setfattr -h -x security.selinux "$f" 2>&1 >/dev/null); then
         count=$((count + 1))
-    elif echo "$err" | grep -qE "No such attribute|Operation not supported"; then
-        : # nothing to strip, expected for files without the xattr
     else
-        fail_count=$((fail_count + 1))
-        echo "setfattr failed on '$f': $err" >&2
+        case "$err" in
+            *"No such attribute"*|*"Operation not supported"*)
+                : # nothing to strip, expected for files without the xattr
+                ;;
+            *)
+                fail_count=$((fail_count + 1))
+                echo "setfattr failed on '$f': $err" >&2
+                ;;
+        esac
     fi
-    rc=0
 done < <(find / \( -path /proc -o -path /sys -o -path /dev -o -path /run \) -prune \
     -o \( -type f -o -type d -o -type l \) -print0)
 
