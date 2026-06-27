@@ -37,12 +37,12 @@ steps:
       inlineScript: |
         set -euxo pipefail
 
-        mkdir -p ${{ parameters.tridentSourceDirectory }}/bin/RPMS
+        mkdir -p ${{ parameters.tridentSourceDirectory }}/artifacts/rpm-overrides
         az storage blob download-batch \
           --max-connections 10 \
           --auth-mode login \
           --account-name azlinuxbmpstaging \
           --source azl4-override-rpms \
           --pattern "*.rpm" \
-          --destination ${{ parameters.tridentSourceDirectory }}/bin/RPMS
-        ls -la ${{ parameters.tridentSourceDirectory }}/bin/RPMS
+          --destination ${{ parameters.tridentSourceDirectory }}/artifacts/rpm-overrides
+        ls -la ${{ parameters.tridentSourceDirectory }}/artifacts/rpm-overrides
