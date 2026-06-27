@@ -27,7 +27,7 @@ storage:
 os:
   bootloader:
     resetType: hard-reset
-  hostname: trident-azll4-testimg
+  hostname: trident-azl4-testimg
 
   selinux:
     mode: disabled
