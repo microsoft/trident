@@ -31,6 +31,13 @@ parameters:
     type: boolean
     default: true
 
+  - name: distro
+    type: string
+    default: "azl3"
+    values:
+      - azl3
+      - azl4
+
 
 jobs:
   - job: DefineTests
@@ -51,8 +58,12 @@ jobs:
           if [ "${{ parameters.testSecureBoot }}" == "False" ]; then
             SKIP_ENCRYPTION_TESTS_ARG="--skipEncryptionTests"
           fi
+          CONFIGURATIONS_FILE=./tests/e2e_tests/target-configurations.yaml
+          if [ "${{ parameters.distro }}" == "azl4" ]; then
+            CONFIGURATIONS_FILE=./tests/e2e_tests/target-configurations-azl4.yaml
+          fi
           python3 ./tests/e2e_tests/helpers/read_target_configurations.py \
-              --configurations ./tests/e2e_tests/target-configurations.yaml \
+              --configurations $CONFIGURATIONS_FILE \
               --env ${{ parameters.deploymentEnvironment }} \
               --runtimeEnv ${{ parameters.runtimeEnv }} \
               --purpose ${{ parameters.buildPurpose }} \

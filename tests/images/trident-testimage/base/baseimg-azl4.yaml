@@ -1,0 +1,144 @@
+storage:
+  bootType: efi
+
+  disks:
+    - partitionTableType: gpt
+      maxSize: 5G
+      partitions:
+        - id: esp
+          type: esp
+          size: 16M
+
+        - id: rootfs
+          size: grow
+
+  filesystems:
+    - deviceId: esp
+      type: fat32
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+
+    - deviceId: rootfs
+      type: ext4
+      mountPoint:
+        path: /
+
+os:
+  bootloader:
+    resetType: hard-reset
+  hostname: trident-azl4-testimg
+
+  selinux:
+    mode: disabled
+
+  kernelCommandLine:
+    extraCommandLine:
+      - console=tty0
+      - console=ttyS0
+      - rd.info
+      - log_buf_len=1M
+      - net.ifnames=0
+      - loglevel=6
+      - systemd.journald.forward_to_console=1
+
+  packages:
+    install:
+      - curl
+      # AZL4: dnf5 (no `dnf` package on AZL4)
+      - dnf5
+      # ^^^
+      - efibootmgr
+      # AZL4: grub2-efi-x64 + grub2-efi-x64-modules (no `-noprefix` package)
+      - grub2-efi-x64
+      - grub2-efi-x64-modules
+      - grub2-tools
+      - grub2-tools-efi
+      # ^^^
+      - iproute
+      # AZL4: iptables-nft (no plain `iptables` meta on AZL4 base)
+      - iptables-nft
+      # ^^^
+      - lsof
+      - mdadm
+      # AZL4 netplan and AZL4 systemd are incompatible at boot ... use
+      # cached netplan RPMs built from main
+      - netplan
+      - netplan-default-backend-networkd
+      - openssh-server
+      - tpm2-tools
+      # AZL4: shim added (AZL4 ships a real signed shim chain)
+      - shim
+      # WHY?  maybe baseimage is missing them?
+      - sudo
+      - systemd-networkd
+      - systemd-resolved
+      # AZL4 systemd (258.4) moves systemd-dissect and mount.ddi from the
+      # main systemd package into the systemd-container subpackage.  mount.ddi
+      # is needed for sysext/sysconf
+      - systemd-sysext
+      - systemd-confext
+      - systemd-dissect
+      # ^^^
+      - trident-service
+      - vim
+      - audit
+      # Packages required for functional tests, which currently use this image:
+      - device-mapper
+      - dosfstools
+      - lvm2
+      - veritysetup
+      # Optional dependencies for NTFS
+      - ntfs-3g
+      - ntfsprogs
+
+  services:
+    enable:
+      - sshd
+      - systemd-networkd
+      - systemd-resolved
+      - trident
+      - tridentd.socket
+      # netplan-main (generate/configure split) defers virtual-device
+      # creation to this service; Fedora ships it preset-disabled.
+      - netplan-configure.service
+
+  additionalFiles:
+    # AZL4 lacks a /usr/bin/hostname binary; the pytest framework smoke-
+    # tests SSH with `hostname`, so we ship a tiny shim.
+    - source: files/hostname-shim.sh
+      destination: /usr/local/bin/hostname
+      permissions: "755"
+    # For tests, override the public trident.service behavior and use
+    # grpc-client commit.
+    - source: files/use-grpc-client-commit.conf
+      destination: /etc/systemd/system/trident.service.d/override.conf
+    # ssh-move-host-keys-azl4.sh points sshd HostKey at /var/srv/etc/ssh.
+    # The srv partition is created fresh on every clean install, so the
+    # host keys must be generated there on first boot (see
+    # regen-sshd-keys.service), otherwise sshd exits with no hostkeys
+    # available and nothing listens on TCP :22.
+    - source: files/regen-sshd-keys.service
+      destination: /etc/systemd/system/regen-sshd-keys.service
+
+scripts:
+  postCustomization:
+    - path: post-install.sh
+    - path: scripts/ssh-move-host-keys-azl4.sh
+    # Enable regen-sshd-keys.service via a wants symlink so sshd has
+    # host keys in /var/srv on first boot.
+    - path: scripts/enable-regen-sshd-keys.sh
+    # Rebuild initramfs with --no-hostonly + extra SATA drivers so the
+    # qcow2 boots regardless of which bus the consumer's libvirt config
+    # picks (storm-trident uses bus=sata; the original boot test on
+    # karhu-ubuntu used bus=virtio). MUST run BEFORE strip-selinux-xattrs
+    # because dracut writes new files with the build-time SELinux
+    # context, and we want those stripped too.
+    - path: scripts/rebuild-initrd-azl4.sh
+    # Strip SELinux labels from all files. See the script header for the
+    # full rationale, but in short: the AZL4 base VHDX bakes in AZL4
+    # SELinux contexts that Trident-from-AZL3-MOS can't preserve during
+    # install (MOS's loaded policy rejects unknown contexts via
+    # setxattr). Stripping at cosi build time sidesteps the cascade.
+    # Must run LAST so other postCustomization scripts don't re-label.
+    - path: scripts/strip-selinux-xattrs.sh

@@ -181,6 +181,15 @@ stages:
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
+  # Build Trident test image (regular) for AZL4
+  - template: stages/build_image/build-image.yml
+    parameters:
+      imageName: trident-azl4-testimage
+      micBuildType: ${{ parameters.micBuildType }}
+      micVersion: ${{ parameters.micVersion }}
+      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      azureLinuxVersion: "4.0-preview"
+
   # Build Trident test image (container)
   - template: stages/build_image/build-image.yml
     parameters:
@@ -408,6 +417,15 @@ stages:
         parameters:
           buildPurpose: "pullrequest"
           runtimeEnv: "container"
+
+      # VM Testing (host, pullrequest) for AZL4
+      - template: stages/testing_vm/netlaunch-testing.yml
+        parameters:
+          buildPurpose: "pullrequest"
+          runtimeEnv: "host"
+          distro: azl4
+          stageSuffix: "_azl4"
+          testSecureBoot: false
 
       # Run direct streaming tests for amd64 with streaming images
       - template: direct-streaming-test.yml

@@ -196,6 +196,15 @@ DEFINED_IMAGES: List[ImageConfig] = [
         ssh_key="files/id_rsa.pub",
         architecture=SystemArchitecture.ARM64,
     ),
+    # Test images (azl4)
+    ImageConfig(
+        "trident-azl4-testimage",
+        config="trident-testimage",
+        base_image=BaseImage.AZL4_QEMU_GUEST,
+        output_and_config={
+            OutputFormat.COSI: "base/baseimg-azl4.yaml",
+        },
+    ),
     # VM test images (azl4)
     ImageConfig(
         "trident-vm-grub-azl4-testimage",

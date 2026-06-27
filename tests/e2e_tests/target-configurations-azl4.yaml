@@ -1,0 +1,38 @@
+# bareMetal:
+#   host:
+#     daily:
+#       - base-azl4
+#     validation:
+#       - base-azl4
+#     weekly:
+#       - base-azl4
+#   container:
+#     daily:
+#       - base-azl4
+#     validation:
+#       - base-azl4
+#     weekly:
+#       - base-azl4
+virtualMachine:
+  host:
+    daily:
+      - base-azl4
+    post_merge:
+      - base-azl4
+    pullrequest:
+      - base-azl4
+    validation:
+      - base-azl4
+    weekly:
+      - base-azl4
+  # container:
+  #   daily:
+  #     - base-azl4
+  #   post_merge:
+  #     - base-azl4
+  #   pullrequest:
+  #     - base-azl4
+  #   validation:
+  #     - base-azl4
+  #   weekly:
+  #     - base-azl4
