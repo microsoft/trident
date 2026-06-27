@@ -172,7 +172,7 @@ DEFINED_IMAGES: List[ImageConfig] = [
         output_and_config={
             OutputFormat.COSI: "base/updateimg-grub-verity-azure.yaml",
             OutputFormat.QCOW2: "base/baseimg-grub-verity-azure.yaml",
-            OutputFormat.VHD: "base/baseimg-grub-verity-azure.yaml",
+            OutputFormat.VHD_FIXED: "base/baseimg-grub-verity-azure.yaml",
         },
     ),
     ImageConfig(
