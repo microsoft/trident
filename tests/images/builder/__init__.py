@@ -184,7 +184,7 @@ class ImageConfig:
 
     # Desired output format for this image
     output_and_config: dict[OutputFormat, Path] = field(
-        default_factory=lambda: {OutputFormat.COSI: "base/baseimg.yaml"}
+        default_factory=lambda: {OutputFormat.COSI: Path("base/baseimg.yaml")}
     )
 
     # Extra dependencies for this image
