@@ -3,5 +3,7 @@
 # /var/srv on first boot. Enable it via wants symlink because the generic
 # `services.enable` in MIC config is reserved for systemd unit names that
 # come from packages, and our unit is delivered via additionalFiles.
+set -euo pipefail
+mkdir -p /etc/systemd/system/multi-user.target.wants
 ln -sf /etc/systemd/system/regen-sshd-keys.service \
   /etc/systemd/system/multi-user.target.wants/regen-sshd-keys.service

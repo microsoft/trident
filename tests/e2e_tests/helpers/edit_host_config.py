@@ -28,12 +28,24 @@ def add_key(host_config_path, public_key):
     with open(host_config_path, "r") as f:
         host_config = yaml.safe_load(f)
 
-    if "os" in host_config and "users" in host_config.get("os", {}):
-        for index_user in range(len(host_config["os"]["users"])):
-            if host_config["os"]["users"][index_user]["name"] == "testing-user":
-                host_config["os"]["users"][index_user]["sshPublicKeys"].append(
-                    public_key
-                )
+    users = host_config.get("os", {}).get("users")
+    if not users:
+        raise ValueError(
+            f"{host_config_path}: expected os.users to be present so the test "
+            "SSH key can be added, but it is missing or empty"
+        )
+
+    added = False
+    for user in users:
+        if user.get("name") == "testing-user":
+            user.setdefault("sshPublicKeys", []).append(public_key)
+            added = True
+
+    if not added:
+        raise ValueError(
+            f"{host_config_path}: no os.users entry named 'testing-user' was "
+            "found to add the test SSH key to"
+        )
 
     with open(host_config_path, "w") as f:
         yaml.safe_dump(host_config, f)
