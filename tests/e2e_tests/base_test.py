@@ -421,10 +421,11 @@ def test_users(connection, hostConfiguration):
     expected_users = list()
     expected_groups = dict()
 
-    if "os" not in hostConfiguration or "users" not in hostConfiguration.get("os", {}):
+    users = hostConfiguration.get("os", {}).get("users")
+    if not users:
         pytest.skip("No os.users in trident config (user baked into image by MIC)")
 
-    for user_info in hostConfiguration["os"]["users"]:
+    for user_info in users:
         expected_users.append(user_info["name"])
         if "groups" in user_info:
             for group in user_info["groups"]:
