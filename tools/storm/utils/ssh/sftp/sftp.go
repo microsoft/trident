@@ -18,7 +18,7 @@ const (
 	// stdin/stdout regardless of where the binary lives. Hard-coding the AZL3
 	// path made SudoSFTP fail on AZL4 (binary not found -> channel closes ->
 	// "error receiving version packet from server: unexpected EOF").
-	SFTP_SERVER_CMD = `sudo -n sh -c 'for p in /usr/libexec/openssh/sftp-server /usr/libexec/sftp-server /usr/lib/openssh/sftp-server; do [ -x "$p" ] && exec "$p"; done; echo "sftp-server not found" >&2; exit 127'`
+	SFTP_SERVER_CMD = `sudo -n -- /bin/sh -c 'for p in /usr/libexec/openssh/sftp-server /usr/libexec/sftp-server /usr/lib/openssh/sftp-server; do [ -x "$p" ] && exec "$p"; done; echo "sftp-server not found" >&2; exit 127'`
 )
 
 type SftpSudoClient struct {
