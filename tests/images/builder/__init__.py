@@ -1,9 +1,13 @@
+import logging
 import yaml
 
 from dataclasses import dataclass, field, fields
 from enum import Enum
 from pathlib import Path
 from typing import List, Optional, Union
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
 
 
 class Distro(Enum):
@@ -246,7 +250,9 @@ class ImageConfig:
 
     def output_format(self) -> OutputFormat:
         if self.runtime_output_format is not None:
-            return self.runtime_output_format
+            for fmt in self.output_and_config:
+                if fmt.ext() == self.runtime_output_format.ext():
+                    return fmt
         return next(iter(self.output_and_config))
 
     def config_path(self) -> str:
@@ -302,6 +308,14 @@ class ImageConfig:
         """Set the runtime output type based on a string."""
         try:
             self.runtime_output_format = OutputFormat(output_type)
+            if output_type == OutputFormat.COSI.ext():
+                log.warning(
+                    f"Output type 'cosi' was specified, if 'baremetal-cosi' was intended, use that as output type."
+                )
+            if output_type == OutputFormat.VHD.ext():
+                log.warning(
+                    f"Output type 'vhd' was specified, if 'vhd-fixed' was intended, use that as output type."
+                )
         except ValueError as e:
             valid_formats = ", ".join([fmt.value for fmt in OutputFormat])
             raise ValueError(
