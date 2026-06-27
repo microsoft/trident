@@ -119,6 +119,16 @@ steps:
         azureLinuxVersion: ${{ parameters.azureLinuxVersion }}
         runtimeBuildType: ${{ parameters.baseimgBuildType }}
   - ${{ else }}:
+    # download-azl4-base-vhdx.yml only fetches the azl4_qemu_guest VHDX,
+    # so fail fast if the image resolves to a different base image type.
+    - bash: |
+        set -euxo pipefail
+        if [[ "$(baseImageType)" != "azl4_qemu_guest" ]]; then
+          echo "ERROR: AZL4 preview only supports base image type 'azl4_qemu_guest', but '$(baseImageType)' was resolved for image '${{ parameters.imageName }}'."
+          exit 1
+        fi
+      displayName: "Validate AZL4 base image type"
+      workingDirectory: ${{ parameters.tridentSourceDirectory }}
     - template: ../common_tasks/download-azl4-base-vhdx.yml
       parameters:
         tridentSourceDirectory: ${{ parameters.tridentSourceDirectory }}
