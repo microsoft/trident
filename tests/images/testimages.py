@@ -8,7 +8,6 @@ from builder import (
     BaseImage,
     BaseImageManifest,
     BlobImageManifest,
-    Distro,
     ImageConfig,
     OutputFormat,
     SystemArchitecture,

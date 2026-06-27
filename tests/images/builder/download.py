@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+from typing import Optional
 
 from builder import BaseImageManifest, BlobImageManifest, Distro
 
@@ -69,8 +70,8 @@ _BLOB_NAME_VERSION_RE = re.compile(r"/([^/]*\d{4}-?\d{2}-?\d{2}[^/]*)/")
 
 def download_blob_image(
     image: BlobImageManifest,
-    storage_account: str,
-    container: str,
+    storage_account: Optional[str],
+    container: Optional[str],
 ) -> None:
     """Download a base image from Azure Storage Blob.
 
