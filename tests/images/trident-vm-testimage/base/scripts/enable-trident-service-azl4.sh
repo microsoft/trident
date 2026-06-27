@@ -2,9 +2,10 @@
 # Defensive enable of trident.service and tridentd.socket.
 #
 # AZL3 gets these via the trident-service RPM's %systemd_post scriptlet.
-# AZL4 doesn't have that RPM yet, so we ship the units via additionalFiles
-# and *should* be able to rely on baseimg-grub-azl4.yaml's `services.enable:`
-# stanza. In practice, `services.enable` did not create the
+# AZL4 now installs the trident-service RPM as well (the units ship with
+# the RPM, not via additionalFiles), and we *should* be able to rely on the
+# RPM scriptlet plus baseimg-grub-azl4.yaml's `services.enable:` stanza.
+# In practice, `services.enable` did not create the
 # multi-user.target.wants/trident.service symlink in MIC AZL4 builds
 # (build 1120959 showed multi-user.target reached but trident.service
 # never started post-reboot, leaving servicingState stuck at
