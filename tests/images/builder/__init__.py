@@ -6,7 +6,6 @@ from enum import Enum
 from pathlib import Path
 from typing import List, Optional, Union
 
-logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
 
@@ -29,7 +28,9 @@ class BaseImage(Enum):
     CORE_SELINUX = BaseImageData("core_selinux", Path("artifacts/core_selinux.vhdx"))
     QEMU_GUEST = BaseImageData("qemu_guest", Path("artifacts/qemu_guest.vhdx"))
     AZL4_QEMU_GUEST = BaseImageData(
-        "azl4_qemu_guest", Path("artifacts/azl4_qemu_guest.vhdx")
+        "azl4_qemu_guest",
+        Path("artifacts/azl4_qemu_guest.vhdx"),
+        distro=Distro.AZL4,
     )
     # AZL4_CORE = BaseImageData(
     #     "azl4_core", Path("artifacts/azl4_core.vhdx"), "core", Distro.AZL4
@@ -310,11 +311,11 @@ class ImageConfig:
             self.runtime_output_format = OutputFormat(output_type)
             if output_type == OutputFormat.COSI.ext():
                 log.warning(
-                    f"Output type 'cosi' was specified, if 'baremetal-cosi' was intended, use that as output type."
+                    "Output type 'cosi' was specified; if 'baremetal-image' was intended, use that as the output type."
                 )
             if output_type == OutputFormat.VHD.ext():
                 log.warning(
-                    f"Output type 'vhd' was specified, if 'vhd-fixed' was intended, use that as output type."
+                    "Output type 'vhd' was specified; if 'vhd-fixed' was intended, use that as the output type."
                 )
         except ValueError as e:
             valid_formats = ", ".join([fmt.value for fmt in OutputFormat])

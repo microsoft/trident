@@ -102,9 +102,7 @@ def build(
 
     if output_type is not None:
         image.set_output_type(output_type)
-        log.info(
-            f"Building image with output type '{image.runtime_output_format.ic_name()}'"
-        )
+        log.info(f"Building image with output type '{image.output_format().ic_name()}'")
     else:
         log.info(
             f"Building image with default output type '{image.output_format().ic_name()}'"
