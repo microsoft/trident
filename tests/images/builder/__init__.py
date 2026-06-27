@@ -1,40 +1,67 @@
+import logging
 import yaml
 
 from dataclasses import dataclass, field, fields
 from enum import Enum
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
+
+log = logging.getLogger(__name__)
+
+
+class Distro(Enum):
+    AZL3 = "azl3"
+    AZL4 = "azl4"
+    OTHER = "other"
 
 
 @dataclass
 class BaseImageData:
     name: str
     path: Path
+    mcr_name: Optional[str] = None
+    distro: Distro = Distro.AZL3
 
 
 class BaseImage(Enum):
     BAREMETAL = BaseImageData("baremetal", Path("artifacts/baremetal.vhdx"))
     CORE_SELINUX = BaseImageData("core_selinux", Path("artifacts/core_selinux.vhdx"))
     QEMU_GUEST = BaseImageData("qemu_guest", Path("artifacts/qemu_guest.vhdx"))
+    AZL4_QEMU_GUEST = BaseImageData(
+        "azl4_qemu_guest",
+        Path("artifacts/azl4_qemu_guest.vhdx"),
+        distro=Distro.AZL4,
+    )
+    # AZL4_CORE = BaseImageData(
+    #     "azl4_core", Path("artifacts/azl4_core.vhdx"), "core", Distro.AZL4
+    # )
     CORE_ARM64 = BaseImageData("core_arm64", Path("artifacts/core_arm64.vhdx"))
     MINIMAL = BaseImageData("minimal", Path("artifacts/minimal.vhdx"))
     MINIMAL_AARCH64 = BaseImageData(
         "minimal_aarch64", Path("artifacts/minimal_aarch64.vhdx")
     )
     UBUNTU_2204_AMD64 = BaseImageData(
-        "ubuntu_2204_amd64", Path("artifacts/ubuntu_2204_amd64.vhdx")
+        "ubuntu_2204_amd64",
+        Path("artifacts/ubuntu_2204_amd64.vhdx"),
+        distro=Distro.OTHER,
     )
     UBUNTU_2204_ARM64 = BaseImageData(
-        "ubuntu_2204_arm64", Path("artifacts/ubuntu_2204_arm64.vhdx")
+        "ubuntu_2204_arm64",
+        Path("artifacts/ubuntu_2204_arm64.vhdx"),
+        distro=Distro.OTHER,
     )
     UBUNTU_2404_AMD64 = BaseImageData(
-        "ubuntu_2404_amd64", Path("artifacts/ubuntu_2404_amd64.vhdx")
+        "ubuntu_2404_amd64",
+        Path("artifacts/ubuntu_2404_amd64.vhdx"),
+        distro=Distro.OTHER,
     )
     UBUNTU_2404_ARM64 = BaseImageData(
-        "ubuntu_2404_arm64", Path("artifacts/ubuntu_2404_arm64.vhdx")
+        "ubuntu_2404_arm64",
+        Path("artifacts/ubuntu_2404_arm64.vhdx"),
+        distro=Distro.OTHER,
     )
     GB200_2404_ARM64 = BaseImageData(
-        "gb200_2404_arm64", Path("artifacts/gb200_2404_arm64.vhdx")
+        "gb200_2404_arm64", Path("artifacts/gb200_2404_arm64.vhdx"), distro=Distro.OTHER
     )
 
     @property
@@ -43,6 +70,12 @@ class BaseImage(Enum):
 
     @property
     def name(self) -> str:
+        return self.value.name
+
+    @property
+    def mcr_name(self) -> str:
+        if self.value.mcr_name is not None:
+            return self.value.mcr_name
         return self.value.name
 
     def __str__(self) -> str:
@@ -54,10 +87,39 @@ class BaseImageManifest:
     image: BaseImage
     package_name: str
     version: str
+    distro: Distro = Distro.AZL3
     org: str = "https://dev.azure.com/mariner-org/"
     project: str = "36d030d6-1d99-4ebd-878b-09af1f4f722f"
     feed: str = "AzureLinuxArtifacts"
     glob: str = "*.vhdx"
+
+
+@dataclass
+class BlobImageManifest:
+    """Manifest for a base image fetched from Azure Storage Blob.
+
+    Used for distros that don't yet publish to an ADO universal artifact
+    feed (e.g., Azure Linux 4.0 alpha builds). The storage account name
+    and container are NOT baked in here -- they are supplied at
+    invocation time via the --blob-storage-account / --blob-container
+    flags (or the BLOB_STORAGE_ACCOUNT / BLOB_CONTAINER env vars) so the
+    pipeline can parameterize them and rotate the location without a
+    code change.
+
+    Authentication is via `az` CLI logged-in identity (`--auth-mode
+    login`). The pipeline running this must have a federated identity
+    with read access to the storage account.
+    """
+
+    image: BaseImage
+    # Blob name prefix to search under
+    # (e.g. "azure-linux/core-efi-vhdx-4.0-amd64")
+    path_prefix: str
+    # Suffix the final blob name must end with.
+    # The downloader lists all blobs under path_prefix, filters to ones
+    # ending with this suffix, and picks the lexically largest (= most
+    # recent version) to download.
+    file_suffix: str = "/image.vhdx"
 
 
 class OutputFormat(Enum):
@@ -111,9 +173,6 @@ class ImageConfig:
     # Second-level dir, generally same as name
     config: str = None
 
-    # YAML config file inside the config dir
-    config_file: Path = Path("base/baseimg.yaml")
-
     # The base image to use
     base_image: BaseImage = BaseImage.BAREMETAL
 
@@ -124,7 +183,9 @@ class ImageConfig:
     requires_dhcp: bool = False
 
     # Desired output format for this image
-    output_format: OutputFormat = OutputFormat.COSI
+    output_and_config: dict[OutputFormat, Path] = field(
+        default_factory=lambda: {OutputFormat.COSI: Path("base/baseimg.yaml")}
+    )
 
     # Extra dependencies for this image
     extra_dependencies: List[Path] = field(default_factory=list)
@@ -142,6 +203,9 @@ class ImageConfig:
     # Use ImageCustomizer convert command rather than customize
     image_customizer_convert: bool = False
 
+    # Runtime variable used to configure output format
+    runtime_output_format: Optional[OutputFormat] = None
+
     @classmethod
     def kebab_fields(cls) -> List[str]:
         """Return a list of fields in kebab-case."""
@@ -156,9 +220,11 @@ class ImageConfig:
         if isinstance(self.ssh_key, str):
             self.ssh_key = Path(self.ssh_key)
 
-        # Update config_file to be a Path object if it's a string
-        if isinstance(self.config_file, str):
-            self.config_file = Path(self.config_file)
+        # Normalize output_and_config values to Path objects
+        for fmt in self.output_and_config:
+            cfg = self.output_and_config[fmt]
+            if isinstance(cfg, str):
+                self.output_and_config[fmt] = Path(cfg)
 
         # Automatically set the architecture to arm64 if the base image is ARM64
         if self.base_image == BaseImage.CORE_ARM64:
@@ -183,8 +249,40 @@ class ImageConfig:
     def base_dir(self) -> Path:
         return Path(self.source) / self.config
 
+    def output_format(self) -> OutputFormat:
+        if self.runtime_output_format is not None:
+            # baremetal-image and vhd-fixed share a file extension with
+            # cosi and vhd respectively (ext() collapses them), so an
+            # explicit request for either must match that exact format
+            # when declared, rather than silently downgrading to the
+            # same-extension format.
+            if (
+                self.runtime_output_format
+                in (OutputFormat.BAREMETAL_IMAGE, OutputFormat.VHD_FIXED)
+                and self.runtime_output_format in self.output_and_config
+            ):
+                return self.runtime_output_format
+            # Otherwise resolve by file extension to preserve the
+            # Makefile's extension-based selection (e.g. --output-type
+            # cosi / vhd).
+            for fmt in self.output_and_config:
+                if fmt.ext() == self.runtime_output_format.ext():
+                    return fmt
+            supported = ", ".join(sorted({fmt.ext() for fmt in self.output_and_config}))
+            raise ValueError(
+                f"Output type '{self.runtime_output_format.value}' "
+                f"(extension '{self.runtime_output_format.ext()}') is not supported "
+                f"by image '{self.name}'. Supported output extensions: {supported}."
+            )
+        return next(iter(self.output_and_config))
+
+    def config_path(self) -> Path:
+        # output_format() returns a key of output_and_config (or raises),
+        # so index directly.
+        return self.output_and_config[self.output_format()]
+
     def full_yaml_path(self) -> Path:
-        return self.base_dir() / self.config_file
+        return self.base_dir() / self.config_path()
 
     def dependencies(self) -> List[Path]:
         deps = [self.base_image.path]
@@ -207,7 +305,7 @@ class ImageConfig:
         """
         Returns the file name for the image.
         """
-        return f"{self.id}.{self.output_format.ext()}"
+        return f"{self.id}.{self.output_format().ext()}"
 
     def file_name_unsigned_raw(self) -> str:
         """Returns the file name for the unsigned raw image."""
@@ -222,6 +320,32 @@ class ImageConfig:
         if self.suffix is None:
             return self.name
         return f"{self.name}_{self.suffix}"
+
+    def set_output_type(self, output_type: str) -> None:
+        """Set the runtime output type based on a string."""
+        try:
+            self.runtime_output_format = OutputFormat(output_type)
+            # Only warn about the ambiguous same-extension alternative when
+            # this image actually declares it; otherwise the hint is noise.
+            if (
+                output_type == OutputFormat.COSI.ext()
+                and OutputFormat.BAREMETAL_IMAGE in self.output_and_config
+            ):
+                log.warning(
+                    "Output type 'cosi' was specified; if 'baremetal-image' was intended, use that as the output type."
+                )
+            if (
+                output_type == OutputFormat.VHD.ext()
+                and OutputFormat.VHD_FIXED in self.output_and_config
+            ):
+                log.warning(
+                    "Output type 'vhd' was specified; if 'vhd-fixed' was intended, use that as the output type."
+                )
+        except ValueError as e:
+            valid_formats = ", ".join([fmt.value for fmt in OutputFormat])
+            raise ValueError(
+                f"Invalid output type '{output_type}'. Valid options are: {valid_formats}"
+            ) from e
 
     def get_output_artifacts_dir(self) -> Optional[str]:
         """
@@ -249,7 +373,9 @@ class ArtifactManifest:
     customizer_version: str
     customizer_container: str
     customizer_container_full: str = None
-    base_images: List[BaseImageManifest] = field(default_factory=list)
+    base_images: List[Union["BaseImageManifest", "BlobImageManifest"]] = field(
+        default_factory=list
+    )
 
     def __post_init__(self):
         if self.customizer_container_full is None:
@@ -264,7 +390,9 @@ class ArtifactManifest:
         """Return a list of fields in kebab-case."""
         return [f.name.replace("_", "-") for f in fields(cls)]
 
-    def find_base_image(self, img: BaseImage) -> Optional[BaseImageManifest]:
+    def find_base_image(
+        self, img: BaseImage
+    ) -> Optional[Union["BaseImageManifest", "BlobImageManifest"]]:
         """Find a base image by its name."""
         for base_image in self.base_images:
             if base_image.image == img:

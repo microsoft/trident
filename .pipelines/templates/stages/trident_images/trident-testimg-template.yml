@@ -134,6 +134,21 @@ steps:
           cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* ${{ parameters.tridentSourceDirectory }}/artifacts/
         displayName: Copy SSH Keys
 
+  # Stage the SSH public key into the test image tree so the builder bakes it
+  # into the image. The Makefile previously did this via the files/id_rsa.pub
+  # prerequisite; those explicit image targets were removed, so the pipeline
+  # now stages the key before building. Superseded by the shared
+  # prepare-testimage-requirements template.
+  - ${{ if eq(parameters.useStagedSshKeys, true) }}:
+      - bash: |
+          set -eux
+
+          SRC="${{ parameters.tridentSourceDirectory }}/artifacts/id_rsa.pub"
+          DEST="${{ parameters.tridentSourceDirectory }}/tests/images/trident-vm-testimage/base/files"
+          mkdir -p "$DEST"
+          cp "$SRC" "$DEST/"
+        displayName: Stage SSH public key into testimage tree
+
   - script: |
       echo "##[warning]THE PIPELINE TEMPLATE trident-testimg-template.yaml IS DEPRECATED. PLEASE SWITCH TO USING testimages.py TO BUILD TEST IMAGES."
       cat /etc/os-release
