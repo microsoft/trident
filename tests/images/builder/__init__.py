@@ -325,11 +325,19 @@ class ImageConfig:
         """Set the runtime output type based on a string."""
         try:
             self.runtime_output_format = OutputFormat(output_type)
-            if output_type == OutputFormat.COSI.ext():
+            # Only warn about the ambiguous same-extension alternative when
+            # this image actually declares it; otherwise the hint is noise.
+            if (
+                output_type == OutputFormat.COSI.ext()
+                and OutputFormat.BAREMETAL_IMAGE in self.output_and_config
+            ):
                 log.warning(
                     "Output type 'cosi' was specified; if 'baremetal-image' was intended, use that as the output type."
                 )
-            if output_type == OutputFormat.VHD.ext():
+            if (
+                output_type == OutputFormat.VHD.ext()
+                and OutputFormat.VHD_FIXED in self.output_and_config
+            ):
                 log.warning(
                     "Output type 'vhd' was specified; if 'vhd-fixed' was intended, use that as the output type."
                 )
