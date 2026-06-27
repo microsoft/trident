@@ -182,7 +182,7 @@ class ImageConfig:
     requires_dhcp: bool = False
 
     # Desired output format for this image
-    output_and_config: dict[OutputFormat, str] = field(
+    output_and_config: dict[OutputFormat, Path] = field(
         default_factory=lambda: {OutputFormat.COSI: "base/baseimg.yaml"}
     )
 
@@ -255,7 +255,7 @@ class ImageConfig:
                     return fmt
         return next(iter(self.output_and_config))
 
-    def config_path(self) -> str:
+    def config_path(self) -> Path:
         output_type = self.output_format().ext()
         for fmt in self.output_and_config:
             if fmt.ext() == output_type:

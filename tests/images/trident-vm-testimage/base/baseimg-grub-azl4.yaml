@@ -7,10 +7,6 @@
 # Layout mirrors AZL3's baseimg-grub.yaml (A/B partitions) but uses
 # AZL4-specific package names (dnf5, grub2-efi-x64, shim, etc.) matching
 # the updateimg-grub-azl4.yaml flavor.
-#
-# TODO(azl4-rpm): Drop the trident additionalFiles entries
-# once an AZL4 trident-service RPM is published. Until then we bake
-# the binary inline.
 
 storage:
   disks:
