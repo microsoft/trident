@@ -251,6 +251,20 @@ class ImageConfig:
 
     def output_format(self) -> OutputFormat:
         if self.runtime_output_format is not None:
+            # baremetal-image and vhd-fixed share a file extension with
+            # cosi and vhd respectively (ext() collapses them), so an
+            # explicit request for either must match that exact format
+            # when declared, rather than silently downgrading to the
+            # same-extension format.
+            if (
+                self.runtime_output_format
+                in (OutputFormat.BAREMETAL_IMAGE, OutputFormat.VHD_FIXED)
+                and self.runtime_output_format in self.output_and_config
+            ):
+                return self.runtime_output_format
+            # Otherwise resolve by file extension to preserve the
+            # Makefile's extension-based selection (e.g. --output-type
+            # cosi / vhd).
             for fmt in self.output_and_config:
                 if fmt.ext() == self.runtime_output_format.ext():
                     return fmt
