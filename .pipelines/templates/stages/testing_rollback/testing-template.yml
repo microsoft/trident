@@ -25,6 +25,7 @@ parameters:
     type: string
     values:
       - qemu-grub
+      - grubazl4
       - qemu
       - uki
 
@@ -160,7 +161,10 @@ jobs:
           fi
           if [ "${{ parameters.flavor }}" != "uki" ]; then
             if [[ "${{ parameters.testSecureBoot }}" == 'True' ]]; then
-              STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --secure-boot"
+              # grubazl4 is skipped: its base image does not support secure boot yet.
+              if [[ "${{ parameters.flavor }}" != 'grubazl4' ]]; then
+                STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --secure-boot"
+              fi
             fi
           fi
           if [ "${{ parameters.skipManualRollbackTesting }}" == "true" ]; then
@@ -195,7 +199,7 @@ jobs:
             --force-cleanup
         displayName: "Rollback test (${{ parameters.platform }})"
         workingDirectory: $(TRIDENT_SOURCE_DIR)
-        timeoutInMinutes: 5
+        timeoutInMinutes: 10
 
       - bash: |
           set -eux
