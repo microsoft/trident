@@ -82,22 +82,28 @@ impl CosiMetadata {
             }
 
             // Ensure osPackages are present and all required info is provided.
-            let Some(os_packages) = &self.os_packages else {
-                return mk_err(CosiMetadataErrorKind::V1_1OsPackagesRequired);
-            };
+            match &self.os_packages {
+                Some(packages) => {
+                    // Ensure both release and arch are provided.
+                    for os_package in packages {
+                        if os_package.release.is_none() {
+                            return mk_err(CosiMetadataErrorKind::V1_1OsPackageMissingRelease(
+                                os_package.name.clone(),
+                            ));
+                        }
 
-            // Ensure both release and arch are provided.
-            for os_package in os_packages {
-                if os_package.release.is_none() {
-                    return mk_err(CosiMetadataErrorKind::V1_1OsPackageMissingRelease(
-                        os_package.name.clone(),
-                    ));
+                        if os_package.arch.is_none() {
+                            return mk_err(CosiMetadataErrorKind::V1_1OsPackageMissingArch(
+                                os_package.name.clone(),
+                            ));
+                        }
+                    }
                 }
-
-                if os_package.arch.is_none() {
-                    return mk_err(CosiMetadataErrorKind::V1_1OsPackageMissingArch(
-                        os_package.name.clone(),
-                    ));
+                None => {
+                    if self.os_release.variant_id != Some("azurecontainerlinux".to_string()) {
+                        // if variant_id is not "azurecontainerlinux", osPackages are required
+                        return mk_err(CosiMetadataErrorKind::V1_1OsPackagesRequired);
+                    }
                 }
             }
         }
