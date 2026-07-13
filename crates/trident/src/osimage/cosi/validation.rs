@@ -2,6 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use log::warn;
 
+use osutils::osrelease::AZURE_CONTAINER_LINUX_VARIANT_ID;
+
 use super::{
     error::{CosiMetadataError, CosiMetadataErrorKind},
     metadata::{
@@ -82,22 +84,30 @@ impl CosiMetadata {
             }
 
             // Ensure osPackages are present and all required info is provided.
-            let Some(os_packages) = &self.os_packages else {
-                return mk_err(CosiMetadataErrorKind::V1_1OsPackagesRequired);
-            };
+            match &self.os_packages {
+                Some(packages) => {
+                    // Ensure both release and arch are provided.
+                    for os_package in packages {
+                        if os_package.release.is_none() {
+                            return mk_err(CosiMetadataErrorKind::V1_1OsPackageMissingRelease(
+                                os_package.name.clone(),
+                            ));
+                        }
 
-            // Ensure both release and arch are provided.
-            for os_package in os_packages {
-                if os_package.release.is_none() {
-                    return mk_err(CosiMetadataErrorKind::V1_1OsPackageMissingRelease(
-                        os_package.name.clone(),
-                    ));
+                        if os_package.arch.is_none() {
+                            return mk_err(CosiMetadataErrorKind::V1_1OsPackageMissingArch(
+                                os_package.name.clone(),
+                            ));
+                        }
+                    }
                 }
-
-                if os_package.arch.is_none() {
-                    return mk_err(CosiMetadataErrorKind::V1_1OsPackageMissingArch(
-                        os_package.name.clone(),
-                    ));
+                None => {
+                    if self.os_release.variant_id.as_deref()
+                        != Some(AZURE_CONTAINER_LINUX_VARIANT_ID)
+                    {
+                        // osPackages are required unless this is an Azure Container Linux image
+                        return mk_err(CosiMetadataErrorKind::V1_1OsPackagesRequired);
+                    }
                 }
             }
         }
@@ -425,6 +435,15 @@ mod tests {
             no_os_packages,
             CosiMetadataErrorKind::V1_1OsPackagesRequired,
         );
+
+        // Azure Container Linux images may omit osPackages.
+        let mut acl_no_os_packages = base.clone();
+        acl_no_os_packages["osRelease"] =
+            json!("ID=azurelinux\nVERSION_ID=3.0\nVARIANT_ID=azurecontainerlinux\n");
+        if let Some(obj) = acl_no_os_packages.as_object_mut() {
+            obj.remove("osPackages");
+        }
+        parse_and_validate(acl_no_os_packages).unwrap();
 
         // v1.1 requires per-package release.
         let mut missing_release = base.clone();
