@@ -228,7 +228,7 @@ impl NewrootMount {
 
                 // ACL-specific: if the staging device has a BTRFS filesystem UUID that
                 // collides with the active USR partition, resolve based on strategy:
-                // - enableAzl4 + kernel >=6.7: mount with -o temp_fsuid (staging device directly)
+                // - enableAzl4 + kernel >=6.7: mount with -o temp_fsid (staging device directly)
                 // - Otherwise: bind-mount from active /usr (verity-verified identical)
                 if let Some(ref resolution) = acl_collision_resolution {
                     let collision_uuid = resolution.collision_uuid();
@@ -237,13 +237,13 @@ impl NewrootMount {
                         && block_device.fsuuid.as_ref() == Some(collision_uuid)
                     {
                         match resolution {
-                            AclBtrfsCollisionResolution::TempFsuid { .. } => {
+                            AclBtrfsCollisionResolution::TempFsid { .. } => {
                                 let mut options = mp.options.to_string_vec();
-                                options.push("temp_fsuid".to_string());
+                                options.push("temp_fsid".to_string());
                                 warn!(
                                     "Block device '{}' has BTRFS filesystem UUID '{}' which \
                                      collides with the active ACL USR partition. Mounting with \
-                                     temp_fsuid option (kernel >=6.7).",
+                                     temp_fsid option (kernel >=6.7).",
                                     target_id, collision_uuid,
                                 );
                                 mount::mount(
@@ -253,7 +253,7 @@ impl NewrootMount {
                                     &options,
                                 )
                                 .context(format!(
-                                    "Failed to mount block device '{}' with temp_fsuid \
+                                    "Failed to mount block device '{}' with temp_fsid \
                                      for ACL BTRFS UUID collision (device path '{}', target '{}')",
                                     target_id,
                                     device_path.display(),
@@ -424,18 +424,18 @@ fn should_be_bind_mounted(fs_type: Option<RealFilesystemType>) -> bool {
     }
 }
 
-/// Minimum kernel version required for the BTRFS `temp_fsuid` mount option
+/// Minimum kernel version required for the BTRFS `temp_fsid` mount option
 /// (introduced in Linux 6.7). Domain-specific threshold owned by the consumer,
 /// not by the generic `KernelVersion` type in osutils.
-const BTRFS_TEMP_FSUID_MIN_KERNEL: osutils::uname::KernelVersion =
+const BTRFS_TEMP_FSID_MIN_KERNEL: osutils::uname::KernelVersion =
     osutils::uname::KernelVersion { major: 6, minor: 7 };
 
 /// How to resolve a BTRFS UUID collision on ACL's USR A/B partitions.
 #[derive(Debug)]
 enum AclBtrfsCollisionResolution {
-    /// Kernel ≥6.7: mount the staging device with `-o temp_fsuid` so BTRFS
+    /// Kernel ≥6.7: mount the staging device with `-o temp_fsid` so BTRFS
     /// assigns a temporary in-memory UUID, bypassing the global registry.
-    TempFsuid { collision_uuid: OsUuid },
+    TempFsid { collision_uuid: OsUuid },
     /// Kernel <6.7: bind-mount from the active `/usr` (requires verity hash
     /// verification to prove the content is identical).
     BindMountActiveUsr { collision_uuid: OsUuid },
@@ -444,7 +444,7 @@ enum AclBtrfsCollisionResolution {
 impl AclBtrfsCollisionResolution {
     fn collision_uuid(&self) -> &OsUuid {
         match self {
-            Self::TempFsuid { collision_uuid } | Self::BindMountActiveUsr { collision_uuid } => {
+            Self::TempFsid { collision_uuid } | Self::BindMountActiveUsr { collision_uuid } => {
                 collision_uuid
             }
         }
@@ -461,7 +461,7 @@ impl AclBtrfsCollisionResolution {
 /// verity device cannot be mounted directly.
 ///
 /// Resolution strategy:
-/// - `enable_azl4` + Kernel ≥6.7: use `mount -o temp_fsuid` (mounts the real staging device)
+/// - `enable_azl4` + Kernel ≥6.7: use `mount -o temp_fsid` (mounts the real staging device)
 /// - Otherwise: bind-mount from active `/usr` (requires verity hash match)
 ///
 /// Returns `None` if no collision exists or if the bind-mount path is unsafe.
@@ -474,39 +474,40 @@ fn resolve_acl_btrfs_uuid_collision(
     let collision_uuid = detect_acl_btrfs_uuid_collision(update_volume)?;
 
     // 2. Determine resolution strategy based on kernel version.
-    //    The temp_fsuid path requires the enableAzl4 internal param to be set.
+    //    The temp_fsid path requires the enableAzl4 internal param to be set.
     //    When the flag is absent (or the running kernel predates 6.7), skip the
-    //    temp_fsuid path and fall through to the verity-verified bind-mount
+    //    temp_fsid path and fall through to the verity-verified bind-mount
     //    strategy below.
     if enable_azl4 {
-        let kernel_version = match osutils::uname::KernelVersion::running() {
-            Ok(kv) => kv,
+        match osutils::uname::KernelVersion::running() {
+            Ok(Some(kv)) => {
+                let supports_temp_fsid = kv >= BTRFS_TEMP_FSID_MIN_KERNEL;
+                debug!(
+                    "Running kernel {}.{}, BTRFS temp_fsid supported: {}",
+                    kv.major, kv.minor, supports_temp_fsid
+                );
+                if supports_temp_fsid {
+                    // Kernel ≥6.7: mount the staging device directly with temp_fsid.
+                    // Verity hash verification is intentionally skipped here: temp_fsid
+                    // mounts the real staging device content (not a bind-mount of the
+                    // active partition), so there is no identity assumption to verify.
+                    return Some(AclBtrfsCollisionResolution::TempFsid { collision_uuid });
+                }
+            }
+            Ok(None) => {
+                // uname succeeded but output could not be parsed into major.minor.
+                warn!(
+                    "Could not parse kernel version from uname output; \
+                     falling back to bind-mount strategy for ACL BTRFS UUID collision"
+                );
+            }
             Err(e) => {
-                // DR-003: distinguish uname execution failure from parse failure.
-                warn!("Failed to execute uname: {e}; cannot determine kernel version");
-                None
+                // uname could not be executed at all (DR-003: distinct from parse failure).
+                warn!(
+                    "Failed to execute uname: {e}; cannot determine kernel version, \
+                     falling back to bind-mount strategy for ACL BTRFS UUID collision"
+                );
             }
-        };
-
-        if let Some(kv) = kernel_version {
-            let supports_temp_fsuid = kv >= BTRFS_TEMP_FSUID_MIN_KERNEL;
-            debug!(
-                "Running kernel {}.{}, BTRFS temp_fsuid supported: {}",
-                kv.major, kv.minor, supports_temp_fsuid
-            );
-            if supports_temp_fsuid {
-                // Kernel ≥6.7: mount the staging device directly with temp_fsuid.
-                // Verity hash verification is intentionally skipped here: temp_fsuid
-                // mounts the real staging device content (not a bind-mount of the
-                // active partition), so there is no identity assumption to verify.
-                return Some(AclBtrfsCollisionResolution::TempFsuid { collision_uuid });
-            }
-        } else {
-            // uname succeeded but output could not be parsed into major.minor.
-            warn!(
-                "Could not parse kernel version from uname output; \
-                 falling back to bind-mount strategy for ACL BTRFS UUID collision"
-            );
         }
     }
 

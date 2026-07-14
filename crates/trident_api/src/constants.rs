@@ -212,7 +212,7 @@ pub mod internal_params {
     pub const DRACUT_DEBUG: &str = "dracutDebug";
 
     /// Enable Azure Linux 4 specific behaviors. Gates features that depend on
-    /// AZL4 kernel capabilities (e.g., BTRFS temp_fsuid mount option on
+    /// AZL4 kernel capabilities (e.g., BTRFS temp_fsid mount option on
     /// kernel ≥6.7). Must be explicitly set; absence means AZL4 codepaths
     /// are not activated.
     pub const ENABLE_AZL4: &str = "enableAzl4";
