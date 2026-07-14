@@ -186,7 +186,7 @@ impl NewrootMount {
             host_config
                 .internal_params
                 .get_flag(internal_params::ENABLE_AZL4),
-        );
+        )?;
 
         // Mount all block devices in the newroot
         mount_points_map(host_config)
@@ -464,14 +464,20 @@ impl AclBtrfsCollisionResolution {
 /// - `enable_azl4` + Kernel ≥6.7: use `mount -o temp_fsid` (mounts the real staging device)
 /// - Otherwise: bind-mount from active `/usr` (requires verity hash match)
 ///
-/// Returns `None` if no collision exists or if the bind-mount path is unsafe.
+/// Returns `Ok(None)` when no collision exists, `Ok(Some(resolution))` when a
+/// collision exists and can be safely resolved, and `Err` when a collision
+/// exists but no safe resolution is possible (kernel <6.7 and the verity hash
+/// is missing, empty, or mismatched). Failing with a structured error preserves
+/// the actionable verity context instead of deferring to an opaque mount error.
 fn resolve_acl_btrfs_uuid_collision(
     update_volume: AbVolumeSelection,
     staging_usr_roothash: Option<&str>,
     enable_azl4: bool,
-) -> Option<AclBtrfsCollisionResolution> {
+) -> Result<Option<AclBtrfsCollisionResolution>, TridentError> {
     // 1. Detect whether a UUID collision exists.
-    let collision_uuid = detect_acl_btrfs_uuid_collision(update_volume)?;
+    let Some(collision_uuid) = detect_acl_btrfs_uuid_collision(update_volume) else {
+        return Ok(None);
+    };
 
     // 2. Determine resolution strategy based on kernel version.
     //    The temp_fsid path requires the enableAzl4 internal param to be set.
@@ -491,7 +497,9 @@ fn resolve_acl_btrfs_uuid_collision(
                     // Verity hash verification is intentionally skipped here: temp_fsid
                     // mounts the real staging device content (not a bind-mount of the
                     // active partition), so there is no identity assumption to verify.
-                    return Some(AclBtrfsCollisionResolution::TempFsid { collision_uuid });
+                    return Ok(Some(AclBtrfsCollisionResolution::TempFsid {
+                        collision_uuid,
+                    }));
                 }
             }
             Ok(None) => {
@@ -513,12 +521,21 @@ fn resolve_acl_btrfs_uuid_collision(
 
     // 3. Kernel <6.7, unknown kernel, or enableAzl4 not set: bind-mount from
     //    active /usr. This requires verity hash verification to prove content
-    //    is identical.
-    if !verify_acl_bind_mount_safety(staging_usr_roothash) {
-        return None;
+    //    is identical. A collision is already known to exist here, so if the
+    //    bind-mount is unsafe we fail with a structured error rather than
+    //    returning None and letting the later mount fail opaquely.
+    if let Err(reason) = verify_acl_bind_mount_safety(staging_usr_roothash) {
+        return Err(TridentError::new(
+            ServicingError::AclBtrfsUuidCollisionUnresolved {
+                uuid: collision_uuid.to_string(),
+                reason,
+            },
+        ));
     }
 
-    Some(AclBtrfsCollisionResolution::BindMountActiveUsr { collision_uuid })
+    Ok(Some(AclBtrfsCollisionResolution::BindMountActiveUsr {
+        collision_uuid,
+    }))
 }
 
 /// Detects a BTRFS filesystem UUID collision on ACL's USR A/B partitions.
@@ -542,7 +559,16 @@ fn detect_acl_btrfs_uuid_collision(update_volume: AbVolumeSelection) -> Option<O
     }
 
     let active_dev = match lsblk::try_get(&active_path) {
-        Ok(dev) => dev?,
+        Ok(Some(dev)) => dev,
+        Ok(None) => {
+            warn!(
+                "lsblk returned no device for '{}' while detecting an ACL BTRFS UUID \
+                 collision. Treating as no collision; a genuine collision will surface \
+                 later as a mount failure.",
+                active_path.display()
+            );
+            return None;
+        }
         Err(e) => {
             warn!(
                 "Failed to query block device '{}' via lsblk while detecting an ACL BTRFS \
@@ -554,7 +580,16 @@ fn detect_acl_btrfs_uuid_collision(update_volume: AbVolumeSelection) -> Option<O
         }
     };
     let update_dev = match lsblk::try_get(&update_path) {
-        Ok(dev) => dev?,
+        Ok(Some(dev)) => dev,
+        Ok(None) => {
+            warn!(
+                "lsblk returned no device for '{}' while detecting an ACL BTRFS UUID \
+                 collision. Treating as no collision; a genuine collision will surface \
+                 later as a mount failure.",
+                update_path.display()
+            );
+            return None;
+        }
         Err(e) => {
             warn!(
                 "Failed to query block device '{}' via lsblk while detecting an ACL BTRFS \
@@ -599,28 +634,25 @@ fn detect_acl_btrfs_uuid_collision(update_volume: AbVolumeSelection) -> Option<O
 }
 
 /// Verifies that bind-mounting from the active `/usr` is safe by comparing
-/// verity root hashes. Returns true if the hashes match, false otherwise.
-fn verify_acl_bind_mount_safety(staging_usr_roothash: Option<&str>) -> bool {
+/// verity root hashes. Returns `Ok(())` when the active and staging root hashes
+/// match, or `Err(reason)` describing why the bind-mount is unsafe.
+fn verify_acl_bind_mount_safety(staging_usr_roothash: Option<&str>) -> Result<(), String> {
     let Some(staging_hash) = staging_usr_roothash else {
         // No staging verity root hash available. A genuine ACL /usr UUID collision
         // cannot reach this point without upstream validation
         // (validate_acl_duplicate_uuid) having already confirmed a staging verity
         // hash exists, so a missing hash here is anomalous. Fail closed: refuse the
         // bind-mount rather than mounting the active /usr without cryptographic
-        // identity proof. The collision then surfaces as an explicit mount failure.
-        warn!(
-            "No staging USR verity root hash available for ACL BTRFS UUID collision. \
-             Refusing bind-mount to avoid mounting /usr without verity verification."
+        // identity proof.
+        return Err(
+            "no staging USR verity root hash available; refusing bind-mount to avoid \
+             mounting /usr without verity verification"
+                .to_string(),
         );
-        return false;
     };
 
     let Some(staging) = VerityRootHash::new(staging_hash) else {
-        warn!(
-            "Staging USR verity root hash is empty. \
-             Refusing bind-mount despite UUID collision."
-        );
-        return false;
+        return Err("staging USR verity root hash is empty".to_string());
     };
 
     match VerityRootHash::from_proc_cmdline() {
@@ -631,24 +663,16 @@ fn verify_acl_bind_mount_safety(staging_usr_roothash: Option<&str>) -> bool {
                      partitions have matching root hash ({}...)",
                     staging.preview()
                 );
-                true
+                Ok(())
             } else {
-                warn!(
-                    "Verity root hash mismatch: active USR has '{}...', staging has '{}...'. \
-                     Refusing bind-mount despite UUID collision.",
+                Err(format!(
+                    "verity root hash mismatch: active USR has '{}...', staging has '{}...'",
                     active.preview(),
                     staging.preview()
-                );
-                false
+                ))
             }
         }
-        None => {
-            warn!(
-                "Cannot read active USR verity root hash from /proc/cmdline. \
-                 Refusing bind-mount despite UUID collision."
-            );
-            false
-        }
+        None => Err("cannot read active USR verity root hash from /proc/cmdline".to_string()),
     }
 }
 

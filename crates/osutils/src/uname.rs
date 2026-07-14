@@ -31,8 +31,9 @@ impl KernelVersion {
     ///
     /// Returns `None` if the string cannot be parsed.
     pub fn parse(release: &str) -> Option<Self> {
-        // Strip everything after the first '-' (e.g. "-1.cm2"), then split on '.'.
-        let numeric_part = release.split('-').next()?;
+        // Trim surrounding whitespace/newlines (uname output is not trimmed),
+        // strip everything after the first '-' (e.g. "-1.cm2"), then split on '.'.
+        let numeric_part = release.trim().split('-').next()?;
         let mut parts = numeric_part.split('.');
         let major = parts.next()?.parse::<u32>().ok()?;
         let minor = parts.next()?.parse::<u32>().ok()?;
@@ -97,5 +98,20 @@ mod tests {
         assert!(KernelVersion::parse("not-a-version").is_none());
         assert!(KernelVersion::parse("").is_none());
         assert!(KernelVersion::parse("6").is_none());
+    }
+
+    #[test]
+    fn test_parse_trailing_newline() {
+        // uname output is not trimmed, so parse must tolerate trailing whitespace.
+        let v = KernelVersion::parse("5.15\n").unwrap();
+        assert_eq!(
+            v,
+            KernelVersion {
+                major: 5,
+                minor: 15
+            }
+        );
+        let v = KernelVersion::parse("6.7.0-1.cm2\n").unwrap();
+        assert_eq!(v, KernelVersion { major: 6, minor: 7 });
     }
 }
