@@ -243,7 +243,7 @@ impl NewrootMount {
                                 warn!(
                                     "Block device '{}' has BTRFS filesystem UUID '{}' which \
                                      collides with the active ACL USR partition. Mounting with \
-                                     temp_fsid option (kernel >=6.7).",
+                                     the temp_fsid option.",
                                     target_id, collision_uuid,
                                 );
                                 mount::mount(
@@ -252,7 +252,7 @@ impl NewrootMount {
                                     MountFileSystemType::Auto,
                                     &options,
                                 )
-                                .context(format!(
+                                .with_context(|| format!(
                                     "Failed to mount block device '{}' with temp_fsid \
                                      for ACL BTRFS UUID collision (device path '{}', target '{}')",
                                     target_id,
@@ -261,11 +261,11 @@ impl NewrootMount {
                                 ))?;
                             }
                             AclBtrfsCollisionResolution::BindMountActiveUsr { .. } => {
-                                let active_usr = Path::new("/usr");
+                                let active_usr = Path::new(USR_MOUNT_POINT_PATH);
                                 warn!(
                                     "Block device '{}' has BTRFS filesystem UUID '{}' which \
-                                     collides with the active ACL USR partition. Bind-mounting \
-                                     '{}' to '{}' instead (kernel <6.7).",
+                                     collides with the active ACL USR partition. temp_fsid is \
+                                     unavailable, so bind-mounting '{}' to '{}' instead.",
                                     target_id,
                                     collision_uuid,
                                     active_usr.display(),
@@ -479,28 +479,19 @@ fn resolve_acl_btrfs_uuid_collision(
         return Ok(None);
     };
 
-    // 2. Determine resolution strategy based on kernel version.
-    //    The temp_fsid path requires the enableAzl4 internal param to be set.
-    //    When the flag is absent (or the running kernel predates 6.7), skip the
-    //    temp_fsid path and fall through to the verity-verified bind-mount
-    //    strategy below.
-    if enable_azl4 {
+    // 2. Determine the resolution strategy. The temp_fsid path requires the
+    //    enableAzl4 internal param AND a running kernel >=6.7; otherwise we fall
+    //    back to the verity-verified bind-mount. Kernel detection (which shells
+    //    out to uname) is only performed when enableAzl4 is set.
+    let kernel_supports_temp_fsid = if enable_azl4 {
         match osutils::uname::KernelVersion::running() {
             Ok(Some(kv)) => {
-                let supports_temp_fsid = kv >= BTRFS_TEMP_FSID_MIN_KERNEL;
+                let supported = kv >= BTRFS_TEMP_FSID_MIN_KERNEL;
                 debug!(
                     "Running kernel {}.{}, BTRFS temp_fsid supported: {}",
-                    kv.major, kv.minor, supports_temp_fsid
+                    kv.major, kv.minor, supported
                 );
-                if supports_temp_fsid {
-                    // Kernel ≥6.7: mount the staging device directly with temp_fsid.
-                    // Verity hash verification is intentionally skipped here: temp_fsid
-                    // mounts the real staging device content (not a bind-mount of the
-                    // active partition), so there is no identity assumption to verify.
-                    return Ok(Some(AclBtrfsCollisionResolution::TempFsid {
-                        collision_uuid,
-                    }));
-                }
+                Some(supported)
             }
             Ok(None) => {
                 // uname succeeded but output could not be parsed into major.minor.
@@ -508,6 +499,7 @@ fn resolve_acl_btrfs_uuid_collision(
                     "Could not parse kernel version from uname output; \
                      falling back to bind-mount strategy for ACL BTRFS UUID collision"
                 );
+                None
             }
             Err(e) => {
                 // uname could not be executed at all (DR-003: distinct from parse failure).
@@ -515,27 +507,63 @@ fn resolve_acl_btrfs_uuid_collision(
                     "Failed to execute uname: {e}; cannot determine kernel version, \
                      falling back to bind-mount strategy for ACL BTRFS UUID collision"
                 );
+                None
             }
         }
-    }
+    } else {
+        None
+    };
 
-    // 3. Kernel <6.7, unknown kernel, or enableAzl4 not set: bind-mount from
-    //    active /usr. This requires verity hash verification to prove content
-    //    is identical. A collision is already known to exist here, so if the
-    //    bind-mount is unsafe we fail with a structured error rather than
-    //    returning None and letting the later mount fail opaquely.
-    if let Err(reason) = verify_acl_bind_mount_safety(staging_usr_roothash) {
-        return Err(TridentError::new(
-            ServicingError::AclBtrfsUuidCollisionUnresolved {
-                uuid: collision_uuid.to_string(),
-                reason,
-            },
-        ));
+    match select_acl_collision_strategy(enable_azl4, kernel_supports_temp_fsid) {
+        // temp_fsid mounts the real staging device content (not a bind-mount of
+        // the active partition), so there is no identity assumption to verify.
+        AclCollisionStrategy::TempFsid => Ok(Some(AclBtrfsCollisionResolution::TempFsid {
+            collision_uuid,
+        })),
+        // Bind-mount from active /usr requires verity hash verification to prove
+        // content is identical. A collision is already known to exist here, so if
+        // the bind-mount is unsafe we fail with a structured error rather than
+        // returning None and letting the later mount fail opaquely.
+        AclCollisionStrategy::BindMount => {
+            if let Err(reason) = verify_acl_bind_mount_safety(staging_usr_roothash) {
+                return Err(TridentError::new(
+                    ServicingError::AclBtrfsUuidCollisionUnresolved {
+                        uuid: collision_uuid.to_string(),
+                        reason,
+                    },
+                ));
+            }
+            Ok(Some(AclBtrfsCollisionResolution::BindMountActiveUsr {
+                collision_uuid,
+            }))
+        }
     }
+}
 
-    Ok(Some(AclBtrfsCollisionResolution::BindMountActiveUsr {
-        collision_uuid,
-    }))
+/// Strategy for resolving an ACL BTRFS `/usr` UUID collision, independent of the
+/// concrete colliding UUID. Extracted as a pure function so strategy selection
+/// can be unit-tested without touching lsblk, uname, or /proc/cmdline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AclCollisionStrategy {
+    /// Mount the staging device directly with `-o temp_fsid` (kernel >=6.7).
+    TempFsid,
+    /// Bind-mount from the active `/usr` (requires verity verification).
+    BindMount,
+}
+
+/// Selects the collision-resolution strategy. `temp_fsid` is chosen only when the
+/// `enableAzl4` internal param is set and the running kernel is known to support
+/// it (>=6.7); every other case (flag unset, kernel too old, or kernel version
+/// undetermined) falls back to the bind-mount strategy.
+fn select_acl_collision_strategy(
+    enable_azl4: bool,
+    kernel_supports_temp_fsid: Option<bool>,
+) -> AclCollisionStrategy {
+    if enable_azl4 && kernel_supports_temp_fsid == Some(true) {
+        AclCollisionStrategy::TempFsid
+    } else {
+        AclCollisionStrategy::BindMount
+    }
 }
 
 /// Detects a BTRFS filesystem UUID collision on ACL's USR A/B partitions.
@@ -885,6 +913,48 @@ mod tests {
         config::{FileSystemSource, HostConfiguration, MountOptions, MountPoint, Storage},
         error::ErrorKind,
     };
+
+    #[test]
+    fn test_select_acl_collision_strategy() {
+        // enableAzl4 + kernel >=6.7 => temp_fsid.
+        assert_eq!(
+            select_acl_collision_strategy(true, Some(true)),
+            AclCollisionStrategy::TempFsid
+        );
+        // enableAzl4 + kernel <6.7 => bind-mount.
+        assert_eq!(
+            select_acl_collision_strategy(true, Some(false)),
+            AclCollisionStrategy::BindMount
+        );
+        // enableAzl4 + undetermined kernel (uname exec/parse failure) => bind-mount.
+        assert_eq!(
+            select_acl_collision_strategy(true, None),
+            AclCollisionStrategy::BindMount
+        );
+        // enableAzl4 not set => bind-mount regardless of kernel support.
+        assert_eq!(
+            select_acl_collision_strategy(false, Some(true)),
+            AclCollisionStrategy::BindMount
+        );
+        assert_eq!(
+            select_acl_collision_strategy(false, None),
+            AclCollisionStrategy::BindMount
+        );
+    }
+
+    #[test]
+    fn test_verify_acl_bind_mount_safety_missing_hash() {
+        // No staging hash available => refuse (fail closed) with a reason.
+        let err = verify_acl_bind_mount_safety(None).unwrap_err();
+        assert!(err.contains("no staging USR verity root hash"), "{err}");
+    }
+
+    #[test]
+    fn test_verify_acl_bind_mount_safety_empty_hash() {
+        // Empty/whitespace staging hash => refuse with a reason.
+        let err = verify_acl_bind_mount_safety(Some("   ")).unwrap_err();
+        assert!(err.contains("empty"), "{err}");
+    }
 
     #[test]
     fn test_mount_point_ordering() {
