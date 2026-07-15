@@ -8,6 +8,7 @@ stages:
   - stage: ReleaseArtifacts
     dependsOn:
       - GetTridentBinaries_rpms_amd64
+      - GetTridentBinaries_rpms_arm64
     condition: succeeded()
 
     jobs:
