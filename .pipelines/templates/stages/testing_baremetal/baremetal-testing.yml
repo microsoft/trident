@@ -134,6 +134,7 @@ stages:
 
         steps:
           - template: ../common_tasks/checkout_trident.yml
+          - template: ../common_tasks/avoid-pypi-usage.yml
 
           - bash: |
               set -xe
