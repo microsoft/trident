@@ -37,8 +37,14 @@ func (s *TridentE2EScenario) validateHostState(tc storm.TestCase) error {
 	// `base` validation always applies.
 	validate.ValidateBase(&sa, s.sshClient, hs, trident.ServicingStateProvisioned, s.expectedActiveVolume)
 
-	// Future markers (encryption, verity, extensions) will self-select here
-	// based on the Host Configuration.
+	// `extensions` validation self-selects when the Host Config declares
+	// sysexts/confexts.
+	if validate.HasExtensions(hs) {
+		validate.ValidateExtensions(&sa, s.sshClient, hs)
+	}
+
+	// Future markers (encryption, verity) will self-select here based on the
+	// Host Configuration.
 
 	if err := sa.Err(); err != nil {
 		tc.FailFromError(err)
