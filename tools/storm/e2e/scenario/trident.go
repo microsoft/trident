@@ -79,6 +79,11 @@ type TridentE2EScenario struct {
 	// Version of the image, used for AB update tests
 	version uint
 
+	// Expected active A/B volume after the most recent servicing operation.
+	// Initialized to volume-a on clean install and flipped after each
+	// successful A/B update. Read by validation cases.
+	expectedActiveVolume trident.AbVolumeSelection
+
 	// Working copy of the host configuration, modified during test execution to
 	// reflect changes such as AB updates.
 	config hostconfig.HostConfig
@@ -115,6 +120,9 @@ func (s *TridentE2EScenario) Args() any {
 }
 
 func (s *TridentE2EScenario) Setup(storm.SetupCleanupContext) error {
+	// A clean install boots the A volume; A/B updates flip this.
+	s.expectedActiveVolume = trident.AbVolumeA
+
 	if s.args.TestRing == testrings.TestRingEmpty {
 		// Default to lowest ring
 		lowestRing, err := s.testRings.Lowest()
@@ -173,10 +181,13 @@ func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 	r.RegisterTestCase("setup-test-host", s.setupTestHost)
 	r.RegisterTestCase("install-os", s.installOs)
 	r.RegisterTestCase("check-trident-ssh", s.checkTridentViaSshAfterInstall)
+	r.RegisterTestCase("validate-install", s.validateHostState)
 
 	if s.originalConfig.HasABUpdate() {
 		s.addAbUpdateTests(r, "ab-update-1")
+		r.RegisterTestCase("validate-ab-update-1", s.validateHostState)
 		s.addSplitABUpdateTests(r, "ab-update-split")
+		r.RegisterTestCase("validate-ab-update-split", s.validateHostState)
 	}
 	return nil
 }

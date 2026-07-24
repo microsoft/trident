@@ -308,6 +308,10 @@ func (s *TridentE2EScenario) abUpdateOs(tc storm.TestCase, split bool) error {
 		tc.FailFromError(err)
 	}
 
+	// The A/B update rebooted into the other volume; flip the expected active
+	// volume so subsequent validation checks the correct one.
+	s.expectedActiveVolume = s.expectedActiveVolume.Other()
+
 	return nil
 }
 
