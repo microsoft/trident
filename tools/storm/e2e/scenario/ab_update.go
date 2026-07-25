@@ -17,6 +17,7 @@ import (
 	"tridenttools/pkg/netlaunch"
 	"tridenttools/pkg/netlisten"
 	"tridenttools/storm/e2e/testrings"
+	"tridenttools/storm/e2e/validate"
 	"tridenttools/storm/utils/ssh/sftp"
 	"tridenttools/storm/utils/sshutils"
 	"tridenttools/storm/utils/trident"
@@ -267,6 +268,18 @@ func (s *TridentE2EScenario) abUpdateOs(tc storm.TestCase, split bool) error {
 		err = runTridentUpdate(tc, s.runtime, s.sshClient, args+" --allowed-operations stage", true)
 		if err != nil {
 			return fmt.Errorf("failed to run Trident A/B update: %w", err)
+		}
+
+		// Between stage and finalize, validate the staged state. The active
+		// volume must not have changed yet (it flips only after finalize+reboot).
+		stagedHs, err := trident.GetHostStatus(s.runtime, s.sshClient)
+		if err != nil {
+			return fmt.Errorf("failed to get Host Status after staging A/B update: %w", err)
+		}
+		var sa validate.SoftAsserter
+		validate.ValidateAbUpdateStaged(&sa, stagedHs, s.expectedActiveVolume)
+		if stagedErr := sa.Err(); stagedErr != nil {
+			tc.FailFromError(stagedErr)
 		}
 
 		logrus.Infof("Running split Trident A/B update (finalize)...")

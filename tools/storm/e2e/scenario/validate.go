@@ -34,17 +34,25 @@ func (s *TridentE2EScenario) validateHostState(tc storm.TestCase) error {
 
 	var sa validate.SoftAsserter
 
-	// `base` validation always applies.
-	validate.ValidateBase(&sa, s.sshClient, hs, trident.ServicingStateProvisioned, s.expectedActiveVolume)
+	if validate.HasRollbackIntent(hs) {
+		// Health-check rollback scenarios (e.g. health-checks-install) replace
+		// base validation with rollback validation and expect the host to have
+		// rolled back rather than reached the provisioned state.
+		validate.ValidateRollback(&sa, s.sshClient, hs,
+			trident.ServicingStateNotProvisioned, s.expectedActiveVolume)
+	} else {
+		// `base` validation always applies.
+		validate.ValidateBase(&sa, s.sshClient, hs, trident.ServicingStateProvisioned, s.expectedActiveVolume)
 
-	// `extensions` validation self-selects when the Host Config declares
-	// sysexts/confexts.
-	if validate.HasExtensions(hs) {
-		validate.ValidateExtensions(&sa, s.sshClient, hs)
+		// `extensions` validation self-selects when the Host Config declares
+		// sysexts/confexts.
+		if validate.HasExtensions(hs) {
+			validate.ValidateExtensions(&sa, s.sshClient, hs)
+		}
+
+		// Future markers (encryption, verity) will self-select here based on
+		// the Host Configuration.
 	}
-
-	// Future markers (encryption, verity) will self-select here based on the
-	// Host Configuration.
 
 	if err := sa.Err(); err != nil {
 		tc.FailFromError(err)
