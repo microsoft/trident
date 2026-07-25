@@ -80,3 +80,42 @@ func ParseBlkid(stdout string) map[string]BlkidEntry {
 
 	return entries
 }
+
+// BlkidExport runs `sudo blkid --output export` and returns a map from full
+// device path (DEVNAME) to its properties. This export format groups each
+// device's fields as `KEY=value` lines separated by blank lines, and is used by
+// the encryption validation (mirrors encryption_test.py::get_blkid_output).
+func BlkidExport(client *ssh.Client) (map[string]map[string]string, error) {
+	out, err := sshutils.CommandOutput(client, "sudo blkid --output export")
+	if err != nil {
+		return nil, fmt.Errorf("failed to run blkid --output export: %w", err)
+	}
+	return ParseBlkidExport(out), nil
+}
+
+// ParseBlkidExport parses `blkid --output export` output into a map keyed by
+// DEVNAME (full device path).
+func ParseBlkidExport(stdout string) map[string]map[string]string {
+	devices := make(map[string]map[string]string)
+	var current string
+
+	for _, line := range strings.Split(stdout, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			current = ""
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		if key == "DEVNAME" {
+			current = value
+			devices[current] = make(map[string]string)
+		} else if current != "" {
+			devices[current][key] = value
+		}
+	}
+
+	return devices
+}
