@@ -20,6 +20,9 @@ type BlkidEntry struct {
 	// Device is the kernel device name (e.g. "sda1"), i.e. the basename of the
 	// device path reported by blkid.
 	Device string
+	// Path is the full device path reported by blkid (e.g. "/dev/sda1",
+	// "/dev/mapper/root").
+	Path string
 	// Fields holds the parsed tag=value pairs (quotes stripped).
 	Fields map[string]string
 }
@@ -62,7 +65,7 @@ func ParseBlkid(stdout string) map[string]BlkidEntry {
 		}
 
 		device := devicePart[strings.LastIndex(devicePart, "/")+1:]
-		entry := BlkidEntry{Device: device, Fields: make(map[string]string)}
+		entry := BlkidEntry{Device: device, Path: devicePart, Fields: make(map[string]string)}
 
 		for _, field := range strings.Fields(rest) {
 			key, value, ok := strings.Cut(field, "=")

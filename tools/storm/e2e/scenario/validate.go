@@ -50,8 +50,14 @@ func (s *TridentE2EScenario) validateHostState(tc storm.TestCase) error {
 			validate.ValidateExtensions(&sa, s.sshClient, hs)
 		}
 
-		// Future markers (encryption, verity) will self-select here based on
-		// the Host Configuration.
+		// `verity` validation self-selects when the Host Config declares a
+		// verity device.
+		if validate.HasVerity(hs) {
+			validate.ValidateVerity(&sa, s.sshClient, hs, s.expectedActiveVolume)
+		}
+
+		// Future markers (encryption) will self-select here based on the Host
+		// Configuration.
 	}
 
 	if err := sa.Err(); err != nil {
