@@ -56,8 +56,11 @@ func (s *TridentE2EScenario) validateHostState(tc storm.TestCase) error {
 			validate.ValidateVerity(&sa, s.sshClient, hs, s.expectedActiveVolume)
 		}
 
-		// Future markers (encryption) will self-select here based on the Host
-		// Configuration.
+		// `encryption` validation self-selects when the Host Config declares
+		// encryption volumes.
+		if validate.HasEncryption(hs) {
+			validate.ValidateEncryption(&sa, s.sshClient, hs, s.configParams.IsUki, s.expectedActiveVolume)
+		}
 	}
 
 	if err := sa.Err(); err != nil {
