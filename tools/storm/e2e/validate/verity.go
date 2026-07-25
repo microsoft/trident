@@ -18,10 +18,19 @@ type VerityDevice struct {
 	HashDeviceID string
 }
 
-// HasVerity reports whether the spec declares any verity device, used to
-// self-select verity validation.
+// HasVerity reports whether the ROOT filesystem is backed by a verity device,
+// used to self-select verity validation. This matches the scope of the ported
+// verity_test.py::test_verity_root, which only validates root verity: configs
+// where verity protects a non-root path (e.g. usr-verity) are intentionally not
+// selected (they receive only base validation, as under pytest).
 func HasVerity(hs tridentutil.HostStatus) bool {
-	return hs.Spec().Exists("storage", "verity")
+	spec := hs.Spec()
+	rootID, ok := RootFilesystemDeviceID(spec)
+	if !ok {
+		return false
+	}
+	_, ok = verityForRoot(spec, rootID)
+	return ok
 }
 
 // verityForRoot returns the verity device whose id matches the root
