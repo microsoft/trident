@@ -221,25 +221,9 @@ Any schema object MAY contain other fields not listed in the tables below.
 Readers MUST ignore any fields not listed in the tables for future
 compatibility.
 
-A machine-readable [JSON Schema](https://json-schema.org/) (draft 2020-12) for
-the **latest** revision (1.2) of the metadata format lives next to this
-specification and can be used to validate a `metadata.json` file:
+Machine-readable JSON Schema:
 
-- Source (browse):
-  [`cosi-metadata-v1.2.schema.json`](https://github.com/microsoft/trident/blob/main/docs/Reference/Composable-OS-Image/cosi-metadata-v1.2.schema.json)
-- Direct raw URL (for tooling):
-  `https://raw.githubusercontent.com/microsoft/trident/main/docs/Reference/Composable-OS-Image/cosi-metadata-v1.2.schema.json`
-
-Example validation with [`check-jsonschema`](https://github.com/python-jsonschema/check-jsonschema):
-
-```bash
-check-jsonschema \
-  --schemafile https://raw.githubusercontent.com/microsoft/trident/main/docs/Reference/Composable-OS-Image/cosi-metadata-v1.2.schema.json \
-  metadata.json
-```
-
-Because the specification requires readers to ignore unknown fields, the schema
-does not forbid additional properties.
+- [1.2](https://github.com/microsoft/trident/blob/main/docs/Reference/Composable-OS-Image/cosi-metadata-v1.2.schema.json)
 
 ##### Root Object
 
