@@ -1,0 +1,311 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/microsoft/trident/main/docs/Reference/Composable-OS-Image/cosi-metadata-v1.2.schema.json",
+  "title": "COSI Metadata (v1.2)",
+  "description": "JSON Schema for the `metadata.json` file of a Composable OS Image (COSI), COSI Specification revision 1.2. Derived from docs/Reference/Composable-OS-Image.md. Per the spec, readers MUST ignore unknown fields, so this schema does not forbid additional properties.",
+  "type": "object",
+  "required": [
+    "version",
+    "osArch",
+    "osRelease",
+    "images",
+    "disk",
+    "osPackages",
+    "bootloader",
+    "compression"
+  ],
+  "properties": {
+    "version": {
+      "description": "The version of the metadata schema, in MAJOR.MINOR form. This schema targets revision 1.2.",
+      "type": "string",
+      "const": "1.2"
+    },
+    "osArch": {
+      "description": "The architecture of the OS, using the names reported by `uname -m`. Case-insensitive; common aliases are accepted.",
+      "type": "string",
+      "pattern": "^(?:[Xx]86_64|[Xx]64|[Aa][Mm][Dd]64|[Aa][Rr][Mm]64|[Aa][Aa][Rr][Cc][Hh]64)$"
+    },
+    "osRelease": {
+      "description": "The contents of `/etc/os-release` verbatim.",
+      "type": "string"
+    },
+    "images": {
+      "description": "Filesystem metadata for each filesystem in the image.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/Filesystem" }
+    },
+    "disk": {
+      "description": "Original disk metadata.",
+      "$ref": "#/$defs/Disk"
+    },
+    "osPackages": {
+      "description": "The list of packages installed in the OS.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/OsPackage" }
+    },
+    "bootloader": {
+      "description": "Information about the bootloader used by the OS.",
+      "$ref": "#/$defs/Bootloader"
+    },
+    "id": {
+      "description": "A unique identifier for the COSI file (UUID, case-insensitive).",
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "compression": {
+      "description": "Compression metadata for the COSI file.",
+      "$ref": "#/$defs/Compression"
+    }
+  },
+  "$defs": {
+    "ImageFile": {
+      "type": "object",
+      "required": ["path", "compressedSize", "uncompressedSize", "sha384"],
+      "properties": {
+        "path": {
+          "description": "Path of the compressed image file inside the tar file. MUST start with `images/`.",
+          "type": "string",
+          "pattern": "^images/.+"
+        },
+        "compressedSize": {
+          "description": "Size of the compressed image in bytes.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "uncompressedSize": {
+          "description": "Size of the raw uncompressed image in bytes.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha384": {
+          "description": "SHA-384 hash of the compressed image (96 hex characters, case-insensitive).",
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{96}$"
+        }
+      }
+    },
+    "VerityConfig": {
+      "type": "object",
+      "required": ["image", "roothash"],
+      "properties": {
+        "image": {
+          "description": "Details of the hash partition image file in the tar file.",
+          "$ref": "#/$defs/ImageFile"
+        },
+        "roothash": {
+          "description": "Verity root hash.",
+          "type": "string"
+        }
+      }
+    },
+    "Filesystem": {
+      "type": "object",
+      "required": ["image", "mountPoint", "fsType", "fsUuid", "partType"],
+      "properties": {
+        "image": {
+          "description": "Details of the image file in the tar file.",
+          "$ref": "#/$defs/ImageFile"
+        },
+        "mountPoint": {
+          "description": "The mount point of the filesystem.",
+          "type": "string"
+        },
+        "fsType": {
+          "description": "The filesystem type, using the name recognized by the kernel.",
+          "type": "string",
+          "enum": [
+            "ext4",
+            "ext3",
+            "ext2",
+            "cramfs",
+            "squashfs",
+            "vfat",
+            "msdos",
+            "exfat",
+            "iso9660",
+            "ntfs",
+            "btrfs",
+            "xfs"
+          ]
+        },
+        "fsUuid": {
+          "description": "The UUID of the filesystem. Can be a proper UUID or a filesystem-specific identifier (e.g. a FAT volume serial such as `C3D4-250D`). MUST be unique across all filesystems.",
+          "type": "string",
+          "minLength": 1
+        },
+        "partType": {
+          "description": "The GPT partition type, as a UUID (case-insensitive). The ESP MUST be `c12a7328-f81f-11d2-ba4b-00a0c93ec93b`. Defaults to Generic Linux Data `0fc63daf-8483-4772-8e79-3d69d8477de4` when the type cannot be determined.",
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        "verity": {
+          "description": "The verity metadata of the filesystem. MUST be specified if the OS opens this filesystem with dm-verity; otherwise omitted or null.",
+          "oneOf": [
+            { "$ref": "#/$defs/VerityConfig" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "Disk": {
+      "type": "object",
+      "required": ["size", "type", "lbaSize"],
+      "properties": {
+        "size": {
+          "description": "Size of the original disk in bytes. MUST be a multiple of `lbaSize`.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "type": {
+          "description": "Partitioning type of the original disk. Currently only `gpt` is supported.",
+          "type": "string",
+          "enum": ["gpt"]
+        },
+        "lbaSize": {
+          "description": "The size of a logical block address (LBA) in bytes. Generally 512.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "gptRegions": {
+          "description": "Regions in the GPT disk, ordered by increasing start LBA (primary-gpt first). Required when `type` == `gpt`.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/GptDiskRegion" }
+        }
+      },
+      "if": {
+        "properties": { "type": { "const": "gpt" } },
+        "required": ["type"]
+      },
+      "then": {
+        "required": ["gptRegions"]
+      }
+    },
+    "GptDiskRegion": {
+      "type": "object",
+      "required": ["image", "type"],
+      "properties": {
+        "image": {
+          "description": "Details of the image file in the tar file.",
+          "$ref": "#/$defs/ImageFile"
+        },
+        "type": {
+          "description": "The type of region this image represents.",
+          "type": "string",
+          "enum": ["primary-gpt", "partition"]
+        },
+        "number": {
+          "description": "The partition's GPT entry index (1-based). Required when `type` == `partition`.",
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "if": {
+        "properties": { "type": { "const": "partition" } },
+        "required": ["type"]
+      },
+      "then": {
+        "required": ["number"]
+      }
+    },
+    "OsPackage": {
+      "type": "object",
+      "required": ["name", "version", "release", "arch"],
+      "properties": {
+        "name": {
+          "description": "The name of the package.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The version of the package installed.",
+          "type": "string"
+        },
+        "release": {
+          "description": "The release of the package.",
+          "type": "string"
+        },
+        "arch": {
+          "description": "The architecture of the package.",
+          "type": "string"
+        }
+      }
+    },
+    "Bootloader": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "description": "The type of the bootloader.",
+          "type": "string",
+          "enum": ["systemd-boot", "grub"]
+        },
+        "systemdBoot": {
+          "description": "systemd-boot configuration. Required when `type` == `systemd-boot`; otherwise omitted or null.",
+          "oneOf": [
+            { "$ref": "#/$defs/SystemDBoot" },
+            { "type": "null" }
+          ]
+        }
+      },
+      "if": {
+        "properties": { "type": { "const": "systemd-boot" } },
+        "required": ["type"]
+      },
+      "then": {
+        "required": ["systemdBoot"],
+        "properties": {
+          "systemdBoot": { "$ref": "#/$defs/SystemDBoot" }
+        }
+      },
+      "else": {
+        "properties": {
+          "systemdBoot": { "type": "null" }
+        }
+      }
+    },
+    "SystemDBoot": {
+      "type": "object",
+      "required": ["entries"],
+      "properties": {
+        "entries": {
+          "description": "The contents of the `loader/entries/*.conf` files in the systemd-boot EFI partition.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/SystemDBootEntry" }
+        }
+      }
+    },
+    "SystemDBootEntry": {
+      "type": "object",
+      "required": ["type", "path", "cmdline", "kernel"],
+      "properties": {
+        "type": {
+          "description": "The type of the entry.",
+          "type": "string",
+          "enum": ["uki-standalone", "uki-config", "config"]
+        },
+        "path": {
+          "description": "Absolute path (from the root FS) to the UKI or config.",
+          "type": "string"
+        },
+        "cmdline": {
+          "description": "The kernel command line.",
+          "type": "string"
+        },
+        "kernel": {
+          "description": "Kernel release as a string.",
+          "type": "string"
+        }
+      }
+    },
+    "Compression": {
+      "type": "object",
+      "required": ["maxWindowLog"],
+      "properties": {
+        "maxWindowLog": {
+          "description": "The maximum zstd `windowLog` (the power-of-2 exponent, not the window size in bytes) used across all images in the COSI file.",
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}
