@@ -322,7 +322,6 @@ fn copy_file_artifacts(
                 // so Ignition doesn't re-trigger and hang on the post-update
                 // reboot.
                 uki::enforce_firstboot_addon_policy(
-                    temp_mount_dir,
                     mount_point,
                     &ctx.esp_mount_path,
                     ctx.servicing_type,
