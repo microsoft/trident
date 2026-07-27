@@ -223,7 +223,7 @@ compatibility.
 
 Machine-readable JSON Schema:
 
-- [1.2](https://github.com/microsoft/trident/blob/main/docs/Reference/Composable-OS-Image/cosi-metadata-v1.2.schema.json)
+- [1.2](https://raw.githubusercontent.com/microsoft/trident/main/docs/Reference/Composable-OS-Image/cosi-metadata-v1.2.schema.json)
 
 ##### Root Object
 
