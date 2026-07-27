@@ -73,22 +73,28 @@ func (s *TridentE2EScenario) installOs(tc storm.TestCase) error {
 
 	nlErr := netlaunch.RunNetlaunch(timeoutCtx, &config)
 	if nlErr != nil {
-		// If this is a phonehome error, log the details and fail the test case
-		// immediately.
+		// If this is a phonehome error, decide whether it is expected.
 		var phonehomeErr *phonehome.PhoneHomeFailureError
 		if errors.As(nlErr, &phonehomeErr) {
-			log.Errorf("Phonehome error details: %s", phonehomeErr.Message)
-			tc.FailFromError(nlErr)
-		}
-
-		// If this is a timeout error, log and fail the test case.
-		if errors.Is(nlErr, context.DeadlineExceeded) {
+			if s.hasRollbackIntent() {
+				// Rollback-intent scenarios (e.g. health-checks-install)
+				// deliberately fail their health checks and roll back, so
+				// Trident phones home a failure. This is the expected outcome:
+				// the target OS booted (health checks ran) and is reachable, so
+				// continue to post-install validation rather than failing.
+				log.Infof("Expected phonehome failure for rollback-intent scenario: %s", phonehomeErr.Message)
+			} else {
+				log.Errorf("Phonehome error details: %s", phonehomeErr.Message)
+				tc.FailFromError(nlErr)
+			}
+		} else if errors.Is(nlErr, context.DeadlineExceeded) {
+			// If this is a timeout error, log and fail the test case.
 			log.Errorln("Netlaunch operation timed out")
 			tc.FailFromError(nlErr)
+		} else {
+			// Otherwise just return the error
+			return nlErr
 		}
-
-		// Otherwise just return the error
-		return nlErr
 	}
 
 	// If we got here netlaunch completed successfully, give some time for the

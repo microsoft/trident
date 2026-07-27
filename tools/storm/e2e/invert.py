@@ -40,8 +40,6 @@ header = """\
 #   - "extensions": its sysexts/confexts are injected by the pipeline
 #     (edit_host_config.py); storm HC-prep injection is not ported yet.
 #   - "split": requires the separate trident-split-installer ISO.
-#   - "health-checks-install": storm install-os does not yet tolerate the
-#     expected rollback phonehome failure (ignorePhonehomeFailures not wired).
 #   - UKI / usr-verity family (combined, memory-constraint-combined, rerun,
 #     usr-verity, usr-verity-raid): their UKI kernel is booted directly by
 #     firmware Secure Boot and is rejected ("Access denied") unless the image
@@ -60,6 +58,7 @@ ALLOWED_CONFIGS = [
     "encrypted-raid",
     "encrypted-swap",
     "root-verity",
+    "health-checks-install",
 ]
 ALLOWED_HARDWARES = ["vm"]
 ALLOWED_RUNTIMES = ["host", "container"]
