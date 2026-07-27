@@ -112,10 +112,22 @@ stages:
 
               mkdir -p $(ob_outputDirectory)
 
+              # UKI/usr-verity images boot their kernel directly through
+              # firmware Secure Boot, so the image signing certificate must be
+              # enrolled into the VM's EFI variables via --signing-cert. The
+              # cert ships alongside the usrverity test image. Enrolling it is
+              # harmless for grub-based images, so pass it whenever present.
+              SIGNING_CERT_ARG=""
+              CA_CERT_PATH="$(System.ArtifactsDirectory)/usrverity-testimage/ca_cert.pem"
+              if [ -f "$CA_CERT_PATH" ]; then
+                SIGNING_CERT_ARG="--signing-cert $CA_CERT_PATH"
+              fi
+
               ./bin/storm-trident run "$(SCENARIO)" \
                   -o $(ob_outputDirectory) \
                   -- \
                   --pipeline-run \
-                  --iso "./artifacts/iso/$(installerISOName).iso"
+                  --iso "./artifacts/iso/$(installerISOName).iso" \
+                  $SIGNING_CERT_ARG
             displayName: "🧪 Run E2E Test"
             workingDirectory: $(TRIDENT_SOURCE_DIR)
