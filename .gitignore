@@ -371,3 +371,6 @@ vendor/
 /junit*.xml
 /logs*/
 /out*/
+/logstream*.log
+/*-metrics*.jsonl
+/metrics-*.jsonl
