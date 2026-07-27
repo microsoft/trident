@@ -367,3 +367,7 @@ vendor/
 # Virtdeploy files
 /tools/vm-netlaunch.yaml
 /tools/virt-deploy-metadata.json
+# Local storm-trident e2e run outputs
+/junit*.xml
+/logs*/
+/out*/
