@@ -1540,6 +1540,30 @@ mod tests {
         assert!(!staged_addon_dir.join(FIRSTBOOT_ADDON_FILENAME).exists());
     }
 
+    /// Any servicing type other than CleanInstall/AbUpdate is a hard error:
+    /// this function is only ever reachable for those two (EspSubsystem
+    /// inherits the default REQUIRES_REBOOT gate), so any other value would
+    /// indicate that invariant no longer holds.
+    #[test]
+    fn test_enforce_firstboot_errors_on_unexpected_servicing_type() {
+        let image_esp = tempdir().unwrap();
+        let mount_point = tempdir().unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)).unwrap();
+
+        let err = enforce_firstboot_addon_policy(
+            image_esp.path(),
+            mount_point.path(),
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+            ServicingType::RuntimeUpdate,
+        )
+        .unwrap_err();
+
+        assert!(
+            err.to_string().contains("unexpected servicing type"),
+            "Expected 'unexpected servicing type' error, got: {err}"
+        );
+    }
+
     /// Helper: creates an ESP directory structure with UKI files and returns
     /// the mock root mount point (tempdir) and the UKI directory path.
     fn setup_esp_for_cleanup(ukis: &[&str]) -> (tempfile::TempDir, PathBuf) {
