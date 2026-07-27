@@ -111,22 +111,9 @@
           "type": "string"
         },
         "fsType": {
-          "description": "The filesystem type, using the name recognized by the kernel.",
+          "description": "The filesystem type, using the name recognized by the kernel (e.g. `ext4`, `vfat`).",
           "type": "string",
-          "enum": [
-            "ext4",
-            "ext3",
-            "ext2",
-            "cramfs",
-            "squashfs",
-            "vfat",
-            "msdos",
-            "exfat",
-            "iso9660",
-            "ntfs",
-            "btrfs",
-            "xfs"
-          ]
+          "minLength": 1
         },
         "fsUuid": {
           "description": "The UUID of the filesystem. Can be a proper UUID or a filesystem-specific identifier (e.g. a FAT volume serial such as `C3D4-250D`). MUST be unique across all filesystems.",
@@ -162,14 +149,32 @@
           "enum": ["gpt"]
         },
         "lbaSize": {
-          "description": "The size of a logical block address (LBA) in bytes. Generally 512.",
+          "description": "The size of a logical block address (LBA) in bytes. Must be 512 or 4096.",
           "type": "integer",
-          "minimum": 1
+          "enum": [512, 4096]
         },
         "gptRegions": {
           "description": "Regions in the GPT disk, ordered by increasing start LBA (primary-gpt first). Required when `type` == `gpt`.",
           "type": "array",
-          "items": { "$ref": "#/$defs/GptDiskRegion" }
+          "minItems": 1,
+          "prefixItems": [
+            {
+              "allOf": [
+                { "$ref": "#/$defs/GptDiskRegion" },
+                {
+                  "properties": { "type": { "const": "primary-gpt" } },
+                  "required": ["type"]
+                }
+              ]
+            }
+          ],
+          "items": { "$ref": "#/$defs/GptDiskRegion" },
+          "contains": {
+            "properties": { "type": { "const": "primary-gpt" } },
+            "required": ["type"]
+          },
+          "minContains": 1,
+          "maxContains": 1
         }
       },
       "if": {
@@ -224,7 +229,7 @@
           "type": "string"
         },
         "arch": {
-          "description": "The architecture of the package.",
+          "description": "The architecture of the package, as reported by RPM's `%{ARCH}` (e.g. `x86_64` or `aarch64` for architecture-specific packages, or `noarch` for architecture-independent packages).",
           "type": "string"
         }
       }
@@ -269,6 +274,7 @@
         "entries": {
           "description": "The contents of the `loader/entries/*.conf` files in the systemd-boot EFI partition.",
           "type": "array",
+          "minItems": 1,
           "items": { "$ref": "#/$defs/SystemDBootEntry" }
         }
       }

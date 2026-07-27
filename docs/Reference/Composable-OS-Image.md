@@ -309,7 +309,7 @@ this COSI file was sourced from.
 | ------------ | ---------------------------------------- | -------- | -------------------- | ------------------------------------------------------------------ |
 | `size`       | number                                   | 1.2      | Yes (since 1.2)      | Size of the original disk in bytes.                                |
 | `type`       | [DiskType](#disktype-enum)               | 1.2      | Yes (since 1.2)      | Partitioning type of the original disk.                            |
-| `lbaSize`    | number                                   | 1.2      | Yes (since 1.2)      | The size of a logical block address (LBA) in bytes. Generally 512. |
+| `lbaSize`    | number                                   | 1.2      | Yes (since 1.2)      | The size of a logical block address (LBA) in bytes. MUST be `512` or `4096`. |
 | `gptRegions` | [GptDiskRegion](#gptdiskregion-object)[] | 1.2      | When `type` == `gpt` | Regions in the GPT disk.                                           |
 
 The order of the `gptRegions` array MUST match the physical order of the regions
@@ -362,7 +362,8 @@ architecture of the OS. The following table lists the valid values for the
 | `arm64`  | ARM 64-bit architecture.            |
 
 _Note:_ The `osArch` field uses the names reported by `uname -m` for consistency.
-The `osArch` field is case-insensitive.
+The `osArch` field is case-insensitive. The following aliases are also accepted:
+`amd64` and `x64` for `x86_64`; `aarch64` for `arm64`.
 
 ##### `OsPackage` Object
 
@@ -374,7 +375,7 @@ objects. Each object represents a package installed in the OS.
 | `name`    | string | 1.0      | Yes (since 1.0) | The name of the package.              |
 | `version` | string | 1.0      | Yes (since 1.0) | The version of the package installed. |
 | `release` | string | 1.0      | Yes (since 1.1) | The release of the package.           |
-| `arch`    | string | 1.0      | Yes (since 1.1) | The architecture of the package.      |
+| `arch`    | string | 1.0      | Yes (since 1.1) | The architecture of the package, as reported by RPM's `%{ARCH}` (e.g. `x86_64` or `aarch64` for architecture-specific packages, or `noarch` for architecture-independent packages). |
 
 A suggested way to obtain this information is by running:
 
@@ -545,7 +546,7 @@ making them invalid JSON. They are provided for illustration purposes only.
         ]
     },
     "compression": {
-        "windowSize": 30 // <-- Non-default 1 GiB window size
+        "maxWindowLog": 30 // <-- Non-default 1 GiB window size
     }
 }
 ```
@@ -620,7 +621,7 @@ making them invalid JSON. They are provided for illustration purposes only.
         ]
     },
     "compression": {
-        "windowSize": 22
+        "maxWindowLog": 22
     }
 }
 ```
