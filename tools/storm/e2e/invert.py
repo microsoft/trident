@@ -35,8 +35,32 @@ header = """\
 # Scenarios not listed in this file will not be run in any ring.
 """
 
-# While on development, only allow these configurations:
-ALLOWED_CONFIGS = ["base"]
+# Configurations enabled for the storm-based E2E flow, validated end-to-end on
+# a real VM (base/encryption/verity paths). Held back intentionally:
+#   - "extensions": its sysexts/confexts are injected by the pipeline
+#     (edit_host_config.py); storm HC-prep injection is not ported yet.
+#   - "split": requires the separate trident-split-installer ISO.
+#   - "health-checks-install": storm install-os does not yet tolerate the
+#     expected rollback phonehome failure (ignorePhonehomeFailures not wired).
+#   - UKI / usr-verity family (combined, memory-constraint-combined, rerun,
+#     usr-verity, usr-verity-raid): their UKI kernel is booted directly by
+#     firmware Secure Boot and is rejected ("Access denied") unless the image
+#     signing certificate is injected into the VM's EFI vars via --signing-cert.
+#     Neither local runs nor the storm CI template pass a signing cert yet.
+# Add each once its prerequisite lands.
+ALLOWED_CONFIGS = [
+    "base",
+    "simple",
+    "misc",
+    "raid-big",
+    "raid-mirrored",
+    "raid-resync-small",
+    "raid-small",
+    "encrypted-partition",
+    "encrypted-raid",
+    "encrypted-swap",
+    "root-verity",
+]
 ALLOWED_HARDWARES = ["vm"]
 ALLOWED_RUNTIMES = ["host"]
 
