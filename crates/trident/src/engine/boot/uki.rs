@@ -529,8 +529,10 @@ pub fn find_previous_uki(esp_dir_path: &Path) -> Result<PathBuf, TridentError> {
     }
 }
 
-/// Path within the image ESP where ACL stores verity addon templates for A/B slots.
-const VERITY_ADDON_TEMPLATES_DIR: &str = "acl/uki-addons";
+/// Path within the image ESP where ACL stores addon templates shared across
+/// servicing scenarios: per-slot verity addons (`verity-a`/`verity-b`) and
+/// the first-boot addon (see `enforce_firstboot_addon_policy`).
+const ACL_ADDON_TEMPLATES_DIR: &str = "acl/uki-addons";
 
 /// Filename of the active verity addon placed in the UKI's `.extra.d/` directory.
 const VERITY_ADDON_FILENAME: &str = "verity.addon.efi";
@@ -549,7 +551,7 @@ pub fn activate_verity_addon_for_target_volume(
     esp_mount_path: &Path,
     target_volume: AbVolumeSelection,
 ) -> Result<(), Error> {
-    let template_dir = image_esp_mount.join(VERITY_ADDON_TEMPLATES_DIR);
+    let template_dir = image_esp_mount.join(ACL_ADDON_TEMPLATES_DIR);
     if !template_dir.exists() {
         // Image does not use PARTUUID-based verity addons (non-ACL or older ACL).
         trace!(
@@ -662,12 +664,12 @@ pub(crate) fn enforce_firstboot_addon_policy(
         }
 
         let template_path = image_esp_mount
-            .join(VERITY_ADDON_TEMPLATES_DIR)
+            .join(ACL_ADDON_TEMPLATES_DIR)
             .join(FIRSTBOOT_ADDON_FILENAME);
         if !template_path.exists() {
             trace!(
                 "No '{FIRSTBOOT_ADDON_FILENAME}' found in the image's live addon directory or \
-                 in '{VERITY_ADDON_TEMPLATES_DIR}'; nothing to activate for clean install"
+                 in '{ACL_ADDON_TEMPLATES_DIR}'; nothing to activate for clean install"
             );
             return Ok(());
         }
@@ -1180,7 +1182,7 @@ mod tests {
 
     /// Helper: creates a mock image ESP with verity addon templates.
     fn setup_image_with_verity_templates(image_esp: &Path) -> (PathBuf, PathBuf) {
-        let template_dir = image_esp.join(VERITY_ADDON_TEMPLATES_DIR);
+        let template_dir = image_esp.join(ACL_ADDON_TEMPLATES_DIR);
         fs::create_dir_all(&template_dir).unwrap();
         let a_path = template_dir.join("verity-a.addon.efi");
         let b_path = template_dir.join("verity-b.addon.efi");
@@ -1273,7 +1275,7 @@ mod tests {
     #[test]
     fn test_activate_verity_addon_missing_selected_template() {
         let image_esp = tempdir().unwrap();
-        let template_dir = image_esp.path().join(VERITY_ADDON_TEMPLATES_DIR);
+        let template_dir = image_esp.path().join(ACL_ADDON_TEMPLATES_DIR);
         fs::create_dir_all(&template_dir).unwrap();
         // Only write verity-a, not verity-b
         fs::write(template_dir.join("verity-a.addon.efi"), b"a-content").unwrap();
@@ -1405,7 +1407,7 @@ mod tests {
     #[test]
     fn test_enforce_firstboot_clean_install_from_template() {
         let image_esp = tempdir().unwrap();
-        let template_dir = image_esp.path().join(VERITY_ADDON_TEMPLATES_DIR);
+        let template_dir = image_esp.path().join(ACL_ADDON_TEMPLATES_DIR);
         fs::create_dir_all(&template_dir).unwrap();
         fs::write(
             template_dir.join(FIRSTBOOT_ADDON_FILENAME),
@@ -1495,7 +1497,7 @@ mod tests {
     #[test]
     fn test_enforce_firstboot_update_no_op_when_absent() {
         let image_esp = tempdir().unwrap();
-        let template_dir = image_esp.path().join(VERITY_ADDON_TEMPLATES_DIR);
+        let template_dir = image_esp.path().join(ACL_ADDON_TEMPLATES_DIR);
         fs::create_dir_all(&template_dir).unwrap();
         fs::write(
             template_dir.join(FIRSTBOOT_ADDON_FILENAME),
