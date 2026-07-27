@@ -655,16 +655,15 @@ pub(crate) fn enforce_firstboot_addon_policy(
     esp_mount_path: &Path,
     servicing_type: ServicingType,
 ) -> Result<(), Error> {
-    let is_clean_install = match servicing_type {
-        ServicingType::CleanInstall => true,
-        ServicingType::AbUpdate => false,
-        other => {
-            return Err(anyhow!(
-                "enforce_firstboot_addon_policy called with unexpected servicing type \
-                 {other:?}; expected CleanInstall or AbUpdate"
-            ))
-        }
-    };
+    ensure!(
+        matches!(
+            servicing_type,
+            ServicingType::CleanInstall | ServicingType::AbUpdate
+        ),
+        "enforce_firstboot_addon_policy called with unexpected servicing type \
+         {servicing_type:?}; expected CleanInstall or AbUpdate"
+    );
+    let is_clean_install = servicing_type == ServicingType::CleanInstall;
 
     let staging_addon_dir = join_relative(mount_point, esp_mount_path)
         .join(UKI_DIRECTORY)
