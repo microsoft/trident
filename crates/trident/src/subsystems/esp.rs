@@ -325,7 +325,7 @@ fn copy_file_artifacts(
                     temp_mount_dir,
                     mount_point,
                     &ctx.esp_mount_path,
-                    ctx.servicing_type == ServicingType::CleanInstall,
+                    ctx.servicing_type,
                 )?;
             }
         }

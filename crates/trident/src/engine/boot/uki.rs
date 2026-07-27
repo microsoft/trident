@@ -19,7 +19,7 @@ use trident_api::{
         AB_VOLUME_A_NAME, AB_VOLUME_B_NAME, AZURE_LINUX_INSTALL_ID_PREFIX, ESP_EFI_DIRECTORY,
     },
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
-    status::AbVolumeSelection,
+    status::{AbVolumeSelection, ServicingType},
 };
 
 use crate::engine::EngineContext;
@@ -641,12 +641,31 @@ const FIRSTBOOT_ADDON_FILENAME: &str = "firstboot.addon.efi";
 /// This is ACL-specific; callers gate on `ctx.image_distro().is_acl()`,
 /// matching the verity addon's existing convention — non-ACL images never
 /// reach this function.
+///
+/// Only reachable for `ServicingType::CleanInstall` or `ServicingType::AbUpdate`:
+/// `EspSubsystem` doesn't override `Subsystem::runs_on()`, so it inherits
+/// the default `REQUIRES_REBOOT` list (`[CleanInstall, AbUpdate]`) — no
+/// other servicing type ever reaches `copy_file_artifacts`, and thus this
+/// function. Takes the servicing type directly (rather than a pre-computed
+/// bool) so an unexpected value — which would indicate that invariant no
+/// longer holds — is a hard error instead of silently doing the wrong thing.
 pub(crate) fn enforce_firstboot_addon_policy(
     image_esp_mount: &Path,
     mount_point: &Path,
     esp_mount_path: &Path,
-    is_clean_install: bool,
+    servicing_type: ServicingType,
 ) -> Result<(), Error> {
+    let is_clean_install = match servicing_type {
+        ServicingType::CleanInstall => true,
+        ServicingType::AbUpdate => false,
+        other => {
+            return Err(anyhow!(
+                "enforce_firstboot_addon_policy called with unexpected servicing type \
+                 {other:?}; expected CleanInstall or AbUpdate"
+            ))
+        }
+    };
+
     let staging_addon_dir = join_relative(mount_point, esp_mount_path)
         .join(UKI_DIRECTORY)
         .join(TMP_UKI_ADDON_DIR_NAME);
@@ -1393,7 +1412,7 @@ mod tests {
             image_esp.path(),
             mount_point.path(),
             Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
-            true,
+            ServicingType::CleanInstall,
         )
         .unwrap();
 
@@ -1422,7 +1441,7 @@ mod tests {
             image_esp.path(),
             mount_point.path(),
             Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
-            true,
+            ServicingType::CleanInstall,
         )
         .unwrap();
 
@@ -1446,7 +1465,7 @@ mod tests {
             image_esp.path(),
             mount_point.path(),
             Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
-            true,
+            ServicingType::CleanInstall,
         )
         .unwrap();
 
@@ -1481,7 +1500,7 @@ mod tests {
             image_esp.path(),
             mount_point.path(),
             Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
-            false,
+            ServicingType::AbUpdate,
         )
         .unwrap();
 
@@ -1512,7 +1531,7 @@ mod tests {
             image_esp.path(),
             mount_point.path(),
             Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
-            false,
+            ServicingType::AbUpdate,
         )
         .unwrap();
 
