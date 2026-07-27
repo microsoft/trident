@@ -143,7 +143,13 @@ func (s *TridentE2EScenario) checkTridentViaSshAfterInstall(tc storm.TestCase) e
 		return nil
 	}
 
-	err = trident.CheckTridentService(s.sshClient, s.runtime, time.Minute*2, true)
+	// Rollback-intent scenarios (e.g. health-checks-install) deliberately fail
+	// their health checks during install and roll back, so the Trident service
+	// is expected to exit with a non-zero status rather than commit
+	// successfully.
+	expectSuccessfulCommit := !s.hasRollbackIntent()
+
+	err = trident.CheckTridentService(s.sshClient, s.runtime, time.Minute*2, expectSuccessfulCommit)
 	if err != nil {
 		tc.FailFromError(err)
 	}

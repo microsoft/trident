@@ -10,6 +10,14 @@ import (
 	"tridenttools/storm/utils/trident"
 )
 
+// hasRollbackIntent reports whether this scenario is expected to trigger a
+// health-check rollback, signalled by a top-level `health` section in the Host
+// Configuration. Such scenarios expect the install to fail and roll back rather
+// than commit successfully.
+func (s *TridentE2EScenario) hasRollbackIntent() bool {
+	return s.config.Exists("health")
+}
+
 // validateHostState is the storm test case that validates the installed host's
 // state against the Host Configuration and Host Status. It is registered after
 // clean install and after each A/B update. It ports the pytest E2E validation
