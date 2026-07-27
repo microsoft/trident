@@ -62,6 +62,9 @@ ALLOWED_CONFIGS = [
     "health-checks-install",
     "usr-verity",
     "usr-verity-raid",
+    "combined",
+    "memory-constraint-combined",
+    "rerun",
 ]
 ALLOWED_HARDWARES = ["vm"]
 ALLOWED_RUNTIMES = ["host", "container"]

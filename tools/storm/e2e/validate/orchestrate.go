@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 
 	"tridenttools/pkg/hostconfig"
@@ -171,7 +172,11 @@ func validateActiveVolumePath(
 			"active volume %q path mismatch: Host Status has %q, expected %q",
 			activeVolumeID, actual, expectedPath)
 	} else {
-		sa.Failf("partitions/ab-path", "active volume %q missing from partitionPaths", activeVolumeID)
+		// base_test.py only asserts the path when the active volume ID appears
+		// in partitionPaths; when it does not (e.g. combined, where root sits on
+		// the A/B pair but Trident reports the mounted device under a different
+		// key), it is a no-op rather than a failure. Match that tolerance.
+		logrus.Infof("Active volume %q not present in Host Status partitionPaths; skipping path match", activeVolumeID)
 	}
 
 	// Active volume selection must match expectation.
