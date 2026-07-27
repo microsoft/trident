@@ -317,9 +317,9 @@ fn copy_file_artifacts(
                 // stage_uki_on_esp) so a genuine first boot works out of the
                 // box. But every ACL AB-update COSI is built from a
                 // never-booted image, so that addon is still present even
-                // when this is not actually a first boot. Enforce it's only
-                // ever staged for a clean install; strip it otherwise so
-                // Ignition doesn't re-trigger and hang on the post-update
+                // when this is not actually a first boot. Enforce that it's
+                // only ever staged for a clean install; strip it otherwise
+                // so Ignition doesn't re-trigger and hang on the post-update
                 // reboot.
                 uki::enforce_firstboot_addon_policy(
                     temp_mount_dir,

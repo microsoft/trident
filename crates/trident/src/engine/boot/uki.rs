@@ -639,7 +639,7 @@ const FIRSTBOOT_ADDON_FILENAME: &str = "firstboot.addon.efi";
 /// This is ACL-specific; callers gate on `ctx.image_distro().is_acl()`,
 /// matching the verity addon's existing convention — non-ACL images never
 /// reach this function.
-pub fn enforce_firstboot_addon_policy(
+pub(crate) fn enforce_firstboot_addon_policy(
     image_esp_mount: &Path,
     mount_point: &Path,
     esp_mount_path: &Path,
