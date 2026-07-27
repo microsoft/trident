@@ -7,6 +7,7 @@ import (
 	"tridenttools/pkg/hostconfig"
 	"tridenttools/storm/e2e/testrings"
 	"tridenttools/storm/utils/sshutils"
+	"tridenttools/storm/utils/sysinspect"
 	"tridenttools/storm/utils/trident"
 
 	"github.com/microsoft/storm"
@@ -232,6 +233,39 @@ func (s *TridentE2EScenario) populateSshClient(ctx context.Context) error {
 	}
 
 	s.sshClient = client
+
+	// For the container runtime, prepare the freshly-connected host the same way
+	// the pytest suite did at connection time: disable SELinux enforcement and
+	// load the Trident container image into Docker. This runs on every new
+	// connection (initial and post-reboot reconnects) because setenforce does
+	// not persist across reboots.
+	if s.runtime == trident.RuntimeTypeContainer {
+		if err := s.prepareContainerRuntime(); err != nil {
+			return fmt.Errorf("failed to prepare container runtime: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// prepareContainerRuntime readies a container-runtime host for Trident commands:
+// it disables SELinux enforcement (the container runtime requires permissive
+// mode) and loads the Trident container image into Docker. Mirrors the container
+// handling in the pytest suite's connection fixture.
+func (s *TridentE2EScenario) prepareContainerRuntime() error {
+	mode, err := sysinspect.Getenforce(s.sshClient)
+	if err != nil {
+		return fmt.Errorf("failed to query SELinux mode: %w", err)
+	}
+	if mode != "Disabled" {
+		if err := sysinspect.Setenforce(s.sshClient, false); err != nil {
+			return fmt.Errorf("failed to set SELinux permissive: %w", err)
+		}
+	}
+
+	if err := trident.LoadTridentContainer(s.sshClient); err != nil {
+		return fmt.Errorf("failed to load Trident container image: %w", err)
+	}
 
 	return nil
 }

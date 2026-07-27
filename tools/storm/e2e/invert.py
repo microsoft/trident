@@ -62,7 +62,7 @@ ALLOWED_CONFIGS = [
     "root-verity",
 ]
 ALLOWED_HARDWARES = ["vm"]
-ALLOWED_RUNTIMES = ["host"]
+ALLOWED_RUNTIMES = ["host", "container"]
 
 # Special settings to merge into specific configurations
 SPECIAL_SETTINGS = {
