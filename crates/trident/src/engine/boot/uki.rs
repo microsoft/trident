@@ -1562,6 +1562,14 @@ mod tests {
             err.to_string().contains("unexpected servicing type"),
             "Expected 'unexpected servicing type' error, got: {err}"
         );
+        // Confirms the servicing type's actual Debug value is interpolated
+        // via the captured identifier ({servicing_type:?}), not left as a
+        // literal placeholder — Rust supports captured identifiers in
+        // format/ensure! strings since 1.58.
+        assert!(
+            err.to_string().contains("RuntimeUpdate"),
+            "Expected the actual servicing type value in the error, got: {err}"
+        );
     }
 
     /// Helper: creates an ESP directory structure with UKI files and returns
