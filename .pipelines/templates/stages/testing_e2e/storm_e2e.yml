@@ -3,6 +3,11 @@ parameters:
     displayName: "Pipeline configuration type"
     type: string
 
+  - name: acrServiceConnectionName
+    displayName: "Service connection used to push extension/COSI images to ACR"
+    type: string
+    default: trident-dev-acr-write-umi-ECF
+
 stages:
   - stage: DefineTests_E2E
     displayName: Define all E2E test matrices
@@ -40,11 +45,13 @@ stages:
     parameters:
       hardwareType: "VM"
       runtimeType: "HOST"
+      acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
   - template: test_execution_template.yml
     parameters:
       hardwareType: "VM"
       runtimeType: "CONTAINER"
+      acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
   # TODO: enable once bare-metal host setup is supported in storm
   # - template: test_execution_template.yml

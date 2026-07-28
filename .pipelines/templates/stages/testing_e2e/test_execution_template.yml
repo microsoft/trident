@@ -19,6 +19,11 @@ parameters:
     type: string
     default: null
 
+  - name: acrServiceConnectionName
+    displayName: "Service connection used to push extension/COSI images to ACR"
+    type: string
+    default: trident-dev-acr-write-umi-ECF
+
 stages:
   - stage: E2ETesting_${{ parameters.hardwareType }}_${{ parameters.runtimeType }}
     displayName: E2E ${{ parameters.hardwareType }} ${{ parameters.runtimeType }} Testing
@@ -59,6 +64,8 @@ stages:
 
         condition: ne(variables['matrixJson'], '{}')
         variables:
+          # Provides: ACR_NAME (used to push/pull extension images).
+          - group: trident_e2e_params
           - name: ob_outputDirectory
             value: /tmp/output
           - name: ob_artifactBaseName
@@ -91,7 +98,18 @@ stages:
           - template: ../common_tasks/avoid-pypi-usage.yml
 
           - bash: |
-              if [ ${{ variables['tridentConfigurationName'] }} == 'split' ]; then
+              set -eux
+              # The matrix only exposes the full scenario name (e.g.
+              # "extensions_vm-host"); derive the configuration name and runtime
+              # from it for the per-config handling below.
+              config=$(echo "$(SCENARIO)" | sed -E 's/_(vm|bm)-(host|container)$//')
+              runtime=$(echo "$(SCENARIO)" | sed -E 's/.*_(vm|bm)-(host|container)$/\2/')
+              echo "##vso[task.setvariable variable=tridentConfigurationName]$config"
+              echo "##vso[task.setvariable variable=tridentRuntimeEnv]$runtime"
+            displayName: "Resolve configuration name from scenario"
+
+          - bash: |
+              if [ "$(tridentConfigurationName)" == 'split' ]; then
                 splitInstallerIsoName="trident-split-installer"
                 echo "setting variable.installerISOName to $splitInstallerIsoName"
                 echo "##vso[task.setvariable variable=installerISOName]$splitInstallerIsoName"
@@ -107,6 +125,58 @@ stages:
               downloadTridentContainer: ${{ variables.downloadTridentContainer }}
               tridentTestImageUsrVerity: ${{ variables.usrVerityTestImageName }}
               tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
+
+          # For the extensions config, build sample sysext images and push them
+          # to ACR so Trident can pull them from an OCI registry during install.
+          # The config name is only known at runtime (matrix SCENARIO), so these
+          # steps branch on it at runtime and no-op for other configs.
+          - bash: |
+              set -eux
+              if [ "$(tridentConfigurationName)" != 'extensions' ]; then
+                echo "Configuration is '$(tridentConfigurationName)'; skipping extension image build."
+                exit 0
+              fi
+
+              ./bin/storm-trident script build-extension-images --build-sysexts --num-clones 2
+
+              # Install ORAS for the ACR push.
+              VERSION="1.2.2"
+              curl -LO "https://github.com/oras-project/oras/releases/download/v${VERSION}/oras_${VERSION}_linux_amd64.tar.gz"
+              mkdir -p oras-install/
+              tar -zxf oras_${VERSION}_*.tar.gz -C oras-install/
+              sudo mv oras-install/oras /usr/local/bin/
+              rm -rf oras_${VERSION}_*.tar.gz oras-install/
+            displayName: "Build extension images (extensions only)"
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+            retryCountOnTaskFailure: 3
+
+          - task: AzureCLI@2
+            displayName: "Push extension images to ACR (extensions only)"
+            inputs:
+              azureSubscription: ${{ parameters.acrServiceConnectionName }}
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -eux
+                if [ "$(tridentConfigurationName)" != 'extensions' ]; then
+                  echo "Configuration is '$(tridentConfigurationName)'; skipping ACR push."
+                  exit 0
+                fi
+
+                cd $(TRIDENT_SOURCE_DIR)
+                # Sets the SYSEXT_REPO and TAG_BASE pipeline variables.
+                ./bin/storm-trident script acr-push \
+                    --config extensions \
+                    --deployment-environment virtualMachine \
+                    --acr-name $(ACR_NAME) \
+                    --repo-name sysext-$(tridentRuntimeEnv) \
+                    --build-id $(Build.BuildId) \
+                    --file-paths $(TRIDENT_SOURCE_DIR)/test-sysext-1.raw \
+                    --file-paths $(TRIDENT_SOURCE_DIR)/test-sysext-2.raw \
+                    --tag-var-name TAG_BASE \
+                    --repo-var-name SYSEXT_REPO
+            retryCountOnTaskFailure: 3
+
           - bash: |
               set -eux
 
@@ -123,11 +193,23 @@ stages:
                 SIGNING_CERT_ARG="--signing-cert $CA_CERT_PATH"
               fi
 
+              # For the extensions config, point the Host Configuration at the
+              # sysext image pushed to ACR above. SYSEXT_REPO and TAG_BASE were
+              # set by the acr-push step; ACR_NAME comes from trident_e2e_params.
+              EXTENSION_ARGS=""
+              if [ "$(tridentConfigurationName)" == 'extensions' ]; then
+                sysext_tag="$(TAG_BASE).1"
+                sysext_oci_url="oci://$(ACR_NAME).azurecr.io/$(SYSEXT_REPO):${sysext_tag}"
+                sysext_sha384=$(sha384sum "$(TRIDENT_SOURCE_DIR)/test-sysext-1.raw" | awk '{print $1}')
+                EXTENSION_ARGS="--sysext-oci-url ${sysext_oci_url} --sysext-sha384 ${sysext_sha384}"
+              fi
+
               ./bin/storm-trident run "$(SCENARIO)" \
                   -o $(ob_outputDirectory) \
                   -- \
                   --pipeline-run \
                   --iso "./artifacts/iso/$(installerISOName).iso" \
-                  $SIGNING_CERT_ARG
+                  $SIGNING_CERT_ARG \
+                  $EXTENSION_ARGS
             displayName: "🧪 Run E2E Test"
             workingDirectory: $(TRIDENT_SOURCE_DIR)

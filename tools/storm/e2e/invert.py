@@ -55,6 +55,7 @@ ALLOWED_CONFIGS = [
     "raid-mirrored",
     "raid-resync-small",
     "raid-small",
+    "extensions",
     "encrypted-partition",
     "encrypted-raid",
     "encrypted-swap",
