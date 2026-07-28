@@ -65,6 +65,7 @@ ALLOWED_CONFIGS = [
     "combined",
     "memory-constraint-combined",
     "rerun",
+    "split",
 ]
 ALLOWED_HARDWARES = ["vm"]
 ALLOWED_RUNTIMES = ["host", "container"]
