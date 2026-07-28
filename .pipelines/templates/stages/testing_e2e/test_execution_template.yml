@@ -230,3 +230,33 @@ stages:
                   $EXTENSION_ARGS
             displayName: "🧪 Run E2E Test"
             workingDirectory: $(TRIDENT_SOURCE_DIR)
+
+          # Delete the extension images pushed to ACR above so runs don't leak
+          # images (mirrors the legacy remove-from-acr.yml cleanup). Runs even
+          # when the test fails; no-ops for non-extensions configs. The tag base
+          # is reconstructed from build id + config + deployment environment
+          # (same inputs acr-push used), and SYSEXT_REPO was set by the push
+          # step.
+          - task: AzureCLI@2
+            displayName: "Delete extension images from ACR (extensions only)"
+            condition: always()
+            retryCountOnTaskFailure: 3
+            inputs:
+              azureSubscription: ${{ parameters.acrServiceConnectionName }}
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -eux
+                if [ "$(tridentConfigurationName)" != 'extensions' ]; then
+                  echo "Configuration is '$(tridentConfigurationName)'; skipping ACR cleanup."
+                  exit 0
+                fi
+
+                cd $(TRIDENT_SOURCE_DIR)
+                ./bin/storm-trident script acr-delete \
+                    --config extensions \
+                    --deployment-environment virtualMachine \
+                    --acr-name $(ACR_NAME) \
+                    --repo-name $(SYSEXT_REPO) \
+                    --build-id $(Build.BuildId) \
+                    --num-clones 2
