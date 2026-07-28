@@ -26,11 +26,18 @@ parameters:
     default: true
 
 stages:
+  # In a testingRun (shortcut), build storm-trident once from source and publish
+  # it so the matrix-definition and test-execution stages consume the
+  # branch-under-test binary instead of a downloaded, possibly-stale go-tools
+  # artifact.
+  - ${{ if eq(parameters.testingRun, true) }}:
+      - template: build-storm-trident-stage.yml
+
   - stage: DefineTests_E2E
     displayName: Define all E2E test matrices
     dependsOn:
       - ${{ if eq(parameters.testingRun, true) }}:
-          - DownloadTestingElements
+          - BuildStormTridentE2E
       - ${{ else }}:
           - BuildingTools
     jobs:
@@ -38,15 +45,7 @@ stages:
         displayName: Get List of tests to run
         timeoutInMinutes: 15
         pool:
-          # In testingRun mode we build storm-trident from source here (so the
-          # matrix reflects the branch under test), which needs a build-capable
-          # pool.
-          ${{ if eq(parameters.testingRun, true) }}:
-            type: linux
-            name: trident-ubuntu-1es-pool-eastus2
-            hostArchitecture: amd64
-          ${{ else }}:
-            type: linux
+          type: linux
 
         variables:
           ob_outputDirectory: /tmp/build
@@ -54,11 +53,16 @@ stages:
 
         steps:
           - template: ../common_tasks/checkout_trident.yml
-          # In a testingRun (shortcut) the downloaded go-tools may be stale
-          # relative to the branch under test, so build storm-trident from
-          # source; otherwise download it from the in-pipeline build.
+          # In a testingRun (shortcut) consume the storm-trident built from the
+          # branch under test (BuildStormTridentE2E); otherwise download it from
+          # the in-pipeline build's go-tools artifact.
           - ${{ if eq(parameters.testingRun, true) }}:
-              - template: ../common_tasks/build-storm-trident.yml
+              - task: DownloadPipelineArtifact@2
+                displayName: "Download storm-trident (built from source)"
+                inputs:
+                  buildType: current
+                  artifactName: "storm-trident-e2e"
+                  targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
           - ${{ else }}:
               - task: DownloadPipelineArtifact@2
                 displayName: "Download go-tools"
