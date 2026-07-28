@@ -151,6 +151,7 @@ stages:
                 libgirepository1.0-dev \
                 python3-venv \
                 python3-dev \
+                python3-poetry \
                 openssh-client \
                 ncat \
                 libcairo2-dev \
@@ -158,10 +159,6 @@ stages:
                 protobuf-compiler
               sudo snap install yq
               setfacl --help
-
-              # Install poetry
-              set -o pipefail
-              curl -sSL https://install.python-poetry.org | python3 -
             displayName: "Install dependencies"
             retryCountOnTaskFailure: 3
 
@@ -199,9 +196,6 @@ stages:
 
           - bash: |
               set -xe
-
-              # Add poetry to PATH.
-              export PATH="$HOME/.local/bin:$PATH"
 
               ls -l
 
