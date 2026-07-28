@@ -9,7 +9,7 @@ require (
 	github.com/fatih/color v1.18.0
 	github.com/google/uuid v1.6.0
 	github.com/knqyf263/go-rpmdb v0.1.1
-	github.com/microsoft/storm v0.4.0-alpha1
+	github.com/microsoft/storm v0.4.0-alpha1.0.20260728224035-6b7ba8c7b7c1
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/sftp v1.13.9
 	github.com/sirupsen/logrus v1.9.3

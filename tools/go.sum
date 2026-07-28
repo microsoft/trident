@@ -90,8 +90,8 @@ github.com/mattn/go-isatty v0.0.20 h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWE
 github.com/mattn/go-isatty v0.0.20/go.mod h1:W+V8PltTTMOvKvAeJH7IuucS94S2C6jfK/D7dTCTo3Y=
 github.com/mattn/go-sqlite3 v1.14.15 h1:vfoHhTN1af61xCRSWzFIWzx2YskyMTwHLrExkBOjvxI=
 github.com/mattn/go-sqlite3 v1.14.15/go.mod h1:2eHXhiwb8IkHr+BDWZGa96P6+rkvnG63S2DGjv9HUNg=
-github.com/microsoft/storm v0.4.0-alpha1 h1:U4Bn6rZQW33xrAq+s4pVT7D+RG7crWYTcOPboGysAyo=
-github.com/microsoft/storm v0.4.0-alpha1/go.mod h1:QMLHpLhA/rI2bmMFor4Vxd6N99k1eadlrXv6lPLbXks=
+github.com/microsoft/storm v0.4.0-alpha1.0.20260728224035-6b7ba8c7b7c1 h1:t3kuKXYdhVX8TEeQe5d1lkmUnbRbqteOiL9rhcELUJI=
+github.com/microsoft/storm v0.4.0-alpha1.0.20260728224035-6b7ba8c7b7c1/go.mod h1:QMLHpLhA/rI2bmMFor4Vxd6N99k1eadlrXv6lPLbXks=
 github.com/mitchellh/mapstructure v1.5.0 h1:jeMsZIYE/09sWLaz43PL7Gy6RuMjD2eJVyuac5Z2hdY=
 github.com/mitchellh/mapstructure v1.5.0/go.mod h1:bFUtVrKA4DC2yAKiSyO/QUcy7e+RRV2QTWOzhPopBRo=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
