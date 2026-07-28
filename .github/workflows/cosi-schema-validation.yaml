@@ -1,0 +1,54 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+name: Validate COSI metadata schema
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "docs/Reference/Composable-OS-Image/cosi-metadata-*.schema.json"
+      - "tests/cosi/metadata_samples/**"
+      - ".github/workflows/cosi-schema-validation.yaml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate-cosi-schema:
+    name: Validate COSI metadata schema
+    runs-on: ubuntu-latest
+    env:
+      SCHEMA: docs/Reference/Composable-OS-Image/cosi-metadata-v1.2.schema.json
+      SAMPLES: tests/cosi/metadata_samples
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install check-jsonschema
+        run: pip install check-jsonschema
+
+      - name: Schema is a valid JSON Schema (draft 2020-12)
+        run: check-jsonschema --check-metaschema "$SCHEMA"
+
+      - name: Valid samples conform to the schema
+        run: check-jsonschema --schemafile "$SCHEMA" "$SAMPLES"/valid/*.json
+
+      - name: Invalid samples are rejected by the schema
+        shell: bash
+        run: |
+          set -uo pipefail
+          shopt -s nullglob
+          rc=0
+          for f in "$SAMPLES"/invalid/*.json; do
+            if check-jsonschema --schemafile "$SCHEMA" "$f" >/dev/null 2>&1; then
+              echo "::error file=$f::expected this sample to FAIL schema validation, but it was accepted"
+              rc=1
+            else
+              echo "ok (correctly rejected): $f"
+            fi
+          done
+          exit "$rc"

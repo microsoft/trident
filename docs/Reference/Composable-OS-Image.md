@@ -465,6 +465,7 @@ making them invalid JSON. They are provided for illustration purposes only.
 ```json
 {
     "version": "1.2",
+    "osArch": "x86_64",
     "images": [
         {
             "image": {
@@ -556,6 +557,7 @@ making them invalid JSON. They are provided for illustration purposes only.
 ```json
 {
     "version": "1.2",
+    "osArch": "x86_64",
     "images": [
         {
             "image": {
