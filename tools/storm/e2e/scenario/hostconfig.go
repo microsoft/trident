@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"tridenttools/storm/utils/sshutils"
 	"tridenttools/storm/utils/trident"
 
@@ -12,6 +13,10 @@ import (
 
 const (
 	testingUsername = "testing-user"
+
+	// usrVerityCosiSuffix identifies the usr-verity UKI test image whose
+	// encryption must not seal to PCR 7 under a containerized runtime.
+	usrVerityCosiSuffix = "usrverity.cosi"
 )
 
 func (s *TridentE2EScenario) prepareHostConfig(tc storm.TestCase) error {
@@ -64,11 +69,39 @@ func (s *TridentE2EScenario) prepareHostConfig(tc storm.TestCase) error {
 		s.config.ArrayAppend(containerAdditionalFile, "os", "additionalFiles")
 	}
 
+	// Strip PCR 7 from the encryption policy when required by the container
+	// runtime, before any OCI image-URL override changes image.url.
+	s.applyContainerPcrExclusion()
+
 	// Inject any pipeline-provided OCI overrides (extension images, ACR-hosted
 	// COSI URL). Mirrors tests/e2e_tests/helpers/edit_host_config.py.
 	s.applyOciOverrides()
 
 	return nil
+}
+
+// applyContainerPcrExclusion drops PCR 7 (secure-boot-policy) from the
+// encryption policy for usr-verity UKI images running under a containerized
+// Trident. Secure Boot measures the host boot chain, not the container's, so a
+// policy sealed to PCR 7 could never reproduce; Trident rejects the
+// combination during dynamic validation
+// (crates/trident/src/subsystems/storage/encryption.rs). This mirrors the
+// legacy pipeline glue added in #221
+// (.pipelines/templates/stages/testing_vm/netlaunch-testing.yml), which
+// rewrites the Host Configuration for exactly this case so combined/rerun
+// (usr-verity UKI + encryption) install on the container runtime.
+func (s *TridentE2EScenario) applyContainerPcrExclusion() {
+	if s.runtime != trident.RuntimeTypeContainer {
+		return
+	}
+	url, ok := s.config.S("image", "url").Data().(string)
+	if !ok || !strings.HasSuffix(url, usrVerityCosiSuffix) {
+		return
+	}
+	if !s.config.Exists("storage", "encryption") {
+		return
+	}
+	s.config.Set([]interface{}{"boot-loader-code", "kernel-boot"}, "storage", "encryption", "pcrs")
 }
 
 // applyOciOverrides injects the OCI-based Host Configuration edits requested via

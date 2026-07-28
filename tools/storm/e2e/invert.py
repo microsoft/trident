@@ -38,10 +38,13 @@ header = """\
 # Configurations enabled for the storm-based E2E flow, validated end-to-end on
 # a real VM (base/encryption/verity/uki paths).
 #
-# Runtime self-selection: encryption+UKI configs (combined,
-# memory-constraint-combined, rerun) seal to PCR 7, which Trident forbids under
-# a containerized runtime, so config_is_runtime_incompatible() drops them from
-# the container matrix (host only). See that helper for details.
+# Runtime note: the encryption+UKI configs (combined, memory-constraint-combined,
+# rerun) seal to PCR 7, which Trident forbids under a containerized runtime. On
+# the container runtime the Host Configuration is rewritten to drop PCR 7
+# (scenario.applyContainerPcrExclusion, mirroring the legacy #221 pipeline glue
+# in testing_vm/netlaunch-testing.yml), so they run in both runtimes just like
+# legacy. memory-constraint-combined is host-only purely because
+# target-configurations.yaml does not list it under container.
 #
 # The UKI/usr-verity images boot their kernel directly through firmware Secure
 # Boot, so they require the image signing certificate injected via
@@ -104,49 +107,6 @@ def config_has_uki_marker(repo_root, name):
     return "uki" in (selection.get("compatible") or [])
 
 
-# PCR 7 (secure-boot-policy) cannot be used to seal encryption for a UKI target
-# OS when Trident itself runs inside a container: Secure Boot measures the
-# host's boot chain, not the container's, so the sealed policy would never
-# reproduce. Trident rejects this combination during dynamic validation
-# (crates/trident/src/subsystems/storage/encryption.rs). Match that constraint
-# here so such configs are not scheduled on the container runtime.
-PCR7_ALIASES = {"secure-boot-policy", 7, "7"}
-
-
-def config_needs_pcr7_for_encryption(repo_root, name):
-    """Return True if the config encrypts volumes sealed to PCR 7."""
-    config_file = (
-        repo_root
-        / "tests"
-        / "e2e_tests"
-        / "trident_configurations"
-        / name
-        / "trident-config.yaml"
-    )
-    try:
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f) or {}
-    except FileNotFoundError:
-        return False
-
-    encryption = (config.get("storage") or {}).get("encryption")
-    if not encryption:
-        return False
-    pcrs = encryption.get("pcrs") or []
-    return any(pcr in PCR7_ALIASES for pcr in pcrs)
-
-
-def config_is_runtime_incompatible(repo_root, name, runtime):
-    """Return True if name must not run on the given Trident runtime."""
-    if runtime == "container":
-        # UKI + PCR-7-sealed encryption cannot install under a containerized
-        # Trident (see PCR7_ALIASES note above).
-        return config_has_uki_marker(repo_root, name) and (
-            config_needs_pcr7_for_encryption(repo_root, name)
-        )
-    return False
-
-
 def main():
     repo_root = Path(__file__).parent.parent.parent.parent
     target_configurations_yaml = (
@@ -198,8 +158,6 @@ def main():
                     if hw_rename not in ALLOWED_HARDWARES:
                         continue
                     if rt not in ALLOWED_RUNTIMES:
-                        continue
-                    if config_is_runtime_incompatible(repo_root, name, rt):
                         continue
 
                     # Build inverted structure
