@@ -36,9 +36,17 @@ stages:
     jobs:
       - job: DefineTests
         displayName: Get List of tests to run
-        timeoutInMinutes: 10
+        timeoutInMinutes: 15
         pool:
-          type: linux
+          # In testingRun mode we build storm-trident from source here (so the
+          # matrix reflects the branch under test), which needs a build-capable
+          # pool.
+          ${{ if eq(parameters.testingRun, true) }}:
+            type: linux
+            name: trident-ubuntu-1es-pool-eastus2
+            hostArchitecture: amd64
+          ${{ else }}:
+            type: linux
 
         variables:
           ob_outputDirectory: /tmp/build
@@ -46,14 +54,20 @@ stages:
 
         steps:
           - template: ../common_tasks/checkout_trident.yml
-          - task: DownloadPipelineArtifact@2
-            displayName: "Download go-tools"
-            inputs:
-              buildType: current
-              artifactName: "go-tools"
-              patterns: |
-                storm-trident
-              targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
+          # In a testingRun (shortcut) the downloaded go-tools may be stale
+          # relative to the branch under test, so build storm-trident from
+          # source; otherwise download it from the in-pipeline build.
+          - ${{ if eq(parameters.testingRun, true) }}:
+              - template: ../common_tasks/build-storm-trident.yml
+          - ${{ else }}:
+              - task: DownloadPipelineArtifact@2
+                displayName: "Download go-tools"
+                inputs:
+                  buildType: current
+                  artifactName: "go-tools"
+                  patterns: |
+                    storm-trident
+                  targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
           - bash: |
               chmod +x ./bin/storm-trident
               ./bin/storm-trident script e2e-matrix "${{ parameters.stageType }}"

@@ -126,6 +126,13 @@ stages:
               tridentTestImageUsrVerity: ${{ variables.usrVerityTestImageName }}
               tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
 
+          # In a testingRun (shortcut) build storm-trident from the checked-out
+          # source so the scenario/validation logic reflects the branch under
+          # test rather than the downloaded go-tools artifact. This overrides
+          # any storm-trident binary provided by the download above.
+          - ${{ if eq(parameters.testingRun, true) }}:
+              - template: ../common_tasks/build-storm-trident.yml
+
           # For the extensions config, build sample sysext images and push them
           # to ACR so Trident can pull them from an OCI registry during install.
           # The config name is only known at runtime (matrix SCENARIO), so these
