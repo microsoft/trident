@@ -64,6 +64,11 @@ type TridentE2EScenario struct {
 		DumpSshKeyFile        string             `name:"dump-ssh-key" help:"If set, the SSH private key used for VM access will be dumped to the specified file."`
 		VmWaitForLoginTimeout int                `name:"vm-wait-for-login-timeout" help:"Time in seconds to wait for the VM to reach login prompt." default:"600"`
 		TestRing              testrings.TestRing `name:"test-ring" help:"The test ring in which this scenario is being executed. Defaults to lowest ring for this scenario." env:"TEST_RING"`
+		SysextOciUrl          string             `name:"sysext-oci-url" help:"OCI URL of a system extension image to inject into the Host Configuration (os.sysexts)."`
+		SysextSha384          string             `name:"sysext-sha384" help:"SHA384 of the system extension image referenced by --sysext-oci-url."`
+		ConfextOciUrl         string             `name:"confext-oci-url" help:"OCI URL of a configuration extension image to inject into the Host Configuration (os.confexts)."`
+		ConfextSha384         string             `name:"confext-sha384" help:"SHA384 of the configuration extension image referenced by --confext-oci-url."`
+		OciImageUrl           string             `name:"oci-image-url" help:"If set, overwrites the Host Configuration image.url with this OCI URL (ACR-hosted COSI)."`
 	}
 
 	// Runtime variables

@@ -64,5 +64,34 @@ func (s *TridentE2EScenario) prepareHostConfig(tc storm.TestCase) error {
 		s.config.ArrayAppend(containerAdditionalFile, "os", "additionalFiles")
 	}
 
+	// Inject any pipeline-provided OCI overrides (extension images, ACR-hosted
+	// COSI URL). Mirrors tests/e2e_tests/helpers/edit_host_config.py.
+	s.applyOciOverrides()
+
 	return nil
+}
+
+// applyOciOverrides injects the OCI-based Host Configuration edits requested via
+// scenario arguments: system/configuration extension images (os.sysexts /
+// os.confexts) and an override of the COSI image URL (image.url). Each edit is
+// applied only when its argument is provided. Ports the OCI handling of
+// edit_host_config.py used by the pipeline's trident-prep step.
+func (s *TridentE2EScenario) applyOciOverrides() {
+	if s.args.SysextOciUrl != "" {
+		s.config.ArrayAppend(map[string]interface{}{
+			"url":    s.args.SysextOciUrl,
+			"sha384": s.args.SysextSha384,
+		}, "os", "sysexts")
+	}
+
+	if s.args.ConfextOciUrl != "" {
+		s.config.ArrayAppend(map[string]interface{}{
+			"url":    s.args.ConfextOciUrl,
+			"sha384": s.args.ConfextSha384,
+		}, "os", "confexts")
+	}
+
+	if s.args.OciImageUrl != "" {
+		s.config.Set(s.args.OciImageUrl, "image", "url")
+	}
 }
