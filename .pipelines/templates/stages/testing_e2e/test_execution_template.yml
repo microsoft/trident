@@ -232,6 +232,28 @@ stages:
             displayName: "🧪 Run E2E Test"
             workingDirectory: $(TRIDENT_SOURCE_DIR)
 
+          # Qualify each JUnit testcase's classname with the scenario (which
+          # includes the runtime, e.g. base_vm-host). storm emits an empty
+          # classname and identical testcase names across runtimes, so ADO's
+          # Tests tab (which keys test identity on classname + name) would merge
+          # the host and container variants of the same case. A targeted sed on
+          # <testcase> lines is used rather than an XML parser because storm
+          # embeds raw serial-console control characters in the CDATA that make
+          # the document reject strict parsing (ADO's own parser is lenient).
+          # Runs even on test failure so the failing XML is still disambiguated.
+          - bash: |
+              set -eu
+              JUNIT="$(ob_outputDirectory)/storm-e2e.junit.xml"
+              if [ ! -f "$JUNIT" ]; then
+                echo "No JUnit file at $JUNIT; skipping classname qualification."
+                exit 0
+              fi
+              SCENARIO="$(SCENARIO)"
+              sed -i "/<testcase /s/ classname=\"\"/ classname=\"${SCENARIO}\"/" "$JUNIT"
+            displayName: "Qualify JUnit classnames with scenario"
+            condition: succeededOrFailed()
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+
           # Publish the JUnit XML produced by the storm run (-j above) to the
           # build's Tests tab and as a build artifact. Uses succeededOrFailed()
           # internally so results upload even when the scenario fails (the XML
