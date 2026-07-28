@@ -223,6 +223,7 @@ stages:
 
               ./bin/storm-trident run "$(SCENARIO)" \
                   -o $(ob_outputDirectory) \
+                  -j "$(ob_outputDirectory)/storm-e2e.junit.xml" \
                   -- \
                   --pipeline-run \
                   --iso "./artifacts/iso/$(installerISOName).iso" \
@@ -230,6 +231,17 @@ stages:
                   $EXTENSION_ARGS
             displayName: "🧪 Run E2E Test"
             workingDirectory: $(TRIDENT_SOURCE_DIR)
+
+          # Publish the JUnit XML produced by the storm run (-j above) to the
+          # build's Tests tab and as a build artifact. Uses succeededOrFailed()
+          # internally so results upload even when the scenario fails (the XML
+          # then carries the failures).
+          - template: ../junit/handle-junit-test-results.yml
+            parameters:
+              testRunName: "storm-e2e $(SCENARIO)"
+              junitTestFile: "$(ob_outputDirectory)/storm-e2e.junit.xml"
+              displayNameSpecifier: "storm E2E $(SCENARIO)"
+              artifactName: "junit_storm_e2e_$(SCENARIO)"
 
           # Delete the extension images pushed to ACR above so runs don't leak
           # images (mirrors the legacy remove-from-acr.yml cleanup). Runs even
