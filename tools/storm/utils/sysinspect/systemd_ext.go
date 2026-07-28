@@ -3,6 +3,7 @@ package sysinspect
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"golang.org/x/crypto/ssh"
 
@@ -13,8 +14,37 @@ import (
 // `systemd-confext status --json` output: a hierarchy (e.g. /usr, /opt, /etc)
 // with the list of extensions currently merged into it.
 type systemdExtHierarchy struct {
-	Hierarchy  string   `json:"hierarchy"`
-	Extensions []string `json:"extensions"`
+	Hierarchy  string        `json:"hierarchy"`
+	Extensions stringOrSlice `json:"extensions"`
+}
+
+// stringOrSlice decodes a JSON value that systemd emits either as an array of
+// strings, a single bare string (e.g. "none" when a hierarchy has no
+// extensions merged), or null. It normalizes all three into a []string.
+type stringOrSlice []string
+
+func (s *stringOrSlice) UnmarshalJSON(data []byte) error {
+	trimmed := strings.TrimSpace(string(data))
+	if trimmed == "null" {
+		*s = nil
+		return nil
+	}
+	// Array form: ["a","b"].
+	if strings.HasPrefix(trimmed, "[") {
+		var list []string
+		if err := json.Unmarshal(data, &list); err != nil {
+			return err
+		}
+		*s = list
+		return nil
+	}
+	// Scalar string form: "none" / "some-ext".
+	var single string
+	if err := json.Unmarshal(data, &single); err != nil {
+		return err
+	}
+	*s = []string{single}
+	return nil
 }
 
 // SystemdExtStatus runs `systemd-<extType> status --json=pretty` on the host and
@@ -43,6 +73,11 @@ func ParseSystemdExtStatus(stdout string) (map[string]struct{}, error) {
 	active := make(map[string]struct{})
 	for _, h := range hierarchies {
 		for _, ext := range h.Extensions {
+			// systemd reports "none" (as a bare string) for a hierarchy with no
+			// extensions merged; it is a sentinel, not an extension name.
+			if strings.EqualFold(ext, "none") {
+				continue
+			}
 			active[ext] = struct{}{}
 		}
 	}

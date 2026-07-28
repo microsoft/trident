@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/microsoft/storm"
+	"github.com/sirupsen/logrus"
 
 	"tridenttools/storm/e2e/validate"
 	"tridenttools/storm/utils/trident"
@@ -74,6 +75,10 @@ func (s *TridentE2EScenario) validateHostState(tc storm.TestCase) error {
 	if err := sa.Err(); err != nil {
 		tc.FailFromError(err)
 	}
+
+	// Always log the full ordered PASS/FAIL breakdown so a single validate case
+	// surfaces exactly which sub-checks ran, even when it passes.
+	logrus.Infof("Host state validation summary:\n%s", sa.Summary())
 
 	return nil
 }

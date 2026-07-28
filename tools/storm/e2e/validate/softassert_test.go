@@ -24,6 +24,32 @@ func TestSoftAsserter_AllPass(t *testing.T) {
 	}
 }
 
+// TestSoftAsserter_Summary verifies the ordered PASS/FAIL breakdown surfaced so
+// a single validate case shows exactly which sub-checks ran.
+func TestSoftAsserter_Summary(t *testing.T) {
+	var sa SoftAsserter
+	sa.Check("a", func() error { return nil })
+	sa.Assert("b", false, "b broke")
+	sa.Pass("c")
+
+	summary := sa.Summary()
+	for _, want := range []string{
+		"3 validation sub-check(s): 2 passed, 1 failed",
+		"PASS  a",
+		"FAIL  b: b broke",
+		"PASS  c",
+	} {
+		if !strings.Contains(summary, want) {
+			t.Errorf("Summary() = %q, missing %q", summary, want)
+		}
+	}
+
+	var empty SoftAsserter
+	if got := empty.Summary(); got != "no validation sub-checks ran" {
+		t.Errorf("empty Summary() = %q", got)
+	}
+}
+
 func TestSoftAsserter_ContinuesAfterFailure(t *testing.T) {
 	var sa SoftAsserter
 	ran := 0
