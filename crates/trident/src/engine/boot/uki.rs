@@ -19,7 +19,7 @@ use trident_api::{
         AB_VOLUME_A_NAME, AB_VOLUME_B_NAME, AZURE_LINUX_INSTALL_ID_PREFIX, ESP_EFI_DIRECTORY,
     },
     error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
-    status::AbVolumeSelection,
+    status::{AbVolumeSelection, ServicingType},
 };
 
 use crate::engine::EngineContext;
@@ -529,8 +529,10 @@ pub fn find_previous_uki(esp_dir_path: &Path) -> Result<PathBuf, TridentError> {
     }
 }
 
-/// Path within the image ESP where ACL stores verity addon templates for A/B slots.
-const VERITY_ADDON_TEMPLATES_DIR: &str = "acl/uki-addons";
+/// Path within the image ESP where ACL stores addon templates shared across
+/// servicing scenarios: per-slot verity addons (`verity-a`/`verity-b`) and
+/// the first-boot addon (see `enforce_firstboot_addon_policy`).
+const ACL_ADDON_TEMPLATES_DIR: &str = "acl/uki-addons";
 
 /// Filename of the active verity addon placed in the UKI's `.extra.d/` directory.
 const VERITY_ADDON_FILENAME: &str = "verity.addon.efi";
@@ -549,7 +551,7 @@ pub fn activate_verity_addon_for_target_volume(
     esp_mount_path: &Path,
     target_volume: AbVolumeSelection,
 ) -> Result<(), Error> {
-    let template_dir = image_esp_mount.join(VERITY_ADDON_TEMPLATES_DIR);
+    let template_dir = image_esp_mount.join(ACL_ADDON_TEMPLATES_DIR);
     if !template_dir.exists() {
         // Image does not use PARTUUID-based verity addons (non-ACL or older ACL).
         trace!(
@@ -600,6 +602,95 @@ pub fn activate_verity_addon_for_target_volume(
             dest.display()
         )
     })?;
+
+    Ok(())
+}
+
+/// Filename of the ACL first-boot UKI addon. Adds `flatcar.first_boot=detected`
+/// to the kernel cmdline (systemd-boot auto-discovers it alongside the UKI),
+/// which triggers Ignition to run. See `ignition-quench.service` (patched
+/// into the `bootengine` package) for the corresponding cleanup after a
+/// genuine first boot.
+const FIRSTBOOT_ADDON_FILENAME: &str = "firstboot.addon.efi";
+
+/// ACL-specific: enforces that the first-boot UKI addon is present only for
+/// a clean install, and never present in the staged addon directory for any
+/// other servicing type (AB-update, runtime update, rollback).
+///
+/// `firstboot.addon.efi` is sourced *only* from the image's own live
+/// `<uki>.efi.extra.d/` directory, which `stage_uki_on_esp` already copies
+/// verbatim onto the target ESP before this function runs — ACL images ship
+/// this addon pre-populated there so a genuine first boot works out of the
+/// box without any activation step.
+///
+/// Unlike the verity addon, it is intentionally never sourced from the
+/// `ACL_ADDON_TEMPLATES_DIR` template library, even for a clean install: if
+/// it's absent from the live directory, it stays absent — we never promote
+/// it in from the template. This avoids accidentally reintroducing it for
+/// an image variant that has deliberately dropped it from the live copy.
+///
+/// On any other servicing type, the addon must NOT reach the target ESP:
+/// every ACL AB-update COSI is built from a never-booted image, so its live
+/// `.extra.d/` directory (already staged by `stage_uki_on_esp` before this
+/// function runs) still carries this addon regardless of whether this is
+/// truly a first boot. Left unremoved, it reintroduces
+/// `flatcar.first_boot=detected` on every update, hanging
+/// `ignition-fetch.service` after the post-update reboot.
+///
+/// This is ACL-specific; callers gate on `ctx.image_distro().is_acl()`,
+/// matching the verity addon's existing convention — non-ACL images never
+/// reach this function.
+///
+/// Only reachable for `ServicingType::CleanInstall` or `ServicingType::AbUpdate`:
+/// `EspSubsystem` doesn't override `Subsystem::runs_on()`, so it inherits
+/// the default `REQUIRES_REBOOT` list (`[CleanInstall, AbUpdate]`) — no
+/// other servicing type ever reaches `copy_file_artifacts`, and thus this
+/// function. Takes the servicing type directly (rather than a pre-computed
+/// bool) so an unexpected value — which would indicate that invariant no
+/// longer holds — is a hard error instead of silently doing the wrong thing.
+pub(crate) fn enforce_firstboot_addon_policy(
+    mount_point: &Path,
+    esp_mount_path: &Path,
+    servicing_type: ServicingType,
+) -> Result<(), Error> {
+    ensure!(
+        matches!(
+            servicing_type,
+            ServicingType::CleanInstall | ServicingType::AbUpdate
+        ),
+        "enforce_firstboot_addon_policy called with unexpected servicing type \
+         {servicing_type:?}; expected CleanInstall or AbUpdate"
+    );
+
+    if servicing_type == ServicingType::CleanInstall {
+        // Nothing to do: if the addon is already staged (via
+        // stage_uki_on_esp's verbatim copy of the image's live .extra.d/),
+        // it's left as-is. If it's absent, it's never promoted in from the
+        // ACL_ADDON_TEMPLATES_DIR template library — see doc comment above.
+        return Ok(());
+    }
+
+    let staging_addon_dir = join_relative(mount_point, esp_mount_path)
+        .join(UKI_DIRECTORY)
+        .join(TMP_UKI_ADDON_DIR_NAME);
+    let staged_firstboot = staging_addon_dir.join(FIRSTBOOT_ADDON_FILENAME);
+
+    if staged_firstboot.exists() {
+        // Every ACL AB-update COSI is built from a never-booted image, so
+        // its live .extra.d/ directory still carries this addon even though
+        // this is not a genuine first boot. Strip it so Ignition does not
+        // re-trigger and hang on the post-update reboot.
+        debug!(
+            "Removing '{}' from staged addon directory — not a clean install",
+            staged_firstboot.display()
+        );
+        fs::remove_file(&staged_firstboot).with_context(|| {
+            format!(
+                "Failed to remove firstboot addon '{}' for a non-clean-install servicing type",
+                staged_firstboot.display()
+            )
+        })?;
+    }
 
     Ok(())
 }
@@ -1071,7 +1162,7 @@ mod tests {
 
     /// Helper: creates a mock image ESP with verity addon templates.
     fn setup_image_with_verity_templates(image_esp: &Path) -> (PathBuf, PathBuf) {
-        let template_dir = image_esp.join(VERITY_ADDON_TEMPLATES_DIR);
+        let template_dir = image_esp.join(ACL_ADDON_TEMPLATES_DIR);
         fs::create_dir_all(&template_dir).unwrap();
         let a_path = template_dir.join("verity-a.addon.efi");
         let b_path = template_dir.join("verity-b.addon.efi");
@@ -1164,7 +1255,7 @@ mod tests {
     #[test]
     fn test_activate_verity_addon_missing_selected_template() {
         let image_esp = tempdir().unwrap();
-        let template_dir = image_esp.path().join(VERITY_ADDON_TEMPLATES_DIR);
+        let template_dir = image_esp.path().join(ACL_ADDON_TEMPLATES_DIR);
         fs::create_dir_all(&template_dir).unwrap();
         // Only write verity-a, not verity-b
         fs::write(template_dir.join("verity-a.addon.efi"), b"a-content").unwrap();
@@ -1254,6 +1345,169 @@ mod tests {
         assert_eq!(
             fs::read(staged_addon_dir.join("firstboot.addon.efi")).unwrap(),
             b"firstboot-data"
+        );
+    }
+
+    // ── enforce_firstboot_addon_policy tests ────────────────────────────────
+
+    /// Clean install: firstboot addon already staged (as if copied verbatim
+    /// by stage_uki_on_esp from the image's live .extra.d/) is left as-is.
+    #[test]
+    fn test_enforce_firstboot_clean_install_already_staged() {
+        let mount_point = tempdir().unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)).unwrap();
+        let staged_addon_dir = join_relative(mount_point.path(), DEFAULT_ESP_MOUNT_POINT_PATH)
+            .join(UKI_DIRECTORY)
+            .join(TMP_UKI_ADDON_DIR_NAME);
+        fs::create_dir_all(&staged_addon_dir).unwrap();
+        fs::write(
+            staged_addon_dir.join(FIRSTBOOT_ADDON_FILENAME),
+            b"live-firstboot-content",
+        )
+        .unwrap();
+
+        enforce_firstboot_addon_policy(
+            mount_point.path(),
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+            ServicingType::CleanInstall,
+        )
+        .unwrap();
+
+        assert_eq!(
+            fs::read(staged_addon_dir.join(FIRSTBOOT_ADDON_FILENAME)).unwrap(),
+            b"live-firstboot-content"
+        );
+    }
+
+    /// Clean install: firstboot addon present only in the template dir is
+    /// intentionally NOT copied in — unlike the verity addon, this addon is
+    /// only ever sourced from the image's live .extra.d/ directory.
+    #[test]
+    fn test_enforce_firstboot_clean_install_ignores_template() {
+        let image_esp = tempdir().unwrap();
+        let template_dir = image_esp.path().join(ACL_ADDON_TEMPLATES_DIR);
+        fs::create_dir_all(&template_dir).unwrap();
+        fs::write(
+            template_dir.join(FIRSTBOOT_ADDON_FILENAME),
+            b"template-firstboot-content",
+        )
+        .unwrap();
+
+        let mount_point = tempdir().unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)).unwrap();
+
+        enforce_firstboot_addon_policy(
+            mount_point.path(),
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+            ServicingType::CleanInstall,
+        )
+        .unwrap();
+
+        let staged_addon_dir = join_relative(mount_point.path(), DEFAULT_ESP_MOUNT_POINT_PATH)
+            .join(UKI_DIRECTORY)
+            .join(TMP_UKI_ADDON_DIR_NAME);
+        assert!(!staged_addon_dir.join(FIRSTBOOT_ADDON_FILENAME).exists());
+    }
+
+    /// Clean install: firstboot addon absent from both sources is a silent no-op.
+    #[test]
+    fn test_enforce_firstboot_clean_install_absent_everywhere() {
+        let mount_point = tempdir().unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)).unwrap();
+
+        enforce_firstboot_addon_policy(
+            mount_point.path(),
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+            ServicingType::CleanInstall,
+        )
+        .unwrap();
+
+        let staged_addon_dir = join_relative(mount_point.path(), DEFAULT_ESP_MOUNT_POINT_PATH)
+            .join(UKI_DIRECTORY)
+            .join(TMP_UKI_ADDON_DIR_NAME);
+        assert!(!staged_addon_dir.join(FIRSTBOOT_ADDON_FILENAME).exists());
+    }
+
+    /// Not a clean install (AB-update): firstboot addon staged verbatim from
+    /// the image's live .extra.d/ is removed — this is the actual fix for
+    /// the Ignition re-fetch hang on Azure AB-updates.
+    #[test]
+    fn test_enforce_firstboot_update_removes_staged_addon() {
+        let mount_point = tempdir().unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)).unwrap();
+        let staged_addon_dir = join_relative(mount_point.path(), DEFAULT_ESP_MOUNT_POINT_PATH)
+            .join(UKI_DIRECTORY)
+            .join(TMP_UKI_ADDON_DIR_NAME);
+        fs::create_dir_all(&staged_addon_dir).unwrap();
+        fs::write(
+            staged_addon_dir.join(FIRSTBOOT_ADDON_FILENAME),
+            b"live-firstboot-content",
+        )
+        .unwrap();
+        // Another addon that must be preserved.
+        fs::write(staged_addon_dir.join("oem.addon.efi"), b"oem-content").unwrap();
+
+        enforce_firstboot_addon_policy(
+            mount_point.path(),
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+            ServicingType::AbUpdate,
+        )
+        .unwrap();
+
+        assert!(!staged_addon_dir.join(FIRSTBOOT_ADDON_FILENAME).exists());
+        assert_eq!(
+            fs::read(staged_addon_dir.join("oem.addon.efi")).unwrap(),
+            b"oem-content"
+        );
+    }
+
+    /// Not a clean install: firstboot addon absent from the staged dir is a
+    /// silent no-op (and the template, if any, is never consulted/copied).
+    #[test]
+    fn test_enforce_firstboot_update_no_op_when_absent() {
+        let mount_point = tempdir().unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)).unwrap();
+
+        enforce_firstboot_addon_policy(
+            mount_point.path(),
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+            ServicingType::AbUpdate,
+        )
+        .unwrap();
+
+        let staged_addon_dir = join_relative(mount_point.path(), DEFAULT_ESP_MOUNT_POINT_PATH)
+            .join(UKI_DIRECTORY)
+            .join(TMP_UKI_ADDON_DIR_NAME);
+        assert!(!staged_addon_dir.join(FIRSTBOOT_ADDON_FILENAME).exists());
+    }
+
+    /// Any servicing type other than CleanInstall/AbUpdate is a hard error:
+    /// this function is only ever reachable for those two (EspSubsystem
+    /// inherits the default REQUIRES_REBOOT gate), so any other value would
+    /// indicate that invariant no longer holds.
+    #[test]
+    fn test_enforce_firstboot_errors_on_unexpected_servicing_type() {
+        let mount_point = tempdir().unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)).unwrap();
+
+        let err = enforce_firstboot_addon_policy(
+            mount_point.path(),
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+            ServicingType::RuntimeUpdate,
+        )
+        .unwrap_err();
+
+        assert!(
+            err.to_string().contains("unexpected servicing type"),
+            "Expected 'unexpected servicing type' error, got: {err}"
+        );
+        // Confirms the servicing type's actual Debug value is interpolated
+        // via the captured identifier ({servicing_type:?}), not left as a
+        // literal placeholder — Rust supports captured identifiers in
+        // format/ensure! strings since 1.58.
+        assert!(
+            err.to_string().contains("RuntimeUpdate"),
+            "Expected the actual servicing type value in the error, got: {err}"
         );
     }
 
