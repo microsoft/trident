@@ -19,8 +19,8 @@ jobs:
     name: Validate COSI metadata schema
     runs-on: ubuntu-latest
     env:
-      SCHEMA: docs/Reference/Composable-OS-Image/cosi-metadata-v1.2.schema.json
-      SAMPLES: tests/cosi/metadata_samples
+      SCHEMA_DIR: docs/Reference/Composable-OS-Image
+      SAMPLES_ROOT: tests/cosi/metadata_samples
     steps:
       - uses: actions/checkout@v4
 
@@ -31,24 +31,64 @@ jobs:
       - name: Install check-jsonschema
         run: pip install check-jsonschema
 
-      - name: Schema is a valid JSON Schema (draft 2020-12)
-        run: check-jsonschema --check-metaschema "$SCHEMA"
-
-      - name: Valid samples conform to the schema
-        run: check-jsonschema --schemafile "$SCHEMA" "$SAMPLES"/valid/*.json
-
-      - name: Invalid samples are rejected by the schema
+      # Iterates every versioned schema (cosi-metadata-v<MAJOR>.<MINOR>.schema.json)
+      # and validates its paired samples under $SAMPLES_ROOT/v<MAJOR>.<MINOR>/.
+      # Adding a new revision (e.g. v1.3) needs only the schema file plus a
+      # matching samples directory; this workflow requires no changes.
+      - name: Validate schemas and samples
         shell: bash
         run: |
           set -uo pipefail
           shopt -s nullglob
+
           rc=0
-          for f in "$SAMPLES"/invalid/*.json; do
-            if check-jsonschema --schemafile "$SCHEMA" "$f" >/dev/null 2>&1; then
-              echo "::error file=$f::expected this sample to FAIL schema validation, but it was accepted"
+          schemas=("$SCHEMA_DIR"/cosi-metadata-v*.schema.json)
+          if [ "${#schemas[@]}" -eq 0 ]; then
+            echo "::error::no COSI schema files found in $SCHEMA_DIR"
+            exit 1
+          fi
+
+          for schema in "${schemas[@]}"; do
+            version="$(basename "$schema" | sed -E 's/^cosi-metadata-(v[0-9]+\.[0-9]+)\.schema\.json$/\1/')"
+            echo "::group::COSI schema $version ($schema)"
+
+            echo "-> schema is a valid JSON Schema (draft 2020-12)"
+            check-jsonschema --check-metaschema "$schema" || rc=1
+
+            samples="$SAMPLES_ROOT/$version"
+            if [ ! -d "$samples" ]; then
+              echo "::error file=$schema::no samples directory '$samples' for schema $version"
+              rc=1
+              echo "::endgroup::"
+              continue
+            fi
+
+            valid_files=("$samples"/valid/*.json)
+            if [ "${#valid_files[@]}" -eq 0 ]; then
+              echo "::error::no valid samples in $samples/valid"
               rc=1
             else
-              echo "ok (correctly rejected): $f"
+              echo "-> valid samples must conform"
+              check-jsonschema --schemafile "$schema" "${valid_files[@]}" || rc=1
             fi
+
+            invalid_files=("$samples"/invalid/*.json)
+            if [ "${#invalid_files[@]}" -eq 0 ]; then
+              echo "::error::no invalid samples in $samples/invalid"
+              rc=1
+            else
+              echo "-> invalid samples must be rejected"
+              for f in "${invalid_files[@]}"; do
+                if check-jsonschema --schemafile "$schema" "$f" >/dev/null 2>&1; then
+                  echo "::error file=$f::expected this sample to FAIL $version schema validation, but it was accepted"
+                  rc=1
+                else
+                  echo "   ok (correctly rejected): $f"
+                fi
+              done
+            fi
+
+            echo "::endgroup::"
           done
+
           exit "$rc"
