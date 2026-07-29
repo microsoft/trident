@@ -155,14 +155,6 @@ func TestInjectRollbackHealthChecks(t *testing.T) {
 		t.Fatalf("injectRollbackHealthChecks: %v", err)
 	}
 
-	// storage dropped, self-upgrade blocked.
-	if s.config.Exists("storage") {
-		t.Error("storage should be removed for the rollback update")
-	}
-	if v := s.config.S("internalParams", "selfUpgradeTrident").Data(); v != false {
-		t.Errorf("internalParams.selfUpgradeTrident = %v, want false", v)
-	}
-
 	// Two failing health checks gated to the ab-update phase.
 	checks := s.config.S("health", "checks").Children()
 	if len(checks) != 2 {

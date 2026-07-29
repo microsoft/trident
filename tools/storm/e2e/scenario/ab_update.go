@@ -18,6 +18,7 @@ import (
 	"tridenttools/pkg/netlisten"
 	"tridenttools/storm/e2e/testrings"
 	"tridenttools/storm/e2e/validate"
+	"tridenttools/storm/utils/retry"
 	"tridenttools/storm/utils/ssh/sftp"
 	"tridenttools/storm/utils/sshutils"
 	"tridenttools/storm/utils/trident"
@@ -92,6 +93,7 @@ const (
 // the surrounding HasABUpdate() gate.
 func (s *TridentE2EScenario) addAutoRollbackTests(r storm.TestRegistrar) {
 	r.RegisterTestCase("auto-rollback-sync-hc", s.syncHostConfig)
+	r.RegisterTestCase("auto-rollback-update-hc", s.updateHostConfig)
 	r.RegisterTestCase("auto-rollback-inject-hc", s.injectRollbackHealthChecks)
 	r.RegisterTestCase("auto-rollback-upload-hc", s.uploadNewConfig)
 	r.RegisterTestCase("auto-rollback-update", func(tc storm.TestCase) error {
@@ -100,17 +102,15 @@ func (s *TridentE2EScenario) addAutoRollbackTests(r storm.TestRegistrar) {
 	r.RegisterTestCase("validate-auto-rollback", s.validateAutoRollback)
 }
 
-// injectRollbackHealthChecks mutates the synced Host Config so the next A/B
-// update fails its health checks and rolls back. It blocks Trident
-// self-upgrade, drops the storage section (not needed for an update, matching
-// the regular update path), and appends a script check that always fails plus
-// a systemd check on non-existent services, both gated to the ab-update phase.
-// The image URL is left untouched so the rolled-back update re-stages the same
-// image (the legacy scenario runs with incrementUpdateVersion=false).
+// injectRollbackHealthChecks appends failing health checks to the (already
+// image-bumped) Host Config so the next A/B update fails and rolls back: a
+// script check that always fails plus a systemd check on non-existent services,
+// both gated to the ab-update phase. It runs after updateHostConfig, which
+// already points the config at a fresh image (so the update passes duplicate
+// filesystem-UUID validation and actually reaches the health-check phase),
+// drops storage, and blocks self-upgrade. Mirrors the failing checks the legacy
+// ab-update helper adds for --forced-rollback.
 func (s *TridentE2EScenario) injectRollbackHealthChecks(tc storm.TestCase) error {
-	s.config.Set(false, "internalParams", "selfUpgradeTrident")
-	s.config.Delete("storage")
-
 	scriptCheck := map[string]interface{}{
 		"name":    rollbackScriptCheckName,
 		"content": "exit 1",
@@ -369,19 +369,34 @@ func (s *TridentE2EScenario) abUpdateOs(tc storm.TestCase, opts abUpdateOptions)
 		}
 	}
 
-	// Wait for SSH client to disconnect, meaning the host is rebooting, before
-	// trying to reconnect again.
+	// After a committed A/B update the host reboots and SSH drops; wait for that
+	// before reconnecting.
 	logrus.Info("Waiting for SSH client to disconnect after Trident A/B update...")
 	disconnectCtx, cancel := context.WithTimeout(tc.Context(), time.Minute*2)
 	defer cancel()
 	err = s.waitForSshToDisconnect(disconnectCtx)
 	if err != nil {
-		// At this point we expect the host to be rebooting, so failure to detect
-		// disconnection is a test failure.
+		// Both a normal A/B update and a forced rollback reboot the host (the
+		// rollback reboots into the staged volume to run the failing health
+		// checks), so a missing disconnect is a test failure either way.
 		tc.FailFromError(fmt.Errorf("failed to detect SSH disconnection after Trident A/B update: %w", err))
 	}
 
 	logrus.Info("SSH client disconnected, host is rebooting. Will attempt to reconnect...")
+
+	if opts.expectRollback {
+		// A forced rollback reboots TWICE: into the staged volume to run the
+		// failing health checks, then back to the current volume once the
+		// rollback is applied. A single reconnect can land on the host mid-way
+		// through the second reboot, so re-dial a fresh client and re-check
+		// until the service settles in its failed-commit state.
+		if err := s.waitForFailedCommitAfterRollback(tc); err != nil {
+			tc.FailFromError(err)
+		}
+		// The rollback returned the host to its current active volume, so the
+		// expected active volume is left unchanged.
+		return nil
+	}
 
 	// Then, try to reconnect via SSH and check that Trident is running.
 	// Longer timeout since the host will be rebooting while we wait.
@@ -396,21 +411,54 @@ func (s *TridentE2EScenario) abUpdateOs(tc storm.TestCase, opts abUpdateOptions)
 	logrus.Info("Reacquired SSH connection to host after reboot.")
 
 	// Give it some extra time to ensure Trident is up after reboot.
-	// A forced rollback is expected to leave the commit in a failed state (the
-	// update's health checks failed and Trident rolled back), whereas a normal
-	// A/B update must commit successfully.
-	err = trident.CheckTridentService(s.sshClient, s.runtime, time.Minute*2, !opts.expectRollback)
+	err = trident.CheckTridentService(s.sshClient, s.runtime, time.Minute*2, true)
 	if err != nil {
 		tc.FailFromError(err)
 	}
 
-	// A committed A/B update reboots into the other volume; a rollback returns
-	// to the current one. Only flip the expected active volume when the update
-	// was expected to commit.
-	if !opts.expectRollback {
-		s.expectedActiveVolume = s.expectedActiveVolume.Other()
+	// The A/B update rebooted into the other volume; flip the expected active
+	// volume so subsequent validation checks the correct one.
+	s.expectedActiveVolume = s.expectedActiveVolume.Other()
+
+	return nil
+}
+
+// waitForFailedCommitAfterRollback reconnects to the host after a forced
+// rollback and waits until the Trident service reports its failed-commit state.
+// It re-dials a fresh SSH client on every attempt so it tolerates the second
+// reboot the rollback performs (into the staged volume for health checks, then
+// back to the current volume). Mirrors the retry-with-fresh-client behaviour of
+// the legacy `check-trident-service` helper.
+func (s *TridentE2EScenario) waitForFailedCommitAfterRollback(tc storm.TestCase) error {
+	const settleTimeout = time.Minute * 8
+	overallCtx, cancel := context.WithTimeout(tc.Context(), settleTimeout)
+	defer cancel()
+
+	_, err := retry.Retry(settleTimeout, time.Second*10, func(attempt int) (*bool, error) {
+		logrus.Infof("Checking for settled rollback state (attempt %d)", attempt)
+
+		// Force a fresh dial: drop any stale client so populateSshClient
+		// reconnects rather than reusing a connection killed by the reboot.
+		if s.sshClient != nil {
+			s.sshClient.Close()
+			s.sshClient = nil
+		}
+		if err := s.populateSshClient(overallCtx); err != nil {
+			return nil, fmt.Errorf("failed to reconnect after rollback: %w", err)
+		}
+
+		// expectSuccessfulCommit=false: the update's health checks failed and
+		// Trident rolled back, so the service must report a failed commit.
+		if err := trident.CheckTridentService(s.sshClient, s.runtime, time.Second*30, false); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	})
+	if err != nil {
+		return fmt.Errorf("host did not settle into the expected failed-commit state after rollback: %w", err)
 	}
 
+	logrus.Info("Host settled into the expected failed-commit (rolled-back) state.")
 	return nil
 }
 
