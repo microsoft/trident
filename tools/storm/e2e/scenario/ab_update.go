@@ -37,14 +37,26 @@ func (s *TridentE2EScenario) addAbUpdateTests(r storm.TestRegistrar, prefix stri
 	})
 }
 
+// splitTestsSkippedForCurrentRing reports whether split A/B update testing is
+// skipped on the current ring. The lowest ring for which we run split testing
+// is 'prerelease'.
+func (s *TridentE2EScenario) splitTestsSkippedForCurrentRing() bool {
+	return s.args.TestRing < testrings.TestRingPre
+}
+
+// skipIfSplitTestsDisabled marks tc as skipped (and, via storm, stops it) when
+// split A/B update testing does not run on the current ring. Shared by the
+// split A/B update test cases and their validation so they skip together.
+func (s *TridentE2EScenario) skipIfSplitTestsDisabled(tc storm.TestCase) {
+	if s.splitTestsSkippedForCurrentRing() {
+		tc.Skip(fmt.Sprintf("Skipping split AB update test on ring '%s'", s.args.TestRing.ToString()))
+	}
+}
+
 // addSplitABUpdateTests adds the split A/B update test cases to the provided test registrar
 func (s *TridentE2EScenario) addSplitABUpdateTests(r storm.TestRegistrar, prefix string) {
 	filterSplitTestForCurrentRing := func(s *TridentE2EScenario, tc storm.TestCase, testFn func(storm.TestCase) error) error {
-		// The lowest ring for which we do split testing is 'prerelease'.
-		if s.args.TestRing < testrings.TestRingPre {
-			tc.Skip(fmt.Sprintf("Skipping split AB update test on ring '%s'", s.args.TestRing.ToString()))
-		}
-
+		s.skipIfSplitTestsDisabled(tc)
 		return testFn(tc)
 	}
 

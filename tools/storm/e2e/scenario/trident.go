@@ -193,7 +193,13 @@ func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 		s.addAbUpdateTests(r, "ab-update-1")
 		r.RegisterTestCase("validate-ab-update-1", s.validateHostState)
 		s.addSplitABUpdateTests(r, "ab-update-split")
-		r.RegisterTestCase("validate-ab-update-split", s.validateHostState)
+		// Validation of the split A/B update must skip on the same rings its
+		// update cases do, otherwise it would run (and likely fail) against a
+		// host that never underwent the split update.
+		r.RegisterTestCase("validate-ab-update-split", func(tc storm.TestCase) error {
+			s.skipIfSplitTestsDisabled(tc)
+			return s.validateHostState(tc)
+		})
 	}
 	return nil
 }
