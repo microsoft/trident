@@ -33,7 +33,7 @@ func (s *TridentE2EScenario) addAbUpdateTests(r storm.TestRegistrar, prefix stri
 	r.RegisterTestCase(prefix+"-update-hc", s.updateHostConfig)
 	r.RegisterTestCase(prefix+"-upload-new-hc", s.uploadNewConfig)
 	r.RegisterTestCase(prefix+"-ab-update", func(tc storm.TestCase) error {
-		return s.abUpdateOs(tc, false)
+		return s.abUpdateOs(tc, abUpdateOptions{})
 	})
 }
 
@@ -71,9 +71,66 @@ func (s *TridentE2EScenario) addSplitABUpdateTests(r storm.TestRegistrar, prefix
 	})
 	r.RegisterTestCase(prefix+"-ab-update", func(tc storm.TestCase) error {
 		return filterSplitTestForCurrentRing(s, tc, func(tc storm.TestCase) error {
-			return s.abUpdateOs(tc, true)
+			return s.abUpdateOs(tc, abUpdateOptions{split: true})
 		})
 	})
+}
+
+// Health check names injected to force an A/B-update rollback. They mirror the
+// checks the legacy pipeline adds via `storm-trident helper ab-update
+// --forced-rollback` and produce the failure-log messages asserted by rollback
+// validation (see validate.ValidateRollback).
+const (
+	rollbackScriptCheckName  = "invoke-rollback-from-script"
+	rollbackSystemdCheckName = "check-non-existent-service-to-invoke-rollback"
+)
+
+// addAutoRollbackTests registers the auto-rollback test cases: they force an
+// A/B update to fail its health checks so Trident rolls back to the current
+// volume, then validate the rolled-back state. This ports the legacy
+// e2e-test-abupdate-scenario.yml `--forced-rollback` flow and self-selects with
+// the surrounding HasABUpdate() gate.
+func (s *TridentE2EScenario) addAutoRollbackTests(r storm.TestRegistrar) {
+	r.RegisterTestCase("auto-rollback-sync-hc", s.syncHostConfig)
+	r.RegisterTestCase("auto-rollback-inject-hc", s.injectRollbackHealthChecks)
+	r.RegisterTestCase("auto-rollback-upload-hc", s.uploadNewConfig)
+	r.RegisterTestCase("auto-rollback-update", func(tc storm.TestCase) error {
+		return s.abUpdateOs(tc, abUpdateOptions{expectRollback: true})
+	})
+	r.RegisterTestCase("validate-auto-rollback", s.validateAutoRollback)
+}
+
+// injectRollbackHealthChecks mutates the synced Host Config so the next A/B
+// update fails its health checks and rolls back. It blocks Trident
+// self-upgrade, drops the storage section (not needed for an update, matching
+// the regular update path), and appends a script check that always fails plus
+// a systemd check on non-existent services, both gated to the ab-update phase.
+// The image URL is left untouched so the rolled-back update re-stages the same
+// image (the legacy scenario runs with incrementUpdateVersion=false).
+func (s *TridentE2EScenario) injectRollbackHealthChecks(tc storm.TestCase) error {
+	s.config.Set(false, "internalParams", "selfUpgradeTrident")
+	s.config.Delete("storage")
+
+	scriptCheck := map[string]interface{}{
+		"name":    rollbackScriptCheckName,
+		"content": "exit 1",
+		"runOn":   []interface{}{"ab-update"},
+	}
+	if err := s.config.ArrayAppend(scriptCheck, "health", "checks"); err != nil {
+		return fmt.Errorf("failed to add rollback script health check: %w", err)
+	}
+
+	systemdCheck := map[string]interface{}{
+		"name":            rollbackSystemdCheckName,
+		"runOn":           []interface{}{"ab-update"},
+		"systemdServices": []interface{}{"non-existent-service1", "non-existent-service2"},
+		"timeoutSeconds":  30,
+	}
+	if err := s.config.ArrayAppend(systemdCheck, "health", "checks"); err != nil {
+		return fmt.Errorf("failed to add rollback systemd health check: %w", err)
+	}
+
+	return nil
 }
 
 func (s *TridentE2EScenario) syncHostConfig(tc storm.TestCase) error {
@@ -216,7 +273,18 @@ func (s *TridentE2EScenario) uploadNewConfig(tc storm.TestCase) error {
 	return nil
 }
 
-func (s *TridentE2EScenario) abUpdateOs(tc storm.TestCase, split bool) error {
+// abUpdateOptions controls a single A/B update run performed by abUpdateOs.
+type abUpdateOptions struct {
+	// split stages and finalizes the update as two independent operations,
+	// validating the staged state in between.
+	split bool
+	// expectRollback runs an update that is expected to fail its health checks
+	// and auto-roll-back: the commit is expected to fail and the host returns
+	// to its current active volume rather than flipping to the other one.
+	expectRollback bool
+}
+
+func (s *TridentE2EScenario) abUpdateOs(tc storm.TestCase, opts abUpdateOptions) error {
 	updateCmd := "update"
 	if s.runtime == trident.RuntimeTypeHost {
 		// For host, use grpc-client for update
@@ -267,7 +335,7 @@ func (s *TridentE2EScenario) abUpdateOs(tc storm.TestCase, split bool) error {
 		}
 	}()
 
-	if !split {
+	if !opts.split {
 		// regular case
 		logrus.Infof("Running Trident A/B update...")
 		err = runTridentUpdate(tc, s.runtime, s.sshClient, args, false)
@@ -328,14 +396,20 @@ func (s *TridentE2EScenario) abUpdateOs(tc storm.TestCase, split bool) error {
 	logrus.Info("Reacquired SSH connection to host after reboot.")
 
 	// Give it some extra time to ensure Trident is up after reboot.
-	err = trident.CheckTridentService(s.sshClient, s.runtime, time.Minute*2, true)
+	// A forced rollback is expected to leave the commit in a failed state (the
+	// update's health checks failed and Trident rolled back), whereas a normal
+	// A/B update must commit successfully.
+	err = trident.CheckTridentService(s.sshClient, s.runtime, time.Minute*2, !opts.expectRollback)
 	if err != nil {
 		tc.FailFromError(err)
 	}
 
-	// The A/B update rebooted into the other volume; flip the expected active
-	// volume so subsequent validation checks the correct one.
-	s.expectedActiveVolume = s.expectedActiveVolume.Other()
+	// A committed A/B update reboots into the other volume; a rollback returns
+	// to the current one. Only flip the expected active volume when the update
+	// was expected to commit.
+	if !opts.expectRollback {
+		s.expectedActiveVolume = s.expectedActiveVolume.Other()
+	}
 
 	return nil
 }

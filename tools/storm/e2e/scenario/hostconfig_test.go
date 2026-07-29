@@ -141,3 +141,44 @@ func TestApplyContainerPcrExclusion_NonUsrverityUnchanged(t *testing.T) {
 		t.Errorf("non-usrverity pcrs = %v, want [secure-boot-policy] (unchanged)", got)
 	}
 }
+
+func TestInjectRollbackHealthChecks(t *testing.T) {
+	hc, err := hostconfig.NewHostConfigFromYaml([]byte(
+		"image:\n  url: http://x/regular.cosi\n" +
+			"storage:\n  disks:\n  - id: os\n" +
+			"os:\n  users: []\n"))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	s := &TridentE2EScenario{config: hc}
+	if err := s.injectRollbackHealthChecks(nil); err != nil {
+		t.Fatalf("injectRollbackHealthChecks: %v", err)
+	}
+
+	// storage dropped, self-upgrade blocked.
+	if s.config.Exists("storage") {
+		t.Error("storage should be removed for the rollback update")
+	}
+	if v := s.config.S("internalParams", "selfUpgradeTrident").Data(); v != false {
+		t.Errorf("internalParams.selfUpgradeTrident = %v, want false", v)
+	}
+
+	// Two failing health checks gated to the ab-update phase.
+	checks := s.config.S("health", "checks").Children()
+	if len(checks) != 2 {
+		t.Fatalf("health.checks len = %d, want 2", len(checks))
+	}
+	names := map[string]bool{}
+	for _, c := range checks {
+		names[c.S("name").Data().(string)] = true
+		runOn := c.S("runOn").Children()
+		if len(runOn) != 1 || runOn[0].Data().(string) != "ab-update" {
+			t.Errorf("check %v runOn = %v, want [ab-update]", c.S("name").Data(), runOn)
+		}
+	}
+	for _, want := range []string{rollbackScriptCheckName, rollbackSystemdCheckName} {
+		if !names[want] {
+			t.Errorf("missing health check %q (have %v)", want, names)
+		}
+	}
+}

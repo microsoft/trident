@@ -82,3 +82,35 @@ func (s *TridentE2EScenario) validateHostState(tc storm.TestCase) error {
 
 	return nil
 }
+
+// validateAutoRollback validates the state after a forced A/B-update rollback.
+// Unlike validateHostState (which self-selects rollback validation only for
+// scenarios whose Host Config declares a top-level `health` section), this case
+// always asserts the rollback outcome: the failed update rolled back onto the
+// current volume, so the host stays provisioned with the active volume
+// unchanged. It ports rollback_test.py for the auto-rollback (provisioned)
+// case.
+func (s *TridentE2EScenario) validateAutoRollback(tc storm.TestCase) error {
+	connCtx, cancel := context.WithTimeout(tc.Context(), time.Minute)
+	defer cancel()
+	if err := s.populateSshClient(connCtx); err != nil {
+		return err
+	}
+
+	hs, err := trident.GetHostStatus(s.runtime, s.sshClient)
+	if err != nil {
+		return err
+	}
+
+	var sa validate.SoftAsserter
+	validate.ValidateRollback(&sa, s.sshClient, hs,
+		trident.ServicingStateProvisioned, s.expectedActiveVolume)
+
+	if err := sa.Err(); err != nil {
+		tc.FailFromError(err)
+	}
+
+	logrus.Infof("Auto-rollback validation summary:\n%s", sa.Summary())
+
+	return nil
+}
