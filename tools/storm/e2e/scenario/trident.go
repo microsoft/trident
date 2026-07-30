@@ -188,6 +188,9 @@ func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 	r.RegisterTestCase("install-os", s.installOs)
 	r.RegisterTestCase("check-trident-ssh", s.checkTridentViaSshAfterInstall)
 	r.RegisterTestCase("validate-install", s.validateHostState)
+	// Host-only SELinux + tracing diagnostics, scoped to the clean install
+	// (mirrors legacy check-selinux/check-tracing). Self-skips on container.
+	r.RegisterTestCase("validate-host-diagnostics", s.validateHostDiagnostics)
 
 	if s.originalConfig.HasABUpdate() {
 		s.addAbUpdateTests(r, "ab-update-1")

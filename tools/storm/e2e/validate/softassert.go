@@ -52,6 +52,14 @@ func (s *SoftAsserter) Pass(name string) {
 	s.pass(name)
 }
 
+// Passf records a passing sub-check and logs an accompanying informational
+// message (e.g. diagnostic output that is surfaced but not treated as a
+// failure).
+func (s *SoftAsserter) Passf(name, format string, args ...any) {
+	logrus.Infof("validation sub-check passed (%s): "+format, append([]any{name}, args...)...)
+	s.results = append(s.results, subCheck{name: name})
+}
+
 // Fail records and logs a failure for the named sub-check.
 func (s *SoftAsserter) Fail(name string, err error) {
 	s.record(name, err)

@@ -83,7 +83,50 @@ func (s *TridentE2EScenario) validateHostState(tc storm.TestCase) error {
 	return nil
 }
 
-// validateAutoRollback validates the state after a forced A/B-update rollback.
+// defaultCleanInstallMetricsFile is the trace-stream file netlisten writes for
+// the clean install when no explicit tracestream file is configured. Kept in
+// sync with installOs.
+const defaultCleanInstallMetricsFile = "trident-clean-install-metrics.jsonl"
+
+// cleanInstallTraceFile returns the local path of the trace-stream file netlisten
+// captured for the clean install.
+func (s *TridentE2EScenario) cleanInstallTraceFile() string {
+	if s.args.TracestreamFile != "" {
+		return s.args.TracestreamFile
+	}
+	return defaultCleanInstallMetricsFile
+}
+
+// validateHostDiagnostics ports the host-only check-selinux and check-tracing
+// steps that legacy ran after clean install: it confirms no SELinux denials
+// were logged (surfaced via audit2allow), that Trident's commit tracing metric
+// reached journald, and that the servicing feature-usage metric was captured in
+// the install trace-stream file. It self-skips on the container runtime, where
+// these host-side concerns do not apply.
+func (s *TridentE2EScenario) validateHostDiagnostics(tc storm.TestCase) error {
+	if s.runtime != trident.RuntimeTypeHost {
+		tc.Skip("Host diagnostics (SELinux + tracing) only apply to the host runtime")
+	}
+
+	connCtx, cancel := context.WithTimeout(tc.Context(), time.Minute)
+	defer cancel()
+	if err := s.populateSshClient(connCtx); err != nil {
+		return err
+	}
+
+	var sa validate.SoftAsserter
+	validate.ValidateSelinuxDenials(&sa, s.sshClient)
+	validate.ValidateJournaldTracing(&sa, s.sshClient)
+	validate.ValidateTraceFileMetric(&sa, s.cleanInstallTraceFile())
+
+	if err := sa.Err(); err != nil {
+		tc.FailFromError(err)
+	}
+	logrus.Infof("Host diagnostics validation summary:\n%s", sa.Summary())
+
+	return nil
+}
+
 // Unlike validateHostState (which self-selects rollback validation only for
 // scenarios whose Host Config declares a top-level `health` section), this case
 // always asserts the rollback outcome: the failed update rolled back onto the
