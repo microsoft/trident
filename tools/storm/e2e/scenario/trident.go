@@ -195,6 +195,8 @@ func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 		// Auto-rollback: force a failing A/B update and confirm the host rolls
 		// back to the current volume. Legacy runs this for every A/B config.
 		s.addAutoRollbackTests(r)
+		// Second A/B update: the return update into OS A after the rollback.
+		s.addSecondAbUpdateTests(r)
 		s.addSplitABUpdateTests(r, "ab-update-split")
 		// Validation of the split A/B update must skip on the same rings its
 		// update cases do, otherwise it would run (and likely fail) against a

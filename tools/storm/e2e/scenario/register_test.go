@@ -83,6 +83,18 @@ func TestRegisterTestCases_ABUpdate_RegistersValidation(t *testing.T) {
 	assertOrder(t, r.names, "auto-rollback-update", "validate-auto-rollback")
 	assertOrder(t, r.names, "validate-auto-rollback", "ab-update-split-sync-hc")
 
+	// Second A/B update (return into OS A) must be registered in order, after
+	// the auto-rollback and before the split A/B update.
+	for _, n := range []string{
+		"ab-update-2-sync-hc", "ab-update-2-clear-hc", "ab-update-2-update-hc",
+		"ab-update-2-upload-new-hc", "ab-update-2-ab-update", "validate-ab-update-2",
+	} {
+		mustContain(t, r.names, n)
+	}
+	assertOrder(t, r.names, "validate-auto-rollback", "ab-update-2-sync-hc")
+	assertOrder(t, r.names, "ab-update-2-ab-update", "validate-ab-update-2")
+	assertOrder(t, r.names, "validate-ab-update-2", "ab-update-split-sync-hc")
+
 	assertUnique(t, r.names)
 }
 

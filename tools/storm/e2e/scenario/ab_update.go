@@ -102,6 +102,48 @@ func (s *TridentE2EScenario) addAutoRollbackTests(r storm.TestRegistrar) {
 	r.RegisterTestCase("validate-auto-rollback", s.validateAutoRollback)
 }
 
+// addSecondAbUpdateTests registers the second A/B update: the return update into
+// OS A after the auto-rollback left the host on OS B. It mirrors legacy's
+// "Stage and finalize A/B update into target OS A": a normal (committing) A/B
+// update that reuses the auto-rollback's image version (see
+// updateHostConfigReuseVersion) so the image UUID differs from the active
+// volume. It also clears the failing health checks the auto-rollback injected,
+// so this update commits instead of rolling back. Self-selects with the
+// surrounding HasABUpdate() gate.
+func (s *TridentE2EScenario) addSecondAbUpdateTests(r storm.TestRegistrar) {
+	r.RegisterTestCase("ab-update-2-sync-hc", s.syncHostConfig)
+	r.RegisterTestCase("ab-update-2-clear-hc", s.removeRollbackHealthChecks)
+	r.RegisterTestCase("ab-update-2-update-hc", s.updateHostConfigReuseVersion)
+	r.RegisterTestCase("ab-update-2-upload-new-hc", s.uploadNewConfig)
+	r.RegisterTestCase("ab-update-2-ab-update", func(tc storm.TestCase) error {
+		return s.abUpdateOs(tc, abUpdateOptions{})
+	})
+	r.RegisterTestCase("validate-ab-update-2", s.validateHostState)
+}
+
+// removeRollbackHealthChecks strips the failing health checks that the
+// auto-rollback step injected, so the following A/B update commits instead of
+// rolling back again. It is tolerant of the checks being absent (the synced
+// config may already be clean). Mirrors the legacy ab-update helper removing
+// those checks when it runs without --forced-rollback.
+func (s *TridentE2EScenario) removeRollbackHealthChecks(tc storm.TestCase) error {
+	checks := s.config.S("health", "checks")
+	if checks == nil {
+		return nil
+	}
+
+	kept := make([]interface{}, 0)
+	for _, check := range checks.Children() {
+		name, _ := check.S("name").Data().(string)
+		if name == rollbackScriptCheckName || name == rollbackSystemdCheckName {
+			continue
+		}
+		kept = append(kept, check.Data())
+	}
+	s.config.Set(kept, "health", "checks")
+	return nil
+}
+
 // injectRollbackHealthChecks appends failing health checks to the (already
 // image-bumped) Host Config so the next A/B update fails and rolls back: a
 // script check that always fails plus a systemd check on non-existent services,
@@ -155,8 +197,27 @@ func (s *TridentE2EScenario) syncHostConfig(tc storm.TestCase) error {
 }
 
 func (s *TridentE2EScenario) updateHostConfig(tc storm.TestCase) error {
-	// Bump the image version by 1:
-	s.version += 1
+	return s.updateHostConfigToVersion(tc, true)
+}
+
+// updateHostConfigReuseVersion points the Host Config at the current image
+// version without bumping it. It is used for the second A/B update (the return
+// into OS A after an auto-rollback), which must reuse the auto-rollback's image
+// version: that version is odd (aliased to the base image, image.cosi) and so
+// has a filesystem UUID distinct from the currently-active volume, whereas the
+// next even version would alias image_v2.cosi and collide with it. This mirrors
+// legacy's auto-rollback step running with incrementUpdateVersion=false so the
+// subsequent A/B update into OS A reuses the same image version.
+func (s *TridentE2EScenario) updateHostConfigReuseVersion(tc storm.TestCase) error {
+	return s.updateHostConfigToVersion(tc, false)
+}
+
+func (s *TridentE2EScenario) updateHostConfigToVersion(tc storm.TestCase, bump bool) error {
+	// Bump the image version by 1 unless the caller wants to reuse the current
+	// version (see updateHostConfigReuseVersion).
+	if bump {
+		s.version += 1
+	}
 
 	// Get the old image URL from config
 	oldUrl, ok := s.config.S("image", "url").Data().(string)
