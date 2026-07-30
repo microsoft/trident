@@ -54,6 +54,29 @@ storage:
       size: 8G
 `
 
+const raidConfig = `
+storage:
+  raid:
+    software:
+    - id: root
+      name: root
+      level: raid1
+      devices: [root-a, root-b]
+`
+
+const usrVerityRaidConfig = `
+storage:
+  raid:
+    software:
+    - id: usr
+      name: usr
+      level: raid1
+      devices: [usr-a, usr-b]
+  verity:
+  - id: usr
+    name: usr
+`
+
 func TestRegisterTestCases_ABUpdate_RegistersValidation(t *testing.T) {
 	s := newScenarioForTest(t, abConfig)
 	var r fakeRegistrar
@@ -116,7 +139,40 @@ func TestRegisterTestCases_NoABUpdate_OnlyInstallValidation(t *testing.T) {
 	if slices.Contains(r.names, "validate-ab-update-1") {
 		t.Error("validate-ab-update-1 should not be registered without abUpdate")
 	}
+	if slices.Contains(r.names, "rebuild-raid") {
+		t.Error("rebuild-raid should not be registered without RAID")
+	}
 	assertUnique(t, r.names)
+}
+
+func TestRegisterTestCases_Raid_RegistersRebuildRaid(t *testing.T) {
+	s := newScenarioForTest(t, raidConfig)
+	var r fakeRegistrar
+	if err := s.RegisterTestCases(&r); err != nil {
+		t.Fatalf("RegisterTestCases error: %v", err)
+	}
+
+	for _, n := range []string{"rebuild-raid-fail-disk", "rebuild-raid", "validate-rebuild-raid"} {
+		mustContain(t, r.names, n)
+	}
+	assertOrder(t, r.names, "rebuild-raid-fail-disk", "rebuild-raid")
+	assertOrder(t, r.names, "rebuild-raid", "validate-rebuild-raid")
+	// A RAID config without abUpdate must not register A/B cases.
+	if slices.Contains(r.names, "validate-ab-update-1") {
+		t.Error("non-A/B RAID config should not register A/B update cases")
+	}
+	assertUnique(t, r.names)
+}
+
+func TestRegisterTestCases_UsrVerityRaid_NoRebuildRaid(t *testing.T) {
+	s := newScenarioForTest(t, usrVerityRaidConfig)
+	var r fakeRegistrar
+	if err := s.RegisterTestCases(&r); err != nil {
+		t.Fatalf("RegisterTestCases error: %v", err)
+	}
+	if slices.Contains(r.names, "rebuild-raid") {
+		t.Error("usr-verity RAID config must not register rebuild-raid (verity rebuild unsupported)")
+	}
 }
 
 func assertOrder(t *testing.T, names []string, before, after string) {

@@ -212,6 +212,12 @@ func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 			s.addManualRollbackTests(r)
 		}
 	}
+
+	// Rebuild-raid self-selects independently of A/B: any config with software
+	// RAID that is not usr-verity. Legacy runs it VM-only (BM not yet ported).
+	if s.hardware.IsVM() && s.originalConfig.HasRebuildableRaid() {
+		s.addRebuildRaidTests(r)
+	}
 	return nil
 }
 
