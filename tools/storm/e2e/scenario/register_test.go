@@ -95,6 +95,13 @@ func TestRegisterTestCases_ABUpdate_RegistersValidation(t *testing.T) {
 	assertOrder(t, r.names, "ab-update-2-ab-update", "validate-ab-update-2")
 	assertOrder(t, r.names, "validate-ab-update-2", "ab-update-split-sync-hc")
 
+	// Manual rollback (VM A/B configs) must be registered after the split
+	// validation, in order.
+	mustContain(t, r.names, "manual-rollback")
+	mustContain(t, r.names, "validate-manual-rollback")
+	assertOrder(t, r.names, "validate-ab-update-split", "manual-rollback")
+	assertOrder(t, r.names, "manual-rollback", "validate-manual-rollback")
+
 	assertUnique(t, r.names)
 }
 

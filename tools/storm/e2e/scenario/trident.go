@@ -205,6 +205,12 @@ func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 			s.skipIfSplitTestsDisabled(tc)
 			return s.validateHostState(tc)
 		})
+
+		// Manual rollback: after the A/B updates, explicitly roll back to the
+		// previously-committed volume and validate. Legacy runs this VM-only.
+		if s.hardware.IsVM() {
+			s.addManualRollbackTests(r)
+		}
 	}
 	return nil
 }
