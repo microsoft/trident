@@ -184,6 +184,10 @@ func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 	}
 
 	r.RegisterTestCase("prepare-hc", s.prepareHostConfig)
+	// Ensure the versioned test images the A/B updates will request exist
+	// (folds the versioning half of the legacy prepare-images helper). No-op
+	// for non-A/B and OCI-hosted images.
+	r.RegisterTestCase("prepare-test-images", s.prepareTestImages)
 	r.RegisterTestCase("setup-test-host", s.setupTestHost)
 	r.RegisterTestCase("install-os", s.installOs)
 	r.RegisterTestCase("check-trident-ssh", s.checkTridentViaSshAfterInstall)

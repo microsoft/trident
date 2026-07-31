@@ -86,6 +86,10 @@ func TestRegisterTestCases_ABUpdate_RegistersValidation(t *testing.T) {
 
 	// validate-install must come right after check-trident-ssh.
 	assertOrder(t, r.names, "check-trident-ssh", "validate-install")
+	// Image prep runs after prepare-hc and before setup-test-host.
+	mustContain(t, r.names, "prepare-test-images")
+	assertOrder(t, r.names, "prepare-hc", "prepare-test-images")
+	assertOrder(t, r.names, "prepare-test-images", "setup-test-host")
 	// Host diagnostics validation runs right after install validation.
 	mustContain(t, r.names, "validate-host-diagnostics")
 	assertOrder(t, r.names, "validate-install", "validate-host-diagnostics")
