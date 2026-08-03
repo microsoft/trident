@@ -156,6 +156,14 @@ DEFINED_IMAGES: List[ImageConfig] = [
         ssh_key="files/id_rsa.pub",
     ),
     ImageConfig(
+        "trident-acl-agent-testimage",
+        base_image=BaseImage.QEMU_GUEST,
+        config="trident-vm-testimage",
+        config_file="base/baseimg-acl-agent.yaml",
+        requires_ukify=True,
+        ssh_key="files/id_rsa.pub",
+    ),
+    ImageConfig(
         "trident-vm-grub-verity-azure-testimage",
         base_image=BaseImage.CORE_SELINUX,
         config="trident-vm-testimage",

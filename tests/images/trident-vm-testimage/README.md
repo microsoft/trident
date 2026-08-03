@@ -10,8 +10,15 @@ Two sets of images are available:
 
 - regular
 - with verity
+- with UKI usr-verity for ACL-agent-driven A/B update testing
 
-For both, a set of corresponding update images is available.
+For both, a set of corresponding update images is available. The ACL-agent
+variant reuses the servicing-style VM image layout but additionally installs
+`trident-acl-agent` and enables `trident-acl-agent.service` so storm ACL-agent
+scenarios can drive a real in-guest agent talking to `tridentd`. The image does
+not preseed /etc/trident/trident-acl-agent.conf with runner-specific tunnel
+ports; the test scenario should SSH in after boot and write the real localhost
+proxy endpoints for Nebraska and the Kubernetes API server.
 
 ## Additional Prerequisites
 
@@ -23,15 +30,17 @@ For both, a set of corresponding update images is available.
 
 To build the base image, run:
 
-| Image type                   | Make command                                        | Output path                                    |
-| ---------------------------- | --------------------------------------------------- | ---------------------------------------------- |
-| Regular                      | `make artifacts/trident-vm-grub-testimage.qcow2`        | `artifacts/trident-vm-grub-testimage.qcow2`        |
-| With verity `qcow2`          | `make artifacts/trident-vm-grub-verity-testimage.qcow2` | `artifacts/trident-vm-grub-verity-testimage.qcow2` |
-| With verity fixed size `vhd` | `make artifacts/trident-vm-grub-verity-testimage.vhd`   | `artifacts/trident-vm-grub-verity-testimage.vhd`   |
+| Image type | Make command | Output path |
+| ---------- | ------------ | ----------- |
+| Regular | `make artifacts/trident-vm-grub-testimage.qcow2` | `artifacts/trident-vm-grub-testimage.qcow2` |
+| With verity `qcow2` | `make artifacts/trident-vm-grub-verity-testimage.qcow2` | `artifacts/trident-vm-grub-verity-testimage.qcow2` |
+| With verity fixed size `vhd` | `make artifacts/trident-vm-grub-verity-testimage.vhd` | `artifacts/trident-vm-grub-verity-testimage.vhd` |
+| ACL-agent UKI usr-verity `qcow2` | `make artifacts/trident-acl-agent-testimage.qcow2` | `artifacts/trident-acl-agent-testimage.qcow2` |
 
 To build the update images, run:
 
-| Image type  | Make command                            | Output path                         |
-| ----------- | --------------------------------------- | ----------------------------------- |
-| Regular     | `make trident-vm-grub-testimage`        | `artifacts/trident-vm-grub-testimage/*` |
+| Image type | Make command | Output path |
+| ---------- | ------------ | ----------- |
+| Regular | `make trident-vm-grub-testimage` | `artifacts/trident-vm-grub-testimage/*` |
 | With verity | `make trident-vm-grub-verity-testimage` | `artifacts/trident-vm-grub-testimage/*` |
+| ACL-agent UKI usr-verity | `make artifacts/trident-acl-agent-testimage.cosi` | `artifacts/trident-acl-agent-testimage.cosi` |
