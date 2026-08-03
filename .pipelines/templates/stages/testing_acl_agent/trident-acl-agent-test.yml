@@ -28,15 +28,10 @@ parameters:
     default: false
 
 stages:
-  - stage: PrepareSSHKeysAclAgent
-    displayName: Prepare SSH Keys (ACL Agent)
-    jobs:
-      - template: ../testing_servicing/generate-ssh-keys.yml
-
   - stage: BuildImagesAclAgent
     displayName: Build Base and Update Images for trident-acl-agent
     dependsOn:
-      - PrepareSSHKeysAclAgent
+      - PrepareSSHKeys
       - GetTridentBinaries_rpms_amd64
       - ${{ if ne(parameters.dependsOnStage, '') }}:
           - ${{ parameters.dependsOnStage }}
@@ -63,7 +58,7 @@ stages:
           useStagedSshKeys: true
 
   - stage: TridentAclAgentTest
-    displayName: Validate trident-acl-agent (storm A/B update scenario)
+    displayName: Validate trident-acl-agent
     dependsOn:
       - BuildingTools
       - BuildImagesAclAgent

@@ -198,8 +198,12 @@ where
                         }
                     }
                 } else {
-                    self.handle_commit(recovered_request_id, recovered_target_version, trident_state)
-                        .await?;
+                    self.handle_commit(
+                        recovered_request_id,
+                        recovered_target_version,
+                        trident_state,
+                    )
+                    .await?;
                 }
             }
             PreviewServicingState::UpdateAbHealthCheckFailed => {
@@ -209,8 +213,12 @@ where
                 // `UpdateAbFinalized` - it unambiguously implies a real
                 // reboot already occurred; no last-error check is needed to
                 // disambiguate it from a bare process restart.
-                self.handle_commit(recovered_request_id, recovered_target_version, trident_state)
-                    .await?;
+                self.handle_commit(
+                    recovered_request_id,
+                    recovered_target_version,
+                    trident_state,
+                )
+                .await?;
             }
             PreviewServicingState::Provisioned => {
                 // A real reboot landed us back at `Provisioned` (with or

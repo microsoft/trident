@@ -243,9 +243,7 @@ impl TridentClient {
     /// but the reboot never took effect), while `UpdateAbFinalized` *with* a
     /// last error - or `Provisioned` in either case - indicates a real reboot
     /// occurred.
-    pub async fn get_last_error(
-        &mut self,
-    ) -> Result<Option<RemoteError>, TridentClientError> {
+    pub async fn get_last_error(&mut self) -> Result<Option<RemoteError>, TridentClientError> {
         let response = self
             .status_client
             .get_last_error(Request::new(GetLastErrorRequest {}))
