@@ -236,7 +236,7 @@ flagged here for reviewer visibility, not because they're beyond challenge:
    "labels"` in the config file only; default is `"omaha-only"` (inactive).
 3. **Timeouts**: `stage_timeout`/`finalize_timeout` default to `20m`/`10m`
    placeholders, configurable — real values are expected to come from
-   `trident-acl-agent-tester` scenario runs.
+   `storm aclagent` scenario runs.
 4. **Duplicate request-id**: treated as an idempotent re-affirmation
    (`RequestedAction::Reaffirm`), never a restart of in-flight or completed
    work.

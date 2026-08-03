@@ -113,9 +113,9 @@ pub enum GoalSource {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OrchestrationConfig {
     pub goal_source: GoalSource,
-    /// Placeholder default pending real data from trident-acl-agent-tester runs.
+    /// Placeholder default pending real data from storm aclagent scenario runs.
     pub stage_timeout: Duration,
-    /// Placeholder default pending real data from trident-acl-agent-tester runs.
+    /// Placeholder default pending real data from storm aclagent scenario runs.
     pub finalize_timeout: Duration,
 }
 
