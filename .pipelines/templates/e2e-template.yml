@@ -128,6 +128,12 @@ stages:
             # Run CodeQL for this in CI only
             runCodeql: true
 
+  # Validate trident-acl-agent label protocol + tester
+  - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pre'), eq(parameters.stageType, 'full-validation')) }}:
+      - template: stages/testing_acl_agent/trident-acl-agent-test.yml
+        parameters:
+          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+
   # Build FT base Image, only for CI or if forceFunctionalTestImageRebuild is true
   - ${{ if or(eq(parameters.stageType, 'ci'), eq(parameters.forceFunctionalTestImageRebuild, true)) }}:
       # Build Trident installer ISO (host)

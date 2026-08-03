@@ -1,0 +1,43 @@
+parameters:
+  - name: dependsOnStage
+    type: string
+    default: ""
+
+stages:
+  - stage: TridentAclAgentTest
+    displayName: Validate trident-acl-agent (label protocol + tester)
+    ${{ if ne(parameters.dependsOnStage, '') }}:
+      dependsOn: ${{ parameters.dependsOnStage }}
+
+    jobs:
+      - job: Cargo
+        displayName: Build and test trident-acl-agent crates
+        timeoutInMinutes: 30
+        pool:
+          type: linux
+          name: trident-ubuntu-1es-pool-eastus2
+          hostArchitecture: amd64
+        variables:
+          ob_outputDirectory: /tmp/build
+        steps:
+          - template: ../common_tasks/checkout_trident.yml
+          - template: ../common_tasks/avoid-pypi-usage.yml
+          - template: ../common_tasks/update-protoc.yml
+          - template: ../common_tasks/rustup.yml
+          - template: ../common_tasks/cargo-auth.yml
+            parameters:
+              cargoConfigPath: $(TRIDENT_SOURCE_DIR)/.cargo/config.toml
+
+          - bash: |
+              set -eux
+
+              cargo build -p trident-acl-agent -p trident-acl-agent-tester
+              cargo test -p trident-acl-agent -p trident-acl-agent-tester
+
+              if [ -f crates/trident-acl-agent-tester/scripts/e2e-smoke.sh ]; then
+                bash crates/trident-acl-agent-tester/scripts/e2e-smoke.sh
+              fi
+            displayName: Build and test ACL agent protocol crates
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+            env:
+              OVERRIDE_RUST_FEED: false
