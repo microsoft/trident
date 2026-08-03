@@ -134,7 +134,6 @@ os:
       - openssh-server
       - systemd-boot
       - systemd-udev
-      - trident-service
       - trident-acl-agent
       - veritysetup
       - vim
@@ -151,7 +150,6 @@ os:
   services:
     enable:
       - kdump
-      - trident
       - tridentd.socket
       - trident-acl-agent.service
 
