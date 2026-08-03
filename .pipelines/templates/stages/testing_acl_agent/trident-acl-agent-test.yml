@@ -10,8 +10,8 @@ stages:
       dependsOn: ${{ parameters.dependsOnStage }}
 
     jobs:
-      - job: Cargo
-        displayName: Build and test trident-acl-agent crates
+      - job: ValidateAclAgent
+        displayName: Build and test trident-acl-agent + Go tester
         timeoutInMinutes: 30
         pool:
           type: linux
@@ -30,14 +30,21 @@ stages:
 
           - bash: |
               set -eux
+              make bin/trident-acl-agent-tester
+              cd tools
+              go test ./pkg/acltester/... ./cmd/trident-acl-agent-tester
+            displayName: Build and test Go ACL tester
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
 
-              cargo build -p trident-acl-agent -p trident-acl-agent-tester
-              cargo test -p trident-acl-agent -p trident-acl-agent-tester
+          - bash: |
+              set -eux
+              cargo build -p trident-acl-agent
+              cargo test -p trident-acl-agent
 
-              if [ -f crates/trident-acl-agent-tester/scripts/e2e-smoke.sh ]; then
-                bash crates/trident-acl-agent-tester/scripts/e2e-smoke.sh
+              if [ -f tools/cmd/trident-acl-agent-tester/e2e-smoke.sh ]; then
+                bash tools/cmd/trident-acl-agent-tester/e2e-smoke.sh
               fi
-            displayName: Build and test ACL agent protocol crates
+            displayName: Build and test Rust ACL agent
             workingDirectory: $(TRIDENT_SOURCE_DIR)
             env:
               OVERRIDE_RUST_FEED: false
