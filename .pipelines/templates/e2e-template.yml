@@ -128,8 +128,9 @@ stages:
             # Run CodeQL for this in CI only
             runCodeql: true
 
-  # Validate trident-acl-agent label protocol + tester
+  # Validate trident-acl-agent (storm A/B update scenario against a real tridentd)
   - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pre'), eq(parameters.stageType, 'full-validation')) }}:
+      - template: stages/testing_acl_agent/trident-acl-agent-test.yml
         parameters:
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
