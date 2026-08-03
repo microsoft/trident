@@ -479,7 +479,6 @@ go.sum: go.mod
 	go mod tidy
 
 .PHONY: go-tools
-go-tools: bin/netlaunch bin/netlisten bin/miniproxy bin/virtdeploy bin/isopatch bin/mkcosi bin/storm-trident bin/rcp-agent bin/trident-acl-agent-tester
 
 bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/* tools/pkg/netlaunch/*
 	@mkdir -p bin
@@ -520,9 +519,7 @@ bin/rcp-agent: tools/cmd/rcp-agent/* tools/go.sum tools/pkg/rcp/* tools/pkg/rcp/
 	cd tools && go generate pkg/rcp/tlscerts/certs.go
 	cd tools && go build -o ../bin/rcp-agent ./cmd/rcp-agent/main.go
 
-bin/trident-acl-agent-tester: tools/cmd/trident-acl-agent-tester/* tools/go.sum tools/pkg/acltester/*
 	@mkdir -p bin
-	cd tools && go build -o ../bin/trident-acl-agent-tester ./cmd/trident-acl-agent-tester
 
 # Clean generated RCP TLS certificates
 .PHONY: clean-rcp-certs
