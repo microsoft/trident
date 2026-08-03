@@ -78,7 +78,7 @@ kubeconfig = "/var/lib/kubelet/kubeconfig"  # example only — see decision #7; 
 node_name = "$NODE_NAME"
 
 [trident]
-socket = "/run/trident/trident.sock"
+socket = "unix:///run/trident/trident.sock"
 
 [orchestration]
 goal_source = "labels"   # or "omaha-only"

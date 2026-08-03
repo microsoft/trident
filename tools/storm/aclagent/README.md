@@ -26,10 +26,23 @@ There is intentionally no fake `tridentd`.
 
 The VM image used by this scenario must already contain:
 
-- `tridentd.service` installed and enabled
-- `trident-acl-agent.service` installed and enabled
-- `/etc/trident/trident-acl-agent.conf` pre-seeded to point at `localhost:<port>` endpoints that storm reverse-SSH-forwards from the test runner into the VM
+- `tridentd.socket` installed and enabled (starts `tridentd.service` on demand)
+- `trident-acl-agent` package installed, but **`trident-acl-agent.service`
+  left disabled** -- it must not start before a config exists
 - the same SSH user/key setup expected by the existing storm servicing scenario
+
+Both the enabled/disabled state of `trident-acl-agent.service`
+(`/etc/systemd/system/multi-user.target.wants/...`) and
+`/etc/trident/trident-acl-agent.conf` live under `/etc`, which is not part of
+the A/B-swapped `/usr`/root volume pair in this usr-verity layout. That makes
+it safe for the scenario to write the config and enable the service once,
+after `deploy-vm`, rather than baking enablement into the image: the state
+persists across `run-ab-update`'s finalize the same way the config file does.
+
+`prepareVmForAclAgent` writes `/etc/trident/trident-acl-agent.conf` pointing
+at the `localhost:<port>` endpoints storm reverse-SSH-forwards into the VM,
+then runs `systemctl enable --now trident-acl-agent.service`. Before that
+runs, the service simply isn't started -- no crash-looping, no log noise.
 
 ## Local usage
 
