@@ -1173,7 +1173,7 @@ artifacts/trident-vm-usr-verity-testimage.qcow2: \
 			--output-image-format qcow2 \
 			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-usr-verity.yaml
 
-artifacts/trident-acl-agent-testimage.qcow2: \
+artifacts/trident-vm-acl-agent-testimage.qcow2: \
 	$(QEMU_GUEST_IMAGE) \
 	$(TRIDENT_VM_DEPENDENCIES) \
 	$(VM_IMAGE_PATH_PREFIX)/baseimg-acl-agent.yaml \

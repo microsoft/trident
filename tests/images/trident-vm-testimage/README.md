@@ -35,7 +35,7 @@ To build the base image, run:
 | Regular | `make artifacts/trident-vm-grub-testimage.qcow2` | `artifacts/trident-vm-grub-testimage.qcow2` |
 | With verity `qcow2` | `make artifacts/trident-vm-grub-verity-testimage.qcow2` | `artifacts/trident-vm-grub-verity-testimage.qcow2` |
 | With verity fixed size `vhd` | `make artifacts/trident-vm-grub-verity-testimage.vhd` | `artifacts/trident-vm-grub-verity-testimage.vhd` |
-| ACL-agent UKI usr-verity `qcow2` | `make artifacts/trident-acl-agent-testimage.qcow2` | `artifacts/trident-acl-agent-testimage.qcow2` |
+| ACL-agent UKI usr-verity `qcow2` | `make artifacts/trident-vm-acl-agent-testimage.qcow2` | `artifacts/trident-vm-acl-agent-testimage.qcow2` |
 
 To build the update images, run:
 
@@ -43,4 +43,4 @@ To build the update images, run:
 | ---------- | ------------ | ----------- |
 | Regular | `make trident-vm-grub-testimage` | `artifacts/trident-vm-grub-testimage/*` |
 | With verity | `make trident-vm-grub-verity-testimage` | `artifacts/trident-vm-grub-testimage/*` |
-| ACL-agent UKI usr-verity | `make artifacts/trident-acl-agent-testimage.cosi` | `artifacts/trident-acl-agent-testimage.cosi` |
+| ACL-agent UKI usr-verity | `make artifacts/trident-vm-acl-agent-testimage.cosi` | `artifacts/trident-vm-acl-agent-testimage.cosi` |
