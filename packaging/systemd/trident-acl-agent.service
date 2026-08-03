@@ -1,0 +1,12 @@
+[Unit]
+Description=Trident ACL Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=trident-acl-agent
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
