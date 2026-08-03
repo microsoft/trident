@@ -63,16 +63,45 @@ runs **before** the watch loop begins:
      outstanding — never overwrites an in-flight request's labels blindly).
    - If `ServicingState == UpdateAbStaged`: patch `state=staged`, carrying
      forward whatever request-id/target-version the snapshot had. This
-     handles a crash/restart between stage and finalize.
-   - If `ServicingState` is `UpdateAbFinalized` or `UpdateAbHealthCheckFailed`:
-     go straight to `handle_commit(...)` — this is the **primary post-reboot
-     resume path**, since a successful finalize+reboot lands here.
-   - Any other state: `ensure_ready_label` only.
+     handles a crash/restart between stage and finalize, and also downgrades
+     a stale `finalizing` label back to `staged` if the crash happened
+     mid-finalize before tridentd's own state advanced — `decide_action` then
+     re-drives `handle_finalize` on the next reconcile.
+   - If `ServicingState == UpdateAbFinalized`: **this state is ambiguous** —
+     it's reached both by a genuine post-reboot resume *and* by the agent
+     crashing/restarting after a successful finalize but before (or during)
+     its own `reboot()` call, i.e. still running on the pre-update boot. The
+     two are distinguished via `tridentd.get_last_error()`: no last error
+     means finalize completed but the reboot never actually happened (a bare
+     restart), so the agent re-issues `reboot()` rather than committing; a
+     last error present means a real reboot occurred (typically from the
+     health-check/reboot path) and the agent proceeds to `handle_commit`.
+   - If `ServicingState == UpdateAbHealthCheckFailed`: this state is only
+     reachable after the host has actually booted into the target OS and
+     health checks ran, so unlike `UpdateAbFinalized` it unambiguously implies
+     a real reboot — proceed straight to `handle_commit`.
+   - If `ServicingState == Provisioned` and the label snapshot's `state` is
+     still `staging`/`finalizing`/`committing` for the current request-id:
+     that in-flight operation was interrupted by a reboot the agent itself
+     didn't drive to completion (or a rollback) and cannot be resumed —
+     `fail_request(Timeout)` so the RP can retry with a fresh request-id,
+     rather than leaving a dangling in-flight label.
+   - Any other state (`NotProvisioned`/`InstallStaged`/`InstallFinalized`,
+     etc.): if the label snapshot's `state` is still `staging`/`finalizing`/
+     `committing`, this means the agent crashed *before* tridentd's own state
+     ever advanced past where it started (e.g. crashed just after patching
+     `state=staging` but before the `UpdateStage` RPC ran, or crashed mid
+     Nebraska query). There is no in-progress tridentd operation to resume,
+     so the request is failed explicitly (`fail_request(Timeout)`) instead of
+     leaving the stale label in place. Otherwise, `ensure_ready_label` only.
 
 This ordering is the concrete implementation of the design's "Trident's own
 state is the source of truth, not labels" decision — labels are a status
 mirror the agent maintains, never an input trusted blindly across a restart
-boundary.
+boundary. Explicitly failing (rather than silently reaffirming) any
+transitional label state that startup recovery cannot corroborate against
+`tridentd`'s own state is what closes the "permanent silent stall" gap found
+in deep review (see below).
 
 ## Steady-state loop: reacting to label changes
 
@@ -188,10 +217,20 @@ aks-rp          API server        trident-acl-agent         Nebraska        trid
 These resolve design-doc open questions with concrete engineering choices —
 flagged here for reviewer visibility, not because they're beyond challenge:
 
-1. **Auth**: the agent authenticates via its own client config
-   (`NodeClient::new`), not by reusing kubelet's node identity — see
-   `config.rs`/`k8s.rs`. RBAC manifests themselves are out of this crate's
-   scope (deployment-time concern).
+1. **Auth**: `NodeClient::new`'s explicit-kubeconfig-path branch is
+   **identity-agnostic** — it loads whatever kubeconfig `[kubernetes].kubeconfig`
+   points at with no check on which credential it contains, so nothing in
+   this crate stops an operator from pointing it at kubelet's own kubeconfig
+   (e.g. `/var/lib/kubelet/kubeconfig`, the wiki design doc's own §12 example
+   value). Only the *fallback* branch — used when no `kubeconfig` path is
+   configured, or the configured path doesn't exist — carries a comment
+   assuming a dedicated ServiceAccount identity via `Config::infer()`. This is
+   therefore **not a resolved decision**: it is an unenforced deployment
+   recommendation, and the underlying question — whether the agent may reuse
+   kubelet's identity, or must use a dedicated scoped credential — remains
+   open pending security sign-off per the wiki design doc's decision log
+   (§8, decision #7). RBAC manifests are out of this crate's scope regardless
+   of which identity model is chosen.
 2. **Activation**: label-mode is opt-in via `[orchestration].goal_source =
    "labels"` in the config file only; default is `"omaha-only"` (inactive).
 3. **Timeouts**: `stage_timeout`/`finalize_timeout` default to `20m`/`10m`
@@ -203,3 +242,25 @@ flagged here for reviewer visibility, not because they're beyond challenge:
 5. **`no-update-available`**: a distinct `FailureReason`, separate from hard
    stage failures, for the case where Nebraska simply hasn't published the
    requested version yet.
+6. **Reboot vs. bare process restart**: `tridentd`'s `UpdateAbFinalized`
+   servicing state is ambiguous on its own — it's reported both immediately
+   after a successful finalize (before any reboot) and after a genuine
+   post-reboot resume. `recover_from_trident_state` disambiguates via
+   `tridentd.get_last_error()`: no last error means the agent restarted
+   without the machine rebooting (finalize completed but reboot didn't
+   happen or didn't take effect), so the agent re-issues `reboot()`; a last
+   error present means a real reboot occurred, so the agent proceeds to
+   `commit()`. `UpdateAbHealthCheckFailed` and `Provisioned` are treated as
+   unambiguous reboot evidence and need no such check.
+
+## Known follow-ups (tracked, not blocking)
+
+- **Commit safety on tridentd's side**: whether `tridentd`'s own `commit()`
+  handler independently verifies it is running from the newly-finalized root
+  (e.g. via boot-loader/active-volume state) is outside this crate — the
+  agent-side fix above closes the *reachable* restart-vs-reboot ambiguity,
+  but a defense-in-depth check inside `tridentd` itself was not evaluated as
+  part of this change.
+- **`watch_node` naming**: currently a poll loop (`k8s.rs`), not a true K8s
+  watch; works correctly but the name may mislead readers expecting
+  watch-semantics (e.g. server-side filtering, no polling interval).

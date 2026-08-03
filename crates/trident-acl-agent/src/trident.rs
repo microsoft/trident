@@ -18,7 +18,7 @@ use trident_proto::{
         ServicingResponse, StageUpdateRequest, StatusCode, TridentErrorKind, UpdateRequest,
     },
     v1preview::{
-        status_service_client::StatusServiceClient, GetServicingStateRequest,
+        status_service_client::StatusServiceClient, GetLastErrorRequest, GetServicingStateRequest,
         ServicingState as PreviewServicingState,
     },
 };
@@ -233,6 +233,34 @@ impl TridentClient {
             })?;
 
         Ok(response.into_inner().state())
+    }
+
+    /// Returns the last error tridentd recorded for the most recent servicing
+    /// operation, if any. Used to distinguish a genuine post-reboot resume
+    /// from a bare process restart on the pre-update boot: per operator
+    /// guidance, `UpdateAbFinalized` with no last error means the agent
+    /// restarted without the machine actually rebooting (finalize completed,
+    /// but the reboot never took effect), while `UpdateAbFinalized` *with* a
+    /// last error - or `Provisioned` in either case - indicates a real reboot
+    /// occurred.
+    pub async fn get_last_error(
+        &mut self,
+    ) -> Result<Option<RemoteError>, TridentClientError> {
+        let response = self
+            .status_client
+            .get_last_error(Request::new(GetLastErrorRequest {}))
+            .await
+            .map_err(|source| TridentClientError::Request {
+                operation: "get_last_error",
+                source,
+            })?;
+
+        Ok(response.into_inner().error.map(|error| RemoteError {
+            kind: TridentErrorKind::try_from(error.kind).ok(),
+            subkind: error.subkind,
+            message: error.message,
+            error_message: error.error_message,
+        }))
     }
 }
 
