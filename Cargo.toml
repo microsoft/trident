@@ -5,7 +5,6 @@ default-members = ["crates/trident"]
 members = [
     "crates/docbuilder",
     "crates/trident-acl-agent",
-    "crates/trident-acl-agent-tester",
     "crates/osmodifier",
     "crates/osutils",
     "crates/pytest_gen",
@@ -35,9 +34,7 @@ gpt = "4.1.0"
 hex = "0.4.0"
 hostname = "0.4.0"
 humantime = "2.3.0"
-http-body-util = "0.1.4"
 hyper = "1.8.1"
-hyper-util = { version = "0.1.20", features = ["server", "http1", "http2", "tokio"] }
 indoc = "2.0.5"
 inventory = "0.3.15"
 k8s-openapi = { version = "0.24.0", features = ["v1_32"] }

@@ -3895,27 +3895,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "trident-acl-agent-tester"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "futures",
- "http-body-util",
- "humantime",
- "hyper",
- "hyper-util",
- "indoc",
- "k8s-openapi",
- "reqwest",
- "serde",
- "serde_json",
- "serde_yaml",
- "tokio",
- "url",
-]
-
-[[package]]
 name = "trident-proto"
 version = "1.2.0"
 dependencies = [
