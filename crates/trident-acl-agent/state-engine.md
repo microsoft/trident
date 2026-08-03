@@ -5,9 +5,9 @@ five participants in an AKS A/B update: **aks-rp**, the **Kubernetes API
 server**, **trident-acl-agent** (Harpoon), **Nebraska/Omaha**, and **tridentd**.
 It reflects the code in this crate (`orchestrator.rs`, `labels.rs`, `k8s.rs`,
 `trident.rs`, `config.rs`), not just the design intent — see
-`wiki/projects/acl-aks/trident-acl-agent-label-protocol.md` in the `mjolnir`
-wiki for the original design rationale and open questions this implementation
-resolves with documented assumptions.
+[`design-decisions.md`](./design-decisions.md) in this crate for the original
+design rationale, the full decision log, and the open questions this
+implementation resolves with documented assumptions.
 
 This orchestration path only runs when `[orchestration].goal_source = "labels"`
 in the agent's config file. The default is `"omaha-only"`, which preserves the
@@ -221,16 +221,17 @@ flagged here for reviewer visibility, not because they're beyond challenge:
    **identity-agnostic** — it loads whatever kubeconfig `[kubernetes].kubeconfig`
    points at with no check on which credential it contains, so nothing in
    this crate stops an operator from pointing it at kubelet's own kubeconfig
-   (e.g. `/var/lib/kubelet/kubeconfig`, the wiki design doc's own §12 example
-   value). Only the *fallback* branch — used when no `kubeconfig` path is
-   configured, or the configured path doesn't exist — carries a comment
-   assuming a dedicated ServiceAccount identity via `Config::infer()`. This is
-   therefore **not a resolved decision**: it is an unenforced deployment
-   recommendation, and the underlying question — whether the agent may reuse
-   kubelet's identity, or must use a dedicated scoped credential — remains
-   open pending security sign-off per the wiki design doc's decision log
-   (§8, decision #7). RBAC manifests are out of this crate's scope regardless
-   of which identity model is chosen.
+   (e.g. `/var/lib/kubelet/kubeconfig`, the example value used in
+   `design-decisions.md`'s config schema). Only the *fallback* branch — used
+   when no `kubeconfig` path is configured, or the configured path doesn't
+   exist — carries a comment assuming a dedicated ServiceAccount identity via
+   `Config::infer()`. This is therefore **not a resolved decision**: it is an
+   unenforced deployment recommendation, and the underlying question —
+   whether the agent may reuse kubelet's identity, or must use a dedicated
+   scoped credential — remains open pending security sign-off (see
+   [`design-decisions.md`](./design-decisions.md), decision #7). RBAC
+   manifests are out of this crate's scope regardless of which identity model
+   is chosen.
 2. **Activation**: label-mode is opt-in via `[orchestration].goal_source =
    "labels"` in the config file only; default is `"omaha-only"` (inactive).
 3. **Timeouts**: `stage_timeout`/`finalize_timeout` default to `20m`/`10m`
