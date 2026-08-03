@@ -16,7 +16,7 @@ const (
 	FailureDetailAnnotation = "kubernetes.azure.com/trident-abupdate-failure-detail"
 
 	DefaultNodeName   = "trident-node"
-	DefaultMarkerFile = "./trident-acl-agent-tester-reboot-signal"
+	DefaultMarkerFile = "./trident-acl-agent-reboot-signal"
 )
 
 func ParseKeyValueList(raw string) (map[string]string, error) {

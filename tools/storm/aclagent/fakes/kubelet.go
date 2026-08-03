@@ -15,7 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const RebootStateAnnotation = "trident-acl-agent-tester/reboot-state"
+const RebootStateAnnotation = "trident-acl-agent/reboot-state"
 
 type KubeletProxy struct {
 	HTTPClient      *http.Client
