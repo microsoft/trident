@@ -16,7 +16,7 @@ understand why the code makes the choices it does.
 | 3a | Agent crafts `HostConfiguration`, doesn't download the image | Decided | Nebraska returns an image URL (+ hash); the agent builds a minimal `HostConfiguration` pointer from it, reusing the existing `image:\n  url:...\n  sha384:...` template. `tridentd`'s own `update_stage` fetches/applies the actual image — no new download/hash-verification code is needed in the agent. |
 | 4 | Post-reboot resume authority | Decided | On every startup, the agent checks `tridentd`'s own `ServicingState` (and, since the crash-recovery fix below, `GetLastError`) **before** trusting/reading any label — labels may be stale or lost across a reboot. See `state-engine.md`'s "Startup: recovering from `tridentd`" section. |
 | 5 | Stuck-node fallback | Decided (shape) | Quarantine label → diagnostics capture → hand off to the existing reimage/replace path (owned by `aks-rp`, outside this crate). Exact liveness-recheck-before-reimage policy: open (see below). |
-| 6 | Single vs. dual transport (Omaha polling loop vs. label-driven) | Decided (shape) | A transport-agnostic `(waker, goal-source)` pair, runtime-selected via `[orchestration].goal_source` in `/etc/trident-acl-agent/config.toml` (see the config schema below). This label protocol is one such `goal-source`; Omaha polling for content discovery continues regardless of which orchestration transport is active. Endpoint overrides in the same file (Nebraska URL, K8s API server, Trident socket) are what let the agent run unmodified against test doubles — see `trident-acl-agent-tester` under `tools/cmd/`. |
+| 6 | Single vs. dual transport (Omaha polling loop vs. label-driven) | Decided (shape) | A transport-agnostic `(waker, goal-source)` pair, runtime-selected via `[orchestration].goal_source` in `/etc/trident/trident-acl-agent.conf` (see the config schema below). This label protocol is one such `goal-source`; Omaha polling for content discovery continues regardless of which orchestration transport is active. Endpoint overrides in the same file (Nebraska URL, K8s API server, Trident socket) are what let the agent run unmodified against test doubles — see `trident-acl-agent-tester` under `tools/cmd/`. |
 | 7 | RBAC / NodeRestriction for agent self-labeling | **Open — needs security sign-off** | No existing precedent for a node-local process patching its own Node object. Kubelet's identity already sets `kubernetes.azure.com/*` labels once at bootstrap (`--node-labels`); whether a long-running process can/should reuse that identity for live PATCHes, or needs its own scoped credential, is unresolved. **As implemented**, `NodeClient::new`'s explicit-kubeconfig-path branch (`k8s.rs`) is identity-agnostic: it does not enforce which credential the configured kubeconfig contains, so nothing in this crate currently prevents pointing `[kubernetes].kubeconfig` at kubelet's own kubeconfig. This decision remains open; the config schema's example path should not be read as an endorsed production configuration. |
 
 ## Open questions (not yet decided)
@@ -57,7 +57,7 @@ understand why the code makes the choices it does.
 
 ## Configuration file schema (endpoint overrides)
 
-A single `/etc/trident-acl-agent/config.toml` carries both the orchestration
+A single `/etc/trident/trident-acl-agent.conf` carries both the orchestration
 transport choice (decision #6) and the concrete endpoints the agent talks to.
 Making these overridable — not hardcoded — is what allows the same production
 binary to run unmodified against test doubles instead of real

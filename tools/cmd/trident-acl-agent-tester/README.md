@@ -105,7 +105,7 @@ export PATH="$(pwd)/shim-bin:$PATH"
 export TRIDENT_ACL_AGENT_TESTER_REBOOT_MARKER="$(pwd)/trident-acl-agent-tester-reboot-signal"
 
 # Start the real Rust agent in label mode against the test doubles.
-trident-acl-agent --config /etc/trident-acl-agent/config.toml &
+trident-acl-agent --config /etc/trident/trident-acl-agent.conf &
 
 # Drive the protocol from the fake RP.
 ./bin/trident-acl-agent-tester rp-proxy \

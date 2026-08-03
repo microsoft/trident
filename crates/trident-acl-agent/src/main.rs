@@ -21,7 +21,7 @@ struct Args {
     #[arg(global = true, short, long, default_value_t = LevelFilter::Debug)]
     verbosity: LevelFilter,
 
-    /// Optional path to /etc/trident-acl-agent/config.toml.
+    /// Optional path to /etc/trident/trident-acl-agent.conf.
     #[arg(long)]
     config: Option<PathBuf>,
 

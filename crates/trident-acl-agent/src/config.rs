@@ -12,7 +12,7 @@ use url::Url;
 
 use crate::DEFAULT_NEBRASKA_APP_ID;
 
-pub const DEFAULT_CONFIG_PATH: &str = "/etc/trident-acl-agent/config.toml";
+pub const DEFAULT_CONFIG_PATH: &str = "/etc/trident/trident-acl-agent.conf";
 pub const DEFAULT_KUBERNETES_API_SERVER: &str = "https://kubernetes.default.svc";
 const DEFAULT_KUBERNETES_POLL_INTERVAL: Duration = Duration::from_secs(2);
 const DEFAULT_NEBRASKA_POLL_INTERVAL: Duration = Duration::from_secs(5 * 60);
