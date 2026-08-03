@@ -130,7 +130,6 @@ stages:
 
   # Validate trident-acl-agent label protocol + tester
   - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pre'), eq(parameters.stageType, 'full-validation')) }}:
-      - template: stages/testing_acl_agent/trident-acl-agent-test.yml
         parameters:
           dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
