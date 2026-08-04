@@ -126,6 +126,24 @@ stages:
 
           - bash: |
               set -eux
+              echo "--- ufw status ---"
+              sudo ufw status verbose || true
+              echo "--- iptables INPUT/FORWARD (before) ---"
+              sudo iptables -L INPUT -n -v || true
+              sudo iptables -L FORWARD -n -v || true
+              echo "--- nft ruleset (before) ---"
+              sudo nft list ruleset || true
+            displayName: "Diagnose host firewall state (before allow rules)"
+
+          - bash: |
+              set -eux
+              sudo iptables -P INPUT ACCEPT
+              sudo iptables -P FORWARD ACCEPT
+              sudo iptables -P OUTPUT ACCEPT
+            displayName: "Allow libvirt VM <-> host traffic (permissive default policies)"
+
+          - bash: |
+              set -eux
 
               FLAGS=""
               if [ "${{ parameters.verboseLogging }}" == "True" ]; then
