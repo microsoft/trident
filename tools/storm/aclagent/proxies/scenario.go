@@ -19,17 +19,19 @@ type ScenarioStep struct {
 }
 
 type PatchStep struct {
-	Request              string `yaml:"request,omitempty" json:"request,omitempty"`
-	RequestID            string `yaml:"request-id,omitempty" json:"request-id,omitempty"`
-	TargetOSImageVersion string `yaml:"target-os-image-version,omitempty" json:"target-os-image-version,omitempty"`
+	NodeUpdateID         string `yaml:"node-update-id,omitempty" json:"nodeUpdateId,omitempty"`
+	OperationID          string `yaml:"operation-id,omitempty" json:"operationId,omitempty"`
+	Operation            string `yaml:"operation,omitempty" json:"operation,omitempty"`
+	TargetOSImageVersion string `yaml:"target-os-image-version,omitempty" json:"targetVersion,omitempty"`
 }
 
 type ExpectStep struct {
-	State             string        `yaml:"state" json:"state"`
-	ObservedRequestID string        `yaml:"observed-request-id,omitempty" json:"observedRequestId,omitempty"`
-	Timeout           time.Duration `yaml:"-" json:"timeoutSeconds"`
-	TimeoutRaw        string        `yaml:"timeout,omitempty" json:"-"`
-	ExpectTimeout     bool          `yaml:"expect-timeout,omitempty" json:"expectTimeout,omitempty"`
+	OperationID   string        `yaml:"operation-id,omitempty" json:"operationId,omitempty"`
+	Operation     string        `yaml:"operation,omitempty" json:"operation,omitempty"`
+	Code          string        `yaml:"code" json:"code"`
+	Timeout       time.Duration `yaml:"-" json:"timeoutSeconds"`
+	TimeoutRaw    string        `yaml:"timeout,omitempty" json:"-"`
+	ExpectTimeout bool          `yaml:"expect-timeout,omitempty" json:"expectTimeout,omitempty"`
 }
 
 type ScenarioReport struct {
@@ -91,18 +93,4 @@ func (s *Scenario) Validate() error {
 		}
 	}
 	return nil
-}
-
-func (p *PatchStep) Labels() map[string]string {
-	labels := map[string]string{}
-	if p.Request != "" {
-		labels[RequestLabel] = p.Request
-	}
-	if p.RequestID != "" {
-		labels[RequestIDLabel] = p.RequestID
-	}
-	if p.TargetOSImageVersion != "" {
-		labels[TargetVersionLabel] = p.TargetOSImageVersion
-	}
-	return labels
 }

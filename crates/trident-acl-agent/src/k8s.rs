@@ -114,22 +114,11 @@ impl NodeClient {
 }
 
 async fn load_client_config(config: &KubernetesConfig) -> Result<Config, anyhow::Error> {
-    let mut client_config = if let Some(path) = config.kubeconfig.as_deref() {
-        let path = Path::new(path);
-        if path.exists() {
-            let kubeconfig = Kubeconfig::read_from(path)
-                .with_context(|| format!("failed to read kubeconfig {}", path.display()))?;
-            Config::from_custom_kubeconfig(kubeconfig, &KubeConfigOptions::default()).await?
-        } else {
-            // Assumption: production deployments use a dedicated ServiceAccount
-            // identity. Falling back to in-cluster/default inference keeps that
-            // path working instead of assuming kubelet credentials are present.
-            Config::infer().await?
-        }
-    } else {
-        Config::infer().await?
-    };
-
+    let path = Path::new(&config.kubeconfig);
+    let kubeconfig = Kubeconfig::read_from(path)
+        .with_context(|| format!("failed to read kubeconfig {}", path.display()))?;
+    let mut client_config =
+        Config::from_custom_kubeconfig(kubeconfig, &KubeConfigOptions::default()).await?;
     client_config.cluster_url = config.api_server.as_str().parse()?;
     Ok(client_config)
 }

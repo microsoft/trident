@@ -47,6 +47,10 @@ storage:
           label: trident
           size: 512M
 
+        - id: trident-acl-agent
+          label: trident-acl-agent
+          size: 128M
+
         - id: home
           label: home
           size: 1G
@@ -94,6 +98,12 @@ storage:
       mountPoint:
         idType: part-label
         path: /var/lib/trident
+
+    - deviceId: trident-acl-agent
+      type: ext4
+      mountPoint:
+        idType: part-label
+        path: /var/lib/trident-acl-agent
 
     - deviceId: home
       type: ext4

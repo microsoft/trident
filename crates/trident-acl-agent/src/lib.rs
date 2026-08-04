@@ -11,13 +11,14 @@ use sha2::{Digest, Sha256};
 use url::Url;
 use uuid::Uuid;
 
+pub mod annotations;
 pub mod config;
 pub mod error;
 pub mod id;
 pub mod k8s;
-pub mod labels;
 pub mod omaha;
 pub mod orchestrator;
+pub mod state;
 pub mod trident;
 
 use error::HarpoonError;

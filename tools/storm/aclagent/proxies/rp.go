@@ -18,6 +18,22 @@ type RPClient struct {
 	NodeName     string
 }
 
+type updateRequest struct {
+	SchemaVersion string `json:"schemaVersion"`
+	NodeUpdateID  string `json:"nodeUpdateId"`
+	OperationID   string `json:"operationId"`
+	Operation     string `json:"operation"`
+	TargetVersion string `json:"targetVersion,omitempty"`
+}
+
+type updateStatus struct {
+	SchemaVersion string `json:"schemaVersion"`
+	NodeUpdateID  string `json:"nodeUpdateId"`
+	OperationID   string `json:"operationId"`
+	Operation     string `json:"operation"`
+	Code          string `json:"code"`
+}
+
 func (c *RPClient) RunScenario(ctx context.Context, scenario *Scenario) (*ScenarioReport, error) {
 	report := &ScenarioReport{Steps: make([]StepReport, 0, len(scenario.Steps)), Passed: true}
 	for index, step := range scenario.Steps {
@@ -36,30 +52,18 @@ func (c *RPClient) RunScenario(ctx context.Context, scenario *Scenario) (*Scenar
 func (c *RPClient) runStep(ctx context.Context, index int, step ScenarioStep) (*StepReport, error) {
 	switch {
 	case step.Patch != nil:
-		if err := c.patchNodeLabels(ctx, step.Patch.Labels()); err != nil {
+		if err := c.patchNodeRequest(ctx, step.Patch); err != nil {
 			return nil, err
 		}
-		return &StepReport{Index: index, Kind: "patch", Passed: true, Message: "patched fake Node labels"}, nil
+		return &StepReport{Index: index, Kind: "patch", Passed: true, Message: "patched fake Node request annotation"}, nil
 	case step.Expect != nil:
-		return c.expectState(ctx, index, step.Expect)
-	case step.AssertFailureReason != "":
-		node, err := c.getNode(ctx)
-		if err != nil {
-			return nil, err
-		}
-		actual := node.Labels[FailureReasonLabel]
-		passed := actual == step.AssertFailureReason
-		message := "failure reason matched"
-		if !passed {
-			message = "failure reason mismatch"
-		}
-		return &StepReport{Index: index, Kind: "assert-failure-reason", Passed: passed, Message: message, Expected: step.AssertFailureReason, Actual: actual}, nil
+		return c.expectStatus(ctx, index, step.Expect)
 	default:
 		return nil, fmt.Errorf("step %d had no recognized action", index)
 	}
 }
 
-func (c *RPClient) expectState(ctx context.Context, index int, step *ExpectStep) (*StepReport, error) {
+func (c *RPClient) expectStatus(ctx context.Context, index int, step *ExpectStep) (*StepReport, error) {
 	deadline := time.Now().Add(step.Timeout)
 	pollInterval := 500 * time.Millisecond
 	var lastObserved map[string]string
@@ -69,9 +73,10 @@ func (c *RPClient) expectState(ctx context.Context, index int, step *ExpectStep)
 		if err != nil {
 			return nil, err
 		}
-		lastObserved = map[string]string{"state": node.Labels[StateLabel], "observed-request-id": node.Labels[ObservedRequestIDLabel], "failure-reason": node.Labels[FailureReasonLabel]}
-		if node.Labels[StateLabel] == step.State {
-			if step.ObservedRequestID == "" || node.Labels[ObservedRequestIDLabel] == step.ObservedRequestID {
+		status, _ := decodeStatus(node)
+		if status != nil {
+			lastObserved = map[string]string{"operation-id": status.OperationID, "operation": status.Operation, "code": status.Code}
+			if status.Code == step.Code && (step.OperationID == "" || status.OperationID == step.OperationID) && (step.Operation == "" || status.Operation == step.Operation) {
 				matched = true
 				break
 			}
@@ -83,36 +88,53 @@ func (c *RPClient) expectState(ctx context.Context, index int, step *ExpectStep)
 		}
 	}
 	passed := matched
-	message := "observed expected state"
+	message := "observed expected status"
 	if step.ExpectTimeout {
 		passed = !matched
 		message = "timed out as expected"
 	}
 	if !passed && !step.ExpectTimeout {
-		message = "state expectation failed"
+		message = "status expectation failed"
 	}
-	return &StepReport{Index: index, Kind: "expect", Passed: passed, Message: message, Expected: map[string]any{"state": step.State, "observed-request-id": step.ObservedRequestID, "timeout": step.Timeout.String(), "expect-timeout": step.ExpectTimeout}, Actual: lastObserved}, nil
+	return &StepReport{Index: index, Kind: "expect", Passed: passed, Message: message, Expected: map[string]any{"operation-id": step.OperationID, "operation": step.Operation, "code": step.Code, "timeout": step.Timeout.String()}, Actual: lastObserved}, nil
 }
 
-func (c *RPClient) patchNodeLabels(ctx context.Context, labels map[string]string) error {
-	body, err := json.Marshal(map[string]any{"metadata": map[string]any{"labels": labels}})
+func (c *RPClient) patchNodeRequest(ctx context.Context, step *PatchStep) error {
+	request := updateRequest{SchemaVersion: "1.0", NodeUpdateID: step.NodeUpdateID, OperationID: step.OperationID, Operation: step.Operation, TargetVersion: step.TargetOSImageVersion}
+	raw, err := json.Marshal(request)
 	if err != nil {
 		return err
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPatch, c.nodeURL(), bytes.NewReader(body))
+	body, err := json.Marshal(map[string]any{"metadata": map[string]any{"annotations": map[string]string{UpdateRequestAnnotation: string(raw)}}})
 	if err != nil {
 		return err
 	}
-	request.Header.Set("Content-Type", "application/merge-patch+json")
-	response, err := c.client().Do(request)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, c.nodeURL(), bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
-	defer response.Body.Close()
-	if response.StatusCode >= 300 {
-		return fmt.Errorf("fake apiserver patch failed with %s", response.Status)
+	req.Header.Set("Content-Type", "application/merge-patch+json")
+	resp, err := c.client().Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("fake apiserver patch failed with %s", resp.Status)
 	}
 	return nil
+}
+
+func decodeStatus(node *corev1.Node) (*updateStatus, error) {
+	raw := node.Annotations[UpdateStatusAnnotation]
+	if raw == "" {
+		return nil, nil
+	}
+	var status updateStatus
+	if err := json.Unmarshal([]byte(raw), &status); err != nil {
+		return nil, err
+	}
+	return &status, nil
 }
 
 func (c *RPClient) getNode(ctx context.Context) (*corev1.Node, error) {
@@ -138,6 +160,7 @@ func (c *RPClient) getNode(ctx context.Context) (*corev1.Node, error) {
 func (c *RPClient) nodeURL() string {
 	return strings.TrimRight(c.APIServerURL, "/") + "/api/v1/nodes/" + c.NodeName
 }
+
 func (c *RPClient) client() *http.Client {
 	if c.HTTPClient != nil {
 		return c.HTTPClient

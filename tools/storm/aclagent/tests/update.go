@@ -183,9 +183,9 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 
 	rp := &stormproxies.RPClient{APIServerURL: fmt.Sprintf("http://%s:%d", testConfig.HostEndpointIP, testConfig.APIServerPort), NodeName: testConfig.NodeName}
 	scenario := &stormproxies.Scenario{Steps: []stormproxies.ScenarioStep{
-		{Patch: &stormproxies.PatchStep{Request: "stage", RequestID: "R1", TargetOSImageVersion: testConfig.TargetVersion}},
-		{Expect: &stormproxies.ExpectStep{State: "staged", ObservedRequestID: "R1", Timeout: 120 * time.Second}},
-		{Patch: &stormproxies.PatchStep{Request: "finalize", RequestID: "R1"}},
+		{Patch: &stormproxies.PatchStep{NodeUpdateID: "11111111-1111-1111-1111-111111111111", OperationID: "stage-op", Operation: "stage", TargetOSImageVersion: testConfig.TargetVersion}},
+		{Expect: &stormproxies.ExpectStep{OperationID: "stage-op", Operation: "stage", Code: "Success", Timeout: 120 * time.Second}},
+		{Patch: &stormproxies.PatchStep{NodeUpdateID: "11111111-1111-1111-1111-111111111111", OperationID: "finalize-op", Operation: "finalize", TargetOSImageVersion: testConfig.TargetVersion}},
 	}}
 	report, err := rp.RunScenario(ctx, scenario)
 	logScenarioTimeline("stage/finalize", report)
@@ -222,7 +222,7 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	}
 
 	finalScenario := &stormproxies.Scenario{Steps: []stormproxies.ScenarioStep{
-		{Expect: &stormproxies.ExpectStep{State: "update-succeeded", ObservedRequestID: "R1", Timeout: 180 * time.Second}},
+		{Expect: &stormproxies.ExpectStep{OperationID: "finalize-op.commit", Operation: "commit", Code: "Success", Timeout: 180 * time.Second}},
 	}}
 	finalReport, err := rp.RunScenario(ctx, finalScenario)
 	logScenarioTimeline("post-reboot commit", finalReport)
@@ -236,9 +236,9 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	}
 
 	snapshot := nodeStore.Snapshot()
-	if got := snapshot.Labels[stormproxies.StateLabel]; got != "update-succeeded" {
+	if got := snapshot.Annotations[stormproxies.UpdateStatusAnnotation]; got == "" {
 		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
-		return fmt.Errorf("final state mismatch: got %q", got)
+		return fmt.Errorf("final status annotation missing")
 	}
 	return collectAclArtifacts(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
 }

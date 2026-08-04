@@ -4,7 +4,11 @@
 //! through config only; defaults intentionally preserve the historical
 //! `omaha-only` one-shot behavior.
 
-use std::{env, fs, path::Path, time::Duration};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use anyhow::Context;
 use serde::Deserialize;
@@ -18,6 +22,8 @@ const DEFAULT_KUBERNETES_POLL_INTERVAL: Duration = Duration::from_secs(2);
 const DEFAULT_NEBRASKA_POLL_INTERVAL: Duration = Duration::from_secs(5 * 60);
 const DEFAULT_STAGE_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 const DEFAULT_FINALIZE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+pub const DEFAULT_STATE_PATH: &str = "/var/lib/trident-acl-agent/state.json";
+pub const DEFAULT_KUBELET_KUBECONFIG: &str = "/var/lib/kubelet/kubeconfig";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AgentConfig {
@@ -73,7 +79,7 @@ impl Default for NebraskaConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KubernetesConfig {
     pub api_server: Url,
-    pub kubeconfig: Option<String>,
+    pub kubeconfig: String,
     pub node_name: String,
     pub watch_poll_interval: Duration,
 }
@@ -82,7 +88,7 @@ impl Default for KubernetesConfig {
     fn default() -> Self {
         Self {
             api_server: Url::parse(DEFAULT_KUBERNETES_API_SERVER).expect("static url"),
-            kubeconfig: None,
+            kubeconfig: DEFAULT_KUBELET_KUBECONFIG.to_string(),
             node_name: default_node_name(),
             watch_poll_interval: DEFAULT_KUBERNETES_POLL_INTERVAL,
         }
@@ -113,6 +119,7 @@ pub enum GoalSource {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OrchestrationConfig {
     pub goal_source: GoalSource,
+    pub state_path: PathBuf,
     /// Placeholder default pending real data from storm aclagent scenario runs.
     pub stage_timeout: Duration,
     /// Placeholder default pending real data from storm aclagent scenario runs.
@@ -123,6 +130,7 @@ impl Default for OrchestrationConfig {
     fn default() -> Self {
         Self {
             goal_source: GoalSource::OmahaOnly,
+            state_path: PathBuf::from(DEFAULT_STATE_PATH),
             stage_timeout: DEFAULT_STAGE_TIMEOUT,
             finalize_timeout: DEFAULT_FINALIZE_TIMEOUT,
         }
@@ -160,7 +168,10 @@ impl RawAgentConfig {
                 api_server: self.kubernetes.api_server.unwrap_or_else(|| {
                     Url::parse(DEFAULT_KUBERNETES_API_SERVER).expect("static url")
                 }),
-                kubeconfig: self.kubernetes.kubeconfig,
+                kubeconfig: self
+                    .kubernetes
+                    .kubeconfig
+                    .unwrap_or_else(|| DEFAULT_KUBELET_KUBECONFIG.to_string()),
                 node_name: self
                     .kubernetes
                     .node_name
@@ -177,6 +188,11 @@ impl RawAgentConfig {
             },
             orchestration: OrchestrationConfig {
                 goal_source: self.orchestration.goal_source.unwrap_or_default(),
+                state_path: self
+                    .orchestration
+                    .state_path
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| PathBuf::from(DEFAULT_STATE_PATH)),
                 stage_timeout: parse_duration(
                     self.orchestration.stage_timeout.as_deref(),
                     DEFAULT_STAGE_TIMEOUT,
@@ -214,6 +230,7 @@ struct RawTridentConfig {
 #[derive(Debug, Default, Deserialize)]
 struct RawOrchestrationConfig {
     goal_source: Option<GoalSource>,
+    state_path: Option<String>,
     stage_timeout: Option<String>,
     finalize_timeout: Option<String>,
 }
@@ -248,7 +265,14 @@ fn expand_env_token(value: String) -> Result<String, anyhow::Error> {
 }
 
 fn default_node_name() -> String {
-    osutils::hostname::read().unwrap_or_else(|_| "localhost".to_string())
+    // Kubernetes Node names must be valid RFC 1123 DNS labels, which are
+    // lowercase-only; kubelet itself lowercases the hostname when it
+    // registers the Node object. Match that behavior here so a mixed-case
+    // hostname doesn't produce a node_name that can never match the actual
+    // Node the agent is supposed to reconcile against.
+    osutils::hostname::read()
+        .unwrap_or_else(|_| "localhost".to_string())
+        .to_lowercase()
 }
 
 trait Pipe: Sized {
@@ -281,6 +305,10 @@ mod tests {
             trident_proto::TRIDENT_DEFAULT_SOCKET_URI
         );
         assert_eq!(config.orchestration.goal_source, GoalSource::OmahaOnly);
+        assert_eq!(
+            config.orchestration.state_path,
+            PathBuf::from(DEFAULT_STATE_PATH)
+        );
         assert_eq!(config.orchestration.stage_timeout, DEFAULT_STAGE_TIMEOUT);
         assert_eq!(
             config.orchestration.finalize_timeout,
@@ -307,6 +335,7 @@ mod tests {
 
             [orchestration]
             goal_source = "labels"
+            state_path = "/var/lib/trident-acl-agent/custom-state.json"
             stage_timeout = "21m"
             finalize_timeout = "11m"
             "#,
@@ -324,12 +353,16 @@ mod tests {
             "https://cluster.example.invalid/"
         );
         assert_eq!(
-            config.kubernetes.kubeconfig.as_deref(),
-            Some("/etc/harpoon/kubeconfig")
+            config.kubernetes.kubeconfig.as_str(),
+            "/etc/harpoon/kubeconfig"
         );
         assert_eq!(config.kubernetes.node_name, "node-42");
         assert_eq!(config.trident.socket, "unix:///custom/trident.sock");
         assert_eq!(config.orchestration.goal_source, GoalSource::Labels);
+        assert_eq!(
+            config.orchestration.state_path,
+            PathBuf::from("/var/lib/trident-acl-agent/custom-state.json")
+        );
         assert_eq!(
             config.orchestration.stage_timeout,
             Duration::from_secs(21 * 60)

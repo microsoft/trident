@@ -19,6 +19,7 @@ reqwest = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+serde_yaml = { workspace = true }
 serde_path_to_error = { workspace = true }
 sha2 = { workspace = true }
 systemd-journal-logger = { workspace = true }
@@ -40,3 +41,4 @@ indoc = { workspace = true }
 maplit = { workspace = true }
 mockito = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml = { workspace = true }
