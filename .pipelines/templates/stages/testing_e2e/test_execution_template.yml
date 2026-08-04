@@ -182,11 +182,18 @@ stages:
 
                 cd $(TRIDENT_SOURCE_DIR)
                 # Sets the SYSEXT_REPO and TAG_BASE pipeline variables.
+                # Namespaced away from the legacy suite's "sysext-<runtime>"
+                # repo. Both suites build their own sysext (mksquashfs embeds
+                # timestamps, so the bytes differ) and derive the same tag from
+                # the shared build id, so sharing a repo means the last pusher
+                # wins and the other job fails its sha384 check. It would also
+                # let this job's ACR cleanup delete images legacy is still
+                # using. The cleanup step below follows via SYSEXT_REPO.
                 ./bin/storm-trident script acr-push \
                     --config extensions \
                     --deployment-environment virtualMachine \
                     --acr-name $(ACR_NAME) \
-                    --repo-name sysext-$(tridentRuntimeEnv) \
+                    --repo-name sysext-storm-$(tridentRuntimeEnv) \
                     --build-id $(Build.BuildId) \
                     --file-paths $(TRIDENT_SOURCE_DIR)/test-sysext-1.raw \
                     --file-paths $(TRIDENT_SOURCE_DIR)/test-sysext-2.raw \
