@@ -142,7 +142,9 @@ where
                 ),
             )
             .await?;
-            client.commit(self.config.orchestration.finalize_timeout).await
+            client
+                .commit(self.config.orchestration.finalize_timeout)
+                .await
         };
         let nothing_to_commit = matches!(
             &result,
