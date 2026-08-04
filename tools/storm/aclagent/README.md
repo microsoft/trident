@@ -46,22 +46,34 @@ runs, the service simply isn't started -- no crash-looping, no log noise.
 
 ## Local usage
 
+The VM image (`make artifacts/trident-vm-acl-agent-testimage.qcow2`) bakes in
+the public key from `artifacts/id_rsa.pub`, not `~/.ssh/id_rsa.pub` -- pass
+`--ssh-private-key-path` pointing at `artifacts/id_rsa` (the matching private
+key) or `check-deployment` will hang/fail trying to authenticate with the
+wrong key.
+
 ```bash
 make bin/storm-trident
-./bin/storm-trident aclagent deploy-vm --artifacts-dir <artifacts>
-./bin/storm-trident aclagent check-deployment --artifacts-dir <artifacts>
-./bin/storm-trident aclagent run-ab-update --artifacts-dir <artifacts>
-./bin/storm-trident aclagent collect-logs --artifacts-dir <artifacts>
-./bin/storm-trident aclagent cleanup-vm --artifacts-dir <artifacts>
+./bin/storm-trident run aclagent deploy-vm \
+  --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
+./bin/storm-trident run aclagent check-deployment \
+  --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
+./bin/storm-trident run aclagent run-ab-update \
+  --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
+./bin/storm-trident run aclagent collect-logs \
+  --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
+./bin/storm-trident run aclagent cleanup-vm \
+  --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
 ```
 
 Common overrides mirror other storm VM scenarios, for example:
 
 ```bash
-./bin/storm-trident aclagent run-ab-update \
+./bin/storm-trident run aclagent run-ab-update \
   --platform qemu \
   --artifacts-dir ./artifacts \
   --output-path ./output/aclagent \
+  --ssh-private-key-path ./artifacts/id_rsa \
   --api-server-port 18080 \
   --nebraska-port 18081
 ```
