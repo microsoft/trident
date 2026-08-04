@@ -15,10 +15,11 @@ import (
 )
 
 type NodeStore struct {
-	mu       sync.RWMutex
-	node     *corev1.Node
-	watchers map[int]chan *corev1.Node
-	nextID   int
+	mu              sync.RWMutex
+	node            *corev1.Node
+	watchers        map[int]chan *corev1.Node
+	nextID          int
+	resourceVersion int64
 }
 
 func NewSeedNode(name string, labels map[string]string) *corev1.Node {
@@ -60,7 +61,20 @@ func LoadSeedNode(data []byte) (*corev1.Node, error) {
 }
 
 func NewNodeStore(seed *corev1.Node) *NodeStore {
-	return &NodeStore{node: seed.DeepCopy(), watchers: map[int]chan *corev1.Node{}}
+	node := seed.DeepCopy()
+	store := &NodeStore{node: node, watchers: map[int]chan *corev1.Node{}, resourceVersion: 1}
+	node.ResourceVersion = "1"
+	return store
+}
+
+// bumpLocked increments the store's resourceVersion counter and stamps it
+// onto the current node object. Every real Kubernetes object always carries
+// metadata.resourceVersion, and kube-rs's watcher() rejects watch events
+// (and the LIST used to bootstrap a watch) that omit it, so this must be
+// set on every mutation. Callers must hold s.mu for writing.
+func (s *NodeStore) bumpLocked() {
+	s.resourceVersion++
+	s.node.ResourceVersion = fmt.Sprintf("%d", s.resourceVersion)
 }
 
 func (s *NodeStore) Snapshot() *corev1.Node {
@@ -82,6 +96,7 @@ func (s *NodeStore) MergePatch(raw []byte) (*corev1.Node, error) {
 	if patch.Status.Conditions != nil {
 		s.node.Status.Conditions = append([]corev1.NodeCondition(nil), (*patch.Status.Conditions)...)
 	}
+	s.bumpLocked()
 	s.broadcastLocked()
 	return s.node.DeepCopy(), nil
 }
@@ -92,6 +107,7 @@ func (s *NodeStore) PatchLabels(labels map[string]string) *corev1.Node {
 	for key, value := range labels {
 		s.node.Labels[key] = value
 	}
+	s.bumpLocked()
 	s.broadcastLocked()
 	return s.node.DeepCopy()
 }
@@ -102,6 +118,7 @@ func (s *NodeStore) PatchAnnotations(annotations map[string]string) *corev1.Node
 	for key, value := range annotations {
 		s.node.Annotations[key] = value
 	}
+	s.bumpLocked()
 	s.broadcastLocked()
 	return s.node.DeepCopy()
 }
@@ -125,6 +142,7 @@ func (s *NodeStore) SetReadyCondition(ready bool) *corev1.Node {
 		Reason:             reason,
 		Message:            message,
 	}}
+	s.bumpLocked()
 	s.broadcastLocked()
 	return s.node.DeepCopy()
 }
@@ -240,7 +258,7 @@ func (s *APIServer) handleList(w http.ResponseWriter, r *http.Request) {
 	}
 	list := corev1.NodeList{
 		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "NodeList"},
-		ListMeta: metav1.ListMeta{ResourceVersion: "1"},
+		ListMeta: metav1.ListMeta{ResourceVersion: node.ResourceVersion},
 		Items:    items,
 	}
 	writeJSON(w, http.StatusOK, &list)
