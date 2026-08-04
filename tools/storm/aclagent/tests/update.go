@@ -14,6 +14,7 @@ import (
 
 	stormproxies "tridenttools/storm/aclagent/proxies"
 	stormaclconfig "tridenttools/storm/aclagent/utils/config"
+	stormfile "tridenttools/storm/utils/file"
 	stormssh "tridenttools/storm/utils/ssh"
 	stormvm "tridenttools/storm/utils/vm"
 	stormvmconfig "tridenttools/storm/utils/vm/config"
@@ -139,12 +140,21 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	// SHA-384 hash, so tridentd's download+verify path is exercised faithfully
 	// instead of failing on an unreachable https://example.invalid URL or a
 	// hash that doesn't match any downloadable bytes.
-	if testConfig.ImagePath != "" {
-		hash, err := sha384File(testConfig.ImagePath)
+	imagePath := testConfig.ImagePath
+	if imagePath == "" {
+		found, err := stormfile.FindFile(testConfig.ArtifactsDir, ".*\\.cosi$")
 		if err != nil {
-			return fmt.Errorf("failed to hash image %s: %w", testConfig.ImagePath, err)
+			return fmt.Errorf("failed to find a .cosi update image under %s: %w", testConfig.ArtifactsDir, err)
 		}
-		imageServer := &stormproxies.ImageServer{ImagePath: testConfig.ImagePath}
+		imagePath = found
+	}
+
+	{
+		hash, err := sha384File(imagePath)
+		if err != nil {
+			return fmt.Errorf("failed to hash image %s: %w", imagePath, err)
+		}
+		imageServer := &stormproxies.ImageServer{ImagePath: imagePath}
 		if _, err := imageServer.ListenAndServe(ctx, fmt.Sprintf("0.0.0.0:%d", testConfig.ImageServerPort)); err != nil {
 			return fmt.Errorf("failed to start fake image server: %w", err)
 		}

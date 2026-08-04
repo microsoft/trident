@@ -84,14 +84,14 @@ stages:
             inputs:
               buildType: current
               artifactName: image-acl-agent-base
-              targetPath: "$(TRIDENT_SOURCE_DIR)/artifacts"
+              targetPath: "$(Build.ArtifactStagingDirectory)"
             displayName: Download Base Image (qcow2)
 
           - task: DownloadPipelineArtifact@2
             inputs:
               buildType: current
               artifactName: image-acl-agent-update
-              targetPath: "$(TRIDENT_SOURCE_DIR)/artifacts"
+              targetPath: "$(Build.ArtifactStagingDirectory)"
             displayName: Download Update Image (cosi)
 
           - task: DownloadPipelineArtifact@2
@@ -121,9 +121,8 @@ stages:
 
           - bash: |
               set -eux
-              ls -la artifacts/
+              ls -la $(Build.ArtifactStagingDirectory)/
             displayName: List downloaded image artifacts
-            workingDirectory: $(TRIDENT_SOURCE_DIR)
 
           - bash: |
               set -eux
@@ -134,8 +133,8 @@ stages:
               fi
 
               sudo ./bin/storm-trident run aclagent $FLAGS \
-                -o $(ob_outputDirectory) \
-                -- \
+                --output-path $(ob_outputDirectory) \
+                --artifacts-dir $(Build.ArtifactStagingDirectory) \
                 --ssh-private-key-path ~/.ssh/id_rsa
             displayName: "🧪 Run trident-acl-agent A/B update scenario"
             workingDirectory: $(TRIDENT_SOURCE_DIR)
