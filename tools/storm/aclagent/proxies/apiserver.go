@@ -169,21 +169,39 @@ func NewAPIServer(nodeName string, store *NodeStore) *APIServer {
 
 func (s *APIServer) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/nodes/"+s.nodeName {
-			http.NotFound(w, r)
+		switch r.URL.Path {
+		case "/api/v1/nodes":
+			// Collection endpoint. kube-rs's watcher always performs an
+			// initial LIST here (optionally filtered by fieldSelector) before
+			// switching to a watch on the same collection; both must be
+			// served or the watcher treats the 404 as fatal and the process
+			// exits, taking down the whole service.
+			if r.Method != http.MethodGet {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			if r.URL.Query().Get("watch") == "true" {
+				s.handleWatch(w, r)
+				return
+			}
+			s.handleList(w, r)
 			return
-		}
-		if r.Method == http.MethodGet && r.URL.Query().Get("watch") == "true" {
-			s.handleWatch(w, r)
+		case "/api/v1/nodes/" + s.nodeName:
+			if r.Method == http.MethodGet && r.URL.Query().Get("watch") == "true" {
+				s.handleWatch(w, r)
+				return
+			}
+			switch r.Method {
+			case http.MethodGet:
+				s.handleGet(w, r)
+			case http.MethodPatch:
+				s.handlePatch(w, r)
+			default:
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			}
 			return
-		}
-		switch r.Method {
-		case http.MethodGet:
-			s.handleGet(w, r)
-		case http.MethodPatch:
-			s.handlePatch(w, r)
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			http.NotFound(w, r)
 		}
 	})
 }
@@ -204,6 +222,28 @@ func (s *APIServer) ListenAndServe(ctx context.Context, listenAddr string) (net.
 
 func (s *APIServer) handleGet(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, s.store.Snapshot())
+}
+
+// handleList serves the collection endpoint's plain (non-watch) LIST
+// request. kube-rs's watcher() issues this before it ever opens a watch
+// stream, so it must return a well-formed NodeList (including
+// metadata.resourceVersion) even though this fake only ever tracks one node.
+func (s *APIServer) handleList(w http.ResponseWriter, r *http.Request) {
+	node := s.store.Snapshot()
+	items := []corev1.Node{}
+	if selector := r.URL.Query().Get("fieldSelector"); selector != "" {
+		if selector == "metadata.name="+s.nodeName {
+			items = append(items, *node)
+		}
+	} else {
+		items = append(items, *node)
+	}
+	list := corev1.NodeList{
+		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "NodeList"},
+		ListMeta: metav1.ListMeta{ResourceVersion: "1"},
+		Items:    items,
+	}
+	writeJSON(w, http.StatusOK, &list)
 }
 
 func (s *APIServer) handlePatch(w http.ResponseWriter, r *http.Request) {
