@@ -354,7 +354,14 @@ func waitForServiceActive(cfg stormvmconfig.VMConfig, vmIP, service string, time
 		lastErr = err
 		time.Sleep(2 * time.Second)
 	}
-	return fmt.Errorf("service %s did not become active within %s (last error: %v)", service, timeout, lastErr)
+
+	// Pull the service's journal so a timeout is self-diagnosing even when
+	// the scenario fails before the dedicated collect-logs test case runs.
+	journal, journalErr := stormssh.SshCommandCombinedOutput(cfg, vmIP, fmt.Sprintf("sudo journalctl -u %s --no-pager -n 200", service))
+	if journalErr != nil {
+		journal = fmt.Sprintf("<failed to collect journal: %v>", journalErr)
+	}
+	return fmt.Errorf("service %s did not become active within %s (last error: %v)\njournal for %s:\n%s", service, timeout, lastErr, service, journal)
 }
 
 // waitForVmRebootAndSshBack polls SSH until it is unreachable (confirming
