@@ -84,14 +84,14 @@ stages:
             inputs:
               buildType: current
               artifactName: image-acl-agent-base
-              targetPath: "artifacts/"
+              targetPath: "$(TRIDENT_SOURCE_DIR)/artifacts"
             displayName: Download Base Image (qcow2)
 
           - task: DownloadPipelineArtifact@2
             inputs:
               buildType: current
               artifactName: image-acl-agent-update
-              targetPath: "artifacts/"
+              targetPath: "$(TRIDENT_SOURCE_DIR)/artifacts"
             displayName: Download Update Image (cosi)
 
           - task: DownloadPipelineArtifact@2
