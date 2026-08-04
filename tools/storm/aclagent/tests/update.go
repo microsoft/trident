@@ -190,9 +190,11 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	report, err := rp.RunScenario(ctx, scenario)
 	logScenarioTimeline("stage/finalize", report)
 	if err != nil {
+		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
 		return fmt.Errorf("ACL agent scenario failed (stage/finalize): %w", err)
 	}
 	if !report.Passed {
+		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
 		return fmt.Errorf("ACL agent scenario failed (stage/finalize): %+v", report)
 	}
 
@@ -225,17 +227,35 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	finalReport, err := rp.RunScenario(ctx, finalScenario)
 	logScenarioTimeline("post-reboot commit", finalReport)
 	if err != nil {
+		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
 		return fmt.Errorf("ACL agent scenario failed (post-reboot commit): %w", err)
 	}
 	if !finalReport.Passed {
+		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
 		return fmt.Errorf("ACL agent scenario failed (post-reboot commit): %+v", finalReport)
 	}
 
 	snapshot := nodeStore.Snapshot()
 	if got := snapshot.Labels[stormproxies.StateLabel]; got != "update-succeeded" {
+		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
 		return fmt.Errorf("final state mismatch: got %q", got)
 	}
 	return collectAclArtifacts(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
+}
+
+// collectAclArtifactsBestEffort collects the same diagnostic artifacts as
+// collectAclArtifacts, but on a failure path where the harness is about to
+// return an error anyway. run-ab-update's failure is otherwise a dead end
+// for diagnostics: the storm-trident test runner marks collect-logs (and
+// cleanup-vm) as NOTR ("dependency failure") whenever run-ab-update fails,
+// so nothing ever calls collectAclArtifacts and the post-reboot journal
+// (trident-acl-agent.log / tridentd.log) that would explain the failure is
+// never captured or published as a pipeline artifact. Errors here are
+// logged but swallowed so they never mask the original failure.
+func collectAclArtifactsBestEffort(cfg stormvmconfig.VMConfig, vmIP string, outputPath string) {
+	if err := collectAclArtifacts(cfg, vmIP, outputPath); err != nil {
+		logrus.Warnf("best-effort artifact collection after test failure also failed: %v", err)
+	}
 }
 
 func prepareVmForAclAgent(cfg stormvmconfig.VMConfig, vmIP string, testConfig stormaclconfig.TestConfig) error {

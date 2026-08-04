@@ -26,7 +26,7 @@ use crate::{
         STATE_LABEL, TARGET_VERSION_LABEL,
     },
     query_for_update,
-    trident::{RemoteError, TridentClient, TridentClientError},
+    trident::{TridentClient, TridentClientError},
     IdSource, QueryResult, DEFAULT_NEBRASKA_TRACK,
 };
 
@@ -150,12 +150,12 @@ where
                 // tridentd in `UpdateAbFinalized`: the agent finalized
                 // successfully, then crashed/restarted before (or during) its
                 // own `reboot()` call, so the machine never actually rebooted
-                // and we're still running from the pre-update boot. Per
-                // tridentd's contract, that case reports `UpdateAbFinalized`
-                // with no last error, whereas a genuine post-reboot resume
-                // reports either `Provisioned` (handled below) or
-                // `UpdateAbFinalized` *with* a last error recorded from the
-                // reboot/health-check path. Distinguish the two via
+                // and we're still running from the pre-update boot. In that
+                // case tridentd's last error still reflects whatever failed
+                // during that aborted attempt. A genuine post-reboot resume,
+                // by contrast, reports `UpdateAbFinalized` with NO last
+                // error - finalize succeeded, the reboot actually happened,
+                // and there is nothing to report. Distinguish the two via
                 // `GetLastError` before deciding whether to retry the reboot
                 // or proceed to `commit()`.
                 let last_error = match client.get_last_error().await {
@@ -164,18 +164,13 @@ where
                         log::warn!(
                             "failed to query trident last-error while distinguishing reboot from restart; treating as a completed reboot and proceeding to commit: {err}"
                         );
-                        Some(RemoteError {
-                            kind: None,
-                            subkind: "agent-local-last-error-query-failed".to_string(),
-                            message: err.to_string(),
-                            error_message: String::new(),
-                        })
+                        None
                     }
                 };
 
-                if last_error.is_none() {
+                if last_error.is_some() {
                     log::warn!(
-                        "tridentd reports UpdateAbFinalized with no last error: the agent restarted without the machine actually rebooting; retrying reboot instead of committing"
+                        "tridentd reports UpdateAbFinalized with a last error: the agent restarted mid-flight without the machine actually rebooting; retrying reboot instead of committing"
                     );
                     match self.rebooter.reboot() {
                         Ok(()) => {
