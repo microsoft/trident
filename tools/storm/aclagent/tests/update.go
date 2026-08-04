@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	stormfakes "tridenttools/storm/aclagent/fakes"
+	stormproxies "tridenttools/storm/aclagent/proxies"
 	stormaclconfig "tridenttools/storm/aclagent/utils/config"
 	stormssh "tridenttools/storm/utils/ssh"
 	stormvm "tridenttools/storm/utils/vm"
@@ -34,7 +34,7 @@ import (
 // machine. It runs regardless of pass/fail so a test run's output always
 // documents exactly how far the state machine got and why, instead of
 // forcing readers to reconstruct the timeline from raw journal logs.
-func logScenarioTimeline(label string, report *stormfakes.ScenarioReport) {
+func logScenarioTimeline(label string, report *stormproxies.ScenarioReport) {
 	if report == nil {
 		return
 	}
@@ -118,8 +118,8 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	nodeStore := stormfakes.NewNodeStore(stormfakes.NewSeedNode(testConfig.NodeName, map[string]string{}))
-	apiServer := stormfakes.NewAPIServer(testConfig.NodeName, nodeStore)
+	nodeStore := stormproxies.NewNodeStore(stormproxies.NewSeedNode(testConfig.NodeName, map[string]string{}))
+	apiServer := stormproxies.NewAPIServer(testConfig.NodeName, nodeStore)
 	// Bind on all interfaces (not 127.0.0.1) so the VM can reach the fake
 	// apiserver directly over the libvirt NAT network at testConfig.HostEndpointIP,
 	// instead of relying on reverse SSH tunnels. Tunnels don't survive a real
@@ -144,7 +144,7 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 		if err != nil {
 			return fmt.Errorf("failed to hash image %s: %w", testConfig.ImagePath, err)
 		}
-		imageServer := &stormfakes.ImageServer{ImagePath: testConfig.ImagePath}
+		imageServer := &stormproxies.ImageServer{ImagePath: testConfig.ImagePath}
 		if _, err := imageServer.ListenAndServe(ctx, fmt.Sprintf("0.0.0.0:%d", testConfig.ImageServerPort)); err != nil {
 			return fmt.Errorf("failed to start fake image server: %w", err)
 		}
@@ -153,7 +153,7 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 		nebraskaSHA384 = hash
 	}
 
-	nebraska := &stormfakes.NebraskaProxy{Scenario: &stormfakes.NebraskaScenario{
+	nebraska := &stormproxies.NebraskaProxy{Scenario: &stormproxies.NebraskaScenario{
 		Available:   true,
 		Version:     testConfig.TargetVersion,
 		URL:         nebraskaCodebase,
@@ -164,18 +164,18 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 		return fmt.Errorf("failed to start fake Nebraska endpoint: %w", err)
 	}
 
-	nodeStore.PatchLabels(map[string]string{stormfakes.NodeImageVersionLabel: testConfig.ExpectedInitialVolume})
+	nodeStore.PatchLabels(map[string]string{stormproxies.NodeImageVersionLabel: testConfig.ExpectedInitialVolume})
 	nodeStore.SetReadyCondition(true)
 
 	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig); err != nil {
 		return err
 	}
 
-	rp := &stormfakes.RPClient{APIServerURL: fmt.Sprintf("http://%s:%d", testConfig.HostEndpointIP, testConfig.APIServerPort), NodeName: testConfig.NodeName}
-	scenario := &stormfakes.Scenario{Steps: []stormfakes.ScenarioStep{
-		{Patch: &stormfakes.PatchStep{Request: "stage", RequestID: "R1", TargetOSImageVersion: testConfig.TargetVersion}},
-		{Expect: &stormfakes.ExpectStep{State: "staged", ObservedRequestID: "R1", Timeout: 120 * time.Second}},
-		{Patch: &stormfakes.PatchStep{Request: "finalize", RequestID: "R1"}},
+	rp := &stormproxies.RPClient{APIServerURL: fmt.Sprintf("http://%s:%d", testConfig.HostEndpointIP, testConfig.APIServerPort), NodeName: testConfig.NodeName}
+	scenario := &stormproxies.Scenario{Steps: []stormproxies.ScenarioStep{
+		{Patch: &stormproxies.PatchStep{Request: "stage", RequestID: "R1", TargetOSImageVersion: testConfig.TargetVersion}},
+		{Expect: &stormproxies.ExpectStep{State: "staged", ObservedRequestID: "R1", Timeout: 120 * time.Second}},
+		{Patch: &stormproxies.PatchStep{Request: "finalize", RequestID: "R1"}},
 	}}
 	report, err := rp.RunScenario(ctx, scenario)
 	logScenarioTimeline("stage/finalize", report)
@@ -209,8 +209,8 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 		return fmt.Errorf("failed to reconfigure ACL agent on post-reboot root: %w", err)
 	}
 
-	finalScenario := &stormfakes.Scenario{Steps: []stormfakes.ScenarioStep{
-		{Expect: &stormfakes.ExpectStep{State: "update-succeeded", ObservedRequestID: "R1", Timeout: 180 * time.Second}},
+	finalScenario := &stormproxies.Scenario{Steps: []stormproxies.ScenarioStep{
+		{Expect: &stormproxies.ExpectStep{State: "update-succeeded", ObservedRequestID: "R1", Timeout: 180 * time.Second}},
 	}}
 	finalReport, err := rp.RunScenario(ctx, finalScenario)
 	logScenarioTimeline("post-reboot commit", finalReport)
@@ -222,7 +222,7 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	}
 
 	snapshot := nodeStore.Snapshot()
-	if got := snapshot.Labels[stormfakes.StateLabel]; got != "update-succeeded" {
+	if got := snapshot.Labels[stormproxies.StateLabel]; got != "update-succeeded" {
 		return fmt.Errorf("final state mismatch: got %q", got)
 	}
 	return collectAclArtifacts(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
