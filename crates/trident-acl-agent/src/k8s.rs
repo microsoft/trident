@@ -1,22 +1,25 @@
 //! Thin Kubernetes client wrapper for Harpoon's node self-patching protocol.
 //!
 //! The design calls for get/patch access to exactly one Node object (§3–§5).
-//! For v1 we use a simple poll loop instead of a streaming watch. This keeps
-//! the implementation predictable for both production and the tester's fake API
-//! server while still reacting within a couple of seconds.
+//! Node changes are observed via the Kubernetes watch API (`kube::runtime::watcher`)
+//! rather than polling, so label updates are delivered promptly and without
+//! placing repeated load on the API server. `watch_poll_interval` still bounds
+//! how quickly the watcher notices a dropped/re-established connection (used
+//! as the watcher's backoff ceiling) and how often the fake test API server
+//! needs to support being polled if it does not support real watches.
 
 use std::{collections::BTreeMap, path::Path};
 
 use anyhow::Context;
-use futures::{stream::BoxStream, StreamExt};
+use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use k8s_openapi::api::core::v1::Node;
 use kube::{
     api::{Patch, PatchParams},
     config::{KubeConfigOptions, Kubeconfig},
+    runtime::{watcher, WatchStreamExt},
     Api, Client, Config,
 };
 use serde_json::json;
-use tokio_stream::wrappers::IntervalStream;
 
 use crate::config::KubernetesConfig;
 
@@ -26,6 +29,8 @@ pub enum K8sClientError {
     Config(#[from] anyhow::Error),
     #[error("failed Kubernetes API call: {0}")]
     Api(#[from] kube::Error),
+    #[error("Kubernetes watch stream failed: {0}")]
+    Watch(#[from] kube::runtime::watcher::Error),
 }
 
 #[derive(Clone)]
@@ -90,14 +95,20 @@ impl NodeClient {
             .await?)
     }
 
+    /// Streams Node updates for `name` using the Kubernetes watch API instead
+    /// of polling. `watcher::Config::default().fields(...)` scopes the watch
+    /// server-side to the single node we care about, and `.default_backoff()`
+    /// governs reconnect timing (capped near `poll_interval`) if the watch
+    /// connection drops.
     pub fn watch_node(&self, name: String) -> BoxStream<'static, Result<Node, K8sClientError>> {
-        let client = self.clone();
-        IntervalStream::new(tokio::time::interval(self.poll_interval))
-            .then(move |_| {
-                let client = client.clone();
-                let name = name.clone();
-                async move { client.get_node(&name).await }
-            })
+        let watcher_config = watcher::Config::default()
+            .fields(&format!("metadata.name={name}"))
+            .timeout(self.poll_interval.as_secs().max(1) as u32);
+
+        watcher(self.api.clone(), watcher_config)
+            .default_backoff()
+            .touched_objects()
+            .map_err(K8sClientError::from)
             .boxed()
     }
 }
