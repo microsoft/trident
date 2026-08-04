@@ -1,26 +1,24 @@
 //! gRPC helpers for talking to `tridentd`.
 //!
-//! The label protocol needs stage/finalize/commit plus a startup servicing-state
-//! query (§4–§5). Harpoon uses the preview `StatusService::GetServicingState`
-//! when available; if the daemon doesn't expose it yet, the orchestrator logs a
-//! warning and falls back to label-based progress only.
+//! The label protocol drives stage/finalize/commit directly against tridentd's
+//! stable v1 API (§4–§5). Startup recovery no longer pre-queries the preview
+//! `StatusService::GetServicingState`: commit() is self-checking (tridentd
+//! only commits from a valid servicing_state and otherwise returns
+//! ServicingKind::NoneRequired as a harmless no-op), so the orchestrator
+//! always calls commit() unconditionally and falls back to label-based
+//! progress for anything commit() reports nothing to do for. See
+//! orchestrator.rs's recover_from_trident_state for the full rationale.
 
 use std::time::Duration;
 
 use anyhow::anyhow;
 use futures::StreamExt;
 use tonic::{transport::Endpoint, Request, Streaming};
-use trident_proto::{
-    v1::{
-        commit_service_client::CommitServiceClient, servicing_response::Response as ResponseBody,
-        update_service_client::UpdateServiceClient, CommitRequest, FinalizeUpdateRequest,
-        HostConfiguration, LogLevel, RebootHandling, RebootManagement, RebootStatus, ServicingKind,
-        ServicingResponse, StageUpdateRequest, StatusCode, TridentErrorKind, UpdateRequest,
-    },
-    v1preview::{
-        status_service_client::StatusServiceClient, GetLastErrorRequest, GetServicingStateRequest,
-        ServicingState as PreviewServicingState,
-    },
+use trident_proto::v1::{
+    commit_service_client::CommitServiceClient, servicing_response::Response as ResponseBody,
+    update_service_client::UpdateServiceClient, CommitRequest, FinalizeUpdateRequest,
+    HostConfiguration, LogLevel, RebootHandling, RebootManagement, RebootStatus, ServicingKind,
+    ServicingResponse, StageUpdateRequest, StatusCode, TridentErrorKind, UpdateRequest,
 };
 use url::Url;
 
@@ -84,7 +82,6 @@ impl TridentClientError {
 pub struct TridentClient {
     update_client: UpdateServiceClient<tonic::transport::Channel>,
     commit_client: CommitServiceClient<tonic::transport::Channel>,
-    status_client: StatusServiceClient<tonic::transport::Channel>,
 }
 
 impl TridentClient {
@@ -104,8 +101,7 @@ impl TridentClient {
 
         Ok(Self {
             update_client: UpdateServiceClient::new(channel.clone()),
-            commit_client: CommitServiceClient::new(channel.clone()),
-            status_client: StatusServiceClient::new(channel),
+            commit_client: CommitServiceClient::new(channel),
         })
     }
 
@@ -202,7 +198,15 @@ impl TridentClient {
             .commit_client
             .commit(Request::new(CommitRequest {
                 reboot: Some(RebootManagement {
-                    handling: RebootHandling::TridentHandlesReboot.into(),
+                    // The agent, not tridentd, must own every reboot
+                    // decision: AKS-RP is the sole authority over
+                    // reboot/rollback (accepted-design.md §2.5). If commit()
+                    // ever reports NeedsReboot (e.g. a health-check failure,
+                    // were health checks ever re-enabled), the agent needs
+                    // to see that as a RebootRequired response it controls
+                    // and reports via labels, not have tridentd reboot out
+                    // from under it.
+                    handling: RebootHandling::CallerHandlesReboot.into(),
                 }),
             }))
             .await
@@ -218,47 +222,6 @@ impl TridentClient {
             consume_servicing_stream("commit", response),
         )
         .await
-    }
-
-    pub async fn get_servicing_state(
-        &mut self,
-    ) -> Result<PreviewServicingState, TridentClientError> {
-        let response = self
-            .status_client
-            .get_servicing_state(Request::new(GetServicingStateRequest {}))
-            .await
-            .map_err(|source| TridentClientError::Request {
-                operation: "get_servicing_state",
-                source,
-            })?;
-
-        Ok(response.into_inner().state())
-    }
-
-    /// Returns the last error tridentd recorded for the most recent servicing
-    /// operation, if any. Used to distinguish a genuine post-reboot resume
-    /// from a bare process restart on the pre-update boot: per operator
-    /// guidance, `UpdateAbFinalized` with no last error means the agent
-    /// restarted without the machine actually rebooting (finalize completed,
-    /// but the reboot never took effect), while `UpdateAbFinalized` *with* a
-    /// last error - or `Provisioned` in either case - indicates a real reboot
-    /// occurred.
-    pub async fn get_last_error(&mut self) -> Result<Option<RemoteError>, TridentClientError> {
-        let response = self
-            .status_client
-            .get_last_error(Request::new(GetLastErrorRequest {}))
-            .await
-            .map_err(|source| TridentClientError::Request {
-                operation: "get_last_error",
-                source,
-            })?;
-
-        Ok(response.into_inner().error.map(|error| RemoteError {
-            kind: TridentErrorKind::try_from(error.kind).ok(),
-            subkind: error.subkind,
-            message: error.message,
-            error_message: error.error_message,
-        }))
     }
 }
 

@@ -48,60 +48,68 @@ and the request-id, written whenever `state=failed`.
 
 Failure reasons (`FailureReason`): `download-failed`, `stage-failed`,
 `version-mismatch`, `finalize-failed`, `commit-failed`, `volume-mismatch`,
-`timeout`, `rollback-succeeded`, `rollback-failed`, `no-update-available`.
+`timeout`, `rollback-succeeded`, `rollback-failed`, `health-check-failed`,
+`no-update-available`.
 
-## Startup: recovering from `tridentd` before trusting labels
+## Startup: recovering by unconditionally calling `commit()`
 
 On every process start (including post-reboot), `recover_from_trident_state()`
-runs **before** the watch loop begins:
+runs **before** the watch loop begins. It no longer queries `tridentd` for its
+servicing state first — it just calls `commit()` unconditionally and
+classifies whatever comes back. This is possible because `tridentd`'s
+`commit()` is self-checking: if no servicing is actually in progress
+(anything outside `*Finalized`/`*HealthCheckFailed`), it returns
+`ServicingKind::NoneRequired` as a harmless no-op rather than an error, so
+calling it speculatively on every startup — even a completely idle node — is
+always safe.
 
 1. Fetch the current Node object and build a `ProtocolSnapshot` from its
    labels/annotations (this is a read-only view; labels are not yet trusted).
-2. Connect to `tridentd` and call `get_servicing_state()`.
-   - If `tridentd` is unreachable or errors: log a warning and fall back to
-     `ensure_ready_label` (only patches `state=ready` if no request is
-     outstanding — never overwrites an in-flight request's labels blindly).
-   - If `ServicingState == UpdateAbStaged`: patch `state=staged`, carrying
-     forward whatever request-id/target-version the snapshot had. This
-     handles a crash/restart between stage and finalize, and also downgrades
-     a stale `finalizing` label back to `staged` if the crash happened
-     mid-finalize before tridentd's own state advanced — `decide_action` then
-     re-drives `handle_finalize` on the next reconcile.
-   - If `ServicingState == UpdateAbFinalized`: **this state is ambiguous** —
-     it's reached both by a genuine post-reboot resume *and* by the agent
-     crashing/restarting after a successful finalize but before (or during)
-     its own `reboot()` call, i.e. still running on the pre-update boot. The
-     two are distinguished via `tridentd.get_last_error()`: no last error
-     means finalize completed but the reboot never actually happened (a bare
-     restart), so the agent re-issues `reboot()` rather than committing; a
-     last error present means a real reboot occurred (typically from the
-     health-check/reboot path) and the agent proceeds to `handle_commit`.
-   - If `ServicingState == UpdateAbHealthCheckFailed`: this state is only
-     reachable after the host has actually booted into the target OS and
-     health checks ran, so unlike `UpdateAbFinalized` it unambiguously implies
-     a real reboot — proceed straight to `handle_commit`.
-   - If `ServicingState == Provisioned` and the label snapshot's `state` is
-     still `staging`/`finalizing`/`committing` for the current request-id:
-     that in-flight operation was interrupted by a reboot the agent itself
-     didn't drive to completion (or a rollback) and cannot be resumed —
-     `fail_request(Timeout)` so the RP can retry with a fresh request-id,
-     rather than leaving a dangling in-flight label.
-   - Any other state (`NotProvisioned`/`InstallStaged`/`InstallFinalized`,
-     etc.): if the label snapshot's `state` is still `staging`/`finalizing`/
-     `committing`, this means the agent crashed *before* tridentd's own state
-     ever advanced past where it started (e.g. crashed just after patching
-     `state=staging` but before the `UpdateStage` RPC ran, or crashed mid
-     Nebraska query). There is no in-progress tridentd operation to resume,
-     so the request is failed explicitly (`fail_request(Timeout)`) instead of
-     leaving the stale label in place. Otherwise, `ensure_ready_label` only.
+2. Patch `state=committing`, then connect to `tridentd` and call
+   `commit(finalize_timeout)` (with `CallerHandlesReboot` — see below).
+3. Classify the result via `apply_commit_result`:
+   - `Ok` with `servicing_kind == Some(NoneRequired)` — no commit was
+     actually run (matches tridentd's `NoActiveServicing` no-op). Fall
+     through to label-only recovery: inspect the snapshot's `state`.
+     - `staged`/`staging` for the current request-id: an in-flight
+       stage/finalize that was interrupted by a crash/restart *without* a
+       real reboot — re-derive `state=staged` so `decide_action` re-drives
+       `handle_finalize` on the next reconcile.
+     - `finalizing`/`committing`: the process crashed after finalize
+       reported success but the reboot didn't actually happen (or happened
+       and the node came back with no active servicing left, i.e. a stale
+       label from a prior cycle) — `fail_request(Timeout)` so the RP can
+       retry with a fresh request-id, rather than leaving a dangling
+       in-flight label the agent can no longer corroborate.
+     - anything else: `ensure_ready_label` only (only patches `state=ready`
+       if no request is outstanding).
+   - `Ok` with `reboot_status == RebootRequired` — commit ran and detected a
+     real servicing operation, but a post-commit reboot is still required
+     (the health-check-failure path). The agent does **not** reboot here —
+     it reports `FailureReason::HealthCheckFailed` via labels and lets AKS-RP
+     decide the next step, per the "AKS-RP owns every reboot/rollback
+     decision" principle (see below).
+   - `Ok` otherwise (`Done`) — a real commit succeeded (forward AB-update or
+     clean install) — patch `state=update-succeeded`, refresh
+     `node-image-version`.
+   - `Err` — `commit()` itself failed (e.g. `ServicingError::AbUpdateRebootCheck`
+     if the host booted from the wrong partition) — `fail_request` with
+     `map_commit_failure(err)`.
 
-This ordering is the concrete implementation of the design's "Trident's own
-state is the source of truth, not labels" decision — labels are a status
-mirror the agent maintains, never an input trusted blindly across a restart
-boundary. Explicitly failing (rather than silently reaffirming) any
-transitional label state that startup recovery cannot corroborate against
-`tridentd`'s own state is what closes the "permanent silent stall" gap found
-in deep review (see below).
+This design deliberately drops the preview `get_servicing_state()` and
+`get_last_error()` RPCs entirely: `commit()`'s own self-checking response
+(`ServicingKind`/`RebootStatus`/`Result`) already fully classifies every
+startup scenario the agent needs to distinguish, so there is nothing left for
+those RPCs to disambiguate. This also removes any dependency on `v1preview`
+APIs that may not be implemented in all `tridentd` builds.
+
+This is the concrete implementation of the design's "Trident's own state is
+the source of truth, not labels" decision — labels are a status mirror the
+agent maintains, never an input trusted blindly across a restart boundary.
+Explicitly failing (rather than silently reaffirming) any transitional label
+state that startup recovery cannot corroborate against `tridentd`'s own state
+is what closes the "permanent silent stall" gap found in deep review (see
+below).
 
 ## Steady-state loop: reacting to label changes
 
@@ -164,17 +172,20 @@ the current label snapshot into one of:
    (finalize genuinely succeeded, but the machine never went down), flagged
    for operator attention rather than silently retried.
 
-### `handle_commit` (post-reboot path)
+### Commit (post-reboot path)
 
-Reached only from `recover_from_trident_state` when `tridentd` reports
-`UpdateAbFinalized`/`UpdateAbHealthCheckFailed` on startup:
-
-1. Patch `state=committing`.
-2. Call `tridentd.commit(finalize_timeout)`.
-   - Success → patch `state=update-succeeded`, refresh `node-image-version`.
-   - Failure → `fail_request` with `map_commit_failure(initial_state, err)` —
-     distinguishes `commit-failed` vs `rollback-succeeded` vs
-     `rollback-failed` depending on what `tridentd` actually did.
+There is no separate steady-state "commit" branch in `decide_action` — commit
+only ever runs from `recover_from_trident_state` at startup (see above),
+since it is inherently a "what happened before I was last running" check, not
+a reaction to a label change. The response classification
+(`apply_commit_result`) is shared code, using `tridentd.commit()` sent with
+`CallerHandlesReboot` (matching `update_finalize`) so a health-check failure
+is reported to AKS-RP via labels rather than tridentd silently rebooting the
+node on its own — `map_commit_failure(err)` maps a real commit `Err` to
+`FailureReason::RollbackSucceeded` (the forward update's target never booted)
+or `CommitFailed` as appropriate; the `RollbackFailed` reason is unused today
+now that health-check failure is caught earlier via `RebootStatus::RebootRequired`
+rather than via `map_commit_failure`.
 
 `update-succeeded` and `failed` are terminal for a given `request-id`; a new
 `request-id` from the RP restarts the cycle from `Stage`/`Finalize`
@@ -201,11 +212,8 @@ aks-rp          API server        trident-acl-agent         Nebraska        trid
   |                 |<--PATCH finalized--| (best-effort, bounded retry)          |
   |                 |                    |--reboot()--                           |
   |                 |                    (process exits; machine reboots)        |
-  |                 |                    |--restart; get_servicing_state()------>|
-  |                 |                    |<--UpdateAbFinalized-------------------|
-  |                 |<--PATCH committing-|                       |               |
-  |                 |                    |--Commit()------------------------------>|
-  |                 |                    |<--Completed{success}--------------------|
+  |                 |                    |--restart; commit(CallerHandlesReboot)->|
+  |                 |                    |<--Completed{Done, AbUpdate}-----------|
   |                 |<--PATCH update-----|                       |               |
   |                 |    succeeded       |                       |               |
   |--watches for observed-request-id=R1 AND state in             |               |
@@ -243,16 +251,25 @@ flagged here for reviewer visibility, not because they're beyond challenge:
 5. **`no-update-available`**: a distinct `FailureReason`, separate from hard
    stage failures, for the case where Nebraska simply hasn't published the
    requested version yet.
-6. **Reboot vs. bare process restart**: `tridentd`'s `UpdateAbFinalized`
-   servicing state is ambiguous on its own — it's reported both immediately
-   after a successful finalize (before any reboot) and after a genuine
-   post-reboot resume. `recover_from_trident_state` disambiguates via
-   `tridentd.get_last_error()`: no last error means the agent restarted
-   without the machine rebooting (finalize completed but reboot didn't
-   happen or didn't take effect), so the agent re-issues `reboot()`; a last
-   error present means a real reboot occurred, so the agent proceeds to
-   `commit()`. `UpdateAbHealthCheckFailed` and `Provisioned` are treated as
-   unambiguous reboot evidence and need no such check.
+6. **Reboot vs. bare process restart**: no longer an ambiguity the agent
+   needs to resolve at all. `commit()` is now called unconditionally on
+   every startup (see above) rather than gated behind a `get_servicing_state()`
+   pre-check, and its own `ServicingKind::NoneRequired` no-op response
+   safely covers the "nothing to commit" case (idle node, or a crash/restart
+   with no real reboot). This removes the dependency on both
+   `tridentd.get_servicing_state()` and `tridentd.get_last_error()` —
+   `v1preview` RPCs not implemented in all `tridentd` builds — entirely.
+7. **Reboot ownership on `commit()`**: `commit()`'s gRPC request now sends
+   `CallerHandlesReboot` (previously `TridentHandlesReboot`), matching
+   `update_finalize`'s existing behavior. If `commit()` detects a real
+   servicing operation whose health check failed, `tridentd` no longer
+   auto-reboots the node on its own — it returns `RebootStatus::RebootRequired`
+   and the agent reports `FailureReason::HealthCheckFailed` to AKS-RP via
+   labels instead of rebooting, so AKS-RP retains control of every
+   reboot/rollback decision (see `accepted-design.md` §2.5). In practice
+   health checks are disabled in this project's config today, so this path
+   is currently unreachable, but the code handles it correctly as
+   defense-in-depth.
 
 ## Known follow-ups (tracked, not blocking)
 

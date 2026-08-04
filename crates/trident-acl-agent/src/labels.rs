@@ -55,6 +55,10 @@ pub enum FailureReason {
     RollbackSucceeded,
     RollbackFailed,
     NoUpdateAvailable,
+    /// commit() reported NeedsReboot (e.g. a Trident health-check failure).
+    /// AKS-RP owns every reboot/rollback decision (accepted-design.md §2.5),
+    /// so the agent reports this via labels instead of rebooting itself.
+    HealthCheckFailed,
 }
 
 impl UpdateRequest {

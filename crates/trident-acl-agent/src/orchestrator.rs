@@ -15,7 +15,7 @@ use futures::StreamExt;
 use k8s_openapi::api::core::v1::Node;
 use semver::Version;
 use serde::{Deserialize, Serialize};
-use trident_proto::v1preview::ServicingState as PreviewServicingState;
+use trident_proto::v1::{RebootStatus, ServicingKind};
 
 use crate::{
     config::AgentConfig,
@@ -26,7 +26,7 @@ use crate::{
         STATE_LABEL, TARGET_VERSION_LABEL,
     },
     query_for_update,
-    trident::{TridentClient, TridentClientError},
+    trident::{CompletedResponse, TridentClient, TridentClientError},
     IdSource, QueryResult, DEFAULT_NEBRASKA_TRACK,
 };
 
@@ -113,17 +113,6 @@ where
             }
         };
 
-        let trident_state = match client.get_servicing_state().await {
-            Ok(state) => state,
-            Err(err) => {
-                log::warn!(
-                    "failed to query trident servicing state before trusting labels; continuing with label view only: {err}"
-                );
-                self.ensure_ready_label(&snapshot).await?;
-                return Ok(());
-            }
-        };
-
         let recovered_request_id = snapshot
             .request_id
             .clone()
@@ -133,8 +122,48 @@ where
             .clone()
             .or(snapshot.node_image_version.clone());
 
-        match trident_state {
-            PreviewServicingState::UpdateAbStaged => {
+        // Always attempt commit() first rather than pre-querying
+        // get_servicing_state() to decide whether to call it. commit() is
+        // self-checking: tridentd only actually commits when its own
+        // servicing_state is one of the finalized/health-check-failed
+        // states (see tridentd's Trident::commit), and otherwise returns
+        // ServicingKind::NoneRequired as a harmless no-op - so it's always
+        // safe to call, whether we're resuming a genuine post-reboot
+        // commit, restarting mid-flight before ever rebooting (commit's own
+        // boot validation then fails closed with its own gRPC error), or
+        // just idling with nothing to commit at all.
+        let result = {
+            self.patch_protocol(
+                &self.config.kubernetes.node_name,
+                ProtocolPatch::progress(
+                    State::Committing,
+                    recovered_request_id.clone(),
+                    recovered_target_version.clone(),
+                ),
+            )
+            .await?;
+            client.commit(self.config.orchestration.finalize_timeout).await
+        };
+        let nothing_to_commit = matches!(
+            &result,
+            Ok(response) if response.servicing_kind == Some(ServicingKind::NoneRequired)
+        );
+        if !nothing_to_commit {
+            return self
+                .apply_commit_result(recovered_request_id, recovered_target_version, result)
+                .await;
+        }
+
+        // commit() reported nothing to commit. Everything from here on is
+        // reconstructed from labels alone (no get_servicing_state() query):
+        // a Staged label means stage completed but finalize never ran; a
+        // transitional staging/finalizing/committing label with nothing to
+        // commit means that operation was interrupted (a crash, or a reboot
+        // that landed us back at a non-finalized state, e.g. after a
+        // rollback) and must be retried with a new request-id; anything
+        // else just needs a Ready label.
+        match snapshot.state {
+            Some(State::Staged) => {
                 self.patch_protocol(
                     &self.config.kubernetes.node_name,
                     ProtocolPatch::progress(
@@ -145,133 +174,20 @@ where
                 )
                 .await?;
             }
-            PreviewServicingState::UpdateAbFinalized => {
-                // A DIFFERENT process restart than a real reboot can also land
-                // tridentd in `UpdateAbFinalized`: the agent finalized
-                // successfully, then crashed/restarted before (or during) its
-                // own `reboot()` call, so the machine never actually rebooted
-                // and we're still running from the pre-update boot. In that
-                // case tridentd's last error still reflects whatever failed
-                // during that aborted attempt. A genuine post-reboot resume,
-                // by contrast, reports `UpdateAbFinalized` with NO last
-                // error - finalize succeeded, the reboot actually happened,
-                // and there is nothing to report. Distinguish the two via
-                // `GetLastError` before deciding whether to retry the reboot
-                // or proceed to `commit()`.
-                let last_error = match client.get_last_error().await {
-                    Ok(last_error) => last_error,
-                    Err(err) => {
-                        log::warn!(
-                            "failed to query trident last-error while distinguishing reboot from restart; treating as a completed reboot and proceeding to commit: {err}"
-                        );
-                        None
-                    }
-                };
-
-                if last_error.is_some() {
-                    log::warn!(
-                        "tridentd reports UpdateAbFinalized with a last error: the agent restarted mid-flight without the machine actually rebooting; retrying reboot instead of committing"
-                    );
-                    match self.rebooter.reboot() {
-                        Ok(()) => {
-                            // The process is expected to be terminated by the
-                            // reboot; if it isn't (e.g. running under a
-                            // supervisor that doesn't kill on shutdown
-                            // signal), fall through to Ready so the next
-                            // startup re-evaluates rather than looping here.
-                        }
-                        Err(err) => {
-                            self.fail_request(
-                                recovered_request_id,
-                                FailureReason::FinalizeFailed,
-                                None,
-                                &format!(
-                                    "finalize previously succeeded but re-issuing reboot after an agent restart failed: {err}"
-                                ),
-                            )
-                            .await?;
-                        }
-                    }
-                } else {
-                    self.handle_commit(
-                        recovered_request_id,
-                        recovered_target_version,
-                        trident_state,
-                    )
-                    .await?;
-                }
-            }
-            PreviewServicingState::UpdateAbHealthCheckFailed => {
-                // This state is only reachable after the host has actually
-                // booted into the target OS and health checks ran (see the
-                // `ServicingState` proto docs), so - unlike
-                // `UpdateAbFinalized` - it unambiguously implies a real
-                // reboot already occurred; no last-error check is needed to
-                // disambiguate it from a bare process restart.
-                self.handle_commit(
+            Some(State::Staging) | Some(State::Finalizing) | Some(State::Committing) => {
+                self.fail_request(
                     recovered_request_id,
-                    recovered_target_version,
-                    trident_state,
+                    FailureReason::Timeout,
+                    None,
+                    &format!(
+                        "agent restarted (or the node rebooted) with nothing for tridentd to commit while the agent's last known state was {:?}; the in-flight operation was interrupted and must be retried with a new request-id",
+                        snapshot.state
+                    ),
                 )
                 .await?;
             }
-            PreviewServicingState::Provisioned => {
-                // A real reboot landed us back at `Provisioned` (with or
-                // without a last error, e.g. after a completed commit or a
-                // rollback). If our labels still show a transitional
-                // in-flight state for this request-id, that operation is
-                // stale/orphaned - resolve it now instead of leaving a
-                // dangling `staging`/`finalizing` label the steady-state loop
-                // would otherwise `Reaffirm` forever (see the transitional
-                // recovery case below for the same failure-mode on a mere
-                // process restart).
-                match snapshot.state {
-                    Some(State::Staging) | Some(State::Finalizing) | Some(State::Committing) => {
-                        self.fail_request(
-                            recovered_request_id,
-                            FailureReason::Timeout,
-                            None,
-                            &format!(
-                                "node rebooted/returned to Provisioned while the agent's last known state was {:?}; the in-flight operation was interrupted and must be retried with a new request-id",
-                                snapshot.state
-                            ),
-                        )
-                        .await?;
-                    }
-                    _ => {
-                        self.ensure_ready_label(&snapshot).await?;
-                    }
-                }
-            }
             _ => {
-                // Covers e.g. NotProvisioned/InstallStaged/InstallFinalized -
-                // not part of the A/B update cycle. If labels still show a
-                // transitional `staging`/`finalizing`/`committing` state left
-                // over from a crash mid-operation (the process died before
-                // tridentd's state ever advanced past where it started),
-                // there is no in-progress tridentd operation to resume or
-                // observe: fail the request explicitly instead of silently
-                // reaffirming the stale label forever. This turns the
-                // previously-permanent silent stall (DR-001) into an
-                // actionable, terminal `failed` state the RP can react to
-                // (e.g. by retrying with a fresh request-id).
-                match snapshot.state {
-                    Some(State::Staging) | Some(State::Finalizing) | Some(State::Committing) => {
-                        self.fail_request(
-                            recovered_request_id,
-                            FailureReason::Timeout,
-                            None,
-                            &format!(
-                                "agent restarted with trident servicing state {trident_state:?}, which does not match the in-flight label state {:?}; the prior operation was interrupted (e.g. a crash) and must be retried with a new request-id",
-                                snapshot.state
-                            ),
-                        )
-                        .await?;
-                    }
-                    _ => {
-                        self.ensure_ready_label(&snapshot).await?;
-                    }
-                }
+                self.ensure_ready_label(&snapshot).await?;
             }
         }
 
@@ -510,46 +426,48 @@ where
         Ok(LoopControl::Continue)
     }
 
-    async fn handle_commit(
+    /// Classifies a `commit()` result into the right label update. Called
+    /// from `recover_from_trident_state` after commit() is attempted at
+    /// startup - see that function for why it always attempts commit()
+    /// unconditionally rather than pre-checking servicing state.
+    async fn apply_commit_result(
         &self,
         request_id: Option<String>,
         target_version: Option<String>,
-        initial_state: PreviewServicingState,
+        result: Result<CompletedResponse, TridentClientError>,
     ) -> Result<(), anyhow::Error> {
-        self.patch_protocol(
-            &self.config.kubernetes.node_name,
-            ProtocolPatch::progress(
-                State::Committing,
-                request_id.clone(),
-                target_version.clone(),
-            ),
-        )
-        .await?;
-
-        let mut client = TridentClient::connect(&self.config.trident.socket).await?;
-        match client
-            .commit(self.config.orchestration.finalize_timeout)
-            .await
-        {
+        match result {
+            Ok(response) if response.reboot_status == RebootStatus::RebootRequired => {
+                // commit() asked for a reboot (e.g. a Trident health-check
+                // failure - see the ServicingKind docs). AKS-RP owns every
+                // reboot/rollback decision (accepted-design.md §2.5), so the
+                // agent must not honor this by rebooting itself; report it
+                // via labels and let AKS-RP decide the next step instead.
+                self.fail_request(
+                    request_id,
+                    FailureReason::HealthCheckFailed,
+                    None,
+                    "commit succeeded but requested a reboot (e.g. a health-check failure); the agent does not reboot on tridentd's behalf - reporting to AKS-RP instead",
+                )
+                .await
+            }
             Ok(_) => {
                 self.patch_protocol(
                     &self.config.kubernetes.node_name,
                     ProtocolPatch::progress(State::UpdateSucceeded, request_id, target_version),
                 )
-                .await?;
+                .await
             }
             Err(err) => {
                 self.fail_request(
                     request_id,
-                    map_commit_failure(initial_state, &err),
+                    map_commit_failure(&err),
                     Some(&err),
                     &format!("commit failed: {err}"),
                 )
-                .await?;
+                .await
             }
         }
-
-        Ok(())
     }
 
     async fn fail_request(
@@ -817,10 +735,7 @@ fn map_finalize_failure(error: &TridentClientError) -> FailureReason {
     }
 }
 
-fn map_commit_failure(
-    initial_state: PreviewServicingState,
-    error: &TridentClientError,
-) -> FailureReason {
+fn map_commit_failure(error: &TridentClientError) -> FailureReason {
     match error {
         TridentClientError::Timeout { .. } => FailureReason::Timeout,
         _ if is_volume_mismatch(error) => FailureReason::VolumeMismatch,
@@ -828,11 +743,16 @@ fn map_commit_failure(
             FailureReason::RollbackSucceeded
         }
         _ if has_remote_subkind(error, "ab-update-reboot-check") => {
-            if initial_state == PreviewServicingState::UpdateAbHealthCheckFailed {
-                FailureReason::RollbackFailed
-            } else {
-                FailureReason::RollbackSucceeded
-            }
+            // A boot-validation failure here always means the forward
+            // update's target never booted and the firmware fell through to
+            // the previous OS (accepted-design.md §2.5) - i.e. the rollback
+            // succeeded. This used to be disambiguated against the state
+            // queried before calling commit(), but that's unnecessary: since
+            // health-check failures are now handled explicitly via commit()'s
+            // own RebootRequired signal (see handle_commit) rather than
+            // reaching commit() again, a reboot-check failure here can only
+            // be this one case.
+            FailureReason::RollbackSucceeded
         }
         _ => FailureReason::CommitFailed,
     }
