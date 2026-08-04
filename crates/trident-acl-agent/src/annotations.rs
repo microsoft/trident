@@ -87,6 +87,11 @@ impl UpdateRequest {
 }
 
 impl UpdateStatus {
+    // This constructor mirrors UpdateStatus's wire schema field-for-field
+    // (see accepted-design.md's two-annotation JSON protocol); splitting it
+    // into a builder would add ceremony across ~25 call sites in
+    // orchestrator.rs without making any of them clearer.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         request: &UpdateRequest,
         operation: Operation,
