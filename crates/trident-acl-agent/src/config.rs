@@ -19,7 +19,12 @@ use crate::DEFAULT_NEBRASKA_APP_ID;
 pub const DEFAULT_CONFIG_PATH: &str = "/etc/trident/trident-acl-agent.conf";
 pub const DEFAULT_KUBERNETES_API_SERVER: &str = "https://kubernetes.default.svc";
 const DEFAULT_KUBERNETES_POLL_INTERVAL: Duration = Duration::from_secs(2);
-const DEFAULT_NEBRASKA_POLL_INTERVAL: Duration = Duration::from_secs(5 * 60);
+// TODO: placeholder until the real production Nebraska/Omaha endpoint is
+// known. `.invalid` is reserved by RFC 2606 and is guaranteed to never
+// resolve, so a deployment that forgets to override this fails loudly at
+// the network layer instead of silently querying a real-looking but wrong
+// host.
+pub const DEFAULT_NEBRASKA_ENDPOINT: &str = "https://nebraska.example.invalid/v1/update";
 const DEFAULT_STAGE_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 const DEFAULT_FINALIZE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 pub const DEFAULT_STATE_PATH: &str = "/var/lib/trident-acl-agent/state.json";
@@ -63,15 +68,13 @@ impl AgentConfig {
 pub struct NebraskaConfig {
     pub endpoint: Option<Url>,
     pub app_id: String,
-    pub poll_interval: Duration,
 }
 
 impl Default for NebraskaConfig {
     fn default() -> Self {
         Self {
-            endpoint: None,
+            endpoint: Some(Url::parse(DEFAULT_NEBRASKA_ENDPOINT).expect("static url")),
             app_id: DEFAULT_NEBRASKA_APP_ID.to_string(),
-            poll_interval: DEFAULT_NEBRASKA_POLL_INTERVAL,
         }
     }
 }
@@ -153,16 +156,14 @@ impl RawAgentConfig {
     fn into_effective(self) -> Result<AgentConfig, anyhow::Error> {
         Ok(AgentConfig {
             nebraska: NebraskaConfig {
-                endpoint: self.nebraska.endpoint,
+                endpoint: self
+                    .nebraska
+                    .endpoint
+                    .or_else(|| Some(Url::parse(DEFAULT_NEBRASKA_ENDPOINT).expect("static url"))),
                 app_id: self
                     .nebraska
                     .app_id
                     .unwrap_or_else(|| DEFAULT_NEBRASKA_APP_ID.to_string()),
-                poll_interval: parse_duration(
-                    self.nebraska.poll_interval.as_deref(),
-                    DEFAULT_NEBRASKA_POLL_INTERVAL,
-                    "nebraska.poll_interval",
-                )?,
             },
             kubernetes: KubernetesConfig {
                 api_server: self.kubernetes.api_server.unwrap_or_else(|| {
@@ -212,7 +213,6 @@ impl RawAgentConfig {
 struct RawNebraskaConfig {
     endpoint: Option<Url>,
     app_id: Option<String>,
-    poll_interval: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -290,12 +290,11 @@ mod tests {
     #[test]
     fn parses_defaults() {
         let config = AgentConfig::from_toml("").unwrap();
-        assert_eq!(config.nebraska.endpoint, None);
-        assert_eq!(config.nebraska.app_id, DEFAULT_NEBRASKA_APP_ID);
         assert_eq!(
-            config.nebraska.poll_interval,
-            DEFAULT_NEBRASKA_POLL_INTERVAL
+            config.nebraska.endpoint.unwrap().as_str(),
+            DEFAULT_NEBRASKA_ENDPOINT
         );
+        assert_eq!(config.nebraska.app_id, DEFAULT_NEBRASKA_APP_ID);
         assert_eq!(
             config.kubernetes.api_server.as_str(),
             "https://kubernetes.default.svc/"
@@ -321,9 +320,8 @@ mod tests {
         let config = AgentConfig::from_toml(
             r#"
             [nebraska]
-            endpoint = "https://nebraska.example.invalid/v1/update"
+            endpoint = "https://custom-nebraska.example.invalid/v1/update"
             app_id = "custom-app"
-            poll_interval = "7m"
 
             [kubernetes]
             api_server = "https://cluster.example.invalid"
@@ -344,10 +342,9 @@ mod tests {
 
         assert_eq!(
             config.nebraska.endpoint.unwrap().as_str(),
-            "https://nebraska.example.invalid/v1/update"
+            "https://custom-nebraska.example.invalid/v1/update"
         );
         assert_eq!(config.nebraska.app_id, "custom-app");
-        assert_eq!(config.nebraska.poll_interval, Duration::from_secs(7 * 60));
         assert_eq!(
             config.kubernetes.api_server.as_str(),
             "https://cluster.example.invalid/"
