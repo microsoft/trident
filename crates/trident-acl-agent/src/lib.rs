@@ -6,6 +6,7 @@
 //! design doc (`aks-rp ↔ trident-acl-agent`, especially §3–§6 and §12–§13),
 //! while preserving the original `omaha-only` mode as the default.
 
+use anyhow::Context;
 use semver::Version;
 use sha2::{Digest, Sha256};
 use url::Url;
@@ -67,13 +68,25 @@ pub async fn run_omaha_only(config: &config::AgentConfig) -> Result<(), anyhow::
         )
     })?;
 
-    let response = query_for_update(
-        &endpoint,
-        &config.nebraska.app_id,
-        DEFAULT_NEBRASKA_TRACK,
-        &Version::new(0, 0, 0),
-        IdSource::MachineIdHashed,
-    )?;
+    // query_for_update() is a blocking call (reqwest::blocking under the
+    // hood, see omaha::send) - calling it directly from this async fn can
+    // panic ("Cannot drop a runtime in a context where blocking is not
+    // allowed") because reqwest::blocking spins up its own inner Tokio
+    // runtime per call, which isn't safe to tear down from inside an
+    // already-running async task. Run it on a dedicated blocking thread.
+    let app_id = config.nebraska.app_id.clone();
+    let endpoint_for_task = endpoint.clone();
+    let response = tokio::task::spawn_blocking(move || {
+        query_for_update(
+            &endpoint_for_task,
+            &app_id,
+            DEFAULT_NEBRASKA_TRACK,
+            &Version::new(0, 0, 0),
+            IdSource::MachineIdHashed,
+        )
+    })
+    .await
+    .context("Nebraska query task panicked")??;
 
     match response.result {
         QueryResult::NoUpdate => {
