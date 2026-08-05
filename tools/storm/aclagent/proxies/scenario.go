@@ -13,9 +13,8 @@ type Scenario struct {
 }
 
 type ScenarioStep struct {
-	Patch               *PatchStep  `yaml:"patch,omitempty"`
-	Expect              *ExpectStep `yaml:"expect,omitempty"`
-	AssertFailureReason string      `yaml:"assert-failure-reason,omitempty"`
+	Patch  *PatchStep  `yaml:"patch,omitempty"`
+	Expect *ExpectStep `yaml:"expect,omitempty"`
 }
 
 type PatchStep struct {
@@ -74,11 +73,8 @@ func (s *Scenario) Validate() error {
 		if step.Expect != nil {
 			kinds++
 		}
-		if step.AssertFailureReason != "" {
-			kinds++
-		}
 		if kinds != 1 {
-			return fmt.Errorf("scenario step %d must set exactly one of patch/expect/assert-failure-reason", index)
+			return fmt.Errorf("scenario step %d must set exactly one of patch/expect", index)
 		}
 		if step.Expect != nil {
 			timeout := 60 * time.Second

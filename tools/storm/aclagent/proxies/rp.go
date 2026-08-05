@@ -91,9 +91,12 @@ func (c *RPClient) expectStatus(ctx context.Context, index int, step *ExpectStep
 	message := "observed expected status"
 	if step.ExpectTimeout {
 		passed = !matched
-		message = "timed out as expected"
-	}
-	if !passed && !step.ExpectTimeout {
+		if passed {
+			message = "timed out as expected"
+		} else {
+			message = "expected no matching status before timeout, but status matched"
+		}
+	} else if !passed {
 		message = "status expectation failed"
 	}
 	return &StepReport{Index: index, Kind: "expect", Passed: passed, Message: message, Expected: map[string]any{"operation-id": step.OperationID, "operation": step.Operation, "code": step.Code, "timeout": step.Timeout.String()}, Actual: lastObserved}, nil
