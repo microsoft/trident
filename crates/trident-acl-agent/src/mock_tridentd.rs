@@ -18,10 +18,13 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::{transport::Endpoint, Request, Response, Status};
 use trident_proto::v1::{
     commit_service_server::{CommitService, CommitServiceServer},
+    rollback_service_server::{RollbackService, RollbackServiceServer},
     servicing_response::Response as ResponseBody,
     update_service_server::{UpdateService, UpdateServiceServer},
-    CommitRequest, Completed, FinalizeUpdateRequest, RebootStatus, ServicingResponse,
-    StageUpdateRequest, StatusCode as ProtoStatusCode, TridentError, UpdateRequest,
+    CheckRollbackRequest, CheckRollbackResponse, CommitRequest, Completed, FinalizeUpdateRequest,
+    RebootStatus, RollbackFinalizeRequest, RollbackRequest, RollbackStageRequest,
+    ServicingResponse, StageUpdateRequest, StatusCode as ProtoStatusCode, TridentError,
+    UpdateRequest,
 };
 
 use crate::trident::TridentClient;
@@ -80,6 +83,8 @@ pub struct MockTridentdConfig {
     pub stage: Option<Outcome>,
     pub finalize: Option<Outcome>,
     pub commit: Option<Outcome>,
+    pub rollback_stage: Option<Outcome>,
+    pub rollback_finalize: Option<Outcome>,
 }
 
 #[derive(Clone)]
@@ -153,6 +158,57 @@ impl CommitService for MockTridentd {
     }
 }
 
+#[tonic::async_trait]
+impl RollbackService for MockTridentd {
+    type RollbackStream = ReceiverStream<Result<ServicingResponse, Status>>;
+    type RollbackStageStream = ReceiverStream<Result<ServicingResponse, Status>>;
+    type RollbackFinalizeStream = ReceiverStream<Result<ServicingResponse, Status>>;
+
+    async fn check_rollback(
+        &self,
+        _request: Request<CheckRollbackRequest>,
+    ) -> Result<Response<CheckRollbackResponse>, Status> {
+        Err(Status::unimplemented(
+            "check_rollback() is not used by trident-acl-agent",
+        ))
+    }
+
+    async fn rollback(
+        &self,
+        _request: Request<RollbackRequest>,
+    ) -> Result<Response<Self::RollbackStream>, Status> {
+        Err(Status::unimplemented(
+            "rollback() is not used by trident-acl-agent",
+        ))
+    }
+
+    async fn rollback_stage(
+        &self,
+        _request: Request<RollbackStageRequest>,
+    ) -> Result<Response<Self::RollbackStageStream>, Status> {
+        let outcome = self.config.lock().unwrap().rollback_stage.clone().expect(
+            "test must configure MockTridentdConfig::rollback_stage before calling rollback_stage",
+        );
+        respond_with(outcome).await
+    }
+
+    async fn rollback_finalize(
+        &self,
+        _request: Request<RollbackFinalizeRequest>,
+    ) -> Result<Response<Self::RollbackFinalizeStream>, Status> {
+        let outcome = self
+            .config
+            .lock()
+            .unwrap()
+            .rollback_finalize
+            .clone()
+            .expect(
+            "test must configure MockTridentdConfig::rollback_finalize before calling rollback_finalize",
+        );
+        respond_with(outcome).await
+    }
+}
+
 /// Starts an in-process mock tridentd wired to `client` over an in-memory
 /// duplex transport (no real socket/subprocess), and returns a
 /// `TridentClient` connected to it. `config` is shared (`Arc<Mutex<..>>`)
@@ -165,7 +221,8 @@ pub async fn connect_mock_client(config: Arc<Mutex<MockTridentdConfig>>) -> Trid
     tokio::spawn(async move {
         tonic::transport::Server::builder()
             .add_service(UpdateServiceServer::new(mock.clone()))
-            .add_service(CommitServiceServer::new(mock))
+            .add_service(CommitServiceServer::new(mock.clone()))
+            .add_service(RollbackServiceServer::new(mock))
             .serve_with_incoming(tokio_stream::once(Ok::<_, std::io::Error>(server_io)))
             .await
             .expect("mock tridentd server should not fail");

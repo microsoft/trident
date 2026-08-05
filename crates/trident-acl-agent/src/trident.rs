@@ -15,10 +15,12 @@ use anyhow::anyhow;
 use futures::StreamExt;
 use tonic::{transport::Endpoint, Request, Streaming};
 use trident_proto::v1::{
-    commit_service_client::CommitServiceClient, servicing_response::Response as ResponseBody,
-    update_service_client::UpdateServiceClient, CommitRequest, FinalizeUpdateRequest,
-    HostConfiguration, LogLevel, RebootHandling, RebootManagement, RebootStatus, ServicingKind,
-    ServicingResponse, StageUpdateRequest, StatusCode, TridentErrorKind, UpdateRequest,
+    commit_service_client::CommitServiceClient, rollback_service_client::RollbackServiceClient,
+    servicing_response::Response as ResponseBody, update_service_client::UpdateServiceClient,
+    CommitRequest, FinalizeUpdateRequest, HostConfiguration, LogLevel, ManualRollbackKind,
+    RebootHandling, RebootManagement, RebootStatus, RollbackFinalizeRequest, RollbackStageRequest,
+    ServicingKind, ServicingResponse, StageUpdateRequest, StatusCode, TridentErrorKind,
+    UpdateRequest,
 };
 use url::Url;
 
@@ -82,6 +84,7 @@ impl TridentClientError {
 pub struct TridentClient {
     update_client: UpdateServiceClient<tonic::transport::Channel>,
     commit_client: CommitServiceClient<tonic::transport::Channel>,
+    rollback_client: RollbackServiceClient<tonic::transport::Channel>,
 }
 
 impl TridentClient {
@@ -112,7 +115,8 @@ impl TridentClient {
     pub fn from_channel(channel: tonic::transport::Channel) -> Self {
         Self {
             update_client: UpdateServiceClient::new(channel.clone()),
-            commit_client: CommitServiceClient::new(channel),
+            commit_client: CommitServiceClient::new(channel.clone()),
+            rollback_client: RollbackServiceClient::new(channel),
         }
     }
 
@@ -231,6 +235,63 @@ impl TridentClient {
             "commit",
             timeout,
             consume_servicing_stream("commit", response),
+        )
+        .await
+    }
+
+    /// Stages an A/B rollback. Only `AbRollbackRequested` is used - per the
+    /// accepted design, trident-acl-agent only ever drives AB-kind manual
+    /// rollback; runtime-kind and "any" rollback are out of scope for the
+    /// annotation-driven protocol.
+    pub async fn rollback_stage(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<CompletedResponse, TridentClientError> {
+        let response = self
+            .rollback_client
+            .rollback_stage(Request::new(RollbackStageRequest {
+                kind: ManualRollbackKind::AbRollbackRequested.into(),
+            }))
+            .await
+            .map_err(|source| TridentClientError::Request {
+                operation: "rollback_stage",
+                source,
+            })?
+            .into_inner();
+
+        run_with_timeout(
+            "rollback_stage",
+            timeout,
+            consume_servicing_stream("rollback_stage", response),
+        )
+        .await
+    }
+
+    pub async fn rollback_finalize(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<CompletedResponse, TridentClientError> {
+        let response = self
+            .rollback_client
+            .rollback_finalize(Request::new(RollbackFinalizeRequest {
+                reboot: Some(RebootManagement {
+                    // Same rationale as commit()/update_finalize(): AKS-RP,
+                    // via the agent, is the sole authority over reboot
+                    // timing (accepted-design.md §2.5).
+                    handling: RebootHandling::CallerHandlesReboot.into(),
+                }),
+            }))
+            .await
+            .map_err(|source| TridentClientError::Request {
+                operation: "rollback_finalize",
+                source,
+            })?
+            .into_inner();
+
+        run_with_timeout(
+            "rollback_finalize",
+            timeout,
+            consume_servicing_stream("rollback_finalize", response),
         )
         .await
     }

@@ -426,20 +426,96 @@ where
     }
 
     async fn handle_rollback(&self, request: UpdateRequest) -> Result<LoopControl, anyhow::Error> {
-        // Rollback is not yet implemented: trident-acl-agent currently has no
-        // gRPC-based path for rollback stage/finalize (only a CLI shellout
-        // existed previously, which was never hooked up to a real trident
-        // gRPC rollback contract). Rather than shelling out to `trident
-        // rollback` and papering over an unimplemented server-side contract,
-        // report a terminal failure immediately so callers get an honest
-        // answer instead of a partially-implemented flow.
-        //
-        // Follow-up: promote RollbackStage/RollbackFinalize/CheckRollback to
-        // stable trident gRPC services and wire this handler up to them per
-        // the accepted design, then remove this stub.
-        let status = rollback_not_implemented_status(&request, Utc::now());
-        self.record_and_publish(status).await?;
-        Ok(LoopControl::Continue)
+        let started = Utc::now();
+        let from_version = Some(current_active_version());
+
+        self.publish_status(&UpdateStatus::new(
+            &request,
+            Operation::Rollback,
+            request.operation_id.clone(),
+            StatusCode::InProgress,
+            "staging rollback",
+            from_version.clone(),
+            None,
+            started,
+            None,
+        ))
+        .await?;
+
+        let mut client = TridentClient::connect(&self.config.trident.socket).await?;
+        if let Err(err) = client
+            .rollback_stage(self.config.orchestration.stage_timeout)
+            .await
+        {
+            let status = rollback_stage_failure_status(&request, from_version, started, &err);
+            self.record_and_publish(status).await?;
+            return Ok(LoopControl::Continue);
+        }
+
+        self.publish_status(&UpdateStatus::new(
+            &request,
+            Operation::Rollback,
+            request.operation_id.clone(),
+            StatusCode::InProgress,
+            "finalizing rollback",
+            from_version.clone(),
+            None,
+            started,
+            None,
+        ))
+        .await?;
+        self.state.set_pending_commit(PendingCommit {
+            request: request.clone(),
+            operation_id: request.operation_id.clone(),
+            operation: Operation::Rollback,
+            from_version: from_version.clone(),
+            to_version: None,
+            started_utc: started,
+        })?;
+        match client
+            .rollback_finalize(self.config.orchestration.finalize_timeout)
+            .await
+        {
+            Ok(_) => {
+                let terminal =
+                    rollback_finalize_success_status(&request, from_version.clone(), started);
+                // Same rationale as handle_finalize(): record the terminal
+                // status under the rollback's plain operationId before
+                // rebooting, so a lost state.json doesn't cause
+                // recover_from_trident_state() to re-run handle_rollback
+                // from scratch after finalize already succeeded.
+                if let Err(err) = self.state.remember_completed(terminal.clone()) {
+                    log::warn!("failed to record rollback completion in state.json: {err}");
+                }
+                self.best_effort_publish_terminal(&terminal).await;
+                match self.rebooter.reboot() {
+                    Ok(()) => Ok(LoopControl::ExitForReboot),
+                    Err(err) => {
+                        self.state.clear_pending_commit()?;
+                        let status = UpdateStatus::new(
+                            &request,
+                            Operation::Rollback,
+                            request.operation_id.clone(),
+                            StatusCode::AgentInternalError,
+                            format!("rollback finalize succeeded but reboot failed: {err}"),
+                            from_version,
+                            None,
+                            started,
+                            Some(Utc::now()),
+                        );
+                        self.record_and_publish(status).await?;
+                        Ok(LoopControl::Continue)
+                    }
+                }
+            }
+            Err(err) => {
+                self.state.clear_pending_commit()?;
+                let status =
+                    rollback_finalize_failure_status(&request, from_version, started, &err);
+                self.record_and_publish(status).await?;
+                Ok(LoopControl::Continue)
+            }
+        }
     }
 
     async fn resume_pending_commit(&self, pending: PendingCommit) -> Result<(), anyhow::Error> {
@@ -865,20 +941,62 @@ fn commit_result_to_status(
     }
 }
 
-/// Builds the terminal status published for a rollback request while
-/// RollbackStage/RollbackFinalize/CheckRollback have not yet been promoted to
-/// stable trident gRPC services (see handle_rollback's follow-up comment).
-fn rollback_not_implemented_status(
+/// Builds the terminal `UpdateStatus` for a failed rollback_stage() call.
+/// Pure function - see `stage_result_to_status` for rationale.
+fn rollback_stage_failure_status(
     request: &UpdateRequest,
-    started: DateTime<Utc>,
+    from_version: Option<String>,
+    started: chrono::DateTime<Utc>,
+    err: &TridentClientError,
 ) -> UpdateStatus {
     UpdateStatus::new(
         request,
         Operation::Rollback,
         request.operation_id.clone(),
-        StatusCode::OperationFailed,
-        "rollback is not yet implemented by trident-acl-agent",
-        Some(current_active_version()),
+        map_trident_failure(err),
+        format!("rollback stage failed: {err}"),
+        from_version,
+        None,
+        started,
+        Some(Utc::now()),
+    )
+}
+
+/// Builds the terminal `UpdateStatus` for a successful rollback_finalize()
+/// call. Pure function - see `stage_result_to_status` for rationale.
+fn rollback_finalize_success_status(
+    request: &UpdateRequest,
+    from_version: Option<String>,
+    started: chrono::DateTime<Utc>,
+) -> UpdateStatus {
+    UpdateStatus::new(
+        request,
+        Operation::Rollback,
+        request.operation_id.clone(),
+        StatusCode::Success,
+        "rollback finalize completed; rebooting for commit",
+        from_version,
+        None,
+        started,
+        Some(Utc::now()),
+    )
+}
+
+/// Builds the terminal `UpdateStatus` for a failed rollback_finalize() call.
+/// Pure function - see `stage_result_to_status` for rationale.
+fn rollback_finalize_failure_status(
+    request: &UpdateRequest,
+    from_version: Option<String>,
+    started: chrono::DateTime<Utc>,
+    err: &TridentClientError,
+) -> UpdateStatus {
+    UpdateStatus::new(
+        request,
+        Operation::Rollback,
+        request.operation_id.clone(),
+        map_trident_failure(err),
+        format!("rollback finalize failed: {err}"),
+        from_version,
         None,
         started,
         Some(Utc::now()),
@@ -921,15 +1039,106 @@ mod tests {
 
     // --- rollback ---
 
-    #[test]
-    fn rollback_reports_not_implemented() {
-        let request = request(RequestedOperation::Rollback);
-        let status = rollback_not_implemented_status(&request, Utc::now());
+    #[tokio::test]
+    async fn rollback_stage_failure_maps_to_operation_failed() {
+        let config = Arc::new(Mutex::new(MockTridentdConfig {
+            rollback_stage: Some(Outcome::Failure {
+                subkind: "some-rollback-stage-error",
+                message: "disk full",
+            }),
+            ..Default::default()
+        }));
+        let mut client = connect_mock_client(config).await;
+        let result = client
+            .rollback_stage(std::time::Duration::from_secs(5))
+            .await;
 
-        assert_eq!(status.operation, Operation::Rollback);
-        assert_eq!(status.operation_id, request.operation_id);
+        let request = request(RequestedOperation::Rollback);
+        let status = rollback_stage_failure_status(
+            &request,
+            Some("2.0.0".to_string()),
+            Utc::now(),
+            &result.unwrap_err(),
+        );
+
         assert_eq!(status.code, StatusCode::OperationFailed);
-        assert!(status.message.contains("not yet implemented"));
+        assert_eq!(status.operation, Operation::Rollback);
+        assert!(status.message.contains("rollback stage failed"));
+    }
+
+    #[tokio::test]
+    async fn rollback_finalize_success_maps_to_success_status() {
+        let config = Arc::new(Mutex::new(MockTridentdConfig {
+            rollback_finalize: Some(Outcome::Success {
+                reboot_status: RebootStatus::RebootRequired,
+            }),
+            ..Default::default()
+        }));
+        let mut client = connect_mock_client(config).await;
+        let result = client
+            .rollback_finalize(std::time::Duration::from_secs(5))
+            .await;
+        assert!(result.is_ok());
+
+        let request = request(RequestedOperation::Rollback);
+        let status =
+            rollback_finalize_success_status(&request, Some("2.0.0".to_string()), Utc::now());
+
+        assert_eq!(status.code, StatusCode::Success);
+        assert_eq!(status.operation, Operation::Rollback);
+        assert_eq!(status.to_version, None);
+    }
+
+    #[tokio::test]
+    async fn rollback_finalize_failure_maps_to_operation_failed() {
+        let config = Arc::new(Mutex::new(MockTridentdConfig {
+            rollback_finalize: Some(Outcome::Failure {
+                subkind: "some-rollback-finalize-error",
+                message: "boom",
+            }),
+            ..Default::default()
+        }));
+        let mut client = connect_mock_client(config).await;
+        let result = client
+            .rollback_finalize(std::time::Duration::from_secs(5))
+            .await;
+
+        let request = request(RequestedOperation::Rollback);
+        let status = rollback_finalize_failure_status(
+            &request,
+            Some("2.0.0".to_string()),
+            Utc::now(),
+            &result.unwrap_err(),
+        );
+
+        assert_eq!(status.code, StatusCode::OperationFailed);
+        assert_eq!(status.operation, Operation::Rollback);
+        assert!(status.message.contains("rollback finalize failed"));
+    }
+
+    #[tokio::test]
+    async fn rollback_finalize_reverted_maps_to_reverted_to_previous() {
+        let config = Arc::new(Mutex::new(MockTridentdConfig {
+            rollback_finalize: Some(Outcome::Failure {
+                subkind: "ab-update-reboot-check",
+                message: "reverted",
+            }),
+            ..Default::default()
+        }));
+        let mut client = connect_mock_client(config).await;
+        let result = client
+            .rollback_finalize(std::time::Duration::from_secs(5))
+            .await;
+
+        let request = request(RequestedOperation::Rollback);
+        let status = rollback_finalize_failure_status(
+            &request,
+            Some("2.0.0".to_string()),
+            Utc::now(),
+            &result.unwrap_err(),
+        );
+
+        assert_eq!(status.code, StatusCode::RevertedToPrevious);
     }
 
     // --- stage ---
