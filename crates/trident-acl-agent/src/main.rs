@@ -63,11 +63,11 @@ fn is_network_target(target: &str) -> bool {
         .any(|prefix| target == *prefix || target.starts_with(&format!("{prefix}::")))
 }
 
-/// Harpoon can either run its original one-shot Omaha flow or the new
-/// label-driven orchestrator. Activation of label mode is intentionally gated by
-/// config file only: shipping defaults stay on `omaha-only`, while a VM
-/// extension or AgentBaker-dropped config is expected to opt a node into the
-/// AKS label protocol.
+/// Harpoon can either run the annotation-driven orchestrator (the default)
+/// or fall back to its original one-shot Omaha flow. Mode selection is
+/// config-file only (`[orchestration] goal_source`): shipping defaults
+/// enable the AKS annotation protocol, while a VM extension or
+/// AgentBaker-dropped config can opt a node out to `omaha-only` if needed.
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -132,7 +132,12 @@ async fn main() -> Result<(), anyhow::Error> {
     let config = config.with_cli_endpoint(args.url.clone());
 
     match config.orchestration.goal_source {
+        // Historical one-shot flow: query Nebraska once, apply an update if
+        // offered, and exit. No Kubernetes/annotation involvement.
         GoalSource::OmahaOnly => run_omaha_only(&config).await,
-        GoalSource::Labels => Orchestrator::from_config(config).await?.run().await,
+        // Default: the annotation-driven reconcile loop (watches
+        // acl.azure.com/update-request, drives stage/finalize/rollback/
+        // commit against tridentd, writes acl.azure.com/update-status).
+        GoalSource::Annotations => Orchestrator::from_config(config).await?.run().await,
     }
 }

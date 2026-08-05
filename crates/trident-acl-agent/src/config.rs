@@ -1,8 +1,8 @@
 //! Config loading for Harpoon.
 //!
-//! See the design doc's endpoint override section (§12). Label mode is opt-in
-//! through config only; defaults intentionally preserve the historical
-//! `omaha-only` one-shot behavior.
+//! See the design doc's endpoint override section (§12). Annotation mode is
+//! the default; `omaha-only` (the historical one-shot behavior) remains
+//! available as an explicit opt-out via `goal_source = "omaha-only"`.
 
 use std::{
     env, fs,
@@ -14,7 +14,7 @@ use anyhow::Context;
 use serde::Deserialize;
 use url::Url;
 
-use crate::DEFAULT_NEBRASKA_APP_ID;
+use crate::{DEFAULT_NEBRASKA_APP_ID, DEFAULT_NEBRASKA_TRACK};
 
 pub const DEFAULT_CONFIG_PATH: &str = "/etc/trident/trident-acl-agent.conf";
 pub const DEFAULT_KUBERNETES_API_SERVER: &str = "https://kubernetes.default.svc";
@@ -68,6 +68,7 @@ impl AgentConfig {
 pub struct NebraskaConfig {
     pub endpoint: Option<Url>,
     pub app_id: String,
+    pub track: String,
 }
 
 impl Default for NebraskaConfig {
@@ -75,6 +76,7 @@ impl Default for NebraskaConfig {
         Self {
             endpoint: Some(Url::parse(DEFAULT_NEBRASKA_ENDPOINT).expect("static url")),
             app_id: DEFAULT_NEBRASKA_APP_ID.to_string(),
+            track: DEFAULT_NEBRASKA_TRACK.to_string(),
         }
     }
 }
@@ -114,9 +116,19 @@ impl Default for TridentConfig {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum GoalSource {
-    #[default]
+    /// Historical one-shot behavior: query Nebraska/Omaha once, and if an
+    /// update is offered, call tridentd's combined `update()` RPC once and
+    /// exit. No Kubernetes involvement at all - no annotations, no watch,
+    /// no Node access. Kept as an explicit opt-out for nodes that don't
+    /// participate in the AKS annotation-driven update protocol.
     OmahaOnly,
-    Labels,
+    /// The annotation-driven reconcile loop: watches the Node's
+    /// `acl.azure.com/update-request` annotation and drives Trident's
+    /// stage/finalize/rollback/commit operations against tridentd
+    /// accordingly, writing progress back to `acl.azure.com/update-status`
+    /// (see docs/update-trigger-design.md). This is the default mode.
+    #[default]
+    Annotations,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -132,7 +144,7 @@ pub struct OrchestrationConfig {
 impl Default for OrchestrationConfig {
     fn default() -> Self {
         Self {
-            goal_source: GoalSource::OmahaOnly,
+            goal_source: GoalSource::Annotations,
             state_path: PathBuf::from(DEFAULT_STATE_PATH),
             stage_timeout: DEFAULT_STAGE_TIMEOUT,
             finalize_timeout: DEFAULT_FINALIZE_TIMEOUT,
@@ -164,6 +176,10 @@ impl RawAgentConfig {
                     .nebraska
                     .app_id
                     .unwrap_or_else(|| DEFAULT_NEBRASKA_APP_ID.to_string()),
+                track: self
+                    .nebraska
+                    .track
+                    .unwrap_or_else(|| DEFAULT_NEBRASKA_TRACK.to_string()),
             },
             kubernetes: KubernetesConfig {
                 api_server: self.kubernetes.api_server.unwrap_or_else(|| {
@@ -213,6 +229,7 @@ impl RawAgentConfig {
 struct RawNebraskaConfig {
     endpoint: Option<Url>,
     app_id: Option<String>,
+    track: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -303,7 +320,7 @@ mod tests {
             config.trident.socket,
             trident_proto::TRIDENT_DEFAULT_SOCKET_URI
         );
-        assert_eq!(config.orchestration.goal_source, GoalSource::OmahaOnly);
+        assert_eq!(config.orchestration.goal_source, GoalSource::Annotations);
         assert_eq!(
             config.orchestration.state_path,
             PathBuf::from(DEFAULT_STATE_PATH)
@@ -322,6 +339,7 @@ mod tests {
             [nebraska]
             endpoint = "https://custom-nebraska.example.invalid/v1/update"
             app_id = "custom-app"
+            track = "custom-track"
 
             [kubernetes]
             api_server = "https://cluster.example.invalid"
@@ -332,7 +350,7 @@ mod tests {
             socket = "unix:///custom/trident.sock"
 
             [orchestration]
-            goal_source = "labels"
+            goal_source = "omaha-only"
             state_path = "/var/lib/trident-acl-agent/custom-state.json"
             stage_timeout = "21m"
             finalize_timeout = "11m"
@@ -345,6 +363,7 @@ mod tests {
             "https://custom-nebraska.example.invalid/v1/update"
         );
         assert_eq!(config.nebraska.app_id, "custom-app");
+        assert_eq!(config.nebraska.track, "custom-track");
         assert_eq!(
             config.kubernetes.api_server.as_str(),
             "https://cluster.example.invalid/"
@@ -355,7 +374,7 @@ mod tests {
         );
         assert_eq!(config.kubernetes.node_name, "node-42");
         assert_eq!(config.trident.socket, "unix:///custom/trident.sock");
-        assert_eq!(config.orchestration.goal_source, GoalSource::Labels);
+        assert_eq!(config.orchestration.goal_source, GoalSource::OmahaOnly);
         assert_eq!(
             config.orchestration.state_path,
             PathBuf::from("/var/lib/trident-acl-agent/custom-state.json")
