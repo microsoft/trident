@@ -479,7 +479,6 @@ go.sum: go.mod
 	go mod tidy
 
 .PHONY: go-tools
-go-tools: bin/netlaunch bin/netlisten bin/miniproxy bin/virtdeploy bin/isopatch bin/mkcosi bin/storm-trident bin/rcp-agent
 
 bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/* tools/pkg/netlaunch/*
 	@mkdir -p bin
@@ -519,6 +518,8 @@ bin/rcp-agent: tools/cmd/rcp-agent/* tools/go.sum tools/pkg/rcp/* tools/pkg/rcp/
 	@mkdir -p bin
 	cd tools && go generate pkg/rcp/tlscerts/certs.go
 	cd tools && go build -o ../bin/rcp-agent ./cmd/rcp-agent/main.go
+
+	@mkdir -p bin
 
 # Clean generated RCP TLS certificates
 .PHONY: clean-rcp-certs
@@ -1171,6 +1172,27 @@ artifacts/trident-vm-usr-verity-testimage.qcow2: \
 			--output-image-file /repo/$@ \
 			--output-image-format qcow2 \
 			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-usr-verity.yaml
+
+artifacts/trident-vm-acl-agent-testimage.qcow2: \
+	$(QEMU_GUEST_IMAGE) \
+	$(TRIDENT_VM_DEPENDENCIES) \
+	$(VM_IMAGE_PATH_PREFIX)/baseimg-acl-agent.yaml \
+	$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub \
+	artifacts/rpm-overrides
+	@echo "Building $@ from $<"
+	docker run --rm \
+		--privileged \
+		-v ".:/repo:z" \
+		-v "/dev:/dev" \
+		${MIC_CONTAINER_IMAGE} \
+			--log-level debug \
+			--rpm-source /repo/bin/RPMS \
+			--rpm-source /repo/artifacts/rpm-overrides \
+			--build-dir /build \
+			--image-file /repo/$< \
+			--output-image-file /repo/$@ \
+			--output-image-format qcow2 \
+			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-acl-agent.yaml
 
 artifacts/trident-vm-grub-verity-azure-testimage.vhd: \
 	$(CORE_SELINUX_IMAGE) \
