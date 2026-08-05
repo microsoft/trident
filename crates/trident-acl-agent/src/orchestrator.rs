@@ -1,6 +1,5 @@
 use std::{collections::BTreeMap, process::Command};
 
-use anyhow::Context;
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use k8s_openapi::api::core::v1::Node;
@@ -427,43 +426,20 @@ where
     }
 
     async fn handle_rollback(&self, request: UpdateRequest) -> Result<LoopControl, anyhow::Error> {
-        let started = Utc::now();
-        let from_version = Some(current_active_version());
-        self.publish_status(&UpdateStatus::new(
-            &request,
-            Operation::Rollback,
-            request.operation_id.clone(),
-            StatusCode::InProgress,
-            "staging rollback",
-            from_version.clone(),
-            None,
-            started,
-            None,
-        ))
-        .await?;
-        self.run_trident_cli(&["rollback", "--ab", "--allowed-operations=stage"])?;
-        self.state.set_pending_commit(PendingCommit {
-            request: request.clone(),
-            operation_id: request.operation_id.clone(),
-            operation: Operation::Rollback,
-            from_version: from_version.clone(),
-            to_version: None,
-            started_utc: started,
-        })?;
-        self.best_effort_publish_terminal(&UpdateStatus::new(
-            &request,
-            Operation::Rollback,
-            request.operation_id.clone(),
-            StatusCode::Success,
-            "rollback staged; finalizing rollback and rebooting",
-            from_version.clone(),
-            None,
-            started,
-            Some(Utc::now()),
-        ))
-        .await;
-        self.run_trident_cli(&["rollback", "--allowed-operations=finalize"])?;
-        Ok(LoopControl::ExitForReboot)
+        // Rollback is not yet implemented: trident-acl-agent currently has no
+        // gRPC-based path for rollback stage/finalize (only a CLI shellout
+        // existed previously, which was never hooked up to a real trident
+        // gRPC rollback contract). Rather than shelling out to `trident
+        // rollback` and papering over an unimplemented server-side contract,
+        // report a terminal failure immediately so callers get an honest
+        // answer instead of a partially-implemented flow.
+        //
+        // Follow-up: promote RollbackStage/RollbackFinalize/CheckRollback to
+        // stable trident gRPC services and wire this handler up to them per
+        // the accepted design, then remove this stub.
+        let status = rollback_not_implemented_status(&request, Utc::now());
+        self.record_and_publish(status).await?;
+        Ok(LoopControl::Continue)
     }
 
     async fn resume_pending_commit(&self, pending: PendingCommit) -> Result<(), anyhow::Error> {
@@ -598,22 +574,6 @@ where
                 return;
             }
             tokio::time::sleep(FINAL_STATUS_PATCH_BACKOFF).await;
-        }
-    }
-
-    fn run_trident_cli(&self, args: &[&str]) -> Result<(), anyhow::Error> {
-        let status = Command::new("trident")
-            .args(args)
-            .status()
-            .with_context(|| format!("failed to run trident {}", args.join(" ")))?;
-        if status.success() {
-            Ok(())
-        } else {
-            Err(anyhow::anyhow!(
-                "trident {} exited with {}",
-                args.join(" "),
-                status
-            ))
         }
     }
 }
@@ -905,6 +865,26 @@ fn commit_result_to_status(
     }
 }
 
+/// Builds the terminal status published for a rollback request while
+/// RollbackStage/RollbackFinalize/CheckRollback have not yet been promoted to
+/// stable trident gRPC services (see handle_rollback's follow-up comment).
+fn rollback_not_implemented_status(
+    request: &UpdateRequest,
+    started: DateTime<Utc>,
+) -> UpdateStatus {
+    UpdateStatus::new(
+        request,
+        Operation::Rollback,
+        request.operation_id.clone(),
+        StatusCode::OperationFailed,
+        "rollback is not yet implemented by trident-acl-agent",
+        Some(current_active_version()),
+        None,
+        started,
+        Some(Utc::now()),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};
@@ -937,6 +917,19 @@ mod tests {
             to_version: Some("2.0.0".to_string()),
             started_utc: Utc::now(),
         }
+    }
+
+    // --- rollback ---
+
+    #[test]
+    fn rollback_reports_not_implemented() {
+        let request = request(RequestedOperation::Rollback);
+        let status = rollback_not_implemented_status(&request, Utc::now());
+
+        assert_eq!(status.operation, Operation::Rollback);
+        assert_eq!(status.operation_id, request.operation_id);
+        assert_eq!(status.code, StatusCode::OperationFailed);
+        assert!(status.message.contains("not yet implemented"));
     }
 
     // --- stage ---
