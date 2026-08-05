@@ -9,7 +9,7 @@
 //! full state-machine rationale; keep it in sync with this file if the
 //! design changes.
 
-use std::{collections::BTreeMap, process::Command};
+use std::collections::BTreeMap;
 
 use anyhow::Context;
 use chrono::{DateTime, Utc};
@@ -18,6 +18,8 @@ use k8s_openapi::api::core::v1::Node;
 use semver::Version;
 use trident_proto::v1::{RebootStatus, ServicingKind};
 use uuid::Uuid;
+
+use osutils::dependencies::Dependency;
 
 use crate::{
     annotations::{
@@ -45,22 +47,15 @@ pub trait RebootHandle: Clone + Send + Sync + 'static {
 
 impl RebootHandle for SystemRebooter {
     fn reboot(&self) -> Result<(), anyhow::Error> {
-        for candidate in [
-            ("reboot", Vec::<&str>::new()),
-            ("systemctl", vec!["reboot"]),
-        ] {
-            match Command::new(candidate.0)
-                .args(candidate.1.iter().copied())
-                .status()
-            {
-                Ok(status) if status.success() => return Ok(()),
-                Ok(status) => log::warn!("{} exited with {}", candidate.0, status),
-                Err(err) => log::warn!("failed to invoke {}: {err}", candidate.0),
-            }
-        }
-        Err(anyhow::anyhow!(
-            "failed to issue reboot via reboot or systemctl reboot"
-        ))
+        // Route through the repo's centralized dependency runner so a
+        // missing systemctl binary or non-zero exit produces the same
+        // uniform, actionable error type used everywhere else in the
+        // codebase (see crates/trident/src/reboot.rs for the same pattern).
+        Dependency::Systemctl
+            .cmd()
+            .arg("reboot")
+            .run_and_check()
+            .map_err(|err| anyhow::anyhow!("failed to issue systemctl reboot: {err}"))
     }
 }
 

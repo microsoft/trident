@@ -67,12 +67,37 @@ impl StateStore {
     }
 
     pub fn save(&self, state: &PersistentState) -> Result<(), anyhow::Error> {
-        if let Some(parent) = self.path.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create {}", parent.display()))?;
-        }
-        fs::write(&self.path, serde_json::to_string_pretty(state)?)
-            .with_context(|| format!("failed to write {}", self.path.display()))
+        let parent = match self.path.parent() {
+            Some(parent) => {
+                fs::create_dir_all(parent)
+                    .with_context(|| format!("failed to create {}", parent.display()))?;
+                parent
+            }
+            None => Path::new("."),
+        };
+
+        // Write to a temp file in the same directory and rename over the
+        // real path, so a crash or power loss mid-write (plausible here,
+        // since this file is written right around a real reboot) can't
+        // leave state.json truncated/corrupted -- rename is atomic on the
+        // same filesystem, unlike a direct truncate-then-write.
+        let temp_path = parent.join(format!(
+            "{}.tmp-{}",
+            self.path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("state.json"),
+            std::process::id()
+        ));
+        fs::write(&temp_path, serde_json::to_string_pretty(state)?)
+            .with_context(|| format!("failed to write {}", temp_path.display()))?;
+        fs::rename(&temp_path, &self.path).with_context(|| {
+            format!(
+                "failed to atomically replace {} with {}",
+                self.path.display(),
+                temp_path.display()
+            )
+        })
     }
 
     pub fn remember_completed(&self, status: UpdateStatus) -> Result<(), anyhow::Error> {
