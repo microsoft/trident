@@ -361,8 +361,8 @@ users:
 		"sudo systemctl restart tridentd.service",
 		"sudo systemctl enable trident-acl-agent.service",
 		"sudo systemctl restart trident-acl-agent.service",
-		fmt.Sprintf("sudo grep -q '%s:%d' /etc/trident/trident-acl-agent.conf", testConfig.HostEndpointIP, testConfig.APIServerPort),
-		fmt.Sprintf("sudo grep -q '%s:%d' /etc/trident/trident-acl-agent.conf", testConfig.HostEndpointIP, testConfig.NebraskaPort),
+		fmt.Sprintf("sudo grep -qF '%s:%d' /etc/trident/trident-acl-agent.conf", testConfig.HostEndpointIP, testConfig.APIServerPort),
+		fmt.Sprintf("sudo grep -qF '%s:%d' /etc/trident/trident-acl-agent.conf", testConfig.HostEndpointIP, testConfig.NebraskaPort),
 	}, " && ")
 	if _, err := stormssh.SshCommandCombinedOutput(cfg, vmIP, command); err != nil {
 		return fmt.Errorf("failed to prepare VM ACL agent config: %w", err)
@@ -405,12 +405,17 @@ func waitForServiceActive(cfg stormvmconfig.VMConfig, vmIP, service string, time
 // reachable again (confirming it came back up), mirroring the real-reboot
 // wait pattern already used by the storm servicing scenario.
 func waitForVmRebootAndSshBack(vmConfig stormvmconfig.AllVMConfig, vmIP string, testConfig stormaclconfig.TestConfig) error {
+	wentDown := false
 	downTimeout := time.Now().Add(60 * time.Second)
 	for time.Now().Before(downTimeout) {
 		if _, err := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, "true"); err != nil {
+			wentDown = true
 			break
 		}
 		time.Sleep(2 * time.Second)
+	}
+	if !wentDown {
+		return fmt.Errorf("VM never became unreachable over SSH within %s; reboot did not appear to happen", 60*time.Second)
 	}
 
 	upTimeout := time.Now().Add(5 * time.Minute)
