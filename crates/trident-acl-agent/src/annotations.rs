@@ -5,6 +5,15 @@ use uuid::Uuid;
 pub const UPDATE_REQUEST_ANNOTATION: &str = "acl.azure.com/update-request";
 pub const UPDATE_STATUS_ANNOTATION: &str = "acl.azure.com/update-status";
 pub const SCHEMA_VERSION: &str = "1.0";
+// TODO(DR-001): This is a temporary stub. The active OS version cannot yet be
+// determined on-node because the OS image does not currently ship a required
+// file/manifest describing the running version. Once that file exists (planned
+// as part of the image build), replace CURRENT_VERSION_STUB and
+// current_active_version() below with real logic that reads it. Until then,
+// this stub can cause current_active_version() to spuriously equal a real
+// requested target version, making handle_stage/handle_finalize incorrectly
+// short-circuit to AlreadyAtTarget. Do not remove this comment when bumping the
+// stub value; keep it until the real probe lands.
 pub const CURRENT_VERSION_STUB: &str = "202601.1.0";
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, Hash)]
@@ -119,9 +128,10 @@ impl UpdateStatus {
 }
 
 pub fn current_active_version() -> String {
-    // TODO: Replace this stub with a real /etc-based active-version probe, or
-    // compare an AKS-RP-supplied expected fromVersion against the on-disk value
-    // once the accepted design grows that request field.
+    // STUB: see CURRENT_VERSION_STUB above. Replace with a real probe (e.g. reading
+    // a version manifest file the OS image will ship) once available. Known risk:
+    // while stubbed, this can equal a real request's targetVersion and cause a
+    // false AlreadyAtTarget short-circuit in handle_stage/handle_finalize.
     CURRENT_VERSION_STUB.to_string()
 }
 

@@ -839,8 +839,8 @@ fn reconstruct_commit_result_to_status(
         ),
         Err(err) => UpdateStatus::new(
             request,
-            request.operation.into(),
-            request.operation_id.clone(),
+            Operation::Commit,
+            commit_operation_id(&request.operation_id),
             map_trident_failure(&err),
             format!("state.json missing after reboot; commit failed: {err}"),
             from_version,
@@ -1279,5 +1279,14 @@ mod tests {
 
         assert_eq!(status.code, StatusCode::OperationFailed);
         assert!(status.message.contains("commit failed"));
+        // Regression check for DR-003: the generic-failure branch must use the
+        // same Operation::Commit / `.commit`-suffixed operationId as every other
+        // branch of this function, matching commit_result_to_status and the
+        // doc comment above reconstruct_commit_result_to_status.
+        assert_eq!(status.operation, Operation::Commit);
+        assert_eq!(
+            status.operation_id,
+            commit_operation_id(&request.operation_id)
+        );
     }
 }
