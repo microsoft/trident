@@ -52,7 +52,7 @@ impl AgentConfig {
 
     pub fn from_toml(contents: &str) -> Result<Self, anyhow::Error> {
         let raw: RawAgentConfig =
-            toml::from_str(contents).context("failed to parse config.toml")?;
+            toml::from_str(contents).context("failed to parse trident-acl-agent.conf")?;
         raw.into_effective()
     }
 

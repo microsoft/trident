@@ -23,12 +23,14 @@ pub const SCHEMA_VERSION: &str = "1.0";
 // determined on-node because the OS image does not currently ship a required
 // file/manifest describing the running version. Once that file exists (planned
 // as part of the image build), replace CURRENT_VERSION_STUB and
-// current_active_version() below with real logic that reads it. Until then,
-// this stub can cause current_active_version() to spuriously equal a real
-// requested target version, making handle_stage/handle_finalize incorrectly
-// short-circuit to AlreadyAtTarget. Do not remove this comment when bumping the
-// stub value; keep it until the real probe lands.
-pub const CURRENT_VERSION_STUB: &str = "202601.1.0";
+// current_active_version() below with real logic that reads it. The stub
+// value below is an explicit sentinel that cannot collide with a real
+// AKS/Trident release version string (those look like "YYYYMM.N.N"), so it
+// can never accidentally match a real requested target version and cause
+// handle_stage/handle_finalize to incorrectly short-circuit to
+// AlreadyAtTarget. Do not remove this comment when bumping the stub value;
+// keep it (and its non-colliding shape) until the real probe lands.
+pub const CURRENT_VERSION_STUB: &str = "0.0.0-unprobed-trident-acl-agent-stub";
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "camelCase")]
