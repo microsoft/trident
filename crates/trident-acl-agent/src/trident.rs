@@ -303,12 +303,31 @@ impl TridentClient {
     }
 }
 
+#[derive(serde::Serialize)]
+struct ImageSpec<'a> {
+    url: &'a str,
+    sha384: &'a str,
+}
+
+#[derive(serde::Serialize)]
+struct HostConfigurationYaml<'a> {
+    image: ImageSpec<'a>,
+}
+
 pub fn host_configuration_from_image(url: &Url, hash: Option<&str>) -> HostConfiguration {
-    HostConfiguration {
-        config: match hash {
-            Some(hash) => format!("image:\n  url: {url}\n  sha384: {hash}"),
-            None => format!("image:\n  url: {url}\n  sha384: ignored"),
+    // Build via serde_yaml rather than raw string formatting so a URL or
+    // hash containing YAML-special characters (e.g. ':' or '#') can't
+    // produce invalid YAML or silently change the parsed structure fed to
+    // tridentd as configuration.
+    let spec = HostConfigurationYaml {
+        image: ImageSpec {
+            url: url.as_str(),
+            sha384: hash.unwrap_or("ignored"),
         },
+    };
+    HostConfiguration {
+        config: serde_yaml::to_string(&spec)
+            .expect("serializing a simple struct to YAML cannot fail"),
     }
 }
 
