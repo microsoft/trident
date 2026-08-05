@@ -1,5 +1,9 @@
 //! Thin Kubernetes client wrapper for Harpoon's node self-patching protocol.
 //!
+//! Implements the Node get/watch/patch access described in
+//! `docs/update-trigger-design.md`:
+//! https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GC67946fff8f296e10217b70e063c896e6028ea843&path=/docs/update-trigger-design.md
+//!
 //! The design calls for get/patch access to exactly one Node object (§3–§5).
 //! Node changes are observed via the Kubernetes watch API (`kube::runtime::watcher`)
 //! rather than polling, so label updates are delivered promptly and without

@@ -1,5 +1,11 @@
 //! gRPC helpers for talking to `tridentd`.
 //!
+//! Implements the Trident-invocation half of `docs/update-trigger-design.md`:
+//! https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GC67946fff8f296e10217b70e063c896e6028ea843&path=/docs/update-trigger-design.md
+//! (the "Trident invocation" column of section 2.1's operations table,
+//! and the stage/finalize/rollback-finalize CallerHandlesReboot split in
+//! section 2.3).
+//!
 //! The label protocol drives stage/finalize/commit directly against tridentd's
 //! stable v1 API (§4–§5). Startup recovery no longer pre-queries the preview
 //! `StatusService::GetServicingState`: commit() is self-checking (tridentd
@@ -17,10 +23,10 @@ use tonic::{transport::Endpoint, Request, Streaming};
 use trident_proto::v1::{
     commit_service_client::CommitServiceClient, rollback_service_client::RollbackServiceClient,
     servicing_response::Response as ResponseBody, update_service_client::UpdateServiceClient,
-    CommitRequest, FinalizeUpdateRequest, HostConfiguration, LogLevel, ManualRollbackKind,
-    RebootHandling, RebootManagement, RebootStatus, RollbackFinalizeRequest, RollbackStageRequest,
-    ServicingKind, ServicingResponse, StageUpdateRequest, StatusCode, TridentErrorKind,
-    UpdateRequest,
+    CheckRollbackKind, CheckRollbackRequest, CommitRequest, FinalizeUpdateRequest,
+    HostConfiguration, LogLevel, ManualRollbackKind, RebootHandling, RebootManagement,
+    RebootStatus, RollbackFinalizeRequest, RollbackStageRequest, ServicingKind, ServicingResponse,
+    StageUpdateRequest, StatusCode, TridentErrorKind, UpdateRequest,
 };
 use url::Url;
 
@@ -237,6 +243,35 @@ impl TridentClient {
             consume_servicing_stream("commit", response),
         )
         .await
+    }
+
+    /// Checks whether an A/B rollback is actually available before staging
+    /// one. `Trident::rollback()`'s underlying "no rollback to perform"
+    /// case (empty rollback chain, or host not in a rollback-eligible
+    /// servicing state) is intentionally *not* an error - tridentd reports
+    /// it as a harmless `Ok(ExitKind::Done)`/gRPC `Success`, same as every
+    /// other no-op servicing outcome, and that isn't changing. So the
+    /// agent must rule this out itself, up front, rather than relying on
+    /// rollback_stage()/rollback_finalize() to somehow flag a no-op as
+    /// failure - a blind `Success` for a rollback that never happened would
+    /// otherwise be indistinguishable from a real one to AKS-RP, and would
+    /// also trigger an unnecessary reboot. See handle_rollback() in
+    /// orchestrator.rs.
+    pub async fn check_ab_rollback_available(&mut self) -> Result<bool, TridentClientError> {
+        let response = self
+            .rollback_client
+            .check_rollback(Request::new(CheckRollbackRequest {
+                kind: ManualRollbackKind::AbRollbackRequested.into(),
+            }))
+            .await
+            .map_err(|source| TridentClientError::Request {
+                operation: "check_rollback",
+                source,
+            })?
+            .into_inner();
+        let kind =
+            CheckRollbackKind::try_from(response.kind).unwrap_or(CheckRollbackKind::Unspecified);
+        Ok(kind == CheckRollbackKind::AbRollbackExpected)
     }
 
     /// Stages an A/B rollback. Only `AbRollbackRequested` is used - per the

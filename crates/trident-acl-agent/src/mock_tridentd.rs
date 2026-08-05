@@ -21,10 +21,10 @@ use trident_proto::v1::{
     rollback_service_server::{RollbackService, RollbackServiceServer},
     servicing_response::Response as ResponseBody,
     update_service_server::{UpdateService, UpdateServiceServer},
-    CheckRollbackRequest, CheckRollbackResponse, CommitRequest, Completed, FinalizeUpdateRequest,
-    RebootStatus, RollbackFinalizeRequest, RollbackRequest, RollbackStageRequest,
-    ServicingResponse, StageUpdateRequest, StatusCode as ProtoStatusCode, TridentError,
-    UpdateRequest,
+    CheckRollbackKind, CheckRollbackRequest, CheckRollbackResponse, CommitRequest, Completed,
+    FinalizeUpdateRequest, RebootStatus, RollbackFinalizeRequest, RollbackRequest,
+    RollbackStageRequest, ServicingResponse, StageUpdateRequest, StatusCode as ProtoStatusCode,
+    TridentError, UpdateRequest,
 };
 
 use crate::trident::TridentClient;
@@ -85,6 +85,7 @@ pub struct MockTridentdConfig {
     pub commit: Option<Outcome>,
     pub rollback_stage: Option<Outcome>,
     pub rollback_finalize: Option<Outcome>,
+    pub check_rollback: Option<CheckRollbackKind>,
 }
 
 #[derive(Clone)]
@@ -168,9 +169,10 @@ impl RollbackService for MockTridentd {
         &self,
         _request: Request<CheckRollbackRequest>,
     ) -> Result<Response<CheckRollbackResponse>, Status> {
-        Err(Status::unimplemented(
-            "check_rollback() is not used by trident-acl-agent",
-        ))
+        let kind = self.config.lock().unwrap().check_rollback.expect(
+            "test must configure MockTridentdConfig::check_rollback before calling check_rollback",
+        );
+        Ok(Response::new(CheckRollbackResponse { kind: kind as i32 }))
     }
 
     async fn rollback(

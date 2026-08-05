@@ -1,3 +1,14 @@
+//! The Trident ACL agent's reconcile loop: watches the Node's request
+//! annotation, drives Trident (stage/finalize/rollback/commit) over gRPC,
+//! and writes the status annotation back, including post-reboot.
+//!
+//! Implements the node-side control flow from `docs/update-trigger-design.md`:
+//! https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GC67946fff8f296e10217b70e063c896e6028ea843&path=/docs/update-trigger-design.md
+//! (sections 2.1 "Trigger mechanism", 2.3 "Stage/finalize/rollback split
+//! and post-reboot commit", and 2.5 "Rollback"). See that document for the
+//! full state-machine rationale; keep it in sync with this file if the
+//! design changes.
+
 use std::{collections::BTreeMap, process::Command};
 
 use chrono::{DateTime, Utc};
@@ -5,11 +16,13 @@ use futures::StreamExt;
 use k8s_openapi::api::core::v1::Node;
 use semver::Version;
 use trident_proto::v1::RebootStatus;
+use uuid::Uuid;
 
 use crate::{
     annotations::{
         commit_operation_id, current_active_version, Operation, RequestedOperation, StatusCode,
-        UpdateRequest, UpdateStatus, UPDATE_REQUEST_ANNOTATION, UPDATE_STATUS_ANNOTATION,
+        UpdateRequest, UpdateStatus, SCHEMA_VERSION, UPDATE_REQUEST_ANNOTATION,
+        UPDATE_STATUS_ANNOTATION,
     },
     config::AgentConfig,
     k8s::NodeClient,
@@ -146,6 +159,30 @@ where
             snapshot.status
         );
         let persisted = self.state.load()?;
+
+        if let Some(invalid) = snapshot.invalid_request.clone() {
+            // Dedupe the same way the completed-status cache above does:
+            // only publish once per operationId, so a persistently invalid
+            // annotation doesn't re-PATCH on every reconcile.
+            if !persisted.completed.contains_key(&invalid.operation_id) {
+                let now = Utc::now();
+                let status = UpdateStatus {
+                    schema_version: SCHEMA_VERSION.to_string(),
+                    node_update_id: invalid.node_update_id,
+                    operation_id: invalid.operation_id,
+                    operation: invalid.operation,
+                    code: StatusCode::InvalidRequest,
+                    message: invalid.reason,
+                    from_version: None,
+                    to_version: None,
+                    started_utc: now,
+                    finished_utc: Some(now),
+                };
+                self.record_and_publish(status).await?;
+            }
+            return Ok(LoopControl::Continue);
+        }
+
         let Some(request) = snapshot.request.clone() else {
             return Ok(LoopControl::Continue);
         };
@@ -189,14 +226,26 @@ where
         }
 
         if let Some(pending) = persisted.pending_commit.as_ref() {
-            if request.node_update_id != pending.request.node_update_id {
+            // Reject on operationId, not nodeUpdateId: the actual conflict
+            // this guard exists to prevent is "a second finalize/rollback
+            // starts while one is still waiting for its post-reboot
+            // commit" (accepted-design.md's in-flight conflict rule).
+            // Keying on nodeUpdateId alone let a retried/re-issued request
+            // that reused the same nodeUpdateId but a new operationId slip
+            // through this guard entirely and re-enter handle_finalize/
+            // handle_rollback concurrently with the still-outstanding
+            // original operation.
+            if request.operation_id != pending.request.operation_id {
                 let started = Utc::now();
                 let status = UpdateStatus::new(
                     &request,
                     request.operation.into(),
                     request.operation_id.clone(),
                     StatusCode::InvalidRequest,
-                    "another finalize/rollback is waiting for post-reboot commit",
+                    format!(
+                        "another finalize/rollback (operationId {}) is waiting for post-reboot commit",
+                        pending.request.operation_id
+                    ),
                     pending.from_version.clone(),
                     pending.to_version.clone(),
                     started,
@@ -329,18 +378,47 @@ where
         }
 
         let completed = self.state.load()?.completed;
-        let staged = completed.values().any(|s| {
+        let staged = completed.values().find(|s| {
             s.node_update_id == request.node_update_id
                 && s.operation == Operation::Stage
                 && matches!(s.code, StatusCode::Success | StatusCode::AlreadyAtTarget)
         });
-        if !staged {
+        let staged = match staged {
+            None => {
+                let status = UpdateStatus::new(
+                    &request,
+                    Operation::Finalize,
+                    request.operation_id.clone(),
+                    StatusCode::NotStaged,
+                    "finalize requested without prior successful stage for nodeUpdateId",
+                    from_version,
+                    to_version,
+                    started,
+                    Some(Utc::now()),
+                );
+                self.record_and_publish(status).await?;
+                return Ok(LoopControl::Continue);
+            }
+            Some(staged) => staged,
+        };
+        // finalize must apply to whatever was actually staged: tridentd's
+        // update_finalize() carries no target version of its own, it just
+        // finalizes whatever is currently staged on disk. Without this
+        // check, a finalize whose targetVersion differs from the recorded
+        // stage's targetVersion would silently finalize the *staged*
+        // version while the status annotation reported the *requested*
+        // (different) toVersion - a silent version-skew in the status
+        // channel that AKS-RP has no way to detect.
+        if staged.to_version != to_version {
             let status = UpdateStatus::new(
                 &request,
                 Operation::Finalize,
                 request.operation_id.clone(),
-                StatusCode::NotStaged,
-                "finalize requested without prior successful stage for nodeUpdateId",
+                StatusCode::InvalidRequest,
+                format!(
+                    "finalize targetVersion {:?} does not match the version staged for this nodeUpdateId ({:?})",
+                    to_version, staged.to_version
+                ),
                 from_version,
                 to_version,
                 started,
@@ -429,6 +507,43 @@ where
         let started = Utc::now();
         let from_version = Some(current_active_version());
 
+        let mut client = TridentClient::connect(&self.config.trident.socket).await?;
+
+        // tridentd's Rollback/RollbackStage report a no-op ("nothing to roll
+        // back") the same way as any other no-op servicing outcome: as a
+        // plain Ok/Success, not an error. That isn't changing, so the
+        // agent must rule this out itself before staging - otherwise a
+        // rollback request against a node with an empty rollback chain (or
+        // in a non-rollbackable state) would be reported as a false
+        // Success to AKS-RP and would trigger an unnecessary reboot for
+        // nothing. This has a narrow, accepted TOCTOU window (eligibility
+        // could theoretically change between this check and the
+        // stage/finalize calls below), but it closes the common, easily
+        // reachable case (repeat rollback with nothing left to undo).
+        match client.check_ab_rollback_available().await {
+            Ok(true) => {}
+            Ok(false) => {
+                let status = UpdateStatus::new(
+                    &request,
+                    Operation::Rollback,
+                    request.operation_id.clone(),
+                    StatusCode::OperationFailed,
+                    "no AB rollback available to perform for this node",
+                    from_version,
+                    None,
+                    started,
+                    Some(Utc::now()),
+                );
+                self.record_and_publish(status).await?;
+                return Ok(LoopControl::Continue);
+            }
+            Err(err) => {
+                let status = rollback_stage_failure_status(&request, from_version, started, &err);
+                self.record_and_publish(status).await?;
+                return Ok(LoopControl::Continue);
+            }
+        }
+
         self.publish_status(&UpdateStatus::new(
             &request,
             Operation::Rollback,
@@ -442,7 +557,6 @@ where
         ))
         .await?;
 
-        let mut client = TridentClient::connect(&self.config.trident.socket).await?;
         if let Err(err) = client
             .rollback_stage(self.config.orchestration.stage_timeout)
             .await
@@ -654,9 +768,23 @@ where
     }
 }
 
+/// A request annotation that parsed as JSON but failed schema/semantic
+/// validation (e.g. wrong schemaVersion, missing targetVersion for
+/// stage/finalize, or a targetVersion present on a rollback request). Kept
+/// distinct from "no request at all" so reconcile_node can surface an
+/// InvalidRequest status instead of silently ignoring the annotation.
+#[derive(Debug, Clone)]
+struct InvalidRequest {
+    node_update_id: Uuid,
+    operation_id: String,
+    operation: Operation,
+    reason: String,
+}
+
 #[derive(Debug, Clone, Default)]
 struct Snapshot {
     request: Option<UpdateRequest>,
+    invalid_request: Option<InvalidRequest>,
     #[allow(dead_code)]
     status: Option<UpdateStatus>,
 }
@@ -664,14 +792,42 @@ struct Snapshot {
 impl Snapshot {
     fn from_node(node: &Node) -> Self {
         let annotations = node.metadata.annotations.as_ref();
-        let request = annotations
-            .and_then(|a| a.get(UPDATE_REQUEST_ANNOTATION))
-            .and_then(|v| serde_json::from_str::<UpdateRequest>(v).ok())
-            .and_then(|r| r.validate().ok());
+        let raw_request = annotations.and_then(|a| a.get(UPDATE_REQUEST_ANNOTATION));
+        let (request, invalid_request) = match raw_request
+            .map(|v| serde_json::from_str::<UpdateRequest>(v))
+        {
+            None => (None, None),
+            Some(Ok(candidate)) => match candidate.clone().validate() {
+                Ok(valid) => (Some(valid), None),
+                Err(reason) => (
+                    None,
+                    Some(InvalidRequest {
+                        node_update_id: candidate.node_update_id,
+                        operation_id: candidate.operation_id,
+                        operation: candidate.operation.into(),
+                        reason,
+                    }),
+                ),
+            },
+            Some(Err(err)) => {
+                // Cannot attribute a status to an operationId we couldn't
+                // even parse out of the annotation - log loudly instead so
+                // this doesn't fail silently, but there's no request to
+                // surface an InvalidRequest status against.
+                log::warn!(
+                    "ignoring malformed {UPDATE_REQUEST_ANNOTATION} annotation (JSON parse failed): {err}"
+                );
+                (None, None)
+            }
+        };
         let status = annotations
             .and_then(|a| a.get(UPDATE_STATUS_ANNOTATION))
             .and_then(|v| serde_json::from_str::<UpdateStatus>(v).ok());
-        Self { request, status }
+        Self {
+            request,
+            invalid_request,
+            status,
+        }
     }
 }
 
@@ -773,8 +929,21 @@ fn indicates_reverted(error: &TridentClientError) -> bool {
     error
         .remote()
         .map(|remote| {
+            // "ab-update-reboot-check"/"ab-update-health-check-commit-check"
+            // are the forward-update (finalize/commit) reboot-check
+            // subkinds (ServicingError::AbUpdateRebootCheck /
+            // HealthChecksError::AbUpdateHealthCheckCommitCheck).
+            // "manual-rollback-reboot-check" is the *rollback*-specific
+            // sibling (ServicingError::ManualRollbackRebootCheck), emitted
+            // when a post-rollback reboot's firmware A/B fallback lands on
+            // the wrong slot. It is a distinct enum variant with its own
+            // kebab-case serde subkind, not a copy of the forward-update
+            // one - both must be checked here, or a real rollback
+            // boot-fallback silently reports as generic OperationFailed
+            // instead of RevertedToPrevious.
             remote.subkind == "ab-update-reboot-check"
                 || remote.subkind == "ab-update-health-check-commit-check"
+                || remote.subkind == "manual-rollback-reboot-check"
         })
         .unwrap_or(false)
 }

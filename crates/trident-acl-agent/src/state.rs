@@ -1,3 +1,11 @@
+//! Persistent agent state (`/var/lib/trident-acl-agent/state.json`):
+//! completed-operation cache and the pending post-reboot commit record.
+//!
+//! Implements the `state.json` mechanism from `docs/update-trigger-design.md`:
+//! https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GC67946fff8f296e10217b70e063c896e6028ea843&path=/docs/update-trigger-design.md
+//! (section 2.3), which bridges the pre-reboot finalize/rollback half and
+//! the post-reboot commit half of an operation across the reboot.
+
 use std::{
     collections::BTreeMap,
     fs,
