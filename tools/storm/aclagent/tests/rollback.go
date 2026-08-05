@@ -101,5 +101,33 @@ func RunRollback(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
 		return fmt.Errorf("final rollback status annotation missing")
 	}
+
+	// Regression coverage for the "rollback with nothing to roll back"
+	// bug: the only AB rollback available was just consumed above, so a
+	// second rollback request now must be rejected up front (via the
+	// agent's CheckRollback precondition) rather than reporting a false
+	// Success and rebooting the node again for no reason. This exercises
+	// that fix end-to-end against the real tridentd, not just the mock.
+	secondScenario := &stormproxies.Scenario{Steps: []stormproxies.ScenarioStep{
+		{Patch: &stormproxies.PatchStep{NodeUpdateID: "33333333-3333-3333-3333-333333333333", OperationID: "rollback-op-2", Operation: "rollback"}},
+		{Expect: &stormproxies.ExpectStep{OperationID: "rollback-op-2", Operation: "rollback", Code: "OperationFailed", Timeout: 60 * time.Second}},
+	}}
+	secondReport, err := rp.RunScenario(ctx, secondScenario)
+	logScenarioTimeline("second rollback with empty chain", secondReport)
+	if err != nil {
+		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
+		return fmt.Errorf("ACL agent second-rollback (empty chain) scenario failed: %w", err)
+	}
+	if !secondReport.Passed {
+		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
+		return fmt.Errorf("ACL agent second-rollback (empty chain) scenario failed: %+v", secondReport)
+	}
+	// A no-op rollback must not trigger another reboot: the VM should
+	// still be reachable immediately, with no reboot wait needed.
+	if _, err := stormvm.GetVmIP(vmConfig); err != nil {
+		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
+		return fmt.Errorf("VM appears to have rebooted (or become unreachable) after a no-op rollback, which should not trigger a reboot: %w", err)
+	}
+
 	return collectAclArtifacts(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
 }
