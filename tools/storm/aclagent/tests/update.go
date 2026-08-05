@@ -273,7 +273,7 @@ node_name = "%s"
 socket = "unix:///run/trident/trident.sock"
 
 [orchestration]
-goal_source = "labels"
+goal_source = "annotations"
 `, testConfig.HostEndpointIP, testConfig.NebraskaPort, testConfig.HostEndpointIP, testConfig.APIServerPort, testConfig.NodeName)
 
 	// Write the config to a local temp file and scp it up rather than
