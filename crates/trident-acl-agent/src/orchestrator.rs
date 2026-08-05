@@ -30,7 +30,7 @@ use crate::{
     query_for_update,
     state::{PendingCommit, StateStore},
     trident::{CompletedResponse, TridentClient, TridentClientError},
-    IdSource, QueryResult, DEFAULT_NEBRASKA_TRACK,
+    IdSource, QueryResult,
 };
 
 const FINAL_STATUS_PATCH_RETRIES: usize = 3;
@@ -310,12 +310,13 @@ where
         // an already-running async task. Run it on a dedicated blocking
         // thread instead.
         let app_id = self.config.nebraska.app_id.clone();
+        let track = self.config.nebraska.track.clone();
         let endpoint_for_task = endpoint.clone();
         let response = tokio::task::spawn_blocking(move || {
             query_for_update(
                 &endpoint_for_task,
                 &app_id,
-                DEFAULT_NEBRASKA_TRACK,
+                &track,
                 &Version::new(0, 0, 0),
                 IdSource::MachineIdHashed,
             )
