@@ -342,9 +342,25 @@ users:
 		return fmt.Errorf("failed to upload fake kubeconfig to VM: %w", err)
 	}
 
+	// Enable (without "--now"), then always issue a single "restart" of
+	// trident-acl-agent.service. Each RunX test case starts its own fresh
+	// fake-apiserver/Nebraska instances, so a plain "enable --now" isn't
+	// enough: it's a no-op restart-wise if the service is already active
+	// (e.g. run-rollback runs right after run-ab-update, no reboot in
+	// between), leaving the agent's watch connected to the prior test
+	// case's now-torn-down apiserver, silently missing the new one and
+	// timing out. A single unconditional "restart" fixes that by both
+	// starting the unit if needed and cleanly restarting it if already
+	// running. Do NOT combine "enable --now" with a separate "restart"
+	// call: on the post-reboot path the unit auto-starts at boot and can
+	// already be mid-commit (calling tridentd) by the time these SSH
+	// commands run, so a second restart right after "--now" started it can
+	// kill and restart the agent mid-call, and the new instance's retry
+	// then fails with tridentd's "Servicing is active" error.
 	command := strings.Join([]string{
 		"sudo systemctl restart tridentd.service",
-		"sudo systemctl enable --now trident-acl-agent.service",
+		"sudo systemctl enable trident-acl-agent.service",
+		"sudo systemctl restart trident-acl-agent.service",
 		fmt.Sprintf("sudo grep -q '%s:%d' /etc/trident/trident-acl-agent.conf", testConfig.HostEndpointIP, testConfig.APIServerPort),
 		fmt.Sprintf("sudo grep -q '%s:%d' /etc/trident/trident-acl-agent.conf", testConfig.HostEndpointIP, testConfig.NebraskaPort),
 	}, " && ")
