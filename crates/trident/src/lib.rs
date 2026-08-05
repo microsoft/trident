@@ -840,7 +840,7 @@ impl Trident {
         invoke_if_next_is_runtime: bool,
         invoke_available_ab: bool,
         allowed_operations: Operations,
-    ) -> Result<ExitKind, TridentError> {
+    ) -> Result<(ExitKind, ServicingType), TridentError> {
         // If host's servicing state is not in Provisioned or ManualRollback*, cannot
         // execute a rollback.
         if !matches!(
@@ -853,7 +853,7 @@ impl Trident {
                 "Cannot trigger rollback from current state ({:?})",
                 datastore.host_status().servicing_state
             );
-            return Ok(ExitKind::Done);
+            return Ok((ExitKind::Done, ServicingType::NoActiveServicing));
         }
 
         let rollback_result = self.execute_and_record_error(datastore, |datastore| {
