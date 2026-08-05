@@ -128,12 +128,6 @@ stages:
             # Run CodeQL for this in CI only
             runCodeql: true
 
-  # Validate trident-acl-agent (storm A/B update scenario against a real tridentd)
-  - ${{ if or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci'), eq(parameters.stageType, 'pre'), eq(parameters.stageType, 'full-validation')) }}:
-      - template: stages/testing_acl_agent/trident-acl-agent-test.yml
-        parameters:
-          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-
   # Build FT base Image, only for CI or if forceFunctionalTestImageRebuild is true
   - ${{ if or(eq(parameters.stageType, 'ci'), eq(parameters.forceFunctionalTestImageRebuild, true)) }}:
       # Build Trident installer ISO (host)
@@ -275,6 +269,11 @@ stages:
       updateIterationCount: ${{ parameters.numberOfUpdateIterations }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
       testSecureBoot: ${{ parameters.testSecureBoot }}
+
+  # Validate trident-acl-agent (storm A/B update scenario against a real tridentd)
+  - template: stages/testing_acl_agent/trident-acl-agent-test.yml
+    parameters:
+      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # TESTING stages for PRERELEASE
   - ${{ if eq(parameters.stageType, 'pre') }}:
