@@ -230,6 +230,16 @@ The Trident ACL Agent triggers updates of ACL images.
 
 %files acl-agent
 %{_bindir}/%{name}-acl-agent
+%{_unitdir}/%{name}-acl-agent.service
+
+%post acl-agent
+%systemd_post %{name}-acl-agent.service
+
+%preun acl-agent
+%systemd_preun %{name}-acl-agent.service
+
+%postun acl-agent
+%systemd_postun_with_restart %{name}-acl-agent.service
 %endif
 
 # ------------------------------------------------------------------------------
@@ -298,6 +308,7 @@ cargo test --all --no-fail-fast -- --skip test_run_systemd_check --skip test_pre
 install -D -m 755 target/release/%{name} %{buildroot}/%{_bindir}/%{name}
 %if %{defined rpm_ver}
 install -D -m 755 target/release/%{name}-acl-agent %{buildroot}/%{_bindir}/%{name}-acl-agent
+install -D -m 644 packaging/systemd/%{name}-acl-agent.service %{buildroot}%{_unitdir}/%{name}-acl-agent.service
 %endif
 
 # Copy Trident SELinux policy module to /usr/share/selinux/packages
