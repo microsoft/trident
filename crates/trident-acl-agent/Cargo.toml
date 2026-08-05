@@ -33,7 +33,7 @@ uuid = { workspace = true, features = ["v4", "serde"] }
 
 sysdefs = { path = "../sysdefs" }
 osutils = { path = "../osutils" }
-trident-proto = { path = "../trident-proto", features = ["grpc-preview"] }
+trident-proto = { path = "../trident-proto" }
 
 
 [dev-dependencies]
