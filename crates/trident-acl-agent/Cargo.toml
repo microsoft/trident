@@ -51,4 +51,4 @@ tower = { workspace = true }
 # keeps it out of the production binary's dependency graph; it is only
 # pulled in for `cargo test`.
 trident-proto = { path = "../trident-proto", features = ["grpc-preview", "server"] }
-hyper-util = { version = "0.1", features = ["tokio"] }
+hyper-util = { workspace = true, features = ["tokio"] }
