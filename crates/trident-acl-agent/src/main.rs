@@ -1,12 +1,16 @@
 use std::path::PathBuf;
 
+use anyhow::Context;
 use clap::Parser;
 use log::{LevelFilter, Log, Metadata, Record};
 
 use trident_acl_agent::{
     config::{AgentConfig, GoalSource, DEFAULT_CONFIG_PATH},
+    k8s::NodeClient,
     orchestrator::Orchestrator,
-    run_omaha_only,
+    query_for_update, run_omaha_only,
+    trident::TridentClient,
+    IdSource, DEFAULT_NEBRASKA_TRACK,
 };
 
 /// Module/target prefixes for the underlying HTTP/gRPC/watch client stack.
@@ -91,6 +95,103 @@ struct Args {
     /// clear error.
     #[arg()]
     url: Option<url::Url>,
+
+    /// Validate connectivity to a single dependency and exit immediately,
+    /// instead of running the agent. Useful for troubleshooting one
+    /// connection in isolation (e.g. a systemd ExecStartPre check, or manual
+    /// diagnostics on-node) without running the full orchestrator loop.
+    /// Exits with status 0 if the connection could be established, non-zero
+    /// (with an error message) otherwise.
+    #[arg(long, value_enum)]
+    validate_connection: Option<ConnectionTarget>,
+}
+
+/// A single dependency `--validate-connection` can check.
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum ConnectionTarget {
+    /// Validates reachability of the Kubernetes API server by fetching this
+    /// node's own Node object (the same access the agent's reconcile loop
+    /// already requires).
+    Kubernetes,
+    /// Validates reachability of tridentd by connecting to its gRPC Unix
+    /// socket. Connecting is sufficient - no RPC call is needed, since the
+    /// connection itself fails immediately if nothing is listening.
+    Tridentd,
+    /// Validates reachability of the Nebraska/Omaha server by issuing a real
+    /// update-check query. Any well-formed Omaha response (including "no
+    /// update available") counts as success - only a network/transport
+    /// failure is treated as unreachable.
+    Nebraska,
+}
+
+/// Checks connectivity to exactly one of `target`'s dependencies and returns
+/// `Ok(())` on success. The caller (`main`) surfaces any `Err` the normal way
+/// (`anyhow`'s `Termination` impl prints the error and exits non-zero), so
+/// this function only needs to produce a descriptive error on failure - no
+/// explicit `process::exit` is required.
+async fn validate_connection(
+    target: ConnectionTarget,
+    config: &AgentConfig,
+) -> Result<(), anyhow::Error> {
+    match target {
+        ConnectionTarget::Kubernetes => {
+            let client = NodeClient::new(&config.kubernetes)
+                .await
+                .context("failed to build Kubernetes client")?;
+            client
+                .get_node(&config.kubernetes.node_name)
+                .await
+                .with_context(|| {
+                    format!(
+                        "failed to reach Kubernetes API server at {} (get Node {:?})",
+                        config.kubernetes.api_server, config.kubernetes.node_name
+                    )
+                })?;
+            log::info!(
+                "kubernetes: reached API server at {} and fetched Node {:?}",
+                config.kubernetes.api_server,
+                config.kubernetes.node_name
+            );
+        }
+        ConnectionTarget::Tridentd => {
+            TridentClient::connect(&config.trident.socket)
+                .await
+                .with_context(|| {
+                    format!("failed to reach tridentd at {}", config.trident.socket)
+                })?;
+            log::info!("tridentd: connected to {}", config.trident.socket);
+        }
+        ConnectionTarget::Nebraska => {
+            let endpoint = config.nebraska.endpoint.clone().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "nebraska.endpoint is not configured (set [nebraska].endpoint in config.toml, or pass a URL on the CLI)"
+                )
+            })?;
+            let app_id = config.nebraska.app_id.clone();
+            // query_for_update() is a blocking call (reqwest::blocking under
+            // the hood, see omaha::send) - calling it directly from this
+            // async fn can panic ("Cannot drop a runtime in a context where
+            // blocking is not allowed") because reqwest::blocking spins up
+            // its own inner Tokio runtime per call, which isn't safe to tear
+            // down from inside an already-running async task. Run it on a
+            // dedicated blocking thread instead.
+            let endpoint_for_task = endpoint.clone();
+            tokio::task::spawn_blocking(move || {
+                query_for_update(
+                    &endpoint_for_task,
+                    &app_id,
+                    DEFAULT_NEBRASKA_TRACK,
+                    &semver::Version::new(0, 0, 0),
+                    IdSource::MachineIdHashed,
+                )
+            })
+            .await
+            .context("Nebraska connectivity check task panicked")?
+            .with_context(|| format!("failed to reach Nebraska server at {endpoint}"))?;
+            log::info!("nebraska: reached server at {endpoint}");
+        }
+    }
+    Ok(())
 }
 
 #[tokio::main]
@@ -130,6 +231,10 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let config = AgentConfig::load(&config_path, explicit_config)?.unwrap_or_default();
     let config = config.with_cli_endpoint(args.url.clone());
+
+    if let Some(target) = args.validate_connection {
+        return validate_connection(target, &config).await;
+    }
 
     match config.orchestration.goal_source {
         // Historical one-shot flow: query Nebraska once, apply an update if
