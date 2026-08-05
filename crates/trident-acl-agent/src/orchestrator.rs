@@ -11,6 +11,7 @@
 
 use std::{collections::BTreeMap, process::Command};
 
+use anyhow::Context;
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use k8s_openapi::api::core::v1::Node;
@@ -301,13 +302,26 @@ where
         let endpoint = self.config.nebraska.endpoint.clone().ok_or_else(|| {
             anyhow::anyhow!("annotation mode requires [nebraska].endpoint or CLI override")
         })?;
-        let response = query_for_update(
-            &endpoint,
-            &self.config.nebraska.app_id,
-            DEFAULT_NEBRASKA_TRACK,
-            &Version::new(0, 0, 0),
-            IdSource::MachineIdHashed,
-        )?;
+        // query_for_update() is a blocking call (reqwest::blocking under the
+        // hood, see omaha::send) - calling it directly from this async fn
+        // can panic ("Cannot drop a runtime in a context where blocking is
+        // not allowed") because reqwest::blocking spins up its own inner
+        // Tokio runtime per call, which isn't safe to tear down from inside
+        // an already-running async task. Run it on a dedicated blocking
+        // thread instead.
+        let app_id = self.config.nebraska.app_id.clone();
+        let endpoint_for_task = endpoint.clone();
+        let response = tokio::task::spawn_blocking(move || {
+            query_for_update(
+                &endpoint_for_task,
+                &app_id,
+                DEFAULT_NEBRASKA_TRACK,
+                &Version::new(0, 0, 0),
+                IdSource::MachineIdHashed,
+            )
+        })
+        .await
+        .context("Nebraska query task panicked")??;
         let offered = match response.result {
             QueryResult::NoUpdate => {
                 let status = UpdateStatus::new(
