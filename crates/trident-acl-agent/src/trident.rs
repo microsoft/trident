@@ -6,12 +6,12 @@
 //! and the stage/finalize/rollback-finalize CallerHandlesReboot split in
 //! section 2.3).
 //!
-//! The label protocol drives stage/finalize/commit directly against tridentd's
-//! stable v1 API (§4–§5). Startup recovery no longer pre-queries the preview
-//! `StatusService::GetServicingState`: commit() is self-checking (tridentd
-//! only commits from a valid servicing_state and otherwise returns
+//! The annotation protocol drives stage/finalize/commit directly against
+//! tridentd's stable v1 API (§4–§5). Startup recovery no longer pre-queries
+//! the preview `StatusService::GetServicingState`: commit() is self-checking
+//! (tridentd only commits from a valid servicing_state and otherwise returns
 //! ServicingKind::NoneRequired as a harmless no-op), so the orchestrator
-//! always calls commit() unconditionally and falls back to label-based
+//! always calls commit() unconditionally and falls back to annotation-based
 //! progress for anything commit() reports nothing to do for. See
 //! orchestrator.rs's recover_from_trident_state for the full rationale.
 

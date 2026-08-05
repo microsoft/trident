@@ -2,9 +2,10 @@
 //!
 //! Harpoon is Trident's ACL update sidecar. Historically it was a one-shot
 //! Omaha client that called Trident's combined `Update()` RPC once and exited.
-//! This crate now also supports the AKS label protocol described in the local
-//! design doc (`aks-rp ↔ trident-acl-agent`, especially §3–§6 and §12–§13),
-//! while preserving the original `omaha-only` mode as the default.
+//! This crate now defaults to the AKS annotation protocol described in the
+//! local design doc (`aks-rp ↔ trident-acl-agent`, especially §3–§6 and
+//! §12–§13), while preserving the original `omaha-only` mode as an explicit
+//! opt-out (see `config::GoalSource`).
 
 use anyhow::Context;
 use semver::Version;
@@ -75,12 +76,13 @@ pub async fn run_omaha_only(config: &config::AgentConfig) -> Result<(), anyhow::
     // runtime per call, which isn't safe to tear down from inside an
     // already-running async task. Run it on a dedicated blocking thread.
     let app_id = config.nebraska.app_id.clone();
+    let track = config.nebraska.track.clone();
     let endpoint_for_task = endpoint.clone();
     let response = tokio::task::spawn_blocking(move || {
         query_for_update(
             &endpoint_for_task,
             &app_id,
-            DEFAULT_NEBRASKA_TRACK,
+            &track,
             &Version::new(0, 0, 0),
             IdSource::MachineIdHashed,
         )
