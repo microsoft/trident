@@ -1,0 +1,105 @@
+package tests
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"time"
+
+	stormproxies "tridenttools/storm/aclagent/proxies"
+	stormaclconfig "tridenttools/storm/aclagent/utils/config"
+	stormvm "tridenttools/storm/utils/vm"
+	stormvmconfig "tridenttools/storm/utils/vm/config"
+)
+
+// RunRollback exercises trident-acl-agent's rollback annotation end-to-end
+// against the real gRPC-backed RollbackService (rollback_stage +
+// rollback_finalize) implemented by tridentd, followed by the real reboot
+// and post-reboot commit. It assumes the VM is already staged/finalized to
+// testConfig.TargetVersion (i.e. it runs after run-ab-update in the same
+// scenario), so ManualRollbackAbStaged/Finalized has a prior version to roll
+// back to.
+func RunRollback(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig) error {
+	vmIP, err := stormvm.GetVmIP(vmConfig)
+	if err != nil {
+		return fmt.Errorf("failed to get VM IP: %w", err)
+	}
+	if err := os.MkdirAll(testConfig.OutputPath, 0o755); err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Rollback doesn't stage a new image from Nebraska - it re-activates the
+	// previously-finalized volume trident already has on disk - so only the
+	// fake apiserver is needed here, not the Nebraska/image-server mocks
+	// run-ab-update starts. The agent config still references a Nebraska
+	// endpoint (required by the config schema) but it is never queried
+	// during a rollback request.
+	nodeStore := stormproxies.NewNodeStore(stormproxies.NewSeedNode(testConfig.NodeName, map[string]string{}))
+	apiServer := stormproxies.NewAPIServer(testConfig.NodeName, nodeStore)
+	if _, err := apiServer.ListenAndServe(ctx, fmt.Sprintf("0.0.0.0:%d", testConfig.APIServerPort)); err != nil {
+		return fmt.Errorf("failed to start fake apiserver: %w", err)
+	}
+
+	nodeStore.PatchLabels(map[string]string{stormproxies.NodeImageVersionLabel: testConfig.TargetVersion})
+	nodeStore.SetReadyCondition(true)
+
+	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig); err != nil {
+		return err
+	}
+
+	rp := &stormproxies.RPClient{APIServerURL: fmt.Sprintf("http://%s:%d", testConfig.HostEndpointIP, testConfig.APIServerPort), NodeName: testConfig.NodeName}
+	scenario := &stormproxies.Scenario{Steps: []stormproxies.ScenarioStep{
+		{Patch: &stormproxies.PatchStep{NodeUpdateID: "22222222-2222-2222-2222-222222222222", OperationID: "rollback-op", Operation: "rollback"}},
+		{Expect: &stormproxies.ExpectStep{OperationID: "rollback-op", Operation: "rollback", Code: "Success", Timeout: 180 * time.Second}},
+	}}
+	report, err := rp.RunScenario(ctx, scenario)
+	logScenarioTimeline("rollback stage/finalize", report)
+	if err != nil {
+		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
+		return fmt.Errorf("ACL agent rollback scenario failed (stage/finalize): %w", err)
+	}
+	if !report.Passed {
+		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
+		return fmt.Errorf("ACL agent rollback scenario failed (stage/finalize): %+v", report)
+	}
+
+	// rollback_finalize triggers a real "systemctl reboot" from
+	// trident-acl-agent, same as update's finalize - wait it out the same
+	// way run-ab-update does.
+	nodeStore.SetReadyCondition(false)
+	if err := waitForVmRebootAndSshBack(vmConfig, vmIP, testConfig); err != nil {
+		return fmt.Errorf("failed waiting for VM to come back after rollback finalize reboot: %w", err)
+	}
+	nodeStore.SetReadyCondition(true)
+
+	// Same rationale as run-ab-update: the rollback reboot lands on the
+	// previous root, which needs the agent config/kubeconfig re-delivered
+	// before it can talk to the fake apiserver again.
+	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig); err != nil {
+		return fmt.Errorf("failed to reconfigure ACL agent on post-rollback-reboot root: %w", err)
+	}
+
+	finalScenario := &stormproxies.Scenario{Steps: []stormproxies.ScenarioStep{
+		{Expect: &stormproxies.ExpectStep{OperationID: "rollback-op.commit", Operation: "commit", Code: "Success", Timeout: 180 * time.Second}},
+	}}
+	finalReport, err := rp.RunScenario(ctx, finalScenario)
+	logScenarioTimeline("post-rollback-reboot commit", finalReport)
+	if err != nil {
+		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
+		return fmt.Errorf("ACL agent rollback scenario failed (post-reboot commit): %w", err)
+	}
+	if !finalReport.Passed {
+		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
+		return fmt.Errorf("ACL agent rollback scenario failed (post-reboot commit): %+v", finalReport)
+	}
+
+	snapshot := nodeStore.Snapshot()
+	if got := snapshot.Annotations[stormproxies.UpdateStatusAnnotation]; got == "" {
+		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
+		return fmt.Errorf("final rollback status annotation missing")
+	}
+	return collectAclArtifacts(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
+}

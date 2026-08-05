@@ -136,5 +136,5 @@ stages:
                 --output-path $(ob_outputDirectory) \
                 --artifacts-dir $(Build.ArtifactStagingDirectory) \
                 --ssh-private-key-path ~/.ssh/id_rsa
-            displayName: "🧪 Run trident-acl-agent A/B update scenario"
+            displayName: "🧪 Run trident-acl-agent A/B update + rollback scenario"
             workingDirectory: $(TRIDENT_SOURCE_DIR)

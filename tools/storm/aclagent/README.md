@@ -19,6 +19,7 @@ There is intentionally no fake `tridentd`.
 - `deploy-vm`
 - `check-deployment`
 - `run-ab-update`
+- `run-rollback`
 - `collect-logs`
 - `cleanup-vm`
 
@@ -60,6 +61,8 @@ make bin/storm-trident
   --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
 ./bin/storm-trident run aclagent run-ab-update \
   --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
+./bin/storm-trident run aclagent run-rollback \
+  --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
 ./bin/storm-trident run aclagent collect-logs \
   --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
 ./bin/storm-trident run aclagent cleanup-vm \
@@ -84,3 +87,13 @@ This scenario keeps the shim-based reboot interception from the old tester.
 That is less realistic than a full VM reboot, but it keeps the test deterministic
 and lets the storm runner hold the reverse SSH tunnels and in-process fake services
 steady while the agent drives the finalize path.
+
+## `run-rollback`
+
+`run-rollback` exercises the `rollback` annotation end-to-end against
+tridentd's stable `RollbackService` gRPC API (`RollbackStage`/
+`RollbackFinalize`), followed by a real reboot and post-reboot commit -
+mirroring `run-ab-update`'s stage/finalize/commit flow. It must run *after*
+`run-ab-update` in the same VM lifetime, since rollback re-activates the
+volume that was active before `run-ab-update`'s finalize and there is
+nothing to roll back to on a freshly-deployed VM.
