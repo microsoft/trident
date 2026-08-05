@@ -104,10 +104,11 @@ func RunRollback(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 
 	// Regression coverage for the "rollback with nothing to roll back"
 	// bug: the only AB rollback available was just consumed above, so a
-	// second rollback request now must be rejected up front (via the
-	// agent's CheckRollback precondition) rather than reporting a false
-	// Success and rebooting the node again for no reason. This exercises
-	// that fix end-to-end against the real tridentd, not just the mock.
+	// second rollback request now must be detected as a no-op (via
+	// RollbackStage's servicing_kind, which tridentd now reports the same
+	// way update/install do) rather than reporting a false Success and
+	// rebooting the node again for no reason. This exercises that fix
+	// end-to-end against the real tridentd, not just the mock.
 	secondScenario := &stormproxies.Scenario{Steps: []stormproxies.ScenarioStep{
 		{Patch: &stormproxies.PatchStep{NodeUpdateID: "33333333-3333-3333-3333-333333333333", OperationID: "rollback-op-2", Operation: "rollback"}},
 		{Expect: &stormproxies.ExpectStep{OperationID: "rollback-op-2", Operation: "rollback", Code: "OperationFailed", Timeout: 60 * time.Second}},

@@ -1,21 +1,53 @@
 // Proto file defining the preview-only extensions to RollbackService.
 //
-// CheckRollback, Rollback, RollbackStage, and RollbackFinalize have been
-// promoted to the stable trident.v1.RollbackService (see
-// trident/v1/rollback_service.proto). This file retains only the
-// still-preview query operations: GetRollbackChain and GetRollbackTarget.
+// Rollback, RollbackStage, and RollbackFinalize have been promoted to the
+// stable trident.v1.RollbackService (see trident/v1/rollback_service.proto).
+// CheckRollback was promoted alongside them but has been demoted back here:
+// once RollbackStage/RollbackFinalize/Rollback started reporting
+// ServicingKind::NoneRequired for a no-op the same way every other
+// servicing RPC does (see CompletedResponse.servicing_kind on
+// trident.v1.ServicingResponse), trident-acl-agent no longer needs a
+// separate precondition query to detect "nothing to roll back" - it reads
+// servicing_kind off the RollbackStage response it already makes. This
+// file now retains all three still-preview query operations:
+// CheckRollback, GetRollbackChain, and GetRollbackTarget.
 
 syntax = "proto3";
 
 package trident.v1preview;
 
+import "trident/v1/rollback_service.proto";
+
 // RollbackService provides preview-only query methods for OS rollbacks.
 service RollbackService {
+  // CheckRollback checks what type of rollback would be performed.
+  rpc CheckRollback(CheckRollbackRequest) returns (CheckRollbackResponse);
+
   // GetRollbackChain returns list of available rollbacks.
   rpc GetRollbackChain(GetRollbackChainRequest) returns (GetRollbackChainResponse);
 
   // GetRollbackTarget returns the next rollback target OS Host Configuration.
   rpc GetRollbackTarget(GetRollbackTargetRequest) returns (GetRollbackTargetResponse);
+}
+
+enum CheckRollbackKind {
+  CHECK_ROLLBACK_KIND_UNSPECIFIED = 0;
+  // No rollbacks are available
+  NO_ROLLBACK_AVAILABLE = 1;
+  // Rollback of an A/B update is expected
+  AB_ROLLBACK_EXPECTED = 2;
+  // Rollback of a runtime update is expected
+  RUNTIME_ROLLBACK_EXPECTED = 3;
+}
+
+message CheckRollbackRequest {
+  // The rollback kind parameter for the servicing operation.
+  trident.v1.ManualRollbackKind kind = 1;
+}
+
+message CheckRollbackResponse {
+  // The rollback kind as a string.
+  CheckRollbackKind kind = 1;
 }
 
 message GetRollbackChainRequest {}

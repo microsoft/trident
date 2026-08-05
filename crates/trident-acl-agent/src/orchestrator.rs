@@ -15,7 +15,7 @@ use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use k8s_openapi::api::core::v1::Node;
 use semver::Version;
-use trident_proto::v1::RebootStatus;
+use trident_proto::v1::{RebootStatus, ServicingKind};
 use uuid::Uuid;
 
 use crate::{
@@ -509,41 +509,6 @@ where
 
         let mut client = TridentClient::connect(&self.config.trident.socket).await?;
 
-        // tridentd's Rollback/RollbackStage report a no-op ("nothing to roll
-        // back") the same way as any other no-op servicing outcome: as a
-        // plain Ok/Success, not an error. That isn't changing, so the
-        // agent must rule this out itself before staging - otherwise a
-        // rollback request against a node with an empty rollback chain (or
-        // in a non-rollbackable state) would be reported as a false
-        // Success to AKS-RP and would trigger an unnecessary reboot for
-        // nothing. This has a narrow, accepted TOCTOU window (eligibility
-        // could theoretically change between this check and the
-        // stage/finalize calls below), but it closes the common, easily
-        // reachable case (repeat rollback with nothing left to undo).
-        match client.check_ab_rollback_available().await {
-            Ok(true) => {}
-            Ok(false) => {
-                let status = UpdateStatus::new(
-                    &request,
-                    Operation::Rollback,
-                    request.operation_id.clone(),
-                    StatusCode::OperationFailed,
-                    "no AB rollback available to perform for this node",
-                    from_version,
-                    None,
-                    started,
-                    Some(Utc::now()),
-                );
-                self.record_and_publish(status).await?;
-                return Ok(LoopControl::Continue);
-            }
-            Err(err) => {
-                let status = rollback_stage_failure_status(&request, from_version, started, &err);
-                self.record_and_publish(status).await?;
-                return Ok(LoopControl::Continue);
-            }
-        }
-
         self.publish_status(&UpdateStatus::new(
             &request,
             Operation::Rollback,
@@ -557,11 +522,44 @@ where
         ))
         .await?;
 
-        if let Err(err) = client
+        let stage_response = match client
             .rollback_stage(self.config.orchestration.stage_timeout)
             .await
         {
-            let status = rollback_stage_failure_status(&request, from_version, started, &err);
+            Ok(response) => response,
+            Err(err) => {
+                let status = rollback_stage_failure_status(&request, from_version, started, &err);
+                self.record_and_publish(status).await?;
+                return Ok(LoopControl::Continue);
+            }
+        };
+
+        // tridentd's RollbackStage reports a no-op ("nothing to roll back")
+        // the same way update/install do: Ok/Success with servicing_kind ==
+        // NoneRequired, not an error - see servicing.proto's
+        // ServicingResponse.servicing_kind and execute_rollback() in
+        // engine/manual_rollback/mod.rs. Detect that here and stop before
+        // finalize/reboot - otherwise a rollback request against a node
+        // with an empty rollback chain (or in a non-rollbackable state)
+        // would be reported as false Success to AKS-RP and would trigger
+        // an unnecessary reboot for nothing. `None` is treated the same as
+        // `NoneRequired` (fail closed) in case a future response omits the
+        // field.
+        if !matches!(
+            stage_response.servicing_kind,
+            Some(ServicingKind::ManualRollbackAb)
+        ) {
+            let status = UpdateStatus::new(
+                &request,
+                Operation::Rollback,
+                request.operation_id.clone(),
+                StatusCode::OperationFailed,
+                "no AB rollback available to perform for this node",
+                from_version,
+                None,
+                started,
+                Some(Utc::now()),
+            );
             self.record_and_publish(status).await?;
             return Ok(LoopControl::Continue);
         }
@@ -1235,11 +1233,57 @@ mod tests {
         assert!(status.message.contains("rollback stage failed"));
     }
 
+    /// Regression coverage for the "rollback with nothing to roll back"
+    /// fix: RollbackStage's response must carry the real ServicingKind
+    /// (ManualRollbackAb for a real rollback, NoneRequired for a no-op) so
+    /// handle_rollback() in this module can distinguish the two before
+    /// finalizing/rebooting - see the `matches!(stage_response.servicing_kind, ..)`
+    /// check there. This test pins the wire plumbing `TridentClient`
+    /// depends on: a mocked RollbackStage response's servicing_kind must
+    /// survive unchanged into `CompletedResponse`.
+    #[tokio::test]
+    async fn rollback_stage_success_reports_servicing_kind() {
+        let config = Arc::new(Mutex::new(MockTridentdConfig {
+            rollback_stage: Some(Outcome::Success {
+                reboot_status: RebootStatus::RebootNotRequired,
+                servicing_kind: Some(ServicingKind::ManualRollbackAb),
+            }),
+            ..Default::default()
+        }));
+        let mut client = connect_mock_client(config).await;
+        let response = client
+            .rollback_stage(std::time::Duration::from_secs(5))
+            .await
+            .expect("mocked rollback_stage should succeed");
+        assert_eq!(
+            response.servicing_kind,
+            Some(ServicingKind::ManualRollbackAb)
+        );
+    }
+
+    #[tokio::test]
+    async fn rollback_stage_noop_reports_none_required_servicing_kind() {
+        let config = Arc::new(Mutex::new(MockTridentdConfig {
+            rollback_stage: Some(Outcome::Success {
+                reboot_status: RebootStatus::RebootNotRequired,
+                servicing_kind: Some(ServicingKind::NoneRequired),
+            }),
+            ..Default::default()
+        }));
+        let mut client = connect_mock_client(config).await;
+        let response = client
+            .rollback_stage(std::time::Duration::from_secs(5))
+            .await
+            .expect("mocked rollback_stage should succeed");
+        assert_eq!(response.servicing_kind, Some(ServicingKind::NoneRequired));
+    }
+
     #[tokio::test]
     async fn rollback_finalize_success_maps_to_success_status() {
         let config = Arc::new(Mutex::new(MockTridentdConfig {
             rollback_finalize: Some(Outcome::Success {
                 reboot_status: RebootStatus::RebootRequired,
+                servicing_kind: None,
             }),
             ..Default::default()
         }));
@@ -1317,6 +1361,7 @@ mod tests {
         let config = Arc::new(Mutex::new(MockTridentdConfig {
             stage: Some(Outcome::Success {
                 reboot_status: RebootStatus::RebootNotRequired,
+                servicing_kind: None,
             }),
             ..Default::default()
         }));
@@ -1447,6 +1492,7 @@ mod tests {
         let config = Arc::new(Mutex::new(MockTridentdConfig {
             commit: Some(Outcome::Success {
                 reboot_status: RebootStatus::RebootNotRequired,
+                servicing_kind: None,
             }),
             ..Default::default()
         }));
@@ -1464,6 +1510,7 @@ mod tests {
         let config = Arc::new(Mutex::new(MockTridentdConfig {
             commit: Some(Outcome::Success {
                 reboot_status: RebootStatus::RebootRequired,
+                servicing_kind: None,
             }),
             ..Default::default()
         }));
@@ -1573,6 +1620,7 @@ mod tests {
         let config = Arc::new(Mutex::new(MockTridentdConfig {
             commit: Some(Outcome::Success {
                 reboot_status: RebootStatus::RebootNotRequired,
+                servicing_kind: None,
             }),
             ..Default::default()
         }));
@@ -1601,6 +1649,7 @@ mod tests {
         let config = Arc::new(Mutex::new(MockTridentdConfig {
             commit: Some(Outcome::Success {
                 reboot_status: RebootStatus::RebootRequired,
+                servicing_kind: None,
             }),
             ..Default::default()
         }));

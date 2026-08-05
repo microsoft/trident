@@ -5,24 +5,25 @@ use trident_api::{
     error::{TridentError, TridentResultExt},
 };
 use trident_proto::v1::{
-    rollback_service_server::RollbackService, CheckRollbackKind, CheckRollbackRequest,
-    CheckRollbackResponse, ManualRollbackKind, RollbackFinalizeRequest, RollbackRequest,
-    RollbackStageRequest,
+    rollback_service_server::RollbackService, ManualRollbackKind, RollbackFinalizeRequest,
+    RollbackRequest, RollbackStageRequest,
 };
 
 #[cfg(feature = "grpc-preview")]
 use trident_api::error::InternalError;
 #[cfg(feature = "grpc-preview")]
 use trident_proto::v1preview::{
-    rollback_service_server::RollbackService as RollbackServicePreview, GetRollbackChainRequest,
-    GetRollbackChainResponse, GetRollbackTargetRequest, GetRollbackTargetResponse,
+    rollback_service_server::RollbackService as RollbackServicePreview, CheckRollbackKind,
+    CheckRollbackRequest, CheckRollbackResponse, GetRollbackChainRequest, GetRollbackChainResponse,
+    GetRollbackTargetRequest, GetRollbackTargetResponse,
 };
 
+#[cfg(feature = "grpc-preview")]
+use crate::engine::manual_rollback::utils::{
+    ManualRollbackContext, ManualRollbackKind as InternalManualRollbackKind,
+    ManualRollbackRequestKind,
+};
 use crate::{
-    engine::manual_rollback::utils::{
-        ManualRollbackContext, ManualRollbackKind as InternalManualRollbackKind,
-        ManualRollbackRequestKind,
-    },
     server::{
         tridentserver::{RebootDecision, ServicingResponseStream},
         TridentServer,
@@ -31,9 +32,9 @@ use crate::{
 };
 
 /// Converts a wire-level `ManualRollbackKind` into the internal
-/// `ManualRollbackRequestKind`. `trident-acl-agent` only ever sends
-/// `AB_ROLLBACK_REQUESTED`, but the server accepts the full set the CLI
-/// already supports.
+/// `ManualRollbackRequestKind`. Only used by the preview-only
+/// `check_rollback` query below.
+#[cfg(feature = "grpc-preview")]
 fn manual_rollback_request_kind(
     kind: ManualRollbackKind,
 ) -> Result<ManualRollbackRequestKind, TridentError> {
@@ -52,40 +53,6 @@ fn manual_rollback_request_kind(
 
 #[async_trait]
 impl RollbackService for TridentServer {
-    async fn check_rollback(
-        &self,
-        request: Request<CheckRollbackRequest>,
-    ) -> Result<Response<CheckRollbackResponse>, Status> {
-        let req = request.into_inner();
-        let data_store_path = self.agent_config.datastore_path().to_owned();
-
-        self.reading_request("check_rollback", move || {
-            let requested_kind = manual_rollback_request_kind(req.kind())?;
-
-            let datastore =
-                DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
-
-            let host_statuses = datastore
-                .get_host_statuses()
-                .message("Failed to get datastore HostStatus entries")?;
-            let rollback_context = ManualRollbackContext::new(&host_statuses)
-                .message("Failed to create manual rollback context")?;
-            let kind = rollback_context.get_requested_rollback(requested_kind)?;
-
-            Ok(CheckRollbackResponse {
-                kind: match kind.map(|item| item.kind) {
-                    None => CheckRollbackKind::NoRollbackAvailable,
-                    Some(InternalManualRollbackKind::Ab) => CheckRollbackKind::AbRollbackExpected,
-                    Some(InternalManualRollbackKind::Runtime) => {
-                        CheckRollbackKind::RuntimeRollbackExpected
-                    }
-                }
-                .into(),
-            })
-        })
-        .await
-    }
-
     type RollbackStream = ServicingResponseStream;
     async fn rollback(
         &self,
@@ -121,7 +88,9 @@ impl RollbackService for TridentServer {
                         invoke_available_ab,
                         Operations::all(),
                     )
-                    .map(|exit_kind| (exit_kind, None, None))
+                    .map(|(exit_kind, servicing_type)| {
+                        (exit_kind, None, Some(servicing_type.into()))
+                    })
             },
         )
     }
@@ -154,7 +123,7 @@ impl RollbackService for TridentServer {
                     invoke_available_ab,
                     Operation::Stage.into(),
                 )
-                .map(|exit_kind| (exit_kind, None, None))
+                .map(|(exit_kind, servicing_type)| (exit_kind, None, Some(servicing_type.into())))
         })
     }
 
@@ -187,7 +156,9 @@ impl RollbackService for TridentServer {
                 // narrowed the chain.
                 trident
                     .rollback(&mut datastore, false, false, Operation::Finalize.into())
-                    .map(|exit_kind| (exit_kind, None, None))
+                    .map(|(exit_kind, servicing_type)| {
+                        (exit_kind, None, Some(servicing_type.into()))
+                    })
             },
         )
     }
@@ -209,6 +180,40 @@ fn manual_rollback_flags(kind: ManualRollbackKind) -> Result<(bool, bool), Tride
 #[cfg(feature = "grpc-preview")]
 #[async_trait]
 impl RollbackServicePreview for TridentServer {
+    async fn check_rollback(
+        &self,
+        request: Request<CheckRollbackRequest>,
+    ) -> Result<Response<CheckRollbackResponse>, Status> {
+        let req = request.into_inner();
+        let data_store_path = self.agent_config.datastore_path().to_owned();
+
+        self.reading_request("check_rollback", move || {
+            let requested_kind = manual_rollback_request_kind(req.kind())?;
+
+            let datastore =
+                DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
+
+            let host_statuses = datastore
+                .get_host_statuses()
+                .message("Failed to get datastore HostStatus entries")?;
+            let rollback_context = ManualRollbackContext::new(&host_statuses)
+                .message("Failed to create manual rollback context")?;
+            let kind = rollback_context.get_requested_rollback(requested_kind)?;
+
+            Ok(CheckRollbackResponse {
+                kind: match kind.map(|item| item.kind) {
+                    None => CheckRollbackKind::NoRollbackAvailable,
+                    Some(InternalManualRollbackKind::Ab) => CheckRollbackKind::AbRollbackExpected,
+                    Some(InternalManualRollbackKind::Runtime) => {
+                        CheckRollbackKind::RuntimeRollbackExpected
+                    }
+                }
+                .into(),
+            })
+        })
+        .await
+    }
+
     async fn get_rollback_chain(
         &self,
         _request: Request<GetRollbackChainRequest>,

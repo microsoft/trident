@@ -21,10 +21,9 @@ use trident_proto::v1::{
     rollback_service_server::{RollbackService, RollbackServiceServer},
     servicing_response::Response as ResponseBody,
     update_service_server::{UpdateService, UpdateServiceServer},
-    CheckRollbackKind, CheckRollbackRequest, CheckRollbackResponse, CommitRequest, Completed,
-    FinalizeUpdateRequest, RebootStatus, RollbackFinalizeRequest, RollbackRequest,
-    RollbackStageRequest, ServicingResponse, StageUpdateRequest, StatusCode as ProtoStatusCode,
-    TridentError, UpdateRequest,
+    CommitRequest, Completed, FinalizeUpdateRequest, RebootStatus, RollbackFinalizeRequest,
+    RollbackRequest, RollbackStageRequest, ServicingKind, ServicingResponse, StageUpdateRequest,
+    StatusCode as ProtoStatusCode, TridentError, UpdateRequest,
 };
 
 use crate::trident::TridentClient;
@@ -32,8 +31,16 @@ use crate::trident::TridentClient;
 /// Canned outcome a `MockTridentd` should return for a given RPC call.
 #[derive(Clone, Debug)]
 pub enum Outcome {
-    /// Respond with a successful `Completed` message.
-    Success { reboot_status: RebootStatus },
+    /// Respond with a successful `Completed` message. `servicing_kind`
+    /// mirrors what a real tridentd populates on every servicing RPC
+    /// (`ServicingKind::NoneRequired` for a no-op, the real kind
+    /// otherwise) - tests that care about the no-op-detection path (see
+    /// orchestrator.rs's `handle_rollback`) set this explicitly; other
+    /// tests that don't inspect it can pass `None`.
+    Success {
+        reboot_status: RebootStatus,
+        servicing_kind: Option<ServicingKind>,
+    },
     /// Respond with a failed `Completed` message carrying the given error
     /// subkind (e.g. "ab-update-reboot-check").
     Failure {
@@ -45,12 +52,15 @@ pub enum Outcome {
 impl Outcome {
     fn into_servicing_response(self) -> ServicingResponse {
         let completed = match self {
-            Outcome::Success { reboot_status } => Completed {
+            Outcome::Success {
+                reboot_status,
+                servicing_kind,
+            } => Completed {
                 status: ProtoStatusCode::Success as i32,
                 error: None,
                 reboot_status: reboot_status as i32,
                 image_hash: None,
-                servicing_kind: None,
+                servicing_kind: servicing_kind.map(|k| k as i32),
             },
             Outcome::Failure { subkind, message } => Completed {
                 status: ProtoStatusCode::Failure as i32,
@@ -85,7 +95,6 @@ pub struct MockTridentdConfig {
     pub commit: Option<Outcome>,
     pub rollback_stage: Option<Outcome>,
     pub rollback_finalize: Option<Outcome>,
-    pub check_rollback: Option<CheckRollbackKind>,
 }
 
 #[derive(Clone)]
@@ -165,15 +174,11 @@ impl RollbackService for MockTridentd {
     type RollbackStageStream = ReceiverStream<Result<ServicingResponse, Status>>;
     type RollbackFinalizeStream = ReceiverStream<Result<ServicingResponse, Status>>;
 
-    async fn check_rollback(
-        &self,
-        _request: Request<CheckRollbackRequest>,
-    ) -> Result<Response<CheckRollbackResponse>, Status> {
-        let kind = self.config.lock().unwrap().check_rollback.expect(
-            "test must configure MockTridentdConfig::check_rollback before calling check_rollback",
-        );
-        Ok(Response::new(CheckRollbackResponse { kind: kind as i32 }))
-    }
+    // check_rollback is no longer part of the stable v1 RollbackService
+    // trait (demoted back to trident.v1preview - trident-acl-agent detects
+    // a no-op rollback via RollbackStage's servicing_kind now instead, see
+    // orchestrator.rs's handle_rollback), so this mock no longer needs to
+    // implement it.
 
     async fn rollback(
         &self,

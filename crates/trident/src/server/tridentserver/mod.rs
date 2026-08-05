@@ -30,10 +30,13 @@ use crate::{
     ExitKind, Logstream, TraceStream,
 };
 
+#[cfg(feature = "grpc-preview")]
 use tokio::sync::OwnedRwLockReadGuard;
 
+#[cfg(feature = "grpc-preview")]
 use tonic::Code;
 
+#[cfg(feature = "grpc-preview")]
 use trident_api::error::ErrorKind;
 
 mod datastore;
@@ -156,6 +159,11 @@ impl TridentServer {
     /// Tries to acquire a read lock on the server's RwLock. If the lock
     /// cannot be acquired, returns a gRPC Status indicating that the server is
     /// busy.
+    ///
+    /// Only used by preview-only read-only RPCs (status_service.rs's whole
+    /// module, and rollback_service.rs's check_rollback) - gated so a
+    /// default (grpc-preview off) build doesn't warn about dead code.
+    #[cfg(feature = "grpc-preview")]
     fn try_acquire_read_lock(&self) -> Result<OwnedRwLockReadGuard<()>, Status> {
         self.rwlock.clone().try_read_owned().map_err(|_| {
             warn!("Trident is busy, cannot acquire read connection lock");
@@ -292,6 +300,7 @@ impl TridentServer {
     /// the value produced by `f`. If `f` returns an error, the error is logged
     /// and converted into a [`Status::internal`] error. Failures to acquire the
     /// underlying locks are returned as appropriate [`Status`] errors.
+    #[cfg(feature = "grpc-preview")]
     async fn reading_request<F, R>(&self, name: &'static str, f: F) -> Result<Response<R>, Status>
     where
         F: FnOnce() -> Result<R, TridentError> + Send + 'static,
@@ -324,6 +333,7 @@ impl TridentServer {
     }
 }
 
+#[cfg(feature = "grpc-preview")]
 fn trident_error_to_status(err: TridentError) -> Status {
     let code = match err.kind() {
         ErrorKind::ExecutionEnvironmentMisconfiguration(_) => Code::FailedPrecondition,

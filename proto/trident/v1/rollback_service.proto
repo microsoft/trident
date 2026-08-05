@@ -1,11 +1,14 @@
 // Proto file defining the stable RollbackService and related messages.
 //
-// This is the stable (v1) subset of the rollback contract. CheckRollback,
-// Rollback, RollbackStage, and RollbackFinalize are promoted here because
-// they are the operations trident-acl-agent depends on for AB-update
-// rollback. GetRollbackChain and GetRollbackTarget remain in
-// trident.v1preview (see rollback_service.proto there) until a stable
-// consumer needs them.
+// This is the stable (v1) subset of the rollback contract: Rollback,
+// RollbackStage, and RollbackFinalize, the operations trident-acl-agent
+// depends on for AB-update rollback. CheckRollback, GetRollbackChain, and
+// GetRollbackTarget remain in trident.v1preview (see rollback_service.proto
+// there). CheckRollback was briefly promoted here but was demoted back to
+// preview once RollbackStage/RollbackFinalize/Rollback started reporting
+// ServicingKind::NoneRequired for a no-op (same as every other servicing
+// RPC), which removed trident-acl-agent's only reason to call it - see
+// ServicingResponse.servicing_kind in servicing.proto.
 
 syntax = "proto3";
 
@@ -15,9 +18,6 @@ import "trident/v1/servicing.proto";
 
 // RollbackService provides methods for performing OS rollbacks.
 service RollbackService {
-  // CheckRollback checks what type of rollback would be performed.
-  rpc CheckRollback(CheckRollbackRequest) returns (CheckRollbackResponse);
-
   // Rollback performs a rollback.
   rpc Rollback(RollbackRequest) returns (stream ServicingResponse);
 
@@ -36,26 +36,6 @@ enum ManualRollbackKind {
   AB_ROLLBACK_REQUESTED = 2;
   // Rollback of a runtime update was requested
   RUNTIME_ROLLBACK_REQUESTED = 3;
-}
-
-message CheckRollbackRequest {
-  // The rollback kind parameter for the servicing operation.
-  ManualRollbackKind kind = 1;
-}
-
-enum CheckRollbackKind {
-  CHECK_ROLLBACK_KIND_UNSPECIFIED = 0;
-  // No rollbacks are available
-  NO_ROLLBACK_AVAILABLE = 1;
-  // Rollback of an A/B update is expected
-  AB_ROLLBACK_EXPECTED = 2;
-  // Rollback of a runtime update is expected
-  RUNTIME_ROLLBACK_EXPECTED = 3;
-}
-
-message CheckRollbackResponse {
-  // The rollback kind as a string.
-  CheckRollbackKind kind = 1;
 }
 
 message RollbackRequest {
