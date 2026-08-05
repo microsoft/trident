@@ -14,11 +14,15 @@ Two sets of images are available:
 
 For both, a set of corresponding update images is available. The ACL-agent
 variant reuses the servicing-style VM image layout but additionally installs
-`trident-acl-agent` and enables `trident-acl-agent.service` so storm ACL-agent
-scenarios can drive a real in-guest agent talking to `tridentd`. The image does
-not preseed /etc/trident/trident-acl-agent.conf with runner-specific tunnel
-ports; the test scenario should SSH in after boot and write the real localhost
-proxy endpoints for Nebraska and the Kubernetes API server.
+`trident-acl-agent` so storm ACL-agent scenarios can drive a real in-guest
+agent talking to `tridentd`. The base (qcow2) image installs the package but
+leaves `trident-acl-agent.service` disabled -- the storm scenario enables and
+starts it itself after seeding a real config. Only the update image enables
+`trident-acl-agent.service` by default, since after a real A/B update boots
+into it there is no test harness left to `systemctl enable --now` it. Neither
+image preseeds /etc/trident/trident-acl-agent.conf with runner-specific
+tunnel ports; the test scenario should SSH in after boot and write the real
+localhost proxy endpoints for Nebraska and the Kubernetes API server.
 
 ## Additional Prerequisites
 

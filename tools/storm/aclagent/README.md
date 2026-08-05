@@ -8,9 +8,9 @@ label-driven trident ACL agent protocol.
 - deploys a QEMU or Azure VM using the existing storm VM helpers
 - starts the fake single-node Kubernetes apiserver in-process inside the storm binary
 - starts the fake Nebraska/Omaha endpoint in-process inside the storm binary
-- seeds bootstrap node labels and simulated Ready flips with an in-process kubelet helper
+- seeds bootstrap node annotations and simulated Ready flips with an in-process kubelet helper
 - talks to the real `tridentd` and real `trident-acl-agent` running inside the VM
-- intercepts `reboot` / `systemctl reboot` with a shim so the finalize path can be exercised without tearing down the SSH session
+- lets `trident-acl-agent` issue a real `systemctl reboot` on finalize, then polls SSH until it drops and comes back up to confirm the reboot actually happened
 
 There is intentionally no fake `tridentd`.
 

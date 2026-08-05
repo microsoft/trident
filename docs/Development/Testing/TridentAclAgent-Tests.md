@@ -23,8 +23,7 @@ There is intentionally no fake `tridentd` — the scenario talks to the real
 - Reading the update image URL/hash from labels and triggering a real
   Trident `stage` + `finalize` A/B update through the normal gRPC path
 - Patching back observed-state labels/annotations as the update progresses
-- Resuming correctly after a simulated reboot (shim-intercepted, not a real
-  VM reboot — see [Reboot Choice](#reboot-choice))
+- Resuming correctly after a real reboot (see [Reboot Choice](#reboot-choice))
 
 ## VM Image Contents
 
@@ -144,8 +143,7 @@ The scenario runs these test cases in order:
 3. **run-ab-update** — Starts the fake apiserver and fake Nebraska/Omaha
    endpoints in-process, seeds bootstrap node labels, patches the desired
    update-image label, and waits for `trident-acl-agent` to drive a real
-   Trident A/B update to completion (including the shim-based simulated
-   reboot)
+   Trident A/B update to completion (including a real reboot)
 4. **collect-logs** — Fetches `trident-acl-agent` and Trident logs from the
    VM via SSH; also runs automatically (with a `journalctl` dump for
    `trident-acl-agent.service`) if `run-ab-update` times out waiting for the
@@ -167,13 +165,13 @@ The scenario runs these test cases in order:
 
 ## Reboot Choice
 
-This scenario uses shim-based reboot interception rather than a full VM
-reboot: a `reboot`/`systemctl reboot` shim on `PATH` inside the VM signals the
-scenario's controller and exits the agent process instead of actually
-rebooting. The scenario then restarts `trident-acl-agent` fresh, exercising
-its post-reboot resume logic without tearing down the SSH session or the
-in-process fake services. This is less realistic than a full reboot, but it
-keeps the test deterministic and fast.
+This scenario uses a real VM reboot rather than a shim: `trident-acl-agent`
+issues a genuine `systemctl reboot` on finalize, and the scenario polls SSH
+until it goes unreachable (confirming the reboot actually happened) and then
+reachable again (confirming the VM came back up), exercising the agent's
+real post-reboot resume logic end to end. This is slower than a shim-based
+approach, but it validates the real reboot path instead of a simulation of
+it.
 
 ## Debugging Failures
 
