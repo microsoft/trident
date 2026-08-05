@@ -298,37 +298,14 @@ where
         }
 
         let mut client = TridentClient::connect(&self.config.trident.socket).await?;
-        let status = match client
+        let result = client
             .update_stage(
                 &offered.url,
                 offered.hash.as_deref(),
                 self.config.orchestration.stage_timeout,
             )
-            .await
-        {
-            Ok(_) => UpdateStatus::new(
-                &request,
-                Operation::Stage,
-                request.operation_id.clone(),
-                StatusCode::Success,
-                "stage completed",
-                from_version,
-                to_version,
-                started,
-                Some(Utc::now()),
-            ),
-            Err(err) => UpdateStatus::new(
-                &request,
-                Operation::Stage,
-                request.operation_id.clone(),
-                StatusCode::OperationFailed,
-                format!("stage failed: {err}"),
-                from_version,
-                to_version,
-                started,
-                Some(Utc::now()),
-            ),
-        };
+            .await;
+        let status = stage_result_to_status(&request, from_version, to_version, started, result);
         self.record_and_publish(status).await
     }
 
@@ -400,16 +377,11 @@ where
             .await
         {
             Ok(_) => {
-                let terminal = UpdateStatus::new(
+                let terminal = finalize_success_status(
                     &request,
-                    Operation::Finalize,
-                    request.operation_id.clone(),
-                    StatusCode::Success,
-                    "finalize completed; rebooting for commit",
                     from_version.clone(),
                     to_version.clone(),
                     started,
-                    Some(Utc::now()),
                 );
                 // Record this terminal status under the *finalize* operationId
                 // (not just the eventual "<id>.commit" one written after
@@ -446,17 +418,8 @@ where
             }
             Err(err) => {
                 self.state.clear_pending_commit()?;
-                let status = UpdateStatus::new(
-                    &request,
-                    Operation::Finalize,
-                    request.operation_id.clone(),
-                    map_trident_failure(&err),
-                    format!("finalize failed: {err}"),
-                    from_version,
-                    to_version,
-                    started,
-                    Some(Utc::now()),
-                );
+                let status =
+                    finalize_failure_status(&request, from_version, to_version, started, &err);
                 self.record_and_publish(status).await?;
                 Ok(LoopControl::Continue)
             }
@@ -544,54 +507,7 @@ where
         pending: &PendingCommit,
         result: Result<CompletedResponse, TridentClientError>,
     ) -> UpdateStatus {
-        match result {
-            Ok(response) if response.reboot_status == RebootStatus::RebootRequired => {
-                UpdateStatus::new(
-                    &pending.request,
-                    Operation::Commit,
-                    commit_operation_id(&pending.operation_id),
-                    StatusCode::AgentInternalError,
-                    "commit requested another reboot",
-                    pending.from_version.clone(),
-                    pending.to_version.clone(),
-                    pending.started_utc,
-                    Some(Utc::now()),
-                )
-            }
-            Ok(_) => UpdateStatus::new(
-                &pending.request,
-                Operation::Commit,
-                commit_operation_id(&pending.operation_id),
-                StatusCode::Success,
-                "commit completed",
-                pending.from_version.clone(),
-                pending.to_version.clone(),
-                pending.started_utc,
-                Some(Utc::now()),
-            ),
-            Err(err) if indicates_reverted(&err) => UpdateStatus::new(
-                &pending.request,
-                Operation::Commit,
-                commit_operation_id(&pending.operation_id),
-                StatusCode::RevertedToPrevious,
-                format!("commit detected rollback to previous version: {err}"),
-                pending.from_version.clone(),
-                pending.to_version.clone(),
-                pending.started_utc,
-                Some(Utc::now()),
-            ),
-            Err(err) => UpdateStatus::new(
-                &pending.request,
-                Operation::Commit,
-                commit_operation_id(&pending.operation_id),
-                map_trident_failure(&err),
-                format!("commit failed: {err}"),
-                pending.from_version.clone(),
-                pending.to_version.clone(),
-                pending.started_utc,
-                Some(Utc::now()),
-            ),
-        }
+        commit_result_to_status(pending, result)
     }
 
     async fn reconstruct_without_state(
@@ -801,6 +717,86 @@ enum LoopControl {
     ExitForReboot,
 }
 
+/// Maps a stage() result to the terminal `UpdateStatus` for that stage
+/// attempt. Pure function: no I/O, no side effects - exists so tests can
+/// exercise the full success/failure matrix against a fake tridentd without
+/// needing a real Kubernetes API or state store.
+fn stage_result_to_status(
+    request: &UpdateRequest,
+    from_version: Option<String>,
+    to_version: Option<String>,
+    started: chrono::DateTime<Utc>,
+    result: Result<CompletedResponse, TridentClientError>,
+) -> UpdateStatus {
+    match result {
+        Ok(_) => UpdateStatus::new(
+            request,
+            Operation::Stage,
+            request.operation_id.clone(),
+            StatusCode::Success,
+            "stage completed",
+            from_version,
+            to_version,
+            started,
+            Some(Utc::now()),
+        ),
+        Err(err) => UpdateStatus::new(
+            request,
+            Operation::Stage,
+            request.operation_id.clone(),
+            StatusCode::OperationFailed,
+            format!("stage failed: {err}"),
+            from_version,
+            to_version,
+            started,
+            Some(Utc::now()),
+        ),
+    }
+}
+
+/// Builds the terminal `UpdateStatus` for a successful finalize() call. Pure
+/// function - see `stage_result_to_status` for rationale.
+fn finalize_success_status(
+    request: &UpdateRequest,
+    from_version: Option<String>,
+    to_version: Option<String>,
+    started: chrono::DateTime<Utc>,
+) -> UpdateStatus {
+    UpdateStatus::new(
+        request,
+        Operation::Finalize,
+        request.operation_id.clone(),
+        StatusCode::Success,
+        "finalize completed; rebooting for commit",
+        from_version,
+        to_version,
+        started,
+        Some(Utc::now()),
+    )
+}
+
+/// Builds the terminal `UpdateStatus` for a failed finalize() call. Pure
+/// function - see `stage_result_to_status` for rationale.
+fn finalize_failure_status(
+    request: &UpdateRequest,
+    from_version: Option<String>,
+    to_version: Option<String>,
+    started: chrono::DateTime<Utc>,
+    err: &TridentClientError,
+) -> UpdateStatus {
+    UpdateStatus::new(
+        request,
+        Operation::Finalize,
+        request.operation_id.clone(),
+        map_trident_failure(err),
+        format!("finalize failed: {err}"),
+        from_version,
+        to_version,
+        started,
+        Some(Utc::now()),
+    )
+}
+
 fn map_trident_failure(error: &TridentClientError) -> StatusCode {
     if indicates_reverted(error) {
         StatusCode::RevertedToPrevious
@@ -817,4 +813,315 @@ fn indicates_reverted(error: &TridentClientError) -> bool {
                 || remote.subkind == "ab-update-health-check-commit-check"
         })
         .unwrap_or(false)
+}
+
+/// Pure function extracted from `Orchestrator::map_commit_result` so tests
+/// can exercise it directly (with a mock-tridentd-driven `Result`) without
+/// needing a full `Orchestrator` instance. See `stage_result_to_status` for
+/// rationale.
+fn commit_result_to_status(
+    pending: &PendingCommit,
+    result: Result<CompletedResponse, TridentClientError>,
+) -> UpdateStatus {
+    match result {
+        Ok(response) if response.reboot_status == RebootStatus::RebootRequired => {
+            UpdateStatus::new(
+                &pending.request,
+                Operation::Commit,
+                commit_operation_id(&pending.operation_id),
+                StatusCode::AgentInternalError,
+                "commit requested another reboot",
+                pending.from_version.clone(),
+                pending.to_version.clone(),
+                pending.started_utc,
+                Some(Utc::now()),
+            )
+        }
+        Ok(_) => UpdateStatus::new(
+            &pending.request,
+            Operation::Commit,
+            commit_operation_id(&pending.operation_id),
+            StatusCode::Success,
+            "commit completed",
+            pending.from_version.clone(),
+            pending.to_version.clone(),
+            pending.started_utc,
+            Some(Utc::now()),
+        ),
+        Err(err) if indicates_reverted(&err) => UpdateStatus::new(
+            &pending.request,
+            Operation::Commit,
+            commit_operation_id(&pending.operation_id),
+            StatusCode::RevertedToPrevious,
+            format!("commit detected rollback to previous version: {err}"),
+            pending.from_version.clone(),
+            pending.to_version.clone(),
+            pending.started_utc,
+            Some(Utc::now()),
+        ),
+        Err(err) => UpdateStatus::new(
+            &pending.request,
+            Operation::Commit,
+            commit_operation_id(&pending.operation_id),
+            map_trident_failure(&err),
+            format!("commit failed: {err}"),
+            pending.from_version.clone(),
+            pending.to_version.clone(),
+            pending.started_utc,
+            Some(Utc::now()),
+        ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use chrono::Utc;
+    use uuid::Uuid;
+
+    use super::*;
+    use crate::{
+        annotations::{RequestedOperation, SCHEMA_VERSION},
+        mock_tridentd::{connect_mock_client, MockTridentdConfig, Outcome},
+    };
+
+    fn request(operation: RequestedOperation) -> UpdateRequest {
+        UpdateRequest {
+            schema_version: SCHEMA_VERSION.to_string(),
+            node_update_id: Uuid::new_v4(),
+            operation_id: "op-1".to_string(),
+            operation,
+            target_version: Some("2.0.0".to_string()),
+        }
+    }
+
+    fn pending(operation: Operation) -> PendingCommit {
+        PendingCommit {
+            request: request(RequestedOperation::Finalize),
+            operation_id: "op-1".to_string(),
+            operation,
+            from_version: Some("1.0.0".to_string()),
+            to_version: Some("2.0.0".to_string()),
+            started_utc: Utc::now(),
+        }
+    }
+
+    // --- stage ---
+
+    #[tokio::test]
+    async fn stage_success_maps_to_success_status() {
+        let config = Arc::new(Mutex::new(MockTridentdConfig {
+            stage: Some(Outcome::Success {
+                reboot_status: RebootStatus::RebootNotRequired,
+            }),
+            ..Default::default()
+        }));
+        let mut client = connect_mock_client(config).await;
+        let result = client
+            .update_stage(
+                &"http://example.test/image".parse().unwrap(),
+                None,
+                std::time::Duration::from_secs(5),
+            )
+            .await;
+
+        let request = request(RequestedOperation::Stage);
+        let status = stage_result_to_status(
+            &request,
+            Some("1.0.0".to_string()),
+            Some("2.0.0".to_string()),
+            Utc::now(),
+            result,
+        );
+
+        assert_eq!(status.code, StatusCode::Success);
+        assert_eq!(status.operation, Operation::Stage);
+        assert_eq!(status.from_version, Some("1.0.0".to_string()));
+        assert_eq!(status.to_version, Some("2.0.0".to_string()));
+    }
+
+    #[tokio::test]
+    async fn stage_failure_maps_to_operation_failed() {
+        let config = Arc::new(Mutex::new(MockTridentdConfig {
+            stage: Some(Outcome::Failure {
+                subkind: "some-stage-error",
+                message: "disk full",
+            }),
+            ..Default::default()
+        }));
+        let mut client = connect_mock_client(config).await;
+        let result = client
+            .update_stage(
+                &"http://example.test/image".parse().unwrap(),
+                None,
+                std::time::Duration::from_secs(5),
+            )
+            .await;
+
+        let request = request(RequestedOperation::Stage);
+        let status = stage_result_to_status(&request, None, None, Utc::now(), result);
+
+        assert_eq!(status.code, StatusCode::OperationFailed);
+        assert!(status.message.contains("stage failed"));
+        assert!(status.message.contains("disk full"));
+    }
+
+    // --- finalize ---
+
+    #[tokio::test]
+    async fn finalize_success_maps_to_success_status() {
+        let status = finalize_success_status(
+            &request(RequestedOperation::Finalize),
+            Some("1.0.0".to_string()),
+            Some("2.0.0".to_string()),
+            Utc::now(),
+        );
+
+        assert_eq!(status.code, StatusCode::Success);
+        assert_eq!(status.operation, Operation::Finalize);
+        assert!(status.message.contains("rebooting"));
+    }
+
+    #[tokio::test]
+    async fn finalize_failure_with_generic_error_maps_to_operation_failed() {
+        let config = Arc::new(Mutex::new(MockTridentdConfig {
+            finalize: Some(Outcome::Failure {
+                subkind: "some-finalize-error",
+                message: "partition swap failed",
+            }),
+            ..Default::default()
+        }));
+        let mut client = connect_mock_client(config).await;
+        let err = client
+            .update_finalize(std::time::Duration::from_secs(5))
+            .await
+            .unwrap_err();
+
+        let status = finalize_failure_status(
+            &request(RequestedOperation::Finalize),
+            None,
+            None,
+            Utc::now(),
+            &err,
+        );
+
+        assert_eq!(status.code, StatusCode::OperationFailed);
+        assert!(status.message.contains("finalize failed"));
+        assert!(status.message.contains("partition swap failed"));
+    }
+
+    #[tokio::test]
+    async fn finalize_failure_with_reboot_check_subkind_maps_to_reverted() {
+        let config = Arc::new(Mutex::new(MockTridentdConfig {
+            finalize: Some(Outcome::Failure {
+                subkind: "ab-update-reboot-check",
+                message: "boot did not land on target partition",
+            }),
+            ..Default::default()
+        }));
+        let mut client = connect_mock_client(config).await;
+        let err = client
+            .update_finalize(std::time::Duration::from_secs(5))
+            .await
+            .unwrap_err();
+
+        let status = finalize_failure_status(
+            &request(RequestedOperation::Finalize),
+            None,
+            None,
+            Utc::now(),
+            &err,
+        );
+
+        assert_eq!(status.code, StatusCode::RevertedToPrevious);
+    }
+
+    // --- commit ---
+
+    #[tokio::test]
+    async fn commit_success_maps_to_success_status() {
+        let config = Arc::new(Mutex::new(MockTridentdConfig {
+            commit: Some(Outcome::Success {
+                reboot_status: RebootStatus::RebootNotRequired,
+            }),
+            ..Default::default()
+        }));
+        let mut client = connect_mock_client(config).await;
+        let result = client.commit(std::time::Duration::from_secs(5)).await;
+
+        let status = commit_result_to_status(&pending(Operation::Finalize), result);
+
+        assert_eq!(status.code, StatusCode::Success);
+        assert_eq!(status.operation, Operation::Commit);
+    }
+
+    #[tokio::test]
+    async fn commit_success_but_reboot_required_maps_to_agent_internal_error() {
+        let config = Arc::new(Mutex::new(MockTridentdConfig {
+            commit: Some(Outcome::Success {
+                reboot_status: RebootStatus::RebootRequired,
+            }),
+            ..Default::default()
+        }));
+        let mut client = connect_mock_client(config).await;
+        let result = client.commit(std::time::Duration::from_secs(5)).await;
+
+        let status = commit_result_to_status(&pending(Operation::Finalize), result);
+
+        assert_eq!(status.code, StatusCode::AgentInternalError);
+        assert!(status.message.contains("another reboot"));
+    }
+
+    #[tokio::test]
+    async fn commit_failure_with_generic_error_maps_to_operation_failed() {
+        let config = Arc::new(Mutex::new(MockTridentdConfig {
+            commit: Some(Outcome::Failure {
+                subkind: "some-commit-error",
+                message: "commit rpc failed",
+            }),
+            ..Default::default()
+        }));
+        let mut client = connect_mock_client(config).await;
+        let result = client.commit(std::time::Duration::from_secs(5)).await;
+
+        let status = commit_result_to_status(&pending(Operation::Finalize), result);
+
+        assert_eq!(status.code, StatusCode::OperationFailed);
+        assert!(status.message.contains("commit failed"));
+    }
+
+    #[tokio::test]
+    async fn commit_failure_with_reboot_check_subkind_maps_to_reverted() {
+        let config = Arc::new(Mutex::new(MockTridentdConfig {
+            commit: Some(Outcome::Failure {
+                subkind: "ab-update-reboot-check",
+                message: "boot did not land on target partition",
+            }),
+            ..Default::default()
+        }));
+        let mut client = connect_mock_client(config).await;
+        let result = client.commit(std::time::Duration::from_secs(5)).await;
+
+        let status = commit_result_to_status(&pending(Operation::Finalize), result);
+
+        assert_eq!(status.code, StatusCode::RevertedToPrevious);
+    }
+
+    #[tokio::test]
+    async fn commit_failure_with_health_check_subkind_maps_to_reverted() {
+        let config = Arc::new(Mutex::new(MockTridentdConfig {
+            commit: Some(Outcome::Failure {
+                subkind: "ab-update-health-check-commit-check",
+                message: "post-commit health check failed",
+            }),
+            ..Default::default()
+        }));
+        let mut client = connect_mock_client(config).await;
+        let result = client.commit(std::time::Duration::from_secs(5)).await;
+
+        let status = commit_result_to_status(&pending(Operation::Finalize), result);
+
+        assert_eq!(status.code, StatusCode::RevertedToPrevious);
+    }
 }

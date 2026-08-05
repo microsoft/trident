@@ -21,6 +21,12 @@ pub mod orchestrator;
 pub mod state;
 pub mod trident;
 
+/// Only built for `cargo test` (relies on trident-proto's `server` feature,
+/// which is only enabled via trident-acl-agent's dev-dependencies - see
+/// mock_tridentd.rs's module docs).
+#[cfg(test)]
+pub mod mock_tridentd;
+
 use error::HarpoonError;
 use omaha::{
     event::{OmahaEvent, OmahaEventType},

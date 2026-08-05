@@ -99,10 +99,21 @@ impl TridentClient {
                 source,
             })?;
 
-        Ok(Self {
+        Ok(Self::from_channel(channel))
+    }
+
+    /// Builds a client directly from an existing tonic Channel, bypassing
+    /// socket/URI resolution entirely. Production code always goes through
+    /// connect(); this exists so tests can hand the client a channel wired
+    /// to an in-process fake tridentd (e.g. via Endpoint::connect_with_connector
+    /// over an in-memory duplex stream) and exercise the exact same
+    /// request/response/error-mapping code as production, without a real
+    /// unix socket or subprocess.
+    pub fn from_channel(channel: tonic::transport::Channel) -> Self {
+        Self {
             update_client: UpdateServiceClient::new(channel.clone()),
             commit_client: CommitServiceClient::new(channel),
-        })
+        }
     }
 
     pub async fn update(

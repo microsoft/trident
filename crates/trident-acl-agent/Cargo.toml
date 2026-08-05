@@ -42,3 +42,12 @@ maplit = { workspace = true }
 mockito = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
+tower = { workspace = true }
+# The generated gRPC *server* stubs (UpdateServiceServer/CommitServiceServer)
+# are only needed to build an in-process fake tridentd for unit tests -- the
+# production trident-acl-agent binary is a gRPC client only. Declaring the
+# "server" feature here (dev-dependencies) rather than in [dependencies]
+# keeps it out of the production binary's dependency graph; it is only
+# pulled in for `cargo test`.
+trident-proto = { path = "../trident-proto", features = ["grpc-preview", "server"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
