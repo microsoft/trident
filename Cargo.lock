@@ -4082,6 +4082,7 @@ dependencies = [
  "sha2",
  "sysdefs",
  "systemd-journal-logger",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "tokio-stream",

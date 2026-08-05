@@ -37,6 +37,7 @@ trident-proto = { path = "../trident-proto", features = ["grpc-preview"] }
 
 
 [dev-dependencies]
+tempfile = { workspace = true }
 indoc = { workspace = true }
 maplit = { workspace = true }
 mockito = { workspace = true }

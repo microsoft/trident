@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, process::Command};
 
 use anyhow::Context;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use k8s_openapi::api::core::v1::Node;
 use semver::Version;
@@ -525,35 +525,10 @@ where
         // distinguishes "swap happened, run commit" from "reboot hasn't
         // happened yet" from "target armed but firmware fell back" far more
         // reliably than a bare version-string comparison could.
-        if let Some(err) = connect_error {
-            return UpdateStatus::new(
-                request,
-                request.operation.into(),
-                request.operation_id.clone(),
-                StatusCode::AgentInternalError,
-                format!("state.json missing after reboot and tridentd unreachable: {err}"),
-                from_version,
-                request.target_version.clone(),
-                Utc::now(),
-                Some(Utc::now()),
-            );
-        }
-
-        if !matches!(
-            request.operation,
-            RequestedOperation::Finalize | RequestedOperation::Rollback
-        ) {
-            return UpdateStatus::new(
-                request,
-                request.operation.into(),
-                request.operation_id.clone(),
-                StatusCode::AgentInternalError,
-                "unable to reconstruct operation without state.json",
-                from_version,
-                request.target_version.clone(),
-                Utc::now(),
-                Some(Utc::now()),
-            );
+        if let Some(status) =
+            reconstruct_precheck_status(request, from_version.clone(), connect_error.as_deref())
+        {
+            return status;
         }
 
         let mut client = match TridentClient::connect(&self.config.trident.socket).await {
@@ -577,54 +552,7 @@ where
         let result = client
             .commit(self.config.orchestration.finalize_timeout)
             .await;
-        match result {
-            Ok(response) if response.reboot_status == RebootStatus::RebootRequired => UpdateStatus::new(
-                request,
-                Operation::Commit,
-                commit_operation_id(&request.operation_id),
-                StatusCode::AgentInternalError,
-                "state.json missing after reboot; commit requested another reboot",
-                from_version,
-                request.target_version.clone(),
-                started,
-                Some(Utc::now()),
-            ),
-            Ok(_) => UpdateStatus::new(
-                request,
-                Operation::Commit,
-                commit_operation_id(&request.operation_id),
-                StatusCode::Success,
-                "state.json missing after reboot; commit() confirmed the swap and completed",
-                from_version,
-                request.target_version.clone(),
-                started,
-                Some(Utc::now()),
-            ),
-            Err(err) if indicates_reverted(&err) => UpdateStatus::new(
-                request,
-                Operation::Commit,
-                commit_operation_id(&request.operation_id),
-                StatusCode::RevertedToPrevious,
-                format!(
-                    "state.json missing after reboot; commit detected rollback to previous version: {err}"
-                ),
-                from_version,
-                request.target_version.clone(),
-                started,
-                Some(Utc::now()),
-            ),
-            Err(err) => UpdateStatus::new(
-                request,
-                request.operation.into(),
-                request.operation_id.clone(),
-                map_trident_failure(&err),
-                format!("state.json missing after reboot; commit failed: {err}"),
-                from_version,
-                request.target_version.clone(),
-                started,
-                Some(Utc::now()),
-            ),
-        }
+        reconstruct_commit_result_to_status(request, from_version, started, result)
     }
 
     async fn record_and_publish(&self, status: UpdateStatus) -> Result<(), anyhow::Error> {
@@ -819,6 +747,110 @@ fn indicates_reverted(error: &TridentClientError) -> bool {
 /// can exercise it directly (with a mock-tridentd-driven `Result`) without
 /// needing a full `Orchestrator` instance. See `stage_result_to_status` for
 /// rationale.
+/// Pre-flight checks for the state.json-missing degraded reconstruction
+/// path (accepted-design.md §2.3). Returns `Some(status)` when reconstruction
+/// cannot proceed (tridentd already known-unreachable, or the outstanding
+/// request isn't a finalize/rollback), or `None` when the caller should go
+/// on to call tridentd's commit() to determine the real outcome.
+fn reconstruct_precheck_status(
+    request: &UpdateRequest,
+    from_version: Option<String>,
+    connect_error: Option<&str>,
+) -> Option<UpdateStatus> {
+    if let Some(err) = connect_error {
+        return Some(UpdateStatus::new(
+            request,
+            request.operation.into(),
+            request.operation_id.clone(),
+            StatusCode::AgentInternalError,
+            format!("state.json missing after reboot and tridentd unreachable: {err}"),
+            from_version,
+            request.target_version.clone(),
+            Utc::now(),
+            Some(Utc::now()),
+        ));
+    }
+
+    if !matches!(
+        request.operation,
+        RequestedOperation::Finalize | RequestedOperation::Rollback
+    ) {
+        return Some(UpdateStatus::new(
+            request,
+            request.operation.into(),
+            request.operation_id.clone(),
+            StatusCode::AgentInternalError,
+            "unable to reconstruct operation without state.json",
+            from_version,
+            request.target_version.clone(),
+            Utc::now(),
+            Some(Utc::now()),
+        ));
+    }
+
+    None
+}
+
+/// Maps tridentd's commit() result to the terminal status for the
+/// state.json-missing degraded reconstruction path (accepted-design.md
+/// §2.3). Always reports under the `.commit`-suffixed operationId, mirroring
+/// the normal post-reboot commit path in `commit_result_to_status`.
+fn reconstruct_commit_result_to_status(
+    request: &UpdateRequest,
+    from_version: Option<String>,
+    started: DateTime<Utc>,
+    result: Result<CompletedResponse, TridentClientError>,
+) -> UpdateStatus {
+    match result {
+        Ok(response) if response.reboot_status == RebootStatus::RebootRequired => UpdateStatus::new(
+            request,
+            Operation::Commit,
+            commit_operation_id(&request.operation_id),
+            StatusCode::AgentInternalError,
+            "state.json missing after reboot; commit requested another reboot",
+            from_version,
+            request.target_version.clone(),
+            started,
+            Some(Utc::now()),
+        ),
+        Ok(_) => UpdateStatus::new(
+            request,
+            Operation::Commit,
+            commit_operation_id(&request.operation_id),
+            StatusCode::Success,
+            "state.json missing after reboot; commit() confirmed the swap and completed",
+            from_version,
+            request.target_version.clone(),
+            started,
+            Some(Utc::now()),
+        ),
+        Err(err) if indicates_reverted(&err) => UpdateStatus::new(
+            request,
+            Operation::Commit,
+            commit_operation_id(&request.operation_id),
+            StatusCode::RevertedToPrevious,
+            format!(
+                "state.json missing after reboot; commit detected rollback to previous version: {err}"
+            ),
+            from_version,
+            request.target_version.clone(),
+            started,
+            Some(Utc::now()),
+        ),
+        Err(err) => UpdateStatus::new(
+            request,
+            request.operation.into(),
+            request.operation_id.clone(),
+            map_trident_failure(&err),
+            format!("state.json missing after reboot; commit failed: {err}"),
+            from_version,
+            request.target_version.clone(),
+            started,
+            Some(Utc::now()),
+        ),
+    }
+}
+
 fn commit_result_to_status(
     pending: &PendingCommit,
     result: Result<CompletedResponse, TridentClientError>,
@@ -1123,5 +1155,129 @@ mod tests {
         let status = commit_result_to_status(&pending(Operation::Finalize), result);
 
         assert_eq!(status.code, StatusCode::RevertedToPrevious);
+    }
+
+    // --- reconstruct_without_state (state.json missing after reboot) ---
+
+    #[test]
+    fn reconstruct_precheck_reports_agent_internal_error_when_tridentd_unreachable() {
+        let request = request(RequestedOperation::Finalize);
+        let status = reconstruct_precheck_status(
+            &request,
+            Some("1.0.0".to_string()),
+            Some("connection refused"),
+        )
+        .expect("connect error should short-circuit reconstruction");
+
+        assert_eq!(status.code, StatusCode::AgentInternalError);
+        assert!(status.message.contains("tridentd unreachable"));
+        assert_eq!(status.operation_id, request.operation_id);
+    }
+
+    #[test]
+    fn reconstruct_precheck_reports_agent_internal_error_for_non_finalize_rollback_operation() {
+        let request = request(RequestedOperation::Stage);
+        let status = reconstruct_precheck_status(&request, None, None)
+            .expect("stage requests cannot be reconstructed without state.json");
+
+        assert_eq!(status.code, StatusCode::AgentInternalError);
+        assert!(status
+            .message
+            .contains("unable to reconstruct operation without state.json"));
+    }
+
+    #[test]
+    fn reconstruct_precheck_allows_finalize_and_rollback_through() {
+        for operation in [RequestedOperation::Finalize, RequestedOperation::Rollback] {
+            let request = request(operation);
+            assert!(
+                reconstruct_precheck_status(&request, None, None).is_none(),
+                "expected {operation:?} to proceed to commit() reconstruction"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn reconstruct_commit_result_success_maps_to_success_status() {
+        let config = Arc::new(Mutex::new(MockTridentdConfig {
+            commit: Some(Outcome::Success {
+                reboot_status: RebootStatus::RebootNotRequired,
+            }),
+            ..Default::default()
+        }));
+        let mut client = connect_mock_client(config).await;
+        let result = client.commit(std::time::Duration::from_secs(5)).await;
+
+        let request = request(RequestedOperation::Finalize);
+        let status = reconstruct_commit_result_to_status(
+            &request,
+            Some("1.0.0".to_string()),
+            Utc::now(),
+            result,
+        );
+
+        assert_eq!(status.code, StatusCode::Success);
+        assert_eq!(status.operation, Operation::Commit);
+        assert_eq!(
+            status.operation_id,
+            commit_operation_id(&request.operation_id)
+        );
+        assert!(status.message.contains("commit() confirmed the swap"));
+    }
+
+    #[tokio::test]
+    async fn reconstruct_commit_result_reboot_required_maps_to_agent_internal_error() {
+        let config = Arc::new(Mutex::new(MockTridentdConfig {
+            commit: Some(Outcome::Success {
+                reboot_status: RebootStatus::RebootRequired,
+            }),
+            ..Default::default()
+        }));
+        let mut client = connect_mock_client(config).await;
+        let result = client.commit(std::time::Duration::from_secs(5)).await;
+
+        let request = request(RequestedOperation::Finalize);
+        let status = reconstruct_commit_result_to_status(&request, None, Utc::now(), result);
+
+        assert_eq!(status.code, StatusCode::AgentInternalError);
+        assert!(status.message.contains("requested another reboot"));
+    }
+
+    #[tokio::test]
+    async fn reconstruct_commit_result_reverted_subkind_maps_to_reverted_to_previous() {
+        let config = Arc::new(Mutex::new(MockTridentdConfig {
+            commit: Some(Outcome::Failure {
+                subkind: "ab-update-reboot-check",
+                message: "boot did not land on target partition",
+            }),
+            ..Default::default()
+        }));
+        let mut client = connect_mock_client(config).await;
+        let result = client.commit(std::time::Duration::from_secs(5)).await;
+
+        let request = request(RequestedOperation::Rollback);
+        let status = reconstruct_commit_result_to_status(&request, None, Utc::now(), result);
+
+        assert_eq!(status.code, StatusCode::RevertedToPrevious);
+        assert!(status.message.contains("detected rollback"));
+    }
+
+    #[tokio::test]
+    async fn reconstruct_commit_result_generic_failure_maps_to_operation_failed() {
+        let config = Arc::new(Mutex::new(MockTridentdConfig {
+            commit: Some(Outcome::Failure {
+                subkind: "some-commit-error",
+                message: "commit rpc failed",
+            }),
+            ..Default::default()
+        }));
+        let mut client = connect_mock_client(config).await;
+        let result = client.commit(std::time::Duration::from_secs(5)).await;
+
+        let request = request(RequestedOperation::Finalize);
+        let status = reconstruct_commit_result_to_status(&request, None, Utc::now(), result);
+
+        assert_eq!(status.code, StatusCode::OperationFailed);
+        assert!(status.message.contains("commit failed"));
     }
 }
