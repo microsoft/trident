@@ -12,6 +12,7 @@
 
 use std::{thread, time::Duration};
 
+use anyhow::Context;
 use clap::Parser;
 use futures::StreamExt;
 use log::{debug, error, info, trace, warn, LevelFilter};
@@ -19,9 +20,13 @@ use semver::Version;
 use sha2::{Digest, Sha256};
 use tonic::{transport::Endpoint, Streaming};
 use trident_proto::v1::{
-    servicing_response::Response as ResponseBody, update_service_client::UpdateServiceClient,
-    FinalizeUpdateRequest, HostConfiguration, LogLevel, RebootHandling, RebootManagement,
-    ServicingResponse, StageUpdateRequest, StatusCode, UpdateRequest,
+    commit_service_client::CommitServiceClient, servicing_response::Response as ResponseBody,
+    update_service_client::UpdateServiceClient, CommitRequest, FinalizeUpdateRequest,
+    HostConfiguration, LogLevel, RebootHandling, RebootManagement, ServicingResponse,
+    StageUpdateRequest, StatusCode, UpdateRequest,
+};
+use trident_proto::v1preview::{
+    status_service_client::StatusServiceClient, GetServicingStateRequest, ServicingState,
 };
 use url::Url;
 use uuid::Uuid;
@@ -182,6 +187,24 @@ fn main() {
         }
     };
 
+    info!(
+        "Harpoon agent starting: appid='{}' track='{}' current-version=v{current_version} \
+         machine-id='{machine_id}' interval={:?} events={:?} url='{}'",
+        args.appid, args.track, args.interval, args.events, args.url
+    );
+
+    // Commit a finalized-but-uncommitted A/B update so it becomes permanent.
+    // Trident finalizes (arms the new slot) but does not commit; without this
+    // the update reverts on a later boot. Runs in BOTH events modes, and is a
+    // no-op unless an A/B update is actually pending commit.
+    if let Err(e) = commit_finalized_update(&current_version) {
+        error!("Failed to commit finalized A/B update: {e:#}");
+        error!(
+            "The running update may revert on a later reboot; a manual `trident commit` may be \
+             needed."
+        );
+    }
+
     // In full-events mode, the very first thing we do after a reboot is report
     // update completion to Nebraska (before any bare update-check), so a wedged
     // instance is never observed. This is a no-op if there is no pending update.
@@ -191,12 +214,6 @@ fn main() {
             warn!("Post-reboot completion reporting failed: {e:#}");
         }
     }
-
-    info!(
-        "Harpoon agent starting: appid='{}' track='{}' current-version=v{current_version} \
-         machine-id='{machine_id}' interval={:?} events={:?} url='{}'",
-        args.appid, args.track, args.interval, args.events, args.url
-    );
 
     loop {
         match poll_once(&args, &current_version, &machine_id) {
@@ -217,9 +234,10 @@ fn main() {
                 std::process::exit(0);
             }
             Err(e) => {
-                // Transient errors (Nebraska unreachable, etc.) must not kill
-                // the agent — log and keep polling.
-                error!("poll failed: {e:#}");
+                // Transient errors (Nebraska unreachable, network settling
+                // after a reboot, etc.) must not kill the agent — log calmly
+                // and keep polling.
+                warn!("poll failed (will retry): {e:#}");
             }
         }
 
@@ -313,6 +331,7 @@ fn poll_once(
             args,
             machine_id,
             current_version,
+            "download started",
             OmahaEventType::UpdateDownloadStarted,
             EventResult::Success,
             None,
@@ -333,6 +352,7 @@ fn poll_once(
             args,
             machine_id,
             current_version,
+            "download finished",
             OmahaEventType::UpdateDownloadFinished,
             EventResult::Success,
             None,
@@ -341,6 +361,7 @@ fn poll_once(
             args,
             machine_id,
             current_version,
+            "installed",
             OmahaEventType::EventUpdateInstalled,
             EventResult::Success,
             None,
@@ -363,15 +384,19 @@ fn poll_once(
 
 /// Sends a single Omaha event to Nebraska, logging but not propagating failures.
 /// Pre-reboot events are cosmetic (they drive the intermediate Nebraska UI
-/// states); a failure must not abort the update.
+/// states); a failure must not abort the update. `label` is a human-readable
+/// marker logged at INFO for the demo console.
+#[allow(clippy::too_many_arguments)]
 fn report_event_best_effort(
     args: &Args,
     machine_id: &str,
     version: &Version,
+    label: &str,
     event_type: OmahaEventType,
     event_result: EventResult,
     previous_version: Option<&Version>,
 ) {
+    info!("reporting to Nebraska: {label}");
     match send_update_event(
         &args.url,
         &args.appid,
@@ -643,6 +668,66 @@ fn parse_semver_loose(s: &str) -> Option<Version> {
         .and_then(|p| p.parse::<u64>().ok())
         .unwrap_or(0);
     Some(Version::new(major, minor, patch))
+}
+
+/// Commits a finalized-but-uncommitted A/B update so it becomes permanent.
+/// Trident finalizes an update (arming the new slot) but does not make it
+/// permanent until committed; without this the update reverts on a later boot.
+/// Idempotent: does nothing unless the servicing state is "A/B update
+/// finalized". Runs in both events modes on startup.
+fn commit_finalized_update(current_version: &Version) -> Result<(), anyhow::Error> {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    rt.block_on(commit_finalized_update_async(current_version))
+}
+
+async fn commit_finalized_update_async(current_version: &Version) -> Result<(), anyhow::Error> {
+    // Trident's gRPC socket may not be ready immediately after boot; retry the
+    // connect/query a bounded number of times before giving up.
+    const ATTEMPTS: u32 = 15;
+    let mut last_err = None;
+    for attempt in 1..=ATTEMPTS {
+        match try_commit_if_finalized(current_version).await {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                debug!("Commit check attempt {attempt}/{ATTEMPTS} not ready yet: {e}");
+                last_err = Some(e);
+                tokio::time::sleep(Duration::from_secs(2)).await;
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("commit check failed")))
+        .context("Trident not reachable to check/commit servicing state")
+}
+
+async fn try_commit_if_finalized(current_version: &Version) -> Result<(), anyhow::Error> {
+    let channel = Endpoint::new(trident_proto::TRIDENT_DEFAULT_SOCKET_URI)?
+        .connect()
+        .await?;
+    let state = StatusServiceClient::new(channel.clone())
+        .get_servicing_state(tonic::Request::new(GetServicingStateRequest {}))
+        .await?
+        .into_inner()
+        .state();
+
+    if state != ServicingState::UpdateAbFinalized {
+        debug!("Servicing state is {state:?}; no A/B commit needed.");
+        return Ok(());
+    }
+
+    info!("A/B update is finalized but not committed; committing to make v{current_version} permanent...");
+    let response = CommitServiceClient::new(channel)
+        .commit(tonic::Request::new(CommitRequest {
+            reboot: Some(RebootManagement {
+                handling: RebootHandling::TridentHandlesReboot.into(),
+            }),
+        }))
+        .await?
+        .into_inner();
+    handle_servicing_stream(response).await?;
+    info!("A/B update committed; now running v{current_version} permanently.");
+    Ok(())
 }
 
 async fn trigger(
