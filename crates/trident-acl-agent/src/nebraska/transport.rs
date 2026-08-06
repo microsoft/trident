@@ -58,8 +58,14 @@ impl Transport for ReqwestTransport {
             .send()
             .map_err(|e| NebraskaError::Transport(e.to_string()))?
             .error_for_status()
-            .map_err(|e| NebraskaError::Http(e.to_string()))?
+            .map_err(|e| NebraskaError::Http {
+                status: e.status().map(|s| s.as_u16()),
+                message: e.to_string(),
+            })?
             .text()
-            .map_err(|e| NebraskaError::Http(e.to_string()))
+            .map_err(|e| NebraskaError::Http {
+                status: None,
+                message: e.to_string(),
+            })
     }
 }
