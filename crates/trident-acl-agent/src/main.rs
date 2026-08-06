@@ -12,7 +12,6 @@
 
 use std::{thread, time::Duration};
 
-use anyhow::Context;
 use clap::Parser;
 use futures::StreamExt;
 use log::{debug, error, info, trace, warn, LevelFilter};
@@ -24,9 +23,6 @@ use trident_proto::v1::{
     update_service_client::UpdateServiceClient, CommitRequest, FinalizeUpdateRequest,
     HostConfiguration, LogLevel, RebootHandling, RebootManagement, ServicingResponse,
     StageUpdateRequest, StatusCode, UpdateRequest,
-};
-use trident_proto::v1preview::{
-    status_service_client::StatusServiceClient, GetServicingStateRequest, ServicingState,
 };
 use url::Url;
 use uuid::Uuid;
@@ -87,6 +83,17 @@ pub enum QueryResult {
     NewDocument { url: Url, version: Version },
 }
 
+/// Whether the agent attempts to commit a finalized A/B update on startup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum CommitMode {
+    /// Attempt a best-effort, time-boxed commit on startup (default). Harmless
+    /// no-op when nothing is pending.
+    Auto,
+    /// Never attempt to commit from the agent (e.g. when the deployment commits
+    /// via a systemd `ExecStartPre` instead).
+    Never,
+}
+
 /// Whether the agent reports Omaha events back to Nebraska.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum EventsMode {
@@ -128,6 +135,12 @@ struct Args {
     /// Whether to report Omaha events back to Nebraska.
     #[arg(long, env = "HARPOON_EVENTS", value_enum, default_value_t = EventsMode::None)]
     pub events: EventsMode,
+
+    /// Whether to commit a finalized A/B update on startup. `auto` (default)
+    /// makes a best-effort, time-boxed commit so the update is not rolled back;
+    /// `never` skips it (e.g. when a systemd ExecStartPre commits instead).
+    #[arg(long, env = "HARPOON_COMMIT", value_enum, default_value_t = CommitMode::Auto)]
+    pub commit: CommitMode,
 
     /// How to derive the machine id (instance identity) reported to Nebraska.
     #[arg(long, env = "HARPOON_ID_SOURCE", value_enum, default_value_t = IdSource::MachineIdHashed)]
@@ -195,14 +208,13 @@ fn main() {
 
     // Commit a finalized-but-uncommitted A/B update so it becomes permanent.
     // Trident finalizes (arms the new slot) but does not commit; without this
-    // the update reverts on a later boot. Runs in BOTH events modes, and is a
-    // no-op unless an A/B update is actually pending commit.
-    if let Err(e) = commit_finalized_update(&current_version) {
-        error!("Failed to commit finalized A/B update: {e:#}");
-        error!(
-            "The running update may revert on a later reboot; a manual `trident commit` may be \
-             needed."
-        );
+    // the update reverts on a later boot. Best-effort and time-boxed so it can
+    // never delay the correctness-critical Nebraska completion report. Skipped
+    // when --commit never (e.g. the deployment commits via systemd ExecStartPre).
+    if args.commit == CommitMode::Auto {
+        if let Err(e) = ensure_committed(&current_version) {
+            warn!("Startup commit attempt did not complete: {e:#}");
+        }
     }
 
     // In full-events mode, the very first thing we do after a reboot is report
@@ -670,64 +682,98 @@ fn parse_semver_loose(s: &str) -> Option<Version> {
     Some(Version::new(major, minor, patch))
 }
 
-/// Commits a finalized-but-uncommitted A/B update so it becomes permanent.
-/// Trident finalizes an update (arming the new slot) but does not make it
-/// permanent until committed; without this the update reverts on a later boot.
-/// Idempotent: does nothing unless the servicing state is "A/B update
-/// finalized". Runs in both events modes on startup.
-fn commit_finalized_update(current_version: &Version) -> Result<(), anyhow::Error> {
+/// Ensures any finalized-but-uncommitted A/B update is committed so it becomes
+/// permanent. Trident finalizes an update (arming the new slot) but does not
+/// make it permanent until committed; without this the update reverts on a
+/// later boot.
+///
+/// The deployed Trident (0.26.0) does not expose the v1preview
+/// `StatusService.GetServicingState` RPC, so we do NOT query state first —
+/// `CommitService.Commit` is idempotent for our purposes (a harmless no-op when
+/// nothing is pending, and the thing we need when a finalized update exists), so
+/// we call it unconditionally.
+///
+/// This is best-effort and strictly time-boxed: it must never delay the
+/// correctness-critical Nebraska completion report. Connection failures (socket
+/// not up yet) are retried briefly; permanent gRPC errors (e.g. UNIMPLEMENTED)
+/// are not retried.
+fn ensure_committed(current_version: &Version) -> Result<(), anyhow::Error> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
-    rt.block_on(commit_finalized_update_async(current_version))
+    rt.block_on(async {
+        // Hard overall deadline so a slow/unavailable Trident can never stall
+        // the demo (or the mandatory post-reboot 3/2 report).
+        tokio::time::timeout(COMMIT_DEADLINE, ensure_committed_async(current_version))
+            .await
+            .map_err(|_| anyhow::anyhow!("commit timed out after {COMMIT_DEADLINE:?}"))?
+    })
 }
 
-async fn commit_finalized_update_async(current_version: &Version) -> Result<(), anyhow::Error> {
-    // Trident's gRPC socket may not be ready immediately after boot; retry the
-    // connect/query a bounded number of times before giving up.
-    const ATTEMPTS: u32 = 15;
-    let mut last_err = None;
-    for attempt in 1..=ATTEMPTS {
-        match try_commit_if_finalized(current_version).await {
+/// Overall wall-clock cap on the startup commit attempt.
+const COMMIT_DEADLINE: Duration = Duration::from_secs(2);
+
+async fn ensure_committed_async(current_version: &Version) -> Result<(), anyhow::Error> {
+    // Only connection failures are worth retrying (the socket may not be up in
+    // the first instant after boot). Everything else — including a permanent
+    // UNIMPLEMENTED from an older Trident — is returned immediately.
+    loop {
+        match try_commit(current_version).await {
             Ok(()) => return Ok(()),
-            Err(e) => {
-                debug!("Commit check attempt {attempt}/{ATTEMPTS} not ready yet: {e}");
-                last_err = Some(e);
-                tokio::time::sleep(Duration::from_secs(2)).await;
+            Err(CommitError::Unavailable(e)) => {
+                debug!("Trident socket not ready yet, retrying commit: {e}");
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            }
+            Err(CommitError::Permanent(e)) => {
+                // Not retryable (e.g. RPC not implemented on this Trident, or a
+                // real commit failure). Best-effort: log and move on.
+                debug!("Commit not performed by agent: {e}");
+                return Ok(());
             }
         }
     }
-    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("commit check failed")))
-        .context("Trident not reachable to check/commit servicing state")
 }
 
-async fn try_commit_if_finalized(current_version: &Version) -> Result<(), anyhow::Error> {
-    let channel = Endpoint::new(trident_proto::TRIDENT_DEFAULT_SOCKET_URI)?
+enum CommitError {
+    /// Transport/connection failure — worth a brief retry.
+    Unavailable(anyhow::Error),
+    /// Permanent failure — do not retry.
+    Permanent(anyhow::Error),
+}
+
+async fn try_commit(current_version: &Version) -> Result<(), CommitError> {
+    let channel = Endpoint::new(trident_proto::TRIDENT_DEFAULT_SOCKET_URI)
+        .map_err(|e| CommitError::Permanent(e.into()))?
         .connect()
-        .await?;
-    let state = StatusServiceClient::new(channel.clone())
-        .get_servicing_state(tonic::Request::new(GetServicingStateRequest {}))
-        .await?
-        .into_inner()
-        .state();
+        .await
+        .map_err(|e| CommitError::Unavailable(e.into()))?;
 
-    if state != ServicingState::UpdateAbFinalized {
-        debug!("Servicing state is {state:?}; no A/B commit needed.");
-        return Ok(());
-    }
-
-    info!("A/B update is finalized but not committed; committing to make v{current_version} permanent...");
     let response = CommitServiceClient::new(channel)
         .commit(tonic::Request::new(CommitRequest {
             reboot: Some(RebootManagement {
                 handling: RebootHandling::TridentHandlesReboot.into(),
             }),
         }))
-        .await?
+        .await
+        .map_err(classify_commit_status)?
         .into_inner();
-    handle_servicing_stream(response).await?;
-    info!("A/B update committed; now running v{current_version} permanently.");
+
+    // Drain the response stream; a commit with nothing pending completes
+    // immediately with no state change.
+    handle_servicing_stream(response)
+        .await
+        .map_err(CommitError::Permanent)?;
+    info!("Ensured any finalized A/B update is committed (now on v{current_version}).");
     Ok(())
+}
+
+/// Classifies a gRPC error from the commit call: only genuine
+/// transport-unavailability is retryable.
+fn classify_commit_status(status: tonic::Status) -> CommitError {
+    match status.code() {
+        tonic::Code::Unavailable => CommitError::Unavailable(anyhow::anyhow!("{status}")),
+        _ => CommitError::Permanent(anyhow::anyhow!("{status}")),
+    }
 }
 
 async fn trigger(
