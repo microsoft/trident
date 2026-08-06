@@ -123,6 +123,15 @@ async fn load_client_config(config: &KubernetesConfig) -> Result<Config, anyhow:
         .with_context(|| format!("failed to read kubeconfig {}", path.display()))?;
     let mut client_config =
         Config::from_custom_kubeconfig(kubeconfig, &KubeConfigOptions::default()).await?;
-    client_config.cluster_url = config.api_server.as_str().parse()?;
+    // Only override the server URL the kubeconfig already resolved to when a
+    // deployment explicitly configures one. A node's own kubeconfig (e.g.
+    // /var/lib/kubelet/kubeconfig) already points at the correct cluster API
+    // server FQDN, so overriding it unconditionally with a fixed default
+    // (like the in-cluster-only `https://kubernetes.default.svc`) would
+    // break any deployment running outside a pod's network namespace, where
+    // that in-cluster DNS name doesn't resolve.
+    if let Some(api_server) = &config.api_server {
+        client_config.cluster_url = api_server.as_str().parse()?;
+    }
     Ok(client_config)
 }

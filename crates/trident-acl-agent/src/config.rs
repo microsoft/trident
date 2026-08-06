@@ -17,7 +17,6 @@ use url::Url;
 use crate::{DEFAULT_NEBRASKA_APP_ID, DEFAULT_NEBRASKA_TRACK};
 
 pub const DEFAULT_CONFIG_PATH: &str = "/etc/trident/trident-acl-agent.conf";
-pub const DEFAULT_KUBERNETES_API_SERVER: &str = "https://kubernetes.default.svc";
 const DEFAULT_KUBERNETES_POLL_INTERVAL: Duration = Duration::from_secs(2);
 // TODO: placeholder until the real production Nebraska/Omaha endpoint is
 // known. `.invalid` is reserved by RFC 2606 and is guaranteed to never
@@ -83,7 +82,14 @@ impl Default for NebraskaConfig {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KubernetesConfig {
-    pub api_server: Url,
+    /// Explicit override for the Kubernetes API server URL. When unset, the
+    /// server embedded in `kubeconfig` is used as-is (e.g. the real cluster
+    /// FQDN a node's own `/var/lib/kubelet/kubeconfig` already points at).
+    /// Only needed when the kubeconfig's own server is wrong for this
+    /// deployment - e.g. a pod deployment wanting the in-cluster
+    /// `https://kubernetes.default.svc` name, which a plain node-level
+    /// kubeconfig has no reason to contain.
+    pub api_server: Option<Url>,
     pub kubeconfig: String,
     pub node_name: String,
     pub watch_poll_interval: Duration,
@@ -92,7 +98,7 @@ pub struct KubernetesConfig {
 impl Default for KubernetesConfig {
     fn default() -> Self {
         Self {
-            api_server: Url::parse(DEFAULT_KUBERNETES_API_SERVER).expect("static url"),
+            api_server: None,
             kubeconfig: DEFAULT_KUBELET_KUBECONFIG.to_string(),
             node_name: default_node_name(),
             watch_poll_interval: DEFAULT_KUBERNETES_POLL_INTERVAL,
@@ -182,9 +188,7 @@ impl RawAgentConfig {
                     .unwrap_or_else(|| DEFAULT_NEBRASKA_TRACK.to_string()),
             },
             kubernetes: KubernetesConfig {
-                api_server: self.kubernetes.api_server.unwrap_or_else(|| {
-                    Url::parse(DEFAULT_KUBERNETES_API_SERVER).expect("static url")
-                }),
+                api_server: self.kubernetes.api_server,
                 kubeconfig: self
                     .kubernetes
                     .kubeconfig
@@ -313,8 +317,8 @@ mod tests {
         );
         assert_eq!(config.nebraska.app_id, DEFAULT_NEBRASKA_APP_ID);
         assert_eq!(
-            config.kubernetes.api_server.as_str(),
-            "https://kubernetes.default.svc/"
+            config.kubernetes.api_server, None,
+            "api_server should default to unset so the kubeconfig's own server is used as-is"
         );
         assert_eq!(
             config.trident.socket,
@@ -365,7 +369,7 @@ mod tests {
         assert_eq!(config.nebraska.app_id, "custom-app");
         assert_eq!(config.nebraska.track, "custom-track");
         assert_eq!(
-            config.kubernetes.api_server.as_str(),
+            config.kubernetes.api_server.unwrap().as_str(),
             "https://cluster.example.invalid/"
         );
         assert_eq!(
