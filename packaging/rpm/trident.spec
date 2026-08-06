@@ -177,6 +177,7 @@ BuildRequires:       selinux-policy-devel
 # is unrelated to loading a compiled SELinux policy module and is not needed here.
 Requires(post):      libselinux-utils
 Requires(post):      policycoreutils
+Requires(postun):    libselinux-utils
 Requires(postun):    policycoreutils
 
 %description selinux
