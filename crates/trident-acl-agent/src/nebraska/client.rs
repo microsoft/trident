@@ -16,8 +16,7 @@ use super::{
 ///
 /// `UpdateInProgress` is a first-class outcome rather than an error because
 /// Nebraska returns it on **every** poll between the first progress event and
-/// the terminal event; it is expected server behaviour (protocol spec §4 and
-/// §7 trap 5).
+/// the terminal event; it is expected server behaviour.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CheckOutcome {
     /// No update is available; the instance is up to date.
@@ -49,14 +48,16 @@ pub struct UpdateOffer {
 /// `track`, and [`MachineId`]. Because these are required to construct the
 /// client and every request flows through it, two protocol invariants hold
 /// structurally: `track` is present on every request including event-only ones
-/// (protocol spec §7 trap 4), and the machine id is always a validated, unbraced
-/// value (§7 trap 2).
+/// (Nebraska resolves the group from `track` before processing events, so an
+/// omitted track silently drops them), and the machine id is always a validated,
+/// unbraced value (Nebraska hides braced ids from its UI and statistics).
 ///
 /// # Event ordering and the all-or-nothing rule
 ///
 /// Emitting a [progress event](Client::report_progress) is a **commitment** to
 /// eventually emit a terminal event: leaving an instance in a progress state
-/// wedges it permanently, with no server-side self-heal (protocol spec §3). The
+/// wedges it permanently, because Nebraska's self-heal path only triggers from
+/// the `UpdateGranted` state and nothing resets instance status on a timer. The
 /// terminal event is sent *after the reboot* — i.e. from a different process —
 /// so this cannot be enforced at compile time; instead the terminal operations
 /// are exposed as dedicated, hard-to-forget methods
@@ -113,8 +114,7 @@ impl<T: Transport> Client<T> {
     ///
     /// `current_version` **must be the real version** and valid semver: a client
     /// reporting `0.0.0` is offered an update on every poll forever, and a
-    /// non-semver version fails instance registration server-side (protocol spec
-    /// §8).
+    /// non-semver version fails instance registration server-side.
     pub fn check_for_update(
         &self,
         current_version: &Version,
@@ -127,10 +127,9 @@ impl<T: Transport> Client<T> {
     /// Reports a [`ProgressEvent`] for an in-flight update.
     ///
     /// Only valid after a successful [`check_for_update`](Client::check_for_update)
-    /// has caused Nebraska to grant the update (Nebraska rejects events from an
-    /// instance it has never seen; protocol spec §7 trap 5). Emitting a progress
-    /// event commits the caller to eventually reporting a terminal event — see
-    /// the [type docs](Client).
+    /// has caused Nebraska to grant the update: Nebraska rejects events from an
+    /// instance it has never seen. Emitting a progress event commits the caller
+    /// to eventually reporting a terminal event — see the [type docs](Client).
     pub fn report_progress(
         &self,
         current_version: &Version,
@@ -149,21 +148,21 @@ impl<T: Transport> Client<T> {
     /// Nebraska processes the event before the update check within one request,
     /// so this both moves the instance to Complete and returns a clean
     /// `noupdate` in one round trip — closing the window in which a bare
-    /// post-reboot poll would hit `error-updateInProgressOnInstance` (protocol
-    /// spec §4). This is the terminal event that discharges the commitment made
-    /// by [`report_progress`](Client::report_progress).
+    /// post-reboot poll would hit `error-updateInProgressOnInstance`. This is
+    /// the terminal event that discharges the commitment made by
+    /// [`report_progress`](Client::report_progress).
     ///
     /// # This call MUST be retried until it succeeds
     ///
     /// The first network call immediately after a reboot routinely fails while
     /// DNS and routing settle. **Losing this terminal event wedges the instance
-    /// permanently** — there is no server-side self-heal, timer, or REST reset
-    /// (protocol spec §3, §6). This module deliberately does not bake in a retry
-    /// policy (that is the caller's to own, alongside the cross-reboot state it
-    /// must already persist), but the caller is responsible for retrying: loop
-    /// with a bounded backoff while [`NebraskaError::is_retryable`] holds, and
-    /// give up only on a permanent error. See [`report_failure`](Client::report_failure)
-    /// for the recovery path if completion genuinely cannot be reported.
+    /// permanently** — there is no server-side self-heal, timer, or REST reset.
+    /// This module deliberately does not bake in a retry policy (that is the
+    /// caller's to own, alongside the cross-reboot state it must already
+    /// persist), but the caller is responsible for retrying: loop with a bounded
+    /// backoff while [`NebraskaError::is_retryable`] holds, and give up only on a
+    /// permanent error. See [`report_failure`](Client::report_failure) for the
+    /// recovery path if completion genuinely cannot be reported.
     ///
     /// `previous_version` is the version the instance was on before the update;
     /// `current_version` is the (new) version now running.
@@ -186,8 +185,8 @@ impl<T: Transport> Client<T> {
 
     /// Reports a failed update (terminal `3/0`), which moves the instance to
     /// Error, clears `update_in_progress`, and re-arms it so a subsequent check
-    /// can grant again (protocol spec §6). This is the "reset and retry" path
-    /// for a wedged or failed update.
+    /// can grant again. This is the "reset and retry" path for a wedged or
+    /// failed update.
     pub fn report_failure(
         &self,
         previous_version: &Version,
@@ -396,9 +395,9 @@ mod tests {
           <daystart elapsed_seconds="0"/>
           <app appid="app-1" status="ok">
             <updatecheck status="ok">
-              <urls><url codebase="http://192.168.122.1:8080/"/></urls>
-              <manifest version="3.0.20260803">
-                <packages><package name="acl-3.0.20260803.cosi" size="1" required="true"/></packages>
+              <urls><url codebase="https://updates.example.com/"/></urls>
+              <manifest version="2.0.0">
+                <packages><package name="os-image-2.0.0.cosi" size="1" required="true"/></packages>
               </manifest>
             </updatecheck>
           </app>
@@ -407,15 +406,13 @@ mod tests {
     #[test]
     fn check_returns_offer_with_joined_url() {
         let client = client_with(OFFER);
-        let outcome = client
-            .check_for_update(&Version::new(3, 0, 20260731))
-            .unwrap();
+        let outcome = client.check_for_update(&Version::new(1, 0, 0)).unwrap();
         match outcome {
             CheckOutcome::UpdateAvailable(offer) => {
-                assert_eq!(offer.version, Version::new(3, 0, 20260803));
+                assert_eq!(offer.version, Version::new(2, 0, 0));
                 assert_eq!(
                     offer.package_url.as_str(),
-                    "http://192.168.122.1:8080/acl-3.0.20260803.cosi"
+                    "https://updates.example.com/os-image-2.0.0.cosi"
                 );
             }
             other => panic!("expected an update offer, got {other:?}"),
@@ -428,9 +425,7 @@ mod tests {
             r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="noupdate"/></app></response>"#,
         );
         assert_eq!(
-            client
-                .check_for_update(&Version::new(3, 0, 20260803))
-                .unwrap(),
+            client.check_for_update(&Version::new(2, 0, 0)).unwrap(),
             CheckOutcome::UpToDate
         );
     }
@@ -441,9 +436,7 @@ mod tests {
             r#"<response protocol="3.0" server="n"><app appid="app-1" status="error-updateInProgressOnInstance"><updatecheck status="error-internal"/></app></response>"#,
         );
         assert_eq!(
-            client
-                .check_for_update(&Version::new(3, 0, 20260803))
-                .unwrap(),
+            client.check_for_update(&Version::new(2, 0, 0)).unwrap(),
             CheckOutcome::UpdateInProgress
         );
     }
@@ -466,10 +459,7 @@ mod tests {
             r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"/></response>"#,
         );
         client
-            .report_progress(
-                &Version::new(3, 0, 20260731),
-                ProgressEvent::DownloadStarted,
-            )
+            .report_progress(&Version::new(1, 0, 0), ProgressEvent::DownloadStarted)
             .unwrap();
         let body = client.transport.last_body.borrow().clone().unwrap();
         assert!(body.contains(r#"track="stable""#), "{body}");
@@ -485,7 +475,7 @@ mod tests {
             r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="noupdate"/></app></response>"#,
         );
         let outcome = client
-            .complete_after_reboot(&Version::new(3, 0, 20260731), &Version::new(3, 0, 20260803))
+            .complete_after_reboot(&Version::new(1, 0, 0), &Version::new(2, 0, 0))
             .unwrap();
         assert_eq!(outcome, CheckOutcome::UpToDate);
         let body = client.transport.last_body.borrow().clone().unwrap();
@@ -493,7 +483,7 @@ mod tests {
             body.contains(r#"<event eventtype="3" eventresult="2""#),
             "{body}"
         );
-        assert!(body.contains(r#"previousversion="3.0.20260731""#), "{body}");
+        assert!(body.contains(r#"previousversion="1.0.0""#), "{body}");
         assert!(body.contains("<ping"), "{body}");
         assert!(body.contains("<updatecheck"), "{body}");
     }
@@ -504,7 +494,7 @@ mod tests {
             r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"/></response>"#,
         );
         client
-            .report_failure(&Version::new(3, 0, 20260731), &Version::new(3, 0, 20260803))
+            .report_failure(&Version::new(1, 0, 0), &Version::new(2, 0, 0))
             .unwrap();
         let body = client.transport.last_body.borrow().clone().unwrap();
         assert!(

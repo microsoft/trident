@@ -10,9 +10,9 @@ use thiserror::Error;
 /// - An update already being in progress for this instance
 ///   (`error-updateInProgressOnInstance`) is surfaced as
 ///   [`CheckOutcome::UpdateInProgress`](crate::nebraska::CheckOutcome::UpdateInProgress),
-///   not an error. See the protocol spec, §4.
+///   not an error.
 /// - An unrecognised status string never fails parsing; it is preserved in an
-///   `Other` variant. See the protocol spec, §7 trap 1.
+///   `Other` variant.
 #[derive(Debug, Error)]
 pub enum NebraskaError {
     /// The provided value could not be used to build a valid Omaha request.
@@ -52,10 +52,10 @@ impl NebraskaError {
     /// This distinction matters most for the post-reboot completion report: the
     /// first network call after a reboot routinely fails while DNS and routing
     /// settle, and losing the terminal event **wedges the instance permanently**
-    /// (protocol spec §3, §7). A caller retrying that report should loop while
-    /// `is_retryable()` holds (with a bounded backoff), and stop on a permanent
-    /// error rather than spinning on it — the inverse mistake (retrying a
-    /// permanent failure) is just as damaging.
+    /// (there is no server-side self-heal from that state). A caller retrying
+    /// that report should loop while `is_retryable()` holds (with a bounded
+    /// backoff), and stop on a permanent error rather than spinning on it — the
+    /// inverse mistake (retrying a permanent failure) is just as damaging.
     ///
     /// Transport and HTTP failures are treated as transient; protocol-level
     /// failures (serialization, parse, unexpected response, server error status,
