@@ -258,6 +258,59 @@ mod tests {
     }
 
     #[test]
+    fn test_batched_complete_request_xml() {
+        // The post-reboot request must carry, for one app: an update-complete
+        // event (3/2), a previousversion attribute, a ping, and an update-check
+        // — all in a single request, with attributes before child elements.
+        let app = AppRequest::new_with_machine_id(
+            "app-1",
+            AppVersion::new(3, 0, 20260803),
+            "stable",
+            "mid-123".to_string(),
+        )
+        .with_event(OmahaEvent::new(
+            OmahaEventType::UpdateComplete,
+            EventResult::SuccessReboot,
+        ))
+        .with_previous_version(AppVersion::new(3, 0, 20260731))
+        .with_ping()
+        .with_update_check();
+
+        let xml = String::from_utf8(Request::default().with_app(app).to_xml().unwrap()).unwrap();
+
+        assert!(xml.contains(r#"version="3.0.20260803""#), "xml: {xml}");
+        assert!(xml.contains(r#"previousversion="3.0.20260731""#), "xml: {xml}");
+        assert!(xml.contains(r#"track="stable""#), "xml: {xml}");
+        assert!(xml.contains(r#"machineid="mid-123""#), "xml: {xml}");
+        assert!(xml.contains(r#"<event eventtype="3" eventresult="2""#), "xml: {xml}");
+        assert!(xml.contains("<ping"), "xml: {xml}");
+        assert!(xml.contains("active=\"1\""), "xml: {xml}");
+        assert!(xml.contains("<updatecheck"), "xml: {xml}");
+    }
+
+    #[test]
+    fn test_single_event_request_xml() {
+        // A pre-reboot event request: one event, no updatecheck, no ping.
+        let app = AppRequest::new_with_machine_id(
+            "app-1",
+            AppVersion::new(3, 0, 20260731),
+            "stable",
+            "mid-123".to_string(),
+        )
+        .with_event(OmahaEvent::new(
+            OmahaEventType::UpdateDownloadStarted,
+            EventResult::Success,
+        ));
+
+        let xml = String::from_utf8(Request::default().with_app(app).to_xml().unwrap()).unwrap();
+
+        assert!(xml.contains(r#"<event eventtype="13" eventresult="1""#), "xml: {xml}");
+        assert!(!xml.contains("<updatecheck"), "xml: {xml}");
+        assert!(!xml.contains("<ping"), "xml: {xml}");
+        assert!(!xml.contains("previousversion"), "xml: {xml}");
+    }
+
+    #[test]
     fn test_request_default() {
         let request = Request::default();
         assert_eq!(request.protocol, OMAHA_VERSION);

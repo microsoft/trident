@@ -72,4 +72,9 @@ All flags also read from `HARPOON_*` env vars.
 - **G4 tolerance** — `error-updateInProgressOnInstance` is handled as a quiet
   "update in progress" state, not a fatal error.
 
-Not yet in this build: the full Omaha event sequence (`--events full`).
+Not yet in this build: none — `--events full` implements the complete Omaha
+event sequence (13/1 download-started, 14/1 download-finished, 800/1 installed
+pre-reboot; then a batched 3/2 + ping + update-check as the first request after
+reboot). In `full` mode the agent owns the reboot (`CALLER_HANDLES_REBOOT`),
+persisting the pre-reboot version to `/var/lib/trident-acl-agent/state.json`
+first. `none` remains the default and the guaranteed-safe path.

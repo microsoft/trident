@@ -182,14 +182,14 @@ fn main() {
         }
     };
 
+    // In full-events mode, the very first thing we do after a reboot is report
+    // update completion to Nebraska (before any bare update-check), so a wedged
+    // instance is never observed. This is a no-op if there is no pending update.
     if args.events == EventsMode::Full {
-        // Full event reporting (the 13/14/800 + post-reboot 3/2 sequence) is
-        // not yet wired in this build. Fall back to the always-safe no-events
-        // path so a rehearsal never wedges the Nebraska instance.
-        warn!(
-            "--events full is not yet implemented in this build; running with --events none \
-             (safe update-check-only polling). Nebraska self-heals the instance to Complete."
-        );
+        if let Err(e) = handle_post_reboot(&args, &current_version, &machine_id) {
+            // Non-fatal: fall through to polling. Nebraska can still self-heal.
+            warn!("Post-reboot completion reporting failed: {e:#}");
+        }
     }
 
     info!(
@@ -299,16 +299,267 @@ fn poll_once(
         Some(args.sha384.clone())
     };
 
+    // In full-events mode the agent owns the reboot so it can report the
+    // download/install events in order before rebooting; in none mode Trident
+    // owns the reboot.
+    let reboot_handling = match args.events {
+        EventsMode::Full => RebootHandling::CallerHandlesReboot,
+        EventsMode::None => RebootHandling::TridentHandlesReboot,
+    };
+
+    // Report "download started" (13/1 → Downloading) before staging.
+    if args.events == EventsMode::Full {
+        report_event_best_effort(
+            args,
+            machine_id,
+            current_version,
+            OmahaEventType::UpdateDownloadStarted,
+            EventResult::Success,
+            None,
+        );
+    }
+
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
-    rt.block_on(trigger(&url, hash))?;
+    rt.block_on(trigger(&url, hash, reboot_handling))?;
+
+    if args.events == EventsMode::Full {
+        // Stage + finalize completed. Report "download finished" (14/1 →
+        // Downloaded) and "installed" (800/1 → Installed) in order, then record
+        // the pending update and reboot ourselves so the ordering vs. reboot is
+        // guaranteed.
+        report_event_best_effort(
+            args,
+            machine_id,
+            current_version,
+            OmahaEventType::UpdateDownloadFinished,
+            EventResult::Success,
+            None,
+        );
+        report_event_best_effort(
+            args,
+            machine_id,
+            current_version,
+            OmahaEventType::EventUpdateInstalled,
+            EventResult::Success,
+            None,
+        );
+
+        // Persist the pre-reboot state to the shared, persistent root so the
+        // restarted agent can report completion with the correct previous
+        // version after the reboot.
+        state::record_pending_update(&state::PendingUpdate {
+            previous_version: current_version.clone(),
+            target_version: version.clone(),
+        })?;
+
+        // This does not return on success — the system reboots.
+        reboot_self()?;
+    }
 
     Ok(PollOutcome::Updated { version })
 }
 
-/// Resolves the machine id (Nebraska instance identity), preferring an explicit
-/// `--machine-id` override over the derived `--id-source`.
+/// Sends a single Omaha event to Nebraska, logging but not propagating failures.
+/// Pre-reboot events are cosmetic (they drive the intermediate Nebraska UI
+/// states); a failure must not abort the update.
+fn report_event_best_effort(
+    args: &Args,
+    machine_id: &str,
+    version: &Version,
+    event_type: OmahaEventType,
+    event_result: EventResult,
+    previous_version: Option<&Version>,
+) {
+    match send_update_event(
+        &args.url,
+        &args.appid,
+        &args.track,
+        machine_id,
+        version,
+        event_type,
+        event_result,
+        previous_version,
+    ) {
+        Ok(()) => debug!("Reported Omaha event {event_type:?}/{event_result:?} to Nebraska"),
+        Err(e) => warn!("Failed to report Omaha event {event_type:?}/{event_result:?}: {e}"),
+    }
+}
+
+/// Reboots the machine to boot into the freshly finalized OS slot. Used in
+/// full-events mode, where the agent (not Trident) owns the reboot. Logs loudly
+/// immediately before, and does not return on success.
+fn reboot_self() -> Result<(), anyhow::Error> {
+    warn!("Update finalized. REBOOTING NOW to boot into the updated OS...");
+
+    let status = std::process::Command::new("systemctl")
+        .arg("reboot")
+        .status();
+    let ok = match status {
+        Ok(s) if s.success() => true,
+        Ok(s) => {
+            warn!("`systemctl reboot` exited with {s}; falling back to `reboot`");
+            std::process::Command::new("reboot")
+                .status()
+                .map(|s2| s2.success())
+                .unwrap_or(false)
+        }
+        Err(e) => {
+            warn!("Failed to invoke `systemctl reboot` ({e}); falling back to `reboot`");
+            std::process::Command::new("reboot")
+                .status()
+                .map(|s2| s2.success())
+                .unwrap_or(false)
+        }
+    };
+
+    if !ok {
+        return Err(anyhow::anyhow!(
+            "Failed to issue reboot; the system is finalized but not rebooted"
+        ));
+    }
+
+    // Reboot has been requested; block until systemd tears us down, rather than
+    // exiting (which would let systemd's Restart=always flap the unit during
+    // shutdown).
+    info!("Reboot requested; waiting for the system to go down.");
+    loop {
+        thread::sleep(Duration::from_secs(3600));
+    }
+}
+
+/// Handles the first-request-after-reboot completion reporting in full-events
+/// mode. If a pending update was recorded before the reboot and we are now
+/// running the target version, report update-complete (3/2) batched with a ping
+/// and an update-check as a single request, which moves the Nebraska instance
+/// straight to Complete and returns a clean no-update. If the running version
+/// does not match (e.g. the update did not take), report a failure (3/0) to
+/// reset the instance so it can be re-offered.
+fn handle_post_reboot(
+    args: &Args,
+    current_version: &Version,
+    machine_id: &str,
+) -> Result<(), anyhow::Error> {
+    let Some(pending) = state::load_pending_update()? else {
+        return Ok(());
+    };
+
+    if *current_version == pending.target_version {
+        info!(
+            "Booted into updated OS v{current_version}; reporting update-complete to Nebraska \
+             (previous v{})",
+            pending.previous_version
+        );
+        // Retry a few times: this is the request that unsticks the instance.
+        let mut last_err = None;
+        for attempt in 1..=5 {
+            match send_complete_batched(
+                &args.url,
+                &args.appid,
+                &args.track,
+                machine_id,
+                current_version,
+                &pending.previous_version,
+            ) {
+                Ok(()) => {
+                    state::clear_pending_update()?;
+                    info!("Reported update-complete; Nebraska instance is now Complete.");
+                    return Ok(());
+                }
+                Err(e) => {
+                    warn!("Attempt {attempt}/5 to report update-complete failed: {e}");
+                    last_err = Some(e);
+                    thread::sleep(Duration::from_secs(2));
+                }
+            }
+        }
+        return Err(anyhow::Error::from(last_err.unwrap_or_else(|| {
+            HarpoonError::QueryError("Failed to report update-complete".to_string())
+        }))
+        .context("Exhausted retries reporting update-complete"));
+    }
+
+    // We recorded an update to target_version but are not running it. Report a
+    // failure so Nebraska releases the in-progress slot and can re-offer.
+    warn!(
+        "Expected v{} after update but running v{current_version}; reporting update failure to \
+         Nebraska to reset the instance",
+        pending.target_version
+    );
+    send_update_event(
+        &args.url,
+        &args.appid,
+        &args.track,
+        machine_id,
+        current_version,
+        OmahaEventType::UpdateComplete,
+        EventResult::Error,
+        Some(&pending.previous_version),
+    )?;
+    state::clear_pending_update()?;
+    Ok(())
+}
+
+/// Sends a single Omaha event (no update-check) to Nebraska.
+#[allow(clippy::too_many_arguments)]
+fn send_update_event(
+    url: &Url,
+    app_id: &str,
+    track: &str,
+    machine_id: &str,
+    version: &Version,
+    event_type: OmahaEventType,
+    event_result: EventResult,
+    previous_version: Option<&Version>,
+) -> Result<(), HarpoonError> {
+    let mut app =
+        AppRequest::new_with_machine_id(app_id, version, track, machine_id.to_string())
+            .with_event(OmahaEvent::new(event_type, event_result));
+    if let Some(prev) = previous_version {
+        app = app.with_previous_version(prev);
+    }
+    omaha::send(url, &Request::default().with_app(app))?;
+    Ok(())
+}
+
+/// Sends the batched post-reboot request: update-complete (3/2) + ping +
+/// update-check, in a single Omaha request. Nebraska processes the event before
+/// the update-check, so the instance moves to Complete and the same response
+/// returns a clean no-update. Errors if Nebraska still reports an error status.
+fn send_complete_batched(
+    url: &Url,
+    app_id: &str,
+    track: &str,
+    machine_id: &str,
+    version: &Version,
+    previous_version: &Version,
+) -> Result<(), HarpoonError> {
+    let app = AppRequest::new_with_machine_id(app_id, version, track, machine_id.to_string())
+        .with_event(OmahaEvent::new(
+            OmahaEventType::UpdateComplete,
+            EventResult::SuccessReboot,
+        ))
+        .with_previous_version(previous_version)
+        .with_ping()
+        .with_update_check();
+
+    let response = omaha::send(url, &Request::default().with_app(app))?;
+    let app = response.apps().first().ok_or_else(|| {
+        HarpoonError::InvalidResponse("Missing app in complete-event response".to_string())
+    })?;
+
+    // The instance may legitimately be Complete already; only a still-in-progress
+    // status indicates the completion did not take.
+    if app.status().is_update_in_progress() {
+        return Err(HarpoonError::QueryError(
+            "Nebraska still reports update in progress after complete event".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+
 fn resolve_machine_id(args: &Args) -> Result<String, anyhow::Error> {
     match &args.machine_id {
         Some(id) => Ok(id.clone()),
@@ -394,11 +645,14 @@ fn parse_semver_loose(s: &str) -> Option<Version> {
     Some(Version::new(major, minor, patch))
 }
 
-async fn trigger(url: &Url, hash: Option<String>) -> Result<(), anyhow::Error> {
-    // For now, we will just log the trigger. In the future, this function can be
-    // used to trigger an update check on the server side, for example by sending
-    // a specific event or making a specific API call to the server.
-    debug!("Triggering update with URL: {url} and hash: {hash:?}");
+async fn trigger(
+    url: &Url,
+    hash: Option<String>,
+    reboot_handling: RebootHandling,
+) -> Result<(), anyhow::Error> {
+    debug!(
+        "Triggering Trident update with URL: {url}, hash: {hash:?}, reboot: {reboot_handling:?}"
+    );
 
     let channel = Endpoint::new(trident_proto::TRIDENT_DEFAULT_SOCKET_URI)?
         .connect()
@@ -420,10 +674,7 @@ async fn trigger(url: &Url, hash: Option<String>) -> Result<(), anyhow::Error> {
             }),
             finalize: Some(FinalizeUpdateRequest {
                 reboot: Some(RebootManagement {
-                    // Let Trident own the reboot after finalize, otherwise the
-                    // agent would have to reboot itself and the demo would hang
-                    // waiting for a reboot that never happens.
-                    handling: RebootHandling::TridentHandlesReboot.into(),
+                    handling: reboot_handling.into(),
                 }),
             }),
         }))
