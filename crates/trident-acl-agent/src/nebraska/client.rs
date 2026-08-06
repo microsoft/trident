@@ -151,8 +151,19 @@ impl<T: Transport> Client<T> {
     /// `noupdate` in one round trip — closing the window in which a bare
     /// post-reboot poll would hit `error-updateInProgressOnInstance` (protocol
     /// spec §4). This is the terminal event that discharges the commitment made
-    /// by [`report_progress`](Client::report_progress), and it must be retried
-    /// until it lands: losing it wedges the instance permanently.
+    /// by [`report_progress`](Client::report_progress).
+    ///
+    /// # This call MUST be retried until it succeeds
+    ///
+    /// The first network call immediately after a reboot routinely fails while
+    /// DNS and routing settle. **Losing this terminal event wedges the instance
+    /// permanently** — there is no server-side self-heal, timer, or REST reset
+    /// (protocol spec §3, §6). This module deliberately does not bake in a retry
+    /// policy (that is the caller's to own, alongside the cross-reboot state it
+    /// must already persist), but the caller is responsible for retrying: loop
+    /// with a bounded backoff while [`NebraskaError::is_retryable`] holds, and
+    /// give up only on a permanent error. See [`report_failure`](Client::report_failure)
+    /// for the recovery path if completion genuinely cannot be reported.
     ///
     /// `previous_version` is the version the instance was on before the update;
     /// `current_version` is the (new) version now running.
