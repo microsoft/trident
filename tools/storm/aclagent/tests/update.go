@@ -107,6 +107,23 @@ func sha384CosiMetadata(path string) (string, error) {
 	}
 }
 
+// expectValidateConnection runs "trident-acl-agent --validate-connection
+// <mode>" on the VM (against whatever config is currently on disk at the
+// binary's compiled-in default path) and asserts its exit status matches
+// wantSuccess. Used to prove both halves of the kubeconfig-server fix
+// (https://github.com/microsoft/trident/pull/730): before a config is
+// delivered, only tridentd (socket-activated, no config needed) should
+// succeed while kubernetes/nebraska fail on unreachable defaults; after
+// prepareVmForAclAgent delivers a real config, all three should succeed.
+func expectValidateConnection(cfg stormvmconfig.VMConfig, vmIP, mode string, wantSuccess bool) error {
+	out, err := stormssh.SshCommandCombinedOutput(cfg, vmIP, fmt.Sprintf("sudo trident-acl-agent --validate-connection %s", mode))
+	gotSuccess := err == nil
+	if gotSuccess != wantSuccess {
+		return fmt.Errorf("--validate-connection %s: expected success=%v, got success=%v (err=%v, output=%s)", mode, wantSuccess, gotSuccess, err, out)
+	}
+	return nil
+}
+
 func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig) error {
 	vmIP, err := stormvm.GetVmIP(vmConfig)
 	if err != nil {
@@ -177,8 +194,33 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	nodeStore.PatchLabels(map[string]string{stormproxies.NodeImageVersionLabel: testConfig.ExpectedInitialVolume})
 	nodeStore.SetReadyCondition(true)
 
+	// Before any trident-acl-agent config has been delivered to the VM, the
+	// binary falls back to its compiled-in defaults: tridentd's socket is
+	// reached via systemd socket activation regardless of config, so it
+	// should succeed; kubernetes and nebraska both default to unreachable
+	// placeholders (no real kubeconfig at /var/lib/kubelet/kubeconfig yet,
+	// and https://nebraska.example.invalid), so both should fail.
+	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "tridentd", true); err != nil {
+		return fmt.Errorf("pre-config validate-connection check failed: %w", err)
+	}
+	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "kubernetes", false); err != nil {
+		return fmt.Errorf("pre-config validate-connection check failed: %w", err)
+	}
+	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "nebraska", false); err != nil {
+		return fmt.Errorf("pre-config validate-connection check failed: %w", err)
+	}
+
 	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig); err != nil {
 		return err
+	}
+
+	// Once prepareVmForAclAgent has delivered a real config (fake apiserver
+	// kubeconfig, fake Nebraska endpoint, and the default tridentd socket
+	// still applying), all three connections should now succeed.
+	for _, mode := range []string{"tridentd", "kubernetes", "nebraska"} {
+		if err := expectValidateConnection(vmConfig.VMConfig, vmIP, mode, true); err != nil {
+			return fmt.Errorf("post-config validate-connection check failed: %w", err)
+		}
 	}
 
 	rp := &stormproxies.RPClient{APIServerURL: fmt.Sprintf("http://%s:%d", testConfig.HostEndpointIP, testConfig.APIServerPort), NodeName: testConfig.NodeName}
