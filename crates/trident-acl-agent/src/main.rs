@@ -11,7 +11,7 @@ use trident_acl_agent::{
     orchestrator::Orchestrator,
     run_omaha_only,
     trident::TridentClient,
-    IdSource, DEFAULT_NEBRASKA_TRACK,
+    IdSource,
 };
 
 /// Module/target prefixes for the underlying HTTP/gRPC/watch client stack.
@@ -184,11 +184,12 @@ async fn validate_connection(
             // rather than the pure reachability check documented on
             // ConnectionTarget::Nebraska above.
             let endpoint_for_task = endpoint.clone();
+            let track = config.nebraska.track.clone();
             tokio::task::spawn_blocking(move || {
                 check_nebraska_reachable(
                     &endpoint_for_task,
                     &app_id,
-                    DEFAULT_NEBRASKA_TRACK,
+                    &track,
                     IdSource::MachineIdHashed,
                 )
             })
