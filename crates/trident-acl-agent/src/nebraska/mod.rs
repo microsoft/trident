@@ -11,25 +11,27 @@
 //! The Omaha protocol as Nebraska implements it has several invariants that
 //! **fail silently** when violated — a client can appear to work over the wire
 //! while leaving the fleet's state permanently wrong. This module encodes those
-//! invariants in the type system so they cannot be violated by accident. The
-//! authoritative behavioural reference is the protocol spec at
-//! `knowledge/topics/nebraska-client-protocol.md` in the `pacobot` repository;
-//! the docs below cite its sections. In summary:
+//! invariants in the type system so they cannot be violated by accident:
 //!
-//! - **Only six `(eventtype, eventresult)` pairs are accepted**; anything else
-//!   is silently discarded. Raw integers never appear in the public API — see
-//!   [`ProgressEvent`] and the private wire mapping (spec §2).
-//! - **`track` is mandatory on every request**, including event-only ones. It
-//!   is a field of [`Client`], so it cannot be omitted (spec §7 trap 4).
-//! - **`error-updateInProgressOnInstance` is expected, not fatal.** It is
-//!   modelled as [`CheckOutcome::UpdateInProgress`], and unknown status strings
-//!   never break parsing (spec §4, §7 trap 1).
-//! - **The machine id must be unbraced and stable.** See [`MachineId`]
-//!   (spec §7 traps 2, 3).
+//! - **Only six `(eventtype, eventresult)` pairs are accepted** by Nebraska;
+//!   any other pair is silently discarded (the server still returns
+//!   `<event status="ok">`). Raw integers never appear in the public API — see
+//!   [`ProgressEvent`] and the private wire mapping.
+//! - **`track` is mandatory on every request**, including event-only ones:
+//!   Nebraska resolves the group from `track` before processing events, so
+//!   omitting it silently drops them. It is a field of [`Client`], so it cannot
+//!   be omitted.
+//! - **`error-updateInProgressOnInstance` is expected, not fatal.** Nebraska
+//!   returns it on every update check between the first progress event and the
+//!   terminal one; it is modelled as [`CheckOutcome::UpdateInProgress`], and
+//!   unknown status strings never break parsing (see [`AppStatus`]).
+//! - **The machine id must be unbraced and stable.** Nebraska filters
+//!   brace-wrapped ids out of its UI and statistics, and uses the id as the
+//!   instance primary key. See [`MachineId`].
 //! - **Event reporting is all-or-nothing.** Sending progress events commits the
 //!   caller to a terminal event that fires after a reboot; the terminal
 //!   operations are dedicated methods on [`Client`] rather than free-standing
-//!   values (spec §3).
+//!   values.
 //!
 //! # Example
 //!
@@ -38,15 +40,15 @@
 //! use url::Url;
 //! use trident_acl_agent::nebraska::{Client, CheckOutcome, MachineId, ProgressEvent};
 //!
-//! # fn demo() -> Result<(), Box<dyn std::error::Error>> {
+//! # fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let client = Client::new(
-//!     Url::parse("https://nebraska.example/v1/update/")?,
-//!     "6d10cf97-443f-4542-8479-b9fdb44c9588",
+//!     Url::parse("https://updates.example.com/v1/update/")?,
+//!     "example-app",
 //!     "stable",
 //!     MachineId::from_uuid(uuid::Uuid::new_v4()),
 //! );
 //!
-//! let current = Version::new(3, 0, 20260731);
+//! let current = Version::new(1, 0, 0);
 //! match client.check_for_update(&current)? {
 //!     CheckOutcome::UpToDate => {}
 //!     CheckOutcome::UpdateInProgress => {}

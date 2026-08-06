@@ -8,17 +8,16 @@ use super::error::NebraskaError;
 
 /// A Nebraska instance identifier.
 ///
-/// `machineid` is the **primary key** of an instance in Nebraska
-/// (protocol spec §7 trap 3), so it carries two invariants that fail *silently*
-/// when violated, which is why this is a validated newtype rather than a bare
-/// `String`:
+/// `machineid` is the **primary key** of an instance in Nebraska, so it carries
+/// two invariants that fail *silently* when violated, which is why this is a
+/// validated newtype rather than a bare `String`:
 ///
 /// 1. **It must not be brace-formatted.** Nebraska filters instance ids matching
 ///    `{8-4-4-4-12}` out of both the instance list and the group statistics as
-///    "fake instances" (protocol spec §7 trap 2). A client using a braced id is
-///    invisible in the UI while appearing to work perfectly over the wire.
-///    [`MachineId::new`] rejects such values; [`MachineId::from_uuid`] relies on
-///    Rust's [`Uuid`] `Display`, which is hyphenated and unbraced.
+///    "fake instances". A client using a braced id is invisible in the UI while
+///    appearing to work perfectly over the wire. [`MachineId::new`] rejects such
+///    values; [`MachineId::from_uuid`] relies on Rust's [`Uuid`] `Display`,
+///    which is hyphenated and unbraced.
 ///
 /// 2. **It must be stable across the update reboot.** If it changes, the old
 ///    instance is left behind in whatever state it was in — permanently wedged
@@ -85,21 +84,21 @@ mod tests {
 
     #[test]
     fn from_uuid_is_unbraced() {
-        let uuid = Uuid::parse_str("b187c502-8d4d-9b6f-91f7-cbd2e6a10225").unwrap();
+        let uuid = Uuid::parse_str("12345678-1234-4234-8234-1234567890ab").unwrap();
         let id = MachineId::from_uuid(uuid);
-        assert_eq!(id.as_str(), "b187c502-8d4d-9b6f-91f7-cbd2e6a10225");
+        assert_eq!(id.as_str(), "12345678-1234-4234-8234-1234567890ab");
         assert!(!id.as_str().starts_with('{'));
     }
 
     #[test]
     fn new_accepts_plain_id() {
-        let id = MachineId::new("b187c502-8d4d-9b6f-91f7-cbd2e6a10225").unwrap();
-        assert_eq!(id.as_str(), "b187c502-8d4d-9b6f-91f7-cbd2e6a10225");
+        let id = MachineId::new("12345678-1234-4234-8234-1234567890ab").unwrap();
+        assert_eq!(id.as_str(), "12345678-1234-4234-8234-1234567890ab");
     }
 
     #[test]
     fn new_rejects_braced_uuid() {
-        let err = MachineId::new("{b187c502-8d4d-9b6f-91f7-cbd2e6a10225}").unwrap_err();
+        let err = MachineId::new("{12345678-1234-4234-8234-1234567890ab}").unwrap_err();
         assert!(
             matches!(err, NebraskaError::InvalidRequest(_)),
             "got {err:?}"

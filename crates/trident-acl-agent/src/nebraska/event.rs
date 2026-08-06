@@ -9,13 +9,11 @@
 //!
 //! An event with any other pair is **silently discarded** — Nebraska still
 //! returns `<event status="ok">`, so the client cannot detect the mistake from
-//! the response (protocol spec §2 and §7 trap 1). To make that class of bug
-//! impossible, this module never exposes raw integers: callers work with typed
-//! events, and the mapping to wire values is private and total over the
-//! whitelist.
+//! the response. To make that class of bug impossible, this module never
+//! exposes raw integers: callers work with typed events, and the mapping to
+//! wire values is private and total over the whitelist.
 //!
-//! The events also split into two kinds with very different consequences
-//! (protocol spec §3):
+//! The events also split into two kinds with very different consequences:
 //!
 //! - **Progress** events ([`ProgressEvent`]) are informational. Sending them is
 //!   a *commitment* to also send a terminal event, because leaving an instance
@@ -40,7 +38,7 @@ pub(super) struct WirePair {
 ///
 /// These correspond to the intermediate Nebraska instance states. Emitting any
 /// of them commits the caller to eventually reporting a terminal event (success
-/// or failure); see the module docs and protocol spec §3.
+/// or failure); see the module docs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProgressEvent {
     /// Staging of the update has begun. Wire `(13, 1)` → Nebraska `Downloading`.
@@ -94,7 +92,8 @@ pub(super) enum TerminalEvent {
     /// `Complete`.
     Completed,
     /// The update failed. Wire `(3, 0)` → Nebraska `Error`; clears
-    /// `update_in_progress` and re-arms the instance (protocol spec §6).
+    /// `update_in_progress` and re-arms the instance so a later check can grant
+    /// again.
     Failed,
 }
 

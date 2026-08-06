@@ -1,103 +1,113 @@
-# `nebraska` client module — design and adoption notes
+# `nebraska` client module
 
 A self-contained Rust client for the [Nebraska](https://github.com/flatcar/nebraska)
-update server (Omaha protocol), living in `crates/trident-acl-agent/src/nebraska/`.
+update server (Omaha protocol). Scoped strictly to the protocol — no Trident
+gRPC, reboot, commit, or CLI logic — so it is reusable by any update agent.
 
-The authoritative behavioural spec is
-`knowledge/topics/nebraska-client-protocol.md` in the `pacobot` repository. This
-document only covers how the module maps that spec into a Rust API and how the
-existing agent would adopt it.
+The API encodes the protocol's silently-failing invariants in the type system:
+only whitelisted events are constructible, `track` cannot be omitted, the machine
+id is a validated unbraced newtype, versions are `semver::Version`, and
+`error-updateInProgressOnInstance` is a normal outcome rather than an error. The
+rationale for each is documented inline on the relevant type.
 
-## Public API
+## Usage
 
-| Item | Purpose |
-| --- | --- |
-| `Client<T = ReqwestTransport>` | A client bound to one app + track + machine id. Methods: `check_for_update`, `report_progress`, `complete_after_reboot`, `report_failure`. |
-| `CheckOutcome` | `UpToDate` \| `UpdateAvailable(UpdateOffer)` \| `UpdateInProgress`. The last models `error-updateInProgressOnInstance` as an expected outcome, not an error. |
-| `UpdateOffer` | `{ version: semver::Version, package_url: Url }` — the resolved package URL (codebase joined with package name). |
-| `ProgressEvent` | `DownloadStarted` \| `DownloadFinished` \| `Installed`. The only publicly constructible events; they map to the whitelisted wire pairs `13/1`, `14/1`, `800/1`. |
-| `MachineId` | Validated, unbraced instance id. `from_uuid` / `new`. |
-| `AppStatus`, `UpdateCheckStatus` | Response statuses with an `Other(String)` catch-all so unknown values never break parsing. |
-| `Transport`, `ReqwestTransport` | The HTTP seam; injectable for hermetic tests. |
-| `NebraskaError` | The module error type (`thiserror`). |
+### Poll for an update
 
-Terminal events (`3/2` complete, `3/0` failure) are **not** public values — they
-are emitted only through `complete_after_reboot` and `report_failure`, so they
-always carry the correct request shape (e.g. the batched update-check that
-completion requires).
+```rust,no_run
+use semver::Version;
+use url::Url;
+use trident_acl_agent::nebraska::{Client, CheckOutcome, MachineId};
 
-## How the invariants are encoded
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+let client = Client::new(
+    Url::parse("https://updates.example.com/v1/update/")?, // trailing slash matters
+    "example-app",
+    "stable",
+    MachineId::from_uuid(uuid::Uuid::new_v4()),
+);
 
-- **Whitelisted events only** — raw `(type, result)` integers are private; the
-  public vocabulary (`ProgressEvent` + the terminal methods) can only produce the
-  six accepted pairs. A unit test asserts this.
-- **`track` mandatory** — a field of `Client`; no request can be built without it.
-- **Unbraced, stable machine id** — `MachineId` rejects braced ids; `from_uuid`
-  uses Rust's unbraced `Display`.
-- **`error-updateInProgressOnInstance` is expected** — surfaced as
-  `CheckOutcome::UpdateInProgress`; unknown statuses map to `Other`.
-- **Real semver version** — the API takes `&semver::Version`, and offered
-  versions are parsed as semver.
-- **All-or-nothing event reporting** — see the design decision below.
+let current = Version::new(1, 0, 0);
+match client.check_for_update(&current)? {
+    CheckOutcome::UpToDate => println!("no update"),
+    CheckOutcome::UpdateInProgress => println!("update already in progress"),
+    CheckOutcome::UpdateAvailable(offer) => {
+        println!("update to {} at {}", offer.version, offer.package_url);
+    }
+}
+# Ok(())
+# }
+```
 
-## Design decision: invariant #2 (all-or-nothing) is a documented plain API, not a typestate
+### Report the full update sequence (with events)
 
-Sending progress events commits the caller to a terminal event, and **the
-terminal event fires after a reboot — in a different process** from the progress
-events. No in-process typestate or RAII guard can span that boundary; worse, an
-RAII "you didn't finish" guard would fire at the drop that happens *at* reboot,
-which is exactly when completion must *not* be reported. A compile-time
-"started ⇒ must-finish" is therefore structurally impossible here.
+Sending progress events is a **commitment** to send a terminal event: leaving an
+instance in a progress state wedges it permanently. The terminal event is sent
+*after the reboot*, from a fresh process, so the caller must persist the
+in-flight state across the reboot and retry the completion until it lands.
 
-Instead the property is encoded three ways that actually hold:
+```rust,no_run
+use semver::Version;
+use url::Url;
+use trident_acl_agent::nebraska::{Client, CheckOutcome, MachineId, ProgressEvent};
 
-1. Terminal events are not free-standing values; they are dedicated `Client`
-   methods, so a terminal cannot be sent in the wrong shape or context.
-2. The only-whitelisted-pairs property is total, so no invalid event exists.
-3. `complete_after_reboot` is the batched `3/2 + ping + updatecheck` request,
-   making the safe post-reboot path (which closes the wedge window) the easy one.
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let client = Client::new(
+#     Url::parse("https://updates.example.com/v1/update/")?,
+#     "example-app", "stable", MachineId::from_uuid(uuid::Uuid::new_v4()));
+let current = Version::new(1, 0, 0);
 
-Persisting "an update is in flight (previous X, target Y)" across the reboot is
-the caller's responsibility — it is orchestration, deliberately out of this
-module's scope — but the module makes the correct post-reboot call trivial.
+if let CheckOutcome::UpdateAvailable(offer) = client.check_for_update(&current)? {
+    // Before/after each stage of the update (driven elsewhere), report progress:
+    client.report_progress(&current, ProgressEvent::DownloadStarted)?;
+    // ... stage the update ...
+    client.report_progress(&current, ProgressEvent::DownloadFinished)?;
+    // ... finalize ...
+    client.report_progress(&current, ProgressEvent::Installed)?;
 
-## Retry of the terminal event is the caller's, but the module makes the distinction visible
+    // Persist { previous: current, target: offer.version } somewhere durable,
+    // then reboot. After the reboot, from a fresh process on the new version:
+    let previous = current;
+    let now_running = offer.version;
+    loop {
+        match client.complete_after_reboot(&previous, &now_running) {
+            Ok(_) => break,
+            // Retry only transient failures; a permanent one will never succeed.
+            Err(e) if e.is_retryable() => continue,
+            Err(e) => return Err(e.into()),
+        }
+    }
+}
+# Ok(())
+# }
+```
 
-`complete_after_reboot` is **not** retried internally. Retry policy is the
-caller's — it lives alongside the cross-reboot state the caller must already
-persist, and baking a policy into a protocol module tends to fight whatever the
-caller has. But because losing the terminal event wedges the instance
-permanently, the module makes the retry decision unmissable:
+### Recover a wedged instance
 
-- `complete_after_reboot`'s rustdoc states, in plain terms, that the call must be
-  retried until it succeeds and why.
-- `NebraskaError::is_retryable()` classifies transient (transport/HTTP) failures
-  from permanent (protocol) ones, so the caller can loop while retryable and stop
-  on a permanent error — avoiding the inverse bug (spinning on a permanent
-  failure) that bit the gRPC commit path.
+If completion cannot be reported, `report_failure` moves the instance to Error
+and re-arms it so a later check can grant again:
 
-## Blocking transport today; async is a non-breaking addition
+```rust,no_run
+# use semver::Version;
+# use url::Url;
+# use trident_acl_agent::nebraska::{Client, MachineId};
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let client = Client::new(
+#     Url::parse("https://updates.example.com/v1/update/")?,
+#     "example-app", "stable", MachineId::from_uuid(uuid::Uuid::new_v4()));
+client.report_failure(&Version::new(1, 0, 0), &Version::new(2, 0, 0))?;
+# Ok(())
+# }
+```
 
-`Transport` is synchronous, matching the current agent. A future async TAA must
-not call a blocking HTTP client inside its Tokio runtime. Supporting async does
-**not** require changing this API: `Client` is generic over the transport, so an
-`AsyncTransport` trait plus a thin async client can be added *alongside* the sync
-ones without breaking them. See the `transport` module docs for the full note.
+## Testing
 
-## Adopting this in the agent
+`Transport` abstracts the HTTP round-trip, so the client is testable without a
+network by injecting a canned implementation via `Client::with_transport`.
 
-The current agent (`main.rs` + the ad-hoc `omaha` module) predates this module.
-A future change would:
+## Notes
 
-1. Replace `omaha::send` / `query_and_fetch_document` / `report_event` with a
-   `nebraska::Client` built from the CLI args (`endpoint`, `appid`, `track`) and a
-   `MachineId` derived from `IdSource`.
-2. Map the poll loop's results onto `CheckOutcome` (the agent already distinguishes
-   no-update / in-progress / available).
-3. In `--events full`, call `report_progress` around the Trident stage/finalize,
-   persist the in-flight state to `/var`, and after the reboot call
-   `complete_after_reboot` (with retry) as the first request.
-4. Delete the `omaha` module once nothing references it.
-
-This module contains no Trident gRPC, reboot, commit, or CLI logic, so that
-adoption is purely at the protocol seam.
+- The `Transport` is synchronous today; an async transport can be added
+  alongside it without breaking this API (see the `transport` module docs).
+- This module supersedes the crate's older ad-hoc `omaha` module; the agent's
+  migration to it is a separate change.
