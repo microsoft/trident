@@ -48,7 +48,7 @@ ssh -i ~/.ssh/id_rsa azureuser@192.168.122.77 'journalctl -u trident-acl-agent -
 | `--appid` | `6d10cf97-443f-4542-8479-b9fdb44c9588` | Must match the Nebraska app |
 | `--track` | `stable` | Must match the Nebraska group exactly |
 | `--interval` | `1s` | humantime (`1s`, `500ms`, …) |
-| `--events` | `none` | `none` = safe update-check-only (Nebraska self-heals to Complete). `full` = report the event sequence (not yet implemented in this build) |
+| `--events` | `none` | `none` = safe update-check-only (Nebraska self-heals to Complete). `full` = report the full Omaha event sequence (agent owns the reboot) |
 | `--id-source` | `machine-id-hashed` | or `machine-id-raw`, `hostname` |
 | `--machine-id` | (derived) | Override the instance id; in-the-room recovery for a wedged Nebraska instance |
 | `--current-version` | (from os-release) | Override the reported version |
