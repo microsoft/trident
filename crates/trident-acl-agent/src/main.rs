@@ -10,6 +10,8 @@
 //! <img src="../logo.jpeg" width="200px"/>
 //!
 
+use std::{thread, time::Duration};
+
 use clap::Parser;
 use futures::StreamExt;
 use log::{debug, error, info, trace, warn, LevelFilter};
@@ -23,6 +25,25 @@ use trident_proto::v1::{
 };
 use url::Url;
 use uuid::Uuid;
+
+use osutils::osrelease::OsRelease;
+
+/// Default Omaha app id, used when `--appid` / `HARPOON_APPID` is not provided.
+const DEFAULT_APPID: &str = "b0ec8f0d-1c13-4bf4-9efd-ea54464a7098";
+
+/// Default Omaha track (a.k.a. group/channel), used when `--track` /
+/// `HARPOON_TRACK` is not provided.
+const DEFAULT_TRACK: &str = "west-us";
+
+/// Value accepted by Trident's Host Configuration to skip COSI checksum
+/// verification. Mirrors `trident_api::constants::IMAGE_CHECKSUM_IGNORED`.
+const IMAGE_CHECKSUM_IGNORED: &str = "ignored";
+
+/// `/etc/os-release` fields consulted, in order, to derive the current OS
+/// version reported to Nebraska. `IMAGE_VERSION` is preferred because Azure
+/// Linux date-stamps the per-build version there (e.g. `3.0.20260801`), while
+/// `VERSION_ID` is often just `3.0` and cannot distinguish two builds.
+const VERSION_FIELDS: &[&str] = &["IMAGE_VERSION", "VERSION_ID", "VERSION", "BUILD_ID"];
 
 pub mod error;
 pub mod id;
@@ -60,49 +81,224 @@ struct Args {
     /// The URL of the Nebraska server to use. Likely should end in `/v1/update`
     #[arg()]
     pub url: Url,
+
+    /// Omaha app id to query for. Must match the app registered in Nebraska.
+    #[arg(long, env = "HARPOON_APPID", default_value = DEFAULT_APPID)]
+    pub appid: String,
+
+    /// Omaha track (Nebraska group/channel). Nebraska does not infer the group;
+    /// it must match exactly or no update is returned.
+    #[arg(long, env = "HARPOON_TRACK", default_value = DEFAULT_TRACK)]
+    pub track: String,
+
+    /// Seconds between polls of the Nebraska server.
+    #[arg(long, env = "HARPOON_INTERVAL", default_value_t = 1)]
+    pub interval: u64,
+
+    /// Run a single poll and exit, instead of looping.
+    #[arg(long)]
+    pub once: bool,
+
+    /// Override the current OS version reported to Nebraska. When unset, it is
+    /// derived from `/etc/os-release` (see `--version-field`).
+    #[arg(long, env = "HARPOON_CURRENT_VERSION")]
+    pub current_version: Option<String>,
+
+    /// `/etc/os-release` field to read the current version from. When unset,
+    /// the first parseable of IMAGE_VERSION, VERSION_ID, VERSION, BUILD_ID is
+    /// used.
+    #[arg(long, env = "HARPOON_VERSION_FIELD")]
+    pub version_field: Option<String>,
+
+    /// COSI metadata SHA384 to pass to Trident, or `ignored` to skip
+    /// verification. The Omaha/Nebraska response does not carry the COSI
+    /// metadata hash, so this must be supplied out of band when verification is
+    /// desired.
+    #[arg(long, env = "HARPOON_SHA384", default_value = IMAGE_CHECKSUM_IGNORED)]
+    pub sha384: String,
 }
 
 fn main() {
     let args = Args::parse();
 
+    init_logger(args.verbosity);
+
+    let current_version = match resolve_current_version(&args) {
+        Ok(v) => v,
+        Err(e) => {
+            error!("Failed to determine current OS version: {e}");
+            error!(
+                "Pass --current-version <semver> or --version-field <OS_RELEASE_FIELD> to override."
+            );
+            std::process::exit(1);
+        }
+    };
+    info!(
+        "Harpoon agent starting: appid='{}' track='{}' current-version=v{current_version} interval={}s url='{}'",
+        args.appid, args.track, args.interval, args.url
+    );
+
+    loop {
+        match poll_once(&args, &current_version) {
+            Ok(PollOutcome::NoUpdate) => {
+                info!("checking for update... none available (current v{current_version})");
+            }
+            Ok(PollOutcome::Updated { version }) => {
+                info!("update to v{version} applied; Trident is handling the reboot");
+                // Trident owns the reboot, which will tear this process down.
+                // Exit cleanly so a supervisor (e.g. systemd) restarts us after
+                // the reboot to resume polling on the new version.
+                std::process::exit(0);
+            }
+            Err(e) => {
+                // Transient errors (Nebraska unreachable, etc.) must not kill
+                // the agent — log and keep polling.
+                error!("poll failed: {e:#}");
+            }
+        }
+
+        if args.once {
+            break;
+        }
+        thread::sleep(Duration::from_secs(args.interval));
+    }
+}
+
+fn init_logger(verbosity: LevelFilter) {
     if let Some(Ok(journal_logger)) =
         systemd_journal_logger::connected_to_journal().then(systemd_journal_logger::JournalLog::new)
     {
         journal_logger
             .install()
             .expect("Failed to install systemd journal logger");
-        log::set_max_level(args.verbosity);
+        log::set_max_level(verbosity);
     } else {
         env_logger::builder()
             .format_timestamp(None)
-            .filter_level(args.verbosity)
+            .filter_level(verbosity)
             .init();
     }
+}
 
-    let r = query_and_fetch_yaml_document(
+/// Outcome of a single poll of the Nebraska server.
+enum PollOutcome {
+    NoUpdate,
+    Updated { version: Version },
+}
+
+/// Performs a single poll: query Nebraska, and if a newer version is offered,
+/// drive the Trident A/B update to completion.
+fn poll_once(args: &Args, current_version: &Version) -> Result<PollOutcome, anyhow::Error> {
+    let response = query_and_fetch_yaml_document(
         &args.url,
-        "b0ec8f0d-1c13-4bf4-9efd-ea54464a7098",
-        "west-us",
-        &Version::new(0, 0, 0),
+        &args.appid,
+        &args.track,
+        current_version,
         IdSource::MachineIdHashed,
-    )
-    .expect("Failed to query Omaha server");
+    )?;
 
-    match r.result {
-        QueryResult::NoUpdate => {
-            debug!("No update available");
-        }
-        QueryResult::NewDocument { url, version } => {
-            debug!("Updating to version {version}");
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("Failed to create tokio runtime");
+    let (url, version) = match response.result {
+        QueryResult::NoUpdate => return Ok(PollOutcome::NoUpdate),
+        QueryResult::NewDocument { url, version } => (url, version),
+    };
 
-            rt.block_on(trigger(&url, None))
-                .expect("Failed to run update");
+    // Belt-and-suspenders: Nebraska should only offer newer versions given the
+    // current version we send, but guard against a misconfigured channel that
+    // would otherwise loop forever.
+    if version <= *current_version {
+        warn!("Nebraska offered v{version} which is not newer than current v{current_version}; ignoring");
+        return Ok(PollOutcome::NoUpdate);
+    }
+
+    info!("UPDATE FOUND: v{current_version} -> v{version}");
+
+    let hash = if args.sha384 == IMAGE_CHECKSUM_IGNORED {
+        None
+    } else {
+        Some(args.sha384.clone())
+    };
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    rt.block_on(trigger(&url, hash))?;
+
+    Ok(PollOutcome::Updated { version })
+}
+
+/// Resolves the current OS version to report to Nebraska, from the
+/// `--current-version` override or `/etc/os-release`.
+fn resolve_current_version(args: &Args) -> Result<Version, anyhow::Error> {
+    if let Some(raw) = &args.current_version {
+        return parse_semver_loose(raw)
+            .ok_or_else(|| anyhow::anyhow!("--current-version '{raw}' is not a valid version"));
+    }
+
+    let os_release =
+        OsRelease::read().map_err(|e| anyhow::anyhow!("Failed to read /etc/os-release: {e}"))?;
+
+    // If the operator named a specific field, honor it strictly.
+    if let Some(field) = &args.version_field {
+        let raw = os_release_field(&os_release, field).ok_or_else(|| {
+            anyhow::anyhow!("os-release field '{field}' is not set or not supported")
+        })?;
+        let version = parse_semver_loose(&raw).ok_or_else(|| {
+            anyhow::anyhow!("os-release field '{field}'='{raw}' is not a parseable version")
+        })?;
+        info!("Current version v{version} from os-release field '{field}' ('{raw}')");
+        return Ok(version);
+    }
+
+    // Otherwise try the preferred fields in order.
+    for field in VERSION_FIELDS {
+        if let Some(raw) = os_release_field(&os_release, field) {
+            if let Some(version) = parse_semver_loose(&raw) {
+                info!("Current version v{version} from os-release field '{field}' ('{raw}')");
+                return Ok(version);
+            }
+            debug!("os-release field '{field}'='{raw}' did not parse as a version, trying next");
         }
     }
+
+    Err(anyhow::anyhow!(
+        "No parseable version found in os-release fields {VERSION_FIELDS:?}"
+    ))
+}
+
+/// Reads a named field from the parsed os-release, for the subset of fields we
+/// consult for versioning.
+fn os_release_field(os_release: &OsRelease, field: &str) -> Option<String> {
+    match field.to_ascii_uppercase().as_str() {
+        "IMAGE_VERSION" => os_release.image_version.clone(),
+        "VERSION_ID" => os_release.version_id.clone(),
+        "VERSION" => os_release.version.clone(),
+        "BUILD_ID" => os_release.build_id.clone(),
+        _ => None,
+    }
+}
+
+/// Parses a version string leniently: takes the first whitespace token, strips
+/// quotes, and accepts 1-3 dotted numeric components (missing components
+/// default to 0). Accepts e.g. `3.0.20260801`, `3.0`, `"3.0"`,
+/// `3.0.20260801 (Azure Linux)`.
+fn parse_semver_loose(s: &str) -> Option<Version> {
+    let token = s.trim().trim_matches('"').split_whitespace().next()?;
+
+    if let Ok(v) = Version::parse(token) {
+        return Some(v);
+    }
+
+    let mut parts = token.split('.');
+    let major = parts.next()?.parse::<u64>().ok()?;
+    let minor = parts
+        .next()
+        .and_then(|p| p.parse::<u64>().ok())
+        .unwrap_or(0);
+    let patch = parts
+        .next()
+        .and_then(|p| p.parse::<u64>().ok())
+        .unwrap_or(0);
+    Some(Version::new(major, minor, patch))
 }
 
 async fn trigger(url: &Url, hash: Option<String>) -> Result<(), anyhow::Error> {
@@ -131,7 +327,10 @@ async fn trigger(url: &Url, hash: Option<String>) -> Result<(), anyhow::Error> {
             }),
             finalize: Some(FinalizeUpdateRequest {
                 reboot: Some(RebootManagement {
-                    handling: RebootHandling::CallerHandlesReboot.into(),
+                    // Let Trident own the reboot after finalize, otherwise the
+                    // agent would have to reboot itself and the demo would hang
+                    // waiting for a reboot that never happens.
+                    handling: RebootHandling::TridentHandlesReboot.into(),
                 }),
             }),
         }))
@@ -436,6 +635,31 @@ mod tests {
     use mockito::Matcher;
 
     use super::*;
+
+    #[test]
+    fn test_parse_semver_loose() {
+        // Full semver passes through.
+        assert_eq!(
+            parse_semver_loose("3.0.20260801"),
+            Some(Version::new(3, 0, 20260801))
+        );
+        // Two-component (typical VERSION_ID) coerces patch to 0.
+        assert_eq!(parse_semver_loose("3.0"), Some(Version::new(3, 0, 0)));
+        // Single component.
+        assert_eq!(parse_semver_loose("3"), Some(Version::new(3, 0, 0)));
+        // Quoted and with trailing text (as os-release VERSION often is).
+        assert_eq!(
+            parse_semver_loose("\"3.0.20260801\""),
+            Some(Version::new(3, 0, 20260801))
+        );
+        assert_eq!(
+            parse_semver_loose("3.0.20260801 (Azure Linux)"),
+            Some(Version::new(3, 0, 20260801))
+        );
+        // Non-numeric is rejected.
+        assert_eq!(parse_semver_loose("azurelinux"), None);
+        assert_eq!(parse_semver_loose(""), None);
+    }
 
     #[test]
     fn test_download_document() {

@@ -6,7 +6,7 @@ publish = false
 
 [dependencies]
 anyhow = { workspace = true, features = ["backtrace"] }
-clap = { workspace = true, features = ["derive"] }
+clap = { workspace = true, features = ["derive", "env"] }
 env_logger = { workspace = true }
 futures = { workspace = true }
 log = { workspace = true }
