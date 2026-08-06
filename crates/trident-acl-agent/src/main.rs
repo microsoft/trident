@@ -139,18 +139,23 @@ async fn validate_connection(
             let client = NodeClient::new(&config.kubernetes)
                 .await
                 .context("failed to build Kubernetes client")?;
+            // Report the actually-resolved server (kubeconfig's own server,
+            // unless overridden by kubernetes.api_server), not a value
+            // guessed from config - the two only match when an override is
+            // set.
+            let cluster_url = client.cluster_url();
             client
                 .get_node(&config.kubernetes.node_name)
                 .await
                 .with_context(|| {
                     format!(
                         "failed to reach Kubernetes API server at {} (get Node {:?})",
-                        config.kubernetes.api_server, config.kubernetes.node_name
+                        cluster_url, config.kubernetes.node_name
                     )
                 })?;
             log::info!(
                 "kubernetes: reached API server at {} and fetched Node {:?}",
-                config.kubernetes.api_server,
+                cluster_url,
                 config.kubernetes.node_name
             );
         }
