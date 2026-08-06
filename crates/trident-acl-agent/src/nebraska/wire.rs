@@ -135,8 +135,8 @@ pub(super) struct App {
     // Child elements are declared — and therefore serialized — in the order
     // Nebraska logically processes them: events first, then the ping, then the
     // update check. Nebraska actually processes events before the update check
-    // regardless of XML order (protocol spec §4), but emitting them in this
-    // order keeps the batched post-reboot request self-documenting.
+    // regardless of XML order, but emitting them in this order keeps the batched
+    // post-reboot request self-documenting.
     #[serde(rename = "event", skip_serializing_if = "Vec::is_empty")]
     events: Vec<EventElement>,
 
@@ -151,7 +151,8 @@ impl App {
     /// Creates a new `<app>` with the mandatory identity fields. `track` is a
     /// required parameter here — the type cannot be built without it — which is
     /// how the module guarantees `track` is present on every request, including
-    /// event-only ones (protocol spec §7 trap 4).
+    /// event-only ones (Nebraska resolves the group from `track` before
+    /// processing events, so omitting it silently drops them).
     pub(super) fn new(app_id: String, version: String, track: String, machine_id: String) -> Self {
         Self {
             app_id,
@@ -307,7 +308,7 @@ mod tests {
     fn update_check_request_shape() {
         let app = App::new(
             "app-1".into(),
-            "3.0.20260731".into(),
+            "1.0.0".into(),
             "stable".into(),
             "mid-1".into(),
         )
@@ -317,13 +318,13 @@ mod tests {
         assert!(xml.contains(r#"protocol="3.0""#), "{xml}");
         assert!(xml.contains(r#"ismachine="1""#), "{xml}");
         assert!(xml.contains(r#"appid="app-1""#), "{xml}");
-        assert!(xml.contains(r#"version="3.0.20260731""#), "{xml}");
+        assert!(xml.contains(r#"version="1.0.0""#), "{xml}");
         assert!(xml.contains(r#"track="stable""#), "{xml}");
         assert!(xml.contains(r#"machineid="mid-1""#), "{xml}");
         assert!(xml.contains("<updatecheck"), "{xml}");
         // os version mirrors the app version
         assert!(
-            xml.contains(r#"<os platform="linux" version="3.0.20260731""#),
+            xml.contains(r#"<os platform="linux" version="1.0.0""#),
             "{xml}"
         );
         // no stray event / ping / previousversion
@@ -336,7 +337,7 @@ mod tests {
     fn progress_event_request_shape() {
         let app = App::new(
             "app-1".into(),
-            "3.0.20260731".into(),
+            "1.0.0".into(),
             "stable".into(),
             "mid-1".into(),
         )
@@ -361,7 +362,7 @@ mod tests {
         // updatecheck, all in one request, with previousversion set.
         let app = App::new(
             "app-1".into(),
-            "3.0.20260803".into(),
+            "2.0.0".into(),
             "stable".into(),
             "mid-1".into(),
         )
@@ -369,7 +370,7 @@ mod tests {
             event_type: 3,
             event_result: 2,
         })
-        .with_previous_version("3.0.20260731".into())
+        .with_previous_version("1.0.0".into())
         .with_ping()
         .with_update_check();
         let xml = xml_of(app);
@@ -378,7 +379,7 @@ mod tests {
             xml.contains(r#"<event eventtype="3" eventresult="2""#),
             "{xml}"
         );
-        assert!(xml.contains(r#"previousversion="3.0.20260731""#), "{xml}");
+        assert!(xml.contains(r#"previousversion="1.0.0""#), "{xml}");
         assert!(xml.contains(r#"active="1""#), "{xml}");
         assert!(xml.contains("<ping"), "{xml}");
         assert!(xml.contains("<updatecheck"), "{xml}");
@@ -395,17 +396,17 @@ mod tests {
 
     #[test]
     fn parse_update_offer() {
-        // Captured shape from the demo (protocol spec §4), including the empty
-        // <actions></actions> that must not break parsing.
+        // A representative positive update-check response, including the empty
+        // <actions></actions> element that must not break parsing.
         let body = r#"
             <response protocol="3.0" server="nebraska">
               <daystart elapsed_seconds="0"/>
-              <app appid="6d10cf97-443f-4542-8479-b9fdb44c9588" status="ok">
+              <app appid="example-app" status="ok">
                 <updatecheck status="ok">
-                  <urls><url codebase="http://192.168.122.1:8080/"/></urls>
-                  <manifest version="3.0.20260803">
+                  <urls><url codebase="https://updates.example.com/"/></urls>
+                  <manifest version="2.0.0">
                     <packages>
-                      <package name="acl-3.0.20260803.cosi" hash="5RKW+UWMc6TGENo7KO+ZCvk5EM4=" size="368420864" required="true"/>
+                      <package name="os-image-2.0.0.cosi" hash="AAAAAAAAAAAAAAAAAAAAAAAAAAA=" size="368420864" required="true"/>
                     </packages>
                     <actions></actions>
                   </manifest>
@@ -415,14 +416,14 @@ mod tests {
         let resp = parse_response(body).unwrap();
         assert_eq!(resp.apps.len(), 1);
         let app = &resp.apps[0];
-        assert_eq!(app.app_id, "6d10cf97-443f-4542-8479-b9fdb44c9588");
+        assert_eq!(app.app_id, "example-app");
         assert!(app.status.is_ok());
         let uc = app.update_check.as_ref().unwrap();
         assert!(uc.status.is_update_available());
-        assert_eq!(uc.manifest.as_ref().unwrap().version, "3.0.20260803");
+        assert_eq!(uc.manifest.as_ref().unwrap().version, "2.0.0");
         assert_eq!(
             uc.urls.as_ref().unwrap().urls[0].codebase.as_str(),
-            "http://192.168.122.1:8080/"
+            "https://updates.example.com/"
         );
         assert_eq!(
             uc.manifest
@@ -433,7 +434,7 @@ mod tests {
                 .unwrap()
                 .packages[0]
                 .name,
-            "acl-3.0.20260803.cosi"
+            "os-image-2.0.0.cosi"
         );
     }
 

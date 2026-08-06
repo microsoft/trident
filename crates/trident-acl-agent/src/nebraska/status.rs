@@ -1,6 +1,6 @@
 //! Response status types, modelled so that unknown values never break parsing.
 //!
-//! Two Nebraska behaviours drive the design here (protocol spec §4 and §7):
+//! Two Nebraska behaviours drive the design here:
 //!
 //! - `error-updateInProgressOnInstance` is returned on **every** update check
 //!   between the first progress event and the terminal event. It is expected,
@@ -22,7 +22,7 @@ pub enum AppStatus {
 
     /// An update is already in progress for this instance. Returned on every
     /// poll between the first progress event and the terminal event; expected,
-    /// not fatal (protocol spec §4).
+    /// not fatal.
     #[serde(rename = "error-updateInProgressOnInstance")]
     UpdateInProgress,
 
@@ -68,7 +68,7 @@ pub enum UpdateCheckStatus {
 
     /// An internal server error. In normal operation this accompanies the
     /// app-level `error-updateInProgressOnInstance` and is therefore expected
-    /// during an in-flight update (protocol spec §4).
+    /// during an in-flight update.
     #[serde(rename = "error-internal")]
     ErrorInternal,
 
