@@ -169,7 +169,15 @@ BuildArch:           noarch
 Requires:            selinux-policy-%{selinuxtype}
 Requires(post):      selinux-policy-%{selinuxtype}
 BuildRequires:       selinux-policy-devel
-%{?selinux_requires}
+# Explicit scriptlet-time deps for %%selinux_modules_install/%%selinux_modules_uninstall
+# (semodule, selinuxenabled, load_policy) used below. Deliberately NOT using the
+# %%{?selinux_requires} macro: on Azure Linux it also adds
+# Requires(post): policycoreutils-python-utils, which transitively pulls in the
+# full audit daemon package via audit-libs-python3/python3-audit. That package set
+# is unrelated to loading a compiled SELinux policy module and is not needed here.
+Requires(post):      libselinux-utils
+Requires(post):      policycoreutils
+Requires(postun):    policycoreutils
 
 %description selinux
 Custom SELinux policy module
