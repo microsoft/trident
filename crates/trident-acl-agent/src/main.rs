@@ -53,6 +53,7 @@ const VERSION_FIELDS: &[&str] = &["IMAGE_VERSION", "VERSION_ID", "VERSION", "BUI
 pub mod error;
 pub mod id;
 pub mod omaha;
+pub mod state;
 
 use error::HarpoonError;
 use omaha::{
@@ -97,12 +98,12 @@ pub enum EventsMode {
 #[command(version, about, long_about = None)]
 struct Args {
     /// Logging verbosity [OFF, ERROR, WARN, INFO, DEBUG, TRACE]
-    #[arg(global = true, short, long, default_value_t = LevelFilter::Debug)]
+    #[arg(global = true, short, long, default_value_t = LevelFilter::Info)]
     pub verbosity: LevelFilter,
 
     /// The URL of the Nebraska server to use. Should end in `/v1/update/`
     /// (trailing slash matters for package URL composition).
-    #[arg(env = "HARPOON_URL", default_value = DEFAULT_URL)]
+    #[arg(long, env = "HARPOON_URL", default_value = DEFAULT_URL)]
     pub url: Url,
 
     /// Omaha app id to query for. Must match the app registered in Nebraska.
@@ -114,8 +115,9 @@ struct Args {
     #[arg(long, env = "HARPOON_TRACK", default_value = DEFAULT_TRACK)]
     pub track: String,
 
-    /// Interval between polls of the Nebraska server (e.g. `1s`, `500ms`).
-    #[arg(long, env = "HARPOON_INTERVAL", default_value = "1s", value_parser = humantime::parse_duration)]
+    /// Interval between polls of the Nebraska server. Accepts a bare number of
+    /// seconds (e.g. `1`) or a duration string (e.g. `1s`, `500ms`).
+    #[arg(long, env = "HARPOON_INTERVAL", default_value = "1s", value_parser = parse_interval)]
     pub interval: Duration,
 
     /// Whether to report Omaha events back to Nebraska.
@@ -242,6 +244,15 @@ fn init_logger(verbosity: LevelFilter) {
             .filter_level(verbosity)
             .init();
     }
+}
+
+/// Parses a poll interval, accepting either a bare number of seconds (e.g. `1`)
+/// or a humantime duration string (e.g. `1s`, `500ms`).
+fn parse_interval(s: &str) -> Result<Duration, String> {
+    if let Ok(secs) = s.parse::<u64>() {
+        return Ok(Duration::from_secs(secs));
+    }
+    humantime::parse_duration(s).map_err(|e| format!("invalid interval '{s}': {e}"))
 }
 
 /// Outcome of a single poll of the Nebraska server.

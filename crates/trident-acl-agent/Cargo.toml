@@ -15,6 +15,7 @@ quick-xml = { workspace = true, features = ["serialize"] }
 reqwest = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 serde_path_to_error = { workspace = true }
 sha2 = { workspace = true }
 systemd-journal-logger = { workspace = true }

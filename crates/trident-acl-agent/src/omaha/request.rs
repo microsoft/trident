@@ -127,6 +127,9 @@ pub(crate) struct AppRequest {
     #[serde(rename = "@nextversion", skip_serializing_if = "Option::is_none")]
     next_version: Option<AppVersion>,
 
+    #[serde(rename = "@previousversion", skip_serializing_if = "Option::is_none")]
+    previous_version: Option<AppVersion>,
+
     #[serde(rename = "@track")]
     track: String,
 
@@ -135,6 +138,9 @@ pub(crate) struct AppRequest {
 
     #[serde(rename = "updatecheck", skip_serializing_if = "Option::is_none")]
     update_check: Option<UpdateCheckRequest>,
+
+    #[serde(rename = "ping", skip_serializing_if = "Option::is_none")]
+    ping: Option<PingRequest>,
 
     #[serde(rename = "event", skip_serializing_if = "Vec::is_empty")]
     events: Vec<OmahaEvent>,
@@ -176,9 +182,11 @@ impl AppRequest {
             app_id: app_id.into(),
             version: version.into(),
             next_version: None,
+            previous_version: None,
             track: track.into(),
             machine_id,
             update_check: None,
+            ping: None,
             events: Vec::new(),
         }
     }
@@ -189,8 +197,21 @@ impl AppRequest {
         self
     }
 
+    /// Sets the `previousversion` attribute, stored by Nebraska for readable
+    /// instance history (e.g. on the post-reboot update-complete event).
+    pub(crate) fn with_previous_version(mut self, previous_version: impl Into<AppVersion>) -> Self {
+        self.previous_version = Some(previous_version.into());
+        self
+    }
+
     pub(crate) fn with_update_check(mut self) -> Self {
         self.update_check = Some(UpdateCheckRequest);
+        self
+    }
+
+    /// Adds an active `<ping/>` element, used in the batched post-reboot request.
+    pub(crate) fn with_ping(mut self) -> Self {
+        self.ping = Some(PingRequest { active: 1 });
         self
     }
 
@@ -210,6 +231,12 @@ impl AppRequest {
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub(crate) struct UpdateCheckRequest;
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub(crate) struct PingRequest {
+    #[serde(rename = "@active")]
+    active: u8,
+}
 
 #[cfg(test)]
 mod tests {
