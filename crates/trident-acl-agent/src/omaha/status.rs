@@ -24,6 +24,12 @@ impl AppStatus {
     pub(crate) fn is_error(&self) -> bool {
         !matches!(self, AppStatus::Ok)
     }
+
+    /// Whether this is Nebraska's `error-updateInProgressOnInstance` status,
+    /// reported on every check while an update is mid-flight for the instance.
+    pub(crate) fn is_update_in_progress(&self) -> bool {
+        matches!(self, AppStatus::Other(s) if s == "error-updateInProgressOnInstance")
+    }
 }
 
 impl Display for AppStatus {

@@ -9,6 +9,7 @@ anyhow = { workspace = true, features = ["backtrace"] }
 clap = { workspace = true, features = ["derive", "env"] }
 env_logger = { workspace = true }
 futures = { workspace = true }
+humantime = { workspace = true }
 log = { workspace = true }
 quick-xml = { workspace = true, features = ["serialize"] }
 reqwest = { workspace = true }

@@ -4,7 +4,7 @@ use osutils::{hostname, machine_id::MachineId};
 
 use crate::error::HarpoonError;
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, clap::ValueEnum)]
 pub enum IdSource {
     MachineIdHashed,
     MachineIdRaw,

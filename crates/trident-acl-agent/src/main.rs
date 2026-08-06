@@ -28,12 +28,17 @@ use uuid::Uuid;
 
 use osutils::osrelease::OsRelease;
 
+/// Default Nebraska update endpoint (POC). Used when no URL is given.
+const DEFAULT_URL: &str = "https://nebraska-poc-ep-cda8e2czfnhahxfk.b01.azurefd.net/v1/update/";
+
 /// Default Omaha app id, used when `--appid` / `HARPOON_APPID` is not provided.
-const DEFAULT_APPID: &str = "b0ec8f0d-1c13-4bf4-9efd-ea54464a7098";
+/// This is the app Paco registered in the Nebraska POC for the demo.
+const DEFAULT_APPID: &str = "6d10cf97-443f-4542-8479-b9fdb44c9588";
 
 /// Default Omaha track (a.k.a. group/channel), used when `--track` /
-/// `HARPOON_TRACK` is not provided.
-const DEFAULT_TRACK: &str = "west-us";
+/// `HARPOON_TRACK` is not provided. Nebraska does not infer the group; the
+/// client declares it here and it must match exactly.
+const DEFAULT_TRACK: &str = "stable";
 
 /// Value accepted by Trident's Host Configuration to skip COSI checksum
 /// verification. Mirrors `trident_api::constants::IMAGE_CHECKSUM_IGNORED`.
@@ -68,7 +73,24 @@ pub struct HarpoonQueryResponse {
 #[derive(Debug, PartialEq, Eq)]
 pub enum QueryResult {
     NoUpdate,
+    /// Nebraska reports an update is already in progress for this instance
+    /// (app status `error-updateInProgressOnInstance`). Expected between a
+    /// download-started event and the final complete event; must be tolerated,
+    /// not treated as a hard error.
+    UpdateInProgress,
     NewDocument { url: Url, version: Version },
+}
+
+/// Whether the agent reports Omaha events back to Nebraska.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum EventsMode {
+    /// Do not send any events. Pure update-check polling. Nebraska self-heals
+    /// the instance to Complete on the next check at the new version. This is
+    /// the guaranteed-safe path and the default.
+    None,
+    /// Send the full Omaha event sequence to drive Nebraska's instance state
+    /// machine (downloading → downloaded → installed → complete).
+    Full,
 }
 
 #[derive(Parser, Debug)]
@@ -78,8 +100,9 @@ struct Args {
     #[arg(global = true, short, long, default_value_t = LevelFilter::Debug)]
     pub verbosity: LevelFilter,
 
-    /// The URL of the Nebraska server to use. Likely should end in `/v1/update`
-    #[arg()]
+    /// The URL of the Nebraska server to use. Should end in `/v1/update/`
+    /// (trailing slash matters for package URL composition).
+    #[arg(env = "HARPOON_URL", default_value = DEFAULT_URL)]
     pub url: Url,
 
     /// Omaha app id to query for. Must match the app registered in Nebraska.
@@ -91,9 +114,22 @@ struct Args {
     #[arg(long, env = "HARPOON_TRACK", default_value = DEFAULT_TRACK)]
     pub track: String,
 
-    /// Seconds between polls of the Nebraska server.
-    #[arg(long, env = "HARPOON_INTERVAL", default_value_t = 1)]
-    pub interval: u64,
+    /// Interval between polls of the Nebraska server (e.g. `1s`, `500ms`).
+    #[arg(long, env = "HARPOON_INTERVAL", default_value = "1s", value_parser = humantime::parse_duration)]
+    pub interval: Duration,
+
+    /// Whether to report Omaha events back to Nebraska.
+    #[arg(long, env = "HARPOON_EVENTS", value_enum, default_value_t = EventsMode::None)]
+    pub events: EventsMode,
+
+    /// How to derive the machine id (instance identity) reported to Nebraska.
+    #[arg(long, env = "HARPOON_ID_SOURCE", value_enum, default_value_t = IdSource::MachineIdHashed)]
+    pub id_source: IdSource,
+
+    /// Override the machine id entirely, bypassing `--id-source`. Useful as an
+    /// in-the-room recovery to abandon a wedged Nebraska instance.
+    #[arg(long, env = "HARPOON_MACHINE_ID")]
+    pub machine_id: Option<String>,
 
     /// Run a single poll and exit, instead of looping.
     #[arg(long)]
@@ -133,15 +169,43 @@ fn main() {
             std::process::exit(1);
         }
     };
+
+    // Resolve the machine id (instance identity) once, honoring an explicit
+    // --machine-id override over the derived --id-source.
+    let machine_id = match resolve_machine_id(&args) {
+        Ok(id) => id,
+        Err(e) => {
+            error!("Failed to determine machine id: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    if args.events == EventsMode::Full {
+        // Full event reporting (the 13/14/800 + post-reboot 3/2 sequence) is
+        // not yet wired in this build. Fall back to the always-safe no-events
+        // path so a rehearsal never wedges the Nebraska instance.
+        warn!(
+            "--events full is not yet implemented in this build; running with --events none \
+             (safe update-check-only polling). Nebraska self-heals the instance to Complete."
+        );
+    }
+
     info!(
-        "Harpoon agent starting: appid='{}' track='{}' current-version=v{current_version} interval={}s url='{}'",
-        args.appid, args.track, args.interval, args.url
+        "Harpoon agent starting: appid='{}' track='{}' current-version=v{current_version} \
+         machine-id='{machine_id}' interval={:?} events={:?} url='{}'",
+        args.appid, args.track, args.interval, args.events, args.url
     );
 
     loop {
-        match poll_once(&args, &current_version) {
+        match poll_once(&args, &current_version, &machine_id) {
             Ok(PollOutcome::NoUpdate) => {
                 info!("checking for update... none available (current v{current_version})");
+            }
+            Ok(PollOutcome::UpdateInProgress) => {
+                info!(
+                    "checking for update... Nebraska reports an update already in progress for \
+                     this instance; waiting (this is expected mid-update)"
+                );
             }
             Ok(PollOutcome::Updated { version }) => {
                 info!("update to v{version} applied; Trident is handling the reboot");
@@ -160,7 +224,7 @@ fn main() {
         if args.once {
             break;
         }
-        thread::sleep(Duration::from_secs(args.interval));
+        thread::sleep(args.interval);
     }
 }
 
@@ -183,22 +247,28 @@ fn init_logger(verbosity: LevelFilter) {
 /// Outcome of a single poll of the Nebraska server.
 enum PollOutcome {
     NoUpdate,
+    UpdateInProgress,
     Updated { version: Version },
 }
 
 /// Performs a single poll: query Nebraska, and if a newer version is offered,
 /// drive the Trident A/B update to completion.
-fn poll_once(args: &Args, current_version: &Version) -> Result<PollOutcome, anyhow::Error> {
-    let response = query_and_fetch_yaml_document(
+fn poll_once(
+    args: &Args,
+    current_version: &Version,
+    machine_id: &str,
+) -> Result<PollOutcome, anyhow::Error> {
+    let response = query_and_fetch_document(
         &args.url,
         &args.appid,
         &args.track,
         current_version,
-        IdSource::MachineIdHashed,
+        machine_id,
     )?;
 
     let (url, version) = match response.result {
         QueryResult::NoUpdate => return Ok(PollOutcome::NoUpdate),
+        QueryResult::UpdateInProgress => return Ok(PollOutcome::UpdateInProgress),
         QueryResult::NewDocument { url, version } => (url, version),
     };
 
@@ -224,6 +294,18 @@ fn poll_once(args: &Args, current_version: &Version) -> Result<PollOutcome, anyh
     rt.block_on(trigger(&url, hash))?;
 
     Ok(PollOutcome::Updated { version })
+}
+
+/// Resolves the machine id (Nebraska instance identity), preferring an explicit
+/// `--machine-id` override over the derived `--id-source`.
+fn resolve_machine_id(args: &Args) -> Result<String, anyhow::Error> {
+    match &args.machine_id {
+        Some(id) => Ok(id.clone()),
+        None => args
+            .id_source
+            .produce_id()
+            .map_err(|e| anyhow::anyhow!("Failed to derive machine id via {}: {e}", args.id_source)),
+    }
 }
 
 /// Resolves the current OS version to report to Nebraska, from the
@@ -397,26 +479,21 @@ async fn handle_servicing_stream(
     }
 }
 
-/// Query the Omaha server at the given URL for the given app and track to fetch
-/// an updated YAML document.
+/// Query the Omaha (Nebraska) server at the given URL for the given app and
+/// track to check for an available update.
 ///
 /// Returns the session ID and the result of the query. If an update is
-/// available, the new version and the updated document are returned.
-///
-/// This function should ONLY be used for querying YAML documents (i.e YAML text
-/// files) because the whole file will be downloaded, and the function will only
-/// look at the first package returned by the omaha server to fetch the
-/// document. The function expects the document to be a single file with `.yaml`
-/// extension.
-pub fn query_and_fetch_yaml_document(
+/// available, the package URL and new version are returned.
+pub fn query_and_fetch_document(
     url: &Url,
     app_id: &str,
     track: &str,
     document_version: &Version,
-    machine_id_source: IdSource,
+    machine_id: &str,
 ) -> Result<HarpoonQueryResponse, HarpoonError> {
     let request = Request::default().with_app(
-        AppRequest::new(app_id, document_version, track, machine_id_source)?.with_update_check(),
+        AppRequest::new_with_machine_id(app_id, document_version, track, machine_id.to_string())
+            .with_update_check(),
     );
 
     let response = omaha::send(url, &request)?;
@@ -442,10 +519,33 @@ pub fn query_and_fetch_yaml_document(
         ));
     }
 
+    // Nebraska reports `error-updateInProgressOnInstance` on every check between
+    // a download-started event and the final complete event. This is expected
+    // and self-clearing (via the post-reboot complete event or Nebraska's own
+    // self-heal); tolerate it quietly rather than treating it as a hard error.
+    if app.status().is_update_in_progress() {
+        return Ok(HarpoonQueryResponse {
+            session_id: request.session_id(),
+            result: QueryResult::UpdateInProgress,
+        });
+    }
+
     if app.status().is_error() {
         return Err(HarpoonError::QueryError(format!(
             "Received a non-OK app status: {0}",
             app.status()
+        )));
+    }
+
+    let update_check = app.update_check().ok_or_else(|| {
+        HarpoonError::InvalidResponse("Missing update check in response".to_string())
+    })?;
+    debug!("Received update check response: {update_check:#?}");
+
+    if update_check.status().is_error() {
+        return Err(HarpoonError::QueryError(format!(
+            "Received an error status in update check: {0}",
+            update_check.status()
         )));
     }
 
@@ -747,12 +847,12 @@ mod tests {
         //     .expect(1)
         //     .create();
 
-        let response = query_and_fetch_yaml_document(
+        let response = query_and_fetch_document(
             &Url::parse(&server.url()).unwrap(),
             "test",
             "track",
             &Version::new(0, 1, 0),
-            IdSource::MachineIdHashed,
+            "test-machine-id",
         )
         .unwrap();
 

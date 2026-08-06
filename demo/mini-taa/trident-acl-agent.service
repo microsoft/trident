@@ -1,0 +1,26 @@
+[Unit]
+Description=Trident ACL Agent (mini-TAA, Nebraska A/B demo)
+Documentation=https://github.com/microsoft/trident
+# Poll only needs the network; the Trident gRPC socket is contacted lazily,
+# only once an update is actually offered, so we do not hard-order on it.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Binary + state live on the shared, persistent ext4 root (/var), so both the
+# binary and this unit survive the A/B update and reboot, giving us the closing
+# "agent returns to no-update" beat automatically.
+ExecStart=/var/lib/trident-acl-agent/trident-acl-agent \
+    --url https://nebraska-poc-ep-cda8e2czfnhahxfk.b01.azurefd.net/v1/update/ \
+    --appid 6d10cf97-443f-4542-8479-b9fdb44c9588 \
+    --track stable \
+    --interval 1s \
+    --events none
+Restart=always
+RestartSec=2
+# Trident's gRPC socket is root-owned, so the agent must run as root.
+User=root
+
+[Install]
+WantedBy=multi-user.target
