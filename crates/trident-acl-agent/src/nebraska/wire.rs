@@ -132,14 +132,19 @@ pub(super) struct App {
     #[serde(rename = "@previousversion", skip_serializing_if = "Option::is_none")]
     previous_version: Option<String>,
 
-    #[serde(rename = "updatecheck", skip_serializing_if = "Option::is_none")]
-    update_check: Option<UpdateCheck>,
+    // Child elements are declared — and therefore serialized — in the order
+    // Nebraska logically processes them: events first, then the ping, then the
+    // update check. Nebraska actually processes events before the update check
+    // regardless of XML order (protocol spec §4), but emitting them in this
+    // order keeps the batched post-reboot request self-documenting.
+    #[serde(rename = "event", skip_serializing_if = "Vec::is_empty")]
+    events: Vec<EventElement>,
 
     #[serde(rename = "ping", skip_serializing_if = "Option::is_none")]
     ping: Option<Ping>,
 
-    #[serde(rename = "event", skip_serializing_if = "Vec::is_empty")]
-    events: Vec<EventElement>,
+    #[serde(rename = "updatecheck", skip_serializing_if = "Option::is_none")]
+    update_check: Option<UpdateCheck>,
 }
 
 impl App {
@@ -377,6 +382,15 @@ mod tests {
         assert!(xml.contains(r#"active="1""#), "{xml}");
         assert!(xml.contains("<ping"), "{xml}");
         assert!(xml.contains("<updatecheck"), "{xml}");
+
+        // The batching is what closes the wedge window: the elements must appear
+        // together in one body. Assert the logical order event → ping →
+        // updatecheck so a refactor cannot silently split or reorder them.
+        let event_at = xml.find("<event").unwrap();
+        let ping_at = xml.find("<ping").unwrap();
+        let check_at = xml.find("<updatecheck").unwrap();
+        assert!(event_at < ping_at, "event should precede ping: {xml}");
+        assert!(ping_at < check_at, "ping should precede updatecheck: {xml}");
     }
 
     #[test]

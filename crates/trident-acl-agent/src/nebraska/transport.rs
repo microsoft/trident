@@ -4,6 +4,23 @@
 //! [`Client`](crate::nebraska::Client) hermetically testable — unit tests inject
 //! a canned transport and never touch the network — while the production path
 //! uses a blocking `reqwest` client.
+//!
+//! # Blocking today; async is a non-breaking addition
+//!
+//! [`Transport`] is intentionally **synchronous**, matching the current agent
+//! (which is otherwise sync and only enters a Tokio runtime for its Trident gRPC
+//! call). A future async TAA that drives Trident over `tonic`/`tokio` must not
+//! call a blocking HTTP client from within the async runtime, as that stalls the
+//! executor.
+//!
+//! Supporting that does **not** require changing this API. Because
+//! [`Client`](crate::nebraska::Client) is generic over the transport, an async
+//! variant can be introduced *alongside* the sync one — a separate
+//! `AsyncTransport` trait and a thin async client wrapper — without modifying or
+//! breaking [`Transport`], [`ReqwestTransport`], or the existing `Client`
+//! surface. The sync path is the right default now; the async path is additive
+//! when a caller needs it. Until then, an async caller can also simply wrap a
+//! sync call in `tokio::task::spawn_blocking`.
 
 use url::Url;
 

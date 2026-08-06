@@ -61,6 +61,29 @@ Persisting "an update is in flight (previous X, target Y)" across the reboot is
 the caller's responsibility — it is orchestration, deliberately out of this
 module's scope — but the module makes the correct post-reboot call trivial.
 
+## Retry of the terminal event is the caller's, but the module makes the distinction visible
+
+`complete_after_reboot` is **not** retried internally. Retry policy is the
+caller's — it lives alongside the cross-reboot state the caller must already
+persist, and baking a policy into a protocol module tends to fight whatever the
+caller has. But because losing the terminal event wedges the instance
+permanently, the module makes the retry decision unmissable:
+
+- `complete_after_reboot`'s rustdoc states, in plain terms, that the call must be
+  retried until it succeeds and why.
+- `NebraskaError::is_retryable()` classifies transient (transport/HTTP) failures
+  from permanent (protocol) ones, so the caller can loop while retryable and stop
+  on a permanent error — avoiding the inverse bug (spinning on a permanent
+  failure) that bit the gRPC commit path.
+
+## Blocking transport today; async is a non-breaking addition
+
+`Transport` is synchronous, matching the current agent. A future async TAA must
+not call a blocking HTTP client inside its Tokio runtime. Supporting async does
+**not** require changing this API: `Client` is generic over the transport, so an
+`AsyncTransport` trait plus a thin async client can be added *alongside* the sync
+ones without breaking them. See the `transport` module docs for the full note.
+
 ## Adopting this in the agent
 
 The current agent (`main.rs` + the ad-hoc `omaha` module) predates this module.

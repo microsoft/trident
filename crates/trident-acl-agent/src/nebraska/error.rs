@@ -45,3 +45,42 @@ pub enum NebraskaError {
     #[error("Nebraska reported error status: {0}")]
     ServerError(String),
 }
+
+impl NebraskaError {
+    /// Whether this error is transient and the request is worth retrying.
+    ///
+    /// This distinction matters most for the post-reboot completion report: the
+    /// first network call after a reboot routinely fails while DNS and routing
+    /// settle, and losing the terminal event **wedges the instance permanently**
+    /// (protocol spec §3, §7). A caller retrying that report should loop while
+    /// `is_retryable()` holds (with a bounded backoff), and stop on a permanent
+    /// error rather than spinning on it — the inverse mistake (retrying a
+    /// permanent failure) is just as damaging.
+    ///
+    /// Transport and HTTP failures are treated as transient; protocol-level
+    /// failures (serialization, parse, unexpected response, server error status,
+    /// invalid request) are permanent.
+    pub fn is_retryable(&self) -> bool {
+        matches!(self, NebraskaError::Transport(_) | NebraskaError::Http(_))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transient_errors_are_retryable() {
+        assert!(NebraskaError::Transport("connection refused".into()).is_retryable());
+        assert!(NebraskaError::Http("502 Bad Gateway".into()).is_retryable());
+    }
+
+    #[test]
+    fn permanent_errors_are_not_retryable() {
+        assert!(!NebraskaError::InvalidRequest("bad".into()).is_retryable());
+        assert!(!NebraskaError::Serialize("x".into()).is_retryable());
+        assert!(!NebraskaError::Parse("x".into()).is_retryable());
+        assert!(!NebraskaError::UnexpectedResponse("x".into()).is_retryable());
+        assert!(!NebraskaError::ServerError("error-osnotsupported".into()).is_retryable());
+    }
+}
