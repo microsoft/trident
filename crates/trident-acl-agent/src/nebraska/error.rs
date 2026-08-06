@@ -27,9 +27,16 @@ pub enum NebraskaError {
     #[error("failed to send request to Nebraska: {0}")]
     Transport(String),
 
-    /// The Nebraska server returned a non-success HTTP status.
-    #[error("Nebraska returned an HTTP error: {0}")]
-    Http(String),
+    /// The Nebraska server returned a non-success HTTP status. Carries the
+    /// status code (when known) so retry logic can distinguish transient
+    /// server errors from permanent ones.
+    #[error("Nebraska returned an HTTP error: {message}")]
+    Http {
+        /// The HTTP status code, if the failure carried one.
+        status: Option<u16>,
+        /// The underlying error message.
+        message: String,
+    },
 
     /// The response body could not be parsed as an Omaha response.
     #[error("failed to parse Nebraska response: {0}")]
@@ -57,11 +64,29 @@ impl NebraskaError {
     /// backoff), and stop on a permanent error rather than spinning on it — the
     /// inverse mistake (retrying a permanent failure) is just as damaging.
     ///
-    /// Transport and HTTP failures are treated as transient; protocol-level
-    /// failures (serialization, parse, unexpected response, server error status,
-    /// invalid request) are permanent.
+    /// Transport failures are always transient. HTTP failures are transient only
+    /// for server-side 5xx errors *other than* `501 Not Implemented`: Nebraska
+    /// returns 501 when an Omaha secret is configured and the client's URL lacks
+    /// it, which is a permanent client misconfiguration that must not be retried.
+    /// 4xx are likewise permanent. All protocol-level failures (serialization,
+    /// parse, unexpected response, server error status, invalid request) are
+    /// permanent.
     pub fn is_retryable(&self) -> bool {
-        matches!(self, NebraskaError::Transport(_) | NebraskaError::Http(_))
+        match self {
+            NebraskaError::Transport(_) => true,
+            // A 5xx other than 501 is a transient server/infrastructure error;
+            // 4xx and 501 are permanent. A missing status (e.g. a body-read
+            // failure) is treated as transient.
+            NebraskaError::Http {
+                status: Some(code), ..
+            } => (500..600).contains(code) && *code != 501,
+            NebraskaError::Http { status: None, .. } => true,
+            NebraskaError::InvalidRequest(_)
+            | NebraskaError::Serialize(_)
+            | NebraskaError::Parse(_)
+            | NebraskaError::UnexpectedResponse(_)
+            | NebraskaError::ServerError(_) => false,
+        }
     }
 }
 
@@ -69,10 +94,28 @@ impl NebraskaError {
 mod tests {
     use super::*;
 
+    fn http(status: Option<u16>) -> NebraskaError {
+        NebraskaError::Http {
+            status,
+            message: "http error".to_string(),
+        }
+    }
+
     #[test]
     fn transient_errors_are_retryable() {
         assert!(NebraskaError::Transport("connection refused".into()).is_retryable());
-        assert!(NebraskaError::Http("502 Bad Gateway".into()).is_retryable());
+        assert!(http(Some(502)).is_retryable());
+        assert!(http(Some(503)).is_retryable());
+        assert!(http(None).is_retryable());
+    }
+
+    #[test]
+    fn permanent_http_errors_are_not_retryable() {
+        // 501 = Nebraska rejecting a wrong/missing Omaha secret in the URL.
+        assert!(!http(Some(501)).is_retryable());
+        // 4xx are client errors and permanent.
+        assert!(!http(Some(400)).is_retryable());
+        assert!(!http(Some(404)).is_retryable());
     }
 
     #[test]
