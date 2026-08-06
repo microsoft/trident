@@ -5,10 +5,11 @@ use clap::Parser;
 use log::{LevelFilter, Log, Metadata, Record};
 
 use trident_acl_agent::{
+    check_nebraska_reachable,
     config::{AgentConfig, GoalSource, DEFAULT_CONFIG_PATH},
     k8s::NodeClient,
     orchestrator::Orchestrator,
-    query_for_update, run_omaha_only,
+    run_omaha_only,
     trident::TridentClient,
     IdSource, DEFAULT_NEBRASKA_TRACK,
 };
@@ -91,8 +92,8 @@ struct Args {
     config: Option<PathBuf>,
 
     /// Optional Omaha/Nebraska URL override. When omitted, Harpoon uses the
-    /// endpoint from config.toml. When both are missing, startup fails with a
-    /// clear error.
+    /// endpoint from trident-acl-agent.conf. When both are missing, startup
+    /// fails with a clear error.
     #[arg()]
     url: Option<url::Url>,
 
@@ -164,24 +165,30 @@ async fn validate_connection(
         ConnectionTarget::Nebraska => {
             let endpoint = config.nebraska.endpoint.clone().ok_or_else(|| {
                 anyhow::anyhow!(
-                    "nebraska.endpoint is not configured (set [nebraska].endpoint in config.toml, or pass a URL on the CLI)"
+                    "nebraska.endpoint is not configured (set [nebraska].endpoint in trident-acl-agent.conf, or pass a URL on the CLI)"
                 )
             })?;
             let app_id = config.nebraska.app_id.clone();
-            // query_for_update() is a blocking call (reqwest::blocking under
-            // the hood, see omaha::send) - calling it directly from this
+            // check_nebraska_reachable() is a blocking call (reqwest::blocking
+            // under the hood, see omaha::send) - calling it directly from this
             // async fn can panic ("Cannot drop a runtime in a context where
             // blocking is not allowed") because reqwest::blocking spins up
             // its own inner Tokio runtime per call, which isn't safe to tear
             // down from inside an already-running async task. Run it on a
             // dedicated blocking thread instead.
+            //
+            // Deliberately uses check_nebraska_reachable() rather than
+            // query_for_update(): the latter also validates app-level
+            // semantics (app ID match, non-error app/update-check status),
+            // which would make this a "can we get a valid update check" test
+            // rather than the pure reachability check documented on
+            // ConnectionTarget::Nebraska above.
             let endpoint_for_task = endpoint.clone();
             tokio::task::spawn_blocking(move || {
-                query_for_update(
+                check_nebraska_reachable(
                     &endpoint_for_task,
                     &app_id,
                     DEFAULT_NEBRASKA_TRACK,
-                    &semver::Version::new(0, 0, 0),
                     IdSource::MachineIdHashed,
                 )
             })

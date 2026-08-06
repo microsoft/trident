@@ -108,6 +108,27 @@ pub async fn run_omaha_only(config: &config::AgentConfig) -> Result<(), anyhow::
     }
 }
 
+/// Checks that the Omaha/Nebraska server at `url` is reachable and speaking
+/// the Omaha protocol, without treating any app-level result (including a
+/// non-OK app/update-check status) as a failure. Unlike [`query_for_update`],
+/// this only fails on network/transport problems or a response that isn't
+/// well-formed Omaha XML -- it's meant for a pure "can we talk to this
+/// server at all" check (e.g. `--validate-connection nebraska`), not for
+/// deciding whether an update is available.
+pub fn check_nebraska_reachable(
+    url: &Url,
+    app_id: &str,
+    track: &str,
+    machine_id_source: IdSource,
+) -> Result<(), HarpoonError> {
+    let request = Request::default().with_app(
+        AppRequest::new(app_id, Version::new(0, 0, 0), track, machine_id_source)?
+            .with_update_check(),
+    );
+    omaha::send(url, &request)?;
+    Ok(())
+}
+
 /// Query the Omaha server at the given URL for the given app and track.
 pub fn query_for_update(
     url: &Url,
@@ -469,5 +490,52 @@ mod tests {
 
         omaha_mock.assert();
         assert!(matches!(response.result, QueryResult::NoUpdate));
+    }
+
+    #[test]
+    fn test_check_nebraska_reachable_succeeds_on_error_app_status() {
+        // check_nebraska_reachable() is meant to be a pure "can we reach
+        // this server and does it speak Omaha" check, unlike
+        // query_for_update() which also validates app-level semantics. A
+        // well-formed response with a non-OK app status should still count
+        // as "reachable" here, even though query_for_update() would reject
+        // the same response as a QueryError.
+        let mut server = mockito::Server::new();
+
+        let omaha_mock = server
+            .mock("POST", "/")
+            .with_status(200)
+            .match_body(Matcher::Regex(".*<updatecheck.*".to_string()))
+            .with_body(indoc::indoc! {r#"
+                <?xml version="1.0" encoding="UTF-8"?>
+                <response protocol="3.0" server="mock">
+                    <daystart elapsed_seconds="0"/>
+                    <app appid="test" status="error-unknownApplication">
+                        <updatecheck status="error-internal"><urls></urls></updatecheck>
+                    </app>
+                </response>"#})
+            .expect(2)
+            .create();
+
+        check_nebraska_reachable(
+            &Url::parse(&server.url()).unwrap(),
+            "test",
+            "track",
+            IdSource::MachineIdHashed,
+        )
+        .unwrap();
+
+        // Confirm the same response *would* be rejected by query_for_update(),
+        // to document the intentional behavior difference.
+        assert!(query_for_update(
+            &Url::parse(&server.url()).unwrap(),
+            "test",
+            "track",
+            &Version::new(0, 1, 0),
+            IdSource::MachineIdHashed,
+        )
+        .is_err());
+
+        omaha_mock.assert();
     }
 }
