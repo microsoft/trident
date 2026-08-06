@@ -41,16 +41,27 @@ pub enum K8sClientError {
 pub struct NodeClient {
     api: Api<Node>,
     poll_interval: std::time::Duration,
+    cluster_url: String,
 }
 
 impl NodeClient {
     pub async fn new(config: &KubernetesConfig) -> Result<Self, K8sClientError> {
         let client_config = load_client_config(config).await?;
+        let cluster_url = client_config.cluster_url.to_string();
         let client = Client::try_from(client_config).map_err(anyhow::Error::new)?;
         Ok(Self {
             api: Api::all(client),
             poll_interval: config.watch_poll_interval,
+            cluster_url,
         })
+    }
+
+    /// The API server URL this client actually connects to - resolved from
+    /// `kubernetes.kubeconfig`'s own server, unless overridden by
+    /// `kubernetes.api_server`. Useful for diagnostics/logging that want to
+    /// report the real effective server rather than guessing from config.
+    pub fn cluster_url(&self) -> &str {
+        &self.cluster_url
     }
 
     pub async fn get_node(&self, name: &str) -> Result<Node, K8sClientError> {
