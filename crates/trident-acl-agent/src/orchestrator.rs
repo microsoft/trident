@@ -29,7 +29,7 @@ use crate::{
     },
     config::AgentConfig,
     k8s::NodeClient,
-    nebraska::{CheckOutcome, Client as NebraskaClient},
+    nebraska::{CheckOutcome, Client as NebraskaClient, ProgressEvent},
     state::{PendingCommit, StateStore},
     trident::{CompletedResponse, TridentClient, TridentClientError},
     IdSource,
@@ -37,6 +37,47 @@ use crate::{
 
 const FINAL_STATUS_PATCH_RETRIES: usize = 3;
 const FINAL_STATUS_PATCH_BACKOFF: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// The machine-id source used for every Nebraska request this module makes,
+/// event reports included. Must match the source used by `handle_stage`'s
+/// initial `check_for_update` so all requests for a given node present the
+/// same instance identity to Nebraska.
+const NEBRASKA_MACHINE_ID_SOURCE: IdSource = IdSource::MachineIdHashed;
+
+/// A single Nebraska event report to send, decoupled from the async
+/// machinery that sends it (see `Orchestrator::report_nebraska_event`) so
+/// the "what to report" decision can be made by plain, unit-testable
+/// functions (`stage_nebraska_report`, `finalize_nebraska_report`,
+/// `commit_nebraska_report` below).
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum NebraskaReport {
+    /// An in-flight progress event; see `nebraska::ProgressEvent`. Sending
+    /// one commits the instance to eventually reporting a terminal event
+    /// (`Completed` or `Failed`) too.
+    Progress {
+        version: Version,
+        event: ProgressEvent,
+    },
+    /// The terminal "success" event, sent after a reboot onto the new
+    /// version.
+    Completed { previous: Version, current: Version },
+    /// The terminal "failure" event. Clears Nebraska's `update_in_progress`
+    /// for the instance so a later check can grant an update again -
+    /// required to avoid permanently wedging the instance after a progress
+    /// event was already sent.
+    Failed { previous: Version, current: Version },
+}
+
+impl NebraskaReport {
+    /// A short label for logging.
+    fn label(&self) -> &'static str {
+        match self {
+            NebraskaReport::Progress { event, .. } => event.label(),
+            NebraskaReport::Completed { .. } => "completed",
+            NebraskaReport::Failed { .. } => "failed",
+        }
+    }
+}
 
 #[derive(Clone, Default)]
 pub struct SystemRebooter;
@@ -351,6 +392,24 @@ where
             return Ok(());
         }
 
+        // The instance's currently-running version, used for every Nebraska
+        // event report below (progress events always carry the version the
+        // instance is *currently* on - it doesn't change until after the
+        // post-reboot commit). `None` here just means the report is skipped
+        // (see parse_nebraska_version); it never blocks staging itself.
+        let current_ver = parse_nebraska_version(&from_version, "stage");
+        if let Some(ref v) = current_ver {
+            // Sending this commits the instance to eventually reporting a
+            // terminal event too - see the Failed report on the error path
+            // below, and Installed/Failed in handle_finalize for the rest of
+            // the commitment.
+            self.report_nebraska_event(NebraskaReport::Progress {
+                version: v.clone(),
+                event: ProgressEvent::DownloadStarted,
+            })
+            .await;
+        }
+
         let mut client = TridentClient::connect(&self.config.trident.socket).await?;
         // The nebraska client module does not parse the package hash out of
         // the Omaha manifest (see nebraska::wire::Package) - integrity of
@@ -363,6 +422,10 @@ where
                 self.config.orchestration.stage_timeout,
             )
             .await;
+        if let Some(ref v) = current_ver {
+            self.report_nebraska_event(stage_nebraska_report(v, &result))
+                .await;
+        }
         let status = stage_result_to_status(&request, from_version, to_version, started, result);
         self.record_and_publish(status).await
     }
@@ -458,11 +521,26 @@ where
             to_version: to_version.clone(),
             started_utc: started,
         })?;
+        // The version the instance is *currently* running - unchanged by
+        // finalize itself; only the post-reboot commit moves it to
+        // `to_version`. See handle_stage for why a report is simply skipped
+        // (not fatal) when this doesn't parse.
+        let current_ver = parse_nebraska_version(&from_version, "finalize");
         let mut client = TridentClient::connect(&self.config.trident.socket).await?;
-        match client
+        let result = client
             .update_finalize(self.config.orchestration.finalize_timeout)
-            .await
-        {
+            .await;
+        if let Some(ref v) = current_ver {
+            // On success this is the "Installed" progress event (the new
+            // slot is now armed for the next boot); on failure it's a
+            // terminal Failed, releasing any wedge from stage's earlier
+            // progress events. Installed itself is discharged by a terminal
+            // event from the post-reboot commit path (see
+            // resume_pending_commit) or by the reboot-failure branch below.
+            self.report_nebraska_event(finalize_nebraska_report(v, &result))
+                .await;
+        }
+        match result {
             Ok(_) => {
                 let terminal = finalize_success_status(
                     &request,
@@ -487,6 +565,17 @@ where
                     Ok(()) => Ok(LoopControl::ExitForReboot),
                     Err(err) => {
                         self.state.clear_pending_commit()?;
+                        // Nebraska thinks Installed was already reported but
+                        // no reboot (and therefore no commit) will actually
+                        // happen - release the wedge so a later retry can be
+                        // granted again.
+                        if let Some(ref v) = current_ver {
+                            self.report_nebraska_event(NebraskaReport::Failed {
+                                previous: v.clone(),
+                                current: v.clone(),
+                            })
+                            .await;
+                        }
                         let status = UpdateStatus::new(
                             &request,
                             Operation::Finalize,
@@ -671,6 +760,18 @@ where
         let result = client
             .commit(self.config.orchestration.finalize_timeout)
             .await;
+        // Rollback isn't a Nebraska-tracked update (no offer was ever
+        // accepted from Nebraska for it), so only report for Finalize's
+        // post-reboot commit.
+        if pending.operation == Operation::Finalize {
+            if let (Some(previous), Some(current)) = (
+                parse_nebraska_version(&pending.from_version, "post-reboot commit"),
+                parse_nebraska_version(&pending.to_version, "post-reboot commit"),
+            ) {
+                self.report_nebraska_event(commit_nebraska_report(&previous, &current, &result))
+                    .await;
+            }
+        }
         let status = self.map_commit_result(&pending, result);
         self.state.clear_pending_commit()?;
         self.record_and_publish(status).await
@@ -726,6 +827,19 @@ where
         let result = client
             .commit(self.config.orchestration.finalize_timeout)
             .await;
+        // Same rationale as resume_pending_commit: only Finalize is a
+        // Nebraska-tracked update; this degraded path is only reached for
+        // Finalize|Rollback (reconstruct_precheck_status above), so
+        // Rollback is implicitly excluded here too.
+        if matches!(request.operation, RequestedOperation::Finalize) {
+            if let (Some(previous), Some(current)) = (
+                parse_nebraska_version(&from_version, "reconstructed post-reboot commit"),
+                parse_nebraska_version(&request.target_version, "reconstructed post-reboot commit"),
+            ) {
+                self.report_nebraska_event(commit_nebraska_report(&previous, &current, &result))
+                    .await;
+            }
+        }
         reconstruct_commit_result_to_status(request, from_version, started, result)
     }
 
@@ -772,6 +886,90 @@ where
                 return;
             }
             tokio::time::sleep(FINAL_STATUS_PATCH_BACKOFF).await;
+        }
+    }
+
+    /// Sends a single Nebraska event report, logging (but never
+    /// propagating) failure.
+    ///
+    /// This is deliberately best-effort: per the `nebraska` module's own
+    /// docs, an instance that sends **no** events at all is always safe
+    /// (Nebraska self-heals to Complete on the instance's next check at the
+    /// new version), so a failed report here must never fail - or even
+    /// delay past its own retries - the underlying Trident operation it
+    /// describes. `complete_after_reboot` reports already retry internally
+    /// (see `nebraska::Client::complete_after_reboot`); everything else is a
+    /// single attempt, on the theory that the next stage/finalize/commit
+    /// step (or self-heal) will re-establish correct Nebraska state anyway.
+    ///
+    /// Runs on a dedicated blocking thread: the nebraska client's
+    /// `reqwest::blocking`-based transport cannot safely be dropped from
+    /// inside an already-running async task (see the same rationale on
+    /// `handle_stage`'s `check_for_update` call).
+    async fn report_nebraska_event(&self, report: NebraskaReport) {
+        let Some(endpoint) = self.config.nebraska.endpoint.clone() else {
+            // Should not happen in practice: every call site only reaches
+            // here after handle_stage has already required an endpoint for
+            // this node update. Guard anyway since this is best-effort
+            // telemetry, not something worth panicking over.
+            log::warn!(
+                "skipping Nebraska '{}' report: no Nebraska endpoint configured",
+                report.label()
+            );
+            return;
+        };
+        let app_id = self.config.nebraska.app_id.clone();
+        let track = self.config.nebraska.track.clone();
+        let machine_id = match crate::build_machine_id(NEBRASKA_MACHINE_ID_SOURCE) {
+            Ok(id) => id,
+            Err(err) => {
+                log::warn!(
+                    "skipping Nebraska '{}' report: failed to build machine id: {err}",
+                    report.label()
+                );
+                return;
+            }
+        };
+        let label = report.label();
+        let result = tokio::task::spawn_blocking(move || {
+            let client = NebraskaClient::new(endpoint, app_id, track, machine_id);
+            match report {
+                NebraskaReport::Progress { version, event } => {
+                    client.report_progress(&version, event)
+                }
+                NebraskaReport::Completed { previous, current } => client
+                    .complete_after_reboot(&previous, &current)
+                    .map(|_| ()),
+                NebraskaReport::Failed { previous, current } => {
+                    client.report_failure(&previous, &current)
+                }
+            }
+        })
+        .await;
+        match result {
+            Ok(Ok(())) => log::debug!("reported Nebraska '{label}' event"),
+            Ok(Err(err)) => log::warn!("Nebraska '{label}' event report failed: {err}"),
+            Err(err) => log::warn!("Nebraska '{label}' event report task panicked: {err}"),
+        }
+    }
+}
+
+/// Parses `version` (e.g. an `UpdateStatus::from_version`/`to_version`
+/// field) as a semver [`Version`] for use in a Nebraska event report,
+/// logging and returning `None` rather than failing if it's absent or not
+/// valid semver. Nebraska event reporting is best-effort telemetry (see
+/// `Orchestrator::report_nebraska_event`), so a malformed/missing version
+/// string must only skip the report, never the Trident operation it
+/// describes.
+fn parse_nebraska_version(version: &Option<String>, context: &str) -> Option<Version> {
+    let raw = version.as_deref()?;
+    match Version::parse(raw) {
+        Ok(v) => Some(v),
+        Err(err) => {
+            log::warn!(
+                "skipping Nebraska event report for {context}: {raw:?} is not valid semver: {err}"
+            );
+            None
         }
     }
 }
@@ -843,6 +1041,85 @@ impl Snapshot {
 enum LoopControl {
     Continue,
     ExitForReboot,
+}
+
+/// Decides which Nebraska event a stage() result should produce, given the
+/// instance's currently-running version (which - for stage - is the same
+/// version on both success and failure; only the post-reboot commit ever
+/// changes it). Pure function - see `stage_result_to_status` for rationale.
+fn stage_nebraska_report(
+    current_version: &Version,
+    result: &Result<CompletedResponse, TridentClientError>,
+) -> NebraskaReport {
+    match result {
+        Ok(_) => NebraskaReport::Progress {
+            version: current_version.clone(),
+            event: ProgressEvent::DownloadFinished,
+        },
+        Err(_) => NebraskaReport::Failed {
+            previous: current_version.clone(),
+            current: current_version.clone(),
+        },
+    }
+}
+
+/// Decides which Nebraska event a finalize() result should produce. Pure
+/// function - see `stage_result_to_status` for rationale. (Used at the
+/// finalize *RPC* call site only; the `Installed` progress event for a
+/// success is sent directly at the call site since it doesn't depend on the
+/// result shape.)
+fn finalize_nebraska_report(
+    current_version: &Version,
+    result: &Result<CompletedResponse, TridentClientError>,
+) -> NebraskaReport {
+    match result {
+        Ok(_) => NebraskaReport::Progress {
+            version: current_version.clone(),
+            event: ProgressEvent::Installed,
+        },
+        Err(_) => NebraskaReport::Failed {
+            previous: current_version.clone(),
+            current: current_version.clone(),
+        },
+    }
+}
+
+/// Decides which Nebraska event a post-reboot commit() result should
+/// produce, discharging the commitment made by the progress events sent
+/// during stage/finalize. Pure function - see `stage_result_to_status` for
+/// rationale.
+///
+/// - A clean commit success reports `Completed`, moving the instance to the
+///   new version.
+/// - A commit asking for *another* reboot is not a state Nebraska has any
+///   representation for; treat it as not-yet-complete and report `Failed`
+///   (previous == current, since the instance is still effectively on the
+///   old version from Nebraska's point of view) so a later check can grant
+///   again rather than leaving the instance wedged in progress forever.
+/// - A commit result indicating the update was reverted (health/reboot
+///   check failure) or any other failure both report `Failed` for the same
+///   reason: the instance did not end up on the new version.
+fn commit_nebraska_report(
+    previous_version: &Version,
+    new_version: &Version,
+    result: &Result<CompletedResponse, TridentClientError>,
+) -> NebraskaReport {
+    match result {
+        Ok(response) if response.reboot_status == RebootStatus::RebootRequired => {
+            NebraskaReport::Failed {
+                previous: previous_version.clone(),
+                current: previous_version.clone(),
+            }
+        }
+        Ok(_) => NebraskaReport::Completed {
+            previous: previous_version.clone(),
+            current: new_version.clone(),
+        },
+        Err(_) => NebraskaReport::Failed {
+            previous: previous_version.clone(),
+            current: previous_version.clone(),
+        },
+    }
 }
 
 /// Maps a stage() result to the terminal `UpdateStatus` for that stage
@@ -1425,6 +1702,64 @@ mod tests {
         assert!(status.message.contains("disk full"));
     }
 
+    #[tokio::test]
+    async fn stage_nebraska_report_success_is_download_finished() {
+        let config = Arc::new(Mutex::new(MockTridentdConfig {
+            stage: Some(Outcome::Success {
+                reboot_status: RebootStatus::RebootNotRequired,
+                servicing_kind: None,
+            }),
+            ..Default::default()
+        }));
+        let mut client = connect_mock_client(config).await;
+        let result = client
+            .update_stage(
+                &"http://example.test/image".parse().unwrap(),
+                None,
+                std::time::Duration::from_secs(5),
+            )
+            .await;
+
+        let version = semver::Version::new(1, 0, 0);
+        let report = stage_nebraska_report(&version, &result);
+        assert_eq!(
+            report,
+            NebraskaReport::Progress {
+                version,
+                event: ProgressEvent::DownloadFinished,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn stage_nebraska_report_failure_releases_wedge() {
+        let config = Arc::new(Mutex::new(MockTridentdConfig {
+            stage: Some(Outcome::Failure {
+                subkind: "some-stage-error",
+                message: "disk full",
+            }),
+            ..Default::default()
+        }));
+        let mut client = connect_mock_client(config).await;
+        let result = client
+            .update_stage(
+                &"http://example.test/image".parse().unwrap(),
+                None,
+                std::time::Duration::from_secs(5),
+            )
+            .await;
+
+        let version = semver::Version::new(1, 0, 0);
+        let report = stage_nebraska_report(&version, &result);
+        assert_eq!(
+            report,
+            NebraskaReport::Failed {
+                previous: version.clone(),
+                current: version,
+            }
+        );
+    }
+
     // --- finalize ---
 
     #[tokio::test]
@@ -1493,6 +1828,56 @@ mod tests {
         );
 
         assert_eq!(status.code, StatusCode::RevertedToPrevious);
+    }
+
+    #[tokio::test]
+    async fn finalize_nebraska_report_success_is_installed() {
+        let config = Arc::new(Mutex::new(MockTridentdConfig {
+            finalize: Some(Outcome::Success {
+                reboot_status: RebootStatus::RebootRequired,
+                servicing_kind: None,
+            }),
+            ..Default::default()
+        }));
+        let mut client = connect_mock_client(config).await;
+        let result = client
+            .update_finalize(std::time::Duration::from_secs(5))
+            .await;
+
+        let version = semver::Version::new(1, 0, 0);
+        let report = finalize_nebraska_report(&version, &result);
+        assert_eq!(
+            report,
+            NebraskaReport::Progress {
+                version,
+                event: ProgressEvent::Installed,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn finalize_nebraska_report_failure_releases_wedge() {
+        let config = Arc::new(Mutex::new(MockTridentdConfig {
+            finalize: Some(Outcome::Failure {
+                subkind: "some-finalize-error",
+                message: "partition swap failed",
+            }),
+            ..Default::default()
+        }));
+        let mut client = connect_mock_client(config).await;
+        let result = client
+            .update_finalize(std::time::Duration::from_secs(5))
+            .await;
+
+        let version = semver::Version::new(1, 0, 0);
+        let report = finalize_nebraska_report(&version, &result);
+        assert_eq!(
+            report,
+            NebraskaReport::Failed {
+                previous: version.clone(),
+                current: version,
+            }
+        );
     }
 
     // --- commit ---
@@ -1583,6 +1968,76 @@ mod tests {
         let status = commit_result_to_status(&pending(Operation::Finalize), result);
 
         assert_eq!(status.code, StatusCode::RevertedToPrevious);
+    }
+
+    #[tokio::test]
+    async fn commit_nebraska_report_success_is_completed_with_new_version() {
+        let config = Arc::new(Mutex::new(MockTridentdConfig {
+            commit: Some(Outcome::Success {
+                reboot_status: RebootStatus::RebootNotRequired,
+                servicing_kind: None,
+            }),
+            ..Default::default()
+        }));
+        let mut client = connect_mock_client(config).await;
+        let result = client.commit(std::time::Duration::from_secs(5)).await;
+
+        let previous = semver::Version::new(1, 0, 0);
+        let current = semver::Version::new(2, 0, 0);
+        let report = commit_nebraska_report(&previous, &current, &result);
+        assert_eq!(report, NebraskaReport::Completed { previous, current });
+    }
+
+    #[tokio::test]
+    async fn commit_nebraska_report_reboot_required_reports_failed_not_completed() {
+        // A commit asking for another reboot is not really "complete" from
+        // Nebraska's point of view: the instance hasn't landed on the new
+        // version, so this must not report Completed (which would tell
+        // Nebraska the fleet's instance count moved when it hasn't).
+        let config = Arc::new(Mutex::new(MockTridentdConfig {
+            commit: Some(Outcome::Success {
+                reboot_status: RebootStatus::RebootRequired,
+                servicing_kind: None,
+            }),
+            ..Default::default()
+        }));
+        let mut client = connect_mock_client(config).await;
+        let result = client.commit(std::time::Duration::from_secs(5)).await;
+
+        let previous = semver::Version::new(1, 0, 0);
+        let current = semver::Version::new(2, 0, 0);
+        let report = commit_nebraska_report(&previous, &current, &result);
+        assert_eq!(
+            report,
+            NebraskaReport::Failed {
+                previous: previous.clone(),
+                current: previous,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn commit_nebraska_report_reverted_reports_failed() {
+        let config = Arc::new(Mutex::new(MockTridentdConfig {
+            commit: Some(Outcome::Failure {
+                subkind: "ab-update-reboot-check",
+                message: "boot did not land on target partition",
+            }),
+            ..Default::default()
+        }));
+        let mut client = connect_mock_client(config).await;
+        let result = client.commit(std::time::Duration::from_secs(5)).await;
+
+        let previous = semver::Version::new(1, 0, 0);
+        let current = semver::Version::new(2, 0, 0);
+        let report = commit_nebraska_report(&previous, &current, &result);
+        assert_eq!(
+            report,
+            NebraskaReport::Failed {
+                previous: previous.clone(),
+                current: previous,
+            }
+        );
     }
 
     // --- reconstruct_without_state (state.json missing after reboot) ---
@@ -1717,6 +2172,29 @@ mod tests {
         assert_eq!(
             status.operation_id,
             commit_operation_id(&request.operation_id)
+        );
+    }
+
+    // --- parse_nebraska_version ---
+
+    #[test]
+    fn parse_nebraska_version_parses_valid_semver() {
+        assert_eq!(
+            parse_nebraska_version(&Some("1.2.3".to_string()), "test"),
+            Some(semver::Version::new(1, 2, 3))
+        );
+    }
+
+    #[test]
+    fn parse_nebraska_version_returns_none_for_missing_version() {
+        assert_eq!(parse_nebraska_version(&None, "test"), None);
+    }
+
+    #[test]
+    fn parse_nebraska_version_returns_none_for_invalid_semver() {
+        assert_eq!(
+            parse_nebraska_version(&Some("not-a-version".to_string()), "test"),
+            None
         );
     }
 }
