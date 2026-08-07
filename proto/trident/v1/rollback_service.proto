@@ -1,0 +1,57 @@
+// Proto file defining the stable RollbackService and related messages.
+//
+// This is the stable (v1) subset of the rollback contract: Rollback,
+// RollbackStage, and RollbackFinalize, the operations trident-acl-agent
+// depends on for AB-update rollback. CheckRollback, GetRollbackChain, and
+// GetRollbackTarget remain in trident.v1preview (see rollback_service.proto
+// there). CheckRollback was briefly promoted here but was demoted back to
+// preview once RollbackStage/RollbackFinalize/Rollback started reporting
+// ServicingKind::NoneRequired for a no-op (same as every other servicing
+// RPC), which removed trident-acl-agent's only reason to call it - see
+// ServicingResponse.servicing_kind in servicing.proto.
+
+syntax = "proto3";
+
+package trident.v1;
+
+import "trident/v1/servicing.proto";
+
+// RollbackService provides methods for performing OS rollbacks.
+service RollbackService {
+  // Rollback performs a rollback.
+  rpc Rollback(RollbackRequest) returns (stream ServicingResponse);
+
+  // RollbackStage performs the stage operation of a rollback.
+  rpc RollbackStage(RollbackStageRequest) returns (stream ServicingResponse);
+
+  // RollbackFinalize performs the finalize operation of a rollback.
+  rpc RollbackFinalize(RollbackFinalizeRequest) returns (stream ServicingResponse);
+}
+
+enum ManualRollbackKind {
+  MANUAL_ROLLBACK_KIND_UNSPECIFIED = 0;
+  // No specific rollback kind was requested
+  ANY_ROLLBACK_REQUESTED = 1;
+  // Rollback of an A/B update was requested
+  AB_ROLLBACK_REQUESTED = 2;
+  // Rollback of a runtime update was requested
+  RUNTIME_ROLLBACK_REQUESTED = 3;
+}
+
+message RollbackRequest {
+  // The rollback kind parameter for the servicing operation.
+  ManualRollbackKind kind = 1;
+
+  // Reboot management configuration for the rollback operation.
+  RollbackFinalizeRequest finalize = 2;
+}
+
+message RollbackStageRequest {
+  // The rollback kind parameter for the servicing operation.
+  ManualRollbackKind kind = 1;
+}
+
+message RollbackFinalizeRequest {
+  // Reboot management configuration for the rollback operation.
+  RebootManagement reboot = 1;
+}
