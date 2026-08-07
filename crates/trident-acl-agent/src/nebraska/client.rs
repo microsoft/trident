@@ -33,7 +33,8 @@ pub enum CheckOutcome {
     UpdateInProgress,
 }
 
-/// An offered update: the version and the fully-resolved package URL.
+/// An offered update: the version, the fully-resolved package URL, and the
+/// package's hash and size as reported by Nebraska.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpdateOffer {
     /// The version being offered.
@@ -42,6 +43,34 @@ pub struct UpdateOffer {
     /// The absolute URL of the update package, resolved by joining the
     /// response's `codebase` with the package `name`.
     pub package_url: Url,
+
+    /// The hash of the package *file* as reported by Nebraska.
+    ///
+    /// **This is a hash of the package file, not of any content inside it.**
+    /// Nebraska's `hash` attribute is a base64-encoded SHA-1 of the file (with
+    /// an optional SHA-256). It is provided for integrity checking of the
+    /// downloaded artifact; note in particular that it is **not** the same as a
+    /// hash of a manifest or other content embedded within the package, so it
+    /// cannot be used where such an inner hash is required. `None` if the
+    /// response carried no hash.
+    pub package_hash: Option<PackageHash>,
+
+    /// The package size in bytes, as reported by Nebraska, if present.
+    pub package_size: Option<u64>,
+}
+
+/// The hash(es) of an update package file, as reported by Nebraska.
+///
+/// Both values are base64-encoded and hash the package *file* (not its
+/// contents). Nebraska always populates the SHA-1 `sha1` field; `sha256` is
+/// present only when the package was registered with one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageHash {
+    /// Base64-encoded SHA-1 of the package file.
+    pub sha1: String,
+
+    /// Base64-encoded SHA-256 of the package file, when Nebraska provides it.
+    pub sha256: Option<String>,
 }
 
 /// The bounded exponential-backoff policy used by
@@ -429,9 +458,20 @@ impl<T: Transport> Client<T> {
             ))
         })?;
 
+        let package_hash = package.hash.as_ref().map(|sha1| PackageHash {
+            sha1: sha1.clone(),
+            sha256: package.hash_sha256.clone(),
+        });
+
+        // Size is a string on the wire; surface it as a number when it parses,
+        // and treat an unparseable size as absent rather than failing the offer.
+        let package_size = package.size.as_ref().and_then(|s| s.parse::<u64>().ok());
+
         Ok(UpdateOffer {
             version,
             package_url,
+            package_hash,
+            package_size,
         })
     }
 }
@@ -482,7 +522,7 @@ mod tests {
             <updatecheck status="ok">
               <urls><url codebase="https://updates.example.com/"/></urls>
               <manifest version="2.0.0">
-                <packages><package name="os-image-2.0.0.cosi" size="1" required="true"/></packages>
+                <packages><package name="os-image-2.0.0.cosi" hash="AAAAAAAAAAAAAAAAAAAAAAAAAAA=" size="1024" required="true"/></packages>
               </manifest>
             </updatecheck>
           </app>
@@ -499,8 +539,30 @@ mod tests {
                     offer.package_url.as_str(),
                     "https://updates.example.com/os-image-2.0.0.cosi"
                 );
+                assert_eq!(
+                    offer.package_hash,
+                    Some(PackageHash {
+                        sha1: "AAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_string(),
+                        sha256: None,
+                    })
+                );
+                assert_eq!(offer.package_size, Some(1024));
             }
             other => panic!("expected an update offer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn check_offer_without_hash_is_none() {
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/"/></urls><manifest version="2.0.0"><packages><package name="x.cosi" required="true"/></packages></manifest></updatecheck></app></response>"#,
+        );
+        match client.check_for_update(&Version::new(1, 0, 0)).unwrap() {
+            CheckOutcome::UpdateAvailable(offer) => {
+                assert_eq!(offer.package_hash, None);
+                assert_eq!(offer.package_size, None);
+            }
+            other => panic!("expected an offer, got {other:?}"),
         }
     }
 

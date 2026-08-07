@@ -288,6 +288,19 @@ pub(super) struct Packages {
 pub(super) struct Package {
     #[serde(rename = "@name")]
     pub(super) name: String,
+
+    /// The package hash as sent by Nebraska: base64-encoded SHA-1 of the package
+    /// *file*. Optional because not every response carries it.
+    #[serde(default, rename = "@hash")]
+    pub(super) hash: Option<String>,
+
+    /// The optional SHA-256 package hash, base64-encoded, when present.
+    #[serde(default, rename = "@hash_sha256")]
+    pub(super) hash_sha256: Option<String>,
+
+    /// The package size in bytes, as a string in the wire format.
+    #[serde(default, rename = "@size")]
+    pub(super) size: Option<String>,
 }
 
 /// Parses a Nebraska response body.
@@ -425,17 +438,17 @@ mod tests {
             uc.urls.as_ref().unwrap().urls[0].codebase.as_str(),
             "https://updates.example.com/"
         );
-        assert_eq!(
-            uc.manifest
-                .as_ref()
-                .unwrap()
-                .packages
-                .as_ref()
-                .unwrap()
-                .packages[0]
-                .name,
-            "os-image-2.0.0.cosi"
-        );
+        let pkg = &uc
+            .manifest
+            .as_ref()
+            .unwrap()
+            .packages
+            .as_ref()
+            .unwrap()
+            .packages[0];
+        assert_eq!(pkg.name, "os-image-2.0.0.cosi");
+        assert_eq!(pkg.hash.as_deref(), Some("AAAAAAAAAAAAAAAAAAAAAAAAAAA="));
+        assert_eq!(pkg.size.as_deref(), Some("368420864"));
     }
 
     #[test]
