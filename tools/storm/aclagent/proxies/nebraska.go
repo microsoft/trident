@@ -70,9 +70,26 @@ type NebraskaProxy struct {
 	Scenario *NebraskaScenario
 
 	containerID string
+	dbURL       string
 	api         *api.API
 	handler     *omaha.Handler
 	appID       string
+}
+
+// ExpectedUpdateStatusSequence is the ordered sequence of Nebraska instance
+// statuses trident-acl-agent's real update flow is expected to drive the
+// seeded instance through end-to-end: GetUpdatePackage grants the update
+// (UpdateGranted) on the first check, stage reports DownloadStarted/
+// DownloadFinished (Downloading/Downloaded), finalize reports Installed
+// (Installed), and the post-reboot commit reports the terminal Completed
+// event (Complete). Pass to ValidateStatusHistory after a full run-ab-update
+// scenario completes.
+var ExpectedUpdateStatusSequence = []int{
+	api.InstanceStatusUpdateGranted,
+	api.InstanceStatusDownloading,
+	api.InstanceStatusDownloaded,
+	api.InstanceStatusInstalled,
+	api.InstanceStatusComplete,
 }
 
 // AppID returns the DB-generated application ID trident-acl-agent must be
@@ -116,6 +133,7 @@ func (p *NebraskaProxy) ListenAndServe(ctx context.Context, listenAddr string) (
 		return nil, fmt.Errorf("failed to start ephemeral Postgres for Nebraska: %w", err)
 	}
 	p.containerID = containerID
+	p.dbURL = dbURL
 
 	// api.New only reads NEBRASKA_DB_URL from the environment - there is no
 	// functional option to set a custom DSN - so this is the only way to
@@ -229,6 +247,99 @@ func (p *NebraskaProxy) seed() error {
 	}
 
 	return nil
+}
+
+// StatusHistory returns every status the seeded application's instance(s)
+// have transitioned through, in chronological order, read directly from
+// Nebraska's instance_status_history table. There's no dbreads query for
+// "history across all instances of an app" (only a single-instance one that
+// takes an instance ID, which storm doesn't predict - it's derived from
+// hashing the VM's /etc/machine-id, see crates/trident-acl-agent/src/lib.rs),
+// so this queries the table by application_id directly instead, using a
+// fresh connection to the same ephemeral Postgres container ListenAndServe
+// started.
+func (p *NebraskaProxy) StatusHistory() ([]int, error) {
+	db, err := sql.Open("pgx", p.dbURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open Nebraska db for status history query: %w", err)
+	}
+	defer db.Close()
+
+	rows, err := db.Query(
+		`select status from instance_status_history where application_id = $1 order by created_ts asc, id asc`,
+		p.appID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query instance_status_history: %w", err)
+	}
+	defer rows.Close()
+
+	var statuses []int
+	for rows.Next() {
+		var status int
+		if err := rows.Scan(&status); err != nil {
+			return nil, fmt.Errorf("failed to scan instance_status_history row: %w", err)
+		}
+		statuses = append(statuses, status)
+	}
+	return statuses, rows.Err()
+}
+
+// ValidateStatusHistory asserts that the seeded application's real Nebraska
+// instance_status_history exactly matches want, in order. Nebraska only ever
+// appends a new history row when an instance's status actually changes (see
+// updateInstanceData in the vendored api package), so this is a stable,
+// duplicate-free ordering to assert against - it fails if trident-acl-agent
+// skips a status transition, reports one out of order, or a status update
+// silently gets rejected/ignored by Nebraska (e.g. sent while no update is
+// in progress).
+func (p *NebraskaProxy) ValidateStatusHistory(want []int) error {
+	got, err := p.StatusHistory()
+	if err != nil {
+		return fmt.Errorf("failed to validate Nebraska instance status history: %w", err)
+	}
+	if len(got) != len(want) {
+		return fmt.Errorf("unexpected Nebraska instance status history: want %s, got %s", formatStatuses(want), formatStatuses(got))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			return fmt.Errorf("unexpected Nebraska instance status history: want %s, got %s", formatStatuses(want), formatStatuses(got))
+		}
+	}
+	return nil
+}
+
+// statusName renders a Nebraska instance status int using its api.InstanceStatus*
+// name, for readable ValidateStatusHistory error messages.
+func statusName(status int) string {
+	switch status {
+	case api.InstanceStatusUndefined:
+		return "Undefined"
+	case api.InstanceStatusUpdateGranted:
+		return "UpdateGranted"
+	case api.InstanceStatusError:
+		return "Error"
+	case api.InstanceStatusComplete:
+		return "Complete"
+	case api.InstanceStatusInstalled:
+		return "Installed"
+	case api.InstanceStatusDownloaded:
+		return "Downloaded"
+	case api.InstanceStatusDownloading:
+		return "Downloading"
+	case api.InstanceStatusOnHold:
+		return "OnHold"
+	default:
+		return fmt.Sprintf("Unknown(%d)", status)
+	}
+}
+
+func formatStatuses(statuses []int) string {
+	names := make([]string, len(statuses))
+	for i, s := range statuses {
+		names[i] = statusName(s)
+	}
+	return "[" + strings.Join(names, " -> ") + "]"
 }
 
 // startEphemeralPostgres starts a disposable Postgres container for this

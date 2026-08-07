@@ -282,6 +282,17 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
 		return fmt.Errorf("final status annotation missing")
 	}
+
+	// The node annotation only proves the ACL-agent-facing rollout API
+	// reported success; it says nothing about whether trident-acl-agent
+	// actually drove Nebraska's own instance state machine correctly. Assert
+	// that too, against the real Nebraska instance_status_history this
+	// scenario's seeded application accumulated over stage/finalize/commit.
+	if err := nebraska.ValidateStatusHistory(stormproxies.ExpectedUpdateStatusSequence); err != nil {
+		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
+		return fmt.Errorf("ACL agent scenario failed Nebraska status validation: %w", err)
+	}
+
 	return collectAclArtifacts(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
 }
 
