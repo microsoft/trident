@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 )
@@ -31,8 +32,39 @@ func LoadNebraskaScenario(path string) (*NebraskaScenario, error) {
 	return &scenario, nil
 }
 
+// instanceState is this fake server's per-machineid memory of an in-flight
+// update, mirroring (in miniature) the piece of real Nebraska's instance
+// state machine that trident-acl-agent's nebraska client actually depends
+// on: once a progress event (Downloading/Downloaded/Installed) is received
+// for a machineid, every update check for that machineid reports
+// "error-updateInProgressOnInstance" until a terminal event (Complete or
+// Error) is received. This is deliberately not a full re-implementation of
+// Nebraska's state machine (no groups/channels/rollout rules, no other
+// statuses) - just enough to exercise the request/response shapes
+// trident-acl-agent's nebraska client actually sends and reads.
+type instanceState struct {
+	updateInProgress bool
+}
+
 type NebraskaProxy struct {
 	Scenario *NebraskaScenario
+
+	mu        sync.Mutex
+	instances map[string]*instanceState
+}
+
+// instanceFor returns (creating if necessary) the tracked state for
+// machineID. Must be called with p.mu held.
+func (p *NebraskaProxy) instanceFor(machineID string) *instanceState {
+	if p.instances == nil {
+		p.instances = make(map[string]*instanceState)
+	}
+	inst, ok := p.instances[machineID]
+	if !ok {
+		inst = &instanceState{}
+		p.instances[machineID] = inst
+	}
+	return inst
 }
 
 func (p *NebraskaProxy) Handler() http.Handler {
@@ -47,11 +79,15 @@ func (p *NebraskaProxy) Handler() http.Handler {
 			http.Error(w, fmt.Sprintf("failed to parse Omaha request: %v", err), http.StatusBadRequest)
 			return
 		}
-		appID := "test"
-		if len(request.Apps) > 0 && request.Apps[0].AppID != "" {
-			appID = request.Apps[0].AppID
+		reqApp := omahaRequestApp{AppID: "test"}
+		if len(request.Apps) > 0 {
+			reqApp = request.Apps[0]
+			if reqApp.AppID == "" {
+				reqApp.AppID = "test"
+			}
 		}
-		response, err := p.Scenario.BuildResponse(appID)
+
+		response, err := p.buildResponse(reqApp)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -75,32 +111,59 @@ func (p *NebraskaProxy) ListenAndServe(ctx context.Context, listenAddr string) (
 	return listener, nil
 }
 
-func (s *NebraskaScenario) BuildResponse(appID string) ([]byte, error) {
-	response := omahaResponse{XMLName: xml.Name{Local: "response"}, Protocol: "3.0", Server: "tester", Daystart: daystart{ElapsedSeconds: 0}, Apps: []omahaApp{{AppID: appID, Status: "ok"}}}
-	if !s.Available {
-		response.Apps[0].UpdateCheck = &updateCheck{Status: "noupdate"}
-	} else {
-		version := s.Version
-		if version == "" {
-			version = "1.0.0"
+// buildResponse handles a single parsed <app>: acknowledges any events
+// (updating this machineid's tracked in-progress state per their whitelisted
+// eventtype/eventresult pair, in the same order real Nebraska processes them
+// - events before the update check, within one request/response) and then,
+// if the request carried an <updatecheck>, answers it either with
+// "error-updateInProgressOnInstance" (if an update is still in flight for
+// this machineid) or the configured scenario's offer/noupdate.
+func (p *NebraskaProxy) buildResponse(reqApp omahaRequestApp) ([]byte, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	inst := p.instanceFor(reqApp.MachineID)
+
+	var eventAcks []eventAck
+	for _, event := range reqApp.Events {
+		// Nebraska acks every whitelisted event with status="ok" regardless
+		// of which pair it is (see nebraska::event's module docs on the
+		// client side) - it never reports an event as rejected over the
+		// wire, even for a pair it silently discards. This fake only
+		// receives events trident-acl-agent's client actually sends
+		// (already whitelisted client-side), so unconditionally acking is
+		// faithful enough here.
+		eventAcks = append(eventAcks, eventAck{Status: "ok"})
+
+		switch {
+		case event.EventType == 3:
+			// Terminal event (any of the three whitelisted eventresults):
+			// clears update_in_progress and re-arms the instance so a
+			// subsequent check can grant again.
+			inst.updateInProgress = false
+		case event.EventType == 13 || event.EventType == 14 || event.EventType == 800:
+			// Progress event (Downloading/Downloaded/Installed): marks the
+			// instance as mid-update.
+			inst.updateInProgress = true
 		}
-		packageName := s.PackageName
-		if packageName == "" {
-			packageName = "acl.cosi"
+	}
+
+	app := omahaApp{AppID: reqApp.AppID, Status: "ok", Events: eventAcks}
+
+	if reqApp.UpdateCheck != nil {
+		if inst.updateInProgress {
+			app.UpdateCheck = &updateCheck{Status: "error-updateInProgressOnInstance"}
+		} else {
+			app.UpdateCheck = p.Scenario.buildUpdateCheck()
 		}
-		baseURL := s.URL
-		if baseURL == "" {
-			baseURL = "https://example.invalid/images/"
-		}
-		hash := s.SHA384
-		if hash == "" {
-			hash = "ignored"
-		}
-		response.Apps[0].UpdateCheck = &updateCheck{
-			Status:   "ok",
-			URLs:     &urls{Entries: []urlEntry{{Codebase: baseURL}}},
-			Manifest: &manifest{Version: version, Packages: &packages{Entries: []packageEntry{{Hash: hash, Name: packageName, Size: 1, Required: true}}}},
-		}
+	}
+
+	response := omahaResponse{
+		XMLName:  xml.Name{Local: "response"},
+		Protocol: "3.0",
+		Server:   "tester",
+		Daystart: daystart{ElapsedSeconds: 0},
+		Apps:     []omahaApp{app},
 	}
 	payload, err := xml.MarshalIndent(response, "", "  ")
 	if err != nil {
@@ -109,10 +172,51 @@ func (s *NebraskaScenario) BuildResponse(appID string) ([]byte, error) {
 	return append([]byte(xml.Header), payload...), nil
 }
 
+// buildUpdateCheck builds the <updatecheck> element for a scenario with no
+// in-flight update, per the configured Available/Version/URL/SHA384/PackageName.
+func (s *NebraskaScenario) buildUpdateCheck() *updateCheck {
+	if !s.Available {
+		return &updateCheck{Status: "noupdate"}
+	}
+	version := s.Version
+	if version == "" {
+		version = "1.0.0"
+	}
+	packageName := s.PackageName
+	if packageName == "" {
+		packageName = "acl.cosi"
+	}
+	baseURL := s.URL
+	if baseURL == "" {
+		baseURL = "https://example.invalid/images/"
+	}
+	hash := s.SHA384
+	if hash == "" {
+		hash = "ignored"
+	}
+	return &updateCheck{
+		Status:   "ok",
+		URLs:     &urls{Entries: []urlEntry{{Codebase: baseURL}}},
+		Manifest: &manifest{Version: version, Packages: &packages{Entries: []packageEntry{{Hash: hash, Name: packageName, Size: 1, Required: true}}}},
+	}
+}
+
 type omahaRequest struct {
-	Apps []struct {
-		AppID string `xml:"appid,attr"`
-	} `xml:"app"`
+	Apps []omahaRequestApp `xml:"app"`
+}
+type omahaRequestApp struct {
+	AppID           string              `xml:"appid,attr"`
+	Version         string              `xml:"version,attr"`
+	Track           string              `xml:"track,attr"`
+	MachineID       string              `xml:"machineid,attr"`
+	PreviousVersion string              `xml:"previousversion,attr"`
+	Events          []omahaRequestEvent `xml:"event"`
+	Ping            *struct{}           `xml:"ping"`
+	UpdateCheck     *struct{}           `xml:"updatecheck"`
+}
+type omahaRequestEvent struct {
+	EventType   int `xml:"eventtype,attr"`
+	EventResult int `xml:"eventresult,attr"`
 }
 type omahaResponse struct {
 	XMLName  xml.Name   `xml:"response"`
@@ -127,7 +231,11 @@ type daystart struct {
 type omahaApp struct {
 	AppID       string       `xml:"appid,attr"`
 	Status      string       `xml:"status,attr"`
+	Events      []eventAck   `xml:"event,omitempty"`
 	UpdateCheck *updateCheck `xml:"updatecheck,omitempty"`
+}
+type eventAck struct {
+	Status string `xml:"status,attr"`
 }
 type updateCheck struct {
 	Status   string    `xml:"status,attr"`
