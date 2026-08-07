@@ -33,6 +33,11 @@ match client.check_for_update(&current)? {
     CheckOutcome::UpdateInProgress => println!("update already in progress"),
     CheckOutcome::UpdateAvailable(offer) => {
         println!("update to {} at {}", offer.version, offer.package_url);
+        // The package file's hash (base64 SHA-1, plus SHA-256 when present) is
+        // available for integrity-checking the downloaded artifact:
+        if let Some(hash) = &offer.package_hash {
+            println!("expected file sha1: {}", hash.sha1);
+        }
     }
 }
 # Ok(())
