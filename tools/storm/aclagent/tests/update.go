@@ -210,7 +210,7 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 		return fmt.Errorf("pre-config validate-connection check failed: %w", err)
 	}
 
-	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig); err != nil {
+	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig, nebraska.AppID()); err != nil {
 		return err
 	}
 
@@ -259,7 +259,7 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	// config re-delivered before it can talk to the fake Nebraska/API
 	// server endpoints. Re-run the same delivery+restart steps now that
 	// we're SSH'd into the post-reboot root.
-	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig); err != nil {
+	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig, nebraska.AppID()); err != nil {
 		return fmt.Errorf("failed to reconfigure ACL agent on post-reboot root: %w", err)
 	}
 
@@ -300,10 +300,10 @@ func collectAclArtifactsBestEffort(cfg stormvmconfig.VMConfig, vmIP string, outp
 	}
 }
 
-func prepareVmForAclAgent(cfg stormvmconfig.VMConfig, vmIP string, testConfig stormaclconfig.TestConfig) error {
+func prepareVmForAclAgent(cfg stormvmconfig.VMConfig, vmIP string, testConfig stormaclconfig.TestConfig, appID string) error {
 	config := fmt.Sprintf(`[nebraska]
 endpoint = "http://%s:%d"
-app_id = "trident-acl-agent-storm-test"
+app_id = "%s"
 poll_interval = "5m"
 
 [kubernetes]
@@ -316,7 +316,7 @@ socket = "unix:///run/trident/trident.sock"
 
 [orchestration]
 goal_source = "annotations"
-`, testConfig.HostEndpointIP, testConfig.NebraskaPort, testConfig.HostEndpointIP, testConfig.APIServerPort, testConfig.NodeName)
+`, testConfig.HostEndpointIP, testConfig.NebraskaPort, appID, testConfig.HostEndpointIP, testConfig.APIServerPort, testConfig.NodeName)
 
 	// Write the config to a local temp file and scp it up rather than
 	// piping it through an SSH heredoc: heredocs are fragile to compose

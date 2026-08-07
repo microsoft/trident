@@ -2,196 +2,100 @@ package proxies
 
 import (
 	"context"
-	"encoding/xml"
+	"fmt"
+	"io"
 	"net/http"
-	"net/http/httptest"
+	"os/exec"
 	"strings"
 	"testing"
 )
 
-// postOmaha sends a raw Omaha-XML request body to the handler and parses the
-// response into an omahaResponse for assertions.
-func postOmaha(t *testing.T, handler http.Handler, body string) omahaResponse {
+// requireDocker skips the test when Docker isn't available, so this test
+// doesn't hard-fail on machines/CI runners without it. NebraskaProxy always
+// needs a real ephemeral Postgres container - there is no in-memory
+// alternative for github.com/flatcar/nebraska/backend.
+func requireDocker(t *testing.T) {
 	t.Helper()
-	server := httptest.NewServer(handler)
-	defer server.Close()
+	if _, err := exec.LookPath("docker"); err != nil {
+		t.Skip("docker not available; skipping test that needs an ephemeral Postgres container")
+	}
+}
 
-	resp, err := http.Post(server.URL, "application/xml", strings.NewReader(body))
+func postUpdateCheck(t *testing.T, addr, appID, machineID string) string {
+	t.Helper()
+	req := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<request protocol="3.0">
+  <app appid="%s" version="1.0.0" track="west-us" machineid="%s">
+    <updatecheck/>
+  </app>
+</request>`, appID, machineID)
+
+	resp, err := http.Post(fmt.Sprintf("http://%s/", addr), "text/xml", strings.NewReader(req))
 	if err != nil {
-		t.Fatalf("post failed: %v", err)
+		t.Fatalf("POST updatecheck: %v", err)
 	}
 	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
 	}
-	var parsed omahaResponse
-	if err := xml.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-		t.Fatalf("failed to parse response: %v", err)
-	}
-	return parsed
+	return string(body)
 }
 
-func updateCheckRequest(appID, machineID string) string {
-	return `<?xml version="1.0" encoding="UTF-8"?>
-<request protocol="3.0"><app appid="` + appID + `" version="1.0.0" track="stable" machineid="` + machineID + `"><updatecheck/></app></request>`
-}
+// TestNebraskaProxy exercises NebraskaProxy against the real
+// github.com/flatcar/nebraska/backend Omaha handler and an ephemeral
+// Postgres container (started/torn down per subtest), rather than a
+// hand-rolled fake. Each subtest takes roughly 10-15s due to container
+// startup and db migrations - slow for a unit test, but this is what
+// validates the mock's seeding logic (app/package/channel/group, track
+// matching, semver-driven grant/noupdate) independently of the full
+// storm-trident VM suite, which additionally exercises the real
+// trident-acl-agent binary end-to-end.
+func TestNebraskaProxy(t *testing.T) {
+	requireDocker(t)
 
-func progressEventRequest(appID, machineID string, eventType, eventResult int) string {
-	return `<?xml version="1.0" encoding="UTF-8"?>
-<request protocol="3.0"><app appid="` + appID + `" version="1.0.0" track="stable" machineid="` + machineID + `">` +
-		eventXML(eventType, eventResult) + `</app></request>`
-}
+	t.Run("update-available", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
 
-func batchedCompletionRequest(appID, machineID, previousVersion string, eventType, eventResult int) string {
-	return `<?xml version="1.0" encoding="UTF-8"?>
-<request protocol="3.0"><app appid="` + appID + `" version="1.0.0" track="stable" machineid="` + machineID + `" previousversion="` + previousVersion + `">` +
-		eventXML(eventType, eventResult) + `<ping active="1"/><updatecheck/></app></request>`
-}
+		p := &NebraskaProxy{Scenario: &NebraskaScenario{
+			Available:   true,
+			Version:     "5.0.0",
+			URL:         "http://example.invalid/images/",
+			SHA384:      "deadbeef",
+			PackageName: "acl.cosi",
+		}}
+		listener, err := p.ListenAndServe(ctx, "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("ListenAndServe: %v", err)
+		}
 
-func eventXML(eventType, eventResult int) string {
-	return `<event eventtype="` + itoa(eventType) + `" eventresult="` + itoa(eventResult) + `"/>`
-}
+		if p.AppID() == "" {
+			t.Fatal("expected non-empty AppID after seeding")
+		}
 
-func itoa(n int) string {
-	// Avoids pulling in strconv just for this - test file, keep it trivial.
-	if n == 0 {
-		return "0"
-	}
-	digits := ""
-	for n > 0 {
-		digits = string(rune('0'+n%10)) + digits
-		n /= 10
-	}
-	return digits
-}
+		body := postUpdateCheck(t, listener.Addr().String(), p.AppID(), "smoke-test-machine")
+		if !strings.Contains(body, `status="ok"`) {
+			t.Fatalf("expected an ok updatecheck offering the package, got: %s", body)
+		}
+		if !strings.Contains(body, "5.0.0") {
+			t.Fatalf("expected manifest version 5.0.0 in response, got: %s", body)
+		}
+	})
 
-func TestNebraskaProxy_NoUpdateWhenScenarioUnavailable(t *testing.T) {
-	proxy := &NebraskaProxy{Scenario: &NebraskaScenario{Available: false}}
+	t.Run("no-update", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
 
-	resp := postOmaha(t, proxy.Handler(), updateCheckRequest("test-app", "machine-1"))
+		p := &NebraskaProxy{Scenario: &NebraskaScenario{Available: false}}
+		listener, err := p.ListenAndServe(ctx, "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("ListenAndServe: %v", err)
+		}
 
-	if len(resp.Apps) != 1 {
-		t.Fatalf("expected 1 app in response, got %d", len(resp.Apps))
-	}
-	app := resp.Apps[0]
-	if app.UpdateCheck == nil || app.UpdateCheck.Status != "noupdate" {
-		t.Fatalf("expected noupdate, got %+v", app.UpdateCheck)
-	}
-}
-
-func TestNebraskaProxy_OffersUpdateWhenAvailable(t *testing.T) {
-	proxy := &NebraskaProxy{Scenario: &NebraskaScenario{
-		Available:   true,
-		Version:     "2.0.0",
-		URL:         "http://example.test/images/",
-		SHA384:      "deadbeef",
-		PackageName: "acl.cosi",
-	}}
-
-	resp := postOmaha(t, proxy.Handler(), updateCheckRequest("test-app", "machine-1"))
-
-	app := resp.Apps[0]
-	if app.UpdateCheck == nil || app.UpdateCheck.Status != "ok" {
-		t.Fatalf("expected ok, got %+v", app.UpdateCheck)
-	}
-	if app.UpdateCheck.Manifest == nil || app.UpdateCheck.Manifest.Version != "2.0.0" {
-		t.Fatalf("expected manifest version 2.0.0, got %+v", app.UpdateCheck.Manifest)
-	}
-	pkg := app.UpdateCheck.Manifest.Packages.Entries[0]
-	if pkg.Hash != "deadbeef" || pkg.Name != "acl.cosi" {
-		t.Fatalf("unexpected package entry: %+v", pkg)
-	}
-}
-
-func TestNebraskaProxy_EventIsAcknowledged(t *testing.T) {
-	proxy := &NebraskaProxy{Scenario: &NebraskaScenario{Available: true}}
-
-	resp := postOmaha(t, proxy.Handler(), progressEventRequest("test-app", "machine-1", 13, 1))
-
-	app := resp.Apps[0]
-	if len(app.Events) != 1 || app.Events[0].Status != "ok" {
-		t.Fatalf("expected a single acknowledged event, got %+v", app.Events)
-	}
-}
-
-func TestNebraskaProxy_ProgressEventMarksInstanceInProgress(t *testing.T) {
-	proxy := &NebraskaProxy{Scenario: &NebraskaScenario{Available: true, Version: "2.0.0"}}
-	handler := proxy.Handler()
-
-	// DownloadStarted (13,1): commits the instance to in-progress.
-	postOmaha(t, handler, progressEventRequest("test-app", "machine-1", 13, 1))
-
-	// A later update check for the same machineid must report
-	// error-updateInProgressOnInstance, not the normal offer - this is the
-	// specific "expected, not fatal" Nebraska behaviour trident-acl-agent's
-	// nebraska client models via CheckOutcome::UpdateInProgress.
-	resp := postOmaha(t, handler, updateCheckRequest("test-app", "machine-1"))
-	app := resp.Apps[0]
-	if app.UpdateCheck == nil || app.UpdateCheck.Status != "error-updateInProgressOnInstance" {
-		t.Fatalf("expected error-updateInProgressOnInstance, got %+v", app.UpdateCheck)
-	}
-}
-
-func TestNebraskaProxy_TerminalCompleteEventClearsInProgress(t *testing.T) {
-	proxy := &NebraskaProxy{Scenario: &NebraskaScenario{Available: true, Version: "2.0.0"}}
-	handler := proxy.Handler()
-
-	postOmaha(t, handler, progressEventRequest("test-app", "machine-1", 800, 1))            // Installed
-	postOmaha(t, handler, batchedCompletionRequest("test-app", "machine-1", "1.0.0", 3, 2)) // Completed
-
-	// Nebraska self-heals to Complete; a fresh update check should now see
-	// the normal (post-update) scenario state again, not a stale
-	// in-progress status.
-	resp := postOmaha(t, handler, updateCheckRequest("test-app", "machine-1"))
-	app := resp.Apps[0]
-	if app.UpdateCheck == nil || app.UpdateCheck.Status != "ok" {
-		t.Fatalf("expected the in-progress wedge to be cleared, got %+v", app.UpdateCheck)
-	}
-}
-
-func TestNebraskaProxy_TerminalFailedEventClearsInProgress(t *testing.T) {
-	proxy := &NebraskaProxy{Scenario: &NebraskaScenario{Available: true, Version: "2.0.0"}}
-	handler := proxy.Handler()
-
-	postOmaha(t, handler, progressEventRequest("test-app", "machine-1", 13, 1)) // DownloadStarted
-	postOmaha(t, handler, progressEventRequest("test-app", "machine-1", 3, 0))  // Failed
-
-	resp := postOmaha(t, handler, updateCheckRequest("test-app", "machine-1"))
-	app := resp.Apps[0]
-	if app.UpdateCheck == nil || app.UpdateCheck.Status != "ok" {
-		t.Fatalf("expected the wedge to be released after a Failed event, got %+v", app.UpdateCheck)
-	}
-}
-
-func TestNebraskaProxy_InstancesAreIndependentByMachineID(t *testing.T) {
-	proxy := &NebraskaProxy{Scenario: &NebraskaScenario{Available: true, Version: "2.0.0"}}
-	handler := proxy.Handler()
-
-	postOmaha(t, handler, progressEventRequest("test-app", "machine-1", 13, 1))
-
-	// machine-2 never sent a progress event, so its update check must not
-	// be affected by machine-1's in-progress state.
-	resp := postOmaha(t, handler, updateCheckRequest("test-app", "machine-2"))
-	app := resp.Apps[0]
-	if app.UpdateCheck == nil || app.UpdateCheck.Status != "ok" {
-		t.Fatalf("expected machine-2 to be unaffected by machine-1's state, got %+v", app.UpdateCheck)
-	}
-
-	// machine-1 must still be reported as in progress.
-	resp = postOmaha(t, handler, updateCheckRequest("test-app", "machine-1"))
-	app = resp.Apps[0]
-	if app.UpdateCheck == nil || app.UpdateCheck.Status != "error-updateInProgressOnInstance" {
-		t.Fatalf("expected machine-1 to remain in progress, got %+v", app.UpdateCheck)
-	}
-}
-
-func TestNebraskaProxy_ListenAndServeShutsDownOnContextCancel(t *testing.T) {
-	proxy := &NebraskaProxy{Scenario: &NebraskaScenario{Available: false}}
-	ctx, cancel := context.WithCancel(context.Background())
-	listener, err := proxy.ListenAndServe(ctx, "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("ListenAndServe failed: %v", err)
-	}
-	cancel()
-	_ = listener.Close()
+		body := postUpdateCheck(t, listener.Addr().String(), p.AppID(), "smoke-test-machine-2")
+		if !strings.Contains(body, `status="noupdate"`) {
+			t.Fatalf("expected noupdate status, got: %s", body)
+		}
+	})
 }

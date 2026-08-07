@@ -1,16 +1,42 @@
 package proxies
 
 import (
+	"bytes"
 	"context"
-	"encoding/xml"
+	"database/sql"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
-	"sync"
+	"os/exec"
+	"strings"
+	"time"
 
+	"github.com/flatcar/nebraska/backend/pkg/api"
+	"github.com/flatcar/nebraska/backend/pkg/api/admin"
+	"github.com/flatcar/nebraska/backend/pkg/omaha"
+	"gopkg.in/guregu/null.v4"
 	"gopkg.in/yaml.v3"
 )
+
+// nebraskaTrack must match trident-acl-agent's DEFAULT_NEBRASKA_TRACK
+// (crates/trident-acl-agent/src/lib.rs). Real Nebraska resolves a group by
+// matching this string against the group's Track column, not its Name.
+const nebraskaTrack = "west-us"
+
+// defaultTeamID is the team seeded by Nebraska's own db migrations
+// (0005_default_team_id.sql); application rows have a NOT NULL team_id FK.
+const defaultTeamID = "d89342dc-9214-441d-a4af-bdd837a3b239"
+
+// noUpdateVersion is a sentinel package version used when Scenario.Available
+// is false. Leaving a channel with no package at all makes real Nebraska
+// return ErrNoPackageFound, which maps to "error-noPackageFound" - a hard
+// error trident-acl-agent's client treats as a failure, not "no update
+// available". Seeding a package this far below any real image version
+// instead exercises Nebraska's actual semver-comparison path in
+// GetUpdatePackage and still cleanly yields "noupdate", since the
+// instance's real reported version can never be lower than 0.0.1.
+const noUpdateVersion = "0.0.1"
 
 type NebraskaScenario struct {
 	Available   bool   `yaml:"available"`
@@ -32,39 +58,30 @@ func LoadNebraskaScenario(path string) (*NebraskaScenario, error) {
 	return &scenario, nil
 }
 
-// instanceState is this fake server's per-machineid memory of an in-flight
-// update, mirroring (in miniature) the piece of real Nebraska's instance
-// state machine that trident-acl-agent's nebraska client actually depends
-// on: once a progress event (Downloading/Downloaded/Installed) is received
-// for a machineid, every update check for that machineid reports
-// "error-updateInProgressOnInstance" until a terminal event (Complete or
-// Error) is received. This is deliberately not a full re-implementation of
-// Nebraska's state machine (no groups/channels/rollout rules, no other
-// statuses) - just enough to exercise the request/response shapes
-// trident-acl-agent's nebraska client actually sends and reads.
-type instanceState struct {
-	updateInProgress bool
-}
-
+// NebraskaProxy wraps the real github.com/flatcar/nebraska/backend Omaha
+// server, backed by an ephemeral Postgres container that this proxy manages
+// itself, instead of a hand-rolled fake. This exercises trident-acl-agent
+// against Nebraska's actual instance/event/update-grant state machine
+// (RegisterInstance, RegisterEvent, GetUpdatePackage's in-progress gating
+// and semver-driven grant/completion logic) rather than an approximation of
+// it, at the cost of needing Docker plus a couple seconds of container
+// startup/migration time per run.
 type NebraskaProxy struct {
 	Scenario *NebraskaScenario
 
-	mu        sync.Mutex
-	instances map[string]*instanceState
+	containerID string
+	api         *api.API
+	handler     *omaha.Handler
+	appID       string
 }
 
-// instanceFor returns (creating if necessary) the tracked state for
-// machineID. Must be called with p.mu held.
-func (p *NebraskaProxy) instanceFor(machineID string) *instanceState {
-	if p.instances == nil {
-		p.instances = make(map[string]*instanceState)
-	}
-	inst, ok := p.instances[machineID]
-	if !ok {
-		inst = &instanceState{}
-		p.instances[machineID] = inst
-	}
-	return inst
+// AppID returns the DB-generated application ID trident-acl-agent must be
+// configured with. Real Nebraska generates application IDs server-side
+// (admin.Service.AddApp does not accept a caller-supplied ID), so callers
+// must read this back after ListenAndServe seeds the app, rather than
+// hardcoding an app_id string as the old fake mock allowed.
+func (p *NebraskaProxy) AppID() string {
+	return p.appID
 }
 
 func (p *NebraskaProxy) Handler() http.Handler {
@@ -74,190 +91,210 @@ func (p *NebraskaProxy) Handler() http.Handler {
 			return
 		}
 		defer r.Body.Close()
-		var request omahaRequest
-		if err := xml.NewDecoder(r.Body).Decode(&request); err != nil {
-			http.Error(w, fmt.Sprintf("failed to parse Omaha request: %v", err), http.StatusBadRequest)
-			return
+		ip := r.RemoteAddr
+		if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+			ip = host
 		}
-		reqApp := omahaRequestApp{AppID: "test"}
-		if len(request.Apps) > 0 {
-			reqApp = request.Apps[0]
-			if reqApp.AppID == "" {
-				reqApp.AppID = "test"
-			}
-		}
-
-		response, err := p.buildResponse(reqApp)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		var buf bytes.Buffer
+		if err := p.handler.Handle(r.Body, &buf, ip); err != nil {
+			http.Error(w, fmt.Sprintf("nebraska omaha handler error: %v", err), http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "application/xml")
-		_, _ = w.Write(response)
+		_, _ = w.Write(buf.Bytes())
 	})
 }
 
+// ListenAndServe starts an ephemeral Postgres container, applies Nebraska's
+// db migrations against it, seeds an application/package/channel/group
+// matching p.Scenario, and starts serving the real Nebraska Omaha handler on
+// listenAddr. The Postgres container and http server are both torn down
+// when ctx is cancelled.
 func (p *NebraskaProxy) ListenAndServe(ctx context.Context, listenAddr string) (net.Listener, error) {
+	dbURL, containerID, err := startEphemeralPostgres(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start ephemeral Postgres for Nebraska: %w", err)
+	}
+	p.containerID = containerID
+
+	// api.New only reads NEBRASKA_DB_URL from the environment - there is no
+	// functional option to set a custom DSN - so this is the only way to
+	// point it at our ephemeral container. Safe here because exactly one
+	// NebraskaProxy is ever instantiated per storm test process.
+	if err := os.Setenv("NEBRASKA_DB_URL", dbURL); err != nil {
+		stopEphemeralPostgres(containerID)
+		return nil, fmt.Errorf("failed to set NEBRASKA_DB_URL: %w", err)
+	}
+
+	a, err := api.NewWithMigrations(api.OptionInitDB)
+	if err != nil {
+		stopEphemeralPostgres(containerID)
+		return nil, fmt.Errorf("failed to initialize Nebraska API against ephemeral Postgres: %w", err)
+	}
+	p.api = a
+	p.handler = omaha.NewHandler(a)
+
+	if err := p.seed(); err != nil {
+		stopEphemeralPostgres(containerID)
+		return nil, fmt.Errorf("failed to seed Nebraska scenario: %w", err)
+	}
+
 	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
+		stopEphemeralPostgres(containerID)
 		return nil, fmt.Errorf("failed to listen on %s: %w", listenAddr, err)
 	}
 	server := &http.Server{Handler: p.Handler()}
 	go func() {
 		<-ctx.Done()
 		_ = server.Shutdown(context.Background())
+		stopEphemeralPostgres(containerID)
 	}()
 	go func() { _ = server.Serve(listener) }()
 	return listener, nil
 }
 
-// buildResponse handles a single parsed <app>: acknowledges any events
-// (updating this machineid's tracked in-progress state per their whitelisted
-// eventtype/eventresult pair, in the same order real Nebraska processes them
-// - events before the update check, within one request/response) and then,
-// if the request carried an <updatecheck>, answers it either with
-// "error-updateInProgressOnInstance" (if an update is still in flight for
-// this machineid) or the configured scenario's offer/noupdate.
-func (p *NebraskaProxy) buildResponse(reqApp omahaRequestApp) ([]byte, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+// seed creates the application/package/channel/group real Nebraska needs to
+// answer update checks, per p.Scenario. The package version is the
+// scenario's target version when an update should be offered, or the
+// noUpdateVersion sentinel otherwise (see its doc comment).
+func (p *NebraskaProxy) seed() error {
+	svc := admin.NewService(p.api.Reads())
 
-	inst := p.instanceFor(reqApp.MachineID)
-
-	var eventAcks []eventAck
-	for _, event := range reqApp.Events {
-		// Nebraska acks every whitelisted event with status="ok" regardless
-		// of which pair it is (see nebraska::event's module docs on the
-		// client side) - it never reports an event as rejected over the
-		// wire, even for a pair it silently discards. This fake only
-		// receives events trident-acl-agent's client actually sends
-		// (already whitelisted client-side), so unconditionally acking is
-		// faithful enough here.
-		eventAcks = append(eventAcks, eventAck{Status: "ok"})
-
-		switch {
-		case event.EventType == 3:
-			// Terminal event (any of the three whitelisted eventresults):
-			// clears update_in_progress and re-arms the instance so a
-			// subsequent check can grant again.
-			inst.updateInProgress = false
-		case event.EventType == 13 || event.EventType == 14 || event.EventType == 800:
-			// Progress event (Downloading/Downloaded/Installed): marks the
-			// instance as mid-update.
-			inst.updateInProgress = true
-		}
-	}
-
-	app := omahaApp{AppID: reqApp.AppID, Status: "ok", Events: eventAcks}
-
-	if reqApp.UpdateCheck != nil {
-		if inst.updateInProgress {
-			app.UpdateCheck = &updateCheck{Status: "error-updateInProgressOnInstance"}
-		} else {
-			app.UpdateCheck = p.Scenario.buildUpdateCheck()
-		}
-	}
-
-	response := omahaResponse{
-		XMLName:  xml.Name{Local: "response"},
-		Protocol: "3.0",
-		Server:   "tester",
-		Daystart: daystart{ElapsedSeconds: 0},
-		Apps:     []omahaApp{app},
-	}
-	payload, err := xml.MarshalIndent(response, "", "  ")
+	app, err := svc.AddApp(&api.Application{
+		Name:   "trident-acl-agent-storm-test",
+		TeamID: defaultTeamID,
+	})
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("failed to seed application: %w", err)
 	}
-	return append([]byte(xml.Header), payload...), nil
-}
+	p.appID = app.ID
 
-// buildUpdateCheck builds the <updatecheck> element for a scenario with no
-// in-flight update, per the configured Available/Version/URL/SHA384/PackageName.
-func (s *NebraskaScenario) buildUpdateCheck() *updateCheck {
-	if !s.Available {
-		return &updateCheck{Status: "noupdate"}
-	}
-	version := s.Version
+	version := p.Scenario.Version
 	if version == "" {
 		version = "1.0.0"
 	}
-	packageName := s.PackageName
+	if !p.Scenario.Available {
+		version = noUpdateVersion
+	}
+	packageName := p.Scenario.PackageName
 	if packageName == "" {
 		packageName = "acl.cosi"
 	}
-	baseURL := s.URL
+	baseURL := p.Scenario.URL
 	if baseURL == "" {
 		baseURL = "https://example.invalid/images/"
 	}
-	hash := s.SHA384
-	if hash == "" {
-		hash = "ignored"
+
+	pkg, err := svc.AddPackage(&api.Package{
+		Type:          api.PkgTypeOther,
+		URL:           baseURL,
+		Version:       version,
+		Filename:      null.StringFrom(packageName),
+		Hash:          null.StringFrom(p.Scenario.SHA384),
+		ApplicationID: app.ID,
+		Arch:          api.ArchAMD64,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to seed package: %w", err)
 	}
-	return &updateCheck{
-		Status:   "ok",
-		URLs:     &urls{Entries: []urlEntry{{Codebase: baseURL}}},
-		Manifest: &manifest{Version: version, Packages: &packages{Entries: []packageEntry{{Hash: hash, Name: packageName, Size: 1, Required: true}}}},
+
+	channel, err := svc.AddChannel(&api.Channel{
+		Name:          "storm",
+		ApplicationID: app.ID,
+		PackageID:     null.StringFrom(pkg.ID),
+		Arch:          api.ArchAMD64,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to seed channel: %w", err)
 	}
+
+	if _, err := svc.AddGroup(&api.Group{
+		Name:                      "storm",
+		ApplicationID:             app.ID,
+		ChannelID:                 null.StringFrom(channel.ID),
+		Track:                     nebraskaTrack,
+		PolicyUpdatesEnabled:      true,
+		PolicyPeriodInterval:      "15 minutes",
+		PolicyMaxUpdatesPerPeriod: 100,
+		PolicyUpdateTimeout:       "60 minutes",
+	}); err != nil {
+		return fmt.Errorf("failed to seed group: %w", err)
+	}
+
+	return nil
 }
 
-type omahaRequest struct {
-	Apps []omahaRequestApp `xml:"app"`
+// startEphemeralPostgres starts a disposable Postgres container for this
+// Nebraska instance to use, waits for it to accept connections, and returns
+// a connection URL for it plus its container ID (for teardown).
+func startEphemeralPostgres(ctx context.Context) (dbURL string, containerID string, err error) {
+	out, err := exec.CommandContext(ctx, "docker", "run", "-d", "--rm",
+		"-e", "POSTGRES_PASSWORD=nebraska",
+		"-e", "POSTGRES_DB=nebraska",
+		"-p", "127.0.0.1::5432",
+		"postgres:16-alpine",
+	).Output()
+	if err != nil {
+		return "", "", fmt.Errorf("docker run postgres: %w", err)
+	}
+	containerID = strings.TrimSpace(string(out))
+
+	portOut, err := exec.CommandContext(ctx, "docker", "port", containerID, "5432/tcp").Output()
+	if err != nil {
+		stopEphemeralPostgres(containerID)
+		return "", "", fmt.Errorf("docker port: %w", err)
+	}
+	// docker port prints e.g. "127.0.0.1:32771" (or several such lines);
+	// take the port from the last colon-separated field of the first line.
+	firstLine := strings.SplitN(strings.TrimSpace(string(portOut)), "\n", 2)[0]
+	fields := strings.Split(firstLine, ":")
+	port := fields[len(fields)-1]
+
+	dbURL = fmt.Sprintf("postgres://postgres:nebraska@127.0.0.1:%s/nebraska?sslmode=disable&connect_timeout=10", port)
+
+	if err := waitForPostgres(ctx, dbURL); err != nil {
+		stopEphemeralPostgres(containerID)
+		return "", "", err
+	}
+
+	return dbURL, containerID, nil
 }
-type omahaRequestApp struct {
-	AppID           string              `xml:"appid,attr"`
-	Version         string              `xml:"version,attr"`
-	Track           string              `xml:"track,attr"`
-	MachineID       string              `xml:"machineid,attr"`
-	PreviousVersion string              `xml:"previousversion,attr"`
-	Events          []omahaRequestEvent `xml:"event"`
-	Ping            *struct{}           `xml:"ping"`
-	UpdateCheck     *struct{}           `xml:"updatecheck"`
+
+// waitForPostgres polls dbURL until it accepts connections or ctx/deadline
+// expires. Relies on the "pgx" driver already being registered with
+// database/sql as a side effect of importing github.com/flatcar/nebraska's
+// api package (which blank-imports github.com/jackc/pgx/v5/stdlib).
+func waitForPostgres(ctx context.Context, dbURL string) error {
+	deadline := time.Now().Add(30 * time.Second)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		if err := pingOnce(dbURL); err != nil {
+			lastErr = err
+		} else {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	return fmt.Errorf("timed out waiting for ephemeral Postgres to accept connections: %w", lastErr)
 }
-type omahaRequestEvent struct {
-	EventType   int `xml:"eventtype,attr"`
-	EventResult int `xml:"eventresult,attr"`
+
+func pingOnce(dbURL string) error {
+	db, err := sql.Open("pgx", dbURL)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	return db.Ping()
 }
-type omahaResponse struct {
-	XMLName  xml.Name   `xml:"response"`
-	Protocol string     `xml:"protocol,attr"`
-	Server   string     `xml:"server,attr"`
-	Daystart daystart   `xml:"daystart"`
-	Apps     []omahaApp `xml:"app"`
-}
-type daystart struct {
-	ElapsedSeconds int `xml:"elapsed_seconds,attr"`
-}
-type omahaApp struct {
-	AppID       string       `xml:"appid,attr"`
-	Status      string       `xml:"status,attr"`
-	Events      []eventAck   `xml:"event,omitempty"`
-	UpdateCheck *updateCheck `xml:"updatecheck,omitempty"`
-}
-type eventAck struct {
-	Status string `xml:"status,attr"`
-}
-type updateCheck struct {
-	Status   string    `xml:"status,attr"`
-	URLs     *urls     `xml:"urls,omitempty"`
-	Manifest *manifest `xml:"manifest,omitempty"`
-}
-type urls struct {
-	Entries []urlEntry `xml:"url"`
-}
-type urlEntry struct {
-	Codebase string `xml:"codebase,attr"`
-}
-type manifest struct {
-	Version  string    `xml:"version,attr"`
-	Packages *packages `xml:"packages,omitempty"`
-}
-type packages struct {
-	Entries []packageEntry `xml:"package"`
-}
-type packageEntry struct {
-	Hash     string `xml:"hash,attr,omitempty"`
-	Name     string `xml:"name,attr"`
-	Size     int    `xml:"size,attr"`
-	Required bool   `xml:"required,attr"`
+
+func stopEphemeralPostgres(containerID string) {
+	if containerID == "" {
+		return
+	}
+	_ = exec.Command("docker", "rm", "-f", containerID).Run()
 }
