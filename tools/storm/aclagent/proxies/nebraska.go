@@ -186,12 +186,18 @@ func (p *NebraskaProxy) seed() error {
 		baseURL = "https://example.invalid/images/"
 	}
 
+	// The package.hash column is varchar(64) (sized for base64 SHA1 or hex
+	// SHA256, what real Nebraska/Omaha packages normally carry), but
+	// Scenario.SHA384 is a 96-character hex string and would overflow it.
+	// trident-acl-agent's Package wire struct doesn't even parse this field
+	// (see crates/trident-acl-agent/src/nebraska/wire.rs) - image integrity
+	// is checked via the COSI metadata instead - so it's safe to leave
+	// unset here rather than truncate it into something misleading.
 	pkg, err := svc.AddPackage(&api.Package{
 		Type:          api.PkgTypeOther,
 		URL:           baseURL,
 		Version:       version,
 		Filename:      null.StringFrom(packageName),
-		Hash:          null.StringFrom(p.Scenario.SHA384),
 		ApplicationID: app.ID,
 		Arch:          api.ArchAMD64,
 	})
