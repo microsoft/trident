@@ -66,17 +66,15 @@ if let CheckOutcome::UpdateAvailable(offer) = client.check_for_update(&current)?
     client.report_progress(&current, ProgressEvent::Installed)?;
 
     // Persist { previous: current, target: offer.version } somewhere durable,
-    // then reboot. After the reboot, from a fresh process on the new version:
+    // then reboot. After the reboot, from a fresh process on the new version,
+    // report completion. This blocks while it retries transient failures (a
+    // reboot's first network call often fails while DNS settles); losing it
+    // would wedge the instance permanently, which is why it retries by default.
     let previous = current;
     let now_running = offer.version;
-    loop {
-        match client.complete_after_reboot(&previous, &now_running) {
-            Ok(_) => break,
-            // Retry only transient failures; a permanent one will never succeed.
-            Err(e) if e.is_retryable() => continue,
-            Err(e) => return Err(e.into()),
-        }
-    }
+    client.complete_after_reboot(&previous, &now_running)?;
+    // A caller with its own scheduler can use `try_complete_after_reboot`
+    // instead and drive the retry on its own cadence.
 }
 # Ok(())
 # }
