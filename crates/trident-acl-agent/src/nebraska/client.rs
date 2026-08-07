@@ -1,6 +1,8 @@
 //! The high-level [`Client`] for talking to a Nebraska server.
 
-use log::{debug, trace};
+use std::{thread, time::Duration};
+
+use log::{debug, trace, warn};
 use semver::Version;
 use url::Url;
 
@@ -40,6 +42,59 @@ pub struct UpdateOffer {
     /// The absolute URL of the update package, resolved by joining the
     /// response's `codebase` with the package `name`.
     pub package_url: Url,
+}
+
+/// The bounded exponential-backoff policy used by
+/// [`Client::complete_after_reboot`] when retrying transient failures.
+///
+/// It is intentionally bounded so that a persistently-unreachable server cannot
+/// hang startup forever, but generous, because the call it guards must land to
+/// avoid permanently wedging the instance.
+#[derive(Debug, Clone, Copy)]
+struct RetryPolicy {
+    /// Maximum number of attempts (including the first).
+    max_attempts: u32,
+    /// Backoff before the second attempt.
+    initial_backoff: Duration,
+    /// Upper bound on the (doubling) backoff.
+    max_backoff: Duration,
+}
+
+impl Default for RetryPolicy {
+    fn default() -> Self {
+        Self {
+            max_attempts: 8,
+            initial_backoff: Duration::from_millis(500),
+            max_backoff: Duration::from_secs(5),
+        }
+    }
+}
+
+/// Runs `op`, retrying while it returns a [retryable](NebraskaError::is_retryable)
+/// error, with an exponential backoff bounded by `policy`. Returns the first
+/// `Ok`, or the last error once attempts are exhausted or a permanent error is
+/// hit. Blocks the current thread between attempts.
+fn retry<T>(
+    policy: RetryPolicy,
+    mut op: impl FnMut() -> Result<T, NebraskaError>,
+) -> Result<T, NebraskaError> {
+    let mut backoff = policy.initial_backoff;
+    let mut attempt = 1;
+    loop {
+        match op() {
+            Ok(value) => return Ok(value),
+            Err(e) if e.is_retryable() && attempt < policy.max_attempts => {
+                warn!(
+                    "retryable Nebraska error (attempt {attempt}/{}): {e}",
+                    policy.max_attempts
+                );
+                thread::sleep(backoff);
+                backoff = (backoff * 2).min(policy.max_backoff);
+                attempt += 1;
+            }
+            Err(e) => return Err(e),
+        }
+    }
 }
 
 /// A client for a single Nebraska app on a single track.
@@ -141,32 +196,62 @@ impl<T: Transport> Client<T> {
         Ok(())
     }
 
-    /// Reports successful completion after the reboot, in the single batched
-    /// request Nebraska expects: a terminal `complete` event plus a `<ping/>`
-    /// plus an `<updatecheck/>`.
+    /// Reports successful completion after the reboot, retrying transient
+    /// failures automatically.
     ///
-    /// Nebraska processes the event before the update check within one request,
-    /// so this both moves the instance to Complete and returns a clean
-    /// `noupdate` in one round trip — closing the window in which a bare
-    /// post-reboot poll would hit `error-updateInProgressOnInstance`. This is
-    /// the terminal event that discharges the commitment made by
-    /// [`report_progress`](Client::report_progress).
+    /// This sends the single batched request Nebraska expects: a terminal
+    /// `complete` event plus a `<ping/>` plus an `<updatecheck/>`. Nebraska
+    /// processes the event before the update check within one request, so this
+    /// both moves the instance to Complete and returns a clean `noupdate` in one
+    /// round trip — closing the window in which a bare post-reboot poll would hit
+    /// `error-updateInProgressOnInstance`. This is the terminal event that
+    /// discharges the commitment made by [`report_progress`](Client::report_progress).
     ///
-    /// # This call MUST be retried until it succeeds
+    /// # Why this retries by default
     ///
     /// The first network call immediately after a reboot routinely fails while
-    /// DNS and routing settle. **Losing this terminal event wedges the instance
-    /// permanently** — there is no server-side self-heal, timer, or REST reset.
-    /// This module deliberately does not bake in a retry policy (that is the
-    /// caller's to own, alongside the cross-reboot state it must already
-    /// persist), but the caller is responsible for retrying: loop with a bounded
-    /// backoff while [`NebraskaError::is_retryable`] holds, and give up only on a
-    /// permanent error. See [`report_failure`](Client::report_failure) for the
-    /// recovery path if completion genuinely cannot be reported.
+    /// DNS and routing settle, and **losing this terminal event wedges the
+    /// instance permanently** — there is no server-side self-heal, timer, or REST
+    /// reset. Retrying is therefore a correctness requirement, not a
+    /// quality-of-service choice, so it is the default here: this method retries
+    /// [retryable](NebraskaError::is_retryable) failures with a bounded
+    /// exponential backoff (a handful of attempts over a few tens of seconds) and
+    /// returns the last error only once transient retries are exhausted or a
+    /// permanent error occurs.
+    ///
+    /// This blocks the calling thread while retrying. A caller that has its own
+    /// scheduler (e.g. an existing poll loop) and would rather re-attempt on its
+    /// own cadence should use [`try_complete_after_reboot`](Client::try_complete_after_reboot)
+    /// instead and drive the retry itself. If completion genuinely cannot be
+    /// reported, see [`report_failure`](Client::report_failure) for the recovery
+    /// path.
     ///
     /// `previous_version` is the version the instance was on before the update;
     /// `current_version` is the (new) version now running.
     pub fn complete_after_reboot(
+        &self,
+        previous_version: &Version,
+        current_version: &Version,
+    ) -> Result<CheckOutcome, NebraskaError> {
+        retry(RetryPolicy::default(), || {
+            self.try_complete_after_reboot(previous_version, current_version)
+        })
+    }
+
+    /// Reports successful completion after the reboot in a **single attempt**,
+    /// without retrying.
+    ///
+    /// This is the non-retrying variant of
+    /// [`complete_after_reboot`](Client::complete_after_reboot); prefer that
+    /// method unless you are driving retries yourself.
+    ///
+    /// Because losing the terminal event wedges the instance permanently, a
+    /// caller using this variant **must** retry the call itself while the
+    /// returned error [is retryable](NebraskaError::is_retryable) (with a bounded
+    /// backoff), giving up only on a permanent error. See
+    /// [`complete_after_reboot`](Client::complete_after_reboot) for the rationale
+    /// and [`report_failure`](Client::report_failure) for the recovery path.
+    pub fn try_complete_after_reboot(
         &self,
         previous_version: &Version,
         current_version: &Version,
@@ -353,7 +438,7 @@ impl<T: Transport> Client<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
 
     use super::*;
 
@@ -501,5 +586,91 @@ mod tests {
             body.contains(r#"<event eventtype="3" eventresult="0""#),
             "{body}"
         );
+    }
+
+    /// A zero-backoff policy so the retry-loop tests do not actually sleep.
+    fn fast_policy() -> RetryPolicy {
+        RetryPolicy {
+            max_attempts: 4,
+            initial_backoff: Duration::ZERO,
+            max_backoff: Duration::ZERO,
+        }
+    }
+
+    #[test]
+    fn retry_returns_first_success_without_retrying() {
+        let calls = Cell::new(0);
+        let result: Result<u32, NebraskaError> = retry(fast_policy(), || {
+            calls.set(calls.get() + 1);
+            Ok(42)
+        });
+        assert_eq!(result.unwrap(), 42);
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
+    fn retry_retries_transient_then_succeeds() {
+        let calls = Cell::new(0);
+        let result: Result<u32, NebraskaError> = retry(fast_policy(), || {
+            calls.set(calls.get() + 1);
+            if calls.get() < 3 {
+                Err(NebraskaError::Transport("dns not ready".into()))
+            } else {
+                Ok(7)
+            }
+        });
+        assert_eq!(result.unwrap(), 7);
+        assert_eq!(calls.get(), 3);
+    }
+
+    #[test]
+    fn retry_does_not_retry_permanent_error() {
+        let calls = Cell::new(0);
+        let result: Result<u32, NebraskaError> = retry(fast_policy(), || {
+            calls.set(calls.get() + 1);
+            Err(NebraskaError::UnexpectedResponse("bad".into()))
+        });
+        assert!(matches!(result, Err(NebraskaError::UnexpectedResponse(_))));
+        assert_eq!(calls.get(), 1, "a permanent error must not be retried");
+    }
+
+    #[test]
+    fn retry_gives_up_after_max_attempts() {
+        let calls = Cell::new(0);
+        let result: Result<u32, NebraskaError> = retry(fast_policy(), || {
+            calls.set(calls.get() + 1);
+            Err(NebraskaError::Transport("still down".into()))
+        });
+        assert!(matches!(result, Err(NebraskaError::Transport(_))));
+        assert_eq!(calls.get(), 4, "should stop at max_attempts");
+    }
+
+    #[test]
+    fn try_complete_after_reboot_is_single_attempt() {
+        // A transport that always fails transiently: the non-retrying variant
+        // must call it exactly once and surface the retryable error.
+        struct AlwaysFails {
+            calls: Cell<u32>,
+        }
+        impl Transport for AlwaysFails {
+            fn post_xml(&self, _endpoint: &Url, _body: &[u8]) -> Result<String, NebraskaError> {
+                self.calls.set(self.calls.get() + 1);
+                Err(NebraskaError::Transport("down".into()))
+            }
+        }
+        let client = Client::with_transport(
+            Url::parse("https://nebraska.example/v1/update/").unwrap(),
+            "app-1",
+            "stable",
+            MachineId::new("mid-1").unwrap(),
+            AlwaysFails {
+                calls: Cell::new(0),
+            },
+        );
+        let err = client
+            .try_complete_after_reboot(&Version::new(1, 0, 0), &Version::new(2, 0, 0))
+            .unwrap_err();
+        assert!(err.is_retryable());
+        assert_eq!(client.transport.calls.get(), 1);
     }
 }
