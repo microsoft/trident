@@ -210,7 +210,7 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 		return fmt.Errorf("pre-config validate-connection check failed: %w", err)
 	}
 
-	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig); err != nil {
+	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig, nebraska.AppID()); err != nil {
 		return err
 	}
 
@@ -259,7 +259,7 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	// config re-delivered before it can talk to the fake Nebraska/API
 	// server endpoints. Re-run the same delivery+restart steps now that
 	// we're SSH'd into the post-reboot root.
-	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig); err != nil {
+	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig, nebraska.AppID()); err != nil {
 		return fmt.Errorf("failed to reconfigure ACL agent on post-reboot root: %w", err)
 	}
 
@@ -282,6 +282,17 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
 		return fmt.Errorf("final status annotation missing")
 	}
+
+	// The node annotation only proves the ACL-agent-facing rollout API
+	// reported success; it says nothing about whether trident-acl-agent
+	// actually drove Nebraska's own instance state machine correctly. Assert
+	// that too, against the real Nebraska instance_status_history this
+	// scenario's seeded application accumulated over stage/finalize/commit.
+	if err := nebraska.ValidateStatusHistory(stormproxies.ExpectedUpdateStatusSequence); err != nil {
+		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
+		return fmt.Errorf("ACL agent scenario failed Nebraska status validation: %w", err)
+	}
+
 	return collectAclArtifacts(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
 }
 
@@ -300,10 +311,10 @@ func collectAclArtifactsBestEffort(cfg stormvmconfig.VMConfig, vmIP string, outp
 	}
 }
 
-func prepareVmForAclAgent(cfg stormvmconfig.VMConfig, vmIP string, testConfig stormaclconfig.TestConfig) error {
+func prepareVmForAclAgent(cfg stormvmconfig.VMConfig, vmIP string, testConfig stormaclconfig.TestConfig, appID string) error {
 	config := fmt.Sprintf(`[nebraska]
 endpoint = "http://%s:%d"
-app_id = "trident-acl-agent-storm-test"
+app_id = "%s"
 poll_interval = "5m"
 
 [kubernetes]
@@ -316,7 +327,7 @@ socket = "unix:///run/trident/trident.sock"
 
 [orchestration]
 goal_source = "annotations"
-`, testConfig.HostEndpointIP, testConfig.NebraskaPort, testConfig.HostEndpointIP, testConfig.APIServerPort, testConfig.NodeName)
+`, testConfig.HostEndpointIP, testConfig.NebraskaPort, appID, testConfig.HostEndpointIP, testConfig.APIServerPort, testConfig.NodeName)
 
 	// Write the config to a local temp file and scp it up rather than
 	// piping it through an SSH heredoc: heredocs are fragile to compose
