@@ -29,10 +29,10 @@ use crate::{
     },
     config::AgentConfig,
     k8s::NodeClient,
-    query_for_update,
+    nebraska::{CheckOutcome, Client as NebraskaClient},
     state::{PendingCommit, StateStore},
     trident::{CompletedResponse, TridentClient, TridentClientError},
-    IdSource, QueryResult,
+    IdSource,
 };
 
 const FINAL_STATUS_PATCH_RETRIES: usize = 3;
@@ -297,29 +297,25 @@ where
         let endpoint = self.config.nebraska.endpoint.clone().ok_or_else(|| {
             anyhow::anyhow!("annotation mode requires [nebraska].endpoint or CLI override")
         })?;
-        // query_for_update() is a blocking call (reqwest::blocking under the
-        // hood, see omaha::send) - calling it directly from this async fn
-        // can panic ("Cannot drop a runtime in a context where blocking is
-        // not allowed") because reqwest::blocking spins up its own inner
-        // Tokio runtime per call, which isn't safe to tear down from inside
-        // an already-running async task. Run it on a dedicated blocking
-        // thread instead.
+        // Client::check_for_update() is a blocking call (reqwest::blocking
+        // under the hood, see nebraska::transport) - calling it directly
+        // from this async fn can panic ("Cannot drop a runtime in a context
+        // where blocking is not allowed") because reqwest::blocking spins up
+        // its own inner Tokio runtime per call, which isn't safe to tear
+        // down from inside an already-running async task. Run it on a
+        // dedicated blocking thread instead.
         let app_id = self.config.nebraska.app_id.clone();
         let track = self.config.nebraska.track.clone();
-        let endpoint_for_task = endpoint.clone();
-        let response = tokio::task::spawn_blocking(move || {
-            query_for_update(
-                &endpoint_for_task,
-                &app_id,
-                &track,
-                &Version::new(0, 0, 0),
-                IdSource::MachineIdHashed,
-            )
+        let machine_id = crate::build_machine_id(IdSource::MachineIdHashed)?;
+        let outcome = tokio::task::spawn_blocking(move || {
+            let client = NebraskaClient::new(endpoint, app_id, track, machine_id);
+            client.check_for_update(&Version::new(0, 0, 0))
         })
         .await
-        .context("Nebraska query task panicked")??;
-        let offered = match response.result {
-            QueryResult::NoUpdate => {
+        .context("Nebraska query task panicked")?
+        .map_err(|err| anyhow::anyhow!("Nebraska query failed: {err}"))?;
+        let offered = match outcome {
+            CheckOutcome::UpToDate | CheckOutcome::UpdateInProgress => {
                 let status = UpdateStatus::new(
                     &request,
                     Operation::Stage,
@@ -334,7 +330,7 @@ where
                 self.record_and_publish(status).await?;
                 return Ok(());
             }
-            QueryResult::NewDocument(update) => update,
+            CheckOutcome::UpdateAvailable(offer) => offer,
         };
         if request.target_version.as_deref() != Some(offered.version.to_string().as_str()) {
             let status = UpdateStatus::new(
@@ -356,10 +352,13 @@ where
         }
 
         let mut client = TridentClient::connect(&self.config.trident.socket).await?;
+        // Integrity of the downloaded image is verified by Trident itself
+        // via the image's own COSI metadata, so the Nebraska-reported hash
+        // (offered.primary.hash) is not passed here.
         let result = client
             .update_stage(
-                &offered.url,
-                offered.hash.as_deref(),
+                &offered.primary.url,
+                None,
                 self.config.orchestration.stage_timeout,
             )
             .await;
