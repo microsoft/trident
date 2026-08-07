@@ -46,7 +46,7 @@ func RunRollback(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	nodeStore.PatchLabels(map[string]string{stormproxies.NodeImageVersionLabel: testConfig.TargetVersion})
 	nodeStore.SetReadyCondition(true)
 
-	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig); err != nil {
+	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig, "unused-not-queried-during-rollback"); err != nil {
 		return err
 	}
 
@@ -78,7 +78,7 @@ func RunRollback(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	// Same rationale as run-ab-update: the rollback reboot lands on the
 	// previous root, which needs the agent config/kubeconfig re-delivered
 	// before it can talk to the fake apiserver again.
-	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig); err != nil {
+	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig, "unused-not-queried-during-rollback"); err != nil {
 		return fmt.Errorf("failed to reconfigure ACL agent on post-rollback-reboot root: %w", err)
 	}
 
