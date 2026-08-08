@@ -20,7 +20,7 @@ require (
 	libvirt.org/go/libvirtxml v1.11007.0
 	libvirt.org/libvirt-go-xml v7.4.0+incompatible
 	modernc.org/sqlite v1.20.3
-	oras.land/oras-go/v2 v2.6.0
+	oras.land/oras-go/v2 v2.6.2
 )
 
 require (
@@ -32,7 +32,7 @@ require (
 	github.com/rogpeppe/go-internal v1.12.0 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	golang.org/x/mod v0.35.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
+	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/tools v0.44.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478 // indirect
