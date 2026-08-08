@@ -342,6 +342,12 @@ func (cfg QemuConfig) TruncateLog(vmName string) error {
 
 func (cfg QemuConfig) WaitForLogin(vmName string, outputPath string, verbose bool, iteration int) error {
 	localSerialLog := "./serial.log"
+	// Each iteration's snapshot must contain only this boot. printAndSave opens
+	// localSerialLog with O_APPEND, so remove any file left by a prior iteration;
+	// otherwise every saved NNN-serial.log accumulates all earlier boots.
+	if rmErr := os.Remove(localSerialLog); rmErr != nil && !os.IsNotExist(rmErr) {
+		logrus.Warnf("Failed to remove stale serial log accumulator %q: %v", localSerialLog, rmErr)
+	}
 	// Wait for login prompt to appear in the serial log and save the log to localSerialLog
 	waitErr := innerWaitForLogin(cfg.SerialLog, verbose, iteration, localSerialLog)
 	// Copy serial log to output directory if specified
