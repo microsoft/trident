@@ -60,6 +60,26 @@ parameters:
     default: false
     displayName: Servicing VM testing
 
+  - name: runStormE2EVMHost
+    type: boolean
+    default: false
+    displayName: Storm E2E tests Virtual Machines Host
+
+  - name: runStormE2EVMContainer
+    type: boolean
+    default: false
+    displayName: Storm E2E tests Virtual Machines Container
+
+  - name: stormTestRing
+    type: string
+    default: full-validation
+    values:
+      - pr-e2e
+      - ci
+      - pre
+      - full-validation
+    displayName: Storm E2E test ring (selects which configurations run)
+
 trigger: none
 
 variables:
@@ -109,3 +129,6 @@ extends:
           runDeploymentBMContainer: ${{ parameters.runDeploymentBMContainer }}
           runFunctionalTests: ${{ parameters.runFunctionalTests }}
           runServicingTests: ${{ parameters.runServicingTests }}
+          runStormE2EVMHost: ${{ parameters.runStormE2EVMHost }}
+          runStormE2EVMContainer: ${{ parameters.runStormE2EVMContainer }}
+          stormTestRing: ${{ parameters.stormTestRing }}
