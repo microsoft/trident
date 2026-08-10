@@ -32,11 +32,15 @@ match client.check_for_update(&current)? {
     CheckOutcome::UpToDate => println!("no update"),
     CheckOutcome::UpdateInProgress => println!("update already in progress"),
     CheckOutcome::UpdateAvailable(offer) => {
-        println!("update to {} at {}", offer.version, offer.package_url);
-        // The package file's hash (base64 SHA-1, plus SHA-256 when present) is
+        println!("update to {} at {}", offer.version, offer.primary.url);
+        // The file's hash (base64 SHA-1, plus SHA-256 when present) is
         // available for integrity-checking the downloaded artifact:
-        if let Some(hash) = &offer.package_hash {
+        if let Some(hash) = &offer.primary.hash {
             println!("expected file sha1: {}", hash.sha1);
+        }
+        // An update may also carry extra files (e.g. a detached signature):
+        for extra in &offer.extra_files {
+            println!("extra file: {} at {}", extra.name, extra.url);
         }
     }
 }

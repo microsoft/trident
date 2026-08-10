@@ -290,7 +290,8 @@ pub(super) struct Package {
     pub(super) name: String,
 
     /// The package hash as sent by Nebraska: base64-encoded SHA-1 of the package
-    /// *file*. Optional because not every response carries it.
+    /// *file*. Optional because Nebraska omits the attribute when a package has
+    /// no hash.
     #[serde(default, rename = "@hash")]
     pub(super) hash: Option<String>,
 
@@ -301,6 +302,11 @@ pub(super) struct Package {
     /// The package size in bytes, as a string in the wire format.
     #[serde(default, rename = "@size")]
     pub(super) size: Option<String>,
+
+    /// Whether the manifest marks this file as required. Defaults to `false`
+    /// when the attribute is absent.
+    #[serde(default, rename = "@required")]
+    pub(super) required: bool,
 }
 
 /// Parses a Nebraska response body.
