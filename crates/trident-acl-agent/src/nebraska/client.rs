@@ -24,8 +24,9 @@ pub enum CheckOutcome {
     /// No update is available; the instance is up to date.
     UpToDate,
 
-    /// An update is available.
-    UpdateAvailable(UpdateOffer),
+    /// An update is available. Boxed to keep [`CheckOutcome`] small, since the
+    /// no-update outcomes are the common case.
+    UpdateAvailable(Box<UpdateOffer>),
 
     /// Nebraska reports an update is already in progress for this instance.
     /// Expected while an update is mid-flight; the caller should keep polling
@@ -33,43 +34,63 @@ pub enum CheckOutcome {
     UpdateInProgress,
 }
 
-/// An offered update: the version, the fully-resolved package URL, and the
-/// package's hash and size as reported by Nebraska.
+/// An offered update: the version and the files that make it up.
+///
+/// Nebraska renders a package's [extra files](https://github.com/flatcar/nebraska)
+/// as additional entries in the manifest, so an update may consist of more than
+/// one file: the [`primary`](UpdateOffer::primary) package and, when present,
+/// one or more [`extra_files`](UpdateOffer::extra_files). Callers that only need
+/// the main artifact use `primary`; extra-file-aware callers also iterate
+/// `extra_files`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpdateOffer {
     /// The version being offered.
     pub version: Version,
 
-    /// The absolute URL of the update package, resolved by joining the
-    /// response's `codebase` with the package `name`.
-    pub package_url: Url,
+    /// The primary package file (the manifest's first package; always present).
+    pub primary: PackageFile,
 
-    /// The hash of the package *file* as reported by Nebraska.
-    ///
-    /// **This is a hash of the package file, not of any content inside it.**
-    /// Nebraska's `hash` attribute is a base64-encoded SHA-1 of the file (with
-    /// an optional SHA-256). It is provided for integrity checking of the
-    /// downloaded artifact; note in particular that it is **not** the same as a
-    /// hash of a manifest or other content embedded within the package, so it
-    /// cannot be used where such an inner hash is required. `None` if the
-    /// response carried no hash.
-    pub package_hash: Option<PackageHash>,
-
-    /// The package size in bytes, as reported by Nebraska, if present.
-    pub package_size: Option<u64>,
+    /// Additional files attached to the update, in manifest order. Empty when
+    /// the update is a single file.
+    pub extra_files: Vec<PackageFile>,
 }
 
-/// The hash(es) of an update package file, as reported by Nebraska.
+/// A single file that is part of an [`UpdateOffer`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageFile {
+    /// The file name as listed in the manifest.
+    pub name: String,
+
+    /// The absolute URL of the file, resolved by joining the response's
+    /// `codebase` with [`name`](PackageFile::name).
+    pub url: Url,
+
+    /// The hash of the file as reported by Nebraska, if any.
+    ///
+    /// **This is a hash of the file, not of any content inside it.** Nebraska
+    /// reports a base64-encoded SHA-1 (with an optional SHA-256), for integrity
+    /// checking the downloaded artifact. `None` when the manifest carries no
+    /// hash for this file, which the protocol permits.
+    pub hash: Option<PackageHash>,
+
+    /// The file size in bytes, when reported by Nebraska.
+    pub size: Option<u64>,
+
+    /// Whether the manifest marks this file as required.
+    pub required: bool,
+}
+
+/// The hash(es) of a file, as reported by Nebraska.
 ///
-/// Both values are base64-encoded and hash the package *file* (not its
-/// contents). Nebraska always populates the SHA-1 `sha1` field; `sha256` is
-/// present only when the package was registered with one.
+/// Both values are base64-encoded and hash the *file* (not its contents).
+/// Nebraska reports a SHA-1; `sha256` is present only when the file was
+/// registered with one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageHash {
-    /// Base64-encoded SHA-1 of the package file.
+    /// Base64-encoded SHA-1 of the file.
     pub sha1: String,
 
-    /// Base64-encoded SHA-256 of the package file, when Nebraska provides it.
+    /// Base64-encoded SHA-256 of the file, when Nebraska provides it.
     pub sha256: Option<String>,
 }
 
@@ -399,7 +420,7 @@ impl<T: Transport> Client<T> {
         }
 
         let offer = self.build_offer(update_check)?;
-        Ok(CheckOutcome::UpdateAvailable(offer))
+        Ok(CheckOutcome::UpdateAvailable(Box::new(offer)))
     }
 
     /// Builds an [`UpdateOffer`] from a positive update-check response.
@@ -433,45 +454,58 @@ impl<T: Transport> Client<T> {
             .as_ref()
             .map(|p| p.packages.as_slice())
             .unwrap_or(&[]);
-        let package = match packages {
-            [package] => package,
-            [] => {
-                return Err(NebraskaError::UnexpectedResponse(
-                    "update available but no package listed".to_string(),
-                ))
-            }
-            many => {
-                return Err(NebraskaError::UnexpectedResponse(format!(
-                    "expected exactly one package, found {}",
-                    many.len()
-                )))
-            }
-        };
 
-        // Join the codebase (which must end in a trailing slash) with the
-        // package name to get the absolute package URL; do not otherwise rewrite
-        // it.
-        let package_url = codebase.codebase.join(&package.name).map_err(|e| {
+        // Nebraska renders extra files as additional packages after the main
+        // one, so the manifest may legitimately carry more than one. The first
+        // is the primary file; any following are extra files.
+        let (primary, extras) = packages.split_first().ok_or_else(|| {
+            NebraskaError::UnexpectedResponse("update available but no package listed".to_string())
+        })?;
+
+        let primary = self.build_package_file(&codebase.codebase, primary)?;
+        let extra_files = extras
+            .iter()
+            .map(|p| self.build_package_file(&codebase.codebase, p))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(UpdateOffer {
+            version,
+            primary,
+            extra_files,
+        })
+    }
+
+    /// Builds a [`PackageFile`] from a single manifest package, resolving its URL
+    /// against `codebase`.
+    fn build_package_file(
+        &self,
+        codebase: &Url,
+        package: &wire::Package,
+    ) -> Result<PackageFile, NebraskaError> {
+        // Join the codebase (which must end in a trailing slash) with the file
+        // name to get the absolute URL; do not otherwise rewrite it.
+        let url = codebase.join(&package.name).map_err(|e| {
             NebraskaError::UnexpectedResponse(format!(
-                "failed to join codebase '{}' with package '{}': {e}",
-                codebase.codebase, package.name
+                "failed to join codebase '{codebase}' with package '{}': {e}",
+                package.name
             ))
         })?;
 
-        let package_hash = package.hash.as_ref().map(|sha1| PackageHash {
+        let hash = package.hash.as_ref().map(|sha1| PackageHash {
             sha1: sha1.clone(),
             sha256: package.hash_sha256.clone(),
         });
 
         // Size is a string on the wire; surface it as a number when it parses,
         // and treat an unparseable size as absent rather than failing the offer.
-        let package_size = package.size.as_ref().and_then(|s| s.parse::<u64>().ok());
+        let size = package.size.as_ref().and_then(|s| s.parse::<u64>().ok());
 
-        Ok(UpdateOffer {
-            version,
-            package_url,
-            package_hash,
-            package_size,
+        Ok(PackageFile {
+            name: package.name.clone(),
+            url,
+            hash,
+            size,
+            required: package.required,
         })
     }
 }
@@ -535,18 +569,21 @@ mod tests {
         match outcome {
             CheckOutcome::UpdateAvailable(offer) => {
                 assert_eq!(offer.version, Version::new(2, 0, 0));
+                assert!(offer.extra_files.is_empty());
+                assert_eq!(offer.primary.name, "os-image-2.0.0.cosi");
                 assert_eq!(
-                    offer.package_url.as_str(),
+                    offer.primary.url.as_str(),
                     "https://updates.example.com/os-image-2.0.0.cosi"
                 );
                 assert_eq!(
-                    offer.package_hash,
+                    offer.primary.hash,
                     Some(PackageHash {
                         sha1: "AAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_string(),
                         sha256: None,
                     })
                 );
-                assert_eq!(offer.package_size, Some(1024));
+                assert_eq!(offer.primary.size, Some(1024));
+                assert!(offer.primary.required);
             }
             other => panic!("expected an update offer, got {other:?}"),
         }
@@ -559,8 +596,48 @@ mod tests {
         );
         match client.check_for_update(&Version::new(1, 0, 0)).unwrap() {
             CheckOutcome::UpdateAvailable(offer) => {
-                assert_eq!(offer.package_hash, None);
-                assert_eq!(offer.package_size, None);
+                assert_eq!(offer.primary.hash, None);
+                assert_eq!(offer.primary.size, None);
+            }
+            other => panic!("expected an offer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn check_offer_surfaces_extra_files() {
+        // Nebraska renders extra files as additional <package> entries after the
+        // main one; the offer exposes them as extra_files in order.
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/"/></urls><manifest version="2.0.0"><packages>
+              <package name="os-image-2.0.0.cosi" hash="MAIN" size="10" required="true"/>
+              <package name="os-image-2.0.0.sig" hash="SIG1" hash_sha256="SIG256" size="20" required="false"/>
+              <package name="notes.txt" size="5" required="false"/>
+            </packages></manifest></updatecheck></app></response>"#,
+        );
+        match client.check_for_update(&Version::new(1, 0, 0)).unwrap() {
+            CheckOutcome::UpdateAvailable(offer) => {
+                assert_eq!(offer.primary.name, "os-image-2.0.0.cosi");
+                assert_eq!(offer.extra_files.len(), 2);
+
+                let sig = &offer.extra_files[0];
+                assert_eq!(sig.name, "os-image-2.0.0.sig");
+                assert_eq!(
+                    sig.url.as_str(),
+                    "https://updates.example.com/os-image-2.0.0.sig"
+                );
+                assert_eq!(
+                    sig.hash,
+                    Some(PackageHash {
+                        sha1: "SIG1".to_string(),
+                        sha256: Some("SIG256".to_string()),
+                    })
+                );
+                assert_eq!(sig.size, Some(20));
+                assert!(!sig.required);
+
+                let notes = &offer.extra_files[1];
+                assert_eq!(notes.name, "notes.txt");
+                assert_eq!(notes.hash, None);
             }
             other => panic!("expected an offer, got {other:?}"),
         }
