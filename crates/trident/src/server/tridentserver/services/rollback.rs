@@ -59,6 +59,9 @@ impl RollbackService for TridentServer {
         request: Request<RollbackRequest>,
     ) -> Result<Response<Self::RollbackStream>, Status> {
         let req = request.into_inner();
+        let Some(stage) = req.stage else {
+            return Err(Status::invalid_argument("Missing stage configuration"));
+        };
         let Some(finalize) = req.finalize else {
             return Err(Status::invalid_argument("Missing finalize configuration"));
         };
@@ -79,7 +82,7 @@ impl RollbackService for TridentServer {
                     .message("Failed to open datastore")?;
 
                 let (invoke_if_next_is_runtime, invoke_available_ab) =
-                    manual_rollback_flags(req.kind())?;
+                    manual_rollback_flags(stage.kind())?;
 
                 trident
                     .rollback(

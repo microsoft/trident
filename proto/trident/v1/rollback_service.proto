@@ -39,10 +39,10 @@ enum ManualRollbackKind {
 }
 
 message RollbackRequest {
-  // The rollback kind parameter for the servicing operation.
-  ManualRollbackKind kind = 1;
+  // The staging parameters for the rollback operation.
+  RollbackStageRequest stage = 1;
 
-  // Reboot management configuration for the rollback operation.
+  // The finalize parameters for the rollback operation.
   RollbackFinalizeRequest finalize = 2;
 }
 
