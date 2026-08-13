@@ -161,12 +161,20 @@ where
         if let Some(request) = snapshot.request.clone() {
             if let Some(entry) = persisted.completed.get(&request.operation_id) {
                 if let Some(commit) = entry.commit.clone() {
-                    if snapshot.commit_status.as_ref() != Some(&commit) {
+                    let matches = snapshot
+                        .commit_status
+                        .as_ref()
+                        .is_some_and(|current| current.same_content(&commit));
+                    if !matches {
                         self.publish_status(&commit).await?;
                     }
                 }
                 if let Some(operation) = entry.operation.clone() {
-                    if snapshot.operation_status.as_ref() != Some(&operation) {
+                    let matches = snapshot
+                        .operation_status
+                        .as_ref()
+                        .is_some_and(|current| current.same_content(&operation));
+                    if !matches {
                         self.publish_status(&operation).await?;
                     }
                     return Ok(());
@@ -229,7 +237,11 @@ where
             .get(&request.operation_id)
             .and_then(|entry| entry.operation.clone());
         if let Some(status) = cached {
-            if snapshot.operation_status.as_ref() != Some(&status) {
+            let matches = snapshot
+                .operation_status
+                .as_ref()
+                .is_some_and(|current| current.same_content(&status));
+            if !matches {
                 self.publish_status(&status).await?;
             }
             return Ok(LoopControl::Continue);

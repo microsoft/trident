@@ -157,6 +157,29 @@ impl UpdateStatus {
         refreshed.message = truncate_message(refreshed.message);
         refreshed
     }
+
+    /// Compares two statuses ignoring `last_updated_utc`.
+    ///
+    /// `publish_status` stamps a fresh `last_updated_utc` on every write via
+    /// `refreshed_for_write`, so a straight `PartialEq` between an
+    /// already-on-the-node status and a cached/completed one to decide
+    /// whether a re-publish is needed would never be equal after the first
+    /// publish - triggering another watch event, another "different"
+    /// comparison, and another publish, forever. Callers that only care
+    /// whether the *content* already matches (and so a re-publish would be a
+    /// no-op) must use this instead of `==`/`!=`.
+    pub fn same_content(&self, other: &Self) -> bool {
+        self.schema_version == other.schema_version
+            && self.node_update_id == other.node_update_id
+            && self.operation_id == other.operation_id
+            && self.operation == other.operation
+            && self.code == other.code
+            && self.message == other.message
+            && self.from_version == other.from_version
+            && self.to_version == other.to_version
+            && self.started_utc == other.started_utc
+            && self.finished_utc == other.finished_utc
+    }
 }
 
 fn truncate_message(message: String) -> String {
@@ -217,6 +240,71 @@ mod tests {
 
     fn fixed_time(secs: i64) -> DateTime<Utc> {
         Utc.timestamp_opt(1_700_000_000 + secs, 0).unwrap()
+    }
+
+    #[test]
+    fn same_content_ignores_last_updated_utc() {
+        // Regression test: publish_status() -> refreshed_for_write() stamps a
+        // fresh last_updated_utc on every write. If the "already completed"
+        // dedupe check in orchestrator.rs compared statuses with `==`/`!=`
+        // instead of `same_content`, a cached status would never equal the
+        // freshly-published one (their last_updated_utc always differs),
+        // causing an infinite republish loop on every watch event.
+        let request = sample_request(RequestedOperation::Finalize);
+        let original = UpdateStatus::new(
+            &request,
+            Operation::Finalize,
+            request.operation_id.clone(),
+            StatusCode::Success,
+            "finalize completed",
+            Some("1.0.0".to_string()),
+            Some("2.0.0".to_string()),
+            fixed_time(0),
+            Some(fixed_time(5)),
+        );
+        let republished = original.refreshed_for_write();
+
+        assert_ne!(
+            original.last_updated_utc, republished.last_updated_utc,
+            "refreshed_for_write should always stamp a new timestamp"
+        );
+        assert_ne!(
+            original, republished,
+            "PartialEq must still distinguish them (guards against same_content silently replacing derived Eq)"
+        );
+        assert!(
+            original.same_content(&republished),
+            "same_content must ignore last_updated_utc"
+        );
+    }
+
+    #[test]
+    fn same_content_detects_real_differences() {
+        let request = sample_request(RequestedOperation::Finalize);
+        let success = UpdateStatus::new(
+            &request,
+            Operation::Finalize,
+            request.operation_id.clone(),
+            StatusCode::Success,
+            "finalize completed",
+            Some("1.0.0".to_string()),
+            Some("2.0.0".to_string()),
+            fixed_time(0),
+            Some(fixed_time(5)),
+        );
+        let failed = UpdateStatus::new(
+            &request,
+            Operation::Finalize,
+            request.operation_id.clone(),
+            StatusCode::OperationFailed,
+            "finalize failed",
+            Some("1.0.0".to_string()),
+            Some("2.0.0".to_string()),
+            fixed_time(0),
+            Some(fixed_time(5)),
+        );
+
+        assert!(!success.same_content(&failed));
     }
 
     #[test]
