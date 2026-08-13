@@ -264,7 +264,7 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	}
 
 	finalScenario := &stormproxies.Scenario{Steps: []stormproxies.ScenarioStep{
-		{Expect: &stormproxies.ExpectStep{OperationID: "finalize-op.commit", Operation: "commit", Code: "Success", Timeout: 180 * time.Second}},
+		{Expect: &stormproxies.ExpectStep{OperationID: "finalize-op", Operation: "commit", Code: "Success", Timeout: 180 * time.Second}},
 	}}
 	finalReport, err := rp.RunScenario(ctx, finalScenario)
 	logScenarioTimeline("post-reboot commit", finalReport)
@@ -278,9 +278,9 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	}
 
 	snapshot := nodeStore.Snapshot()
-	if got := snapshot.Annotations[stormproxies.UpdateStatusAnnotation]; got == "" {
+	if got := snapshot.Annotations[stormproxies.UpdateCommitStatusAnnotation]; got == "" {
 		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
-		return fmt.Errorf("final status annotation missing")
+		return fmt.Errorf("final commit status annotation missing")
 	}
 
 	// The node annotation only proves the ACL-agent-facing rollout API
