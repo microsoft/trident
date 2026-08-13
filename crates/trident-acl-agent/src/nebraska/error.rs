@@ -51,6 +51,16 @@ pub enum NebraskaError {
     /// check. Carries the raw status string for diagnosis.
     #[error("Nebraska reported error status: {0}")]
     ServerError(String),
+
+    /// [`Client::complete_after_reboot`](crate::nebraska::Client::complete_after_reboot)
+    /// sent the completion report, but Nebraska still reports
+    /// [`CheckOutcome::UpdateInProgress`](crate::nebraska::CheckOutcome::UpdateInProgress)
+    /// rather than reflecting completion. This is retryable for the same
+    /// reason a transport failure is: losing the terminal event wedges the
+    /// instance permanently, so the caller must keep retrying rather than
+    /// treat an unacknowledged completion as success.
+    #[error("Nebraska still reports the update in progress after completion was reported")]
+    CompletionNotAcknowledged,
 }
 
 impl NebraskaError {
@@ -86,6 +96,7 @@ impl NebraskaError {
             | NebraskaError::Parse(_)
             | NebraskaError::UnexpectedResponse(_)
             | NebraskaError::ServerError(_) => false,
+            NebraskaError::CompletionNotAcknowledged => true,
         }
     }
 }
@@ -125,5 +136,10 @@ mod tests {
         assert!(!NebraskaError::Parse("x".into()).is_retryable());
         assert!(!NebraskaError::UnexpectedResponse("x".into()).is_retryable());
         assert!(!NebraskaError::ServerError("error-osnotsupported".into()).is_retryable());
+    }
+
+    #[test]
+    fn completion_not_acknowledged_is_retryable() {
+        assert!(NebraskaError::CompletionNotAcknowledged.is_retryable());
     }
 }

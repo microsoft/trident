@@ -276,6 +276,12 @@ impl<T: Transport> Client<T> {
     /// reported, see [`report_failure`](Client::report_failure) for the recovery
     /// path.
     ///
+    /// A still-`UpdateInProgress` outcome (the completion report did not take)
+    /// is also retried here, not just transport/HTTP failures: it is treated as
+    /// [`NebraskaError::CompletionNotAcknowledged`] internally so the same
+    /// retry loop covers it, then unwrapped back into a plain `CheckOutcome` on
+    /// success.
+    ///
     /// `previous_version` is the version the instance was on before the update;
     /// `current_version` is the (new) version now running.
     pub fn complete_after_reboot(
@@ -284,7 +290,17 @@ impl<T: Transport> Client<T> {
         current_version: &Version,
     ) -> Result<CheckOutcome, NebraskaError> {
         retry(RetryPolicy::default(), || {
-            self.try_complete_after_reboot(previous_version, current_version)
+            match self.try_complete_after_reboot(previous_version, current_version)? {
+                // Nebraska hasn't reflected the completion report yet. This is
+                // exactly the "the completion did not take, retry" case
+                // documented on `try_complete_after_reboot`, but `retry` only
+                // re-attempts on `Err`, so it must be translated into one here
+                // or a still-in-progress `Ok` would be (incorrectly) treated
+                // as success and returned immediately without retrying. See
+                // `NebraskaError::CompletionNotAcknowledged`.
+                CheckOutcome::UpdateInProgress => Err(NebraskaError::CompletionNotAcknowledged),
+                outcome => Ok(outcome),
+            }
         })
     }
 
@@ -513,6 +529,7 @@ impl<T: Transport> Client<T> {
 #[cfg(test)]
 mod tests {
     use std::cell::{Cell, RefCell};
+    use std::collections::VecDeque;
 
     use super::*;
 
@@ -811,5 +828,76 @@ mod tests {
             .unwrap_err();
         assert!(err.is_retryable());
         assert_eq!(client.transport.calls.get(), 1);
+    }
+
+    /// A transport that returns a different canned response on each
+    /// successive call, so `complete_after_reboot`'s retry behaviour can be
+    /// exercised across several attempts.
+    struct SequenceTransport {
+        responses: RefCell<VecDeque<String>>,
+        calls: Cell<u32>,
+    }
+
+    impl SequenceTransport {
+        fn new(responses: impl IntoIterator<Item = &'static str>) -> Self {
+            Self {
+                responses: RefCell::new(responses.into_iter().map(String::from).collect()),
+                calls: Cell::new(0),
+            }
+        }
+    }
+
+    impl Transport for SequenceTransport {
+        fn post_xml(&self, _endpoint: &Url, _body: &[u8]) -> Result<String, NebraskaError> {
+            self.calls.set(self.calls.get() + 1);
+            self.responses
+                .borrow_mut()
+                .pop_front()
+                .ok_or_else(|| NebraskaError::Transport("no more canned responses".into()))
+        }
+    }
+
+    const STILL_IN_PROGRESS: &str = r#"<response protocol="3.0" server="n"><app appid="app-1" status="error-updateInProgressOnInstance"><updatecheck status="error-internal"/></app></response>"#;
+    const COMPLETE: &str = r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="noupdate"/></app></response>"#;
+
+    #[test]
+    fn complete_after_reboot_retries_when_still_in_progress() {
+        // The first two attempts land but Nebraska hasn't reflected the
+        // completion yet; the third attempt reports it as done.
+        let client = Client::with_transport(
+            Url::parse("https://nebraska.example/v1/update/").unwrap(),
+            "app-1",
+            "stable",
+            MachineId::new("mid-1").unwrap(),
+            SequenceTransport::new([STILL_IN_PROGRESS, STILL_IN_PROGRESS, COMPLETE]),
+        );
+        let outcome = client
+            .complete_after_reboot(&Version::new(1, 0, 0), &Version::new(2, 0, 0))
+            .unwrap();
+        assert_eq!(outcome, CheckOutcome::UpToDate);
+        assert_eq!(
+            client.transport.calls.get(),
+            3,
+            "a still-in-progress outcome must be retried, not returned as success"
+        );
+    }
+
+    #[test]
+    fn complete_after_reboot_gives_up_if_never_acknowledged() {
+        // Nebraska never reflects the completion within the retry budget:
+        // the call must eventually surface an error rather than silently
+        // "succeeding" with a stale in-progress outcome.
+        let responses = std::iter::repeat_n(STILL_IN_PROGRESS, 10);
+        let client = Client::with_transport(
+            Url::parse("https://nebraska.example/v1/update/").unwrap(),
+            "app-1",
+            "stable",
+            MachineId::new("mid-1").unwrap(),
+            SequenceTransport::new(responses),
+        );
+        let err = client
+            .complete_after_reboot(&Version::new(1, 0, 0), &Version::new(2, 0, 0))
+            .unwrap_err();
+        assert!(matches!(err, NebraskaError::CompletionNotAcknowledged));
     }
 }
