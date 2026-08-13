@@ -3,13 +3,13 @@
 //! and writes the status annotation back, including post-reboot.
 //!
 //! Implements the node-side control flow from `docs/update-trigger-design.md`:
-//! https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GC67946fff8f296e10217b70e063c896e6028ea843&path=/docs/update-trigger-design.md
+//! https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GC1cfe79ec53bfc6936771e2433cba3dec0906b4fd&path=/docs/update-trigger-design.md
 //! (sections 2.1 "Trigger mechanism", 2.3 "Stage/finalize/rollback split
 //! and post-reboot commit", and 2.5 "Rollback"). See that document for the
 //! full state-machine rationale; keep it in sync with this file if the
 //! design changes.
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, future::Future};
 
 use anyhow::Context;
 use chrono::{DateTime, Utc};
@@ -23,12 +23,12 @@ use osutils::dependencies::Dependency;
 
 use crate::{
     annotations::{
-        commit_operation_id, current_active_version, Operation, RequestedOperation, StatusCode,
-        UpdateRequest, UpdateStatus, SCHEMA_VERSION, UPDATE_REQUEST_ANNOTATION,
+        current_active_version, Operation, RequestedOperation, StatusCode, UpdateRequest,
+        UpdateStatus, SCHEMA_VERSION, UPDATE_COMMIT_STATUS_ANNOTATION, UPDATE_REQUEST_ANNOTATION,
         UPDATE_STATUS_ANNOTATION,
     },
     config::AgentConfig,
-    k8s::NodeClient,
+    k8s::{K8sClientError, NodeClient},
     nebraska::{CheckOutcome, Client as NebraskaClient, ProgressEvent},
     state::{PendingCommit, StateStore},
     trident::{CompletedResponse, TridentClient, TridentClientError},
@@ -124,14 +124,26 @@ where
     R: RebootHandle,
 {
     pub async fn run(&self) -> Result<(), anyhow::Error> {
-        self.recover_from_trident_state().await?;
+        if let Err(err) = self.recover_from_trident_state().await {
+            if self.log_and_swallow_node_gone(&err, "recovering persisted state") {
+                return Ok(());
+            }
+            return Err(err);
+        }
         let mut stream = self
             .k8s
             .watch_node(self.config.kubernetes.node_name.clone());
         while let Some(node) = stream.next().await {
-            match self.reconcile_node(&node?).await? {
-                LoopControl::Continue => {}
-                LoopControl::ExitForReboot => return Ok(()),
+            let node = node?;
+            match self.reconcile_node(&node).await {
+                Ok(LoopControl::Continue) => {}
+                Ok(LoopControl::ExitForReboot) => return Ok(()),
+                Err(err) => {
+                    if self.log_and_swallow_node_gone(&err, "reconciling node") {
+                        return Ok(());
+                    }
+                    return Err(err);
+                }
             }
         }
         Ok(())
@@ -147,35 +159,21 @@ where
         }
 
         if let Some(request) = snapshot.request.clone() {
-            // See reconcile_node() for why we must also check the
-            // commit-suffixed id: a finalize/rollback's post-reboot outcome
-            // is recorded under `<operationId>.commit`, not the original
-            // request's plain operationId.
-            let cached = persisted
-                .completed
-                .get(&commit_operation_id(&request.operation_id))
-                .or_else(|| persisted.completed.get(&request.operation_id))
-                .cloned();
-            if let Some(status) = cached {
-                self.publish_status(&status).await?;
-                return Ok(());
+            if let Some(entry) = persisted.completed.get(&request.operation_id) {
+                if let Some(commit) = entry.commit.clone() {
+                    if snapshot.commit_status.as_ref() != Some(&commit) {
+                        self.publish_status(&commit).await?;
+                    }
+                }
+                if let Some(operation) = entry.operation.clone() {
+                    if snapshot.operation_status.as_ref() != Some(&operation) {
+                        self.publish_status(&operation).await?;
+                    }
+                    return Ok(());
+                }
             }
         }
 
-        // No pendingCommit survived (or none was ever written) and there's no
-        // cached terminal status for the current request's operationId. If
-        // the outstanding request is a finalize/rollback, this is exactly the
-        // "state.json did not survive the reboot" degraded path from
-        // accepted-design.md §2.3: the *status* annotation from before the
-        // reboot (e.g. finalize's InProgress/Success) is still sitting in the
-        // API server untouched - annotations live in etcd, not on the node -
-        // so we cannot use "is there a status annotation at all" to detect
-        // this case. We must always attempt reconstruction here rather than
-        // falling through to the normal watch loop, which would otherwise
-        // re-run handle_finalize from scratch against an empty local
-        // `completed` map and incorrectly report NotStaged. Stage requests
-        // don't reboot, so a crash there is safely retried by the normal
-        // watch loop instead.
         if let Some(request) = snapshot.request {
             if matches!(
                 request.operation,
@@ -191,9 +189,10 @@ where
     async fn reconcile_node(&self, node: &Node) -> Result<LoopControl, anyhow::Error> {
         let snapshot = Snapshot::from_node(node);
         log::debug!(
-            "received node update: request={:?} status={:?}",
+            "received node update: request={:?} operation_status={:?} commit_status={:?}",
             snapshot.request,
-            snapshot.status
+            snapshot.operation_status,
+            snapshot.commit_status
         );
         let persisted = self.state.load()?;
 
@@ -213,6 +212,7 @@ where
                     from_version: None,
                     to_version: None,
                     started_utc: now,
+                    last_updated_utc: now,
                     finished_utc: Some(now),
                 };
                 self.record_and_publish(status).await?;
@@ -224,39 +224,12 @@ where
             return Ok(LoopControl::Continue);
         };
 
-        // A finalize/rollback request yields two terminal statuses under two
-        // operationIds on opposite sides of the reboot: the plain id (the
-        // pre-reboot `finalize`/`rollback` terminal) and the `.commit`-suffixed
-        // id (the post-reboot `commit` terminal written by
-        // resume_pending_commit()/reconstruct_without_state() - see
-        // accepted-design.md §2.3). Once the commit half has landed, the
-        // *request* annotation is still the original finalize/rollback
-        // request (annotations don't get cleared), so this reconcile can
-        // fire again for the same request after the commit already
-        // completed. Checking only the plain operationId here missed the
-        // commit-suffixed entry and caused this reconcile to treat the
-        // request as unfinished, re-publishing the stale pre-reboot
-        // `finalize` status and clobbering the correct post-reboot `commit`
-        // status the caller (AKS-RP) is actually waiting on. Prefer the
-        // commit-suffixed entry when present since it reflects the more
-        // recent, authoritative outcome.
         let cached = persisted
             .completed
-            .get(&commit_operation_id(&request.operation_id))
-            .or_else(|| persisted.completed.get(&request.operation_id))
-            .cloned();
+            .get(&request.operation_id)
+            .and_then(|entry| entry.operation.clone());
         if let Some(status) = cached {
-            // Only (re-)publish if the status annotation isn't already
-            // up to date. Publishing unconditionally here is dangerous:
-            // publish_status() PATCHes the Node, which is itself an
-            // update the watch stream observes, which re-triggers
-            // reconcile_node() for the very same (already-completed)
-            // request, causing an infinite self-sustaining PATCH loop
-            // (observed as thousands of PATCH/watch cycles per second
-            // with no forward progress). Comparing against the annotation
-            // already on the node breaks that cycle while still repairing
-            // a stale/missing annotation exactly once.
-            if snapshot.status.as_ref() != Some(&status) {
+            if snapshot.operation_status.as_ref() != Some(&status) {
                 self.publish_status(&status).await?;
             }
             return Ok(LoopControl::Continue);
@@ -266,7 +239,7 @@ where
             // Reject on operationId, not nodeUpdateId: the actual conflict
             // this guard exists to prevent is "a second finalize/rollback
             // starts while one is still waiting for its post-reboot
-            // commit" (accepted-design.md's in-flight conflict rule).
+            // commit" (accepted-design-v2.md's in-flight conflict rule).
             // Keying on nodeUpdateId alone let a retried/re-issued request
             // that reused the same nodeUpdateId but a new operationId slip
             // through this guard entirely and re-enter handle_finalize/
@@ -323,7 +296,7 @@ where
             return Ok(());
         }
 
-        self.publish_status(&UpdateStatus::new(
+        let in_progress = UpdateStatus::new(
             &request,
             Operation::Stage,
             request.operation_id.clone(),
@@ -333,18 +306,11 @@ where
             to_version.clone(),
             started,
             None,
-        ))
-        .await?;
+        );
+        self.publish_status(&in_progress).await?;
         let endpoint = self.config.nebraska.endpoint.clone().ok_or_else(|| {
             anyhow::anyhow!("annotation mode requires [nebraska].endpoint or CLI override")
         })?;
-        // Client::check_for_update() is a blocking call (reqwest::blocking
-        // under the hood, see nebraska::transport) - calling it directly
-        // from this async fn can panic ("Cannot drop a runtime in a context
-        // where blocking is not allowed") because reqwest::blocking spins up
-        // its own inner Tokio runtime per call, which isn't safe to tear
-        // down from inside an already-running async task. Run it on a
-        // dedicated blocking thread instead.
         let app_id = self.config.nebraska.app_id.clone();
         let track = self.config.nebraska.track.clone();
         let machine_id = crate::build_machine_id(IdSource::MachineIdHashed)?;
@@ -392,17 +358,8 @@ where
             return Ok(());
         }
 
-        // The instance's currently-running version, used for every Nebraska
-        // event report below (progress events always carry the version the
-        // instance is *currently* on - it doesn't change until after the
-        // post-reboot commit). `None` here just means the report is skipped
-        // (see parse_nebraska_version); it never blocks staging itself.
         let current_ver = parse_nebraska_version(&from_version, "stage");
         if let Some(ref v) = current_ver {
-            // Sending this commits the instance to eventually reporting a
-            // terminal event too - see the Failed report on the error path
-            // below, and Installed/Failed in handle_finalize for the rest of
-            // the commitment.
             self.report_nebraska_event(NebraskaReport::Progress {
                 version: v.clone(),
                 event: ProgressEvent::DownloadStarted,
@@ -414,11 +371,14 @@ where
         // Integrity of the downloaded image is verified by Trident itself
         // via the image's own COSI metadata, so the Nebraska-reported hash
         // (offered.primary.hash) is not passed here.
-        let result = client
-            .update_stage(
-                &offered.primary.url,
-                None,
-                self.config.orchestration.stage_timeout,
+        let result = self
+            .run_with_status_heartbeat(
+                in_progress,
+                client.update_stage(
+                    &offered.primary.url,
+                    None,
+                    self.config.orchestration.stage_timeout,
+                ),
             )
             .await;
         if let Some(ref v) = current_ver {
@@ -450,11 +410,17 @@ where
         }
 
         let completed = self.state.load()?.completed;
-        let staged = completed.values().find(|s| {
-            s.node_update_id == request.node_update_id
-                && s.operation == Operation::Stage
-                && matches!(s.code, StatusCode::Success | StatusCode::AlreadyAtTarget)
-        });
+        let staged = completed
+            .values()
+            .filter_map(|entry| entry.operation.as_ref())
+            .find(|status| {
+                status.node_update_id == request.node_update_id
+                    && status.operation == Operation::Stage
+                    && matches!(
+                        status.code,
+                        StatusCode::Success | StatusCode::AlreadyAtTarget
+                    )
+            });
         let staged = match staged {
             None => {
                 let status = UpdateStatus::new(
@@ -473,34 +439,26 @@ where
             }
             Some(staged) => staged,
         };
-        // finalize must apply to whatever was actually staged: tridentd's
-        // update_finalize() carries no target version of its own, it just
-        // finalizes whatever is currently staged on disk. Without this
-        // check, a finalize whose targetVersion differs from the recorded
-        // stage's targetVersion would silently finalize the *staged*
-        // version while the status annotation reported the *requested*
-        // (different) toVersion - a silent version-skew in the status
-        // channel that AKS-RP has no way to detect.
         if staged.to_version != to_version {
             let status = UpdateStatus::new(
-                &request,
-                Operation::Finalize,
-                request.operation_id.clone(),
-                StatusCode::InvalidRequest,
-                format!(
-                    "finalize targetVersion {:?} does not match the version staged for this nodeUpdateId ({:?})",
-                    to_version, staged.to_version
-                ),
-                from_version,
-                to_version,
-                started,
-                Some(Utc::now()),
-            );
+            &request,
+            Operation::Finalize,
+            request.operation_id.clone(),
+            StatusCode::InvalidRequest,
+            format!(
+                "finalize targetVersion {:?} does not match the version staged for this nodeUpdateId ({:?})",
+                to_version, staged.to_version
+            ),
+            from_version,
+            to_version,
+            started,
+            Some(Utc::now()),
+        );
             self.record_and_publish(status).await?;
             return Ok(LoopControl::Continue);
         }
 
-        self.publish_status(&UpdateStatus::new(
+        let in_progress = UpdateStatus::new(
             &request,
             Operation::Finalize,
             request.operation_id.clone(),
@@ -510,52 +468,38 @@ where
             to_version.clone(),
             started,
             None,
-        ))
-        .await?;
-        self.state.set_pending_commit(PendingCommit {
-            request: request.clone(),
-            operation_id: request.operation_id.clone(),
-            operation: Operation::Finalize,
-            from_version: from_version.clone(),
-            to_version: to_version.clone(),
-            started_utc: started,
-        })?;
-        // The version the instance is *currently* running - unchanged by
-        // finalize itself; only the post-reboot commit moves it to
-        // `to_version`. See handle_stage for why a report is simply skipped
-        // (not fatal) when this doesn't parse.
+        );
+        self.publish_status(&in_progress).await?;
         let current_ver = parse_nebraska_version(&from_version, "finalize");
         let mut client = TridentClient::connect(&self.config.trident.socket).await?;
-        let result = client
-            .update_finalize(self.config.orchestration.finalize_timeout)
+        let result = self
+            .run_with_status_heartbeat(
+                in_progress,
+                client.update_finalize(self.config.orchestration.finalize_timeout),
+            )
             .await;
         if let Some(ref v) = current_ver {
-            // On success this is the "Installed" progress event (the new
-            // slot is now armed for the next boot); on failure it's a
-            // terminal Failed, releasing any wedge from stage's earlier
-            // progress events. Installed itself is discharged by a terminal
-            // event from the post-reboot commit path (see
-            // resume_pending_commit) or by the reboot-failure branch below.
             self.report_nebraska_event(finalize_nebraska_report(v, &result))
                 .await;
         }
         match result {
             Ok(_) => {
+                let boot_marker = current_boot_marker()?;
+                self.state.set_pending_commit(PendingCommit {
+                    request: request.clone(),
+                    operation_id: request.operation_id.clone(),
+                    operation: Operation::Finalize,
+                    from_version: from_version.clone(),
+                    to_version: to_version.clone(),
+                    started_utc: started,
+                    boot_marker,
+                })?;
                 let terminal = finalize_success_status(
                     &request,
                     from_version.clone(),
                     to_version.clone(),
                     started,
                 );
-                // Record this terminal status under the *finalize* operationId
-                // (not just the eventual "<id>.commit" one written after
-                // commit()) before rebooting. Without this, if state.json
-                // doesn't survive the reboot, the still-present finalize
-                // request annotation gets reconciled again post-reboot with
-                // an empty local `completed` map for "finalize-op" and
-                // re-runs handle_finalize from scratch - incorrectly
-                // reporting NotStaged even though finalize already
-                // succeeded and a commit reconstruction already ran.
                 if let Err(err) = self.state.remember_completed(terminal.clone()) {
                     log::warn!("failed to record finalize completion in state.json: {err}");
                 }
@@ -564,10 +508,6 @@ where
                     Ok(()) => Ok(LoopControl::ExitForReboot),
                     Err(err) => {
                         self.state.clear_pending_commit()?;
-                        // Nebraska thinks Installed was already reported but
-                        // no reboot (and therefore no commit) will actually
-                        // happen - release the wedge so a later retry can be
-                        // granted again.
                         if let Some(ref v) = current_ver {
                             self.report_nebraska_event(NebraskaReport::Failed {
                                 previous: v.clone(),
@@ -607,7 +547,7 @@ where
 
         let mut client = TridentClient::connect(&self.config.trident.socket).await?;
 
-        self.publish_status(&UpdateStatus::new(
+        let staging = UpdateStatus::new(
             &request,
             Operation::Rollback,
             request.operation_id.clone(),
@@ -617,11 +557,14 @@ where
             None,
             started,
             None,
-        ))
-        .await?;
+        );
+        self.publish_status(&staging).await?;
 
-        let stage_response = match client
-            .rollback_stage(self.config.orchestration.stage_timeout)
+        let stage_response = match self
+            .run_with_status_heartbeat(
+                staging,
+                client.rollback_stage(self.config.orchestration.stage_timeout),
+            )
             .await
         {
             Ok(response) => response,
@@ -632,17 +575,6 @@ where
             }
         };
 
-        // tridentd's RollbackStage reports a no-op ("nothing to roll back")
-        // the same way update/install do: Ok/Success with servicing_kind ==
-        // NoneRequired, not an error - see servicing.proto's
-        // ServicingResponse.servicing_kind and execute_rollback() in
-        // engine/manual_rollback/mod.rs. Detect that here and stop before
-        // finalize/reboot - otherwise a rollback request against a node
-        // with an empty rollback chain (or in a non-rollbackable state)
-        // would be reported as false Success to AKS-RP and would trigger
-        // an unnecessary reboot for nothing. `None` is treated the same as
-        // `NoneRequired` (fail closed) in case a future response omits the
-        // field.
         if !matches!(
             stage_response.servicing_kind,
             Some(ServicingKind::ManualRollbackAb)
@@ -662,7 +594,7 @@ where
             return Ok(LoopControl::Continue);
         }
 
-        self.publish_status(&UpdateStatus::new(
+        let finalizing = UpdateStatus::new(
             &request,
             Operation::Rollback,
             request.operation_id.clone(),
@@ -672,28 +604,28 @@ where
             None,
             started,
             None,
-        ))
-        .await?;
-        self.state.set_pending_commit(PendingCommit {
-            request: request.clone(),
-            operation_id: request.operation_id.clone(),
-            operation: Operation::Rollback,
-            from_version: from_version.clone(),
-            to_version: None,
-            started_utc: started,
-        })?;
-        match client
-            .rollback_finalize(self.config.orchestration.finalize_timeout)
+        );
+        self.publish_status(&finalizing).await?;
+        match self
+            .run_with_status_heartbeat(
+                finalizing,
+                client.rollback_finalize(self.config.orchestration.finalize_timeout),
+            )
             .await
         {
             Ok(_) => {
+                let boot_marker = current_boot_marker()?;
+                self.state.set_pending_commit(PendingCommit {
+                    request: request.clone(),
+                    operation_id: request.operation_id.clone(),
+                    operation: Operation::Rollback,
+                    from_version: from_version.clone(),
+                    to_version: None,
+                    started_utc: started,
+                    boot_marker,
+                })?;
                 let terminal =
                     rollback_finalize_success_status(&request, from_version.clone(), started);
-                // Same rationale as handle_finalize(): record the terminal
-                // status under the rollback's plain operationId before
-                // rebooting, so a lost state.json doesn't cause
-                // recover_from_trident_state() to re-run handle_rollback
-                // from scratch after finalize already succeeded.
                 if let Err(err) = self.state.remember_completed(terminal.clone()) {
                     log::warn!("failed to record rollback completion in state.json: {err}");
                 }
@@ -729,6 +661,15 @@ where
     }
 
     async fn resume_pending_commit(&self, pending: PendingCommit) -> Result<(), anyhow::Error> {
+        let current_boot = current_boot_marker()?;
+        if current_boot == pending.boot_marker {
+            log::info!(
+                "pending commit {} is still waiting for the reboot to happen",
+                pending.operation_id
+            );
+            return Ok(());
+        }
+
         let mut client = match TridentClient::connect(&self.config.trident.socket).await {
             Ok(client) => client,
             Err(err) => {
@@ -744,24 +685,21 @@ where
                 return Ok(());
             }
         };
-        self.publish_status(&UpdateStatus::new(
+        let in_progress = UpdateStatus::new(
             &pending.request,
             Operation::Commit,
-            commit_operation_id(&pending.operation_id),
+            pending.operation_id.clone(),
             StatusCode::InProgress,
             "committing post-reboot state",
             pending.from_version.clone(),
             pending.to_version.clone(),
             pending.started_utc,
             None,
-        ))
-        .await?;
+        );
+        self.publish_status(&in_progress).await?;
         let result = client
             .commit(self.config.orchestration.finalize_timeout)
             .await;
-        // Rollback isn't a Nebraska-tracked update (no offer was ever
-        // accepted from Nebraska for it), so only report for Finalize's
-        // post-reboot commit.
         if pending.operation == Operation::Finalize {
             if let (Some(previous), Some(current)) = (
                 parse_nebraska_version(&pending.from_version, "post-reboot commit"),
@@ -792,7 +730,7 @@ where
     ) -> UpdateStatus {
         // state.json did not survive the reboot (or was never written, e.g.
         // the agent crashed before persisting pendingCommit). Per
-        // accepted-design.md §2.3's degraded path, reconstruct the answer by
+        // accepted-design-v2.md §2.3's degraded path, reconstruct the answer by
         // calling commit() unconditionally rather than guessing from labels
         // or the target version alone - tridentd's commit() is self-checking
         // and its own (ServicingKind/RebootStatus/Result) response already
@@ -843,30 +781,25 @@ where
     }
 
     async fn record_and_publish(&self, status: UpdateStatus) -> Result<(), anyhow::Error> {
+        let status = status.refreshed_for_write();
         self.state.remember_completed(status.clone())?;
-        // Once the status is recorded in state.json, publishing it to the
-        // Node annotation is not allowed to be fatal: right after a reboot
-        // the fake-apiserver/kubelet networking can still be settling
-        // (transient "connection refused"), and letting that error
-        // propagate would crash the whole process via `?` up through
-        // run()/main(). Systemd then restarts the agent in a tight loop
-        // (visible as repeated "Scheduled restart job" entries), and the
-        // already-recorded status never makes it onto the Node - the
-        // annotation just stays stale until something else nudges a
-        // reconcile. Retry with backoff instead; the write is idempotent
-        // since remember_completed() already happened.
         self.best_effort_publish_terminal(&status).await;
         Ok(())
     }
 
     async fn publish_status(&self, status: &UpdateStatus) -> Result<(), anyhow::Error> {
+        let status = status.refreshed_for_write();
         let mut annotations = BTreeMap::new();
+        let annotation_key = match status.operation {
+            Operation::Commit => UPDATE_COMMIT_STATUS_ANNOTATION,
+            _ => UPDATE_STATUS_ANNOTATION,
+        };
         annotations.insert(
-            UPDATE_STATUS_ANNOTATION.to_string(),
-            Some(serde_json::to_string(status)?),
+            annotation_key.to_string(),
+            Some(serde_json::to_string(&status)?),
         );
         log::info!(
-            "sending {UPDATE_STATUS_ANNOTATION} annotation to node {}: {status:?}",
+            "sending {annotation_key} annotation to node {}: {status:?}",
             self.config.kubernetes.node_name
         );
         self.k8s
@@ -881,10 +814,65 @@ where
 
     async fn best_effort_publish_terminal(&self, status: &UpdateStatus) {
         for _ in 0..FINAL_STATUS_PATCH_RETRIES {
-            if self.publish_status(status).await.is_ok() {
-                return;
+            match self.publish_status(status).await {
+                Ok(()) => return,
+                Err(err) if self.is_node_gone_error(&err) => {
+                    log::info!(
+                        "stopping terminal status publish because node {} no longer exists",
+                        self.config.kubernetes.node_name
+                    );
+                    return;
+                }
+                Err(_) => tokio::time::sleep(FINAL_STATUS_PATCH_BACKOFF).await,
             }
-            tokio::time::sleep(FINAL_STATUS_PATCH_BACKOFF).await;
+        }
+    }
+
+    fn is_node_gone_error(&self, err: &anyhow::Error) -> bool {
+        matches!(
+            err.downcast_ref::<K8sClientError>(),
+            Some(K8sClientError::NodeGone)
+        )
+    }
+
+    fn log_and_swallow_node_gone(&self, err: &anyhow::Error, context: &str) -> bool {
+        if self.is_node_gone_error(err) {
+            log::info!(
+                "stopping trident-acl-agent while {}: node {} no longer exists",
+                context,
+                self.config.kubernetes.node_name
+            );
+            true
+        } else {
+            false
+        }
+    }
+
+    async fn run_with_status_heartbeat<F>(&self, status: UpdateStatus, future: F) -> F::Output
+    where
+        F: Future,
+    {
+        tokio::pin!(future);
+        let mut interval = tokio::time::interval(self.config.orchestration.heartbeat_interval);
+        interval.tick().await;
+        let mut stop_heartbeats = false;
+        loop {
+            tokio::select! {
+                result = &mut future => return result,
+                _ = interval.tick(), if !stop_heartbeats => {
+                    if let Err(err) = self.publish_status(&status).await {
+                        if self.is_node_gone_error(&err) {
+                            log::info!(
+                                "stopping heartbeats because node {} no longer exists",
+                                self.config.kubernetes.node_name
+                            );
+                            stop_heartbeats = true;
+                        } else {
+                            log::warn!("failed to refresh in-progress status heartbeat: {err}");
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -960,6 +948,16 @@ where
 /// `Orchestrator::report_nebraska_event`), so a malformed/missing version
 /// string must only skip the report, never the Trident operation it
 /// describes.
+fn current_boot_marker() -> Result<String, anyhow::Error> {
+    let raw = std::fs::read_to_string("/proc/sys/kernel/random/boot_id")
+        .context("failed to read /proc/sys/kernel/random/boot_id")?;
+    let marker = raw.trim().to_string();
+    if marker.is_empty() {
+        anyhow::bail!("/proc/sys/kernel/random/boot_id was empty");
+    }
+    Ok(marker)
+}
+
 fn parse_nebraska_version(version: &Option<String>, context: &str) -> Option<Version> {
     let raw = version.as_deref()?;
     match Version::parse(raw) {
@@ -990,8 +988,8 @@ struct InvalidRequest {
 struct Snapshot {
     request: Option<UpdateRequest>,
     invalid_request: Option<InvalidRequest>,
-    #[allow(dead_code)]
-    status: Option<UpdateStatus>,
+    operation_status: Option<UpdateStatus>,
+    commit_status: Option<UpdateStatus>,
 }
 
 impl Snapshot {
@@ -1025,13 +1023,17 @@ impl Snapshot {
                 (None, None)
             }
         };
-        let status = annotations
+        let operation_status = annotations
             .and_then(|a| a.get(UPDATE_STATUS_ANNOTATION))
+            .and_then(|v| serde_json::from_str::<UpdateStatus>(v).ok());
+        let commit_status = annotations
+            .and_then(|a| a.get(UPDATE_COMMIT_STATUS_ANNOTATION))
             .and_then(|v| serde_json::from_str::<UpdateStatus>(v).ok());
         Self {
             request,
             invalid_request,
-            status,
+            operation_status,
+            commit_status,
         }
     }
 }
@@ -1202,14 +1204,14 @@ fn finalize_failure_status(
 }
 
 fn map_trident_failure(error: &TridentClientError) -> StatusCode {
-    if indicates_reverted(error) {
-        StatusCode::RevertedToPrevious
+    if indicates_target_boot_failed(error) {
+        StatusCode::TargetBootFailed
     } else {
         StatusCode::OperationFailed
     }
 }
 
-fn indicates_reverted(error: &TridentClientError) -> bool {
+fn indicates_target_boot_failed(error: &TridentClientError) -> bool {
     error
         .remote()
         .map(|remote| {
@@ -1224,7 +1226,7 @@ fn indicates_reverted(error: &TridentClientError) -> bool {
             // kebab-case serde subkind, not a copy of the forward-update
             // one - both must be checked here, or a real rollback
             // boot-fallback silently reports as generic OperationFailed
-            // instead of RevertedToPrevious.
+            // instead of TargetBootFailed.
             remote.subkind == "ab-update-reboot-check"
                 || remote.subkind == "ab-update-health-check-commit-check"
                 || remote.subkind == "manual-rollback-reboot-check"
@@ -1237,7 +1239,7 @@ fn indicates_reverted(error: &TridentClientError) -> bool {
 /// needing a full `Orchestrator` instance. See `stage_result_to_status` for
 /// rationale.
 /// Pre-flight checks for the state.json-missing degraded reconstruction
-/// path (accepted-design.md §2.3). Returns `Some(status)` when reconstruction
+/// path (accepted-design-v2.md §2.3). Returns `Some(status)` when reconstruction
 /// cannot proceed (tridentd already known-unreachable, or the outstanding
 /// request isn't a finalize/rollback), or `None` when the caller should go
 /// on to call tridentd's commit() to determine the real outcome.
@@ -1281,9 +1283,9 @@ fn reconstruct_precheck_status(
 }
 
 /// Maps tridentd's commit() result to the terminal status for the
-/// state.json-missing degraded reconstruction path (accepted-design.md
-/// §2.3). Always reports under the `.commit`-suffixed operationId, mirroring
-/// the normal post-reboot commit path in `commit_result_to_status`.
+/// state.json-missing degraded reconstruction path (accepted-design-v2.md
+/// §2.3). Always reports under the original operationId, mirroring the
+/// normal post-reboot commit path in `commit_result_to_status`.
 fn reconstruct_commit_result_to_status(
     request: &UpdateRequest,
     from_version: Option<String>,
@@ -1294,7 +1296,7 @@ fn reconstruct_commit_result_to_status(
         Ok(response) if response.reboot_status == RebootStatus::RebootRequired => UpdateStatus::new(
             request,
             Operation::Commit,
-            commit_operation_id(&request.operation_id),
+            request.operation_id.clone(),
             StatusCode::AgentInternalError,
             "state.json missing after reboot; commit requested another reboot",
             from_version,
@@ -1305,7 +1307,7 @@ fn reconstruct_commit_result_to_status(
         Ok(_) => UpdateStatus::new(
             request,
             Operation::Commit,
-            commit_operation_id(&request.operation_id),
+            request.operation_id.clone(),
             StatusCode::Success,
             "state.json missing after reboot; commit() confirmed the swap and completed",
             from_version,
@@ -1313,11 +1315,11 @@ fn reconstruct_commit_result_to_status(
             started,
             Some(Utc::now()),
         ),
-        Err(err) if indicates_reverted(&err) => UpdateStatus::new(
+        Err(err) if indicates_target_boot_failed(&err) => UpdateStatus::new(
             request,
             Operation::Commit,
-            commit_operation_id(&request.operation_id),
-            StatusCode::RevertedToPrevious,
+            request.operation_id.clone(),
+            StatusCode::TargetBootFailed,
             format!(
                 "state.json missing after reboot; commit detected rollback to previous version: {err}"
             ),
@@ -1329,7 +1331,7 @@ fn reconstruct_commit_result_to_status(
         Err(err) => UpdateStatus::new(
             request,
             Operation::Commit,
-            commit_operation_id(&request.operation_id),
+            request.operation_id.clone(),
             map_trident_failure(&err),
             format!("state.json missing after reboot; commit failed: {err}"),
             from_version,
@@ -1349,7 +1351,7 @@ fn commit_result_to_status(
             UpdateStatus::new(
                 &pending.request,
                 Operation::Commit,
-                commit_operation_id(&pending.operation_id),
+                pending.operation_id.clone(),
                 StatusCode::AgentInternalError,
                 "commit requested another reboot",
                 pending.from_version.clone(),
@@ -1361,7 +1363,7 @@ fn commit_result_to_status(
         Ok(_) => UpdateStatus::new(
             &pending.request,
             Operation::Commit,
-            commit_operation_id(&pending.operation_id),
+            pending.operation_id.clone(),
             StatusCode::Success,
             "commit completed",
             pending.from_version.clone(),
@@ -1369,11 +1371,11 @@ fn commit_result_to_status(
             pending.started_utc,
             Some(Utc::now()),
         ),
-        Err(err) if indicates_reverted(&err) => UpdateStatus::new(
+        Err(err) if indicates_target_boot_failed(&err) => UpdateStatus::new(
             &pending.request,
             Operation::Commit,
-            commit_operation_id(&pending.operation_id),
-            StatusCode::RevertedToPrevious,
+            pending.operation_id.clone(),
+            StatusCode::TargetBootFailed,
             format!("commit detected rollback to previous version: {err}"),
             pending.from_version.clone(),
             pending.to_version.clone(),
@@ -1383,7 +1385,7 @@ fn commit_result_to_status(
         Err(err) => UpdateStatus::new(
             &pending.request,
             Operation::Commit,
-            commit_operation_id(&pending.operation_id),
+            pending.operation_id.clone(),
             map_trident_failure(&err),
             format!("commit failed: {err}"),
             pending.from_version.clone(),
@@ -1487,6 +1489,7 @@ mod tests {
             from_version: Some("1.0.0".to_string()),
             to_version: Some("2.0.0".to_string()),
             started_utc: Utc::now(),
+            boot_marker: "boot-1".to_string(),
         }
     }
 
@@ -1637,7 +1640,7 @@ mod tests {
             &result.unwrap_err(),
         );
 
-        assert_eq!(status.code, StatusCode::RevertedToPrevious);
+        assert_eq!(status.code, StatusCode::TargetBootFailed);
     }
 
     // --- stage ---
@@ -1826,7 +1829,7 @@ mod tests {
             &err,
         );
 
-        assert_eq!(status.code, StatusCode::RevertedToPrevious);
+        assert_eq!(status.code, StatusCode::TargetBootFailed);
     }
 
     #[tokio::test]
@@ -1949,7 +1952,7 @@ mod tests {
 
         let status = commit_result_to_status(&pending(Operation::Finalize), result);
 
-        assert_eq!(status.code, StatusCode::RevertedToPrevious);
+        assert_eq!(status.code, StatusCode::TargetBootFailed);
     }
 
     #[tokio::test]
@@ -1966,7 +1969,7 @@ mod tests {
 
         let status = commit_result_to_status(&pending(Operation::Finalize), result);
 
-        assert_eq!(status.code, StatusCode::RevertedToPrevious);
+        assert_eq!(status.code, StatusCode::TargetBootFailed);
     }
 
     #[tokio::test]
@@ -2101,10 +2104,7 @@ mod tests {
 
         assert_eq!(status.code, StatusCode::Success);
         assert_eq!(status.operation, Operation::Commit);
-        assert_eq!(
-            status.operation_id,
-            commit_operation_id(&request.operation_id)
-        );
+        assert_eq!(status.operation_id, request.operation_id.clone());
         assert!(status.message.contains("commit() confirmed the swap"));
     }
 
@@ -2142,7 +2142,7 @@ mod tests {
         let request = request(RequestedOperation::Rollback);
         let status = reconstruct_commit_result_to_status(&request, None, Utc::now(), result);
 
-        assert_eq!(status.code, StatusCode::RevertedToPrevious);
+        assert_eq!(status.code, StatusCode::TargetBootFailed);
         assert!(status.message.contains("detected rollback"));
     }
 
@@ -2164,14 +2164,11 @@ mod tests {
         assert_eq!(status.code, StatusCode::OperationFailed);
         assert!(status.message.contains("commit failed"));
         // Regression check for DR-003: the generic-failure branch must use the
-        // same Operation::Commit / `.commit`-suffixed operationId as every other
+        // same Operation::Commit / shared operationId as every other
         // branch of this function, matching commit_result_to_status and the
         // doc comment above reconstruct_commit_result_to_status.
         assert_eq!(status.operation, Operation::Commit);
-        assert_eq!(
-            status.operation_id,
-            commit_operation_id(&request.operation_id)
-        );
+        assert_eq!(status.operation_id, request.operation_id.clone());
     }
 
     // --- parse_nebraska_version ---

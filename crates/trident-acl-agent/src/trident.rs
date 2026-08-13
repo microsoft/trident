@@ -1,7 +1,7 @@
 //! gRPC helpers for talking to `tridentd`.
 //!
 //! Implements the Trident-invocation half of `docs/update-trigger-design.md`:
-//! https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GC67946fff8f296e10217b70e063c896e6028ea843&path=/docs/update-trigger-design.md
+//! https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GC1cfe79ec53bfc6936771e2433cba3dec0906b4fd&path=/docs/update-trigger-design.md
 //! (the "Trident invocation" column of section 2.1's operations table,
 //! and the stage/finalize/rollback-finalize CallerHandlesReboot split in
 //! section 2.3).
@@ -221,7 +221,7 @@ impl TridentClient {
                 reboot: Some(RebootManagement {
                     // The agent, not tridentd, must own every reboot
                     // decision: AKS-RP is the sole authority over
-                    // reboot/rollback (accepted-design.md §2.5). If commit()
+                    // reboot/rollback (accepted-design-v2.md §2.5). If commit()
                     // ever reports NeedsReboot (e.g. a health-check failure,
                     // were health checks ever re-enabled), the agent needs
                     // to see that as a RebootRequired response it controls
@@ -283,7 +283,7 @@ impl TridentClient {
                 reboot: Some(RebootManagement {
                     // Same rationale as commit()/update_finalize(): AKS-RP,
                     // via the agent, is the sole authority over reboot
-                    // timing (accepted-design.md §2.5).
+                    // timing (accepted-design-v2.md §2.5).
                     handling: RebootHandling::CallerHandlesReboot.into(),
                 }),
             }))

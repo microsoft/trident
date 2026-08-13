@@ -26,6 +26,7 @@ const DEFAULT_KUBERNETES_POLL_INTERVAL: Duration = Duration::from_secs(2);
 pub const DEFAULT_NEBRASKA_ENDPOINT: &str = "https://nebraska.example.invalid/v1/update";
 const DEFAULT_STAGE_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 const DEFAULT_FINALIZE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+const DEFAULT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(60);
 pub const DEFAULT_STATE_PATH: &str = "/var/lib/trident-acl-agent/state.json";
 pub const DEFAULT_KUBELET_KUBECONFIG: &str = "/var/lib/kubelet/kubeconfig";
 
@@ -132,7 +133,8 @@ pub enum GoalSource {
     /// `acl.azure.com/update-request` annotation and drives Trident's
     /// stage/finalize/rollback/commit operations against tridentd
     /// accordingly, writing progress back to `acl.azure.com/update-status`
-    /// (see docs/update-trigger-design.md). This is the default mode.
+    /// and `acl.azure.com/update-commit-status` (see accepted-design-v2.md).
+    /// This is the default mode.
     #[default]
     Annotations,
 }
@@ -145,6 +147,10 @@ pub struct OrchestrationConfig {
     pub stage_timeout: Duration,
     /// Placeholder default pending real data from storm aclagent scenario runs.
     pub finalize_timeout: Duration,
+    /// Refresh cadence for in-flight InProgress heartbeats. Default is well
+    /// below the ~10 minute watchdog staleness target proposed in
+    /// accepted-design-v2.md.
+    pub heartbeat_interval: Duration,
 }
 
 impl Default for OrchestrationConfig {
@@ -154,6 +160,7 @@ impl Default for OrchestrationConfig {
             state_path: PathBuf::from(DEFAULT_STATE_PATH),
             stage_timeout: DEFAULT_STAGE_TIMEOUT,
             finalize_timeout: DEFAULT_FINALIZE_TIMEOUT,
+            heartbeat_interval: DEFAULT_HEARTBEAT_INTERVAL,
         }
     }
 }
@@ -224,6 +231,11 @@ impl RawAgentConfig {
                     DEFAULT_FINALIZE_TIMEOUT,
                     "orchestration.finalize_timeout",
                 )?,
+                heartbeat_interval: parse_duration(
+                    self.orchestration.heartbeat_interval.as_deref(),
+                    DEFAULT_HEARTBEAT_INTERVAL,
+                    "orchestration.heartbeat_interval",
+                )?,
             },
         })
     }
@@ -254,6 +266,7 @@ struct RawOrchestrationConfig {
     state_path: Option<String>,
     stage_timeout: Option<String>,
     finalize_timeout: Option<String>,
+    heartbeat_interval: Option<String>,
 }
 
 fn parse_duration(
@@ -334,6 +347,10 @@ mod tests {
             config.orchestration.finalize_timeout,
             DEFAULT_FINALIZE_TIMEOUT
         );
+        assert_eq!(
+            config.orchestration.heartbeat_interval,
+            DEFAULT_HEARTBEAT_INTERVAL
+        );
     }
 
     #[test]
@@ -358,6 +375,7 @@ mod tests {
             state_path = "/var/lib/trident-acl-agent/custom-state.json"
             stage_timeout = "21m"
             finalize_timeout = "11m"
+            heartbeat_interval = "45s"
             "#,
         )
         .unwrap();
@@ -390,6 +408,10 @@ mod tests {
         assert_eq!(
             config.orchestration.finalize_timeout,
             Duration::from_secs(11 * 60)
+        );
+        assert_eq!(
+            config.orchestration.heartbeat_interval,
+            Duration::from_secs(45)
         );
     }
 }
