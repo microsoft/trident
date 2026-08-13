@@ -66,6 +66,10 @@ func (c *RPClient) runStep(ctx context.Context, index int, step ScenarioStep) (*
 func (c *RPClient) expectStatus(ctx context.Context, index int, step *ExpectStep) (*StepReport, error) {
 	deadline := time.Now().Add(step.Timeout)
 	pollInterval := 500 * time.Millisecond
+	annotationKey := UpdateStatusAnnotation
+	if step.Operation == "commit" {
+		annotationKey = UpdateCommitStatusAnnotation
+	}
 	var lastObserved map[string]string
 	matched := false
 	for time.Now().Before(deadline) {
@@ -73,7 +77,7 @@ func (c *RPClient) expectStatus(ctx context.Context, index int, step *ExpectStep
 		if err != nil {
 			return nil, err
 		}
-		status, _ := decodeStatus(node)
+		status, _ := decodeStatus(node, annotationKey)
 		if status != nil {
 			lastObserved = map[string]string{"operation-id": status.OperationID, "operation": status.Operation, "code": status.Code}
 			if status.Code == step.Code && (step.OperationID == "" || status.OperationID == step.OperationID) && (step.Operation == "" || status.Operation == step.Operation) {
@@ -128,8 +132,8 @@ func (c *RPClient) patchNodeRequest(ctx context.Context, step *PatchStep) error 
 	return nil
 }
 
-func decodeStatus(node *corev1.Node) (*updateStatus, error) {
-	raw := node.Annotations[UpdateStatusAnnotation]
+func decodeStatus(node *corev1.Node, annotationKey string) (*updateStatus, error) {
+	raw := node.Annotations[annotationKey]
 	if raw == "" {
 		return nil, nil
 	}
