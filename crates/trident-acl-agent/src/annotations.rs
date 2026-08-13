@@ -160,7 +160,7 @@ impl UpdateStatus {
 }
 
 fn truncate_message(message: String) -> String {
-    if message.as_bytes().len() <= MAX_MESSAGE_BYTES {
+    if message.len() <= MAX_MESSAGE_BYTES {
         return message;
     }
 
@@ -234,7 +234,7 @@ mod tests {
             Some(fixed_time(1)),
         );
 
-        assert!(status.message.as_bytes().len() <= MAX_MESSAGE_BYTES);
+        assert!(status.message.len() <= MAX_MESSAGE_BYTES);
         assert!(status.message.ends_with(TRUNCATION_MARKER));
     }
 
