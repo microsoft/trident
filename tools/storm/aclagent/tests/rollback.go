@@ -83,7 +83,7 @@ func RunRollback(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	}
 
 	finalScenario := &stormproxies.Scenario{Steps: []stormproxies.ScenarioStep{
-		{Expect: &stormproxies.ExpectStep{OperationID: "rollback-op.commit", Operation: "commit", Code: "Success", Timeout: 180 * time.Second}},
+		{Expect: &stormproxies.ExpectStep{OperationID: "rollback-op", Operation: "commit", Code: "Success", Timeout: 180 * time.Second}},
 	}}
 	finalReport, err := rp.RunScenario(ctx, finalScenario)
 	logScenarioTimeline("post-rollback-reboot commit", finalReport)
@@ -97,9 +97,9 @@ func RunRollback(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	}
 
 	snapshot := nodeStore.Snapshot()
-	if got := snapshot.Annotations[stormproxies.UpdateStatusAnnotation]; got == "" {
+	if got := snapshot.Annotations[stormproxies.UpdateCommitStatusAnnotation]; got == "" {
 		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
-		return fmt.Errorf("final rollback status annotation missing")
+		return fmt.Errorf("final rollback commit status annotation missing")
 	}
 
 	// Regression coverage for the "rollback with nothing to roll back"
