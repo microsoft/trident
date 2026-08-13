@@ -2,15 +2,14 @@
 //!
 //! This module (schema types, `UpdateRequest::validate()`, and the
 //! `#[cfg(test)]` design-doc conformance tests below) implements the
-//! `acl.azure.com/update-request` / `acl.azure.com/update-status` node
-//! annotation protocol designed in `docs/update-trigger-design.md`:
-//! https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GC67946fff8f296e10217b70e063c896e6028ea843&path=/docs/update-trigger-design.md
-//! Keep `UpdateRequest`/`UpdateStatus`/`StatusCode` and `validate()` in sync
-//! with that document's formal JSON Schema (its section "Formal JSON
-//! Schema") - the `design_doc_*`/`agent_built_*_conform_to_formal_schema`
-//! tests in this file's test module pin that JSON Schema in literally and
-//! check both the doc's own examples and our constructed annotations
-//! against it.
+//! `acl.azure.com/update-request`, `acl.azure.com/update-status`, and
+//! `acl.azure.com/update-commit-status` node annotation protocol described
+//! by the current accepted design (`accepted-design-v2.md`). Keep
+//! `UpdateRequest`/`UpdateStatus`/`StatusCode` and `validate()` in sync with
+//! that document's formal JSON Schema (its section "Formal JSON Schema") -
+//! the `design_doc_*`/`agent_built_*_conform_to_formal_schema` tests in this
+//! file's test module pin that JSON Schema in literally and check both the
+//! doc's own examples and our constructed annotations against it.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -18,7 +17,10 @@ use uuid::Uuid;
 
 pub const UPDATE_REQUEST_ANNOTATION: &str = "acl.azure.com/update-request";
 pub const UPDATE_STATUS_ANNOTATION: &str = "acl.azure.com/update-status";
+pub const UPDATE_COMMIT_STATUS_ANNOTATION: &str = "acl.azure.com/update-commit-status";
 pub const SCHEMA_VERSION: &str = "1.0";
+const MAX_MESSAGE_BYTES: usize = 2048;
+const TRUNCATION_MARKER: &str = "... (truncated)";
 // TODO(DR-001): This is a temporary stub. The active OS version cannot yet be
 // determined on-node because the OS image does not currently ship a required
 // file/manifest describing the running version. Once that file exists (planned
@@ -56,7 +58,7 @@ pub enum StatusCode {
     AlreadyAtTarget,
     NotStaged,
     OperationFailed,
-    RevertedToPrevious,
+    TargetBootFailed,
     AgentInternalError,
     InvalidRequest,
 }
@@ -86,15 +88,16 @@ pub struct UpdateStatus {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to_version: Option<String>,
     pub started_utc: DateTime<Utc>,
+    pub last_updated_utc: DateTime<Utc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finished_utc: Option<DateTime<Utc>>,
 }
 
 impl UpdateRequest {
     /// Enforces the same constraints as the request annotation's formal
-    /// JSON Schema in docs/update-trigger-design.md (https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GC67946fff8f296e10217b70e063c896e6028ea843&path=/docs/update-trigger-design.md):
-    /// schemaVersion match, and targetVersion required for stage/finalize
-    /// but disallowed for rollback. See this file's module doc.
+    /// JSON Schema in `accepted-design-v2.md`: schemaVersion match, and
+    /// targetVersion required for stage/finalize but disallowed for rollback.
+    /// See this file's module doc.
     pub fn validate(self) -> Result<Self, String> {
         if self.schema_version != SCHEMA_VERSION {
             return Err(format!("unsupported schemaVersion {}", self.schema_version));
@@ -117,8 +120,8 @@ impl UpdateRequest {
 
 impl UpdateStatus {
     // This constructor mirrors UpdateStatus's wire schema field-for-field
-    // (see accepted-design.md's two-annotation JSON protocol); splitting it
-    // into a builder would add ceremony across ~25 call sites in
+    // (see accepted-design-v2.md's two-status-key JSON protocol); splitting
+    // it into a builder would add ceremony across ~25 call sites in
     // orchestrator.rs without making any of them clearer.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -132,19 +135,48 @@ impl UpdateStatus {
         started_utc: DateTime<Utc>,
         finished_utc: Option<DateTime<Utc>>,
     ) -> Self {
+        let finished_or_started = finished_utc.unwrap_or(started_utc);
         Self {
             schema_version: SCHEMA_VERSION.to_string(),
             node_update_id: request.node_update_id,
             operation_id,
             operation,
             code,
-            message: message.into(),
+            message: truncate_message(message.into()),
             from_version,
             to_version,
             started_utc,
+            last_updated_utc: finished_or_started,
             finished_utc,
         }
     }
+
+    pub fn refreshed_for_write(&self) -> Self {
+        let mut refreshed = self.clone();
+        refreshed.last_updated_utc = Utc::now();
+        refreshed.message = truncate_message(refreshed.message);
+        refreshed
+    }
+}
+
+fn truncate_message(message: String) -> String {
+    if message.as_bytes().len() <= MAX_MESSAGE_BYTES {
+        return message;
+    }
+
+    let budget = MAX_MESSAGE_BYTES.saturating_sub(TRUNCATION_MARKER.len());
+    let mut end = 0;
+    for (idx, ch) in message.char_indices() {
+        let next = idx + ch.len_utf8();
+        if next > budget {
+            break;
+        }
+        end = next;
+    }
+
+    let mut truncated = message[..end].to_string();
+    truncated.push_str(TRUNCATION_MARKER);
+    truncated
 }
 
 pub fn current_active_version() -> String {
@@ -153,10 +185,6 @@ pub fn current_active_version() -> String {
     // while stubbed, this can equal a real request's targetVersion and cause a
     // false AlreadyAtTarget short-circuit in handle_stage/handle_finalize.
     CURRENT_VERSION_STUB.to_string()
-}
-
-pub fn commit_operation_id(operation_id: &str) -> String {
-    format!("{operation_id}.commit")
 }
 
 impl From<RequestedOperation> for Operation {
@@ -189,6 +217,25 @@ mod tests {
 
     fn fixed_time(secs: i64) -> DateTime<Utc> {
         Utc.timestamp_opt(1_700_000_000 + secs, 0).unwrap()
+    }
+
+    #[test]
+    fn truncates_messages_longer_than_2048_bytes() {
+        let request = sample_request(RequestedOperation::Stage);
+        let status = UpdateStatus::new(
+            &request,
+            Operation::Stage,
+            request.operation_id.clone(),
+            StatusCode::OperationFailed,
+            "x".repeat(3000),
+            None,
+            None,
+            fixed_time(0),
+            Some(fixed_time(1)),
+        );
+
+        assert!(status.message.as_bytes().len() <= MAX_MESSAGE_BYTES);
+        assert!(status.message.ends_with(TRUNCATION_MARKER));
     }
 
     /// Round-trips `status` through JSON and returns the parsed `Value`, also
@@ -228,6 +275,7 @@ mod tests {
         assert_eq!(json["fromVersion"], "1.0.0");
         assert_eq!(json["toVersion"], "2.0.0");
         assert!(json.get("startedUtc").is_some());
+        assert!(json.get("lastUpdatedUtc").is_some());
         assert!(json.get("finishedUtc").is_some());
         // Confirms camelCase renaming applies to every field, not just a subset.
         assert!(json.get("nodeUpdateId").is_some());
@@ -281,13 +329,13 @@ mod tests {
     }
 
     #[test]
-    fn finalize_failure_reverted_annotation_has_reverted_to_previous_code() {
+    fn finalize_failure_reverted_annotation_has_target_boot_failed_code() {
         let request = sample_request(RequestedOperation::Finalize);
         let status = UpdateStatus::new(
             &request,
             Operation::Finalize,
             request.operation_id.clone(),
-            StatusCode::RevertedToPrevious,
+            StatusCode::TargetBootFailed,
             "finalize failed: trident reported ab-update-reboot-check failure",
             Some("1.0.0".to_string()),
             Some("2.0.0".to_string()),
@@ -296,14 +344,14 @@ mod tests {
         );
 
         let json = to_annotation_json(&status);
-        assert_eq!(json["code"], "RevertedToPrevious");
+        assert_eq!(json["code"], "TargetBootFailed");
         assert_eq!(json["operationId"], "op-1");
     }
 
     #[test]
-    fn commit_success_annotation_uses_commit_suffixed_operation_id() {
+    fn commit_success_annotation_reuses_operation_id() {
         let request = sample_request(RequestedOperation::Finalize);
-        let commit_id = commit_operation_id(&request.operation_id);
+        let commit_id = request.operation_id.clone();
         let status = UpdateStatus::new(
             &request,
             Operation::Commit,
@@ -317,7 +365,7 @@ mod tests {
         );
 
         let json = to_annotation_json(&status);
-        assert_eq!(json["operationId"], "op-1.commit");
+        assert_eq!(json["operationId"], "op-1");
         assert_eq!(json["operation"], "commit");
         assert_eq!(json["code"], "Success");
     }
@@ -325,7 +373,7 @@ mod tests {
     #[test]
     fn commit_reboot_required_annotation_uses_agent_internal_error_code() {
         let request = sample_request(RequestedOperation::Finalize);
-        let commit_id = commit_operation_id(&request.operation_id);
+        let commit_id = request.operation_id.clone();
         let status = UpdateStatus::new(
             &request,
             Operation::Commit,
@@ -346,7 +394,7 @@ mod tests {
     #[test]
     fn commit_failure_reverted_annotations_cover_both_reverted_subkinds() {
         let request = sample_request(RequestedOperation::Finalize);
-        let commit_id = commit_operation_id(&request.operation_id);
+        let commit_id = request.operation_id.clone();
 
         for message in [
             "commit failed: trident reported ab-update-reboot-check failure",
@@ -356,7 +404,7 @@ mod tests {
                 &request,
                 Operation::Commit,
                 commit_id.clone(),
-                StatusCode::RevertedToPrevious,
+                StatusCode::TargetBootFailed,
                 message,
                 Some("1.0.0".to_string()),
                 Some("2.0.0".to_string()),
@@ -365,15 +413,15 @@ mod tests {
             );
 
             let json = to_annotation_json(&status);
-            assert_eq!(json["code"], "RevertedToPrevious");
-            assert_eq!(json["operationId"], "op-1.commit");
+            assert_eq!(json["code"], "TargetBootFailed");
+            assert_eq!(json["operationId"], "op-1");
         }
     }
 
     #[test]
     fn commit_failure_generic_annotation_has_operation_failed_code() {
         let request = sample_request(RequestedOperation::Finalize);
-        let commit_id = commit_operation_id(&request.operation_id);
+        let commit_id = request.operation_id.clone();
         let status = UpdateStatus::new(
             &request,
             Operation::Commit,
@@ -388,7 +436,7 @@ mod tests {
 
         let json = to_annotation_json(&status);
         assert_eq!(json["code"], "OperationFailed");
-        assert_eq!(json["operationId"], "op-1.commit");
+        assert_eq!(json["operationId"], "op-1");
     }
 
     #[test]
@@ -408,6 +456,7 @@ mod tests {
 
         let json = to_annotation_json(&status);
         assert!(json.get("toVersion").is_none());
+        assert!(json.get("lastUpdatedUtc").is_some());
         assert!(json.get("finishedUtc").is_none());
         assert_eq!(json["fromVersion"], "1.0.0");
     }
@@ -416,7 +465,7 @@ mod tests {
     //
     // Pins our annotation (de)serialization/validation code against two
     // things lifted verbatim from docs/update-trigger-design.md
-    // (https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GC67946fff8f296e10217b70e063c896e6028ea843&path=/docs/update-trigger-design.md),
+    // (https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GC1cfe79ec53bfc6936771e2433cba3dec0906b4fd&path=/docs/update-trigger-design.md),
     // section 2.1 "Trigger mechanism", so a doc/code drift shows up as a
     // test failure instead of being discovered against a real AKS-RP:
     //   1. The three example JSON payloads (request, finalize status, and
@@ -447,6 +496,7 @@ mod tests {
   "fromVersion":   "202605.15.0",
   "toVersion":     "202606.29.0",
   "startedUtc":    "2026-06-04T12:00:00Z",
+  "lastUpdatedUtc": "2026-06-04T12:00:32Z",
   "finishedUtc":   "2026-06-04T12:00:32Z"
 }"#;
 
@@ -454,18 +504,19 @@ mod tests {
     const DESIGN_DOC_COMMIT_STATUS_EXAMPLE: &str = r#"{
   "schemaVersion": "1.0",
   "nodeUpdateId":  "550e8400-e29b-41d4-a716-446655440000",
-  "operationId":   "f47ac10b-58cc-4372-a567-0e02b2c3d479.commit",
+  "operationId":   "f47ac10b-58cc-4372-a567-0e02b2c3d479",
   "operation":     "commit",
   "code":          "Success",
   "message":       "booted expected volume, boot order promoted",
   "fromVersion":   "202605.15.0",
   "toVersion":     "202606.29.0",
   "startedUtc":    "2026-06-04T12:01:18Z",
+  "lastUpdatedUtc": "2026-06-04T12:01:32Z",
   "finishedUtc":   "2026-06-04T12:01:32Z"
 }"#;
 
     /// The formal JSON Schema for the request annotation, from
-    /// docs/update-trigger-design.md (https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GC67946fff8f296e10217b70e063c896e6028ea843&path=/docs/update-trigger-design.md),
+    /// docs/update-trigger-design.md (https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GC1cfe79ec53bfc6936771e2433cba3dec0906b4fd&path=/docs/update-trigger-design.md),
     /// section 2.1 "Formal JSON Schema". Keep byte-for-byte in sync with
     /// that document.
     const DESIGN_DOC_REQUEST_SCHEMA: &str = r#"{
@@ -490,10 +541,9 @@ mod tests {
   ]
 }"#;
 
-    /// The formal JSON Schema for the status annotation, from
-    /// docs/update-trigger-design.md (https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GC67946fff8f296e10217b70e063c896e6028ea843&path=/docs/update-trigger-design.md),
-    /// section 2.1 "Formal JSON Schema". Keep byte-for-byte in sync with
-    /// that document.
+    /// The formal JSON Schema for the status annotations, from
+    /// accepted-design-v2.md section 2.1 "Formal JSON Schema". Keep
+    /// byte-for-byte in sync with that document.
     const DESIGN_DOC_STATUS_SCHEMA: &str = r#"{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://acl.azure.com/schemas/update-status/1.0.json",
@@ -504,19 +554,20 @@ mod tests {
   "properties": {
     "schemaVersion": { "type": "string", "const": "1.0" },
     "nodeUpdateId":  { "type": "string", "format": "uuid", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
-    "operationId":   { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(\\.commit)?$", "description": "The request operationId; the implicit post-reboot commit status appends a '.commit' suffix to the finalize/rollback operationId." },
+    "operationId":   { "type": "string", "format": "uuid", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", "description": "The operationId of the request this status reports on. The post-reboot commit status repeats the operationId of the finalize or rollback that caused the reboot." },
     "operation":     { "type": "string", "enum": ["stage", "finalize", "rollback", "commit"] },
-    "code":          { "type": "string", "enum": ["InProgress", "Success", "AlreadyAtTarget", "NotStaged", "OperationFailed", "RevertedToPrevious", "AgentInternalError", "InvalidRequest"] },
-    "message":       { "type": "string" },
+    "code":          { "type": "string", "enum": ["InProgress", "Success", "AlreadyAtTarget", "NotStaged", "OperationFailed", "TargetBootFailed", "AgentInternalError", "InvalidRequest"] },
+    "message":       { "type": "string", "maxLength": 2048 },
     "fromVersion":   { "type": "string" },
     "toVersion":     { "type": "string" },
     "startedUtc":    { "type": "string", "format": "date-time" },
+    "lastUpdatedUtc": { "type": "string", "format": "date-time", "description": "When the agent last wrote this status. The agent refreshes it on every write, including a periodic InProgress heartbeat, so AKS-RP and the watchdog can tell a working agent from a stuck one." },
     "finishedUtc":   { "type": "string", "format": "date-time" }
   },
   "allOf": [
     {
       "if":   { "properties": { "code": { "const": "InProgress" } }, "required": ["code"] },
-      "then": { "required": ["startedUtc"] },
+      "then": { "required": ["startedUtc", "lastUpdatedUtc"] },
       "else": { "required": ["startedUtc", "finishedUtc"] }
     }
   ]
@@ -529,7 +580,7 @@ mod tests {
     // additionalProperties, required, properties.{type,const,enum,format,
     // pattern}, and a single-level allOf/if/then/else). Panics loudly on any
     // schema keyword/pattern/type/format it doesn't recognize, so if
-    // accepted-design.md's schemas grow new constraints, this validator's
+    // accepted-design-v2.md's schemas grow new constraints, this validator's
     // blind spots don't silently mask them - the test fails instead,
     // prompting an update here.
 
@@ -706,13 +757,8 @@ mod tests {
     fn schema_pattern_matches(pattern: &str, value: &str) -> bool {
         const BARE_UUID: &str =
             r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
-        const UUID_OPTIONAL_COMMIT_SUFFIX: &str = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(\.commit)?$";
         match pattern {
             BARE_UUID => Uuid::parse_str(value).is_ok(),
-            UUID_OPTIONAL_COMMIT_SUFFIX => match value.strip_suffix(".commit") {
-                Some(prefix) => Uuid::parse_str(prefix).is_ok(),
-                None => Uuid::parse_str(value).is_ok(),
-            },
             other => panic!(
                 "test schema validator does not recognize pattern {other:?} - extend schema_pattern_matches"
             ),
@@ -755,10 +801,7 @@ mod tests {
             .expect("design doc's commit status example must parse as UpdateStatus");
         assert_eq!(status.operation, Operation::Commit);
         assert_eq!(status.code, StatusCode::Success);
-        assert_eq!(
-            status.operation_id,
-            "f47ac10b-58cc-4372-a567-0e02b2c3d479.commit"
-        );
+        assert_eq!(status.operation_id, "f47ac10b-58cc-4372-a567-0e02b2c3d479");
     }
 
     // --- example payloads validated against the embedded formal schema ----
@@ -882,12 +925,12 @@ mod tests {
         schema_validate(&schema, &serde_json::to_value(&rollback_status).unwrap())
             .expect("agent-constructed rollback status must conform to the formal schema");
 
-        // Derived post-reboot commit status: operationId gets a ".commit"
-        // suffix - exercises the status schema's optional-suffix pattern.
+        // Derived post-reboot commit status: operationId stays unchanged
+        // while the separate commit annotation key distinguishes the half.
         let commit_status = UpdateStatus::new(
             &request,
             Operation::Commit,
-            commit_operation_id(&request.operation_id),
+            request.operation_id.clone(),
             StatusCode::Success,
             "booted expected volume, boot order promoted",
             Some("1.0.0".to_string()),
