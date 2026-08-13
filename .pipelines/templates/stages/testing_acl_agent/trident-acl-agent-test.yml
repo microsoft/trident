@@ -127,10 +127,7 @@ stages:
           - bash: |
               set -eux
 
-              FLAGS=""
-              if [ "${{ parameters.verboseLogging }}" == "True" ]; then
-                FLAGS="$FLAGS --verbose"
-              fi
+              FLAGS="-a --verbose"
 
               sudo ./bin/storm-trident run aclagent $FLAGS \
                 --output-path $(ob_outputDirectory) \
