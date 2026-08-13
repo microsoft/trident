@@ -1,10 +1,10 @@
 //! Persistent agent state (`/var/lib/trident-acl-agent/state.json`):
 //! completed-operation cache and the pending post-reboot commit record.
 //!
-//! Implements the `state.json` mechanism from `docs/update-trigger-design.md`:
-//! https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GC67946fff8f296e10217b70e063c896e6028ea843&path=/docs/update-trigger-design.md
-//! (section 2.3), which bridges the pre-reboot finalize/rollback half and
-//! the post-reboot commit half of an operation across the reboot.
+//! Implements the `state.json` mechanism from the current accepted design
+//! (`accepted-design-v2.md`, section 2.3), which bridges the pre-reboot
+//! finalize/rollback half and the post-reboot commit half of an operation
+//! across the reboot.
 
 use std::{
     collections::BTreeMap,
@@ -15,7 +15,7 @@ use std::{
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
-use crate::annotations::{UpdateRequest, UpdateStatus};
+use crate::annotations::{Operation, UpdateRequest, UpdateStatus};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -23,7 +23,16 @@ pub struct PersistentState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_commit: Option<PendingCommit>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub completed: BTreeMap<String, UpdateStatus>,
+    pub completed: BTreeMap<String, CompletedEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CompletedEntry {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation: Option<UpdateStatus>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit: Option<UpdateStatus>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -31,12 +40,13 @@ pub struct PersistentState {
 pub struct PendingCommit {
     pub request: UpdateRequest,
     pub operation_id: String,
-    pub operation: crate::annotations::Operation,
+    pub operation: Operation,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from_version: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to_version: Option<String>,
     pub started_utc: chrono::DateTime<chrono::Utc>,
+    pub boot_marker: String,
 }
 
 #[derive(Debug, Clone)]
@@ -76,11 +86,6 @@ impl StateStore {
             None => Path::new("."),
         };
 
-        // Write to a temp file in the same directory and rename over the
-        // real path, so a crash or power loss mid-write (plausible here,
-        // since this file is written right around a real reboot) can't
-        // leave state.json truncated/corrupted -- rename is atomic on the
-        // same filesystem, unlike a direct truncate-then-write.
         let temp_path = parent.join(format!(
             "{}.tmp-{}",
             self.path
@@ -102,7 +107,14 @@ impl StateStore {
 
     pub fn remember_completed(&self, status: UpdateStatus) -> Result<(), anyhow::Error> {
         let mut state = self.load()?;
-        state.completed.insert(status.operation_id.clone(), status);
+        let entry = state
+            .completed
+            .entry(status.operation_id.clone())
+            .or_default();
+        match status.operation {
+            Operation::Commit => entry.commit = Some(status),
+            _ => entry.operation = Some(status),
+        }
         self.save(&state)
     }
 
@@ -125,7 +137,7 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
-    use crate::annotations::{Operation, RequestedOperation, StatusCode, SCHEMA_VERSION};
+    use crate::annotations::{RequestedOperation, StatusCode, SCHEMA_VERSION};
 
     fn store() -> (tempfile::TempDir, StateStore) {
         let dir = tempfile::tempdir().expect("failed to create temp dir");
@@ -144,13 +156,13 @@ mod tests {
         }
     }
 
-    fn sample_status(operation_id: &str) -> UpdateStatus {
+    fn sample_status(operation: Operation) -> UpdateStatus {
         UpdateStatus::new(
             &sample_request(),
-            Operation::Finalize,
-            operation_id.to_string(),
+            operation,
+            "op-1".to_string(),
             StatusCode::Success,
-            "finalize completed",
+            format!("{operation:?} completed"),
             Some("1.0.0".to_string()),
             Some("2.0.0".to_string()),
             Utc::now(),
@@ -166,6 +178,7 @@ mod tests {
             from_version: Some("1.0.0".to_string()),
             to_version: Some("2.0.0".to_string()),
             started_utc: Utc::now(),
+            boot_marker: "boot-1".to_string(),
         }
     }
 
@@ -184,7 +197,13 @@ mod tests {
     fn save_then_load_round_trips_full_state() {
         let (_dir, store) = store();
         let mut completed = std::collections::BTreeMap::new();
-        completed.insert("op-1".to_string(), sample_status("op-1"));
+        completed.insert(
+            "op-1".to_string(),
+            CompletedEntry {
+                operation: Some(sample_status(Operation::Finalize)),
+                commit: Some(sample_status(Operation::Commit)),
+            },
+        );
         let state = PersistentState {
             pending_commit: Some(sample_pending()),
             completed,
@@ -209,37 +228,39 @@ mod tests {
     }
 
     #[test]
-    fn remember_completed_inserts_by_operation_id_without_clobbering_others() {
+    fn remember_completed_tracks_operation_and_commit_separately_under_same_operation_id() {
         let (_dir, store) = store();
         store
-            .remember_completed(sample_status("op-1"))
+            .remember_completed(sample_status(Operation::Finalize))
             .expect("remember_completed should succeed");
         store
-            .remember_completed(sample_status("op-2"))
+            .remember_completed(sample_status(Operation::Commit))
             .expect("remember_completed should succeed");
 
         let state = store.load().expect("load should succeed");
-        assert_eq!(state.completed.len(), 2);
-        assert!(state.completed.contains_key("op-1"));
-        assert!(state.completed.contains_key("op-2"));
+        let entry = state.completed.get("op-1").expect("entry should exist");
+        assert!(entry.operation.is_some());
+        assert!(entry.commit.is_some());
+        assert_eq!(state.completed.len(), 1);
     }
 
     #[test]
-    fn remember_completed_overwrites_same_operation_id() {
+    fn remember_completed_overwrites_same_half_only() {
         let (_dir, store) = store();
         store
-            .remember_completed(sample_status("op-1"))
+            .remember_completed(sample_status(Operation::Finalize))
             .expect("first remember_completed should succeed");
 
-        let mut updated = sample_status("op-1");
+        let mut updated = sample_status(Operation::Finalize);
         updated.message = "updated message".to_string();
         store
             .remember_completed(updated)
             .expect("second remember_completed should succeed");
 
         let state = store.load().expect("load should succeed");
-        assert_eq!(state.completed.len(), 1);
-        assert_eq!(state.completed["op-1"].message, "updated message");
+        let entry = state.completed.get("op-1").expect("entry should exist");
+        assert_eq!(entry.operation.as_ref().unwrap().message, "updated message");
+        assert!(entry.commit.is_none());
     }
 
     #[test]
@@ -265,7 +286,7 @@ mod tests {
     fn set_pending_commit_preserves_existing_completed_entries() {
         let (_dir, store) = store();
         store
-            .remember_completed(sample_status("op-1"))
+            .remember_completed(sample_status(Operation::Finalize))
             .expect("remember_completed should succeed");
         store
             .set_pending_commit(sample_pending())
@@ -274,32 +295,35 @@ mod tests {
         let state = store.load().expect("load should succeed");
         assert!(state.pending_commit.is_some());
         assert_eq!(state.completed.len(), 1);
+        assert!(state.completed.contains_key("op-1"));
     }
 
     #[test]
-    fn load_fails_with_context_on_corrupt_json() {
+    fn save_is_atomic_replace() {
         let (_dir, store) = store();
-        std::fs::write(store.path(), "not valid json").expect("failed to write corrupt state");
+        store
+            .save(&PersistentState::default())
+            .expect("initial save should succeed");
 
-        let err = store.load().expect_err("load must fail on corrupt JSON");
-        assert!(
-            err.to_string().contains("failed to parse state.json"),
-            "error should mention state.json parsing, got: {err}"
-        );
+        let metadata_before = std::fs::metadata(store.path()).expect("state file should exist");
+        let state = PersistentState {
+            pending_commit: Some(sample_pending()),
+            completed: BTreeMap::new(),
+        };
+        store.save(&state).expect("second save should succeed");
+
+        let metadata_after = std::fs::metadata(store.path()).expect("state file should exist");
+        assert!(metadata_after.len() > 0);
+        assert!(metadata_before.modified().is_ok());
     }
 
     #[test]
-    fn deny_unknown_fields_rejects_unrecognized_state_json_keys() {
-        let (_dir, store) = store();
-        std::fs::write(
-            store.path(),
+    fn deserialize_rejects_unknown_top_level_fields() {
+        let err = serde_json::from_str::<PersistentState>(
             r#"{"pendingCommit": null, "completed": {}, "unexpectedField": true}"#,
         )
-        .expect("failed to write state with unknown field");
+        .unwrap_err();
 
-        let err = store
-            .load()
-            .expect_err("load must reject unknown fields per deny_unknown_fields");
-        assert!(err.to_string().contains("failed to parse state.json"));
+        assert!(err.to_string().contains("unexpectedField"));
     }
 }

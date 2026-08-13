@@ -1,12 +1,11 @@
 //! Thin Kubernetes client wrapper for Harpoon's node self-patching protocol.
 //!
-//! Implements the Node get/watch/patch access described in
-//! `docs/update-trigger-design.md`:
-//! https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GC67946fff8f296e10217b70e063c896e6028ea843&path=/docs/update-trigger-design.md
+//! Implements the Node get/watch/patch access described in the current
+//! accepted design (`accepted-design-v2.md`).
 //!
-//! The design calls for get/patch access to exactly one Node object (§3–§5).
+//! The design calls for get/patch access to exactly one Node object (§2.2–§2.6).
 //! Node changes are observed via the Kubernetes watch API (`kube::runtime::watcher`)
-//! rather than polling, so label updates are delivered promptly and without
+//! rather than polling, so annotation updates are delivered promptly and without
 //! placing repeated load on the API server. `watch_poll_interval` still bounds
 //! how quickly the watcher notices a dropped/re-established connection (used
 //! as the watcher's backoff ceiling) and how often the fake test API server
@@ -20,6 +19,7 @@ use k8s_openapi::api::core::v1::Node;
 use kube::{
     api::{Patch, PatchParams},
     config::{KubeConfigOptions, Kubeconfig},
+    error::ErrorResponse,
     runtime::{watcher, WatchStreamExt},
     Api, Client, Config,
 };
@@ -31,8 +31,10 @@ use crate::config::KubernetesConfig;
 pub enum K8sClientError {
     #[error("failed to build Kubernetes client config: {0}")]
     Config(#[from] anyhow::Error),
+    #[error("node object no longer exists")]
+    NodeGone,
     #[error("failed Kubernetes API call: {0}")]
-    Api(#[from] kube::Error),
+    Api(#[source] kube::Error),
     #[error("Kubernetes watch stream failed: {0}")]
     Watch(#[from] kube::runtime::watcher::Error),
 }
@@ -56,16 +58,12 @@ impl NodeClient {
         })
     }
 
-    /// The API server URL this client actually connects to - resolved from
-    /// `kubernetes.kubeconfig`'s own server, unless overridden by
-    /// `kubernetes.api_server`. Useful for diagnostics/logging that want to
-    /// report the real effective server rather than guessing from config.
     pub fn cluster_url(&self) -> &str {
         &self.cluster_url
     }
 
     pub async fn get_node(&self, name: &str) -> Result<Node, K8sClientError> {
-        Ok(self.api.get(name).await?)
+        self.api.get(name).await.map_err(map_kube_error)
     }
 
     pub async fn patch_node_labels(
@@ -74,10 +72,10 @@ impl NodeClient {
         labels: BTreeMap<String, String>,
     ) -> Result<Node, K8sClientError> {
         let patch = json!({ "metadata": { "labels": labels } });
-        Ok(self
-            .api
+        self.api
             .patch(name, &PatchParams::default(), &Patch::Merge(&patch))
-            .await?)
+            .await
+            .map_err(map_kube_error)
     }
 
     pub async fn patch_node_annotations(
@@ -86,10 +84,10 @@ impl NodeClient {
         annotations: BTreeMap<String, String>,
     ) -> Result<Node, K8sClientError> {
         let patch = json!({ "metadata": { "annotations": annotations } });
-        Ok(self
-            .api
+        self.api
             .patch(name, &PatchParams::default(), &Patch::Merge(&patch))
-            .await?)
+            .await
+            .map_err(map_kube_error)
     }
 
     pub async fn patch_node_metadata(
@@ -104,17 +102,12 @@ impl NodeClient {
                 "annotations": annotations,
             }
         });
-        Ok(self
-            .api
+        self.api
             .patch(name, &PatchParams::default(), &Patch::Merge(&patch))
-            .await?)
+            .await
+            .map_err(map_kube_error)
     }
 
-    /// Streams Node updates for `name` using the Kubernetes watch API instead
-    /// of polling. `watcher::Config::default().fields(...)` scopes the watch
-    /// server-side to the single node we care about, and `.default_backoff()`
-    /// governs reconnect timing (capped near `poll_interval`) if the watch
-    /// connection drops.
     pub fn watch_node(&self, name: String) -> BoxStream<'static, Result<Node, K8sClientError>> {
         let watcher_config = watcher::Config::default()
             .fields(&format!("metadata.name={name}"))
@@ -128,21 +121,53 @@ impl NodeClient {
     }
 }
 
+fn map_kube_error(err: kube::Error) -> K8sClientError {
+    if matches!(&err, kube::Error::Api(ErrorResponse { code: 404, .. })) {
+        K8sClientError::NodeGone
+    } else {
+        K8sClientError::Api(err)
+    }
+}
+
 async fn load_client_config(config: &KubernetesConfig) -> Result<Config, anyhow::Error> {
     let path = Path::new(&config.kubeconfig);
     let kubeconfig = Kubeconfig::read_from(path)
         .with_context(|| format!("failed to read kubeconfig {}", path.display()))?;
     let mut client_config =
         Config::from_custom_kubeconfig(kubeconfig, &KubeConfigOptions::default()).await?;
-    // Only override the server URL the kubeconfig already resolved to when a
-    // deployment explicitly configures one. A node's own kubeconfig (e.g.
-    // /var/lib/kubelet/kubeconfig) already points at the correct cluster API
-    // server FQDN, so overriding it unconditionally with a fixed default
-    // (like the in-cluster-only `https://kubernetes.default.svc`) would
-    // break any deployment running outside a pod's network namespace, where
-    // that in-cluster DNS name doesn't resolve.
     if let Some(api_server) = &config.api_server {
         client_config.cluster_url = api_server.as_str().parse()?;
     }
     Ok(client_config)
+}
+
+#[cfg(test)]
+mod tests {
+    use kube::error::ErrorResponse;
+
+    use super::*;
+
+    #[test]
+    fn maps_404_to_node_gone() {
+        let err = kube::Error::Api(ErrorResponse {
+            status: "Failure".to_string(),
+            message: "nodes \"n\" not found".to_string(),
+            reason: "NotFound".to_string(),
+            code: 404,
+        });
+
+        assert!(matches!(map_kube_error(err), K8sClientError::NodeGone));
+    }
+
+    #[test]
+    fn leaves_other_api_errors_as_api() {
+        let err = kube::Error::Api(ErrorResponse {
+            status: "Failure".to_string(),
+            message: "forbidden".to_string(),
+            reason: "Forbidden".to_string(),
+            code: 403,
+        });
+
+        assert!(matches!(map_kube_error(err), K8sClientError::Api(_)));
+    }
 }
