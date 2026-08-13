@@ -471,10 +471,26 @@ func waitForVmRebootAndSshBack(vmConfig stormvmconfig.AllVMConfig, vmIP string, 
 		return fmt.Errorf("VM never became unreachable over SSH within %s; reboot did not appear to happen", 60*time.Second)
 	}
 
+	// A single successful SSH command right after boot is not proof the VM
+	// is stably back up: sshd (or the network stack) can accept one
+	// connection and then bounce again moments later while later boot
+	// units are still settling (observed in practice as one successful
+	// "true" immediately followed by "connection refused" on the very
+	// next SSH dial). Require a few consecutive successes, spaced out,
+	// before declaring the VM ready, so callers that immediately issue
+	// real SSH commands (e.g. prepareVmForAclAgent) don't race a
+	// still-settling boot.
+	const requiredConsecutiveSuccesses = 3
+	consecutiveSuccesses := 0
 	upTimeout := time.Now().Add(5 * time.Minute)
 	for time.Now().Before(upTimeout) {
 		if _, err := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, "true"); err == nil {
-			return nil
+			consecutiveSuccesses++
+			if consecutiveSuccesses >= requiredConsecutiveSuccesses {
+				return nil
+			}
+		} else {
+			consecutiveSuccesses = 0
 		}
 		time.Sleep(2 * time.Second)
 	}
