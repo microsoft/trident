@@ -250,18 +250,12 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	}
 	nodeStore.SetReadyCondition(true)
 
-	// The real A/B reboot lands on a different root filesystem than the
-	// one prepareVmForAclAgent originally configured: /etc/trident and
-	// /var/lib/kubelet are per-root ext4 partitions, not shared storage,
-	// so the config/kubeconfig written before staging do not carry over
-	// to the newly-activated root. trident-acl-agent.service is enabled
-	// by default there (baked into the update image), but it needs its
-	// config re-delivered before it can talk to the fake Nebraska/API
-	// server endpoints. Re-run the same delivery+restart steps now that
-	// we're SSH'd into the post-reboot root.
-	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig, nebraska.AppID()); err != nil {
-		return fmt.Errorf("failed to reconfigure ACL agent on post-reboot root: %w", err)
-	}
+	// /etc/trident and /var/lib/kubelet are their own dedicated ext4
+	// partitions (not part of the A/B-swapped root), so the config and
+	// kubeconfig prepareVmForAclAgent delivered before staging carry over
+	// unchanged to the newly-activated root. trident-acl-agent.service is
+	// enabled by default there (baked into the update image) and starts
+	// with that same config at boot, so no re-delivery is needed here.
 
 	finalScenario := &stormproxies.Scenario{Steps: []stormproxies.ScenarioStep{
 		{Expect: &stormproxies.ExpectStep{OperationID: "finalize-op", Operation: "commit", Code: "Success", Timeout: 180 * time.Second}},
