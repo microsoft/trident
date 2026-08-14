@@ -43,6 +43,14 @@ storage:
           label: trident-acl-agent
           size: 128M
 
+        - id: kubelet
+          label: kubelet
+          size: 128M
+
+        - id: etc-trident
+          label: etc-trident
+          size: 128M
+
         - id: home
           label: home
           size: 1G
@@ -96,6 +104,18 @@ storage:
       mountPoint:
         idType: part-label
         path: /var/lib/trident-acl-agent
+
+    - deviceId: kubelet
+      type: ext4
+      mountPoint:
+        idType: part-label
+        path: /var/lib/kubelet
+
+    - deviceId: etc-trident
+      type: ext4
+      mountPoint:
+        idType: part-label
+        path: /etc/trident
 
     - deviceId: home
       type: ext4
