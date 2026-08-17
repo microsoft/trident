@@ -1,10 +1,19 @@
 # trident-acl-agent
 
 The on-node half of Trident's Azure Container Linux (ACL) A/B update
-trigger. Watches its Node's `acl.azure.com/update-request` annotation and
-drives Trident's stage/finalize/rollback/commit operations against
-`tridentd` accordingly, reporting progress and status back to Kubernetes and
-to Nebraska (the Omaha-protocol update server).
+trigger. Runs in one of two modes, selected by
+`TRIDENT_ACL_AGENT_ORCHESTRATION_GOAL_SOURCE`:
+
+- **`annotations`** (the default): watches its Node's
+  `acl.azure.com/update-request` annotation and drives Trident's
+  stage/finalize/rollback/commit operations against `tridentd` accordingly,
+  reporting progress and status back to Kubernetes and to Nebraska (the
+  Omaha-protocol update server).
+- **`omaha-only`**: the historical one-shot behavior. Queries Nebraska once,
+  and if an update is offered, calls tridentd's combined `update()` RPC once
+  and exits - no Kubernetes or annotation involvement at all. Kept as an
+  explicit opt-out for nodes that don't participate in the AKS
+  annotation-driven update protocol.
 
 ## Configuration
 
@@ -30,25 +39,15 @@ fail to start with an error naming the offending variable.
 | `TRIDENT_ACL_AGENT_KUBERNETES_KUBECONFIG` | `/var/lib/kubelet/kubeconfig` | Path to the kubeconfig file used to reach the Kubernetes API server and authenticate as this node. |
 | `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME` | The node's own hostname, lowercased | The Node object this agent watches/patches. Kubernetes Node names must be valid RFC 1123 DNS labels (lowercase), matching how kubelet itself registers the Node - so the default only needs overriding when the agent's environment can't discover the correct hostname on its own. |
 | `TRIDENT_ACL_AGENT_TRIDENT_SOCKET` | `unix:///run/trident/trident.sock` | The gRPC Unix socket URI used to reach `tridentd`. |
-| `TRIDENT_ACL_AGENT_ORCHESTRATION_GOAL_SOURCE` | `annotations` | Selects the agent's operating mode. `annotations` is the annotation-driven reconcile loop described above (the default). `omaha-only` is the historical one-shot behavior: query Nebraska once, and if an update is offered, call tridentd's combined `update()` RPC once and exit - no Kubernetes/annotation involvement at all. Kept as an explicit opt-out for nodes that don't participate in the AKS annotation-driven update protocol. |
+| `TRIDENT_ACL_AGENT_ORCHESTRATION_GOAL_SOURCE` | `annotations` | Selects the agent's operating mode: `annotations` or `omaha-only` (see above). |
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_STATE_PATH` | `/var/lib/trident-acl-agent/state.json` | Path to the agent's persistent state file, which bridges the pre-reboot `finalize`/`rollback` half of an update and its post-reboot `commit` half across the reboot. |
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_STAGE_TIMEOUT` | `20m` | How long a `stage` operation (parsed as a [`humantime`](https://docs.rs/humantime) duration, e.g. `20m`, `1h`) is allowed to run before it's considered failed. |
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_FINALIZE_TIMEOUT` | `10m` | How long a `finalize` operation is allowed to run before it's considered failed. Parsed the same way as the stage timeout. |
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_HEARTBEAT_INTERVAL` | `60s` | Refresh cadence for the `InProgress` status heartbeat the agent writes while a stage/finalize/rollback operation is running, so AKS-RP and the watchdog can tell a working agent from a stuck one. Parsed the same way as the timeouts. |
 
-### CLI override
-
-A single positional `[URL]` CLI argument, if given, overrides
-`TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT` for the life of that process
-invocation (e.g. `trident-acl-agent --validate-connection nebraska
-<url>`). It takes precedence over the environment variable but not over a
-per-update annotation `server` override, which is resolved later, per
-request, once the orchestrator is running.
-
 ## Diagnostics
 
 `trident-acl-agent --validate-connection <kubernetes|tridentd|nebraska>`
 checks connectivity to a single dependency using the current environment
-(and, for `nebraska`, the optional CLI URL override) and exits immediately -
-useful for a systemd `ExecStartPre` check or manual on-node
-troubleshooting without running the full orchestrator loop.
+and exits immediately - useful for a systemd `ExecStartPre` check or manual
+on-node troubleshooting without running the full orchestrator loop.
