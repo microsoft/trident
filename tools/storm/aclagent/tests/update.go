@@ -215,19 +215,28 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	}
 
 	// Once prepareVmForAclAgent has delivered a real config (fake apiserver
-	// kubeconfig, fake Nebraska endpoint, and the default tridentd socket
-	// still applying), all three connections should now succeed.
-	for _, mode := range []string{"tridentd", "kubernetes", "nebraska"} {
+	// kubeconfig, and the default tridentd socket still applying), tridentd
+	// and kubernetes now succeed. nebraska is deliberately left unset in the
+	// static config (see prepareVmForAclAgent) - it is only ever supplied
+	// per-request via the update-request annotation's `server` field - so a
+	// bare "--validate-connection nebraska" with no annotation in play still
+	// fails here exactly as it did before configuration, proving the static
+	// config never carries a Nebraska endpoint of its own.
+	for _, mode := range []string{"tridentd", "kubernetes"} {
 		if err := expectValidateConnection(vmConfig.VMConfig, vmIP, mode, true); err != nil {
 			return fmt.Errorf("post-config validate-connection check failed: %w", err)
 		}
 	}
+	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "nebraska", false); err != nil {
+		return fmt.Errorf("post-config validate-connection check failed (nebraska.endpoint must stay unset in the static config): %w", err)
+	}
 
 	rp := &stormproxies.RPClient{APIServerURL: fmt.Sprintf("http://%s:%d", testConfig.HostEndpointIP, testConfig.APIServerPort), NodeName: testConfig.NodeName}
+	nebraskaServer := fmt.Sprintf("http://%s:%d", testConfig.HostEndpointIP, testConfig.NebraskaPort)
 	scenario := &stormproxies.Scenario{Steps: []stormproxies.ScenarioStep{
-		{Patch: &stormproxies.PatchStep{NodeUpdateID: "11111111-1111-1111-1111-111111111111", OperationID: "stage-op", Operation: "stage", TargetOSImageVersion: testConfig.TargetVersion}},
+		{Patch: &stormproxies.PatchStep{NodeUpdateID: "11111111-1111-1111-1111-111111111111", OperationID: "stage-op", Operation: "stage", TargetOSImageVersion: testConfig.TargetVersion, Server: nebraskaServer}},
 		{Expect: &stormproxies.ExpectStep{OperationID: "stage-op", Operation: "stage", Code: "Success", Timeout: 120 * time.Second}},
-		{Patch: &stormproxies.PatchStep{NodeUpdateID: "11111111-1111-1111-1111-111111111111", OperationID: "finalize-op", Operation: "finalize", TargetOSImageVersion: testConfig.TargetVersion}},
+		{Patch: &stormproxies.PatchStep{NodeUpdateID: "11111111-1111-1111-1111-111111111111", OperationID: "finalize-op", Operation: "finalize", TargetOSImageVersion: testConfig.TargetVersion, Server: nebraskaServer}},
 	}}
 	report, err := rp.RunScenario(ctx, scenario)
 	logScenarioTimeline("stage/finalize", report)
@@ -306,22 +315,26 @@ func collectAclArtifactsBestEffort(cfg stormvmconfig.VMConfig, vmIP string, outp
 }
 
 func prepareVmForAclAgent(cfg stormvmconfig.VMConfig, vmIP string, testConfig stormaclconfig.TestConfig, appID string) error {
+	// Deliberately minimal: only settings that differ from
+	// trident-acl-agent's own defaults are listed here.
+	//   - nebraska.endpoint is NOT set - the Nebraska endpoint is supplied
+	//     per-request via the update-request annotation's `server` field
+	//     instead (see the PatchStep.Server usage in RunABUpdate), so the
+	//     static config never carries one of its own.
+	//   - nebraska.poll_interval was a removed field the agent no longer
+	//     parses at all; it never belonged here.
+	//   - kubernetes.api_server is left unset (its own default): the fake
+	//     kubeconfig written below already has `server:` pointing at the
+	//     fake apiserver, so there is nothing to override.
+	//   - kubernetes.kubeconfig, trident.socket, and orchestration.goal_source
+	//     are all already their compiled-in defaults; naming them here would
+	//     just restate the default.
 	config := fmt.Sprintf(`[nebraska]
-endpoint = "http://%s:%d"
 app_id = "%s"
-poll_interval = "5m"
 
 [kubernetes]
-api_server = "http://%s:%d"
-kubeconfig = "/var/lib/kubelet/kubeconfig"
 node_name = "%s"
-
-[trident]
-socket = "unix:///run/trident/trident.sock"
-
-[orchestration]
-goal_source = "annotations"
-`, testConfig.HostEndpointIP, testConfig.NebraskaPort, appID, testConfig.HostEndpointIP, testConfig.APIServerPort, testConfig.NodeName)
+`, appID, testConfig.NodeName)
 
 	// Write the config to a local temp file and scp it up rather than
 	// piping it through an SSH heredoc: heredocs are fragile to compose
@@ -408,8 +421,14 @@ users:
 		"sudo systemctl restart tridentd.service",
 		"sudo systemctl enable trident-acl-agent.service",
 		"sudo systemctl restart trident-acl-agent.service",
-		fmt.Sprintf("sudo grep -qF '%s:%d' /etc/trident/trident-acl-agent.conf", testConfig.HostEndpointIP, testConfig.APIServerPort),
-		fmt.Sprintf("sudo grep -qF '%s:%d' /etc/trident/trident-acl-agent.conf", testConfig.HostEndpointIP, testConfig.NebraskaPort),
+		// api_server no longer lives in trident-acl-agent.conf (it's left
+		// unset so the kubeconfig's own `server:` field is used as-is);
+		// check the fake kubeconfig itself instead of the agent config.
+		fmt.Sprintf("sudo grep -qF '%s:%d' /var/lib/kubelet/kubeconfig", testConfig.HostEndpointIP, testConfig.APIServerPort),
+		// Lock in the design invariant: the Nebraska endpoint must never be
+		// written to the static agent config - it is only ever supplied
+		// per-request via the update-request annotation's `server` field.
+		fmt.Sprintf("! sudo grep -qF '%s:%d' /etc/trident/trident-acl-agent.conf", testConfig.HostEndpointIP, testConfig.NebraskaPort),
 	}, " && ")
 	if _, err := stormssh.SshCommandCombinedOutput(cfg, vmIP, command); err != nil {
 		return fmt.Errorf("failed to prepare VM ACL agent config: %w", err)
