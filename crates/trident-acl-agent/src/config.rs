@@ -276,25 +276,6 @@ fn default_node_name() -> String {
 mod tests {
     use super::*;
 
-    /// All `TRIDENT_ACL_AGENT_*` variables this module reads. Kept as one
-    /// list so the default/override test below can reliably clear them
-    /// before each phase rather than depending on nothing else in the test
-    /// binary having touched them.
-    const ALL_ENV_VARS: &[&str] = &[
-        ENV_NEBRASKA_ENDPOINT,
-        ENV_NEBRASKA_APP_ID,
-        ENV_NEBRASKA_TRACK,
-        ENV_KUBERNETES_API_SERVER,
-        ENV_KUBERNETES_KUBECONFIG,
-        ENV_KUBERNETES_NODE_NAME,
-        ENV_TRIDENT_SOCKET,
-        ENV_ORCHESTRATION_GOAL_SOURCE,
-        ENV_ORCHESTRATION_STATE_PATH,
-        ENV_ORCHESTRATION_STAGE_TIMEOUT,
-        ENV_ORCHESTRATION_FINALIZE_TIMEOUT,
-        ENV_ORCHESTRATION_HEARTBEAT_INTERVAL,
-    ];
-
     /// Clears every var this module reads. Environment mutation is process-
     /// global and `std::env::remove_var`/`set_var` are `unsafe` (not
     /// thread-safe against concurrent reads elsewhere in the process), so
@@ -302,13 +283,21 @@ mod tests {
     /// cases in one sequential function rather than two separate `#[test]`s
     /// that `cargo test` could run in parallel against the same variables.
     fn clear_env() {
-        for var in ALL_ENV_VARS {
-            // SAFETY: single-threaded within this test function; no other
-            // test in this crate reads or writes these TRIDENT_ACL_AGENT_*
-            // variables.
-            unsafe {
-                env::remove_var(var);
-            }
+        // SAFETY: single-threaded within this test function; no other test
+        // in this crate reads or writes these TRIDENT_ACL_AGENT_* variables.
+        unsafe {
+            env::remove_var(ENV_NEBRASKA_ENDPOINT);
+            env::remove_var(ENV_NEBRASKA_APP_ID);
+            env::remove_var(ENV_NEBRASKA_TRACK);
+            env::remove_var(ENV_KUBERNETES_API_SERVER);
+            env::remove_var(ENV_KUBERNETES_KUBECONFIG);
+            env::remove_var(ENV_KUBERNETES_NODE_NAME);
+            env::remove_var(ENV_TRIDENT_SOCKET);
+            env::remove_var(ENV_ORCHESTRATION_GOAL_SOURCE);
+            env::remove_var(ENV_ORCHESTRATION_STATE_PATH);
+            env::remove_var(ENV_ORCHESTRATION_STAGE_TIMEOUT);
+            env::remove_var(ENV_ORCHESTRATION_FINALIZE_TIMEOUT);
+            env::remove_var(ENV_ORCHESTRATION_HEARTBEAT_INTERVAL);
         }
     }
 
