@@ -194,12 +194,13 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	nodeStore.PatchLabels(map[string]string{stormproxies.NodeImageVersionLabel: testConfig.ExpectedInitialVolume})
 	nodeStore.SetReadyCondition(true)
 
-	// Before any trident-acl-agent config has been delivered to the VM, the
-	// binary falls back to its compiled-in defaults: tridentd's socket is
-	// reached via systemd socket activation regardless of config, so it
-	// should succeed; kubernetes and nebraska both default to unreachable
-	// placeholders (no real kubeconfig at /var/lib/kubelet/kubeconfig yet,
-	// and https://nebraska.example.invalid), so both should fail.
+	// Before the fake kubeconfig has been delivered to the VM, trident-acl-agent
+	// falls back to its compiled-in defaults for everything: tridentd's
+	// socket is reached via systemd socket activation regardless of any
+	// config, so it should succeed; kubernetes and nebraska both default to
+	// unreachable placeholders (no real kubeconfig at
+	// /var/lib/kubelet/kubeconfig yet, and https://nebraska.example.invalid
+	// / no app_id/server override in play), so both should fail.
 	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "tridentd", true); err != nil {
 		return fmt.Errorf("pre-config validate-connection check failed: %w", err)
 	}
@@ -210,33 +211,35 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 		return fmt.Errorf("pre-config validate-connection check failed: %w", err)
 	}
 
-	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig, nebraska.AppID()); err != nil {
+	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig); err != nil {
 		return err
 	}
 
-	// Once prepareVmForAclAgent has delivered a real config (fake apiserver
-	// kubeconfig, and the default tridentd socket still applying), tridentd
-	// and kubernetes now succeed. nebraska is deliberately left unset in the
-	// static config (see prepareVmForAclAgent) - it is only ever supplied
-	// per-request via the update-request annotation's `server` field - so a
-	// bare "--validate-connection nebraska" with no annotation in play still
-	// fails here exactly as it did before configuration, proving the static
-	// config never carries a Nebraska endpoint of its own.
+	// Once prepareVmForAclAgent has delivered the fake kubeconfig, kubernetes
+	// now succeeds (its own `server:` field points at the fake apiserver);
+	// tridentd is unaffected either way. trident-acl-agent never gets a
+	// config file at all (see prepareVmForAclAgent's doc comment) - Nebraska
+	// endpoint/app_id are only ever supplied per-request via the
+	// update-request annotation's `server`/`appId` fields - so a bare
+	// "--validate-connection nebraska" with no annotation in play still
+	// fails here exactly as it did before configuration, proving there is no
+	// static Nebraska configuration of any kind for the agent to fall back on.
 	for _, mode := range []string{"tridentd", "kubernetes"} {
 		if err := expectValidateConnection(vmConfig.VMConfig, vmIP, mode, true); err != nil {
 			return fmt.Errorf("post-config validate-connection check failed: %w", err)
 		}
 	}
 	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "nebraska", false); err != nil {
-		return fmt.Errorf("post-config validate-connection check failed (nebraska.endpoint must stay unset in the static config): %w", err)
+		return fmt.Errorf("post-config validate-connection check failed (trident-acl-agent.conf must never exist / carry a Nebraska endpoint): %w", err)
 	}
 
 	rp := &stormproxies.RPClient{APIServerURL: fmt.Sprintf("http://%s:%d", testConfig.HostEndpointIP, testConfig.APIServerPort), NodeName: testConfig.NodeName}
 	nebraskaServer := fmt.Sprintf("http://%s:%d", testConfig.HostEndpointIP, testConfig.NebraskaPort)
+	nebraskaAppID := nebraska.AppID()
 	scenario := &stormproxies.Scenario{Steps: []stormproxies.ScenarioStep{
-		{Patch: &stormproxies.PatchStep{NodeUpdateID: "11111111-1111-1111-1111-111111111111", OperationID: "stage-op", Operation: "stage", TargetOSImageVersion: testConfig.TargetVersion, Server: nebraskaServer}},
+		{Patch: &stormproxies.PatchStep{NodeUpdateID: "11111111-1111-1111-1111-111111111111", OperationID: "stage-op", Operation: "stage", TargetOSImageVersion: testConfig.TargetVersion, Server: nebraskaServer, AppId: nebraskaAppID}},
 		{Expect: &stormproxies.ExpectStep{OperationID: "stage-op", Operation: "stage", Code: "Success", Timeout: 120 * time.Second}},
-		{Patch: &stormproxies.PatchStep{NodeUpdateID: "11111111-1111-1111-1111-111111111111", OperationID: "finalize-op", Operation: "finalize", TargetOSImageVersion: testConfig.TargetVersion, Server: nebraskaServer}},
+		{Patch: &stormproxies.PatchStep{NodeUpdateID: "11111111-1111-1111-1111-111111111111", OperationID: "finalize-op", Operation: "finalize", TargetOSImageVersion: testConfig.TargetVersion, Server: nebraskaServer, AppId: nebraskaAppID}},
 	}}
 	report, err := rp.RunScenario(ctx, scenario)
 	logScenarioTimeline("stage/finalize", report)
@@ -314,52 +317,23 @@ func collectAclArtifactsBestEffort(cfg stormvmconfig.VMConfig, vmIP string, outp
 	}
 }
 
-func prepareVmForAclAgent(cfg stormvmconfig.VMConfig, vmIP string, testConfig stormaclconfig.TestConfig, appID string) error {
-	// Deliberately minimal: only settings that differ from
-	// trident-acl-agent's own defaults are listed here.
-	//   - nebraska.endpoint is NOT set - the Nebraska endpoint is supplied
-	//     per-request via the update-request annotation's `server` field
-	//     instead (see the PatchStep.Server usage in RunABUpdate), so the
-	//     static config never carries one of its own.
-	//   - nebraska.poll_interval was a removed field the agent no longer
-	//     parses at all; it never belonged here.
+func prepareVmForAclAgent(cfg stormvmconfig.VMConfig, vmIP string, testConfig stormaclconfig.TestConfig) error {
+	// trident-acl-agent needs no config file at all for this scenario:
+	//   - nebraska.app_id and nebraska.endpoint are supplied per-request via
+	//     the update-request annotation's `appId`/`server` fields instead
+	//     (see PatchStep.AppId/Server usage in RunABUpdate).
 	//   - kubernetes.api_server is left unset (its own default): the fake
 	//     kubeconfig written below already has `server:` pointing at the
 	//     fake apiserver, so there is nothing to override.
+	//   - kubernetes.node_name is also left unset (its own default: the
+	//     node's real hostname, lowercased). testConfig.NodeName is set to
+	//     match the VM image's Image Customizer 'hostname' setting
+	//     (baseimg-acl-agent.yaml), so the agent's own hostname-derived
+	//     default already agrees with the fake apiserver's seeded Node -
+	//     no override needed, exactly like a real deployment.
 	//   - kubernetes.kubeconfig, trident.socket, and orchestration.goal_source
-	//     are all already their compiled-in defaults; naming them here would
-	//     just restate the default.
-	config := fmt.Sprintf(`[nebraska]
-app_id = "%s"
-
-[kubernetes]
-node_name = "%s"
-`, appID, testConfig.NodeName)
-
-	// Write the config to a local temp file and scp it up rather than
-	// piping it through an SSH heredoc: heredocs are fragile to compose
-	// with trailing shell operators (a bare "&&" right after the closing
-	// delimiter is a syntax error), whereas scp-then-move is a plain file
-	// transfer with no quoting/escaping pitfalls.
-	localConfigFile, err := os.CreateTemp("", "trident-acl-agent-*.conf")
-	if err != nil {
-		return fmt.Errorf("failed to create local temp file for ACL agent config: %w", err)
-	}
-	defer os.Remove(localConfigFile.Name())
-	if _, err := localConfigFile.WriteString(config); err != nil {
-		localConfigFile.Close()
-		return fmt.Errorf("failed to write local temp ACL agent config: %w", err)
-	}
-	if err := localConfigFile.Close(); err != nil {
-		return fmt.Errorf("failed to close local temp ACL agent config: %w", err)
-	}
-
-	if _, err := stormssh.SshCommandCombinedOutput(cfg, vmIP, "sudo mkdir -p /etc/trident"); err != nil {
-		return fmt.Errorf("failed to create /etc/trident on VM: %w", err)
-	}
-	if err := stormssh.ScpUploadFileWithSudo(cfg, vmIP, localConfigFile.Name(), "/etc/trident/trident-acl-agent.conf"); err != nil {
-		return fmt.Errorf("failed to upload ACL agent config to VM: %w", err)
-	}
+	//     are all already their compiled-in defaults.
+	// trident-acl-agent.conf is simply never written to the VM.
 
 	// The fake apiserver has no real kubelet-managed kubeconfig backing it,
 	// and it takes plain HTTP with no auth/TLS, so provide a minimal
@@ -421,17 +395,17 @@ users:
 		"sudo systemctl restart tridentd.service",
 		"sudo systemctl enable trident-acl-agent.service",
 		"sudo systemctl restart trident-acl-agent.service",
-		// api_server no longer lives in trident-acl-agent.conf (it's left
-		// unset so the kubeconfig's own `server:` field is used as-is);
-		// check the fake kubeconfig itself instead of the agent config.
+		// api_server lives only in the fake kubeconfig now (agent config
+		// never sets it - see this function's doc comment).
 		fmt.Sprintf("sudo grep -qF '%s:%d' /var/lib/kubelet/kubeconfig", testConfig.HostEndpointIP, testConfig.APIServerPort),
-		// Lock in the design invariant: the Nebraska endpoint must never be
-		// written to the static agent config - it is only ever supplied
-		// per-request via the update-request annotation's `server` field.
-		fmt.Sprintf("! sudo grep -qF '%s:%d' /etc/trident/trident-acl-agent.conf", testConfig.HostEndpointIP, testConfig.NebraskaPort),
+		// Lock in the design invariant: trident-acl-agent.conf is never
+		// written to the VM at all - app_id/endpoint are only ever supplied
+		// per-request via the update-request annotation's `appId`/`server`
+		// fields.
+		"! sudo test -e /etc/trident/trident-acl-agent.conf",
 	}, " && ")
 	if _, err := stormssh.SshCommandCombinedOutput(cfg, vmIP, command); err != nil {
-		return fmt.Errorf("failed to prepare VM ACL agent config: %w", err)
+		return fmt.Errorf("failed to prepare VM for ACL agent: %w", err)
 	}
 
 	// Both services can briefly report "activating" right after

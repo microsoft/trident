@@ -29,25 +29,29 @@ The VM image used by this scenario must already contain:
 
 - `tridentd.socket` installed and enabled (starts `tridentd.service` on demand)
 - `trident-acl-agent` package installed, but **`trident-acl-agent.service`
-  left disabled** -- it must not start before a config exists
+  left disabled** -- it must not start before the fake kubeconfig exists
 - the same SSH user/key setup expected by the existing storm servicing scenario
 
 Both the enabled/disabled state of `trident-acl-agent.service`
-(`/etc/systemd/system/multi-user.target.wants/...`) and
-`/etc/trident/trident-acl-agent.conf` live under `/etc`, which is not part of
-the A/B-swapped `/usr`/root volume pair in this usr-verity layout. That makes
-it safe for the scenario to write the config and enable the service once,
+(`/etc/systemd/system/multi-user.target.wants/...`) and the fake kubeconfig
+at `/var/lib/kubelet/kubeconfig` live under paths that are not part of the
+A/B-swapped `/usr`/root volume pair in this usr-verity layout. That makes it
+safe for the scenario to deliver the kubeconfig and enable the service once,
 after `deploy-vm`, rather than baking enablement into the image: the state
-persists across `run-ab-update`'s finalize the same way the config file does.
+persists across `run-ab-update`'s finalize the same way the kubeconfig does.
 
-`prepareVmForAclAgent` writes a minimal `/etc/trident/trident-acl-agent.conf`
-(just `nebraska.app_id` and `kubernetes.node_name` - everything else is
-either a default or delivered another way, see the function's own comment),
-then runs `systemctl enable --now trident-acl-agent.service`. Before that
-runs, the service simply isn't started -- no crash-looping, no log noise.
-Notably, `nebraska.endpoint` is never set in this config: the Nebraska
-endpoint is supplied per-request via the update-request annotation's
-`server` field instead (see `RunABUpdate`'s `PatchStep.Server`).
+`prepareVmForAclAgent` never writes a `trident-acl-agent.conf` at all - the
+agent's compiled-in defaults already cover everything it needs (see the
+function's own doc comment): `nebraska.app_id`/`nebraska.endpoint` are
+supplied per-request via the update-request annotation's `appId`/`server`
+fields instead (see `RunABUpdate`'s `PatchStep.AppId`/`PatchStep.Server`),
+`kubernetes.node_name` defaults to the node's real hostname (which the VM
+image's Image Customizer config sets to match `TestConfig.NodeName`), and
+`kubernetes.api_server` is left unset so the fake kubeconfig's own `server:`
+field is used as-is. `prepareVmForAclAgent` writes only that fake
+kubeconfig, then runs `systemctl enable --now trident-acl-agent.service`.
+Before that runs, the service simply isn't started -- no crash-looping, no
+log noise.
 
 ## Local usage
 
