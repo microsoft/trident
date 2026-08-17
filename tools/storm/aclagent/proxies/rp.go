@@ -26,6 +26,7 @@ type updateRequest struct {
 	TargetVersion string `json:"targetVersion,omitempty"`
 	Server        string `json:"server,omitempty"`
 	AppId         string `json:"appId,omitempty"`
+	Track         string `json:"track,omitempty"`
 }
 
 type updateStatus struct {
@@ -109,7 +110,7 @@ func (c *RPClient) expectStatus(ctx context.Context, index int, step *ExpectStep
 }
 
 func (c *RPClient) patchNodeRequest(ctx context.Context, step *PatchStep) error {
-	request := updateRequest{SchemaVersion: "1.0", NodeUpdateID: step.NodeUpdateID, OperationID: step.OperationID, Operation: step.Operation, TargetVersion: step.TargetOSImageVersion, Server: step.Server, AppId: step.AppId}
+	request := updateRequest{SchemaVersion: "1.0", NodeUpdateID: step.NodeUpdateID, OperationID: step.OperationID, Operation: step.Operation, TargetVersion: step.TargetOSImageVersion, Server: step.Server, AppId: step.AppId, Track: step.Track}
 	raw, err := json.Marshal(request)
 	if err != nil {
 		return err

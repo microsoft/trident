@@ -31,6 +31,10 @@ type PatchStep struct {
 	// this request, for the same reason Server does: there is no config
 	// file to source it from.
 	AppId string `yaml:"app-id,omitempty" json:"appId,omitempty"`
+	// Track overrides trident-acl-agent's configured Nebraska track for
+	// this request, for the same reason Server/AppId do: there is no
+	// config file to source it from.
+	Track string `yaml:"track,omitempty" json:"track,omitempty"`
 }
 
 type ExpectStep struct {
