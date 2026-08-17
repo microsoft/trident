@@ -79,6 +79,12 @@ pub struct UpdateRequest {
     /// since Nebraska's per-instance state is tied to one specific server.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server: Option<Url>,
+    /// Optional override of the agent's configured Nebraska `app_id`
+    /// (`[nebraska].app_id`) for this update. Resolved the same way as
+    /// [`server`](UpdateRequest::server): takes precedence over the static
+    /// config for every Nebraska call this `nodeUpdateId` makes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_id: Option<String>,
     /// Optional caller-asserted current OS version. When present, it must
     /// match [`current_active_version`] or [`UpdateRequest::validate`]
     /// rejects the request with `InvalidRequest`, catching a stale/incorrect
@@ -282,6 +288,7 @@ mod tests {
             operation,
             target_version: Some("2.0.0".to_string()),
             server: None,
+            app_id: None,
             current_version: None,
         }
     }
@@ -669,6 +676,7 @@ mod tests {
     "operation":     { "type": "string", "enum": ["stage", "finalize", "rollback"] },
     "targetVersion": { "type": "string", "description": "ACL image release version, e.g. 202606.29.0." },
     "server":        { "type": "string", "format": "uri", "description": "Optional override of the agent's configured Nebraska endpoint for this update." },
+    "appId":         { "type": "string", "description": "Optional override of the agent's configured Nebraska app_id for this update." },
     "currentVersion": { "type": "string", "description": "Optional caller-asserted current OS version. If present, must match the node's actual active version or the request is rejected as InvalidRequest." }
   },
   "allOf": [
@@ -995,6 +1003,7 @@ mod tests {
                 operation,
                 target_version,
                 server: None,
+                app_id: None,
                 current_version: None,
             };
             let request = request
@@ -1019,6 +1028,7 @@ mod tests {
             operation: RequestedOperation::Finalize,
             target_version: Some("202606.29.0".to_string()),
             server: None,
+            app_id: None,
             current_version: None,
         };
 
@@ -1089,7 +1099,7 @@ mod tests {
             .expect("agent-constructed commit status must conform to the formal schema");
     }
 
-    // --- server / currentVersion (Nebraska endpoint override + version guard) -
+    // --- server / appId / currentVersion (Nebraska overrides + version guard) -
 
     #[test]
     fn server_field_round_trips_and_conforms_to_formal_schema() {
@@ -1112,6 +1122,29 @@ mod tests {
         let request = sample_request(RequestedOperation::Stage);
         let json = serde_json::to_value(&request).unwrap();
         assert!(json.get("server").is_none());
+    }
+
+    #[test]
+    fn app_id_field_round_trips_and_conforms_to_formal_schema() {
+        let schema: Value = serde_json::from_str(DESIGN_DOC_REQUEST_SCHEMA).unwrap();
+        let mut request = sample_request(RequestedOperation::Stage);
+        request.operation_id = Uuid::new_v4().to_string();
+        request.app_id = Some("59bbad61-257d-47f4-9730-6848d88e1a6e".to_string());
+
+        let json = serde_json::to_value(&request).unwrap();
+        assert_eq!(json["appId"], "59bbad61-257d-47f4-9730-6848d88e1a6e");
+        schema_validate(&schema, &json)
+            .expect("request with an appId override must conform to the formal schema");
+
+        let round_tripped: UpdateRequest = serde_json::from_value(json).unwrap();
+        assert_eq!(round_tripped.app_id, request.app_id);
+    }
+
+    #[test]
+    fn app_id_field_absent_when_not_set() {
+        let request = sample_request(RequestedOperation::Stage);
+        let json = serde_json::to_value(&request).unwrap();
+        assert!(json.get("appId").is_none());
     }
 
     #[test]
