@@ -535,12 +535,11 @@ func collectAclArtifacts(cfg stormvmconfig.VMConfig, vmIP string, outputPath str
 	cmds := []string{
 		"sudo journalctl --no-pager -u trident-acl-agent.service > /tmp/trident-acl-agent.log && sudo chmod 644 /tmp/trident-acl-agent.log",
 		"sudo journalctl --no-pager -u tridentd.service > /tmp/tridentd.log && sudo chmod 644 /tmp/tridentd.log",
-		"sudo cat /etc/trident/trident-acl-agent.conf > /tmp/trident-acl-agent.conf && sudo chmod 644 /tmp/trident-acl-agent.conf",
 	}
 	for _, cmd := range cmds {
 		_, _ = stormssh.SshCommandCombinedOutput(cfg, vmIP, cmd)
 	}
-	for _, remote := range []string{"/tmp/trident-acl-agent.log", "/tmp/tridentd.log", "/tmp/trident-acl-agent.conf"} {
+	for _, remote := range []string{"/tmp/trident-acl-agent.log", "/tmp/tridentd.log"} {
 		if err := stormssh.ScpDownloadFile(cfg, vmIP, remote, filepath.Join(outputPath, filepath.Base(remote))); err != nil {
 			logrus.Warnf("failed to download %s: %v", remote, err)
 		}
