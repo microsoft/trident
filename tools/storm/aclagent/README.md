@@ -40,10 +40,14 @@ it safe for the scenario to write the config and enable the service once,
 after `deploy-vm`, rather than baking enablement into the image: the state
 persists across `run-ab-update`'s finalize the same way the config file does.
 
-`prepareVmForAclAgent` writes `/etc/trident/trident-acl-agent.conf` pointing
-at the `localhost:<port>` endpoints storm reverse-SSH-forwards into the VM,
+`prepareVmForAclAgent` writes a minimal `/etc/trident/trident-acl-agent.conf`
+(just `nebraska.app_id` and `kubernetes.node_name` - everything else is
+either a default or delivered another way, see the function's own comment),
 then runs `systemctl enable --now trident-acl-agent.service`. Before that
 runs, the service simply isn't started -- no crash-looping, no log noise.
+Notably, `nebraska.endpoint` is never set in this config: the Nebraska
+endpoint is supplied per-request via the update-request annotation's
+`server` field instead (see `RunABUpdate`'s `PatchStep.Server`).
 
 ## Local usage
 
