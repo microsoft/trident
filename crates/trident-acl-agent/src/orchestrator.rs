@@ -318,6 +318,19 @@ where
             .unwrap_or_else(|| self.config.nebraska.app_id.clone())
     }
 
+    /// Resolves which Nebraska track to use for `request`: the request
+    /// annotation's own `track` override, if present, otherwise the agent's
+    /// configured `[nebraska].track`. Same always-resolves behavior as
+    /// [`resolve_nebraska_app_id`] - `[nebraska].track` always has a default
+    /// ([`crate::DEFAULT_NEBRASKA_TRACK`]) - so there is no error case here
+    /// either.
+    fn resolve_nebraska_track(&self, request: &UpdateRequest) -> String {
+        request
+            .track
+            .clone()
+            .unwrap_or_else(|| self.config.nebraska.track.clone())
+    }
+
     async fn handle_stage(&self, request: UpdateRequest) -> Result<(), anyhow::Error> {
         let started = Utc::now();
         let from_version = Some(current_active_version());
@@ -356,7 +369,7 @@ where
             )
         })?;
         let app_id = self.resolve_nebraska_app_id(&request);
-        let track = self.config.nebraska.track.clone();
+        let track = self.resolve_nebraska_track(&request);
         let machine_id = crate::build_machine_id(IdSource::MachineIdHashed)?;
         let outcome = tokio::task::spawn_blocking(move || {
             let client = NebraskaClient::new(endpoint, app_id, track, machine_id);
@@ -962,7 +975,7 @@ where
             return;
         };
         let app_id = self.resolve_nebraska_app_id(request);
-        let track = self.config.nebraska.track.clone();
+        let track = self.resolve_nebraska_track(request);
         let machine_id = match crate::build_machine_id(NEBRASKA_MACHINE_ID_SOURCE) {
             Ok(id) => id,
             Err(err) => {
@@ -1536,6 +1549,7 @@ mod tests {
             target_version: Some("2.0.0".to_string()),
             server: None,
             app_id: None,
+            track: None,
             current_version: None,
         }
     }

@@ -85,6 +85,16 @@ pub struct UpdateRequest {
     /// config for every Nebraska call this `nodeUpdateId` makes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app_id: Option<String>,
+    /// Optional override of the agent's configured Nebraska `track`
+    /// (`[nebraska].track`) for this update. Resolved and applied the same
+    /// way as [`server`](UpdateRequest::server) and
+    /// [`app_id`](UpdateRequest::app_id): takes precedence over the static
+    /// config for every Nebraska call this `nodeUpdateId` makes. `track` is
+    /// never optional on the wire itself (Nebraska requires it on every
+    /// request), only this override is - when absent, the static
+    /// `[nebraska].track` config value is used, exactly as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub track: Option<String>,
     /// Optional caller-asserted current OS version. When present, it must
     /// match [`current_active_version`] or [`UpdateRequest::validate`]
     /// rejects the request with `InvalidRequest`, catching a stale/incorrect
@@ -289,6 +299,7 @@ mod tests {
             target_version: Some("2.0.0".to_string()),
             server: None,
             app_id: None,
+            track: None,
             current_version: None,
         }
     }
@@ -677,6 +688,7 @@ mod tests {
     "targetVersion": { "type": "string", "description": "ACL image release version, e.g. 202606.29.0." },
     "server":        { "type": "string", "format": "uri", "description": "Optional override of the agent's configured Nebraska endpoint for this update." },
     "appId":         { "type": "string", "description": "Optional override of the agent's configured Nebraska app_id for this update." },
+    "track":         { "type": "string", "description": "Optional override of the agent's configured Nebraska track for this update." },
     "currentVersion": { "type": "string", "description": "Optional caller-asserted current OS version. If present, must match the node's actual active version or the request is rejected as InvalidRequest." }
   },
   "allOf": [
@@ -1004,6 +1016,7 @@ mod tests {
                 target_version,
                 server: None,
                 app_id: None,
+                track: None,
                 current_version: None,
             };
             let request = request
@@ -1029,6 +1042,7 @@ mod tests {
             target_version: Some("202606.29.0".to_string()),
             server: None,
             app_id: None,
+            track: None,
             current_version: None,
         };
 
@@ -1099,7 +1113,7 @@ mod tests {
             .expect("agent-constructed commit status must conform to the formal schema");
     }
 
-    // --- server / appId / currentVersion (Nebraska overrides + version guard) -
+    // --- server / appId / track / currentVersion (Nebraska overrides + version guard) -
 
     #[test]
     fn server_field_round_trips_and_conforms_to_formal_schema() {
@@ -1145,6 +1159,29 @@ mod tests {
         let request = sample_request(RequestedOperation::Stage);
         let json = serde_json::to_value(&request).unwrap();
         assert!(json.get("appId").is_none());
+    }
+
+    #[test]
+    fn track_field_round_trips_and_conforms_to_formal_schema() {
+        let schema: Value = serde_json::from_str(DESIGN_DOC_REQUEST_SCHEMA).unwrap();
+        let mut request = sample_request(RequestedOperation::Stage);
+        request.operation_id = Uuid::new_v4().to_string();
+        request.track = Some("pin-202608.6.0".to_string());
+
+        let json = serde_json::to_value(&request).unwrap();
+        assert_eq!(json["track"], "pin-202608.6.0");
+        schema_validate(&schema, &json)
+            .expect("request with a track override must conform to the formal schema");
+
+        let round_tripped: UpdateRequest = serde_json::from_value(json).unwrap();
+        assert_eq!(round_tripped.track, request.track);
+    }
+
+    #[test]
+    fn track_field_absent_when_not_set() {
+        let request = sample_request(RequestedOperation::Stage);
+        let json = serde_json::to_value(&request).unwrap();
+        assert!(json.get("track").is_none());
     }
 
     #[test]

@@ -38,8 +38,13 @@ use trident::TridentClient;
 
 pub use id::IdSource;
 
-pub const DEFAULT_NEBRASKA_APP_ID: &str = "b0ec8f0d-1c13-4bf4-9efd-ea54464a7098";
-pub const DEFAULT_NEBRASKA_TRACK: &str = "west-us";
+// Deliberately invalid sentinels, mirroring DEFAULT_NEBRASKA_ENDPOINT's
+// `.invalid` domain trick: a deployment that forgets to configure (or
+// override via the update-request annotation's `appId`/`track` fields) a
+// real app_id/track fails loudly against Nebraska instead of silently
+// querying a real-looking but wrong app/group.
+pub const DEFAULT_NEBRASKA_APP_ID: &str = "00000000-0000-0000-0000-000000000000";
+pub const DEFAULT_NEBRASKA_TRACK: &str = "unspecified";
 
 /// Builds a validated [`MachineId`] from an [`IdSource`], translating the
 /// crate's own machine-id/hostname read errors into a single [`HarpoonError`].
