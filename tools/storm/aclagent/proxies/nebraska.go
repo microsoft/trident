@@ -19,9 +19,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// nebraskaTrack must match trident-acl-agent's DEFAULT_NEBRASKA_TRACK
-// (crates/trident-acl-agent/src/lib.rs). Real Nebraska resolves a group by
-// matching this string against the group's Track column, not its Name.
+// nebraskaTrack is the group's Track this proxy seeds. Now supplied to
+// trident-acl-agent per-request via the update-request annotation's `track`
+// field (see Track() and RunABUpdate's PatchStep.Track) rather than needing
+// to match DEFAULT_NEBRASKA_TRACK, since the agent no longer has any
+// config-file fallback for it.
 const nebraskaTrack = "west-us"
 
 // defaultTeamID is the team seeded by Nebraska's own db migrations
@@ -99,6 +101,13 @@ var ExpectedUpdateStatusSequence = []int{
 // hardcoding an app_id string as the old fake mock allowed.
 func (p *NebraskaProxy) AppID() string {
 	return p.appID
+}
+
+// Track returns the group Track trident-acl-agent must be configured with
+// (via the update-request annotation's `track` field), matching the group
+// this proxy seeded in seed().
+func (p *NebraskaProxy) Track() string {
+	return nebraskaTrack
 }
 
 func (p *NebraskaProxy) Handler() http.Handler {
