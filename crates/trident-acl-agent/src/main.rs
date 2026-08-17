@@ -86,12 +86,6 @@ struct Args {
     #[arg(global = true, long, default_value_t = LevelFilter::Warn)]
     network_verbosity: LevelFilter,
 
-    /// Optional Omaha/Nebraska URL override. When omitted, Harpoon uses the
-    /// endpoint from TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT. When both are
-    /// missing, startup fails with a clear error.
-    #[arg()]
-    url: Option<url::Url>,
-
     /// Validate connectivity to a single dependency and exit immediately,
     /// instead of running the agent. Useful for troubleshooting one
     /// connection in isolation (e.g. a systemd ExecStartPre check, or manual
@@ -165,7 +159,7 @@ async fn validate_connection(
         ConnectionTarget::Nebraska => {
             let endpoint = config.nebraska.endpoint.clone().ok_or_else(|| {
                 anyhow::anyhow!(
-                    "nebraska.endpoint is not configured (set TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT, or pass a URL on the CLI)"
+                    "nebraska.endpoint is not configured (set TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT)"
                 )
             })?;
             let app_id = config.nebraska.app_id.clone();
@@ -232,7 +226,6 @@ async fn main() -> Result<(), anyhow::Error> {
     }
 
     let config = AgentConfig::from_env()?;
-    let config = config.with_cli_endpoint(args.url.clone());
 
     if let Some(target) = args.validate_connection {
         return validate_connection(target, &config).await;

@@ -104,13 +104,6 @@ impl AgentConfig {
             },
         })
     }
-
-    pub fn with_cli_endpoint(mut self, cli_endpoint: Option<Url>) -> Self {
-        if cli_endpoint.is_some() {
-            self.nebraska.endpoint = cli_endpoint;
-        }
-        self
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
