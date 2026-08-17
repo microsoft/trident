@@ -13,6 +13,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use url::Url;
 use uuid::Uuid;
 
 pub const UPDATE_REQUEST_ANNOTATION: &str = "acl.azure.com/update-request";
@@ -21,17 +22,16 @@ pub const UPDATE_COMMIT_STATUS_ANNOTATION: &str = "acl.azure.com/update-commit-s
 pub const SCHEMA_VERSION: &str = "1.0";
 const MAX_MESSAGE_BYTES: usize = 2048;
 const TRUNCATION_MARKER: &str = "... (truncated)";
-// TODO(DR-001): This is a temporary stub. The active OS version cannot yet be
-// determined on-node because the OS image does not currently ship a required
-// file/manifest describing the running version. Once that file exists (planned
-// as part of the image build), replace CURRENT_VERSION_STUB and
-// current_active_version() below with real logic that reads it. The stub
-// value below is an explicit sentinel that cannot collide with a real
-// AKS/Trident release version string (those look like "YYYYMM.N.N"), so it
-// can never accidentally match a real requested target version and cause
-// handle_stage/handle_finalize to incorrectly short-circuit to
-// AlreadyAtTarget. Do not remove this comment when bumping the stub value;
-// keep it (and its non-colliding shape) until the real probe lands.
+// TODO(DR-001): current_active_version() now reads /etc/aks-os-version, but
+// falls back to this stub if that file isn't present yet (e.g. an image that
+// hasn't picked up the file, or a dev/test host). Once the file ships
+// unconditionally on every ACL image, this fallback (and this comment) can be
+// removed. The stub value below is an explicit sentinel that cannot collide
+// with a real AKS/Trident release version string (those look like
+// "YYYYMM.N.N"), so it can never accidentally match a real requested target
+// version and cause handle_stage/handle_finalize to incorrectly short-circuit
+// to AlreadyAtTarget. Do not remove this comment when bumping the stub value;
+// keep it (and its non-colliding shape) until the fallback is removed.
 pub const CURRENT_VERSION_STUB: &str = "0.0.0-unprobed-trident-acl-agent-stub";
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, Hash)]
@@ -72,6 +72,19 @@ pub struct UpdateRequest {
     pub operation: RequestedOperation,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_version: Option<String>,
+    /// Optional override of the agent's configured Nebraska endpoint
+    /// (`[nebraska].endpoint` / CLI override) for this update. When present,
+    /// it takes precedence for every Nebraska call this `nodeUpdateId` makes
+    /// (`stage`'s update check, and all progress/completion event reports),
+    /// since Nebraska's per-instance state is tied to one specific server.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server: Option<Url>,
+    /// Optional caller-asserted current OS version. When present, it must
+    /// match [`current_active_version`] or [`UpdateRequest::validate`]
+    /// rejects the request with `InvalidRequest`, catching a stale/incorrect
+    /// AKS-RP view of the node's actual version before any work starts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -95,8 +108,10 @@ pub struct UpdateStatus {
 
 impl UpdateRequest {
     /// Enforces the same constraints as the request annotation's formal
-    /// JSON Schema in `accepted-design-v2.md`: schemaVersion match, and
-    /// targetVersion required for stage/finalize but disallowed for rollback.
+    /// JSON Schema in `accepted-design-v2.md`: schemaVersion match,
+    /// targetVersion required for stage/finalize but disallowed for
+    /// rollback, and (if the caller asserted one) currentVersion matching
+    /// the node's actual active version.
     /// See this file's module doc.
     pub fn validate(self) -> Result<Self, String> {
         if self.schema_version != SCHEMA_VERSION {
@@ -112,6 +127,14 @@ impl UpdateRequest {
                 if self.target_version.is_some() {
                     return Err("targetVersion must be omitted for rollback".to_string());
                 }
+            }
+        }
+        if let Some(ref current) = self.current_version {
+            let active = current_active_version();
+            if *current != active {
+                return Err(format!(
+                    "currentVersion {current:?} does not match node's active version {active:?}"
+                ));
             }
         }
         Ok(self)
@@ -202,12 +225,35 @@ fn truncate_message(message: String) -> String {
     truncated
 }
 
+/// Path to the file the ACL image ships carrying the running OS version.
+/// See `CURRENT_VERSION_STUB`'s doc comment above for the stub fallback this
+/// probe still uses when the file isn't there yet.
+const AKS_OS_VERSION_PATH: &str = "/etc/aks-os-version";
+
 pub fn current_active_version() -> String {
-    // STUB: see CURRENT_VERSION_STUB above. Replace with a real probe (e.g. reading
-    // a version manifest file the OS image will ship) once available. Known risk:
-    // while stubbed, this can equal a real request's targetVersion and cause a
-    // false AlreadyAtTarget short-circuit in handle_stage/handle_finalize.
-    CURRENT_VERSION_STUB.to_string()
+    read_active_version(AKS_OS_VERSION_PATH).unwrap_or_else(|| {
+        log::warn!(
+            "{AKS_OS_VERSION_PATH} not found; falling back to stub current version \
+             {CURRENT_VERSION_STUB}"
+        );
+        CURRENT_VERSION_STUB.to_string()
+    })
+}
+
+/// Reads and trims the active-version file at `path`. Returns `None` (rather
+/// than propagating an error) for any read failure - missing file, permission
+/// error, or empty contents - all of which `current_active_version` treats
+/// identically: fall back to the stub. Split out from
+/// `current_active_version` so tests can point it at a temp file instead of
+/// the real `/etc/aks-os-version`.
+fn read_active_version(path: &str) -> Option<String> {
+    let contents = std::fs::read_to_string(path).ok()?;
+    let trimmed = contents.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
 }
 
 impl From<RequestedOperation> for Operation {
@@ -235,6 +281,8 @@ mod tests {
             operation_id: "op-1".to_string(),
             operation,
             target_version: Some("2.0.0".to_string()),
+            server: None,
+            current_version: None,
         }
     }
 
@@ -619,7 +667,9 @@ mod tests {
     "nodeUpdateId":  { "type": "string", "format": "uuid", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
     "operationId":   { "type": "string", "format": "uuid", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
     "operation":     { "type": "string", "enum": ["stage", "finalize", "rollback"] },
-    "targetVersion": { "type": "string", "description": "ACL image release version, e.g. 202606.29.0." }
+    "targetVersion": { "type": "string", "description": "ACL image release version, e.g. 202606.29.0." },
+    "server":        { "type": "string", "format": "uri", "description": "Optional override of the agent's configured Nebraska endpoint for this update." },
+    "currentVersion": { "type": "string", "description": "Optional caller-asserted current OS version. If present, must match the node's actual active version or the request is rejected as InvalidRequest." }
   },
   "allOf": [
     {
@@ -819,6 +869,11 @@ mod tests {
                         format!("property {name:?}: {s:?} is not a valid date-time: {err}")
                     })?;
                 }
+                "uri" => {
+                    Url::parse(s).map_err(|err| {
+                        format!("property {name:?}: {s:?} is not a valid uri: {err}")
+                    })?;
+                }
                 other => panic!(
                     "test schema validator does not support format {other:?} - extend schema_validate_property"
                 ),
@@ -939,6 +994,8 @@ mod tests {
                 operation_id: Uuid::new_v4().to_string(),
                 operation,
                 target_version,
+                server: None,
+                current_version: None,
             };
             let request = request
                 .validate()
@@ -961,6 +1018,8 @@ mod tests {
             operation_id: Uuid::new_v4().to_string(),
             operation: RequestedOperation::Finalize,
             target_version: Some("202606.29.0".to_string()),
+            server: None,
+            current_version: None,
         };
 
         // InProgress: startedUtc only, no finishedUtc yet.
@@ -1028,5 +1087,96 @@ mod tests {
         );
         schema_validate(&schema, &serde_json::to_value(&commit_status).unwrap())
             .expect("agent-constructed commit status must conform to the formal schema");
+    }
+
+    // --- server / currentVersion (Nebraska endpoint override + version guard) -
+
+    #[test]
+    fn server_field_round_trips_and_conforms_to_formal_schema() {
+        let schema: Value = serde_json::from_str(DESIGN_DOC_REQUEST_SCHEMA).unwrap();
+        let mut request = sample_request(RequestedOperation::Stage);
+        request.operation_id = Uuid::new_v4().to_string();
+        request.server = Some(Url::parse("https://nebraska.example/v1/update").unwrap());
+
+        let json = serde_json::to_value(&request).unwrap();
+        assert_eq!(json["server"], "https://nebraska.example/v1/update");
+        schema_validate(&schema, &json)
+            .expect("request with a server override must conform to the formal schema");
+
+        let round_tripped: UpdateRequest = serde_json::from_value(json).unwrap();
+        assert_eq!(round_tripped.server, request.server);
+    }
+
+    #[test]
+    fn server_field_absent_when_not_set() {
+        let request = sample_request(RequestedOperation::Stage);
+        let json = serde_json::to_value(&request).unwrap();
+        assert!(json.get("server").is_none());
+    }
+
+    #[test]
+    fn current_version_matching_active_version_validates() {
+        let mut request = sample_request(RequestedOperation::Stage);
+        request.current_version = Some(current_active_version());
+        assert!(request.validate().is_ok());
+    }
+
+    #[test]
+    fn current_version_mismatching_active_version_is_rejected() {
+        let mut request = sample_request(RequestedOperation::Stage);
+        request.current_version = Some("not-the-active-version".to_string());
+        let err = request
+            .validate()
+            .expect_err("mismatched currentVersion must be rejected");
+        assert!(err.contains("currentVersion"), "{err}");
+    }
+
+    #[test]
+    fn current_version_absent_skips_the_check() {
+        // No currentVersion asserted at all: validate() must not compare
+        // against current_active_version(), so this can never fail on that
+        // account regardless of what the node's active version is.
+        let request = sample_request(RequestedOperation::Stage);
+        assert!(request.current_version.is_none());
+        assert!(request.validate().is_ok());
+    }
+
+    #[test]
+    fn current_version_field_conforms_to_formal_schema() {
+        let schema: Value = serde_json::from_str(DESIGN_DOC_REQUEST_SCHEMA).unwrap();
+        let mut request = sample_request(RequestedOperation::Stage);
+        request.operation_id = Uuid::new_v4().to_string();
+        request.current_version = Some(current_active_version());
+        let request = request.validate().expect("must validate");
+        schema_validate(&schema, &serde_json::to_value(&request).unwrap())
+            .expect("request with currentVersion must conform to the formal schema");
+    }
+
+    #[test]
+    fn read_active_version_returns_none_for_missing_file() {
+        assert_eq!(
+            read_active_version("/nonexistent/path/does-not-exist-aks-os-version"),
+            None
+        );
+    }
+
+    #[test]
+    fn read_active_version_trims_and_reads_real_file() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!("aks-os-version-test-{}", Uuid::new_v4()));
+        std::fs::write(&path, "  202608.6.0\n").unwrap();
+        let result = read_active_version(path.to_str().unwrap());
+        std::fs::remove_file(&path).ok();
+        assert_eq!(result.as_deref(), Some("202608.6.0"));
+    }
+
+    #[test]
+    fn read_active_version_treats_empty_file_as_absent() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!("aks-os-version-test-empty-{}", Uuid::new_v4()));
+        std::fs::write(&path, "   \n").unwrap();
+        let result = read_active_version(path.to_str().unwrap());
+        std::fs::remove_file(&path).ok();
+        assert_eq!(result, None);
     }
 }

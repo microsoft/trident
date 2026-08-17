@@ -135,6 +135,7 @@ impl StateStore {
 mod tests {
     use chrono::Utc;
     use uuid::Uuid;
+    use url::Url;
 
     use super::*;
     use crate::annotations::{RequestedOperation, StatusCode, SCHEMA_VERSION};
@@ -153,6 +154,8 @@ mod tests {
             operation_id: "op-1".to_string(),
             operation: RequestedOperation::Finalize,
             target_version: Some("2.0.0".to_string()),
+            server: None,
+            current_version: None,
         }
     }
 
@@ -280,6 +283,24 @@ mod tests {
             .expect("clear_pending_commit should succeed");
         let state = store.load().expect("load should succeed");
         assert!(state.pending_commit.is_none());
+    }
+
+    #[test]
+    fn pending_commit_persists_server_and_current_version_overrides() {
+        // PendingCommit.request carries the whole UpdateRequest, so a
+        // server/currentVersion override present at finalize time must
+        // survive the reboot unchanged, ready for the post-reboot commit's
+        // Nebraska event report (see Orchestrator::resolve_nebraska_endpoint).
+        let (_dir, store) = store();
+        let mut pending = sample_pending();
+        pending.request.server = Some(Url::parse("https://nebraska.example/v1/update").unwrap());
+        pending.request.current_version = Some("202608.5.0".to_string());
+
+        store
+            .set_pending_commit(pending.clone())
+            .expect("set_pending_commit should succeed");
+        let state = store.load().expect("load should succeed");
+        assert_eq!(state.pending_commit, Some(pending));
     }
 
     #[test]
