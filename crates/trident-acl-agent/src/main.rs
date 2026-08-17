@@ -1,12 +1,10 @@
-use std::path::PathBuf;
-
 use anyhow::Context;
 use clap::Parser;
 use log::{LevelFilter, Log, Metadata, Record};
 
 use trident_acl_agent::{
     check_nebraska_reachable,
-    config::{AgentConfig, GoalSource, DEFAULT_CONFIG_PATH},
+    config::{AgentConfig, GoalSource},
     k8s::NodeClient,
     orchestrator::Orchestrator,
     run_omaha_only,
@@ -70,9 +68,10 @@ fn is_network_target(target: &str) -> bool {
 
 /// Harpoon can either run the annotation-driven orchestrator (the default)
 /// or fall back to its original one-shot Omaha flow. Mode selection is
-/// config-file only (`[orchestration] goal_source`): shipping defaults
-/// enable the AKS annotation protocol, while a VM extension or
-/// AgentBaker-dropped config can opt a node out to `omaha-only` if needed.
+/// environment-variable only (`TRIDENT_ACL_AGENT_ORCHESTRATION_GOAL_SOURCE`):
+/// shipping defaults enable the AKS annotation protocol, while a VM
+/// extension, systemd drop-in, or AgentBaker-set environment can opt a node
+/// out to `omaha-only` if needed.
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -87,13 +86,9 @@ struct Args {
     #[arg(global = true, long, default_value_t = LevelFilter::Warn)]
     network_verbosity: LevelFilter,
 
-    /// Optional path to /etc/trident/trident-acl-agent.conf.
-    #[arg(long)]
-    config: Option<PathBuf>,
-
     /// Optional Omaha/Nebraska URL override. When omitted, Harpoon uses the
-    /// endpoint from trident-acl-agent.conf. When both are missing, startup
-    /// fails with a clear error.
+    /// endpoint from TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT. When both are
+    /// missing, startup fails with a clear error.
     #[arg()]
     url: Option<url::Url>,
 
@@ -170,7 +165,7 @@ async fn validate_connection(
         ConnectionTarget::Nebraska => {
             let endpoint = config.nebraska.endpoint.clone().ok_or_else(|| {
                 anyhow::anyhow!(
-                    "nebraska.endpoint is not configured (set [nebraska].endpoint in trident-acl-agent.conf, or pass a URL on the CLI)"
+                    "nebraska.endpoint is not configured (set TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT, or pass a URL on the CLI)"
                 )
             })?;
             let app_id = config.nebraska.app_id.clone();
@@ -236,13 +231,7 @@ async fn main() -> Result<(), anyhow::Error> {
         log::set_max_level(max_level);
     }
 
-    let config_path = args
-        .config
-        .clone()
-        .unwrap_or_else(|| PathBuf::from(DEFAULT_CONFIG_PATH));
-    let explicit_config = args.config.is_some();
-
-    let config = AgentConfig::load(&config_path, explicit_config)?.unwrap_or_default();
+    let config = AgentConfig::from_env()?;
     let config = config.with_cli_endpoint(args.url.clone());
 
     if let Some(target) = args.validate_connection {
