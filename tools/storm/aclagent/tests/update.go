@@ -108,18 +108,34 @@ func sha384CosiMetadata(path string) (string, error) {
 }
 
 // expectValidateConnection runs "trident-acl-agent --validate-connection
-// <mode>" on the VM (against whatever config is currently on disk at the
-// binary's compiled-in default path) and asserts its exit status matches
-// wantSuccess. Used to prove both halves of the kubeconfig-server fix
-// (https://github.com/microsoft/trident/pull/730): before a config is
-// delivered, only tridentd (socket-activated, no config needed) should
-// succeed while kubernetes/nebraska fail on unreachable defaults; after
-// prepareVmForAclAgent delivers a real config, all three should succeed.
-func expectValidateConnection(cfg stormvmconfig.VMConfig, vmIP, mode string, wantSuccess bool) error {
-	out, err := stormssh.SshCommandCombinedOutput(cfg, vmIP, fmt.Sprintf("sudo trident-acl-agent --validate-connection %s", mode))
+// <mode>" on the VM and asserts its exit status matches wantSuccess. All
+// configuration is via TRIDENT_ACL_AGENT_* environment variables (see
+// crates/trident-acl-agent/src/config.rs) - there is no config file - so
+// envVars lets a caller inject one-off overrides for this single
+// invocation only (nil/empty runs against whatever the agent's own
+// environment already has, i.e. nothing, proving the compiled-in
+// defaults). Used to prove both halves of the kubeconfig-server fix
+// (https://github.com/microsoft/trident/pull/730): before the fake
+// kubeconfig is delivered, only tridentd (socket-activated, no config
+// needed) should succeed while kubernetes/nebraska fail on unreachable
+// defaults; after prepareVmForAclAgent delivers it, kubernetes succeeds
+// too. Nebraska has no static config at all, so proving it can succeed
+// requires passing envVars explicitly (see the env-var-override checks in
+// RunABUpdate).
+func expectValidateConnection(cfg stormvmconfig.VMConfig, vmIP, mode string, wantSuccess bool, envVars map[string]string) error {
+	var prefix strings.Builder
+	prefix.WriteString("sudo")
+	if len(envVars) > 0 {
+		prefix.WriteString(" env")
+		for k, v := range envVars {
+			fmt.Fprintf(&prefix, " %s=%q", k, v)
+		}
+	}
+	command := fmt.Sprintf("%s trident-acl-agent --validate-connection %s", prefix.String(), mode)
+	out, err := stormssh.SshCommandCombinedOutput(cfg, vmIP, command)
 	gotSuccess := err == nil
 	if gotSuccess != wantSuccess {
-		return fmt.Errorf("--validate-connection %s: expected success=%v, got success=%v (err=%v, output=%s)", mode, wantSuccess, gotSuccess, err, out)
+		return fmt.Errorf("--validate-connection %s (envVars=%v): expected success=%v, got success=%v (err=%v, output=%s)", mode, envVars, wantSuccess, gotSuccess, err, out)
 	}
 	return nil
 }
@@ -201,13 +217,13 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	// unreachable placeholders (no real kubeconfig at
 	// /var/lib/kubelet/kubeconfig yet, and https://nebraska.example.invalid
 	// / no app_id/server override in play), so both should fail.
-	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "tridentd", true); err != nil {
+	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "tridentd", true, nil); err != nil {
 		return fmt.Errorf("pre-config validate-connection check failed: %w", err)
 	}
-	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "kubernetes", false); err != nil {
+	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "kubernetes", false, nil); err != nil {
 		return fmt.Errorf("pre-config validate-connection check failed: %w", err)
 	}
-	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "nebraska", false); err != nil {
+	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "nebraska", false, nil); err != nil {
 		return fmt.Errorf("pre-config validate-connection check failed: %w", err)
 	}
 
@@ -219,24 +235,51 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	// now succeeds (its own `server:` field points at the fake apiserver);
 	// tridentd is unaffected either way. trident-acl-agent never gets a
 	// config file at all (see prepareVmForAclAgent's doc comment) - Nebraska
-	// endpoint/app_id are only ever supplied per-request via the
-	// update-request annotation's `server`/`appId` fields - so a bare
-	// "--validate-connection nebraska" with no annotation in play still
-	// fails here exactly as it did before configuration, proving there is no
-	// static Nebraska configuration of any kind for the agent to fall back on.
+	// endpoint/app_id/track are only ever supplied per-request, either via
+	// the update-request annotation's `server`/`appId`/`track` fields or
+	// (for this one-off diagnostic check) a TRIDENT_ACL_AGENT_NEBRASKA_*
+	// env var - so a bare "--validate-connection nebraska" with neither in
+	// play still fails here exactly as it did before configuration, proving
+	// there is no static Nebraska configuration of any kind for the agent
+	// to fall back on.
 	for _, mode := range []string{"tridentd", "kubernetes"} {
-		if err := expectValidateConnection(vmConfig.VMConfig, vmIP, mode, true); err != nil {
+		if err := expectValidateConnection(vmConfig.VMConfig, vmIP, mode, true, nil); err != nil {
 			return fmt.Errorf("post-config validate-connection check failed: %w", err)
 		}
 	}
-	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "nebraska", false); err != nil {
-		return fmt.Errorf("post-config validate-connection check failed (trident-acl-agent.conf must never exist / carry a Nebraska endpoint): %w", err)
+	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "nebraska", false, nil); err != nil {
+		return fmt.Errorf("post-config validate-connection check failed (trident-acl-agent has no static Nebraska config): %w", err)
 	}
 
 	rp := &stormproxies.RPClient{APIServerURL: fmt.Sprintf("http://%s:%d", testConfig.HostEndpointIP, testConfig.APIServerPort), NodeName: testConfig.NodeName}
 	nebraskaServer := fmt.Sprintf("http://%s:%d", testConfig.HostEndpointIP, testConfig.NebraskaPort)
 	nebraskaAppID := nebraska.AppID()
 	nebraskaTrack := nebraska.Track()
+
+	// Proves the env-var override path itself: the same one-off diagnostic
+	// check that just failed with no override now succeeds when given the
+	// exact TRIDENT_ACL_AGENT_NEBRASKA_* values RunABUpdate is about to send
+	// via the update-request annotation, and fails again with a deliberately
+	// wrong endpoint - i.e. both the success and failure paths of the
+	// env-var config mechanism are exercised directly, not just inferred
+	// from the annotation-driven flow below.
+	nebraskaEnv := map[string]string{
+		"TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT": nebraskaServer,
+		"TRIDENT_ACL_AGENT_NEBRASKA_APP_ID":   nebraskaAppID,
+		"TRIDENT_ACL_AGENT_NEBRASKA_TRACK":    nebraskaTrack,
+	}
+	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "nebraska", true, nebraskaEnv); err != nil {
+		return fmt.Errorf("env-var-override validate-connection check failed (expected success): %w", err)
+	}
+	wrongNebraskaEnv := map[string]string{
+		"TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT": fmt.Sprintf("http://%s:%d", testConfig.HostEndpointIP, testConfig.NebraskaPort+1),
+		"TRIDENT_ACL_AGENT_NEBRASKA_APP_ID":   nebraskaAppID,
+		"TRIDENT_ACL_AGENT_NEBRASKA_TRACK":    nebraskaTrack,
+	}
+	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "nebraska", false, wrongNebraskaEnv); err != nil {
+		return fmt.Errorf("env-var-override validate-connection check failed (expected failure against wrong port): %w", err)
+	}
+
 	scenario := &stormproxies.Scenario{Steps: []stormproxies.ScenarioStep{
 		{Patch: &stormproxies.PatchStep{NodeUpdateID: "11111111-1111-1111-1111-111111111111", OperationID: "stage-op", Operation: "stage", TargetOSImageVersion: testConfig.TargetVersion, Server: nebraskaServer, AppId: nebraskaAppID, Track: nebraskaTrack}},
 		{Expect: &stormproxies.ExpectStep{OperationID: "stage-op", Operation: "stage", Code: "Success", Timeout: 120 * time.Second}},
