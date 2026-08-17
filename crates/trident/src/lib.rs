@@ -834,6 +834,9 @@ impl Trident {
 
     /// Handle a manual rollback request. Either print information about
     /// available rollbacks, or execute a rollback.
+    ///
+    /// Returns the exit kind and the resulting servicing type, i.e.
+    /// `ServicingType::NoActiveServicing` if no rollback was performed.
     pub fn rollback(
         &mut self,
         datastore: &mut DataStore,
