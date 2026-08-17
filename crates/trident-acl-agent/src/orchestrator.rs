@@ -305,6 +305,19 @@ where
             .or_else(|| self.config.nebraska.endpoint.clone())
     }
 
+    /// Resolves which Nebraska app id to use for `request`: the request
+    /// annotation's own `appId` override, if present, otherwise the agent's
+    /// configured `[nebraska].app_id`. Unlike [`resolve_nebraska_endpoint`],
+    /// this always resolves to a value - `[nebraska].app_id` always has one
+    /// (defaulting to [`crate::DEFAULT_NEBRASKA_APP_ID`]) - so there is no
+    /// error case to handle at call sites.
+    fn resolve_nebraska_app_id(&self, request: &UpdateRequest) -> String {
+        request
+            .app_id
+            .clone()
+            .unwrap_or_else(|| self.config.nebraska.app_id.clone())
+    }
+
     async fn handle_stage(&self, request: UpdateRequest) -> Result<(), anyhow::Error> {
         let started = Utc::now();
         let from_version = Some(current_active_version());
@@ -342,7 +355,7 @@ where
                 "annotation mode requires request.server, [nebraska].endpoint, or CLI override"
             )
         })?;
-        let app_id = self.config.nebraska.app_id.clone();
+        let app_id = self.resolve_nebraska_app_id(&request);
         let track = self.config.nebraska.track.clone();
         let machine_id = crate::build_machine_id(IdSource::MachineIdHashed)?;
         let outcome = tokio::task::spawn_blocking(move || {
@@ -948,7 +961,7 @@ where
             );
             return;
         };
-        let app_id = self.config.nebraska.app_id.clone();
+        let app_id = self.resolve_nebraska_app_id(request);
         let track = self.config.nebraska.track.clone();
         let machine_id = match crate::build_machine_id(NEBRASKA_MACHINE_ID_SOURCE) {
             Ok(id) => id,
@@ -1522,6 +1535,7 @@ mod tests {
             operation,
             target_version: Some("2.0.0".to_string()),
             server: None,
+            app_id: None,
             current_version: None,
         }
     }
