@@ -134,8 +134,8 @@ impl StateStore {
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
-    use uuid::Uuid;
     use url::Url;
+    use uuid::Uuid;
 
     use super::*;
     use crate::annotations::{RequestedOperation, StatusCode, SCHEMA_VERSION};
