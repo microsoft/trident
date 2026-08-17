@@ -9,11 +9,9 @@ Restart=on-failure
 RestartSec=5
 # All configuration is via TRIDENT_ACL_AGENT_* environment variables (see
 # crates/trident-acl-agent/src/config.rs) - there is no config file. Set
-# them here, in a drop-in override (`systemctl edit trident-acl-agent.service`
-# creates /etc/systemd/system/trident-acl-agent.service.d/override.conf),
-# or in the optional env file below. The leading "-" makes a missing file
-# non-fatal.
-EnvironmentFile=-/etc/default/trident-acl-agent
+# them here (Environment=), or via a drop-in override
+# (`systemctl edit trident-acl-agent.service` creates
+# /etc/systemd/system/trident-acl-agent.service.d/override.conf).
 
 [Install]
 WantedBy=multi-user.target
