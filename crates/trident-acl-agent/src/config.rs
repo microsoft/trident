@@ -1,28 +1,36 @@
-//! Config loading for Harpoon.
+//! Env-var-based config loading for Harpoon.
 //!
-//! See the design doc's endpoint override section (§12). Annotation mode is
-//! the default; `omaha-only` (the historical one-shot behavior) remains
-//! available as an explicit opt-out via `goal_source = "omaha-only"`.
+//! There is no config file. Every setting is an environment variable
+//! prefixed `TRIDENT_ACL_AGENT_` (see [`ENV_PREFIX`]), systemd-style: set it
+//! directly in the unit's own `Environment=` lines, via a drop-in override
+//! (`systemctl edit trident-acl-agent.service`, which creates
+//! `/etc/systemd/system/trident-acl-agent.service.d/override.conf`), via the
+//! packaged `EnvironmentFile=-/etc/default/trident-acl-agent` (see
+//! `packaging/systemd/trident-acl-agent.service`), or by any other means
+//! that ultimately sets the process's environment before it starts. All
+//! three mechanisms are equivalent from the agent's point of view - it just
+//! reads `std::env::var`.
+//!
+//! Annotation mode is the default; `omaha-only` (the historical one-shot
+//! behavior) remains available as an explicit opt-out via
+//! `TRIDENT_ACL_AGENT_ORCHESTRATION_GOAL_SOURCE=omaha-only`.
 
-use std::{
-    env, fs,
-    path::{Path, PathBuf},
-    time::Duration,
-};
+use std::{env, path::PathBuf, str::FromStr, time::Duration};
 
-use anyhow::Context;
-use serde::Deserialize;
 use url::Url;
 
 use crate::{DEFAULT_NEBRASKA_APP_ID, DEFAULT_NEBRASKA_TRACK};
 
-pub const DEFAULT_CONFIG_PATH: &str = "/etc/trident/trident-acl-agent.conf";
+/// Prefix shared by every trident-acl-agent environment variable.
+const ENV_PREFIX: &str = "TRIDENT_ACL_AGENT_";
+
 const DEFAULT_KUBERNETES_POLL_INTERVAL: Duration = Duration::from_secs(2);
 // TODO: placeholder until the real production Nebraska/Omaha endpoint is
 // known. `.invalid` is reserved by RFC 2606 and is guaranteed to never
-// resolve, so a deployment that forgets to override this fails loudly at
-// the network layer instead of silently querying a real-looking but wrong
-// host.
+// resolve, so a deployment that forgets to set
+// TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT (or override it per-request via the
+// update-request annotation's `server` field) fails loudly at the network
+// layer instead of silently querying a real-looking but wrong host.
 pub const DEFAULT_NEBRASKA_ENDPOINT: &str = "https://nebraska.example.invalid/v1/update";
 const DEFAULT_STAGE_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 const DEFAULT_FINALIZE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
@@ -39,21 +47,48 @@ pub struct AgentConfig {
 }
 
 impl AgentConfig {
-    pub fn load(path: &Path, explicit: bool) -> Result<Option<Self>, anyhow::Error> {
-        match fs::read_to_string(path) {
-            Ok(contents) => Ok(Some(Self::from_toml(&contents)?)),
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound && !explicit => Ok(None),
-            Err(err) => Err(anyhow::Error::new(err).context(format!(
-                "failed to read Harpoon config at {}",
-                path.display()
-            ))),
-        }
-    }
-
-    pub fn from_toml(contents: &str) -> Result<Self, anyhow::Error> {
-        let raw: RawAgentConfig =
-            toml::from_str(contents).context("failed to parse trident-acl-agent.conf")?;
-        raw.into_effective()
+    /// Loads the effective config purely from `TRIDENT_ACL_AGENT_*`
+    /// environment variables (see the module doc). A merely-absent variable
+    /// is never an error - it just falls back to that setting's default -
+    /// but a present-and-malformed value (bad URL, bad duration, unknown
+    /// `goal_source`, etc.) is.
+    pub fn from_env() -> Result<Self, anyhow::Error> {
+        Ok(Self {
+            nebraska: NebraskaConfig {
+                endpoint: env_url("NEBRASKA_ENDPOINT")?
+                    .or_else(|| Some(Url::parse(DEFAULT_NEBRASKA_ENDPOINT).expect("static url"))),
+                app_id: env_string("NEBRASKA_APP_ID")
+                    .unwrap_or_else(|| DEFAULT_NEBRASKA_APP_ID.to_string()),
+                track: env_string("NEBRASKA_TRACK")
+                    .unwrap_or_else(|| DEFAULT_NEBRASKA_TRACK.to_string()),
+            },
+            kubernetes: KubernetesConfig {
+                api_server: env_url("KUBERNETES_API_SERVER")?,
+                kubeconfig: env_string("KUBERNETES_KUBECONFIG")
+                    .unwrap_or_else(|| DEFAULT_KUBELET_KUBECONFIG.to_string()),
+                node_name: env_string("KUBERNETES_NODE_NAME").unwrap_or_else(default_node_name),
+                watch_poll_interval: DEFAULT_KUBERNETES_POLL_INTERVAL,
+            },
+            trident: TridentConfig {
+                socket: env_string("TRIDENT_SOCKET")
+                    .unwrap_or_else(|| trident_proto::TRIDENT_DEFAULT_SOCKET_URI.to_string()),
+            },
+            orchestration: OrchestrationConfig {
+                goal_source: env_parse("ORCHESTRATION_GOAL_SOURCE")?.unwrap_or_default(),
+                state_path: env_string("ORCHESTRATION_STATE_PATH")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| PathBuf::from(DEFAULT_STATE_PATH)),
+                stage_timeout: env_duration("ORCHESTRATION_STAGE_TIMEOUT", DEFAULT_STAGE_TIMEOUT)?,
+                finalize_timeout: env_duration(
+                    "ORCHESTRATION_FINALIZE_TIMEOUT",
+                    DEFAULT_FINALIZE_TIMEOUT,
+                )?,
+                heartbeat_interval: env_duration(
+                    "ORCHESTRATION_HEARTBEAT_INTERVAL",
+                    DEFAULT_HEARTBEAT_INTERVAL,
+                )?,
+            },
+        })
     }
 
     pub fn with_cli_endpoint(mut self, cli_endpoint: Option<Url>) -> Self {
@@ -120,8 +155,7 @@ impl Default for TridentConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum GoalSource {
     /// Historical one-shot behavior: query Nebraska/Omaha once, and if an
     /// update is offered, call tridentd's combined `update()` RPC once and
@@ -137,6 +171,20 @@ pub enum GoalSource {
     /// This is the default mode.
     #[default]
     Annotations,
+}
+
+impl FromStr for GoalSource {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "omaha-only" => Ok(GoalSource::OmahaOnly),
+            "annotations" => Ok(GoalSource::Annotations),
+            other => Err(anyhow::anyhow!(
+                "unknown goal_source {other:?} (expected \"annotations\" or \"omaha-only\")"
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -165,137 +213,46 @@ impl Default for OrchestrationConfig {
     }
 }
 
-#[derive(Debug, Default, Deserialize)]
-struct RawAgentConfig {
-    #[serde(default)]
-    nebraska: RawNebraskaConfig,
-    #[serde(default)]
-    kubernetes: RawKubernetesConfig,
-    #[serde(default)]
-    trident: RawTridentConfig,
-    #[serde(default)]
-    orchestration: RawOrchestrationConfig,
+/// Builds the full `TRIDENT_ACL_AGENT_<suffix>` environment variable name.
+fn env_name(suffix: &str) -> String {
+    format!("{ENV_PREFIX}{suffix}")
 }
 
-impl RawAgentConfig {
-    fn into_effective(self) -> Result<AgentConfig, anyhow::Error> {
-        Ok(AgentConfig {
-            nebraska: NebraskaConfig {
-                endpoint: self
-                    .nebraska
-                    .endpoint
-                    .or_else(|| Some(Url::parse(DEFAULT_NEBRASKA_ENDPOINT).expect("static url"))),
-                app_id: self
-                    .nebraska
-                    .app_id
-                    .unwrap_or_else(|| DEFAULT_NEBRASKA_APP_ID.to_string()),
-                track: self
-                    .nebraska
-                    .track
-                    .unwrap_or_else(|| DEFAULT_NEBRASKA_TRACK.to_string()),
-            },
-            kubernetes: KubernetesConfig {
-                api_server: self.kubernetes.api_server,
-                kubeconfig: self
-                    .kubernetes
-                    .kubeconfig
-                    .unwrap_or_else(|| DEFAULT_KUBELET_KUBECONFIG.to_string()),
-                node_name: self
-                    .kubernetes
-                    .node_name
-                    .map(expand_env_token)
-                    .transpose()?
-                    .unwrap_or_else(default_node_name),
-                watch_poll_interval: DEFAULT_KUBERNETES_POLL_INTERVAL,
-            },
-            trident: TridentConfig {
-                socket: self
-                    .trident
-                    .socket
-                    .unwrap_or_else(|| trident_proto::TRIDENT_DEFAULT_SOCKET_URI.to_string()),
-            },
-            orchestration: OrchestrationConfig {
-                goal_source: self.orchestration.goal_source.unwrap_or_default(),
-                state_path: self
-                    .orchestration
-                    .state_path
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|| PathBuf::from(DEFAULT_STATE_PATH)),
-                stage_timeout: parse_duration(
-                    self.orchestration.stage_timeout.as_deref(),
-                    DEFAULT_STAGE_TIMEOUT,
-                    "orchestration.stage_timeout",
-                )?,
-                finalize_timeout: parse_duration(
-                    self.orchestration.finalize_timeout.as_deref(),
-                    DEFAULT_FINALIZE_TIMEOUT,
-                    "orchestration.finalize_timeout",
-                )?,
-                heartbeat_interval: parse_duration(
-                    self.orchestration.heartbeat_interval.as_deref(),
-                    DEFAULT_HEARTBEAT_INTERVAL,
-                    "orchestration.heartbeat_interval",
-                )?,
-            },
+/// Reads `TRIDENT_ACL_AGENT_<suffix>`, treating both "unset" and "set to the
+/// empty string" as absent - a drop-in override that clears a variable to
+/// `""` should fall back to the default, not try to parse an empty value.
+fn env_raw(suffix: &str) -> Option<String> {
+    env::var(env_name(suffix)).ok().filter(|v| !v.is_empty())
+}
+
+fn env_string(suffix: &str) -> Option<String> {
+    env_raw(suffix)
+}
+
+fn env_url(suffix: &str) -> Result<Option<Url>, anyhow::Error> {
+    env_raw(suffix)
+        .map(|v| {
+            Url::parse(&v)
+                .map_err(|err| anyhow::anyhow!("invalid URL for {}: {err}", env_name(suffix)))
         })
-    }
+        .transpose()
 }
 
-#[derive(Debug, Default, Deserialize)]
-struct RawNebraskaConfig {
-    endpoint: Option<Url>,
-    app_id: Option<String>,
-    track: Option<String>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct RawKubernetesConfig {
-    api_server: Option<Url>,
-    kubeconfig: Option<String>,
-    node_name: Option<String>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct RawTridentConfig {
-    socket: Option<String>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct RawOrchestrationConfig {
-    goal_source: Option<GoalSource>,
-    state_path: Option<String>,
-    stage_timeout: Option<String>,
-    finalize_timeout: Option<String>,
-    heartbeat_interval: Option<String>,
-}
-
-fn parse_duration(
-    value: Option<&str>,
-    default: Duration,
-    field: &str,
-) -> Result<Duration, anyhow::Error> {
-    value
-        .map(|value| {
-            humantime::parse_duration(value)
-                .map_err(|err| anyhow::anyhow!("invalid duration for {field}: {err}"))
+fn env_duration(suffix: &str, default: Duration) -> Result<Duration, anyhow::Error> {
+    env_raw(suffix)
+        .map(|v| {
+            humantime::parse_duration(&v)
+                .map_err(|err| anyhow::anyhow!("invalid duration for {}: {err}", env_name(suffix)))
         })
-        .transpose()?
-        .unwrap_or(default)
-        .pipe(Ok)
+        .transpose()
+        .map(|parsed| parsed.unwrap_or(default))
 }
 
-fn expand_env_token(value: String) -> Result<String, anyhow::Error> {
-    if let Some(name) = value.strip_prefix("${").and_then(|v| v.strip_suffix('}')) {
-        return env::var(name).map_err(|_| {
-            anyhow::anyhow!("environment variable {name} is not set for kubernetes.node_name")
-        });
-    }
-    if let Some(name) = value.strip_prefix('$') {
-        return env::var(name).map_err(|_| {
-            anyhow::anyhow!("environment variable {name} is not set for kubernetes.node_name")
-        });
-    }
-    Ok(value)
+fn env_parse<T>(suffix: &str) -> Result<Option<T>, anyhow::Error>
+where
+    T: FromStr<Err = anyhow::Error>,
+{
+    env_raw(suffix).map(|v| v.parse::<T>()).transpose()
 }
 
 fn default_node_name() -> String {
@@ -309,29 +266,64 @@ fn default_node_name() -> String {
         .to_lowercase()
 }
 
-trait Pipe: Sized {
-    fn pipe<T>(self, f: impl FnOnce(Self) -> T) -> T {
-        f(self)
-    }
-}
-
-impl<T> Pipe for T {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// All `TRIDENT_ACL_AGENT_*` variables this module reads. Kept as one
+    /// list so the default/override test below can reliably clear them
+    /// before each phase rather than depending on nothing else in the test
+    /// binary having touched them.
+    const ALL_ENV_VARS: &[&str] = &[
+        "TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT",
+        "TRIDENT_ACL_AGENT_NEBRASKA_APP_ID",
+        "TRIDENT_ACL_AGENT_NEBRASKA_TRACK",
+        "TRIDENT_ACL_AGENT_KUBERNETES_API_SERVER",
+        "TRIDENT_ACL_AGENT_KUBERNETES_KUBECONFIG",
+        "TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME",
+        "TRIDENT_ACL_AGENT_TRIDENT_SOCKET",
+        "TRIDENT_ACL_AGENT_ORCHESTRATION_GOAL_SOURCE",
+        "TRIDENT_ACL_AGENT_ORCHESTRATION_STATE_PATH",
+        "TRIDENT_ACL_AGENT_ORCHESTRATION_STAGE_TIMEOUT",
+        "TRIDENT_ACL_AGENT_ORCHESTRATION_FINALIZE_TIMEOUT",
+        "TRIDENT_ACL_AGENT_ORCHESTRATION_HEARTBEAT_INTERVAL",
+    ];
+
+    /// Clears every var this module reads. Environment mutation is process-
+    /// global and `std::env::remove_var`/`set_var` are `unsafe` (not
+    /// thread-safe against concurrent reads elsewhere in the process), so
+    /// this test intentionally covers both the "nothing set" and "override"
+    /// cases in one sequential function rather than two separate `#[test]`s
+    /// that `cargo test` could run in parallel against the same variables.
+    fn clear_env() {
+        for var in ALL_ENV_VARS {
+            // SAFETY: single-threaded within this test function; no other
+            // test in this crate reads or writes these TRIDENT_ACL_AGENT_*
+            // variables.
+            unsafe {
+                env::remove_var(var);
+            }
+        }
+    }
+
     #[test]
-    fn parses_defaults() {
-        let config = AgentConfig::from_toml("").unwrap();
+    fn env_config_defaults_then_overrides() {
+        clear_env();
+
+        let config = AgentConfig::from_env().unwrap();
         assert_eq!(
             config.nebraska.endpoint.unwrap().as_str(),
             DEFAULT_NEBRASKA_ENDPOINT
         );
         assert_eq!(config.nebraska.app_id, DEFAULT_NEBRASKA_APP_ID);
+        assert_eq!(config.nebraska.track, DEFAULT_NEBRASKA_TRACK);
         assert_eq!(
             config.kubernetes.api_server, None,
             "api_server should default to unset so the kubeconfig's own server is used as-is"
+        );
+        assert_eq!(
+            config.kubernetes.kubeconfig,
+            DEFAULT_KUBELET_KUBECONFIG.to_string()
         );
         assert_eq!(
             config.trident.socket,
@@ -351,34 +343,40 @@ mod tests {
             config.orchestration.heartbeat_interval,
             DEFAULT_HEARTBEAT_INTERVAL
         );
-    }
 
-    #[test]
-    fn parses_overrides() {
-        let config = AgentConfig::from_toml(
-            r#"
-            [nebraska]
-            endpoint = "https://custom-nebraska.example.invalid/v1/update"
-            app_id = "custom-app"
-            track = "custom-track"
+        // SAFETY: see clear_env's doc comment.
+        unsafe {
+            env::set_var(
+                "TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT",
+                "https://custom-nebraska.example.invalid/v1/update",
+            );
+            env::set_var("TRIDENT_ACL_AGENT_NEBRASKA_APP_ID", "custom-app");
+            env::set_var("TRIDENT_ACL_AGENT_NEBRASKA_TRACK", "custom-track");
+            env::set_var(
+                "TRIDENT_ACL_AGENT_KUBERNETES_API_SERVER",
+                "https://cluster.example.invalid",
+            );
+            env::set_var(
+                "TRIDENT_ACL_AGENT_KUBERNETES_KUBECONFIG",
+                "/etc/harpoon/kubeconfig",
+            );
+            env::set_var("TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME", "node-42");
+            env::set_var(
+                "TRIDENT_ACL_AGENT_TRIDENT_SOCKET",
+                "unix:///custom/trident.sock",
+            );
+            env::set_var("TRIDENT_ACL_AGENT_ORCHESTRATION_GOAL_SOURCE", "omaha-only");
+            env::set_var(
+                "TRIDENT_ACL_AGENT_ORCHESTRATION_STATE_PATH",
+                "/var/lib/trident-acl-agent/custom-state.json",
+            );
+            env::set_var("TRIDENT_ACL_AGENT_ORCHESTRATION_STAGE_TIMEOUT", "21m");
+            env::set_var("TRIDENT_ACL_AGENT_ORCHESTRATION_FINALIZE_TIMEOUT", "11m");
+            env::set_var("TRIDENT_ACL_AGENT_ORCHESTRATION_HEARTBEAT_INTERVAL", "45s");
+        }
 
-            [kubernetes]
-            api_server = "https://cluster.example.invalid"
-            kubeconfig = "/etc/harpoon/kubeconfig"
-            node_name = "node-42"
-
-            [trident]
-            socket = "unix:///custom/trident.sock"
-
-            [orchestration]
-            goal_source = "omaha-only"
-            state_path = "/var/lib/trident-acl-agent/custom-state.json"
-            stage_timeout = "21m"
-            finalize_timeout = "11m"
-            heartbeat_interval = "45s"
-            "#,
-        )
-        .unwrap();
+        let config = AgentConfig::from_env().unwrap();
+        clear_env();
 
         assert_eq!(
             config.nebraska.endpoint.unwrap().as_str(),
@@ -413,5 +411,38 @@ mod tests {
             config.orchestration.heartbeat_interval,
             Duration::from_secs(45)
         );
+
+        // --- empty value falls back to default, same as unset -------------
+        clear_env();
+        // SAFETY: see clear_env's doc comment.
+        unsafe {
+            env::set_var("TRIDENT_ACL_AGENT_NEBRASKA_APP_ID", "");
+        }
+        let config = AgentConfig::from_env().unwrap();
+        assert_eq!(config.nebraska.app_id, DEFAULT_NEBRASKA_APP_ID);
+
+        // --- a present-but-malformed URL is a parse error ------------------
+        clear_env();
+        // SAFETY: see clear_env's doc comment.
+        unsafe {
+            env::set_var("TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT", "not a url");
+        }
+        let err = AgentConfig::from_env().unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT"),
+            "{err}"
+        );
+
+        // --- a present-but-unknown goal_source is a parse error ------------
+        clear_env();
+        // SAFETY: see clear_env's doc comment.
+        unsafe {
+            env::set_var("TRIDENT_ACL_AGENT_ORCHESTRATION_GOAL_SOURCE", "bogus");
+        }
+        let err = AgentConfig::from_env().unwrap_err();
+        assert!(err.to_string().contains("bogus"), "{err}");
+
+        clear_env();
     }
 }
