@@ -7,18 +7,25 @@ publish = false
 [dependencies]
 anyhow = { workspace = true, features = ["backtrace"] }
 clap = { workspace = true, features = ["derive"] }
+chrono = { workspace = true }
 env_logger = { workspace = true }
 futures = { workspace = true }
+humantime = { workspace = true }
+k8s-openapi = { workspace = true }
+kube = { workspace = true }
 log = { workspace = true }
 quick-xml = { workspace = true, features = ["serialize"] }
 reqwest = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
 serde_path_to_error = { workspace = true }
 sha2 = { workspace = true }
 systemd-journal-logger = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-stream = { workspace = true }
 tonic = { workspace = true }
 url = { workspace = true, features = ["serde"] }
 uuid = { workspace = true, features = ["v4", "serde"] }
@@ -29,7 +36,18 @@ trident-proto = { path = "../trident-proto" }
 
 
 [dev-dependencies]
+tempfile = { workspace = true }
 indoc = { workspace = true }
 maplit = { workspace = true }
 mockito = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+tower = { workspace = true }
+# The generated gRPC *server* stubs (UpdateServiceServer/CommitServiceServer)
+# are only needed to build an in-process fake tridentd for unit tests -- the
+# production trident-acl-agent binary is a gRPC client only. Declaring the
+# "server" feature here (dev-dependencies) rather than in [dependencies]
+# keeps it out of the production binary's dependency graph; it is only
+# pulled in for `cargo test`.
+trident-proto = { path = "../trident-proto", features = ["grpc-preview", "server"] }
+hyper-util = { workspace = true, features = ["tokio"] }
