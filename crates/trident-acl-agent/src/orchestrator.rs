@@ -17,6 +17,7 @@ use futures::StreamExt;
 use k8s_openapi::api::core::v1::Node;
 use semver::Version;
 use trident_proto::v1::{RebootStatus, ServicingKind};
+use url::Url;
 use uuid::Uuid;
 
 use osutils::dependencies::Dependency;
@@ -288,6 +289,22 @@ where
         }
     }
 
+    /// Resolves which Nebraska endpoint to use for `request`: the request
+    /// annotation's own `server` override, if present, otherwise the
+    /// agent's configured `[nebraska].endpoint` (set via config file or CLI
+    /// override). Every Nebraska call this `nodeUpdateId` makes - stage's
+    /// update check plus every progress/completion event report - must go
+    /// through this resolver rather than reading `self.config.nebraska.endpoint`
+    /// directly, since Nebraska's per-instance state is tied to one specific
+    /// server: mixing endpoints across one update's lifecycle would split
+    /// that state across two servers.
+    fn resolve_nebraska_endpoint(&self, request: &UpdateRequest) -> Option<Url> {
+        request
+            .server
+            .clone()
+            .or_else(|| self.config.nebraska.endpoint.clone())
+    }
+
     async fn handle_stage(&self, request: UpdateRequest) -> Result<(), anyhow::Error> {
         let started = Utc::now();
         let from_version = Some(current_active_version());
@@ -320,8 +337,10 @@ where
             None,
         );
         self.publish_status(&in_progress).await?;
-        let endpoint = self.config.nebraska.endpoint.clone().ok_or_else(|| {
-            anyhow::anyhow!("annotation mode requires [nebraska].endpoint or CLI override")
+        let endpoint = self.resolve_nebraska_endpoint(&request).ok_or_else(|| {
+            anyhow::anyhow!(
+                "annotation mode requires request.server, [nebraska].endpoint, or CLI override"
+            )
         })?;
         let app_id = self.config.nebraska.app_id.clone();
         let track = self.config.nebraska.track.clone();
@@ -372,10 +391,13 @@ where
 
         let current_ver = parse_nebraska_version(&from_version, "stage");
         if let Some(ref v) = current_ver {
-            self.report_nebraska_event(NebraskaReport::Progress {
-                version: v.clone(),
-                event: ProgressEvent::DownloadStarted,
-            })
+            self.report_nebraska_event(
+                &request,
+                NebraskaReport::Progress {
+                    version: v.clone(),
+                    event: ProgressEvent::DownloadStarted,
+                },
+            )
             .await;
         }
 
@@ -394,7 +416,7 @@ where
             )
             .await;
         if let Some(ref v) = current_ver {
-            self.report_nebraska_event(stage_nebraska_report(v, &result))
+            self.report_nebraska_event(&request, stage_nebraska_report(v, &result))
                 .await;
         }
         let status = stage_result_to_status(&request, from_version, to_version, started, result);
@@ -491,7 +513,7 @@ where
             )
             .await;
         if let Some(ref v) = current_ver {
-            self.report_nebraska_event(finalize_nebraska_report(v, &result))
+            self.report_nebraska_event(&request, finalize_nebraska_report(v, &result))
                 .await;
         }
         match result {
@@ -521,10 +543,13 @@ where
                     Err(err) => {
                         self.state.clear_pending_commit()?;
                         if let Some(ref v) = current_ver {
-                            self.report_nebraska_event(NebraskaReport::Failed {
-                                previous: v.clone(),
-                                current: v.clone(),
-                            })
+                            self.report_nebraska_event(
+                                &request,
+                                NebraskaReport::Failed {
+                                    previous: v.clone(),
+                                    current: v.clone(),
+                                },
+                            )
                             .await;
                         }
                         let status = UpdateStatus::new(
@@ -717,8 +742,11 @@ where
                 parse_nebraska_version(&pending.from_version, "post-reboot commit"),
                 parse_nebraska_version(&pending.to_version, "post-reboot commit"),
             ) {
-                self.report_nebraska_event(commit_nebraska_report(&previous, &current, &result))
-                    .await;
+                self.report_nebraska_event(
+                    &pending.request,
+                    commit_nebraska_report(&previous, &current, &result),
+                )
+                .await;
             }
         }
         let status = self.map_commit_result(&pending, result);
@@ -785,8 +813,11 @@ where
                 parse_nebraska_version(&from_version, "reconstructed post-reboot commit"),
                 parse_nebraska_version(&request.target_version, "reconstructed post-reboot commit"),
             ) {
-                self.report_nebraska_event(commit_nebraska_report(&previous, &current, &result))
-                    .await;
+                self.report_nebraska_event(
+                    request,
+                    commit_nebraska_report(&previous, &current, &result),
+                )
+                .await;
             }
         }
         reconstruct_commit_result_to_status(request, from_version, started, result)
@@ -905,14 +936,14 @@ where
     /// `reqwest::blocking`-based transport cannot safely be dropped from
     /// inside an already-running async task (see the same rationale on
     /// `handle_stage`'s `check_for_update` call).
-    async fn report_nebraska_event(&self, report: NebraskaReport) {
-        let Some(endpoint) = self.config.nebraska.endpoint.clone() else {
+    async fn report_nebraska_event(&self, request: &UpdateRequest, report: NebraskaReport) {
+        let Some(endpoint) = self.resolve_nebraska_endpoint(request) else {
             // Should not happen in practice: every call site only reaches
             // here after handle_stage has already required an endpoint for
             // this node update. Guard anyway since this is best-effort
             // telemetry, not something worth panicking over.
             log::warn!(
-                "skipping Nebraska '{}' report: no Nebraska endpoint configured",
+                "skipping Nebraska '{}' report: no Nebraska endpoint configured (no request.server override and no [nebraska].endpoint)",
                 report.label()
             );
             return;
@@ -1490,6 +1521,8 @@ mod tests {
             operation_id: "op-1".to_string(),
             operation,
             target_version: Some("2.0.0".to_string()),
+            server: None,
+            current_version: None,
         }
     }
 

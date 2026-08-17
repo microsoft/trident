@@ -69,6 +69,22 @@ A retry that starts over from `stage` gets a fresh `nodeUpdateId`.
 The agent compares `operationId` against the last one it saw to decide whether to start
 new work, resume in-flight work, or re-emit a cached terminal status as a no-op.
 
+`server` is an optional override of the agent's configured Nebraska endpoint
+(`[nebraska].endpoint` in `trident-acl-agent.conf`, or its CLI override) for this update. When
+present, it takes precedence over the static config for every Nebraska call this
+`nodeUpdateId` makes: `stage`'s update check as well as every progress/completion event report,
+including the post-reboot `commit` report. This consistency matters because Nebraska's
+per-instance state (progress/completion history) is tied to one specific server; the agent
+persists `server` in `state.json` alongside the rest of the triggering request so the
+post-reboot half of `finalize`/`rollback` reports to the same server `stage`/`finalize` used,
+even if AKS-RP's own configured default changes in between.
+
+`currentVersion` is an optional caller-asserted current OS version. When present, the agent
+compares it against its own on-node probe of the active version and rejects the request with
+`InvalidRequest` if they don't match, catching a stale or incorrect AKS-RP view of the node's
+actual version before any work starts. It is independent of `targetVersion`'s
+required/omitted-by-operation rule above; both are optional-per-operation on their own terms.
+
 `operation` is one of three values AKS-RP can request:
 
 | `operation` | other fields | meaning | Trident invocation |
@@ -236,7 +252,9 @@ Request (`acl.azure.com/update-request`):
     "nodeUpdateId":  { "type": "string", "format": "uuid", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
     "operationId":   { "type": "string", "format": "uuid", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
     "operation":     { "type": "string", "enum": ["stage", "finalize", "rollback"] },
-    "targetVersion": { "type": "string", "description": "ACL image release version, e.g. 202606.29.0." }
+    "targetVersion": { "type": "string", "description": "ACL image release version, e.g. 202606.29.0." },
+    "server":        { "type": "string", "format": "uri", "description": "Optional override of the agent's configured Nebraska endpoint for this update." },
+    "currentVersion": { "type": "string", "description": "Optional caller-asserted current OS version. If present, must match the node's actual active version or the request is rejected as InvalidRequest." }
   },
   "allOf": [
     {
