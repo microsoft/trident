@@ -1220,6 +1220,27 @@ artifacts/trident-vm-usr-verity-testimage.qcow2: \
 			--output-image-format qcow2 \
 			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-usr-verity.yaml
 
+artifacts/trident-vm-acl-agent-testimage.qcow2: \
+	$(QEMU_GUEST_IMAGE) \
+	$(TRIDENT_VM_DEPENDENCIES) \
+	$(VM_IMAGE_PATH_PREFIX)/baseimg-acl-agent.yaml \
+	$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub \
+	artifacts/rpm-overrides
+	@echo "Building $@ from $<"
+	docker run --rm \
+		--privileged \
+		-v ".:/repo:z" \
+		-v "/dev:/dev" \
+		${MIC_CONTAINER_IMAGE} \
+			--log-level debug \
+			--rpm-source /repo/bin/RPMS \
+			--rpm-source /repo/artifacts/rpm-overrides \
+			--build-dir /build \
+			--image-file /repo/$< \
+			--output-image-file /repo/$@ \
+			--output-image-format qcow2 \
+			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-acl-agent.yaml
+
 artifacts/trident-vm-grub-verity-azure-testimage.vhd: \
 	$(CORE_SELINUX_IMAGE) \
 	$(TRIDENT_VM_DEPENDENCIES) \
