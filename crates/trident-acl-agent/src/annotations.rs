@@ -96,12 +96,6 @@ pub struct UpdateRequest {
     /// `TRIDENT_ACL_AGENT_NEBRASKA_TRACK` value is used, exactly as before.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub track: Option<String>,
-    /// Optional caller-asserted current OS version. When present, it must
-    /// match [`current_active_version`] or [`UpdateRequest::validate`]
-    /// rejects the request with `InvalidRequest`, catching a stale/incorrect
-    /// AKS-RP view of the node's actual version before any work starts.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub current_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -125,11 +119,9 @@ pub struct UpdateStatus {
 
 impl UpdateRequest {
     /// Enforces the same constraints as the request annotation's formal
-    /// JSON Schema in `accepted-design-v2.md`: schemaVersion match,
+    /// JSON Schema in `accepted-design-v2.md`: schemaVersion match, and
     /// targetVersion required for stage/finalize but disallowed for
-    /// rollback, and (if the caller asserted one) currentVersion matching
-    /// the node's actual active version.
-    /// See this file's module doc.
+    /// rollback. See this file's module doc.
     pub fn validate(self) -> Result<Self, String> {
         if self.schema_version != SCHEMA_VERSION {
             return Err(format!("unsupported schemaVersion {}", self.schema_version));
@@ -144,14 +136,6 @@ impl UpdateRequest {
                 if self.target_version.is_some() {
                     return Err("targetVersion must be omitted for rollback".to_string());
                 }
-            }
-        }
-        if let Some(ref current) = self.current_version {
-            let active = current_active_version();
-            if *current != active {
-                return Err(format!(
-                    "currentVersion {current:?} does not match node's active version {active:?}"
-                ));
             }
         }
         Ok(self)
@@ -301,7 +285,6 @@ mod tests {
             server: None,
             app_id: None,
             track: None,
-            current_version: None,
         }
     }
 
@@ -689,8 +672,7 @@ mod tests {
     "targetVersion": { "type": "string", "description": "ACL image release version, e.g. 202606.29.0." },
     "server":        { "type": "string", "format": "uri", "description": "Optional override of the agent's configured Nebraska endpoint for this update." },
     "appId":         { "type": "string", "description": "Optional override of the agent's configured Nebraska app_id for this update." },
-    "track":         { "type": "string", "description": "Optional override of the agent's configured Nebraska track for this update." },
-    "currentVersion": { "type": "string", "description": "Optional caller-asserted current OS version. If present, must match the node's actual active version or the request is rejected as InvalidRequest." }
+    "track":         { "type": "string", "description": "Optional override of the agent's configured Nebraska track for this update." }
   },
   "allOf": [
     {
@@ -1018,7 +1000,6 @@ mod tests {
                 server: None,
                 app_id: None,
                 track: None,
-                current_version: None,
             };
             let request = request
                 .validate()
@@ -1044,7 +1025,6 @@ mod tests {
             server: None,
             app_id: None,
             track: None,
-            current_version: None,
         };
 
         // InProgress: startedUtc only, no finishedUtc yet.
@@ -1114,7 +1094,7 @@ mod tests {
             .expect("agent-constructed commit status must conform to the formal schema");
     }
 
-    // --- server / appId / track / currentVersion (Nebraska overrides + version guard) -
+    // --- server / appId / track (Nebraska overrides) -
 
     #[test]
     fn server_field_round_trips_and_conforms_to_formal_schema() {
@@ -1183,44 +1163,6 @@ mod tests {
         let request = sample_request(RequestedOperation::Stage);
         let json = serde_json::to_value(&request).unwrap();
         assert!(json.get("track").is_none());
-    }
-
-    #[test]
-    fn current_version_matching_active_version_validates() {
-        let mut request = sample_request(RequestedOperation::Stage);
-        request.current_version = Some(current_active_version());
-        assert!(request.validate().is_ok());
-    }
-
-    #[test]
-    fn current_version_mismatching_active_version_is_rejected() {
-        let mut request = sample_request(RequestedOperation::Stage);
-        request.current_version = Some("not-the-active-version".to_string());
-        let err = request
-            .validate()
-            .expect_err("mismatched currentVersion must be rejected");
-        assert!(err.contains("currentVersion"), "{err}");
-    }
-
-    #[test]
-    fn current_version_absent_skips_the_check() {
-        // No currentVersion asserted at all: validate() must not compare
-        // against current_active_version(), so this can never fail on that
-        // account regardless of what the node's active version is.
-        let request = sample_request(RequestedOperation::Stage);
-        assert!(request.current_version.is_none());
-        assert!(request.validate().is_ok());
-    }
-
-    #[test]
-    fn current_version_field_conforms_to_formal_schema() {
-        let schema: Value = serde_json::from_str(DESIGN_DOC_REQUEST_SCHEMA).unwrap();
-        let mut request = sample_request(RequestedOperation::Stage);
-        request.operation_id = Uuid::new_v4().to_string();
-        request.current_version = Some(current_active_version());
-        let request = request.validate().expect("must validate");
-        schema_validate(&schema, &serde_json::to_value(&request).unwrap())
-            .expect("request with currentVersion must conform to the formal schema");
     }
 
     #[test]

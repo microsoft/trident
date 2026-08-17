@@ -1552,7 +1552,6 @@ mod tests {
             server: None,
             app_id: None,
             track: None,
-            current_version: None,
         }
     }
 

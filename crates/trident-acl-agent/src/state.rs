@@ -157,7 +157,6 @@ mod tests {
             server: None,
             app_id: None,
             track: None,
-            current_version: None,
         }
     }
 
@@ -288,12 +287,11 @@ mod tests {
     }
 
     #[test]
-    fn pending_commit_persists_server_and_current_version_overrides() {
+    fn pending_commit_persists_server_app_id_and_track_overrides() {
         // PendingCommit.request carries the whole UpdateRequest, so a
-        // server/appId/track/currentVersion override present at finalize
-        // time must survive the reboot unchanged, ready for the post-reboot
-        // commit's Nebraska event report (see
-        // Orchestrator::resolve_nebraska_endpoint,
+        // server/appId/track override present at finalize time must survive
+        // the reboot unchanged, ready for the post-reboot commit's Nebraska
+        // event report (see Orchestrator::resolve_nebraska_endpoint,
         // Orchestrator::resolve_nebraska_app_id, and
         // Orchestrator::resolve_nebraska_track).
         let (_dir, store) = store();
@@ -301,7 +299,6 @@ mod tests {
         pending.request.server = Some(Url::parse("https://nebraska.example/v1/update").unwrap());
         pending.request.app_id = Some("59bbad61-257d-47f4-9730-6848d88e1a6e".to_string());
         pending.request.track = Some("pin-202608.6.0".to_string());
-        pending.request.current_version = Some("202608.5.0".to_string());
 
         store
             .set_pending_commit(pending.clone())
