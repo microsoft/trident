@@ -1,7 +1,8 @@
 //! Env-var-based config loading for Harpoon.
 //!
 //! There is no config file. Every setting is an environment variable
-//! prefixed `TRIDENT_ACL_AGENT_` (see [`ENV_PREFIX`]), systemd-style: set it
+//! prefixed `TRIDENT_ACL_AGENT_` (one constant per setting, e.g.
+//! [`ENV_NEBRASKA_ENDPOINT`]), systemd-style: set it
 //! directly in the unit's own `Environment=` lines, via a drop-in override
 //! (`systemctl edit trident-acl-agent.service`, which creates
 //! `/etc/systemd/system/trident-acl-agent.service.d/override.conf`), via the
