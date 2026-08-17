@@ -73,26 +73,27 @@ pub struct UpdateRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_version: Option<String>,
     /// Optional override of the agent's configured Nebraska endpoint
-    /// (`[nebraska].endpoint` / CLI override) for this update. When present,
-    /// it takes precedence for every Nebraska call this `nodeUpdateId` makes
-    /// (`stage`'s update check, and all progress/completion event reports),
-    /// since Nebraska's per-instance state is tied to one specific server.
+    /// (`TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT` / CLI override) for this
+    /// update. When present, it takes precedence for every Nebraska call
+    /// this `nodeUpdateId` makes (`stage`'s update check, and all
+    /// progress/completion event reports), since Nebraska's per-instance
+    /// state is tied to one specific server.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server: Option<Url>,
     /// Optional override of the agent's configured Nebraska `app_id`
-    /// (`[nebraska].app_id`) for this update. Resolved the same way as
-    /// [`server`](UpdateRequest::server): takes precedence over the static
-    /// config for every Nebraska call this `nodeUpdateId` makes.
+    /// (`TRIDENT_ACL_AGENT_NEBRASKA_APP_ID`) for this update. Resolved the
+    /// same way as [`server`](UpdateRequest::server): takes precedence over
+    /// the static config for every Nebraska call this `nodeUpdateId` makes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app_id: Option<String>,
     /// Optional override of the agent's configured Nebraska `track`
-    /// (`[nebraska].track`) for this update. Resolved and applied the same
-    /// way as [`server`](UpdateRequest::server) and
+    /// (`TRIDENT_ACL_AGENT_NEBRASKA_TRACK`) for this update. Resolved and
+    /// applied the same way as [`server`](UpdateRequest::server) and
     /// [`app_id`](UpdateRequest::app_id): takes precedence over the static
     /// config for every Nebraska call this `nodeUpdateId` makes. `track` is
     /// never optional on the wire itself (Nebraska requires it on every
     /// request), only this override is - when absent, the static
-    /// `[nebraska].track` config value is used, exactly as before.
+    /// `TRIDENT_ACL_AGENT_NEBRASKA_TRACK` value is used, exactly as before.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub track: Option<String>,
     /// Optional caller-asserted current OS version. When present, it must

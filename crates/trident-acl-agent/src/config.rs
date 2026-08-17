@@ -2,13 +2,13 @@
 //!
 //! There is no config file. Every setting is an environment variable
 //! prefixed `TRIDENT_ACL_AGENT_` (one constant per setting, e.g.
-//! [`ENV_NEBRASKA_ENDPOINT`]), systemd-style: set it
-//! directly in the unit's own `Environment=` lines, or via a drop-in
-//! override (`systemctl edit trident-acl-agent.service`, which creates
+//! [`ENV_NEBRASKA_ENDPOINT`]), systemd-style: set it directly in the unit's
+//! own `Environment=` lines, via a drop-in override (`systemctl edit
+//! trident-acl-agent.service`, which creates
 //! `/etc/systemd/system/trident-acl-agent.service.d/override.conf`), or by
 //! any other means that ultimately sets the process's environment before it
-//! starts. Both mechanisms are equivalent from the agent's point of view -
-//! it just reads `std::env::var`.
+//! starts. All are equivalent from the agent's point of view - it just reads
+//! `std::env::var`.
 //!
 //! Annotation mode is the default; `omaha-only` (the historical one-shot
 //! behavior) remains available as an explicit opt-out via
@@ -279,9 +279,10 @@ mod tests {
     /// Clears every var this module reads. Environment mutation is process-
     /// global and `std::env::remove_var`/`set_var` are `unsafe` (not
     /// thread-safe against concurrent reads elsewhere in the process), so
-    /// this test intentionally covers both the "nothing set" and "override"
-    /// cases in one sequential function rather than two separate `#[test]`s
-    /// that `cargo test` could run in parallel against the same variables.
+    /// all of the defaults/overrides/empty-value/malformed-value cases below
+    /// are intentionally folded into one sequential `#[test]` rather than
+    /// several separate ones that `cargo test` could run in parallel against
+    /// the same variables.
     fn clear_env() {
         // SAFETY: single-threaded within this test function; no other test
         // in this crate reads or writes these TRIDENT_ACL_AGENT_* variables.

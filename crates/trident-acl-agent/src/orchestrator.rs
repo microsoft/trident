@@ -291,7 +291,7 @@ where
 
     /// Resolves which Nebraska endpoint to use for `request`: the request
     /// annotation's own `server` override, if present, otherwise the
-    /// agent's configured `[nebraska].endpoint` (set via config file or CLI
+    /// agent's configured `TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT` (or CLI
     /// override). Every Nebraska call this `nodeUpdateId` makes - stage's
     /// update check plus every progress/completion event report - must go
     /// through this resolver rather than reading `self.config.nebraska.endpoint`
@@ -307,10 +307,11 @@ where
 
     /// Resolves which Nebraska app id to use for `request`: the request
     /// annotation's own `appId` override, if present, otherwise the agent's
-    /// configured `[nebraska].app_id`. Unlike [`resolve_nebraska_endpoint`],
-    /// this always resolves to a value - `[nebraska].app_id` always has one
-    /// (defaulting to [`crate::DEFAULT_NEBRASKA_APP_ID`]) - so there is no
-    /// error case to handle at call sites.
+    /// configured `TRIDENT_ACL_AGENT_NEBRASKA_APP_ID`. Unlike
+    /// [`resolve_nebraska_endpoint`], this always resolves to a value -
+    /// `TRIDENT_ACL_AGENT_NEBRASKA_APP_ID` always has one (defaulting to
+    /// [`crate::DEFAULT_NEBRASKA_APP_ID`]) - so there is no error case to
+    /// handle at call sites.
     fn resolve_nebraska_app_id(&self, request: &UpdateRequest) -> String {
         request
             .app_id
@@ -320,8 +321,9 @@ where
 
     /// Resolves which Nebraska track to use for `request`: the request
     /// annotation's own `track` override, if present, otherwise the agent's
-    /// configured `[nebraska].track`. Same always-resolves behavior as
-    /// [`resolve_nebraska_app_id`] - `[nebraska].track` always has a default
+    /// configured `TRIDENT_ACL_AGENT_NEBRASKA_TRACK`. Same always-resolves
+    /// behavior as [`resolve_nebraska_app_id`] -
+    /// `TRIDENT_ACL_AGENT_NEBRASKA_TRACK` always has a default
     /// ([`crate::DEFAULT_NEBRASKA_TRACK`]) - so there is no error case here
     /// either.
     fn resolve_nebraska_track(&self, request: &UpdateRequest) -> String {
@@ -365,7 +367,7 @@ where
         self.publish_status(&in_progress).await?;
         let endpoint = self.resolve_nebraska_endpoint(&request).ok_or_else(|| {
             anyhow::anyhow!(
-                "annotation mode requires request.server, [nebraska].endpoint, or CLI override"
+                "annotation mode requires request.server, TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT, or CLI override"
             )
         })?;
         let app_id = self.resolve_nebraska_app_id(&request);

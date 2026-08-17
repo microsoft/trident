@@ -59,7 +59,7 @@ fn build_machine_id(source: IdSource) -> Result<MachineId, HarpoonError> {
 pub async fn run_omaha_only(config: &config::AgentConfig) -> Result<(), anyhow::Error> {
     let endpoint = config.nebraska.endpoint.clone().ok_or_else(|| {
         anyhow::anyhow!(
-            "no Nebraska endpoint configured: pass <url> on the CLI or set [nebraska].endpoint in config.toml"
+            "no Nebraska endpoint configured: pass <url> on the CLI or set TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT"
         )
     })?;
 
