@@ -34,9 +34,9 @@ func RunRollback(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	// Rollback doesn't stage a new image from Nebraska - it re-activates the
 	// previously-finalized volume trident already has on disk - so only the
 	// fake apiserver is needed here, not the Nebraska/image-server mocks
-	// run-ab-update starts. The agent config never references a Nebraska
-	// endpoint at all now (see prepareVmForAclAgent); rollback's PatchSteps
-	// leave `server` unset too, since Nebraska is never queried during a
+	// run-ab-update starts. trident-acl-agent never gets a config file at
+	// all (see prepareVmForAclAgent); rollback's PatchSteps leave
+	// `server`/`appId` unset too, since Nebraska is never queried during a
 	// rollback request.
 	nodeStore := stormproxies.NewNodeStore(stormproxies.NewSeedNode(testConfig.NodeName, map[string]string{}))
 	apiServer := stormproxies.NewAPIServer(testConfig.NodeName, nodeStore)
@@ -47,7 +47,7 @@ func RunRollback(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	nodeStore.PatchLabels(map[string]string{stormproxies.NodeImageVersionLabel: testConfig.TargetVersion})
 	nodeStore.SetReadyCondition(true)
 
-	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig, "unused-not-queried-during-rollback"); err != nil {
+	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig); err != nil {
 		return err
 	}
 
@@ -77,9 +77,9 @@ func RunRollback(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	nodeStore.SetReadyCondition(true)
 
 	// Same rationale as run-ab-update: the rollback reboot lands on the
-	// previous root, which needs the agent config/kubeconfig re-delivered
-	// before it can talk to the fake apiserver again.
-	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig, "unused-not-queried-during-rollback"); err != nil {
+	// previous root, which needs the fake kubeconfig re-delivered before it
+	// can talk to the fake apiserver again.
+	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig); err != nil {
 		return fmt.Errorf("failed to reconfigure ACL agent on post-rollback-reboot root: %w", err)
 	}
 

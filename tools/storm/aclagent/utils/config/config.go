@@ -13,7 +13,7 @@ type TestConfig struct {
 	NebraskaSHA384        string `help:"SHA384 returned by the fake Nebraska endpoint (overridden by the real hash of ImagePath when set)" default:"111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111"`
 	ImagePath             string `help:"Path to a real OS update image (e.g. a .cosi file) to serve to tridentd during staging; when set, this takes precedence over NebraskaCodebase/NebraskaPackageName/NebraskaSHA384. When empty, the first *.cosi file found under ArtifactsDir is used."`
 	ImageServerPort       int    `help:"Runner port exposed into VM for the fake image server" default:"18082"`
-	NodeName              string `help:"Node name served by the fake apiserver" default:"trident-node"`
+	NodeName              string `help:"Node name served by the fake apiserver; must match the VM image's hostname (Image Customizer 'hostname' setting in baseimg-acl-agent.yaml), since trident-acl-agent's [kubernetes].node_name defaults to the node's own real hostname" default:"trident-acl-agent-testimg"`
 	HostEndpointIP        string `help:"Host IP the VM can reach the fake apiserver/Nebraska endpoints at" default:"192.168.122.1"`
 	ExpectedInitialVolume string `help:"Expected active volume immediately after deployment" default:"volume-a"`
 }

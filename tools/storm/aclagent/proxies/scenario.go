@@ -23,10 +23,14 @@ type PatchStep struct {
 	Operation            string `yaml:"operation,omitempty" json:"operation,omitempty"`
 	TargetOSImageVersion string `yaml:"target-os-image-version,omitempty" json:"targetVersion,omitempty"`
 	// Server overrides trident-acl-agent's configured Nebraska endpoint for
-	// this request. The agent config deliberately never sets
-	// [nebraska].endpoint (see prepareVmForAclAgent), so any request that
-	// reaches Nebraska (stage, finalize) must set this field.
+	// this request. The agent no longer has a config file at all (see
+	// prepareVmForAclAgent), so any request that reaches Nebraska (stage,
+	// finalize) must set this field.
 	Server string `yaml:"server,omitempty" json:"server,omitempty"`
+	// AppId overrides trident-acl-agent's configured Nebraska app_id for
+	// this request, for the same reason Server does: there is no config
+	// file to source it from.
+	AppId string `yaml:"app-id,omitempty" json:"appId,omitempty"`
 }
 
 type ExpectStep struct {
