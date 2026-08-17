@@ -249,7 +249,7 @@ func innerUpdateLoop(testConfig stormsvcconfig.TestConfig, vmConfig stormvmconfi
 				return fmt.Errorf("failed to copy staged trident log to output path: %w", err)
 			}
 			if err := os.Chmod(stageLogPath, 0644); err != nil {
-				logrus.Errorf("failed to change permissions for staged trident log: %w", err)
+				logrus.Errorf("failed to change permissions for staged trident log: %v", err)
 			}
 			if lsOut, err := exec.Command("ls", "-lh", stageLogPath).Output(); err == nil {
 				logrus.Tracef("Staged trident log details for iteration %d:\n%s", i, lsOut)
