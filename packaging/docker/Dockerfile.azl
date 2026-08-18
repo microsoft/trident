@@ -20,6 +20,7 @@ WORKDIR /work
 
 COPY packaging/rpm/trident.spec .
 COPY packaging ./packaging
+COPY LICENSE NOTICE ./
 COPY bin/trident ./target/release/trident
 COPY bin/trident-acl-agent ./target/release/trident-acl-agent
 
