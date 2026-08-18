@@ -23,7 +23,13 @@ stable across Nebraska versions rather than on a specific build:
   first progress event and its terminal event;
 - the app and the group (resolved from `track`) are looked up *before* events
   are processed, so an unresolvable app or track is reported as an app-level
-  error status while the events are dropped.
+  error status *and* the events are dropped without an `<event>`
+  acknowledgement — which is how event delivery is verified here;
+- `previousversion` is read from the `<event>` element (an Omaha server ignores
+  it elsewhere, and Nebraska discards a terminal event that arrives without it);
+- the `<os arch>` value is matched against a fixed table (`amd64`/`x64`,
+  `aarch64`/`arm`) with a silent fallback to amd64, so the value is spelled out
+  explicitly rather than derived from an internal architecture name.
 
 Unknown status strings are preserved rather than rejected, so a server that adds
 new ones does not break parsing.

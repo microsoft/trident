@@ -113,8 +113,24 @@ impl Os {
         Self {
             platform: "linux",
             version: String::new(),
-            arch: SystemArchitecture::current().into(),
+            arch: arch_str(SystemArchitecture::current()),
         }
+    }
+}
+
+/// Returns the Omaha `<os arch>` value for `arch`.
+///
+/// Nebraska matches this against a fixed table — `amd64`/`x64` and
+/// `aarch64`/`arm` — and **silently falls back to amd64** for anything it does
+/// not recognise. Since the group is keyed on the architecture, an unrecognised
+/// value makes every lookup miss (or, worse, match an amd64 group on the same
+/// track), so the mapping is spelled out here rather than delegated to
+/// `sysdefs`'s own string form: that form is `arm64`, which is *not* in
+/// Nebraska's table and would send every ARM64 instance to an amd64 group.
+fn arch_str(arch: SystemArchitecture) -> &'static str {
+    match arch {
+        SystemArchitecture::Amd64 => "amd64",
+        SystemArchitecture::Aarch64 => "aarch64",
     }
 }
 
@@ -132,9 +148,6 @@ pub(super) struct App {
 
     #[serde(rename = "@machineid")]
     machine_id: String,
-
-    #[serde(rename = "@previousversion", skip_serializing_if = "Option::is_none")]
-    previous_version: Option<String>,
 
     // Child elements are declared — and therefore serialized — in the order
     // Nebraska logically processes them: events first, then the ping, then the
@@ -163,16 +176,10 @@ impl App {
             version,
             track,
             machine_id,
-            previous_version: None,
             update_check: None,
             ping: None,
             events: Vec::new(),
         }
-    }
-
-    pub(super) fn with_previous_version(mut self, previous: String) -> Self {
-        self.previous_version = Some(previous);
-        self
     }
 
     pub(super) fn with_update_check(mut self) -> Self {
@@ -189,6 +196,23 @@ impl App {
         self.events.push(EventElement {
             event_type: pair.event_type,
             event_result: pair.event_result,
+            previous_version: None,
+        });
+        self
+    }
+
+    /// Adds an event that reports the version the instance is updating *from*.
+    ///
+    /// `previousversion` is an attribute of `<event>`, not of `<app>`: an Omaha
+    /// server parses it off the event element and ignores it anywhere else, and
+    /// Nebraska discards a terminal `complete` event that arrives without it —
+    /// while still answering `status="ok"` — so misplacing it loses the event
+    /// silently.
+    pub(super) fn with_event_from_version(mut self, pair: WirePair, previous: String) -> Self {
+        self.events.push(EventElement {
+            event_type: pair.event_type,
+            event_result: pair.event_result,
+            previous_version: Some(previous),
         });
         self
     }
@@ -216,6 +240,9 @@ pub(super) struct EventElement {
 
     #[serde(rename = "@eventresult")]
     event_result: u8,
+
+    #[serde(rename = "@previousversion", skip_serializing_if = "Option::is_none")]
+    previous_version: Option<String>,
 }
 
 /// Builds a request from an app, setting the `<os version>` from the app version
@@ -368,6 +395,16 @@ mod tests {
     }
 
     #[test]
+    fn arch_strings_are_the_ones_nebraska_parses() {
+        // Nebraska matches these against a fixed table and silently falls back
+        // to amd64 for anything else, so a wrong value sends instances to the
+        // wrong group instead of failing loudly. Its accepted spellings are
+        // "amd64"/"x64" and "aarch64"/"arm" — notably *not* "arm64".
+        assert_eq!(arch_str(SystemArchitecture::Amd64), "amd64");
+        assert_eq!(arch_str(SystemArchitecture::Aarch64), "aarch64");
+    }
+
+    #[test]
     fn progress_event_request_shape() {
         let app = App::new(
             "app-1".into(),
@@ -400,11 +437,13 @@ mod tests {
             "stable".into(),
             "mid-1".into(),
         )
-        .with_event(WirePair {
-            event_type: 3,
-            event_result: 2,
-        })
-        .with_previous_version("1.0.0".into())
+        .with_event_from_version(
+            WirePair {
+                event_type: 3,
+                event_result: 2,
+            },
+            "1.0.0".into(),
+        )
         .with_ping()
         .with_update_check();
         let xml = xml_of(app);
@@ -413,7 +452,13 @@ mod tests {
             xml.contains(r#"<event eventtype="3" eventresult="2""#),
             "{xml}"
         );
-        assert!(xml.contains(r#"previousversion="1.0.0""#), "{xml}");
+        // `previousversion` must sit on the <event>, not the <app>: an Omaha
+        // server reads it off the event element and ignores it elsewhere, and
+        // Nebraska drops a terminal event that arrives without it.
+        assert!(
+            xml.contains(r#"<event eventtype="3" eventresult="2" previousversion="1.0.0""#),
+            "{xml}"
+        );
         assert!(xml.contains(r#"active="1""#), "{xml}");
         assert!(xml.contains("<ping"), "{xml}");
         assert!(xml.contains("<updatecheck"), "{xml}");

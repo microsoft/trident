@@ -1,5 +1,7 @@
 //! Error type for the [`nebraska`](crate::nebraska) client module.
 
+use std::ops::Range;
+
 use thiserror::Error;
 
 /// Errors that can occur while talking to a Nebraska server.
@@ -67,6 +69,13 @@ pub enum NebraskaError {
     CompletionNotAcknowledged,
 }
 
+/// The HTTP status range that indicates a server-side failure.
+const SERVER_ERROR_STATUS: Range<u16> = 500..600;
+
+/// `501 Not Implemented`, which Nebraska returns when an Omaha secret is
+/// configured and the request URL does not carry it.
+const NOT_IMPLEMENTED_STATUS: u16 = 501;
+
 impl NebraskaError {
     /// Whether this error is transient and the request is worth retrying.
     ///
@@ -82,10 +91,16 @@ impl NebraskaError {
     /// for server-side 5xx errors *other than* `501 Not Implemented`: Nebraska
     /// returns 501 when an Omaha secret is configured and the client's URL lacks
     /// it, which is a permanent client misconfiguration that must not be retried.
-    /// 4xx are likewise permanent. A completion that the server did not record
-    /// is transient, since the whole point is to land that event. All other
-    /// protocol-level failures (serialization, parse, unexpected response,
-    /// server error status, invalid request) are permanent.
+    /// 4xx are likewise permanent.
+    ///
+    /// A completion the server did not record is transient, since the whole
+    /// point is to land that event. So is a parse failure: a captive portal or
+    /// an intercepting proxy answers `200` with an HTML body, which is a
+    /// network-settling problem wearing a protocol error's clothes — and
+    /// treating it as permanent would abandon the terminal event after a single
+    /// attempt, the one outcome this module exists to prevent. The remaining
+    /// protocol-level failures (serialization, unexpected response, server error
+    /// status, invalid request) are permanent.
     pub fn is_retryable(&self) -> bool {
         match self {
             NebraskaError::Transport(_) => true,
@@ -94,12 +109,11 @@ impl NebraskaError {
             // failure) is treated as transient.
             NebraskaError::Http {
                 status: Some(code), ..
-            } => (500..600).contains(code) && *code != 501,
+            } => SERVER_ERROR_STATUS.contains(code) && *code != NOT_IMPLEMENTED_STATUS,
             NebraskaError::Http { status: None, .. } => true,
-            NebraskaError::CompletionNotAcknowledged => true,
+            NebraskaError::CompletionNotAcknowledged | NebraskaError::Parse(_) => true,
             NebraskaError::InvalidRequest(_)
             | NebraskaError::Serialize(_)
-            | NebraskaError::Parse(_)
             | NebraskaError::UnexpectedResponse(_)
             | NebraskaError::ServerError(_) => false,
         }
@@ -124,6 +138,8 @@ mod tests {
         assert!(http(Some(503)).is_retryable());
         assert!(http(None).is_retryable());
         assert!(NebraskaError::CompletionNotAcknowledged.is_retryable());
+        // An intercepting proxy's HTML error page on a 200 looks like this.
+        assert!(NebraskaError::Parse("expected <response>".into()).is_retryable());
     }
 
     #[test]
@@ -139,7 +155,6 @@ mod tests {
     fn permanent_errors_are_not_retryable() {
         assert!(!NebraskaError::InvalidRequest("bad".into()).is_retryable());
         assert!(!NebraskaError::Serialize("x".into()).is_retryable());
-        assert!(!NebraskaError::Parse("x".into()).is_retryable());
         assert!(!NebraskaError::UnexpectedResponse("x".into()).is_retryable());
         assert!(!NebraskaError::ServerError("error-osnotsupported".into()).is_retryable());
     }

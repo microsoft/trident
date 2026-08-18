@@ -104,3 +104,44 @@ impl Transport for ReqwestTransport {
             })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::{
+        net::TcpListener,
+        time::{Duration, Instant},
+    };
+
+    const TEST_TIMEOUT: Duration = Duration::from_millis(200);
+
+    #[test]
+    fn request_times_out_instead_of_hanging() {
+        // A socket that accepts the connection but never answers: without a
+        // per-request timeout this blocks forever, which would make the bounded
+        // retry in `complete_after_reboot` unbounded in practice.
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = Url::parse(&format!(
+            "http://{}/v1/update/",
+            listener.local_addr().unwrap()
+        ))
+        .unwrap();
+
+        let started = Instant::now();
+        let err = ReqwestTransport::with_timeout(TEST_TIMEOUT)
+            .post_xml(&endpoint, b"<request/>")
+            .unwrap_err();
+
+        assert!(matches!(err, NebraskaError::Transport(_)), "got {err:?}");
+        assert!(err.is_retryable(), "a timeout must be worth retrying");
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "should have given up after {TEST_TIMEOUT:?}, took {:?}",
+            started.elapsed()
+        );
+        // The endpoint path can carry an Omaha secret, so it must not survive
+        // into the error text.
+        assert!(!err.to_string().contains("/v1/update"), "{err}");
+    }
+}

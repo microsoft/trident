@@ -147,6 +147,23 @@ fn retry<T>(
     }
 }
 
+/// Resolves a package file name against the manifest's `codebase`.
+///
+/// The codebase is a directory, but Nebraska stores whatever URL an operator
+/// typed and does not normalize it. A plain [`Url::join`] would apply RFC 3986
+/// relative resolution and *replace* the last path segment when the trailing
+/// slash is missing, turning `https://host/packages` + `os.cosi` into
+/// `https://host/os.cosi` — a plausible-looking URL pointing at the wrong place.
+/// Appending the separator first keeps the codebase a directory, matching how
+/// Omaha clients concatenate the two halves.
+fn join_file(codebase: &Url, name: &str) -> Option<Url> {
+    let mut base = codebase.clone();
+    if !base.path().ends_with('/') {
+        base.set_path(&format!("{}/", base.path()));
+    }
+    base.join(name).ok()
+}
+
 /// Renders an endpoint for logging with everything after the authority removed.
 ///
 /// A Nebraska endpoint can carry an Omaha secret (Nebraska answers `501` when
@@ -257,7 +274,7 @@ impl<T: Transport> Client<T> {
     ) -> Result<(), NebraskaError> {
         let app = self.app(current_version).with_event(event.wire());
         let response = self.send(app)?;
-        self.require_events_accepted(&response)?;
+        self.require_events_accepted(&response, 1)?;
         Ok(())
     }
 
@@ -356,14 +373,35 @@ impl<T: Transport> Client<T> {
     ) -> Result<CheckOutcome, NebraskaError> {
         let app = self
             .app(current_version)
-            .with_event(TerminalEvent::Completed.wire())
-            .with_previous_version(previous_version.to_string())
+            .with_event_from_version(
+                TerminalEvent::Completed.wire(),
+                previous_version.to_string(),
+            )
             .with_ping()
             .with_update_check();
         let response = self.send(app)?;
+
+        // Landing the terminal event is what this request exists for, and a
+        // dropped event is the only failure here that can wedge the instance —
+        // so confirm delivery before interpreting the update check that rode
+        // along with it.
+        self.require_events_accepted(&response, 1)?;
+
         // The instance should now be Complete; a still-in-progress status means
         // the completion did not take and the caller should retry.
-        self.interpret_check(response)
+        match self.interpret_check(response) {
+            // The event was acknowledged, so the completion *was* recorded and
+            // the instance is not wedged; the batched update check simply could
+            // not grant — a rollout policy, a throttled or disabled group. Both
+            // stages report through the same app status, so without this the
+            // most safety-critical call in the API would report a permanent
+            // failure for an update that succeeded.
+            Err(NebraskaError::ServerError(status)) => {
+                debug!("completion recorded; the batched update check reported '{status}'");
+                Ok(CheckOutcome::UpToDate)
+            }
+            result => result,
+        }
     }
 
     /// Reports a failed update (terminal `3/0`), which moves the instance to
@@ -377,10 +415,9 @@ impl<T: Transport> Client<T> {
     ) -> Result<(), NebraskaError> {
         let app = self
             .app(current_version)
-            .with_event(TerminalEvent::Failed.wire())
-            .with_previous_version(previous_version.to_string());
+            .with_event_from_version(TerminalEvent::Failed.wire(), previous_version.to_string());
         let response = self.send(app)?;
-        self.require_events_accepted(&response)?;
+        self.require_events_accepted(&response, 1)?;
         Ok(())
     }
 
@@ -436,30 +473,29 @@ impl<T: Transport> Client<T> {
         }
     }
 
-    /// Validates the response to an event-only request: the app must be present
-    /// and the server must not have reported an error while resolving it.
+    /// Validates that the server recorded the `expected` events sent with this
+    /// request.
     ///
-    /// This is the load-bearing check for event delivery. Nebraska resolves the
-    /// app and the group (from `track`) *before* processing events and, when
-    /// either lookup fails, sets an app-level error status and returns without
-    /// handling them — so the events are dropped while the HTTP response is
-    /// still 200. Without inspecting the status, that silent drop would be
-    /// indistinguishable from success, which matters most on the
-    /// [`report_failure`](Client::report_failure) recovery path.
-    ///
-    /// `error-updateInProgressOnInstance` is tolerated: events are sent
-    /// precisely while an update is in flight, so it says nothing about whether
-    /// this event was accepted.
-    fn require_events_accepted(&self, response: &wire::Response) -> Result<(), NebraskaError> {
+    /// Delivery is judged by the **per-event acknowledgements**, not by the app
+    /// status. Nebraska resolves the app and the group (from `track`) *before*
+    /// processing events and, when either lookup fails, sets an app-level error
+    /// status and returns early — so the events are dropped while the response
+    /// is still HTTP 200 and carries no `<event>` element at all. Once the
+    /// events *are* processed, an acknowledgement is emitted for each one, and
+    /// any later app-level error belongs to the update check that rode along in
+    /// the same request rather than to the events. Judging delivery by the app
+    /// status alone would therefore conflate a lost event with a rollout policy
+    /// that merely declined to grant an update.
+    fn require_events_accepted(
+        &self,
+        response: &wire::Response,
+        expected: usize,
+    ) -> Result<(), NebraskaError> {
         let app = self.app_response(response)?;
 
-        if !app.status.is_ok() && !app.status.is_update_in_progress() {
-            return Err(NebraskaError::ServerError(app.status.to_string()));
-        }
-
-        // Per-event acknowledgements, for servers that report event failures
-        // there. Nebraska always answers `ok`, so a rejection is only ever seen
-        // from another Omaha implementation.
+        // A rejected event, for servers that report event failures this way.
+        // Nebraska always answers `ok`, so this only ever fires against another
+        // Omaha implementation.
         if let Some(rejected) = app.events.iter().find(|event| !event.status.is_ok()) {
             return Err(NebraskaError::ServerError(format!(
                 "event rejected with status '{}'",
@@ -467,7 +503,21 @@ impl<T: Transport> Client<T> {
             )));
         }
 
-        Ok(())
+        if app.events.len() >= expected {
+            return Ok(());
+        }
+
+        // Unacknowledged events: report the server's own explanation when it
+        // gave one, since that names the misconfiguration (an unknown app id or
+        // track) that caused the drop.
+        if !app.status.is_ok() && !app.status.is_update_in_progress() {
+            return Err(NebraskaError::ServerError(app.status.to_string()));
+        }
+
+        Err(NebraskaError::UnexpectedResponse(format!(
+            "Nebraska acknowledged {} of {expected} events",
+            app.events.len()
+        )))
     }
 
     /// Interprets a response that carries an update check into a [`CheckOutcome`].
@@ -558,11 +608,10 @@ impl<T: Transport> Client<T> {
         codebase: &Url,
         package: &wire::Package,
     ) -> Result<PackageFile, NebraskaError> {
-        // Join the codebase (which must end in a trailing slash) with the file
-        // name to get the absolute URL; do not otherwise rewrite it.
-        let url = codebase.join(&package.name).map_err(|e| {
+        let url = join_file(codebase, &package.name).ok_or_else(|| {
             NebraskaError::UnexpectedResponse(format!(
-                "failed to join codebase '{codebase}' with package '{}': {e}",
+                "failed to join codebase '{}' with package '{}'",
+                redacted(codebase),
                 package.name
             ))
         })?;
@@ -572,9 +621,15 @@ impl<T: Transport> Client<T> {
             sha256: package.hash_sha256.clone(),
         });
 
-        // Size is a string on the wire; surface it as a number when it parses,
-        // and treat an unparseable size as absent rather than failing the offer.
-        let size = package.size.as_ref().and_then(|s| s.parse::<u64>().ok());
+        // Size is a string on the wire, and the attribute is not optional there:
+        // a package registered without a size is serialized as `size="0"`, which
+        // means "unknown" rather than an empty file. Treat that — and an
+        // unparseable value — as absent rather than failing the offer.
+        let size = package
+            .size
+            .as_ref()
+            .and_then(|s| s.parse::<u64>().ok())
+            .filter(|size| *size != 0);
 
         Ok(PackageFile {
             name: package.name.clone(),
@@ -710,6 +765,35 @@ mod tests {
                 assert_eq!(offer.primary.hash, None);
                 assert_eq!(offer.primary.size, None);
             }
+            other => panic!("expected an offer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn check_offer_zero_size_is_none() {
+        // `size` is not optional on the wire, so a package registered without
+        // one arrives as "0", meaning unknown rather than an empty file.
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/"/></urls><manifest version="2.0.0"><packages><package name="x.cosi" size="0" required="true"/></packages></manifest></updatecheck></app></response>"#,
+        );
+        match client.check_for_update(&Version::new(1, 0, 0)).unwrap() {
+            CheckOutcome::UpdateAvailable(offer) => assert_eq!(offer.primary.size, None),
+            other => panic!("expected an offer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn check_offer_codebase_without_trailing_slash_keeps_directory() {
+        // Relative resolution would replace the last segment and yield
+        // https://updates.example.com/x.cosi, silently pointing elsewhere.
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/packages"/></urls><manifest version="2.0.0"><packages><package name="x.cosi" required="true"/></packages></manifest></updatecheck></app></response>"#,
+        );
+        match client.check_for_update(&Version::new(1, 0, 0)).unwrap() {
+            CheckOutcome::UpdateAvailable(offer) => assert_eq!(
+                offer.primary.url.as_str(),
+                "https://updates.example.com/packages/x.cosi"
+            ),
             other => panic!("expected an offer, got {other:?}"),
         }
     }
@@ -894,10 +978,64 @@ mod tests {
     }
 
     #[test]
+    fn complete_after_reboot_succeeds_when_only_the_batched_check_is_declined() {
+        // The event was acknowledged, so the completion landed; the app-level
+        // error belongs to the update check that rode along (a throttled or
+        // disabled rollout). Reporting that as a failure would send the caller
+        // down the recovery path for an update that actually succeeded.
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="error-maxUpdatesPerPeriodLimitReached"><event status="ok"/><updatecheck status="error-internal"/></app></response>"#,
+        );
+        let outcome = client
+            .complete_after_reboot(&Version::new(1, 0, 0), &Version::new(2, 0, 0))
+            .unwrap();
+        assert_eq!(outcome, CheckOutcome::UpToDate);
+    }
+
+    #[test]
+    fn complete_after_reboot_fails_when_the_event_was_dropped() {
+        // No <event> acknowledgement: Nebraska could not resolve the app or the
+        // track and returned before processing events, so the terminal event was
+        // lost even though the app carries an error status.
+        let client = client_with_responses(vec![
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="error-failedToRetrieveUpdatePackageInfo"><updatecheck status="error-internal"/></app></response>"#,
+        ]);
+        let err = client
+            .complete_after_reboot_with_policy(
+                fast_policy(),
+                &Version::new(1, 0, 0),
+                &Version::new(2, 0, 0),
+            )
+            .unwrap_err();
+        assert!(matches!(err, NebraskaError::ServerError(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn complete_after_reboot_sends_previous_version_on_the_event() {
+        let client = client_with(NO_UPDATE);
+        client
+            .complete_after_reboot(&Version::new(1, 0, 0), &Version::new(2, 0, 0))
+            .unwrap();
+        let body = client.transport.last_body.borrow().clone().unwrap();
+        assert!(
+            body.contains(r#"<event eventtype="3" eventresult="2" previousversion="1.0.0""#),
+            "{body}"
+        );
+    }
+
+    #[test]
     fn redacted_endpoint_drops_path_and_query() {
         let url = Url::parse("https://nebraska.example:8443/v1/update/?secret=hunter2").unwrap();
         let logged = redacted(&url);
         assert_eq!(logged, "https://nebraska.example:8443/<redacted>");
+        assert!(!logged.contains("hunter2"));
+    }
+
+    #[test]
+    fn redacted_endpoint_drops_userinfo() {
+        let url = Url::parse("https://user:hunter2@nebraska.example/v1/update/").unwrap();
+        let logged = redacted(&url);
+        assert_eq!(logged, "https://nebraska.example/<redacted>");
         assert!(!logged.contains("hunter2"));
     }
 

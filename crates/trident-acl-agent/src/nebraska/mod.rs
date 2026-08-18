@@ -20,9 +20,15 @@
 //! - **`track` is mandatory on every request**, including event-only ones:
 //!   Nebraska resolves the group from `track` before processing events, so
 //!   omitting it silently drops them. It is a field of [`Client`], so it cannot
-//!   be omitted. When the app or track cannot be resolved at all, the drop is
-//!   visible only in the app-level status, which the event-reporting methods
-//!   therefore check rather than treating any HTTP 200 as success.
+//!   be omitted. When the app or track cannot be resolved at all, Nebraska
+//!   returns before acknowledging any event, so the event-reporting methods
+//!   judge delivery by the per-event `<event>` acknowledgements rather than
+//!   treating any HTTP 200 as success.
+//! - **`previousversion` belongs on the `<event>`, not the `<app>`.** An Omaha
+//!   server reads it off the event element and ignores it anywhere else, and
+//!   Nebraska *discards* a terminal `complete` event that arrives without it —
+//!   while still answering `status="ok"`. The attribute is therefore only
+//!   reachable through the terminal-event builders.
 //! - **`error-updateInProgressOnInstance` is expected, not fatal.** Nebraska
 //!   returns it on every update check between the first progress event and the
 //!   terminal one; it is modelled as [`CheckOutcome::UpdateInProgress`], and

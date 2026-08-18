@@ -43,7 +43,7 @@ impl MachineId {
                 "machine id must not be empty".to_string(),
             ));
         }
-        if is_braced_uuid(&id) {
+        if is_fake_instance_shape(&id) {
             return Err(NebraskaError::InvalidRequest(format!(
                 "machine id '{id}' is brace-wrapped; Nebraska filters braced ids out of the UI \
                  and group statistics"
@@ -72,13 +72,32 @@ impl Display for MachineId {
     }
 }
 
-/// Returns whether the value is a brace-wrapped UUID (`{...}`) — the exact shape
-/// Nebraska treats as a fake instance and filters out. A braced string whose
-/// contents are *not* a UUID is left alone, since Nebraska does not filter it.
-fn is_braced_uuid(id: &str) -> bool {
-    id.strip_prefix('{')
-        .and_then(|inner| inner.strip_suffix('}'))
-        .is_some_and(|inner| Uuid::parse_str(inner).is_ok())
+/// Positions of the hyphens within a `8-4-4-4-12` id, and the total length of
+/// that shape.
+const HYPHEN_POSITIONS: [usize; 4] = [8, 13, 18, 23];
+const HYPHENATED_LEN: usize = 36;
+
+/// Returns whether the value has the shape Nebraska hides as a "fake instance".
+///
+/// The server filters with `instance_id NOT LIKE
+/// '{________-____-____-____-____________}'`, and SQL's `_` matches *any*
+/// character — so what is filtered is the braced `8-4-4-4-12` **shape**, not a
+/// well-formed UUID. Matching on shape keeps this check aligned with the query
+/// that actually hides the instance: a braced non-hex id of that shape would
+/// still vanish from the UI, while a braced value of any other shape is a
+/// legitimate id and must not be rejected.
+fn is_fake_instance_shape(id: &str) -> bool {
+    let Some(inner) = id.strip_prefix('{').and_then(|i| i.strip_suffix('}')) else {
+        return false;
+    };
+    inner.len() == HYPHENATED_LEN
+        && inner.char_indices().all(|(index, c)| {
+            if HYPHEN_POSITIONS.contains(&index) {
+                c == '-'
+            } else {
+                c != '-'
+            }
+        })
 }
 
 #[cfg(test)]
@@ -110,10 +129,29 @@ mod tests {
 
     #[test]
     fn new_accepts_braced_non_uuid() {
-        // Nebraska only filters brace-wrapped UUIDs; a braced value that is not a
-        // UUID is a legitimate id and must not be rejected.
+        // Nebraska hides only the braced 8-4-4-4-12 shape; a braced value of any
+        // other shape is a legitimate id and must not be rejected.
         let id = MachineId::new("{not-a-uuid}").unwrap();
         assert_eq!(id.as_str(), "{not-a-uuid}");
+    }
+
+    #[test]
+    fn new_rejects_braced_non_hex_of_uuid_shape() {
+        // The server filters with a SQL LIKE whose `_` matches any character, so
+        // a braced id of this shape is hidden even though it is not valid hex.
+        let err = MachineId::new("{zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz}").unwrap_err();
+        assert!(
+            matches!(err, NebraskaError::InvalidRequest(_)),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn new_accepts_braced_unhyphenated_uuid() {
+        // Nebraska's pattern requires the hyphens, so the compact form is not
+        // filtered and must not be rejected.
+        let id = MachineId::new("{0123456789abcdef0123456789abcdef}").unwrap();
+        assert_eq!(id.as_str(), "{0123456789abcdef0123456789abcdef}");
     }
 
     #[test]
