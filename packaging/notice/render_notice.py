@@ -53,7 +53,7 @@ def main() -> None:
 
     lines = [HEADER]
     # Ordering is fully determined by license content, never by input order.
-    for (license_id, name, text) in sorted(groups):
+    for license_id, name, text in sorted(groups):
         crates = sorted(groups[(license_id, name, text)])
         lines.append(SEPARATOR)
         lines.append(f"{name} ({license_id})")
