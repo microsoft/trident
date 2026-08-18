@@ -46,10 +46,11 @@ impl<R> ReadMonitor<R> {
     ///
     /// * `label` — identifies what is being read (e.g. partition id), used to
     ///   tag log messages and metric events.
-    /// * `threshold_mbps` — speed in Mbps below which debug messages/metrics
-    ///   are emitted.
-    /// * `report_cadence` — minimum interval between consecutive log
-    ///   messages/metrics.
+    /// * `threshold_mbps` — speed in Mbps below which slow-download debug log
+    ///   messages are emitted. Does not affect the summary metric emitted at
+    ///   drop time, which is always recorded regardless of speed.
+    /// * `report_cadence` — minimum interval between consecutive slow-download
+    ///   debug log messages.
     pub fn new(
         inner: R,
         label: impl Into<String>,
@@ -143,9 +144,9 @@ impl<R: Read> Read for ReadMonitor<R> {
                 };
 
                 let eta_secs = if self.size > self.total_bytes {
-                    self.moving_average_bytes_per_sec().filter(|&bps| bps > 0.0).map(|bps| {
-                        (self.size - self.total_bytes) as f64 / bps
-                    })
+                    self.moving_average_bytes_per_sec()
+                        .filter(|&bps| bps > 0.0)
+                        .map(|bps| (self.size - self.total_bytes) as f64 / bps)
                 } else {
                     None
                 };
@@ -352,5 +353,4 @@ mod tests {
         assert_eq!(complete.1.get("total_bytes").unwrap(), &len.to_string());
         assert_eq!(complete.1.get("complete").unwrap(), "true");
     }
-
 }
