@@ -30,6 +30,10 @@ pub enum NebraskaError {
     /// The Nebraska server returned a non-success HTTP status. Carries the
     /// status code (when known) so retry logic can distinguish transient
     /// server errors from permanent ones.
+    ///
+    /// The message deliberately omits the request URL, which may carry an Omaha
+    /// secret (see [`is_retryable`](NebraskaError::is_retryable)) and would
+    /// otherwise be copied into every log line that renders this error.
     #[error("Nebraska returned an HTTP error: {message}")]
     Http {
         /// The HTTP status code, if the failure carried one.
@@ -51,6 +55,16 @@ pub enum NebraskaError {
     /// check. Carries the raw status string for diagnosis.
     #[error("Nebraska reported error status: {0}")]
     ServerError(String),
+
+    /// The post-reboot completion event was sent and the server accepted the
+    /// request, but the instance is still reported as having an update in
+    /// progress — so the terminal event did not take effect.
+    ///
+    /// This is retryable, and re-sending it matters: an instance left in a
+    /// progress state is wedged permanently. See
+    /// [`Client::complete_after_reboot`](crate::nebraska::Client::complete_after_reboot).
+    #[error("Nebraska did not record the completion event: the update is still in progress")]
+    CompletionNotAcknowledged,
 }
 
 impl NebraskaError {
@@ -68,9 +82,10 @@ impl NebraskaError {
     /// for server-side 5xx errors *other than* `501 Not Implemented`: Nebraska
     /// returns 501 when an Omaha secret is configured and the client's URL lacks
     /// it, which is a permanent client misconfiguration that must not be retried.
-    /// 4xx are likewise permanent. All protocol-level failures (serialization,
-    /// parse, unexpected response, server error status, invalid request) are
-    /// permanent.
+    /// 4xx are likewise permanent. A completion that the server did not record
+    /// is transient, since the whole point is to land that event. All other
+    /// protocol-level failures (serialization, parse, unexpected response,
+    /// server error status, invalid request) are permanent.
     pub fn is_retryable(&self) -> bool {
         match self {
             NebraskaError::Transport(_) => true,
@@ -81,6 +96,7 @@ impl NebraskaError {
                 status: Some(code), ..
             } => (500..600).contains(code) && *code != 501,
             NebraskaError::Http { status: None, .. } => true,
+            NebraskaError::CompletionNotAcknowledged => true,
             NebraskaError::InvalidRequest(_)
             | NebraskaError::Serialize(_)
             | NebraskaError::Parse(_)
@@ -107,6 +123,7 @@ mod tests {
         assert!(http(Some(502)).is_retryable());
         assert!(http(Some(503)).is_retryable());
         assert!(http(None).is_retryable());
+        assert!(NebraskaError::CompletionNotAcknowledged.is_retryable());
     }
 
     #[test]

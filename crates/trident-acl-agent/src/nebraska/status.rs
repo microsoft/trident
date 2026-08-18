@@ -55,6 +55,42 @@ impl Display for AppStatus {
     }
 }
 
+/// Status of an `<event>` acknowledgement in a Nebraska response.
+///
+/// Per the Omaha protocol the server acknowledges each submitted event with a
+/// status, so a spec-compliant server can report that an event was rejected on
+/// an otherwise-200 response. Nebraska itself always acknowledges `ok` (it only
+/// logs event-processing errors server-side), so this check is a best-effort
+/// guard for other Omaha servers; the load-bearing signal against Nebraska is
+/// the app-level [`AppStatus`], which is set to an error — with the events
+/// silently dropped — when the app or track cannot be resolved.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub enum EventStatus {
+    /// The event was accepted.
+    #[serde(rename = "ok")]
+    Ok,
+
+    /// Any other (including unknown) status string, preserved verbatim.
+    #[serde(untagged)]
+    Other(String),
+}
+
+impl EventStatus {
+    /// Whether the event was accepted (`ok`).
+    pub fn is_ok(&self) -> bool {
+        matches!(self, EventStatus::Ok)
+    }
+}
+
+impl Display for EventStatus {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            EventStatus::Ok => f.write_str("ok"),
+            EventStatus::Other(s) => f.write_str(s),
+        }
+    }
+}
+
 /// Status of an `<updatecheck>` element in a Nebraska response.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub enum UpdateCheckStatus {
@@ -124,6 +160,16 @@ mod tests {
         );
         assert!(!status.is_ok());
         assert!(!status.is_update_in_progress());
+    }
+
+    #[test]
+    fn event_status_unknown_does_not_fail() {
+        let status: EventStatus = serde_json::from_str(r#""error-brandNew""#).unwrap();
+        assert_eq!(status, EventStatus::Other("error-brandNew".to_string()));
+        assert!(!status.is_ok());
+        assert!(serde_json::from_str::<EventStatus>(r#""ok""#)
+            .unwrap()
+            .is_ok());
     }
 
     #[test]

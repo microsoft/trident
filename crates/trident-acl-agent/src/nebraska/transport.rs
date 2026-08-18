@@ -82,22 +82,25 @@ impl ReqwestTransport {
 
 impl Transport for ReqwestTransport {
     fn post_xml(&self, endpoint: &Url, body: &[u8]) -> Result<String, NebraskaError> {
+        // `reqwest::Error`'s `Display` embeds the request URL, which may carry an
+        // Omaha secret; `without_url` strips it so the secret cannot reach a log
+        // or a propagated error.
         self.client
             .post(endpoint.as_str())
             .header("Content-Type", "application/xml")
             .timeout(self.timeout)
             .body(body.to_vec())
             .send()
-            .map_err(|e| NebraskaError::Transport(e.to_string()))?
+            .map_err(|e| NebraskaError::Transport(e.without_url().to_string()))?
             .error_for_status()
             .map_err(|e| NebraskaError::Http {
                 status: e.status().map(|s| s.as_u16()),
-                message: e.to_string(),
+                message: e.without_url().to_string(),
             })?
             .text()
             .map_err(|e| NebraskaError::Http {
                 status: None,
-                message: e.to_string(),
+                message: e.without_url().to_string(),
             })
     }
 }

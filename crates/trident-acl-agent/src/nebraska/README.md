@@ -10,6 +10,24 @@ id is a validated unbraced newtype, versions are `semver::Version`, and
 `error-updateInProgressOnInstance` is a normal outcome rather than an error. The
 rationale for each is documented inline on the relevant type.
 
+## Protocol compatibility
+
+This is a generic **Omaha v3** client (`protocol="3.0"`), not tied to any
+particular Nebraska release. It relies on a handful of behaviours that are
+stable across Nebraska versions rather than on a specific build:
+
+- an event and an update check batched in one request are processed
+  events-first, which is what makes the post-reboot completion a single round
+  trip;
+- `error-updateInProgressOnInstance` is reported for an instance between its
+  first progress event and its terminal event;
+- the app and the group (resolved from `track`) are looked up *before* events
+  are processed, so an unresolvable app or track is reported as an app-level
+  error status while the events are dropped.
+
+Unknown status strings are preserved rather than rejected, so a server that adds
+new ones does not break parsing.
+
 ## Usage
 
 ### Poll for an update
@@ -77,8 +95,10 @@ if let CheckOutcome::UpdateAvailable(offer) = client.check_for_update(&current)?
     // Persist { previous: current, target: offer.version } somewhere durable,
     // then reboot. After the reboot, from a fresh process on the new version,
     // report completion. This blocks while it retries transient failures (a
-    // reboot's first network call often fails while DNS settles); losing it
-    // would wedge the instance permanently, which is why it retries by default.
+    // reboot's first network call often fails while DNS settles) and while the
+    // server still reports the update as in progress; losing this event would
+    // wedge the instance permanently, which is why it retries by default and
+    // fails loudly (`CompletionNotAcknowledged`) rather than returning success.
     let previous = current;
     let now_running = offer.version;
     client.complete_after_reboot(&previous, &now_running)?;
@@ -114,6 +134,11 @@ network by injecting a canned implementation via `Client::with_transport`.
 
 ## Notes
 
+- Every request carries a per-request timeout (10s by default, overridable with
+  `ReqwestTransport::with_timeout`), so `complete_after_reboot`'s retry window is
+  bounded in wall-clock time and a hung connection cannot stall startup.
+- The update endpoint may carry an Omaha secret, so it is never logged in full
+  and is stripped from transport errors; only its scheme and host appear.
 - The `Transport` is synchronous today; an async transport can be added
   alongside it without breaking this API (see the `transport` module docs).
 - This module supersedes the crate's older ad-hoc `omaha` module; the agent's

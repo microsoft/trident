@@ -18,12 +18,23 @@ use sysdefs::arch::SystemArchitecture;
 
 use super::{
     event::WirePair,
-    status::{AppStatus, UpdateCheckStatus},
+    status::{AppStatus, EventStatus, UpdateCheckStatus},
 };
 
 const OMAHA_PROTOCOL: &str = "3.0";
 const XML_VERSION: &str = "1.0";
 const XML_ENCODING: &str = "UTF-8";
+
+/// The updater version reported in `<request version>`, which Nebraska surfaces
+/// in its UI and logs to identify the client.
+///
+/// Prefers the build-time `TRIDENT_VERSION` (the version the shipped product is
+/// stamped with) over this crate's own package version, which is not
+/// independently released and would otherwise report a placeholder to operators.
+const CLIENT_VERSION: &str = match option_env!("TRIDENT_VERSION") {
+    Some(v) => v,
+    None => env!("CARGO_PKG_VERSION"),
+};
 
 /// Serializes an `ismachine`-style boolean as the string `"1"` or `"0"`, as the
 /// Omaha protocol requires.
@@ -61,7 +72,7 @@ impl Request {
     pub(super) fn new(app: App) -> Self {
         Self {
             protocol: OMAHA_PROTOCOL,
-            version: env!("CARGO_PKG_VERSION"),
+            version: CLIENT_VERSION,
             is_machine: true,
             session_id: Uuid::new_v4(),
             os: Os::current(),
@@ -234,8 +245,19 @@ pub(super) struct AppResponse {
     #[serde(rename = "@status")]
     pub(super) status: AppStatus,
 
+    /// The per-event acknowledgements, one per event sent in the request.
+    /// Empty for requests that carried no events.
+    #[serde(default, rename = "event")]
+    pub(super) events: Vec<EventResponse>,
+
     #[serde(default, rename = "updatecheck")]
     pub(super) update_check: Option<UpdateCheckResponse>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct EventResponse {
+    #[serde(rename = "@status")]
+    pub(super) status: EventStatus,
 }
 
 #[derive(Debug, Deserialize)]

@@ -20,7 +20,9 @@
 //! - **`track` is mandatory on every request**, including event-only ones:
 //!   Nebraska resolves the group from `track` before processing events, so
 //!   omitting it silently drops them. It is a field of [`Client`], so it cannot
-//!   be omitted.
+//!   be omitted. When the app or track cannot be resolved at all, the drop is
+//!   visible only in the app-level status, which the event-reporting methods
+//!   therefore check rather than treating any HTTP 200 as success.
 //! - **`error-updateInProgressOnInstance` is expected, not fatal.** Nebraska
 //!   returns it on every update check between the first progress event and the
 //!   terminal one; it is modelled as [`CheckOutcome::UpdateInProgress`], and
@@ -76,5 +78,5 @@ pub use client::{CheckOutcome, Client, PackageFile, PackageHash, UpdateOffer};
 pub use error::NebraskaError;
 pub use event::ProgressEvent;
 pub use id::MachineId;
-pub use status::{AppStatus, UpdateCheckStatus};
+pub use status::{AppStatus, EventStatus, UpdateCheckStatus};
 pub use transport::{ReqwestTransport, Transport};

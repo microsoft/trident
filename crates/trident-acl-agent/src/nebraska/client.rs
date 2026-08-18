@@ -147,6 +147,21 @@ fn retry<T>(
     }
 }
 
+/// Renders an endpoint for logging with everything after the authority removed.
+///
+/// A Nebraska endpoint can carry an Omaha secret (Nebraska answers `501` when
+/// the configured secret is missing from the client's URL), so only the scheme
+/// and host are safe to emit; the path, query, fragment, and any userinfo are
+/// dropped rather than selectively scrubbed, so a secret cannot leak from a
+/// component this code did not anticipate.
+fn redacted(endpoint: &Url) -> String {
+    let Some(host) = endpoint.host_str() else {
+        return "<redacted>".to_string();
+    };
+    let port = endpoint.port().map(|p| format!(":{p}")).unwrap_or_default();
+    format!("{}://{host}{port}/<redacted>", endpoint.scheme())
+}
+
 /// A client for a single Nebraska app on a single track.
 ///
 /// The client bundles the immutable request identity — endpoint, app id,
@@ -242,7 +257,7 @@ impl<T: Transport> Client<T> {
     ) -> Result<(), NebraskaError> {
         let app = self.app(current_version).with_event(event.wire());
         let response = self.send(app)?;
-        self.require_app_present(&response)?;
+        self.require_events_accepted(&response)?;
         Ok(())
     }
 
@@ -265,9 +280,18 @@ impl<T: Transport> Client<T> {
     /// reset. Retrying is therefore a correctness requirement, not a
     /// quality-of-service choice, so it is the default here: this method retries
     /// [retryable](NebraskaError::is_retryable) failures with a bounded
-    /// exponential backoff (a handful of attempts over a few tens of seconds) and
-    /// returns the last error only once transient retries are exhausted or a
-    /// permanent error occurs.
+    /// exponential backoff and returns the last error only once transient
+    /// retries are exhausted or a permanent error occurs.
+    ///
+    /// A response that still reports the update as in progress means the
+    /// completion did not take, so it is retried too, and surfaces as
+    /// [`NebraskaError::CompletionNotAcknowledged`] if it never lands — never as
+    /// a successful outcome.
+    ///
+    /// The retry window is bounded by both the per-request timeout of the
+    /// [transport](crate::nebraska::ReqwestTransport) and this method's attempt
+    /// count and backoff; with the defaults of each, it gives up after under two
+    /// minutes rather than blocking indefinitely.
     ///
     /// This blocks the calling thread while retrying. A caller that has its own
     /// scheduler (e.g. an existing poll loop) and would rather re-attempt on its
@@ -283,8 +307,31 @@ impl<T: Transport> Client<T> {
         previous_version: &Version,
         current_version: &Version,
     ) -> Result<CheckOutcome, NebraskaError> {
-        retry(RetryPolicy::default(), || {
-            self.try_complete_after_reboot(previous_version, current_version)
+        self.complete_after_reboot_with_policy(
+            RetryPolicy::default(),
+            previous_version,
+            current_version,
+        )
+    }
+
+    /// [`complete_after_reboot`](Client::complete_after_reboot) with an explicit
+    /// retry policy, so the retry behaviour can be exercised without waiting out
+    /// the production backoff.
+    fn complete_after_reboot_with_policy(
+        &self,
+        policy: RetryPolicy,
+        previous_version: &Version,
+        current_version: &Version,
+    ) -> Result<CheckOutcome, NebraskaError> {
+        retry(policy, || {
+            match self.try_complete_after_reboot(previous_version, current_version)? {
+                // Still in progress means the terminal event did not take.
+                // Convert it into a retryable error so the bounded retry
+                // re-sends it, rather than reporting success for an instance
+                // that is still wedged.
+                CheckOutcome::UpdateInProgress => Err(NebraskaError::CompletionNotAcknowledged),
+                outcome => Ok(outcome),
+            }
         })
     }
 
@@ -297,8 +344,9 @@ impl<T: Transport> Client<T> {
     ///
     /// Because losing the terminal event wedges the instance permanently, a
     /// caller using this variant **must** retry the call itself while the
-    /// returned error [is retryable](NebraskaError::is_retryable) (with a bounded
-    /// backoff), giving up only on a permanent error. See
+    /// returned error [is retryable](NebraskaError::is_retryable) *or* the
+    /// outcome is [`CheckOutcome::UpdateInProgress`] (with a bounded backoff),
+    /// giving up only on a permanent error. See
     /// [`complete_after_reboot`](Client::complete_after_reboot) for the rationale
     /// and [`report_failure`](Client::report_failure) for the recovery path.
     pub fn try_complete_after_reboot(
@@ -332,7 +380,7 @@ impl<T: Transport> Client<T> {
             .with_event(TerminalEvent::Failed.wire())
             .with_previous_version(previous_version.to_string());
         let response = self.send(app)?;
-        self.require_app_present(&response)?;
+        self.require_events_accepted(&response)?;
         Ok(())
     }
 
@@ -354,7 +402,7 @@ impl<T: Transport> Client<T> {
             .map_err(|e| NebraskaError::Serialize(e.to_string()))?;
         trace!(
             "Nebraska request to '{}':\n{}",
-            self.endpoint,
+            redacted(&self.endpoint),
             String::from_utf8_lossy(&body)
         );
         let text = self.transport.post_xml(&self.endpoint, &body)?;
@@ -388,10 +436,38 @@ impl<T: Transport> Client<T> {
         }
     }
 
-    /// Validates the app is present (used by event requests, which have no
-    /// update-check to interpret).
-    fn require_app_present(&self, response: &wire::Response) -> Result<(), NebraskaError> {
-        self.app_response(response).map(|_| ())
+    /// Validates the response to an event-only request: the app must be present
+    /// and the server must not have reported an error while resolving it.
+    ///
+    /// This is the load-bearing check for event delivery. Nebraska resolves the
+    /// app and the group (from `track`) *before* processing events and, when
+    /// either lookup fails, sets an app-level error status and returns without
+    /// handling them — so the events are dropped while the HTTP response is
+    /// still 200. Without inspecting the status, that silent drop would be
+    /// indistinguishable from success, which matters most on the
+    /// [`report_failure`](Client::report_failure) recovery path.
+    ///
+    /// `error-updateInProgressOnInstance` is tolerated: events are sent
+    /// precisely while an update is in flight, so it says nothing about whether
+    /// this event was accepted.
+    fn require_events_accepted(&self, response: &wire::Response) -> Result<(), NebraskaError> {
+        let app = self.app_response(response)?;
+
+        if !app.status.is_ok() && !app.status.is_update_in_progress() {
+            return Err(NebraskaError::ServerError(app.status.to_string()));
+        }
+
+        // Per-event acknowledgements, for servers that report event failures
+        // there. Nebraska always answers `ok`, so a rejection is only ever seen
+        // from another Omaha implementation.
+        if let Some(rejected) = app.events.iter().find(|event| !event.status.is_ok()) {
+            return Err(NebraskaError::ServerError(format!(
+                "event rejected with status '{}'",
+                rejected.status
+            )));
+        }
+
+        Ok(())
     }
 
     /// Interprets a response that carries an update check into a [`CheckOutcome`].
@@ -549,6 +625,41 @@ mod tests {
         )
     }
 
+    /// A transport that replays a script of responses, repeating the last one
+    /// once the script is exhausted, so a retry loop can be driven through a
+    /// sequence of server answers.
+    struct ScriptedTransport {
+        responses: Vec<String>,
+        calls: Cell<u32>,
+    }
+
+    impl Transport for ScriptedTransport {
+        fn post_xml(&self, _endpoint: &Url, _body: &[u8]) -> Result<String, NebraskaError> {
+            let index = (self.calls.get() as usize).min(self.responses.len() - 1);
+            self.calls.set(self.calls.get() + 1);
+            Ok(self.responses[index].clone())
+        }
+    }
+
+    fn client_with_responses(responses: Vec<&str>) -> Client<ScriptedTransport> {
+        Client::with_transport(
+            Url::parse("https://nebraska.example/v1/update/").unwrap(),
+            "app-1",
+            "stable",
+            MachineId::new("mid-1").unwrap(),
+            ScriptedTransport {
+                responses: responses.into_iter().map(String::from).collect(),
+                calls: Cell::new(0),
+            },
+        )
+    }
+
+    /// A completion response that reports the instance as still updating.
+    const IN_PROGRESS: &str = r#"<response protocol="3.0" server="n"><app appid="app-1" status="error-updateInProgressOnInstance"><event status="ok"/><updatecheck status="error-internal"/></app></response>"#;
+
+    /// A completion response that reports the instance as settled and current.
+    const NO_UPDATE: &str = r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><event status="ok"/><updatecheck status="noupdate"/></app></response>"#;
+
     const OFFER: &str = r#"
         <response protocol="3.0" server="nebraska">
           <daystart elapsed_seconds="0"/>
@@ -680,7 +791,7 @@ mod tests {
     #[test]
     fn report_progress_sends_track_and_event() {
         let client = client_with(
-            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"/></response>"#,
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><event status="ok"/></app></response>"#,
         );
         client
             .report_progress(&Version::new(1, 0, 0), ProgressEvent::DownloadStarted)
@@ -694,9 +805,46 @@ mod tests {
     }
 
     #[test]
+    fn report_progress_fails_when_app_status_is_an_error() {
+        // Nebraska sets an app-level error and returns *before* processing
+        // events when it cannot resolve the app or the track, so the events are
+        // silently dropped on an HTTP 200. That must not look like success.
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="error-failedToRetrieveUpdatePackageInfo"><updatecheck status="error-internal"/></app></response>"#,
+        );
+        let err = client
+            .report_progress(&Version::new(1, 0, 0), ProgressEvent::DownloadStarted)
+            .unwrap_err();
+        assert!(matches!(err, NebraskaError::ServerError(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn report_progress_tolerates_update_in_progress_status() {
+        // Progress events are sent precisely while an update is in flight, so
+        // this status says nothing about whether the event was accepted.
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="error-updateInProgressOnInstance"><event status="ok"/></app></response>"#,
+        );
+        client
+            .report_progress(&Version::new(1, 0, 0), ProgressEvent::DownloadStarted)
+            .unwrap();
+    }
+
+    #[test]
+    fn report_failure_rejected_event_is_an_error() {
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><event status="error-internal"/></app></response>"#,
+        );
+        let err = client
+            .report_failure(&Version::new(1, 0, 0), &Version::new(2, 0, 0))
+            .unwrap_err();
+        assert!(matches!(err, NebraskaError::ServerError(_)), "got {err:?}");
+    }
+
+    #[test]
     fn complete_after_reboot_batches_event_ping_and_check() {
         let client = client_with(
-            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="noupdate"/></app></response>"#,
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><event status="ok"/><updatecheck status="noupdate"/></app></response>"#,
         );
         let outcome = client
             .complete_after_reboot(&Version::new(1, 0, 0), &Version::new(2, 0, 0))
@@ -713,9 +861,50 @@ mod tests {
     }
 
     #[test]
+    fn complete_after_reboot_retries_while_update_in_progress() {
+        // The completion did not take on the first attempt; the retry must
+        // re-send it rather than reporting success for a still-wedged instance.
+        let client = client_with_responses(vec![IN_PROGRESS, NO_UPDATE]);
+        let outcome = client
+            .complete_after_reboot_with_policy(
+                fast_policy(),
+                &Version::new(1, 0, 0),
+                &Version::new(2, 0, 0),
+            )
+            .unwrap();
+        assert_eq!(outcome, CheckOutcome::UpToDate);
+        assert_eq!(client.transport.calls.get(), 2);
+    }
+
+    #[test]
+    fn complete_after_reboot_fails_when_completion_never_lands() {
+        let client = client_with_responses(vec![IN_PROGRESS]);
+        let err = client
+            .complete_after_reboot_with_policy(
+                fast_policy(),
+                &Version::new(1, 0, 0),
+                &Version::new(2, 0, 0),
+            )
+            .unwrap_err();
+        assert!(
+            matches!(err, NebraskaError::CompletionNotAcknowledged),
+            "got {err:?}"
+        );
+        assert_eq!(client.transport.calls.get(), fast_policy().max_attempts);
+    }
+
+    #[test]
+    fn redacted_endpoint_drops_path_and_query() {
+        let url = Url::parse("https://nebraska.example:8443/v1/update/?secret=hunter2").unwrap();
+        let logged = redacted(&url);
+        assert_eq!(logged, "https://nebraska.example:8443/<redacted>");
+        assert!(!logged.contains("hunter2"));
+    }
+
+    #[test]
     fn report_failure_sends_terminal_failure() {
         let client = client_with(
-            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"/></response>"#,
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><event status="ok"/></app></response>"#,
         );
         client
             .report_failure(&Version::new(1, 0, 0), &Version::new(2, 0, 0))
