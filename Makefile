@@ -404,7 +404,7 @@ NOTICE_GENERATED  := target/NOTICE.generated
 # --locked pins Cargo.lock; --offline keeps generation deterministic and matches
 # the network-isolated CI (no clearlydefined.io lookups); --workspace matches the
 # scope of the cargo-deny check.
-CARGO_ABOUT_ARGS  := generate --workspace --locked --offline packaging/notice/about.hbs
+CARGO_ABOUT_ARGS  := generate --workspace --locked --offline -c packaging/notice/about.toml packaging/notice/about.hbs
 
 # Regenerate the checked-in NOTICE locally. Run after changing dependencies.
 .PHONY: update-notice
