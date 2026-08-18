@@ -54,10 +54,10 @@ manual rollback chains without using `netlaunch` or an installer ISO.
   rollback via `storm-trident run servicing`
 - [Rollback Tests](Rollback-Tests.md) — full rollback chain (A/B + runtime
   updates) via `storm-trident run rollback`
-- [Trident ACL Agent Tests](TridentAclAgent-Tests.md) — validates
-  `trident-acl-agent`'s label-driven update protocol against fake
+- [Trident AKS Agent Tests](TridentAksAgent-Tests.md) — validates
+  `trident-aks-agent`'s annotation-driven update protocol against fake
   Kubernetes API server and Nebraska/Omaha endpoints via
-  `storm-trident run aclagent`
+  `storm-trident run aksagent`
 
 ## Code Coverage
 

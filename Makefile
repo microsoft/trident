@@ -1224,10 +1224,10 @@ artifacts/trident-vm-usr-verity-testimage.qcow2: \
 			--output-image-format qcow2 \
 			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-usr-verity.yaml
 
-artifacts/trident-vm-acl-agent-testimage.qcow2: \
+artifacts/trident-vm-aks-agent-testimage.qcow2: \
 	$(QEMU_GUEST_IMAGE) \
 	$(TRIDENT_VM_DEPENDENCIES) \
-	$(VM_IMAGE_PATH_PREFIX)/baseimg-acl-agent.yaml \
+	$(VM_IMAGE_PATH_PREFIX)/baseimg-aks-agent.yaml \
 	$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub \
 	artifacts/rpm-overrides
 	@echo "Building $@ from $<"
@@ -1243,7 +1243,7 @@ artifacts/trident-vm-acl-agent-testimage.qcow2: \
 			--image-file /repo/$< \
 			--output-image-file /repo/$@ \
 			--output-image-format qcow2 \
-			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-acl-agent.yaml
+			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-aks-agent.yaml
 
 artifacts/trident-vm-grub-verity-azure-testimage.vhd: \
 	$(CORE_SELINUX_IMAGE) \

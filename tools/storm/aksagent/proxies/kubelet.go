@@ -15,7 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const RebootStateAnnotation = "trident-acl-agent/reboot-state"
+const RebootStateAnnotation = "trident-aks-agent/reboot-state"
 
 type KubeletProxy struct {
 	HTTPClient      *http.Client
@@ -142,11 +142,11 @@ func patchStringMap(ctx context.Context, client *http.Client, nodeURL string, fi
 func patchReadyCondition(ctx context.Context, client *http.Client, nodeURL string, ready bool) error {
 	status := corev1.ConditionFalse
 	message := "Simulated reboot in progress"
-	reason := "TridentACLAgentTesterReboot"
+	reason := "TridentAKSAgentTesterReboot"
 	if ready {
 		status = corev1.ConditionTrue
 		message = "Node ready"
-		reason = "TridentACLAgentTesterReady"
+		reason = "TridentAKSAgentTesterReady"
 	}
 
 	condition := corev1.NodeCondition{

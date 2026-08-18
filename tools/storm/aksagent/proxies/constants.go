@@ -7,5 +7,5 @@ const (
 	NodeImageVersionLabel        = "kubernetes.azure.com/node-image-version"
 
 	DefaultNodeName   = "trident-node"
-	DefaultMarkerFile = "./trident-acl-agent-reboot-signal"
+	DefaultMarkerFile = "./trident-aks-agent-reboot-signal"
 )

@@ -1,10 +1,10 @@
-# UKI usr-verity VM test image for validating trident-acl-agent's
+# UKI usr-verity VM test image for validating trident-aks-agent's
 # label-driven A/B update protocol against a real tridentd.
 #
-# This is the "update" counterpart to baseimg-acl-agent.yaml: it is built as
+# This is the "update" counterpart to baseimg-aks-agent.yaml: it is built as
 # a .cosi and served to the initial qcow2-booted VM as the A/B update target,
 # not booted directly. Unlike the qcow2 base image, this image enables
-# trident-acl-agent.service by default, since after a real A/B update boots
+# trident-aks-agent.service by default, since after a real A/B update boots
 # into this image's root, there is no SSH session available anymore to
 # `systemctl enable --now` it as the storm test harness does for the initial
 # qcow2 boot.
@@ -47,8 +47,8 @@ storage:
           label: trident
           size: 512M
 
-        - id: trident-acl-agent
-          label: trident-acl-agent
+        - id: trident-aks-agent
+          label: trident-aks-agent
           size: 128M
 
         - id: kubelet
@@ -107,11 +107,11 @@ storage:
         idType: part-label
         path: /var/lib/trident
 
-    - deviceId: trident-acl-agent
+    - deviceId: trident-aks-agent
       type: ext4
       mountPoint:
         idType: part-label
-        path: /var/lib/trident-acl-agent
+        path: /var/lib/trident-aks-agent
 
     - deviceId: kubelet
       type: ext4
@@ -140,7 +140,7 @@ storage:
 os:
   bootloader:
     resetType: hard-reset
-  hostname: trident-acl-agent-testimg
+  hostname: trident-aks-agent-testimg
 
   selinux:
     mode: disabled
@@ -172,7 +172,7 @@ os:
       - openssh-server
       - systemd-boot
       - systemd-udev
-      - trident-acl-agent
+      - trident-aks-agent
       - veritysetup
       - vim
       - netplan
@@ -189,7 +189,7 @@ os:
     enable:
       - kdump
       - tridentd.socket
-      - trident-acl-agent.service
+      - trident-aks-agent.service
 
   users:
     - name: testuser

@@ -28,8 +28,8 @@ parameters:
     default: false
 
 stages:
-  - stage: BuildImagesAclAgent
-    displayName: Build Base and Update Images for trident-acl-agent
+  - stage: BuildImagesAksAgent
+    displayName: Build Base and Update Images for trident-aks-agent
     dependsOn:
       - PrepareSSHKeys
       - GetTridentBinaries_rpms_amd64
@@ -39,8 +39,8 @@ stages:
     jobs:
       - template: ../trident_images/build-image.yml
         parameters:
-          label: "acl-agent-base"
-          makeTarget: "artifacts/trident-vm-acl-agent-testimage.qcow2"
+          label: "aks-agent-base"
+          makeTarget: "artifacts/trident-vm-aks-agent-testimage.qcow2"
           baseimgType: qemu_guest
           baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
           micBuildType: ${{ parameters.micBuildType }}
@@ -49,23 +49,23 @@ stages:
 
       - template: ../trident_images/build-image.yml
         parameters:
-          label: "acl-agent-update"
-          makeTarget: "artifacts/trident-vm-acl-agent-update-testimage.cosi"
+          label: "aks-agent-update"
+          makeTarget: "artifacts/trident-vm-aks-agent-update-testimage.cosi"
           baseimgType: qemu_guest
           baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
           micBuildType: ${{ parameters.micBuildType }}
           micVersion: ${{ parameters.micVersion }}
           useStagedSshKeys: true
 
-  - stage: TridentAclAgentTest
-    displayName: Validate trident-acl-agent
+  - stage: TridentAksAgentTest
+    displayName: Validate trident-aks-agent
     dependsOn:
       - BuildingTools
-      - BuildImagesAclAgent
+      - BuildImagesAksAgent
 
     jobs:
-      - job: AclAgentStormTest
-        displayName: Run storm aclagent scenario
+      - job: AksAgentStormTest
+        displayName: Run storm aksagent scenario
         timeoutInMinutes: 30
         pool:
           type: linux
@@ -74,7 +74,7 @@ stages:
 
         variables:
           ob_outputDirectory: /tmp/output
-          ob_artifactBaseName: "aclagent-storm-test"
+          ob_artifactBaseName: "aksagent-storm-test"
 
         steps:
           - template: ../common_tasks/checkout_trident.yml
@@ -83,14 +83,14 @@ stages:
           - task: DownloadPipelineArtifact@2
             inputs:
               buildType: current
-              artifactName: image-acl-agent-base
+              artifactName: image-aks-agent-base
               targetPath: "$(Build.ArtifactStagingDirectory)"
             displayName: Download Base Image (qcow2)
 
           - task: DownloadPipelineArtifact@2
             inputs:
               buildType: current
-              artifactName: image-acl-agent-update
+              artifactName: image-aks-agent-update
               targetPath: "$(Build.ArtifactStagingDirectory)"
             displayName: Download Update Image (cosi)
 
@@ -129,9 +129,9 @@ stages:
 
               FLAGS="-a --verbose"
 
-              sudo ./bin/storm-trident run aclagent $FLAGS \
+              sudo ./bin/storm-trident run aksagent $FLAGS \
                 --output-path $(ob_outputDirectory) \
                 --artifacts-dir $(Build.ArtifactStagingDirectory) \
                 --ssh-private-key-path ~/.ssh/id_rsa
-            displayName: "🧪 Run trident-acl-agent A/B update + rollback scenario"
+            displayName: "🧪 Run trident-aks-agent A/B update + rollback scenario"
             workingDirectory: $(TRIDENT_SOURCE_DIR)

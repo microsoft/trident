@@ -128,11 +128,11 @@ func (s *NodeStore) SetReadyCondition(ready bool) *corev1.Node {
 	defer s.mu.Unlock()
 	status := corev1.ConditionFalse
 	message := "Simulated reboot in progress"
-	reason := "TridentACLAgentTesterReboot"
+	reason := "TridentAKSAgentTesterReboot"
 	if ready {
 		status = corev1.ConditionTrue
 		message = "Node ready"
-		reason = "TridentACLAgentTesterReady"
+		reason = "TridentAKSAgentTesterReady"
 	}
 	s.node.Status.Conditions = []corev1.NodeCondition{{
 		Type:               corev1.NodeReady,

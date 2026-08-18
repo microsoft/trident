@@ -20,7 +20,7 @@ import (
 )
 
 // nebraskaTrack is the group's Track this proxy seeds. Now supplied to
-// trident-acl-agent per-request via the update-request annotation's `track`
+// trident-aks-agent per-request via the update-request annotation's `track`
 // field (see Track() and RunABUpdate's PatchStep.Track) rather than needing
 // to match DEFAULT_NEBRASKA_TRACK, since the agent no longer has any
 // config-file fallback for it.
@@ -33,7 +33,7 @@ const defaultTeamID = "d89342dc-9214-441d-a4af-bdd837a3b239"
 // noUpdateVersion is a sentinel package version used when Scenario.Available
 // is false. Leaving a channel with no package at all makes real Nebraska
 // return ErrNoPackageFound, which maps to "error-noPackageFound" - a hard
-// error trident-acl-agent's client treats as a failure, not "no update
+// error trident-aks-agent's client treats as a failure, not "no update
 // available". Seeding a package this far below any real image version
 // instead exercises Nebraska's actual semver-comparison path in
 // GetUpdatePackage and still cleanly yields "noupdate", since the
@@ -62,7 +62,7 @@ func LoadNebraskaScenario(path string) (*NebraskaScenario, error) {
 
 // NebraskaProxy wraps the real github.com/flatcar/nebraska/backend Omaha
 // server, backed by an ephemeral Postgres container that this proxy manages
-// itself, instead of a hand-rolled fake. This exercises trident-acl-agent
+// itself, instead of a hand-rolled fake. This exercises trident-aks-agent
 // against Nebraska's actual instance/event/update-grant state machine
 // (RegisterInstance, RegisterEvent, GetUpdatePackage's in-progress gating
 // and semver-driven grant/completion logic) rather than an approximation of
@@ -79,7 +79,7 @@ type NebraskaProxy struct {
 }
 
 // ExpectedUpdateStatusSequence is the ordered sequence of Nebraska instance
-// statuses trident-acl-agent's real update flow is expected to drive the
+// statuses trident-aks-agent's real update flow is expected to drive the
 // seeded instance through end-to-end: GetUpdatePackage grants the update
 // (UpdateGranted) on the first check, stage reports DownloadStarted/
 // DownloadFinished (Downloading/Downloaded), finalize reports Installed
@@ -94,7 +94,7 @@ var ExpectedUpdateStatusSequence = []int{
 	api.InstanceStatusComplete,
 }
 
-// AppID returns the DB-generated application ID trident-acl-agent must be
+// AppID returns the DB-generated application ID trident-aks-agent must be
 // configured with. Real Nebraska generates application IDs server-side
 // (admin.Service.AddApp does not accept a caller-supplied ID), so callers
 // must read this back after ListenAndServe seeds the app, rather than
@@ -103,7 +103,7 @@ func (p *NebraskaProxy) AppID() string {
 	return p.appID
 }
 
-// Track returns the group Track trident-acl-agent must be configured with
+// Track returns the group Track trident-aks-agent must be configured with
 // (via the update-request annotation's `track` field), matching the group
 // this proxy seeded in seed().
 func (p *NebraskaProxy) Track() string {
@@ -189,7 +189,7 @@ func (p *NebraskaProxy) seed() error {
 	svc := admin.NewService(p.api.Reads())
 
 	app, err := svc.AddApp(&api.Application{
-		Name:   "trident-acl-agent-storm-test",
+		Name:   "trident-aks-agent-storm-test",
 		TeamID: defaultTeamID,
 	})
 	if err != nil {
@@ -216,8 +216,8 @@ func (p *NebraskaProxy) seed() error {
 	// The package.hash column is varchar(64) (sized for base64 SHA1 or hex
 	// SHA256, what real Nebraska/Omaha packages normally carry), but
 	// Scenario.SHA384 is a 96-character hex string and would overflow it.
-	// trident-acl-agent's Package wire struct doesn't even parse this field
-	// (see crates/trident-acl-agent/src/nebraska/wire.rs) - image integrity
+	// trident-aks-agent's Package wire struct doesn't even parse this field
+	// (see crates/trident-agent-core/src/nebraska/wire.rs) - image integrity
 	// is checked via the COSI metadata instead - so it's safe to leave
 	// unset here rather than truncate it into something misleading.
 	pkg, err := svc.AddPackage(&api.Package{
@@ -263,7 +263,7 @@ func (p *NebraskaProxy) seed() error {
 // Nebraska's instance_status_history table. There's no dbreads query for
 // "history across all instances of an app" (only a single-instance one that
 // takes an instance ID, which storm doesn't predict - it's derived from
-// hashing the VM's /etc/machine-id, see crates/trident-acl-agent/src/lib.rs),
+// hashing the VM's /etc/machine-id, see crates/trident-agent-core/src/lib.rs),
 // so this queries the table by application_id directly instead, using a
 // fresh connection to the same ephemeral Postgres container ListenAndServe
 // started.
@@ -298,7 +298,7 @@ func (p *NebraskaProxy) StatusHistory() ([]int, error) {
 // instance_status_history exactly matches want, in order. Nebraska only ever
 // appends a new history row when an instance's status actually changes (see
 // updateInstanceData in the vendored api package), so this is a stable,
-// duplicate-free ordering to assert against - it fails if trident-acl-agent
+// duplicate-free ordering to assert against - it fails if trident-aks-agent
 // skips a status transition, reports one out of order, or a status update
 // silently gets rejected/ignored by Nebraska (e.g. sent while no update is
 // in progress).

@@ -1,12 +1,12 @@
-package aclagent
+package aksagent
 
 import (
 	"fmt"
 	"os"
 	"path/filepath"
 
-	stormtests "tridenttools/storm/aclagent/tests"
-	stormaclconfig "tridenttools/storm/aclagent/utils/config"
+	stormtests "tridenttools/storm/aksagent/tests"
+	stormaksconfig "tridenttools/storm/aksagent/utils/config"
 	stormvmazure "tridenttools/storm/utils/vm/azure"
 	stormvmconfig "tridenttools/storm/utils/vm/config"
 	stormvmqemu "tridenttools/storm/utils/vm/qemu"
@@ -15,33 +15,33 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type TridentAclAgentScenario struct {
-	args TridentAclAgentScenarioArgs
+type TridentAksAgentScenario struct {
+	args TridentAksAgentScenarioArgs
 }
 
-type TridentAclAgentScenarioArgs struct {
-	stormaclconfig.TestConfig `embed:""`
+type TridentAksAgentScenarioArgs struct {
+	stormaksconfig.TestConfig `embed:""`
 	stormvmconfig.VMConfig    `embed:""`
 	stormvmqemu.QemuConfig    `embed:""`
 	stormvmazure.AzureConfig  `embed:""`
 	TestCaseToRun             string `help:"Name of the test case to run. If not specified, all test cases will be run." default:"all"`
 }
 
-func (s *TridentAclAgentScenario) Name() string                             { return "aclagent" }
-func (s *TridentAclAgentScenario) Args() any                                { return &s.args }
-func (s *TridentAclAgentScenario) Tags() []string                           { return []string{} }
-func (s *TridentAclAgentScenario) StagePaths() []string                     { return []string{} }
-func (s *TridentAclAgentScenario) RequiredFiles() []string                  { return nil }
-func (s TridentAclAgentScenario) Setup(ctx storm.SetupCleanupContext) error { return nil }
+func (s *TridentAksAgentScenario) Name() string                             { return "aksagent" }
+func (s *TridentAksAgentScenario) Args() any                                { return &s.args }
+func (s *TridentAksAgentScenario) Tags() []string                           { return []string{} }
+func (s *TridentAksAgentScenario) StagePaths() []string                     { return []string{} }
+func (s *TridentAksAgentScenario) RequiredFiles() []string                  { return nil }
+func (s TridentAksAgentScenario) Setup(ctx storm.SetupCleanupContext) error { return nil }
 
-func (s *TridentAclAgentScenario) Cleanup(ctx storm.SetupCleanupContext) error {
+func (s *TridentAksAgentScenario) Cleanup(ctx storm.SetupCleanupContext) error {
 	if s.args.TestConfig.ForceCleanup {
 		_ = stormtests.CleanupVM(s.args.TestConfig, stormvmconfig.AllVMConfig{VMConfig: s.args.VMConfig, QemuConfig: s.args.QemuConfig, AzureConfig: s.args.AzureConfig})
 	}
 	return nil
 }
 
-func (s *TridentAclAgentScenario) RegisterTestCases(r storm.TestRegistrar) error {
+func (s *TridentAksAgentScenario) RegisterTestCases(r storm.TestRegistrar) error {
 	r.RegisterTestCase("deploy-vm", s.deployVm)
 	r.RegisterTestCase("check-deployment", s.checkDeployment)
 	r.RegisterTestCase("run-ab-update", s.runABUpdate)
@@ -51,7 +51,7 @@ func (s *TridentAclAgentScenario) RegisterTestCases(r storm.TestRegistrar) error
 	return nil
 }
 
-func (s *TridentAclAgentScenario) runTestCase(tc storm.TestCase, testFunc func(stormaclconfig.TestConfig, stormvmconfig.AllVMConfig) error) error {
+func (s *TridentAksAgentScenario) runTestCase(tc storm.TestCase, testFunc func(stormaksconfig.TestConfig, stormvmconfig.AllVMConfig) error) error {
 	if tc.Name() != s.args.TestCaseToRun && s.args.TestCaseToRun != "all" {
 		tc.Skip(fmt.Sprintf("Test case '%s' does not align to TestCaseToRun '%s'", tc.Name(), s.args.TestCaseToRun))
 		return nil
@@ -72,21 +72,21 @@ func (s *TridentAclAgentScenario) runTestCase(tc storm.TestCase, testFunc func(s
 	return nil
 }
 
-func (s *TridentAclAgentScenario) deployVm(tc storm.TestCase) error {
+func (s *TridentAksAgentScenario) deployVm(tc storm.TestCase) error {
 	return s.runTestCase(tc, stormtests.DeployVM)
 }
-func (s *TridentAclAgentScenario) checkDeployment(tc storm.TestCase) error {
+func (s *TridentAksAgentScenario) checkDeployment(tc storm.TestCase) error {
 	return s.runTestCase(tc, stormtests.CheckDeployment)
 }
-func (s *TridentAclAgentScenario) runABUpdate(tc storm.TestCase) error {
+func (s *TridentAksAgentScenario) runABUpdate(tc storm.TestCase) error {
 	return s.runTestCase(tc, stormtests.RunABUpdate)
 }
-func (s *TridentAclAgentScenario) runRollback(tc storm.TestCase) error {
+func (s *TridentAksAgentScenario) runRollback(tc storm.TestCase) error {
 	return s.runTestCase(tc, stormtests.RunRollback)
 }
-func (s *TridentAclAgentScenario) collectLogs(tc storm.TestCase) error {
+func (s *TridentAksAgentScenario) collectLogs(tc storm.TestCase) error {
 	return s.runTestCase(tc, stormtests.FetchLogs)
 }
-func (s *TridentAclAgentScenario) cleanupVm(tc storm.TestCase) error {
+func (s *TridentAksAgentScenario) cleanupVm(tc storm.TestCase) error {
 	return s.runTestCase(tc, stormtests.CleanupVM)
 }

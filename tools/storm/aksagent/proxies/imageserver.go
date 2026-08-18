@@ -9,9 +9,9 @@ import (
 )
 
 // ImageServer serves a single OS update image (e.g. a .cosi file) over plain
-// HTTP so trident-acl-agent's fake Nebraska endpoint can point tridentd at a
+// HTTP so trident-aks-agent's fake Nebraska endpoint can point tridentd at a
 // real, downloadable artifact during A/B update staging. tridentd downloads
-// the image itself (not the acl-agent), so this just needs to serve the raw
+// the image itself (not the aks-agent), so this just needs to serve the raw
 // bytes at a stable path.
 type ImageServer struct {
 	// ImagePath is the local filesystem path to the image file to serve.

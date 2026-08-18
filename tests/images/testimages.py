@@ -156,10 +156,10 @@ DEFINED_IMAGES: List[ImageConfig] = [
         ssh_key="files/id_rsa.pub",
     ),
     ImageConfig(
-        "trident-vm-acl-agent-update-testimage",
+        "trident-vm-aks-agent-update-testimage",
         base_image=BaseImage.QEMU_GUEST,
         config="trident-vm-testimage",
-        config_file="base/updateimg-acl-agent.yaml",
+        config_file="base/updateimg-aks-agent.yaml",
         requires_ukify=True,
         ssh_key="files/id_rsa.pub",
     ),

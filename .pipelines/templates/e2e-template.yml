@@ -270,8 +270,8 @@ stages:
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
       testSecureBoot: ${{ parameters.testSecureBoot }}
 
-  # Validate trident-acl-agent (storm A/B update scenario against a real tridentd)
-  - template: stages/testing_acl_agent/trident-acl-agent-test.yml
+  # Validate trident-aks-agent (storm A/B update scenario against a real tridentd)
+  - template: stages/testing_aks_agent/trident-aks-agent-test.yml
     parameters:
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 

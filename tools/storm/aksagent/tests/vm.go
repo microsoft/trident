@@ -3,18 +3,18 @@ package tests
 import (
 	"fmt"
 
-	stormaclconfig "tridenttools/storm/aclagent/utils/config"
+	stormaksconfig "tridenttools/storm/aksagent/utils/config"
 	stormvm "tridenttools/storm/utils/vm"
 	stormvmconfig "tridenttools/storm/utils/vm/config"
 
 	"github.com/sirupsen/logrus"
 )
 
-func CheckDeployment(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig) error {
+func CheckDeployment(testConfig stormaksconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig) error {
 	return stormvm.CheckDeployment(vmConfig, testConfig.ExpectedInitialVolume)
 }
 
-func DeployVM(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig) error {
+func DeployVM(testConfig stormaksconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig) error {
 	if vmConfig.VMConfig.Platform == stormvmconfig.PlatformQEMU {
 		logrus.Tracef("Deploying VM on QEMU platform with name '%s'", vmConfig.VMConfig.Name)
 		if err := vmConfig.QemuConfig.DeployQemuVM(vmConfig.VMConfig.Name, testConfig.ArtifactsDir, testConfig.OutputPath, testConfig.Verbose); err != nil {
@@ -29,7 +29,7 @@ func DeployVM(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.AllVM
 	return nil
 }
 
-func CleanupVM(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig) error {
+func CleanupVM(testConfig stormaksconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig) error {
 	if vmConfig.VMConfig.Platform == stormvmconfig.PlatformAzure {
 		if err := vmConfig.AzureConfig.CleanupAzureVM(); err != nil {
 			return fmt.Errorf("failed to cleanup Azure VM: %w", err)

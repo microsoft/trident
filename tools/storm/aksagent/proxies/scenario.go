@@ -22,16 +22,16 @@ type PatchStep struct {
 	OperationID          string `yaml:"operation-id,omitempty" json:"operationId,omitempty"`
 	Operation            string `yaml:"operation,omitempty" json:"operation,omitempty"`
 	TargetOSImageVersion string `yaml:"target-os-image-version,omitempty" json:"targetVersion,omitempty"`
-	// Server overrides trident-acl-agent's configured Nebraska endpoint for
+	// Server overrides trident-aks-agent's configured Nebraska endpoint for
 	// this request. The agent no longer has a config file at all (see
-	// prepareVmForAclAgent), so any request that reaches Nebraska (stage,
+	// prepareVmForAksAgent), so any request that reaches Nebraska (stage,
 	// finalize) must set this field.
 	Server string `yaml:"server,omitempty" json:"server,omitempty"`
-	// AppId overrides trident-acl-agent's configured Nebraska app_id for
+	// AppId overrides trident-aks-agent's configured Nebraska app_id for
 	// this request, for the same reason Server does: there is no config
 	// file to source it from.
 	AppId string `yaml:"app-id,omitempty" json:"appId,omitempty"`
-	// Track overrides trident-acl-agent's configured Nebraska track for
+	// Track overrides trident-aks-agent's configured Nebraska track for
 	// this request, for the same reason Server/AppId do: there is no
 	// config file to source it from.
 	Track string `yaml:"track,omitempty" json:"track,omitempty"`

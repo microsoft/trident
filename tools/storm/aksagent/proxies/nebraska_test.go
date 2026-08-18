@@ -45,9 +45,9 @@ func postUpdateCheck(t *testing.T, addr, appID, machineID string) string {
 }
 
 // postEvent posts a bare progress/terminal event, mirroring the (eventtype,
-// eventresult) requests trident-acl-agent's nebraska::Client sends during
+// eventresult) requests trident-aks-agent's nebraska::Client sends during
 // stage/finalize/post-reboot-commit (see
-// crates/trident-acl-agent/src/nebraska/event.rs for the whitelisted pairs).
+// crates/trident-agent-core/src/nebraska/event.rs for the whitelisted pairs).
 func postEvent(t *testing.T, addr, appID, machineID string, eventType, eventResult int) string {
 	t.Helper()
 	req := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
@@ -77,7 +77,7 @@ func postEvent(t *testing.T, addr, appID, machineID string, eventType, eventResu
 // validates the mock's seeding logic (app/package/channel/group, track
 // matching, semver-driven grant/noupdate) independently of the full
 // storm-trident VM suite, which additionally exercises the real
-// trident-acl-agent binary end-to-end.
+// trident-aks-agent binary end-to-end.
 func TestNebraskaProxy(t *testing.T) {
 	requireDocker(t)
 
@@ -145,7 +145,7 @@ func TestNebraskaProxy(t *testing.T) {
 		machineID := "status-history-machine"
 
 		// Drive the instance through exactly the same request sequence a
-		// real trident-acl-agent run-ab-update does: an updatecheck grants
+		// real trident-aks-agent run-ab-update does: an updatecheck grants
 		// the update, then stage/finalize/post-reboot-commit each report one
 		// progress or terminal event (see event.rs's whitelisted pairs).
 		postUpdateCheck(t, addr, p.AppID(), machineID)
