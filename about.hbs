@@ -1,0 +1,21 @@
+THIRD-PARTY SOFTWARE NOTICES AND INFORMATION
+============================================
+
+The Trident binaries statically link the third-party open-source Rust crates
+listed below. Their required license notices are reproduced here in full.
+
+This file is generated from Cargo.lock by `cargo-about`; do not edit it by hand.
+Run `make update-notice` to regenerate it after changing dependencies.
+
+{{#each licenses}}
+--------------------------------------------------------------------------------
+{{{name}}} ({{{id}}})
+
+Used by:
+{{#each used_by}}
+    - {{{crate.name}}} {{crate.version}}
+{{/each}}
+
+{{{text}}}
+{{/each}}
+--------------------------------------------------------------------------------
