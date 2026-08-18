@@ -169,6 +169,7 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
 
         let monitored_reader = ReadMonitor::new(
             reader,
+            id.clone(),
             image_file.compressed_size,
             threshold_reporting,
             reporting_interval,
