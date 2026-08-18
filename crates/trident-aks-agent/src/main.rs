@@ -2,19 +2,30 @@ use anyhow::Context;
 use clap::Parser;
 use log::{LevelFilter, Log, Metadata, Record};
 
-use trident_acl_agent::{config::AgentConfig, run_omaha_only};
 use trident_agent_core::{check_nebraska_reachable, trident::TridentClient, IdSource};
+use trident_aks_agent::{config::AgentConfig, k8s::NodeClient, orchestrator::Orchestrator};
 
-/// Module/target prefixes for the underlying HTTP/gRPC client stack. These
-/// crates emit very verbose `log`-facade tracing (connection setup,
-/// per-frame HTTP2 detail) that is rarely useful at the same verbosity as
-/// the agent's own logic, so it's filtered independently via
-/// `--network-verbosity`.
-const NETWORK_LOG_TARGETS: &[&str] = &["hyper", "h2", "tower", "tonic", "reqwest", "rustls"];
+/// Module/target prefixes for the underlying HTTP/gRPC/watch client stack.
+/// These crates emit very verbose `log`-facade tracing (connection setup,
+/// per-frame HTTP2 detail, watch reconnect churn) that is rarely useful at
+/// the same verbosity as the agent's own orchestration logic, so it's
+/// filtered independently via `--network-verbosity`.
+const NETWORK_LOG_TARGETS: &[&str] = &[
+    "hyper",
+    "h2",
+    "tower",
+    "tonic",
+    "reqwest",
+    "rustls",
+    "kube",
+    "kube_client",
+    "kube_runtime",
+];
 
 /// A `log::Log` wrapper that applies a separate level filter to the noisy
-/// HTTP/gRPC client crates (see [`NETWORK_LOG_TARGETS`]) while leaving every
-/// other target (the agent's own code) at the main `--verbosity` level.
+/// HTTP/gRPC/watch client crates (see [`NETWORK_LOG_TARGETS`]) while leaving
+/// every other target (the agent's own code) at the main `--verbosity`
+/// level.
 struct FilteredLogger<L> {
     inner: L,
     verbosity: LevelFilter,
@@ -55,18 +66,19 @@ struct Args {
     #[arg(global = true, short, long, default_value_t = LevelFilter::Debug)]
     verbosity: LevelFilter,
 
-    /// Logging verbosity for the underlying HTTP/gRPC client stack (hyper,
-    /// h2, tower, tonic, reqwest, rustls). Kept separate from `--verbosity`
-    /// because it can be extremely noisy (per-frame HTTP2 detail)
-    /// [OFF, ERROR, WARN, INFO, DEBUG, TRACE].
+    /// Logging verbosity for the underlying HTTP/gRPC/watch client stack
+    /// (hyper, h2, tower, tonic, reqwest, rustls, kube). Kept separate from
+    /// `--verbosity` because it can be extremely noisy (per-frame HTTP2
+    /// detail, watch reconnect churn) [OFF, ERROR, WARN, INFO, DEBUG, TRACE].
     #[arg(global = true, long, default_value_t = LevelFilter::Warn)]
     network_verbosity: LevelFilter,
 
     /// Validate connectivity to a single dependency and exit immediately,
-    /// instead of running the agent. Useful for manual on-node diagnostics
-    /// without running the full Omaha flow. Exits with status 0 if the
-    /// connection could be established, non-zero (with an error message)
-    /// otherwise.
+    /// instead of running the agent. Useful for troubleshooting one
+    /// connection in isolation (e.g. a systemd ExecStartPre check, or manual
+    /// diagnostics on-node) without running the full orchestrator loop.
+    /// Exits with status 0 if the connection could be established, non-zero
+    /// (with an error message) otherwise.
     #[arg(long, value_enum)]
     validate_connection: Option<ConnectionTarget>,
 }
@@ -74,6 +86,10 @@ struct Args {
 /// A single dependency `--validate-connection` can check.
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]
 enum ConnectionTarget {
+    /// Validates reachability of the Kubernetes API server by fetching this
+    /// node's own Node object (the same access the agent's reconcile loop
+    /// already requires).
+    Kubernetes,
     /// Validates reachability of tridentd by connecting to its gRPC Unix
     /// socket. Connecting is sufficient - no RPC call is needed, since the
     /// connection itself fails immediately if nothing is listening.
@@ -95,6 +111,30 @@ async fn validate_connection(
     config: &AgentConfig,
 ) -> Result<(), anyhow::Error> {
     match target {
+        ConnectionTarget::Kubernetes => {
+            let client = NodeClient::new(&config.kubernetes)
+                .await
+                .context("failed to build Kubernetes client")?;
+            // Report the actually-resolved server (kubeconfig's own server,
+            // unless overridden by kubernetes.api_server), not a value
+            // guessed from config - the two only match when an override is
+            // set.
+            let cluster_url = client.cluster_url();
+            client
+                .get_node(&config.kubernetes.node_name)
+                .await
+                .with_context(|| {
+                    format!(
+                        "failed to reach Kubernetes API server at {} (get Node {:?})",
+                        cluster_url, config.kubernetes.node_name
+                    )
+                })?;
+            log::info!(
+                "kubernetes: reached API server at {} and fetched Node {:?}",
+                cluster_url,
+                config.kubernetes.node_name
+            );
+        }
         ConnectionTarget::Tridentd => {
             TridentClient::connect(&config.trident.socket)
                 .await
@@ -106,7 +146,7 @@ async fn validate_connection(
         ConnectionTarget::Nebraska => {
             let endpoint = config.nebraska.endpoint.clone().ok_or_else(|| {
                 anyhow::anyhow!(
-                    "nebraska.endpoint is not configured (set TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT)"
+                    "nebraska.endpoint is not configured (set TRIDENT_AKS_AGENT_NEBRASKA_ENDPOINT)"
                 )
             })?;
             let app_id = config.nebraska.app_id.clone();
@@ -178,5 +218,5 @@ async fn main() -> Result<(), anyhow::Error> {
         return validate_connection(target, &config).await;
     }
 
-    run_omaha_only(&config).await
+    Orchestrator::from_config(config).await?.run().await
 }

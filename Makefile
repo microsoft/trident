@@ -161,12 +161,12 @@ clean-coverage:
 	rm -rf target/coverage/profraw
 	rm -rf target/lcov.info
 
-target/release/trident target/release/trident-acl-agent: .cargo/config | version-vars
+target/release/trident target/release/trident-acl-agent target/release/trident-aks-agent: .cargo/config | version-vars
 	@OPENSSL_STATIC=1 \
 		OPENSSL_LIB_DIR=$(shell dirname `whereis libssl.a | cut -d" " -f2`) \
 		OPENSSL_INCLUDE_DIR=/usr/include/openssl \
 		TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
-		cargo build --release --features dangerous-options,grpc-preview -p trident -p trident-acl-agent
+		cargo build --release --features dangerous-options,grpc-preview -p trident -p trident-acl-agent -p trident-aks-agent
 
 ARTIFACTS_DIR="artifacts"
 
@@ -189,7 +189,7 @@ clean-builder-image: azl-version-vars
 	@echo "Removing local image $(BUILDER_IMAGE)..."
 	@docker rmi $(BUILDER_IMAGE) || echo "Image $(BUILDER_IMAGE) not found locally."
 
-target/$(DISTRO)/release/trident target/$(DISTRO)/release/trident-acl-agent: azl-version-vars version-vars builder-image
+target/$(DISTRO)/release/trident target/$(DISTRO)/release/trident-acl-agent target/$(DISTRO)/release/trident-aks-agent: azl-version-vars version-vars builder-image
 	@mkdir -p bin/
 	@mkdir -p target/$(DISTRO)/
 	@echo "Building Trident for Azure Linux ($(DISTRO)) using Docker image $(BUILDER_IMAGE)..."
@@ -202,7 +202,8 @@ target/$(DISTRO)/release/trident target/$(DISTRO)/release/trident-acl-agent: azl
 			--release \
 			--features dangerous-options,grpc-preview \
 			-p trident \
-			-p trident-acl-agent
+			-p trident-acl-agent \
+			-p trident-aks-agent
 
 # This will do a proper build on azl3, exactly as the pipelines would, with the custom registry and all.
 bin/trident-rpms-%.tar.gz: packaging/docker/Dockerfile.full packaging/systemd/*.service packaging/rpm/trident.spec packaging/selinux-policy-trident/* LICENSE NOTICE version-vars azl-version-vars
@@ -239,13 +240,16 @@ bin/trident-rpms-%.tar.gz: packaging/docker/Dockerfile.full packaging/systemd/*.
 # backward compatibility; other distros use the in-container distro build.
 TRIDENT_RPM_BIN_DIR := $(if $(filter azl3,$(DISTRO)),target/release,target/$(DISTRO)/release)
 
-bin/trident-rpms.tar.gz: azl-version-vars packaging/docker/Dockerfile.azl packaging/systemd/*.service packaging/rpm/trident.spec $(TRIDENT_RPM_BIN_DIR)/trident $(TRIDENT_RPM_BIN_DIR)/trident-acl-agent packaging/selinux-policy-trident/* LICENSE NOTICE
+bin/trident-rpms.tar.gz: azl-version-vars packaging/docker/Dockerfile.azl packaging/systemd/*.service packaging/rpm/trident.spec $(TRIDENT_RPM_BIN_DIR)/trident $(TRIDENT_RPM_BIN_DIR)/trident-acl-agent $(TRIDENT_RPM_BIN_DIR)/trident-aks-agent packaging/selinux-policy-trident/* LICENSE NOTICE
 	@mkdir -p bin/
 	@if [ ! -f bin/trident ] || ! cmp -s $(TRIDENT_RPM_BIN_DIR)/trident bin/trident; then \
 		cp $(TRIDENT_RPM_BIN_DIR)/trident bin/trident; \
 	fi
 	@if [ ! -f bin/trident-acl-agent ] || ! cmp -s $(TRIDENT_RPM_BIN_DIR)/trident-acl-agent bin/trident-acl-agent; then \
 		cp $(TRIDENT_RPM_BIN_DIR)/trident-acl-agent bin/trident-acl-agent; \
+	fi
+	@if [ ! -f bin/trident-aks-agent ] || ! cmp -s $(TRIDENT_RPM_BIN_DIR)/trident-aks-agent bin/trident-aks-agent; then \
+		cp $(TRIDENT_RPM_BIN_DIR)/trident-aks-agent bin/trident-aks-agent; \
 	fi
 	@docker build -t trident/trident-build:latest \
 		--build-arg TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
@@ -651,14 +655,14 @@ IS_UBUNTU_24_OR_NEWER := $(shell \
 	[ "$$ID" = "ubuntu" ] && [ "$${VERSION_ID%%.*}" -ge 24 ] && echo yes)
 
 RUN_NETLAUNCH_TRIDENT_BIN ?= $(if $(filter yes,$(IS_UBUNTU_24_OR_NEWER)),target/$(DISTRO)/release/trident,target/release/trident)
-RUN_NETLAUNCH_LAUNCHER_BIN ?= $(if $(filter yes,$(IS_UBUNTU_24_OR_NEWER)),target/$(DISTRO)/release/trident-acl-agent,target/release/trident-acl-agent)
+RUN_NETLAUNCH_LAUNCHER_BIN ?= $(if $(filter yes,$(IS_UBUNTU_24_OR_NEWER)),target/$(DISTRO)/release/trident-aks-agent,target/release/trident-aks-agent)
 
 .PHONY: run-netlaunch run-netlaunch-stream
 run-netlaunch: $(NETLAUNCH_CONFIG) $(TRIDENT_CONFIG) $(NETLAUNCH_ISO) bin/netlaunch validate $(RUN_NETLAUNCH_TRIDENT_BIN) $(RUN_NETLAUNCH_LAUNCHER_BIN)
 	@echo "Using trident binary: $(RUN_NETLAUNCH_TRIDENT_BIN)"
 	@mkdir -p artifacts/test-image
 	@cp $(RUN_NETLAUNCH_TRIDENT_BIN) artifacts/test-image/trident
-	@cp $(RUN_NETLAUNCH_LAUNCHER_BIN) artifacts/test-image/trident-acl-agent
+	@cp $(RUN_NETLAUNCH_LAUNCHER_BIN) artifacts/test-image/trident-aks-agent
 	@bin/netlaunch \
 	    --trident-binary $(RUN_NETLAUNCH_TRIDENT_BIN) \
 	    --launcher-binary $(RUN_NETLAUNCH_LAUNCHER_BIN) \

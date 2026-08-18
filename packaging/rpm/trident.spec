@@ -232,21 +232,37 @@ Summary:        Trident ACL Agent
 Requires:       %{name} = %{version}-%{release}
 
 %description acl-agent
-The Trident ACL Agent triggers updates of ACL images.
+The Trident ACL Agent is a one-shot, Omaha/Nebraska-driven client that
+triggers updates of ACL images. It has no systemd unit and is configured
+entirely via TRIDENT_ACL_AGENT_* environment variables, intended to be
+invoked directly by an external scheduler.
 
 %files acl-agent
 %license LICENSE NOTICE
 %{_bindir}/%{name}-acl-agent
-%{_unitdir}/%{name}-acl-agent.service
 
-%post acl-agent
-%systemd_post %{name}-acl-agent.service
+%package aks-agent
+Summary:        Trident AKS Agent
+Requires:       %{name} = %{version}-%{release}
 
-%preun acl-agent
-%systemd_preun %{name}-acl-agent.service
+%description aks-agent
+The Trident AKS Agent is an AKS-RP-facing sidecar that watches this node's
+Kubernetes update-request annotation and drives Trident stage/finalize/
+rollback/commit operations against tridentd, reporting progress back via
+annotations. It ships with a systemd unit.
 
-%postun acl-agent
-%systemd_postun_with_restart %{name}-acl-agent.service
+%files aks-agent
+%{_bindir}/%{name}-aks-agent
+%{_unitdir}/%{name}-aks-agent.service
+
+%post aks-agent
+%systemd_post %{name}-aks-agent.service
+
+%preun aks-agent
+%systemd_preun %{name}-aks-agent.service
+
+%postun aks-agent
+%systemd_postun_with_restart %{name}-aks-agent.service
 %endif
 
 # ------------------------------------------------------------------------------
@@ -280,7 +296,7 @@ export TRIDENT_VERSION="%{version}-%{release}"
 export TRIDENT_VERSION="%{trident_version}"
 %endif
 %if %{defined rpm_ver}
-cargo build --release -p trident -p trident-acl-agent
+cargo build --release -p trident -p trident-acl-agent -p trident-aks-agent
 %else
 cargo build --release -p trident
 %endif
@@ -315,7 +331,8 @@ cargo test --all --no-fail-fast -- --skip test_run_systemd_check --skip test_pre
 install -D -m 755 target/release/%{name} %{buildroot}/%{_bindir}/%{name}
 %if %{defined rpm_ver}
 install -D -m 755 target/release/%{name}-acl-agent %{buildroot}/%{_bindir}/%{name}-acl-agent
-install -D -m 644 packaging/systemd/%{name}-acl-agent.service %{buildroot}%{_unitdir}/%{name}-acl-agent.service
+install -D -m 755 target/release/%{name}-aks-agent %{buildroot}/%{_bindir}/%{name}-aks-agent
+install -D -m 644 packaging/systemd/%{name}-aks-agent.service %{buildroot}%{_unitdir}/%{name}-aks-agent.service
 %endif
 
 # Copy Trident SELinux policy module to /usr/share/selinux/packages

@@ -63,3 +63,16 @@ if [ -n "$ACL_AGENT_RPM" ]; then
 
   mv "$ACL_TMP_DIR/usr/bin/trident-acl-agent" "$OUTPUT_PATH"
 fi
+
+# Extract trident-aks-agent binary from the aks-agent sub-package RPM
+AKS_AGENT_RPM=$(find "$RPM_DIR" | grep -P "trident-aks-agent-\d.*\.${DISTRO}\.${RPM_ARCH}\.rpm" | head -n 1 || true)
+if [ -n "$AKS_AGENT_RPM" ]; then
+  AKS_TMP_DIR=$(mktemp -d)
+  cp "$AKS_AGENT_RPM" "$AKS_TMP_DIR/trident-aks-agent.rpm"
+
+  pushd "$AKS_TMP_DIR"
+  rpm2cpio trident-aks-agent.rpm | cpio -idmv
+  popd
+
+  mv "$AKS_TMP_DIR/usr/bin/trident-aks-agent" "$OUTPUT_PATH"
+fi

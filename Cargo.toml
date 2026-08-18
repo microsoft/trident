@@ -5,6 +5,8 @@ default-members = ["crates/trident"]
 members = [
     "crates/docbuilder",
     "crates/trident-acl-agent",
+    "crates/trident-agent-core",
+    "crates/trident-aks-agent",
     "crates/osmodifier",
     "crates/osutils",
     "crates/pytest_gen",

@@ -26,7 +26,7 @@ use trident_proto::v1::{
     StatusCode as ProtoStatusCode, TridentError, UpdateRequest,
 };
 
-use crate::trident::TridentClient;
+use trident_agent_core::trident::TridentClient;
 
 /// Canned outcome a `MockTridentd` should return for a given RPC call.
 #[derive(Clone, Debug)]

@@ -302,7 +302,9 @@ issues that **is** worth flagging in review.
 | `osutils`               | OS-interaction wrappers  | Thin, single-purpose wrappers around system tools/syscalls (`lsblk`, `mkfs`, `mount`, `systemd`, `grub`, `repart`, `chroot`, `efivar`, …). **No business logic, no policy decisions.**                                                                                    | `sysdefs`, `trident_api`           |
 | `osmodifier`            | OS configuration applier | Native-Rust replacement for the Go `osmodifier`; applies OS-config changes (hostname, modules, services, users, selinux, grub) under a chrooted root.                                                                                                                     | (largely standalone)               |
 | `trident`               | Business logic / binary  | The actual servicing engine — orchestrator, subsystems (`storage`, `osconfig`, `network`, `selinux`, `extensions`, `initrd`, `esp`, `management`, `hooks`), `engine` (clean install / A-B / runtime update / rollback), CLI, server, datastore, logging, gRPC client.     | everything below                   |
-| `trident-acl-agent`     | Update client (Harpoon)  | Omaha-protocol client that fetches updated `HostConfiguration` documents for Trident.                                                                                                                                                                                     | `trident-proto`                    |
+| `trident-agent-core`    | Shared agent plumbing    | Nebraska/Omaha protocol client, tridentd gRPC client wrapper, machine-id/hostname helpers. Shared by both node-agent binaries below.                                                                                                                                      | `trident-proto`                    |
+| `trident-acl-agent`     | Update client            | One-shot, Omaha/Nebraska-driven client that fetches updated `HostConfiguration` documents for Trident. No systemd unit; configured via env vars, invoked by an external scheduler.                                                                                       | `trident-agent-core`, `trident-proto` |
+| `trident-aks-agent`     | Update client            | AKS-RP-facing sidecar with a systemd unit. Watches this node's Kubernetes update-request annotation and drives Trident stage/finalize/rollback/commit over gRPC, reporting progress back via annotations.                                                                | `trident-agent-core`, `trident-proto` |
 | `docbuilder`            | Tooling                  | Builds markdown docs from the `HostConfiguration` schema, the CLI definitions, and architecture pages. **Not on the runtime path.**                                                                                                                                       | `trident_api` (with feature flags) |
 | `pytest` / `pytest_gen` | Test tooling             | Proc-macro + runtime that lets Rust functions register themselves as Python `pytest` cases for functional/E2E test discovery.                                                                                                                                             | —                                  |
 
@@ -345,11 +347,14 @@ Apply these questions in order; stop at the first "yes":
   not execute servicing, perform I/O, or know about internal subsystems. If
   you're adding I/O or a workflow step to `trident_api`, it belongs in
   `trident` instead.
-- **`trident-acl-agent` (`harpoon`) is standalone.** It is a separate binary
-  that talks to Trident over the gRPC contract; do not couple it to
-  `trident`'s internals.
+- **`trident-acl-agent` and `trident-aks-agent` are standalone.** They are
+  separate binaries that talk to Trident over the gRPC contract; do not
+  couple them to `trident`'s internals. Logic shared between them (the
+  Nebraska/Omaha client, the tridentd gRPC client, machine-id helpers)
+  belongs in `trident-agent-core`, not duplicated in either binary crate.
 - **`docbuilder` and `pytest`/`pytest_gen` are dev-only.** They must not
-  appear in the runtime dependency graph of `trident` or `trident-acl-agent`.
+  appear in the runtime dependency graph of `trident`, `trident-acl-agent`,
+  or `trident-aks-agent`.
 
 ### Code reuse (do this before writing anything)
 

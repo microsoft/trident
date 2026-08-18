@@ -4010,6 +4010,51 @@ name = "trident-acl-agent"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
+ "env_logger 0.11.5",
+ "humantime",
+ "log",
+ "semver",
+ "systemd-journal-logger",
+ "tokio",
+ "trident-agent-core",
+ "trident-proto",
+ "url",
+]
+
+[[package]]
+name = "trident-agent-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures",
+ "humantime",
+ "indoc",
+ "log",
+ "mockito",
+ "osutils",
+ "quick-xml",
+ "reqwest",
+ "semver",
+ "serde",
+ "serde_json",
+ "serde_path_to_error",
+ "serde_yaml",
+ "sha2",
+ "sysdefs",
+ "thiserror 1.0.69",
+ "tokio",
+ "tonic",
+ "trident-proto",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "trident-aks-agent"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
  "chrono",
  "clap",
  "env_logger 0.11.5",
@@ -4023,14 +4068,10 @@ dependencies = [
  "maplit",
  "mockito",
  "osutils",
- "quick-xml",
- "reqwest",
  "semver",
  "serde",
  "serde_json",
- "serde_path_to_error",
  "serde_yaml",
- "sha2",
  "sysdefs",
  "systemd-journal-logger",
  "tempfile",
@@ -4039,6 +4080,7 @@ dependencies = [
  "tokio-stream",
  "tonic",
  "tower",
+ "trident-agent-core",
  "trident-proto",
  "url",
  "uuid",

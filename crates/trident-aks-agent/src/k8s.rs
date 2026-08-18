@@ -1,4 +1,5 @@
-//! Thin Kubernetes client wrapper for Harpoon's node self-patching protocol.
+//! Thin Kubernetes client wrapper for trident-aks-agent's node self-patching
+//! protocol.
 //!
 //! Implements the Node get/watch/patch access described in the current
 //! accepted design (`accepted-design-v3.md`).

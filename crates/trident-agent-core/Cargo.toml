@@ -1,0 +1,38 @@
+[package]
+name = "trident-agent-core"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Shared building blocks for Trident's node-agent binaries
+# (`trident-acl-agent`, `trident-aks-agent`): the Nebraska/Omaha update
+# client, the tridentd gRPC client, machine/hostname identity helpers, and
+# their shared error type. Contains no Kubernetes or annotation-protocol
+# code -- that is binary-specific and lives in `trident-aks-agent`.
+
+[dependencies]
+anyhow = { workspace = true, features = ["backtrace"] }
+futures = { workspace = true }
+humantime = { workspace = true }
+log = { workspace = true }
+quick-xml = { workspace = true, features = ["serialize"] }
+reqwest = { workspace = true }
+semver = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_path_to_error = { workspace = true }
+serde_yaml = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tonic = { workspace = true }
+url = { workspace = true, features = ["serde"] }
+uuid = { workspace = true, features = ["v4", "serde"] }
+
+sysdefs = { path = "../sysdefs" }
+osutils = { path = "../osutils" }
+trident-proto = { path = "../trident-proto" }
+
+[dev-dependencies]
+indoc = { workspace = true }
+mockito = { workspace = true }
+serde_json = { workspace = true }
