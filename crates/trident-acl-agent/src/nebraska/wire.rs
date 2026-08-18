@@ -14,6 +14,8 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
 
+use sysdefs::arch::SystemArchitecture;
+
 use super::{
     event::WirePair,
     status::{AppStatus, UpdateCheckStatus},
@@ -100,17 +102,8 @@ impl Os {
         Self {
             platform: "linux",
             version: String::new(),
-            arch: arch_str(),
+            arch: SystemArchitecture::current().into(),
         }
-    }
-}
-
-/// Returns the Omaha architecture string for the current build target.
-fn arch_str() -> &'static str {
-    if cfg!(target_arch = "aarch64") {
-        "arm64"
-    } else {
-        "amd64"
     }
 }
 

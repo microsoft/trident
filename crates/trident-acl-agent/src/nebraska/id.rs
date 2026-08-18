@@ -43,7 +43,7 @@ impl MachineId {
                 "machine id must not be empty".to_string(),
             ));
         }
-        if is_braced(&id) {
+        if is_braced_uuid(&id) {
             return Err(NebraskaError::InvalidRequest(format!(
                 "machine id '{id}' is brace-wrapped; Nebraska filters braced ids out of the UI \
                  and group statistics"
@@ -72,10 +72,13 @@ impl Display for MachineId {
     }
 }
 
-/// Returns whether the value is a brace-wrapped id (`{...}`), the shape Nebraska
-/// filters out.
-fn is_braced(id: &str) -> bool {
-    id.starts_with('{') && id.ends_with('}')
+/// Returns whether the value is a brace-wrapped UUID (`{...}`) — the exact shape
+/// Nebraska treats as a fake instance and filters out. A braced string whose
+/// contents are *not* a UUID is left alone, since Nebraska does not filter it.
+fn is_braced_uuid(id: &str) -> bool {
+    id.strip_prefix('{')
+        .and_then(|inner| inner.strip_suffix('}'))
+        .is_some_and(|inner| Uuid::parse_str(inner).is_ok())
 }
 
 #[cfg(test)]
@@ -103,6 +106,14 @@ mod tests {
             matches!(err, NebraskaError::InvalidRequest(_)),
             "got {err:?}"
         );
+    }
+
+    #[test]
+    fn new_accepts_braced_non_uuid() {
+        // Nebraska only filters brace-wrapped UUIDs; a braced value that is not a
+        // UUID is a legitimate id and must not be rejected.
+        let id = MachineId::new("{not-a-uuid}").unwrap();
+        assert_eq!(id.as_str(), "{not-a-uuid}");
     }
 
     #[test]

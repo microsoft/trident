@@ -22,9 +22,18 @@
 //! when a caller needs it. Until then, an async caller can also simply wrap a
 //! sync call in `tokio::task::spawn_blocking`.
 
+use std::time::Duration;
+
 use url::Url;
 
 use super::error::NebraskaError;
+
+/// Default per-request timeout. Bounds every Omaha round-trip so a stalled
+/// server turns into a retryable [`NebraskaError::Transport`] rather than
+/// hanging indefinitely — which is what makes the bounded retry in
+/// [`complete_after_reboot`](crate::nebraska::Client::complete_after_reboot)
+/// actually bounded.
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Performs the HTTP POST of an Omaha request body and returns the response body.
 ///
@@ -37,15 +46,37 @@ pub trait Transport {
 }
 
 /// The default [`Transport`], backed by a blocking `reqwest` client.
-#[derive(Debug, Default)]
+///
+/// Carries a per-request `timeout` (default [`DEFAULT_TIMEOUT`]) that is applied
+/// to every request the transport issues.
+#[derive(Debug)]
 pub struct ReqwestTransport {
     client: reqwest::blocking::Client,
+    timeout: Duration,
+}
+
+impl Default for ReqwestTransport {
+    fn default() -> Self {
+        Self {
+            client: reqwest::blocking::Client::new(),
+            timeout: DEFAULT_TIMEOUT,
+        }
+    }
 }
 
 impl ReqwestTransport {
-    /// Creates a new transport with a default `reqwest` client.
+    /// Creates a new transport with a default `reqwest` client and the default
+    /// [`DEFAULT_TIMEOUT`] per-request timeout.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Creates a transport that applies `timeout` to every request it issues.
+    pub fn with_timeout(timeout: Duration) -> Self {
+        Self {
+            timeout,
+            ..Self::default()
+        }
     }
 }
 
@@ -54,6 +85,7 @@ impl Transport for ReqwestTransport {
         self.client
             .post(endpoint.as_str())
             .header("Content-Type", "application/xml")
+            .timeout(self.timeout)
             .body(body.to_vec())
             .send()
             .map_err(|e| NebraskaError::Transport(e.to_string()))?
