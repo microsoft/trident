@@ -232,7 +232,7 @@ mod tests {
     };
     use tracing::{
         field::{Field, Visit},
-        span, Event, Subscriber,
+        Event, Subscriber,
     };
     use tracing_subscriber::{layer::Layer, layer::SubscriberExt, registry::LookupSpan};
 
@@ -271,6 +271,9 @@ mod tests {
         assert_eq!(monitor.sample_idx, 5); // wrapped around
     }
 
+    /// Recorded (metric_name, fields) pairs captured by `RecordingLayer`.
+    type EventLog = Arc<Mutex<Vec<(String, std::collections::BTreeMap<String, String>)>>>;
+
     /// A minimal tracing `Layer` that records the field values of every
     /// event carrying a `metric_name` field, keyed by metric name -> field
     /// name -> stringified value. Used to assert that `ReadMonitor` emits
@@ -278,7 +281,7 @@ mod tests {
     /// `logging::tracestream`'s own tests.
     #[derive(Default, Clone)]
     struct RecordingLayer {
-        events: Arc<Mutex<Vec<(String, std::collections::BTreeMap<String, String>)>>>,
+        events: EventLog,
     }
 
     #[derive(Default)]
@@ -338,7 +341,7 @@ mod tests {
                 Duration::from_secs(1),
             );
             let mut buf = vec![0u8; 4096];
-            monitor.read(&mut buf).unwrap();
+            monitor.read_exact(&mut buf).unwrap();
             // Drop explicitly to trigger the summary metric.
             drop(monitor);
         });
