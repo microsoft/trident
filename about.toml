@@ -8,16 +8,18 @@
 #
 #   make update-notice
 #
-# The accepted license set is kept in sync with `deny.toml`'s `[licenses] allow`
-# list; a new license appearing in the tree must be vetted and added to both.
+# The accepted set below mirrors the licenses permitted by `deny.toml` — its
+# `[licenses] allow` list plus any per-crate `exceptions` (e.g. Zlib for
+# const_format). Keep the two in sync: a new license appearing in the tree must
+# be vetted and added in both places.
 
-# SPDX identifiers accepted for third-party crates. Keep in sync with deny.toml.
+# SPDX identifiers accepted for third-party crates. Keep in sync with deny.toml
+# (its allow list plus per-crate exceptions).
 accepted = [
     "MIT",
     "Apache-2.0",
     "BSD-3-Clause",
     "Unicode-3.0",
-    # `const_format` / `const_format_proc_macros` are Zlib (see deny.toml exceptions).
     "Zlib",
 ]
 
@@ -28,9 +30,10 @@ targets = [
     "aarch64-unknown-linux-gnu",
 ]
 
-# Only crates whose code is actually linked into a shipped binary need
-# attribution: build-time-only and test-only dependencies are not bundled.
-ignore-build-dependencies = true
+# Test-only dependencies are never shipped, so they are excluded. Build
+# dependencies are kept: build scripts and proc-macros can emit code that ends up
+# in the final binary, so their licenses may still require attribution.
+ignore-build-dependencies = false
 ignore-dev-dependencies = true
 ignore-transitive-dependencies = false
 

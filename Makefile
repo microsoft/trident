@@ -402,7 +402,7 @@ validate-api-schema: build-api-schema docbuilder
 NOTICE_CHECKED_IN := NOTICE
 NOTICE_GENERATED  := target/NOTICE.generated
 # --locked pins Cargo.lock; --workspace matches the scope of the cargo-deny check.
-CARGO_ABOUT_ARGS  := generate --workspace --locked about.hbs
+CARGO_ABOUT_ARGS  := generate --workspace --locked packaging/notice/about.hbs
 
 # Regenerate the checked-in NOTICE locally. Run after changing dependencies.
 .PHONY: update-notice

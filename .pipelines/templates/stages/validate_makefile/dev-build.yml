@@ -66,7 +66,8 @@ stages:
 
           - script: |
               # Use a lower optimization level to speed up cargo-about installation.
-              CARGO_PROFILE_RELEASE_OPT_LEVEL=0 cargo install --locked cargo-about@0.9.1
+              # cargo-about's binary is gated behind the non-default `cli` feature.
+              CARGO_PROFILE_RELEASE_OPT_LEVEL=0 cargo install --locked cargo-about@0.9.1 --features cli
             displayName: Install cargo-about
             workingDirectory: $(TRIDENT_SOURCE_DIR)
 
