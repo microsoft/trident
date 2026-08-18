@@ -19,6 +19,7 @@ RUN tdnf install -y \
 WORKDIR /work
 
 COPY packaging/rpm/trident.spec .
+COPY LICENSE .
 COPY packaging ./packaging
 COPY bin/trident ./target/release/trident
 COPY bin/trident-acl-agent ./target/release/trident-acl-agent

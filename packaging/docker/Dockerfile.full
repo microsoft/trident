@@ -23,6 +23,7 @@ RUN tdnf install -y \
 WORKDIR /work
 
 COPY packaging/rpm/trident.spec .
+COPY LICENSE .
 COPY packaging ./packaging
 
 COPY .cargo/config.toml ./.cargo/config.toml

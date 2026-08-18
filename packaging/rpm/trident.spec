@@ -82,6 +82,7 @@ Trident. This package provides the Trident tool
 and its dependencies for managing the lifecycle of Azure Linux hosts.
 
 %files
+%license LICENSE
 %{_bindir}/%{name}
 %dir /etc/%{name}
 %{_unitdir}/%{name}d.service
