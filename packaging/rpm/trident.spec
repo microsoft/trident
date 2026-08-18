@@ -107,6 +107,7 @@ Requires:       %{name} = %{version}-%{release}
 Trident files for the provisioning OS
 
 %files provisioning
+%license LICENSE
 %{_unitdir}/%{name}-network.service
 
 %post provisioning
@@ -129,6 +130,7 @@ Conflicts:      %{name}-install-service
 Trident files for SystemD commit services
 
 %files service
+%license LICENSE
 %{_unitdir}/%{name}.service
 
 %post service
@@ -151,6 +153,7 @@ Conflicts:      %{name}-service
 Trident files for SystemD install service
 
 %files install-service
+%license LICENSE
 %{_unitdir}/%{name}-install.service
 
 %post install-service
@@ -185,6 +188,7 @@ Requires(postun):    policycoreutils
 Custom SELinux policy module
 
 %files selinux
+%license LICENSE
 %{_datadir}/selinux/packages/%{selinuxtype}/%{name}.pp.bz2
 %{_datadir}/selinux/devel/include/distributed/%{name}.if
 %ghost %verify(not md5 size mode mtime) %{_sharedstatedir}/selinux/%{selinuxtype}/active/modules/200/%{name}
@@ -217,6 +221,7 @@ Statically defined .pcrlock files for PCR-based encryption. This is a workaround
 be removed once the fix is merged in AZL 4.0.
 
 %files static-pcrlock-files
+%license LICENSE
 %{_sharedstatedir}/pcrlock.d
 
 # ------------------------------------------------------------------------------
@@ -230,6 +235,7 @@ Requires:       %{name} = %{version}-%{release}
 The Trident ACL Agent triggers updates of ACL images.
 
 %files acl-agent
+%license LICENSE
 %{_bindir}/%{name}-acl-agent
 %endif
 
