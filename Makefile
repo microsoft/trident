@@ -401,8 +401,10 @@ validate-api-schema: build-api-schema docbuilder
 # Licenses" pipeline job); install locally with `cargo install --locked cargo-about`.
 NOTICE_CHECKED_IN := NOTICE
 NOTICE_GENERATED  := target/NOTICE.generated
-# --locked pins Cargo.lock; --workspace matches the scope of the cargo-deny check.
-CARGO_ABOUT_ARGS  := generate --workspace --locked packaging/notice/about.hbs
+# --locked pins Cargo.lock; --offline keeps generation deterministic and matches
+# the network-isolated CI (no clearlydefined.io lookups); --workspace matches the
+# scope of the cargo-deny check.
+CARGO_ABOUT_ARGS  := generate --workspace --locked --offline packaging/notice/about.hbs
 
 # Regenerate the checked-in NOTICE locally. Run after changing dependencies.
 .PHONY: update-notice
