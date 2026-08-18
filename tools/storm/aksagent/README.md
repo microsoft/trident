@@ -63,24 +63,24 @@ wrong key.
 
 ```bash
 make bin/storm-trident
-./bin/storm-trident run aksagent deploy-vm \
+./bin/storm-trident run aksagent --test-case-to-run deploy-vm \
   --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
-./bin/storm-trident run aksagent check-deployment \
+./bin/storm-trident run aksagent --test-case-to-run check-deployment \
   --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
-./bin/storm-trident run aksagent run-ab-update \
+./bin/storm-trident run aksagent --test-case-to-run run-ab-update \
   --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
-./bin/storm-trident run aksagent run-rollback \
+./bin/storm-trident run aksagent --test-case-to-run run-rollback \
   --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
-./bin/storm-trident run aksagent collect-logs \
+./bin/storm-trident run aksagent --test-case-to-run collect-logs \
   --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
-./bin/storm-trident run aksagent cleanup-vm \
+./bin/storm-trident run aksagent --test-case-to-run cleanup-vm \
   --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
 ```
 
 Common overrides mirror other storm VM scenarios, for example:
 
 ```bash
-./bin/storm-trident run aksagent run-ab-update \
+./bin/storm-trident run aksagent --test-case-to-run run-ab-update \
   --platform qemu \
   --artifacts-dir ./artifacts \
   --output-path ./output/aksagent \
