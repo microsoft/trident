@@ -11,11 +11,11 @@ RUN tdnf install -y rpmdevtools openssl-devel clang-devel protobuf-devel ${RUST_
 
 WORKDIR /work
 
-COPY trident.spec .
+COPY packaging/rpm/trident.spec .
 COPY LICENSE .
 COPY packaging ./packaging
 
-COPY .cargo/config ./.cargo/config
+COPY .cargo/config.toml ./.cargo/config.toml
 COPY Cargo.toml .
 COPY Cargo.lock .
 COPY crates/ ./crates/
