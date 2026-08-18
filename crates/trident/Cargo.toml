@@ -83,9 +83,6 @@ pytest_gen = { path = "../pytest_gen", optional = true }
 # Optional dependencies
 pytest = { path = "../pytest", optional = true }
 
-[build-dependencies]
-osutils = { path = "../osutils" }
-
 [dev-dependencies]
 indoc = { workspace = true }
 maplit = { workspace = true }
