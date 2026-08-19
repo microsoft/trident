@@ -63,6 +63,10 @@ pub struct PackageFile {
 
     /// The absolute URL of the file, resolved by joining the response's
     /// `codebase` with [`name`](PackageFile::name).
+    ///
+    /// Guaranteed to live under that `codebase`: an offer whose name would
+    /// resolve to another origin, scheme, or a path outside it is rejected
+    /// rather than surfaced here.
     pub url: Url,
 
     /// The hash of the file as reported by Nebraska, if any.
@@ -147,21 +151,95 @@ fn retry<T>(
     }
 }
 
-/// Resolves a package file name against the manifest's `codebase`.
+/// Resolves a package file name against the manifest's `codebase`, or `None` if
+/// it does not name a file *under* that codebase.
 ///
-/// The codebase is a directory, but Nebraska stores whatever URL an operator
-/// typed and does not normalize it. A plain [`Url::join`] would apply RFC 3986
-/// relative resolution and *replace* the last path segment when the trailing
-/// slash is missing, turning `https://host/packages` + `os.cosi` into
-/// `https://host/os.cosi` — a plausible-looking URL pointing at the wrong place.
-/// Appending the separator first keeps the codebase a directory, matching how
-/// Omaha clients concatenate the two halves.
+/// Two distinct hazards make this more than a call to [`Url::join`]:
+///
+/// 1. The codebase is a directory, but Nebraska stores whatever URL an operator
+///    typed and does not normalize it. Relative resolution *replaces* the last
+///    path segment when the trailing slash is missing, turning
+///    `https://host/packages` + `os.cosi` into `https://host/os.cosi` — a
+///    plausible-looking URL pointing at the wrong place. Appending the separator
+///    first keeps the codebase a directory, matching how Omaha clients
+///    concatenate the two halves.
+/// 2. `join` resolves a *reference*, not a file name, so a server-supplied name
+///    can redirect the download anywhere: an absolute URL or a protocol-relative
+///    `//host/…` changes the origin, `file:///…` changes the scheme, and `..`
+///    or a leading `/` escapes the codebase directory. Since the artifact this
+///    URL points at is an OS image that will be installed, the result is
+///    checked to still live under the codebase rather than trusting the name.
 fn join_file(codebase: &Url, name: &str) -> Option<Url> {
     let mut base = codebase.clone();
     if !base.path().ends_with('/') {
         base.set_path(&format!("{}/", base.path()));
     }
-    base.join(name).ok()
+
+    let url = base.join(name).ok()?;
+
+    // A differing origin covers both a redirected host and a changed scheme:
+    // opaque origins (`file:`, `data:`) never compare equal, not even to
+    // themselves, so anything that leaves the web-URL world fails closed.
+    // The path prefix then confirms the file is inside the codebase directory,
+    // and the inequality rejects a name that resolves back to the directory.
+    let contained = url.origin() == base.origin()
+        && url.path().starts_with(base.path())
+        && url.path() != base.path();
+
+    contained.then_some(url)
+}
+
+/// Renders a response for logging: the statuses that drive this client's
+/// decisions, and nothing else.
+///
+/// The raw body is deliberately not logged. A manifest's `codebase` and package
+/// URLs are frequently pre-signed (an Azure blob SAS token, for instance), so
+/// dumping the XML would write a download credential into the log of anyone who
+/// turns on trace diagnostics — the same reason the endpoint is
+/// [redacted](redacted).
+fn summarize(response: &wire::Response) -> String {
+    if response.apps.is_empty() {
+        return "no apps".to_string();
+    }
+
+    response
+        .apps
+        .iter()
+        .map(|app| {
+            let events = app
+                .events
+                .iter()
+                .map(|event| event.status.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            let check = match &app.update_check {
+                None => String::new(),
+                Some(check) => {
+                    let manifest = match &check.manifest {
+                        None => String::new(),
+                        Some(manifest) => format!(
+                            ", manifest {} with {} package(s)",
+                            manifest.version,
+                            manifest
+                                .packages
+                                .as_ref()
+                                .map_or(0, |packages| packages.packages.len())
+                        ),
+                    };
+                    format!(", updatecheck {}{manifest}", check.status)
+                }
+            };
+
+            format!(
+                "app '{}' status {}, {} event(s) [{events}]{check}",
+                app.app_id,
+                app.status,
+                app.events.len()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 /// Renders an endpoint for logging with everything after the authority removed.
@@ -443,8 +521,10 @@ impl<T: Transport> Client<T> {
             String::from_utf8_lossy(&body)
         );
         let text = self.transport.post_xml(&self.endpoint, &body)?;
-        trace!("Nebraska response:\n{text}");
-        wire::parse_response(&text).map_err(NebraskaError::Parse)
+        trace!("Nebraska response: {} bytes", text.len());
+        let response = wire::parse_response(&text).map_err(NebraskaError::Parse)?;
+        trace!("Nebraska response: {}", summarize(&response));
+        Ok(response)
     }
 
     /// Locates this client's app in a response, validating it is present and
@@ -610,9 +690,9 @@ impl<T: Transport> Client<T> {
     ) -> Result<PackageFile, NebraskaError> {
         let url = join_file(codebase, &package.name).ok_or_else(|| {
             NebraskaError::UnexpectedResponse(format!(
-                "failed to join codebase '{}' with package '{}'",
-                redacted(codebase),
-                package.name
+                "package '{}' does not name a file under codebase '{}'",
+                package.name,
+                redacted(codebase)
             ))
         })?;
 
@@ -1021,6 +1101,69 @@ mod tests {
             body.contains(r#"<event eventtype="3" eventresult="2" previousversion="1.0.0""#),
             "{body}"
         );
+    }
+
+    #[test]
+    fn join_file_rejects_names_that_escape_the_codebase() {
+        // The name comes from the server, and the artifact it points at is an OS
+        // image that gets installed — so a name that redirects the download must
+        // fail rather than resolve.
+        let codebase = Url::parse("https://updates.example.com/packages/").unwrap();
+        for escape in [
+            "https://evil.example.com/x.cosi", // absolute URL: different origin
+            "//evil.example.com/x.cosi",       // protocol-relative: different origin
+            "file:///etc/shadow",              // different scheme
+            "../../etc/x.cosi",                // traversal out of the directory
+            "/absolute/x.cosi",                // absolute path
+            "",                                // resolves back to the directory
+        ] {
+            assert_eq!(
+                join_file(&codebase, escape),
+                None,
+                "'{escape}' should not resolve"
+            );
+        }
+    }
+
+    #[test]
+    fn join_file_accepts_names_under_the_codebase() {
+        let codebase = Url::parse("https://updates.example.com/packages/").unwrap();
+        assert_eq!(
+            join_file(&codebase, "os.cosi").unwrap().as_str(),
+            "https://updates.example.com/packages/os.cosi"
+        );
+        // A name may still address a subdirectory of the codebase.
+        assert_eq!(
+            join_file(&codebase, "2.0.0/os.cosi").unwrap().as_str(),
+            "https://updates.example.com/packages/2.0.0/os.cosi"
+        );
+    }
+
+    #[test]
+    fn check_rejects_offer_whose_package_redirects_off_host() {
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/"/></urls><manifest version="2.0.0"><packages><package name="https://evil.example.com/x.cosi" required="true"/></packages></manifest></updatecheck></app></response>"#,
+        );
+        let err = client.check_for_update(&Version::new(1, 0, 0)).unwrap_err();
+        assert!(
+            matches!(err, NebraskaError::UnexpectedResponse(_)),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn summarize_reports_statuses_without_urls() {
+        // The traced summary must not carry the manifest URLs, which are
+        // routinely pre-signed.
+        let response = wire::parse_response(OFFER).unwrap();
+        let summary = summarize(&response);
+        assert!(summary.contains("app 'app-1' status ok"), "{summary}");
+        assert!(summary.contains("updatecheck ok"), "{summary}");
+        assert!(
+            summary.contains("manifest 2.0.0 with 1 package(s)"),
+            "{summary}"
+        );
+        assert!(!summary.contains("updates.example.com"), "{summary}");
     }
 
     #[test]
