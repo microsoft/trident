@@ -1,7 +1,7 @@
 //! gRPC helpers for talking to `tridentd`.
 //!
 //! Implements the Trident-invocation half of `docs/update-trigger-design.md`:
-//! https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GC1cfe79ec53bfc6936771e2433cba3dec0906b4fd&path=/docs/update-trigger-design.md
+//! https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md
 //! (the "Trident invocation" column of section 2.1's operations table,
 //! and the stage/finalize/rollback-finalize CallerHandlesReboot split in
 //! section 2.3).

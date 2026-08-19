@@ -3,7 +3,7 @@
 //! and writes the status annotation back, including post-reboot.
 //!
 //! Implements the node-side control flow from `docs/update-trigger-design.md`:
-//! https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GC1cfe79ec53bfc6936771e2433cba3dec0906b4fd&path=/docs/update-trigger-design.md
+//! https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md
 //! (sections 2.1 "Trigger mechanism", 2.3 "Stage/finalize/rollback split
 //! and post-reboot commit", and 2.5 "Rollback"). See that document for the
 //! full state-machine rationale; keep it in sync with this file if the
