@@ -67,7 +67,12 @@ stages:
           - script: |
               # Use a lower optimization level to speed up cargo-about installation.
               # cargo-about's binary is gated behind the non-default `cli` feature.
-              CARGO_PROFILE_RELEASE_OPT_LEVEL=0 cargo install --locked cargo-about@0.9.1 --features cli
+              # Pinned >=0.9.2: 0.9.1 could silently discard a crate's detected
+              # license files instead of including them (fixed upstream by
+              # https://github.com/EmbarkStudios/cargo-about/pull/312), which
+              # intermittently dropped whole license sections (e.g. for `ring`)
+              # from the generated NOTICE and failed validate-notice.
+              CARGO_PROFILE_RELEASE_OPT_LEVEL=0 cargo install --locked cargo-about@0.9.2 --features cli
             displayName: Install cargo-about
             workingDirectory: $(TRIDENT_SOURCE_DIR)
 
