@@ -3,8 +3,10 @@
 //!
 //! This module is scoped strictly to the Nebraska/Omaha protocol: building and
 //! sending update checks and events, and interpreting the responses. It knows
-//! nothing about Trident, reboots, commits, or the update orchestration around
-//! it — that separation is deliberate.
+//! nothing about the product being updated — reboots, commits, or the update
+//! orchestration around it — that separation is deliberate. Everything
+//! caller-specific, including the updater version reported in the request, is
+//! passed in by the caller.
 //!
 //! # Why the API looks the way it does
 //!
@@ -54,6 +56,7 @@
 //!     "example-app",
 //!     "stable",
 //!     MachineId::from_uuid(uuid::Uuid::new_v4()),
+//!     "my-updater-1.0.0",
 //! );
 //!
 //! let current = Version::new(1, 0, 0);
@@ -61,7 +64,7 @@
 //!     CheckOutcome::UpToDate => {}
 //!     CheckOutcome::UpdateInProgress => {}
 //!     CheckOutcome::UpdateAvailable(offer) => {
-//!         // (drive the update via Trident, out of this module's scope)
+//!         // (apply the update; out of this module's scope)
 //!         client.report_progress(&current, ProgressEvent::DownloadStarted)?;
 //!         // ... download finished, installed, then reboot ...
 //!         // After the reboot, from a fresh process running the new version:

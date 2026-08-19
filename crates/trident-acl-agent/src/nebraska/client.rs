@@ -265,6 +265,7 @@ pub struct Client<T: Transport = ReqwestTransport> {
     app_id: String,
     track: String,
     machine_id: MachineId,
+    client_version: String,
     transport: T,
 }
 
@@ -273,13 +274,26 @@ impl Client<ReqwestTransport> {
     ///
     /// `endpoint` should be the Nebraska update URL (typically ending in
     /// `/v1/update/`, with the trailing slash preserved).
+    ///
+    /// `client_version` identifies the **updater** — the program driving the
+    /// update — in `<request version>`, which Nebraska surfaces in its UI and
+    /// logs. It is the caller's to supply: this module speaks the protocol and
+    /// has no version of its own worth reporting to an operator.
     pub fn new(
         endpoint: Url,
         app_id: impl Into<String>,
         track: impl Into<String>,
         machine_id: MachineId,
+        client_version: impl Into<String>,
     ) -> Self {
-        Self::with_transport(endpoint, app_id, track, machine_id, ReqwestTransport::new())
+        Self::with_transport(
+            endpoint,
+            app_id,
+            track,
+            machine_id,
+            client_version,
+            ReqwestTransport::new(),
+        )
     }
 }
 
@@ -290,6 +304,7 @@ impl<T: Transport> Client<T> {
         app_id: impl Into<String>,
         track: impl Into<String>,
         machine_id: MachineId,
+        client_version: impl Into<String>,
         transport: T,
     ) -> Self {
         Self {
@@ -297,6 +312,7 @@ impl<T: Transport> Client<T> {
             app_id: app_id.into(),
             track: track.into(),
             machine_id,
+            client_version: client_version.into(),
             transport,
         }
     }
@@ -488,7 +504,7 @@ impl<T: Transport> Client<T> {
 
     /// Serializes, sends, and parses a request/response round-trip.
     fn send(&self, app: App) -> Result<wire::Response, NebraskaError> {
-        let request = wire::request_for(app);
+        let request = wire::request_for(app, self.client_version.clone());
         let body = request
             .to_xml()
             .map_err(|e| NebraskaError::Serialize(e.to_string()))?;
@@ -704,6 +720,9 @@ mod tests {
 
     use super::*;
 
+    /// Stands in for the updater version a real caller would supply.
+    const TEST_CLIENT_VERSION: &str = "test-updater-1.2.3";
+
     /// A canned transport: records the last request body and returns a fixed
     /// response, so client logic is exercised without a network.
     struct MockTransport {
@@ -733,6 +752,7 @@ mod tests {
             "app-1",
             "stable",
             MachineId::new("mid-1").unwrap(),
+            TEST_CLIENT_VERSION,
             MockTransport::new(response),
         )
     }
@@ -759,6 +779,7 @@ mod tests {
             "app-1",
             "stable",
             MachineId::new("mid-1").unwrap(),
+            TEST_CLIENT_VERSION,
             ScriptedTransport {
                 responses: responses.into_iter().map(String::from).collect(),
                 calls: Cell::new(0),
@@ -1228,6 +1249,7 @@ mod tests {
             "app-1",
             "stable",
             MachineId::new("mid-1").unwrap(),
+            TEST_CLIENT_VERSION,
             AlwaysFails {
                 calls: Cell::new(0),
             },

@@ -7,11 +7,10 @@
 //!
 //! # Blocking today; async is a non-breaking addition
 //!
-//! [`Transport`] is intentionally **synchronous**, matching the current agent
-//! (which is otherwise sync and only enters a Tokio runtime for its Trident gRPC
-//! call). A future async TAA that drives Trident over `tonic`/`tokio` must not
-//! call a blocking HTTP client from within the async runtime, as that stalls the
-//! executor.
+//! [`Transport`] is intentionally **synchronous**, matching the current caller
+//! (which is otherwise sync and only enters a Tokio runtime for an unrelated
+//! gRPC call). A future async caller must not call a blocking HTTP client from
+//! within an async runtime, as that stalls the executor.
 //!
 //! Supporting that does **not** require changing this API. Because
 //! [`Client`](crate::nebraska::Client) is generic over the transport, an async

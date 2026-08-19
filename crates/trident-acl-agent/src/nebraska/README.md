@@ -1,8 +1,10 @@
 # `nebraska` client module
 
 A self-contained Rust client for the [Nebraska](https://github.com/flatcar/nebraska)
-update server (Omaha protocol). Scoped strictly to the protocol — no Trident
-gRPC, reboot, commit, or CLI logic — so it is reusable by any update agent.
+update server (Omaha protocol). Scoped strictly to the protocol — no gRPC,
+reboot, commit, or CLI logic — so it is reusable by any update agent. Anything
+caller-specific, such as the updater version reported in each request, is passed
+in rather than baked in.
 
 The API encodes the protocol's silently-failing invariants in the type system:
 only whitelisted events are constructible, `track` cannot be omitted, the machine
@@ -49,6 +51,7 @@ let client = Client::new(
     "example-app",
     "stable",
     MachineId::from_uuid(uuid::Uuid::new_v4()),
+    "my-updater-1.0.0", // the updater's own version, reported to Nebraska
 );
 
 let current = Version::new(1, 0, 0);
@@ -87,7 +90,7 @@ use trident_acl_agent::nebraska::{Client, CheckOutcome, MachineId, ProgressEvent
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
 # let client = Client::new(
 #     Url::parse("https://updates.example.com/v1/update/")?,
-#     "example-app", "stable", MachineId::from_uuid(uuid::Uuid::new_v4()));
+#     "example-app", "stable", MachineId::from_uuid(uuid::Uuid::new_v4()), "my-updater-1.0.0");
 let current = Version::new(1, 0, 0);
 
 if let CheckOutcome::UpdateAvailable(offer) = client.check_for_update(&current)? {
@@ -127,7 +130,7 @@ and re-arms it so a later check can grant again:
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
 # let client = Client::new(
 #     Url::parse("https://updates.example.com/v1/update/")?,
-#     "example-app", "stable", MachineId::from_uuid(uuid::Uuid::new_v4()));
+#     "example-app", "stable", MachineId::from_uuid(uuid::Uuid::new_v4()), "my-updater-1.0.0");
 client.report_failure(&Version::new(1, 0, 0), &Version::new(2, 0, 0))?;
 # Ok(())
 # }

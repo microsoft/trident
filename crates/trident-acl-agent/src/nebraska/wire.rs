@@ -25,17 +25,6 @@ const OMAHA_PROTOCOL: &str = "3.0";
 const XML_VERSION: &str = "1.0";
 const XML_ENCODING: &str = "UTF-8";
 
-/// The updater version reported in `<request version>`, which Nebraska surfaces
-/// in its UI and logs to identify the client.
-///
-/// Prefers the build-time `TRIDENT_VERSION` (the version the shipped product is
-/// stamped with) over this crate's own package version, which is not
-/// independently released and would otherwise report a placeholder to operators.
-const CLIENT_VERSION: &str = match option_env!("TRIDENT_VERSION") {
-    Some(v) => v,
-    None => env!("CARGO_PKG_VERSION"),
-};
-
 /// Serializes an `ismachine`-style boolean as the string `"1"` or `"0"`, as the
 /// Omaha protocol requires.
 fn bool_as_num<S>(value: &bool, serializer: S) -> Result<S::Ok, S::Error>
@@ -52,7 +41,7 @@ pub(super) struct Request {
     protocol: &'static str,
 
     #[serde(rename = "@version")]
-    version: &'static str,
+    version: String,
 
     #[serde(rename = "@ismachine", serialize_with = "bool_as_num")]
     is_machine: bool,
@@ -68,11 +57,12 @@ pub(super) struct Request {
 }
 
 impl Request {
-    /// Builds a request carrying a single app.
-    pub(super) fn new(app: App) -> Self {
+    /// Builds a request carrying a single app, identifying the updater as
+    /// `client_version`.
+    pub(super) fn new(app: App, client_version: String) -> Self {
         Self {
             protocol: OMAHA_PROTOCOL,
-            version: CLIENT_VERSION,
+            version: client_version,
             is_machine: true,
             session_id: Uuid::new_v4(),
             os: Os::current(),
@@ -247,8 +237,10 @@ pub(super) struct EventElement {
 
 /// Builds a request from an app, setting the `<os version>` from the app version
 /// so the two agree.
-pub(super) fn request_for(app: App) -> Request {
-    let mut request = Request::new(app);
+/// Builds a request from an app, setting the `<os version>` from the app version
+/// so the two agree. `client_version` identifies the updater itself.
+pub(super) fn request_for(app: App, client_version: String) -> Request {
+    let mut request = Request::new(app, client_version);
     request.os.version = request.app.os_version().to_string();
     request
 }
@@ -361,8 +353,35 @@ pub(super) fn parse_response(body: &str) -> Result<Response, String> {
 mod tests {
     use super::*;
 
+    const CLIENT_VERSION: &str = "test-updater-1.2.3";
+
     fn xml_of(app: App) -> String {
-        String::from_utf8(request_for(app).to_xml().unwrap()).unwrap()
+        String::from_utf8(
+            request_for(app, CLIENT_VERSION.to_string())
+                .to_xml()
+                .unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn request_reports_the_caller_supplied_client_version() {
+        // `<request version>` identifies the updater, which is the caller's to
+        // name: this module is a generic Omaha client and has no version of its
+        // own to report.
+        let app = App::new(
+            "app-1".into(),
+            "1.0.0".into(),
+            "stable".into(),
+            "mid-1".into(),
+        )
+        .with_update_check();
+        let xml = xml_of(app);
+
+        assert!(
+            xml.contains(&format!(r#"version="{CLIENT_VERSION}""#)),
+            "{xml}"
+        );
     }
 
     #[test]
