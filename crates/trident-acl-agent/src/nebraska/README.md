@@ -34,6 +34,15 @@ stable across Nebraska versions rather than on a specific build:
   `aarch64`/`arm`) with a silent fallback to amd64, so the value is spelled out
   explicitly rather than derived from an internal architecture name.
 
+One deliberate divergence from the reference client: Nebraska stores a package
+as an unvalidated `codebase` plus a `filename`, and Flatcar's `update_engine`
+combines them by appending a `/` when needed and concatenating. This client
+appends the same `/` but then *resolves* the name as a URL reference, so a
+manifest may name an artifact that lives outside the codebase — including an
+absolute, pre-signed URL. The trade-off is that a query on the codebase itself
+is not carried onto the file URL; Omaha cannot express that anyway, so a
+signature has to travel per file.
+
 Unknown status strings are preserved rather than rejected, so a server that adds
 new ones does not break parsing.
 

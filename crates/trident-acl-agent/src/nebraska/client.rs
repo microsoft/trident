@@ -150,14 +150,25 @@ fn retry<T>(
 
 /// Resolves a package file name against the manifest's `codebase`.
 ///
-/// The codebase is a directory — and normally a different host than Nebraska
-/// itself, since Nebraska serves metadata while the artifact lives in a blob
-/// store or CDN — but Nebraska stores whatever URL an operator typed and does
-/// not normalize it. Relative resolution *replaces* the last path segment when
-/// the trailing slash is missing, turning `https://host/packages` + `os.cosi`
-/// into `https://host/os.cosi` — a plausible-looking URL pointing at the wrong
-/// place. Appending the separator first keeps the codebase a directory,
-/// matching how Omaha clients concatenate the two halves.
+/// Nebraska models a package as a free-form `codebase` plus a `filename`,
+/// validating and normalizing neither, and leaves the client to combine them.
+/// The reference client (Flatcar's `update_engine`) appends a `/` to the
+/// codebase when it lacks one and then concatenates the two strings verbatim.
+///
+/// This resolves them as a URL reference instead — a deliberate divergence,
+/// because it honours a `name` that is itself an absolute URL, letting a
+/// manifest point straight at an artifact that does not sit under the codebase.
+/// The trailing-slash handling matches `update_engine` and is what stops a
+/// codebase lacking the separator from losing its last path segment:
+/// `https://host/packages` + `os.cosi` would otherwise resolve to
+/// `https://host/os.cosi`.
+///
+/// What resolution costs relative to concatenation is that a query or fragment
+/// on the *codebase* does not survive — `https://host/pkgs/?sig=…` + `os.cosi`
+/// gives `https://host/pkgs/os.cosi`. Omaha cannot express a query-bearing
+/// codebase in the first place (concatenating would yield `…?sig=…os.cosi`), so
+/// a pre-signed artifact has to carry its signature per file, in the name, where
+/// it is preserved.
 fn join_file(codebase: &Url, name: &str) -> Option<Url> {
     let mut base = codebase.clone();
     if !base.path().ends_with('/') {
@@ -1107,14 +1118,45 @@ mod tests {
 
     #[test]
     fn join_file_accepts_an_absolute_name() {
-        // The manifest may point at a wholly different host: Nebraska serves
-        // metadata, while the artifact usually lives in a blob store or CDN.
+        // The reason this resolves rather than concatenating: a manifest may
+        // point at a wholly different host, since Nebraska serves metadata while
+        // the artifact usually lives in a blob store or CDN. `update_engine`
+        // would produce "<codebase>/https://cdn.example.net/os.cosi" here.
         let codebase = Url::parse("https://updates.example.com/packages/").unwrap();
         assert_eq!(
             join_file(&codebase, "https://cdn.example.net/os.cosi")
                 .unwrap()
                 .as_str(),
             "https://cdn.example.net/os.cosi"
+        );
+    }
+
+    #[test]
+    fn join_file_keeps_a_signature_carried_on_the_name() {
+        // The supported way to pre-sign an artifact: the signature travels with
+        // the file, not on the codebase.
+        let codebase = Url::parse("https://updates.example.com/packages/").unwrap();
+        assert_eq!(
+            join_file(
+                &codebase,
+                "https://acct.blob.core.windows.net/p/os.cosi?sig=abc"
+            )
+            .unwrap()
+            .as_str(),
+            "https://acct.blob.core.windows.net/p/os.cosi?sig=abc"
+        );
+    }
+
+    #[test]
+    fn join_file_does_not_carry_the_codebase_query() {
+        // Documented consequence of resolving rather than concatenating. Omaha
+        // cannot express a query-bearing codebase either way — concatenation
+        // would yield ".../pkgs/?sig=secretos.cosi" — so this is a deliberate
+        // limitation, not an oversight.
+        let codebase = Url::parse("https://updates.example.com/packages/?sig=secret").unwrap();
+        assert_eq!(
+            join_file(&codebase, "os.cosi").unwrap().as_str(),
+            "https://updates.example.com/packages/os.cosi"
         );
     }
 
