@@ -4,7 +4,7 @@ After=network-online.target tridentd.socket
 Wants=network-online.target tridentd.socket
 
 [Service]
-ExecStart=trident-acl-agent
+ExecStart=/usr/bin/trident-acl-agent
 Restart=on-failure
 RestartSec=5
 
