@@ -4,7 +4,7 @@
 //! `#[cfg(test)]` design-doc conformance tests below) implements the
 //! `acl.azure.com/update-request`, `acl.azure.com/update-status`, and
 //! `acl.azure.com/update-commit-status` node annotation protocol described
-//! by the current accepted design (`accepted-design-v2.md`). Keep
+//! by the current accepted design (`accepted-design-v3.md`). Keep
 //! `UpdateRequest`/`UpdateStatus`/`StatusCode` and `validate()` in sync with
 //! that document's formal JSON Schema (its section "Formal JSON Schema") -
 //! the `design_doc_*`/`agent_built_*_conform_to_formal_schema` tests in this
@@ -72,28 +72,27 @@ pub struct UpdateRequest {
     pub operation: RequestedOperation,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_version: Option<String>,
-    /// Optional override of the agent's configured Nebraska endpoint
-    /// (`TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT` / CLI override) for this
-    /// update. When present, it takes precedence for every Nebraska call
-    /// this `nodeUpdateId` makes (`stage`'s update check, and all
-    /// progress/completion event reports), since Nebraska's per-instance
-    /// state is tied to one specific server.
+    /// The Omaha endpoint that serves the target image, with the path (e.g.
+    /// `https://<host>/v1/update`). Required for `stage`/`finalize` (see
+    /// [`UpdateRequest::validate`]) - AKS-RP holds this constant across one
+    /// update's `stage` -> `finalize` -> `commit` lifecycle, in the same way
+    /// it holds `nodeUpdateId` constant, since Nebraska's per-instance state
+    /// is tied to one specific server. Omitted for `rollback`, which reports
+    /// no Nebraska event. There is deliberately no static/config-file
+    /// fallback if this is absent on a `stage`/`finalize` request: a
+    /// fallback would let a node update from a source AKS-RP did not
+    /// choose, so the agent rejects such a request with `InvalidRequest`
+    /// instead.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server: Option<Url>,
-    /// Optional override of the agent's configured Nebraska `app_id`
-    /// (`TRIDENT_ACL_AGENT_NEBRASKA_APP_ID`) for this update. Resolved the
-    /// same way as [`server`](UpdateRequest::server): takes precedence over
-    /// the static config for every Nebraska call this `nodeUpdateId` makes.
+    /// The Omaha application id of the ACL image on `server`. Same
+    /// requirement/lifecycle/no-fallback rules as
+    /// [`server`](UpdateRequest::server) - see its docs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app_id: Option<String>,
-    /// Optional override of the agent's configured Nebraska `track`
-    /// (`TRIDENT_ACL_AGENT_NEBRASKA_TRACK`) for this update. Resolved and
-    /// applied the same way as [`server`](UpdateRequest::server) and
-    /// [`app_id`](UpdateRequest::app_id): takes precedence over the static
-    /// config for every Nebraska call this `nodeUpdateId` makes. `track` is
-    /// never optional on the wire itself (Nebraska requires it on every
-    /// request), only this override is - when absent, the static
-    /// `TRIDENT_ACL_AGENT_NEBRASKA_TRACK` value is used, exactly as before.
+    /// The Omaha track that `server` resolves to the group serving this
+    /// node. Same requirement/lifecycle/no-fallback rules as
+    /// [`server`](UpdateRequest::server) - see its docs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub track: Option<String>,
 }
@@ -119,9 +118,10 @@ pub struct UpdateStatus {
 
 impl UpdateRequest {
     /// Enforces the same constraints as the request annotation's formal
-    /// JSON Schema in `accepted-design-v2.md`: schemaVersion match, and
+    /// JSON Schema in `accepted-design-v3.md`: schemaVersion match,
     /// targetVersion required for stage/finalize but disallowed for
-    /// rollback. See this file's module doc.
+    /// rollback, and server/appId/track required for stage/finalize. See
+    /// this file's module doc.
     pub fn validate(self) -> Result<Self, String> {
         if self.schema_version != SCHEMA_VERSION {
             return Err(format!("unsupported schemaVersion {}", self.schema_version));
@@ -130,6 +130,15 @@ impl UpdateRequest {
             RequestedOperation::Stage | RequestedOperation::Finalize => {
                 if self.target_version.as_deref().unwrap_or("").is_empty() {
                     return Err("targetVersion is required for stage/finalize".to_string());
+                }
+                if self.server.is_none() {
+                    return Err("server is required for stage/finalize".to_string());
+                }
+                if self.app_id.as_deref().unwrap_or("").is_empty() {
+                    return Err("appId is required for stage/finalize".to_string());
+                }
+                if self.track.as_deref().unwrap_or("").is_empty() {
+                    return Err("track is required for stage/finalize".to_string());
                 }
             }
             RequestedOperation::Rollback => {
@@ -144,7 +153,7 @@ impl UpdateRequest {
 
 impl UpdateStatus {
     // This constructor mirrors UpdateStatus's wire schema field-for-field
-    // (see accepted-design-v2.md's two-status-key JSON protocol); splitting
+    // (see accepted-design-v3.md's two-status-key JSON protocol); splitting
     // it into a builder would add ceremony across ~25 call sites in
     // orchestrator.rs without making any of them clearer.
     #[allow(clippy::too_many_arguments)]
@@ -614,13 +623,20 @@ mod tests {
     //
     // Keep these constants byte-for-byte in sync with the design doc.
 
-    /// docs/update-trigger-design.md 2.1, "Request annotation" example.
+    /// docs/update-trigger-design.md 2.1, "Request annotation" example
+    /// (adapted to `finalize` to pair with the status/commit examples
+    /// below, which also share this `finalize`; server/appId/track values
+    /// are the doc's own example values for those fields, required on
+    /// stage/finalize per `accepted-design-v3.md`).
     const DESIGN_DOC_FINALIZE_REQUEST_EXAMPLE: &str = r#"{
   "schemaVersion": "1.0",
   "nodeUpdateId":  "550e8400-e29b-41d4-a716-446655440000",
   "operationId":   "f47ac10b-58cc-4372-a567-0e02b2c3d479",
   "operation":     "finalize",
-  "targetVersion": "202606.29.0"
+  "targetVersion": "202606.29.0",
+  "server":        "https://nebraska.example.com/v1/update",
+  "appId":         "11111111-2222-3333-4444-555555555555",
+  "track":         "pin-202606.29.0"
 }"#;
 
     /// docs/update-trigger-design.md 2.1, "Status annotation" example.
@@ -654,9 +670,8 @@ mod tests {
 }"#;
 
     /// The formal JSON Schema for the request annotation, from
-    /// docs/update-trigger-design.md (https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md),
-    /// section 2.1 "Formal JSON Schema". Keep byte-for-byte in sync with
-    /// that document.
+    /// `accepted-design-v3.md` section 2.1 "Formal JSON Schema". Keep
+    /// byte-for-byte in sync with that document.
     const DESIGN_DOC_REQUEST_SCHEMA: &str = r#"{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://acl.azure.com/schemas/update-request/1.0.json",
@@ -670,20 +685,24 @@ mod tests {
     "operationId":   { "type": "string", "format": "uuid", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
     "operation":     { "type": "string", "enum": ["stage", "finalize", "rollback"] },
     "targetVersion": { "type": "string", "description": "ACL image release version, e.g. 202606.29.0." },
-    "server":        { "type": "string", "format": "uri", "description": "Optional override of the agent's configured Nebraska endpoint for this update." },
-    "appId":         { "type": "string", "description": "Optional override of the agent's configured Nebraska app_id for this update." },
-    "track":         { "type": "string", "description": "Optional override of the agent's configured Nebraska track for this update." }
+    "server":        { "type": "string", "format": "uri", "pattern": "^https://[^/]", "description": "Omaha endpoint that serves the target image, with the path, e.g. https://<host>/v1/update." },
+    "appId":         { "type": "string", "description": "Omaha application id of the ACL image on that endpoint." },
+    "track":         { "type": "string", "description": "Omaha track that the update server resolves to the group serving the node." }
   },
   "allOf": [
     {
       "if":   { "properties": { "operation": { "enum": ["stage", "finalize"] } }, "required": ["operation"] },
       "then": { "required": ["targetVersion"] }
+    },
+    {
+      "if":   { "properties": { "operation": { "enum": ["stage", "finalize"] } }, "required": ["operation"] },
+      "then": { "required": ["server", "appId", "track"] }
     }
   ]
 }"#;
 
     /// The formal JSON Schema for the status annotations, from
-    /// accepted-design-v2.md section 2.1 "Formal JSON Schema". Keep
+    /// `accepted-design-v3.md` section 2.1 "Formal JSON Schema". Keep
     /// byte-for-byte in sync with that document.
     const DESIGN_DOC_STATUS_SCHEMA: &str = r#"{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -721,7 +740,7 @@ mod tests {
     // additionalProperties, required, properties.{type,const,enum,format,
     // pattern}, and a single-level allOf/if/then/else). Panics loudly on any
     // schema keyword/pattern/type/format it doesn't recognize, so if
-    // accepted-design-v2.md's schemas grow new constraints, this validator's
+    // accepted-design-v3.md's schemas grow new constraints, this validator's
     // blind spots don't silently mask them - the test fails instead,
     // prompting an update here.
 
@@ -896,19 +915,105 @@ mod tests {
     }
 
     /// Bespoke stand-in for full regex support: the two schemas above use
-    /// exactly two distinct patterns, both UUID-shaped, so this matches them
-    /// by exact pattern text rather than pulling in a regex engine for two
-    /// known cases. Panics on an unrecognized pattern so a future schema
+    /// only a few distinct patterns - two UUID-shaped ones and the
+    /// `server` https-with-host one - so this matches them by exact pattern
+    /// text rather than pulling in a regex engine for such a small,
+    /// enumerable set. Panics on an unrecognized pattern so a future schema
     /// change can't silently pass unchecked.
     fn schema_pattern_matches(pattern: &str, value: &str) -> bool {
         const BARE_UUID: &str =
             r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
+        const HTTPS_WITH_HOST: &str = r"^https://[^/]";
         match pattern {
             BARE_UUID => Uuid::parse_str(value).is_ok(),
+            HTTPS_WITH_HOST => value
+                .strip_prefix("https://")
+                .and_then(|rest| rest.chars().next())
+                .is_some_and(|c| c != '/'),
             other => panic!(
                 "test schema validator does not recognize pattern {other:?} - extend schema_pattern_matches"
             ),
         }
+    }
+
+    // --- UpdateRequest::validate() ------------------------------------------
+
+    fn valid_nebraska_request(operation: RequestedOperation) -> UpdateRequest {
+        UpdateRequest {
+            schema_version: SCHEMA_VERSION.to_string(),
+            node_update_id: Uuid::new_v4(),
+            operation_id: "op-1".to_string(),
+            operation,
+            target_version: Some("202606.29.0".to_string()),
+            server: Some(Url::parse("https://nebraska.example/v1/update").unwrap()),
+            app_id: Some("app-id".to_string()),
+            track: Some("track".to_string()),
+        }
+    }
+
+    #[test]
+    fn validate_accepts_stage_and_finalize_with_nebraska_fields() {
+        for operation in [RequestedOperation::Stage, RequestedOperation::Finalize] {
+            valid_nebraska_request(operation)
+                .validate()
+                .unwrap_or_else(|err| panic!("{operation:?} with server/appId/track: {err}"));
+        }
+    }
+
+    #[test]
+    fn validate_rejects_stage_and_finalize_missing_server() {
+        for operation in [RequestedOperation::Stage, RequestedOperation::Finalize] {
+            let mut request = valid_nebraska_request(operation);
+            request.server = None;
+            let err = request
+                .validate()
+                .expect_err("missing server must be rejected for stage/finalize");
+            assert!(err.contains("server"), "{err}");
+        }
+    }
+
+    #[test]
+    fn validate_rejects_stage_and_finalize_missing_app_id() {
+        for operation in [RequestedOperation::Stage, RequestedOperation::Finalize] {
+            let mut request = valid_nebraska_request(operation);
+            request.app_id = None;
+            let err = request
+                .validate()
+                .expect_err("missing appId must be rejected for stage/finalize");
+            assert!(err.contains("appId"), "{err}");
+        }
+    }
+
+    #[test]
+    fn validate_rejects_stage_and_finalize_missing_track() {
+        for operation in [RequestedOperation::Stage, RequestedOperation::Finalize] {
+            let mut request = valid_nebraska_request(operation);
+            request.track = None;
+            let err = request
+                .validate()
+                .expect_err("missing track must be rejected for stage/finalize");
+            assert!(err.contains("track"), "{err}");
+        }
+    }
+
+    #[test]
+    fn validate_allows_rollback_without_nebraska_fields() {
+        // Rollback reports no Nebraska event, so it carries no update
+        // source (accepted-design-v3.md 2.1): server/appId/track are not
+        // required, and validate() must not reject their absence.
+        let request = UpdateRequest {
+            schema_version: SCHEMA_VERSION.to_string(),
+            node_update_id: Uuid::new_v4(),
+            operation_id: "op-1".to_string(),
+            operation: RequestedOperation::Rollback,
+            target_version: None,
+            server: None,
+            app_id: None,
+            track: None,
+        };
+        request
+            .validate()
+            .expect("rollback without server/appId/track must validate");
     }
 
     // --- example payload parsing tests -------------------------------------
@@ -983,13 +1088,26 @@ mod tests {
         let schema: Value = serde_json::from_str(DESIGN_DOC_REQUEST_SCHEMA).unwrap();
         let node_update_id = Uuid::new_v4();
 
-        for (operation, target_version) in [
-            (RequestedOperation::Stage, Some("202606.29.0".to_string())),
+        for (operation, target_version, nebraska) in [
+            (
+                RequestedOperation::Stage,
+                Some("202606.29.0".to_string()),
+                Some((
+                    "https://nebraska.example.com/v1/update",
+                    "11111111-2222-3333-4444-555555555555",
+                    "pin-202606.29.0",
+                )),
+            ),
             (
                 RequestedOperation::Finalize,
                 Some("202606.29.0".to_string()),
+                Some((
+                    "https://nebraska.example.com/v1/update",
+                    "11111111-2222-3333-4444-555555555555",
+                    "pin-202606.29.0",
+                )),
             ),
-            (RequestedOperation::Rollback, None),
+            (RequestedOperation::Rollback, None, None),
         ] {
             let request = UpdateRequest {
                 schema_version: SCHEMA_VERSION.to_string(),
@@ -997,9 +1115,9 @@ mod tests {
                 operation_id: Uuid::new_v4().to_string(),
                 operation,
                 target_version,
-                server: None,
-                app_id: None,
-                track: None,
+                server: nebraska.map(|(server, ..)| Url::parse(server).unwrap()),
+                app_id: nebraska.map(|(_, app_id, _)| app_id.to_string()),
+                track: nebraska.map(|(_, _, track)| track.to_string()),
             };
             let request = request
                 .validate()
@@ -1094,19 +1212,19 @@ mod tests {
             .expect("agent-constructed commit status must conform to the formal schema");
     }
 
-    // --- server / appId / track (Nebraska overrides) -
+    // --- server / appId / track (Nebraska fields, required for stage/finalize) -
 
     #[test]
     fn server_field_round_trips_and_conforms_to_formal_schema() {
         let schema: Value = serde_json::from_str(DESIGN_DOC_REQUEST_SCHEMA).unwrap();
-        let mut request = sample_request(RequestedOperation::Stage);
+        let mut request = valid_nebraska_request(RequestedOperation::Stage);
         request.operation_id = Uuid::new_v4().to_string();
         request.server = Some(Url::parse("https://nebraska.example/v1/update").unwrap());
 
         let json = serde_json::to_value(&request).unwrap();
         assert_eq!(json["server"], "https://nebraska.example/v1/update");
         schema_validate(&schema, &json)
-            .expect("request with a server override must conform to the formal schema");
+            .expect("request with server/appId/track must conform to the formal schema");
 
         let round_tripped: UpdateRequest = serde_json::from_value(json).unwrap();
         assert_eq!(round_tripped.server, request.server);
@@ -1122,14 +1240,14 @@ mod tests {
     #[test]
     fn app_id_field_round_trips_and_conforms_to_formal_schema() {
         let schema: Value = serde_json::from_str(DESIGN_DOC_REQUEST_SCHEMA).unwrap();
-        let mut request = sample_request(RequestedOperation::Stage);
+        let mut request = valid_nebraska_request(RequestedOperation::Stage);
         request.operation_id = Uuid::new_v4().to_string();
         request.app_id = Some("59bbad61-257d-47f4-9730-6848d88e1a6e".to_string());
 
         let json = serde_json::to_value(&request).unwrap();
         assert_eq!(json["appId"], "59bbad61-257d-47f4-9730-6848d88e1a6e");
         schema_validate(&schema, &json)
-            .expect("request with an appId override must conform to the formal schema");
+            .expect("request with server/appId/track must conform to the formal schema");
 
         let round_tripped: UpdateRequest = serde_json::from_value(json).unwrap();
         assert_eq!(round_tripped.app_id, request.app_id);
@@ -1145,14 +1263,14 @@ mod tests {
     #[test]
     fn track_field_round_trips_and_conforms_to_formal_schema() {
         let schema: Value = serde_json::from_str(DESIGN_DOC_REQUEST_SCHEMA).unwrap();
-        let mut request = sample_request(RequestedOperation::Stage);
+        let mut request = valid_nebraska_request(RequestedOperation::Stage);
         request.operation_id = Uuid::new_v4().to_string();
         request.track = Some("pin-202608.6.0".to_string());
 
         let json = serde_json::to_value(&request).unwrap();
         assert_eq!(json["track"], "pin-202608.6.0");
         schema_validate(&schema, &json)
-            .expect("request with a track override must conform to the formal schema");
+            .expect("request with server/appId/track must conform to the formal schema");
 
         let round_tripped: UpdateRequest = serde_json::from_value(json).unwrap();
         assert_eq!(round_tripped.track, request.track);

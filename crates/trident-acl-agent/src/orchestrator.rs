@@ -252,7 +252,7 @@ where
             // Reject on operationId, not nodeUpdateId: the actual conflict
             // this guard exists to prevent is "a second finalize/rollback
             // starts while one is still waiting for its post-reboot
-            // commit" (accepted-design-v2.md's in-flight conflict rule).
+            // commit" (accepted-design-v3.md's in-flight conflict rule).
             // Keying on nodeUpdateId alone let a retried/re-issued request
             // that reused the same nodeUpdateId but a new operationId slip
             // through this guard entirely and re-enter handle_finalize/
@@ -289,48 +289,39 @@ where
         }
     }
 
-    /// Resolves which Nebraska endpoint to use for `request`: the request
-    /// annotation's own `server` override, if present, otherwise the
-    /// agent's configured `TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT` (or CLI
-    /// override). Every Nebraska call this `nodeUpdateId` makes - stage's
-    /// update check plus every progress/completion event report - must go
-    /// through this resolver rather than reading `self.config.nebraska.endpoint`
-    /// directly, since Nebraska's per-instance state is tied to one specific
-    /// server: mixing endpoints across one update's lifecycle would split
-    /// that state across two servers.
+    /// Resolves which Nebraska endpoint to use for `request`: its own
+    /// `server` field. Every Nebraska call this `nodeUpdateId` makes -
+    /// stage's update check plus every progress/completion event report -
+    /// must go through this resolver rather than reading
+    /// `self.config.nebraska.endpoint` directly, since Nebraska's
+    /// per-instance state is tied to one specific server: mixing endpoints
+    /// across one update's lifecycle would split that state across two
+    /// servers.
+    ///
+    /// Per `accepted-design-v3.md` 2.1, `stage`/`finalize` requests must
+    /// carry `server` and there is deliberately no static-config fallback
+    /// here: a fallback would let a node update from a source AKS-RP did
+    /// not choose. `UpdateRequest::validate()` already rejects a
+    /// stage/finalize missing it with `InvalidRequest` before the
+    /// orchestrator ever reaches this resolver, so `None` here should not
+    /// happen in practice; callers still treat it as absent (rather than
+    /// panicking) as defense in depth.
     fn resolve_nebraska_endpoint(&self, request: &UpdateRequest) -> Option<Url> {
-        request
-            .server
-            .clone()
-            .or_else(|| self.config.nebraska.endpoint.clone())
+        request.server.clone()
     }
 
-    /// Resolves which Nebraska app id to use for `request`: the request
-    /// annotation's own `appId` override, if present, otherwise the agent's
-    /// configured `TRIDENT_ACL_AGENT_NEBRASKA_APP_ID`. Unlike
-    /// [`resolve_nebraska_endpoint`], this always resolves to a value -
-    /// `TRIDENT_ACL_AGENT_NEBRASKA_APP_ID` always has one (defaulting to
-    /// [`crate::DEFAULT_NEBRASKA_APP_ID`]) - so there is no error case to
-    /// handle at call sites.
-    fn resolve_nebraska_app_id(&self, request: &UpdateRequest) -> String {
-        request
-            .app_id
-            .clone()
-            .unwrap_or_else(|| self.config.nebraska.app_id.clone())
+    /// Resolves which Nebraska app id to use for `request`: its own `appId`
+    /// field. Same stage/finalize-required, no-fallback rules as
+    /// [`resolve_nebraska_endpoint`] - see its docs.
+    fn resolve_nebraska_app_id(&self, request: &UpdateRequest) -> Option<String> {
+        request.app_id.clone()
     }
 
-    /// Resolves which Nebraska track to use for `request`: the request
-    /// annotation's own `track` override, if present, otherwise the agent's
-    /// configured `TRIDENT_ACL_AGENT_NEBRASKA_TRACK`. Same always-resolves
-    /// behavior as [`resolve_nebraska_app_id`] -
-    /// `TRIDENT_ACL_AGENT_NEBRASKA_TRACK` always has a default
-    /// ([`crate::DEFAULT_NEBRASKA_TRACK`]) - so there is no error case here
-    /// either.
-    fn resolve_nebraska_track(&self, request: &UpdateRequest) -> String {
-        request
-            .track
-            .clone()
-            .unwrap_or_else(|| self.config.nebraska.track.clone())
+    /// Resolves which Nebraska track to use for `request`: its own `track`
+    /// field. Same stage/finalize-required, no-fallback rules as
+    /// [`resolve_nebraska_endpoint`] - see its docs.
+    fn resolve_nebraska_track(&self, request: &UpdateRequest) -> Option<String> {
+        request.track.clone()
     }
 
     async fn handle_stage(&self, request: UpdateRequest) -> Result<(), anyhow::Error> {
@@ -365,13 +356,29 @@ where
             None,
         );
         self.publish_status(&in_progress).await?;
+        // UpdateRequest::validate() already requires server/appId/track for
+        // stage/finalize before this handler is ever reached (see
+        // resolve_nebraska_endpoint's docs), so treat a missing one here as
+        // an agent-internal error rather than silently defaulting - there
+        // is deliberately no static-config fallback for the annotation flow.
         let endpoint = self.resolve_nebraska_endpoint(&request).ok_or_else(|| {
             anyhow::anyhow!(
-                "annotation mode requires request.server, TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT, or CLI override"
+                "stage request has no request.server despite passing validation (nodeUpdateId {})",
+                request.node_update_id
             )
         })?;
-        let app_id = self.resolve_nebraska_app_id(&request);
-        let track = self.resolve_nebraska_track(&request);
+        let app_id = self.resolve_nebraska_app_id(&request).ok_or_else(|| {
+            anyhow::anyhow!(
+                "stage request has no request.appId despite passing validation (nodeUpdateId {})",
+                request.node_update_id
+            )
+        })?;
+        let track = self.resolve_nebraska_track(&request).ok_or_else(|| {
+            anyhow::anyhow!(
+                "stage request has no request.track despite passing validation (nodeUpdateId {})",
+                request.node_update_id
+            )
+        })?;
         let machine_id = crate::build_machine_id(IdSource::MachineIdHashed)?;
         let outcome = tokio::task::spawn_blocking(move || {
             let client = NebraskaClient::new(endpoint, app_id, track, machine_id);
@@ -798,7 +805,7 @@ where
     ) -> UpdateStatus {
         // state.json did not survive the reboot (or was never written, e.g.
         // the agent crashed before persisting pendingCommit). Per
-        // accepted-design-v2.md §2.3's degraded path, reconstruct the answer by
+        // accepted-design-v3.md §2.3's degraded path, reconstruct the answer by
         // calling commit() unconditionally rather than guessing from labels
         // or the target version alone - tridentd's commit() is self-checking
         // and its own (ServicingKind/RebootStatus/Result) response already
@@ -966,18 +973,35 @@ where
     /// `handle_stage`'s `check_for_update` call).
     async fn report_nebraska_event(&self, request: &UpdateRequest, report: NebraskaReport) {
         let Some(endpoint) = self.resolve_nebraska_endpoint(request) else {
-            // Should not happen in practice: every call site only reaches
-            // here after handle_stage has already required an endpoint for
-            // this node update. Guard anyway since this is best-effort
-            // telemetry, not something worth panicking over.
+            // Should not happen in practice: UpdateRequest::validate()
+            // already requires request.server for stage/finalize before
+            // the orchestrator ever reaches here, and there is
+            // deliberately no static-config fallback (see
+            // resolve_nebraska_endpoint's docs). Guard anyway since this is
+            // best-effort telemetry, not something worth panicking over.
             log::warn!(
-                "skipping Nebraska '{}' report: no Nebraska endpoint configured (no request.server override and no [nebraska].endpoint)",
-                report.label()
+                "skipping Nebraska '{}' report: request has no server (nodeUpdateId {})",
+                report.label(),
+                request.node_update_id
             );
             return;
         };
-        let app_id = self.resolve_nebraska_app_id(request);
-        let track = self.resolve_nebraska_track(request);
+        let Some(app_id) = self.resolve_nebraska_app_id(request) else {
+            log::warn!(
+                "skipping Nebraska '{}' report: request has no appId (nodeUpdateId {})",
+                report.label(),
+                request.node_update_id
+            );
+            return;
+        };
+        let Some(track) = self.resolve_nebraska_track(request) else {
+            log::warn!(
+                "skipping Nebraska '{}' report: request has no track (nodeUpdateId {})",
+                report.label(),
+                request.node_update_id
+            );
+            return;
+        };
         let machine_id = match crate::build_machine_id(NEBRASKA_MACHINE_ID_SOURCE) {
             Ok(id) => id,
             Err(err) => {
@@ -1310,7 +1334,7 @@ fn indicates_target_boot_failed(error: &TridentClientError) -> bool {
 /// needing a full `Orchestrator` instance. See `stage_result_to_status` for
 /// rationale.
 /// Pre-flight checks for the state.json-missing degraded reconstruction
-/// path (accepted-design-v2.md §2.3). Returns `Some(status)` when reconstruction
+/// path (accepted-design-v3.md §2.3). Returns `Some(status)` when reconstruction
 /// cannot proceed (tridentd already known-unreachable, or the outstanding
 /// request isn't a finalize/rollback), or `None` when the caller should go
 /// on to call tridentd's commit() to determine the real outcome.
@@ -1354,7 +1378,7 @@ fn reconstruct_precheck_status(
 }
 
 /// Maps tridentd's commit() result to the terminal status for the
-/// state.json-missing degraded reconstruction path (accepted-design-v2.md
+/// state.json-missing degraded reconstruction path (accepted-design-v3.md
 /// §2.3). Always reports under the original operationId, mirroring the
 /// normal post-reboot commit path in `commit_result_to_status`.
 fn reconstruct_commit_result_to_status(
