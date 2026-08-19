@@ -276,9 +276,18 @@ impl Client<ReqwestTransport> {
     /// `/v1/update/`, with the trailing slash preserved).
     ///
     /// `client_version` identifies the **updater** — the program driving the
-    /// update — in `<request version>`, which Nebraska surfaces in its UI and
-    /// logs. It is the caller's to supply: this module speaks the protocol and
-    /// has no version of its own worth reporting to an operator.
+    /// update — in `<request version>`. It is the caller's to supply: this
+    /// module speaks the protocol and has no version of its own worth
+    /// reporting.
+    ///
+    /// Nebraska does not store or display this value; it reads it in exactly
+    /// one place, to recognise its own syncer (`version` of
+    /// `CoreOSUpdateEngine-0.1.0.0` *together with* `installsource` of
+    /// `scheduler`, which is answered with every package rather than a normal
+    /// update grant). This client never sends `installsource`, so that pairing
+    /// cannot arise — but anything that adds it must not also adopt the syncer's
+    /// version string. Otherwise the value is for whoever reads the requests:
+    /// a proxy log, or an Omaha server other than Nebraska.
     pub fn new(
         endpoint: Url,
         app_id: impl Into<String>,
