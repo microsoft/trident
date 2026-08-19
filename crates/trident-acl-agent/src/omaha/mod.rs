@@ -1,5 +1,23 @@
 //! Super basic implementation of the Omaha protocol as defined in
 //! https://github.com/google/omaha/blob/main/doc/ServerProtocol.md.
+//!
+//! # Superseded by the `nebraska` module
+//!
+//! This module predates, and is superseded by, the crate's `nebraska` client
+//! module (`crate::nebraska`, exposed via the library target), which encodes the
+//! protocol's silently-failing invariants (whitelisted events, mandatory
+//! `track`, unbraced machine id, `error-updateInProgressOnInstance` tolerance)
+//! in the type system. New code should use `nebraska`; this module remains only
+//! until the agent's control flow is migrated to it (a deliberate follow-up, to
+//! keep that diff separate). It is not `#[deprecated]` because the agent binary
+//! still depends on it and the crate is built with `-D warnings`. Migration
+//! mapping:
+//!
+//! - `query_and_fetch_*` / `omaha::send` with an `<updatecheck>` →
+//!   `nebraska::Client::check_for_update`
+//! - `report_event` for a progress event → `nebraska::Client::report_progress`
+//! - the batched post-reboot completion → `nebraska::Client::complete_after_reboot`
+//! - a failure/reset event → `nebraska::Client::report_failure`
 
 use log::{debug, trace};
 use url::Url;
