@@ -205,7 +205,7 @@ target/$(DISTRO)/release/trident target/$(DISTRO)/release/trident-acl-agent: azl
 			-p trident-acl-agent
 
 # This will do a proper build on azl3, exactly as the pipelines would, with the custom registry and all.
-bin/trident-rpms-%.tar.gz: packaging/docker/Dockerfile.full packaging/systemd/*.service packaging/rpm/trident.spec packaging/selinux-policy-trident/* version-vars azl-version-vars
+bin/trident-rpms-%.tar.gz: packaging/docker/Dockerfile.full packaging/systemd/*.service packaging/rpm/trident.spec packaging/selinux-policy-trident/* LICENSE NOTICE version-vars azl-version-vars
 	@case "$@" in \
 		*$(DISTRO).tar.gz) ;; \
 		*) echo "Invalid target '$@' for DISTRO '$(DISTRO)'. Expected target ending in '$(DISTRO).tar.gz'."; exit 1 ;; \
@@ -239,7 +239,7 @@ bin/trident-rpms-%.tar.gz: packaging/docker/Dockerfile.full packaging/systemd/*.
 # backward compatibility; other distros use the in-container distro build.
 TRIDENT_RPM_BIN_DIR := $(if $(filter azl3,$(DISTRO)),target/release,target/$(DISTRO)/release)
 
-bin/trident-rpms.tar.gz: azl-version-vars packaging/docker/Dockerfile.azl packaging/systemd/*.service packaging/rpm/trident.spec $(TRIDENT_RPM_BIN_DIR)/trident $(TRIDENT_RPM_BIN_DIR)/trident-acl-agent packaging/selinux-policy-trident/*
+bin/trident-rpms.tar.gz: azl-version-vars packaging/docker/Dockerfile.azl packaging/systemd/*.service packaging/rpm/trident.spec $(TRIDENT_RPM_BIN_DIR)/trident $(TRIDENT_RPM_BIN_DIR)/trident-acl-agent packaging/selinux-policy-trident/* LICENSE NOTICE
 	@mkdir -p bin/
 	@if [ ! -f bin/trident ] || ! cmp -s $(TRIDENT_RPM_BIN_DIR)/trident bin/trident; then \
 		cp $(TRIDENT_RPM_BIN_DIR)/trident bin/trident; \
@@ -393,6 +393,47 @@ validate-api-schema: build-api-schema docbuilder
 		exit 1; \
 	}
 	@echo "Trident API Schema is OK!"
+
+# ------------------------------------------------------------------------------
+# Third-party OSS attribution notice (NOTICE). cargo-about discovers the license
+# text for every linked crate (emitted as JSON), and render_notice.py turns that
+# into a deterministic NOTICE. The checked-in NOTICE is regenerated in CI to detect
+# drift, mirroring the API schema check above. cargo-about must be installed (see
+# the "Check Licenses" pipeline job); install locally with
+# `cargo install --locked cargo-about --features cli`.
+NOTICE_CHECKED_IN := NOTICE
+NOTICE_GENERATED  := target/NOTICE.generated
+NOTICE_JSON       := target/notice.json
+NOTICE_RENDERER   := packaging/notice/render_notice.py
+# --locked pins Cargo.lock; --offline keeps generation deterministic and matches
+# the network-isolated CI (no clearlydefined.io lookups); --workspace matches the
+# scope of the cargo-deny check. Output is JSON so render_notice.py can group by
+# license content (cargo-about's own section grouping is not host-stable).
+CARGO_ABOUT_ARGS  := generate --workspace --locked --offline -c packaging/notice/about.toml --format json
+
+# Regenerate the checked-in NOTICE locally. Run after changing dependencies.
+.PHONY: update-notice
+update-notice:
+	@mkdir -p target
+	cargo about $(CARGO_ABOUT_ARGS) -o $(NOTICE_JSON)
+	python3 $(NOTICE_RENDERER) $(NOTICE_JSON) > $(NOTICE_CHECKED_IN)
+	@echo Updated $(NOTICE_CHECKED_IN)
+
+# This target is meant to be used by CI to ensure that NOTICE is up to date.
+# It compares a freshly generated notice with the checked-in one.
+# Please do not modify for local use. :)
+.PHONY: validate-notice
+validate-notice:
+	@echo ""
+	@echo "Validating third-party NOTICE..."
+	@mkdir -p target
+	cargo about $(CARGO_ABOUT_ARGS) -o $(NOTICE_JSON)
+	python3 $(NOTICE_RENDERER) $(NOTICE_JSON) > $(NOTICE_GENERATED)
+	@diff $(NOTICE_CHECKED_IN) $(NOTICE_GENERATED) || { \
+		echo "ERROR: NOTICE is not up to date. Please run 'make update-notice' and commit the changes."; \
+		exit 1; \
+	}
+	@echo "Trident NOTICE is OK!"
 
 .PHONY: build-functional-tests
 build-functional-test: .cargo/config

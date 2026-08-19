@@ -834,13 +834,16 @@ impl Trident {
 
     /// Handle a manual rollback request. Either print information about
     /// available rollbacks, or execute a rollback.
+    ///
+    /// Returns the exit kind and the resulting servicing type, i.e.
+    /// `ServicingType::NoActiveServicing` if no rollback was performed.
     pub fn rollback(
         &mut self,
         datastore: &mut DataStore,
         invoke_if_next_is_runtime: bool,
         invoke_available_ab: bool,
         allowed_operations: Operations,
-    ) -> Result<ExitKind, TridentError> {
+    ) -> Result<(ExitKind, ServicingType), TridentError> {
         // If host's servicing state is not in Provisioned or ManualRollback*, cannot
         // execute a rollback.
         if !matches!(
@@ -853,7 +856,7 @@ impl Trident {
                 "Cannot trigger rollback from current state ({:?})",
                 datastore.host_status().servicing_state
             );
-            return Ok(ExitKind::Done);
+            return Ok((ExitKind::Done, ServicingType::NoActiveServicing));
         }
 
         let rollback_result = self.execute_and_record_error(datastore, |datastore| {

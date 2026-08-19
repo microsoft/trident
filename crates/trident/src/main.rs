@@ -195,12 +195,14 @@ fn run_trident(
                         ab,
                         ref allowed_operations,
                         ..
-                    } => trident.rollback(
-                        &mut datastore,
-                        runtime,
-                        ab,
-                        cli::to_operations(allowed_operations),
-                    ),
+                    } => trident
+                        .rollback(
+                            &mut datastore,
+                            runtime,
+                            ab,
+                            cli::to_operations(allowed_operations),
+                        )
+                        .map(|(exit_kind, _servicing_type)| exit_kind),
                     Commands::RebuildRaid { .. } => trident
                         .rebuild_raid(&mut datastore)
                         .map(|()| ExitKind::Done),
