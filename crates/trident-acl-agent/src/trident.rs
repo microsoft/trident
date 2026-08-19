@@ -221,7 +221,7 @@ impl TridentClient {
                 reboot: Some(RebootManagement {
                     // The agent, not tridentd, must own every reboot
                     // decision: AKS-RP is the sole authority over
-                    // reboot/rollback (accepted-design-v2.md §2.5). If commit()
+                    // reboot/rollback (accepted-design-v3.md §2.5). If commit()
                     // ever reports NeedsReboot (e.g. a health-check failure,
                     // were health checks ever re-enabled), the agent needs
                     // to see that as a RebootRequired response it controls
@@ -283,7 +283,7 @@ impl TridentClient {
                 reboot: Some(RebootManagement {
                     // Same rationale as commit()/update_finalize(): AKS-RP,
                     // via the agent, is the sole authority over reboot
-                    // timing (accepted-design-v2.md §2.5).
+                    // timing (accepted-design-v3.md §2.5).
                     handling: RebootHandling::CallerHandlesReboot.into(),
                 }),
             }))

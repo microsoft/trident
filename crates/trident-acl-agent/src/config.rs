@@ -37,11 +37,13 @@ const ENV_ORCHESTRATION_HEARTBEAT_INTERVAL: &str =
 
 const DEFAULT_KUBERNETES_POLL_INTERVAL: Duration = Duration::from_secs(2);
 // TODO: placeholder until the real production Nebraska/Omaha endpoint is
-// known. `.invalid` is reserved by RFC 2606 and is guaranteed to never
-// resolve, so a deployment that forgets to set
-// TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT (or override it per-request via the
-// update-request annotation's `server` field) fails loudly at the network
-// layer instead of silently querying a real-looking but wrong host.
+// known, for omaha-only mode. `.invalid` is reserved by RFC 2606 and is
+// guaranteed to never resolve, so a deployment that forgets to set
+// TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT fails loudly at the network layer
+// instead of silently querying a real-looking but wrong host. Annotation
+// mode does not use this default at all: stage/finalize requests must
+// carry their own `server` field, with no fallback to this config (see
+// Orchestrator::resolve_nebraska_endpoint).
 pub const DEFAULT_NEBRASKA_ENDPOINT: &str = "https://nebraska.example.invalid/v1/update";
 const DEFAULT_STAGE_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 const DEFAULT_FINALIZE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
@@ -174,7 +176,7 @@ pub enum GoalSource {
     /// `acl.azure.com/update-request` annotation and drives Trident's
     /// stage/finalize/rollback/commit operations against tridentd
     /// accordingly, writing progress back to `acl.azure.com/update-status`
-    /// and `acl.azure.com/update-commit-status` (see accepted-design-v2.md).
+    /// and `acl.azure.com/update-commit-status` (see accepted-design-v3.md).
     /// This is the default mode.
     #[default]
     Annotations,
@@ -204,7 +206,7 @@ pub struct OrchestrationConfig {
     pub finalize_timeout: Duration,
     /// Refresh cadence for in-flight InProgress heartbeats. Default is well
     /// below the ~10 minute watchdog staleness target proposed in
-    /// accepted-design-v2.md.
+    /// accepted-design-v3.md.
     pub heartbeat_interval: Duration,
 }
 

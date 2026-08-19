@@ -1,7 +1,7 @@
 //! Thin Kubernetes client wrapper for Harpoon's node self-patching protocol.
 //!
 //! Implements the Node get/watch/patch access described in the current
-//! accepted design (`accepted-design-v2.md`).
+//! accepted design (`accepted-design-v3.md`).
 //!
 //! The design calls for get/patch access to exactly one Node object (§2.2–§2.6).
 //! Node changes are observed via the Kubernetes watch API (`kube::runtime::watcher`)
