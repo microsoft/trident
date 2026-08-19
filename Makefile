@@ -405,16 +405,22 @@ NOTICE_CHECKED_IN := NOTICE
 NOTICE_GENERATED  := target/NOTICE.generated
 NOTICE_JSON       := target/notice.json
 NOTICE_RENDERER   := packaging/notice/render_notice.py
-# --locked pins Cargo.lock; --offline keeps generation deterministic and matches
-# the network-isolated CI (no clearlydefined.io lookups); --workspace matches the
-# scope of the cargo-deny check. Output is JSON so render_notice.py can group by
-# license content (cargo-about's own section grouping is not host-stable).
+# --locked pins Cargo.lock; --offline keeps generation deterministic (no
+# clearlydefined.io lookups, so results don't depend on network state);
+# --workspace matches the scope of the cargo-deny check. `cargo fetch --locked`
+# runs first so every crate's source (and thus its license file) is present on
+# disk before cargo-about reads it -- otherwise cargo-about silently omits the
+# license section for any crate whose source isn't already cached, rather than
+# erroring, which caused intermittent NOTICE-validation failures on cache-cold
+# CI agents. Output is JSON so render_notice.py can group by license content
+# (cargo-about's own section grouping is not host-stable).
 CARGO_ABOUT_ARGS  := generate --workspace --locked --offline -c packaging/notice/about.toml --format json
 
 # Regenerate the checked-in NOTICE locally. Run after changing dependencies.
 .PHONY: update-notice
 update-notice:
 	@mkdir -p target
+	cargo fetch --locked
 	cargo about $(CARGO_ABOUT_ARGS) -o $(NOTICE_JSON)
 	python3 $(NOTICE_RENDERER) $(NOTICE_JSON) > $(NOTICE_CHECKED_IN)
 	@echo Updated $(NOTICE_CHECKED_IN)
@@ -427,6 +433,7 @@ validate-notice:
 	@echo ""
 	@echo "Validating third-party NOTICE..."
 	@mkdir -p target
+	cargo fetch --locked
 	cargo about $(CARGO_ABOUT_ARGS) -o $(NOTICE_JSON)
 	python3 $(NOTICE_RENDERER) $(NOTICE_JSON) > $(NOTICE_GENERATED)
 	@diff $(NOTICE_CHECKED_IN) $(NOTICE_GENERATED) || { \
