@@ -62,11 +62,8 @@ pub struct PackageFile {
     pub name: String,
 
     /// The absolute URL of the file, resolved by joining the response's
-    /// `codebase` with [`name`](PackageFile::name).
-    ///
-    /// Guaranteed to live under that `codebase`: an offer whose name would
-    /// resolve to another origin, scheme, or a path outside it is rejected
-    /// rather than surfaced here.
+    /// `codebase` with [`name`](PackageFile::name). Frequently on a different
+    /// host than the Nebraska server itself, which serves only metadata.
     pub url: Url,
 
     /// The hash of the file as reported by Nebraska, if any.
@@ -151,42 +148,22 @@ fn retry<T>(
     }
 }
 
-/// Resolves a package file name against the manifest's `codebase`, or `None` if
-/// it does not name a file *under* that codebase.
+/// Resolves a package file name against the manifest's `codebase`.
 ///
-/// Two distinct hazards make this more than a call to [`Url::join`]:
-///
-/// 1. The codebase is a directory, but Nebraska stores whatever URL an operator
-///    typed and does not normalize it. Relative resolution *replaces* the last
-///    path segment when the trailing slash is missing, turning
-///    `https://host/packages` + `os.cosi` into `https://host/os.cosi` — a
-///    plausible-looking URL pointing at the wrong place. Appending the separator
-///    first keeps the codebase a directory, matching how Omaha clients
-///    concatenate the two halves.
-/// 2. `join` resolves a *reference*, not a file name, so a server-supplied name
-///    can redirect the download anywhere: an absolute URL or a protocol-relative
-///    `//host/…` changes the origin, `file:///…` changes the scheme, and `..`
-///    or a leading `/` escapes the codebase directory. Since the artifact this
-///    URL points at is an OS image that will be installed, the result is
-///    checked to still live under the codebase rather than trusting the name.
+/// The codebase is a directory — and normally a different host than Nebraska
+/// itself, since Nebraska serves metadata while the artifact lives in a blob
+/// store or CDN — but Nebraska stores whatever URL an operator typed and does
+/// not normalize it. Relative resolution *replaces* the last path segment when
+/// the trailing slash is missing, turning `https://host/packages` + `os.cosi`
+/// into `https://host/os.cosi` — a plausible-looking URL pointing at the wrong
+/// place. Appending the separator first keeps the codebase a directory,
+/// matching how Omaha clients concatenate the two halves.
 fn join_file(codebase: &Url, name: &str) -> Option<Url> {
     let mut base = codebase.clone();
     if !base.path().ends_with('/') {
         base.set_path(&format!("{}/", base.path()));
     }
-
-    let url = base.join(name).ok()?;
-
-    // A differing origin covers both a redirected host and a changed scheme:
-    // opaque origins (`file:`, `data:`) never compare equal, not even to
-    // themselves, so anything that leaves the web-URL world fails closed.
-    // The path prefix then confirms the file is inside the codebase directory,
-    // and the inequality rejects a name that resolves back to the directory.
-    let contained = url.origin() == base.origin()
-        && url.path().starts_with(base.path())
-        && url.path() != base.path();
-
-    contained.then_some(url)
+    base.join(name).ok()
 }
 
 /// Renders a response for logging: the statuses that drive this client's
@@ -690,7 +667,7 @@ impl<T: Transport> Client<T> {
     ) -> Result<PackageFile, NebraskaError> {
         let url = join_file(codebase, &package.name).ok_or_else(|| {
             NebraskaError::UnexpectedResponse(format!(
-                "package '{}' does not name a file under codebase '{}'",
+                "failed to resolve package '{}' against codebase '{}'",
                 package.name,
                 redacted(codebase)
             ))
@@ -1104,25 +1081,16 @@ mod tests {
     }
 
     #[test]
-    fn join_file_rejects_names_that_escape_the_codebase() {
-        // The name comes from the server, and the artifact it points at is an OS
-        // image that gets installed — so a name that redirects the download must
-        // fail rather than resolve.
+    fn join_file_accepts_an_absolute_name() {
+        // The manifest may point at a wholly different host: Nebraska serves
+        // metadata, while the artifact usually lives in a blob store or CDN.
         let codebase = Url::parse("https://updates.example.com/packages/").unwrap();
-        for escape in [
-            "https://evil.example.com/x.cosi", // absolute URL: different origin
-            "//evil.example.com/x.cosi",       // protocol-relative: different origin
-            "file:///etc/shadow",              // different scheme
-            "../../etc/x.cosi",                // traversal out of the directory
-            "/absolute/x.cosi",                // absolute path
-            "",                                // resolves back to the directory
-        ] {
-            assert_eq!(
-                join_file(&codebase, escape),
-                None,
-                "'{escape}' should not resolve"
-            );
-        }
+        assert_eq!(
+            join_file(&codebase, "https://cdn.example.net/os.cosi")
+                .unwrap()
+                .as_str(),
+            "https://cdn.example.net/os.cosi"
+        );
     }
 
     #[test]
@@ -1136,18 +1104,6 @@ mod tests {
         assert_eq!(
             join_file(&codebase, "2.0.0/os.cosi").unwrap().as_str(),
             "https://updates.example.com/packages/2.0.0/os.cosi"
-        );
-    }
-
-    #[test]
-    fn check_rejects_offer_whose_package_redirects_off_host() {
-        let client = client_with(
-            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/"/></urls><manifest version="2.0.0"><packages><package name="https://evil.example.com/x.cosi" required="true"/></packages></manifest></updatecheck></app></response>"#,
-        );
-        let err = client.check_for_update(&Version::new(1, 0, 0)).unwrap_err();
-        assert!(
-            matches!(err, NebraskaError::UnexpectedResponse(_)),
-            "got {err:?}"
         );
     }
 

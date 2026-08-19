@@ -147,10 +147,6 @@ network by injecting a canned implementation via `Client::with_transport`.
   and is stripped from transport errors; only its scheme and host appear.
   Response bodies are summarized rather than logged verbatim, since a manifest's
   package URLs are frequently pre-signed.
-- A package name that would resolve outside its `codebase` — an absolute URL, a
-  protocol-relative `//host/…`, a different scheme, or a `..` escape — is
-  rejected rather than downloaded, so a compromised or garbled response cannot
-  redirect an OS image download to another host.
 - The `Transport` is synchronous today; an async transport can be added
   alongside it without breaking this API (see the `transport` module docs).
 - This module supersedes the crate's older ad-hoc `omaha` module; the agent's
