@@ -603,7 +603,7 @@ mod tests {
     //
     // Pins our annotation (de)serialization/validation code against two
     // things lifted verbatim from docs/update-trigger-design.md
-    // (https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GC1cfe79ec53bfc6936771e2433cba3dec0906b4fd&path=/docs/update-trigger-design.md),
+    // (https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md),
     // section 2.1 "Trigger mechanism", so a doc/code drift shows up as a
     // test failure instead of being discovered against a real AKS-RP:
     //   1. The three example JSON payloads (request, finalize status, and
@@ -654,7 +654,7 @@ mod tests {
 }"#;
 
     /// The formal JSON Schema for the request annotation, from
-    /// docs/update-trigger-design.md (https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GC1cfe79ec53bfc6936771e2433cba3dec0906b4fd&path=/docs/update-trigger-design.md),
+    /// docs/update-trigger-design.md (https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md),
     /// section 2.1 "Formal JSON Schema". Keep byte-for-byte in sync with
     /// that document.
     const DESIGN_DOC_REQUEST_SCHEMA: &str = r#"{
