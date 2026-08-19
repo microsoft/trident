@@ -40,8 +40,8 @@ pub(super) struct Request {
     #[serde(rename = "@protocol")]
     protocol: &'static str,
 
-    #[serde(rename = "@version")]
-    version: String,
+    #[serde(rename = "@version", skip_serializing_if = "Option::is_none")]
+    version: Option<String>,
 
     #[serde(rename = "@ismachine", serialize_with = "bool_as_num")]
     is_machine: bool,
@@ -58,8 +58,8 @@ pub(super) struct Request {
 
 impl Request {
     /// Builds a request carrying a single app, identifying the updater as
-    /// `client_version`.
-    pub(super) fn new(app: App, client_version: String) -> Self {
+    /// `client_version` when the caller supplied one.
+    pub(super) fn new(app: App, client_version: Option<String>) -> Self {
         Self {
             protocol: OMAHA_PROTOCOL,
             version: client_version,
@@ -238,8 +238,9 @@ pub(super) struct EventElement {
 /// Builds a request from an app, setting the `<os version>` from the app version
 /// so the two agree.
 /// Builds a request from an app, setting the `<os version>` from the app version
-/// so the two agree. `client_version` identifies the updater itself.
-pub(super) fn request_for(app: App, client_version: String) -> Request {
+/// so the two agree. `client_version` identifies the updater itself, and is
+/// omitted from the request entirely when the caller did not name one.
+pub(super) fn request_for(app: App, client_version: Option<String>) -> Request {
     let mut request = Request::new(app, client_version);
     request.os.version = request.app.os_version().to_string();
     request
@@ -356,12 +357,30 @@ mod tests {
     const CLIENT_VERSION: &str = "test-updater-1.2.3";
 
     fn xml_of(app: App) -> String {
-        String::from_utf8(
-            request_for(app, CLIENT_VERSION.to_string())
-                .to_xml()
-                .unwrap(),
+        xml_of_versioned(app, Some(CLIENT_VERSION.to_string()))
+    }
+
+    fn xml_of_versioned(app: App, client_version: Option<String>) -> String {
+        String::from_utf8(request_for(app, client_version).to_xml().unwrap()).unwrap()
+    }
+
+    fn bare_app() -> App {
+        App::new(
+            "app-1".into(),
+            "1.0.0".into(),
+            "stable".into(),
+            "mid-1".into(),
         )
-        .unwrap()
+    }
+
+    #[test]
+    fn request_omits_client_version_when_unset() {
+        // The attribute is optional in the protocol; a request without it
+        // decodes cleanly server-side, so send nothing rather than an empty
+        // string.
+        let xml = xml_of_versioned(bare_app().with_update_check(), None);
+        assert!(!xml.contains("<request version="), "{xml}");
+        assert!(!xml.contains(r#"version="""#), "{xml}");
     }
 
     #[test]

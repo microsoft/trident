@@ -265,7 +265,7 @@ pub struct Client<T: Transport = ReqwestTransport> {
     app_id: String,
     track: String,
     machine_id: MachineId,
-    client_version: String,
+    client_version: Option<String>,
     transport: T,
 }
 
@@ -274,35 +274,13 @@ impl Client<ReqwestTransport> {
     ///
     /// `endpoint` should be the Nebraska update URL (typically ending in
     /// `/v1/update/`, with the trailing slash preserved).
-    ///
-    /// `client_version` identifies the **updater** — the program driving the
-    /// update — in `<request version>`. It is the caller's to supply: this
-    /// module speaks the protocol and has no version of its own worth
-    /// reporting.
-    ///
-    /// Nebraska does not store or display this value; it reads it in exactly
-    /// one place, to recognise its own syncer (`version` of
-    /// `CoreOSUpdateEngine-0.1.0.0` *together with* `installsource` of
-    /// `scheduler`, which is answered with every package rather than a normal
-    /// update grant). This client never sends `installsource`, so that pairing
-    /// cannot arise — but anything that adds it must not also adopt the syncer's
-    /// version string. Otherwise the value is for whoever reads the requests:
-    /// a proxy log, or an Omaha server other than Nebraska.
     pub fn new(
         endpoint: Url,
         app_id: impl Into<String>,
         track: impl Into<String>,
         machine_id: MachineId,
-        client_version: impl Into<String>,
     ) -> Self {
-        Self::with_transport(
-            endpoint,
-            app_id,
-            track,
-            machine_id,
-            client_version,
-            ReqwestTransport::new(),
-        )
+        Self::with_transport(endpoint, app_id, track, machine_id, ReqwestTransport::new())
     }
 }
 
@@ -313,7 +291,6 @@ impl<T: Transport> Client<T> {
         app_id: impl Into<String>,
         track: impl Into<String>,
         machine_id: MachineId,
-        client_version: impl Into<String>,
         transport: T,
     ) -> Self {
         Self {
@@ -321,9 +298,29 @@ impl<T: Transport> Client<T> {
             app_id: app_id.into(),
             track: track.into(),
             machine_id,
-            client_version: client_version.into(),
+            client_version: None,
             transport,
         }
+    }
+
+    /// Names the **updater** — the program driving the update — in
+    /// `<request version>`.
+    ///
+    /// Optional, and omitted from the request entirely when unset, which the
+    /// protocol allows and Nebraska accepts. Nebraska neither stores nor
+    /// displays the value: it reads it in exactly one place, to recognise its
+    /// own syncer (a version of `CoreOSUpdateEngine-0.1.0.0` *together with* an
+    /// `installsource` of `scheduler`, which is answered with every package
+    /// rather than a normal update grant). This client never sends
+    /// `installsource`, so that pairing cannot arise — but anything that adds it
+    /// must not also adopt the syncer's version string.
+    ///
+    /// Set it when something downstream reads the raw requests — a proxy log, or
+    /// an Omaha server other than Nebraska. By convention the string carries
+    /// both name and version, as in `update_engine-0.4.2`.
+    pub fn with_client_version(mut self, client_version: impl Into<String>) -> Self {
+        self.client_version = Some(client_version.into());
+        self
     }
 
     /// Checks for an available update, reporting `current_version` as the
@@ -761,7 +758,6 @@ mod tests {
             "app-1",
             "stable",
             MachineId::new("mid-1").unwrap(),
-            TEST_CLIENT_VERSION,
             MockTransport::new(response),
         )
     }
@@ -788,7 +784,6 @@ mod tests {
             "app-1",
             "stable",
             MachineId::new("mid-1").unwrap(),
-            TEST_CLIENT_VERSION,
             ScriptedTransport {
                 responses: responses.into_iter().map(String::from).collect(),
                 calls: Cell::new(0),
@@ -1153,6 +1148,28 @@ mod tests {
     }
 
     #[test]
+    fn client_version_is_omitted_unless_set() {
+        // The attribute is optional in the protocol and Nebraska ignores it, so
+        // a caller that has nothing meaningful to report sends nothing.
+        let client = client_with(NO_UPDATE);
+        client.check_for_update(&Version::new(1, 0, 0)).unwrap();
+        let body = client.transport.last_body.borrow().clone().unwrap();
+        assert!(!body.contains("<request version="), "{body}");
+        assert!(!body.contains(" version=\"\""), "{body}");
+    }
+
+    #[test]
+    fn client_version_is_sent_when_set() {
+        let client = client_with(NO_UPDATE).with_client_version(TEST_CLIENT_VERSION);
+        client.check_for_update(&Version::new(1, 0, 0)).unwrap();
+        let body = client.transport.last_body.borrow().clone().unwrap();
+        assert!(
+            body.contains(&format!(r#"version="{TEST_CLIENT_VERSION}""#)),
+            "{body}"
+        );
+    }
+
+    #[test]
     fn redacted_endpoint_drops_path_and_query() {
         let url = Url::parse("https://nebraska.example:8443/v1/update/?secret=hunter2").unwrap();
         let logged = redacted(&url);
@@ -1258,7 +1275,6 @@ mod tests {
             "app-1",
             "stable",
             MachineId::new("mid-1").unwrap(),
-            TEST_CLIENT_VERSION,
             AlwaysFails {
                 calls: Cell::new(0),
             },

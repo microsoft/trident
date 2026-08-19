@@ -56,8 +56,8 @@
 //!     "example-app",
 //!     "stable",
 //!     MachineId::from_uuid(uuid::Uuid::new_v4()),
-//!     "my-updater-1.0.0",
-//! );
+//! )
+//! .with_client_version("my-updater-1.0.0"); // optional; identifies the updater
 //!
 //! let current = Version::new(1, 0, 0);
 //! match client.check_for_update(&current)? {
