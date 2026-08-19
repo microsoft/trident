@@ -64,6 +64,17 @@ stages:
             displayName: Check licenses
             workingDirectory: $(TRIDENT_SOURCE_DIR)
 
+          - script: |
+              # Use a lower optimization level to speed up cargo-about installation.
+              # cargo-about's binary is gated behind the non-default `cli` feature.
+              CARGO_PROFILE_RELEASE_OPT_LEVEL=0 cargo install --locked cargo-about@0.9.1 --features cli
+            displayName: Install cargo-about
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+
+          - script: make validate-notice
+            displayName: Validate third-party NOTICE
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+
       - job: Make
         displayName: make
         timeoutInMinutes: 30

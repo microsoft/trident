@@ -25,6 +25,7 @@ WORKDIR /work
 COPY packaging/rpm/trident.spec .
 COPY packaging ./packaging
 
+COPY LICENSE NOTICE ./
 COPY .cargo/config.toml ./.cargo/config.toml
 COPY Cargo.toml .
 COPY Cargo.lock .
