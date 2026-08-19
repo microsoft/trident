@@ -21,6 +21,7 @@ accepted = [
     "BSD-3-Clause",
     "Unicode-3.0",
     "Zlib",
+    "ISC",
 ]
 
 # Pin the target triples so the generated dependency graph — and therefore the
