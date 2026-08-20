@@ -167,15 +167,6 @@ naming the offending variable.
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_FINALIZE_TIMEOUT` | `10m` | How long a `finalize` is allowed to run before it's considered failed. |
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_HEARTBEAT_INTERVAL` | `60s` | Refresh cadence for the `InProgress` status heartbeat. |
 
-`TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT`, `TRIDENT_ACL_AGENT_NEBRASKA_APP_ID`,
-and `TRIDENT_ACL_AGENT_NEBRASKA_TRACK` also exist, but are **not** used by
-the annotation-driven flow described in this document — every `stage`/
-`finalize` request carries its own `server`/`appId`/`track` fields instead,
-with no fallback to these variables (see
-[above](#the-annotation-contract)). They only matter for
-`trident-acl-agent --validate-connection nebraska`; see
-[Diagnostics](#diagnostics).
-
 ### Setting env vars via a systemd drop-in
 
 The agent ships as `trident-acl-agent.service`, with no `Environment=`
@@ -261,11 +252,14 @@ update-check query against the configured endpoint/app id/track and reports
 whether the Omaha server is reachable. They default to deliberately invalid
 values (`https://nebraska.example.invalid/v1/update`, an all-zero UUID, and
 `unspecified`, respectively) so this check fails loudly unless a deployment
-sets them:
+sets them. Since these variables otherwise play no role in the
+annotation-driven flow, there's no reason to add them to the service's
+persistent environment (e.g. via a drop-in) — set them just for this
+one-off invocation instead:
 
-```ini
-[Service]
-Environment=TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT=https://updates.contoso.com/v1/update
-Environment=TRIDENT_ACL_AGENT_NEBRASKA_APP_ID=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee
-Environment=TRIDENT_ACL_AGENT_NEBRASKA_TRACK=stable
+```console
+$ sudo TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT=https://updates.contoso.com/v1/update \
+    TRIDENT_ACL_AGENT_NEBRASKA_APP_ID=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee \
+    TRIDENT_ACL_AGENT_NEBRASKA_TRACK=stable \
+    trident-acl-agent --validate-connection nebraska
 ```
