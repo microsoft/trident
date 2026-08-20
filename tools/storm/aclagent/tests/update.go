@@ -375,9 +375,19 @@ func prepareVmForAclAgent(cfg stormvmconfig.VMConfig, vmIP string, testConfig st
 	//     (baseimg-acl-agent.yaml), so the agent's own hostname-derived
 	//     default already agrees with the fake apiserver's seeded Node -
 	//     no override needed, exactly like a real deployment.
-	//   - kubernetes.kubeconfig, trident.socket, and orchestration.goal_source
-	//     are all already their compiled-in defaults.
+	//   - kubernetes.kubeconfig and trident.socket are also already their
+	//     compiled-in defaults.
 	// trident-acl-agent.conf is simply never written to the VM.
+	//
+	// kubernetes.annotation_prefix and current_version.key DO need an
+	// explicit override, via a systemd drop-in, below: this scenario
+	// pins its expectations to the AKS-era values (annotation prefix
+	// "acl.azure.com" - see proxies/constants.go - and current-version key
+	// "IMAGE_VERSION"), which used to be trident-acl-agent's own compiled-in
+	// defaults and so needed no override at all. Now that the defaults have
+	// moved to the generic "acl.microsoft.com"/"VERSION_ID", this scenario
+	// must set them explicitly to keep exercising the same values it always
+	// has.
 
 	// The fake apiserver has no real kubelet-managed kubeconfig backing it,
 	// and it takes plain HTTP with no auth/TLS, so provide a minimal
@@ -418,6 +428,36 @@ users:
 	}
 	if err := stormssh.ScpUploadFileWithSudo(cfg, vmIP, localKubeconfigFile.Name(), "/var/lib/kubelet/kubeconfig"); err != nil {
 		return fmt.Errorf("failed to upload fake kubeconfig to VM: %w", err)
+	}
+
+	// Pin this scenario's annotation prefix and current-version key to the
+	// AKS-era values it has always exercised (see doc comment above), via a
+	// systemd drop-in rather than trident-acl-agent.conf, matching how a
+	// real deployment overrides these settings.
+	overrideConf := "[Service]\n" +
+		"Environment=TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX=acl.azure.com\n" +
+		"Environment=TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY=IMAGE_VERSION\n"
+
+	localOverrideFile, err := os.CreateTemp("", "trident-acl-agent-override-*.conf")
+	if err != nil {
+		return fmt.Errorf("failed to create local temp file for systemd drop-in: %w", err)
+	}
+	defer os.Remove(localOverrideFile.Name())
+	if _, err := localOverrideFile.WriteString(overrideConf); err != nil {
+		localOverrideFile.Close()
+		return fmt.Errorf("failed to write local temp systemd drop-in: %w", err)
+	}
+	if err := localOverrideFile.Close(); err != nil {
+		return fmt.Errorf("failed to close local temp systemd drop-in: %w", err)
+	}
+	if _, err := stormssh.SshCommandCombinedOutput(cfg, vmIP, "sudo mkdir -p /etc/systemd/system/trident-acl-agent.service.d"); err != nil {
+		return fmt.Errorf("failed to create trident-acl-agent.service.d on VM: %w", err)
+	}
+	if err := stormssh.ScpUploadFileWithSudo(cfg, vmIP, localOverrideFile.Name(), "/etc/systemd/system/trident-acl-agent.service.d/override.conf"); err != nil {
+		return fmt.Errorf("failed to upload systemd drop-in to VM: %w", err)
+	}
+	if _, err := stormssh.SshCommandCombinedOutput(cfg, vmIP, "sudo systemctl daemon-reload"); err != nil {
+		return fmt.Errorf("failed to reload systemd on VM after writing drop-in: %w", err)
 	}
 
 	// Enable (without "--now"), then always issue a single "restart" of
