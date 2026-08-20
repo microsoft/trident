@@ -24,9 +24,8 @@ use osutils::dependencies::Dependency;
 
 use crate::{
     annotations::{
-        current_active_version, Operation, RequestedOperation, StatusCode, UpdateRequest,
-        UpdateStatus, SCHEMA_VERSION, UPDATE_COMMIT_STATUS_ANNOTATION, UPDATE_REQUEST_ANNOTATION,
-        UPDATE_STATUS_ANNOTATION,
+        current_active_version, AnnotationKeys, Operation, RequestedOperation, StatusCode,
+        UpdateRequest, UpdateStatus, SCHEMA_VERSION,
     },
     config::AgentConfig,
     k8s::{K8sClientError, NodeClient},
@@ -106,16 +105,19 @@ pub struct Orchestrator<R = SystemRebooter> {
     k8s: NodeClient,
     rebooter: R,
     state: StateStore,
+    annotation_keys: AnnotationKeys,
 }
 
 impl Orchestrator<SystemRebooter> {
     pub async fn from_config(config: AgentConfig) -> Result<Self, anyhow::Error> {
         let k8s = NodeClient::new(&config.kubernetes).await?;
+        let annotation_keys = AnnotationKeys::new(&config.kubernetes.annotation_prefix);
         Ok(Self {
             state: StateStore::new(config.orchestration.state_path.clone()),
             config,
             k8s,
             rebooter: SystemRebooter,
+            annotation_keys,
         })
     }
 }
@@ -152,7 +154,7 @@ where
 
     async fn recover_from_trident_state(&self) -> Result<(), anyhow::Error> {
         let node = self.k8s.get_node(&self.config.kubernetes.node_name).await?;
-        let snapshot = Snapshot::from_node(&node);
+        let snapshot = Snapshot::from_node(&node, &self.annotation_keys);
         let persisted = self.state.load()?;
 
         if let Some(pending) = persisted.pending_commit.clone() {
@@ -196,7 +198,7 @@ where
     }
 
     async fn reconcile_node(&self, node: &Node) -> Result<LoopControl, anyhow::Error> {
-        let snapshot = Snapshot::from_node(node);
+        let snapshot = Snapshot::from_node(node, &self.annotation_keys);
         log::debug!(
             "received node update: request={:?} operation_status={:?} commit_status={:?}",
             snapshot.request,
@@ -869,8 +871,8 @@ where
         let status = status.refreshed_for_write();
         let mut annotations = BTreeMap::new();
         let annotation_key = match status.operation {
-            Operation::Commit => UPDATE_COMMIT_STATUS_ANNOTATION,
-            _ => UPDATE_STATUS_ANNOTATION,
+            Operation::Commit => &self.annotation_keys.commit_status,
+            _ => &self.annotation_keys.status,
         };
         annotations.insert(
             annotation_key.to_string(),
@@ -1088,41 +1090,41 @@ struct Snapshot {
 }
 
 impl Snapshot {
-    fn from_node(node: &Node) -> Self {
+    fn from_node(node: &Node, keys: &AnnotationKeys) -> Self {
         let annotations = node.metadata.annotations.as_ref();
-        let raw_request = annotations.and_then(|a| a.get(UPDATE_REQUEST_ANNOTATION));
-        let (request, invalid_request) = match raw_request
-            .map(|v| serde_json::from_str::<UpdateRequest>(v))
-        {
-            None => (None, None),
-            Some(Ok(candidate)) => match candidate.clone().validate() {
-                Ok(valid) => (Some(valid), None),
-                Err(reason) => (
-                    None,
-                    Some(InvalidRequest {
-                        node_update_id: candidate.node_update_id,
-                        operation_id: candidate.operation_id,
-                        operation: candidate.operation.into(),
-                        reason,
-                    }),
-                ),
-            },
-            Some(Err(err)) => {
-                // Cannot attribute a status to an operationId we couldn't
-                // even parse out of the annotation - log loudly instead so
-                // this doesn't fail silently, but there's no request to
-                // surface an InvalidRequest status against.
-                log::warn!(
-                    "ignoring malformed {UPDATE_REQUEST_ANNOTATION} annotation (JSON parse failed): {err}"
-                );
-                (None, None)
-            }
-        };
+        let raw_request = annotations.and_then(|a| a.get(&keys.request));
+        let (request, invalid_request) =
+            match raw_request.map(|v| serde_json::from_str::<UpdateRequest>(v)) {
+                None => (None, None),
+                Some(Ok(candidate)) => match candidate.clone().validate() {
+                    Ok(valid) => (Some(valid), None),
+                    Err(reason) => (
+                        None,
+                        Some(InvalidRequest {
+                            node_update_id: candidate.node_update_id,
+                            operation_id: candidate.operation_id,
+                            operation: candidate.operation.into(),
+                            reason,
+                        }),
+                    ),
+                },
+                Some(Err(err)) => {
+                    // Cannot attribute a status to an operationId we couldn't
+                    // even parse out of the annotation - log loudly instead so
+                    // this doesn't fail silently, but there's no request to
+                    // surface an InvalidRequest status against.
+                    log::warn!(
+                        "ignoring malformed {} annotation (JSON parse failed): {err}",
+                        keys.request
+                    );
+                    (None, None)
+                }
+            };
         let operation_status = annotations
-            .and_then(|a| a.get(UPDATE_STATUS_ANNOTATION))
+            .and_then(|a| a.get(&keys.status))
             .and_then(|v| serde_json::from_str::<UpdateStatus>(v).ok());
         let commit_status = annotations
-            .and_then(|a| a.get(UPDATE_COMMIT_STATUS_ANNOTATION))
+            .and_then(|a| a.get(&keys.commit_status))
             .and_then(|v| serde_json::from_str::<UpdateStatus>(v).ok());
         Self {
             request,

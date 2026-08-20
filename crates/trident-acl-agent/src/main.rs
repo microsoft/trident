@@ -236,8 +236,10 @@ async fn main() -> Result<(), anyhow::Error> {
         // offered, and exit. No Kubernetes/annotation involvement.
         GoalSource::OmahaOnly => run_omaha_only(&config).await,
         // Default: the annotation-driven reconcile loop (watches
-        // acl.azure.com/update-request, drives stage/finalize/rollback/
-        // commit against tridentd, writes acl.azure.com/update-status).
+        // <prefix>/update-request, drives stage/finalize/rollback/
+        // commit against tridentd, writes <prefix>/update-status; prefix
+        // defaults to acl.azure.com, overridable via
+        // TRIDENT_ACL_AGENT_ANNOTATION_PREFIX).
         GoalSource::Annotations => Orchestrator::from_config(config).await?.run().await,
     }
 }
