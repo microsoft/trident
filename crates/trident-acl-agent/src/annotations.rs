@@ -76,11 +76,22 @@ const TRUNCATION_MARKER: &str = "... (truncated)";
 // stub itself is overridable via TRIDENT_ACL_AGENT_CURRENT_VERSION_STUB, for
 // dev/test hosts that want a specific sentinel.
 pub const CURRENT_VERSION_STUB: &str = "0.0.0-unprobed-trident-acl-agent-stub";
+/// Default path `current_active_version` reads. Overridable via
+/// `TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH` so a deployment can point the
+/// agent at any file that follows the os-release format (`KEY=VALUE` lines,
+/// optionally quoted, blank lines and `#` comments ignored - see
+/// <https://www.freedesktop.org/software/systemd/man/latest/os-release.html>)
+/// instead of the real `/etc/os-release`, e.g. a vendor-specific file that
+/// carries the running image's version under a key `/etc/os-release`
+/// doesn't have room for.
+pub const DEFAULT_CURRENT_VERSION_PATH: &str = osutils::osrelease::OS_RELEASE_PATH;
 /// Default os-release key `current_active_version` looks up for the running
 /// image's version. Overridable via `TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY`
 /// so a deployment that doesn't set `IMAGE_VERSION` can point at whatever
-/// key its os-release does carry.
+/// key its os-release (or `TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH`
+/// override) does carry.
 pub const DEFAULT_CURRENT_VERSION_KEY: &str = "IMAGE_VERSION";
+const ENV_CURRENT_VERSION_PATH: &str = "TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH";
 const ENV_CURRENT_VERSION_KEY: &str = "TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY";
 const ENV_CURRENT_VERSION_STUB: &str = "TRIDENT_ACL_AGENT_CURRENT_VERSION_STUB";
 
@@ -294,15 +305,14 @@ fn env_override(name: &str) -> Option<String> {
 }
 
 pub fn current_active_version() -> String {
+    let path = env_override(ENV_CURRENT_VERSION_PATH)
+        .unwrap_or_else(|| DEFAULT_CURRENT_VERSION_PATH.to_string());
     let key = env_override(ENV_CURRENT_VERSION_KEY)
         .unwrap_or_else(|| DEFAULT_CURRENT_VERSION_KEY.to_string());
-    read_os_release_value(osutils::osrelease::OS_RELEASE_PATH, &key).unwrap_or_else(|| {
+    read_os_release_value(&path, &key).unwrap_or_else(|| {
         let stub = env_override(ENV_CURRENT_VERSION_STUB)
             .unwrap_or_else(|| CURRENT_VERSION_STUB.to_string());
-        log::warn!(
-            "{key} not found in {}; falling back to stub current version {stub}",
-            osutils::osrelease::OS_RELEASE_PATH
-        );
+        log::warn!("{key} not found in {path}; falling back to stub current version {stub}");
         stub
     })
 }
@@ -1443,26 +1453,37 @@ mod tests {
         assert_eq!(result.as_deref(), Some("202608.6.0"));
     }
 
-    /// Clears both env vars `current_active_version` reads. Environment
+    /// Clears all three env vars `current_active_version` reads. Environment
     /// mutation is process-global and `std::env::remove_var`/`set_var` are
     /// `unsafe` (not thread-safe against concurrent reads elsewhere in the
-    /// process), so the defaults/overrides cases below are intentionally
-    /// folded into one sequential `#[test]` rather than several separate
-    /// ones that `cargo test` could run in parallel against the same
-    /// variables.
+    /// process), so the defaults/overrides/read-path cases below are
+    /// intentionally folded into one sequential `#[test]` rather than
+    /// several separate ones that `cargo test` could run in parallel
+    /// against the same variables.
     fn clear_current_version_env() {
         // SAFETY: single-threaded within this test function; no other test
-        // in this crate reads or writes these two variables.
+        // in this crate reads or writes these three variables.
         unsafe {
+            std::env::remove_var(ENV_CURRENT_VERSION_PATH);
             std::env::remove_var(ENV_CURRENT_VERSION_KEY);
             std::env::remove_var(ENV_CURRENT_VERSION_STUB);
         }
     }
 
     #[test]
-    fn current_active_version_key_and_stub_are_overridable_via_env() {
+    fn current_active_version_path_key_and_stub_are_overridable_via_env() {
         clear_current_version_env();
+        assert_eq!(env_override(ENV_CURRENT_VERSION_PATH), None);
         assert_eq!(env_override(ENV_CURRENT_VERSION_KEY), None);
+
+        // SAFETY: see clear_current_version_env's doc comment.
+        unsafe {
+            std::env::set_var(ENV_CURRENT_VERSION_PATH, "/custom/os-release");
+        }
+        assert_eq!(
+            env_override(ENV_CURRENT_VERSION_PATH).as_deref(),
+            Some("/custom/os-release")
+        );
 
         // SAFETY: see clear_current_version_env's doc comment.
         unsafe {
@@ -1485,10 +1506,52 @@ mod tests {
         // An empty override is treated the same as unset.
         // SAFETY: see clear_current_version_env's doc comment.
         unsafe {
+            std::env::set_var(ENV_CURRENT_VERSION_PATH, "");
             std::env::set_var(ENV_CURRENT_VERSION_KEY, "");
         }
+        assert_eq!(env_override(ENV_CURRENT_VERSION_PATH), None);
         assert_eq!(env_override(ENV_CURRENT_VERSION_KEY), None);
 
+        clear_current_version_env();
+
+        // current_active_version() itself honors TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH,
+        // pointing it at an arbitrary os-release-formatted file instead of the
+        // real /etc/os-release.
+        let dir = std::env::temp_dir();
+        let found_path = dir.join(format!(
+            "os-release-test-current-version-{}",
+            Uuid::new_v4()
+        ));
+        std::fs::write(
+            &found_path,
+            "NAME=\"Contoso Linux\"\nVERSION_ID=202608.6.0\n",
+        )
+        .unwrap();
+        // SAFETY: see clear_current_version_env's doc comment.
+        unsafe {
+            std::env::set_var(ENV_CURRENT_VERSION_PATH, found_path.to_str().unwrap());
+            std::env::set_var(ENV_CURRENT_VERSION_KEY, "VERSION_ID");
+        }
+        assert_eq!(current_active_version(), "202608.6.0");
+        std::fs::remove_file(&found_path).ok();
+        clear_current_version_env();
+
+        // When the configured key isn't present at the configured path, it
+        // still falls back to the (possibly also-overridden) stub, exactly
+        // as it does for the real /etc/os-release.
+        let missing_path = dir.join(format!(
+            "os-release-test-current-version-missing-{}",
+            Uuid::new_v4()
+        ));
+        std::fs::write(&missing_path, "NAME=\"Contoso Linux\"\n").unwrap();
+        // SAFETY: see clear_current_version_env's doc comment.
+        unsafe {
+            std::env::set_var(ENV_CURRENT_VERSION_PATH, missing_path.to_str().unwrap());
+            std::env::set_var(ENV_CURRENT_VERSION_KEY, "VERSION_ID");
+            std::env::set_var(ENV_CURRENT_VERSION_STUB, "custom-stub-for-missing-key");
+        }
+        assert_eq!(current_active_version(), "custom-stub-for-missing-key");
+        std::fs::remove_file(&missing_path).ok();
         clear_current_version_env();
     }
 }
