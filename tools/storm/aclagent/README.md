@@ -40,18 +40,23 @@ safe for the scenario to deliver the kubeconfig and enable the service once,
 after `deploy-vm`, rather than baking enablement into the image: the state
 persists across `run-ab-update`'s finalize the same way the kubeconfig does.
 
-`prepareVmForAclAgent` never writes a `trident-acl-agent.conf` at all - the
-agent's compiled-in defaults already cover everything it needs (see the
-function's own doc comment): `nebraska.app_id`/`nebraska.endpoint` are
-supplied per-request via the update-request annotation's `appId`/`server`
-fields instead (see `RunABUpdate`'s `PatchStep.AppId`/`PatchStep.Server`),
-`kubernetes.node_name` defaults to the node's real hostname (which the VM
-image's Image Customizer config sets to match `TestConfig.NodeName`), and
-`kubernetes.api_server` is left unset so the fake kubeconfig's own `server:`
-field is used as-is. `prepareVmForAclAgent` writes only that fake
-kubeconfig, then runs `systemctl enable --now trident-acl-agent.service`.
-Before that runs, the service simply isn't started -- no crash-looping, no
-log noise.
+`prepareVmForAclAgent` never writes a `trident-acl-agent.conf` at all -
+`nebraska.app_id`/`nebraska.endpoint` are supplied per-request via the
+update-request annotation's `appId`/`server` fields instead (see
+`RunABUpdate`'s `PatchStep.AppId`/`PatchStep.Server`), `kubernetes.node_name`
+defaults to the node's real hostname (which the VM image's Image Customizer
+config sets to match `TestConfig.NodeName`), and `kubernetes.api_server` is
+left unset so the fake kubeconfig's own `server:` field is used as-is.
+`kubernetes.annotation_prefix` and `current_version.key`, however, ARE
+overridden, via a systemd drop-in
+(`/etc/systemd/system/trident-acl-agent.service.d/override.conf`) that
+pins them to this scenario's expected `acl.azure.com`/`IMAGE_VERSION`
+values (see `proxies/constants.go`) - these used to be the agent's own
+compiled-in defaults and needed no override, but no longer are now that
+the defaults have moved to the generic `acl.microsoft.com`/`VERSION_ID`.
+`prepareVmForAclAgent` writes that drop-in and the fake kubeconfig, then
+enables and restarts `trident-acl-agent.service`. Before that runs, the
+service simply isn't started -- no crash-looping, no log noise.
 
 ## Local usage
 
