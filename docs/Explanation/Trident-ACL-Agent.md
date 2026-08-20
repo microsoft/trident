@@ -3,9 +3,9 @@
 `trident-acl-agent` is an on-node daemon that drives Trident
 [A/B updates](./AB-Update.md) from a Kubernetes control plane, using node
 annotations instead of a direct API call as the trigger. It is the on-node
-half of Azure Container Linux (ACL)'s update mechanism, but the mechanism
-itself is not AKS-specific: any Kubernetes control-plane component (a
-custom controller, an operator, or a script driven by `kubectl patch`) can
+half of Azure Container Linux (ACL)'s update mechanism. Any Kubernetes
+control-plane component (a custom controller, an operator, or a script
+driven by `kubectl patch`) can
 orchestrate updates across a fleet of nodes by writing to the annotation
 contract described below, provided it is willing to speak the
 [Omaha](https://github.com/omaha-consortium/omaha) protocol for image
@@ -78,7 +78,7 @@ A request annotation looks like:
 
 | `operation` | Trident invocation | Effect |
 |---|---|---|
-| `stage` | `trident update --allowed-operations=stage` | Streams the target image to the inactive partition. No reboot. |
+| `stage` | `trident update --allowed-operations=stage` | Queries the `server`/`appId`/`track` Omaha endpoint for `targetVersion`, then streams the resulting image to the inactive partition. No reboot. |
 | `finalize` | `trident update --allowed-operations=finalize` (gRPC `UpdateFinalize`, caller-handled reboot) | Arms boot for the staged target, writes a terminal `finalize` status, then triggers the reboot. |
 | `rollback` | `trident rollback --ab` (gRPC `RollbackStage`/`RollbackFinalize`, caller-handled reboot) | Swaps back to the previous partition, mirroring `finalize` on the return path. Only the last update can be undone this way. |
 
@@ -95,14 +95,17 @@ sequenceDiagram
     actor Orchestrator
     participant API as K8s API Server
     participant Agent as Trident ACL Agent<br/>(on the node)
+    participant Nebraska as Omaha server
     participant Trident
 
     Orchestrator->>API: 1. PATCH request: stage (opId A)
     Note over Agent: agent picks up the request<br/>on its next poll
     Agent->>API: 2. read request, PATCH status: stage InProgress
-    Agent->>Trident: 3. Stage (image to inactive partition)
+    Agent->>Nebraska: 3. query targetVersion (server/appId/track)
+    Nebraska-->>Agent: image location
+    Agent->>Trident: 4. Stage (image to inactive partition)
     Trident-->>Agent: staged | error
-    Agent->>API: 4. PATCH status: stage Success | <error code>
+    Agent->>API: 5. PATCH status: stage Success | <error code>
     API-->>Orchestrator: terminal stage code
 ```
 
