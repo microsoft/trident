@@ -11,31 +11,16 @@ contract described below, provided it is willing to speak the
 [Omaha](https://github.com/omaha-consortium/omaha) protocol for image
 distribution and honors the agent's per-node protocol.
 
-## Modes
-
-The agent runs in one of two modes, selected by
-`TRIDENT_ACL_AGENT_ORCHESTRATION_GOAL_SOURCE`:
-
-- **`annotations`** (the default) — watches this Node's annotations for an
-  update request, and drives Trident's stage/finalize/rollback/commit
-  operations against `tridentd` accordingly, reporting progress and status
-  back to Kubernetes and to the configured Omaha server. This is the mode
-  described in the rest of this document.
-- **`omaha-only`** — a one-shot mode with no Kubernetes involvement at all:
-  the agent queries its Omaha server once, and if an update is offered,
-  calls `tridentd`'s combined `update()` RPC once and exits. Useful for a
-  node that isn't part of a Kubernetes-orchestrated fleet.
-
 ## The annotation contract
 
-In `annotations` mode, an orchestrator (a Kubernetes controller with RBAC
-permission to PATCH the target Node object) triggers an update by writing a
-JSON payload to a request annotation on the Node. The agent watches that
-annotation, drives the requested operation against `tridentd`, and writes
-its progress and result back to two status annotations on the same Node.
+An orchestrator (a Kubernetes controller with RBAC permission to PATCH the
+target Node object) triggers an update by writing a JSON payload to a
+request annotation on the Node. The agent watches that annotation, drives
+the requested operation against `tridentd`, and writes its progress and
+result back to two status annotations on the same Node.
 
 Three annotation keys make up the contract, all sharing one configurable
-prefix (`acl.azure.com` by default — see [Configuration](#configuration)
+prefix (`acl.microsoft.com` by default — see [Configuration](#configuration)
 below):
 
 | Annotation | Written by | Purpose |
@@ -169,18 +154,17 @@ naming the offending variable.
 
 | Variable | Default | Description |
 |---|---|---|
-| `TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX` | `acl.azure.com` | The annotation-key prefix for the request/status/commit-status annotations (e.g. the `acl.azure.com` in `acl.azure.com/update-request`). Not tied to AKS or Azure — any orchestrator can pick its own namespace here so its annotations don't collide with another controller's. |
+| `TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX` | `acl.microsoft.com` | The annotation-key prefix for the request/status/commit-status annotations (e.g. the `acl.microsoft.com` in `acl.microsoft.com/update-request`). Any orchestrator can pick its own namespace here so its annotations don't collide with another controller's. |
 | `TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH` | `/etc/os-release` | The file the agent reads to determine the node's currently running version. Any file works, as long as it follows the os-release format (`KEY=VALUE` lines, optionally single- or double-quoted, blank lines and `#` comments ignored) — see [below](#configuring-the-on-disk-version). |
-| `TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY` | `IMAGE_VERSION` | The key the agent looks up in `TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH` (`/etc/os-release` by default) to determine the node's currently running version, used to compare against a request's `targetVersion` (e.g. to short-circuit to `AlreadyAtTarget`). `IMAGE_VERSION` is what ACL images carry; a deployment building its own images can point this at whatever key its own `os-release`-formatted file provides instead — see [below](#configuring-the-on-disk-version). |
+| `TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY` | `VERSION_ID` | The key the agent looks up in `TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH` (`/etc/os-release` by default) to determine the node's currently running version, used to compare against a request's `targetVersion` (e.g. to short-circuit to `AlreadyAtTarget`). `VERSION_ID` is the standard `os-release` field most images already stamp; a deployment that instead carries an ACL-specific `IMAGE_VERSION` field can point this variable at that key instead — see [below](#configuring-the-on-disk-version). |
 | `TRIDENT_ACL_AGENT_CURRENT_VERSION_STUB` | `0.0.0-unprobed-trident-acl-agent-stub` | Sentinel value used as the node's "current version" when `TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY` isn't present at `TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH` (e.g. a dev/test host, or an image that hasn't started stamping that key yet). Deliberately shaped so it can never collide with a real release version and cause a false `AlreadyAtTarget`. |
-| `TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT` | `https://nebraska.example.invalid/v1/update` (deliberately unreachable) | The Omaha server URL to poll and report events to, for `omaha-only` mode only. In `annotations` mode this is never used as a fallback — `stage`/`finalize` requests must carry their own `server` field (see [above](#the-annotation-contract)). |
-| `TRIDENT_ACL_AGENT_NEBRASKA_APP_ID` | An all-zero UUID (deliberately invalid) | The Omaha application id this node checks in as, for `omaha-only` mode. In `annotations` mode, required on the request's `appId` field instead. |
-| `TRIDENT_ACL_AGENT_NEBRASKA_TRACK` | `unspecified` (deliberately invalid) | The Omaha track this node follows, for `omaha-only` mode. In `annotations` mode, required on the request's `track` field instead. |
+| `TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT` | `https://nebraska.example.invalid/v1/update` (deliberately unreachable) | The Omaha server URL, never used as a fallback — `stage`/`finalize` requests must carry their own `server` field (see [above](#the-annotation-contract)). |
+| `TRIDENT_ACL_AGENT_NEBRASKA_APP_ID` | An all-zero UUID (deliberately invalid) | The Omaha application id this node checks in as, never used as a fallback — required on the request's `appId` field instead. |
+| `TRIDENT_ACL_AGENT_NEBRASKA_TRACK` | `unspecified` (deliberately invalid) | The Omaha track this node follows, never used as a fallback — required on the request's `track` field instead. |
 | `TRIDENT_ACL_AGENT_KUBERNETES_API_SERVER` | unset | Explicit override for the Kubernetes API server URL. When unset, the server embedded in the kubeconfig is used as-is. |
 | `TRIDENT_ACL_AGENT_KUBERNETES_KUBECONFIG` | `/var/lib/kubelet/kubeconfig` | Path to the kubeconfig used to reach the Kubernetes API server and authenticate as this node. |
 | `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME` | The node's own hostname, lowercased | The Node object this agent watches/patches. |
 | `TRIDENT_ACL_AGENT_TRIDENT_SOCKET` | `unix:///run/trident/trident.sock` | The gRPC Unix socket URI used to reach `tridentd`. |
-| `TRIDENT_ACL_AGENT_ORCHESTRATION_GOAL_SOURCE` | `annotations` | Selects the agent's operating mode: `annotations` or `omaha-only`. |
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_STATE_PATH` | `/var/lib/trident-acl-agent/state.json` | Path to the agent's persistent state file bridging the pre-reboot and post-reboot halves of `finalize`/`rollback` across the reboot. |
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_STAGE_TIMEOUT` | `20m` | How long a `stage` is allowed to run (a [`humantime`](https://docs.rs/humantime) duration, e.g. `20m`, `1h`) before it's considered failed. |
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_FINALIZE_TIMEOUT` | `10m` | How long a `finalize` is allowed to run before it's considered failed. |
@@ -198,7 +182,7 @@ $ sudo systemctl edit trident-acl-agent.service
 
 This opens `/etc/systemd/system/trident-acl-agent.service.d/override.conf`
 in an editor. For example, to point the agent at a custom annotation
-namespace and Omaha server for a non-AKS Kubernetes deployment:
+namespace and Omaha server:
 
 ```ini
 [Service]
@@ -210,7 +194,7 @@ Environment=TRIDENT_ACL_AGENT_NEBRASKA_TRACK=stable
 
 With the prefix above, the orchestrator now reads/writes
 `acl.contoso.com/update-request`, `acl.contoso.com/update-status`, and
-`acl.contoso.com/update-commit-status` instead of the `acl.azure.com/*`
+`acl.contoso.com/update-commit-status` instead of the `acl.microsoft.com/*`
 defaults. Reload and restart to apply:
 
 ```console
@@ -224,25 +208,39 @@ unit plus drop-in), useful for confirming the override took effect.
 ### Configuring the on-disk version
 
 The agent determines the node's current version by reading a key out of
-`/etc/os-release`, defaulting to `IMAGE_VERSION` — the key ACL images
-stamp. A deployment building its own images, not derived from ACL, may not
-carry `IMAGE_VERSION` at all; rather than requiring every image build to
-add an ACL-specific field, point the agent at the standard
+`TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH` (`/etc/os-release` by default),
+defaulting to the key `VERSION_ID` — the standard
 [`os-release`](https://www.freedesktop.org/software/systemd/man/latest/os-release.html)
-field `VERSION_ID` instead:
+field most distributions already stamp. A deployment that instead builds
+ACL images carrying an `IMAGE_VERSION` field can point the agent at that
+key instead:
 
 ```ini
 [Service]
-Environment=TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY=VERSION_ID
+Environment=TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY=IMAGE_VERSION
 ```
 
-With this set, the agent reads `VERSION_ID` from `/etc/os-release` (e.g.
-`VERSION_ID=202606.29.0`) as the node's current version, and compares it
-against a request's `targetVersion` the same way it would for
-`IMAGE_VERSION` — including short-circuiting to `AlreadyAtTarget` when they
-already match. If the configured key is absent from `/etc/os-release`
-(for example, on a dev/test host with a minimal `os-release`), the agent
-falls back to `TRIDENT_ACL_AGENT_CURRENT_VERSION_STUB`
+With this set, the agent reads `IMAGE_VERSION` from
+`TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH` (e.g. `IMAGE_VERSION=202606.29.0`)
+as the node's current version, and compares it against a request's
+`targetVersion` the same way it would for `VERSION_ID` — including
+short-circuiting to `AlreadyAtTarget` when they already match.
+
+A deployment that keeps its version stamp somewhere other than
+`/etc/os-release` — a different file entirely — can point the agent there
+instead, as long as that file follows the `os-release` key-value schema
+(`KEY=VALUE` lines, optionally quoted, blank lines and `#` comments
+ignored):
+
+```ini
+[Service]
+Environment=TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH=/etc/my-app-release
+Environment=TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY=BUILD_VERSION
+```
+
+If the configured key is absent from the configured file (for example, on
+a dev/test host with a minimal `os-release`), the agent falls back to
+`TRIDENT_ACL_AGENT_CURRENT_VERSION_STUB`
 (`0.0.0-unprobed-trident-acl-agent-stub` by default), a sentinel value
 that can never accidentally match a real requested version.
 
