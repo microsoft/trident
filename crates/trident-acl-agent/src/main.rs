@@ -233,13 +233,14 @@ async fn main() -> Result<(), anyhow::Error> {
 
     match config.orchestration.goal_source {
         // Historical one-shot flow: query Nebraska once, apply an update if
-        // offered, and exit. No Kubernetes/annotation involvement.
+        // offered, and exit. No Kubernetes/annotation involvement. Not a
+        // documented/supported deployment option (see config::GoalSource).
         GoalSource::OmahaOnly => run_omaha_only(&config).await,
-        // Default: the annotation-driven reconcile loop (watches
-        // <prefix>/update-request, drives stage/finalize/rollback/
+        // The only supported mode: the annotation-driven reconcile loop
+        // (watches <prefix>/update-request, drives stage/finalize/rollback/
         // commit against tridentd, writes <prefix>/update-status; prefix
-        // defaults to acl.azure.com, overridable via
-        // TRIDENT_ACL_AGENT_ANNOTATION_PREFIX).
+        // defaults to acl.microsoft.com, overridable via
+        // TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX).
         GoalSource::Annotations => Orchestrator::from_config(config).await?.run().await,
     }
 }
