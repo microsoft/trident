@@ -184,6 +184,10 @@ os:
       destination: /etc/systemd/network/99-dhcp-eth0.network
     - source: files/sudoers-wheel
       destination: /etc/sudoers.d/wheel
+    # See baseimg-acl-agent.yaml for why this is baked in rather than
+    # written at runtime.
+    - source: files/trident-acl-agent-override.conf
+      destination: /etc/systemd/system/trident-acl-agent.service.d/override.conf
 
   services:
     enable:
