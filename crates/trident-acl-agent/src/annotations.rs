@@ -2,12 +2,16 @@
 //!
 //! This module (schema types, `UpdateRequest::validate()`, and the
 //! `#[cfg(test)]` design-doc conformance tests below) implements the
-//! `acl.azure.com/update-request`, `acl.azure.com/update-status`, and
-//! `acl.azure.com/update-commit-status` node annotation protocol described
-//! by the current accepted design (`accepted-design-v3.md`). Keep
-//! `UpdateRequest`/`UpdateStatus`/`StatusCode` and `validate()` in sync with
-//! that document's formal JSON Schema (its section "Formal JSON Schema") -
-//! the `design_doc_*`/`agent_built_*_conform_to_formal_schema` tests in this
+//! `<prefix>/update-request`, `<prefix>/update-status`, and
+//! `<prefix>/update-commit-status` node annotation protocol described
+//! by the current accepted design (`accepted-design-v3.md`), where
+//! `<prefix>` defaults to `acl.azure.com` (see
+//! [`AnnotationKeys`]/[`crate::config::DEFAULT_ANNOTATION_PREFIX`]) and is
+//! overridable via the `TRIDENT_ACL_AGENT_ANNOTATION_PREFIX` environment
+//! variable. Keep `UpdateRequest`/`UpdateStatus`/`StatusCode` and
+//! `validate()` in sync with that document's formal JSON Schema (its
+//! section "Formal JSON Schema") - the
+//! `design_doc_*`/`agent_built_*_conform_to_formal_schema` tests in this
 //! file's test module pin that JSON Schema in literally and check both the
 //! doc's own examples and our constructed annotations against it.
 
@@ -16,9 +20,45 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
 
-pub const UPDATE_REQUEST_ANNOTATION: &str = "acl.azure.com/update-request";
-pub const UPDATE_STATUS_ANNOTATION: &str = "acl.azure.com/update-status";
-pub const UPDATE_COMMIT_STATUS_ANNOTATION: &str = "acl.azure.com/update-commit-status";
+use crate::config::DEFAULT_ANNOTATION_PREFIX;
+
+/// Suffix (appended to the configured annotation prefix) for the request
+/// annotation, e.g. `acl.azure.com/update-request`.
+pub const UPDATE_REQUEST_SUFFIX: &str = "update-request";
+/// Suffix for the operation-status annotation, e.g.
+/// `acl.azure.com/update-status`.
+pub const UPDATE_STATUS_SUFFIX: &str = "update-status";
+/// Suffix for the post-reboot commit-status annotation, e.g.
+/// `acl.azure.com/update-commit-status`.
+pub const UPDATE_COMMIT_STATUS_SUFFIX: &str = "update-commit-status";
+
+/// The full annotation keys for one deployment's configured annotation
+/// prefix. Built once from [`crate::config::KubernetesConfig::annotation_prefix`]
+/// and threaded through instead of hardcoding the AKS-specific
+/// `acl.azure.com` prefix.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnnotationKeys {
+    pub request: String,
+    pub status: String,
+    pub commit_status: String,
+}
+
+impl AnnotationKeys {
+    pub fn new(prefix: &str) -> Self {
+        Self {
+            request: format!("{prefix}/{UPDATE_REQUEST_SUFFIX}"),
+            status: format!("{prefix}/{UPDATE_STATUS_SUFFIX}"),
+            commit_status: format!("{prefix}/{UPDATE_COMMIT_STATUS_SUFFIX}"),
+        }
+    }
+}
+
+impl Default for AnnotationKeys {
+    fn default() -> Self {
+        Self::new(DEFAULT_ANNOTATION_PREFIX)
+    }
+}
+
 pub const SCHEMA_VERSION: &str = "1.0";
 const MAX_MESSAGE_BYTES: usize = 2048;
 const TRUNCATION_MARKER: &str = "... (truncated)";
@@ -283,6 +323,25 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
+
+    #[test]
+    fn annotation_keys_default_uses_acl_azure_com_prefix() {
+        let keys = AnnotationKeys::default();
+        assert_eq!(keys.request, "acl.azure.com/update-request");
+        assert_eq!(keys.status, "acl.azure.com/update-status");
+        assert_eq!(keys.commit_status, "acl.azure.com/update-commit-status");
+    }
+
+    #[test]
+    fn annotation_keys_new_applies_custom_prefix() {
+        let keys = AnnotationKeys::new("contoso.example.com");
+        assert_eq!(keys.request, "contoso.example.com/update-request");
+        assert_eq!(keys.status, "contoso.example.com/update-status");
+        assert_eq!(
+            keys.commit_status,
+            "contoso.example.com/update-commit-status"
+        );
+    }
 
     fn sample_request(operation: RequestedOperation) -> UpdateRequest {
         UpdateRequest {

@@ -34,6 +34,12 @@ const ENV_ORCHESTRATION_STAGE_TIMEOUT: &str = "TRIDENT_ACL_AGENT_ORCHESTRATION_S
 const ENV_ORCHESTRATION_FINALIZE_TIMEOUT: &str = "TRIDENT_ACL_AGENT_ORCHESTRATION_FINALIZE_TIMEOUT";
 const ENV_ORCHESTRATION_HEARTBEAT_INTERVAL: &str =
     "TRIDENT_ACL_AGENT_ORCHESTRATION_HEARTBEAT_INTERVAL";
+/// Overrides the annotation-key prefix (e.g. `acl.azure.com` in
+/// `acl.azure.com/update-request`). Defaults to
+/// [`DEFAULT_ANNOTATION_PREFIX`] so a deployment not tied to AKS's
+/// `acl.azure.com` domain can point the agent at its own annotation
+/// namespace without a code change.
+const ENV_KUBERNETES_ANNOTATION_PREFIX: &str = "TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX";
 
 const DEFAULT_KUBERNETES_POLL_INTERVAL: Duration = Duration::from_secs(2);
 // TODO: placeholder until the real production Nebraska/Omaha endpoint is
@@ -50,6 +56,9 @@ const DEFAULT_FINALIZE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const DEFAULT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(60);
 pub const DEFAULT_STATE_PATH: &str = "/var/lib/trident-acl-agent/state.json";
 pub const DEFAULT_KUBELET_KUBECONFIG: &str = "/var/lib/kubelet/kubeconfig";
+/// Default annotation-key prefix, matching AKS's `acl.azure.com` namespace.
+/// Override with `TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX`.
+pub const DEFAULT_ANNOTATION_PREFIX: &str = "acl.azure.com";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AgentConfig {
@@ -81,6 +90,8 @@ impl AgentConfig {
                     .unwrap_or_else(|| DEFAULT_KUBELET_KUBECONFIG.to_string()),
                 node_name: env_string(ENV_KUBERNETES_NODE_NAME).unwrap_or_else(default_node_name),
                 watch_poll_interval: DEFAULT_KUBERNETES_POLL_INTERVAL,
+                annotation_prefix: env_string(ENV_KUBERNETES_ANNOTATION_PREFIX)
+                    .unwrap_or_else(|| DEFAULT_ANNOTATION_PREFIX.to_string()),
             },
             trident: TridentConfig {
                 socket: env_string(ENV_TRIDENT_SOCKET)
@@ -138,6 +149,12 @@ pub struct KubernetesConfig {
     pub kubeconfig: String,
     pub node_name: String,
     pub watch_poll_interval: Duration,
+    /// Annotation-key prefix used for the request/status/commit-status
+    /// annotations (e.g. `acl.azure.com` in `acl.azure.com/update-request`).
+    /// Defaults to [`DEFAULT_ANNOTATION_PREFIX`], overridable via
+    /// `TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX` so the annotation
+    /// namespace isn't hardcoded to AKS.
+    pub annotation_prefix: String,
 }
 
 impl Default for KubernetesConfig {
@@ -147,6 +164,7 @@ impl Default for KubernetesConfig {
             kubeconfig: DEFAULT_KUBELET_KUBECONFIG.to_string(),
             node_name: default_node_name(),
             watch_poll_interval: DEFAULT_KUBERNETES_POLL_INTERVAL,
+            annotation_prefix: DEFAULT_ANNOTATION_PREFIX.to_string(),
         }
     }
 }
@@ -173,11 +191,15 @@ pub enum GoalSource {
     /// participate in the AKS annotation-driven update protocol.
     OmahaOnly,
     /// The annotation-driven reconcile loop: watches the Node's
-    /// `acl.azure.com/update-request` annotation and drives Trident's
+    /// `<annotation-prefix>/update-request` annotation and drives Trident's
     /// stage/finalize/rollback/commit operations against tridentd
-    /// accordingly, writing progress back to `acl.azure.com/update-status`
-    /// and `acl.azure.com/update-commit-status` (see accepted-design-v3.md).
-    /// This is the default mode.
+    /// accordingly, writing progress back to
+    /// `<annotation-prefix>/update-status` and
+    /// `<annotation-prefix>/update-commit-status` (see
+    /// accepted-design-v3.md). `<annotation-prefix>` defaults to
+    /// [`DEFAULT_ANNOTATION_PREFIX`] (`acl.azure.com`), overridable via
+    /// `TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX`. This is the default
+    /// mode.
     #[default]
     Annotations,
 }
@@ -294,6 +316,7 @@ mod tests {
             env::remove_var(ENV_ORCHESTRATION_STAGE_TIMEOUT);
             env::remove_var(ENV_ORCHESTRATION_FINALIZE_TIMEOUT);
             env::remove_var(ENV_ORCHESTRATION_HEARTBEAT_INTERVAL);
+            env::remove_var(ENV_KUBERNETES_ANNOTATION_PREFIX);
         }
     }
 
@@ -334,6 +357,10 @@ mod tests {
             config.orchestration.heartbeat_interval,
             DEFAULT_HEARTBEAT_INTERVAL
         );
+        assert_eq!(
+            config.kubernetes.annotation_prefix,
+            DEFAULT_ANNOTATION_PREFIX
+        );
 
         // SAFETY: see clear_env's doc comment.
         unsafe {
@@ -355,6 +382,7 @@ mod tests {
             env::set_var(ENV_ORCHESTRATION_STAGE_TIMEOUT, "21m");
             env::set_var(ENV_ORCHESTRATION_FINALIZE_TIMEOUT, "11m");
             env::set_var(ENV_ORCHESTRATION_HEARTBEAT_INTERVAL, "45s");
+            env::set_var(ENV_KUBERNETES_ANNOTATION_PREFIX, "contoso.example.com");
         }
 
         let config = AgentConfig::from_env().unwrap();
@@ -393,6 +421,7 @@ mod tests {
             config.orchestration.heartbeat_interval,
             Duration::from_secs(45)
         );
+        assert_eq!(config.kubernetes.annotation_prefix, "contoso.example.com");
 
         // --- empty value falls back to default, same as unset -------------
         clear_env();
