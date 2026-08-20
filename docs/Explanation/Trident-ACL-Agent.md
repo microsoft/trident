@@ -205,32 +205,23 @@ The agent determines the node's current version by reading a key out of
 `TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH` (`/etc/os-release` by default),
 defaulting to the key `VERSION_ID` — the standard
 [`os-release`](https://www.freedesktop.org/software/systemd/man/latest/os-release.html)
-field most distributions already stamp. A deployment that instead builds
-ACL images carrying an `IMAGE_VERSION` field can point the agent at that
-key instead:
-
-```ini
-[Service]
-Environment=TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY=IMAGE_VERSION
-```
-
-With this set, the agent reads `IMAGE_VERSION` from
-`TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH` (e.g. `IMAGE_VERSION=202606.29.0`)
-as the node's current version, and compares it against a request's
-`targetVersion` the same way it would for `VERSION_ID` — including
-short-circuiting to `AlreadyAtTarget` when they already match.
-
-A deployment that keeps its version stamp somewhere other than
-`/etc/os-release` — a different file entirely — can point the agent there
-instead, as long as that file follows the `os-release` key-value schema
-(`KEY=VALUE` lines, optionally quoted, blank lines and `#` comments
-ignored):
+field most distributions already stamp. A deployment that keeps its
+version stamp under a different key, a different file entirely, or both,
+can point the agent there instead, as long as that file follows the
+`os-release` key-value schema (`KEY=VALUE` lines, optionally quoted, blank
+lines and `#` comments ignored):
 
 ```ini
 [Service]
 Environment=TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH=/etc/my-app-release
 Environment=TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY=BUILD_VERSION
 ```
+
+With this set, the agent reads `BUILD_VERSION` from `/etc/my-app-release`
+(e.g. `BUILD_VERSION=202606.29.0`) as the node's current version, and
+compares it against a request's `targetVersion` the same way it would for
+`VERSION_ID`/`/etc/os-release` — including short-circuiting to
+`AlreadyAtTarget` when they already match.
 
 If the configured key is absent from the configured file (for example, on
 a dev/test host with a minimal `os-release`), the agent falls back to
