@@ -62,17 +62,27 @@ impl Default for AnnotationKeys {
 pub const SCHEMA_VERSION: &str = "1.0";
 const MAX_MESSAGE_BYTES: usize = 2048;
 const TRUNCATION_MARKER: &str = "... (truncated)";
-// TODO(DR-001): current_active_version() now reads /etc/aks-os-version, but
-// falls back to this stub if that file isn't present yet (e.g. an image that
-// hasn't picked up the file, or a dev/test host). Once the file ships
+// TODO(DR-001): current_active_version() now reads the `IMAGE_VERSION` key
+// (overridable via TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY) out of os-release,
+// but falls back to this stub if that key isn't present yet (e.g. an image
+// whose os-release doesn't carry it, or a dev/test host). Once the key ships
 // unconditionally on every ACL image, this fallback (and this comment) can be
 // removed. The stub value below is an explicit sentinel that cannot collide
 // with a real AKS/Trident release version string (those look like
 // "YYYYMM.N.N"), so it can never accidentally match a real requested target
 // version and cause handle_stage/handle_finalize to incorrectly short-circuit
 // to AlreadyAtTarget. Do not remove this comment when bumping the stub value;
-// keep it (and its non-colliding shape) until the fallback is removed.
+// keep it (and its non-colliding shape) until the fallback is removed. The
+// stub itself is overridable via TRIDENT_ACL_AGENT_CURRENT_VERSION_STUB, for
+// dev/test hosts that want a specific sentinel.
 pub const CURRENT_VERSION_STUB: &str = "0.0.0-unprobed-trident-acl-agent-stub";
+/// Default os-release key `current_active_version` looks up for the running
+/// image's version. Overridable via `TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY`
+/// so a deployment that doesn't set `IMAGE_VERSION` can point at whatever
+/// key its os-release does carry.
+pub const DEFAULT_CURRENT_VERSION_KEY: &str = "IMAGE_VERSION";
+const ENV_CURRENT_VERSION_KEY: &str = "TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY";
+const ENV_CURRENT_VERSION_STUB: &str = "TRIDENT_ACL_AGENT_CURRENT_VERSION_STUB";
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "camelCase")]
@@ -275,35 +285,57 @@ fn truncate_message(message: String) -> String {
     truncated
 }
 
-/// Path to the file the ACL image ships carrying the running OS version.
-/// See `CURRENT_VERSION_STUB`'s doc comment above for the stub fallback this
-/// probe still uses when the file isn't there yet.
-const AKS_OS_VERSION_PATH: &str = "/etc/aks-os-version";
+/// Reads `name`, treating both "unset" and "set to the empty string" as
+/// absent, matching `config::env_raw`'s convention: a drop-in override that
+/// clears a variable to `""` should fall back to the default, not try to use
+/// an empty value.
+fn env_override(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|v| !v.is_empty())
+}
 
 pub fn current_active_version() -> String {
-    read_active_version(AKS_OS_VERSION_PATH).unwrap_or_else(|| {
+    let key = env_override(ENV_CURRENT_VERSION_KEY)
+        .unwrap_or_else(|| DEFAULT_CURRENT_VERSION_KEY.to_string());
+    read_os_release_value(osutils::osrelease::OS_RELEASE_PATH, &key).unwrap_or_else(|| {
+        let stub = env_override(ENV_CURRENT_VERSION_STUB)
+            .unwrap_or_else(|| CURRENT_VERSION_STUB.to_string());
         log::warn!(
-            "{AKS_OS_VERSION_PATH} not found; falling back to stub current version \
-             {CURRENT_VERSION_STUB}"
+            "{key} not found in {}; falling back to stub current version {stub}",
+            osutils::osrelease::OS_RELEASE_PATH
         );
-        CURRENT_VERSION_STUB.to_string()
+        stub
     })
 }
 
-/// Reads and trims the active-version file at `path`. Returns `None` (rather
-/// than propagating an error) for any read failure - missing file, permission
-/// error, or empty contents - all of which `current_active_version` treats
-/// identically: fall back to the stub. Split out from
-/// `current_active_version` so tests can point it at a temp file instead of
-/// the real `/etc/aks-os-version`.
-fn read_active_version(path: &str) -> Option<String> {
+/// Reads `path` (an os-release-formatted file: `KEY=VALUE` lines, blank
+/// lines and `#` comments ignored, values optionally single- or
+/// double-quoted - see
+/// <https://www.freedesktop.org/software/systemd/man/latest/os-release.html>)
+/// and returns the trimmed, unquoted value for `key`, or `None` if the file
+/// can't be read, `key` isn't present, or its value is empty - all of which
+/// `current_active_version` treats identically: fall back to the stub.
+/// Split out from `current_active_version` so tests can point it at a temp
+/// file instead of the real os-release.
+fn read_os_release_value(path: &str, key: &str) -> Option<String> {
     let contents = std::fs::read_to_string(path).ok()?;
-    let trimmed = contents.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
+    for line in contents.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((line_key, raw_value)) = line.split_once('=') else {
+            continue;
+        };
+        if line_key.trim() != key {
+            continue;
+        }
+        let value = raw_value.trim().trim_matches('"').trim_matches('\'').trim();
+        if value.is_empty() {
+            return None;
+        }
+        return Some(value.to_string());
     }
+    None
 }
 
 impl From<RequestedOperation> for Operation {
@@ -1343,30 +1375,120 @@ mod tests {
     }
 
     #[test]
-    fn read_active_version_returns_none_for_missing_file() {
+    fn read_os_release_value_returns_none_for_missing_file() {
         assert_eq!(
-            read_active_version("/nonexistent/path/does-not-exist-aks-os-version"),
+            read_os_release_value(
+                "/nonexistent/path/does-not-exist-os-release",
+                DEFAULT_CURRENT_VERSION_KEY
+            ),
             None
         );
     }
 
     #[test]
-    fn read_active_version_trims_and_reads_real_file() {
+    fn read_os_release_value_finds_requested_key() {
         let dir = std::env::temp_dir();
-        let path = dir.join(format!("aks-os-version-test-{}", Uuid::new_v4()));
-        std::fs::write(&path, "  202608.6.0\n").unwrap();
-        let result = read_active_version(path.to_str().unwrap());
+        let path = dir.join(format!("os-release-test-{}", Uuid::new_v4()));
+        std::fs::write(
+            &path,
+            "NAME=\"Azure Linux\"\nIMAGE_VERSION=202608.6.0\nVERSION_ID=3.0\n",
+        )
+        .unwrap();
+        let result = read_os_release_value(path.to_str().unwrap(), "IMAGE_VERSION");
         std::fs::remove_file(&path).ok();
         assert_eq!(result.as_deref(), Some("202608.6.0"));
     }
 
     #[test]
-    fn read_active_version_treats_empty_file_as_absent() {
+    fn read_os_release_value_trims_quotes_and_whitespace() {
         let dir = std::env::temp_dir();
-        let path = dir.join(format!("aks-os-version-test-empty-{}", Uuid::new_v4()));
-        std::fs::write(&path, "   \n").unwrap();
-        let result = read_active_version(path.to_str().unwrap());
+        let path = dir.join(format!("os-release-test-quoted-{}", Uuid::new_v4()));
+        std::fs::write(&path, "  IMAGE_VERSION = \"202608.6.0\" \n").unwrap();
+        let result = read_os_release_value(path.to_str().unwrap(), "IMAGE_VERSION");
+        std::fs::remove_file(&path).ok();
+        assert_eq!(result.as_deref(), Some("202608.6.0"));
+    }
+
+    #[test]
+    fn read_os_release_value_returns_none_for_missing_key() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!("os-release-test-missing-key-{}", Uuid::new_v4()));
+        std::fs::write(&path, "NAME=\"Azure Linux\"\nVERSION_ID=3.0\n").unwrap();
+        let result = read_os_release_value(path.to_str().unwrap(), "IMAGE_VERSION");
         std::fs::remove_file(&path).ok();
         assert_eq!(result, None);
+    }
+
+    #[test]
+    fn read_os_release_value_returns_none_for_empty_value() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!("os-release-test-empty-value-{}", Uuid::new_v4()));
+        std::fs::write(&path, "IMAGE_VERSION=\n").unwrap();
+        let result = read_os_release_value(path.to_str().unwrap(), "IMAGE_VERSION");
+        std::fs::remove_file(&path).ok();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn read_os_release_value_skips_comments_and_blank_lines() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!("os-release-test-comments-{}", Uuid::new_v4()));
+        std::fs::write(
+            &path,
+            "# a comment\n\n# IMAGE_VERSION=should-be-ignored\nIMAGE_VERSION=202608.6.0\n",
+        )
+        .unwrap();
+        let result = read_os_release_value(path.to_str().unwrap(), "IMAGE_VERSION");
+        std::fs::remove_file(&path).ok();
+        assert_eq!(result.as_deref(), Some("202608.6.0"));
+    }
+
+    /// Clears both env vars `current_active_version` reads. Environment
+    /// mutation is process-global and `std::env::remove_var`/`set_var` are
+    /// `unsafe` (not thread-safe against concurrent reads elsewhere in the
+    /// process), so the defaults/overrides cases below are intentionally
+    /// folded into one sequential `#[test]` rather than several separate
+    /// ones that `cargo test` could run in parallel against the same
+    /// variables.
+    fn clear_current_version_env() {
+        // SAFETY: single-threaded within this test function; no other test
+        // in this crate reads or writes these two variables.
+        unsafe {
+            std::env::remove_var(ENV_CURRENT_VERSION_KEY);
+            std::env::remove_var(ENV_CURRENT_VERSION_STUB);
+        }
+    }
+
+    #[test]
+    fn current_active_version_key_and_stub_are_overridable_via_env() {
+        clear_current_version_env();
+        assert_eq!(env_override(ENV_CURRENT_VERSION_KEY), None);
+
+        // SAFETY: see clear_current_version_env's doc comment.
+        unsafe {
+            std::env::set_var(ENV_CURRENT_VERSION_KEY, "CUSTOM_VERSION_KEY");
+        }
+        assert_eq!(
+            env_override(ENV_CURRENT_VERSION_KEY).as_deref(),
+            Some("CUSTOM_VERSION_KEY")
+        );
+
+        // SAFETY: see clear_current_version_env's doc comment.
+        unsafe {
+            std::env::set_var(ENV_CURRENT_VERSION_STUB, "custom-stub");
+        }
+        assert_eq!(
+            env_override(ENV_CURRENT_VERSION_STUB).as_deref(),
+            Some("custom-stub")
+        );
+
+        // An empty override is treated the same as unset.
+        // SAFETY: see clear_current_version_env's doc comment.
+        unsafe {
+            std::env::set_var(ENV_CURRENT_VERSION_KEY, "");
+        }
+        assert_eq!(env_override(ENV_CURRENT_VERSION_KEY), None);
+
+        clear_current_version_env();
     }
 }
