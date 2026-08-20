@@ -158,9 +158,6 @@ naming the offending variable.
 | `TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH` | `/etc/os-release` | The file the agent reads to determine the node's currently running version. Any file works, as long as it follows the os-release format (`KEY=VALUE` lines, optionally single- or double-quoted, blank lines and `#` comments ignored) — see [below](#configuring-the-on-disk-version). |
 | `TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY` | `VERSION_ID` | The key the agent looks up in `TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH` (`/etc/os-release` by default) to determine the node's currently running version, used to compare against a request's `targetVersion` (e.g. to short-circuit to `AlreadyAtTarget`). `VERSION_ID` is the standard `os-release` field most images already stamp; a deployment that instead carries an ACL-specific `IMAGE_VERSION` field can point this variable at that key instead — see [below](#configuring-the-on-disk-version). |
 | `TRIDENT_ACL_AGENT_CURRENT_VERSION_STUB` | `0.0.0-unprobed-trident-acl-agent-stub` | Sentinel value used as the node's "current version" when `TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY` isn't present at `TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH` (e.g. a dev/test host, or an image that hasn't started stamping that key yet). Deliberately shaped so it can never collide with a real release version and cause a false `AlreadyAtTarget`. |
-| `TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT` | `https://nebraska.example.invalid/v1/update` (deliberately unreachable) | The Omaha server URL, never used as a fallback — `stage`/`finalize` requests must carry their own `server` field (see [above](#the-annotation-contract)). |
-| `TRIDENT_ACL_AGENT_NEBRASKA_APP_ID` | An all-zero UUID (deliberately invalid) | The Omaha application id this node checks in as, never used as a fallback — required on the request's `appId` field instead. |
-| `TRIDENT_ACL_AGENT_NEBRASKA_TRACK` | `unspecified` (deliberately invalid) | The Omaha track this node follows, never used as a fallback — required on the request's `track` field instead. |
 | `TRIDENT_ACL_AGENT_KUBERNETES_API_SERVER` | unset | Explicit override for the Kubernetes API server URL. When unset, the server embedded in the kubeconfig is used as-is. |
 | `TRIDENT_ACL_AGENT_KUBERNETES_KUBECONFIG` | `/var/lib/kubelet/kubeconfig` | Path to the kubeconfig used to reach the Kubernetes API server and authenticate as this node. |
 | `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME` | The node's own hostname, lowercased | The Node object this agent watches/patches. |
@@ -169,6 +166,15 @@ naming the offending variable.
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_STAGE_TIMEOUT` | `20m` | How long a `stage` is allowed to run (a [`humantime`](https://docs.rs/humantime) duration, e.g. `20m`, `1h`) before it's considered failed. |
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_FINALIZE_TIMEOUT` | `10m` | How long a `finalize` is allowed to run before it's considered failed. |
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_HEARTBEAT_INTERVAL` | `60s` | Refresh cadence for the `InProgress` status heartbeat. |
+
+`TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT`, `TRIDENT_ACL_AGENT_NEBRASKA_APP_ID`,
+and `TRIDENT_ACL_AGENT_NEBRASKA_TRACK` also exist, but are **not** used by
+the annotation-driven flow described in this document — every `stage`/
+`finalize` request carries its own `server`/`appId`/`track` fields instead,
+with no fallback to these variables (see
+[above](#the-annotation-contract)). They only matter for
+`trident-acl-agent --validate-connection nebraska`; see
+[Diagnostics](#diagnostics).
 
 ### Setting env vars via a systemd drop-in
 
@@ -182,14 +188,11 @@ $ sudo systemctl edit trident-acl-agent.service
 
 This opens `/etc/systemd/system/trident-acl-agent.service.d/override.conf`
 in an editor. For example, to point the agent at a custom annotation
-namespace and Omaha server:
+namespace:
 
 ```ini
 [Service]
 Environment=TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX=acl.contoso.com
-Environment=TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT=https://updates.contoso.com/v1/update
-Environment=TRIDENT_ACL_AGENT_NEBRASKA_APP_ID=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee
-Environment=TRIDENT_ACL_AGENT_NEBRASKA_TRACK=stable
 ```
 
 With the prefix above, the orchestrator now reads/writes
@@ -250,3 +253,19 @@ that can never accidentally match a real requested version.
 checks connectivity to a single dependency using the current environment
 and exits immediately — useful for a systemd `ExecStartPre` check or manual
 on-node troubleshooting without running the full orchestrator loop.
+
+`--validate-connection nebraska` is the one place
+`TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT`, `TRIDENT_ACL_AGENT_NEBRASKA_APP_ID`,
+and `TRIDENT_ACL_AGENT_NEBRASKA_TRACK` are used: it issues a real
+update-check query against the configured endpoint/app id/track and reports
+whether the Omaha server is reachable. They default to deliberately invalid
+values (`https://nebraska.example.invalid/v1/update`, an all-zero UUID, and
+`unspecified`, respectively) so this check fails loudly unless a deployment
+sets them:
+
+```ini
+[Service]
+Environment=TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT=https://updates.contoso.com/v1/update
+Environment=TRIDENT_ACL_AGENT_NEBRASKA_APP_ID=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee
+Environment=TRIDENT_ACL_AGENT_NEBRASKA_TRACK=stable
+```
