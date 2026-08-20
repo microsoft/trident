@@ -1,0 +1,250 @@
+# Trident ACL Agent
+
+`trident-acl-agent` is an on-node daemon that drives Trident
+[A/B updates](./AB-Update.md) from a Kubernetes control plane, using node
+annotations instead of a direct API call as the trigger. It is the on-node
+half of Azure Container Linux (ACL)'s update mechanism, but the mechanism
+itself is not AKS-specific: any Kubernetes control-plane component (a
+custom controller, an operator, or a script driven by `kubectl patch`) can
+orchestrate updates across a fleet of nodes by writing to the annotation
+contract described below, provided it is willing to speak the
+[Omaha](https://github.com/omaha-consortium/omaha) protocol for image
+distribution and honors the agent's per-node protocol.
+
+## Modes
+
+The agent runs in one of two modes, selected by
+`TRIDENT_ACL_AGENT_ORCHESTRATION_GOAL_SOURCE`:
+
+- **`annotations`** (the default) — watches this Node's annotations for an
+  update request, and drives Trident's stage/finalize/rollback/commit
+  operations against `tridentd` accordingly, reporting progress and status
+  back to Kubernetes and to the configured Omaha server. This is the mode
+  described in the rest of this document.
+- **`omaha-only`** — a one-shot mode with no Kubernetes involvement at all:
+  the agent queries its Omaha server once, and if an update is offered,
+  calls `tridentd`'s combined `update()` RPC once and exits. Useful for a
+  node that isn't part of a Kubernetes-orchestrated fleet.
+
+## The annotation contract
+
+In `annotations` mode, an orchestrator (a Kubernetes controller with RBAC
+permission to PATCH the target Node object) triggers an update by writing a
+JSON payload to a request annotation on the Node. The agent watches that
+annotation, drives the requested operation against `tridentd`, and writes
+its progress and result back to two status annotations on the same Node.
+
+Three annotation keys make up the contract, all sharing one configurable
+prefix (`acl.azure.com` by default — see [Configuration](#configuration)
+below):
+
+| Annotation | Written by | Purpose |
+|---|---|---|
+| `<prefix>/update-request` | Orchestrator | Requests `stage`, `finalize`, or `rollback` for this node. |
+| `<prefix>/update-status` | Agent | Reports the status of the requested operation. |
+| `<prefix>/update-commit-status` | Agent | Reports the status of the implicit post-reboot `commit` that follows a `finalize` or `rollback`. |
+
+A request annotation looks like:
+
+```json
+{
+  "schemaVersion": "1.0",
+  "nodeUpdateId":  "550e8400-e29b-41d4-a716-446655440000",
+  "operationId":   "c9d6f0a2-3b41-4e8d-9f27-1a5b6c7d8e90",
+  "operation":     "stage",
+  "targetVersion": "202606.29.0",
+  "server":        "https://nebraska.example.com/v1/update",
+  "appId":         "11111111-2222-3333-4444-555555555555",
+  "track":         "pin-202606.29.0"
+}
+```
+
+- `nodeUpdateId` identifies one node's update sequence and is held constant
+  across `stage` → `finalize` → `commit`.
+- `operationId` identifies this specific step; the agent uses it to decide
+  whether to start new work, resume in-flight work, or re-emit a cached
+  terminal status as a no-op on a duplicate PATCH.
+- `targetVersion` is the image release version to update to. Required for
+  `stage`/`finalize`; omitted for `rollback`, whose target (the previous
+  partition) is implicit.
+- `server`, `appId`, and `track` name the Omaha instance that serves the
+  target image and receives progress events for it. They are required on
+  `stage`/`finalize` requests, with **no static fallback** — a request
+  missing them is rejected with `InvalidRequest` rather than falling back to
+  a built-in endpoint, so a node can never update from a source the
+  orchestrator did not explicitly choose.
+
+`operation` maps to Trident invocations as follows:
+
+| `operation` | Trident invocation | Effect |
+|---|---|---|
+| `stage` | `trident update --allowed-operations=stage` | Streams the target image to the inactive partition. No reboot. |
+| `finalize` | `trident update --allowed-operations=finalize` (gRPC `UpdateFinalize`, caller-handled reboot) | Arms boot for the staged target, writes a terminal `finalize` status, then triggers the reboot. |
+| `rollback` | `trident rollback --ab` (gRPC `RollbackStage`/`RollbackFinalize`, caller-handled reboot) | Swaps back to the previous partition, mirroring `finalize` on the return path. Only the last update can be undone this way. |
+
+A fourth phase, `commit`, runs implicitly after the post-`finalize`/
+`rollback` reboot: the agent runs `trident commit` on the new partition and
+writes a `commit` status without needing a separate annotation request. The
+orchestrator watches `<prefix>/update-commit-status` as the terminal signal
+that the reboot half of the update succeeded.
+
+`stage` end-to-end:
+
+```mermaid
+sequenceDiagram
+    actor Orchestrator
+    participant API as K8s API Server
+    participant Agent as Trident ACL Agent<br/>(on the node)
+    participant Trident
+
+    Orchestrator->>API: 1. PATCH request: stage (opId A)
+    Note over Agent: agent picks up the request<br/>on its next poll
+    Agent->>API: 2. read request, PATCH status: stage InProgress
+    Agent->>Trident: 3. Stage (image to inactive partition)
+    Trident-->>Agent: staged | error
+    Agent->>API: 4. PATCH status: stage Success | <error code>
+    API-->>Orchestrator: terminal stage code
+```
+
+`finalize` / `rollback`, spanning the reboot:
+
+```mermaid
+sequenceDiagram
+    actor Orchestrator
+    participant API as K8s API Server
+    participant Agent as Trident ACL Agent<br/>(on the node)
+    participant Trident
+
+    Note over Orchestrator,Trident: pre-reboot half
+    Orchestrator->>API: 1. PATCH request: finalize (opId A)
+    Agent->>API: 2. read request, PATCH status: finalize InProgress
+    Agent->>Trident: 3. UpdateFinalize (caller-handled reboot)
+    Trident-->>Agent: boot armed, reboot required
+    Agent->>Agent: 4. persist pendingCommit + boot marker to state.json
+    Agent->>API: 5. PATCH status: finalize Success
+    API-->>Orchestrator: finalize Success (reboot pending)
+    Note over Agent,Trident: 6. agent triggers reboot, boots new partition
+    Note over Orchestrator,Trident: post-reboot half
+    Agent->>Agent: 7. read state.json, confirm a boot happened since the marker
+    Agent->>Trident: 8. Commit (validate volume, promote boot order)
+    Trident-->>Agent: committed | reverted to previous
+    Agent->>API: 9. PATCH status: commit Success | TargetBootFailed
+    API-->>Orchestrator: terminal commit code
+```
+
+A status annotation's `code` is one of `InProgress`, `Success`,
+`AlreadyAtTarget`, `NotStaged`, `OperationFailed`, `TargetBootFailed`,
+`AgentInternalError`, or `InvalidRequest` — see the request/status schema
+types in `crates/trident-acl-agent/src/annotations.rs` for the full
+contract, including the formal JSON Schema both sides validate against.
+
+## Pre/post-reboot state and the watchdog
+
+Because `finalize`/`rollback` spans a reboot, the agent persists a small
+state file (`TRIDENT_ACL_AGENT_ORCHESTRATION_STATE_PATH`) recording that a
+commit is pending and a marker for "a boot happened after this point". On
+restart, the agent checks this state to resume the post-reboot `commit`
+step rather than re-running `finalize` from scratch.
+
+While an operation is in flight, the agent refreshes the `InProgress`
+status's `lastUpdatedUtc` on a heartbeat cadence
+(`TRIDENT_ACL_AGENT_ORCHESTRATION_HEARTBEAT_INTERVAL`), so an external
+watchdog can distinguish a working agent from a stuck one and reprovision a
+node that never reports a terminal `commit` status within its SLA.
+
+## Configuration
+
+There is no config file. Every setting is an environment variable prefixed
+`TRIDENT_ACL_AGENT_`, systemd-style: set it in the unit's own
+`Environment=` lines, via a drop-in override, or by any other means that
+sets the process's environment before it starts.
+
+A variable that is unset, or set to the empty string, falls back to its
+default. A variable set to a malformed value (a bad URL, a bad duration, an
+unrecognized `goal_source`) causes the agent to fail to start with an error
+naming the offending variable.
+
+| Variable | Default | Description |
+|---|---|---|
+| `TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX` | `acl.azure.com` | The annotation-key prefix for the request/status/commit-status annotations (e.g. the `acl.azure.com` in `acl.azure.com/update-request`). Not tied to AKS or Azure — any orchestrator can pick its own namespace here so its annotations don't collide with another controller's. |
+| `TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY` | `IMAGE_VERSION` | The `/etc/os-release` key the agent reads to determine the node's currently running version, used to compare against a request's `targetVersion` (e.g. to short-circuit to `AlreadyAtTarget`). `IMAGE_VERSION` is what ACL images carry; a deployment building its own images can point this at whatever key its own `os-release` provides instead — see [below](#configuring-the-on-disk-version). |
+| `TRIDENT_ACL_AGENT_CURRENT_VERSION_STUB` | `0.0.0-unprobed-trident-acl-agent-stub` | Sentinel value used as the node's "current version" when `TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY` isn't present in `/etc/os-release` (e.g. a dev/test host, or an image that hasn't started stamping that key yet). Deliberately shaped so it can never collide with a real release version and cause a false `AlreadyAtTarget`. |
+| `TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT` | `https://nebraska.example.invalid/v1/update` (deliberately unreachable) | The Omaha server URL to poll and report events to, for `omaha-only` mode only. In `annotations` mode this is never used as a fallback — `stage`/`finalize` requests must carry their own `server` field (see [above](#the-annotation-contract)). |
+| `TRIDENT_ACL_AGENT_NEBRASKA_APP_ID` | An all-zero UUID (deliberately invalid) | The Omaha application id this node checks in as, for `omaha-only` mode. In `annotations` mode, required on the request's `appId` field instead. |
+| `TRIDENT_ACL_AGENT_NEBRASKA_TRACK` | `unspecified` (deliberately invalid) | The Omaha track this node follows, for `omaha-only` mode. In `annotations` mode, required on the request's `track` field instead. |
+| `TRIDENT_ACL_AGENT_KUBERNETES_API_SERVER` | unset | Explicit override for the Kubernetes API server URL. When unset, the server embedded in the kubeconfig is used as-is. |
+| `TRIDENT_ACL_AGENT_KUBERNETES_KUBECONFIG` | `/var/lib/kubelet/kubeconfig` | Path to the kubeconfig used to reach the Kubernetes API server and authenticate as this node. |
+| `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME` | The node's own hostname, lowercased | The Node object this agent watches/patches. |
+| `TRIDENT_ACL_AGENT_TRIDENT_SOCKET` | `unix:///run/trident/trident.sock` | The gRPC Unix socket URI used to reach `tridentd`. |
+| `TRIDENT_ACL_AGENT_ORCHESTRATION_GOAL_SOURCE` | `annotations` | Selects the agent's operating mode: `annotations` or `omaha-only`. |
+| `TRIDENT_ACL_AGENT_ORCHESTRATION_STATE_PATH` | `/var/lib/trident-acl-agent/state.json` | Path to the agent's persistent state file bridging the pre-reboot and post-reboot halves of `finalize`/`rollback` across the reboot. |
+| `TRIDENT_ACL_AGENT_ORCHESTRATION_STAGE_TIMEOUT` | `20m` | How long a `stage` is allowed to run (a [`humantime`](https://docs.rs/humantime) duration, e.g. `20m`, `1h`) before it's considered failed. |
+| `TRIDENT_ACL_AGENT_ORCHESTRATION_FINALIZE_TIMEOUT` | `10m` | How long a `finalize` is allowed to run before it's considered failed. |
+| `TRIDENT_ACL_AGENT_ORCHESTRATION_HEARTBEAT_INTERVAL` | `60s` | Refresh cadence for the `InProgress` status heartbeat. |
+
+### Setting env vars via a systemd drop-in
+
+The agent ships as `trident-acl-agent.service`, with no `Environment=`
+lines of its own beyond `ExecStart`. Any setting is overridden with a
+drop-in file, without editing the packaged unit:
+
+```console
+$ sudo systemctl edit trident-acl-agent.service
+```
+
+This opens `/etc/systemd/system/trident-acl-agent.service.d/override.conf`
+in an editor. For example, to point the agent at a custom annotation
+namespace and Omaha server for a non-AKS Kubernetes deployment:
+
+```ini
+[Service]
+Environment=TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX=acl.contoso.com
+Environment=TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT=https://updates.contoso.com/v1/update
+Environment=TRIDENT_ACL_AGENT_NEBRASKA_APP_ID=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee
+Environment=TRIDENT_ACL_AGENT_NEBRASKA_TRACK=stable
+```
+
+With the prefix above, the orchestrator now reads/writes
+`acl.contoso.com/update-request`, `acl.contoso.com/update-status`, and
+`acl.contoso.com/update-commit-status` instead of the `acl.azure.com/*`
+defaults. Reload and restart to apply:
+
+```console
+$ sudo systemctl daemon-reload
+$ sudo systemctl restart trident-acl-agent.service
+```
+
+`systemctl cat trident-acl-agent.service` shows the merged unit (packaged
+unit plus drop-in), useful for confirming the override took effect.
+
+### Configuring the on-disk version
+
+The agent determines the node's current version by reading a key out of
+`/etc/os-release`, defaulting to `IMAGE_VERSION` — the key ACL images
+stamp. A deployment building its own images, not derived from ACL, may not
+carry `IMAGE_VERSION` at all; rather than requiring every image build to
+add an ACL-specific field, point the agent at the standard
+[`os-release`](https://www.freedesktop.org/software/systemd/man/latest/os-release.html)
+field `VERSION_ID` instead:
+
+```ini
+[Service]
+Environment=TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY=VERSION_ID
+```
+
+With this set, the agent reads `VERSION_ID` from `/etc/os-release` (e.g.
+`VERSION_ID=202606.29.0`) as the node's current version, and compares it
+against a request's `targetVersion` the same way it would for
+`IMAGE_VERSION` — including short-circuiting to `AlreadyAtTarget` when they
+already match. If the configured key is absent from `/etc/os-release`
+(for example, on a dev/test host with a minimal `os-release`), the agent
+falls back to `TRIDENT_ACL_AGENT_CURRENT_VERSION_STUB`
+(`0.0.0-unprobed-trident-acl-agent-stub` by default), a sentinel value
+that can never accidentally match a real requested version.
+
+## Diagnostics
+
+`trident-acl-agent --validate-connection <kubernetes|tridentd|nebraska>`
+checks connectivity to a single dependency using the current environment
+and exits immediately — useful for a systemd `ExecStartPre` check or manual
+on-node troubleshooting without running the full orchestrator loop.
