@@ -5,7 +5,7 @@
 //! `<prefix>/update-request`, `<prefix>/update-status`, and
 //! `<prefix>/update-commit-status` node annotation protocol described
 //! by the current accepted design (`accepted-design-v3.md`), where
-//! `<prefix>` defaults to `acl.azure.com` (see
+//! `<prefix>` defaults to `acl.microsoft.com` (see
 //! [`AnnotationKeys`]/[`crate::config::DEFAULT_ANNOTATION_PREFIX`]) and is
 //! overridable via the `TRIDENT_ACL_AGENT_ANNOTATION_PREFIX` environment
 //! variable. Keep `UpdateRequest`/`UpdateStatus`/`StatusCode` and
@@ -23,19 +23,19 @@ use uuid::Uuid;
 use crate::config::DEFAULT_ANNOTATION_PREFIX;
 
 /// Suffix (appended to the configured annotation prefix) for the request
-/// annotation, e.g. `acl.azure.com/update-request`.
+/// annotation, e.g. `acl.microsoft.com/update-request`.
 pub const UPDATE_REQUEST_SUFFIX: &str = "update-request";
 /// Suffix for the operation-status annotation, e.g.
-/// `acl.azure.com/update-status`.
+/// `acl.microsoft.com/update-status`.
 pub const UPDATE_STATUS_SUFFIX: &str = "update-status";
 /// Suffix for the post-reboot commit-status annotation, e.g.
-/// `acl.azure.com/update-commit-status`.
+/// `acl.microsoft.com/update-commit-status`.
 pub const UPDATE_COMMIT_STATUS_SUFFIX: &str = "update-commit-status";
 
 /// The full annotation keys for one deployment's configured annotation
 /// prefix. Built once from [`crate::config::KubernetesConfig::annotation_prefix`]
-/// and threaded through instead of hardcoding the AKS-specific
-/// `acl.azure.com` prefix.
+/// and threaded through instead of hardcoding a fixed
+/// `acl.microsoft.com` prefix.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AnnotationKeys {
     pub request: String,
@@ -62,19 +62,18 @@ impl Default for AnnotationKeys {
 pub const SCHEMA_VERSION: &str = "1.0";
 const MAX_MESSAGE_BYTES: usize = 2048;
 const TRUNCATION_MARKER: &str = "... (truncated)";
-// TODO(DR-001): current_active_version() now reads the `IMAGE_VERSION` key
-// (overridable via TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY) out of os-release,
-// but falls back to this stub if that key isn't present yet (e.g. an image
-// whose os-release doesn't carry it, or a dev/test host). Once the key ships
-// unconditionally on every ACL image, this fallback (and this comment) can be
-// removed. The stub value below is an explicit sentinel that cannot collide
-// with a real AKS/Trident release version string (those look like
-// "YYYYMM.N.N"), so it can never accidentally match a real requested target
-// version and cause handle_stage/handle_finalize to incorrectly short-circuit
-// to AlreadyAtTarget. Do not remove this comment when bumping the stub value;
-// keep it (and its non-colliding shape) until the fallback is removed. The
-// stub itself is overridable via TRIDENT_ACL_AGENT_CURRENT_VERSION_STUB, for
-// dev/test hosts that want a specific sentinel.
+// current_active_version() reads the `VERSION_ID` key (overridable via
+// TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY, e.g. to `IMAGE_VERSION` for an ACL
+// image that stamps its own per-build version there) out of os-release, but
+// falls back to this stub if that key isn't present (e.g. a minimal
+// dev/test os-release). The stub value below is an explicit sentinel that
+// cannot collide with a real release version string, so it can never
+// accidentally match a real requested target version and cause
+// handle_stage/handle_finalize to incorrectly short-circuit to
+// AlreadyAtTarget. Do not remove this comment when bumping the stub value;
+// keep it (and its non-colliding shape). The stub itself is overridable via
+// TRIDENT_ACL_AGENT_CURRENT_VERSION_STUB, for dev/test hosts that want a
+// specific sentinel.
 pub const CURRENT_VERSION_STUB: &str = "0.0.0-unprobed-trident-acl-agent-stub";
 /// Default path `current_active_version` reads. Overridable via
 /// `TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH` so a deployment can point the
@@ -86,11 +85,14 @@ pub const CURRENT_VERSION_STUB: &str = "0.0.0-unprobed-trident-acl-agent-stub";
 /// doesn't have room for.
 pub const DEFAULT_CURRENT_VERSION_PATH: &str = osutils::osrelease::OS_RELEASE_PATH;
 /// Default os-release key `current_active_version` looks up for the running
-/// image's version. Overridable via `TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY`
-/// so a deployment that doesn't set `IMAGE_VERSION` can point at whatever
-/// key its os-release (or `TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH`
-/// override) does carry.
-pub const DEFAULT_CURRENT_VERSION_KEY: &str = "IMAGE_VERSION";
+/// image's version: `VERSION_ID`, a standard key every os-release carries
+/// (see
+/// <https://www.freedesktop.org/software/systemd/man/latest/os-release.html>).
+/// Overridable via `TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY` - e.g. to
+/// `IMAGE_VERSION` for an ACL image that stamps its own per-build version
+/// under that key instead - or point
+/// `TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH` at a different file entirely.
+pub const DEFAULT_CURRENT_VERSION_KEY: &str = "VERSION_ID";
 const ENV_CURRENT_VERSION_PATH: &str = "TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH";
 const ENV_CURRENT_VERSION_KEY: &str = "TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY";
 const ENV_CURRENT_VERSION_STUB: &str = "TRIDENT_ACL_AGENT_CURRENT_VERSION_STUB";
@@ -367,11 +369,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn annotation_keys_default_uses_acl_azure_com_prefix() {
+    fn annotation_keys_default_uses_acl_microsoft_com_prefix() {
         let keys = AnnotationKeys::default();
-        assert_eq!(keys.request, "acl.azure.com/update-request");
-        assert_eq!(keys.status, "acl.azure.com/update-status");
-        assert_eq!(keys.commit_status, "acl.azure.com/update-commit-status");
+        assert_eq!(keys.request, "acl.microsoft.com/update-request");
+        assert_eq!(keys.status, "acl.microsoft.com/update-status");
+        assert_eq!(keys.commit_status, "acl.microsoft.com/update-commit-status");
     }
 
     #[test]

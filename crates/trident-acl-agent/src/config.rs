@@ -34,11 +34,10 @@ const ENV_ORCHESTRATION_STAGE_TIMEOUT: &str = "TRIDENT_ACL_AGENT_ORCHESTRATION_S
 const ENV_ORCHESTRATION_FINALIZE_TIMEOUT: &str = "TRIDENT_ACL_AGENT_ORCHESTRATION_FINALIZE_TIMEOUT";
 const ENV_ORCHESTRATION_HEARTBEAT_INTERVAL: &str =
     "TRIDENT_ACL_AGENT_ORCHESTRATION_HEARTBEAT_INTERVAL";
-/// Overrides the annotation-key prefix (e.g. `acl.azure.com` in
-/// `acl.azure.com/update-request`). Defaults to
-/// [`DEFAULT_ANNOTATION_PREFIX`] so a deployment not tied to AKS's
-/// `acl.azure.com` domain can point the agent at its own annotation
-/// namespace without a code change.
+/// Overrides the annotation-key prefix (e.g. `acl.microsoft.com` in
+/// `acl.microsoft.com/update-request`). Defaults to
+/// [`DEFAULT_ANNOTATION_PREFIX`] so a deployment can point the agent at its
+/// own annotation namespace without a code change.
 const ENV_KUBERNETES_ANNOTATION_PREFIX: &str = "TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX";
 
 const DEFAULT_KUBERNETES_POLL_INTERVAL: Duration = Duration::from_secs(2);
@@ -56,9 +55,9 @@ const DEFAULT_FINALIZE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const DEFAULT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(60);
 pub const DEFAULT_STATE_PATH: &str = "/var/lib/trident-acl-agent/state.json";
 pub const DEFAULT_KUBELET_KUBECONFIG: &str = "/var/lib/kubelet/kubeconfig";
-/// Default annotation-key prefix, matching AKS's `acl.azure.com` namespace.
+/// Default annotation-key prefix.
 /// Override with `TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX`.
-pub const DEFAULT_ANNOTATION_PREFIX: &str = "acl.azure.com";
+pub const DEFAULT_ANNOTATION_PREFIX: &str = "acl.microsoft.com";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AgentConfig {
@@ -150,10 +149,11 @@ pub struct KubernetesConfig {
     pub node_name: String,
     pub watch_poll_interval: Duration,
     /// Annotation-key prefix used for the request/status/commit-status
-    /// annotations (e.g. `acl.azure.com` in `acl.azure.com/update-request`).
-    /// Defaults to [`DEFAULT_ANNOTATION_PREFIX`], overridable via
-    /// `TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX` so the annotation
-    /// namespace isn't hardcoded to AKS.
+    /// annotations (e.g. `acl.microsoft.com` in
+    /// `acl.microsoft.com/update-request`). Defaults to
+    /// [`DEFAULT_ANNOTATION_PREFIX`], overridable via
+    /// `TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX` so a deployment can
+    /// pick its own namespace instead.
     pub annotation_prefix: String,
 }
 
@@ -187,8 +187,11 @@ pub enum GoalSource {
     /// Historical one-shot behavior: query Nebraska/Omaha once, and if an
     /// update is offered, call tridentd's combined `update()` RPC once and
     /// exit. No Kubernetes involvement at all - no annotations, no watch,
-    /// no Node access. Kept as an explicit opt-out for nodes that don't
-    /// participate in the AKS annotation-driven update protocol.
+    /// no Node access. Not fully designed and not a supported deployment
+    /// option - kept only as an internal escape hatch, and deliberately
+    /// left out of user-facing docs. `Annotations` is the only documented,
+    /// supported mode.
+    #[doc(hidden)]
     OmahaOnly,
     /// The annotation-driven reconcile loop: watches the Node's
     /// `<annotation-prefix>/update-request` annotation and drives Trident's
@@ -197,9 +200,9 @@ pub enum GoalSource {
     /// `<annotation-prefix>/update-status` and
     /// `<annotation-prefix>/update-commit-status` (see
     /// accepted-design-v3.md). `<annotation-prefix>` defaults to
-    /// [`DEFAULT_ANNOTATION_PREFIX`] (`acl.azure.com`), overridable via
-    /// `TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX`. This is the default
-    /// mode.
+    /// [`DEFAULT_ANNOTATION_PREFIX`] (`acl.microsoft.com`), overridable via
+    /// `TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX`. This is the only
+    /// supported mode.
     #[default]
     Annotations,
 }
