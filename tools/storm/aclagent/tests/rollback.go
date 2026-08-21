@@ -53,8 +53,8 @@ func RunRollback(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 
 	rp := &stormproxies.RPClient{APIServerURL: fmt.Sprintf("http://%s:%d", testConfig.HostEndpointIP, testConfig.APIServerPort), NodeName: testConfig.NodeName}
 	scenario := &stormproxies.Scenario{Steps: []stormproxies.ScenarioStep{
-		{Patch: &stormproxies.PatchStep{NodeUpdateID: "22222222-2222-2222-2222-222222222222", OperationID: "rollback-op", Operation: "rollback"}},
-		{Expect: &stormproxies.ExpectStep{OperationID: "rollback-op", Operation: "rollback", Code: "Success", Timeout: 180 * time.Second}},
+		{Patch: &stormproxies.PatchStep{NodeUpdateID: "22222222-2222-2222-2222-222222222222", OperationID: "cccccccc-3333-3333-3333-333333333333", Operation: "rollback"}},
+		{Expect: &stormproxies.ExpectStep{OperationID: "cccccccc-3333-3333-3333-333333333333", Operation: "rollback", Code: "Success", Timeout: 180 * time.Second}},
 	}}
 	report, err := rp.RunScenario(ctx, scenario)
 	logScenarioTimeline("rollback stage/finalize", report)
@@ -84,7 +84,7 @@ func RunRollback(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	}
 
 	finalScenario := &stormproxies.Scenario{Steps: []stormproxies.ScenarioStep{
-		{Expect: &stormproxies.ExpectStep{OperationID: "rollback-op", Operation: "commit", Code: "Success", Timeout: 180 * time.Second}},
+		{Expect: &stormproxies.ExpectStep{OperationID: "cccccccc-3333-3333-3333-333333333333", Operation: "commit", Code: "Success", Timeout: 180 * time.Second}},
 	}}
 	finalReport, err := rp.RunScenario(ctx, finalScenario)
 	logScenarioTimeline("post-rollback-reboot commit", finalReport)
@@ -111,8 +111,8 @@ func RunRollback(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	// rebooting the node again for no reason. This exercises that fix
 	// end-to-end against the real tridentd, not just the mock.
 	secondScenario := &stormproxies.Scenario{Steps: []stormproxies.ScenarioStep{
-		{Patch: &stormproxies.PatchStep{NodeUpdateID: "33333333-3333-3333-3333-333333333333", OperationID: "rollback-op-2", Operation: "rollback"}},
-		{Expect: &stormproxies.ExpectStep{OperationID: "rollback-op-2", Operation: "rollback", Code: "OperationFailed", Timeout: 60 * time.Second}},
+		{Patch: &stormproxies.PatchStep{NodeUpdateID: "33333333-3333-3333-3333-333333333333", OperationID: "dddddddd-4444-4444-4444-444444444444", Operation: "rollback"}},
+		{Expect: &stormproxies.ExpectStep{OperationID: "dddddddd-4444-4444-4444-444444444444", Operation: "rollback", Code: "OperationFailed", Timeout: 60 * time.Second}},
 	}}
 	secondReport, err := rp.RunScenario(ctx, secondScenario)
 	logScenarioTimeline("second rollback with empty chain", secondReport)
