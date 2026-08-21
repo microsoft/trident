@@ -145,8 +145,10 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	if err != nil {
 		return fmt.Errorf("failed to get VM IP: %w", err)
 	}
-	if err := os.MkdirAll(testConfig.OutputPath, 0o755); err != nil {
-		return err
+	if testConfig.OutputPath != "" {
+		if err := os.MkdirAll(testConfig.OutputPath, 0o755); err != nil {
+			return err
+		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -154,11 +156,13 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 
 	nodeStore := stormproxies.NewNodeStore(stormproxies.NewSeedNode(testConfig.NodeName, map[string]string{}))
 	apiServer := stormproxies.NewAPIServer(testConfig.NodeName, nodeStore)
-	// Bind on all interfaces (not 127.0.0.1) so the VM can reach the fake
-	// apiserver directly over the libvirt NAT network at testConfig.HostEndpointIP,
-	// instead of relying on reverse SSH tunnels. Tunnels don't survive a real
-	// VM reboot; a real host IP does.
-	if _, err := apiServer.ListenAndServe(ctx, fmt.Sprintf("0.0.0.0:%d", testConfig.APIServerPort)); err != nil {
+	// Bind on HostEndpointIP (not 127.0.0.1) so the VM can reach the fake
+	// apiserver directly over the libvirt NAT network, instead of relying
+	// on reverse SSH tunnels (which don't survive a real VM reboot; a real
+	// host IP does). Binding to that specific address rather than 0.0.0.0
+	// avoids unintentionally exposing the fake server on every other host
+	// interface too.
+	if _, err := apiServer.ListenAndServe(ctx, fmt.Sprintf("%s:%d", testConfig.HostEndpointIP, testConfig.APIServerPort)); err != nil {
 		return fmt.Errorf("failed to start fake apiserver: %w", err)
 	}
 
@@ -188,7 +192,7 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 			return fmt.Errorf("failed to hash image %s: %w", imagePath, err)
 		}
 		imageServer := &stormproxies.ImageServer{ImagePath: imagePath}
-		if _, err := imageServer.ListenAndServe(ctx, fmt.Sprintf("0.0.0.0:%d", testConfig.ImageServerPort)); err != nil {
+		if _, err := imageServer.ListenAndServe(ctx, fmt.Sprintf("%s:%d", testConfig.HostEndpointIP, testConfig.ImageServerPort)); err != nil {
 			return fmt.Errorf("failed to start fake image server: %w", err)
 		}
 		nebraskaCodebase = fmt.Sprintf("http://%s:%d/", testConfig.HostEndpointIP, testConfig.ImageServerPort)
@@ -203,7 +207,7 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 		SHA384:      nebraskaSHA384,
 		PackageName: nebraskaPackageName,
 	}}
-	if _, err := nebraska.ListenAndServe(ctx, fmt.Sprintf("0.0.0.0:%d", testConfig.NebraskaPort)); err != nil {
+	if _, err := nebraska.ListenAndServe(ctx, fmt.Sprintf("%s:%d", testConfig.HostEndpointIP, testConfig.NebraskaPort)); err != nil {
 		return fmt.Errorf("failed to start fake Nebraska endpoint: %w", err)
 	}
 
@@ -459,7 +463,7 @@ users:
 		// written to the VM at all - app_id/endpoint are only ever supplied
 		// per-request via the update-request annotation's `appId`/`server`
 		// fields.
-		"! sudo test -e /etc/trident/trident-acl-agent.conf",
+		"sudo test ! -e /etc/trident/trident-acl-agent.conf",
 	}, " && ")
 	if _, err := stormssh.SshCommandCombinedOutput(cfg, vmIP, command); err != nil {
 		return fmt.Errorf("failed to prepare VM for ACL agent: %w", err)
