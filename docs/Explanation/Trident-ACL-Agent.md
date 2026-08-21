@@ -17,7 +17,7 @@ An orchestrator (a Kubernetes controller with RBAC permission to PATCH the
 target Node object) triggers an update by writing a JSON payload to a
 request annotation on the Node. The agent watches that annotation, drives
 the requested operation against `tridentd`, and writes its progress and
-result back to two status annotations on the same Node.
+result via annotations on the same Node.
 
 Three annotation keys make up the contract, all sharing one configurable
 prefix (`acl.microsoft.com` by default — see [Configuration](#configuration)
