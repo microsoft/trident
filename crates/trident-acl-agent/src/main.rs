@@ -61,14 +61,16 @@ impl<L: Log> Log for FilteredLogger<L> {
 }
 
 fn is_network_target(target: &str) -> bool {
-    NETWORK_LOG_TARGETS
-        .iter()
-        .any(|prefix| target == *prefix || target.starts_with(&format!("{prefix}::")))
+    NETWORK_LOG_TARGETS.iter().any(|prefix| {
+        target
+            .strip_prefix(prefix)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with("::"))
+    })
 }
 
-/// Harpoon can either run the annotation-driven orchestrator (the default)
-/// or fall back to its original one-shot Omaha flow. Mode selection is
-/// environment-variable only (`TRIDENT_ACL_AGENT_ORCHESTRATION_GOAL_SOURCE`):
+/// trident-acl-agent can either run the annotation-driven orchestrator (the
+/// default) or fall back to its original one-shot Omaha flow. Mode selection
+/// is environment-variable only (`TRIDENT_ACL_AGENT_ORCHESTRATION_GOAL_SOURCE`):
 /// shipping defaults enable the AKS annotation protocol, while a VM
 /// extension, systemd drop-in, or AgentBaker-set environment can opt a node
 /// out to `omaha-only` if needed.
@@ -164,7 +166,7 @@ async fn validate_connection(
             })?;
             let app_id = config.nebraska.app_id.clone();
             // check_nebraska_reachable() is a blocking call (reqwest::blocking
-            // under the hood, see omaha::send) - calling it directly from this
+            // under the hood, see nebraska::transport) - calling it directly from this
             // async fn can panic ("Cannot drop a runtime in a context where
             // blocking is not allowed") because reqwest::blocking spins up
             // its own inner Tokio runtime per call, which isn't safe to tear

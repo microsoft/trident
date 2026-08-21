@@ -1,4 +1,4 @@
-//! Env-var-based config loading for Harpoon.
+//! Env-var-based config loading for trident-acl-agent.
 //!
 //! There is no config file. Every setting is an environment variable
 //! prefixed `TRIDENT_ACL_AGENT_` (one constant per setting, e.g.
@@ -49,7 +49,7 @@ const DEFAULT_KUBERNETES_POLL_INTERVAL: Duration = Duration::from_secs(2);
 // mode does not use this default at all: stage/finalize requests must
 // carry their own `server` field, with no fallback to this config (see
 // Orchestrator::resolve_nebraska_endpoint).
-pub const DEFAULT_NEBRASKA_ENDPOINT: &str = "https://nebraska.example.invalid/v1/update";
+pub const DEFAULT_NEBRASKA_ENDPOINT: &str = "https://nebraska.example.invalid/v1/update/";
 const DEFAULT_STAGE_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 const DEFAULT_FINALIZE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const DEFAULT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(60);
@@ -374,7 +374,10 @@ mod tests {
             env::set_var(ENV_NEBRASKA_APP_ID, "custom-app");
             env::set_var(ENV_NEBRASKA_TRACK, "custom-track");
             env::set_var(ENV_KUBERNETES_API_SERVER, "https://cluster.example.invalid");
-            env::set_var(ENV_KUBERNETES_KUBECONFIG, "/etc/harpoon/kubeconfig");
+            env::set_var(
+                ENV_KUBERNETES_KUBECONFIG,
+                "/etc/trident-acl-agent/kubeconfig",
+            );
             env::set_var(ENV_KUBERNETES_NODE_NAME, "node-42");
             env::set_var(ENV_TRIDENT_SOCKET, "unix:///custom/trident.sock");
             env::set_var(ENV_ORCHESTRATION_GOAL_SOURCE, "omaha-only");
@@ -403,7 +406,7 @@ mod tests {
         );
         assert_eq!(
             config.kubernetes.kubeconfig.as_str(),
-            "/etc/harpoon/kubeconfig"
+            "/etc/trident-acl-agent/kubeconfig"
         );
         assert_eq!(config.kubernetes.node_name, "node-42");
         assert_eq!(config.trident.socket, "unix:///custom/trident.sock");

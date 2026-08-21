@@ -155,6 +155,12 @@ impl UpdateRequest {
         if self.schema_version != SCHEMA_VERSION {
             return Err(format!("unsupported schemaVersion {}", self.schema_version));
         }
+        if Uuid::parse_str(&self.operation_id).is_err() {
+            return Err(format!(
+                "operationId must be a UUID, got {:?}",
+                self.operation_id
+            ));
+        }
         match self.operation {
             RequestedOperation::Stage | RequestedOperation::Finalize => {
                 if self.target_version.as_deref().unwrap_or("").is_empty() {
@@ -935,6 +941,19 @@ mod tests {
                 ));
             }
         }
+        if let Some(max_length) = prop_schema.get("maxLength").and_then(Value::as_u64) {
+            let s = value
+                .as_str()
+                .ok_or_else(|| format!("property {name:?}: expected string to check maxLength"))?;
+            // Matches truncate_message's byte-based budget (MAX_MESSAGE_BYTES)
+            // rather than a char count, since that's the unit actually
+            // enforced in production.
+            if s.len() as u64 > max_length {
+                return Err(format!(
+                    "property {name:?}: {s:?} exceeds maxLength {max_length}"
+                ));
+            }
+        }
         Ok(())
     }
 
@@ -966,7 +985,7 @@ mod tests {
         UpdateRequest {
             schema_version: SCHEMA_VERSION.to_string(),
             node_update_id: Uuid::new_v4(),
-            operation_id: "op-1".to_string(),
+            operation_id: Uuid::new_v4().to_string(),
             operation,
             target_version: Some("202606.29.0".to_string()),
             server: Some(Url::parse("https://nebraska.example/v1/update").unwrap()),
@@ -1053,7 +1072,7 @@ mod tests {
         let request = UpdateRequest {
             schema_version: SCHEMA_VERSION.to_string(),
             node_update_id: Uuid::new_v4(),
-            operation_id: "op-1".to_string(),
+            operation_id: Uuid::new_v4().to_string(),
             operation: RequestedOperation::Rollback,
             target_version: None,
             server: None,
@@ -1063,6 +1082,25 @@ mod tests {
         request
             .validate()
             .expect("rollback without server/appId/track must validate");
+    }
+
+    #[test]
+    fn validate_rejects_non_uuid_operation_id() {
+        // The formal schema requires `operationId` to be UUID-shaped
+        // (`format: uuid`); a non-UUID value must be rejected regardless of
+        // operation kind.
+        for operation in [
+            RequestedOperation::Stage,
+            RequestedOperation::Finalize,
+            RequestedOperation::Rollback,
+        ] {
+            let mut request = valid_nebraska_request(operation);
+            request.operation_id = "op-1".to_string();
+            let err = request
+                .validate()
+                .expect_err("a non-UUID operationId must be rejected");
+            assert!(err.contains("operationId"), "{err}");
+        }
     }
 
     // --- example payload parsing tests -------------------------------------

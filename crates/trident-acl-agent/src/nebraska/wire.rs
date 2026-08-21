@@ -236,8 +236,6 @@ pub(super) struct EventElement {
 }
 
 /// Builds a request from an app, setting the `<os version>` from the app version
-/// so the two agree.
-/// Builds a request from an app, setting the `<os version>` from the app version
 /// so the two agree. `client_version` identifies the updater itself, and is
 /// omitted from the request entirely when the caller did not name one.
 pub(super) fn request_for(app: App, client_version: Option<String>) -> Request {
