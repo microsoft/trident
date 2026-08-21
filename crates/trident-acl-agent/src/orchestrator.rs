@@ -24,14 +24,15 @@ use osutils::dependencies::Dependency;
 
 use crate::{
     annotations::{
-        current_active_version, AnnotationKeys, Operation, RequestedOperation, StatusCode,
-        UpdateRequest, UpdateStatus, SCHEMA_VERSION,
+        AnnotationKeys, Operation, RequestedOperation, StatusCode, UpdateRequest, UpdateStatus,
+        SCHEMA_VERSION,
     },
     config::AgentConfig,
     k8s::{K8sClientError, NodeClient},
     nebraska::{CheckOutcome, Client as NebraskaClient, ProgressEvent},
     state::{PendingCommit, StateStore},
     trident::{CompletedResponse, TridentClient, TridentClientError},
+    version::current_active_version,
     IdSource,
 };
 
@@ -381,10 +382,12 @@ where
                 request.node_update_id
             )
         })?;
-        let machine_id = crate::build_machine_id(IdSource::MachineIdHashed)?;
+        let machine_id = crate::build_machine_id(NEBRASKA_MACHINE_ID_SOURCE)?;
+        let current_version = parse_nebraska_version(&from_version, "stage current version")
+            .unwrap_or_else(|| Version::new(0, 0, 0));
         let outcome = tokio::task::spawn_blocking(move || {
             let client = NebraskaClient::new(endpoint, app_id, track, machine_id);
-            client.check_for_update(&Version::new(0, 0, 0))
+            client.check_for_update(&current_version)
         })
         .await
         .context("Nebraska query task panicked")?

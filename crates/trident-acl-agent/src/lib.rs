@@ -22,6 +22,7 @@ pub mod error;
 pub mod id;
 pub mod k8s;
 pub mod nebraska;
+pub mod version;
 
 /// The version this agent reports to Nebraska as the updater's own version, for
 /// [`nebraska::Client::new`].
@@ -87,9 +88,16 @@ pub async fn run_omaha_only(config: &config::AgentConfig) -> Result<(), anyhow::
     let app_id = config.nebraska.app_id.clone();
     let track = config.nebraska.track.clone();
     let machine_id = build_machine_id(IdSource::MachineIdHashed)?;
+    let current_version_raw = version::current_active_version();
+    let current_version = Version::parse(&current_version_raw).unwrap_or_else(|err| {
+        log::warn!(
+            "current version {current_version_raw:?} is not valid semver ({err}); reporting 0.0.0 to Nebraska"
+        );
+        Version::new(0, 0, 0)
+    });
     let outcome = tokio::task::spawn_blocking(move || {
         let client = Client::new(endpoint, app_id, track, machine_id);
-        client.check_for_update(&Version::new(0, 0, 0))
+        client.check_for_update(&current_version)
     })
     .await
     .context("Nebraska query task panicked")?
