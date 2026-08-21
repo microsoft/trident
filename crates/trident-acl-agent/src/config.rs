@@ -199,7 +199,7 @@ pub enum GoalSource {
     /// accordingly, writing progress back to
     /// `<annotation-prefix>/update-status` and
     /// `<annotation-prefix>/update-commit-status` (see
-    /// accepted-design-v3.md). `<annotation-prefix>` defaults to
+    /// <https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md>). `<annotation-prefix>` defaults to
     /// [`DEFAULT_ANNOTATION_PREFIX`] (`acl.microsoft.com`), overridable via
     /// `TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX`. This is the only
     /// supported mode.
@@ -231,7 +231,7 @@ pub struct OrchestrationConfig {
     pub finalize_timeout: Duration,
     /// Refresh cadence for in-flight InProgress heartbeats. Default is well
     /// below the ~10 minute watchdog staleness target proposed in
-    /// accepted-design-v3.md.
+    /// <https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md>.
     pub heartbeat_interval: Duration,
 }
 
