@@ -11,6 +11,36 @@ contract described below, provided it is willing to speak the
 [Omaha](https://github.com/omaha-consortium/omaha) protocol for image
 distribution and honors the agent's per-node protocol.
 
+## Deployment
+
+`trident-acl-agent` ships as its own `trident-acl-agent` RPM subpackage
+(built alongside, and `Requires:` the same version of, the main `trident`
+package). Installing it:
+
+```console
+$ tdnf install trident-acl-agent
+```
+
+lays down exactly two files: the `/usr/bin/trident-acl-agent` binary and
+its `trident-acl-agent.service` unit
+(`packaging/systemd/trident-acl-agent.service`) under the systemd unit
+directory. Installing the package does not by itself enable or start the
+service — a deployment decides when that happens, e.g. by running
+`systemctl enable --now trident-acl-agent.service` on the node, or by
+baking that enablement into the image build (as this repo's own
+`updateimg-acl-agent.yaml` test image does via Image Customizer's
+`services: enable` list).
+
+The shipped unit carries no `Environment=` lines beyond `ExecStart`, so
+every deployment-specific choice — which annotation prefix to watch, where
+to read the current version from, which Kubernetes API server to talk to,
+and so on — is supplied the same way any other systemd service is
+configured: standard `Environment=`/`EnvironmentFile=` constructs, most
+commonly a drop-in applied on top of the packaged unit. See
+[Configuration](#configuration) below for the full list of variables and
+[Setting env vars via a systemd drop-in](#setting-env-vars-via-a-systemd-drop-in)
+for how to apply them without editing the packaged unit.
+
 ## The annotation contract
 
 An orchestrator (a Kubernetes controller with RBAC permission to PATCH the
