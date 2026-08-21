@@ -281,9 +281,9 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	}
 
 	scenario := &stormproxies.Scenario{Steps: []stormproxies.ScenarioStep{
-		{Patch: &stormproxies.PatchStep{NodeUpdateID: "11111111-1111-1111-1111-111111111111", OperationID: "stage-op", Operation: "stage", TargetOSImageVersion: testConfig.TargetVersion, Server: nebraskaServer, AppId: nebraskaAppID, Track: nebraskaTrack}},
-		{Expect: &stormproxies.ExpectStep{OperationID: "stage-op", Operation: "stage", Code: "Success", Timeout: 120 * time.Second}},
-		{Patch: &stormproxies.PatchStep{NodeUpdateID: "11111111-1111-1111-1111-111111111111", OperationID: "finalize-op", Operation: "finalize", TargetOSImageVersion: testConfig.TargetVersion, Server: nebraskaServer, AppId: nebraskaAppID, Track: nebraskaTrack}},
+		{Patch: &stormproxies.PatchStep{NodeUpdateID: "11111111-1111-1111-1111-111111111111", OperationID: "aaaaaaaa-1111-1111-1111-111111111111", Operation: "stage", TargetOSImageVersion: testConfig.TargetVersion, Server: nebraskaServer, AppId: nebraskaAppID, Track: nebraskaTrack}},
+		{Expect: &stormproxies.ExpectStep{OperationID: "aaaaaaaa-1111-1111-1111-111111111111", Operation: "stage", Code: "Success", Timeout: 120 * time.Second}},
+		{Patch: &stormproxies.PatchStep{NodeUpdateID: "11111111-1111-1111-1111-111111111111", OperationID: "bbbbbbbb-2222-2222-2222-222222222222", Operation: "finalize", TargetOSImageVersion: testConfig.TargetVersion, Server: nebraskaServer, AppId: nebraskaAppID, Track: nebraskaTrack}},
 	}}
 	report, err := rp.RunScenario(ctx, scenario)
 	logScenarioTimeline("stage/finalize", report)
@@ -314,7 +314,7 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	// with that same config at boot, so no re-delivery is needed here.
 
 	finalScenario := &stormproxies.Scenario{Steps: []stormproxies.ScenarioStep{
-		{Expect: &stormproxies.ExpectStep{OperationID: "finalize-op", Operation: "commit", Code: "Success", Timeout: 180 * time.Second}},
+		{Expect: &stormproxies.ExpectStep{OperationID: "bbbbbbbb-2222-2222-2222-222222222222", Operation: "commit", Code: "Success", Timeout: 180 * time.Second}},
 	}}
 	finalReport, err := rp.RunScenario(ctx, finalScenario)
 	logScenarioTimeline("post-reboot commit", finalReport)
