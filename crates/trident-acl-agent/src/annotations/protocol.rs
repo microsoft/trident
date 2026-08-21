@@ -7,8 +7,8 @@
 //! by the current accepted design (<https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md>), where
 //! `<prefix>` defaults to `acl.microsoft.com` (see
 //! [`AnnotationKeys`]/[`crate::core::config::DEFAULT_ANNOTATION_PREFIX`]) and is
-//! overridable via the `TRIDENT_ACL_AGENT_ANNOTATION_PREFIX` environment
-//! variable. Keep `UpdateRequest`/`UpdateStatus`/`StatusCode` and
+//! overridable via the `TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX`
+//! environment variable. Keep `UpdateRequest`/`UpdateStatus`/`StatusCode` and
 //! `validate()` in sync with that document's formal JSON Schema (its
 //! section "Formal JSON Schema") - the
 //! `design_doc_*`/`agent_built_*_conform_to_formal_schema` tests in this
