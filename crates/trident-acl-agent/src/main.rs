@@ -3,12 +3,13 @@ use clap::Parser;
 use log::{LevelFilter, Log, Metadata, Record};
 
 use trident_acl_agent::{
+    annotations::{k8s::NodeClient, orchestrator::Orchestrator},
     check_nebraska_reachable,
-    config::{AgentConfig, GoalSource},
-    k8s::NodeClient,
-    orchestrator::Orchestrator,
-    run_omaha_only,
-    trident::TridentClient,
+    core::{
+        config::{AgentConfig, GoalSource},
+        trident::TridentClient,
+    },
+    omahaonly::run_omaha_only,
     IdSource,
 };
 

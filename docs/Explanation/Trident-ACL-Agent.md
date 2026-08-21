@@ -198,7 +198,7 @@ A status annotation (`<prefix>/update-status` or
 | `InvalidRequest` | Yes | The request annotation itself was rejected before any action was taken — malformed JSON, a schema/version mismatch, a missing required field (`server`/`appId`/`track`/`targetVersion`), a `finalize` whose `targetVersion` doesn't match what was staged, or a second `finalize`/`rollback` submitted while one is already pending its post-reboot `commit`. No Trident operation runs. |
 
 See the request/status schema types in
-`crates/trident-acl-agent/src/annotations.rs` for the full contract,
+`crates/trident-acl-agent/src/annotations/protocol.rs` for the full contract,
 including the formal JSON Schema both sides validate against.
 
 ## Pre/post-reboot state and the watchdog

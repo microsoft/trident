@@ -6,54 +6,42 @@
 //! described in the accepted design
 //! (<https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md>),
 //! while preserving the original `omaha-only` mode as an explicit opt-out
-//! (see `config::GoalSource`).
+//! (see `core::config::GoalSource`).
 //!
 //! All Omaha/Nebraska protocol traffic (both `omaha-only` and annotation mode)
-//! goes through the [`nebraska`] client module, a self-contained, reusable
-//! implementation of the Nebraska/Omaha update protocol. It is usable both by
-//! this crate's agent binary and by a future Trident ACL Agent that
+//! goes through the [`core::nebraska`] client module, a self-contained,
+//! reusable implementation of the Nebraska/Omaha update protocol. It is usable
+//! both by this crate's agent binary and by a future Trident ACL Agent that
 //! orchestrates updates differently.
-
-use anyhow::Context;
-use semver::Version;
+//!
+//! - [`core`]: building blocks shared by both modes (config, errors,
+//!   machine-id, current-version, the `tridentd` client, the Nebraska
+//!   client).
+//! - [`annotations`]: the default Kubernetes annotation-driven protocol.
+//! - [`omahaonly`]: the legacy one-shot Omaha flow.
 
 pub mod annotations;
-pub mod config;
-pub mod error;
-pub mod id;
-pub mod k8s;
-pub mod nebraska;
-pub mod version;
+pub mod core;
+pub mod omahaonly;
 
 /// The version this agent reports to Nebraska as the updater's own version, for
-/// [`nebraska::Client::new`].
+/// [`core::nebraska::Client::new`].
 ///
 /// Prefers the build-time `TRIDENT_VERSION` (the version the shipped product is
 /// stamped with) over this crate's package version, which is not released
 /// independently and is a placeholder. Nebraska itself ignores the value, so
 /// this is for whoever reads the raw requests. It lives here, not in
-/// [`nebraska`], because that module is a generic Omaha client: which product is
-/// doing the updating is the caller's business.
+/// [`core::nebraska`], because that module is a generic Omaha client: which
+/// product is doing the updating is the caller's business.
 pub const AGENT_VERSION: &str = match option_env!("TRIDENT_VERSION") {
     Some(version) => version,
     None => env!("CARGO_PKG_VERSION"),
 };
 
-pub mod orchestrator;
-pub mod state;
-pub mod trident;
+use crate::core::error::AgentError;
+use crate::core::nebraska::{Client, MachineId, NebraskaError};
 
-/// Only built for `cargo test` (relies on trident-proto's `server` feature,
-/// which is only enabled via trident-acl-agent's dev-dependencies - see
-/// mock_tridentd.rs's module docs).
-#[cfg(test)]
-pub mod mock_tridentd;
-
-use error::AgentError;
-use nebraska::{CheckOutcome, Client, MachineId, NebraskaError};
-use trident::TridentClient;
-
-pub use id::IdSource;
+pub use crate::core::id::IdSource;
 
 // Deliberately invalid sentinels, mirroring DEFAULT_NEBRASKA_ENDPOINT's
 // `.invalid` domain trick: a deployment that forgets to configure (or
@@ -67,60 +55,6 @@ pub const DEFAULT_NEBRASKA_TRACK: &str = "unspecified";
 /// crate's own machine-id/hostname read errors into a single [`AgentError`].
 fn build_machine_id(source: IdSource) -> Result<MachineId, AgentError> {
     MachineId::new(source.produce_id()?).map_err(|err| AgentError::Nebraska(err.to_string()))
-}
-
-/// Historical one-shot flow: query the Nebraska/Omaha server at
-/// `config.nebraska.endpoint` once, and if an update is offered, call
-/// tridentd's combined `Update()` RPC once and exit. No Kubernetes/annotation
-/// involvement.
-pub async fn run_omaha_only(config: &config::AgentConfig) -> Result<(), anyhow::Error> {
-    let endpoint = config.nebraska.endpoint.clone().ok_or_else(|| {
-        anyhow::anyhow!("no Nebraska endpoint configured: set TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT")
-    })?;
-
-    // Client::check_for_update() is a blocking call (reqwest::blocking under
-    // the hood, see nebraska::transport) - calling it directly from this
-    // async fn can panic ("Cannot drop a runtime in a context where blocking
-    // is not allowed") because reqwest::blocking spins up its own inner
-    // Tokio runtime per call, which isn't safe to tear down from inside an
-    // already-running async task. Run it on a dedicated blocking thread.
-    let app_id = config.nebraska.app_id.clone();
-    let track = config.nebraska.track.clone();
-    let machine_id = build_machine_id(IdSource::MachineIdHashed)?;
-    let current_version_raw = version::current_active_version()?;
-    let current_version = Version::parse(&current_version_raw).unwrap_or_else(|err| {
-        log::warn!(
-            "current version {current_version_raw:?} is not valid semver ({err}); reporting 0.0.0 to Nebraska"
-        );
-        Version::new(0, 0, 0)
-    });
-    let outcome = tokio::task::spawn_blocking(move || {
-        let client = Client::new(endpoint, app_id, track, machine_id);
-        client.check_for_update(&current_version)
-    })
-    .await
-    .context("Nebraska query task panicked")?
-    .map_err(|err| anyhow::anyhow!("Nebraska query failed: {err}"))?;
-
-    match outcome {
-        CheckOutcome::UpToDate | CheckOutcome::UpdateInProgress => {
-            log::debug!("No update available from Nebraska");
-            Ok(())
-        }
-        CheckOutcome::UpdateAvailable(offer) => {
-            log::info!("Triggering one-shot Omaha update to {}", offer.version);
-            let mut client = TridentClient::connect(&config.trident.socket).await?;
-            let combined_timeout =
-                config.orchestration.stage_timeout + config.orchestration.finalize_timeout;
-            // Integrity of the downloaded image is verified by Trident itself
-            // via the image's own COSI metadata, so the Nebraska-reported hash
-            // (offer.primary.hash) is not passed here.
-            client
-                .update(&offer.primary.url, None, combined_timeout)
-                .await?;
-            Ok(())
-        }
-    }
 }
 
 /// Checks that the Omaha/Nebraska server at `url` is reachable and speaking
@@ -139,7 +73,7 @@ pub fn check_nebraska_reachable(
 ) -> Result<(), AgentError> {
     let machine_id = build_machine_id(machine_id_source)?;
     let client = Client::new(url.clone(), app_id, track, machine_id);
-    match client.check_for_update(&Version::new(0, 0, 0)) {
+    match client.check_for_update(&semver::Version::new(0, 0, 0)) {
         Ok(_) => Ok(()),
         // A well-formed response reporting a non-OK app/update-check status
         // still proves the server is reachable and speaking Omaha; only a

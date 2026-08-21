@@ -30,7 +30,7 @@ use kube::{
 };
 use serde_json::json;
 
-use crate::config::KubernetesConfig;
+use crate::core::config::KubernetesConfig;
 
 /// Floor for the Kubernetes watch request's `timeoutSeconds`, decoupled from
 /// `poll_interval` (see [`NodeClient::watch_node`]). Sits comfortably under
