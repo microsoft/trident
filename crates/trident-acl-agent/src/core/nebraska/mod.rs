@@ -48,7 +48,7 @@
 //! ```no_run
 //! use semver::Version;
 //! use url::Url;
-//! use trident_acl_agent::nebraska::{Client, CheckOutcome, MachineId, ProgressEvent};
+//! use trident_acl_agent::core::nebraska::{Client, CheckOutcome, MachineId, ProgressEvent};
 //!
 //! # fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let client = Client::new(
