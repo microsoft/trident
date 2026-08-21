@@ -24,8 +24,10 @@ func RunRollback(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	if err != nil {
 		return fmt.Errorf("failed to get VM IP: %w", err)
 	}
-	if err := os.MkdirAll(testConfig.OutputPath, 0o755); err != nil {
-		return err
+	if testConfig.OutputPath != "" {
+		if err := os.MkdirAll(testConfig.OutputPath, 0o755); err != nil {
+			return err
+		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -76,9 +78,11 @@ func RunRollback(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	}
 	nodeStore.SetReadyCondition(true)
 
-	// Same rationale as run-ab-update: the rollback reboot lands on the
-	// previous root, which needs the fake kubeconfig re-delivered before it
-	// can talk to the fake apiserver again.
+	// Restart the agent so it reconnects to this test case's fresh fake
+	// apiserver instance (see prepareVmForAclAgent's doc comment in
+	// update.go). /var/lib/kubelet is its own dedicated ext4 partition, so
+	// the fake kubeconfig itself already persists across the rollback
+	// reboot's root swap and doesn't need to be re-delivered.
 	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig); err != nil {
 		return fmt.Errorf("failed to reconfigure ACL agent on post-rollback-reboot root: %w", err)
 	}
