@@ -7,6 +7,7 @@ use trident_acl_agent::{
     check_nebraska_reachable,
     core::{
         config::{AgentConfig, GoalSource},
+        nebraska,
         trident::TridentClient,
     },
     omahaonly::run_omaha_only,
@@ -192,8 +193,16 @@ async fn validate_connection(
             })
             .await
             .context("Nebraska connectivity check task panicked")?
-            .with_context(|| format!("failed to reach Nebraska server at {endpoint}"))?;
-            log::info!("nebraska: reached server at {endpoint}");
+            .with_context(|| {
+                format!(
+                    "failed to reach Nebraska server at {}",
+                    nebraska::redacted(&endpoint)
+                )
+            })?;
+            log::info!(
+                "nebraska: reached server at {}",
+                nebraska::redacted(&endpoint)
+            );
         }
     }
     Ok(())

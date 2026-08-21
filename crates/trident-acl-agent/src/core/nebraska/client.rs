@@ -237,7 +237,7 @@ fn summarize(response: &wire::Response) -> String {
 /// and host are safe to emit; the path, query, fragment, and any userinfo are
 /// dropped rather than selectively scrubbed, so a secret cannot leak from a
 /// component this code did not anticipate.
-fn redacted(endpoint: &Url) -> String {
+pub fn redacted(endpoint: &Url) -> String {
     let Some(host) = endpoint.host_str() else {
         return "<redacted>".to_string();
     };
