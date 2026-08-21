@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
-pub enum HarpoonError {
-    #[error("Failed to initialize the Harpoon client: {0}")]
+pub enum AgentError {
+    #[error("Failed to initialize the trident-acl-agent client: {0}")]
     InitializationError(String),
 
     #[error("The version provided '{version}' is not valid semver: {inner}")]
@@ -21,7 +21,7 @@ pub enum HarpoonError {
     /// Wraps a [`nebraska::NebraskaError`](crate::nebraska::NebraskaError).
     /// Stored as a string rather than `#[from]` because `NebraskaError`
     /// doesn't derive `Serialize`/`Deserialize`/`PartialEq`, which
-    /// `HarpoonError` requires for annotation-status round-tripping.
+    /// `AgentError` requires for annotation-status round-tripping.
     #[error("Nebraska request failed: {0}")]
     Nebraska(String),
 }

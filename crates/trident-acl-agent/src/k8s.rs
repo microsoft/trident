@@ -1,4 +1,5 @@
-//! Thin Kubernetes client wrapper for Harpoon's node self-patching protocol.
+//! Thin Kubernetes client wrapper for trident-acl-agent's node self-patching
+//! protocol.
 //!
 //! Implements the Node get/watch/patch access described in the current
 //! accepted design (<https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md>).
@@ -26,6 +27,12 @@ use kube::{
 use serde_json::json;
 
 use crate::config::KubernetesConfig;
+
+/// Floor for the Kubernetes watch request's `timeoutSeconds`, decoupled from
+/// `poll_interval` (see [`NodeClient::watch_node`]). Sits comfortably under
+/// typical apiserver request-timeout defaults (~300s) while avoiding
+/// reconnect churn on an otherwise-healthy watch.
+const WATCH_TIMEOUT_SECS: u32 = 290;
 
 #[derive(Debug, thiserror::Error)]
 pub enum K8sClientError {
@@ -109,9 +116,21 @@ impl NodeClient {
     }
 
     pub fn watch_node(&self, name: String) -> BoxStream<'static, Result<Node, K8sClientError>> {
+        // The watch request's timeoutSeconds bounds how long the API server
+        // holds the connection open before closing it, at which point
+        // `kube::runtime::watcher` reconnects. `poll_interval` defaults to a
+        // couple of seconds (fine for a fallback-polling cadence), so using
+        // it directly here would force a reconnect every couple of seconds
+        // even on a perfectly healthy watch. Floor the request timeout at
+        // WATCH_TIMEOUT_SECS instead, while still honoring a larger
+        // configured `poll_interval` if one is ever set.
+        let timeout_secs = self
+            .poll_interval
+            .as_secs()
+            .max(u64::from(WATCH_TIMEOUT_SECS)) as u32;
         let watcher_config = watcher::Config::default()
             .fields(&format!("metadata.name={name}"))
-            .timeout(self.poll_interval.as_secs().max(1) as u32);
+            .timeout(timeout_secs);
 
         watcher(self.api.clone(), watcher_config)
             .default_backoff()

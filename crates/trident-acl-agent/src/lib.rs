@@ -1,11 +1,12 @@
-//! # Harpoon
+//! # trident-acl-agent
 //!
-//! Harpoon is Trident's ACL update sidecar. Historically it was a one-shot
-//! Omaha client that called Trident's combined `Update()` RPC once and exited.
-//! This crate now defaults to the AKS annotation protocol described in the
-//! local design doc (`aks-rp ↔ trident-acl-agent`, especially §3–§6 and
-//! §12–§13), while preserving the original `omaha-only` mode as an explicit
-//! opt-out (see `config::GoalSource`).
+//! trident-acl-agent is Trident's ACL update sidecar. Historically it was a
+//! one-shot Omaha client that called Trident's combined `Update()` RPC once
+//! and exited. This crate now defaults to the Kubernetes annotation protocol
+//! described in the accepted design
+//! (<https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md>),
+//! while preserving the original `omaha-only` mode as an explicit opt-out
+//! (see `config::GoalSource`).
 //!
 //! All Omaha/Nebraska protocol traffic (both `omaha-only` and annotation mode)
 //! goes through the [`nebraska`] client module, a self-contained, reusable
@@ -48,7 +49,7 @@ pub mod trident;
 #[cfg(test)]
 pub mod mock_tridentd;
 
-use error::HarpoonError;
+use error::AgentError;
 use nebraska::{CheckOutcome, Client, MachineId, NebraskaError};
 use trident::TridentClient;
 
@@ -63,9 +64,9 @@ pub const DEFAULT_NEBRASKA_APP_ID: &str = "00000000-0000-0000-0000-000000000000"
 pub const DEFAULT_NEBRASKA_TRACK: &str = "unspecified";
 
 /// Builds a validated [`MachineId`] from an [`IdSource`], translating the
-/// crate's own machine-id/hostname read errors into a single [`HarpoonError`].
-fn build_machine_id(source: IdSource) -> Result<MachineId, HarpoonError> {
-    MachineId::new(source.produce_id()?).map_err(|err| HarpoonError::Nebraska(err.to_string()))
+/// crate's own machine-id/hostname read errors into a single [`AgentError`].
+fn build_machine_id(source: IdSource) -> Result<MachineId, AgentError> {
+    MachineId::new(source.produce_id()?).map_err(|err| AgentError::Nebraska(err.to_string()))
 }
 
 /// Historical one-shot flow: query the Nebraska/Omaha server at
@@ -74,9 +75,7 @@ fn build_machine_id(source: IdSource) -> Result<MachineId, HarpoonError> {
 /// involvement.
 pub async fn run_omaha_only(config: &config::AgentConfig) -> Result<(), anyhow::Error> {
     let endpoint = config.nebraska.endpoint.clone().ok_or_else(|| {
-        anyhow::anyhow!(
-            "no Nebraska endpoint configured: pass <url> on the CLI or set TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT"
-        )
+        anyhow::anyhow!("no Nebraska endpoint configured: set TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT")
     })?;
 
     // Client::check_for_update() is a blocking call (reqwest::blocking under
@@ -137,7 +136,7 @@ pub fn check_nebraska_reachable(
     app_id: &str,
     track: &str,
     machine_id_source: IdSource,
-) -> Result<(), HarpoonError> {
+) -> Result<(), AgentError> {
     let machine_id = build_machine_id(machine_id_source)?;
     let client = Client::new(url.clone(), app_id, track, machine_id);
     match client.check_for_update(&Version::new(0, 0, 0)) {
@@ -146,7 +145,7 @@ pub fn check_nebraska_reachable(
         // still proves the server is reachable and speaking Omaha; only a
         // transport/parse-level failure means it is not.
         Err(NebraskaError::ServerError(_)) => Ok(()),
-        Err(err) => Err(HarpoonError::Nebraska(err.to_string())),
+        Err(err) => Err(AgentError::Nebraska(err.to_string())),
     }
 }
 
@@ -199,6 +198,6 @@ mod tests {
             IdSource::MachineIdHashed,
         )
         .unwrap_err();
-        assert!(matches!(err, HarpoonError::Nebraska(_)));
+        assert!(matches!(err, AgentError::Nebraska(_)));
     }
 }

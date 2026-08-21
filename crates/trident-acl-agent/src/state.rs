@@ -9,6 +9,7 @@
 use std::{
     collections::BTreeMap,
     fs,
+    io::Write,
     path::{Path, PathBuf},
 };
 
@@ -65,7 +66,8 @@ impl StateStore {
 
     pub fn load(&self) -> Result<PersistentState, anyhow::Error> {
         match fs::read_to_string(&self.path) {
-            Ok(raw) => Ok(serde_json::from_str(&raw).context("failed to parse state.json")?),
+            Ok(raw) => Ok(serde_json::from_str(&raw)
+                .with_context(|| format!("failed to parse {}", self.path.display()))?),
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
                 Ok(PersistentState::default())
             }
@@ -94,15 +96,37 @@ impl StateStore {
                 .unwrap_or("state.json"),
             std::process::id()
         ));
-        fs::write(&temp_path, serde_json::to_string_pretty(state)?)
-            .with_context(|| format!("failed to write {}", temp_path.display()))?;
+
+        // Write via a File handle and fsync it before the rename: fs::write
+        // alone only guarantees the data reaches the OS page cache, not
+        // disk, so a crash between the write and a later flush could still
+        // leave state.json empty/corrupt after the rename below.
+        {
+            let mut file = fs::File::create(&temp_path)
+                .with_context(|| format!("failed to create {}", temp_path.display()))?;
+            file.write_all(serde_json::to_string_pretty(state)?.as_bytes())
+                .with_context(|| format!("failed to write {}", temp_path.display()))?;
+            file.sync_all()
+                .with_context(|| format!("failed to fsync {}", temp_path.display()))?;
+        }
+
         fs::rename(&temp_path, &self.path).with_context(|| {
             format!(
                 "failed to atomically replace {} with {}",
                 self.path.display(),
                 temp_path.display()
             )
-        })
+        })?;
+
+        // Best-effort: POSIX doesn't guarantee a rename is durable until the
+        // containing directory's metadata is also synced, so fsync it too.
+        // Not fatal if this fails (e.g. unsupported on some filesystems) -
+        // the rename itself has already succeeded.
+        if let Ok(dir) = fs::File::open(parent) {
+            let _ = dir.sync_all();
+        }
+
+        Ok(())
     }
 
     pub fn remember_completed(&self, status: UpdateStatus) -> Result<(), anyhow::Error> {
