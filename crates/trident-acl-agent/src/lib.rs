@@ -87,7 +87,7 @@ pub async fn run_omaha_only(config: &config::AgentConfig) -> Result<(), anyhow::
     let app_id = config.nebraska.app_id.clone();
     let track = config.nebraska.track.clone();
     let machine_id = build_machine_id(IdSource::MachineIdHashed)?;
-    let current_version_raw = version::current_active_version();
+    let current_version_raw = version::current_active_version()?;
     let current_version = Version::parse(&current_version_raw).unwrap_or_else(|err| {
         log::warn!(
             "current version {current_version_raw:?} is not valid semver ({err}); reporting 0.0.0 to Nebraska"

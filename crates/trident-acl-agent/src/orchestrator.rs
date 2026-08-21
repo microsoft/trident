@@ -329,7 +329,7 @@ where
 
     async fn handle_stage(&self, request: UpdateRequest) -> Result<(), anyhow::Error> {
         let started = Utc::now();
-        let from_version = Some(current_active_version());
+        let from_version = Some(current_active_version()?);
         let to_version = request.target_version.clone();
         if from_version == to_version {
             let status = UpdateStatus::new(
@@ -465,7 +465,7 @@ where
 
     async fn handle_finalize(&self, request: UpdateRequest) -> Result<LoopControl, anyhow::Error> {
         let started = Utc::now();
-        let from_version = Some(current_active_version());
+        let from_version = Some(current_active_version()?);
         let to_version = request.target_version.clone();
         if from_version == to_version {
             let status = UpdateStatus::new(
@@ -620,7 +620,7 @@ where
 
     async fn handle_rollback(&self, request: UpdateRequest) -> Result<LoopControl, anyhow::Error> {
         let started = Utc::now();
-        let from_version = Some(current_active_version());
+        let from_version = Some(current_active_version()?);
 
         let mut client = TridentClient::connect(&self.config.trident.socket).await?;
 
