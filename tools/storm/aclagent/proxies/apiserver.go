@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -272,12 +273,15 @@ func (s *APIServer) handlePatch(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	body := json.NewDecoder(r.Body)
 	body.DisallowUnknownFields()
-	var raw map[string]any
-	if err := body.Decode(&raw); err != nil {
+	// Decode into the typed metadataPatch (not map[string]any) so
+	// DisallowUnknownFields actually rejects unexpected fields, instead of
+	// silently accepting arbitrary keys.
+	var patch metadataPatch
+	if err := body.Decode(&patch); err != nil {
 		http.Error(w, fmt.Sprintf("invalid patch body: %v", err), http.StatusBadRequest)
 		return
 	}
-	bytes, err := json.Marshal(raw)
+	bytes, err := json.Marshal(patch)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to re-marshal patch: %v", err), http.StatusInternalServerError)
 		return
@@ -301,7 +305,11 @@ func (s *APIServer) handleWatch(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if err := writeWatchEvent(w, "ADDED", current); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		// Headers (and a 200 status) have already been written, so calling
+		// http.Error here would just append a second, malformed
+		// header/body onto the response. Log and close the connection
+		// instead.
+		logrus.Errorf("failed to write initial watch event: %v", err)
 		return
 	}
 	flusher.Flush()
@@ -314,6 +322,7 @@ func (s *APIServer) handleWatch(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if err := writeWatchEvent(w, "MODIFIED", node); err != nil {
+				logrus.Errorf("failed to write watch event: %v", err)
 				return
 			}
 			flusher.Flush()
