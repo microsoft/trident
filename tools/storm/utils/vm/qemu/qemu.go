@@ -21,7 +21,7 @@ import (
 type QemuConfig struct {
 	SecureBoot   bool   `help:"Enable secure boot for the VM" default:"false"`
 	SerialLog    string `help:"Path to the serial log file" default:"/tmp/trident-vm-verity-test.log"`
-	ImagePattern string `help:"Regex pattern used to find the base VM image (.qcow2) in the artifacts directory" default:"^trident-vm-.*-testimage.qcow2$"`
+	ImagePattern string `help:"Regex pattern used to find the base VM image (.qcow2) in the artifacts directory" default:"^trident-vm-.*-testimage\\.qcow2$"`
 }
 
 func (cfg QemuConfig) DeployQemuVM(vmName string, artifactsDir string, outputPath string, verbose bool) error {
