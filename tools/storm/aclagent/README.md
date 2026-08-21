@@ -1,14 +1,15 @@
 # Trident ACL agent storm scenario
 
 `storm-trident aclagent` is the single supported validation entrypoint for the
-label-driven trident ACL agent protocol.
+annotation-driven trident ACL agent protocol.
 
 ## What it does
 
 - deploys a QEMU or Azure VM using the existing storm VM helpers
 - starts the fake single-node Kubernetes apiserver in-process inside the storm binary
 - starts the fake Nebraska/Omaha endpoint in-process inside the storm binary
-- seeds bootstrap node annotations and simulated Ready flips with an in-process kubelet helper
+- seeds bootstrap node annotations and simulated Ready flips by mutating the
+  fake Node directly via `NodeStore`
 - talks to the real `tridentd` and real `trident-acl-agent` running inside the VM
 - lets `trident-acl-agent` issue a real `systemctl reboot` on finalize, then polls SSH until it drops and comes back up to confirm the reboot actually happened
 
@@ -87,24 +88,32 @@ wrong key.
 
 ```bash
 make bin/storm-trident
-./bin/storm-trident run aclagent deploy-vm \
+./bin/storm-trident run aclagent -- --test-case-to-run=deploy-vm \
   --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
-./bin/storm-trident run aclagent check-deployment \
+./bin/storm-trident run aclagent -- --test-case-to-run=check-deployment \
   --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
-./bin/storm-trident run aclagent run-ab-update \
+./bin/storm-trident run aclagent -- --test-case-to-run=run-ab-update \
   --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
-./bin/storm-trident run aclagent run-rollback \
+./bin/storm-trident run aclagent -- --test-case-to-run=run-rollback \
   --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
-./bin/storm-trident run aclagent collect-logs \
+./bin/storm-trident run aclagent -- --test-case-to-run=collect-logs \
   --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
-./bin/storm-trident run aclagent cleanup-vm \
+./bin/storm-trident run aclagent -- --test-case-to-run=cleanup-vm \
+  --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
+```
+
+Or, to run every test case in the same VM lifetime (the default,
+`--test-case-to-run=all`, and how the pipeline runs it):
+
+```bash
+./bin/storm-trident run aclagent -- \
   --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
 ```
 
 Common overrides mirror other storm VM scenarios, for example:
 
 ```bash
-./bin/storm-trident run aclagent run-ab-update \
+./bin/storm-trident run aclagent -- \
   --platform qemu \
   --artifacts-dir ./artifacts \
   --output-path ./output/aclagent \
@@ -115,10 +124,14 @@ Common overrides mirror other storm VM scenarios, for example:
 
 ## Reboot choice
 
-This scenario keeps the shim-based reboot interception from the old tester.
-That is less realistic than a full VM reboot, but it keeps the test deterministic
-and lets the storm runner hold the reverse SSH tunnels and in-process fake services
-steady while the agent drives the finalize path.
+This scenario waits out a real VM reboot rather than using a shim:
+`trident-acl-agent` issues a genuine `systemctl reboot` on finalize, and
+`waitForVmRebootAndSshBack` polls SSH until it goes unreachable (confirming
+the reboot actually happened) and then reachable again (confirming the VM
+came back up). The fake apiserver/Nebraska/image-server endpoints are bound
+to `HostEndpointIP` (the libvirt NAT gateway address), which the VM can
+reach directly — this avoids relying on reverse SSH tunnels, which don't
+survive the VM actually going down for a real reboot.
 
 ## `run-rollback`
 
