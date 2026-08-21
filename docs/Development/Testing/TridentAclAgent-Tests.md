@@ -5,13 +5,14 @@ sidebar_position: 9
 # Trident ACL Agent Tests
 
 `storm-trident run aclagent` is the single supported validation entrypoint for
-the label-driven `trident-acl-agent` protocol described in the ACL AKS
-node-label design. Unlike [Servicing Tests](Servicing-Tests.md), which drive
-Trident's own `stage`/`finalize` gRPC calls directly, this scenario validates
-`trident-acl-agent` itself: it deploys a VM, starts fake in-process test
-doubles for the Kubernetes API server and the Nebraska/Omaha update server,
-seeds bootstrap node labels, and lets the real `trident-acl-agent` binary
-running inside the VM drive a full A/B update against those fakes.
+the annotation-driven `trident-acl-agent` protocol. Unlike [Servicing
+Tests](Servicing-Tests.md), which drive Trident's own `stage`/`finalize` gRPC
+calls directly, this scenario validates `trident-acl-agent` itself: it
+deploys a VM, starts fake in-process test doubles for the Kubernetes API
+server and the Nebraska/Omaha update server, patches update-request
+annotations onto the fake Node, and lets the real `trident-acl-agent` binary
+running inside the VM drive a full A/B update (and, separately, a rollback)
+against those fakes.
 
 There is intentionally no fake `tridentd` — the scenario talks to the real
 `tridentd` and real `trident-acl-agent` running inside the VM.
@@ -19,10 +20,13 @@ There is intentionally no fake `tridentd` — the scenario talks to the real
 ## What It Validates
 
 - `trident-acl-agent` watching its own Kubernetes Node object for
-  RP-authored label changes (via `kube::runtime::watcher()`)
-- Reading the update image URL/hash from labels and triggering a real
-  Trident `stage` + `finalize` A/B update through the normal gRPC path
-- Patching back observed-state labels/annotations as the update progresses
+  RP-authored `acl.azure.com/update-request` annotation changes (via
+  `kube::runtime::watcher()`)
+- Reading the target OS image version, Nebraska server/appId/track from the
+  request annotation and triggering a real Trident `stage` + `finalize` A/B
+  update (or `rollback` + rollback `finalize`) through the normal gRPC path
+- Writing back progress/result via the `acl.azure.com/update-status` and
+  `acl.azure.com/update-commit-status` annotations as the update progresses
 - Resuming correctly after a real reboot (see [Reboot Choice](#reboot-choice))
 
 ## VM Image Contents
@@ -32,17 +36,29 @@ The VM image used by this scenario must already contain:
 - `tridentd.socket` installed and enabled (starts `tridentd.service` on
   demand)
 - `trident-acl-agent` package installed, but **`trident-acl-agent.service`
-  left disabled** — it must not start before a config file exists
+  left disabled** in the base image — it must not start before the fake
+  kubeconfig exists (the harness delivers it at runtime and enables/starts
+  the service itself; the update image, by contrast, bakes enablement in
+  directly, since there is no test harness left to run `systemctl enable
+  --now` after a real A/B update boots into it)
 - the same SSH user/key setup expected by the [servicing](Servicing-Tests.md)
   scenario
 
-Both the enabled/disabled state of `trident-acl-agent.service` and
-`/etc/trident/trident-acl-agent.conf` live under `/etc`, which is not part of
-the A/B-swapped `/usr`/root volume pair in this usr-verity image layout. That
-makes it safe for the scenario to write the config and enable the service
-once, after `deploy-vm`, rather than baking enablement into the image — the
-state persists across `run-ab-update`'s finalize the same way the config file
-does.
+The harness never writes `/etc/trident/trident-acl-agent.conf` at all —
+`nebraska.endpoint`/`nebraska.app_id`/`nebraska.track` are supplied per-request
+via the update-request annotation's `server`/`appId`/`track` fields instead,
+and `kubernetes.node_name` defaults to the node's own real hostname (which
+the image's hostname is set to match). What the harness does deliver, once
+at runtime after `deploy-vm`, is a fake kubeconfig at
+`/var/lib/kubelet/kubeconfig` pointing at the fake apiserver. That path lives
+on its own dedicated ext4 partition (not part of the A/B-swapped `/usr`/root
+volume pair in this usr-verity image layout), so it persists across
+`run-ab-update`'s finalize reboot without needing to be re-delivered.
+`trident-acl-agent.service`'s enablement state, by contrast, lives on the
+swapped root itself and does not carry over a reboot onto the other A/B
+volume — the harness re-runs its short prepare/restart step after each
+reboot to reconnect the agent to that test case's fresh fake-apiserver
+instance, not to re-create the kubeconfig.
 
 ## Prerequisites
 
@@ -136,30 +152,34 @@ sudo bin/storm-trident run aclagent \
 The scenario runs these test cases in order:
 
 1. **deploy-vm** — Copies the base qcow2 image and creates a QEMU VM
-2. **check-deployment** — Verifies the VM booted and is accessible via SSH;
-   writes `/etc/trident/trident-acl-agent.conf` pointing at the
-   `localhost:<port>` endpoints storm reverse-SSH-forwards into the VM, then
-   runs `systemctl enable --now trident-acl-agent.service`
+2. **check-deployment** — Verifies the VM booted and is accessible via SSH
 3. **run-ab-update** — Starts the fake apiserver and fake Nebraska/Omaha
-   endpoints in-process, seeds bootstrap node labels, patches the desired
-   update-image label, and waits for `trident-acl-agent` to drive a real
-   Trident A/B update to completion (including a real reboot)
-4. **collect-logs** — Fetches `trident-acl-agent` and Trident logs from the
+   endpoints in-process, delivers a fake kubeconfig and restarts
+   `trident-acl-agent.service`, patches the `acl.azure.com/update-request`
+   annotation, and waits for `trident-acl-agent` to drive a real Trident A/B
+   update to completion (including a real reboot)
+4. **run-rollback** — Exercises the `rollback` annotation end-to-end against
+   tridentd's `RollbackService` gRPC API, followed by a real reboot and
+   post-reboot commit; must run after `run-ab-update` in the same VM
+   lifetime, since it rolls back to the volume active before that update
+5. **collect-logs** — Fetches `trident-acl-agent` and Trident logs from the
    VM via SSH; also runs automatically (with a `journalctl` dump for
-   `trident-acl-agent.service`) if `run-ab-update` times out waiting for the
-   service to become active, to make crash-loops self-diagnosing
-5. **cleanup-vm** — Destroys the QEMU VM
+   `trident-acl-agent.service`) if an update/rollback step times out waiting
+   for the service to become active, to make crash-loops self-diagnosing
+6. **cleanup-vm** — Destroys the QEMU VM
 
 ### Flags
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--artifacts-dir` | Directory containing VM images | `/tmp` |
+| `--artifacts-dir` | Directory containing VM images | `.` |
 | `--output-path` | Output directory for logs | `./output` |
 | `--platform` | `qemu` or `azure` | `qemu` |
 | `--ssh-private-key-path` | Path to SSH private key | `~/.ssh/id_rsa` |
 | `--api-server-port` | Port for the fake Kubernetes API server | `18080` |
 | `--nebraska-port` | Port for the fake Nebraska/Omaha server | `18081` |
+| `--host-endpoint-ip` | Host IP the VM reaches the fake endpoints at | `192.168.122.1` |
+| `--image-path` | Real `.cosi` update image to serve during staging | first `*.cosi` found under `--artifacts-dir` |
 | `--verbose` | Enable verbose logging | `false` |
 | `--test-case-to-run` | Run a specific test case only | `all` |
 

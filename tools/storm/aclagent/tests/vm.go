@@ -25,6 +25,8 @@ func DeployVM(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.AllVM
 		if err := vmConfig.AzureConfig.DeployAzureVM(vmConfig.VMConfig.Name, vmConfig.VMConfig.User); err != nil {
 			return fmt.Errorf("failed to deploy azure vm: %w", err)
 		}
+	} else {
+		return fmt.Errorf("unsupported VM platform '%s'", vmConfig.VMConfig.Platform)
 	}
 	return nil
 }
@@ -38,6 +40,8 @@ func CleanupVM(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.AllV
 		if err := vmConfig.QemuConfig.CleanupQemuVM(vmConfig.VMConfig.Name); err != nil {
 			return fmt.Errorf("failed to cleanup QEMU VM: %w", err)
 		}
+	} else {
+		return fmt.Errorf("unsupported VM platform '%s'", vmConfig.VMConfig.Platform)
 	}
 	return nil
 }

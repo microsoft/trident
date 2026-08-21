@@ -80,7 +80,10 @@ func (c *RPClient) expectStatus(ctx context.Context, index int, step *ExpectStep
 		if err != nil {
 			return nil, err
 		}
-		status, _ := decodeStatus(node, annotationKey)
+		status, err := decodeStatus(node, annotationKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode %s annotation: %w", annotationKey, err)
+		}
 		if status != nil {
 			lastObserved = map[string]string{"operation-id": status.OperationID, "operation": status.Operation, "code": status.Code}
 			if status.Code == step.Code && (step.OperationID == "" || status.OperationID == step.OperationID) && (step.Operation == "" || status.Operation == step.Operation) {

@@ -62,11 +62,13 @@ func (s *TridentAclAgentScenario) runTestCase(tc storm.TestCase, testFunc func(s
 		testCaseSpecificConfig.OutputPath = filepath.Join(testCaseSpecificConfig.OutputPath, tc.Name())
 		if err := os.MkdirAll(testCaseSpecificConfig.OutputPath, 0o755); err != nil {
 			tc.FailFromError(err)
+			return nil
 		}
 	}
 	if err := testFunc(testCaseSpecificConfig, stormvmconfig.AllVMConfig{VMConfig: s.args.VMConfig, QemuConfig: s.args.QemuConfig, AzureConfig: s.args.AzureConfig}); err != nil {
 		logrus.Infof("test case '%s' failed", tc.Name())
 		tc.FailFromError(err)
+		return nil
 	}
 	logrus.Infof("test case '%s' passed", tc.Name())
 	return nil

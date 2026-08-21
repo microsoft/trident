@@ -176,6 +176,9 @@ func (p *NebraskaProxy) ListenAndServe(ctx context.Context, listenAddr string) (
 		<-ctx.Done()
 		_ = server.Shutdown(context.Background())
 		stopEphemeralPostgres(containerID)
+		// Unset so it doesn't leak into other tests/scenarios running in
+		// this same process after this proxy has shut down.
+		_ = os.Unsetenv("NEBRASKA_DB_URL")
 	}()
 	go func() { _ = server.Serve(listener) }()
 	return listener, nil
