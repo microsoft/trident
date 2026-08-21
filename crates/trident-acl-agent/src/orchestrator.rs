@@ -2,8 +2,8 @@
 //! annotation, drives Trident (stage/finalize/rollback/commit) over gRPC,
 //! and writes the status annotation back, including post-reboot.
 //!
-//! Implements the node-side control flow from `docs/update-trigger-design.md`:
-//! https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md
+//! Implements the node-side control flow from
+//! <https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md>
 //! (sections 2.1 "Trigger mechanism", 2.3 "Stage/finalize/rollback split
 //! and post-reboot commit", and 2.5 "Rollback"). See that document for the
 //! full state-machine rationale; keep it in sync with this file if the
@@ -254,7 +254,7 @@ where
             // Reject on operationId, not nodeUpdateId: the actual conflict
             // this guard exists to prevent is "a second finalize/rollback
             // starts while one is still waiting for its post-reboot
-            // commit" (accepted-design-v3.md's in-flight conflict rule).
+            // commit" (https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md's in-flight conflict rule).
             // Keying on nodeUpdateId alone let a retried/re-issued request
             // that reused the same nodeUpdateId but a new operationId slip
             // through this guard entirely and re-enter handle_finalize/
@@ -300,7 +300,7 @@ where
     /// across one update's lifecycle would split that state across two
     /// servers.
     ///
-    /// Per `accepted-design-v3.md` 2.1, `stage`/`finalize` requests must
+    /// Per <https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md> 2.1, `stage`/`finalize` requests must
     /// carry `server` and there is deliberately no static-config fallback
     /// here: a fallback would let a node update from a source AKS-RP did
     /// not choose. `UpdateRequest::validate()` already rejects a
@@ -807,7 +807,7 @@ where
     ) -> UpdateStatus {
         // state.json did not survive the reboot (or was never written, e.g.
         // the agent crashed before persisting pendingCommit). Per
-        // accepted-design-v3.md §2.3's degraded path, reconstruct the answer by
+        // https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md §2.3's degraded path, reconstruct the answer by
         // calling commit() unconditionally rather than guessing from labels
         // or the target version alone - tridentd's commit() is self-checking
         // and its own (ServicingKind/RebootStatus/Result) response already
@@ -1336,7 +1336,7 @@ fn indicates_target_boot_failed(error: &TridentClientError) -> bool {
 /// needing a full `Orchestrator` instance. See `stage_result_to_status` for
 /// rationale.
 /// Pre-flight checks for the state.json-missing degraded reconstruction
-/// path (accepted-design-v3.md §2.3). Returns `Some(status)` when reconstruction
+/// path (<https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md> §2.3). Returns `Some(status)` when reconstruction
 /// cannot proceed (tridentd already known-unreachable, or the outstanding
 /// request isn't a finalize/rollback), or `None` when the caller should go
 /// on to call tridentd's commit() to determine the real outcome.
@@ -1380,7 +1380,8 @@ fn reconstruct_precheck_status(
 }
 
 /// Maps tridentd's commit() result to the terminal status for the
-/// state.json-missing degraded reconstruction path (accepted-design-v3.md
+/// state.json-missing degraded reconstruction path
+/// (<https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md>
 /// §2.3). Always reports under the original operationId, mirroring the
 /// normal post-reboot commit path in `commit_result_to_status`.
 fn reconstruct_commit_result_to_status(
