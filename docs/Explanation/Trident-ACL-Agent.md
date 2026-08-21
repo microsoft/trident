@@ -232,7 +232,7 @@ naming the offending variable.
 | `TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX` | `acl.microsoft.com` | The annotation-key prefix for the request/status/commit-status annotations (e.g. the `acl.microsoft.com` in `acl.microsoft.com/update-request`). Any orchestrator can pick its own namespace here so its annotations don't collide with another controller's. |
 | `TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH` | `/etc/os-release` | The file the agent reads to determine the node's currently running version. Any file works, as long as it follows the os-release format (`KEY=VALUE` lines, optionally single- or double-quoted, blank lines and `#` comments ignored) — see [below](#configuring-the-on-disk-version). |
 | `TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY` | `VERSION_ID` | The key the agent looks up in `TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH` (`/etc/os-release` by default) to determine the node's currently running version, used to compare against a request's `targetVersion` (e.g. to short-circuit to `AlreadyAtTarget`). `VERSION_ID` is the standard `os-release` field most images already stamp; a deployment that instead carries an ACL-specific `IMAGE_VERSION` field can point this variable at that key instead — see [below](#configuring-the-on-disk-version). |
-| `TRIDENT_ACL_AGENT_CURRENT_VERSION_STUB` | `0.0.0-unprobed-trident-acl-agent-stub` | Sentinel value used as the node's "current version" when `TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY` isn't present at `TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH` (e.g. a dev/test host, or an image that hasn't started stamping that key yet). Deliberately shaped so it can never collide with a real release version and cause a false `AlreadyAtTarget`. |
+| `TRIDENT_ACL_AGENT_CURRENT_VERSION_FALLBACK` | `always` | Controls what happens when `TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY` isn't present at `TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH` (e.g. a dev/test host, or an image that hasn't started stamping that key yet). `always` reports `0.0.0` as the node's current version — a sentinel that can never collide with a real release version and cause a false `AlreadyAtTarget`. `error` fails the operation instead of using a placeholder version. Any other value is used verbatim as the current version, with no format validation. |
 | `TRIDENT_ACL_AGENT_KUBERNETES_API_SERVER` | unset | Explicit override for the Kubernetes API server URL. When unset, the server embedded in the kubeconfig is used as-is. |
 | `TRIDENT_ACL_AGENT_KUBERNETES_KUBECONFIG` | `/var/lib/kubelet/kubeconfig` | Path to the kubeconfig used to reach the Kubernetes API server and authenticate as this node. |
 | `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME` | The node's own hostname, lowercased | The Node object this agent watches/patches. |
@@ -299,10 +299,12 @@ compares it against a request's `targetVersion` the same way it would for
 `AlreadyAtTarget` when they already match.
 
 If the configured key is absent from the configured file (for example, on
-a dev/test host with a minimal `os-release`), the agent falls back to
-`TRIDENT_ACL_AGENT_CURRENT_VERSION_STUB`
-(`0.0.0-unprobed-trident-acl-agent-stub` by default), a sentinel value
-that can never accidentally match a real requested version.
+a dev/test host with a minimal `os-release`), the agent consults
+`TRIDENT_ACL_AGENT_CURRENT_VERSION_FALLBACK` (`always` by default): `always`
+reports `0.0.0` as the current version — a sentinel that can never
+accidentally match a real requested version; `error` fails the operation
+instead of guessing; any other value is used verbatim as the current
+version, unvalidated.
 
 ## Diagnostics
 
