@@ -22,14 +22,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// sha384File computes the lowercase hex-encoded SHA-384 digest that tridentd
-// expects for a given image path.
-//
-// For a .cosi file, tridentd does NOT hash the whole archive: a COSI is a
-// plain tar with an embedded "metadata.json" entry, and tridentd's Host
-// Configuration "sha384" field must match the hash of just that entry's
-// bytes (see crates/trident/src/osimage/cosi/mod.rs's read_cosi_metadata).
-// For any other file, this hashes the whole file's contents directly.
 // logScenarioTimeline prints a human-readable, step-by-step trace of a
 // scenario's progress through the ACL agent's stage/finalize/commit state
 // machine. It runs regardless of pass/fail so a test run's output always
@@ -58,6 +50,14 @@ func logScenarioTimeline(label string, report *stormproxies.ScenarioReport) {
 	logrus.Infof("=== %s state machine timeline: %s ===", label, overall)
 }
 
+// sha384File computes the lowercase hex-encoded SHA-384 digest that tridentd
+// expects for a given image path.
+//
+// For a .cosi file, tridentd does NOT hash the whole archive: a COSI is a
+// plain tar with an embedded "metadata.json" entry, and tridentd's Host
+// Configuration "sha384" field must match the hash of just that entry's
+// bytes (see crates/trident/src/osimage/cosi/mod.rs's read_cosi_metadata).
+// For any other file, this hashes the whole file's contents directly.
 func sha384File(path string) (string, error) {
 	if strings.HasSuffix(path, ".cosi") {
 		return sha384CosiMetadata(path)
