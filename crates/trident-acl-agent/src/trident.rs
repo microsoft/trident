@@ -356,13 +356,15 @@ async fn consume_servicing_stream(
                 log::info!("[Trident:{operation}] started");
             }
             Some(ResponseBody::Log(log_record)) => {
-                let msg = format!("[Trident:{operation}] {}", log_record.message);
+                let message = &log_record.message;
                 match log_record.level() {
-                    LogLevel::Unspecified | LogLevel::Trace => log::trace!("{msg}"),
-                    LogLevel::Debug => log::debug!("{msg}"),
-                    LogLevel::Info => log::info!("{msg}"),
-                    LogLevel::Warn => log::warn!("{msg}"),
-                    LogLevel::Error => log::error!("{msg}"),
+                    LogLevel::Unspecified | LogLevel::Trace => {
+                        log::trace!("[Trident:{operation}] {message}")
+                    }
+                    LogLevel::Debug => log::debug!("[Trident:{operation}] {message}"),
+                    LogLevel::Info => log::info!("[Trident:{operation}] {message}"),
+                    LogLevel::Warn => log::warn!("[Trident:{operation}] {message}"),
+                    LogLevel::Error => log::error!("[Trident:{operation}] {message}"),
                 }
             }
             Some(ResponseBody::Completed(completed)) => {
