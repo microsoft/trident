@@ -10,6 +10,7 @@ use std::{
     collections::BTreeMap,
     fs,
     io::Write,
+    os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
 };
 
@@ -101,8 +102,18 @@ impl StateStore {
         // alone only guarantees the data reaches the OS page cache, not
         // disk, so a crash between the write and a later flush could still
         // leave state.json empty/corrupt after the rename below.
+        //
+        // The persisted state embeds the full UpdateRequest, which can
+        // include a secret-bearing Omaha `server` URL, so create the file
+        // with owner-only permissions (0600) rather than relying on the
+        // process umask.
         {
-            let mut file = fs::File::create(&temp_path)
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&temp_path)
                 .with_context(|| format!("failed to create {}", temp_path.display()))?;
             file.write_all(serde_json::to_string_pretty(state)?.as_bytes())
                 .with_context(|| format!("failed to write {}", temp_path.display()))?;
