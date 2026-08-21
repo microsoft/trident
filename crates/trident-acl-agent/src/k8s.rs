@@ -7,10 +7,14 @@
 //! The design calls for get/patch access to exactly one Node object (§2.2–§2.6).
 //! Node changes are observed via the Kubernetes watch API (`kube::runtime::watcher`)
 //! rather than polling, so annotation updates are delivered promptly and without
-//! placing repeated load on the API server. `watch_poll_interval` still bounds
-//! how quickly the watcher notices a dropped/re-established connection (used
-//! as the watcher's backoff ceiling) and how often the fake test API server
-//! needs to support being polled if it does not support real watches.
+//! placing repeated load on the API server. `watch_poll_interval` only
+//! bounds the watch request's `timeoutSeconds` (see
+//! [`NodeClient::watch_node`]) - it floors how long a healthy watch
+//! connection is held open before a routine reconnect, and how often the
+//! fake test API server needs to support being polled if it does not
+//! support real watches. It does not influence reconnect/backoff timing
+//! after a dropped or failed watch; that is governed entirely by
+//! `kube::runtime::watcher`'s built-in `default_backoff()`.
 
 use std::{collections::BTreeMap, path::Path};
 
@@ -123,7 +127,10 @@ impl NodeClient {
         // it directly here would force a reconnect every couple of seconds
         // even on a perfectly healthy watch. Floor the request timeout at
         // WATCH_TIMEOUT_SECS instead, while still honoring a larger
-        // configured `poll_interval` if one is ever set.
+        // configured `poll_interval` if one is ever set. Note this only
+        // affects the cadence of routine reconnects on a healthy watch -
+        // `default_backoff()` below (not `poll_interval`) governs
+        // retry/backoff timing after a dropped or failed watch.
         let timeout_secs = self
             .poll_interval
             .as_secs()
