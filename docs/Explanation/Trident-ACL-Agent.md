@@ -120,11 +120,55 @@ sequenceDiagram
     API-->>Orchestrator: terminal commit code
 ```
 
-A status annotation's `code` is one of `InProgress`, `Success`,
-`AlreadyAtTarget`, `NotStaged`, `OperationFailed`, `TargetBootFailed`,
-`AgentInternalError`, or `InvalidRequest` — see the request/status schema
-types in `crates/trident-acl-agent/src/annotations.rs` for the full
-contract, including the formal JSON Schema both sides validate against.
+A status annotation (`<prefix>/update-status` or
+`<prefix>/update-commit-status`) looks like:
+
+```json
+{
+  "schemaVersion":   "1.0",
+  "nodeUpdateId":    "550e8400-e29b-41d4-a716-446655440000",
+  "operationId":     "c9d6f0a2-3b41-4e8d-9f27-1a5b6c7d8e90",
+  "operation":       "stage",
+  "code":            "Success",
+  "message":         "staged update to 202606.29.0",
+  "fromVersion":     "202606.15.0",
+  "toVersion":       "202606.29.0",
+  "startedUtc":      "2026-06-29T12:00:00Z",
+  "lastUpdatedUtc":  "2026-06-29T12:03:41Z",
+  "finishedUtc":     "2026-06-29T12:03:41Z"
+}
+```
+
+- `operation` is `stage`, `finalize`, `rollback`, or `commit` (`commit` only
+  ever appears on `<prefix>/update-commit-status`, never on
+  `<prefix>/update-status`).
+- `code` is the outcome — see the table below.
+- `message` is a short, human-readable explanation of `code`, useful for
+  logs/alerts; treat its exact wording as informational, not something to
+  match on (it may include error detail that varies run to run).
+- `fromVersion`/`toVersion` are the versions the operation moved between
+  (`toVersion` is absent for `rollback`, whose target is implicit).
+- `startedUtc`/`lastUpdatedUtc`/`finishedUtc` bound the operation:
+  `lastUpdatedUtc` refreshes on a heartbeat cadence while `code` is
+  `InProgress` (see [below](#pre-post-reboot-state-and-the-watchdog));
+  `finishedUtc` is absent until `code` reaches a terminal value.
+
+`code` is one of:
+
+| `code` | Terminal? | Meaning |
+|---|---|---|
+| `InProgress` | No | The operation is running. `lastUpdatedUtc` refreshes on a heartbeat cadence; a terminal code always follows. |
+| `Success` | Yes | The operation completed as requested. For `commit`, this means the reboot landed on the target partition and it was promoted. |
+| `AlreadyAtTarget` | Yes | `stage`/`finalize` was requested for the version the node is already running (per `TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY`); treated as a no-op success. |
+| `NotStaged` | Yes | `finalize` was requested for a `nodeUpdateId` with no prior successful `stage`. Issue a `stage` first. |
+| `OperationFailed` | Yes | The operation failed for a reason other than a boot/rollback outcome (e.g. the Omaha server has no update for the requested version, or the underlying `tridentd` call returned an error). See `message` for detail. |
+| `TargetBootFailed` | Yes | The post-reboot `commit` found the node had rolled back to its previous partition instead of booting the target — Trident's own health checks rejected the new boot. The node is back on `fromVersion`; the orchestrator should treat this as a failed update, not retry the same `nodeUpdateId` blindly. |
+| `AgentInternalError` | Yes | A failure in the agent itself rather than in Trident or the requested operation (e.g. it triggered a reboot but the reboot call failed, or it lost track of an in-flight commit). Distinct from `OperationFailed` so an orchestrator can decide to treat these differently (e.g. retry vs. escalate). |
+| `InvalidRequest` | Yes | The request annotation itself was rejected before any action was taken — malformed JSON, a schema/version mismatch, a missing required field (`server`/`appId`/`track`/`targetVersion`), a `finalize` whose `targetVersion` doesn't match what was staged, or a second `finalize`/`rollback` submitted while one is already pending its post-reboot `commit`. No Trident operation runs. |
+
+See the request/status schema types in
+`crates/trident-acl-agent/src/annotations.rs` for the full contract,
+including the formal JSON Schema both sides validate against.
 
 ## Pre/post-reboot state and the watchdog
 
