@@ -10,16 +10,29 @@
 // current_active_version() reads the `VERSION_ID` key (overridable via
 // TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY, e.g. to `IMAGE_VERSION` for an ACL
 // image that stamps its own per-build version there) out of os-release, but
-// falls back to this stub if that key isn't present (e.g. a minimal
-// dev/test os-release). The stub value below is an explicit sentinel that
-// cannot collide with a real release version string, so it can never
-// accidentally match a real requested target version and cause
-// handle_stage/handle_finalize to incorrectly short-circuit to
-// AlreadyAtTarget. Do not remove this comment when bumping the stub value;
-// keep it (and its non-colliding shape). The stub itself is overridable via
-// TRIDENT_ACL_AGENT_CURRENT_VERSION_STUB, for dev/test hosts that want a
-// specific sentinel.
-pub const CURRENT_VERSION_STUB: &str = "0.0.0-unprobed-trident-acl-agent-stub";
+// falls back to TRIDENT_ACL_AGENT_CURRENT_VERSION_FALLBACK's behavior if
+// that key isn't present (e.g. a minimal dev/test os-release). Three forms
+// are recognized:
+//   - "always" (the default): report "0.0.0" as the current version. This
+//     is a sentinel that cannot collide with a real release version
+//     string, so it can never accidentally match a real requested target
+//     version and cause handle_stage/handle_finalize to incorrectly
+//     short-circuit to AlreadyAtTarget - useful on dev/test hosts that
+//     always want to treat themselves as needing whatever update is
+//     requested.
+//   - "error": current_active_version() returns an error instead of
+//     falling back to anything, so a misconfigured VERSION_ID/IMAGE_VERSION
+//     key fails the in-flight operation loudly rather than silently
+//     proceeding with a meaningless placeholder version - the right choice
+//     for a production deployment that wants to catch this class of
+//     misconfiguration immediately.
+//   - anything else: used verbatim as the fallback "current version"
+//     string, with no format validation - e.g. a specific sentinel a
+//     dev/test host wants for its own purposes. This is not checked against
+//     any version syntax, so it's the caller's responsibility to pick a
+//     value that can't collide with a real target version if that matters
+//     to them.
+pub const DEFAULT_CURRENT_VERSION_FALLBACK: &str = "always";
 /// Default path `current_active_version` reads. Overridable via
 /// `TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH` so a deployment can point the
 /// agent at any file that follows the os-release format (`KEY=VALUE` lines,
@@ -40,7 +53,14 @@ pub const DEFAULT_CURRENT_VERSION_PATH: &str = osutils::osrelease::OS_RELEASE_PA
 pub const DEFAULT_CURRENT_VERSION_KEY: &str = "VERSION_ID";
 const ENV_CURRENT_VERSION_PATH: &str = "TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH";
 const ENV_CURRENT_VERSION_KEY: &str = "TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY";
-const ENV_CURRENT_VERSION_STUB: &str = "TRIDENT_ACL_AGENT_CURRENT_VERSION_STUB";
+const ENV_CURRENT_VERSION_FALLBACK: &str = "TRIDENT_ACL_AGENT_CURRENT_VERSION_FALLBACK";
+/// `TRIDENT_ACL_AGENT_CURRENT_VERSION_FALLBACK`'s "report 0.0.0" keyword.
+const FALLBACK_ALWAYS: &str = "always";
+/// `TRIDENT_ACL_AGENT_CURRENT_VERSION_FALLBACK`'s "fail instead" keyword.
+const FALLBACK_ERROR: &str = "error";
+/// What [`current_active_version`] reports for [`FALLBACK_ALWAYS`] - see its
+/// docs above for why 0.0.0 is a safe sentinel here.
+const FALLBACK_ALWAYS_VERSION: &str = "0.0.0";
 
 /// Reads `name`, treating both "unset" and "set to the empty string" as
 /// absent, matching `config::env_raw`'s convention: a drop-in override that
@@ -50,17 +70,33 @@ fn env_override(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|v| !v.is_empty())
 }
 
-pub fn current_active_version() -> String {
+pub fn current_active_version() -> Result<String, anyhow::Error> {
     let path = env_override(ENV_CURRENT_VERSION_PATH)
         .unwrap_or_else(|| DEFAULT_CURRENT_VERSION_PATH.to_string());
     let key = env_override(ENV_CURRENT_VERSION_KEY)
         .unwrap_or_else(|| DEFAULT_CURRENT_VERSION_KEY.to_string());
-    read_os_release_value(&path, &key).unwrap_or_else(|| {
-        let stub = env_override(ENV_CURRENT_VERSION_STUB)
-            .unwrap_or_else(|| CURRENT_VERSION_STUB.to_string());
-        log::warn!("{key} not found in {path}; falling back to stub current version {stub}");
-        stub
-    })
+    if let Some(value) = read_os_release_value(&path, &key) {
+        return Ok(value);
+    }
+    let fallback = env_override(ENV_CURRENT_VERSION_FALLBACK)
+        .unwrap_or_else(|| DEFAULT_CURRENT_VERSION_FALLBACK.to_string());
+    match fallback.as_str() {
+        FALLBACK_ERROR => Err(anyhow::anyhow!(
+            "{key} not found in {path}, and {ENV_CURRENT_VERSION_FALLBACK} is set to \"error\""
+        )),
+        FALLBACK_ALWAYS => {
+            log::warn!(
+                "{key} not found in {path}; falling back to \"always\" (reporting {FALLBACK_ALWAYS_VERSION} as the current version)"
+            );
+            Ok(FALLBACK_ALWAYS_VERSION.to_string())
+        }
+        _ => {
+            log::warn!(
+                "{key} not found in {path}; falling back to configured current version {fallback:?}"
+            );
+            Ok(fallback)
+        }
+    }
 }
 
 /// Reads `path` (an os-release-formatted file: `KEY=VALUE` lines, blank
@@ -182,12 +218,12 @@ mod tests {
         unsafe {
             std::env::remove_var(ENV_CURRENT_VERSION_PATH);
             std::env::remove_var(ENV_CURRENT_VERSION_KEY);
-            std::env::remove_var(ENV_CURRENT_VERSION_STUB);
+            std::env::remove_var(ENV_CURRENT_VERSION_FALLBACK);
         }
     }
 
     #[test]
-    fn current_active_version_path_key_and_stub_are_overridable_via_env() {
+    fn current_active_version_path_key_and_fallback_are_overridable_via_env() {
         clear_current_version_env();
         assert_eq!(env_override(ENV_CURRENT_VERSION_PATH), None);
         assert_eq!(env_override(ENV_CURRENT_VERSION_KEY), None);
@@ -212,11 +248,11 @@ mod tests {
 
         // SAFETY: see clear_current_version_env's doc comment.
         unsafe {
-            std::env::set_var(ENV_CURRENT_VERSION_STUB, "custom-stub");
+            std::env::set_var(ENV_CURRENT_VERSION_FALLBACK, "custom-fallback");
         }
         assert_eq!(
-            env_override(ENV_CURRENT_VERSION_STUB).as_deref(),
-            Some("custom-stub")
+            env_override(ENV_CURRENT_VERSION_FALLBACK).as_deref(),
+            Some("custom-fallback")
         );
 
         // An empty override is treated the same as unset.
@@ -248,13 +284,13 @@ mod tests {
             std::env::set_var(ENV_CURRENT_VERSION_PATH, found_path.to_str().unwrap());
             std::env::set_var(ENV_CURRENT_VERSION_KEY, "VERSION_ID");
         }
-        assert_eq!(current_active_version(), "202608.6.0");
+        assert_eq!(current_active_version().unwrap(), "202608.6.0");
         std::fs::remove_file(&found_path).ok();
         clear_current_version_env();
 
-        // When the configured key isn't present at the configured path, it
-        // still falls back to the (possibly also-overridden) stub, exactly
-        // as it does for the real /etc/os-release.
+        // When the configured key isn't present at the configured path, and
+        // no fallback override is set, it defaults to "always" - reporting
+        // FALLBACK_ALWAYS_VERSION ("0.0.0") as the current version.
         let missing_path = dir.join(format!(
             "os-release-test-current-version-missing-{}",
             Uuid::new_v4()
@@ -264,9 +300,31 @@ mod tests {
         unsafe {
             std::env::set_var(ENV_CURRENT_VERSION_PATH, missing_path.to_str().unwrap());
             std::env::set_var(ENV_CURRENT_VERSION_KEY, "VERSION_ID");
-            std::env::set_var(ENV_CURRENT_VERSION_STUB, "custom-stub-for-missing-key");
         }
-        assert_eq!(current_active_version(), "custom-stub-for-missing-key");
+        assert_eq!(current_active_version().unwrap(), FALLBACK_ALWAYS_VERSION);
+
+        // TRIDENT_ACL_AGENT_CURRENT_VERSION_FALLBACK="error" turns a missing
+        // key into a hard error instead of a placeholder version.
+        // SAFETY: see clear_current_version_env's doc comment.
+        unsafe {
+            std::env::set_var(ENV_CURRENT_VERSION_FALLBACK, FALLBACK_ERROR);
+        }
+        assert!(current_active_version().is_err());
+
+        // Any other TRIDENT_ACL_AGENT_CURRENT_VERSION_FALLBACK value is used
+        // verbatim, with no format validation.
+        // SAFETY: see clear_current_version_env's doc comment.
+        unsafe {
+            std::env::set_var(
+                ENV_CURRENT_VERSION_FALLBACK,
+                "custom-fallback-for-missing-key",
+            );
+        }
+        assert_eq!(
+            current_active_version().unwrap(),
+            "custom-fallback-for-missing-key"
+        );
+
         std::fs::remove_file(&missing_path).ok();
         clear_current_version_env();
     }
