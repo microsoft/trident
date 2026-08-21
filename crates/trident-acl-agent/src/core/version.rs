@@ -2,7 +2,7 @@
 //! a request's `targetVersion` (e.g. to short-circuit to `AlreadyAtTarget`)
 //! and for reporting the instance's current version to Nebraska.
 //!
-//! Split out of [`crate::annotations`] because it has nothing to do with the
+//! Lives in `core`, not `annotations`, because it has nothing to do with the
 //! annotation wire format - it's plain env-var-configurable file probing,
 //! used by both the annotation-driven orchestrator and the `omaha-only`
 //! one-shot mode.

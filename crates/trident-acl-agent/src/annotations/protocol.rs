@@ -6,7 +6,7 @@
 //! `<prefix>/update-commit-status` node annotation protocol described
 //! by the current accepted design (<https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md>), where
 //! `<prefix>` defaults to `acl.microsoft.com` (see
-//! [`AnnotationKeys`]/[`crate::config::DEFAULT_ANNOTATION_PREFIX`]) and is
+//! [`AnnotationKeys`]/[`crate::core::config::DEFAULT_ANNOTATION_PREFIX`]) and is
 //! overridable via the `TRIDENT_ACL_AGENT_ANNOTATION_PREFIX` environment
 //! variable. Keep `UpdateRequest`/`UpdateStatus`/`StatusCode` and
 //! `validate()` in sync with that document's formal JSON Schema (its
@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
 
-use crate::config::DEFAULT_ANNOTATION_PREFIX;
+use crate::core::config::DEFAULT_ANNOTATION_PREFIX;
 
 /// Suffix (appended to the configured annotation prefix) for the request
 /// annotation, e.g. `acl.microsoft.com/update-request`.
@@ -33,7 +33,7 @@ pub const UPDATE_STATUS_SUFFIX: &str = "update-status";
 pub const UPDATE_COMMIT_STATUS_SUFFIX: &str = "update-commit-status";
 
 /// The full annotation keys for one deployment's configured annotation
-/// prefix. Built once from [`crate::config::KubernetesConfig::annotation_prefix`]
+/// prefix. Built once from [`crate::core::config::KubernetesConfig::annotation_prefix`]
 /// and threaded through instead of hardcoding a fixed
 /// `acl.microsoft.com` prefix.
 #[derive(Debug, Clone, PartialEq, Eq)]

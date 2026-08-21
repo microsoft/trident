@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use osutils::{hostname, machine_id::MachineId};
 
-use crate::error::AgentError;
+use crate::core::error::AgentError;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum IdSource {
@@ -22,7 +22,7 @@ impl Display for IdSource {
 }
 
 impl IdSource {
-    pub(super) fn produce_id(&self) -> Result<String, AgentError> {
+    pub(crate) fn produce_id(&self) -> Result<String, AgentError> {
         Ok(match self {
             IdSource::MachineIdHashed => MachineId::read()
                 .map_err(|err| AgentError::MachineIdRead(err.to_string()))?

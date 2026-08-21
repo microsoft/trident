@@ -24,15 +24,17 @@ use osutils::dependencies::Dependency;
 
 use crate::{
     annotations::{
+        k8s::{K8sClientError, NodeClient},
+        state::{PendingCommit, StateStore},
         AnnotationKeys, Operation, RequestedOperation, StatusCode, UpdateRequest, UpdateStatus,
         SCHEMA_VERSION,
     },
-    config::AgentConfig,
-    k8s::{K8sClientError, NodeClient},
-    nebraska::{CheckOutcome, Client as NebraskaClient, ProgressEvent},
-    state::{PendingCommit, StateStore},
-    trident::{CompletedResponse, TridentClient, TridentClientError},
-    version::current_active_version,
+    core::{
+        config::AgentConfig,
+        nebraska::{CheckOutcome, Client as NebraskaClient, ProgressEvent},
+        trident::{CompletedResponse, TridentClient, TridentClientError},
+        version::current_active_version,
+    },
     IdSource,
 };
 
@@ -1569,7 +1571,7 @@ mod tests {
     use super::*;
     use crate::{
         annotations::{RequestedOperation, SCHEMA_VERSION},
-        mock_tridentd::{connect_mock_client, MockTridentdConfig, Outcome},
+        core::trident::mock::{connect_mock_client, MockTridentdConfig, Outcome},
     };
 
     fn request(operation: RequestedOperation) -> UpdateRequest {
