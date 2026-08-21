@@ -21,10 +21,11 @@ package). Installing it:
 $ tdnf install trident-acl-agent
 ```
 
-lays down exactly two files: the `/usr/bin/trident-acl-agent` binary and
-its `trident-acl-agent.service` unit
+lays down the `/usr/bin/trident-acl-agent` binary and its
+`trident-acl-agent.service` unit
 (`packaging/systemd/trident-acl-agent.service`) under the systemd unit
-directory. Installing the package does not by itself enable or start the
+directory, along with the package's `%license`-installed `LICENSE`/`NOTICE`
+files. Installing the package does not by itself enable or start the
 service — a deployment decides when that happens, e.g. by running
 `systemctl enable --now trident-acl-agent.service` on the node, or by
 baking that enablement into the image build (as this repo's own
