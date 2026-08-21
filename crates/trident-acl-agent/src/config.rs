@@ -49,7 +49,7 @@ const DEFAULT_KUBERNETES_POLL_INTERVAL: Duration = Duration::from_secs(2);
 // mode does not use this default at all: stage/finalize requests must
 // carry their own `server` field, with no fallback to this config (see
 // Orchestrator::resolve_nebraska_endpoint).
-pub const DEFAULT_NEBRASKA_ENDPOINT: &str = "https://nebraska.example.invalid/v1/update/";
+pub const DEFAULT_NEBRASKA_ENDPOINT: &str = "https://nebraska.example.invalid/v1/update";
 const DEFAULT_STAGE_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 const DEFAULT_FINALIZE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const DEFAULT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(60);
