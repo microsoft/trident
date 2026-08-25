@@ -22,6 +22,7 @@ use url::Url;
 use uuid::Uuid;
 
 use osutils::{dependencies::Dependency, machine_id};
+use trident_api::error::{HealthChecksError, ServicingError};
 use trident_proto::v1::{RebootStatus, ServicingKind};
 
 use crate::{
@@ -1225,7 +1226,7 @@ fn stage_result_to_status(
     request: &UpdateRequest,
     from_version: Option<String>,
     to_version: Option<String>,
-    started: chrono::DateTime<Utc>,
+    started: DateTime<Utc>,
     result: Result<CompletedResponse, TridentClientError>,
 ) -> UpdateStatus {
     match result {
@@ -1260,7 +1261,7 @@ fn finalize_success_status(
     request: &UpdateRequest,
     from_version: Option<String>,
     to_version: Option<String>,
-    started: chrono::DateTime<Utc>,
+    started: DateTime<Utc>,
 ) -> UpdateStatus {
     UpdateStatus::new(
         request,
@@ -1281,7 +1282,7 @@ fn finalize_failure_status(
     request: &UpdateRequest,
     from_version: Option<String>,
     to_version: Option<String>,
-    started: chrono::DateTime<Utc>,
+    started: DateTime<Utc>,
     err: &TridentClientError,
 ) -> UpdateStatus {
     UpdateStatus::new(
@@ -1321,9 +1322,9 @@ fn indicates_target_boot_failed(error: &TridentClientError) -> bool {
             // one - both must be checked here, or a real rollback
             // boot-fallback silently reports as generic OperationFailed
             // instead of TargetBootFailed.
-            remote.subkind == "ab-update-reboot-check"
-                || remote.subkind == "ab-update-health-check-commit-check"
-                || remote.subkind == "manual-rollback-reboot-check"
+            remote.subkind == ServicingError::AB_UPDATE_REBOOT_CHECK_SUBKIND
+                || remote.subkind == HealthChecksError::AB_UPDATE_HEALTH_CHECK_COMMIT_CHECK_SUBKIND
+                || remote.subkind == ServicingError::MANUAL_ROLLBACK_REBOOT_CHECK_SUBKIND
         })
         .unwrap_or(false)
 }
@@ -1496,7 +1497,7 @@ fn commit_result_to_status(
 fn rollback_stage_failure_status(
     request: &UpdateRequest,
     from_version: Option<String>,
-    started: chrono::DateTime<Utc>,
+    started: DateTime<Utc>,
     err: &TridentClientError,
 ) -> UpdateStatus {
     UpdateStatus::new(
@@ -1517,7 +1518,7 @@ fn rollback_stage_failure_status(
 fn rollback_finalize_success_status(
     request: &UpdateRequest,
     from_version: Option<String>,
-    started: chrono::DateTime<Utc>,
+    started: DateTime<Utc>,
 ) -> UpdateStatus {
     UpdateStatus::new(
         request,
@@ -1537,7 +1538,7 @@ fn rollback_finalize_success_status(
 fn rollback_finalize_failure_status(
     request: &UpdateRequest,
     from_version: Option<String>,
-    started: chrono::DateTime<Utc>,
+    started: DateTime<Utc>,
     err: &TridentClientError,
 ) -> UpdateStatus {
     UpdateStatus::new(
