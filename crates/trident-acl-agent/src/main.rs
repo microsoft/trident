@@ -5,7 +5,7 @@ use systemd_journal_logger::{connected_to_journal, JournalLog};
 
 use trident_acl_agent::{
     annotations::orchestrator::Orchestrator,
-    core::config::{AgentConfig, GoalSource},
+    core::config::{AgentConfig, Mode},
     omahaonly::run_omaha_only,
 };
 
@@ -70,16 +70,16 @@ async fn main() -> Result<(), Error> {
         return validate_connection(target, &config).await;
     }
 
-    match config.orchestration.goal_source {
+    match config.orchestration.mode {
         // Historical one-shot flow: query Nebraska once, apply an update if
         // offered, and exit. No Kubernetes/annotation involvement. Not a
-        // documented/supported deployment option (see config::GoalSource).
-        GoalSource::OmahaOnly => run_omaha_only(&config).await,
+        // documented/supported deployment option (see config::Mode).
+        Mode::OmahaOnly => run_omaha_only(&config).await,
         // The only supported mode: the annotation-driven reconcile loop
         // (watches <prefix>/update-request, drives stage/finalize/rollback/
         // commit against tridentd, writes <prefix>/update-status; prefix
         // defaults to acl.microsoft.com, overridable via
         // TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX).
-        GoalSource::Annotations => Orchestrator::from_config(config).await?.run().await,
+        Mode::Annotations => Orchestrator::from_config(config).await?.run().await,
     }
 }

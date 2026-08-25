@@ -4,7 +4,7 @@
 //! Trident (stage/finalize/rollback/commit) through a Kubernetes node
 //! annotation protocol; a one-shot `omaha-only` mode that calls Trident's
 //! combined `Update()` RPC once and exits is also available as an explicit
-//! opt-out (see `core::config::GoalSource`).
+//! opt-out (see `core::config::Mode`).
 //!
 //! All Omaha/Nebraska protocol traffic (both `omaha-only` and annotation mode)
 //! goes through the [`core::nebraska`] client module, a self-contained,
