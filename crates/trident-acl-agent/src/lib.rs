@@ -3,9 +3,8 @@
 //! trident-acl-agent is Trident's ACL update sidecar. Historically it was a
 //! one-shot Omaha client that called Trident's combined `Update()` RPC once
 //! and exited. This crate now defaults to the Kubernetes annotation protocol
-//! described in the accepted design
-//! (<https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md>),
-//! while preserving the original `omaha-only` mode as an explicit opt-out
+//! (the currently accepted design for triggering updates), while
+//! preserving the original `omaha-only` mode as an explicit opt-out
 //! (see `core::config::GoalSource`).
 //!
 //! All Omaha/Nebraska protocol traffic (both `omaha-only` and annotation mode)
