@@ -2,24 +2,28 @@
 //! the default annotation-driven protocol (see
 //! [`crate::core::config::GoalSource`]).
 
-use anyhow::Context;
+use anyhow::{anyhow, Context, Error};
+use log::{debug, info, warn};
 use semver::Version;
+use tokio::task;
 
-use crate::core::{
-    config::AgentConfig,
-    nebraska::{CheckOutcome, Client},
-    trident::TridentClient,
-    version,
+use crate::{
+    core::{
+        config::AgentConfig,
+        nebraska::{CheckOutcome, Client},
+        trident::TridentClient,
+        version::{self, FALLBACK_ALWAYS_VERSION},
+    },
+    IdSource,
 };
-use crate::IdSource;
 
 /// Historical one-shot flow: query the Nebraska/Omaha server at
 /// `config.nebraska.endpoint` once, and if an update is offered, call
 /// tridentd's combined `Update()` RPC once and exit. No Kubernetes/annotation
 /// involvement.
-pub async fn run_omaha_only(config: &AgentConfig) -> Result<(), anyhow::Error> {
+pub async fn run_omaha_only(config: &AgentConfig) -> Result<(), Error> {
     let endpoint = config.nebraska.endpoint.clone().ok_or_else(|| {
-        anyhow::anyhow!("no Nebraska endpoint configured: set TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT")
+        anyhow!("no Nebraska endpoint configured: set TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT")
     })?;
 
     // Client::check_for_update() is a blocking call (reqwest::blocking under
@@ -33,26 +37,26 @@ pub async fn run_omaha_only(config: &AgentConfig) -> Result<(), anyhow::Error> {
     let machine_id = crate::build_machine_id(IdSource::MachineIdHashed)?;
     let current_version_raw = version::current_active_version()?;
     let current_version = Version::parse(&current_version_raw).unwrap_or_else(|err| {
-        log::warn!(
+        warn!(
             "current version {current_version_raw:?} is not valid semver ({err}); reporting 0.0.0 to Nebraska"
         );
-        Version::new(0, 0, 0)
+        Version::parse(FALLBACK_ALWAYS_VERSION).expect("invariant: FALLBACK_ALWAYS_VERSION is valid semver")
     });
-    let outcome = tokio::task::spawn_blocking(move || {
+    let outcome = task::spawn_blocking(move || {
         let client = Client::new(endpoint, app_id, track, machine_id);
         client.check_for_update(&current_version)
     })
     .await
     .context("Nebraska query task panicked")?
-    .map_err(|err| anyhow::anyhow!("Nebraska query failed: {err}"))?;
+    .context("Nebraska query failed")?;
 
     match outcome {
         CheckOutcome::UpToDate | CheckOutcome::UpdateInProgress => {
-            log::debug!("No update available from Nebraska");
+            debug!("No update available from Nebraska");
             Ok(())
         }
         CheckOutcome::UpdateAvailable(offer) => {
-            log::info!("Triggering one-shot Omaha update to {}", offer.version);
+            info!("Triggering one-shot Omaha update to {}", offer.version);
             let mut client = TridentClient::connect(&config.trident.socket).await?;
             let combined_timeout =
                 config.orchestration.stage_timeout + config.orchestration.finalize_timeout;

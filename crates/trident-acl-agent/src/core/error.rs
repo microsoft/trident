@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
-#[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Error)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum AgentError {
     #[error("Failed to initialize the trident-acl-agent client: {0}")]
     InitializationError(String),
@@ -17,6 +18,9 @@ pub enum AgentError {
 
     #[error("Internal error: {0}")]
     Internal(String),
+
+    #[error("invalid request: {0}")]
+    InvalidRequest(String),
 
     /// Wraps a [`nebraska::NebraskaError`](crate::core::nebraska::NebraskaError).
     /// Stored as a string rather than `#[from]` because `NebraskaError`
