@@ -1,12 +1,11 @@
 //! gRPC helpers for talking to `tridentd`.
 //!
-//! Implements the Trident-invocation half of the accepted design
-//! (the "Trident invocation" column of section 2.1's operations table,
-//! and the stage/finalize/rollback-finalize CallerHandlesReboot split in
-//! section 2.3).
+//! Implements the Trident-invocation half of the update-trigger flow
+//! (covering operation invocation and the
+//! stage/finalize/rollback-finalize CallerHandlesReboot split).
 //!
 //! The annotation protocol drives stage/finalize/commit directly against
-//! tridentd's stable v1 API (§4–§5). Startup recovery no longer pre-queries
+//! tridentd's stable v1 API. Startup recovery no longer pre-queries
 //! the preview `StatusService::GetServicingState`: commit() is self-checking
 //! (tridentd only commits from a valid servicing_state and otherwise returns
 //! ServicingKind::NoneRequired as a harmless no-op), so the orchestrator
@@ -233,7 +232,7 @@ impl TridentClient {
                 reboot: Some(RebootManagement {
                     // The agent, not tridentd, must own every reboot
                     // decision: AKS-RP is the sole authority over
-                    // reboot/rollback (the accepted design's §2.5). If commit()
+                    // reboot/rollback. If commit()
                     // ever reports NeedsReboot (e.g. a health-check failure,
                     // were health checks ever re-enabled), the agent needs
                     // to see that as a RebootRequired response it controls
@@ -257,9 +256,9 @@ impl TridentClient {
         .await
     }
 
-    /// Stages an A/B rollback. Only `AbRollbackRequested` is used - per the
-    /// accepted design, trident-acl-agent only ever drives AB-kind manual
-    /// rollback; runtime-kind and "any" rollback are out of scope for the
+    /// Stages an A/B rollback. Only `AbRollbackRequested` is used -
+    /// trident-acl-agent only ever drives AB-kind manual rollback;
+    /// runtime-kind and "any" rollback are out of scope for the
     /// annotation-driven protocol.
     pub async fn rollback_stage(
         &mut self,
@@ -295,7 +294,7 @@ impl TridentClient {
                 reboot: Some(RebootManagement {
                     // Same rationale as commit()/update_finalize(): AKS-RP,
                     // via the agent, is the sole authority over reboot
-                    // timing (the accepted design's §2.5).
+                    // timing.
                     handling: RebootHandling::CallerHandlesReboot.into(),
                 }),
             }))

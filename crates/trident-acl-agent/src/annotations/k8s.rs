@@ -1,10 +1,9 @@
 //! Thin Kubernetes client wrapper for trident-acl-agent's node self-patching
 //! protocol.
 //!
-//! Implements the Node get/watch/patch access described in the current
-//! accepted design.
+//! Implements the Node get/watch/patch access.
 //!
-//! The design calls for get/patch access to exactly one Node object (§2.2–§2.6).
+//! The design calls for get/patch access to exactly one Node object.
 //! Node changes are observed via the Kubernetes watch API (`kube::runtime::watcher`)
 //! rather than polling, so annotation updates are delivered promptly and without
 //! placing repeated load on the API server. `watch_poll_interval` only
