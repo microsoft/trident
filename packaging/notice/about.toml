@@ -41,3 +41,28 @@ ignore-transitive-dependencies = false
 # the repository's own top-level LICENSE, not by third-party notices.
 [private]
 ignore = true
+
+# Deterministic license selection for the zerocopy family.
+#
+# These crates are multi-licensed (`BSD-2-Clause OR Apache-2.0 OR MIT`) and ship
+# all three license files. cargo-about's per-host harvesting resolves the `OR`
+# expression to a different concrete MIT *text* on different hosts (dev vs CI),
+# which moved `zerocopy` between two MIT groups and broke the checked-in-vs-CI
+# `NOTICE` diff on every run. Pinning the license to MIT sourced from the crate's
+# own `LICENSE-MIT` (identical bytes across all four family members, verified by
+# the shared checksum below) makes the resolved text identical on every host.
+# `render_notice.py` already de-dupes by exact text; this fixes the one input
+# cargo-about itself produces non-deterministically.
+[zerocopy.clarify]
+license = "MIT"
+
+[[zerocopy.clarify.files]]
+path = "LICENSE-MIT"
+checksum = "1a2f5c12ddc934d58956aa5dbdd3255fe55fd957633ab7d0d39e4f0daa73f7df"
+
+[zerocopy-derive.clarify]
+license = "MIT"
+
+[[zerocopy-derive.clarify.files]]
+path = "LICENSE-MIT"
+checksum = "1a2f5c12ddc934d58956aa5dbdd3255fe55fd957633ab7d0d39e4f0daa73f7df"
