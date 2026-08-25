@@ -1,5 +1,7 @@
+use anyhow::{Context, Error};
 use clap::Parser;
 use osutils::logging::FilteredLogger;
+use systemd_journal_logger::{self, JournalLog};
 
 use trident_acl_agent::{
     annotations::orchestrator::Orchestrator,
@@ -31,11 +33,11 @@ const NETWORK_LOG_TARGETS: &[&str] = &[
 ];
 
 #[tokio::main]
-async fn main() -> Result<(), anyhow::Error> {
+async fn main() -> Result<(), Error> {
     let args = Args::parse();
 
     if let Some(Ok(journal_logger)) =
-        systemd_journal_logger::connected_to_journal().then(systemd_journal_logger::JournalLog::new)
+        systemd_journal_logger::connected_to_journal().then(JournalLog::new)
     {
         let logger = FilteredLogger::new(
             journal_logger,
@@ -44,7 +46,9 @@ async fn main() -> Result<(), anyhow::Error> {
             NETWORK_LOG_TARGETS,
         );
         log::set_max_level(logger.max_level());
-        log::set_boxed_logger(Box::new(logger)).expect("Failed to install systemd journal logger");
+        log::set_boxed_logger(Box::new(logger))
+            .map_err(Error::new)
+            .context("failed to install systemd journal logger")?;
     } else {
         let inner = env_logger::builder()
             .format_timestamp(None)
@@ -57,7 +61,9 @@ async fn main() -> Result<(), anyhow::Error> {
             NETWORK_LOG_TARGETS,
         );
         log::set_max_level(logger.max_level());
-        log::set_boxed_logger(Box::new(logger)).expect("Failed to install env logger");
+        log::set_boxed_logger(Box::new(logger))
+            .map_err(Error::new)
+            .context("failed to install env logger")?;
     }
 
     let config = AgentConfig::from_env()?;

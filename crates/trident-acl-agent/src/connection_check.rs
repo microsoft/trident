@@ -1,4 +1,6 @@
-use anyhow::Context;
+use anyhow::{anyhow, Context, Error};
+use log::info;
+use tokio::task;
 
 use trident_acl_agent::{
     annotations::k8s::NodeClient,
@@ -17,7 +19,7 @@ use crate::cli::ConnectionTarget;
 pub async fn validate_connection(
     target: ConnectionTarget,
     config: &AgentConfig,
-) -> Result<(), anyhow::Error> {
+) -> Result<(), Error> {
     match target {
         ConnectionTarget::Kubernetes => {
             let client = NodeClient::new(&config.kubernetes)
@@ -33,13 +35,12 @@ pub async fn validate_connection(
                 .await
                 .with_context(|| {
                     format!(
-                        "failed to reach Kubernetes API server at {} (get Node {:?})",
-                        cluster_url, config.kubernetes.node_name
+                        "failed to reach Kubernetes API server at {cluster_url} (get Node {:?})",
+                        config.kubernetes.node_name
                     )
                 })?;
-            log::info!(
-                "kubernetes: reached API server at {} and fetched Node {:?}",
-                cluster_url,
+            info!(
+                "kubernetes: reached API server at {cluster_url} and fetched Node {:?}",
                 config.kubernetes.node_name
             );
         }
@@ -49,11 +50,11 @@ pub async fn validate_connection(
                 .with_context(|| {
                     format!("failed to reach tridentd at {}", config.trident.socket)
                 })?;
-            log::info!("tridentd: connected to {}", config.trident.socket);
+            info!("tridentd: connected to {}", config.trident.socket);
         }
         ConnectionTarget::Nebraska => {
             let endpoint = config.nebraska.endpoint.clone().ok_or_else(|| {
-                anyhow::anyhow!(
+                anyhow!(
                     "nebraska.endpoint is not configured (set TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT)"
                 )
             })?;
@@ -74,7 +75,7 @@ pub async fn validate_connection(
             // ConnectionTarget::Nebraska above.
             let endpoint_for_task = endpoint.clone();
             let track = config.nebraska.track.clone();
-            tokio::task::spawn_blocking(move || {
+            task::spawn_blocking(move || {
                 check_nebraska_reachable(
                     &endpoint_for_task,
                     &app_id,
@@ -90,7 +91,7 @@ pub async fn validate_connection(
                     nebraska::redacted(&endpoint)
                 )
             })?;
-            log::info!(
+            info!(
                 "nebraska: reached server at {}",
                 nebraska::redacted(&endpoint)
             );

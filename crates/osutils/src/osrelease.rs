@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{fs, path::Path};
 
 use anyhow::{ensure, Context, Error};
 use const_format::formatcp;
@@ -29,6 +29,32 @@ pub fn is_azl2() -> Result<bool, Error> {
 /// Returns whether the host is running Azure Linux 3.
 pub fn is_azl3() -> Result<bool, Error> {
     Ok(OsRelease::read()?.get_distro().is_azl3())
+}
+
+/// Reads a single key from an arbitrary os-release-formatted file. Returns
+/// `None` when the file is unreadable, the key is absent, or its value is
+/// empty.
+pub fn read_key(path: impl AsRef<Path>, key: &str) -> Option<String> {
+    let path = path.as_ref();
+    let contents = fs::read_to_string(path).ok()?;
+    for line in contents.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((line_key, raw_value)) = line.split_once('=') else {
+            continue;
+        };
+        if line_key.trim() != key {
+            continue;
+        }
+        let value = raw_value.trim().trim_matches('"').trim_matches('\'').trim();
+        if value.is_empty() {
+            return None;
+        }
+        return Some(value.to_string());
+    }
+    None
 }
 
 /// Represents the contents of the /etc/os-release file.

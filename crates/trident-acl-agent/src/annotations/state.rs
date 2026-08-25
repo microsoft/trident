@@ -9,17 +9,24 @@
 use std::{
     collections::BTreeMap,
     fs,
-    io::Write,
+    io::{ErrorKind, Write},
     os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
+    process,
 };
 
-use anyhow::Context;
+use anyhow::{Context, Error};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::annotations::{Operation, UpdateRequest, UpdateStatus};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+const DEFAULT_STATE_FILE_NAME: &str = "state.json";
+// state.json persists the full UpdateRequest, which can include a
+// secret-bearing Omaha `server` URL, so store it with owner-only permissions.
+const STATE_FILE_MODE: u32 = 0o600;
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PersistentState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -28,7 +35,7 @@ pub struct PersistentState {
     pub completed: BTreeMap<String, CompletedEntry>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CompletedEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -37,7 +44,7 @@ pub struct CompletedEntry {
     pub commit: Option<UpdateStatus>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PendingCommit {
     pub request: UpdateRequest,
@@ -47,7 +54,7 @@ pub struct PendingCommit {
     pub from_version: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to_version: Option<String>,
-    pub started_utc: chrono::DateTime<chrono::Utc>,
+    pub started_utc: DateTime<Utc>,
     pub boot_marker: String,
 }
 
@@ -65,21 +72,16 @@ impl StateStore {
         &self.path
     }
 
-    pub fn load(&self) -> Result<PersistentState, anyhow::Error> {
+    pub fn load(&self) -> Result<PersistentState, Error> {
         match fs::read_to_string(&self.path) {
             Ok(raw) => Ok(serde_json::from_str(&raw)
                 .with_context(|| format!("failed to parse {}", self.path.display()))?),
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                Ok(PersistentState::default())
-            }
-            Err(err) => {
-                Err(anyhow::Error::new(err)
-                    .context(format!("failed to read {}", self.path.display())))
-            }
+            Err(err) if err.kind() == ErrorKind::NotFound => Ok(PersistentState::default()),
+            Err(err) => Err(err).with_context(|| format!("failed to read {}", self.path.display())),
         }
     }
 
-    pub fn save(&self, state: &PersistentState) -> Result<(), anyhow::Error> {
+    pub fn save(&self, state: &PersistentState) -> Result<(), Error> {
         let parent = match self.path.parent() {
             Some(parent) => {
                 fs::create_dir_all(parent)
@@ -94,8 +96,8 @@ impl StateStore {
             self.path
                 .file_name()
                 .and_then(|name| name.to_str())
-                .unwrap_or("state.json"),
-            std::process::id()
+                .unwrap_or(DEFAULT_STATE_FILE_NAME),
+            process::id()
         ));
 
         // Write via a File handle and fsync it before the rename: fs::write
@@ -112,7 +114,7 @@ impl StateStore {
                 .write(true)
                 .create(true)
                 .truncate(true)
-                .mode(0o600)
+                .mode(STATE_FILE_MODE)
                 .open(&temp_path)
                 .with_context(|| format!("failed to create {}", temp_path.display()))?;
             file.write_all(serde_json::to_string_pretty(state)?.as_bytes())
@@ -140,7 +142,7 @@ impl StateStore {
         Ok(())
     }
 
-    pub fn remember_completed(&self, status: UpdateStatus) -> Result<(), anyhow::Error> {
+    pub fn remember_completed(&self, status: UpdateStatus) -> Result<(), Error> {
         let mut state = self.load()?;
         let entry = state
             .completed
@@ -153,13 +155,13 @@ impl StateStore {
         self.save(&state)
     }
 
-    pub fn set_pending_commit(&self, pending: PendingCommit) -> Result<(), anyhow::Error> {
+    pub fn set_pending_commit(&self, pending: PendingCommit) -> Result<(), Error> {
         let mut state = self.load()?;
         state.pending_commit = Some(pending);
         self.save(&state)
     }
 
-    pub fn clear_pending_commit(&self) -> Result<(), anyhow::Error> {
+    pub fn clear_pending_commit(&self) -> Result<(), Error> {
         let mut state = self.load()?;
         state.pending_commit = None;
         self.save(&state)
@@ -168,12 +170,12 @@ impl StateStore {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    use crate::annotations::{RequestedOperation, StatusCode, SCHEMA_VERSION};
     use chrono::Utc;
     use url::Url;
     use uuid::Uuid;
-
-    use super::*;
-    use crate::annotations::{RequestedOperation, StatusCode, SCHEMA_VERSION};
 
     fn store() -> (tempfile::TempDir, StateStore) {
         let dir = tempfile::tempdir().expect("failed to create temp dir");
@@ -235,7 +237,7 @@ mod tests {
     #[test]
     fn save_then_load_round_trips_full_state() {
         let (_dir, store) = store();
-        let mut completed = std::collections::BTreeMap::new();
+        let mut completed = BTreeMap::new();
         completed.insert(
             "op-1".to_string(),
             CompletedEntry {
@@ -365,14 +367,14 @@ mod tests {
             .save(&PersistentState::default())
             .expect("initial save should succeed");
 
-        let metadata_before = std::fs::metadata(store.path()).expect("state file should exist");
+        let metadata_before = fs::metadata(store.path()).expect("state file should exist");
         let state = PersistentState {
             pending_commit: Some(sample_pending()),
             completed: BTreeMap::new(),
         };
         store.save(&state).expect("second save should succeed");
 
-        let metadata_after = std::fs::metadata(store.path()).expect("state file should exist");
+        let metadata_after = fs::metadata(store.path()).expect("state file should exist");
         assert!(metadata_after.len() > 0);
         assert!(metadata_before.modified().is_ok());
     }

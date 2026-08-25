@@ -20,6 +20,17 @@
 //! - [`annotations`]: the default Kubernetes annotation-driven protocol.
 //! - [`omahaonly`]: the legacy one-shot Omaha flow.
 
+use semver::Version;
+use url::Url;
+
+use crate::core::{
+    error::AgentError,
+    nebraska::{Client, MachineId, NebraskaError},
+    version::FALLBACK_ALWAYS_VERSION,
+};
+
+pub use crate::core::id::IdSource;
+
 pub mod annotations;
 pub mod core;
 pub mod omahaonly;
@@ -37,11 +48,6 @@ pub const AGENT_VERSION: &str = match option_env!("TRIDENT_VERSION") {
     Some(version) => version,
     None => env!("CARGO_PKG_VERSION"),
 };
-
-use crate::core::error::AgentError;
-use crate::core::nebraska::{Client, MachineId, NebraskaError};
-
-pub use crate::core::id::IdSource;
 
 // Deliberately invalid sentinels, mirroring DEFAULT_NEBRASKA_ENDPOINT's
 // `.invalid` domain trick: a deployment that forgets to configure (or
@@ -66,14 +72,17 @@ fn build_machine_id(source: IdSource) -> Result<MachineId, AgentError> {
 /// `--validate-connection nebraska`), not for deciding whether an update is
 /// available.
 pub fn check_nebraska_reachable(
-    url: &url::Url,
+    url: &Url,
     app_id: &str,
     track: &str,
     machine_id_source: IdSource,
 ) -> Result<(), AgentError> {
     let machine_id = build_machine_id(machine_id_source)?;
     let client = Client::new(url.clone(), app_id, track, machine_id);
-    match client.check_for_update(&semver::Version::new(0, 0, 0)) {
+    match client.check_for_update(
+        &Version::parse(FALLBACK_ALWAYS_VERSION)
+            .expect("invariant: FALLBACK_ALWAYS_VERSION is valid semver"),
+    ) {
         Ok(_) => Ok(()),
         // A well-formed response reporting a non-OK app/update-check status
         // still proves the server is reachable and speaking Omaha; only a
@@ -87,6 +96,10 @@ pub fn check_nebraska_reachable(
 mod tests {
     use super::*;
 
+    use indoc::indoc;
+    use mockito::Server;
+    use url::Url;
+
     #[test]
     fn test_check_nebraska_reachable_succeeds_on_error_app_status() {
         // check_nebraska_reachable() is meant to be a pure "can we reach this
@@ -95,12 +108,12 @@ mod tests {
         // with a non-OK app status should still count as "reachable" here,
         // even though check_for_update() would reject the same response as a
         // NebraskaError::ServerError.
-        let mut server = mockito::Server::new();
+        let mut server = Server::new();
 
         let omaha_mock = server
             .mock("POST", "/")
             .with_status(200)
-            .with_body(indoc::indoc! {r#"
+            .with_body(indoc! {r#"
                 <?xml version="1.0" encoding="UTF-8"?>
                 <response protocol="3.0" server="mock">
                     <daystart elapsed_seconds="0"/>
@@ -112,7 +125,7 @@ mod tests {
             .create();
 
         check_nebraska_reachable(
-            &url::Url::parse(&server.url()).unwrap(),
+            &Url::parse(&server.url()).unwrap(),
             "test",
             "track",
             IdSource::MachineIdHashed,
@@ -126,7 +139,7 @@ mod tests {
     fn test_check_nebraska_reachable_fails_on_transport_error() {
         let err = check_nebraska_reachable(
             // Port 0 never accepts a connection.
-            &url::Url::parse("http://127.0.0.1:0/").unwrap(),
+            &Url::parse("http://127.0.0.1:0/").unwrap(),
             "test",
             "track",
             IdSource::MachineIdHashed,

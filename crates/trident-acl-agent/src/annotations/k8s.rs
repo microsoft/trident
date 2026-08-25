@@ -16,19 +16,24 @@
 //! after a dropped or failed watch; that is governed entirely by
 //! `kube::runtime::watcher`'s built-in `default_backoff()`.
 
-use std::{collections::BTreeMap, path::Path};
+use std::{collections::BTreeMap, path::Path, time::Duration};
 
-use anyhow::Context;
+use anyhow::{Context, Error};
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use k8s_openapi::api::core::v1::Node;
 use kube::{
     api::{Patch, PatchParams},
     config::{KubeConfigOptions, Kubeconfig},
     error::ErrorResponse,
-    runtime::{watcher, WatchStreamExt},
-    Api, Client, Config,
+    runtime::{
+        watcher::{self, Error as WatchError},
+        WatchStreamExt,
+    },
+    Api, Client, Config, Error as KubeError,
 };
+use reqwest::StatusCode;
 use serde_json::json;
+use thiserror::Error;
 
 use crate::core::config::KubernetesConfig;
 
@@ -38,22 +43,22 @@ use crate::core::config::KubernetesConfig;
 /// reconnect churn on an otherwise-healthy watch.
 const WATCH_TIMEOUT_SECS: u32 = 290;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Error)]
 pub enum K8sClientError {
     #[error("failed to build Kubernetes client config: {0}")]
-    Config(#[from] anyhow::Error),
+    Config(#[from] Error),
     #[error("node object no longer exists")]
     NodeGone,
     #[error("failed Kubernetes API call: {0}")]
-    Api(#[source] kube::Error),
+    Api(#[source] KubeError),
     #[error("Kubernetes watch stream failed: {0}")]
-    Watch(#[from] kube::runtime::watcher::Error),
+    Watch(#[from] WatchError),
 }
 
 #[derive(Clone)]
 pub struct NodeClient {
     api: Api<Node>,
-    poll_interval: std::time::Duration,
+    poll_interval: Duration,
     cluster_url: String,
 }
 
@@ -61,7 +66,7 @@ impl NodeClient {
     pub async fn new(config: &KubernetesConfig) -> Result<Self, K8sClientError> {
         let client_config = load_client_config(config).await?;
         let cluster_url = client_config.cluster_url.to_string();
-        let client = Client::try_from(client_config).map_err(anyhow::Error::new)?;
+        let client = Client::try_from(client_config).map_err(Error::new)?;
         Ok(Self {
             api: Api::all(client),
             poll_interval: config.watch_poll_interval,
@@ -139,7 +144,7 @@ impl NodeClient {
             .fields(&format!("metadata.name={name}"))
             .timeout(timeout_secs);
 
-        watcher(self.api.clone(), watcher_config)
+        watcher::watcher(self.api.clone(), watcher_config)
             .default_backoff()
             .touched_objects()
             .map_err(K8sClientError::from)
@@ -147,15 +152,16 @@ impl NodeClient {
     }
 }
 
-fn map_kube_error(err: kube::Error) -> K8sClientError {
-    if matches!(&err, kube::Error::Api(ErrorResponse { code: 404, .. })) {
+fn map_kube_error(err: KubeError) -> K8sClientError {
+    if matches!(&err, KubeError::Api(ErrorResponse { code, .. }) if *code == StatusCode::NOT_FOUND.as_u16())
+    {
         K8sClientError::NodeGone
     } else {
         K8sClientError::Api(err)
     }
 }
 
-async fn load_client_config(config: &KubernetesConfig) -> Result<Config, anyhow::Error> {
+async fn load_client_config(config: &KubernetesConfig) -> Result<Config, Error> {
     let path = Path::new(&config.kubeconfig);
     let kubeconfig = Kubeconfig::read_from(path)
         .with_context(|| format!("failed to read kubeconfig {}", path.display()))?;
@@ -169,8 +175,6 @@ async fn load_client_config(config: &KubernetesConfig) -> Result<Config, anyhow:
 
 #[cfg(test)]
 mod tests {
-    use kube::error::ErrorResponse;
-
     use super::*;
 
     #[test]

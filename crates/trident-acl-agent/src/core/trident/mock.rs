@@ -11,11 +11,18 @@
 //! `tokio::io::duplex` transport via `Endpoint::connect_with_connector` +
 //! `TridentClient::from_channel` - see `connect_mock_client` below.
 
-use std::sync::{Arc, Mutex};
+use std::{
+    io::Error as IoError,
+    sync::{Arc, Mutex},
+};
 
 use hyper_util::rt::TokioIo;
+use tokio::{io, sync::mpsc};
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::{transport::Endpoint, Request, Response, Status};
+use tonic::{
+    transport::{Endpoint, Server, Uri},
+    Request, Response, Status,
+};
 use trident_proto::v1::{
     commit_service_server::{CommitService, CommitServiceServer},
     rollback_service_server::{RollbackService, RollbackServiceServer},
@@ -27,6 +34,9 @@ use trident_proto::v1::{
 };
 
 use crate::core::trident::TridentClient;
+
+const MOCK_RESPONSE_CHANNEL_CAPACITY: usize = 4;
+const MOCK_DUPLEX_BUFFER_BYTES: usize = 64 * 1024;
 
 /// Canned outcome a `MockTridentd` should return for a given RPC call.
 #[derive(Clone, Debug)]
@@ -105,7 +115,7 @@ struct MockTridentd {
 async fn respond_with(
     outcome: Outcome,
 ) -> Result<Response<ReceiverStream<Result<ServicingResponse, Status>>>, Status> {
-    let (tx, rx) = tokio::sync::mpsc::channel(4);
+    let (tx, rx) = mpsc::channel(MOCK_RESPONSE_CHANNEL_CAPACITY);
     tx.send(Ok(outcome.into_servicing_response()))
         .await
         .expect("mock tridentd channel send should not fail");
@@ -222,15 +232,15 @@ impl RollbackService for MockTridentd {
 /// so the caller can reconfigure outcomes between calls if a test needs to
 /// simulate stage-then-finalize-then-commit in one session.
 pub async fn connect_mock_client(config: Arc<Mutex<MockTridentdConfig>>) -> TridentClient {
-    let (client_io, server_io) = tokio::io::duplex(64 * 1024);
+    let (client_io, server_io) = io::duplex(MOCK_DUPLEX_BUFFER_BYTES);
 
     let mock = MockTridentd { config };
     tokio::spawn(async move {
-        tonic::transport::Server::builder()
+        Server::builder()
             .add_service(UpdateServiceServer::new(mock.clone()))
             .add_service(CommitServiceServer::new(mock.clone()))
             .add_service(RollbackServiceServer::new(mock))
-            .serve_with_incoming(tokio_stream::once(Ok::<_, std::io::Error>(server_io)))
+            .serve_with_incoming(tokio_stream::once(Ok::<_, IoError>(server_io)))
             .await
             .expect("mock tridentd server should not fail");
     });
@@ -238,12 +248,12 @@ pub async fn connect_mock_client(config: Arc<Mutex<MockTridentdConfig>>) -> Trid
     let mut client_io = Some(client_io);
     let channel = Endpoint::try_from("http://[::]:50051")
         .expect("static endpoint URI should always parse")
-        .connect_with_connector(tower::service_fn(move |_: tonic::transport::Uri| {
+        .connect_with_connector(tower::service_fn(move |_: Uri| {
             let client_io = client_io.take();
             async move {
-                client_io.map(TokioIo::new).ok_or_else(|| {
-                    std::io::Error::other("mock client connector called more than once")
-                })
+                client_io
+                    .map(TokioIo::new)
+                    .ok_or_else(|| IoError::other("mock client connector called more than once"))
             }
         }))
         .await
