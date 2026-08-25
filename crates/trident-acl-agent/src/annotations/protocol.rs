@@ -4,7 +4,7 @@
 //! `#[cfg(test)]` design-doc conformance tests below) implements the
 //! `<prefix>/update-request`, `<prefix>/update-status`, and
 //! `<prefix>/update-commit-status` node annotation protocol described
-//! by the current accepted design (<https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md>), where
+//! by the current accepted design, where
 //! `<prefix>` defaults to `acl.microsoft.com` (see
 //! [`AnnotationKeys`]/[`crate::core::config::DEFAULT_ANNOTATION_PREFIX`]) and is
 //! overridable via the `TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX`
@@ -148,7 +148,7 @@ pub struct UpdateStatus {
 
 impl UpdateRequest {
     /// Enforces the same constraints as the request annotation's formal
-    /// JSON Schema in <https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md>: schemaVersion match,
+    /// JSON Schema in the accepted design: schemaVersion match,
     /// targetVersion required for stage/finalize but disallowed for
     /// rollback, and server/appId/track required for stage/finalize. See
     /// this file's module doc.
@@ -211,7 +211,7 @@ impl UpdateRequest {
 
 impl UpdateStatus {
     // This constructor mirrors UpdateStatus's wire schema field-for-field
-    // (see https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md's two-status-key JSON protocol); splitting
+    // (see the accepted design's two-status-key JSON protocol); splitting
     // it into a builder would add ceremony across ~25 call sites in
     // orchestrator.rs without making any of them clearer.
     #[allow(clippy::too_many_arguments)]
@@ -656,9 +656,9 @@ mod tests {
     // --- docs/update-trigger-design.md conformance --------------------------
     //
     // Pins our annotation (de)serialization/validation code against two
-    // things lifted verbatim from docs/update-trigger-design.md
-    // (https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md),
-    // section 2.1 "Trigger mechanism", so a doc/code drift shows up as a
+    // things lifted verbatim from the accepted design's
+    // docs/update-trigger-design.md, section 2.1 "Trigger mechanism", so a
+    // doc/code drift shows up as a
     // test failure instead of being discovered against a real AKS-RP:
     //   1. The three example JSON payloads (request, finalize status, and
     //      the derived commit status) parse with our real UpdateRequest /
@@ -672,7 +672,7 @@ mod tests {
     /// (adapted to `finalize` to pair with the status/commit examples
     /// below, which also share this `finalize`; server/appId/track values
     /// are the doc's own example values for those fields, required on
-    /// stage/finalize per <https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md>).
+    /// stage/finalize per the accepted design).
     const DESIGN_DOC_FINALIZE_REQUEST_EXAMPLE: &str = r#"{
   "schemaVersion": "1.0",
   "nodeUpdateId":  "550e8400-e29b-41d4-a716-446655440000",
@@ -714,8 +714,8 @@ mod tests {
   "finishedUtc":   "2026-06-04T12:01:32Z"
 }"#;
 
-    /// The formal JSON Schema for the request annotation, from
-    /// <https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md> section 2.1 "Formal JSON Schema". Keep
+    /// The formal JSON Schema for the request annotation, from the
+    /// accepted design's section 2.1 "Formal JSON Schema". Keep
     /// byte-for-byte in sync with that document.
     const DESIGN_DOC_REQUEST_SCHEMA: &str = r#"{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -746,8 +746,8 @@ mod tests {
   ]
 }"#;
 
-    /// The formal JSON Schema for the status annotations, from
-    /// <https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md> section 2.1 "Formal JSON Schema". Keep
+    /// The formal JSON Schema for the status annotations, from the
+    /// accepted design's section 2.1 "Formal JSON Schema". Keep
     /// byte-for-byte in sync with that document.
     const DESIGN_DOC_STATUS_SCHEMA: &str = r#"{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -785,7 +785,7 @@ mod tests {
     // additionalProperties, required, properties.{type,const,enum,format,
     // pattern}, and a single-level allOf/if/then/else). Panics loudly on any
     // schema keyword/pattern/type/format it doesn't recognize, so if
-    // https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md's schemas grow new constraints, this validator's
+    // the accepted design's schemas grow new constraints, this validator's
     // blind spots don't silently mask them - the test fails instead,
     // prompting an update here.
 
@@ -1082,7 +1082,7 @@ mod tests {
     #[test]
     fn validate_allows_rollback_without_nebraska_fields() {
         // Rollback reports no Nebraska event, so it carries no update
-        // source (https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md 2.1): server/appId/track are not
+        // source (the accepted design, §2.1): server/appId/track are not
         // required, and validate() must not reject their absence.
         let request = UpdateRequest {
             schema_version: SCHEMA_VERSION.to_string(),
