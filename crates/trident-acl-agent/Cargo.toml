@@ -8,6 +8,7 @@ publish = false
 anyhow = { workspace = true, features = ["backtrace"] }
 clap = { workspace = true, features = ["derive"] }
 chrono = { workspace = true }
+const_format = { workspace = true }
 env_logger = { workspace = true }
 futures = { workspace = true }
 humantime = { workspace = true }

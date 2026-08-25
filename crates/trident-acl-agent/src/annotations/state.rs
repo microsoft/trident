@@ -19,9 +19,11 @@ use anyhow::{Context, Error};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::annotations::{Operation, UpdateRequest, UpdateStatus};
+use crate::{
+    annotations::{Operation, UpdateRequest, UpdateStatus},
+    core::config::STATE_FILE_NAME,
+};
 
-const DEFAULT_STATE_FILE_NAME: &str = "state.json";
 // state.json persists the full UpdateRequest, which can include a
 // secret-bearing Omaha `server` URL, so store it with owner-only permissions.
 const STATE_FILE_MODE: u32 = 0o600;
@@ -96,7 +98,7 @@ impl StateStore {
             self.path
                 .file_name()
                 .and_then(|name| name.to_str())
-                .unwrap_or(DEFAULT_STATE_FILE_NAME),
+                .unwrap_or(STATE_FILE_NAME),
             process::id()
         ));
 
