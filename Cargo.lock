@@ -4012,6 +4012,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "const_format",
  "env_logger 0.11.5",
  "futures",
  "humantime",
