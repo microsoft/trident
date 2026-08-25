@@ -205,8 +205,8 @@ pub enum GoalSource {
     /// stage/finalize/rollback/commit operations against tridentd
     /// accordingly, writing progress back to
     /// `<annotation-prefix>/update-status` and
-    /// `<annotation-prefix>/update-commit-status` (see the accepted design).
-    /// `<annotation-prefix>` defaults to
+    /// `<annotation-prefix>/update-commit-status`. `<annotation-prefix>`
+    /// defaults to
     /// [`DEFAULT_ANNOTATION_PREFIX`] (`acl.microsoft.com`), overridable via
     /// `TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX`. This is the only
     /// supported mode.
@@ -237,8 +237,7 @@ pub struct OrchestrationConfig {
     /// Placeholder default pending real data from storm aclagent scenario runs.
     pub finalize_timeout: Duration,
     /// Refresh cadence for in-flight InProgress heartbeats. Default is well
-    /// below the ~10 minute watchdog staleness target proposed in the
-    /// accepted design.
+    /// below the ~10 minute watchdog staleness target.
     pub heartbeat_interval: Duration,
 }
 

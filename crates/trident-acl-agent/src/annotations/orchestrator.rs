@@ -2,11 +2,10 @@
 //! annotation, drives Trident (stage/finalize/rollback/commit) over gRPC,
 //! and writes the status annotation back, including post-reboot.
 //!
-//! Implements the node-side control flow from the accepted design
-//! (sections 2.1 "Trigger mechanism", 2.3 "Stage/finalize/rollback split
-//! and post-reboot commit", and 2.5 "Rollback"). See that document for the
-//! full state-machine rationale; keep it in sync with this file if the
-//! design changes.
+//! Implements the node-side control flow (covering the trigger
+//! mechanism, stage/finalize/rollback split with post-reboot commit, and
+//! rollback). See the design doc for the full state-machine rationale;
+//! keep it in sync with this file if the design changes.
 
 use std::{collections::BTreeMap, future::Future, time::Duration};
 
@@ -257,7 +256,7 @@ where
             // Reject on operationId, not nodeUpdateId: the actual conflict
             // this guard exists to prevent is "a second finalize/rollback
             // starts while one is still waiting for its post-reboot
-            // commit" (the accepted design's in-flight conflict rule).
+            // commit" (the in-flight conflict rule).
             // Keying on nodeUpdateId alone let a retried/re-issued request
             // that reused the same nodeUpdateId but a new operationId slip
             // through this guard entirely and re-enter handle_finalize/
@@ -303,7 +302,7 @@ where
     /// across one update's lifecycle would split that state across two
     /// servers.
     ///
-    /// Per the accepted design (§2.1), `stage`/`finalize` requests must
+    /// `stage`/`finalize` requests must
     /// carry `server` and there is deliberately no static-config fallback
     /// here: a fallback would let a node update from a source AKS-RP did
     /// not choose. `UpdateRequest::validate()` already rejects a
@@ -806,8 +805,8 @@ where
         connect_error: Option<String>,
     ) -> UpdateStatus {
         // state.json did not survive the reboot (or was never written, e.g.
-        // the agent crashed before persisting pendingCommit). Per
-        // the accepted design's §2.3 degraded path, reconstruct the answer by
+        // the agent crashed before persisting pendingCommit). Reconstruct
+        // the answer by
         // calling commit() unconditionally rather than guessing from labels
         // or the target version alone - tridentd's commit() is self-checking
         // and its own (ServicingKind/RebootStatus/Result) response already
@@ -1329,7 +1328,7 @@ fn indicates_target_boot_failed(error: &TridentClientError) -> bool {
 }
 
 /// Pre-flight checks for the state.json-missing degraded reconstruction
-/// path (the accepted design's §2.3). Returns `Some(status)` when reconstruction
+/// path. Returns `Some(status)` when reconstruction
 /// cannot proceed (tridentd already known-unreachable, or the outstanding
 /// request isn't a finalize/rollback), or `None` when the caller should go
 /// on to call tridentd's commit() to determine the real outcome.
@@ -1373,9 +1372,8 @@ fn reconstruct_precheck_status(
 }
 
 /// Maps tridentd's commit() result to the terminal status for the
-/// state.json-missing degraded reconstruction path
-/// (the accepted design's §2.3). Always reports under the original
-/// operationId, mirroring the
+/// state.json-missing degraded reconstruction path. Always reports
+/// under the original operationId, mirroring the
 /// normal post-reboot commit path in `commit_result_to_status`.
 fn reconstruct_commit_result_to_status(
     request: &UpdateRequest,
