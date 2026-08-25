@@ -652,8 +652,6 @@ mod tests {
         assert_eq!(json["fromVersion"], "1.0.0");
     }
 
-    // --- design-doc conformance --------------------------
-    //
     // Pins our annotation (de)serialization/validation code against two
     // things lifted verbatim from the design doc, so a
     // doc/code drift shows up as a
