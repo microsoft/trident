@@ -4040,6 +4040,7 @@ dependencies = [
  "tonic",
  "tower",
  "trident-proto",
+ "trident_api",
  "url",
  "uuid",
 ]
