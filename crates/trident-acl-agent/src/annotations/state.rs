@@ -1,8 +1,7 @@
 //! Persistent agent state (`/var/lib/trident-acl-agent/state.json`):
 //! completed-operation cache and the pending post-reboot commit record.
 //!
-//! Implements the `state.json` mechanism from the current accepted design
-//! (section 2.3), which bridges the pre-reboot
+//! Implements the `state.json` mechanism, which bridges the pre-reboot
 //! finalize/rollback half and the post-reboot commit half of an operation
 //! across the reboot.
 

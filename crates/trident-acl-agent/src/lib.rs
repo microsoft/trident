@@ -1,11 +1,10 @@
 //! # trident-acl-agent
 //!
-//! trident-acl-agent is Trident's ACL update sidecar. Historically it was a
-//! one-shot Omaha client that called Trident's combined `Update()` RPC once
-//! and exited. This crate now defaults to the Kubernetes annotation protocol
-//! (the currently accepted design for triggering updates), while
-//! preserving the original `omaha-only` mode as an explicit opt-out
-//! (see `core::config::GoalSource`).
+//! trident-acl-agent is Trident's ACL update sidecar. By default it drives
+//! Trident (stage/finalize/rollback/commit) through a Kubernetes node
+//! annotation protocol; a one-shot `omaha-only` mode that calls Trident's
+//! combined `Update()` RPC once and exits is also available as an explicit
+//! opt-out (see `core::config::GoalSource`).
 //!
 //! All Omaha/Nebraska protocol traffic (both `omaha-only` and annotation mode)
 //! goes through the [`core::nebraska`] client module, a self-contained,
