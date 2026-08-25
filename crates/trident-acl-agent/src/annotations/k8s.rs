@@ -179,7 +179,7 @@ mod tests {
 
     #[test]
     fn maps_404_to_node_gone() {
-        let err = kube::Error::Api(ErrorResponse {
+        let err = KubeError::Api(ErrorResponse {
             status: "Failure".to_string(),
             message: "nodes \"n\" not found".to_string(),
             reason: "NotFound".to_string(),
@@ -191,7 +191,7 @@ mod tests {
 
     #[test]
     fn leaves_other_api_errors_as_api() {
-        let err = kube::Error::Api(ErrorResponse {
+        let err = KubeError::Api(ErrorResponse {
             status: "Failure".to_string(),
             message: "forbidden".to_string(),
             reason: "Forbidden".to_string(),

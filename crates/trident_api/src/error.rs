@@ -749,6 +749,16 @@ pub enum DatastoreError {
     WriteToDatastore,
 }
 
+impl ServicingError {
+    /// Kebab-case serde subkind for [`ServicingError::AbUpdateRebootCheck`],
+    /// matching this enum's `#[serde(rename_all = "kebab-case")]` attribute.
+    /// Verified against `serde_variant::to_variant_name` in this module's tests.
+    pub const AB_UPDATE_REBOOT_CHECK_SUBKIND: &str = "ab-update-reboot-check";
+
+    /// Kebab-case serde subkind for [`ServicingError::ManualRollbackRebootCheck`].
+    pub const MANUAL_ROLLBACK_REBOOT_CHECK_SUBKIND: &str = "manual-rollback-reboot-check";
+}
+
 /// Identifies errors that occur when interacting with failed health checks.
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
@@ -764,6 +774,15 @@ pub enum HealthChecksError {
         details: String,
         servicing_type: String,
     },
+}
+
+impl HealthChecksError {
+    /// Kebab-case serde subkind for
+    /// [`HealthChecksError::AbUpdateHealthCheckCommitCheck`], matching this
+    /// enum's `#[serde(rename_all = "kebab-case")]` attribute. Verified
+    /// against `serde_variant::to_variant_name` in this module's tests.
+    pub const AB_UPDATE_HEALTH_CHECK_COMMIT_CHECK_SUBKIND: &str =
+        "ab-update-health-check-commit-check";
 }
 
 /// Identifies errors that occur when clean install or update fail due to the current configuration
@@ -1211,5 +1230,32 @@ mod tests {
                 msg_line = error.0.context[0].1.line(),
         };
         assert_eq!(format!("{error:?}"), expected);
+    }
+
+    #[test]
+    fn test_subkind_consts_match_serde_variant_names() {
+        assert_eq!(
+            serde_variant::to_variant_name(&ServicingError::AbUpdateRebootCheck {
+                root_device_path: String::new(),
+                expected_device_path: String::new(),
+            })
+            .unwrap(),
+            ServicingError::AB_UPDATE_REBOOT_CHECK_SUBKIND,
+        );
+        assert_eq!(
+            serde_variant::to_variant_name(&ServicingError::ManualRollbackRebootCheck {
+                root_device_path: String::new(),
+                expected_device_path: String::new(),
+            })
+            .unwrap(),
+            ServicingError::MANUAL_ROLLBACK_REBOOT_CHECK_SUBKIND,
+        );
+        assert_eq!(
+            serde_variant::to_variant_name(&HealthChecksError::AbUpdateHealthCheckCommitCheck {
+                expected_device_path: String::new(),
+            })
+            .unwrap(),
+            HealthChecksError::AB_UPDATE_HEALTH_CHECK_COMMIT_CHECK_SUBKIND,
+        );
     }
 }

@@ -1,7 +1,7 @@
 use anyhow::{Context, Error};
 use clap::Parser;
 use osutils::logging::FilteredLogger;
-use systemd_journal_logger::{self, JournalLog};
+use systemd_journal_logger::{connected_to_journal, JournalLog};
 
 use trident_acl_agent::{
     annotations::orchestrator::Orchestrator,
@@ -36,9 +36,7 @@ const NETWORK_LOG_TARGETS: &[&str] = &[
 async fn main() -> Result<(), Error> {
     let args = Args::parse();
 
-    if let Some(Ok(journal_logger)) =
-        systemd_journal_logger::connected_to_journal().then(JournalLog::new)
-    {
+    if let Some(Ok(journal_logger)) = connected_to_journal().then(JournalLog::new) {
         let logger = FilteredLogger::new(
             journal_logger,
             args.verbosity,
