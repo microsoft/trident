@@ -2,7 +2,7 @@
 //! completed-operation cache and the pending post-reboot commit record.
 //!
 //! Implements the `state.json` mechanism from the current accepted design
-//! (<https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md>, section 2.3), which bridges the pre-reboot
+//! (section 2.3), which bridges the pre-reboot
 //! finalize/rollback half and the post-reboot commit half of an operation
 //! across the reboot.
 
