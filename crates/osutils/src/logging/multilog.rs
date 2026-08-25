@@ -1,3 +1,12 @@
+//! A [`Log`] implementation that fans each record out to several loggers.
+//!
+//! [`MultiLogger`] holds a set of `Box<dyn Log>` sinks and forwards every
+//! record to each one that reports itself `enabled`, so a process can log to
+//! (say) journald, a file, and a remote stream at once through a single
+//! installed logger. It applies a global max level plus per-target ceilings
+//! (matched by target prefix) before dispatching, and `flush` fans out to all
+//! sinks. [`MultiLogger::init`] installs it as the process-global logger.
+
 use log::{LevelFilter, Log};
 
 pub struct MultiLogger {
