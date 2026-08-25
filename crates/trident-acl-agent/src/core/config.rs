@@ -17,6 +17,7 @@
 use std::{env, path::PathBuf, str::FromStr, time::Duration};
 
 use anyhow::{anyhow, Context, Error};
+use const_format::formatcp;
 use osutils::hostname;
 use trident_proto::TRIDENT_DEFAULT_SOCKET_URI;
 use url::Url;
@@ -57,7 +58,9 @@ const DEFAULT_NODE_NAME: &str = "localhost";
 const DEFAULT_STAGE_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 const DEFAULT_FINALIZE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const DEFAULT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(60);
-pub const DEFAULT_STATE_PATH: &str = "/var/lib/trident-acl-agent/state.json";
+/// File name for the persisted agent state (see `annotations::state`).
+pub const STATE_FILE_NAME: &str = "state.json";
+pub const DEFAULT_STATE_PATH: &str = formatcp!("/var/lib/trident-acl-agent/{STATE_FILE_NAME}");
 pub const DEFAULT_KUBELET_KUBECONFIG: &str = "/var/lib/kubelet/kubeconfig";
 /// Default annotation-key prefix.
 /// Override with `TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX`.
