@@ -1,7 +1,3 @@
-//! The historical one-shot Omaha flow, preserved as an explicit opt-out from
-//! the default annotation-driven protocol (see
-//! [`crate::core::config::GoalSource`]).
-
 use anyhow::{anyhow, Context, Error};
 use log::{debug, info, warn};
 use semver::Version;

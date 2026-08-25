@@ -15,7 +15,12 @@
 //! - [`core`]: building blocks shared by both modes (config, errors,
 //!   machine-id, current-version, the `tridentd` client, the Nebraska
 //!   client).
-//! - [`annotations`]: the default Kubernetes annotation-driven protocol.
+//! - [`annotations`]: the default Kubernetes annotation-driven protocol -
+//!   [`annotations::protocol`] defines the annotation schema,
+//!   [`annotations::k8s`] is the Kubernetes Node get/watch/patch client,
+//!   [`annotations::state`] persists in-flight/completed operations across
+//!   the reboot that finalize triggers, and [`annotations::orchestrator`]
+//!   is the reconcile loop tying them all together.
 //! - [`omahaonly`]: the legacy one-shot Omaha flow.
 
 use semver::Version;
