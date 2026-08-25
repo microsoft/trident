@@ -652,10 +652,10 @@ mod tests {
         assert_eq!(json["fromVersion"], "1.0.0");
     }
 
-    // --- docs/update-trigger-design.md conformance --------------------------
+    // --- design-doc conformance --------------------------
     //
     // Pins our annotation (de)serialization/validation code against two
-    // things lifted verbatim from docs/update-trigger-design.md, so a
+    // things lifted verbatim from the design doc, so a
     // doc/code drift shows up as a
     // test failure instead of being discovered against a real AKS-RP:
     //   1. The three example JSON payloads (request, finalize status, and
@@ -666,7 +666,7 @@ mod tests {
     //
     // Keep these constants byte-for-byte in sync with the design doc.
 
-    /// docs/update-trigger-design.md 2.1, "Request annotation" example
+    /// The design doc's "Request annotation" example
     /// (adapted to `finalize` to pair with the status/commit examples
     /// below, which also share this `finalize`; server/appId/track values
     /// are the doc's own example values for those fields, required on
@@ -682,7 +682,7 @@ mod tests {
   "track":         "pin-202606.29.0"
 }"#;
 
-    /// docs/update-trigger-design.md 2.1, "Status annotation" example.
+    /// The design doc's "Status annotation" example.
     const DESIGN_DOC_FINALIZE_STATUS_EXAMPLE: &str = r#"{
   "schemaVersion": "1.0",
   "nodeUpdateId":  "550e8400-e29b-41d4-a716-446655440000",
@@ -697,7 +697,7 @@ mod tests {
   "finishedUtc":   "2026-06-04T12:00:32Z"
 }"#;
 
-    /// docs/update-trigger-design.md 2.1, the derived post-reboot commit status example.
+    /// The design doc's derived post-reboot commit status example.
     const DESIGN_DOC_COMMIT_STATUS_EXAMPLE: &str = r#"{
   "schemaVersion": "1.0",
   "nodeUpdateId":  "550e8400-e29b-41d4-a716-446655440000",
