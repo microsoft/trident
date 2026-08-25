@@ -28,6 +28,7 @@ documented = "0.6.0"
 duct = "0.13.7"
 enumflags2 = { version = "0.7", features = ["serde"] }
 env_logger = "0.11.5"
+envy = "0.4.2"
 futures = "0.3.32"
 glob = "0.3.1"
 gpt = "4.1.0"

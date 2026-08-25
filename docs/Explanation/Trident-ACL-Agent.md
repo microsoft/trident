@@ -224,7 +224,7 @@ sets the process's environment before it starts.
 
 A variable that is unset, or set to the empty string, falls back to its
 default. A variable set to a malformed value (a bad URL, a bad duration, an
-unrecognized `goal_source`) causes the agent to fail to start with an error
+unrecognized `mode`) causes the agent to fail to start with an error
 naming the offending variable.
 
 | Variable | Default | Description |

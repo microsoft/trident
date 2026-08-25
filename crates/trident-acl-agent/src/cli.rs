@@ -3,7 +3,7 @@ use log::LevelFilter;
 
 /// trident-acl-agent can either run the annotation-driven orchestrator (the
 /// default) or fall back to its original one-shot Omaha flow. Mode selection
-/// is environment-variable only (`TRIDENT_ACL_AGENT_ORCHESTRATION_GOAL_SOURCE`):
+/// is environment-variable only (`TRIDENT_ACL_AGENT_ORCHESTRATION_MODE`):
 /// shipping defaults enable the AKS annotation protocol, while a VM
 /// extension, systemd drop-in, or AgentBaker-set environment can opt a node
 /// out to `omaha-only` if needed.

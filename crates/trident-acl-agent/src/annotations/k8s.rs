@@ -15,7 +15,7 @@
 //! after a dropped or failed watch; that is governed entirely by
 //! `kube::runtime::watcher`'s built-in `default_backoff()`.
 
-use std::{collections::BTreeMap, path::Path, time::Duration};
+use std::{collections::BTreeMap, time::Duration};
 
 use anyhow::{Context, Error};
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
@@ -161,7 +161,7 @@ fn map_kube_error(err: KubeError) -> K8sClientError {
 }
 
 async fn load_client_config(config: &KubernetesConfig) -> Result<Config, Error> {
-    let path = Path::new(&config.kubeconfig);
+    let path = config.kubeconfig.as_path();
     let kubeconfig = Kubeconfig::read_from(path)
         .with_context(|| format!("failed to read kubeconfig {}", path.display()))?;
     let mut client_config =

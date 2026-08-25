@@ -10,7 +10,9 @@ clap = { workspace = true, features = ["derive"] }
 chrono = { workspace = true }
 const_format = { workspace = true }
 env_logger = { workspace = true }
+envy = { workspace = true }
 futures = { workspace = true }
+hostname = { workspace = true }
 humantime = { workspace = true }
 k8s-openapi = { workspace = true }
 kube = { workspace = true }
