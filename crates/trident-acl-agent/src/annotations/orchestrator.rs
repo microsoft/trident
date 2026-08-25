@@ -9,18 +9,20 @@
 //! full state-machine rationale; keep it in sync with this file if the
 //! design changes.
 
-use std::{collections::BTreeMap, future::Future};
+use std::{collections::BTreeMap, future::Future, time::Duration};
 
-use anyhow::Context;
+use anyhow::{anyhow, Context, Error};
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use k8s_openapi::api::core::v1::Node;
+use log::{debug, info, warn};
 use semver::Version;
-use trident_proto::v1::{RebootStatus, ServicingKind};
+use tokio::{pin, select, task, time};
 use url::Url;
 use uuid::Uuid;
 
-use osutils::dependencies::Dependency;
+use osutils::{dependencies::Dependency, machine_id};
+use trident_proto::v1::{RebootStatus, ServicingKind};
 
 use crate::{
     annotations::{
@@ -33,13 +35,13 @@ use crate::{
         config::AgentConfig,
         nebraska::{CheckOutcome, Client as NebraskaClient, ProgressEvent},
         trident::{CompletedResponse, TridentClient, TridentClientError},
-        version::current_active_version,
+        version::{current_active_version, FALLBACK_ALWAYS_VERSION},
     },
     IdSource,
 };
 
 const FINAL_STATUS_PATCH_RETRIES: usize = 3;
-const FINAL_STATUS_PATCH_BACKOFF: std::time::Duration = std::time::Duration::from_secs(2);
+const FINAL_STATUS_PATCH_BACKOFF: Duration = Duration::from_secs(2);
 
 /// The machine-id source used for every Nebraska request this module makes,
 /// event reports included. Must match the source used by `handle_stage`'s
@@ -86,11 +88,11 @@ impl NebraskaReport {
 pub struct SystemRebooter;
 
 pub trait RebootHandle: Clone + Send + Sync + 'static {
-    fn reboot(&self) -> Result<(), anyhow::Error>;
+    fn reboot(&self) -> Result<(), Error>;
 }
 
 impl RebootHandle for SystemRebooter {
-    fn reboot(&self) -> Result<(), anyhow::Error> {
+    fn reboot(&self) -> Result<(), Error> {
         // Route through the repo's centralized dependency runner so a
         // missing systemctl binary or non-zero exit produces the same
         // uniform, actionable error type used everywhere else in the
@@ -99,7 +101,7 @@ impl RebootHandle for SystemRebooter {
             .cmd()
             .arg("reboot")
             .run_and_check()
-            .map_err(|err| anyhow::anyhow!("failed to issue systemctl reboot: {err}"))
+            .context("failed to issue systemctl reboot")
     }
 }
 
@@ -112,7 +114,7 @@ pub struct Orchestrator<R = SystemRebooter> {
 }
 
 impl Orchestrator<SystemRebooter> {
-    pub async fn from_config(config: AgentConfig) -> Result<Self, anyhow::Error> {
+    pub async fn from_config(config: AgentConfig) -> Result<Self, Error> {
         let k8s = NodeClient::new(&config.kubernetes).await?;
         let annotation_keys = AnnotationKeys::new(&config.kubernetes.annotation_prefix);
         Ok(Self {
@@ -129,7 +131,7 @@ impl<R> Orchestrator<R>
 where
     R: RebootHandle,
 {
-    pub async fn run(&self) -> Result<(), anyhow::Error> {
+    pub async fn run(&self) -> Result<(), Error> {
         if let Err(err) = self.recover_from_trident_state().await {
             if self.log_and_swallow_node_gone(&err, "recovering persisted state") {
                 return Ok(());
@@ -155,7 +157,7 @@ where
         Ok(())
     }
 
-    async fn recover_from_trident_state(&self) -> Result<(), anyhow::Error> {
+    async fn recover_from_trident_state(&self) -> Result<(), Error> {
         let node = self.k8s.get_node(&self.config.kubernetes.node_name).await?;
         let snapshot = Snapshot::from_node(&node, &self.annotation_keys);
         let persisted = self.state.load()?;
@@ -200,13 +202,11 @@ where
         Ok(())
     }
 
-    async fn reconcile_node(&self, node: &Node) -> Result<LoopControl, anyhow::Error> {
+    async fn reconcile_node(&self, node: &Node) -> Result<LoopControl, Error> {
         let snapshot = Snapshot::from_node(node, &self.annotation_keys);
-        log::debug!(
+        debug!(
             "received node update: request={:?} operation_status={:?} commit_status={:?}",
-            snapshot.request,
-            snapshot.operation_status,
-            snapshot.commit_status
+            snapshot.request, snapshot.operation_status, snapshot.commit_status
         );
         let persisted = self.state.load()?;
 
@@ -329,7 +329,7 @@ where
         request.track.clone()
     }
 
-    async fn handle_stage(&self, request: UpdateRequest) -> Result<(), anyhow::Error> {
+    async fn handle_stage(&self, request: UpdateRequest) -> Result<(), Error> {
         let started = Utc::now();
         let from_version = Some(current_active_version()?);
         let to_version = request.target_version.clone();
@@ -367,33 +367,36 @@ where
         // an agent-internal error rather than silently defaulting - there
         // is deliberately no static-config fallback for the annotation flow.
         let endpoint = self.resolve_nebraska_endpoint(&request).ok_or_else(|| {
-            anyhow::anyhow!(
+            anyhow!(
                 "stage request has no request.server despite passing validation (nodeUpdateId {})",
                 request.node_update_id
             )
         })?;
         let app_id = self.resolve_nebraska_app_id(&request).ok_or_else(|| {
-            anyhow::anyhow!(
+            anyhow!(
                 "stage request has no request.appId despite passing validation (nodeUpdateId {})",
                 request.node_update_id
             )
         })?;
         let track = self.resolve_nebraska_track(&request).ok_or_else(|| {
-            anyhow::anyhow!(
+            anyhow!(
                 "stage request has no request.track despite passing validation (nodeUpdateId {})",
                 request.node_update_id
             )
         })?;
         let machine_id = crate::build_machine_id(NEBRASKA_MACHINE_ID_SOURCE)?;
         let current_version = parse_nebraska_version(&from_version, "stage current version")
-            .unwrap_or_else(|| Version::new(0, 0, 0));
-        let outcome = tokio::task::spawn_blocking(move || {
+            .unwrap_or_else(|| {
+                Version::parse(FALLBACK_ALWAYS_VERSION)
+                    .expect("invariant: FALLBACK_ALWAYS_VERSION is valid semver")
+            });
+        let outcome = task::spawn_blocking(move || {
             let client = NebraskaClient::new(endpoint, app_id, track, machine_id);
             client.check_for_update(&current_version)
         })
         .await
         .context("Nebraska query task panicked")?
-        .map_err(|err| anyhow::anyhow!("Nebraska query failed: {err}"))?;
+        .context("Nebraska query failed")?;
         let offered = match outcome {
             CheckOutcome::UpToDate | CheckOutcome::UpdateInProgress => {
                 let status = UpdateStatus::new(
@@ -465,7 +468,7 @@ where
         self.record_and_publish(status).await
     }
 
-    async fn handle_finalize(&self, request: UpdateRequest) -> Result<LoopControl, anyhow::Error> {
+    async fn handle_finalize(&self, request: UpdateRequest) -> Result<LoopControl, Error> {
         let started = Utc::now();
         let from_version = Some(current_active_version()?);
         let to_version = request.target_version.clone();
@@ -577,7 +580,7 @@ where
                     started,
                 );
                 if let Err(err) = self.state.remember_completed(terminal.clone()) {
-                    log::warn!("failed to record finalize completion in state.json: {err}");
+                    warn!("failed to record finalize completion in state.json: {err}");
                 }
                 self.best_effort_publish_terminal(&terminal).await;
                 match self.rebooter.reboot() {
@@ -620,7 +623,7 @@ where
         }
     }
 
-    async fn handle_rollback(&self, request: UpdateRequest) -> Result<LoopControl, anyhow::Error> {
+    async fn handle_rollback(&self, request: UpdateRequest) -> Result<LoopControl, Error> {
         let started = Utc::now();
         let from_version = Some(current_active_version()?);
 
@@ -706,7 +709,7 @@ where
                 let terminal =
                     rollback_finalize_success_status(&request, from_version.clone(), started);
                 if let Err(err) = self.state.remember_completed(terminal.clone()) {
-                    log::warn!("failed to record rollback completion in state.json: {err}");
+                    warn!("failed to record rollback completion in state.json: {err}");
                 }
                 self.best_effort_publish_terminal(&terminal).await;
                 match self.rebooter.reboot() {
@@ -739,10 +742,10 @@ where
         }
     }
 
-    async fn resume_pending_commit(&self, pending: PendingCommit) -> Result<(), anyhow::Error> {
+    async fn resume_pending_commit(&self, pending: PendingCommit) -> Result<(), Error> {
         let current_boot = current_boot_marker()?;
         if current_boot == pending.boot_marker {
-            log::info!(
+            info!(
                 "pending commit {} is still waiting for the reboot to happen",
                 pending.operation_id
             );
@@ -791,17 +794,9 @@ where
                 .await;
             }
         }
-        let status = self.map_commit_result(&pending, result);
+        let status = commit_result_to_status(&pending, result);
         self.state.clear_pending_commit()?;
         self.record_and_publish(status).await
-    }
-
-    fn map_commit_result(
-        &self,
-        pending: &PendingCommit,
-        result: Result<CompletedResponse, TridentClientError>,
-    ) -> UpdateStatus {
-        commit_result_to_status(pending, result)
     }
 
     async fn reconstruct_without_state(
@@ -865,14 +860,14 @@ where
         reconstruct_commit_result_to_status(request, from_version, started, result)
     }
 
-    async fn record_and_publish(&self, status: UpdateStatus) -> Result<(), anyhow::Error> {
+    async fn record_and_publish(&self, status: UpdateStatus) -> Result<(), Error> {
         let status = status.refreshed_for_write();
         self.state.remember_completed(status.clone())?;
         self.best_effort_publish_terminal(&status).await;
         Ok(())
     }
 
-    async fn publish_status(&self, status: &UpdateStatus) -> Result<(), anyhow::Error> {
+    async fn publish_status(&self, status: &UpdateStatus) -> Result<(), Error> {
         let status = status.refreshed_for_write();
         let mut annotations = BTreeMap::new();
         let annotation_key = match status.operation {
@@ -883,7 +878,7 @@ where
             annotation_key.to_string(),
             Some(serde_json::to_string(&status)?),
         );
-        log::info!(
+        info!(
             "sending {annotation_key} annotation to node {}: {status:?}",
             self.config.kubernetes.node_name
         );
@@ -902,29 +897,28 @@ where
             match self.publish_status(status).await {
                 Ok(()) => return,
                 Err(err) if self.is_node_gone_error(&err) => {
-                    log::info!(
+                    info!(
                         "stopping terminal status publish because node {} no longer exists",
                         self.config.kubernetes.node_name
                     );
                     return;
                 }
-                Err(_) => tokio::time::sleep(FINAL_STATUS_PATCH_BACKOFF).await,
+                Err(_) => time::sleep(FINAL_STATUS_PATCH_BACKOFF).await,
             }
         }
     }
 
-    fn is_node_gone_error(&self, err: &anyhow::Error) -> bool {
+    fn is_node_gone_error(&self, err: &Error) -> bool {
         matches!(
             err.downcast_ref::<K8sClientError>(),
             Some(K8sClientError::NodeGone)
         )
     }
 
-    fn log_and_swallow_node_gone(&self, err: &anyhow::Error, context: &str) -> bool {
+    fn log_and_swallow_node_gone(&self, err: &Error, context: &str) -> bool {
         if self.is_node_gone_error(err) {
-            log::info!(
-                "stopping trident-acl-agent while {}: node {} no longer exists",
-                context,
+            info!(
+                "stopping trident-acl-agent while {context}: node {} no longer exists",
                 self.config.kubernetes.node_name
             );
             true
@@ -937,23 +931,23 @@ where
     where
         F: Future,
     {
-        tokio::pin!(future);
-        let mut interval = tokio::time::interval(self.config.orchestration.heartbeat_interval);
+        pin!(future);
+        let mut interval = time::interval(self.config.orchestration.heartbeat_interval);
         interval.tick().await;
         let mut stop_heartbeats = false;
         loop {
-            tokio::select! {
+            select! {
                 result = &mut future => return result,
                 _ = interval.tick(), if !stop_heartbeats => {
                     if let Err(err) = self.publish_status(&status).await {
                         if self.is_node_gone_error(&err) {
-                            log::info!(
+                            info!(
                                 "stopping heartbeats because node {} no longer exists",
                                 self.config.kubernetes.node_name
                             );
                             stop_heartbeats = true;
                         } else {
-                            log::warn!("failed to refresh in-progress status heartbeat: {err}");
+                            warn!("failed to refresh in-progress status heartbeat: {err}");
                         }
                     }
                 }
@@ -986,7 +980,7 @@ where
             // deliberately no static-config fallback (see
             // resolve_nebraska_endpoint's docs). Guard anyway since this is
             // best-effort telemetry, not something worth panicking over.
-            log::warn!(
+            warn!(
                 "skipping Nebraska '{}' report: request has no server (nodeUpdateId {})",
                 report.label(),
                 request.node_update_id
@@ -994,7 +988,7 @@ where
             return;
         };
         let Some(app_id) = self.resolve_nebraska_app_id(request) else {
-            log::warn!(
+            warn!(
                 "skipping Nebraska '{}' report: request has no appId (nodeUpdateId {})",
                 report.label(),
                 request.node_update_id
@@ -1002,7 +996,7 @@ where
             return;
         };
         let Some(track) = self.resolve_nebraska_track(request) else {
-            log::warn!(
+            warn!(
                 "skipping Nebraska '{}' report: request has no track (nodeUpdateId {})",
                 report.label(),
                 request.node_update_id
@@ -1012,7 +1006,7 @@ where
         let machine_id = match crate::build_machine_id(NEBRASKA_MACHINE_ID_SOURCE) {
             Ok(id) => id,
             Err(err) => {
-                log::warn!(
+                warn!(
                     "skipping Nebraska '{}' report: failed to build machine id: {err}",
                     report.label()
                 );
@@ -1020,7 +1014,7 @@ where
             }
         };
         let label = report.label();
-        let result = tokio::task::spawn_blocking(move || {
+        let result = task::spawn_blocking(move || {
             let client = NebraskaClient::new(endpoint, app_id, track, machine_id);
             match report {
                 NebraskaReport::Progress { version, event } => {
@@ -1036,11 +1030,19 @@ where
         })
         .await;
         match result {
-            Ok(Ok(())) => log::debug!("reported Nebraska '{label}' event"),
-            Ok(Err(err)) => log::warn!("Nebraska '{label}' event report failed: {err}"),
-            Err(err) => log::warn!("Nebraska '{label}' event report task panicked: {err}"),
+            Ok(Ok(())) => debug!("reported Nebraska '{label}' event"),
+            Ok(Err(err)) => warn!("Nebraska '{label}' event report failed: {err}"),
+            Err(err) => warn!("Nebraska '{label}' event report task panicked: {err}"),
         }
     }
+}
+
+/// Uses the kernel boot ID as the reboot marker because it changes on every
+/// successful reboot but remains stable for the lifetime of the current boot.
+/// That makes it a simple, durable fence for deciding whether a pending
+/// finalize/rollback has crossed the reboot boundary yet.
+fn current_boot_marker() -> Result<String, Error> {
+    machine_id::boot_id()
 }
 
 /// Parses `version` (e.g. an `UpdateStatus::from_version`/`to_version`
@@ -1050,22 +1052,12 @@ where
 /// `Orchestrator::report_nebraska_event`), so a malformed/missing version
 /// string must only skip the report, never the Trident operation it
 /// describes.
-fn current_boot_marker() -> Result<String, anyhow::Error> {
-    let raw = std::fs::read_to_string("/proc/sys/kernel/random/boot_id")
-        .context("failed to read /proc/sys/kernel/random/boot_id")?;
-    let marker = raw.trim().to_string();
-    if marker.is_empty() {
-        anyhow::bail!("/proc/sys/kernel/random/boot_id was empty");
-    }
-    Ok(marker)
-}
-
 fn parse_nebraska_version(version: &Option<String>, context: &str) -> Option<Version> {
     let raw = version.as_deref()?;
     match Version::parse(raw) {
         Ok(v) => Some(v),
         Err(err) => {
-            log::warn!(
+            warn!(
                 "skipping Nebraska event report for {context}: {raw:?} is not valid semver: {err}"
             );
             None
@@ -1109,7 +1101,7 @@ impl Snapshot {
                             node_update_id: candidate.node_update_id,
                             operation_id: candidate.operation_id,
                             operation: candidate.operation.into(),
-                            reason,
+                            reason: reason.to_string(),
                         }),
                     ),
                 },
@@ -1118,7 +1110,7 @@ impl Snapshot {
                     // even parse out of the annotation - log loudly instead so
                     // this doesn't fail silently, but there's no request to
                     // surface an InvalidRequest status against.
-                    log::warn!(
+                    warn!(
                         "ignoring malformed {} annotation (JSON parse failed): {err}",
                         keys.request
                     );
@@ -1336,10 +1328,6 @@ fn indicates_target_boot_failed(error: &TridentClientError) -> bool {
         .unwrap_or(false)
 }
 
-/// Pure function extracted from `Orchestrator::map_commit_result` so tests
-/// can exercise it directly (with a mock-tridentd-driven `Result`) without
-/// needing a full `Orchestrator` instance. See `stage_result_to_status` for
-/// rationale.
 /// Pre-flight checks for the state.json-missing degraded reconstruction
 /// path (<https://msazure.visualstudio.com/One/_git/Compute-ACL-Update-Service?version=GCeb7e534b2415ad52b37ef22fd49685e81e56c8aa&path=/docs/update-trigger-design.md> §2.3). Returns `Some(status)` when reconstruction
 /// cannot proceed (tridentd already known-unreachable, or the outstanding
@@ -1445,6 +1433,10 @@ fn reconstruct_commit_result_to_status(
     }
 }
 
+/// Pure function extracted from `Orchestrator::map_commit_result` so tests
+/// can exercise it directly (with a mock-tridentd-driven `Result`) without
+/// needing a full `Orchestrator` instance. See `stage_result_to_status` for
+/// rationale.
 fn commit_result_to_status(
     pending: &PendingCommit,
     result: Result<CompletedResponse, TridentClientError>,
@@ -1563,12 +1555,14 @@ fn rollback_finalize_failure_status(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use std::sync::{Arc, Mutex};
 
     use chrono::Utc;
     use uuid::Uuid;
 
-    use super::*;
+    const MOCK_RPC_TIMEOUT: Duration = Duration::from_secs(5);
     use crate::{
         annotations::{RequestedOperation, SCHEMA_VERSION},
         core::trident::mock::{connect_mock_client, MockTridentdConfig, Outcome},
@@ -1611,9 +1605,7 @@ mod tests {
             ..Default::default()
         }));
         let mut client = connect_mock_client(config).await;
-        let result = client
-            .rollback_stage(std::time::Duration::from_secs(5))
-            .await;
+        let result = client.rollback_stage(MOCK_RPC_TIMEOUT).await;
 
         let request = request(RequestedOperation::Rollback);
         let status = rollback_stage_failure_status(
@@ -1647,7 +1639,7 @@ mod tests {
         }));
         let mut client = connect_mock_client(config).await;
         let response = client
-            .rollback_stage(std::time::Duration::from_secs(5))
+            .rollback_stage(MOCK_RPC_TIMEOUT)
             .await
             .expect("mocked rollback_stage should succeed");
         assert_eq!(
@@ -1667,7 +1659,7 @@ mod tests {
         }));
         let mut client = connect_mock_client(config).await;
         let response = client
-            .rollback_stage(std::time::Duration::from_secs(5))
+            .rollback_stage(MOCK_RPC_TIMEOUT)
             .await
             .expect("mocked rollback_stage should succeed");
         assert_eq!(response.servicing_kind, Some(ServicingKind::NoneRequired));
@@ -1683,10 +1675,8 @@ mod tests {
             ..Default::default()
         }));
         let mut client = connect_mock_client(config).await;
-        let result = client
-            .rollback_finalize(std::time::Duration::from_secs(5))
-            .await;
-        assert!(result.is_ok());
+        let result = client.rollback_finalize(MOCK_RPC_TIMEOUT).await;
+        result.expect("mocked rollback_finalize should succeed");
 
         let request = request(RequestedOperation::Rollback);
         let status =
@@ -1707,9 +1697,7 @@ mod tests {
             ..Default::default()
         }));
         let mut client = connect_mock_client(config).await;
-        let result = client
-            .rollback_finalize(std::time::Duration::from_secs(5))
-            .await;
+        let result = client.rollback_finalize(MOCK_RPC_TIMEOUT).await;
 
         let request = request(RequestedOperation::Rollback);
         let status = rollback_finalize_failure_status(
@@ -1734,9 +1722,7 @@ mod tests {
             ..Default::default()
         }));
         let mut client = connect_mock_client(config).await;
-        let result = client
-            .rollback_finalize(std::time::Duration::from_secs(5))
-            .await;
+        let result = client.rollback_finalize(MOCK_RPC_TIMEOUT).await;
 
         let request = request(RequestedOperation::Rollback);
         let status = rollback_finalize_failure_status(
@@ -1765,7 +1751,7 @@ mod tests {
             .update_stage(
                 &"http://example.test/image".parse().unwrap(),
                 None,
-                std::time::Duration::from_secs(5),
+                MOCK_RPC_TIMEOUT,
             )
             .await;
 
@@ -1798,7 +1784,7 @@ mod tests {
             .update_stage(
                 &"http://example.test/image".parse().unwrap(),
                 None,
-                std::time::Duration::from_secs(5),
+                MOCK_RPC_TIMEOUT,
             )
             .await;
 
@@ -1824,11 +1810,11 @@ mod tests {
             .update_stage(
                 &"http://example.test/image".parse().unwrap(),
                 None,
-                std::time::Duration::from_secs(5),
+                MOCK_RPC_TIMEOUT,
             )
             .await;
 
-        let version = semver::Version::new(1, 0, 0);
+        let version = Version::new(1, 0, 0);
         let report = stage_nebraska_report(&version, &result);
         assert_eq!(
             report,
@@ -1853,11 +1839,11 @@ mod tests {
             .update_stage(
                 &"http://example.test/image".parse().unwrap(),
                 None,
-                std::time::Duration::from_secs(5),
+                MOCK_RPC_TIMEOUT,
             )
             .await;
 
-        let version = semver::Version::new(1, 0, 0);
+        let version = Version::new(1, 0, 0);
         let report = stage_nebraska_report(&version, &result);
         assert_eq!(
             report,
@@ -1894,10 +1880,7 @@ mod tests {
             ..Default::default()
         }));
         let mut client = connect_mock_client(config).await;
-        let err = client
-            .update_finalize(std::time::Duration::from_secs(5))
-            .await
-            .unwrap_err();
+        let err = client.update_finalize(MOCK_RPC_TIMEOUT).await.unwrap_err();
 
         let status = finalize_failure_status(
             &request(RequestedOperation::Finalize),
@@ -1922,10 +1905,7 @@ mod tests {
             ..Default::default()
         }));
         let mut client = connect_mock_client(config).await;
-        let err = client
-            .update_finalize(std::time::Duration::from_secs(5))
-            .await
-            .unwrap_err();
+        let err = client.update_finalize(MOCK_RPC_TIMEOUT).await.unwrap_err();
 
         let status = finalize_failure_status(
             &request(RequestedOperation::Finalize),
@@ -1948,11 +1928,9 @@ mod tests {
             ..Default::default()
         }));
         let mut client = connect_mock_client(config).await;
-        let result = client
-            .update_finalize(std::time::Duration::from_secs(5))
-            .await;
+        let result = client.update_finalize(MOCK_RPC_TIMEOUT).await;
 
-        let version = semver::Version::new(1, 0, 0);
+        let version = Version::new(1, 0, 0);
         let report = finalize_nebraska_report(&version, &result);
         assert_eq!(
             report,
@@ -1973,11 +1951,9 @@ mod tests {
             ..Default::default()
         }));
         let mut client = connect_mock_client(config).await;
-        let result = client
-            .update_finalize(std::time::Duration::from_secs(5))
-            .await;
+        let result = client.update_finalize(MOCK_RPC_TIMEOUT).await;
 
-        let version = semver::Version::new(1, 0, 0);
+        let version = Version::new(1, 0, 0);
         let report = finalize_nebraska_report(&version, &result);
         assert_eq!(
             report,
@@ -2000,7 +1976,7 @@ mod tests {
             ..Default::default()
         }));
         let mut client = connect_mock_client(config).await;
-        let result = client.commit(std::time::Duration::from_secs(5)).await;
+        let result = client.commit(MOCK_RPC_TIMEOUT).await;
 
         let status = commit_result_to_status(&pending(Operation::Finalize), result);
 
@@ -2018,7 +1994,7 @@ mod tests {
             ..Default::default()
         }));
         let mut client = connect_mock_client(config).await;
-        let result = client.commit(std::time::Duration::from_secs(5)).await;
+        let result = client.commit(MOCK_RPC_TIMEOUT).await;
 
         let status = commit_result_to_status(&pending(Operation::Finalize), result);
 
@@ -2036,7 +2012,7 @@ mod tests {
             ..Default::default()
         }));
         let mut client = connect_mock_client(config).await;
-        let result = client.commit(std::time::Duration::from_secs(5)).await;
+        let result = client.commit(MOCK_RPC_TIMEOUT).await;
 
         let status = commit_result_to_status(&pending(Operation::Finalize), result);
 
@@ -2054,7 +2030,7 @@ mod tests {
             ..Default::default()
         }));
         let mut client = connect_mock_client(config).await;
-        let result = client.commit(std::time::Duration::from_secs(5)).await;
+        let result = client.commit(MOCK_RPC_TIMEOUT).await;
 
         let status = commit_result_to_status(&pending(Operation::Finalize), result);
 
@@ -2071,7 +2047,7 @@ mod tests {
             ..Default::default()
         }));
         let mut client = connect_mock_client(config).await;
-        let result = client.commit(std::time::Duration::from_secs(5)).await;
+        let result = client.commit(MOCK_RPC_TIMEOUT).await;
 
         let status = commit_result_to_status(&pending(Operation::Finalize), result);
 
@@ -2088,10 +2064,10 @@ mod tests {
             ..Default::default()
         }));
         let mut client = connect_mock_client(config).await;
-        let result = client.commit(std::time::Duration::from_secs(5)).await;
+        let result = client.commit(MOCK_RPC_TIMEOUT).await;
 
-        let previous = semver::Version::new(1, 0, 0);
-        let current = semver::Version::new(2, 0, 0);
+        let previous = Version::new(1, 0, 0);
+        let current = Version::new(2, 0, 0);
         let report = commit_nebraska_report(&previous, &current, &result);
         assert_eq!(report, NebraskaReport::Completed { previous, current });
     }
@@ -2110,10 +2086,10 @@ mod tests {
             ..Default::default()
         }));
         let mut client = connect_mock_client(config).await;
-        let result = client.commit(std::time::Duration::from_secs(5)).await;
+        let result = client.commit(MOCK_RPC_TIMEOUT).await;
 
-        let previous = semver::Version::new(1, 0, 0);
-        let current = semver::Version::new(2, 0, 0);
+        let previous = Version::new(1, 0, 0);
+        let current = Version::new(2, 0, 0);
         let report = commit_nebraska_report(&previous, &current, &result);
         assert_eq!(
             report,
@@ -2134,10 +2110,10 @@ mod tests {
             ..Default::default()
         }));
         let mut client = connect_mock_client(config).await;
-        let result = client.commit(std::time::Duration::from_secs(5)).await;
+        let result = client.commit(MOCK_RPC_TIMEOUT).await;
 
-        let previous = semver::Version::new(1, 0, 0);
-        let current = semver::Version::new(2, 0, 0);
+        let previous = Version::new(1, 0, 0);
+        let current = Version::new(2, 0, 0);
         let report = commit_nebraska_report(&previous, &current, &result);
         assert_eq!(
             report,
@@ -2198,7 +2174,7 @@ mod tests {
             ..Default::default()
         }));
         let mut client = connect_mock_client(config).await;
-        let result = client.commit(std::time::Duration::from_secs(5)).await;
+        let result = client.commit(MOCK_RPC_TIMEOUT).await;
 
         let request = request(RequestedOperation::Finalize);
         let status = reconstruct_commit_result_to_status(
@@ -2224,7 +2200,7 @@ mod tests {
             ..Default::default()
         }));
         let mut client = connect_mock_client(config).await;
-        let result = client.commit(std::time::Duration::from_secs(5)).await;
+        let result = client.commit(MOCK_RPC_TIMEOUT).await;
 
         let request = request(RequestedOperation::Finalize);
         let status = reconstruct_commit_result_to_status(&request, None, Utc::now(), result);
@@ -2243,7 +2219,7 @@ mod tests {
             ..Default::default()
         }));
         let mut client = connect_mock_client(config).await;
-        let result = client.commit(std::time::Duration::from_secs(5)).await;
+        let result = client.commit(MOCK_RPC_TIMEOUT).await;
 
         let request = request(RequestedOperation::Rollback);
         let status = reconstruct_commit_result_to_status(&request, None, Utc::now(), result);
@@ -2262,7 +2238,7 @@ mod tests {
             ..Default::default()
         }));
         let mut client = connect_mock_client(config).await;
-        let result = client.commit(std::time::Duration::from_secs(5)).await;
+        let result = client.commit(MOCK_RPC_TIMEOUT).await;
 
         let request = request(RequestedOperation::Finalize);
         let status = reconstruct_commit_result_to_status(&request, None, Utc::now(), result);
@@ -2283,7 +2259,7 @@ mod tests {
     fn parse_nebraska_version_parses_valid_semver() {
         assert_eq!(
             parse_nebraska_version(&Some("1.2.3".to_string()), "test"),
-            Some(semver::Version::new(1, 2, 3))
+            Some(Version::new(1, 2, 3))
         );
     }
 

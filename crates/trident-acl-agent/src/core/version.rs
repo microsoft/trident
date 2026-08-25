@@ -7,6 +7,12 @@
 //! used by both the annotation-driven orchestrator and the `omaha-only`
 //! one-shot mode.
 
+use std::{env, path::Path};
+
+use anyhow::{anyhow, Error};
+use log::warn;
+use osutils::osrelease;
+
 // current_active_version() reads the `VERSION_ID` key (overridable via
 // TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY, e.g. to `IMAGE_VERSION` for an ACL
 // image that stamps its own per-build version there) out of os-release, but
@@ -41,7 +47,7 @@ pub const DEFAULT_CURRENT_VERSION_FALLBACK: &str = "always";
 /// instead of the real `/etc/os-release`, e.g. a vendor-specific file that
 /// carries the running image's version under a key `/etc/os-release`
 /// doesn't have room for.
-pub const DEFAULT_CURRENT_VERSION_PATH: &str = osutils::osrelease::OS_RELEASE_PATH;
+pub const DEFAULT_CURRENT_VERSION_PATH: &str = osrelease::OS_RELEASE_PATH;
 /// Default os-release key `current_active_version` looks up for the running
 /// image's version: `VERSION_ID`, a standard key every os-release carries
 /// (see
@@ -60,17 +66,17 @@ const FALLBACK_ALWAYS: &str = "always";
 const FALLBACK_ERROR: &str = "error";
 /// What [`current_active_version`] reports for [`FALLBACK_ALWAYS`] - see its
 /// docs above for why 0.0.0 is a safe sentinel here.
-const FALLBACK_ALWAYS_VERSION: &str = "0.0.0";
+pub(crate) const FALLBACK_ALWAYS_VERSION: &str = "0.0.0";
 
 /// Reads `name`, treating both "unset" and "set to the empty string" as
 /// absent, matching `config::env_raw`'s convention: a drop-in override that
 /// clears a variable to `""` should fall back to the default, not try to use
 /// an empty value.
 fn env_override(name: &str) -> Option<String> {
-    std::env::var(name).ok().filter(|v| !v.is_empty())
+    env::var(name).ok().filter(|v| !v.is_empty())
 }
 
-pub fn current_active_version() -> Result<String, anyhow::Error> {
+pub fn current_active_version() -> Result<String, Error> {
     let path = env_override(ENV_CURRENT_VERSION_PATH)
         .unwrap_or_else(|| DEFAULT_CURRENT_VERSION_PATH.to_string());
     let key = env_override(ENV_CURRENT_VERSION_KEY)
@@ -81,17 +87,17 @@ pub fn current_active_version() -> Result<String, anyhow::Error> {
     let fallback = env_override(ENV_CURRENT_VERSION_FALLBACK)
         .unwrap_or_else(|| DEFAULT_CURRENT_VERSION_FALLBACK.to_string());
     match fallback.as_str() {
-        FALLBACK_ERROR => Err(anyhow::anyhow!(
+        FALLBACK_ERROR => Err(anyhow!(
             "{key} not found in {path}, and {ENV_CURRENT_VERSION_FALLBACK} is set to \"error\""
         )),
         FALLBACK_ALWAYS => {
-            log::warn!(
+            warn!(
                 "{key} not found in {path}; falling back to \"always\" (reporting {FALLBACK_ALWAYS_VERSION} as the current version)"
             );
             Ok(FALLBACK_ALWAYS_VERSION.to_string())
         }
         _ => {
-            log::warn!(
+            warn!(
                 "{key} not found in {path}; falling back to configured current version {fallback:?}"
             );
             Ok(fallback)
@@ -108,33 +114,17 @@ pub fn current_active_version() -> Result<String, anyhow::Error> {
 /// `current_active_version` treats identically: fall back to the stub.
 /// Split out from `current_active_version` so tests can point it at a temp
 /// file instead of the real os-release.
-fn read_os_release_value(path: &str, key: &str) -> Option<String> {
-    let contents = std::fs::read_to_string(path).ok()?;
-    for line in contents.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let Some((line_key, raw_value)) = line.split_once('=') else {
-            continue;
-        };
-        if line_key.trim() != key {
-            continue;
-        }
-        let value = raw_value.trim().trim_matches('"').trim_matches('\'').trim();
-        if value.is_empty() {
-            return None;
-        }
-        return Some(value.to_string());
-    }
-    None
+fn read_os_release_value(path: impl AsRef<Path>, key: &str) -> Option<String> {
+    let path = path.as_ref();
+    osrelease::read_key(path, key)
 }
 
 #[cfg(test)]
 mod tests {
-    use uuid::Uuid;
-
     use super::*;
+
+    use indoc::indoc;
+    use tempfile::tempdir;
 
     #[test]
     fn read_os_release_value_returns_none_for_missing_file() {
@@ -149,59 +139,76 @@ mod tests {
 
     #[test]
     fn read_os_release_value_finds_requested_key() {
-        let dir = std::env::temp_dir();
-        let path = dir.join(format!("os-release-test-{}", Uuid::new_v4()));
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("os-release");
         std::fs::write(
             &path,
-            "NAME=\"Azure Linux\"\nIMAGE_VERSION=202608.6.0\nVERSION_ID=3.0\n",
+            indoc! {r#"
+                NAME="Azure Linux"
+                IMAGE_VERSION=202608.6.0
+                VERSION_ID=3.0
+            "#},
         )
         .unwrap();
-        let result = read_os_release_value(path.to_str().unwrap(), "IMAGE_VERSION");
-        std::fs::remove_file(&path).ok();
+        let result = read_os_release_value(&path, "IMAGE_VERSION");
         assert_eq!(result.as_deref(), Some("202608.6.0"));
     }
 
     #[test]
     fn read_os_release_value_trims_quotes_and_whitespace() {
-        let dir = std::env::temp_dir();
-        let path = dir.join(format!("os-release-test-quoted-{}", Uuid::new_v4()));
-        std::fs::write(&path, "  IMAGE_VERSION = \"202608.6.0\" \n").unwrap();
-        let result = read_os_release_value(path.to_str().unwrap(), "IMAGE_VERSION");
-        std::fs::remove_file(&path).ok();
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("os-release");
+        std::fs::write(
+            &path,
+            indoc! {r#"
+              IMAGE_VERSION = "202608.6.0" 
+            "#},
+        )
+        .unwrap();
+        let result = read_os_release_value(&path, "IMAGE_VERSION");
         assert_eq!(result.as_deref(), Some("202608.6.0"));
     }
 
     #[test]
     fn read_os_release_value_returns_none_for_missing_key() {
-        let dir = std::env::temp_dir();
-        let path = dir.join(format!("os-release-test-missing-key-{}", Uuid::new_v4()));
-        std::fs::write(&path, "NAME=\"Azure Linux\"\nVERSION_ID=3.0\n").unwrap();
-        let result = read_os_release_value(path.to_str().unwrap(), "IMAGE_VERSION");
-        std::fs::remove_file(&path).ok();
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("os-release");
+        std::fs::write(
+            &path,
+            indoc! {r#"
+                NAME="Azure Linux"
+                VERSION_ID=3.0
+            "#},
+        )
+        .unwrap();
+        let result = read_os_release_value(&path, "IMAGE_VERSION");
         assert_eq!(result, None);
     }
 
     #[test]
     fn read_os_release_value_returns_none_for_empty_value() {
-        let dir = std::env::temp_dir();
-        let path = dir.join(format!("os-release-test-empty-value-{}", Uuid::new_v4()));
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("os-release");
         std::fs::write(&path, "IMAGE_VERSION=\n").unwrap();
-        let result = read_os_release_value(path.to_str().unwrap(), "IMAGE_VERSION");
-        std::fs::remove_file(&path).ok();
+        let result = read_os_release_value(&path, "IMAGE_VERSION");
         assert_eq!(result, None);
     }
 
     #[test]
     fn read_os_release_value_skips_comments_and_blank_lines() {
-        let dir = std::env::temp_dir();
-        let path = dir.join(format!("os-release-test-comments-{}", Uuid::new_v4()));
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("os-release");
         std::fs::write(
             &path,
-            "# a comment\n\n# IMAGE_VERSION=should-be-ignored\nIMAGE_VERSION=202608.6.0\n",
+            indoc! {r#"
+                # a comment
+
+                # IMAGE_VERSION=should-be-ignored
+                IMAGE_VERSION=202608.6.0
+            "#},
         )
         .unwrap();
-        let result = read_os_release_value(path.to_str().unwrap(), "IMAGE_VERSION");
-        std::fs::remove_file(&path).ok();
+        let result = read_os_release_value(&path, "IMAGE_VERSION");
         assert_eq!(result.as_deref(), Some("202608.6.0"));
     }
 
@@ -269,11 +276,8 @@ mod tests {
         // current_active_version() itself honors TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH,
         // pointing it at an arbitrary os-release-formatted file instead of the
         // real /etc/os-release.
-        let dir = std::env::temp_dir();
-        let found_path = dir.join(format!(
-            "os-release-test-current-version-{}",
-            Uuid::new_v4()
-        ));
+        let found_dir = tempdir().unwrap();
+        let found_path = found_dir.path().join("os-release");
         std::fs::write(
             &found_path,
             "NAME=\"Contoso Linux\"\nVERSION_ID=202608.6.0\n",
@@ -285,16 +289,13 @@ mod tests {
             std::env::set_var(ENV_CURRENT_VERSION_KEY, "VERSION_ID");
         }
         assert_eq!(current_active_version().unwrap(), "202608.6.0");
-        std::fs::remove_file(&found_path).ok();
         clear_current_version_env();
 
         // When the configured key isn't present at the configured path, and
         // no fallback override is set, it defaults to "always" - reporting
         // FALLBACK_ALWAYS_VERSION ("0.0.0") as the current version.
-        let missing_path = dir.join(format!(
-            "os-release-test-current-version-missing-{}",
-            Uuid::new_v4()
-        ));
+        let missing_dir = tempdir().unwrap();
+        let missing_path = missing_dir.path().join("os-release");
         std::fs::write(&missing_path, "NAME=\"Contoso Linux\"\n").unwrap();
         // SAFETY: see clear_current_version_env's doc comment.
         unsafe {
@@ -325,7 +326,6 @@ mod tests {
             "custom-fallback-for-missing-key"
         );
 
-        std::fs::remove_file(&missing_path).ok();
         clear_current_version_env();
     }
 }

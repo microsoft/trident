@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
 
-use crate::core::config::DEFAULT_ANNOTATION_PREFIX;
+use crate::core::{config::DEFAULT_ANNOTATION_PREFIX, error::AgentError};
 
 /// Suffix (appended to the configured annotation prefix) for the request
 /// annotation, e.g. `acl.microsoft.com/update-request`.
@@ -63,7 +63,7 @@ pub const SCHEMA_VERSION: &str = "1.0";
 const MAX_MESSAGE_BYTES: usize = 2048;
 const TRUNCATION_MARKER: &str = "... (truncated)";
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[serde(rename_all = "camelCase")]
 pub enum RequestedOperation {
     Stage,
@@ -71,7 +71,7 @@ pub enum RequestedOperation {
     Rollback,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[serde(rename_all = "camelCase")]
 pub enum Operation {
     Stage,
@@ -80,7 +80,8 @@ pub enum Operation {
     Commit,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[serde(rename_all = "PascalCase")]
 pub enum StatusCode {
     InProgress,
     Success,
@@ -92,7 +93,7 @@ pub enum StatusCode {
     InvalidRequest,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateRequest {
     pub schema_version: String,
@@ -126,7 +127,7 @@ pub struct UpdateRequest {
     pub track: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateStatus {
     pub schema_version: String,
@@ -151,41 +152,56 @@ impl UpdateRequest {
     /// targetVersion required for stage/finalize but disallowed for
     /// rollback, and server/appId/track required for stage/finalize. See
     /// this file's module doc.
-    pub fn validate(self) -> Result<Self, String> {
+    pub fn validate(self) -> Result<Self, AgentError> {
         if self.schema_version != SCHEMA_VERSION {
-            return Err(format!("unsupported schemaVersion {}", self.schema_version));
+            return Err(AgentError::InvalidRequest(format!(
+                "unsupported schemaVersion {}",
+                self.schema_version
+            )));
         }
         if Uuid::parse_str(&self.operation_id).is_err() {
-            return Err(format!(
+            return Err(AgentError::InvalidRequest(format!(
                 "operationId must be a UUID, got {:?}",
                 self.operation_id
-            ));
+            )));
         }
         match self.operation {
             RequestedOperation::Stage | RequestedOperation::Finalize => {
                 if self.target_version.as_deref().unwrap_or("").is_empty() {
-                    return Err("targetVersion is required for stage/finalize".to_string());
+                    return Err(AgentError::InvalidRequest(
+                        "targetVersion is required for stage/finalize".to_string(),
+                    ));
                 }
                 if self.server.is_none() {
-                    return Err("server is required for stage/finalize".to_string());
+                    return Err(AgentError::InvalidRequest(
+                        "server is required for stage/finalize".to_string(),
+                    ));
                 }
                 if self
                     .server
                     .as_ref()
                     .is_some_and(|u| !matches!(u.scheme(), "http" | "https"))
                 {
-                    return Err("server must be an http(s) URL".to_string());
+                    return Err(AgentError::InvalidRequest(
+                        "server must be an http(s) URL".to_string(),
+                    ));
                 }
                 if self.app_id.as_deref().unwrap_or("").is_empty() {
-                    return Err("appId is required for stage/finalize".to_string());
+                    return Err(AgentError::InvalidRequest(
+                        "appId is required for stage/finalize".to_string(),
+                    ));
                 }
                 if self.track.as_deref().unwrap_or("").is_empty() {
-                    return Err("track is required for stage/finalize".to_string());
+                    return Err(AgentError::InvalidRequest(
+                        "track is required for stage/finalize".to_string(),
+                    ));
                 }
             }
             RequestedOperation::Rollback => {
                 if self.target_version.is_some() {
-                    return Err("targetVersion must be omitted for rollback".to_string());
+                    return Err(AgentError::InvalidRequest(
+                        "targetVersion must be omitted for rollback".to_string(),
+                    ));
                 }
             }
         }
@@ -289,11 +305,10 @@ impl From<RequestedOperation> for Operation {
 
 #[cfg(test)]
 mod tests {
-    use chrono::TimeZone;
-    use serde_json::Value;
-    use uuid::Uuid;
-
     use super::*;
+
+    use chrono::TimeZone;
+    use serde_json::{Map, Value};
 
     #[test]
     fn annotation_keys_default_uses_acl_microsoft_com_prefix() {
@@ -836,7 +851,7 @@ mod tests {
         Ok(())
     }
 
-    fn schema_if_matches(if_schema: &Value, obj: &serde_json::Map<String, Value>) -> bool {
+    fn schema_if_matches(if_schema: &Value, obj: &Map<String, Value>) -> bool {
         let Some(if_obj) = if_schema.as_object() else {
             return false;
         };
@@ -1011,7 +1026,7 @@ mod tests {
             let err = request
                 .validate()
                 .expect_err("missing server must be rejected for stage/finalize");
-            assert!(err.contains("server"), "{err}");
+            assert!(err.to_string().contains("server"), "{err}");
         }
     }
 
@@ -1036,7 +1051,7 @@ mod tests {
             let err = request
                 .validate()
                 .expect_err("a non-http(s) server scheme must be rejected");
-            assert!(err.contains("server"), "{err}");
+            assert!(err.to_string().contains("server"), "{err}");
         }
     }
 
@@ -1048,7 +1063,7 @@ mod tests {
             let err = request
                 .validate()
                 .expect_err("missing appId must be rejected for stage/finalize");
-            assert!(err.contains("appId"), "{err}");
+            assert!(err.to_string().contains("appId"), "{err}");
         }
     }
 
@@ -1060,7 +1075,7 @@ mod tests {
             let err = request
                 .validate()
                 .expect_err("missing track must be rejected for stage/finalize");
-            assert!(err.contains("track"), "{err}");
+            assert!(err.to_string().contains("track"), "{err}");
         }
     }
 
@@ -1099,7 +1114,7 @@ mod tests {
             let err = request
                 .validate()
                 .expect_err("a non-UUID operationId must be rejected");
-            assert!(err.contains("operationId"), "{err}");
+            assert!(err.to_string().contains("operationId"), "{err}");
         }
     }
 

@@ -16,6 +16,9 @@
 
 use std::{env, path::PathBuf, str::FromStr, time::Duration};
 
+use anyhow::{anyhow, Context, Error};
+use osutils::hostname;
+use trident_proto::TRIDENT_DEFAULT_SOCKET_URI;
 use url::Url;
 
 use crate::{DEFAULT_NEBRASKA_APP_ID, DEFAULT_NEBRASKA_TRACK};
@@ -50,6 +53,7 @@ const DEFAULT_KUBERNETES_POLL_INTERVAL: Duration = Duration::from_secs(2);
 // carry their own `server` field, with no fallback to this config (see
 // Orchestrator::resolve_nebraska_endpoint).
 pub const DEFAULT_NEBRASKA_ENDPOINT: &str = "https://nebraska.example.invalid/v1/update";
+const DEFAULT_NODE_NAME: &str = "localhost";
 const DEFAULT_STAGE_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 const DEFAULT_FINALIZE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const DEFAULT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(60);
@@ -73,11 +77,11 @@ impl AgentConfig {
     /// is never an error - it just falls back to that setting's default -
     /// but a present-and-malformed value (bad URL, bad duration, unknown
     /// `goal_source`, etc.) is.
-    pub fn from_env() -> Result<Self, anyhow::Error> {
+    pub fn from_env() -> Result<Self, Error> {
         Ok(Self {
             nebraska: NebraskaConfig {
                 endpoint: env_url(ENV_NEBRASKA_ENDPOINT)?
-                    .or_else(|| Some(Url::parse(DEFAULT_NEBRASKA_ENDPOINT).expect("static url"))),
+                    .or_else(|| Some(default_nebraska_endpoint())),
                 app_id: env_string(ENV_NEBRASKA_APP_ID)
                     .unwrap_or_else(|| DEFAULT_NEBRASKA_APP_ID.to_string()),
                 track: env_string(ENV_NEBRASKA_TRACK)
@@ -94,7 +98,7 @@ impl AgentConfig {
             },
             trident: TridentConfig {
                 socket: env_string(ENV_TRIDENT_SOCKET)
-                    .unwrap_or_else(|| trident_proto::TRIDENT_DEFAULT_SOCKET_URI.to_string()),
+                    .unwrap_or_else(|| TRIDENT_DEFAULT_SOCKET_URI.to_string()),
             },
             orchestration: OrchestrationConfig {
                 goal_source: env_parse(ENV_ORCHESTRATION_GOAL_SOURCE)?.unwrap_or_default(),
@@ -128,7 +132,7 @@ pub struct NebraskaConfig {
 impl Default for NebraskaConfig {
     fn default() -> Self {
         Self {
-            endpoint: Some(Url::parse(DEFAULT_NEBRASKA_ENDPOINT).expect("static url")),
+            endpoint: Some(default_nebraska_endpoint()),
             app_id: DEFAULT_NEBRASKA_APP_ID.to_string(),
             track: DEFAULT_NEBRASKA_TRACK.to_string(),
         }
@@ -177,7 +181,7 @@ pub struct TridentConfig {
 impl Default for TridentConfig {
     fn default() -> Self {
         Self {
-            socket: trident_proto::TRIDENT_DEFAULT_SOCKET_URI.to_string(),
+            socket: TRIDENT_DEFAULT_SOCKET_URI.to_string(),
         }
     }
 }
@@ -208,13 +212,13 @@ pub enum GoalSource {
 }
 
 impl FromStr for GoalSource {
-    type Err = anyhow::Error;
+    type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "omaha-only" => Ok(GoalSource::OmahaOnly),
             "annotations" => Ok(GoalSource::Annotations),
-            other => Err(anyhow::anyhow!(
+            other => Err(anyhow!(
                 "unknown goal_source {other:?} (expected \"annotations\" or \"omaha-only\")"
             )),
         }
@@ -258,25 +262,29 @@ fn env_string(name: &str) -> Option<String> {
     env_raw(name)
 }
 
-fn env_url(name: &str) -> Result<Option<Url>, anyhow::Error> {
+fn default_nebraska_endpoint() -> Url {
+    Url::parse(DEFAULT_NEBRASKA_ENDPOINT)
+        .expect("invariant: DEFAULT_NEBRASKA_ENDPOINT is a compile-time-valid URL")
+}
+
+fn env_url(name: &str) -> Result<Option<Url>, Error> {
     env_raw(name)
-        .map(|v| Url::parse(&v).map_err(|err| anyhow::anyhow!("invalid URL for {name}: {err}")))
+        .map(|v| Url::parse(&v).with_context(|| format!("invalid URL for {name}")))
         .transpose()
 }
 
-fn env_duration(name: &str, default: Duration) -> Result<Duration, anyhow::Error> {
+fn env_duration(name: &str, default: Duration) -> Result<Duration, Error> {
     env_raw(name)
         .map(|v| {
-            humantime::parse_duration(&v)
-                .map_err(|err| anyhow::anyhow!("invalid duration for {name}: {err}"))
+            humantime::parse_duration(&v).with_context(|| format!("invalid duration for {name}"))
         })
         .transpose()
         .map(|parsed| parsed.unwrap_or(default))
 }
 
-fn env_parse<T>(name: &str) -> Result<Option<T>, anyhow::Error>
+fn env_parse<T>(name: &str) -> Result<Option<T>, Error>
 where
-    T: FromStr<Err = anyhow::Error>,
+    T: FromStr<Err = Error>,
 {
     env_raw(name).map(|v| v.parse::<T>()).transpose()
 }
@@ -287,8 +295,8 @@ fn default_node_name() -> String {
     // registers the Node object. Match that behavior here so a mixed-case
     // hostname doesn't produce a node_name that can never match the actual
     // Node the agent is supposed to reconcile against.
-    osutils::hostname::read()
-        .unwrap_or_else(|_| "localhost".to_string())
+    hostname::read()
+        .unwrap_or_else(|_| DEFAULT_NODE_NAME.to_string())
         .to_lowercase()
 }
 
@@ -342,10 +350,7 @@ mod tests {
             config.kubernetes.kubeconfig,
             DEFAULT_KUBELET_KUBECONFIG.to_string()
         );
-        assert_eq!(
-            config.trident.socket,
-            trident_proto::TRIDENT_DEFAULT_SOCKET_URI
-        );
+        assert_eq!(config.trident.socket, TRIDENT_DEFAULT_SOCKET_URI);
         assert_eq!(config.orchestration.goal_source, GoalSource::Annotations);
         assert_eq!(
             config.orchestration.state_path,

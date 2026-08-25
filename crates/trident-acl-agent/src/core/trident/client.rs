@@ -15,11 +15,18 @@
 //! progress for anything commit() reports nothing to do for. See
 //! orchestrator.rs's recover_from_trident_state for the full rationale.
 
-use std::time::Duration;
+use std::{future::Future, time::Duration};
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Error};
 use futures::StreamExt;
-use tonic::{transport::Endpoint, Request, Streaming};
+use log::{debug, error, info, trace, warn};
+use serde::Serialize;
+use thiserror::Error;
+use tokio::time;
+use tonic::{
+    transport::{Channel, Endpoint, Error as TransportError},
+    Request, Streaming,
+};
 use trident_proto::v1::{
     commit_service_client::CommitServiceClient, rollback_service_client::RollbackServiceClient,
     servicing_response::Response as ResponseBody, update_service_client::UpdateServiceClient,
@@ -44,13 +51,13 @@ pub struct RemoteError {
     pub error_message: String,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Error)]
 pub enum TridentClientError {
     #[error("failed to connect to trident socket {socket}: {source}")]
     Connect {
         socket: String,
         #[source]
-        source: tonic::transport::Error,
+        source: TransportError,
     },
     #[error("failed to start trident request {operation}: {source}")]
     Request {
@@ -64,7 +71,7 @@ pub enum TridentClientError {
     Stream {
         operation: &'static str,
         #[source]
-        source: anyhow::Error,
+        source: Error,
     },
     #[error("trident reported {operation} failure: {details:?}")]
     Remote {
@@ -87,10 +94,16 @@ impl TridentClientError {
     }
 }
 
+const PLACEHOLDER_IMAGE_HASH: &str = "ignored";
+// Trident reports a structured error object for real remote failures; if it
+// omits one entirely, keep a sentinel subkind so callers can still surface
+// that contract explicitly.
+const UNKNOWN_REMOTE_ERROR_SUBKIND: &str = "unknown";
+
 pub struct TridentClient {
-    update_client: UpdateServiceClient<tonic::transport::Channel>,
-    commit_client: CommitServiceClient<tonic::transport::Channel>,
-    rollback_client: RollbackServiceClient<tonic::transport::Channel>,
+    update_client: UpdateServiceClient<Channel>,
+    commit_client: CommitServiceClient<Channel>,
+    rollback_client: RollbackServiceClient<Channel>,
 }
 
 impl TridentClient {
@@ -118,7 +131,7 @@ impl TridentClient {
     /// over an in-memory duplex stream) and exercise the exact same
     /// request/response/error-mapping code as production, without a real
     /// unix socket or subprocess.
-    pub fn from_channel(channel: tonic::transport::Channel) -> Self {
+    pub fn from_channel(channel: Channel) -> Self {
         Self {
             update_client: UpdateServiceClient::new(channel.clone()),
             commit_client: CommitServiceClient::new(channel.clone()),
@@ -303,13 +316,13 @@ impl TridentClient {
     }
 }
 
-#[derive(serde::Serialize)]
+#[derive(Serialize)]
 struct ImageSpec<'a> {
     url: &'a str,
     sha384: &'a str,
 }
 
-#[derive(serde::Serialize)]
+#[derive(Serialize)]
 struct HostConfigurationYaml<'a> {
     image: ImageSpec<'a>,
 }
@@ -322,7 +335,7 @@ pub fn host_configuration_from_image(url: &Url, hash: Option<&str>) -> HostConfi
     let spec = HostConfigurationYaml {
         image: ImageSpec {
             url: url.as_str(),
-            sha384: hash.unwrap_or("ignored"),
+            sha384: hash.unwrap_or(PLACEHOLDER_IMAGE_HASH),
         },
     };
     HostConfiguration {
@@ -334,9 +347,9 @@ pub fn host_configuration_from_image(url: &Url, hash: Option<&str>) -> HostConfi
 async fn run_with_timeout<T>(
     operation: &'static str,
     timeout: Duration,
-    future: impl std::future::Future<Output = Result<T, TridentClientError>>,
+    future: impl Future<Output = Result<T, TridentClientError>>,
 ) -> Result<T, TridentClientError> {
-    tokio::time::timeout(timeout, future)
+    time::timeout(timeout, future)
         .await
         .map_err(|_| TridentClientError::Timeout { operation, timeout })?
 }
@@ -353,18 +366,18 @@ async fn consume_servicing_stream(
 
         match response.response {
             Some(ResponseBody::Started(_)) => {
-                log::info!("[Trident:{operation}] started");
+                info!("[Trident:{operation}] started");
             }
             Some(ResponseBody::Log(log_record)) => {
                 let message = &log_record.message;
                 match log_record.level() {
                     LogLevel::Unspecified | LogLevel::Trace => {
-                        log::trace!("[Trident:{operation}] {message}")
+                        trace!("[Trident:{operation}] {message}")
                     }
-                    LogLevel::Debug => log::debug!("[Trident:{operation}] {message}"),
-                    LogLevel::Info => log::info!("[Trident:{operation}] {message}"),
-                    LogLevel::Warn => log::warn!("[Trident:{operation}] {message}"),
-                    LogLevel::Error => log::error!("[Trident:{operation}] {message}"),
+                    LogLevel::Debug => debug!("[Trident:{operation}] {message}"),
+                    LogLevel::Info => info!("[Trident:{operation}] {message}"),
+                    LogLevel::Warn => warn!("[Trident:{operation}] {message}"),
+                    LogLevel::Error => error!("[Trident:{operation}] {message}"),
                 }
             }
             Some(ResponseBody::Completed(completed)) => {
@@ -387,7 +400,7 @@ async fn consume_servicing_stream(
                     })
                     .unwrap_or(RemoteError {
                         kind: None,
-                        subkind: "unknown".to_string(),
+                        subkind: UNKNOWN_REMOTE_ERROR_SUBKIND.to_string(),
                         message: format!("Trident {operation} failed without structured error"),
                         error_message: String::new(),
                     });
