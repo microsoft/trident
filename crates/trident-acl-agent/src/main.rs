@@ -1,6 +1,6 @@
 use anyhow::{Context, Error};
 use clap::Parser;
-use osutils::logging::FilteredLogger;
+use osutils::logging::filter::LogFilter;
 use systemd_journal_logger::{connected_to_journal, JournalLog};
 
 use trident_acl_agent::{
@@ -32,33 +32,42 @@ const NETWORK_LOG_TARGETS: &[&str] = &[
     "kube_runtime",
 ];
 
+/// Wraps `inner` in a [`LogFilter`] that caps overall verbosity at
+/// `args.verbosity`, then further caps every [`NETWORK_LOG_TARGETS`] prefix
+/// down to `args.network_verbosity` (matching osutils::logging's shared
+/// `LogFilter`/`MultiLogger` pattern already used by `trident`'s own
+/// `main.rs`, rather than a bespoke wrapper type).
+fn build_logger<L: log::Log>(inner: L, args: &Args) -> LogFilter<L> {
+    NETWORK_LOG_TARGETS.iter().fold(
+        LogFilter::new(inner).with_max_level(args.verbosity),
+        |logger, target| logger.with_global_filter(*target, args.network_verbosity),
+    )
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     let args = Args::parse();
 
+    // LogFilter has no single accessor for "the loosest level anything could
+    // be logged at" (unlike the old FilteredLogger::max_level()), so compute
+    // it the same way FilteredLogger did: the looser of the two configured
+    // verbosities, so the `log` facade doesn't drop records before this
+    // filter gets a chance to apply the per-target ceiling.
+    let max_level = args.verbosity.max(args.network_verbosity);
+
     if let Some(Ok(journal_logger)) = connected_to_journal().then(JournalLog::new) {
-        let logger = FilteredLogger::new(
-            journal_logger,
-            args.verbosity,
-            args.network_verbosity,
-            NETWORK_LOG_TARGETS,
-        );
-        log::set_max_level(logger.max_level());
+        let logger = build_logger(journal_logger, &args);
+        log::set_max_level(max_level);
         log::set_boxed_logger(Box::new(logger))
             .map_err(Error::new)
             .context("failed to install systemd journal logger")?;
     } else {
         let inner = env_logger::builder()
             .format_timestamp(None)
-            .filter_level(args.verbosity.max(args.network_verbosity))
+            .filter_level(max_level)
             .build();
-        let logger = FilteredLogger::new(
-            inner,
-            args.verbosity,
-            args.network_verbosity,
-            NETWORK_LOG_TARGETS,
-        );
-        log::set_max_level(logger.max_level());
+        let logger = build_logger(inner, &args);
+        log::set_max_level(max_level);
         log::set_boxed_logger(Box::new(logger))
             .map_err(Error::new)
             .context("failed to install env logger")?;
