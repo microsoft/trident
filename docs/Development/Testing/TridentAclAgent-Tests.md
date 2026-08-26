@@ -65,7 +65,7 @@ instance, not to re-create the kubeconfig.
 - **Linux host** with root access
 - **libvirt and QEMU** installed and configured
 - **Docker** (for building images with Image Customizer)
-- **Go 1.24+** (for building Go tools)
+- **Go 1.25+** (for building Go tools; matches `tools/go.mod`'s `go 1.25.0`)
 - **Rust** (latest stable, for building Trident and `trident-acl-agent`)
 
 See [Dependencies](../Building/Dependencies.md) for full build dependency
