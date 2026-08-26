@@ -49,7 +49,9 @@ impl<R> ReadMonitor<R> {
     /// Creates a new download monitor wrapping `inner`.
     ///
     /// * `label` — identifies what is being read (e.g. partition id), used to
-    ///   tag log messages and metric events.
+    ///   tag the slow-download debug log message. To additionally report a
+    ///   (possibly different) label on the summary metric, see
+    ///   [`ReadMonitor::make_reporting`].
     /// * `threshold_mbps` — speed in Mbps below which slow-download debug log
     ///   messages are emitted.
     /// * `report_cadence` — minimum interval between consecutive slow-download
