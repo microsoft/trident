@@ -206,9 +206,12 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
 }
 
 /// Mount points allow-listed for use as `ReadMonitor` metric labels. Any
-/// mount point not on this list (including partitions with no associated
-/// mount point, e.g. verity hash devices or raw COSI partitions) is reported
-/// as "other". This keeps metric cardinality bounded and avoids leaking
+/// mount point not on this list is reported as "other". Partitions with no
+/// associated mount point at all (e.g. raw COSI partitions) are also always
+/// reported as "other". Verity hash devices are the exception: they don't
+/// have their own mount point, but are tagged with the mount point label of
+/// the data device they protect, since they're deployed as part of the same
+/// filesystem. This keeps metric cardinality bounded and avoids leaking
 /// user-defined block device ids or arbitrary mount paths into the metrics
 /// pipeline.
 fn metric_label_for_mount_point(mount_point: &Path, esp_mount_path: &Path) -> &'static str {

@@ -18,8 +18,11 @@ const RING_BUFFER_SIZE: usize = 10;
 /// finishes (successfully or not), wrap it with [`ReadMonitor::make_reporting`].
 pub struct ReadMonitor<R> {
     inner: R,
-    /// Identifies what is being read, for metric/log context (e.g. a
-    /// partition id, or "esp").
+    /// Identifies what is being read (e.g. a partition id, or "esp"). Only
+    /// used locally, to tag the slow-download debug log message. The label
+    /// reported on the summary metric (if any) is provided separately via
+    /// [`ReadMonitor::make_reporting`] and may intentionally differ (e.g. to
+    /// report a sanitized/allow-listed value instead).
     label: String,
     /// Expected size of the complete file being read (for log/metric context).
     size: u64,
