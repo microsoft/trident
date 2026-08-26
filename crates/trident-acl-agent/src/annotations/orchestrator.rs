@@ -83,36 +83,14 @@ impl NebraskaReport {
     }
 }
 
-#[derive(Clone, Default)]
-pub struct SystemRebooter;
-
-pub trait RebootHandle: Clone + Send + Sync + 'static {
-    fn reboot(&self) -> Result<(), Error>;
-}
-
-impl RebootHandle for SystemRebooter {
-    fn reboot(&self) -> Result<(), Error> {
-        // Route through the repo's centralized dependency runner so a
-        // missing systemctl binary or non-zero exit produces the same
-        // uniform, actionable error type used everywhere else in the
-        // codebase (see crates/trident/src/reboot.rs for the same pattern).
-        Dependency::Systemctl
-            .cmd()
-            .arg("reboot")
-            .run_and_check()
-            .context("failed to issue systemctl reboot")
-    }
-}
-
-pub struct Orchestrator<R = SystemRebooter> {
+pub struct Orchestrator {
     config: AgentConfig,
     k8s: NodeClient,
-    rebooter: R,
     state: StateStore,
     annotation_keys: AnnotationKeys,
 }
 
-impl Orchestrator<SystemRebooter> {
+impl Orchestrator {
     pub async fn from_config(config: AgentConfig) -> Result<Self, Error> {
         let k8s = NodeClient::new(&config.kubernetes).await?;
         let annotation_keys = AnnotationKeys::new(&config.kubernetes.annotation_prefix);
@@ -120,16 +98,22 @@ impl Orchestrator<SystemRebooter> {
             state: StateStore::new(config.orchestration.state_path.clone()),
             config,
             k8s,
-            rebooter: SystemRebooter,
             annotation_keys,
         })
     }
-}
 
-impl<R> Orchestrator<R>
-where
-    R: RebootHandle,
-{
+    /// Issues a real `systemctl reboot`. Routed through the repo's
+    /// centralized dependency runner so a missing systemctl binary or
+    /// non-zero exit produces the same uniform, actionable error type used
+    /// everywhere else in the codebase (see crates/trident/src/reboot.rs for
+    /// the same pattern).
+    fn reboot(&self) -> Result<(), Error> {
+        Dependency::Systemctl
+            .cmd()
+            .arg("reboot")
+            .run_and_check()
+            .context("failed to issue systemctl reboot")
+    }
     pub async fn run(&self) -> Result<(), Error> {
         if let Err(err) = self.recover_from_trident_state().await {
             if self.log_and_swallow_node_gone(&err, "recovering persisted state") {
@@ -582,7 +566,7 @@ where
                     warn!("failed to record finalize completion in state.json: {err}");
                 }
                 self.best_effort_publish_terminal(&terminal).await;
-                match self.rebooter.reboot() {
+                match self.reboot() {
                     Ok(()) => Ok(LoopControl::ExitForReboot),
                     Err(err) => {
                         self.state.clear_pending_commit()?;
@@ -711,7 +695,7 @@ where
                     warn!("failed to record rollback completion in state.json: {err}");
                 }
                 self.best_effort_publish_terminal(&terminal).await;
-                match self.rebooter.reboot() {
+                match self.reboot() {
                     Ok(()) => Ok(LoopControl::ExitForReboot),
                     Err(err) => {
                         self.state.clear_pending_commit()?;

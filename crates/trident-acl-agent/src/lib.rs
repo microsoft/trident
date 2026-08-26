@@ -2,26 +2,17 @@
 //!
 //! trident-acl-agent is Trident's ACL update sidecar. By default it drives
 //! Trident (stage/finalize/rollback/commit) through a Kubernetes node
-//! annotation protocol; a one-shot `omaha-only` mode that calls Trident's
-//! combined `Update()` RPC once and exits is also available as an explicit
-//! opt-out (see `core::config::Mode`).
+//! annotation protocol ([`annotations`]); a one-shot `omaha-only` mode
+//! ([`omahaonly`]) that calls Trident's combined `Update()` RPC once and
+//! exits is also available as an explicit opt-out (see
+//! `core::config::Mode`). Building blocks shared by both modes live in
+//! [`core`].
 //!
 //! All Omaha/Nebraska protocol traffic (both `omaha-only` and annotation mode)
 //! goes through the [`core::nebraska`] client module, a self-contained,
 //! reusable implementation of the Nebraska/Omaha update protocol. It is usable
 //! both by this crate's agent binary and by a future Trident ACL Agent that
 //! orchestrates updates differently.
-//!
-//! - [`core`]: building blocks shared by both modes (config, errors,
-//!   machine-id, current-version, the `tridentd` client, the Nebraska
-//!   client).
-//! - [`annotations`]: the default Kubernetes annotation-driven protocol -
-//!   [`annotations::protocol`] defines the annotation schema,
-//!   [`annotations::k8s`] is the Kubernetes Node get/watch/patch client,
-//!   [`annotations::state`] persists in-flight/completed operations across
-//!   the reboot that finalize triggers, and [`annotations::orchestrator`]
-//!   is the reconcile loop tying them all together.
-//! - [`omahaonly`]: the legacy one-shot Omaha flow.
 
 use semver::Version;
 use url::Url;
