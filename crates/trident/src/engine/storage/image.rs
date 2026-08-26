@@ -219,7 +219,6 @@ fn metric_label_for_mount_point(mount_point: &Path, esp_mount_path: &Path) -> &'
     match mount_point.to_str() {
         Some("/") => "root",
         Some("/usr") => "usr",
-        Some("/boot") => "boot",
         _ => "other",
     }
 }
