@@ -452,8 +452,17 @@ users:
 	// commands run, so a second restart right after "--now" started it can
 	// kill and restart the agent mid-call, and the new instance's retry
 	// then fails with tridentd's "Servicing is active" error.
+	//
+	// tridentd.service is socket-activated (tridentd.socket): it doesn't
+	// hold any per-test-case state that needs refreshing, so a "restart"
+	// is unnecessary and, on the post-reboot path, risks killing an
+	// in-progress gRPC call (e.g. a commit already underway) that a
+	// trident-acl-agent instance auto-started at boot may be mid-flight
+	// on. Use "start" instead: it's a no-op if tridentd is already
+	// running (whether via socket activation or a prior start here), and
+	// otherwise brings it up without disturbing anything already using it.
 	command := strings.Join([]string{
-		"sudo systemctl restart tridentd.service",
+		"sudo systemctl start tridentd.service",
 		"sudo systemctl enable trident-acl-agent.service",
 		"sudo systemctl restart trident-acl-agent.service",
 		// api_server lives only in the fake kubeconfig now (agent config
