@@ -11,10 +11,11 @@ const RING_BUFFER_SIZE: usize = 10;
 /// A `Read` wrapper that monitors download speed using a moving average over
 /// the last [`RING_BUFFER_SIZE`] reads. When the speed falls below a
 /// configurable threshold, it emits debug-level log messages at a
-/// configurable minimum cadence. When the wrapper is dropped (i.e. the read
-/// is finished, successfully or not), it emits a single `tracing` metric
-/// event (picked up by the metrics pipeline) with the overall size and
-/// average rate for the whole read.
+/// configurable minimum cadence.
+///
+/// `ReadMonitor` itself is a generic IO utility and never emits metrics. To
+/// additionally get a single summary `tracing` metric event when the read
+/// finishes (successfully or not), wrap it with [`ReadMonitor::make_reporting`].
 pub struct ReadMonitor<R> {
     inner: R,
     /// Identifies what is being read, for metric/log context (e.g. a
@@ -47,8 +48,7 @@ impl<R> ReadMonitor<R> {
     /// * `label` — identifies what is being read (e.g. partition id), used to
     ///   tag log messages and metric events.
     /// * `threshold_mbps` — speed in Mbps below which slow-download debug log
-    ///   messages are emitted. Does not affect the summary metric emitted at
-    ///   drop time, which is always recorded regardless of speed.
+    ///   messages are emitted.
     /// * `report_cadence` — minimum interval between consecutive slow-download
     ///   debug log messages.
     pub fn new(
@@ -70,6 +70,19 @@ impl<R> ReadMonitor<R> {
             last_report: Instant::now(),
             total_bytes: 0,
             started: Instant::now(),
+        }
+    }
+
+    /// Wraps this monitor so that a single summary `tracing` metric event
+    /// (named `metric_name`, picked up by the metrics pipeline) is emitted
+    /// once the read finishes -- successfully or not -- when the returned
+    /// wrapper is dropped, with the overall size and average rate for the
+    /// whole read. Keeps `ReadMonitor` itself free of metric-reporting side
+    /// effects, so it remains usable as a generic IO monitor.
+    pub fn make_reporting(self, metric_name: impl Into<String>) -> ReportingReadMonitor<R> {
+        ReportingReadMonitor {
+            monitor: self,
+            metric_name: metric_name.into(),
         }
     }
 
@@ -179,27 +192,42 @@ impl<R: Read> Read for ReadMonitor<R> {
     }
 }
 
-impl<R> Drop for ReadMonitor<R> {
-    /// Emits a single summary metric once the read finishes (or the monitor
+/// Wraps a [`ReadMonitor`] to additionally emit a single summary `tracing`
+/// metric event (picked up by the metrics pipeline) once the read finishes
+/// (successfully or not), when the wrapper is dropped. Constructed via
+/// [`ReadMonitor::make_reporting`].
+pub struct ReportingReadMonitor<R> {
+    monitor: ReadMonitor<R>,
+    metric_name: String,
+}
+
+impl<R: Read> Read for ReportingReadMonitor<R> {
+    fn read(&mut self, buf: &mut [u8]) -> IoResult<usize> {
+        self.monitor.read(buf)
+    }
+}
+
+impl<R> Drop for ReportingReadMonitor<R> {
+    /// Emits a single summary metric once the read finishes (or the wrapper
     /// is otherwise dropped), regardless of whether the slow-speed threshold
     /// was ever crossed. This gives one metric per file with the complete
     /// download rate and size, in addition to any slow-speed events above.
     fn drop(&mut self) {
         // Nothing was ever read (e.g. size-0 file, or the reader was dropped
         // before any read happened) -- skip emitting a meaningless metric.
-        if self.total_bytes == 0 {
+        if self.monitor.total_bytes == 0 {
             return;
         }
 
-        let duration_secs = self.started.elapsed().as_secs_f64();
-        let avg_mbps = self.overall_avg_mbps();
-        let complete = self.size == 0 || self.total_bytes >= self.size;
+        let duration_secs = self.monitor.started.elapsed().as_secs_f64();
+        let avg_mbps = self.monitor.overall_avg_mbps();
+        let complete = self.monitor.size == 0 || self.monitor.total_bytes >= self.monitor.size;
 
         tracing::info!(
-            metric_name = "image_read_complete",
-            label = self.label,
-            bytes_read = self.total_bytes,
-            total_bytes = self.size,
+            metric_name = self.metric_name,
+            label = self.monitor.label,
+            bytes_read = self.monitor.total_bytes,
+            total_bytes = self.monitor.size,
             duration_secs = duration_secs,
             avg_mbps = avg_mbps,
             complete = complete,
@@ -331,7 +359,7 @@ mod tests {
         let len = data.len() as u64;
 
         tracing::subscriber::with_default(subscriber, || {
-            let mut monitor = ReadMonitor::new(
+            let monitor = ReadMonitor::new(
                 Cursor::new(data),
                 "test-partition",
                 len,
@@ -340,6 +368,7 @@ mod tests {
                 f64::MAX,
                 Duration::from_secs(1),
             );
+            let mut monitor = monitor.make_reporting("image_read_complete");
             let mut buf = vec![0u8; 4096];
             monitor.read_exact(&mut buf).unwrap();
             // Drop explicitly to trigger the summary metric.

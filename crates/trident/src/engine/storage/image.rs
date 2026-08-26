@@ -173,7 +173,8 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
             image_file.compressed_size,
             threshold_reporting,
             reporting_interval,
-        );
+        )
+        .make_reporting("image_read_complete");
 
         if let Err(e) = deploy_os_image_file(ctx, &id, image_file, resize, monitored_reader) {
             return ControlFlow::Break(Err(e).structured(ServicingError::DeployImages));
