@@ -1,3 +1,7 @@
+//! The legacy one-shot Omaha flow: query the Nebraska/Omaha server once,
+//! and if an update is offered, call tridentd's combined `Update()` RPC
+//! once and exit. No Kubernetes/annotation involvement.
+
 use anyhow::{anyhow, Context, Error};
 use log::{debug, info, warn};
 use semver::Version;
