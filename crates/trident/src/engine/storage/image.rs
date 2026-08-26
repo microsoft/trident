@@ -175,12 +175,12 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
 
         let monitored_reader = ReadMonitor::new(
             reader,
-            metric_label,
+            id.clone(),
             image_file.compressed_size,
             threshold_reporting,
             reporting_interval,
         )
-        .make_reporting("image_read_complete");
+        .make_reporting("image_read_complete", metric_label);
 
         if let Err(e) = deploy_os_image_file(ctx, &id, image_file, resize, monitored_reader) {
             return ControlFlow::Break(Err(e).structured(ServicingError::DeployImages));

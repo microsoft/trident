@@ -74,15 +74,27 @@ impl<R> ReadMonitor<R> {
     }
 
     /// Wraps this monitor so that a single summary `tracing` metric event
-    /// (named `metric_name`, picked up by the metrics pipeline) is emitted
-    /// once the read finishes -- successfully or not -- when the returned
-    /// wrapper is dropped, with the overall size and average rate for the
-    /// whole read. Keeps `ReadMonitor` itself free of metric-reporting side
-    /// effects, so it remains usable as a generic IO monitor.
-    pub fn make_reporting(self, metric_name: impl Into<String>) -> ReportingReadMonitor<R> {
+    /// (named `metric_name`, tagged with `label`, and picked up by the
+    /// metrics pipeline) is emitted once the read finishes -- successfully or
+    /// not -- when the returned wrapper is dropped, with the overall size and
+    /// average rate for the whole read.
+    ///
+    /// `label` is independent of the label passed to [`ReadMonitor::new`],
+    /// which is only ever used locally for the slow-download debug log. This
+    /// lets callers keep a precise/identifying label for local debugging
+    /// while reporting a coarser, sanitized label (e.g. from an allow-list)
+    /// to the metrics pipeline. Keeps `ReadMonitor` itself free of
+    /// metric-reporting side effects, so it remains usable as a generic IO
+    /// monitor.
+    pub fn make_reporting(
+        self,
+        metric_name: impl Into<String>,
+        label: impl Into<String>,
+    ) -> ReportingReadMonitor<R> {
         ReportingReadMonitor {
             monitor: self,
             metric_name: metric_name.into(),
+            label: label.into(),
         }
     }
 
@@ -199,6 +211,9 @@ impl<R: Read> Read for ReadMonitor<R> {
 pub struct ReportingReadMonitor<R> {
     monitor: ReadMonitor<R>,
     metric_name: String,
+    /// Label reported on the metric event, independent of the wrapped
+    /// monitor's own (debug-log-only) label.
+    label: String,
 }
 
 impl<R: Read> Read for ReportingReadMonitor<R> {
@@ -225,7 +240,7 @@ impl<R> Drop for ReportingReadMonitor<R> {
 
         tracing::info!(
             metric_name = self.metric_name,
-            label = self.monitor.label,
+            label = self.label,
             bytes_read = self.monitor.total_bytes,
             total_bytes = self.monitor.size,
             duration_secs = duration_secs,
@@ -368,7 +383,7 @@ mod tests {
                 f64::MAX,
                 Duration::from_secs(1),
             );
-            let mut monitor = monitor.make_reporting("image_read_complete");
+            let mut monitor = monitor.make_reporting("image_read_complete", "test-partition");
             let mut buf = vec![0u8; 4096];
             monitor.read_exact(&mut buf).unwrap();
             // Drop explicitly to trigger the summary metric.

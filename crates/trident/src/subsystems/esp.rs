@@ -137,7 +137,7 @@ fn deploy_esp(ctx: &EngineContext, mount_point: &Path) -> Result<(), TridentErro
             threshold_reporting,
             reporting_interval,
         )
-        .make_reporting("image_read_complete");
+        .make_reporting("image_read_complete", "esp");
 
         found_esp = true;
         let (temp_file, computed_sha384) = match load_raw_image(
