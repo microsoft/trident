@@ -17,7 +17,7 @@ hex = {workspace = true}
 hostname = {workspace = true}
 indoc = {workspace = true}
 inventory = {workspace = true}
-log = {workspace = true}
+log = {workspace = true, features = ["std"]}
 netplan-types = {workspace = true}
 nix = {workspace = true, features = ["fs"]}
 once_cell = {workspace = true}
