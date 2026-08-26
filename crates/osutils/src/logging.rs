@@ -57,7 +57,7 @@ impl<L: Log> Log for FilteredLogger<L> {
         } else {
             self.verbosity
         };
-        metadata.level() <= level
+        metadata.level() <= level && self.inner.enabled(metadata)
     }
 
     fn log(&self, record: &Record) {
@@ -102,6 +102,23 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push(format!("{} {}", record.target(), record.args()));
+        }
+
+        fn flush(&self) {}
+    }
+
+    /// A logger whose `enabled()` always returns `false`, to verify
+    /// `FilteredLogger` honors the inner logger's own filter rather than
+    /// bypassing it once its own level/target filter passes.
+    struct AlwaysDisabledLogger;
+
+    impl Log for AlwaysDisabledLogger {
+        fn enabled(&self, _metadata: &Metadata) -> bool {
+            false
+        }
+
+        fn log(&self, _record: &Record) {
+            panic!("log() must not be called when enabled() is false");
         }
 
         fn flush(&self) {}
@@ -157,6 +174,34 @@ mod tests {
                 .target("trident_acl_agent")
                 .build()
         ));
+    }
+
+    #[test]
+    fn test_inner_enabled_is_respected() {
+        let logger = FilteredLogger::new(
+            AlwaysDisabledLogger,
+            LevelFilter::Debug,
+            LevelFilter::Debug,
+            NETWORK_TARGETS,
+        );
+
+        let metadata = Metadata::builder()
+            .level(Level::Error)
+            .target("trident_acl_agent")
+            .build();
+
+        // FilteredLogger's own filter passes (Error <= Debug), but the inner
+        // logger's enabled() returns false, so the combined result must too.
+        assert!(!logger.enabled(&metadata));
+
+        // log() must therefore be a no-op (AlwaysDisabledLogger panics if
+        // its log() is ever reached).
+        logger.log(
+            &Record::builder()
+                .metadata(metadata)
+                .args(format_args!("should not be logged"))
+                .build(),
+        );
     }
 
     #[test]

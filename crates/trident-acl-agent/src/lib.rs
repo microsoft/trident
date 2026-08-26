@@ -23,7 +23,7 @@ use crate::core::{
     version::FALLBACK_ALWAYS_VERSION,
 };
 
-pub use crate::core::id::IdSource;
+pub use crate::core::{id::IdSource, nebraska};
 
 pub mod annotations;
 pub mod core;

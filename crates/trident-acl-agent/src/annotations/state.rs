@@ -111,13 +111,31 @@ impl StateStore {
         // with owner-only permissions (0600) rather than relying on the
         // process umask.
         {
-            let mut file = fs::OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .mode(STATE_FILE_MODE)
-                .open(&temp_path)
-                .with_context(|| format!("failed to create {}", temp_path.display()))?;
+            // create_new (not create+truncate) so the file is always newly
+            // created with STATE_FILE_MODE: opening/truncating a stale temp
+            // file left behind by a prior crash would silently keep that
+            // file's existing (possibly broader) permissions, since .mode()
+            // only applies on creation. A leftover temp file (same
+            // process::id() reused across reboots) is removed and retried
+            // once, since it can only be this process's own abandoned
+            // write, never another process's live file.
+            let mut open_opts = fs::OpenOptions::new();
+            open_opts.write(true).create_new(true).mode(STATE_FILE_MODE);
+            let mut file = match open_opts.open(&temp_path) {
+                Ok(file) => file,
+                Err(err) if err.kind() == ErrorKind::AlreadyExists => {
+                    fs::remove_file(&temp_path).with_context(|| {
+                        format!("failed to remove stale {}", temp_path.display())
+                    })?;
+                    open_opts
+                        .open(&temp_path)
+                        .with_context(|| format!("failed to create {}", temp_path.display()))?
+                }
+                Err(err) => {
+                    return Err(err)
+                        .with_context(|| format!("failed to create {}", temp_path.display()))
+                }
+            };
             file.write_all(serde_json::to_string_pretty(state)?.as_bytes())
                 .with_context(|| format!("failed to write {}", temp_path.display()))?;
             file.sync_all()
@@ -378,6 +396,35 @@ mod tests {
         let metadata_after = fs::metadata(store.path()).expect("state file should exist");
         assert!(metadata_after.len() > 0);
         assert!(metadata_before.modified().is_ok());
+    }
+
+    #[test]
+    fn save_recreates_stale_world_readable_temp_file_with_owner_only_mode() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let (_dir, store) = store();
+
+        // Simulate a temp file left behind by a prior crash, deliberately
+        // world-readable, at the exact path save() will compute for this
+        // process (same process::id()-derived name).
+        let temp_path = store.path().parent().unwrap().join(format!(
+            "{}.tmp-{}",
+            STATE_FILE_NAME,
+            process::id()
+        ));
+        fs::write(&temp_path, b"stale leftover data").expect("failed to write stale temp file");
+        fs::set_permissions(&temp_path, fs::Permissions::from_mode(0o644))
+            .expect("failed to widen stale temp file permissions");
+
+        store
+            .save(&PersistentState::default())
+            .expect("save should recover from a stale temp file");
+
+        // The stale file must not still exist post-rename (it becomes
+        // state.json), and the final state.json must carry owner-only mode,
+        // proving the stale file's permissions were never inherited.
+        let metadata = fs::metadata(store.path()).expect("state file should exist");
+        assert_eq!(metadata.permissions().mode() & 0o777, STATE_FILE_MODE);
     }
 
     #[test]
