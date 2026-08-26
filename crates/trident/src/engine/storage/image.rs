@@ -89,6 +89,8 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
             .structured(InternalError::Internal("No image found for mount point"))
             .message(format!("Mount point '{}' should have image", mpp.display()))?;
 
+        let metric_label = metric_label_for_mount_point(&mpp, ctx.esp_mount_path.as_path());
+
         // Check if this ID is a verity device, if so, we must explore the graph
         // to obtain the underlying devices.
         if let Some(verity_device) = ctx.spec.storage.verity_device(&id) {
@@ -104,6 +106,7 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
                 image.image_file.path.clone(),
                 (
                     verity_device.data_device_id.clone(),
+                    metric_label,
                     &image.image_file,
                     FileSystemResize::NoResize,
                 ),
@@ -112,6 +115,7 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
                 image_file_verity.hash_image_file.path.clone(),
                 (
                     verity_device.hash_device_id.clone(),
+                    metric_label,
                     &image_file_verity.hash_image_file,
                     FileSystemResize::NoResize,
                 ),
@@ -131,17 +135,19 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
 
             combined_images.insert(
                 image.image_file.path.clone(),
-                (id.clone(), &image.image_file, resize),
+                (id.clone(), metric_label, &image.image_file, resize),
             );
         }
     }
 
-    // Now add any non-fs partitions that we may need to deploy on raw COSI storage mode
+    // Now add any non-fs partitions that we may need to deploy on raw COSI storage mode. These
+    // are not associated with a mount point, so they are always reported as "other".
     for (id, partition) in partitions_from_img.iter() {
         combined_images.insert(
             partition.image_file.path.clone(),
             (
                 id.clone(),
+                "other",
                 &partition.image_file,
                 FileSystemResize::NoResize,
             ),
@@ -154,7 +160,7 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
     let (threshold_reporting, reporting_interval) = ctx.read_monitor_params()?;
 
     os_img.read_images(|path, reader| -> ControlFlow<Result<(), TridentError>> {
-        let Some((id, image_file, resize)) = combined_images.remove(path) else {
+        let Some((id, metric_label, image_file, resize)) = combined_images.remove(path) else {
             debug!(
                 "Skipping non-image file at path '{}' from imaging",
                 path.display()
@@ -169,7 +175,7 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
 
         let monitored_reader = ReadMonitor::new(
             reader,
-            id.clone(),
+            metric_label,
             image_file.compressed_size,
             threshold_reporting,
             reporting_interval,
@@ -197,6 +203,25 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
     }
 
     Ok(())
+}
+
+/// Mount points allow-listed for use as `ReadMonitor` metric labels. Any
+/// mount point not on this list (including partitions with no associated
+/// mount point, e.g. verity hash devices or raw COSI partitions) is reported
+/// as "other". This keeps metric cardinality bounded and avoids leaking
+/// user-defined block device ids or arbitrary mount paths into the metrics
+/// pipeline.
+fn metric_label_for_mount_point(mount_point: &Path, esp_mount_path: &Path) -> &'static str {
+    if mount_point == esp_mount_path {
+        return "esp";
+    }
+
+    match mount_point.to_str() {
+        Some("/") => "root",
+        Some("/usr") => "usr",
+        Some("/boot") => "boot",
+        _ => "other",
+    }
 }
 
 /// Scans the Host Configuration and the image in the engine context to find
