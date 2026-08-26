@@ -1415,10 +1415,10 @@ fn reconstruct_commit_result_to_status(
     }
 }
 
-/// Pure function extracted from `Orchestrator::map_commit_result` so tests
-/// can exercise it directly (with a mock-tridentd-driven `Result`) without
-/// needing a full `Orchestrator` instance. See `stage_result_to_status` for
-/// rationale.
+/// Maps a post-reboot commit RPC outcome to the status annotation. Pure
+/// function so tests can exercise it directly (with a mock-tridentd-driven
+/// `Result`) without needing a full `Orchestrator` instance. See
+/// `stage_result_to_status` for rationale.
 fn commit_result_to_status(
     pending: &PendingCommit,
     result: Result<CompletedResponse, TridentClientError>,
