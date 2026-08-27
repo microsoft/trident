@@ -161,29 +161,65 @@ impl StateStore {
         Ok(())
     }
 
-    pub fn remember_completed(&self, status: UpdateStatus) -> Result<(), Error> {
+    /// Atomically applies `mutate` to the persisted state in a single
+    /// load->mutate->save cycle. Callers that need to change more than one
+    /// field (e.g. recording a completed entry while also clearing
+    /// `pendingCommit`) should compose their change into one call to this
+    /// method instead of two separate `save()`s - each `save()` is its own
+    /// crash-safe atomic file replace, but two of them back-to-back still
+    /// leave a real window where a crash between them can lose whichever
+    /// half hadn't landed yet.
+    fn update<F>(&self, mutate: F) -> Result<(), Error>
+    where
+        F: FnOnce(&mut PersistentState),
+    {
         let mut state = self.load()?;
-        let entry = state
-            .completed
-            .entry(status.operation_id.clone())
-            .or_default();
-        match status.operation {
-            Operation::Commit => entry.commit = Some(status),
-            _ => entry.operation = Some(status),
-        }
+        mutate(&mut state);
         self.save(&state)
+    }
+
+    pub fn remember_completed(&self, status: UpdateStatus) -> Result<(), Error> {
+        self.update(|state| {
+            let entry = state
+                .completed
+                .entry(status.operation_id.clone())
+                .or_default();
+            match status.operation {
+                Operation::Commit => entry.commit = Some(status.clone()),
+                _ => entry.operation = Some(status.clone()),
+            }
+        })
     }
 
     pub fn set_pending_commit(&self, pending: PendingCommit) -> Result<(), Error> {
-        let mut state = self.load()?;
-        state.pending_commit = Some(pending);
-        self.save(&state)
+        self.update(|state| state.pending_commit = Some(pending.clone()))
     }
 
     pub fn clear_pending_commit(&self) -> Result<(), Error> {
-        let mut state = self.load()?;
-        state.pending_commit = None;
-        self.save(&state)
+        self.update(|state| state.pending_commit = None)
+    }
+
+    /// Atomically records `status` as a completed entry and clears any
+    /// pending commit, in a single load->mutate->save cycle. Every
+    /// post-reboot completion path (a real `resume_pending_commit`, or the
+    /// `state.json`-missing degraded reconstruction) must use this instead
+    /// of a separate `remember_completed()` + `clear_pending_commit()` pair:
+    /// with two separate writes, a crash between them can leave a stale
+    /// `pendingCommit` with no completed record (re-triggering the same
+    /// commit attempt) or vice versa (clearing the pending record with the
+    /// result never persisted, silently losing the outcome).
+    pub fn remember_completed_and_clear_pending(&self, status: UpdateStatus) -> Result<(), Error> {
+        self.update(|state| {
+            let entry = state
+                .completed
+                .entry(status.operation_id.clone())
+                .or_default();
+            match status.operation {
+                Operation::Commit => entry.commit = Some(status.clone()),
+                _ => entry.operation = Some(status.clone()),
+            }
+            state.pending_commit = None;
+        })
     }
 }
 
@@ -377,6 +413,26 @@ mod tests {
         assert!(state.pending_commit.is_some());
         assert_eq!(state.completed.len(), 1);
         assert!(state.completed.contains_key("op-1"));
+    }
+
+    #[test]
+    fn remember_completed_and_clear_pending_does_both_in_one_write() {
+        let (_dir, store) = store();
+        store
+            .set_pending_commit(sample_pending())
+            .expect("set_pending_commit should succeed");
+
+        store
+            .remember_completed_and_clear_pending(sample_status(Operation::Commit))
+            .expect("remember_completed_and_clear_pending should succeed");
+
+        let state = store.load().expect("load should succeed");
+        assert!(
+            state.pending_commit.is_none(),
+            "pending commit should be cleared"
+        );
+        let entry = state.completed.get("op-1").expect("entry should exist");
+        assert!(entry.commit.is_some(), "commit half should be recorded");
     }
 
     #[test]

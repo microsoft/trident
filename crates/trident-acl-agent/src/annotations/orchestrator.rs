@@ -114,12 +114,17 @@ impl Orchestrator {
             .run_and_check()
             .context("failed to issue systemctl reboot")
     }
+
     pub async fn run(&self) -> Result<(), Error> {
-        if let Err(err) = self.recover_from_trident_state().await {
-            if self.log_and_swallow_node_gone(&err, "recovering persisted state") {
-                return Ok(());
+        match self.recover_from_trident_state().await {
+            Ok(LoopControl::Continue) => {}
+            Ok(LoopControl::ExitForReboot) => return Ok(()),
+            Err(err) => {
+                if self.log_and_swallow_node_gone(&err, "recovering persisted state") {
+                    return Ok(());
+                }
+                return Err(err);
             }
-            return Err(err);
         }
         let mut stream = self
             .k8s
@@ -140,14 +145,26 @@ impl Orchestrator {
         Ok(())
     }
 
-    async fn recover_from_trident_state(&self) -> Result<(), Error> {
-        let node = self.k8s.get_node(&self.config.kubernetes.node_name).await?;
-        let snapshot = Snapshot::from_node(&node, &self.annotation_keys);
+    /// Startup recovery. Order matters: a pending post-reboot `commit()` is
+    /// resumed *before* the first Kubernetes call, since `commit()` is a
+    /// purely local `tridentd` gRPC call and is exactly the time-sensitive
+    /// step a k8s outage must not block (a node left uncommitted risks a
+    /// second reboot silently falling back to the old slot). Only
+    /// *publishing* the resulting status annotation needs k8s, and that
+    /// publish is already best-effort/retried (see
+    /// `best_effort_publish_terminal`), so deferring the k8s read this far
+    /// costs nothing when k8s is healthy and avoids a crash-loop when it
+    /// isn't.
+    async fn recover_from_trident_state(&self) -> Result<LoopControl, Error> {
         let persisted = self.state.load()?;
 
         if let Some(pending) = persisted.pending_commit.clone() {
-            return self.resume_pending_commit(pending).await;
+            self.resume_pending_commit(pending).await?;
+            return Ok(LoopControl::Continue);
         }
+
+        let node = self.k8s.get_node(&self.config.kubernetes.node_name).await?;
+        let snapshot = Snapshot::from_node(&node, &self.annotation_keys);
 
         if let Some(request) = snapshot.request.clone() {
             if let Some(entry) = persisted.completed.get(&request.operation_id) {
@@ -168,21 +185,15 @@ impl Orchestrator {
                     if !matches {
                         self.publish_status(&operation).await?;
                     }
-                    return Ok(());
+                    return Ok(LoopControl::Continue);
                 }
             }
         }
 
         if let Some(request) = snapshot.request {
-            if matches!(
-                request.operation,
-                RequestedOperation::Finalize | RequestedOperation::Rollback
-            ) {
-                let status = self.reconstruct_without_state(&request, None, None).await;
-                self.record_and_publish(status).await?;
-            }
+            return self.reconstruct_without_pending_record(&request).await;
         }
-        Ok(())
+        Ok(LoopControl::Continue)
     }
 
     async fn reconcile_node(&self, node: &Node) -> Result<LoopControl, Error> {
@@ -265,6 +276,18 @@ impl Orchestrator {
                 self.record_and_publish(status).await?;
                 return Ok(LoopControl::Continue);
             }
+            // Same operationId as the outstanding pendingCommit: this is a
+            // retry/re-issue of the operation already armed and waiting on
+            // (or ready to resume) its post-reboot commit, not a new
+            // finalize/rollback to drive from scratch. Falling through to
+            // handle_finalize/handle_rollback below would re-run
+            // UpdateFinalize/RollbackFinalize against a boot that may
+            // already be armed or in flight, and on failure would
+            // clear_pending_commit and discard a boot the firmware still
+            // has queued. Resume it the same way startup recovery does
+            // instead.
+            self.resume_pending_commit(pending.clone()).await?;
+            return Ok(LoopControl::Continue);
         }
 
         match request.operation {
@@ -373,21 +396,62 @@ impl Orchestrator {
                 Version::parse(FALLBACK_ALWAYS_VERSION)
                     .expect("invariant: FALLBACK_ALWAYS_VERSION is valid semver")
             });
-        let outcome = task::spawn_blocking(move || {
-            let client = NebraskaClient::new(endpoint, app_id, track, machine_id);
-            client.check_for_update(&current_version)
+        let outcome = task::spawn_blocking({
+            let current_version = current_version.clone();
+            move || {
+                let client = NebraskaClient::new(endpoint, app_id, track, machine_id);
+                client.check_for_update(&current_version)
+            }
         })
         .await
         .context("Nebraska query task panicked")?
         .context("Nebraska query failed")?;
         let offered = match outcome {
-            CheckOutcome::UpToDate | CheckOutcome::UpdateInProgress => {
+            CheckOutcome::UpToDate => {
                 let status = UpdateStatus::new(
                     &request,
                     Operation::Stage,
                     request.operation_id.clone(),
                     StatusCode::OperationFailed,
                     "Nebraska currently offers no update for the requested target",
+                    from_version,
+                    to_version,
+                    started,
+                    Some(Utc::now()),
+                );
+                self.record_and_publish(status).await?;
+                return Ok(());
+            }
+            CheckOutcome::UpdateInProgress => {
+                // A prior stage attempt reported DownloadStarted to
+                // Nebraska (below) but never followed up with a terminal
+                // event - e.g. the agent was killed, or the node rebooted,
+                // mid-download, before update_stage returned. Nebraska's
+                // update_in_progress flag for this instance never clears
+                // on its own: its documented self-heal only fires once the
+                // instance checks in *at the new version*, which can't
+                // happen because the update never actually installed. Left
+                // alone, every later stage attempt would hit this same
+                // branch forever with no way out. Send the compensating
+                // Failed event (documented at nebraska::client as clearing
+                // update_in_progress and re-arming the instance) before
+                // reporting failure, so a subsequent stage (new
+                // operationId) has a real chance to succeed instead of
+                // being permanently wedged.
+                self.report_nebraska_event(
+                    &request,
+                    NebraskaReport::Failed {
+                        previous: current_version.clone(),
+                        current: current_version.clone(),
+                    },
+                )
+                .await;
+                let status = UpdateStatus::new(
+                    &request,
+                    Operation::Stage,
+                    request.operation_id.clone(),
+                    StatusCode::OperationFailed,
+                    "Nebraska reported an update already in progress for this instance; cleared the stuck in-progress state so a retried stage can succeed",
                     from_version,
                     to_version,
                     started,
@@ -545,7 +609,7 @@ impl Orchestrator {
                 .await;
         }
         match result {
-            Ok(_) => {
+            Ok(response) if response.reboot_status == RebootStatus::RebootRequired => {
                 let boot_marker = current_boot_marker()?;
                 self.state.set_pending_commit(PendingCommit {
                     request: request.clone(),
@@ -569,7 +633,6 @@ impl Orchestrator {
                 match self.reboot() {
                     Ok(()) => Ok(LoopControl::ExitForReboot),
                     Err(err) => {
-                        self.state.clear_pending_commit()?;
                         if let Some(ref v) = current_ver {
                             self.report_nebraska_event(
                                 &request,
@@ -591,10 +654,35 @@ impl Orchestrator {
                             started,
                             Some(Utc::now()),
                         );
-                        self.record_and_publish(status).await?;
+                        self.state
+                            .remember_completed_and_clear_pending(status.clone())?;
+                        self.best_effort_publish_terminal(&status).await;
                         Ok(LoopControl::Continue)
                     }
                 }
+            }
+            Ok(_) => {
+                // update_finalize returned success but did not report a
+                // reboot as required - nothing was actually armed (e.g.
+                // nothing staged to finalize; mirrors handle_rollback's
+                // ManualRollbackAb check below). Treating any Ok(_) as
+                // "boot armed" here previously meant only the agent-local
+                // NotStaged cache guard above stood between a no-op
+                // finalize and a real reboot + a false-positive Success -
+                // Trident's own response is the authoritative signal now.
+                let status = UpdateStatus::new(
+                    &request,
+                    Operation::Finalize,
+                    request.operation_id.clone(),
+                    StatusCode::NotStaged,
+                    "finalize completed without arming a reboot (nothing to finalize)",
+                    from_version,
+                    to_version,
+                    started,
+                    Some(Utc::now()),
+                );
+                self.record_and_publish(status).await?;
+                Ok(LoopControl::Continue)
             }
             Err(err) => {
                 self.state.clear_pending_commit()?;
@@ -698,7 +786,6 @@ impl Orchestrator {
                 match self.reboot() {
                     Ok(()) => Ok(LoopControl::ExitForReboot),
                     Err(err) => {
-                        self.state.clear_pending_commit()?;
                         let status = UpdateStatus::new(
                             &request,
                             Operation::Rollback,
@@ -710,7 +797,9 @@ impl Orchestrator {
                             started,
                             Some(Utc::now()),
                         );
-                        self.record_and_publish(status).await?;
+                        self.state
+                            .remember_completed_and_clear_pending(status.clone())?;
+                        self.best_effort_publish_terminal(&status).await;
                         Ok(LoopControl::Continue)
                     }
                 }
@@ -728,10 +817,35 @@ impl Orchestrator {
     async fn resume_pending_commit(&self, pending: PendingCommit) -> Result<(), Error> {
         let current_boot = current_boot_marker()?;
         if current_boot == pending.boot_marker {
+            // No reboot has happened since finalize/rollback armed this
+            // boot - the agent restarted (crash, watchdog, crash-loop)
+            // without the reboot ever taking effect. Re-issue it instead of
+            // just waiting: previously this branch only logged and
+            // returned, so a reboot inhibited/delayed past the original
+            // process exit left the node armed-but-never-rebooting
+            // forever, showing `finalize: Success` with no commit until an
+            // external watchdog eventually wiped it.
             info!(
-                "pending commit {} is still waiting for the reboot to happen",
+                "pending commit {} is still waiting for the reboot to happen; re-issuing reboot",
                 pending.operation_id
             );
+            if let Err(err) = self.reboot() {
+                let now = Utc::now();
+                let status = UpdateStatus::new(
+                    &pending.request,
+                    pending.operation,
+                    pending.operation_id.clone(),
+                    StatusCode::AgentInternalError,
+                    format!("armed update is waiting for reboot, but re-issuing it failed: {err}"),
+                    pending.from_version.clone(),
+                    pending.to_version.clone(),
+                    pending.started_utc,
+                    Some(now),
+                );
+                self.state
+                    .remember_completed_and_clear_pending(status.clone())?;
+                self.best_effort_publish_terminal(&status).await;
+            }
             return Ok(());
         }
 
@@ -745,8 +859,9 @@ impl Orchestrator {
                         Some(err.to_string()),
                     )
                     .await;
-                self.state.clear_pending_commit()?;
-                self.record_and_publish(status).await?;
+                self.state
+                    .remember_completed_and_clear_pending(status.clone())?;
+                self.best_effort_publish_terminal(&status).await;
                 return Ok(());
             }
         };
@@ -778,25 +893,31 @@ impl Orchestrator {
             }
         }
         let status = commit_result_to_status(&pending, result);
-        self.state.clear_pending_commit()?;
-        self.record_and_publish(status).await
+        self.state
+            .remember_completed_and_clear_pending(status.clone())?;
+        self.best_effort_publish_terminal(&status).await;
+        Ok(())
     }
 
+    /// Reconstructs the post-reboot outcome for `request` when `state.json`
+    /// has no `pendingCommit` for it but a reboot is already known (by the
+    /// caller) to have happened - either because `resume_pending_commit`'s
+    /// boot-marker check already confirmed it (its `connect()` failure
+    /// branch below), or because [`reconstruct_without_pending_record`]
+    /// independently confirmed the swap via `current_active_version()`
+    /// before ever calling this. In that situation it's safe to call
+    /// `commit()` unconditionally: tridentd's own (ServicingKind/
+    /// RebootStatus/Result) response distinguishes "already committed"
+    /// from "target armed but firmware fell back" reliably. Do not call
+    /// this when a reboot has *not* been confirmed - see
+    /// [`reconstruct_without_pending_record`] for that (genuinely
+    /// ambiguous) case, which must never call `commit()` speculatively.
     async fn reconstruct_without_state(
         &self,
         request: &UpdateRequest,
         from_version: Option<String>,
         connect_error: Option<String>,
     ) -> UpdateStatus {
-        // state.json did not survive the reboot (or was never written, e.g.
-        // the agent crashed before persisting pendingCommit). Reconstruct
-        // the answer by
-        // calling commit() unconditionally rather than guessing from labels
-        // or the target version alone - tridentd's commit() is self-checking
-        // and its own (ServicingKind/RebootStatus/Result) response already
-        // distinguishes "swap happened, run commit" from "reboot hasn't
-        // happened yet" from "target armed but firmware fell back" far more
-        // reliably than a bare version-string comparison could.
         if let Some(status) =
             reconstruct_precheck_status(request, from_version.clone(), connect_error.as_deref())
         {
@@ -841,6 +962,85 @@ impl Orchestrator {
             }
         }
         reconstruct_commit_result_to_status(request, from_version, started, result)
+    }
+
+    /// Reconstructs whether a reboot even happened for `request` when
+    /// `state.json` carries no `pendingCommit` at all for it (missing
+    /// entirely, or lost across the reboot) - see design doc 2.3's
+    /// degraded-recovery path. This is the genuinely ambiguous case:
+    /// unlike `resume_pending_commit`'s boot-marker check, there is no
+    /// local record proving a reboot occurred, so `commit()` - which is
+    /// state-changing and can discard an armed-but-unbooted update, or
+    /// silently report `Success` for a no-op - must never be called
+    /// speculatively here.
+    ///
+    /// Comparing the node's currently-running version against the
+    /// request's target resolves the common cases without guessing:
+    /// - **active == target**: the swap already happened (the active
+    ///   version only changes via the post-finalize swap), so it's safe to
+    ///   hand off to [`reconstruct_without_state`] to validate/promote via
+    ///   `commit()`.
+    /// - **active != target**: not proven that a reboot ever happened, so
+    ///   the request is run fresh instead of guessed at further - always
+    ///   safe (never touches `commit()` on an unconfirmed boot). This
+    ///   cannot yet distinguish "hasn't rebooted" from "did reboot, target
+    ///   failed to boot, firmware fell back" without Trident exposing boot
+    ///   history (`get rollback-chain` / `get last-error`) over gRPC, which
+    ///   isn't available today - a known remaining gap. In the
+    ///   fallen-back case this simply re-drives the finalize/rollback
+    ///   instead of immediately reporting `TargetBootFailed`.
+    ///
+    /// `rollback` requests carry no explicit `targetVersion` (the target is
+    /// implicit: whatever the previous partition was), so this comparison
+    /// can never match for them and a state.json-missing rollback recovery
+    /// always falls to "run fresh". That's still safe: `handle_rollback`'s
+    /// own `stage_response.servicing_kind` check already reports
+    /// `OperationFailed` if the rollback already happened and nothing is
+    /// left to roll back to, rather than a false `Success`.
+    async fn reconstruct_without_pending_record(
+        &self,
+        request: &UpdateRequest,
+    ) -> Result<LoopControl, Error> {
+        if !matches!(
+            request.operation,
+            RequestedOperation::Finalize | RequestedOperation::Rollback
+        ) {
+            return Ok(LoopControl::Continue);
+        }
+
+        let now = Utc::now();
+        let current_version = match current_active_version() {
+            Ok(version) => version,
+            Err(err) => {
+                let status = UpdateStatus::new(
+                    request,
+                    request.operation.into(),
+                    request.operation_id.clone(),
+                    StatusCode::AgentInternalError,
+                    format!(
+                        "unable to determine current active version to reconstruct recovery state: {err}"
+                    ),
+                    None,
+                    request.target_version.clone(),
+                    now,
+                    Some(now),
+                );
+                self.record_and_publish(status).await?;
+                return Ok(LoopControl::Continue);
+            }
+        };
+
+        if request.target_version.as_deref() == Some(current_version.as_str()) {
+            let status = self.reconstruct_without_state(request, None, None).await;
+            self.record_and_publish(status).await?;
+            return Ok(LoopControl::Continue);
+        }
+
+        match request.operation {
+            RequestedOperation::Finalize => self.handle_finalize(request.clone()).await,
+            RequestedOperation::Rollback => self.handle_rollback(request.clone()).await,
+            RequestedOperation::Stage => Ok(LoopControl::Continue),
+        }
     }
 
     async fn record_and_publish(&self, status: UpdateStatus) -> Result<(), Error> {
@@ -1267,11 +1467,14 @@ fn finalize_failure_status(
     started: DateTime<Utc>,
     err: &TridentClientError,
 ) -> UpdateStatus {
+    // Pre-reboot status: TargetBootFailed is reserved for the post-reboot
+    // commit status (see map_trident_commit_failure's docs), so this always
+    // reports OperationFailed regardless of the error's subkind.
     UpdateStatus::new(
         request,
         Operation::Finalize,
         request.operation_id.clone(),
-        map_trident_failure(err),
+        StatusCode::OperationFailed,
         format!("finalize failed: {err}"),
         from_version,
         to_version,
@@ -1280,7 +1483,15 @@ fn finalize_failure_status(
     )
 }
 
-fn map_trident_failure(error: &TridentClientError) -> StatusCode {
+/// Maps a `commit()` (or `update_finalize()`/`rollback_finalize()` sharing
+/// the same reboot-check error subkinds) failure to a status code, for the
+/// **post-reboot `commit` status only**. Per the status-code contract,
+/// `TargetBootFailed` means the firmware fell back to the previous slot
+/// after a real boot attempt, and is reserved for the `commit` key -
+/// callers writing a pre-reboot `finalize`/`rollback` status must use
+/// [`StatusCode::OperationFailed`] directly instead of this function, even
+/// though the underlying Trident error subkinds are shared plumbing.
+fn map_trident_commit_failure(error: &TridentClientError) -> StatusCode {
     if indicates_target_boot_failed(error) {
         StatusCode::TargetBootFailed
     } else {
@@ -1377,6 +1588,23 @@ fn reconstruct_commit_result_to_status(
             started,
             Some(Utc::now()),
         ),
+        // servicing_kind == NoneRequired means commit() found nothing to
+        // commit (e.g. the node was already on its target with no armed
+        // update to promote) - reporting Success here would tell AKS-RP a
+        // real update completed when nothing actually did.
+        Ok(response) if response.servicing_kind == Some(ServicingKind::NoneRequired) => {
+            UpdateStatus::new(
+                request,
+                Operation::Commit,
+                request.operation_id.clone(),
+                StatusCode::OperationFailed,
+                "state.json missing after reboot; commit() reported nothing to commit",
+                from_version,
+                request.target_version.clone(),
+                started,
+                Some(Utc::now()),
+            )
+        }
         Ok(_) => UpdateStatus::new(
             request,
             Operation::Commit,
@@ -1405,7 +1633,7 @@ fn reconstruct_commit_result_to_status(
             request,
             Operation::Commit,
             request.operation_id.clone(),
-            map_trident_failure(&err),
+            map_trident_commit_failure(&err),
             format!("state.json missing after reboot; commit failed: {err}"),
             from_version,
             request.target_version.clone(),
@@ -1431,6 +1659,26 @@ fn commit_result_to_status(
                 pending.operation_id.clone(),
                 StatusCode::AgentInternalError,
                 "commit requested another reboot",
+                pending.from_version.clone(),
+                pending.to_version.clone(),
+                pending.started_utc,
+                Some(Utc::now()),
+            )
+        }
+        // See reconstruct_commit_result_to_status's comment: a
+        // NoneRequired servicing_kind means nothing was actually
+        // committed, which must not be reported as Success even though
+        // this path is normally only reached with a confirmed pending
+        // commit (defense in depth against a stale/corrupted state.json
+        // entry naming a commit that Trident no longer has anything armed
+        // for).
+        Ok(response) if response.servicing_kind == Some(ServicingKind::NoneRequired) => {
+            UpdateStatus::new(
+                &pending.request,
+                Operation::Commit,
+                pending.operation_id.clone(),
+                StatusCode::OperationFailed,
+                "commit() reported nothing to commit",
                 pending.from_version.clone(),
                 pending.to_version.clone(),
                 pending.started_utc,
@@ -1463,7 +1711,7 @@ fn commit_result_to_status(
             &pending.request,
             Operation::Commit,
             pending.operation_id.clone(),
-            map_trident_failure(&err),
+            map_trident_commit_failure(&err),
             format!("commit failed: {err}"),
             pending.from_version.clone(),
             pending.to_version.clone(),
@@ -1481,11 +1729,13 @@ fn rollback_stage_failure_status(
     started: DateTime<Utc>,
     err: &TridentClientError,
 ) -> UpdateStatus {
+    // Pre-reboot status: see finalize_failure_status's comment -
+    // TargetBootFailed is reserved for the post-reboot commit status.
     UpdateStatus::new(
         request,
         Operation::Rollback,
         request.operation_id.clone(),
-        map_trident_failure(err),
+        StatusCode::OperationFailed,
         format!("rollback stage failed: {err}"),
         from_version,
         None,
@@ -1522,11 +1772,13 @@ fn rollback_finalize_failure_status(
     started: DateTime<Utc>,
     err: &TridentClientError,
 ) -> UpdateStatus {
+    // Pre-reboot status: see finalize_failure_status's comment -
+    // TargetBootFailed is reserved for the post-reboot commit status.
     UpdateStatus::new(
         request,
         Operation::Rollback,
         request.operation_id.clone(),
-        map_trident_failure(err),
+        StatusCode::OperationFailed,
         format!("rollback finalize failed: {err}"),
         from_version,
         None,
@@ -1695,7 +1947,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rollback_finalize_reverted_maps_to_reverted_to_previous() {
+    async fn rollback_finalize_reboot_check_subkind_maps_to_operation_failed() {
+        // Pre-reboot rollback-finalize failures always report
+        // OperationFailed now, even with a boot-check subkind -
+        // TargetBootFailed is reserved for the post-reboot commit status.
         let config = Arc::new(Mutex::new(MockTridentdConfig {
             rollback_finalize: Some(Outcome::Failure {
                 subkind: "ab-update-reboot-check",
@@ -1714,7 +1969,7 @@ mod tests {
             &result.unwrap_err(),
         );
 
-        assert_eq!(status.code, StatusCode::TargetBootFailed);
+        assert_eq!(status.code, StatusCode::OperationFailed);
     }
 
     // --- stage ---
@@ -1878,7 +2133,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn finalize_failure_with_reboot_check_subkind_maps_to_reverted() {
+    async fn finalize_failure_with_reboot_check_subkind_maps_to_operation_failed() {
+        // Pre-reboot finalize failures always report OperationFailed now,
+        // even when the underlying Trident error carries a boot-check
+        // subkind - TargetBootFailed is reserved for the post-reboot
+        // commit status (see finalize_failure_status's doc comment).
         let config = Arc::new(Mutex::new(MockTridentdConfig {
             finalize: Some(Outcome::Failure {
                 subkind: "ab-update-reboot-check",
@@ -1897,7 +2156,7 @@ mod tests {
             &err,
         );
 
-        assert_eq!(status.code, StatusCode::TargetBootFailed);
+        assert_eq!(status.code, StatusCode::OperationFailed);
     }
 
     #[tokio::test]
@@ -1963,6 +2222,27 @@ mod tests {
         let status = commit_result_to_status(&pending(Operation::Finalize), result);
 
         assert_eq!(status.code, StatusCode::Success);
+        assert_eq!(status.operation, Operation::Commit);
+    }
+
+    #[tokio::test]
+    async fn commit_success_with_none_required_servicing_kind_does_not_report_success() {
+        // A NoneRequired servicing_kind means commit() found nothing to
+        // commit - reporting Success here would tell AKS-RP a real update
+        // completed when nothing actually did.
+        let config = Arc::new(Mutex::new(MockTridentdConfig {
+            commit: Some(Outcome::Success {
+                reboot_status: RebootStatus::RebootNotRequired,
+                servicing_kind: Some(ServicingKind::NoneRequired),
+            }),
+            ..Default::default()
+        }));
+        let mut client = connect_mock_client(config).await;
+        let result = client.commit(MOCK_RPC_TIMEOUT).await;
+
+        let status = commit_result_to_status(&pending(Operation::Finalize), result);
+
+        assert_ne!(status.code, StatusCode::Success);
         assert_eq!(status.operation, Operation::Commit);
     }
 
@@ -2170,6 +2450,30 @@ mod tests {
         assert_eq!(status.operation, Operation::Commit);
         assert_eq!(status.operation_id, request.operation_id.clone());
         assert!(status.message.contains("commit() confirmed the swap"));
+    }
+
+    #[tokio::test]
+    async fn reconstruct_commit_result_none_required_servicing_kind_does_not_report_success() {
+        let config = Arc::new(Mutex::new(MockTridentdConfig {
+            commit: Some(Outcome::Success {
+                reboot_status: RebootStatus::RebootNotRequired,
+                servicing_kind: Some(ServicingKind::NoneRequired),
+            }),
+            ..Default::default()
+        }));
+        let mut client = connect_mock_client(config).await;
+        let result = client.commit(MOCK_RPC_TIMEOUT).await;
+
+        let request = request(RequestedOperation::Finalize);
+        let status = reconstruct_commit_result_to_status(
+            &request,
+            Some("1.0.0".to_string()),
+            Utc::now(),
+            result,
+        );
+
+        assert_ne!(status.code, StatusCode::Success);
+        assert_eq!(status.operation, Operation::Commit);
     }
 
     #[tokio::test]
