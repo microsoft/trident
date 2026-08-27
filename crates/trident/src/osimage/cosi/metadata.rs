@@ -266,6 +266,14 @@ pub(crate) struct VerityMetadata {
     pub file: ImageFile,
 
     pub roothash: String,
+
+    /// Byte offset of the verity superblock inside [`file`](Self::file).
+    ///
+    /// Present for *inline* verity, where the hash tree is stored inside the
+    /// data image itself; in that case `file` points at the same image as the
+    /// filesystem it protects.
+    #[serde(default)]
+    pub hash_offset: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq)]

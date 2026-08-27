@@ -28,6 +28,12 @@ pub struct VerityDevice {
     pub data_device_id: BlockDeviceId,
 
     /// The ID of the partition to use as the verity hash partition.
+    ///
+    /// For inline verity, where the image stores the hash tree inside the data
+    /// partition itself, this names the same partition as the data device. The
+    /// offset at which the hash tree begins is a property of the OS image
+    /// rather than of this configuration, and is read from the image metadata
+    /// at servicing time, like the root hash.
     #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub hash_device_id: BlockDeviceId,
 
@@ -64,6 +70,12 @@ pub enum VerityCorruptionOption {
 }
 
 impl VerityDevice {
+    /// Returns whether this device stores its hash tree inline, inside the data
+    /// device, rather than in a dedicated hash partition.
+    pub fn is_inline(&self) -> bool {
+        self.data_device_id == self.hash_device_id
+    }
+
     /// Returns the path where this verity device will be mounted at runtime.
     pub fn device_path(&self) -> PathBuf {
         Path::new(DEV_MAPPER_PATH).join(&self.name)
