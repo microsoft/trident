@@ -132,10 +132,12 @@ fn deploy_esp(ctx: &EngineContext, mount_point: &Path) -> Result<(), TridentErro
 
         let monitored_reader = ReadMonitor::new(
             stream,
+            "esp",
             esp_img.image_file.compressed_size,
             threshold_reporting,
             reporting_interval,
-        );
+        )
+        .make_reporting("image_read_complete", "esp");
 
         found_esp = true;
         let (temp_file, computed_sha384) = match load_raw_image(
