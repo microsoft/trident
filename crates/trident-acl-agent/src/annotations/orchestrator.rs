@@ -42,6 +42,16 @@ use crate::{
 const FINAL_STATUS_PATCH_RETRIES: usize = 3;
 const FINAL_STATUS_PATCH_BACKOFF: Duration = Duration::from_secs(2);
 
+/// Bounded retry for `recover_from_trident_state`'s one-shot Node read (used
+/// only when there's no `pendingCommit` to resume locally, so this is not
+/// on the earlier, more time-sensitive resume path). Mirrors
+/// `FINAL_STATUS_PATCH_RETRIES`/`FINAL_STATUS_PATCH_BACKOFF`'s shape: a
+/// short bounded retry absorbs a transient k8s hiccup at startup instead of
+/// turning it into an immediate crash-loop, while still giving up and
+/// surfacing a real error if k8s stays down.
+const RECOVERY_NODE_READ_RETRIES: usize = 3;
+const RECOVERY_NODE_READ_BACKOFF: Duration = Duration::from_secs(2);
+
 /// The machine-id source used for every Nebraska request this module makes,
 /// event reports included. Must match the source used by `handle_stage`'s
 /// initial `check_for_update` so all requests for a given node present the
@@ -163,7 +173,9 @@ impl Orchestrator {
             return Ok(LoopControl::Continue);
         }
 
-        let node = self.k8s.get_node(&self.config.kubernetes.node_name).await?;
+        let node = self
+            .get_node_with_retry(&self.config.kubernetes.node_name)
+            .await?;
         let snapshot = Snapshot::from_node(&node, &self.annotation_keys);
 
         if let Some(request) = snapshot.request.clone() {
@@ -1089,6 +1101,32 @@ impl Orchestrator {
                 Err(_) => time::sleep(FINAL_STATUS_PATCH_BACKOFF).await,
             }
         }
+    }
+
+    /// Reads the agent's own Node object with a bounded retry, so a
+    /// transient Kubernetes hiccup at startup recovery doesn't propagate the
+    /// first error straight into a process exit / crash-loop the way a bare
+    /// `self.k8s.get_node(...).await?` would. Only used by
+    /// `recover_from_trident_state`'s "no pending commit to resume" branch;
+    /// the pending-commit resume itself never touches k8s at all (see that
+    /// function's docs). `NodeGone` is returned immediately without
+    /// retrying, since it's terminal - the node was deleted, and no amount
+    /// of retrying changes that.
+    async fn get_node_with_retry(&self, name: &str) -> Result<Node, K8sClientError> {
+        let mut last_err = None;
+        for attempt in 0..RECOVERY_NODE_READ_RETRIES {
+            match self.k8s.get_node(name).await {
+                Ok(node) => return Ok(node),
+                Err(K8sClientError::NodeGone) => return Err(K8sClientError::NodeGone),
+                Err(err) => {
+                    last_err = Some(err);
+                    if attempt + 1 < RECOVERY_NODE_READ_RETRIES {
+                        time::sleep(RECOVERY_NODE_READ_BACKOFF).await;
+                    }
+                }
+            }
+        }
+        Err(last_err.expect("loop runs RECOVERY_NODE_READ_RETRIES >= 1 times"))
     }
 
     fn is_node_gone_error(&self, err: &Error) -> bool {
