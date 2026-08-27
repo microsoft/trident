@@ -988,8 +988,20 @@ impl Orchestrator {
     /// silently report `Success` for a no-op - must never be called
     /// speculatively here.
     ///
-    /// A reboot is considered confirmed (safe to call `commit()` via
-    /// [`reconstruct_without_state`]) when either:
+    /// If `operation_status` is entirely absent, the agent never even
+    /// started processing this `operationId` (it's set to `InProgress`
+    /// immediately on dispatch, before anything else) - there is no
+    /// evidence this specific request caused anything, so the request is
+    /// always run fresh rather than considered for `commit()`. A version
+    /// match alone isn't enough proof here: the node could already be on
+    /// `targetVersion` for an unrelated reason (a prior, already-completed
+    /// operation; a manually re-imaged node), in which case
+    /// `handle_finalize`/`handle_rollback`'s own `AlreadyAtTarget` check
+    /// produces the correct status without ever needing `commit()`.
+    ///
+    /// With an `operation_status` in hand, a reboot is considered confirmed
+    /// (safe to call `commit()` via [`reconstruct_without_state`]) when
+    /// either:
     /// - **active version == target version**: the swap already happened
     ///   (the active version only changes via the post-finalize swap), or
     /// - **the system's current boot started after `operation_status`'s
@@ -1007,12 +1019,12 @@ impl Orchestrator {
     ///
     /// If neither is true, the request is run fresh instead of guessed at
     /// further - always safe (never touches `commit()` on an unconfirmed
-    /// boot), though it means an *unconfirmable* firmware fallback (e.g. no
-    /// `operation_status` was ever published, or its `finished_utc` is
-    /// absent) is retried as a fresh finalize/rollback rather than reported
-    /// as `TargetBootFailed`. Closing that last corner fully would need
-    /// Trident's own boot history (`get rollback-chain` / `get last-error`),
-    /// which isn't exposed over gRPC today, only via the CLI.
+    /// boot), though it means an *unconfirmable* firmware fallback (e.g.
+    /// `operation_status` has no `finished_utc`, i.e. it's stuck at
+    /// `InProgress`) is retried as a fresh finalize/rollback rather than
+    /// reported as `TargetBootFailed`. Closing that last corner fully would
+    /// need Trident's own boot history (`get rollback-chain` / `get
+    /// last-error`), which isn't exposed over gRPC today, only via the CLI.
     ///
     /// `rollback` requests carry no explicit `targetVersion` (the target is
     /// implicit: whatever the previous partition was), so the version
@@ -1034,6 +1046,10 @@ impl Orchestrator {
         ) {
             return Ok(LoopControl::Continue);
         }
+
+        let Some(operation_status) = operation_status else {
+            return self.run_request_fresh(request).await;
+        };
 
         let now = Utc::now();
         let current_version = match current_active_version() {
@@ -1058,12 +1074,16 @@ impl Orchestrator {
         };
 
         let already_at_target = request.target_version.as_deref() == Some(current_version.as_str());
-        if already_at_target || reboot_confirmed_since_arming(operation_status) {
+        if already_at_target || reboot_confirmed_since_arming(Some(operation_status)) {
             let status = self.reconstruct_without_state(request, None, None).await;
             self.record_and_publish(status).await?;
             return Ok(LoopControl::Continue);
         }
 
+        self.run_request_fresh(request).await
+    }
+
+    async fn run_request_fresh(&self, request: &UpdateRequest) -> Result<LoopControl, Error> {
         match request.operation {
             RequestedOperation::Finalize => self.handle_finalize(request.clone()).await,
             RequestedOperation::Rollback => self.handle_rollback(request.clone()).await,
