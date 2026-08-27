@@ -31,6 +31,27 @@ pub fn is_azl3() -> Result<bool, Error> {
     Ok(OsRelease::read()?.get_distro().is_azl3())
 }
 
+/// Splits one os-release-style `KEY=VALUE` line into its key and
+/// unquoted/trimmed value, or `None` for a blank, comment, or malformed
+/// line. Shared by [`read_key`], [`OsRelease::parse`], and
+/// [`ExtensionRelease::parse`] so all three os-release-formatted parsers in
+/// this file agree on one set of quoting/trimming rules instead of each
+/// maintaining its own copy.
+fn parse_line(line: &str) -> Option<(&str, String)> {
+    let line = line.trim();
+    if line.is_empty() || line.starts_with('#') {
+        return None;
+    }
+    let (key, raw_value) = line.split_once('=')?;
+    let value = raw_value
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .trim()
+        .to_string();
+    Some((key.trim(), value))
+}
+
 /// Reads a single key from an arbitrary os-release-formatted file. Returns
 /// `None` when the file is unreadable, the key is absent, or its value is
 /// empty.
@@ -38,21 +59,13 @@ pub fn read_key(path: impl AsRef<Path>, key: &str) -> Option<String> {
     let path = path.as_ref();
     let contents = fs::read_to_string(path).ok()?;
     for line in contents.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let Some((line_key, raw_value)) = line.split_once('=') else {
+        let Some((line_key, value)) = parse_line(line) else {
             continue;
         };
-        if line_key.trim() != key {
+        if line_key != key {
             continue;
         }
-        let value = raw_value.trim().trim_matches('"').trim_matches('\'').trim();
-        if value.is_empty() {
-            return None;
-        }
-        return Some(value.to_string());
+        return (!value.is_empty()).then_some(value);
     }
     None
 }
@@ -208,58 +221,43 @@ impl OsRelease {
     fn parse(data: &str) -> Self {
         let mut os_release = OsRelease::default();
         for line in data.lines() {
-            if line.is_empty() || line.trim_start().starts_with('#') {
-                continue;
-            }
-
-            let Some((key, raw_value)) = line.trim().split_once('=') else {
+            let Some((key, value)) = parse_line(line) else {
                 continue;
             };
-
-            // Fn to trim whitespace and quotes from value, and return as
-            // Option<String>
-            let value = || {
-                Some(
-                    raw_value
-                        .trim()
-                        .trim_matches('\"')
-                        .trim_matches('\'')
-                        .to_string(),
-                )
-            };
+            let value = Some(value);
 
             match key {
-                "NAME" => os_release.name = value(),
-                "ID" => os_release.id = value(),
-                "ID_LIKE" => os_release.id_like = value(),
-                "PRETTY_NAME" => os_release.pretty_name = value(),
-                "CPE_NAME" => os_release.cpe_name = value(),
-                "VARIANT" => os_release.variant = value(),
-                "VARIANT_ID" => os_release.variant_id = value(),
-                "VERSION" => os_release.version = value(),
-                "VERSION_ID" => os_release.version_id = value(),
-                "VERSION_CODENAME" => os_release.version_codename = value(),
-                "BUILD_ID" => os_release.build_id = value(),
-                "IMAGE_ID" => os_release.image_id = value(),
-                "IMAGE_VERSION" => os_release.image_version = value(),
-                "RELEASE_TYPE" => os_release.release_type = value(),
-                "HOME_URL" => os_release.home_url = value(),
-                "DOCUMENTATION_URL" => os_release.documentation_url = value(),
-                "SUPPORT_URL" => os_release.support_url = value(),
-                "BUG_REPORT_URL" => os_release.bug_report_url = value(),
-                "PRIVACY_POLICY_URL" => os_release.privacy_policy_url = value(),
-                "SUPPORT_END" => os_release.support_end = value(),
-                "LOGO" => os_release.logo = value(),
-                "ANSI_COLOR" => os_release.ansi_color = value(),
-                "ANSI_COLOR_REVERSE" => os_release.ansi_color_reverse = value(),
-                "VENDOR_NAME" => os_release.vendor_name = value(),
-                "VENDOR_URL" => os_release.vendor_url = value(),
-                "EXPERIMENT" => os_release.experiment = value(),
-                "EXPERIMENT_URL" => os_release.experiment_url = value(),
-                "DEFAULT_HOSTNAME" => os_release.default_hostname = value(),
-                "ARCHITECTURE" => os_release.architecture = value(),
-                "SYSEXT_LEVEL" => os_release.sysext_level = value(),
-                "CONFEXT_LEVEL" => os_release.confext_level = value(),
+                "NAME" => os_release.name = value,
+                "ID" => os_release.id = value,
+                "ID_LIKE" => os_release.id_like = value,
+                "PRETTY_NAME" => os_release.pretty_name = value,
+                "CPE_NAME" => os_release.cpe_name = value,
+                "VARIANT" => os_release.variant = value,
+                "VARIANT_ID" => os_release.variant_id = value,
+                "VERSION" => os_release.version = value,
+                "VERSION_ID" => os_release.version_id = value,
+                "VERSION_CODENAME" => os_release.version_codename = value,
+                "BUILD_ID" => os_release.build_id = value,
+                "IMAGE_ID" => os_release.image_id = value,
+                "IMAGE_VERSION" => os_release.image_version = value,
+                "RELEASE_TYPE" => os_release.release_type = value,
+                "HOME_URL" => os_release.home_url = value,
+                "DOCUMENTATION_URL" => os_release.documentation_url = value,
+                "SUPPORT_URL" => os_release.support_url = value,
+                "BUG_REPORT_URL" => os_release.bug_report_url = value,
+                "PRIVACY_POLICY_URL" => os_release.privacy_policy_url = value,
+                "SUPPORT_END" => os_release.support_end = value,
+                "LOGO" => os_release.logo = value,
+                "ANSI_COLOR" => os_release.ansi_color = value,
+                "ANSI_COLOR_REVERSE" => os_release.ansi_color_reverse = value,
+                "VENDOR_NAME" => os_release.vendor_name = value,
+                "VENDOR_URL" => os_release.vendor_url = value,
+                "EXPERIMENT" => os_release.experiment = value,
+                "EXPERIMENT_URL" => os_release.experiment_url = value,
+                "DEFAULT_HOSTNAME" => os_release.default_hostname = value,
+                "ARCHITECTURE" => os_release.architecture = value,
+                "SYSEXT_LEVEL" => os_release.sysext_level = value,
+                "CONFEXT_LEVEL" => os_release.confext_level = value,
                 _ => {}
             }
         }
@@ -309,32 +307,17 @@ impl ExtensionRelease {
         let mut portable_prefixes = None;
 
         for line in data.lines() {
-            if line.is_empty() || line.trim_start().starts_with('#') {
-                continue;
-            }
-
-            let Some((key, raw_value)) = line.trim().split_once('=') else {
+            let Some((key, value)) = parse_line(line) else {
                 continue;
             };
-
-            // Fn to trim whitespace and quotes from value, and return as
-            // Option<String>
-            let value = || {
-                Some(
-                    raw_value
-                        .trim()
-                        .trim_matches('\"')
-                        .trim_matches('\'')
-                        .to_string(),
-                )
-            };
+            let value = Some(value);
 
             match key {
-                "SYSEXT_ID" => sysext_id = value(),
-                "CONFEXT_ID" => confext_id = value(),
-                "SYSEXT_SCOPE" => sysext_scope = value(),
-                "CONFEXT_SCOPE" => confext_scope = value(),
-                "PORTABLE_PREFIXES" => portable_prefixes = value(),
+                "SYSEXT_ID" => sysext_id = value,
+                "CONFEXT_ID" => confext_id = value,
+                "SYSEXT_SCOPE" => sysext_scope = value,
+                "CONFEXT_SCOPE" => confext_scope = value,
+                "PORTABLE_PREFIXES" => portable_prefixes = value,
                 _ => {}
             }
         }
@@ -686,5 +669,75 @@ mod tests {
             Some("notmatching".to_string()),
         );
         assert!(OsRelease::ensure_matching_distro(&os_release1, &os_release2).is_err());
+    }
+
+    #[test]
+    fn read_key_finds_a_quoted_value() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = dir.path().join("os-release");
+        std::fs::write(&path, "ID=azurelinux\nIMAGE_VERSION=\"202608.1.0\"\n")
+            .expect("failed to write test file");
+
+        assert_eq!(
+            read_key(&path, "IMAGE_VERSION"),
+            Some("202608.1.0".to_string())
+        );
+        assert_eq!(read_key(&path, "ID"), Some("azurelinux".to_string()));
+    }
+
+    #[test]
+    fn read_key_skips_blank_lines_and_comments() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = dir.path().join("os-release");
+        std::fs::write(
+            &path,
+            "\n# a comment\n  # indented comment\nID=azurelinux\n",
+        )
+        .expect("failed to write test file");
+
+        assert_eq!(read_key(&path, "ID"), Some("azurelinux".to_string()));
+    }
+
+    #[test]
+    fn read_key_returns_none_for_a_missing_key() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = dir.path().join("os-release");
+        std::fs::write(&path, "ID=azurelinux\n").expect("failed to write test file");
+
+        assert_eq!(read_key(&path, "IMAGE_VERSION"), None);
+    }
+
+    #[test]
+    fn read_key_returns_none_for_an_empty_value() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = dir.path().join("os-release");
+        std::fs::write(&path, "IMAGE_VERSION=\n").expect("failed to write test file");
+
+        assert_eq!(read_key(&path, "IMAGE_VERSION"), None);
+    }
+
+    #[test]
+    fn read_key_returns_none_for_a_missing_file() {
+        assert_eq!(read_key("/nonexistent/os-release", "ID"), None);
+    }
+
+    #[test]
+    fn read_key_agrees_with_os_release_parse_on_the_same_input() {
+        // read_key and OsRelease::parse share parse_line, so both should
+        // agree on the same file's VERSION_ID.
+        let data = indoc::indoc! {
+            r#"
+            ID=azurelinux
+            VERSION_ID="3.0"
+            "#,
+        };
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = dir.path().join("os-release");
+        std::fs::write(&path, data).expect("failed to write test file");
+
+        assert_eq!(
+            read_key(&path, "VERSION_ID"),
+            OsRelease::parse(data).version_id
+        );
     }
 }

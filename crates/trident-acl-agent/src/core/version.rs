@@ -76,6 +76,17 @@ fn env_override(name: &str) -> Option<String> {
     env::var(name).ok().filter(|v| !v.is_empty())
 }
 
+/// Returns the node's currently-running version, for comparison against a
+/// request's `targetVersion` (e.g. to short-circuit to `AlreadyAtTarget`, or
+/// to decide whether a post-reboot swap actually happened when
+/// reconstructing state after a crash - see `annotations::orchestrator`).
+/// Reads the key named by `TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY` (default
+/// [`DEFAULT_CURRENT_VERSION_KEY`]) from the file named by
+/// `TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH` (default
+/// [`DEFAULT_CURRENT_VERSION_PATH`]), falling back per
+/// `TRIDENT_ACL_AGENT_CURRENT_VERSION_FALLBACK` (default
+/// [`DEFAULT_CURRENT_VERSION_FALLBACK`]) when that key is absent - see the
+/// module-level doc comment above for the three fallback forms.
 pub fn current_active_version() -> Result<String, Error> {
     let path = env_override(ENV_CURRENT_VERSION_PATH)
         .unwrap_or_else(|| DEFAULT_CURRENT_VERSION_PATH.to_string());

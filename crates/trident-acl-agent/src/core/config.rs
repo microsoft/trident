@@ -81,16 +81,16 @@ impl AgentConfig {
     fn from_vars(vars: Vec<(String, String)>) -> Result<Self, Error> {
         let nebraska: RawNebraskaConfig = envy::prefixed(ENV_PREFIX_NEBRASKA)
             .from_iter(vars.iter().cloned())
-            .context("invalid TRIDENT_ACL_AGENT_NEBRASKA_* environment variable")?;
+            .with_context(|| format!("invalid {ENV_PREFIX_NEBRASKA}* environment variable"))?;
         let kubernetes: RawKubernetesConfig = envy::prefixed(ENV_PREFIX_KUBERNETES)
             .from_iter(vars.iter().cloned())
-            .context("invalid TRIDENT_ACL_AGENT_KUBERNETES_* environment variable")?;
+            .with_context(|| format!("invalid {ENV_PREFIX_KUBERNETES}* environment variable"))?;
         let trident: RawTridentConfig = envy::prefixed(ENV_PREFIX_TRIDENT)
             .from_iter(vars.iter().cloned())
-            .context("invalid TRIDENT_ACL_AGENT_TRIDENT_* environment variable")?;
+            .with_context(|| format!("invalid {ENV_PREFIX_TRIDENT}* environment variable"))?;
         let orchestration: RawOrchestrationConfig = envy::prefixed(ENV_PREFIX_ORCHESTRATION)
             .from_iter(vars.iter().cloned())
-            .context("invalid TRIDENT_ACL_AGENT_ORCHESTRATION_* environment variable")?;
+            .with_context(|| format!("invalid {ENV_PREFIX_ORCHESTRATION}* environment variable"))?;
 
         Ok(Self {
             nebraska: NebraskaConfig {
