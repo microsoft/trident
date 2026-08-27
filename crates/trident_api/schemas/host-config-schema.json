@@ -1805,7 +1805,7 @@
           "format": "Block Device ID"
         },
         "hashDeviceId": {
-          "description": "The ID of the partition to use as the verity hash partition.",
+          "description": "The ID of the partition to use as the verity hash partition.\n\nFor inline verity, where the image stores the hash tree inside the data partition itself, this names the same partition as the data device. The offset at which the hash tree begins is a property of the OS image rather than of this configuration, and is read from the image metadata at servicing time, like the root hash.",
           "type": "string",
           "format": "Block Device ID"
         },

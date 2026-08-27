@@ -27,6 +27,8 @@ The ID of the partition to use as the verity data partition.
 
 The ID of the partition to use as the verity hash partition.
 
+For inline verity, where the image stores the hash tree inside the data partition itself, this names the same partition as the data device. The offset at which the hash tree begins is a property of the OS image rather than of this configuration, and is read from the image metadata at servicing time, like the root hash.
+
 | Characteristic | Value             |
 | -------------- | ----------------- |
 | Type           | `string`          |
