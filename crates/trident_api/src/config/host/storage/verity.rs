@@ -28,12 +28,6 @@ pub struct VerityDevice {
     pub data_device_id: BlockDeviceId,
 
     /// The ID of the partition to use as the verity hash partition.
-    ///
-    /// For inline verity, where the image stores the hash tree inside the data
-    /// partition itself, this names the same partition as the data device. The
-    /// offset at which the hash tree begins is a property of the OS image
-    /// rather than of this configuration, and is read from the image metadata
-    /// at servicing time, like the root hash.
     #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub hash_device_id: BlockDeviceId,
 
