@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{bail, ensure, Context, Error};
-use log::warn;
+use log::{debug, warn};
 use sysdefs::partition_types::DiscoverablePartitionType;
 use url::Url;
 
@@ -86,15 +86,42 @@ pub(super) fn derive_host_configuration_inner(
         if let Some(verity_device) = filesystem_metadata.verity.as_ref() {
             // This partition has verity, so we need to derive the verity device from it.
 
-            // First, get the id of the hash partition.
-            let hash_partition_id = partition_ids_by_file
-                .get(verity_device.file.path.as_path())
-                .with_context(|| {
-                    format!(
-                        "Failed to find hash partition for verity device: {}",
-                        verity_device.file.path.display()
-                    )
-                })?;
+            // Inline verity stores the hash tree inside the data partition
+            // itself, so the verity metadata points at the very same image as
+            // the filesystem, and the data partition doubles as the hash
+            // device. The offset at which the hash tree starts is a property of
+            // the OS image, so it is read from the image metadata at servicing
+            // time rather than recorded in the Host Configuration.
+            let inline = verity_device.file.path == part.image_file.path;
+
+            let hash_partition_id = if inline {
+                // Fail early and clearly, rather than at `veritysetup open` time.
+                ensure!(
+                    verity_device.hash_offset.is_some(),
+                    "Filesystem '{}' uses inline dm-verity (its verity hash image is the same \
+                    image as its data), but the COSI metadata provides no 'hashOffset', so \
+                    Trident cannot locate the hash tree.",
+                    filesystem_metadata.mount_point.display()
+                );
+
+                debug!(
+                    "Filesystem '{}' uses inline dm-verity",
+                    filesystem_metadata.mount_point.display()
+                );
+
+                partition_id.clone()
+            } else {
+                // Otherwise, get the id of the hash partition.
+                partition_ids_by_file
+                    .get(verity_device.file.path.as_path())
+                    .with_context(|| {
+                        format!(
+                            "Failed to find hash partition for verity device: {}",
+                            verity_device.file.path.display()
+                        )
+                    })?
+                    .clone()
+            };
 
             let verity_id = verity_id_gen.next_id();
 
@@ -114,7 +141,7 @@ pub(super) fn derive_host_configuration_inner(
                 id: verity_id.clone(),
                 name: verity_name,
                 data_device_id: partition_id.clone(),
-                hash_device_id: hash_partition_id.clone(),
+                hash_device_id: hash_partition_id,
                 corruption_option: Default::default(),
             });
 
@@ -245,6 +272,9 @@ mod tests {
             OsImageFileSystemType,
         },
     };
+
+    /// The `usr` partition type GUID used by ACL (inherited from Flatcar).
+    const ACL_USR_PARTITION_TYPE_GUID: &str = "5dfbf5f4-2848-4bac-aa5e-0d9a20b745a6";
 
     /// Creates a mock GPT disk in memory with the specified partitions.
     ///
@@ -726,6 +756,7 @@ mod tests {
             verity: Some(VerityMetadata {
                 file: sample_image_file("images/root-hash.img.zst"),
                 roothash: "abcd1234".to_string(),
+                hash_offset: None,
             }),
         };
 
@@ -739,6 +770,7 @@ mod tests {
             verity: Some(VerityMetadata {
                 file: sample_image_file("images/usr-hash.img.zst"),
                 roothash: "efgh5678".to_string(),
+                hash_offset: None,
             }),
         };
 
@@ -875,6 +907,7 @@ mod tests {
             verity: Some(VerityMetadata {
                 file: sample_image_file("images/var-hash.img.zst"),
                 roothash: "badhash".to_string(),
+                hash_offset: None,
             }),
         };
 
@@ -908,6 +941,209 @@ mod tests {
             err_msg.contains("unsupported"),
             "Error should mention unsupported verity path: {}",
             err_msg
+        );
+    }
+
+    /// Tests [`derive_host_configuration_inner`] with *inline* dm-verity, as
+    /// used by Azure Container Linux (ACL): the hash tree lives inside the very
+    /// same partition as the data, at a byte offset, instead of in a dedicated
+    /// hash partition.
+    ///
+    /// COSI expresses that by pointing `verity.image` at the *same* image file
+    /// as the filesystem itself and adding a `hashOffset`. The derived verity
+    /// device therefore has no hash device of its own, and carries the offset
+    /// so that `veritysetup open` can be given `--hash-offset`.
+    ///
+    /// This is the shape a real `trident grpc-client stream-disk <acl.cosi>`
+    /// produces.
+    #[test]
+    fn test_derive_host_configuration_inner_inline_verity() {
+        // Mirrors the ACL base image layout: EFI-SYSTEM, USR-A, USR-B, OEM,
+        // ROOT. USR-B has no filesystem entry in the COSI metadata; it is the
+        // idle A/B slot.
+        // ACL's /usr partitions carry the Flatcar `usr` type GUID, which is not
+        // one of the types normally permitted behind a verity *hash* device
+        // reference. Using it here keeps the fixture honest.
+        let acl_usr = gpt::partition_types::Type {
+            guid: Uuid::parse_str(ACL_USR_PARTITION_TYPE_GUID).unwrap(),
+            os: gpt::partition_types::OperatingSystem::Linux,
+        };
+
+        let (raw_gpt, disk_size, lba_size) = create_mock_gpt_disk_typed(&[
+            ("EFI-SYSTEM", 64 * 1024, gpt::partition_types::EFI),
+            ("USR-A", 256 * 1024, acl_usr.clone()),
+            ("USR-B", 256 * 1024, acl_usr),
+            ("OEM", 64 * 1024, gpt::partition_types::LINUX_FS),
+            ("ROOT", 128 * 1024, gpt::partition_types::LINUX_FS),
+        ]);
+
+        let disk_info = DiskInfo {
+            size: disk_size,
+            lba_size,
+            partition_table_type: PartitionTableType::Gpt,
+            gpt_regions: vec![
+                GptDiskRegion {
+                    image: sample_image_file("gpt_primary.zst"),
+                    region_type: GptRegionType::PrimaryGpt,
+                },
+                GptDiskRegion {
+                    image: sample_image_file("images/acl_1.raw.zst"),
+                    region_type: GptRegionType::Partition { number: 1 },
+                },
+                GptDiskRegion {
+                    image: sample_image_file("images/acl_2.raw.zst"),
+                    region_type: GptRegionType::Partition { number: 2 },
+                },
+                GptDiskRegion {
+                    image: sample_image_file("images/acl_3.raw.zst"),
+                    region_type: GptRegionType::Partition { number: 3 },
+                },
+                GptDiskRegion {
+                    image: sample_image_file("images/acl_4.raw.zst"),
+                    region_type: GptRegionType::Partition { number: 4 },
+                },
+                GptDiskRegion {
+                    image: sample_image_file("images/acl_5.raw.zst"),
+                    region_type: GptRegionType::Partition { number: 5 },
+                },
+            ],
+        };
+
+        // The /usr filesystem carries its own verity hash tree inline: the
+        // verity image path is identical to the filesystem image path.
+        let usr_image = Image {
+            file: sample_image_file("images/acl_2.raw.zst"),
+            mount_point: PathBuf::from("/usr"),
+            fs_type: OsImageFileSystemType::Ext4,
+            fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+            part_type: DiscoverablePartitionType::LinuxGeneric,
+            verity: Some(VerityMetadata {
+                file: sample_image_file("images/acl_2.raw.zst"),
+                roothash: "270ed371044dd0be4429a3945b1defa6a4cf202aa1308220c1ff40ea20cfb9c5"
+                    .to_string(),
+                hash_offset: Some(1065345024),
+            }),
+        };
+
+        let metadata = CosiMetadata {
+            version: KnownMetadataVersion::V1_2.as_version(),
+            id: Some(Uuid::new_v4()),
+            os_arch: SystemArchitecture::Amd64,
+            os_release: OsRelease::default(),
+            os_packages: None,
+            images: vec![
+                sample_esp_image("images/acl_1.raw.zst", "/boot"),
+                usr_image,
+                sample_image("images/acl_4.raw.zst", "/oem"),
+                sample_image("images/acl_5.raw.zst", "/"),
+            ],
+            bootloader: None,
+            disk: Some(disk_info),
+            compression: None,
+        };
+
+        let cosi = create_test_cosi(metadata, Some(raw_gpt));
+        let hc = derive_host_configuration_inner(
+            &cosi.source,
+            &cosi.metadata_sha384,
+            "/dev/sda",
+            &cosi.metadata.images,
+            cosi.partitioning_info.as_ref().unwrap(),
+        )
+        .unwrap();
+
+        // The verity device has no hash device of its own; it points only at
+        // the data partition and carries the offset of the inline hash tree.
+        assert_eq!(hc.storage.verity.len(), 1);
+        assert_eq!(hc.storage.verity[0].name, USR_VERITY_DEVICE_NAME);
+        assert_eq!(hc.storage.verity[0].data_device_id, "partition-2");
+        assert_eq!(
+            hc.storage.verity[0].hash_device_id, "partition-2",
+            "inline verity uses the data partition as its own hash device"
+        );
+        assert!(hc.storage.verity[0].is_inline());
+
+        // The storage graph accepts a verity device with a single reference.
+        hc.storage.build_graph().unwrap();
+
+        // /usr is mounted read-only on top of the verity device.
+        let usr_fs = hc
+            .storage
+            .filesystems
+            .iter()
+            .find(|fs| fs.mount_point_path() == Some(Path::new(USR_MOUNT_POINT_PATH)))
+            .unwrap();
+        assert_eq!(usr_fs.device_id, Some(hc.storage.verity[0].id.clone()));
+        assert!(usr_fs.is_read_only());
+    }
+
+    /// Tests that inline verity without a `hashOffset` anywhere is rejected,
+    /// rather than silently producing a verity device that cannot be opened.
+    #[test]
+    fn test_derive_host_configuration_inner_inline_verity_missing_offset() {
+        let (raw_gpt, disk_size, lba_size) = create_mock_gpt_disk_typed(&[
+            ("EFI-SYSTEM", 64 * 1024, gpt::partition_types::EFI),
+            ("USR-A", 256 * 1024, gpt::partition_types::LINUX_FS),
+        ]);
+
+        let disk_info = DiskInfo {
+            size: disk_size,
+            lba_size,
+            partition_table_type: PartitionTableType::Gpt,
+            gpt_regions: vec![
+                GptDiskRegion {
+                    image: sample_image_file("gpt_primary.zst"),
+                    region_type: GptRegionType::PrimaryGpt,
+                },
+                GptDiskRegion {
+                    image: sample_image_file("images/acl_1.raw.zst"),
+                    region_type: GptRegionType::Partition { number: 1 },
+                },
+                GptDiskRegion {
+                    image: sample_image_file("images/acl_2.raw.zst"),
+                    region_type: GptRegionType::Partition { number: 2 },
+                },
+            ],
+        };
+
+        let usr_image = Image {
+            file: sample_image_file("images/acl_2.raw.zst"),
+            mount_point: PathBuf::from("/usr"),
+            fs_type: OsImageFileSystemType::Ext4,
+            fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+            part_type: DiscoverablePartitionType::LinuxGeneric,
+            verity: Some(VerityMetadata {
+                file: sample_image_file("images/acl_2.raw.zst"),
+                roothash: "270ed371".to_string(),
+                hash_offset: None,
+            }),
+        };
+
+        let metadata = CosiMetadata {
+            version: KnownMetadataVersion::V1_2.as_version(),
+            id: Some(Uuid::new_v4()),
+            os_arch: SystemArchitecture::Amd64,
+            os_release: OsRelease::default(),
+            os_packages: None,
+            images: vec![sample_esp_image("images/acl_1.raw.zst", "/boot"), usr_image],
+            bootloader: None,
+            disk: Some(disk_info),
+            compression: None,
+        };
+
+        let cosi = create_test_cosi(metadata, Some(raw_gpt));
+        let err = derive_host_configuration_inner(
+            &cosi.source,
+            &cosi.metadata_sha384,
+            "/dev/sda",
+            &cosi.metadata.images,
+            cosi.partitioning_info.as_ref().unwrap(),
+        )
+        .unwrap_err();
+
+        assert!(
+            format!("{err:#}").contains("hashOffset"),
+            "error should call out the missing hashOffset: {err:#}"
         );
     }
 

@@ -609,6 +609,13 @@ fn validate_hash_filesystem_blkdev_fit(
             fs_mount_point.display()
         ))?;
 
+    // Inline verity keeps its hash tree inside the data partition, so there is
+    // no separate hash device to size-check; the data image size check already
+    // covers the whole partition image, hash tree included.
+    if verity_device.is_inline() {
+        return Ok(());
+    }
+
     // Get the size of the block device configured for the verity hash
     let Some(blkdev_hash_size) = graph.block_device_size(&verity_device.hash_device_id) else {
         debug!(
@@ -848,6 +855,7 @@ mod tests {
                         fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
                         part_type: DiscoverablePartitionType::Root,
                         verity: Some(MockVerity {
+                            hash_offset: None,
                             roothash: "mock-roothash".to_string(),
                         }),
                     },
@@ -897,6 +905,7 @@ mod tests {
                     fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
                     part_type: DiscoverablePartitionType::Esp,
                     verity: Some(MockVerity {
+                        hash_offset: None,
                         roothash: "mock-hash".to_string(),
                     }),
                 },
@@ -906,6 +915,7 @@ mod tests {
                     fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
                     part_type: DiscoverablePartitionType::Root,
                     verity: Some(MockVerity {
+                        hash_offset: None,
                         roothash: "mock-roothash".to_string(),
                     }),
                 },
@@ -1456,6 +1466,7 @@ mod tests {
                 part_type: DiscoverablePartitionType::LinuxGeneric,
                 verity: roothash.map(|h| MockVerity {
                     roothash: h.to_string(),
+                    hash_offset: None,
                 }),
             }],
             is_uki: false,
