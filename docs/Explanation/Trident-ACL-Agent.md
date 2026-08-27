@@ -181,7 +181,7 @@ A status annotation (`<prefix>/update-status` or
   (`toVersion` is absent for `rollback`, whose target is implicit).
 - `startedUtc`/`lastUpdatedUtc`/`finishedUtc` bound the operation:
   `lastUpdatedUtc` refreshes on a heartbeat cadence while `code` is
-  `InProgress` (see [below](#pre-post-reboot-state-and-the-watchdog));
+  `InProgress` (see [below](#prepost-reboot-state-and-the-watchdog));
   `finishedUtc` is absent until `code` reaches a terminal value.
 
 `code` is one of:
