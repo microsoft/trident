@@ -994,13 +994,28 @@ impl Orchestrator {
     ///   `commit()`.
     /// - **active != target**: not proven that a reboot ever happened, so
     ///   the request is run fresh instead of guessed at further - always
-    ///   safe (never touches `commit()` on an unconfirmed boot). This
-    ///   cannot yet distinguish "hasn't rebooted" from "did reboot, target
-    ///   failed to boot, firmware fell back" without Trident exposing boot
-    ///   history (`get rollback-chain` / `get last-error`) over gRPC, which
-    ///   isn't available today - a known remaining gap. In the
-    ///   fallen-back case this simply re-drives the finalize/rollback
-    ///   instead of immediately reporting `TargetBootFailed`.
+    ///   safe (never touches `commit()` on an unconfirmed boot).
+    ///
+    /// KNOWN GAP: the design doc's degraded-recovery path (2.3) has 4
+    /// branches; this implements only 2 of them, folding the other 2
+    /// together as "run fresh":
+    ///   1. active == target                          -> run `commit()` [done]
+    ///   2. active != target, boot attempted+failed    -> report `TargetBootFailed` [missing]
+    ///   3. active != target, no boot attempted         -> run the request fresh [done]
+    ///   4. anything Trident can't account for          -> `AgentInternalError` [handled elsewhere]
+    ///
+    /// Branch 2 is missing because distinguishing it from branch 3 needs to
+    /// know whether a boot was *attempted*, not just which version is
+    /// currently active - both leave the node on the same (previous)
+    /// version, since a firmware fallback is invisible from inside the OS
+    /// that ends up running. The design's answer is Trident's boot history
+    /// (`get rollback-chain` / `get last-error`), which isn't exposed over
+    /// gRPC today, only via the CLI. Closing this gap means adding a
+    /// gRPC-exposed equivalent in `trident` and calling it here to pick
+    /// branch 2 vs 3. Until then this is always safe (never calls
+    /// `commit()` on an unconfirmed boot) but not fully correct: a real
+    /// firmware fallback gets silently retried as a fresh finalize/rollback
+    /// instead of being reported as `TargetBootFailed`.
     ///
     /// `rollback` requests carry no explicit `targetVersion` (the target is
     /// implicit: whatever the previous partition was), so this comparison
