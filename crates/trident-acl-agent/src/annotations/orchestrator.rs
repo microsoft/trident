@@ -988,16 +988,19 @@ impl Orchestrator {
     /// silently report `Success` for a no-op - must never be called
     /// speculatively here.
     ///
-    /// If `operation_status` is entirely absent, the agent never even
-    /// started processing this `operationId` (it's set to `InProgress`
-    /// immediately on dispatch, before anything else) - there is no
-    /// evidence this specific request caused anything, so the request is
-    /// always run fresh rather than considered for `commit()`. A version
-    /// match alone isn't enough proof here: the node could already be on
-    /// `targetVersion` for an unrelated reason (a prior, already-completed
-    /// operation; a manually re-imaged node), in which case
-    /// `handle_finalize`/`handle_rollback`'s own `AlreadyAtTarget` check
-    /// produces the correct status without ever needing `commit()`.
+    /// If `operation_status` is entirely absent, *or* it exists but belongs
+    /// to a different `operationId` than `request` (e.g. a still-lingering
+    /// terminal status annotation from an earlier, unrelated operation that
+    /// hasn't been overwritten yet), the agent has no evidence this
+    /// specific request was ever touched (its own status is set to
+    /// `InProgress` immediately on dispatch, before anything else) - so the
+    /// request is always run fresh rather than considered for `commit()`.
+    /// A version match alone isn't enough proof here either: the node
+    /// could already be on `targetVersion` for an unrelated reason (a
+    /// prior, already-completed operation; a manually re-imaged node), in
+    /// which case `handle_finalize`/`handle_rollback`'s own
+    /// `AlreadyAtTarget` check produces the correct status without ever
+    /// needing `commit()`.
     ///
     /// With an `operation_status` in hand, a reboot is considered confirmed
     /// (safe to call `commit()` via [`reconstruct_without_state`]) when
@@ -1047,6 +1050,8 @@ impl Orchestrator {
             return Ok(LoopControl::Continue);
         }
 
+        let operation_status =
+            operation_status.filter(|status| status.operation_id == request.operation_id);
         let Some(operation_status) = operation_status else {
             return self.run_request_fresh(request).await;
         };
