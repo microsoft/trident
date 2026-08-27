@@ -203,7 +203,9 @@ impl Orchestrator {
         }
 
         if let Some(request) = snapshot.request {
-            return self.reconstruct_without_pending_record(&request).await;
+            return self
+                .reconstruct_without_pending_record(&request, snapshot.operation_status.as_ref())
+                .await;
         }
         Ok(LoopControl::Continue)
     }
@@ -986,47 +988,45 @@ impl Orchestrator {
     /// silently report `Success` for a no-op - must never be called
     /// speculatively here.
     ///
-    /// Comparing the node's currently-running version against the
-    /// request's target resolves the common cases without guessing:
-    /// - **active == target**: the swap already happened (the active
-    ///   version only changes via the post-finalize swap), so it's safe to
-    ///   hand off to [`reconstruct_without_state`] to validate/promote via
-    ///   `commit()`.
-    /// - **active != target**: not proven that a reboot ever happened, so
-    ///   the request is run fresh instead of guessed at further - always
-    ///   safe (never touches `commit()` on an unconfirmed boot).
+    /// A reboot is considered confirmed (safe to call `commit()` via
+    /// [`reconstruct_without_state`]) when either:
+    /// - **active version == target version**: the swap already happened
+    ///   (the active version only changes via the post-finalize swap), or
+    /// - **the system's current boot started after `operation_status`'s
+    ///   `finished_utc`** (see [`reboot_confirmed_since_arming`]):
+    ///   `operation_status` is the finalize/rollback's own terminal status,
+    ///   already published to the Node's `update-status` annotation
+    ///   *before* the reboot was triggered (see the caller-handled-reboot
+    ///   ordering in module docs), so it survives independent of local
+    ///   disk state. If the node's current boot demonstrably started after
+    ///   that timestamp, a reboot has happened since, whatever version the
+    ///   node ended up on - so it's safe to call `commit()` and let
+    ///   Trident's own response (already handled by
+    ///   `reconstruct_commit_result_to_status`'s `indicates_target_boot_failed`
+    ///   check) distinguish a successful commit from a firmware fallback.
     ///
-    /// KNOWN GAP: the design doc's degraded-recovery path (2.3) has 4
-    /// branches; this implements only 2 of them, folding the other 2
-    /// together as "run fresh":
-    ///   1. active == target                          -> run `commit()` [done]
-    ///   2. active != target, boot attempted+failed    -> report `TargetBootFailed` [missing]
-    ///   3. active != target, no boot attempted         -> run the request fresh [done]
-    ///   4. anything Trident can't account for          -> `AgentInternalError` [handled elsewhere]
-    ///
-    /// Branch 2 is missing because distinguishing it from branch 3 needs to
-    /// know whether a boot was *attempted*, not just which version is
-    /// currently active - both leave the node on the same (previous)
-    /// version, since a firmware fallback is invisible from inside the OS
-    /// that ends up running. The design's answer is Trident's boot history
-    /// (`get rollback-chain` / `get last-error`), which isn't exposed over
-    /// gRPC today, only via the CLI. Closing this gap means adding a
-    /// gRPC-exposed equivalent in `trident` and calling it here to pick
-    /// branch 2 vs 3. Until then this is always safe (never calls
-    /// `commit()` on an unconfirmed boot) but not fully correct: a real
-    /// firmware fallback gets silently retried as a fresh finalize/rollback
-    /// instead of being reported as `TargetBootFailed`.
+    /// If neither is true, the request is run fresh instead of guessed at
+    /// further - always safe (never touches `commit()` on an unconfirmed
+    /// boot), though it means an *unconfirmable* firmware fallback (e.g. no
+    /// `operation_status` was ever published, or its `finished_utc` is
+    /// absent) is retried as a fresh finalize/rollback rather than reported
+    /// as `TargetBootFailed`. Closing that last corner fully would need
+    /// Trident's own boot history (`get rollback-chain` / `get last-error`),
+    /// which isn't exposed over gRPC today, only via the CLI.
     ///
     /// `rollback` requests carry no explicit `targetVersion` (the target is
-    /// implicit: whatever the previous partition was), so this comparison
-    /// can never match for them and a state.json-missing rollback recovery
-    /// always falls to "run fresh". That's still safe: `handle_rollback`'s
-    /// own `stage_response.servicing_kind` check already reports
-    /// `OperationFailed` if the rollback already happened and nothing is
-    /// left to roll back to, rather than a false `Success`.
+    /// implicit: whatever the previous partition was), so the version
+    /// comparison can never match for them - they rely entirely on the
+    /// boot-time check above. If that's also inconclusive, a
+    /// state.json-missing rollback recovery falls to "run fresh", which is
+    /// still safe: `handle_rollback`'s own `stage_response.servicing_kind`
+    /// check already reports `OperationFailed` if the rollback already
+    /// happened and nothing is left to roll back to, rather than a false
+    /// `Success`.
     async fn reconstruct_without_pending_record(
         &self,
         request: &UpdateRequest,
+        operation_status: Option<&UpdateStatus>,
     ) -> Result<LoopControl, Error> {
         if !matches!(
             request.operation,
@@ -1057,7 +1057,8 @@ impl Orchestrator {
             }
         };
 
-        if request.target_version.as_deref() == Some(current_version.as_str()) {
+        let already_at_target = request.target_version.as_deref() == Some(current_version.as_str());
+        if already_at_target || reboot_confirmed_since_arming(operation_status) {
             let status = self.reconstruct_without_state(request, None, None).await;
             self.record_and_publish(status).await?;
             return Ok(LoopControl::Continue);
@@ -1279,6 +1280,29 @@ impl Orchestrator {
 /// finalize/rollback has crossed the reboot boundary yet.
 fn current_boot_marker() -> Result<String, Error> {
     machine_id::boot_id()
+}
+
+/// Returns whether the system has rebooted since `operation_status` (the
+/// finalize/rollback's own previously-published terminal status) was
+/// recorded as finished, by comparing the current boot's start time
+/// (`machine_id::boot_time()`, read from `/proc/stat`'s `btime` - no local
+/// state persisted across the reboot required) against that status's
+/// `finished_utc`. If the current boot started after the reboot was armed,
+/// a reboot has definitely happened since - whatever version the node
+/// ended up on. Never speculatively assumes a reboot happened: returns
+/// `false` if there's no status to compare against, its `finished_utc` is
+/// absent, or the boot time can't be read.
+fn reboot_confirmed_since_arming(operation_status: Option<&UpdateStatus>) -> bool {
+    let Some(finished_utc) = operation_status.and_then(|status| status.finished_utc) else {
+        return false;
+    };
+    let Ok(boot_time_secs) = machine_id::boot_time() else {
+        return false;
+    };
+    let Some(boot_time) = DateTime::from_timestamp(boot_time_secs, 0) else {
+        return false;
+    };
+    boot_time > finished_utc
 }
 
 /// Parses `version` (e.g. an `UpdateStatus::from_version`/`to_version`
@@ -2613,5 +2637,67 @@ mod tests {
             parse_nebraska_version(&Some("not-a-version".to_string()), "test"),
             None
         );
+    }
+
+    // --- reboot_confirmed_since_arming ---
+
+    #[test]
+    fn reboot_confirmed_since_arming_true_for_ancient_finished_utc() {
+        // Any real boot time is long after 1970 - a finished_utc from the
+        // epoch must always read as "a reboot happened since".
+        let epoch = DateTime::from_timestamp(0, 0).unwrap();
+        let status = UpdateStatus::new(
+            &request(RequestedOperation::Finalize),
+            Operation::Finalize,
+            "op-1".to_string(),
+            StatusCode::Success,
+            "finalize completed",
+            Some("1.0.0".to_string()),
+            Some("2.0.0".to_string()),
+            epoch,
+            Some(epoch),
+        );
+
+        assert!(reboot_confirmed_since_arming(Some(&status)));
+    }
+
+    #[test]
+    fn reboot_confirmed_since_arming_false_for_far_future_finished_utc() {
+        let far_future = DateTime::from_timestamp(32_503_680_000, 0).unwrap(); // ~year 3000
+        let status = UpdateStatus::new(
+            &request(RequestedOperation::Finalize),
+            Operation::Finalize,
+            "op-1".to_string(),
+            StatusCode::Success,
+            "finalize completed",
+            Some("1.0.0".to_string()),
+            Some("2.0.0".to_string()),
+            far_future,
+            Some(far_future),
+        );
+
+        assert!(!reboot_confirmed_since_arming(Some(&status)));
+    }
+
+    #[test]
+    fn reboot_confirmed_since_arming_false_when_no_status() {
+        assert!(!reboot_confirmed_since_arming(None));
+    }
+
+    #[test]
+    fn reboot_confirmed_since_arming_false_when_finished_utc_absent() {
+        let status = UpdateStatus::new(
+            &request(RequestedOperation::Finalize),
+            Operation::Finalize,
+            "op-1".to_string(),
+            StatusCode::InProgress,
+            "finalizing",
+            Some("1.0.0".to_string()),
+            Some("2.0.0".to_string()),
+            Utc::now(),
+            None,
+        );
+
+        assert!(!reboot_confirmed_since_arming(Some(&status)));
     }
 }
