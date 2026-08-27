@@ -85,7 +85,7 @@ shows valid reference counts for each referrer type.
 | raid-array         | 2   | ∞   |
 | ab-volume          | 2   | 2   |
 | encrypted-volume   | 1   | 1   |
-| verity-device      | 2   | 2   |
+| verity-device      | 1   | 2   |
 | swap-device        | 1   | 1   |
 | filesystem-new     | 0   | 1   |
 | filesystem-image   | 1   | 1   |

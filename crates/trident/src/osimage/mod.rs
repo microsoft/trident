@@ -337,6 +337,14 @@ pub struct GptPartitionInfo {
 pub struct OsImageVerityHash {
     pub roothash: String,
     pub hash_image_file: OsImageFile,
+
+    /// Byte offset of the verity superblock within the hash image.
+    ///
+    /// Set for *inline* verity, where the hash tree is stored inside the data
+    /// image itself, so `hash_image_file` is the same image as the filesystem's
+    /// own. Like [`roothash`](Self::roothash), this is a property of the OS
+    /// image rather than of the Host Configuration.
+    pub hash_offset: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Eq, PartialEq)]
