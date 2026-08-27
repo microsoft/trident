@@ -1,0 +1,495 @@
+//! Persistent agent state (`/var/lib/trident-acl-agent/state.json`):
+//! completed-operation cache and the pending post-reboot commit record.
+//!
+//! Implements the `state.json` mechanism, which bridges the pre-reboot
+//! finalize/rollback half and the post-reboot commit half of an operation
+//! across the reboot.
+
+use std::{
+    collections::BTreeMap,
+    fs,
+    io::{ErrorKind, Write},
+    os::unix::fs::OpenOptionsExt,
+    path::{Path, PathBuf},
+    process,
+};
+
+use anyhow::{Context, Error};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+
+use crate::{
+    annotations::{Operation, UpdateRequest, UpdateStatus},
+    core::config::STATE_FILE_NAME,
+};
+
+// state.json persists the full UpdateRequest, which can include a
+// secret-bearing Omaha `server` URL, so store it with owner-only permissions.
+const STATE_FILE_MODE: u32 = 0o600;
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PersistentState {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_commit: Option<PendingCommit>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub completed: BTreeMap<String, CompletedEntry>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CompletedEntry {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation: Option<UpdateStatus>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit: Option<UpdateStatus>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PendingCommit {
+    pub request: UpdateRequest,
+    pub operation_id: String,
+    pub operation: Operation,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_version: Option<String>,
+    pub started_utc: DateTime<Utc>,
+    pub boot_marker: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct StateStore {
+    path: PathBuf,
+}
+
+impl StateStore {
+    pub fn new(path: impl Into<PathBuf>) -> Self {
+        Self { path: path.into() }
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn load(&self) -> Result<PersistentState, Error> {
+        match fs::read_to_string(&self.path) {
+            Ok(raw) => Ok(serde_json::from_str(&raw)
+                .with_context(|| format!("failed to parse {}", self.path.display()))?),
+            Err(err) if err.kind() == ErrorKind::NotFound => Ok(PersistentState::default()),
+            Err(err) => Err(err).with_context(|| format!("failed to read {}", self.path.display())),
+        }
+    }
+
+    pub fn save(&self, state: &PersistentState) -> Result<(), Error> {
+        let parent = match self.path.parent() {
+            Some(parent) => {
+                fs::create_dir_all(parent)
+                    .with_context(|| format!("failed to create {}", parent.display()))?;
+                parent
+            }
+            None => Path::new("."),
+        };
+
+        let temp_path = parent.join(format!(
+            "{}.tmp-{}",
+            self.path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or(STATE_FILE_NAME),
+            process::id()
+        ));
+
+        // Write via a File handle and fsync it before the rename: fs::write
+        // alone only guarantees the data reaches the OS page cache, not
+        // disk, so a crash between the write and a later flush could still
+        // leave state.json empty/corrupt after the rename below.
+        //
+        // The persisted state embeds the full UpdateRequest, which can
+        // include a secret-bearing Omaha `server` URL, so create the file
+        // with owner-only permissions (0600) rather than relying on the
+        // process umask.
+        {
+            // create_new (not create+truncate) so the file is always newly
+            // created with STATE_FILE_MODE: opening/truncating a stale temp
+            // file left behind by a prior crash would silently keep that
+            // file's existing (possibly broader) permissions, since .mode()
+            // only applies on creation. A leftover temp file (same
+            // process::id() reused across reboots) is removed and retried
+            // once, since it can only be this process's own abandoned
+            // write, never another process's live file.
+            let mut open_opts = fs::OpenOptions::new();
+            open_opts.write(true).create_new(true).mode(STATE_FILE_MODE);
+            let mut file = match open_opts.open(&temp_path) {
+                Ok(file) => file,
+                Err(err) if err.kind() == ErrorKind::AlreadyExists => {
+                    fs::remove_file(&temp_path).with_context(|| {
+                        format!("failed to remove stale {}", temp_path.display())
+                    })?;
+                    open_opts
+                        .open(&temp_path)
+                        .with_context(|| format!("failed to create {}", temp_path.display()))?
+                }
+                Err(err) => {
+                    return Err(err)
+                        .with_context(|| format!("failed to create {}", temp_path.display()))
+                }
+            };
+            file.write_all(serde_json::to_string_pretty(state)?.as_bytes())
+                .with_context(|| format!("failed to write {}", temp_path.display()))?;
+            file.sync_all()
+                .with_context(|| format!("failed to fsync {}", temp_path.display()))?;
+        }
+
+        fs::rename(&temp_path, &self.path).with_context(|| {
+            format!(
+                "failed to atomically replace {} with {}",
+                self.path.display(),
+                temp_path.display()
+            )
+        })?;
+
+        // Best-effort: POSIX doesn't guarantee a rename is durable until the
+        // containing directory's metadata is also synced, so fsync it too.
+        // Not fatal if this fails (e.g. unsupported on some filesystems) -
+        // the rename itself has already succeeded.
+        if let Ok(dir) = fs::File::open(parent) {
+            let _ = dir.sync_all();
+        }
+
+        Ok(())
+    }
+
+    /// Atomically applies `mutate` to the persisted state in a single
+    /// load->mutate->save cycle. Callers that need to change more than one
+    /// field (e.g. recording a completed entry while also clearing
+    /// `pendingCommit`) should compose their change into one call to this
+    /// method instead of two separate `save()`s - each `save()` is its own
+    /// crash-safe atomic file replace, but two of them back-to-back still
+    /// leave a real window where a crash between them can lose whichever
+    /// half hadn't landed yet.
+    fn update<F>(&self, mutate: F) -> Result<(), Error>
+    where
+        F: FnOnce(&mut PersistentState),
+    {
+        let mut state = self.load()?;
+        mutate(&mut state);
+        self.save(&state)
+    }
+
+    pub fn remember_completed(&self, status: UpdateStatus) -> Result<(), Error> {
+        self.update(|state| {
+            let entry = state
+                .completed
+                .entry(status.operation_id.clone())
+                .or_default();
+            match status.operation {
+                Operation::Commit => entry.commit = Some(status.clone()),
+                _ => entry.operation = Some(status.clone()),
+            }
+        })
+    }
+
+    pub fn set_pending_commit(&self, pending: PendingCommit) -> Result<(), Error> {
+        self.update(|state| state.pending_commit = Some(pending.clone()))
+    }
+
+    pub fn clear_pending_commit(&self) -> Result<(), Error> {
+        self.update(|state| state.pending_commit = None)
+    }
+
+    /// Atomically records `status` as a completed entry and clears any
+    /// pending commit, in a single load->mutate->save cycle. Every
+    /// post-reboot completion path (a real `resume_pending_commit`, or the
+    /// `state.json`-missing degraded reconstruction) must use this instead
+    /// of a separate `remember_completed()` + `clear_pending_commit()` pair:
+    /// with two separate writes, a crash between them can leave a stale
+    /// `pendingCommit` with no completed record (re-triggering the same
+    /// commit attempt) or vice versa (clearing the pending record with the
+    /// result never persisted, silently losing the outcome).
+    pub fn remember_completed_and_clear_pending(&self, status: UpdateStatus) -> Result<(), Error> {
+        self.update(|state| {
+            let entry = state
+                .completed
+                .entry(status.operation_id.clone())
+                .or_default();
+            match status.operation {
+                Operation::Commit => entry.commit = Some(status.clone()),
+                _ => entry.operation = Some(status.clone()),
+            }
+            state.pending_commit = None;
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::annotations::{RequestedOperation, StatusCode, SCHEMA_VERSION};
+    use chrono::Utc;
+    use url::Url;
+    use uuid::Uuid;
+
+    fn store() -> (tempfile::TempDir, StateStore) {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = dir.path().join("state.json");
+        let store = StateStore::new(path);
+        (dir, store)
+    }
+
+    fn sample_request() -> UpdateRequest {
+        UpdateRequest {
+            schema_version: SCHEMA_VERSION.to_string(),
+            node_update_id: Uuid::new_v4(),
+            operation_id: "op-1".to_string(),
+            operation: RequestedOperation::Finalize,
+            target_version: Some("2.0.0".to_string()),
+            server: None,
+            app_id: None,
+            track: None,
+        }
+    }
+
+    fn sample_status(operation: Operation) -> UpdateStatus {
+        UpdateStatus::new(
+            &sample_request(),
+            operation,
+            "op-1".to_string(),
+            StatusCode::Success,
+            format!("{operation:?} completed"),
+            Some("1.0.0".to_string()),
+            Some("2.0.0".to_string()),
+            Utc::now(),
+            Some(Utc::now()),
+        )
+    }
+
+    fn sample_pending() -> PendingCommit {
+        PendingCommit {
+            request: sample_request(),
+            operation_id: "op-1".to_string(),
+            operation: Operation::Finalize,
+            from_version: Some("1.0.0".to_string()),
+            to_version: Some("2.0.0".to_string()),
+            started_utc: Utc::now(),
+            boot_marker: "boot-1".to_string(),
+        }
+    }
+
+    #[test]
+    fn load_returns_default_when_file_missing() {
+        let (_dir, store) = store();
+        let state = store
+            .load()
+            .expect("load should not fail when file is absent");
+        assert_eq!(state, PersistentState::default());
+        assert!(state.pending_commit.is_none());
+        assert!(state.completed.is_empty());
+    }
+
+    #[test]
+    fn save_then_load_round_trips_full_state() {
+        let (_dir, store) = store();
+        let mut completed = BTreeMap::new();
+        completed.insert(
+            "op-1".to_string(),
+            CompletedEntry {
+                operation: Some(sample_status(Operation::Finalize)),
+                commit: Some(sample_status(Operation::Commit)),
+            },
+        );
+        let state = PersistentState {
+            pending_commit: Some(sample_pending()),
+            completed,
+        };
+        store.save(&state).expect("save should succeed");
+        let loaded = store.load().expect("load should succeed after save");
+
+        assert_eq!(loaded, state);
+    }
+
+    #[test]
+    fn save_creates_parent_directories() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let nested_path = dir.path().join("nested").join("deeper").join("state.json");
+        let store = StateStore::new(nested_path.clone());
+
+        store
+            .save(&PersistentState::default())
+            .expect("save should create missing parent directories");
+
+        assert!(nested_path.exists());
+    }
+
+    #[test]
+    fn remember_completed_tracks_operation_and_commit_separately_under_same_operation_id() {
+        let (_dir, store) = store();
+        store
+            .remember_completed(sample_status(Operation::Finalize))
+            .expect("remember_completed should succeed");
+        store
+            .remember_completed(sample_status(Operation::Commit))
+            .expect("remember_completed should succeed");
+
+        let state = store.load().expect("load should succeed");
+        let entry = state.completed.get("op-1").expect("entry should exist");
+        assert!(entry.operation.is_some());
+        assert!(entry.commit.is_some());
+        assert_eq!(state.completed.len(), 1);
+    }
+
+    #[test]
+    fn remember_completed_overwrites_same_half_only() {
+        let (_dir, store) = store();
+        store
+            .remember_completed(sample_status(Operation::Finalize))
+            .expect("first remember_completed should succeed");
+
+        let mut updated = sample_status(Operation::Finalize);
+        updated.message = "updated message".to_string();
+        store
+            .remember_completed(updated)
+            .expect("second remember_completed should succeed");
+
+        let state = store.load().expect("load should succeed");
+        let entry = state.completed.get("op-1").expect("entry should exist");
+        assert_eq!(entry.operation.as_ref().unwrap().message, "updated message");
+        assert!(entry.commit.is_none());
+    }
+
+    #[test]
+    fn set_and_clear_pending_commit_round_trip() {
+        let (_dir, store) = store();
+        assert!(store.load().unwrap().pending_commit.is_none());
+
+        let pending = sample_pending();
+        store
+            .set_pending_commit(pending.clone())
+            .expect("set_pending_commit should succeed");
+        let state = store.load().expect("load should succeed");
+        assert_eq!(state.pending_commit, Some(pending));
+
+        store
+            .clear_pending_commit()
+            .expect("clear_pending_commit should succeed");
+        let state = store.load().expect("load should succeed");
+        assert!(state.pending_commit.is_none());
+    }
+
+    #[test]
+    fn pending_commit_persists_server_app_id_and_track_overrides() {
+        // PendingCommit.request carries the whole UpdateRequest, so a
+        // server/appId/track override present at finalize time must survive
+        // the reboot unchanged, ready for the post-reboot commit's Nebraska
+        // event report (see Orchestrator::resolve_nebraska_endpoint,
+        // Orchestrator::resolve_nebraska_app_id, and
+        // Orchestrator::resolve_nebraska_track).
+        let (_dir, store) = store();
+        let mut pending = sample_pending();
+        pending.request.server = Some(Url::parse("https://nebraska.example/v1/update").unwrap());
+        pending.request.app_id = Some("59bbad61-257d-47f4-9730-6848d88e1a6e".to_string());
+        pending.request.track = Some("pin-202608.6.0".to_string());
+
+        store
+            .set_pending_commit(pending.clone())
+            .expect("set_pending_commit should succeed");
+        let state = store.load().expect("load should succeed");
+        assert_eq!(state.pending_commit, Some(pending));
+    }
+
+    #[test]
+    fn set_pending_commit_preserves_existing_completed_entries() {
+        let (_dir, store) = store();
+        store
+            .remember_completed(sample_status(Operation::Finalize))
+            .expect("remember_completed should succeed");
+        store
+            .set_pending_commit(sample_pending())
+            .expect("set_pending_commit should succeed");
+
+        let state = store.load().expect("load should succeed");
+        assert!(state.pending_commit.is_some());
+        assert_eq!(state.completed.len(), 1);
+        assert!(state.completed.contains_key("op-1"));
+    }
+
+    #[test]
+    fn remember_completed_and_clear_pending_does_both_in_one_write() {
+        let (_dir, store) = store();
+        store
+            .set_pending_commit(sample_pending())
+            .expect("set_pending_commit should succeed");
+
+        store
+            .remember_completed_and_clear_pending(sample_status(Operation::Commit))
+            .expect("remember_completed_and_clear_pending should succeed");
+
+        let state = store.load().expect("load should succeed");
+        assert!(
+            state.pending_commit.is_none(),
+            "pending commit should be cleared"
+        );
+        let entry = state.completed.get("op-1").expect("entry should exist");
+        assert!(entry.commit.is_some(), "commit half should be recorded");
+    }
+
+    #[test]
+    fn save_is_atomic_replace() {
+        let (_dir, store) = store();
+        store
+            .save(&PersistentState::default())
+            .expect("initial save should succeed");
+
+        let metadata_before = fs::metadata(store.path()).expect("state file should exist");
+        let state = PersistentState {
+            pending_commit: Some(sample_pending()),
+            completed: BTreeMap::new(),
+        };
+        store.save(&state).expect("second save should succeed");
+
+        let metadata_after = fs::metadata(store.path()).expect("state file should exist");
+        assert!(metadata_after.len() > 0);
+        assert!(metadata_before.modified().is_ok());
+    }
+
+    #[test]
+    fn save_recreates_stale_world_readable_temp_file_with_owner_only_mode() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let (_dir, store) = store();
+
+        // Simulate a temp file left behind by a prior crash, deliberately
+        // world-readable, at the exact path save() will compute for this
+        // process (same process::id()-derived name).
+        let temp_path = store.path().parent().unwrap().join(format!(
+            "{}.tmp-{}",
+            STATE_FILE_NAME,
+            process::id()
+        ));
+        fs::write(&temp_path, b"stale leftover data").expect("failed to write stale temp file");
+        fs::set_permissions(&temp_path, fs::Permissions::from_mode(0o644))
+            .expect("failed to widen stale temp file permissions");
+
+        store
+            .save(&PersistentState::default())
+            .expect("save should recover from a stale temp file");
+
+        // The stale file must not still exist post-rename (it becomes
+        // state.json), and the final state.json must carry owner-only mode,
+        // proving the stale file's permissions were never inherited.
+        let metadata = fs::metadata(store.path()).expect("state file should exist");
+        assert_eq!(metadata.permissions().mode() & 0o777, STATE_FILE_MODE);
+    }
+
+    #[test]
+    fn deserialize_rejects_unknown_top_level_fields() {
+        let err = serde_json::from_str::<PersistentState>(
+            r#"{"pendingCommit": null, "completed": {}, "unexpectedField": true}"#,
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("unexpectedField"));
+    }
+}

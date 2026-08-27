@@ -226,7 +226,6 @@ be removed once the fix is merged in AZL 4.0.
 
 # ------------------------------------------------------------------------------
 
-%if %{defined rpm_ver}
 %package acl-agent
 Summary:        Trident ACL Agent
 Requires:       %{name} = %{version}-%{release}
@@ -237,7 +236,16 @@ The Trident ACL Agent triggers updates of ACL images.
 %files acl-agent
 %license LICENSE NOTICE
 %{_bindir}/%{name}-acl-agent
-%endif
+%{_unitdir}/%{name}-acl-agent.service
+
+%post acl-agent
+%systemd_post %{name}-acl-agent.service
+
+%preun acl-agent
+%systemd_preun %{name}-acl-agent.service
+
+%postun acl-agent
+%systemd_postun_with_restart %{name}-acl-agent.service
 
 # ------------------------------------------------------------------------------
 
@@ -269,11 +277,7 @@ export TRIDENT_VERSION="%{version}-%{release}"
 # Use %{trident_version} for Trident repo build
 export TRIDENT_VERSION="%{trident_version}"
 %endif
-%if %{defined rpm_ver}
 cargo build --release -p trident -p trident-acl-agent
-%else
-cargo build --release -p trident
-%endif
 
 mkdir selinux
 cp -p packaging/selinux-policy-trident/trident.fc selinux/
@@ -303,9 +307,8 @@ cargo test --all --no-fail-fast -- --skip test_run_systemd_check --skip test_pre
 
 %install
 install -D -m 755 target/release/%{name} %{buildroot}/%{_bindir}/%{name}
-%if %{defined rpm_ver}
 install -D -m 755 target/release/%{name}-acl-agent %{buildroot}/%{_bindir}/%{name}-acl-agent
-%endif
+install -D -m 644 packaging/systemd/%{name}-acl-agent.service %{buildroot}%{_unitdir}/%{name}-acl-agent.service
 
 # Copy Trident SELinux policy module to /usr/share/selinux/packages
 install -D -m 0644 %{name}.pp.bz2 %{buildroot}%{_datadir}/selinux/packages/%{selinuxtype}/%{name}.pp.bz2
