@@ -227,11 +227,11 @@ be removed once the fix is merged in AZL 4.0.
 # ------------------------------------------------------------------------------
 
 %package acl
-Summary:        Trident ACL Agent
+Summary:        Trident ACL Components
 Requires:       %{name} = %{version}-%{release}
 
 %description acl
-The Trident ACL Agent triggers updates of ACL images.
+The Trident ACL components required to orchestrate servicing of ACL images.
 
 %files acl
 %license LICENSE NOTICE
