@@ -75,7 +75,7 @@ verbs:
   other root partition and reboots), or reports that a clean install is
   required if the change can't be applied in place.
 
-See [How Trident Knows What to Do](../../Explanation/How-Trident-Knows-What-to-Do.md) and 
+See [How Trident Knows What to Do](../../Explanation/How-Trident-Knows-What-to-Do.md) and
 [A/B Update](../../Explanation/AB-Update.md) for a deeper explanation of this
 decision process.
 
