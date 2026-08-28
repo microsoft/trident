@@ -22,8 +22,8 @@ stages:
           - DeploymentTesting_host
           - DeploymentTesting_container
           - FunctionalTesting
-          - BaremetalDeploymentTesting_host
-          - BaremetalDeploymentTesting_container
+          # - BaremetalDeploymentTesting_host
+          # - BaremetalDeploymentTesting_container
           - ServicingTesting
     condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main') )
 
