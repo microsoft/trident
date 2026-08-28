@@ -226,25 +226,25 @@ be removed once the fix is merged in AZL 4.0.
 
 # ------------------------------------------------------------------------------
 
-%package acl-agent
-Summary:        Trident ACL Agent
+%package acl
+Summary:        Trident ACL Components
 Requires:       %{name} = %{version}-%{release}
 
-%description acl-agent
-The Trident ACL Agent triggers updates of ACL images.
+%description acl
+The Trident ACL components required to orchestrate servicing of ACL images.
 
-%files acl-agent
+%files acl
 %license LICENSE NOTICE
 %{_bindir}/%{name}-acl-agent
 %{_unitdir}/%{name}-acl-agent.service
 
-%post acl-agent
+%post acl
 %systemd_post %{name}-acl-agent.service
 
-%preun acl-agent
+%preun acl
 %systemd_preun %{name}-acl-agent.service
 
-%postun acl-agent
+%postun acl
 %systemd_postun_with_restart %{name}-acl-agent.service
 
 # ------------------------------------------------------------------------------

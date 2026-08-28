@@ -51,8 +51,8 @@ popd
 mkdir -p "$OUTPUT_PATH"
 mv "$TMP_DIR/usr/bin/trident" "$OUTPUT_PATH"
 
-# Extract trident-acl-agent binary from the acl-agent sub-package RPM
-ACL_AGENT_RPM=$(find "$RPM_DIR" | grep -P "trident-acl-agent-\d.*\.${DISTRO}\.${RPM_ARCH}\.rpm" | head -n 1 || true)
+# Extract trident-acl-agent binary from the acl sub-package RPM
+ACL_AGENT_RPM=$(find "$RPM_DIR" | grep -P "trident-acl-\d.*\.${DISTRO}\.${RPM_ARCH}\.rpm" | head -n 1 || true)
 if [ -n "$ACL_AGENT_RPM" ]; then
   ACL_TMP_DIR=$(mktemp -d)
   cp "$ACL_AGENT_RPM" "$ACL_TMP_DIR/trident-acl-agent.rpm"
