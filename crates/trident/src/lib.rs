@@ -674,7 +674,7 @@ impl Trident {
                             Ok((ExitKind::Done, None, ServicingType::NoActiveServicing))
                         }
                     }
-                    ServicingState::AbUpdateFinalized | ServicingState::Provisioned => {
+                    ServicingState::AbUpdateHealthCheckFailed | ServicingState::AbUpdateFinalized | ServicingState::Provisioned => {
                         // Need to either re-execute the failed update OR inform the user that no update
                         // is needed.
                         engine::update(&host_config, datastore, &allowed_operations, image)
