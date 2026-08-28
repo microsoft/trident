@@ -530,8 +530,9 @@ pub fn find_previous_uki(esp_dir_path: &Path) -> Result<PathBuf, TridentError> {
 }
 
 /// Path within the image ESP where ACL stores addon templates shared across
-/// servicing scenarios: per-slot verity addons (`slot-a`/`slot-b`) and
-/// the first-boot addon (see `enforce_firstboot_addon_policy`).
+/// servicing scenarios: per-slot verity addons (`slot-a.addon.efi`/
+/// `slot-b.addon.efi`) and the first-boot addon (see
+/// `enforce_firstboot_addon_policy`).
 const ACL_ADDON_TEMPLATES_DIR: &str = "acl/uki-addons";
 
 /// Filename of the verity addon template for slot A, both in
@@ -572,9 +573,9 @@ pub fn activate_verity_addon_for_target_volume(
         return Ok(());
     }
 
-    let template_name = match target_volume {
-        AbVolumeSelection::VolumeA => SLOT_A_ADDON_FILENAME,
-        AbVolumeSelection::VolumeB => SLOT_B_ADDON_FILENAME,
+    let (template_name, other_slot_addon_name) = match target_volume {
+        AbVolumeSelection::VolumeA => (SLOT_A_ADDON_FILENAME, SLOT_B_ADDON_FILENAME),
+        AbVolumeSelection::VolumeB => (SLOT_B_ADDON_FILENAME, SLOT_A_ADDON_FILENAME),
     };
 
     let template_path = template_dir.join(template_name);
@@ -595,6 +596,21 @@ pub fn activate_verity_addon_for_target_volume(
             format!(
                 "Failed to create staged addon directory '{}'",
                 staging_addon_dir.display()
+            )
+        })?;
+    }
+
+    // The staged addon dir may already carry the other slot's addon —
+    // e.g. copied verbatim from the image's live .extra.d/ by
+    // stage_uki_on_esp, which ships slot A active. Leaving it in place
+    // would let systemd-boot apply both slots' (conflicting) verity
+    // cmdlines, so remove it before activating the target slot.
+    let other_slot_addon_path = staging_addon_dir.join(other_slot_addon_name);
+    if other_slot_addon_path.exists() {
+        fs::remove_file(&other_slot_addon_path).with_context(|| {
+            format!(
+                "Failed to remove stale verity addon '{}'",
+                other_slot_addon_path.display()
             )
         })?;
     }
@@ -1359,6 +1375,46 @@ mod tests {
             fs::read(staged_addon_dir.join("firstboot.addon.efi")).unwrap(),
             b"firstboot-data"
         );
+    }
+
+    /// Activating a slot removes a stale addon for the *other* slot already
+    /// present in the staged dir (e.g. copied verbatim from the image's live
+    /// .extra.d/, which ships slot A active), so systemd-boot never applies
+    /// both slots' conflicting verity cmdlines.
+    #[test]
+    fn test_activate_verity_addon_removes_stale_other_slot_addon() {
+        let image_esp = tempdir().unwrap();
+        setup_image_with_verity_templates(image_esp.path());
+
+        let mount_point = tempdir().unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)).unwrap();
+
+        let staged_addon_dir = join_relative(mount_point.path(), DEFAULT_ESP_MOUNT_POINT_PATH)
+            .join(UKI_DIRECTORY)
+            .join(TMP_UKI_ADDON_DIR_NAME);
+        fs::create_dir_all(&staged_addon_dir).unwrap();
+        // Stale slot A addon staged verbatim from the image's live .extra.d/
+        fs::write(
+            staged_addon_dir.join(SLOT_A_ADDON_FILENAME),
+            b"stale-a-content",
+        )
+        .unwrap();
+
+        activate_verity_addon_for_target_volume(
+            image_esp.path(),
+            mount_point.path(),
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+            AbVolumeSelection::VolumeB,
+        )
+        .unwrap();
+
+        // Target slot's addon is activated
+        assert_eq!(
+            fs::read(staged_addon_dir.join(SLOT_B_ADDON_FILENAME)).unwrap(),
+            b"verity-b-content"
+        );
+        // Stale other-slot addon is removed
+        assert!(!staged_addon_dir.join(SLOT_A_ADDON_FILENAME).exists());
     }
 
     // ── enforce_firstboot_addon_policy tests ────────────────────────────────
