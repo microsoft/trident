@@ -286,10 +286,25 @@ _Notes:_
 The `VerityConfig` object contains information required to set up a verity
 device on top of a data device.
 
-| Field      | Type                           | Added in | Required        | Description                                               |
-| ---------- | ------------------------------ | -------- | --------------- | --------------------------------------------------------- |
-| `image`    | [ImageFile](#imagefile-object) | 1.0      | Yes (since 1.0) | Details of the hash partition image file in the tar file. |
-| `roothash` | string                         | 1.0      | Yes (since 1.0) | Verity root hash.                                         |
+| Field        | Type                           | Added in | Required         | Description                                               |
+| ------------ | ------------------------------ | -------- | ---------------- | --------------------------------------------------------- |
+| `image`      | [ImageFile](#imagefile-object) | 1.0      | Yes (since 1.0)  | Details of the hash partition image file in the tar file. [1] |
+| `roothash`   | string                         | 1.0      | Yes (since 1.0)  | Verity root hash.                                         |
+| `hashOffset` | number                         | 1.2      | Conditionally[2] | Byte offset at which the verity hash tree starts inside `image`. [2] |
+
+_Notes:_
+
+- **[1]** The hash tree is normally written to a partition of its own, in which
+    case `image` refers to that partition's image and is distinct from the
+    `image` of the filesystem this object belongs to. For *inline* verity the
+    hash tree is instead stored inside the data partition itself, so `image`
+    refers to the **same** image file as the filesystem's own `image`, and the
+    two MUST have identical values for all fields.
+- **[2]** `hashOffset` MUST be specified for inline verity, i.e. whenever
+    `image` refers to the same image file as the filesystem's own `image`. It
+    gives the byte offset, from the start of the uncompressed image, at which
+    the verity superblock begins. It MUST be omitted OR set to `null` when the
+    hash tree occupies a partition of its own.
 
 ##### `ImageFile` Object
 
@@ -628,12 +643,85 @@ making them invalid JSON. They are provided for illustration purposes only.
 }
 ```
 
+##### Inline Verity Image
+
+An image where the verity hash tree is stored inside the data partition instead
+of in a partition of its own. The `verity.image` field refers to the *same*
+image file as the filesystem's own `image`, and `hashOffset` says where inside
+it the hash tree begins.
+
+```json
+{
+    "version": "1.2",
+    "osArch": "x86_64",
+    "images": [
+        {
+            "image": {
+                "path": "images/usr.rawzst",
+                "compressedSize": 299718933,
+                "uncompressedSize": 1073741824,
+                "sha384": "fd2992ee573ab5314deeb8f1a467bdf48f5d9a530f1f1988b105e29bc1d82ba6a156f2d1ed4ae8ed4dd60784bec1c6b0"
+            },
+            "mountPoint": "/usr",
+            "fsType": "ext4",
+            "fsUuid": "695a5ef2-6e5d-4f0d-b819-dae630122b8f",
+            "partType": "8484680c-9521-48c6-9c11-b0720656f69e", // <-- /usr amd64/x86_64 DPS GUID
+            "verity": {
+                "image": {
+                    // <-- Same image file as the filesystem above: the hash
+                    //     tree lives inside the data partition.
+                    "path": "images/usr.rawzst",
+                    "compressedSize": 299718933,
+                    "uncompressedSize": 1073741824,
+                    "sha384": "fd2992ee573ab5314deeb8f1a467bdf48f5d9a530f1f1988b105e29bc1d82ba6a156f2d1ed4ae8ed4dd60784bec1c6b0"
+                },
+                "roothash": "270ed371044dd0be4429a3945b1defa6a4cf202aa1308220c1ff40ea20cfb9c5",
+                "hashOffset": 1065345024 // <-- Hash tree starts here
+            }
+        },
+        // More images...
+    ],
+    "osRelease": "NAME=\"Microsoft Azure Linux\"\nVERSION=\"3.0.20240824\"\nID=azurelinux\nVERSION_ID=\"3.0\"\nPRETTY_NAME=\"Microsoft Azure Linux 3.0\"\nANSI_COLOR=\"1;34\"\nHOME_URL=\"https://aka.ms/azurelinux\"\nBUG_REPORT_URL=\"https://aka.ms/azurelinux\"\nSUPPORT_URL=\"https://aka.ms/azurelinux\"\n",
+    "bootloader": {
+        "type": "systemd-boot",
+        "systemdBoot": {
+            "entries": [
+                {
+                    "type": "uki-standalone",
+                    "path": "/boot/EFI/Linux/azurelinux-uki.efi",
+                    // The same offset appears in the kernel command line, so
+                    // that systemd can open the device at boot.
+                    "cmdline": "mount.usr=/dev/mapper/usr systemd.verity_usr_options=hash-offset=1065345024,panic-on-corruption usrhash=270ed371044dd0be4429a3945b1defa6a4cf202aa1308220c1ff40ea20cfb9c5",
+                    "kernel": "6.6.78.1-3.azl3"
+                }
+            ]
+        }
+    },
+    "osPackages": [
+        // Packages...
+    ],
+    "disk": {
+        "size": 1073741824,
+        "type": "gpt",
+        "lbaSize": 512,
+        "gptRegions": [
+            // Regions...
+        ]
+    },
+    "compression": {
+        "maxWindowLog": 27
+    }
+}
+```
+
 ## Changelog
 
 ### Revision 1.2
 
 - Added `disk` field to the root object.
 - Added `compression` field to the root object.
+- Added `hashOffset` field to the `VerityConfig` object, to describe verity
+  images whose hash tree is stored inline in the data partition.
 - COSI now ships the GPT data as a binary blob.
 - Added `cosi-marker` file as the first entry in the tar file.
 
