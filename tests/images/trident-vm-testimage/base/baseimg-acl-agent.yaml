@@ -164,7 +164,7 @@ os:
       - openssh-server
       - systemd-boot
       - systemd-udev
-      - trident-acl-agent
+      - trident-acl
       - veritysetup
       - vim
       - netplan
