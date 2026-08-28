@@ -13,7 +13,7 @@ distribution and honors the agent's per-node protocol.
 
 ## Deployment
 
-`trident-acl-agent` ships as its own `trident-acl` RPM subpackage
+`trident-acl-agent` ships in the `trident-acl` RPM subpackage
 (built alongside, and `Requires:` the same version of, the main `trident`
 package). Installing it:
 
