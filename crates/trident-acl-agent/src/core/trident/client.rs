@@ -28,10 +28,10 @@ use tonic::{
 use trident_proto::v1::{
     commit_service_client::CommitServiceClient, rollback_service_client::RollbackServiceClient,
     servicing_response::Response as ResponseBody, update_service_client::UpdateServiceClient,
-    CommitRequest, FinalizeUpdateRequest, HostConfiguration, LogLevel, ManualRollbackKind,
-    RebootHandling, RebootManagement, RebootStatus, RollbackFinalizeRequest, RollbackStageRequest,
-    ServicingKind, ServicingResponse, StageUpdateRequest, StatusCode, TridentErrorKind,
-    UpdateRequest,
+    CommitRequest, FileLocation, FinalizeUpdateRequest, HostConfiguration, LogLevel,
+    ManualRollbackKind, RebootHandling, RebootManagement, RebootStatus, RollbackFinalizeRequest,
+    RollbackStageRequest, ServicingKind, ServicingResponse, StageUpdateRequest, StatusCode,
+    TridentErrorKind, UpdateRequest,
 };
 use url::Url;
 
@@ -47,6 +47,9 @@ pub struct RemoteError {
     pub subkind: String,
     pub message: String,
     pub error_message: String,
+    /// Location in Trident's source where the error originated, when
+    /// Trident's structured error reported one.
+    pub location: Option<FileLocation>,
 }
 
 #[derive(Debug, Error)]
@@ -395,12 +398,14 @@ async fn consume_servicing_stream(
                         subkind: error.subkind,
                         message: error.message,
                         error_message: error.error_message,
+                        location: error.location,
                     })
                     .unwrap_or(RemoteError {
                         kind: None,
                         subkind: UNKNOWN_REMOTE_ERROR_SUBKIND.to_string(),
                         message: format!("Trident {operation} failed without structured error"),
                         error_message: String::new(),
+                        location: None,
                     });
                 return Err(TridentClientError::Remote { operation, details });
             }
