@@ -19,7 +19,9 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
 
-use crate::core::{config::DEFAULT_ANNOTATION_PREFIX, error::AgentError};
+use crate::core::{
+    config::DEFAULT_ANNOTATION_PREFIX, error::AgentError, trident::TridentClientError,
+};
 
 /// Suffix (appended to the configured annotation prefix) for the request
 /// annotation, e.g. `acl.microsoft.com/update-request`.
@@ -136,6 +138,10 @@ pub struct UpdateStatus {
     pub code: StatusCode,
     pub message: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_subkind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from_version: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to_version: Option<String>,
@@ -233,6 +239,8 @@ impl UpdateStatus {
             operation,
             code,
             message: truncate_message(message.into()),
+            error_kind: None,
+            error_subkind: None,
             from_version,
             to_version,
             started_utc,
@@ -246,6 +254,20 @@ impl UpdateStatus {
         refreshed.last_updated_utc = Utc::now();
         refreshed.message = truncate_message(refreshed.message);
         refreshed
+    }
+
+    /// Populates `error_kind`/`error_subkind` from a Trident-reported remote
+    /// error, if present. Non-`Remote` `TridentClientError` variants
+    /// (connect/timeout/stream failures) and agent-generated failures
+    /// (e.g. `InvalidRequest`) carry no structured Trident error, so this
+    /// is a no-op for them - `errorKind`/`errorSubkind` stay unset, since
+    /// only a subset of failure codes actually originate from Trident.
+    pub fn with_trident_error(mut self, err: &TridentClientError) -> Self {
+        if let Some(remote) = err.remote() {
+            self.error_kind = remote.kind.map(|kind| kind.as_str_name().to_string());
+            self.error_subkind = Some(remote.subkind.clone());
+        }
+        self
     }
 
     /// Compares two statuses ignoring `last_updated_utc`.
@@ -265,6 +287,8 @@ impl UpdateStatus {
             && self.operation == other.operation
             && self.code == other.code
             && self.message == other.message
+            && self.error_kind == other.error_kind
+            && self.error_subkind == other.error_subkind
             && self.from_version == other.from_version
             && self.to_version == other.to_version
             && self.started_utc == other.started_utc
@@ -757,6 +781,8 @@ mod tests {
     "operation":     { "type": "string", "enum": ["stage", "finalize", "rollback", "commit"] },
     "code":          { "type": "string", "enum": ["InProgress", "Success", "AlreadyAtTarget", "NotStaged", "OperationFailed", "TargetBootFailed", "AgentInternalError", "InvalidRequest"] },
     "message":       { "type": "string", "maxLength": 2048 },
+    "errorKind":     { "type": "string", "description": "TridentError kind, e.g. SERVICING_ERROR, HEALTH_CHECKS_ERROR. Present only when the failure originated from a structured Trident remote error - a subset of failure codes carry this; most do not." },
+    "errorSubkind":  { "type": "string", "description": "Finer-grained identifier within errorKind, e.g. ab-update-reboot-check. Optional even when errorKind is present - not every kind defines subkinds." },
     "fromVersion":   { "type": "string" },
     "toVersion":     { "type": "string" },
     "startedUtc":    { "type": "string", "format": "date-time" },
@@ -1225,6 +1251,89 @@ mod tests {
                 )
             });
         }
+    }
+
+    #[test]
+    fn with_trident_error_populates_kind_and_subkind_and_conforms_to_schema() {
+        use crate::core::trident::RemoteError;
+        use trident_proto::v1::TridentErrorKind;
+
+        let schema: Value = serde_json::from_str(DESIGN_DOC_STATUS_SCHEMA).unwrap();
+        let request = UpdateRequest {
+            schema_version: SCHEMA_VERSION.to_string(),
+            node_update_id: Uuid::new_v4(),
+            operation_id: Uuid::new_v4().to_string(),
+            operation: RequestedOperation::Finalize,
+            target_version: Some("202606.29.0".to_string()),
+            server: None,
+            app_id: None,
+            track: None,
+        };
+
+        let remote_err = TridentClientError::Remote {
+            operation: "commit",
+            details: RemoteError {
+                kind: Some(TridentErrorKind::ServicingError),
+                subkind: "ab-update-reboot-check".to_string(),
+                message: "reboot check failed".to_string(),
+                error_message: "reboot check failed".to_string(),
+            },
+        };
+        let status = UpdateStatus::new(
+            &request,
+            Operation::Commit,
+            request.operation_id.clone(),
+            StatusCode::TargetBootFailed,
+            format!("commit detected rollback to previous version: {remote_err}"),
+            Some("1.0.0".to_string()),
+            Some("2.0.0".to_string()),
+            fixed_time(0),
+            Some(fixed_time(5)),
+        )
+        .with_trident_error(&remote_err);
+
+        assert_eq!(status.error_kind.as_deref(), Some("SERVICING_ERROR"));
+        assert_eq!(
+            status.error_subkind.as_deref(),
+            Some("ab-update-reboot-check")
+        );
+        schema_validate(&schema, &serde_json::to_value(&status).unwrap()).expect(
+            "status carrying errorKind/errorSubkind must still conform to the formal schema",
+        );
+    }
+
+    #[test]
+    fn with_trident_error_is_noop_for_non_remote_errors() {
+        let request = UpdateRequest {
+            schema_version: SCHEMA_VERSION.to_string(),
+            node_update_id: Uuid::new_v4(),
+            operation_id: Uuid::new_v4().to_string(),
+            operation: RequestedOperation::Finalize,
+            target_version: Some("202606.29.0".to_string()),
+            server: None,
+            app_id: None,
+            track: None,
+        };
+
+        let timeout_err = TridentClientError::Timeout {
+            operation: "commit",
+            timeout: std::time::Duration::from_secs(5),
+        };
+        let status = UpdateStatus::new(
+            &request,
+            Operation::Commit,
+            request.operation_id.clone(),
+            StatusCode::OperationFailed,
+            format!("commit failed: {timeout_err}"),
+            Some("1.0.0".to_string()),
+            Some("2.0.0".to_string()),
+            fixed_time(0),
+            Some(fixed_time(5)),
+        )
+        .with_trident_error(&timeout_err);
+
+        assert_eq!(status.error_kind, None);
+        assert_eq!(status.error_subkind, None);
     }
 
     #[test]
