@@ -19,7 +19,10 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
 
-use crate::core::{config::DEFAULT_ANNOTATION_PREFIX, error::AgentError};
+use crate::{
+    core::{config::DEFAULT_ANNOTATION_PREFIX, error::AgentError},
+    AGENT_VERSION,
+};
 
 /// Suffix (appended to the configured annotation prefix) for the request
 /// annotation, e.g. `acl.microsoft.com/update-request`.
@@ -139,6 +142,13 @@ pub struct UpdateStatus {
     pub from_version: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to_version: Option<String>,
+    /// Version of trident-acl-agent that wrote this status (`AGENT_VERSION`).
+    /// Packaged and versioned together with tridentd via the same RPM build
+    /// (see `packaging/rpm/trident.spec`'s single `TRIDENT_VERSION`-stamped
+    /// `%build` step for both `-p trident` and `-p trident-acl-agent`), so
+    /// this value doubles as the tridentd version for that install.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trident_version: Option<String>,
     pub started_utc: DateTime<Utc>,
     pub last_updated_utc: DateTime<Utc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -235,6 +245,7 @@ impl UpdateStatus {
             message: truncate_message(message.into()),
             from_version,
             to_version,
+            trident_version: Some(AGENT_VERSION.to_string()),
             started_utc,
             last_updated_utc: finished_or_started,
             finished_utc,
@@ -267,6 +278,7 @@ impl UpdateStatus {
             && self.message == other.message
             && self.from_version == other.from_version
             && self.to_version == other.to_version
+            && self.trident_version == other.trident_version
             && self.started_utc == other.started_utc
             && self.finished_utc == other.finished_utc
     }
@@ -465,11 +477,30 @@ mod tests {
         assert_eq!(json["message"], "stage completed");
         assert_eq!(json["fromVersion"], "1.0.0");
         assert_eq!(json["toVersion"], "2.0.0");
+        assert_eq!(json["tridentVersion"], AGENT_VERSION);
         assert!(json.get("startedUtc").is_some());
         assert!(json.get("lastUpdatedUtc").is_some());
         assert!(json.get("finishedUtc").is_some());
         // Confirms camelCase renaming applies to every field, not just a subset.
         assert!(json.get("nodeUpdateId").is_some());
+    }
+
+    #[test]
+    fn new_always_populates_trident_version_with_agent_version() {
+        let request = sample_request(RequestedOperation::Stage);
+        let status = UpdateStatus::new(
+            &request,
+            Operation::Stage,
+            request.operation_id.clone(),
+            StatusCode::Success,
+            "stage completed",
+            None,
+            None,
+            fixed_time(0),
+            Some(fixed_time(5)),
+        );
+
+        assert_eq!(status.trident_version.as_deref(), Some(AGENT_VERSION));
     }
 
     #[test]
@@ -759,6 +790,7 @@ mod tests {
     "message":       { "type": "string", "maxLength": 2048 },
     "fromVersion":   { "type": "string" },
     "toVersion":     { "type": "string" },
+    "tridentVersion": { "type": "string", "description": "Version of trident-acl-agent that wrote this status. Packaged and released together with tridentd, so this is also the tridentd version." },
     "startedUtc":    { "type": "string", "format": "date-time" },
     "lastUpdatedUtc": { "type": "string", "format": "date-time", "description": "When the agent last wrote this status. The agent refreshes it on every write, including a periodic InProgress heartbeat, so AKS-RP and the watchdog can tell a working agent from a stuck one." },
     "finishedUtc":   { "type": "string", "format": "date-time" }

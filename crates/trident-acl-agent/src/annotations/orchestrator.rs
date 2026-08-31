@@ -233,6 +233,7 @@ impl Orchestrator {
                     message: invalid.reason,
                     from_version: None,
                     to_version: None,
+                    trident_version: Some(crate::AGENT_VERSION.to_string()),
                     started_utc: now,
                     last_updated_utc: now,
                     finished_utc: Some(now),
