@@ -19,7 +19,7 @@ use osutils::{
     path,
 };
 use trident_api::{
-    config::UefiFallbackMode,
+    config::{UefiFallbackMode, VerityDevice},
     constants::{
         internal_params::DISABLE_GRUB_NOPREFIX_CHECK, EFI_DEFAULT_BIN_DIRECTORY,
         EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY, GRUB2_CONFIG_FILENAME,
@@ -339,15 +339,22 @@ fn copy_file_artifacts(
 
         // For ACL A/B images, activate the verity addon matching the target slot.
         // The image ships with slot A's addon active; this swaps it when updating
-        // to slot B (or confirms slot A for clean installs). Non-ACL images have
-        // no template directory and this is a no-op.
+        // to slot B (or confirms slot A for clean installs). Images using inline
+        // verity have no per-slot PARTUUID pair, so this is a no-op for them.
         if ctx.image_distro().is_acl() {
             if let Some(target_volume) = ctx.get_ab_update_volume() {
+                // A per-slot addon carries its slot's verity data/hash PARTUUID
+                // pair, which only exists when the hash tree has a partition of
+                // its own. An empty verity list is vacuously inline: there is no
+                // pair either way.
+                let verity_is_inline = ctx.spec.storage.verity.iter().all(VerityDevice::is_inline);
+
                 uki::activate_verity_addon_for_target_volume(
                     temp_mount_dir,
                     mount_point,
                     &ctx.esp_mount_path,
                     target_volume,
+                    verity_is_inline,
                 )?;
 
                 // ACL images ship the first-boot addon pre-populated in the
