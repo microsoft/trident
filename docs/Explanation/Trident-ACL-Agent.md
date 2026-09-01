@@ -253,6 +253,8 @@ naming the offending variable.
 | `TRIDENT_ACL_AGENT_KUBERNETES_API_SERVER` | unset | Explicit override for the Kubernetes API server URL. When unset, the server embedded in the kubeconfig is used as-is. |
 | `TRIDENT_ACL_AGENT_KUBERNETES_KUBECONFIG` | `/var/lib/kubelet/kubeconfig` | Path to the kubeconfig used to reach the Kubernetes API server and authenticate as this node. |
 | `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME` | The node's own hostname, lowercased | The Node object this agent watches/patches. |
+| `TRIDENT_ACL_AGENT_KUBERNETES_CONNECT_MAX_TRIES` | `3` | Total attempts (first attempt included) to connect to the Kubernetes API server before giving up - covers both the startup/recovery Node read and the watch loop's tolerance for consecutive transient errors. `0`, `infinite`, or `forever` (case-insensitive) retries forever, mirroring `wget --tries=0`/`--tries=inf`. |
+| `TRIDENT_ACL_AGENT_KUBERNETES_CONNECT_BACKOFF` | `2s` | Delay between Kubernetes API server connect attempts (a [`humantime`](https://docs.rs/humantime) duration, e.g. `2s`, `500ms`). |
 | `TRIDENT_ACL_AGENT_TRIDENT_SOCKET` | `unix:///run/trident/trident.sock` | The gRPC Unix socket URI used to reach `tridentd`. |
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_STATE_PATH` | `/var/lib/trident-acl-agent/state.json` | Path to the agent's persistent state file bridging the pre-reboot and post-reboot halves of `finalize`/`rollback` across the reboot. |
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_STAGE_TIMEOUT` | `20m` | How long a `stage` is allowed to run (a [`humantime`](https://docs.rs/humantime) duration, e.g. `20m`, `1h`) before it's considered failed. |
