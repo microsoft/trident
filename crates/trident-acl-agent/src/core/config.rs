@@ -347,11 +347,15 @@ pub struct KubernetesConfig {
     /// pick its own namespace instead.
     pub annotation_prefix: String,
     /// Total attempts (first attempt included) to connect to the
-    /// Kubernetes API server - see [`DEFAULT_CONNECT_MAX_TRIES`]. Override
-    /// via `TRIDENT_ACL_AGENT_KUBERNETES_CONNECT_MAX_TRIES`.
+    /// Kubernetes API server during startup recovery's one-shot Node read
+    /// (`Orchestrator::get_node_with_retry`) - see [`DEFAULT_CONNECT_MAX_TRIES`].
+    /// Override via `TRIDENT_ACL_AGENT_KUBERNETES_CONNECT_MAX_TRIES`. Does
+    /// *not* bound the main watch loop, which tolerates errors indefinitely
+    /// (see `Orchestrator::run`).
     pub connect_max_tries: MaxTries,
-    /// Delay between connect attempts - see [`DEFAULT_CONNECT_BACKOFF`].
-    /// Override via `TRIDENT_ACL_AGENT_KUBERNETES_CONNECT_BACKOFF`.
+    /// Delay between connect attempts in `get_node_with_retry` - see
+    /// [`DEFAULT_CONNECT_BACKOFF`]. Override via
+    /// `TRIDENT_ACL_AGENT_KUBERNETES_CONNECT_BACKOFF`.
     pub connect_backoff: Duration,
 }
 
