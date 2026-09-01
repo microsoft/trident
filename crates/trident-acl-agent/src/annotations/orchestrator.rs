@@ -1210,8 +1210,10 @@ impl Orchestrator {
                 Err(err @ K8sClientError::NodeGone) => return Err(err),
                 Err(err) => {
                     // `max_elapsed_time(None)` means `next_backoff()` never
-                    // returns `None`.
-                    let delay = backoff.next_backoff().unwrap();
+                    // returns `None` in practice, but fall back to the cap
+                    // instead of unwrapping, so this can't panic even if
+                    // that invariant ever changes.
+                    let delay = backoff.next_backoff().unwrap_or(NODE_READ_BACKOFF_MAX);
                     warn!(
                         "transient error reading node {name} during startup recovery, retrying in {delay:?}: {err:#}"
                     );
