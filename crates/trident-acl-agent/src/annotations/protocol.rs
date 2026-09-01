@@ -19,7 +19,16 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
 
-use crate::core::{config::DEFAULT_ANNOTATION_PREFIX, error::AgentError};
+use crate::core::{
+    config::DEFAULT_ANNOTATION_PREFIX, error::AgentError, trident::TridentClientError,
+};
+
+/// Sentinel `kind` used when Trident reported a remote failure without any
+/// structured error at all (see `client.rs`'s `UNKNOWN_REMOTE_ERROR_SUBKIND`
+/// for the matching `subkind` sentinel) - keeps `TridentErrorInfo::kind`
+/// non-optional instead of adding a third `Option` layer for a case that
+/// should already be rare/a Trident-side contract violation.
+const UNKNOWN_ERROR_KIND: &str = "unknown";
 
 /// Suffix (appended to the configured annotation prefix) for the request
 /// annotation, e.g. `acl.microsoft.com/update-request`.
@@ -136,6 +145,8 @@ pub struct UpdateStatus {
     pub code: StatusCode,
     pub message: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trident_error: Option<TridentErrorInfo>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from_version: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to_version: Option<String>,
@@ -143,6 +154,30 @@ pub struct UpdateStatus {
     pub last_updated_utc: DateTime<Utc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finished_utc: Option<DateTime<Utc>>,
+}
+
+/// A structured Trident error surfaced on a failure status. Mirrors
+/// `TridentError`'s `kind`/`subkind`/`location` - its `message`/
+/// `error_message` are not duplicated here since `UpdateStatus::message`
+/// already carries the human-readable failure text.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TridentErrorInfo {
+    /// TridentError kind, e.g. `SERVICING_ERROR`, `HEALTH_CHECKS_ERROR`.
+    pub kind: String,
+    /// Finer-grained identifier within `kind`, e.g.
+    /// `ab-update-reboot-check`.
+    pub subkind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location: Option<ErrorLocation>,
+}
+
+/// Location in Trident's source where a `TridentErrorInfo` originated.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ErrorLocation {
+    pub path: String,
+    pub line: u32,
 }
 
 impl UpdateRequest {
@@ -233,6 +268,7 @@ impl UpdateStatus {
             operation,
             code,
             message: truncate_message(message.into()),
+            trident_error: None,
             from_version,
             to_version,
             started_utc,
@@ -246,6 +282,29 @@ impl UpdateStatus {
         refreshed.last_updated_utc = Utc::now();
         refreshed.message = truncate_message(refreshed.message);
         refreshed
+    }
+
+    /// Populates `trident_error` from a Trident-reported remote error, if
+    /// present. Non-`Remote` `TridentClientError` variants (connect/timeout/
+    /// stream failures) and agent-generated failures (e.g. `InvalidRequest`)
+    /// carry no structured Trident error, so this is a no-op for them -
+    /// `trident_error` stays unset, since only a subset of failure codes
+    /// actually originate from Trident.
+    pub fn with_trident_error(mut self, err: &TridentClientError) -> Self {
+        if let Some(remote) = err.remote() {
+            self.trident_error = Some(TridentErrorInfo {
+                kind: remote
+                    .kind
+                    .map(|kind| kind.as_str_name().to_string())
+                    .unwrap_or_else(|| UNKNOWN_ERROR_KIND.to_string()),
+                subkind: remote.subkind.clone(),
+                location: remote.location.as_ref().map(|location| ErrorLocation {
+                    path: location.path.clone(),
+                    line: location.line,
+                }),
+            });
+        }
+        self
     }
 
     /// Compares two statuses ignoring `last_updated_utc`.
@@ -265,6 +324,7 @@ impl UpdateStatus {
             && self.operation == other.operation
             && self.code == other.code
             && self.message == other.message
+            && self.trident_error == other.trident_error
             && self.from_version == other.from_version
             && self.to_version == other.to_version
             && self.started_utc == other.started_utc
@@ -757,6 +817,26 @@ mod tests {
     "operation":     { "type": "string", "enum": ["stage", "finalize", "rollback", "commit"] },
     "code":          { "type": "string", "enum": ["InProgress", "Success", "AlreadyAtTarget", "NotStaged", "OperationFailed", "TargetBootFailed", "AgentInternalError", "InvalidRequest"] },
     "message":       { "type": "string", "maxLength": 2048 },
+    "tridentError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "subkind"],
+      "description": "Structured Trident error, present only when the failure originated from a Trident remote error - a subset of failure codes carry this; most do not.",
+      "properties": {
+        "kind":    { "type": "string", "description": "TridentError kind, e.g. SERVICING_ERROR, HEALTH_CHECKS_ERROR." },
+        "subkind": { "type": "string", "description": "Finer-grained identifier within kind, e.g. ab-update-reboot-check." },
+        "location": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "line"],
+          "description": "Location in Trident's source where the error originated.",
+          "properties": {
+            "path": { "type": "string" },
+            "line": { "type": "integer", "minimum": 0, "maximum": 4294967295 }
+          }
+        }
+      }
+    },
     "fromVersion":   { "type": "string" },
     "toVersion":     { "type": "string" },
     "startedUtc":    { "type": "string", "format": "date-time" },
@@ -890,7 +970,8 @@ mod tests {
                 "object" => value.is_object(),
                 "array" => value.is_array(),
                 "boolean" => value.is_boolean(),
-                "number" | "integer" => value.is_number(),
+                "number" => value.is_number(),
+                "integer" => value.is_i64() || value.is_u64(),
                 other => panic!(
                     "test schema validator does not support type {other:?} - extend schema_validate_property"
                 ),
@@ -899,6 +980,13 @@ mod tests {
                 return Err(format!(
                     "property {name:?}: expected type {expected_type}, got {value:?}"
                 ));
+            }
+            // Recurse into nested object schemas (e.g. `tridentError`/`location`)
+            // so their own properties/required/additionalProperties are
+            // checked too, not just "is this an object".
+            if expected_type == "object" {
+                schema_validate(prop_schema, value)
+                    .map_err(|err| format!("property {name:?}: {err}"))?;
             }
         }
         if let Some(const_value) = prop_schema.get("const") {
@@ -948,6 +1036,22 @@ mod tests {
                 return Err(format!(
                     "property {name:?}: {s:?} does not match pattern {pattern:?}"
                 ));
+            }
+        }
+        if let Some(minimum) = prop_schema.get("minimum").and_then(Value::as_f64) {
+            let n = value
+                .as_f64()
+                .ok_or_else(|| format!("property {name:?}: expected number to check minimum"))?;
+            if n < minimum {
+                return Err(format!("property {name:?}: {n} is below minimum {minimum}"));
+            }
+        }
+        if let Some(maximum) = prop_schema.get("maximum").and_then(Value::as_f64) {
+            let n = value
+                .as_f64()
+                .ok_or_else(|| format!("property {name:?}: expected number to check maximum"))?;
+            if n > maximum {
+                return Err(format!("property {name:?}: {n} exceeds maximum {maximum}"));
             }
         }
         if let Some(max_length) = prop_schema.get("maxLength").and_then(Value::as_u64) {
@@ -1225,6 +1329,141 @@ mod tests {
                 )
             });
         }
+    }
+
+    #[test]
+    fn with_trident_error_populates_kind_subkind_and_location_and_conforms_to_schema() {
+        use trident_proto::v1::{FileLocation, TridentErrorKind};
+
+        let schema: Value = serde_json::from_str(DESIGN_DOC_STATUS_SCHEMA).unwrap();
+        let request = UpdateRequest {
+            schema_version: SCHEMA_VERSION.to_string(),
+            node_update_id: Uuid::new_v4(),
+            operation_id: Uuid::new_v4().to_string(),
+            operation: RequestedOperation::Finalize,
+            target_version: Some("202606.29.0".to_string()),
+            server: None,
+            app_id: None,
+            track: None,
+        };
+
+        use crate::core::trident::RemoteError;
+        let remote_err = TridentClientError::Remote {
+            operation: "commit",
+            details: RemoteError {
+                kind: Some(TridentErrorKind::ServicingError),
+                subkind: "ab-update-reboot-check".to_string(),
+                message: "reboot check failed".to_string(),
+                error_message: "reboot check failed".to_string(),
+                location: Some(FileLocation {
+                    path: "crates/trident/src/servicing.rs".to_string(),
+                    line: 42,
+                }),
+            },
+        };
+        let status = UpdateStatus::new(
+            &request,
+            Operation::Commit,
+            request.operation_id.clone(),
+            StatusCode::TargetBootFailed,
+            format!("commit detected rollback to previous version: {remote_err}"),
+            Some("1.0.0".to_string()),
+            Some("2.0.0".to_string()),
+            fixed_time(0),
+            Some(fixed_time(5)),
+        )
+        .with_trident_error(&remote_err);
+
+        let trident_error = status
+            .trident_error
+            .as_ref()
+            .expect("trident_error must be populated");
+        assert_eq!(trident_error.kind, "SERVICING_ERROR");
+        assert_eq!(trident_error.subkind, "ab-update-reboot-check");
+        let location = trident_error
+            .location
+            .as_ref()
+            .expect("location must be populated");
+        assert_eq!(location.path, "crates/trident/src/servicing.rs");
+        assert_eq!(location.line, 42);
+        schema_validate(&schema, &serde_json::to_value(&status).unwrap())
+            .expect("status carrying trident_error must still conform to the formal schema");
+    }
+
+    #[test]
+    fn design_doc_status_schema_rejects_out_of_range_line() {
+        // Regression test: ErrorLocation::line and protobuf
+        // FileLocation::line are u32, so the formal JSON Schema must reject
+        // negative and > u32::MAX values for `line` - otherwise a
+        // schema-valid instance could fail to deserialize into
+        // ErrorLocation.
+        let schema: Value = serde_json::from_str(DESIGN_DOC_STATUS_SCHEMA).unwrap();
+        let base = serde_json::json!({
+            "schemaVersion": SCHEMA_VERSION,
+            "nodeUpdateId": Uuid::new_v4().to_string(),
+            "operationId": Uuid::new_v4().to_string(),
+            "operation": "commit",
+            "code": "TargetBootFailed",
+            "message": "commit failed",
+            "startedUtc": fixed_time(0).to_rfc3339(),
+            "lastUpdatedUtc": fixed_time(0).to_rfc3339(),
+            "finishedUtc": fixed_time(5).to_rfc3339(),
+            "tridentError": {
+                "kind": "SERVICING_ERROR",
+                "subkind": "ab-update-reboot-check",
+                "location": { "path": "crates/trident/src/servicing.rs", "line": 42 }
+            }
+        });
+
+        let mut negative = base.clone();
+        negative["tridentError"]["location"]["line"] = serde_json::json!(-1);
+        schema_validate(&schema, &negative).expect_err("schema must reject a negative line number");
+
+        let mut too_large = base.clone();
+        too_large["tridentError"]["location"]["line"] = serde_json::json!(4294967296u64);
+        schema_validate(&schema, &too_large)
+            .expect_err("schema must reject a line number beyond u32::MAX");
+
+        let mut fractional = base.clone();
+        fractional["tridentError"]["location"]["line"] = serde_json::json!(1.5);
+        schema_validate(&schema, &fractional)
+            .expect_err("schema must reject a fractional line number");
+
+        schema_validate(&schema, &base)
+            .expect("baseline instance with an in-range line must conform to the schema");
+    }
+
+    #[test]
+    fn with_trident_error_is_noop_for_non_remote_errors() {
+        let request = UpdateRequest {
+            schema_version: SCHEMA_VERSION.to_string(),
+            node_update_id: Uuid::new_v4(),
+            operation_id: Uuid::new_v4().to_string(),
+            operation: RequestedOperation::Finalize,
+            target_version: Some("202606.29.0".to_string()),
+            server: None,
+            app_id: None,
+            track: None,
+        };
+
+        let timeout_err = TridentClientError::Timeout {
+            operation: "commit",
+            timeout: std::time::Duration::from_secs(5),
+        };
+        let status = UpdateStatus::new(
+            &request,
+            Operation::Commit,
+            request.operation_id.clone(),
+            StatusCode::OperationFailed,
+            format!("commit failed: {timeout_err}"),
+            Some("1.0.0".to_string()),
+            Some("2.0.0".to_string()),
+            fixed_time(0),
+            Some(fixed_time(5)),
+        )
+        .with_trident_error(&timeout_err);
+
+        assert_eq!(status.trident_error, None);
     }
 
     #[test]
