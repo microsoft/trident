@@ -259,6 +259,16 @@ naming the offending variable.
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_FINALIZE_TIMEOUT` | `10m` | How long a `finalize` is allowed to run before it's considered failed. |
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_HEARTBEAT_INTERVAL` | `60s` | Refresh cadence for the `InProgress` status heartbeat. |
 
+Kubernetes API server connectivity (both the startup/recovery Node read
+and the long-lived watch loop) is retried indefinitely; there is no
+configurable attempt limit for either path. The startup/recovery Node
+read uses a small fixed delay between attempts; the watch loop's
+reconnect delay is governed entirely by `kube::runtime::watcher`'s own
+`default_backoff()` instead. A quiet Node has no reliable signal that
+distinguishes an isolated, otherwise-healthy reconnect blip from a
+genuinely ongoing outage, so
+retrying forever is the simple, correct default.
+
 ### Setting env vars via a systemd drop-in
 
 The agent ships as `trident-acl-agent.service`, with no `Environment=`
