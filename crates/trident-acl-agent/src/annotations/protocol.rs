@@ -970,7 +970,8 @@ mod tests {
                 "object" => value.is_object(),
                 "array" => value.is_array(),
                 "boolean" => value.is_boolean(),
-                "number" | "integer" => value.is_number(),
+                "number" => value.is_number(),
+                "integer" => value.is_i64() || value.is_u64(),
                 other => panic!(
                     "test schema validator does not support type {other:?} - extend schema_validate_property"
                 ),
@@ -1422,6 +1423,11 @@ mod tests {
         too_large["tridentError"]["location"]["line"] = serde_json::json!(4294967296u64);
         schema_validate(&schema, &too_large)
             .expect_err("schema must reject a line number beyond u32::MAX");
+
+        let mut fractional = base.clone();
+        fractional["tridentError"]["location"]["line"] = serde_json::json!(1.5);
+        schema_validate(&schema, &fractional)
+            .expect_err("schema must reject a fractional line number");
 
         schema_validate(&schema, &base)
             .expect("baseline instance with an in-range line must conform to the schema");
