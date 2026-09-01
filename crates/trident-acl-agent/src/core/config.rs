@@ -49,8 +49,18 @@ const DEFAULT_KUBERNETES_POLL_INTERVAL: Duration = Duration::from_secs(2);
 /// behavior change. Override via
 /// `TRIDENT_ACL_AGENT_KUBERNETES_CONNECT_MAX_TRIES` - `0`, `"infinite"`, or
 /// `"forever"` retries forever.
-const DEFAULT_CONNECT_MAX_TRIES: MaxTries = MaxTries::Limited(3);
-/// Delay between connect attempts. Override via
+const DEFAULT_CONNECT_MAX_TRIES: MaxTries =
+    MaxTries::Limited(match std::num::NonZeroUsize::new(3) {
+        Some(n) => n,
+        None => unreachable!(),
+    });
+/// Delay between connect attempts, used only by the startup/recovery Node
+/// read (`Orchestrator::get_node_with_retry`) - the watch loop's own
+/// reconnect delay is governed entirely by `kube::runtime::watcher`'s
+/// `default_backoff()` (see `k8s::NodeClient::watch_node`), so stacking a
+/// second configured delay on top of it there would just be redundant.
+/// Must be greater than zero (enforced at parse time), since a zero
+/// backoff would tight-loop retries. Override via
 /// `TRIDENT_ACL_AGENT_KUBERNETES_CONNECT_BACKOFF`.
 const DEFAULT_CONNECT_BACKOFF: Duration = Duration::from_secs(2);
 // TODO: placeholder until the real production Nebraska/Omaha endpoint is
@@ -182,7 +192,7 @@ struct RawKubernetesConfig {
     annotation_prefix: Option<String>,
     #[serde(deserialize_with = "empty_max_tries_as_none")]
     connect_max_tries: Option<MaxTries>,
-    #[serde(deserialize_with = "empty_duration_as_none")]
+    #[serde(deserialize_with = "empty_positive_duration_as_none")]
     connect_backoff: Option<Duration>,
 }
 
@@ -277,6 +287,28 @@ where
         .transpose()
 }
 
+/// Like [`empty_duration_as_none`], but additionally rejects a zero
+/// duration: a zero backoff would tight-loop retries (log spam / hammering
+/// the API server), especially dangerous paired with `connect_max_tries =
+/// infinite`.
+fn empty_positive_duration_as_none<'de, D>(deserializer: D) -> Result<Option<Duration>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    empty_as_none(String::deserialize(deserializer)?)
+        .map(|value| {
+            let duration = humantime::parse_duration(&value)
+                .map_err(|err| D::Error::custom(format!("invalid duration {value:?}: {err}")))?;
+            if duration.is_zero() {
+                return Err(D::Error::custom(format!(
+                    "invalid duration {value:?}: must be greater than zero"
+                )));
+            }
+            Ok(duration)
+        })
+        .transpose()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NebraskaConfig {
     pub endpoint: Option<Url>,
@@ -318,8 +350,8 @@ pub struct KubernetesConfig {
     /// Kubernetes API server - see [`DEFAULT_CONNECT_MAX_TRIES`]. Override
     /// via `TRIDENT_ACL_AGENT_KUBERNETES_CONNECT_MAX_TRIES`.
     pub connect_max_tries: MaxTries,
-    /// Delay between connect attempts. Override via
-    /// `TRIDENT_ACL_AGENT_KUBERNETES_CONNECT_BACKOFF`.
+    /// Delay between connect attempts - see [`DEFAULT_CONNECT_BACKOFF`].
+    /// Override via `TRIDENT_ACL_AGENT_KUBERNETES_CONNECT_BACKOFF`.
     pub connect_backoff: Duration,
 }
 
@@ -578,7 +610,10 @@ mod tests {
             "7",
         )]))
         .unwrap();
-        assert_eq!(config.kubernetes.connect_max_tries, MaxTries::Limited(7));
+        assert_eq!(
+            config.kubernetes.connect_max_tries,
+            MaxTries::Limited(std::num::NonZeroUsize::new(7).unwrap())
+        );
     }
 
     #[test]
@@ -604,6 +639,16 @@ mod tests {
             AgentConfig::from_vars(vars(&[("TRIDENT_ACL_AGENT_ORCHESTRATION_MODE", "bogus")]))
                 .unwrap_err();
         assert!(format!("{err:#}").contains("bogus"), "{err:#}");
+    }
+
+    #[test]
+    fn zero_connect_backoff_is_a_parse_error() {
+        let err = AgentConfig::from_vars(vars(&[(
+            "TRIDENT_ACL_AGENT_KUBERNETES_CONNECT_BACKOFF",
+            "0s",
+        )]))
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("greater than zero"), "{err:#}");
     }
 
     #[test]
