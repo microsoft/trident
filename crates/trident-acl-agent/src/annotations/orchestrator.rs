@@ -231,6 +231,7 @@ impl Orchestrator {
                     operation: invalid.operation,
                     code: StatusCode::InvalidRequest,
                     message: invalid.reason,
+                    trident_error: None,
                     from_version: None,
                     to_version: None,
                     started_utc: now,
@@ -1535,7 +1536,8 @@ fn stage_result_to_status(
             to_version,
             started,
             Some(Utc::now()),
-        ),
+        )
+        .with_trident_error(&err),
     }
 }
 
@@ -1583,6 +1585,7 @@ fn finalize_failure_status(
         started,
         Some(Utc::now()),
     )
+    .with_trident_error(err)
 }
 
 /// Maps a `commit()` (or `update_finalize()`/`rollback_finalize()` sharing
@@ -1730,7 +1733,8 @@ fn reconstruct_commit_result_to_status(
             request.target_version.clone(),
             started,
             Some(Utc::now()),
-        ),
+        )
+        .with_trident_error(&err),
         Err(err) => UpdateStatus::new(
             request,
             Operation::Commit,
@@ -1741,7 +1745,8 @@ fn reconstruct_commit_result_to_status(
             request.target_version.clone(),
             started,
             Some(Utc::now()),
-        ),
+        )
+        .with_trident_error(&err),
     }
 }
 
@@ -1808,7 +1813,8 @@ fn commit_result_to_status(
             pending.to_version.clone(),
             pending.started_utc,
             Some(Utc::now()),
-        ),
+        )
+        .with_trident_error(&err),
         Err(err) => UpdateStatus::new(
             &pending.request,
             Operation::Commit,
@@ -1819,7 +1825,8 @@ fn commit_result_to_status(
             pending.to_version.clone(),
             pending.started_utc,
             Some(Utc::now()),
-        ),
+        )
+        .with_trident_error(&err),
     }
 }
 
@@ -1844,6 +1851,7 @@ fn rollback_stage_failure_status(
         started,
         Some(Utc::now()),
     )
+    .with_trident_error(err)
 }
 
 /// Builds the terminal `UpdateStatus` for a successful rollback_finalize()
@@ -1887,6 +1895,7 @@ fn rollback_finalize_failure_status(
         started,
         Some(Utc::now()),
     )
+    .with_trident_error(err)
 }
 
 #[cfg(test)]
