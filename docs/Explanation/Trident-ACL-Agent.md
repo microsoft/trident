@@ -164,6 +164,7 @@ A status annotation (`<prefix>/update-status` or
   "message":         "staged update to 202606.29.0",
   "fromVersion":     "202606.15.0",
   "toVersion":       "202606.29.0",
+  "tridentVersion":  "0.22.0",
   "startedUtc":      "2026-06-29T12:00:00Z",
   "lastUpdatedUtc":  "2026-06-29T12:03:41Z",
   "finishedUtc":     "2026-06-29T12:03:41Z"
@@ -179,6 +180,11 @@ A status annotation (`<prefix>/update-status` or
   match on (it may include error detail that varies run to run).
 - `fromVersion`/`toVersion` are the versions the operation moved between
   (`toVersion` is absent for `rollback`, whose target is implicit).
+- `tridentVersion` is the agent's own build version (`AGENT_VERSION`),
+  stamped on every status write. `tridentd` and `trident-acl-agent` are
+  built and released together from a single RPM spec
+  (`packaging/rpm/trident.spec`), so this value doubles as the `tridentd`
+  version for that install.
 - `startedUtc`/`lastUpdatedUtc`/`finishedUtc` bound the operation:
   `lastUpdatedUtc` refreshes on a heartbeat cadence while `code` is
   `InProgress` (see [below](#pre-post-reboot-state-and-the-watchdog));
