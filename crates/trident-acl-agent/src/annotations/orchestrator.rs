@@ -7,11 +7,7 @@
 //! rollback). See the design doc for the full state-machine rationale;
 //! keep it in sync with this file if the design changes.
 
-use std::{
-    collections::BTreeMap,
-    future::Future,
-    time::{Duration, Instant},
-};
+use std::{collections::BTreeMap, future::Future, time::Duration};
 
 use anyhow::{anyhow, Context, Error};
 use chrono::{DateTime, Utc};
@@ -47,19 +43,19 @@ use crate::{
 const FINAL_STATUS_PATCH_RETRIES: usize = 3;
 const FINAL_STATUS_PATCH_BACKOFF: Duration = Duration::from_secs(2);
 
-/// A gap this long (or longer) between watch-stream errors is treated as
-/// the end of one outage rather than a continuation of it, so
-/// `consecutive_errors` restarts from 1 instead of accumulating further.
-/// Chosen comfortably above `kube::runtime::watcher`'s own internal
-/// `default_backoff()` ceiling (on the order of tens of seconds), so
-/// errors from one continuous, still-ongoing outage keep accumulating
-/// (they'll always be closer together than this), while unrelated
-/// failures separated by a real recovery period don't wrongly stack
-/// toward the same `connect_max_tries` budget - this matters because a
-/// quiet Node (no touches) never emits a stream item on a silent
-/// reconnect, so `Ok(node) => consecutive_errors = 0` alone can't catch
-/// every recovery.
-const WATCH_ERROR_RESET_WINDOW: Duration = Duration::from_secs(5 * 60);
+/// Given the previous `consecutive_errors` count and whether the new error
+/// is a genuine connect-establishment failure (see
+/// [`K8sClientError::is_connect_failure`]), returns the updated count.
+/// Establishment failures accumulate toward `connect_max_tries`; anything
+/// else resets to 0, since it's proof the API server was reachable. Pure so
+/// it's trivially unit testable.
+fn accumulate_watch_error(consecutive_errors: usize, is_connect_failure: bool) -> usize {
+    if is_connect_failure {
+        consecutive_errors + 1
+    } else {
+        0
+    }
+}
 
 /// The machine-id source used for every Nebraska request this module makes,
 /// event reports included. Must match the source used by `handle_stage`'s
@@ -148,44 +144,42 @@ impl Orchestrator {
         let mut stream = self
             .k8s
             .watch_node(self.config.kubernetes.node_name.clone());
-        // Consecutive stream errors tolerated per `connect_max_tries`
-        // (`TRIDENT_ACL_AGENT_KUBERNETES_CONNECT_MAX_TRIES`), so a transient
-        // watch reconnect hiccup doesn't abort the whole orchestrator the
-        // way a bare `node?` would. No extra sleep here (unlike
-        // `get_node_with_retry`): `kube::runtime::watcher`'s own
+        // Consecutive *connect-establishment* failures tolerated per
+        // `connect_max_tries` (`TRIDENT_ACL_AGENT_KUBERNETES_CONNECT_MAX_TRIES`),
+        // so a transient watch reconnect hiccup doesn't abort the whole
+        // orchestrator the way a bare `node?` would. No extra sleep here
+        // (unlike `get_node_with_retry`): `kube::runtime::watcher`'s own
         // `default_backoff()` (see `k8s::NodeClient::watch_node`) already
         // delays before the stream's next reconnect attempt, so sleeping
         // `connect_backoff` here as well would only stack a second,
         // redundant delay on top of it - `connect_backoff` governs
-        // `get_node_with_retry` only. Reset on every successful item, since
-        // only *consecutive* failures indicate a real outage. A quiet Node
-        // (no touches) never emits a stream item on a silent reconnect, so
-        // we also reset on a long-enough gap since the last error (see
-        // `WATCH_ERROR_RESET_WINDOW`) rather than relying solely on
-        // `Ok(node)` arriving.
+        // `get_node_with_retry` only.
+        //
+        // Only errors that mean the watch could never be established at all
+        // (see `K8sClientError::is_connect_failure`) count toward this
+        // budget. An already-established watch that broke or was rejected
+        // by the apiserver mid-stream is proof the server *is* reachable -
+        // not the kind of failure `connect_max_tries` is meant to bound -
+        // so it resets the count instead of accumulating. This also avoids
+        // guessing recovery from wall-clock gaps between errors: a single
+        // connect attempt fails fast, but a stalled, already-connected watch
+        // can take much longer to surface as an error (e.g. via a read
+        // timeout), so elapsed time alone can't reliably tell the two apart.
         let mut consecutive_errors = 0usize;
-        let mut last_error_at: Option<Instant> = None;
         while let Some(item) = stream.next().await {
             let node = match item {
                 Ok(node) => {
                     consecutive_errors = 0;
-                    last_error_at = None;
                     node
                 }
                 Err(err) => {
+                    let is_connect_failure = err.is_connect_failure();
                     let err: Error = err.into();
                     if self.log_and_swallow_node_gone(&err, "watching node") {
                         return Ok(());
                     }
-                    let now = Instant::now();
-                    let same_outage = last_error_at
-                        .is_some_and(|at| now.duration_since(at) < WATCH_ERROR_RESET_WINDOW);
-                    consecutive_errors = if same_outage {
-                        consecutive_errors + 1
-                    } else {
-                        1
-                    };
-                    last_error_at = Some(now);
+                    consecutive_errors =
+                        accumulate_watch_error(consecutive_errors, is_connect_failure);
                     if self
                         .config
                         .kubernetes
@@ -1999,6 +1993,27 @@ mod tests {
             started_utc: Utc::now(),
             boot_marker: "boot-1".to_string(),
         }
+    }
+
+    // --- watch-error accumulation ---
+
+    #[test]
+    fn accumulate_watch_error_increments_on_connect_failure() {
+        assert_eq!(accumulate_watch_error(0, true), 1);
+        assert_eq!(accumulate_watch_error(2, true), 3);
+    }
+
+    /// An already-established watch that breaks (or is rejected by the
+    /// apiserver) mid-stream is proof the API server *is* reachable, so it
+    /// must not be mistaken for a connect-establishment failure - it should
+    /// reset the count rather than accumulate toward `connect_max_tries`.
+    /// This matters even when such an error takes a long time to surface
+    /// (e.g. a stalled read taking most of a multi-minute timeout): unlike
+    /// a wall-clock heuristic, classifying by error kind gets this right
+    /// regardless of how slow the failure was to appear.
+    #[test]
+    fn accumulate_watch_error_resets_on_established_watch_failure() {
+        assert_eq!(accumulate_watch_error(5, false), 0);
     }
 
     // --- rollback ---
