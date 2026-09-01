@@ -111,6 +111,20 @@ pub(super) fn derive_host_configuration_inner(
 
                 partition_id.clone()
             } else {
+                // A hash offset only has meaning when the hash tree shares the
+                // data image. Producers emit the two together, so an offset
+                // alongside a distinct hash image is contradictory; warn rather
+                // than silently ignoring it, since the offset would otherwise
+                // be dropped and the device set up as if it were not there.
+                if verity_device.hash_offset.is_some() {
+                    warn!(
+                        "Filesystem '{}' has a verity hash image distinct from its data image, but \
+                        the COSI metadata also provides a 'hashOffset'. The offset only applies to \
+                        inline verity and will be ignored.",
+                        filesystem_metadata.mount_point.display()
+                    );
+                }
+
                 // Otherwise, get the id of the hash partition.
                 partition_ids_by_file
                     .get(verity_device.file.path.as_path())
