@@ -133,11 +133,14 @@ impl Orchestrator {
         // Consecutive stream errors tolerated per `connect_max_tries`
         // (`TRIDENT_ACL_AGENT_KUBERNETES_CONNECT_MAX_TRIES`), so a transient
         // watch reconnect hiccup doesn't abort the whole orchestrator the
-        // way a bare `node?` would - `kube::runtime::watcher`'s own internal
-        // backoff already retries the connection underneath us, but can
-        // still surface an `Err` item to us in the meantime. Reset on every
-        // successful item, since only *consecutive* failures indicate a
-        // real outage.
+        // way a bare `node?` would. No extra sleep here (unlike
+        // `get_node_with_retry`): `kube::runtime::watcher`'s own
+        // `default_backoff()` (see `k8s::NodeClient::watch_node`) already
+        // delays before the stream's next reconnect attempt, so sleeping
+        // `connect_backoff` here as well would only stack a second,
+        // redundant delay on top of it - `connect_backoff` governs
+        // `get_node_with_retry` only. Reset on every successful item, since
+        // only *consecutive* failures indicate a real outage.
         let mut consecutive_errors = 0usize;
         while let Some(item) = stream.next().await {
             let node = match item {
@@ -160,10 +163,9 @@ impl Orchestrator {
                         return Err(err);
                     }
                     warn!(
-                        "transient error watching node {} (attempt {consecutive_errors}): {err:#}; retrying in {:?}",
-                        self.config.kubernetes.node_name, self.config.kubernetes.connect_backoff
+                        "transient error watching node {} (attempt {consecutive_errors}): {err:#}",
+                        self.config.kubernetes.node_name
                     );
-                    time::sleep(self.config.kubernetes.connect_backoff).await;
                     continue;
                 }
             };
