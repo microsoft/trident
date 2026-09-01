@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 anyhow = { workspace = true, features = ["backtrace"] }
+backoff = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 chrono = { workspace = true }
 const_format = { workspace = true }

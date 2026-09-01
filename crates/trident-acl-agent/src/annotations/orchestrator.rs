@@ -10,6 +10,7 @@
 use std::{collections::BTreeMap, future::Future, time::Duration};
 
 use anyhow::{anyhow, Context, Error};
+use backoff::{backoff::Backoff, ExponentialBackoffBuilder};
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use k8s_openapi::api::core::v1::Node;
@@ -41,9 +42,13 @@ use crate::{
 
 const FINAL_STATUS_PATCH_RETRIES: usize = 3;
 const FINAL_STATUS_PATCH_BACKOFF: Duration = Duration::from_secs(2);
-/// Delay between attempts in `get_node_with_retry`, which retries
-/// indefinitely - see that function's docs.
+/// Initial delay between attempts in `get_node_with_retry`, which retries
+/// indefinitely with capped exponential backoff and jitter - see that
+/// function's docs.
 const NODE_READ_BACKOFF: Duration = Duration::from_secs(2);
+/// Cap on the backoff delay in `get_node_with_retry`, so retries never
+/// slow to an unreasonably long cadence during an extended outage.
+const NODE_READ_BACKOFF_MAX: Duration = Duration::from_secs(30);
 
 /// The machine-id source used for every Nebraska request this module makes,
 /// event reports included. Must match the source used by `handle_stage`'s
@@ -149,14 +154,17 @@ impl Orchestrator {
         // blip apart from a genuinely ongoing outage. Retrying forever here
         // is the simple, correct choice until a real need for a bound (and
         // a real recovery signal to bound it safely) arises. A running
-        // `consecutive_errors` count is still logged with every failure -
-        // purely for operator visibility into an ongoing outage - but
-        // nothing here decides anything based on it.
-        let mut consecutive_errors = 0u64;
+        // `errors_since_last_node_event` count is still logged with every
+        // failure - purely for operator visibility into an ongoing outage -
+        // but nothing here decides anything based on it. Note this counts
+        // errors since the last *Node event*, not truly consecutive
+        // failures: a healthy reconnect between two errors produces no
+        // stream item, so it wouldn't reset this counter either.
+        let mut errors_since_last_node_event = 0u64;
         while let Some(item) = stream.next().await {
             let node = match item {
                 Ok(node) => {
-                    consecutive_errors = 0;
+                    errors_since_last_node_event = 0;
                     node
                 }
                 Err(err) => {
@@ -164,9 +172,9 @@ impl Orchestrator {
                     if self.log_and_swallow_node_gone(&err, "watching node") {
                         return Ok(());
                     }
-                    consecutive_errors += 1;
+                    errors_since_last_node_event += 1;
                     warn!(
-                        "transient error watching node {} (consecutive failures: {consecutive_errors}): {err:#}",
+                        "transient error watching node {} (errors since last node event: {errors_since_last_node_event}): {err:#}",
                         self.config.kubernetes.node_name
                     );
                     continue;
@@ -1177,26 +1185,37 @@ impl Orchestrator {
         }
     }
 
-    /// Reads the agent's own Node object, retrying indefinitely with a
-    /// fixed backoff between attempts, so a transient Kubernetes hiccup at
-    /// startup recovery doesn't propagate the first error straight into a
-    /// process exit / crash-loop the way a bare
-    /// `self.k8s.get_node(...).await?` would. Only used by
+    /// Reads the agent's own Node object, retrying indefinitely with capped
+    /// exponential backoff and full jitter between attempts, so a transient
+    /// Kubernetes hiccup at startup recovery doesn't propagate the first
+    /// error straight into a process exit / crash-loop the way a bare
+    /// `self.k8s.get_node(...).await?` would, and repeated retries don't
+    /// pile onto an API server that's already struggling. Only used by
     /// `recover_from_trident_state`'s "no pending commit to resume" branch;
     /// the pending-commit resume itself never touches k8s at all (see that
     /// function's docs). `NodeGone` is returned immediately without
     /// retrying, since it's terminal - the node was deleted, and no amount
     /// of retrying changes that.
     async fn get_node_with_retry(&self, name: &str) -> Result<Node, K8sClientError> {
+        let mut backoff = ExponentialBackoffBuilder::new()
+            .with_initial_interval(NODE_READ_BACKOFF)
+            .with_max_interval(NODE_READ_BACKOFF_MAX)
+            .with_multiplier(2.0)
+            .with_randomization_factor(1.0)
+            .with_max_elapsed_time(None)
+            .build();
         loop {
             match self.k8s.get_node(name).await {
                 Ok(node) => return Ok(node),
                 Err(err @ K8sClientError::NodeGone) => return Err(err),
                 Err(err) => {
+                    // `max_elapsed_time(None)` means `next_backoff()` never
+                    // returns `None`.
+                    let delay = backoff.next_backoff().unwrap();
                     warn!(
-                        "transient error reading node {name} during startup recovery, retrying: {err:#}"
+                        "transient error reading node {name} during startup recovery, retrying in {delay:?}: {err:#}"
                     );
-                    time::sleep(NODE_READ_BACKOFF).await;
+                    time::sleep(delay).await;
                 }
             }
         }
