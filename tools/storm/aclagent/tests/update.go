@@ -162,8 +162,16 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	// host IP does). Binding to that specific address rather than 0.0.0.0
 	// avoids unintentionally exposing the fake server on every other host
 	// interface too.
-	if _, err := apiServer.ListenAndServe(ctx, fmt.Sprintf("%s:%d", testConfig.HostEndpointIP, testConfig.APIServerPort)); err != nil {
-		return fmt.Errorf("failed to start fake apiserver: %w", err)
+	//
+	// The bind itself is deliberately deferred (see apiServerDelayedStart
+	// below) until ~10s after trident-acl-agent.service has been told to
+	// (re)start, so the agent's connect-retry/backoff logic has to actually
+	// retry against a closed port for a while instead of always finding the
+	// apiserver already up.
+	apiServerReady := make(chan error, 1)
+	apiServerDelayedStart := func() {
+		_, err := apiServer.ListenAndServe(ctx, fmt.Sprintf("%s:%d", testConfig.HostEndpointIP, testConfig.APIServerPort))
+		apiServerReady <- err
 	}
 
 	nebraskaCodebase := testConfig.NebraskaCodebase
@@ -231,6 +239,14 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 		return fmt.Errorf("pre-config validate-connection check failed: %w", err)
 	}
 
+	// Start the ~10s countdown right as we hand off to prepareVmForAclAgent,
+	// which is what actually delivers the kubeconfig and issues `systemctl
+	// restart trident-acl-agent.service`. Exact timing off the real restart
+	// isn't important - roughly 10s of the service being up against a
+	// closed apiserver port is good enough to exercise the retry/backoff
+	// path.
+	time.AfterFunc(10*time.Second, apiServerDelayedStart)
+
 	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig); err != nil {
 		return err
 	}
@@ -247,6 +263,17 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	// there is no static Nebraska configuration of any kind for the agent
 	// to fall back on.
 	for _, mode := range []string{"tridentd", "kubernetes"} {
+		if mode == "kubernetes" {
+			// This is the first thing in the test that actually needs the
+			// (deliberately delayed) fake apiserver to be reachable - block
+			// here instead of racing it, both so this one-shot check isn't
+			// spuriously flaky and so the stage/finalize scenario below
+			// never starts patching the fake Node before the apiserver
+			// exists at all (that HTTP client has no retry of its own).
+			if err := <-apiServerReady; err != nil {
+				return fmt.Errorf("failed to start fake apiserver: %w", err)
+			}
+		}
 		if err := expectValidateConnection(vmConfig.VMConfig, vmIP, mode, true, nil); err != nil {
 			return fmt.Errorf("post-config validate-connection check failed: %w", err)
 		}
