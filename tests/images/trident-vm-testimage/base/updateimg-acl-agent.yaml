@@ -1,0 +1,215 @@
+# UKI usr-verity VM test image for validating trident-acl-agent's
+# label-driven A/B update protocol against a real tridentd.
+#
+# This is the "update" counterpart to baseimg-acl-agent.yaml: it is built as
+# a .cosi and served to the initial qcow2-booted VM as the A/B update target,
+# not booted directly. Unlike the qcow2 base image, this image enables
+# trident-acl-agent.service by default, since after a real A/B update boots
+# into this image's root, there is no SSH session available anymore to
+# `systemctl enable --now` it as the storm test harness does for the initial
+# qcow2 boot.
+storage:
+  bootType: efi
+
+  disks:
+    - partitionTableType: gpt
+      partitions:
+        - id: esp
+          type: esp
+          label: esp
+          size: 512M
+
+        - id: boot-a
+          size: 256M
+
+        - id: boot-b
+          size: 256M
+
+        - id: root-a
+          size: 4G
+
+        - id: root-b
+          size: 4G
+
+        - id: usr-a
+          size: 1G
+
+        - id: usr-b
+          size: 1G
+
+        - id: usr-hash-a
+          size: 128M
+
+        - id: usr-hash-b
+          size: 128M
+
+        - id: trident
+          label: trident
+          size: 512M
+
+        - id: trident-acl-agent
+          label: trident-acl-agent
+          size: 128M
+
+        - id: kubelet
+          label: kubelet
+          size: 128M
+
+        - id: etc-trident
+          label: etc-trident
+          size: 128M
+
+        - id: home
+          label: home
+          size: 1G
+
+        - id: srv
+          label: srv
+          size: 128M
+
+  verity:
+    - id: usrverity
+      name: usr
+      dataDeviceId: usr-a
+      hashDeviceId: usr-hash-a
+      dataDeviceMountIdType: uuid
+      hashDeviceMountIdType: uuid
+
+  filesystems:
+    - deviceId: esp
+      type: fat32
+      mountPoint:
+        idType: part-label
+        path: /boot/efi
+        options: umask=0077
+
+    - deviceId: boot-a
+      type: ext4
+      mountPoint:
+        idType: uuid
+        path: /boot
+
+    - deviceId: usrverity
+      type: ext4
+      mountPoint:
+        path: /usr
+        options: defaults,ro
+
+    - deviceId: root-a
+      type: ext4
+      mountPoint:
+        idType: uuid
+        path: /
+
+    - deviceId: trident
+      type: ext4
+      mountPoint:
+        idType: part-label
+        path: /var/lib/trident
+
+    - deviceId: trident-acl-agent
+      type: ext4
+      mountPoint:
+        idType: part-label
+        path: /var/lib/trident-acl-agent
+
+    - deviceId: kubelet
+      type: ext4
+      mountPoint:
+        idType: part-label
+        path: /var/lib/kubelet
+
+    - deviceId: etc-trident
+      type: ext4
+      mountPoint:
+        idType: part-label
+        path: /etc/trident
+
+    - deviceId: home
+      type: ext4
+      mountPoint:
+        idType: part-label
+        path: /home
+
+    - deviceId: srv
+      type: ext4
+      mountPoint:
+        idType: part-label
+        path: /srv
+
+os:
+  bootloader:
+    resetType: hard-reset
+  hostname: trident-acl-agent-testimg
+
+  selinux:
+    mode: disabled
+
+  uki:
+    mode: create
+  kernelCommandLine:
+    # Replicates BM base image settings, that would otherwise be lost
+    extraCommandLine:
+      - console=tty0
+      - console=tty1
+      - console=ttyS0
+      - rd.debug
+      - loglevel=6
+      - log_buf_len=1M
+      - systemd.journald.forward_to_console=1
+      - rd.hostonly=0
+
+  packages:
+    install:
+      - device-mapper
+      - dnf
+      - efibootmgr
+      - iproute
+      - iptables
+      - jq
+      - kexec-tools
+      - lvm2
+      - openssh-server
+      - systemd-boot
+      - systemd-udev
+      - trident-acl
+      - veritysetup
+      - vim
+      - netplan
+    remove:
+      - grub2-efi-binary
+
+  additionalFiles:
+    - source: files/99-dhcp-eth0.network
+      destination: /etc/systemd/network/99-dhcp-eth0.network
+    - source: files/sudoers-wheel
+      destination: /etc/sudoers.d/wheel
+    # See baseimg-acl-agent.yaml for why this is baked in rather than
+    # written at runtime.
+    - source: files/trident-acl-agent-override.conf
+      destination: /etc/systemd/system/trident-acl-agent.service.d/override.conf
+
+  services:
+    enable:
+      - kdump
+      - tridentd.socket
+      - trident-acl-agent.service
+
+  users:
+    - name: testuser
+      sshPublicKeyPaths:
+        - files/id_rsa.pub
+      secondaryGroups:
+        - wheel
+
+scripts:
+  postCustomization:
+    - path: scripts/post-install.sh
+    - path: scripts/update-host-status.sh
+    - path: scripts/prepare-update-config-verity.sh
+      arguments:
+        - uki
+    - path: scripts/duid-type-to-link-layer.sh
+
+previewFeatures:
+  - uki
