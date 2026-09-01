@@ -832,7 +832,7 @@ mod tests {
           "description": "Location in Trident's source where the error originated.",
           "properties": {
             "path": { "type": "string" },
-            "line": { "type": "integer" }
+            "line": { "type": "integer", "minimum": 0, "maximum": 4294967295 }
           }
         }
       }
@@ -1035,6 +1035,22 @@ mod tests {
                 return Err(format!(
                     "property {name:?}: {s:?} does not match pattern {pattern:?}"
                 ));
+            }
+        }
+        if let Some(minimum) = prop_schema.get("minimum").and_then(Value::as_f64) {
+            let n = value
+                .as_f64()
+                .ok_or_else(|| format!("property {name:?}: expected number to check minimum"))?;
+            if n < minimum {
+                return Err(format!("property {name:?}: {n} is below minimum {minimum}"));
+            }
+        }
+        if let Some(maximum) = prop_schema.get("maximum").and_then(Value::as_f64) {
+            let n = value
+                .as_f64()
+                .ok_or_else(|| format!("property {name:?}: expected number to check maximum"))?;
+            if n > maximum {
+                return Err(format!("property {name:?}: {n} exceeds maximum {maximum}"));
             }
         }
         if let Some(max_length) = prop_schema.get("maxLength").and_then(Value::as_u64) {
@@ -1371,6 +1387,44 @@ mod tests {
         assert_eq!(location.line, 42);
         schema_validate(&schema, &serde_json::to_value(&status).unwrap())
             .expect("status carrying trident_error must still conform to the formal schema");
+    }
+
+    #[test]
+    fn design_doc_status_schema_rejects_out_of_range_line() {
+        // Regression test: ErrorLocation::line and protobuf
+        // FileLocation::line are u32, so the formal JSON Schema must reject
+        // negative and > u32::MAX values for `line` - otherwise a
+        // schema-valid instance could fail to deserialize into
+        // ErrorLocation.
+        let schema: Value = serde_json::from_str(DESIGN_DOC_STATUS_SCHEMA).unwrap();
+        let base = serde_json::json!({
+            "schemaVersion": SCHEMA_VERSION,
+            "nodeUpdateId": Uuid::new_v4().to_string(),
+            "operationId": Uuid::new_v4().to_string(),
+            "operation": "commit",
+            "code": "TargetBootFailed",
+            "message": "commit failed",
+            "startedUtc": fixed_time(0).to_rfc3339(),
+            "lastUpdatedUtc": fixed_time(0).to_rfc3339(),
+            "finishedUtc": fixed_time(5).to_rfc3339(),
+            "tridentError": {
+                "kind": "SERVICING_ERROR",
+                "subkind": "ab-update-reboot-check",
+                "location": { "path": "crates/trident/src/servicing.rs", "line": 42 }
+            }
+        });
+
+        let mut negative = base.clone();
+        negative["tridentError"]["location"]["line"] = serde_json::json!(-1);
+        schema_validate(&schema, &negative).expect_err("schema must reject a negative line number");
+
+        let mut too_large = base.clone();
+        too_large["tridentError"]["location"]["line"] = serde_json::json!(4294967296u64);
+        schema_validate(&schema, &too_large)
+            .expect_err("schema must reject a line number beyond u32::MAX");
+
+        schema_validate(&schema, &base)
+            .expect("baseline instance with an in-range line must conform to the schema");
     }
 
     #[test]
