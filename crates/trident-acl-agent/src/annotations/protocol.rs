@@ -269,16 +269,22 @@ impl UpdateStatus {
         refreshed
     }
 
-    /// Compares two statuses ignoring `last_updated_utc`.
+    /// Compares two statuses ignoring `last_updated_utc` and
+    /// `trident_version`.
     ///
     /// `publish_status` stamps a fresh `last_updated_utc` on every write via
     /// `refreshed_for_write`, so a straight `PartialEq` between an
     /// already-on-the-node status and a cached/completed one to decide
     /// whether a re-publish is needed would never be equal after the first
     /// publish - triggering another watch event, another "different"
-    /// comparison, and another publish, forever. Callers that only care
-    /// whether the *content* already matches (and so a re-publish would be a
-    /// no-op) must use this instead of `==`/`!=`.
+    /// comparison, and another publish, forever. `trident_version` is
+    /// excluded for the same reason: `refreshed_for_write` also
+    /// unconditionally restamps it with the currently-running agent's
+    /// `AGENT_VERSION`, so after an upgrade a cached status carrying the old
+    /// version would otherwise never compare equal to the just-republished
+    /// one, reintroducing the same infinite re-publish loop. Callers that
+    /// only care whether the *content* already matches (and so a re-publish
+    /// would be a no-op) must use this instead of `==`/`!=`.
     pub fn same_content(&self, other: &Self) -> bool {
         self.schema_version == other.schema_version
             && self.node_update_id == other.node_update_id
@@ -288,7 +294,6 @@ impl UpdateStatus {
             && self.message == other.message
             && self.from_version == other.from_version
             && self.to_version == other.to_version
-            && self.trident_version == other.trident_version
             && self.started_utc == other.started_utc
             && self.finished_utc == other.finished_utc
     }
@@ -463,6 +468,34 @@ mod tests {
         );
 
         assert!(!success.same_content(&failed));
+    }
+
+    #[test]
+    fn same_content_ignores_trident_version() {
+        // Regression test: refreshed_for_write() always restamps
+        // trident_version with the currently-running agent's AGENT_VERSION
+        // (see refreshed_for_write_restamps_trident_version). If
+        // same_content compared trident_version, a cached status from
+        // before an agent upgrade would never again compare equal to the
+        // freshly-republished one, reintroducing the infinite re-publish
+        // loop same_content exists to prevent.
+        let request = sample_request(RequestedOperation::Finalize);
+        let mut cached = UpdateStatus::new(
+            &request,
+            Operation::Finalize,
+            request.operation_id.clone(),
+            StatusCode::Success,
+            "finalize completed",
+            Some("1.0.0".to_string()),
+            Some("2.0.0".to_string()),
+            fixed_time(0),
+            Some(fixed_time(5)),
+        );
+        cached.trident_version = Some("0.0.1-old-agent".to_string());
+        let republished = cached.refreshed_for_write();
+
+        assert_ne!(cached.trident_version, republished.trident_version);
+        assert!(cached.same_content(&republished));
     }
 
     #[test]
