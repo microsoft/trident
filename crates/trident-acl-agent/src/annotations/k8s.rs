@@ -54,32 +54,6 @@ pub enum K8sClientError {
     Watch(#[from] WatchError),
 }
 
-impl K8sClientError {
-    /// True when this error means the watch could not be established at all
-    /// (the API server is unreachable or refused the initial list/watch
-    /// request) - as opposed to a watch that *was* successfully established
-    /// and then broke, or was rejected mid-stream, which is itself proof the
-    /// API server is reachable.
-    ///
-    /// Only establishment failures are meant to be bounded by
-    /// `connect_max_tries`/`connect_backoff`: they fail fast (on the order
-    /// of seconds), so a small budget still gives a meaningful signal that
-    /// the server is genuinely unreachable. An already-connected watch
-    /// breaking is a different, expected occurrence for a long-lived watch
-    /// (network blips, apiserver-side timeouts, a stale resourceVersion,
-    /// etc.) that `kube::runtime::watcher`'s own `default_backoff()` already
-    /// handles by reconnecting, and can take much longer to surface (e.g.
-    /// via a stalled read) without indicating an ongoing outage at all.
-    pub fn is_connect_failure(&self) -> bool {
-        matches!(
-            self,
-            K8sClientError::Watch(
-                WatchError::InitialListFailed(_) | WatchError::WatchStartFailed(_)
-            )
-        )
-    }
-}
-
 #[derive(Clone)]
 pub struct NodeClient {
     api: Api<Node>,
