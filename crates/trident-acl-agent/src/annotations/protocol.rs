@@ -286,10 +286,20 @@ impl UpdateStatus {
         }
     }
 
+    /// Refreshes a status immediately before it is written to the node
+    /// (the common path for every annotation write - see `publish_status`).
+    /// Restamps `trident_version` with the currently-running agent's
+    /// `AGENT_VERSION` rather than trusting whatever value the status
+    /// already carries: a completed status can be loaded from
+    /// `state.json` (written by a possibly older agent) and republished
+    /// later by a newer agent (e.g. `recover_from_trident_state` replaying
+    /// a cached commit/operation status), so only re-stamping here
+    /// guarantees the annotation reflects the agent that actually wrote it.
     pub fn refreshed_for_write(&self) -> Self {
         let mut refreshed = self.clone();
         refreshed.last_updated_utc = Utc::now();
         refreshed.message = truncate_message(refreshed.message);
+        refreshed.trident_version = Some(AGENT_VERSION.to_string());
         refreshed
     }
 
@@ -448,6 +458,39 @@ mod tests {
         assert!(
             original.same_content(&republished),
             "same_content must ignore last_updated_utc"
+        );
+    }
+
+    #[test]
+    fn refreshed_for_write_restamps_trident_version() {
+        // Regression test: a completed status can be loaded from
+        // state.json (written by a possibly older agent) and republished
+        // later by a newer agent (recover_from_trident_state replaying a
+        // cached commit/operation status via publish_status). Verify
+        // refreshed_for_write - the common path for every annotation write
+        // - always overwrites trident_version with the currently-running
+        // AGENT_VERSION, rather than preserving whatever an older/stale
+        // status carries.
+        let request = sample_request(RequestedOperation::Finalize);
+        let mut stale = UpdateStatus::new(
+            &request,
+            Operation::Finalize,
+            request.operation_id.clone(),
+            StatusCode::Success,
+            "finalize completed",
+            Some("1.0.0".to_string()),
+            Some("2.0.0".to_string()),
+            fixed_time(0),
+            Some(fixed_time(5)),
+        );
+        stale.trident_version = Some("0.0.1-old-agent".to_string());
+
+        let republished = stale.refreshed_for_write();
+
+        assert_eq!(
+            republished.trident_version.as_deref(),
+            Some(AGENT_VERSION),
+            "refreshed_for_write must restamp trident_version with the current agent's AGENT_VERSION"
         );
     }
 
