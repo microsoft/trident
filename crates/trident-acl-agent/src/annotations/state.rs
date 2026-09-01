@@ -185,8 +185,8 @@ impl StateStore {
                 .entry(status.operation_id.clone())
                 .or_default();
             match status.operation {
-                Operation::Commit => entry.commit = Some(status.clone()),
-                _ => entry.operation = Some(status.clone()),
+                Operation::Commit => entry.commit = Some(strip_trident_version(&status)),
+                _ => entry.operation = Some(strip_trident_version(&status)),
             }
         })
     }
@@ -215,12 +215,25 @@ impl StateStore {
                 .entry(status.operation_id.clone())
                 .or_default();
             match status.operation {
-                Operation::Commit => entry.commit = Some(status.clone()),
-                _ => entry.operation = Some(status.clone()),
+                Operation::Commit => entry.commit = Some(strip_trident_version(&status)),
+                _ => entry.operation = Some(strip_trident_version(&status)),
             }
             state.pending_commit = None;
         })
     }
+}
+
+// `UpdateStatus::trident_version` is stamped on every annotation publish
+// (see `refreshed_for_write`), so the persisted copy is never read back as
+// a trusted value - only ever overwritten before republish. Keeping it out
+// of `state.json` entirely avoids a cross-version rollback hazard: an
+// older trident-acl-agent binary (from before this field existed) still
+// derives `UpdateStatus` with `deny_unknown_fields`, so it would fail to
+// parse a state file containing an unrecognized `tridentVersion` key.
+fn strip_trident_version(status: &UpdateStatus) -> UpdateStatus {
+    let mut persisted = status.clone();
+    persisted.trident_version = None;
+    persisted
 }
 
 #[cfg(test)]
@@ -357,6 +370,33 @@ mod tests {
         let entry = state.completed.get("op-1").expect("entry should exist");
         assert_eq!(entry.operation.as_ref().unwrap().message, "updated message");
         assert!(entry.commit.is_none());
+    }
+
+    #[test]
+    fn remember_completed_strips_trident_version_before_persisting() {
+        // Regression test: UpdateStatus is embedded directly in
+        // CompletedEntry with deny_unknown_fields, so persisting
+        // trident_version to state.json would break a pre-this-field
+        // trident-acl-agent binary reading the file back after an A/B
+        // rollback. The persisted value is never trusted anyway -
+        // refreshed_for_write always restamps it before republish - so it
+        // must never round-trip through disk.
+        let (_dir, store) = store();
+        let mut status = sample_status(Operation::Finalize);
+        status.trident_version = Some("1.2.3".to_string());
+        store
+            .remember_completed(status)
+            .expect("remember_completed should succeed");
+
+        let raw = fs::read_to_string(store.path()).expect("state.json should exist");
+        assert!(
+            !raw.contains("tridentVersion"),
+            "state.json must not persist tridentVersion: {raw}"
+        );
+
+        let state = store.load().expect("load should succeed");
+        let entry = state.completed.get("op-1").expect("entry should exist");
+        assert_eq!(entry.operation.as_ref().unwrap().trident_version, None);
     }
 
     #[test]
