@@ -180,10 +180,14 @@ A status annotation (`<prefix>/update-status` or
 - `fromVersion`/`toVersion` are the versions the operation moved between
   (`toVersion` is absent for `rollback`, whose target is implicit).
 - `tridentError` is present only when the failure originated from a
-  structured Trident remote error (a subset of `OperationFailed` failures;
-  most `OperationFailed` statuses - and every other code - carry no
-  `tridentError`). It has `kind`/`subkind` (Trident's own error
-  classification, e.g. `SERVICING_ERROR`/`ab-update-reboot-check`) and an
+  Trident call that returned an error response (a remote error); it can
+  appear on both `OperationFailed` and `TargetBootFailed` (the reboot
+  landed but the post-reboot commit call itself failed remotely) -
+  every other failure mode (timeouts, connection failures, agent-generated
+  errors like `InvalidRequest`) carries no `tridentError`. It has
+  `kind`/`subkind` (Trident's own error classification, e.g.
+  `SERVICING_ERROR`/`ab-update-reboot-check`, or `unknown`/`unknown` when
+  Trident reported failure without a structured error payload) and an
   optional `location` (`path`/`line` in Trident's source), letting an
   orchestrator key off structured fields instead of parsing `message`.
 - `startedUtc`/`lastUpdatedUtc`/`finishedUtc` bound the operation:
