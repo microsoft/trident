@@ -8,7 +8,7 @@
 //! retries" would - mirrors `wget --tries=0`/`--tries=inf` and systemd's
 //! `StartLimitBurst=0`.
 
-use std::{future::Future, str::FromStr, time::Duration};
+use std::{future::Future, num::NonZeroUsize, str::FromStr, time::Duration};
 
 use anyhow::{anyhow, Error};
 use tokio::time;
@@ -16,15 +16,13 @@ use tokio::time;
 /// Total connection attempts before giving up, or [`MaxTries::Infinite`] to
 /// retry forever. Parsed from an env var via [`FromStr`]: any positive
 /// integer is [`MaxTries::Limited`]; `0`, `"infinite"`, or `"forever"`
-/// (case-insensitive) is [`MaxTries::Infinite`].
-///
-/// Invariant: `Limited` is never constructed with `0` - [`FromStr`] maps
-/// `"0"` to [`MaxTries::Infinite`] instead (see its docs). Code constructing
-/// a `Limited` value directly (e.g. defaults) must uphold the same
-/// invariant.
+/// (case-insensitive) is [`MaxTries::Infinite`]. `Limited` holds a
+/// [`NonZeroUsize`] rather than a plain `usize` so "zero total attempts",
+/// which would make the setting useless, is unrepresentable - `"0"` parses
+/// to [`MaxTries::Infinite`] instead (see [`FromStr`] below).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MaxTries {
-    Limited(usize),
+    Limited(NonZeroUsize),
     Infinite,
 }
 
@@ -34,7 +32,7 @@ impl MaxTries {
     pub fn is_exhausted(&self, tries_so_far: usize) -> bool {
         match self {
             MaxTries::Infinite => false,
-            MaxTries::Limited(max) => tries_so_far >= *max,
+            MaxTries::Limited(max) => tries_so_far >= max.get(),
         }
     }
 }
@@ -51,13 +49,12 @@ impl FromStr for MaxTries {
                         "invalid max tries {s:?} (expected a non-negative integer, \"infinite\", or \"forever\")"
                     )
                 })?;
-                Ok(if n == 0 {
+                Ok(match NonZeroUsize::new(n) {
+                    Some(n) => MaxTries::Limited(n),
                     // "0" means the same thing as "infinite" (wget's own
                     // `--tries=0`/`--tries=inf` convention), rather than "no
                     // attempts at all", which would make the setting useless.
-                    MaxTries::Infinite
-                } else {
-                    MaxTries::Limited(n)
+                    None => MaxTries::Infinite,
                 })
             }
         }
@@ -111,8 +108,14 @@ mod tests {
 
     #[test]
     fn parses_positive_integers_as_limited() {
-        assert_eq!("3".parse::<MaxTries>().unwrap(), MaxTries::Limited(3));
-        assert_eq!("1".parse::<MaxTries>().unwrap(), MaxTries::Limited(1));
+        assert_eq!(
+            "3".parse::<MaxTries>().unwrap(),
+            MaxTries::Limited(NonZeroUsize::new(3).unwrap())
+        );
+        assert_eq!(
+            "1".parse::<MaxTries>().unwrap(),
+            MaxTries::Limited(NonZeroUsize::new(1).unwrap())
+        );
     }
 
     #[test]
@@ -134,10 +137,14 @@ mod tests {
     #[tokio::test]
     async fn succeeds_on_first_try_without_sleeping() {
         let calls = AtomicUsize::new(0);
-        let result: Result<u32, ()> = retry(MaxTries::Limited(3), Duration::from_secs(60), || {
-            calls.fetch_add(1, Ordering::SeqCst);
-            async { Ok(42) }
-        })
+        let result: Result<u32, ()> = retry(
+            MaxTries::Limited(NonZeroUsize::new(3).unwrap()),
+            Duration::from_secs(60),
+            || {
+                calls.fetch_add(1, Ordering::SeqCst);
+                async { Ok(42) }
+            },
+        )
         .await;
         assert_eq!(result, Ok(42));
         assert_eq!(calls.load(Ordering::SeqCst), 1);
@@ -146,12 +153,15 @@ mod tests {
     #[tokio::test]
     async fn permanent_error_stops_immediately() {
         let calls = AtomicUsize::new(0);
-        let result: Result<u32, &str> =
-            retry(MaxTries::Limited(3), Duration::from_secs(60), || {
+        let result: Result<u32, &str> = retry(
+            MaxTries::Limited(NonZeroUsize::new(3).unwrap()),
+            Duration::from_secs(60),
+            || {
                 calls.fetch_add(1, Ordering::SeqCst);
                 async { Err(RetryError::Permanent("nope")) }
-            })
-            .await;
+            },
+        )
+        .await;
         assert_eq!(result, Err("nope"));
         assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
@@ -159,12 +169,15 @@ mod tests {
     #[tokio::test]
     async fn transient_error_retries_until_limited_exhausted() {
         let calls = AtomicUsize::new(0);
-        let result: Result<u32, &str> =
-            retry(MaxTries::Limited(3), Duration::from_millis(1), || {
+        let result: Result<u32, &str> = retry(
+            MaxTries::Limited(NonZeroUsize::new(3).unwrap()),
+            Duration::from_millis(1),
+            || {
                 calls.fetch_add(1, Ordering::SeqCst);
                 async { Err(RetryError::Transient("still down")) }
-            })
-            .await;
+            },
+        )
+        .await;
         assert_eq!(result, Err("still down"));
         assert_eq!(calls.load(Ordering::SeqCst), 3);
     }
@@ -172,8 +185,10 @@ mod tests {
     #[tokio::test]
     async fn transient_error_eventually_succeeds() {
         let calls = AtomicUsize::new(0);
-        let result: Result<u32, &str> =
-            retry(MaxTries::Limited(5), Duration::from_millis(1), || {
+        let result: Result<u32, &str> = retry(
+            MaxTries::Limited(NonZeroUsize::new(5).unwrap()),
+            Duration::from_millis(1),
+            || {
                 let n = calls.fetch_add(1, Ordering::SeqCst);
                 async move {
                     if n < 2 {
@@ -182,8 +197,9 @@ mod tests {
                         Ok(7)
                     }
                 }
-            })
-            .await;
+            },
+        )
+        .await;
         assert_eq!(result, Ok(7));
         assert_eq!(calls.load(Ordering::SeqCst), 3);
     }
