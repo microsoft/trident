@@ -33,7 +33,6 @@ use crate::{
     core::{
         config::AgentConfig,
         nebraska::{CheckOutcome, Client as NebraskaClient, ProgressEvent},
-        retry::{retry, RetryError},
         trident::{CompletedResponse, TridentClient, TridentClientError},
         version::{current_active_version, FALLBACK_ALWAYS_VERSION},
     },
@@ -42,6 +41,9 @@ use crate::{
 
 const FINAL_STATUS_PATCH_RETRIES: usize = 3;
 const FINAL_STATUS_PATCH_BACKOFF: Duration = Duration::from_secs(2);
+/// Delay between attempts in `get_node_with_retry`, which retries
+/// indefinitely - see that function's docs.
+const NODE_READ_BACKOFF: Duration = Duration::from_secs(2);
 
 /// The machine-id source used for every Nebraska request this module makes,
 /// event reports included. Must match the source used by `handle_stage`'s
@@ -136,10 +138,8 @@ impl Orchestrator {
         // `get_node_with_retry`): `kube::runtime::watcher`'s own
         // `default_backoff()` (see `k8s::NodeClient::watch_node`) already
         // delays before the stream's next reconnect attempt, so sleeping
-        // `connect_backoff` here as well would only stack a second,
-        // redundant delay on top of it - `connect_backoff`/`connect_max_tries`
-        // govern `get_node_with_retry`'s bounded, one-shot startup read
-        // only, not this long-lived watch.
+        // here as well would only stack a second, redundant delay on top
+        // of it.
         //
         // A bounded give-up-eventually budget for this loop was tried and
         // repeatedly found to be unsound: a long-lived watch has no clean
@@ -1177,32 +1177,29 @@ impl Orchestrator {
         }
     }
 
-    /// Reads the agent's own Node object with a bounded (or, if
-    /// configured, unbounded) retry, so a transient Kubernetes hiccup at
+    /// Reads the agent's own Node object, retrying indefinitely with a
+    /// fixed backoff between attempts, so a transient Kubernetes hiccup at
     /// startup recovery doesn't propagate the first error straight into a
     /// process exit / crash-loop the way a bare
-    /// `self.k8s.get_node(...).await?` would. Attempt count and backoff are
-    /// controlled by `connect_max_tries`/`connect_backoff`, set via
-    /// `TRIDENT_ACL_AGENT_KUBERNETES_CONNECT_MAX_TRIES`/`_CONNECT_BACKOFF`
-    /// (see `core::config`). Only used by `recover_from_trident_state`'s
-    /// "no pending commit to resume" branch; the pending-commit resume
-    /// itself never touches k8s at all (see that function's docs).
-    /// `NodeGone` is returned immediately without retrying, since it's
-    /// terminal - the node was deleted, and no amount of retrying changes
-    /// that.
+    /// `self.k8s.get_node(...).await?` would. Only used by
+    /// `recover_from_trident_state`'s "no pending commit to resume" branch;
+    /// the pending-commit resume itself never touches k8s at all (see that
+    /// function's docs). `NodeGone` is returned immediately without
+    /// retrying, since it's terminal - the node was deleted, and no amount
+    /// of retrying changes that.
     async fn get_node_with_retry(&self, name: &str) -> Result<Node, K8sClientError> {
-        retry(
-            self.config.kubernetes.connect_max_tries,
-            self.config.kubernetes.connect_backoff,
-            || async {
-                match self.k8s.get_node(name).await {
-                    Ok(node) => Ok(node),
-                    Err(err @ K8sClientError::NodeGone) => Err(RetryError::Permanent(err)),
-                    Err(err) => Err(RetryError::Transient(err)),
+        loop {
+            match self.k8s.get_node(name).await {
+                Ok(node) => return Ok(node),
+                Err(err @ K8sClientError::NodeGone) => return Err(err),
+                Err(err) => {
+                    warn!(
+                        "transient error reading node {name} during startup recovery, retrying: {err:#}"
+                    );
+                    time::sleep(NODE_READ_BACKOFF).await;
                 }
-            },
-        )
-        .await
+            }
+        }
     }
 
     fn is_node_gone_error(&self, err: &Error) -> bool {
