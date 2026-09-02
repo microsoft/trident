@@ -12,8 +12,9 @@ use reqwest::Url;
 use tempfile::{NamedTempFile, TempDir};
 
 use osutils::{
+    blkid,
     bootloaders::{BOOT_EFI, GRUB_EFI, GRUB_NOPREFIX_EFI},
-    files,
+    fatlabel, files,
     filesystems::MountFileSystemType,
     mount::{self, MountGuard},
     path,
@@ -170,6 +171,7 @@ fn deploy_esp(ctx: &EngineContext, mount_point: &Path) -> Result<(), TridentErro
 
         ControlFlow::Break(
             copy_file_artifacts(temp_file.path(), ctx, mount_point)
+                .and_then(|()| preserve_esp_filesystem_label(temp_file.path(), ctx))
                 .structured(ServicingError::DeployESPImages)
                 .message("Failed to load raw image"),
         )
@@ -216,6 +218,47 @@ fn ensure_esp_extraction_dir(mount_point: &Path) -> Result<PathBuf, TridentError
     }
 
     Ok(esp_extraction_dir)
+}
+
+/// Copies the ESP image's filesystem label onto the ESP Trident created.
+///
+/// Every other filesystem from the OS image is written to its partition
+/// verbatim, so its label arrives with the rest of the bits. The ESP is the
+/// exception: it is deployed file by file onto a filesystem Trident makes
+/// itself, and `mkfs` gives that filesystem no label. Copying the label across
+/// leaves the ESP in the state it would have been in had it been written
+/// wholesale, which matters because images refer to it that way — ACL's initrd
+/// looks the ESP up as `/dev/disk/by-label/EFI-SYSTEM`.
+///
+/// An image whose ESP has no label leaves the new filesystem unlabelled too,
+/// which is still faithful to the image.
+fn preserve_esp_filesystem_label(esp_image_path: &Path, ctx: &EngineContext) -> Result<(), Error> {
+    let label = blkid::get_filesystem_label(esp_image_path).unwrap_or_default();
+    if label.is_empty() {
+        debug!("ESP image has no filesystem label to preserve");
+        return Ok(());
+    }
+
+    let (esp_device_id, _) = ctx
+        .spec
+        .storage
+        .esp_filesystem()
+        .context("Failed to find the ESP filesystem in the Host Configuration")?;
+
+    let esp_device_path = ctx
+        .get_block_device_path(esp_device_id)
+        .with_context(|| format!("Failed to find the path of ESP device '{esp_device_id}'"))?;
+
+    debug!(
+        "Applying ESP image's filesystem label '{label}' to '{}'",
+        esp_device_path.display()
+    );
+    fatlabel::set_label(&esp_device_path, &label).with_context(|| {
+        format!(
+            "Failed to set filesystem label '{label}' on ESP device '{}'",
+            esp_device_path.display()
+        )
+    })
 }
 
 /// Takes in a reader to the raw zstd-compressed ESP image and decompresses it
