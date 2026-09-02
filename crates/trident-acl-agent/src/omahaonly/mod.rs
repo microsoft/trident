@@ -57,14 +57,31 @@ pub async fn run_omaha_only(config: &AgentConfig) -> Result<(), Error> {
         }
         CheckOutcome::UpdateAvailable(offer) => {
             info!("Triggering one-shot Omaha update to {}", offer.version);
+            // Nebraska's reported hash is required, not optional: it is
+            // Trident's only signal to verify the downloaded image's identity
+            // before installing it, so a missing hash is a hard failure here
+            // rather than a silently-skipped check. See
+            // `PackageHash::to_cosi_sha384` for why this needs converting
+            // (our Nebraska deployment stores a base64 SHA-384 in the field
+            // Omaha calls `sha1`) rather than being forwarded as-is.
+            let hash = offer
+                .primary
+                .hash
+                .as_ref()
+                .ok_or_else(|| {
+                    anyhow!(
+                        "Nebraska offered {} with no package hash for '{}'; refusing to update without an integrity check",
+                        offer.version,
+                        offer.primary.name
+                    )
+                })?
+                .to_cosi_sha384()
+                .context("Nebraska-reported hash is not a usable SHA-384")?;
             let mut client = TridentClient::connect(&config.trident.socket).await?;
             let combined_timeout =
                 config.orchestration.stage_timeout + config.orchestration.finalize_timeout;
-            // Integrity of the downloaded image is verified by Trident itself
-            // via the image's own COSI metadata, so the Nebraska-reported hash
-            // (offer.primary.hash) is not passed here.
             client
-                .update(&offer.primary.url, None, combined_timeout)
+                .update(&offer.primary.url, Some(&hash), combined_timeout)
                 .await?;
             Ok(())
         }
