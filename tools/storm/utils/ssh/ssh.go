@@ -2,6 +2,7 @@ package ssh
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -40,6 +41,7 @@ func StartSshProxyPortAndWait(ctx context.Context, port int, vmIP string, sshUse
 		"-o", "ServerAliveInterval=5",
 		"-o", "StrictHostKeyChecking=no",
 		"-o", "UserKnownHostsFile=/dev/null",
+		"-o", "ExitOnForwardFailure=yes",
 		"-i", sshKeyPath,
 		fmt.Sprintf("%s@%s", sshUser, vmIP),
 	)
@@ -48,12 +50,37 @@ func StartSshProxyPortAndWait(ctx context.Context, port int, vmIP string, sshUse
 
 	logrus.Tracef("Starting SSH proxy for port %d to VM %s with user %s", port, vmIP, sshUser)
 	if err := cmd.Start(); err != nil {
+		startedChannel <- false
 		return fmt.Errorf("failed to start SSH proxy for port %d: %w", port, err)
 	}
-	// Signal that the SSH proxy has started
-	startedChannel <- true
-	// Wait for the command to finish
-	if err := cmd.Wait(); err != nil {
+
+	// With ExitOnForwardFailure=yes, SSH exits immediately if the remote port
+	// forward fails. Brief pause to catch that before signaling readiness.
+	earlyExit := make(chan error, 1)
+	go func() { earlyExit <- cmd.Wait() }()
+
+	select {
+	case err := <-earlyExit:
+		// SSH exited before we could signal readiness — forward setup failed.
+		startedChannel <- false
+		if err != nil {
+			return fmt.Errorf("SSH proxy for port %d exited immediately (forward setup failed): %w", port, err)
+		}
+		return fmt.Errorf("SSH proxy for port %d exited immediately", port)
+	case <-time.After(1 * time.Second):
+		// SSH still running after 1s — forward is likely established.
+		startedChannel <- true
+	}
+
+	// Wait for the command to finish (blocks until context cancel or SSH dies).
+	err := <-earlyExit
+	if err != nil {
+		// Context cancellation is expected during cleanup — only swallow
+		// Canceled, not DeadlineExceeded (which indicates a real timeout).
+		if errors.Is(ctx.Err(), context.Canceled) {
+			logrus.Tracef("SSH proxy for port %d stopped (context cancelled)", port)
+			return nil
+		}
 		return fmt.Errorf("SSH proxy for port %d failed: %w", port, err)
 	}
 	logrus.Tracef("SSH proxy for port %d exited", port)
