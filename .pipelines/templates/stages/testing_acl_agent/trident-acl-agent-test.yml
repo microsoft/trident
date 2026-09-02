@@ -141,14 +141,20 @@ stages:
               scriptLocation: inlineScript
               inlineScript: |
                 set -eux
-                # NebraskaProxy's ephemeral Postgres (maritimusdev.azurecr.io/postgres:16-alpine,
-                # see tools/storm/aclagent/proxies/constants.go's PostgresImage) is pulled by the
-                # storm-trident binary via a plain `docker run`, not through this task, so log in
-                # here first and let the docker credential helper cache the token for that later
-                # step. Runs as root to match the `sudo ./bin/storm-trident run aclagent` step
-                # below, since docker credentials are per-user.
+                # NebraskaProxy's ephemeral Postgres (must match
+                # tools/storm/aclagent/proxies/constants.go's PostgresImage)
+                # is started by the storm-trident binary via a plain
+                # `docker run`, not through this task. Log in and pull it
+                # here instead, as root to match the `sudo ./bin/storm-trident
+                # run aclagent` step below (docker credentials are
+                # per-user, but a pulled image lands in the daemon's shared
+                # image cache, so this is the only step that needs the ACR
+                # login - the later `docker run` just finds it locally and
+                # never touches the network or the ACR credential).
+                POSTGRES_IMAGE="maritimusdev.azurecr.io/postgres:16-alpine"
                 sudo az acr login -n maritimusdev
-            displayName: "Log in to maritimusdev ACR for ephemeral Postgres pull"
+                sudo docker pull "$POSTGRES_IMAGE"
+            displayName: "Pull ephemeral Postgres image from maritimusdev ACR"
             retryCountOnTaskFailure: 3
 
           - bash: |
