@@ -9,12 +9,15 @@ const (
 	DefaultNodeName   = "trident-node"
 	DefaultMarkerFile = "./trident-acl-agent-reboot-signal"
 
-	// PostgresImage is the ephemeral Postgres image NebraskaProxy runs to
-	// back the real Nebraska server it links in-process. Pulled from the
-	// maritimusdev ACR (mirroring the same registry push-to-acr.yml uses for
-	// the Polar SC, see maritimus-dev-acr-write-umi) rather than unqualified
-	// from Docker Hub, since some pipeline pools (e.g. OneBranch-governed
-	// ones) restrict egress to an allow-list that does not include Docker
-	// Hub.
-	PostgresImage = "maritimusdev.azurecr.io/postgres:16-alpine"
+	// DefaultPostgresImage is the ephemeral Postgres image NebraskaProxy runs
+	// to back the real Nebraska server it links in-process, used whenever a
+	// caller (or the --postgres-image CLI flag, see
+	// utils/config.TestConfig.PostgresImage) does not set
+	// NebraskaProxy.PostgresImage explicitly. This is the public Docker Hub
+	// image deliberately, not an internal registry, so the harness (and its
+	// unit tests) work unmodified for anyone with plain internet access - no
+	// Microsoft-internal credentials or network access required. Trident's
+	// own pipelines run on network-restricted pools and override this to an
+	// internal ACR mirror via that same flag.
+	DefaultPostgresImage = "postgres:16-alpine"
 )

@@ -37,6 +37,16 @@ parameters:
       - maritimus-dev-acr-write-umi
       - trident-dev-acr-write-umi-ECF
 
+  # Container image for the ephemeral Postgres instance backing the fake
+  # Nebraska endpoint (see tools/storm/aclagent/utils/config.TestConfig's
+  # --postgres-image flag). Trident's own pipelines default to the
+  # maritimusdev ACR mirror, since the pool this stage runs on restricts
+  # egress to an allow-list that does not include Docker Hub; a local/fork
+  # run without ACR access should pass "postgres:16-alpine" instead.
+  - name: postgresImage
+    type: string
+    default: maritimusdev.azurecr.io/postgres:16-alpine
+
 stages:
   - stage: BuildImagesAclAgent
     displayName: Build Base and Update Images for trident-acl-agent
@@ -134,28 +144,28 @@ stages:
               ls -la $(Build.ArtifactStagingDirectory)/
             displayName: List downloaded image artifacts
 
-          - task: AzureCLI@2
-            inputs:
-              azureSubscription: ${{ parameters.acrServiceConnectionName }}
-              scriptType: bash
-              scriptLocation: inlineScript
-              inlineScript: |
-                set -eux
-                # NebraskaProxy's ephemeral Postgres (must match
-                # tools/storm/aclagent/proxies/constants.go's PostgresImage)
-                # is started by the storm-trident binary via a plain
-                # `docker run`, not through this task. Log in and pull it
-                # here instead, as root to match the `sudo ./bin/storm-trident
-                # run aclagent` step below (docker credentials are
-                # per-user, but a pulled image lands in the daemon's shared
-                # image cache, so this is the only step that needs the ACR
-                # login - the later `docker run` just finds it locally and
-                # never touches the network or the ACR credential).
-                POSTGRES_IMAGE="maritimusdev.azurecr.io/postgres:16-alpine"
-                sudo az acr login -n maritimusdev
-                sudo docker pull "$POSTGRES_IMAGE"
-            displayName: "Pull ephemeral Postgres image from maritimusdev ACR"
-            retryCountOnTaskFailure: 3
+          - ${{ if startsWith(parameters.postgresImage, 'maritimusdev.azurecr.io/') }}:
+              - task: AzureCLI@2
+                inputs:
+                  azureSubscription: ${{ parameters.acrServiceConnectionName }}
+                  scriptType: bash
+                  scriptLocation: inlineScript
+                  inlineScript: |
+                    set -eux
+                    # NebraskaProxy's ephemeral Postgres (--postgres-image
+                    # below must match) is started by the storm-trident
+                    # binary via a plain `docker run`, not through this
+                    # task. Log in and pull it here instead, as root to
+                    # match the `sudo ./bin/storm-trident run aclagent` step
+                    # below (docker credentials are per-user, but a pulled
+                    # image lands in the daemon's shared image cache, so
+                    # this is the only step that needs the ACR login - the
+                    # later `docker run` just finds it locally and never
+                    # touches the network or the ACR credential).
+                    sudo az acr login -n maritimusdev
+                    sudo docker pull "${{ parameters.postgresImage }}"
+                displayName: "Pull ephemeral Postgres image from maritimusdev ACR"
+                retryCountOnTaskFailure: 3
 
           - bash: |
               set -eux
@@ -165,6 +175,7 @@ stages:
               sudo ./bin/storm-trident run aclagent $FLAGS \
                 --output-path $(ob_outputDirectory) \
                 --artifacts-dir $(Build.ArtifactStagingDirectory) \
-                --ssh-private-key-path ~/.ssh/id_rsa
+                --ssh-private-key-path ~/.ssh/id_rsa \
+                --postgres-image "${{ parameters.postgresImage }}"
             displayName: "🧪 Run trident-acl-agent A/B update + rollback scenario"
             workingDirectory: $(TRIDENT_SOURCE_DIR)

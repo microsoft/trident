@@ -208,13 +208,16 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 		nebraskaSHA384 = hash
 	}
 
-	nebraska := &stormproxies.NebraskaProxy{Scenario: &stormproxies.NebraskaScenario{
-		Available:   true,
-		Version:     testConfig.TargetVersion,
-		URL:         nebraskaCodebase,
-		SHA384:      nebraskaSHA384,
-		PackageName: nebraskaPackageName,
-	}}
+	nebraska := &stormproxies.NebraskaProxy{
+		Scenario: &stormproxies.NebraskaScenario{
+			Available:   true,
+			Version:     testConfig.TargetVersion,
+			URL:         nebraskaCodebase,
+			SHA384:      nebraskaSHA384,
+			PackageName: nebraskaPackageName,
+		},
+		PostgresImage: testConfig.PostgresImage,
+	}
 	if _, err := nebraska.ListenAndServe(ctx, fmt.Sprintf("%s:%d", testConfig.HostEndpointIP, testConfig.NebraskaPort)); err != nil {
 		return fmt.Errorf("failed to start fake Nebraska endpoint: %w", err)
 	}
