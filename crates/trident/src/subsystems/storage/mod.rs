@@ -183,11 +183,15 @@ impl Subsystem for StorageSubsystem {
             return Ok(());
         }
 
-        fstab::generate_fstab(ctx, Path::new(fstab::DEFAULT_FSTAB_PATH)).structured(
-            ServicingError::GenerateFstab {
-                fstab_path: fstab::DEFAULT_FSTAB_PATH.to_string(),
-            },
-        )?;
+        if should_generate_fstab(ctx)? {
+            fstab::generate_fstab(ctx, Path::new(fstab::DEFAULT_FSTAB_PATH)).structured(
+                ServicingError::GenerateFstab {
+                    fstab_path: fstab::DEFAULT_FSTAB_PATH.to_string(),
+                },
+            )?;
+        } else {
+            debug!("Skipping fstab generation because UKI usr-verity is in use");
+        }
 
         // TODO: Update /etc/repart.d directly for the matching disk, derive it from where the root
         // is located
@@ -201,6 +205,24 @@ impl Subsystem for StorageSubsystem {
 
         Ok(())
     }
+}
+
+/// Returns whether an fstab should be written for this image.
+///
+/// A UKI image using dm-verity takes its mount topology from the signed kernel
+/// command line rather than from fstab: the verity device, its data and hash
+/// devices, and the root device are all named there, and the image ships units
+/// for whatever else it mounts. Writing an fstab would at best duplicate that,
+/// and at worst override it, since `systemd-fstab-generator` emits units into
+/// `/run/systemd/generator`, which takes precedence over the units an image
+/// ships in `/usr/lib/systemd/system`.
+///
+/// Root-verity images never reach this: they skip storage configuration
+/// entirely, having no writable root to configure. A usr-verity image does have
+/// a writable root, so only fstab is skipped and the rest of the configuration
+/// still applies.
+fn should_generate_fstab(ctx: &EngineContext) -> Result<bool, TridentError> {
+    Ok(!(ctx.is_uki()? && ctx.storage_graph.usr_fs_is_verity()))
 }
 
 #[cfg(test)]
@@ -219,9 +241,10 @@ mod tests {
     use osutils::encryption;
     use trident_api::{
         config::{
-            AbUpdate, Disk as DiskConfig, Encryption, FileSystem, HostConfiguration, MountPoint,
-            Partition as PartitionConfig, PartitionSize, PartitionType, Raid, RaidLevel,
-            SoftwareRaidArray, Storage as StorageConfig,
+            AbUpdate, Disk as DiskConfig, Encryption, FileSystem, FileSystemSource,
+            HostConfiguration, MountOptions, MountPoint, Partition as PartitionConfig,
+            PartitionSize, PartitionTableType, PartitionType, Raid, RaidLevel, SoftwareRaidArray,
+            Storage as StorageConfig, VerityDevice,
         },
         error::ErrorKind,
     };
@@ -234,6 +257,121 @@ mod tests {
             is_uki: Some(false),
             ..Default::default()
         }
+    }
+
+    /// Builds a context whose `/usr` is on a verity device, optionally inline.
+    ///
+    /// Inline verity (data device == hash device) is the shape Azure Container
+    /// Linux uses; the separate-hash form is the conventional one.
+    fn usr_verity_ctx(is_uki: bool, inline: bool) -> EngineContext {
+        let mut partitions = vec![
+            PartitionConfig {
+                id: "esp".into(),
+                partition_type: PartitionType::Esp,
+                size: PartitionSize::from_str("100M").unwrap(),
+                uuid: None,
+                label: None,
+            },
+            PartitionConfig {
+                id: "root".into(),
+                partition_type: PartitionType::Root,
+                size: PartitionSize::from_str("10G").unwrap(),
+                uuid: None,
+                label: None,
+            },
+            PartitionConfig {
+                id: "usr-data".into(),
+                partition_type: PartitionType::Usr,
+                size: PartitionSize::from_str("1G").unwrap(),
+                uuid: None,
+                label: None,
+            },
+        ];
+        if !inline {
+            partitions.push(PartitionConfig {
+                id: "usr-hash".into(),
+                partition_type: PartitionType::UsrVerity,
+                size: PartitionSize::from_str("100M").unwrap(),
+                uuid: None,
+                label: None,
+            });
+        }
+
+        EngineContext {
+            is_uki: Some(is_uki),
+            ..Default::default()
+        }
+        .with_spec(HostConfiguration {
+            storage: StorageConfig {
+                disks: vec![DiskConfig {
+                    id: "os".into(),
+                    device: PathBuf::from("/dev/disk/by-bus/foobar"),
+                    partition_table_type: PartitionTableType::Gpt,
+                    partitions,
+                    ..Default::default()
+                }],
+                verity: vec![VerityDevice {
+                    id: "usr".into(),
+                    name: "usr".into(),
+                    data_device_id: "usr-data".into(),
+                    hash_device_id: if inline { "usr-data" } else { "usr-hash" }.into(),
+                    ..Default::default()
+                }],
+                filesystems: vec![
+                    FileSystem {
+                        device_id: Some("esp".into()),
+                        source: FileSystemSource::Image,
+                        mount_point: Some("/boot/efi".into()),
+                        is_esp: true,
+                    },
+                    FileSystem {
+                        device_id: Some("root".into()),
+                        source: FileSystemSource::Image,
+                        mount_point: Some("/".into()),
+                        is_esp: false,
+                    },
+                    FileSystem {
+                        device_id: Some("usr".into()),
+                        source: FileSystemSource::Image,
+                        mount_point: Some(MountPoint {
+                            path: PathBuf::from("/usr"),
+                            options: MountOptions::defaults().with("ro"),
+                        }),
+                        is_esp: false,
+                    },
+                ],
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+    }
+
+    /// A UKI image with usr-verity takes its mounts from the kernel command
+    /// line, so no fstab is written. This is the Azure Container Linux case,
+    /// whose root image ships no `/etc` for an fstab to be written into, and
+    /// whose `/etc` is an overlay whose lower layer holds a deliberately empty
+    /// fstab.
+    #[test]
+    fn test_should_not_generate_fstab_for_uki_usr_verity() {
+        for inline in [true, false] {
+            assert!(
+                !should_generate_fstab(&usr_verity_ctx(true, inline)).unwrap(),
+                "UKI usr-verity should not get an fstab (inline: {inline})"
+            );
+        }
+    }
+
+    /// Usr-verity without UKI still gets an fstab: the mounts are not coming
+    /// from a signed kernel command line in that case.
+    #[test]
+    fn test_should_generate_fstab_for_non_uki_usr_verity() {
+        assert!(should_generate_fstab(&usr_verity_ctx(false, true)).unwrap());
+    }
+
+    /// An ordinary image gets an fstab.
+    #[test]
+    fn test_should_generate_fstab_without_verity() {
+        assert!(should_generate_fstab(&get_ctx()).unwrap());
     }
 
     // Create a temporary recovery key file. The file will be deleted once

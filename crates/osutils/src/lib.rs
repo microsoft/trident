@@ -10,6 +10,7 @@ pub mod efibootmgr;
 pub mod efivar;
 pub mod encryption;
 pub mod exe;
+pub mod fatlabel;
 pub mod files;
 pub mod filesystems;
 pub mod findmnt;

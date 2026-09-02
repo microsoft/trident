@@ -144,16 +144,24 @@ impl StorageGraphNode {
                     vec![StorageReference::new_regular(&encrypted_volume.device_id)]
                 }
                 HostConfigBlockDevice::VerityDevice(verity_device) => {
-                    vec![
-                        StorageReference::new_special(
-                            SpecialReferenceKind::VerityDataDevice,
-                            &verity_device.data_device_id,
-                        ),
-                        StorageReference::new_special(
+                    let mut refs = vec![StorageReference::new_special(
+                        SpecialReferenceKind::VerityDataDevice,
+                        &verity_device.data_device_id,
+                    )];
+
+                    // With *inline* verity the hash tree lives inside the data
+                    // device, so the configuration names the same device for
+                    // both roles. The graph models that as the single device it
+                    // is, rather than as a redundant second edge to the same
+                    // node.
+                    if !verity_device.is_inline() {
+                        refs.push(StorageReference::new_special(
                             SpecialReferenceKind::VerityHashDevice,
                             &verity_device.hash_device_id,
-                        ),
-                    ]
+                        ));
+                    }
+
+                    refs
                 }
             },
             Self::FileSystem(fs) => fs

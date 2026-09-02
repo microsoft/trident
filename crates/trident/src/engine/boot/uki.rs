@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::{anyhow, ensure, Context, Error};
 use const_format::formatcp;
-use log::{debug, trace};
+use log::{debug, trace, warn};
 use procfs::sys::kernel::Version;
 
 use osutils::path::join_relative;
@@ -546,37 +546,53 @@ const SLOT_A_ADDON_FILENAME: &str = "slot-a.addon.efi";
 const SLOT_B_ADDON_FILENAME: &str = "slot-b.addon.efi";
 
 /// After staging the UKI, activate the correct verity addon for the target
-/// A/B volume. ACL images ship with slot-A active by default and include
-/// templates for both slots in `acl/uki-addons/` on the ESP image.
+/// A/B volume. ACL images that use per-slot verity addons ship with slot-A
+/// active by default and include templates for both slots in
+/// `acl/uki-addons/` on the ESP image.
 ///
 /// The template is copied verbatim (no rename) into the staged addon
 /// directory as `slot-a.addon.efi` or `slot-b.addon.efi`, matching its
 /// source filename.
 ///
-/// This is ACL-specific: if no verity addon templates exist on the image
-/// (i.e. a non-ACL image), this function is a silent no-op. However, if
-/// templates exist but the selected slot's template is missing, an error
-/// is returned to prevent booting with the wrong slot's PARTUUIDs.
+/// A per-slot addon exists to carry its slot's verity data/hash PARTUUID pair.
+/// An image whose verity is *inline* has no such pair — the hash tree lives in
+/// the data partition, so both refer to the same device — and there is nothing
+/// for an addon to select. `verity_is_inline` therefore makes this a no-op.
+///
+/// Otherwise the selected slot's template is required, and its absence is an
+/// error rather than a skip, to prevent booting with the wrong slot's
+/// PARTUUIDs.
 pub fn activate_verity_addon_for_target_volume(
     image_esp_mount: &Path,
     mount_point: &Path,
     esp_mount_path: &Path,
     target_volume: AbVolumeSelection,
+    verity_is_inline: bool,
 ) -> Result<(), Error> {
     let template_dir = image_esp_mount.join(ACL_ADDON_TEMPLATES_DIR);
-    if !template_dir.exists() {
-        // Image does not use PARTUUID-based verity addons (non-ACL or older ACL).
-        trace!(
-            "No verity addon template directory at '{}', skipping",
-            template_dir.display()
-        );
-        return Ok(());
-    }
 
     let (template_name, other_slot_addon_name) = match target_volume {
         AbVolumeSelection::VolumeA => (SLOT_A_ADDON_FILENAME, SLOT_B_ADDON_FILENAME),
         AbVolumeSelection::VolumeB => (SLOT_B_ADDON_FILENAME, SLOT_A_ADDON_FILENAME),
     };
+
+    if verity_is_inline {
+        // Shipping per-slot templates alongside inline verity is contradictory:
+        // the templates cannot describe anything the image actually does. Say
+        // so, but keep going, since there is genuinely nothing to activate.
+        if template_dir.join(SLOT_A_ADDON_FILENAME).exists()
+            || template_dir.join(SLOT_B_ADDON_FILENAME).exists()
+        {
+            warn!(
+                "Image uses inline dm-verity but ships per-slot verity addon templates in '{}'. \
+                The templates do not apply to inline verity and will be ignored.",
+                template_dir.display()
+            );
+        }
+
+        trace!("Verity is inline, so there is no per-slot verity addon to activate");
+        return Ok(());
+    }
 
     let template_path = template_dir.join(template_name);
     ensure!(
@@ -1220,6 +1236,7 @@ mod tests {
             mount_point.path(),
             Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
             AbVolumeSelection::VolumeA,
+            false,
         )
         .unwrap();
 
@@ -1247,6 +1264,7 @@ mod tests {
             mount_point.path(),
             Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
             AbVolumeSelection::VolumeB,
+            false,
         )
         .unwrap();
 
@@ -1255,7 +1273,10 @@ mod tests {
         assert_eq!(fs::read(&active).unwrap(), b"verity-b-content");
     }
 
-    /// No template directory at all → silent no-op (backward compat with non-ACL).
+    /// No template directory at all, with inline verity → silent no-op.
+    ///
+    /// The non-inline counterpart is an error, covered by
+    /// [`test_activate_verity_addon_non_inline_requires_template`].
     #[test]
     fn test_activate_verity_addon_no_template_dir() {
         let image_esp = tempdir().unwrap();
@@ -1270,6 +1291,7 @@ mod tests {
             mount_point.path(),
             Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
             AbVolumeSelection::VolumeA,
+            true,
         )
         .unwrap();
 
@@ -1297,6 +1319,7 @@ mod tests {
             mount_point.path(),
             Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
             AbVolumeSelection::VolumeB,
+            false,
         );
 
         assert!(result.is_err());
@@ -1306,6 +1329,107 @@ mod tests {
                 .to_string()
                 .contains(SLOT_B_ADDON_FILENAME),
             "Error should mention the missing template"
+        );
+    }
+
+    /// Inline verity makes activation a no-op, whatever the addon directory holds.
+    ///
+    /// A per-slot addon carries its slot's verity data/hash PARTUUID pair, and
+    /// inline verity has no such pair. Published ACL images are inline and ship
+    /// only non-verity addons (first boot, fips, kdump) in the shared
+    /// `acl/uki-addons/` directory, so keying the no-op on that directory
+    /// existing made every one of them fail to install.
+    #[test]
+    fn test_activate_verity_addon_inline_verity_is_noop() {
+        let image_esp = tempdir().unwrap();
+        let template_dir = image_esp.path().join(ACL_ADDON_TEMPLATES_DIR);
+        fs::create_dir_all(&template_dir).unwrap();
+        for addon in ["firstboot.addon.efi", "fips.addon.efi", "kdump.addon.efi"] {
+            fs::write(template_dir.join(addon), b"addon").unwrap();
+        }
+
+        let mount_point = tempdir().unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)).unwrap();
+
+        for target_volume in [AbVolumeSelection::VolumeA, AbVolumeSelection::VolumeB] {
+            activate_verity_addon_for_target_volume(
+                image_esp.path(),
+                mount_point.path(),
+                Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+                target_volume,
+                true,
+            )
+            .unwrap();
+        }
+
+        // Nothing was activated, and the non-verity addons were left alone.
+        let staged_addon_dir =
+            join_relative(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH))
+                .join(UKI_DIRECTORY)
+                .join(TMP_UKI_ADDON_DIR_NAME);
+        assert!(!staged_addon_dir.join(SLOT_A_ADDON_FILENAME).exists());
+        assert!(!staged_addon_dir.join(SLOT_B_ADDON_FILENAME).exists());
+        assert!(template_dir.join("firstboot.addon.efi").exists());
+    }
+
+    /// Inline verity is still a no-op if the image contradicts itself by also
+    /// shipping per-slot templates, which cannot describe an inline layout.
+    #[test]
+    fn test_activate_verity_addon_inline_verity_ignores_templates() {
+        let image_esp = tempdir().unwrap();
+        setup_image_with_verity_templates(image_esp.path());
+
+        let mount_point = tempdir().unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)).unwrap();
+
+        activate_verity_addon_for_target_volume(
+            image_esp.path(),
+            mount_point.path(),
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+            AbVolumeSelection::VolumeA,
+            true,
+        )
+        .unwrap();
+
+        let staged_addon_dir =
+            join_relative(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH))
+                .join(UKI_DIRECTORY)
+                .join(TMP_UKI_ADDON_DIR_NAME);
+        assert!(
+            !staged_addon_dir.join(SLOT_A_ADDON_FILENAME).exists()
+                && !staged_addon_dir.join(SLOT_B_ADDON_FILENAME).exists(),
+            "no addon should be activated for inline verity"
+        );
+    }
+
+    /// With a separate hash partition, a missing template for the selected slot
+    /// is an error even if the directory holds other addons: the image is meant
+    /// to carry per-slot PARTUUIDs and shipping none is a packaging fault, not
+    /// an exemption.
+    #[test]
+    fn test_activate_verity_addon_non_inline_requires_template() {
+        let image_esp = tempdir().unwrap();
+        let template_dir = image_esp.path().join(ACL_ADDON_TEMPLATES_DIR);
+        fs::create_dir_all(&template_dir).unwrap();
+        fs::write(template_dir.join("firstboot.addon.efi"), b"addon").unwrap();
+
+        let mount_point = tempdir().unwrap();
+        prepare_esp_for_uki(mount_point.path(), Path::new(DEFAULT_ESP_MOUNT_POINT_PATH)).unwrap();
+
+        let result = activate_verity_addon_for_target_volume(
+            image_esp.path(),
+            mount_point.path(),
+            Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+            AbVolumeSelection::VolumeA,
+            false,
+        );
+
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains(SLOT_A_ADDON_FILENAME),
+            "error should name the missing template"
         );
     }
 
@@ -1324,6 +1448,7 @@ mod tests {
             mount_point.path(),
             Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
             AbVolumeSelection::VolumeB,
+            false,
         )
         .unwrap();
 
@@ -1362,6 +1487,7 @@ mod tests {
             mount_point.path(),
             Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
             AbVolumeSelection::VolumeA,
+            false,
         )
         .unwrap();
 
@@ -1405,6 +1531,7 @@ mod tests {
             mount_point.path(),
             Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
             AbVolumeSelection::VolumeB,
+            false,
         )
         .unwrap();
 

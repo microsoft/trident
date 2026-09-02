@@ -456,7 +456,16 @@ fn validate_esp(os_image: &OsImage, ctx: &EngineContext) -> Result<(), TridentEr
     }
 
     let Some(available_space) = ctx.filesystem_block_device_size(ESP_EXTRACTION_DIRECTORY) else {
-        warn!("Failed to check if there is enough space available on '{ESP_EXTRACTION_DIRECTORY}' to copy ESP image.");
+        // Most commonly the backing partition is sized to grow into the
+        // remaining disk space, so its size is not known ahead of servicing.
+        // Skip the check rather than fail on it, but say so: it is a check that
+        // did not happen, not a check that passed.
+        warn!(
+            "Cannot check whether there is enough space to copy the ESP image into \
+            '{ESP_EXTRACTION_DIRECTORY}': the size of its backing block device is not known, which \
+            is expected when the partition is configured to grow. Skipping the check; servicing may \
+            still fail later if the space is insufficient."
+        );
         return Ok(());
     };
 
@@ -608,6 +617,13 @@ fn validate_hash_filesystem_blkdev_fit(
             "Failed to find verity device for filesystem mounted at '{}'",
             fs_mount_point.display()
         ))?;
+
+    // Inline verity keeps its hash tree inside the data partition, so there is
+    // no separate hash device to size-check; the data image size check already
+    // covers the whole partition image, hash tree included.
+    if verity_device.is_inline() {
+        return Ok(());
+    }
 
     // Get the size of the block device configured for the verity hash
     let Some(blkdev_hash_size) = graph.block_device_size(&verity_device.hash_device_id) else {
@@ -848,6 +864,7 @@ mod tests {
                         fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
                         part_type: DiscoverablePartitionType::Root,
                         verity: Some(MockVerity {
+                            hash_offset: None,
                             roothash: "mock-roothash".to_string(),
                         }),
                     },
@@ -897,6 +914,7 @@ mod tests {
                     fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
                     part_type: DiscoverablePartitionType::Esp,
                     verity: Some(MockVerity {
+                        hash_offset: None,
                         roothash: "mock-hash".to_string(),
                     }),
                 },
@@ -906,6 +924,7 @@ mod tests {
                     fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
                     part_type: DiscoverablePartitionType::Root,
                     verity: Some(MockVerity {
+                        hash_offset: None,
                         roothash: "mock-roothash".to_string(),
                     }),
                 },
@@ -1456,6 +1475,7 @@ mod tests {
                 part_type: DiscoverablePartitionType::LinuxGeneric,
                 verity: roothash.map(|h| MockVerity {
                     roothash: h.to_string(),
+                    hash_offset: None,
                 }),
             }],
             is_uki: false,

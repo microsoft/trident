@@ -64,6 +64,12 @@ pub enum VerityCorruptionOption {
 }
 
 impl VerityDevice {
+    /// Returns whether this device stores its hash tree inline, inside the data
+    /// device, rather than in a dedicated hash partition.
+    pub fn is_inline(&self) -> bool {
+        self.data_device_id == self.hash_device_id
+    }
+
     /// Returns the path where this verity device will be mounted at runtime.
     pub fn device_path(&self) -> PathBuf {
         Path::new(DEV_MAPPER_PATH).join(&self.name)
