@@ -27,6 +27,16 @@ parameters:
     type: boolean
     default: false
 
+  # Define which service connection to use for accessing ACR.
+  #   `maritimus-dev-acr-write-umi` is the service connection for the Polar SC
+  #   `trident-dev-acr-write-umi-ECF` is the service connection for the ECF SC
+  - name: acrServiceConnectionName
+    type: string
+    default: trident-dev-acr-write-umi-ECF
+    values:
+      - maritimus-dev-acr-write-umi
+      - trident-dev-acr-write-umi-ECF
+
 stages:
   - stage: BuildImagesAclAgent
     displayName: Build Base and Update Images for trident-acl-agent
@@ -123,6 +133,23 @@ stages:
               set -eux
               ls -la $(Build.ArtifactStagingDirectory)/
             displayName: List downloaded image artifacts
+
+          - task: AzureCLI@2
+            inputs:
+              azureSubscription: ${{ parameters.acrServiceConnectionName }}
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -eux
+                # NebraskaProxy's ephemeral Postgres (maritimusdev.azurecr.io/postgres:16-alpine,
+                # see tools/storm/aclagent/proxies/constants.go's PostgresImage) is pulled by the
+                # storm-trident binary via a plain `docker run`, not through this task, so log in
+                # here first and let the docker credential helper cache the token for that later
+                # step. Runs as root to match the `sudo ./bin/storm-trident run aclagent` step
+                # below, since docker credentials are per-user.
+                sudo az acr login -n maritimusdev
+            displayName: "Log in to maritimusdev ACR for ephemeral Postgres pull"
+            retryCountOnTaskFailure: 3
 
           - bash: |
               set -eux
