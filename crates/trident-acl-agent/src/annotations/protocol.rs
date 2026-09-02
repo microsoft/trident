@@ -19,8 +19,9 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
 
-use crate::core::{
-    config::DEFAULT_ANNOTATION_PREFIX, error::AgentError, trident::TridentClientError,
+use crate::{
+    core::{config::DEFAULT_ANNOTATION_PREFIX, error::AgentError, trident::TridentClientError},
+    AGENT_VERSION,
 };
 
 /// Sentinel `kind` used when Trident reported a remote failure without any
@@ -150,6 +151,13 @@ pub struct UpdateStatus {
     pub from_version: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to_version: Option<String>,
+    /// Version of trident-acl-agent that wrote this status (`AGENT_VERSION`).
+    /// Packaged and versioned together with tridentd via the same RPM build
+    /// (see `packaging/rpm/trident.spec`'s single `TRIDENT_VERSION`-stamped
+    /// `%build` step for both `-p trident` and `-p trident-acl-agent`), so
+    /// this value doubles as the tridentd version for that install.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trident_version: Option<String>,
     pub started_utc: DateTime<Utc>,
     pub last_updated_utc: DateTime<Utc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -271,16 +279,27 @@ impl UpdateStatus {
             trident_error: None,
             from_version,
             to_version,
+            trident_version: Some(AGENT_VERSION.to_string()),
             started_utc,
             last_updated_utc: finished_or_started,
             finished_utc,
         }
     }
 
+    /// Refreshes a status immediately before it is written to the node
+    /// (the common path for every annotation write - see `publish_status`).
+    /// Restamps `trident_version` with the currently-running agent's
+    /// `AGENT_VERSION` rather than trusting whatever value the status
+    /// already carries: a completed status can be loaded from
+    /// `state.json` (written by a possibly older agent) and republished
+    /// later by a newer agent (e.g. `recover_from_trident_state` replaying
+    /// a cached commit/operation status), so only re-stamping here
+    /// guarantees the annotation reflects the agent that actually wrote it.
     pub fn refreshed_for_write(&self) -> Self {
         let mut refreshed = self.clone();
         refreshed.last_updated_utc = Utc::now();
         refreshed.message = truncate_message(refreshed.message);
+        refreshed.trident_version = Some(AGENT_VERSION.to_string());
         refreshed
     }
 
@@ -307,16 +326,22 @@ impl UpdateStatus {
         self
     }
 
-    /// Compares two statuses ignoring `last_updated_utc`.
+    /// Compares two statuses ignoring `last_updated_utc` and
+    /// `trident_version`.
     ///
     /// `publish_status` stamps a fresh `last_updated_utc` on every write via
     /// `refreshed_for_write`, so a straight `PartialEq` between an
     /// already-on-the-node status and a cached/completed one to decide
     /// whether a re-publish is needed would never be equal after the first
     /// publish - triggering another watch event, another "different"
-    /// comparison, and another publish, forever. Callers that only care
-    /// whether the *content* already matches (and so a re-publish would be a
-    /// no-op) must use this instead of `==`/`!=`.
+    /// comparison, and another publish, forever. `trident_version` is
+    /// excluded for the same reason: `refreshed_for_write` also
+    /// unconditionally restamps it with the currently-running agent's
+    /// `AGENT_VERSION`, so after an upgrade a cached status carrying the old
+    /// version would otherwise never compare equal to the just-republished
+    /// one, reintroducing the same infinite re-publish loop. Callers that
+    /// only care whether the *content* already matches (and so a re-publish
+    /// would be a no-op) must use this instead of `==`/`!=`.
     pub fn same_content(&self, other: &Self) -> bool {
         self.schema_version == other.schema_version
             && self.node_update_id == other.node_update_id
@@ -442,6 +467,39 @@ mod tests {
     }
 
     #[test]
+    fn refreshed_for_write_restamps_trident_version() {
+        // Regression test: a completed status can be loaded from
+        // state.json (written by a possibly older agent) and republished
+        // later by a newer agent (recover_from_trident_state replaying a
+        // cached commit/operation status via publish_status). Verify
+        // refreshed_for_write - the common path for every annotation write
+        // - always overwrites trident_version with the currently-running
+        // AGENT_VERSION, rather than preserving whatever an older/stale
+        // status carries.
+        let request = sample_request(RequestedOperation::Finalize);
+        let mut stale = UpdateStatus::new(
+            &request,
+            Operation::Finalize,
+            request.operation_id.clone(),
+            StatusCode::Success,
+            "finalize completed",
+            Some("1.0.0".to_string()),
+            Some("2.0.0".to_string()),
+            fixed_time(0),
+            Some(fixed_time(5)),
+        );
+        stale.trident_version = Some("0.0.1-old-agent".to_string());
+
+        let republished = stale.refreshed_for_write();
+
+        assert_eq!(
+            republished.trident_version.as_deref(),
+            Some(AGENT_VERSION),
+            "refreshed_for_write must restamp trident_version with the current agent's AGENT_VERSION"
+        );
+    }
+
+    #[test]
     fn same_content_detects_real_differences() {
         let request = sample_request(RequestedOperation::Finalize);
         let success = UpdateStatus::new(
@@ -468,6 +526,34 @@ mod tests {
         );
 
         assert!(!success.same_content(&failed));
+    }
+
+    #[test]
+    fn same_content_ignores_trident_version() {
+        // Regression test: refreshed_for_write() always restamps
+        // trident_version with the currently-running agent's AGENT_VERSION
+        // (see refreshed_for_write_restamps_trident_version). If
+        // same_content compared trident_version, a cached status from
+        // before an agent upgrade would never again compare equal to the
+        // freshly-republished one, reintroducing the infinite re-publish
+        // loop same_content exists to prevent.
+        let request = sample_request(RequestedOperation::Finalize);
+        let mut cached = UpdateStatus::new(
+            &request,
+            Operation::Finalize,
+            request.operation_id.clone(),
+            StatusCode::Success,
+            "finalize completed",
+            Some("1.0.0".to_string()),
+            Some("2.0.0".to_string()),
+            fixed_time(0),
+            Some(fixed_time(5)),
+        );
+        cached.trident_version = Some("0.0.1-old-agent".to_string());
+        let republished = cached.refreshed_for_write();
+
+        assert_ne!(cached.trident_version, republished.trident_version);
+        assert!(cached.same_content(&republished));
     }
 
     #[test]
@@ -525,11 +611,30 @@ mod tests {
         assert_eq!(json["message"], "stage completed");
         assert_eq!(json["fromVersion"], "1.0.0");
         assert_eq!(json["toVersion"], "2.0.0");
+        assert_eq!(json["tridentVersion"], AGENT_VERSION);
         assert!(json.get("startedUtc").is_some());
         assert!(json.get("lastUpdatedUtc").is_some());
         assert!(json.get("finishedUtc").is_some());
         // Confirms camelCase renaming applies to every field, not just a subset.
         assert!(json.get("nodeUpdateId").is_some());
+    }
+
+    #[test]
+    fn new_always_populates_trident_version_with_agent_version() {
+        let request = sample_request(RequestedOperation::Stage);
+        let status = UpdateStatus::new(
+            &request,
+            Operation::Stage,
+            request.operation_id.clone(),
+            StatusCode::Success,
+            "stage completed",
+            None,
+            None,
+            fixed_time(0),
+            Some(fixed_time(5)),
+        );
+
+        assert_eq!(status.trident_version.as_deref(), Some(AGENT_VERSION));
     }
 
     #[test]
@@ -839,6 +944,7 @@ mod tests {
     },
     "fromVersion":   { "type": "string" },
     "toVersion":     { "type": "string" },
+    "tridentVersion": { "type": "string", "description": "Version of trident-acl-agent that wrote this status. Packaged and released together with tridentd, so this is also the tridentd version." },
     "startedUtc":    { "type": "string", "format": "date-time" },
     "lastUpdatedUtc": { "type": "string", "format": "date-time", "description": "When the agent last wrote this status. The agent refreshes it on every write, including a periodic InProgress heartbeat, so AKS-RP and the watchdog can tell a working agent from a stuck one." },
     "finishedUtc":   { "type": "string", "format": "date-time" }
