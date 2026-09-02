@@ -362,7 +362,7 @@ func startEphemeralPostgres(ctx context.Context) (dbURL string, containerID stri
 		"-e", "POSTGRES_PASSWORD=nebraska",
 		"-e", "POSTGRES_DB=nebraska",
 		"-p", "127.0.0.1::5432",
-		"postgres:16-alpine",
+		PostgresImage,
 	).Output()
 	if err != nil {
 		return "", "", fmt.Errorf("docker run postgres: %w", err)
