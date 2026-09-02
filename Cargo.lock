@@ -4019,6 +4019,7 @@ name = "trident-acl-agent"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "backoff",
  "chrono",
  "clap",
  "const_format",

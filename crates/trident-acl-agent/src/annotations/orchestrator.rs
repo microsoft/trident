@@ -10,6 +10,7 @@
 use std::{collections::BTreeMap, future::Future, time::Duration};
 
 use anyhow::{anyhow, Context, Error};
+use backoff::{backoff::Backoff, ExponentialBackoffBuilder};
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use k8s_openapi::api::core::v1::Node;
@@ -41,16 +42,13 @@ use crate::{
 
 const FINAL_STATUS_PATCH_RETRIES: usize = 3;
 const FINAL_STATUS_PATCH_BACKOFF: Duration = Duration::from_secs(2);
-
-/// Bounded retry for `recover_from_trident_state`'s one-shot Node read (used
-/// only when there's no `pendingCommit` to resume locally, so this is not
-/// on the earlier, more time-sensitive resume path). Mirrors
-/// `FINAL_STATUS_PATCH_RETRIES`/`FINAL_STATUS_PATCH_BACKOFF`'s shape: a
-/// short bounded retry absorbs a transient k8s hiccup at startup instead of
-/// turning it into an immediate crash-loop, while still giving up and
-/// surfacing a real error if k8s stays down.
-const RECOVERY_NODE_READ_RETRIES: usize = 3;
-const RECOVERY_NODE_READ_BACKOFF: Duration = Duration::from_secs(2);
+/// Initial delay between attempts in `get_node_with_retry`, which retries
+/// indefinitely with capped exponential backoff and jitter - see that
+/// function's docs.
+const NODE_READ_BACKOFF: Duration = Duration::from_secs(2);
+/// Cap on the backoff delay in `get_node_with_retry`, so retries never
+/// slow to an unreasonably long cadence during an extended outage.
+const NODE_READ_BACKOFF_MAX: Duration = Duration::from_secs(30);
 
 /// The machine-id source used for every Nebraska request this module makes,
 /// event reports included. Must match the source used by `handle_stage`'s
@@ -139,8 +137,49 @@ impl Orchestrator {
         let mut stream = self
             .k8s
             .watch_node(self.config.kubernetes.node_name.clone());
-        while let Some(node) = stream.next().await {
-            let node = node?;
+        // Watch-stream errors are tolerated indefinitely, so a transient
+        // reconnect hiccup doesn't abort the whole orchestrator the way a
+        // bare `node?` would. No extra sleep here (unlike
+        // `get_node_with_retry`): `kube::runtime::watcher`'s own
+        // `default_backoff()` (see `k8s::NodeClient::watch_node`) already
+        // delays before the stream's next reconnect attempt, so sleeping
+        // here as well would only stack a second, redundant delay on top
+        // of it.
+        //
+        // A bounded give-up-eventually budget for this loop was tried and
+        // repeatedly found to be unsound: a long-lived watch has no clean
+        // notion of "consecutive" failures like a one-shot retry does - a
+        // quiet Node produces no stream item on a successful reconnect, so
+        // there's no reliable signal to tell an isolated, otherwise-healthy
+        // blip apart from a genuinely ongoing outage. Retrying forever here
+        // is the simple, correct choice until a real need for a bound (and
+        // a real recovery signal to bound it safely) arises. A running
+        // `errors_since_last_node_event` count is still logged with every
+        // failure - purely for operator visibility into an ongoing outage -
+        // but nothing here decides anything based on it. Note this counts
+        // errors since the last *Node event*, not truly consecutive
+        // failures: a healthy reconnect between two errors produces no
+        // stream item, so it wouldn't reset this counter either.
+        let mut errors_since_last_node_event = 0u64;
+        while let Some(item) = stream.next().await {
+            let node = match item {
+                Ok(node) => {
+                    errors_since_last_node_event = 0;
+                    node
+                }
+                Err(err) => {
+                    let err: Error = err.into();
+                    if self.log_and_swallow_node_gone(&err, "watching node") {
+                        return Ok(());
+                    }
+                    errors_since_last_node_event += 1;
+                    warn!(
+                        "transient error watching node {} (errors since last node event: {errors_since_last_node_event}): {err:#}",
+                        self.config.kubernetes.node_name
+                    );
+                    continue;
+                }
+            };
             match self.reconcile_node(&node).await {
                 Ok(LoopControl::Continue) => {}
                 Ok(LoopControl::ExitForReboot) => return Ok(()),
@@ -1146,30 +1185,42 @@ impl Orchestrator {
         }
     }
 
-    /// Reads the agent's own Node object with a bounded retry, so a
-    /// transient Kubernetes hiccup at startup recovery doesn't propagate the
-    /// first error straight into a process exit / crash-loop the way a bare
-    /// `self.k8s.get_node(...).await?` would. Only used by
+    /// Reads the agent's own Node object, retrying indefinitely with capped
+    /// exponential backoff and full jitter between attempts, so a transient
+    /// Kubernetes hiccup at startup recovery doesn't propagate the first
+    /// error straight into a process exit / crash-loop the way a bare
+    /// `self.k8s.get_node(...).await?` would, and repeated retries don't
+    /// pile onto an API server that's already struggling. Only used by
     /// `recover_from_trident_state`'s "no pending commit to resume" branch;
     /// the pending-commit resume itself never touches k8s at all (see that
     /// function's docs). `NodeGone` is returned immediately without
     /// retrying, since it's terminal - the node was deleted, and no amount
     /// of retrying changes that.
     async fn get_node_with_retry(&self, name: &str) -> Result<Node, K8sClientError> {
-        let mut last_err = None;
-        for attempt in 0..RECOVERY_NODE_READ_RETRIES {
+        let mut backoff = ExponentialBackoffBuilder::new()
+            .with_initial_interval(NODE_READ_BACKOFF)
+            .with_max_interval(NODE_READ_BACKOFF_MAX)
+            .with_multiplier(2.0)
+            .with_randomization_factor(1.0)
+            .with_max_elapsed_time(None)
+            .build();
+        loop {
             match self.k8s.get_node(name).await {
                 Ok(node) => return Ok(node),
-                Err(K8sClientError::NodeGone) => return Err(K8sClientError::NodeGone),
+                Err(err @ K8sClientError::NodeGone) => return Err(err),
                 Err(err) => {
-                    last_err = Some(err);
-                    if attempt + 1 < RECOVERY_NODE_READ_RETRIES {
-                        time::sleep(RECOVERY_NODE_READ_BACKOFF).await;
-                    }
+                    // `max_elapsed_time(None)` means `next_backoff()` never
+                    // returns `None` in practice, but fall back to the cap
+                    // instead of unwrapping, so this can't panic even if
+                    // that invariant ever changes.
+                    let delay = backoff.next_backoff().unwrap_or(NODE_READ_BACKOFF_MAX);
+                    warn!(
+                        "transient error reading node {name} during startup recovery, retrying in {delay:?}: {err:#}"
+                    );
+                    time::sleep(delay).await;
                 }
             }
         }
-        Err(last_err.expect("loop runs RECOVERY_NODE_READ_RETRIES >= 1 times"))
     }
 
     fn is_node_gone_error(&self, err: &Error) -> bool {
