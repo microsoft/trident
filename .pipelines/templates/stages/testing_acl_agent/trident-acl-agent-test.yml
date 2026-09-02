@@ -155,15 +155,18 @@ stages:
                     # NebraskaProxy's ephemeral Postgres (--postgres-image
                     # below must match) is started by the storm-trident
                     # binary via a plain `docker run`, not through this
-                    # task. Log in and pull it here instead, as root to
-                    # match the `sudo ./bin/storm-trident run aclagent` step
-                    # below (docker credentials are per-user, but a pulled
-                    # image lands in the daemon's shared image cache, so
-                    # this is the only step that needs the ACR login - the
-                    # later `docker run` just finds it locally and never
-                    # touches the network or the ACR credential).
-                    sudo az acr login -n maritimusdev
-                    sudo docker pull "${{ parameters.postgresImage }}"
+                    # task. Log in and pull it here as the agent user (not
+                    # sudo - the AzureCLI@2 task's service-connection auth
+                    # context lives under this user's home directory, and
+                    # sudo would run az/docker as root with no such
+                    # context, breaking the login). Docker images land in
+                    # the daemon's shared image cache regardless of which
+                    # user pulled them, so the later
+                    # `sudo ./bin/storm-trident run aclagent` step still
+                    # finds the image locally and never touches the
+                    # network or the ACR credential.
+                    az acr login -n maritimusdev
+                    docker pull "${{ parameters.postgresImage }}"
                 displayName: "Pull ephemeral Postgres image from maritimusdev ACR"
                 retryCountOnTaskFailure: 3
 
