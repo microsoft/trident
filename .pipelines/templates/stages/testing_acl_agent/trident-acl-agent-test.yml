@@ -167,7 +167,7 @@ stages:
                     # network or the ACR credential.
                     az acr login -n martimusexternal
                     docker pull "${{ parameters.postgresImage }}"
-                displayName: "Pull ephemeral Postgres image from martimusexternal ACR"
+                displayName: "Pull Postgres image"
                 retryCountOnTaskFailure: 3
 
           - bash: |
