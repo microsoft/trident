@@ -178,10 +178,22 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	nebraskaPackageName := testConfig.NebraskaPackageName
 	nebraskaSHA384 := testConfig.NebraskaSHA384
 
+	// trident-acl-agent requires https for both the Nebraska control channel
+	// and the resolved package/image URL scheme (see
+	// crates/trident-acl-agent/src/core/nebraska/client.rs), so both fake
+	// servers below share one ephemeral, self-signed TLS certificate for
+	// HostEndpointIP. It is never written to disk: it's generated fresh for
+	// this run and installed directly into the VM's trust store(s) by
+	// prepareVmForAclAgent.
+	tlsCert, tlsCertPEM, err := stormproxies.GenerateEphemeralTLSCert(testConfig.HostEndpointIP)
+	if err != nil {
+		return fmt.Errorf("failed to generate ephemeral TLS certificate for %s: %w", testConfig.HostEndpointIP, err)
+	}
+
 	// tridentd downloads and hashes the image itself as part of staging a
 	// runtime update; it is not enough for the acl-agent to merely reach the
 	// fake apiserver/Nebraska endpoints. When a real image is configured, serve
-	// it over plain HTTP from this same test runner and advertise its real
+	// it over HTTPS from this same test runner and advertise its real
 	// SHA-384 hash, so tridentd's download+verify path is exercised faithfully
 	// instead of failing on an unreachable https://example.invalid URL or a
 	// hash that doesn't match any downloadable bytes.
@@ -199,11 +211,11 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 		if err != nil {
 			return fmt.Errorf("failed to hash image %s: %w", imagePath, err)
 		}
-		imageServer := &stormproxies.ImageServer{ImagePath: imagePath}
+		imageServer := &stormproxies.ImageServer{ImagePath: imagePath, Cert: tlsCert}
 		if _, err := imageServer.ListenAndServe(ctx, fmt.Sprintf("%s:%d", testConfig.HostEndpointIP, testConfig.ImageServerPort)); err != nil {
 			return fmt.Errorf("failed to start fake image server: %w", err)
 		}
-		nebraskaCodebase = fmt.Sprintf("http://%s:%d/", testConfig.HostEndpointIP, testConfig.ImageServerPort)
+		nebraskaCodebase = fmt.Sprintf("https://%s:%d/", testConfig.HostEndpointIP, testConfig.ImageServerPort)
 		nebraskaPackageName = imageServer.PackageBaseName()
 		nebraskaSHA384 = hash
 	}
@@ -217,6 +229,7 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 			PackageName: nebraskaPackageName,
 		},
 		PostgresImage: testConfig.PostgresImage,
+		Cert:          tlsCert,
 	}
 	if _, err := nebraska.ListenAndServe(ctx, fmt.Sprintf("%s:%d", testConfig.HostEndpointIP, testConfig.NebraskaPort)); err != nil {
 		return fmt.Errorf("failed to start fake Nebraska endpoint: %w", err)
@@ -250,7 +263,7 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	// path.
 	time.AfterFunc(10*time.Second, apiServerDelayedStart)
 
-	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig); err != nil {
+	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig, tlsCertPEM); err != nil {
 		return err
 	}
 
@@ -286,7 +299,7 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	}
 
 	rp := &stormproxies.RPClient{APIServerURL: fmt.Sprintf("http://%s:%d", testConfig.HostEndpointIP, testConfig.APIServerPort), NodeName: testConfig.NodeName}
-	nebraskaServer := fmt.Sprintf("http://%s:%d", testConfig.HostEndpointIP, testConfig.NebraskaPort)
+	nebraskaServer := fmt.Sprintf("https://%s:%d", testConfig.HostEndpointIP, testConfig.NebraskaPort)
 	nebraskaAppID := nebraska.AppID()
 	nebraskaTrack := nebraska.Track()
 
@@ -296,7 +309,10 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	// via the update-request annotation, and fails again with a deliberately
 	// wrong endpoint - i.e. both the success and failure paths of the
 	// env-var config mechanism are exercised directly, not just inferred
-	// from the annotation-driven flow below.
+	// from the annotation-driven flow below. No CA-cert-path override is
+	// passed here: the ephemeral cert is already trusted VM-wide via
+	// prepareVmForAclAgent's update-ca-trust + rehash install, exactly as
+	// a real deployment would trust Nebraska's cert via the OS trust store.
 	nebraskaEnv := map[string]string{
 		"TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT": nebraskaServer,
 		"TRIDENT_ACL_AGENT_NEBRASKA_APP_ID":   nebraskaAppID,
@@ -306,7 +322,7 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 		return fmt.Errorf("env-var-override validate-connection check failed (expected success): %w", err)
 	}
 	wrongNebraskaEnv := map[string]string{
-		"TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT": fmt.Sprintf("http://%s:%d", testConfig.HostEndpointIP, testConfig.NebraskaPort+1),
+		"TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT": fmt.Sprintf("https://%s:%d", testConfig.HostEndpointIP, testConfig.NebraskaPort+1),
 		"TRIDENT_ACL_AGENT_NEBRASKA_APP_ID":   nebraskaAppID,
 		"TRIDENT_ACL_AGENT_NEBRASKA_TRACK":    nebraskaTrack,
 	}
@@ -346,6 +362,19 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	// unchanged to the newly-activated root. trident-acl-agent.service is
 	// enabled by default there (baked into the update image) and starts
 	// with that same config at boot, so no re-delivery is needed here.
+	//
+	// The system trust store is a different story: it lives under /etc,
+	// which IS part of the A/B-swapped root (an overlay backed by the
+	// per-slot trident-overlay-a/-b partitions), so a cert installed there
+	// pre-reboot would not carry over. That's handled at the image level
+	// instead: prepareVmForAclAgent also drops the cert onto the
+	// persistent /var/lib/trident-acl-agent partition (see its own doc
+	// comment), and the update image (the only one this scenario reboots
+	// into needing Nebraska trust - RunRollback reboots back to the base
+	// image instead, and never queries Nebraska) bakes in a
+	// trident-acl-agent-cert-install oneshot service that re-installs the
+	// cert into that root's system trust store before
+	// trident-acl-agent.service starts - no SSH round-trip needed here.
 
 	finalScenario := &stormproxies.Scenario{Steps: []stormproxies.ScenarioStep{
 		{Expect: &stormproxies.ExpectStep{OperationID: "bbbbbbbb-2222-2222-2222-222222222222", Operation: "commit", Code: "Success", Timeout: 180 * time.Second}},
@@ -395,7 +424,7 @@ func collectAclArtifactsBestEffort(cfg stormvmconfig.VMConfig, vmIP string, outp
 	}
 }
 
-func prepareVmForAclAgent(cfg stormvmconfig.VMConfig, vmIP string, testConfig stormaclconfig.TestConfig) error {
+func prepareVmForAclAgent(cfg stormvmconfig.VMConfig, vmIP string, testConfig stormaclconfig.TestConfig, nebraskaCACertPEM []byte) error {
 	// trident-acl-agent needs no config file at all for this scenario:
 	//   - nebraska.app_id and nebraska.endpoint are supplied per-request via
 	//     the update-request annotation's `appId`/`server` fields instead
@@ -465,6 +494,83 @@ users:
 	}
 	if err := stormssh.ScpUploadFileWithSudo(cfg, vmIP, localKubeconfigFile.Name(), "/var/lib/kubelet/kubeconfig"); err != nil {
 		return fmt.Errorf("failed to upload fake kubeconfig to VM: %w", err)
+	}
+
+	// Trust the fake Nebraska/image server's ephemeral TLS cert into the
+	// VM's system trust store, when this scenario uses Nebraska at all
+	// (RunRollback doesn't - it never queries Nebraska/image-server, see
+	// its own doc comment - and passes nil). This covers the image
+	// download (a tridentd HTTPS fetch that only ever happens pre-reboot,
+	// during stage) and this function's own validate-connection checks.
+	//
+	// This install alone does not survive finalize's A/B root swap, since
+	// each root has its own /etc: trident-acl-agent has no CA-override
+	// config of its own (a private CA is expected to be trusted via the
+	// node's system trust store, installed at image-build time - not via
+	// a runtime agent config knob), so the cert is also dropped onto the
+	// persistent, non-A/B /var/lib/trident-acl-agent partition. The
+	// update image bakes in a trident-acl-agent-cert-install oneshot
+	// service (see files/trident-acl-agent-cert-install.service) that
+	// runs at boot, before trident-acl-agent.service starts, and - only
+	// when that shared file is present - re-installs the cert into the
+	// newly-active root. That is what lets the post-reboot commit event
+	// still reach Nebraska over TLS, without any extra SSH round-trip
+	// from this harness after the reboot. (The base image has no need
+	// for this service: RunRollback reboots back into it, but never
+	// queries Nebraska, see its own doc comment.)
+	//
+	// Three steps are required to install the cert, not just one:
+	//   1. `update-ca-trust extract` regenerates the bundle *files* under
+	//      /etc/pki/ca-trust/extracted/ - what curl/openssl s_client
+	//      consult by default.
+	//   2. Copying the cert into /etc/pki/tls/certs and running
+	//      `openssl rehash` there creates a hash-named symlink to it in
+	//      that *directory* - separately consulted, as this image's
+	//      OpenSSL default cert dir, by reqwest/native-tls's default
+	//      (no-custom-CA) client construction used by both tridentd's
+	//      image downloader and trident-acl-agent's Nebraska client.
+	//      update-ca-trust does not populate this directory, so step 2 is
+	//      required for those two call sites specifically (a
+	//      platform/build quirk of this image, not a
+	//      trident/trident-acl-agent bug).
+	//   3. Copying the cert onto /var/lib/trident-acl-agent, so
+	//      trident-acl-agent-cert-install.service can redo steps 1-2 on
+	//      whichever root boots next.
+	if len(nebraskaCACertPEM) > 0 {
+		localCertFile, err := os.CreateTemp("", "trident-acl-agent-storm-test-ca-*.pem")
+		if err != nil {
+			return fmt.Errorf("failed to create local temp file for test CA cert: %w", err)
+		}
+		defer os.Remove(localCertFile.Name())
+		if _, err := localCertFile.Write(nebraskaCACertPEM); err != nil {
+			localCertFile.Close()
+			return fmt.Errorf("failed to write local temp test CA cert: %w", err)
+		}
+		if err := localCertFile.Close(); err != nil {
+			return fmt.Errorf("failed to close local temp test CA cert: %w", err)
+		}
+		if err := stormssh.ScpUploadFileWithSudo(cfg, vmIP, localCertFile.Name(), "/etc/pki/ca-trust/source/anchors/trident-acl-agent-storm-test-ca.pem"); err != nil {
+			return fmt.Errorf("failed to upload test CA cert to VM system trust store: %w", err)
+		}
+		if _, err := stormssh.SshCommandCombinedOutput(cfg, vmIP, "sudo update-ca-trust extract"); err != nil {
+			return fmt.Errorf("failed to refresh VM system trust store: %w", err)
+		}
+		// `openssl rehash` only hashes files that live directly in its
+		// target directory - it does not follow the anchors dir the cert
+		// was just uploaded to - so a copy into /etc/pki/tls/certs is
+		// required before rehashing it.
+		if _, err := stormssh.SshCommandCombinedOutput(cfg, vmIP, "sudo cp /etc/pki/ca-trust/source/anchors/trident-acl-agent-storm-test-ca.pem /etc/pki/tls/certs/trident-acl-agent-storm-test-ca.pem"); err != nil {
+			return fmt.Errorf("failed to copy test CA cert into VM OpenSSL cert directory: %w", err)
+		}
+		if _, err := stormssh.SshCommandCombinedOutput(cfg, vmIP, "sudo openssl rehash /etc/pki/tls/certs"); err != nil {
+			return fmt.Errorf("failed to rehash VM OpenSSL cert directory: %w", err)
+		}
+		if _, err := stormssh.SshCommandCombinedOutput(cfg, vmIP, "sudo mkdir -p /var/lib/trident-acl-agent"); err != nil {
+			return fmt.Errorf("failed to create /var/lib/trident-acl-agent on VM: %w", err)
+		}
+		if err := stormssh.ScpUploadFileWithSudo(cfg, vmIP, localCertFile.Name(), "/var/lib/trident-acl-agent/nebraska-ca.pem"); err != nil {
+			return fmt.Errorf("failed to upload test CA cert to VM persistent partition: %w", err)
+		}
 	}
 
 	// Enable (without "--now"), then always issue a single "restart" of

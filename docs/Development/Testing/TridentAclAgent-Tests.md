@@ -60,6 +60,68 @@ volume — the harness re-runs its short prepare/restart step after each
 reboot to reconnect the agent to that test case's fresh fake-apiserver
 instance, not to re-create the kubeconfig.
 
+## Nebraska/Image Server TLS
+
+`trident-acl-agent` requires `https` for the Nebraska `server` URL and only
+accepts `https`/`oci` for the package/image URL Nebraska's response resolves
+to (`http` and `file` are rejected) — see
+[Trident ACL Agent](../../Explanation/Trident-ACL-Agent.md). The fake
+Nebraska proxy and fake image server this scenario starts must therefore
+serve real TLS, not plain HTTP.
+
+`run-ab-update` generates one ephemeral, self-signed TLS certificate per run
+(in memory, in the Go test process — nothing is ever written to the repo)
+and serves both fakes with it. Both fakes also cap their TLS version at 1.2
+(`tls.Config.MaxVersion`) — this build's OpenSSL has an interop bug with
+Go's TLS 1.3 post-handshake `NewSessionTicket` message, surfacing as a
+`bad record MAC` error on the very first request to a freshly-started fake
+server. The cap is a pragmatic workaround; it only affects these test-only
+fakes, not `tridentd`/`trident-acl-agent`'s real TLS clients.
+
+The cert is installed into the VM's system trust store in two steps, both
+required:
+
+- **System trust *bundle*** (`update-ca-trust extract`), which regenerates
+  the PEM bundle *files* under `/etc/pki/ca-trust/extracted/` — what tools
+  like `curl`/`openssl s_client` consult by default.
+- **System trust *directory*** (a copy under `/etc/pki/tls/certs/`,
+  followed by `openssl rehash` there to create the hash-named symlink
+  OpenSSL's directory-based lookup requires). This step is required *in
+  addition to* `update-ca-trust`: this image's statically-linked
+  reqwest/OpenSSL stack — used by both `tridentd`'s image downloader and
+  `trident-acl-agent`'s Nebraska client — defaults to directory-based
+  lookup (`/usr/lib/ssl/certs`, symlinked to `/etc/pki/tls/certs` on Azure
+  Linux), which `update-ca-trust` never populates. Skipping this step
+  reproduces as an `unknown certificate authority` TLS alert from
+  `tridentd`'s image download and from this harness's own
+  `--validate-connection nebraska` check, even though `curl`/`openssl
+  s_client` would report the same cert as trusted. This is a
+  platform/build quirk of this test image, not a bug in
+  `trident`/`trident-acl-agent`.
+
+`trident-acl-agent` has no CA-override config of its own — a private CA is
+expected to be trusted via the node's system trust store, installed at
+image-build time, not via a runtime agent config knob — so neither install
+step above survives `finalize`'s A/B root swap (each root has its own
+`/etc`, and `/etc` is itself an overlay backed by the per-slot
+`trident-overlay-a`/`-b` partitions). `prepareVmForAclAgent` also drops the
+cert onto the persistent, non-A/B `/var/lib/trident-acl-agent` partition,
+and the update image bakes in a `trident-acl-agent-cert-install.service`
+oneshot unit (`Before=trident-acl-agent.service`, `ConditionPathExists=`
+that persistent-partition file) that redoes the two steps above into
+whichever root just booted, before `trident-acl-agent.service` starts —
+no SSH round-trip from this harness is needed after the reboot. The base
+image has no need for this unit: `run-rollback` reboots back into it, but
+never queries Nebraska (see below), so there is nothing to reprovision.
+
+`run-rollback` never queries Nebraska at all (see its own scenario
+description above), so it starts no TLS-serving fakes and installs no cert.
+
+This is why the harness needs no static Nebraska endpoint/CA configuration
+of its own: endpoint, `app_id`, and `track` are all supplied per-request via
+the update-request annotation, as described in
+[VM Image Contents](#vm-image-contents).
+
 ## Prerequisites
 
 - **Linux host** with root access
@@ -164,7 +226,8 @@ The scenario runs these test cases in order:
 1. **deploy-vm** — Copies the base qcow2 image and creates a QEMU VM
 2. **check-deployment** — Verifies the VM booted and is accessible via SSH
 3. **run-ab-update** — Starts the fake apiserver and fake Nebraska/Omaha
-   endpoints in-process, delivers a fake kubeconfig and restarts
+   endpoints in-process (the latter over HTTPS — see [Nebraska/Image Server
+   TLS](#nebraskaimage-server-tls)), delivers a fake kubeconfig and restarts
    `trident-acl-agent.service`, patches the `acl.azure.com/update-request`
    annotation, and waits for `trident-acl-agent` to drive a real Trident A/B
    update to completion (including a real reboot)
