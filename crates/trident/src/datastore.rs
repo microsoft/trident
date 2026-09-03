@@ -1,7 +1,9 @@
 use std::{fs, path::Path};
 
 use log::{debug, warn};
+use serde::{de::DeserializeOwned, Serialize};
 use sqlite::State;
+use uuid::Uuid;
 
 use trident_api::{
     error::{
@@ -11,6 +13,13 @@ use trident_api::{
 };
 
 use crate::TRIDENT_SEMVER_VERSION;
+
+/// Key under which the datastore's unique correlation ID is stored in the
+/// generic key-value table. This ID is generated once (on first access) and
+/// persisted for the lifetime of the datastore. It is intended to be added to
+/// tracing/telemetry so that all activity for a given host installation can
+/// be correlated.
+const CORRELATION_ID_KEY: &str = "correlation-id";
 
 pub struct DataStore {
     db: Option<sqlite::Connection>,
@@ -128,6 +137,13 @@ impl DataStore {
             )",
         )
         .structured(ServicingError::from(DatastoreError::InitializeDatastore))?;
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS keyvalue (
+                key TEXT PRIMARY KEY,
+                contents TEXT NOT NULL
+            )",
+        )
+        .structured(ServicingError::from(DatastoreError::InitializeDatastore))?;
         Ok(db)
     }
 
@@ -139,8 +155,75 @@ impl DataStore {
                 TridentVersion::SemVer(TRIDENT_SEMVER_VERSION.clone());
             Self::write_host_status(&persistent_db, self.host_status())?;
 
+            // Carry over any generic key-value entries (e.g. the correlation ID)
+            // recorded in the temporary datastore into the persistent one, so
+            // they survive the transition from temporary to persistent
+            // storage.
+            if let Some(temporary_db) = self.db.as_ref() {
+                Self::copy_key_values(temporary_db, &persistent_db)?;
+            }
+
             self.db = Some(persistent_db);
             self.temporary = false;
+        }
+
+        Ok(())
+    }
+
+    /// Copy all rows of the generic key-value table from `source` into
+    /// `destination`, overwriting any conflicting keys already present in
+    /// `destination`.
+    fn copy_key_values(
+        source: &sqlite::Connection,
+        destination: &sqlite::Connection,
+    ) -> Result<(), TridentError> {
+        let mut query_statement = source
+            .prepare("SELECT key, contents FROM keyvalue")
+            .structured(ServicingError::from(DatastoreError::ReadDatastore))?;
+
+        loop {
+            match query_statement.next() {
+                Ok(State::Done) => break,
+                Err(e) => {
+                    warn!(
+                        "Failed to get next keyvalue row while copying datastore: {:?}",
+                        e
+                    );
+                    break;
+                }
+                Ok(State::Row) => {} // continue below
+            }
+
+            let key = query_statement
+                .read::<String, _>(0)
+                .structured(ServicingError::from(DatastoreError::ReadDatastore))?;
+            let contents = query_statement
+                .read::<String, _>(1)
+                .structured(ServicingError::from(DatastoreError::ReadDatastore))?;
+
+            let mut insert_statement = destination
+                .prepare(
+                    "INSERT INTO keyvalue (key, contents) VALUES (?, ?) \
+                     ON CONFLICT(key) DO UPDATE SET contents = excluded.contents",
+                )
+                .structured(ServicingError::Datastore {
+                    inner: DatastoreError::WriteKeyValue { key: key.clone() },
+                })?;
+            insert_statement
+                .bind((1, &*key))
+                .structured(ServicingError::Datastore {
+                    inner: DatastoreError::WriteKeyValue { key: key.clone() },
+                })?;
+            insert_statement
+                .bind((2, &*contents))
+                .structured(ServicingError::Datastore {
+                    inner: DatastoreError::WriteKeyValue { key: key.clone() },
+                })?;
+            insert_statement
+                .next()
+                .structured(ServicingError::Datastore {
+                    inner: DatastoreError::WriteKeyValue { key },
+                })?;
         }
 
         Ok(())
@@ -217,6 +300,128 @@ impl DataStore {
     /// any further attempts to use the datastore to fail.
     pub(crate) fn close(&mut self) {
         self.db = None;
+    }
+
+    /// Retrieve a structured value stored under `key` in the datastore's
+    /// generic key-value table, if present.
+    ///
+    /// Values are serialized as JSON, so any type implementing
+    /// `serde::Serialize`/`serde::de::DeserializeOwned` can be stored, not
+    /// just `HostStatus`.
+    pub(crate) fn get_value<T: DeserializeOwned>(
+        &self,
+        key: &str,
+    ) -> Result<Option<T>, TridentError> {
+        let db = self
+            .db
+            .as_ref()
+            .structured(ServicingError::from(DatastoreError::OpenDatastore))?;
+
+        let mut statement = db
+            .prepare("SELECT contents FROM keyvalue WHERE key = ?")
+            .structured(ServicingError::Datastore {
+                inner: DatastoreError::ReadKeyValue {
+                    key: key.to_string(),
+                },
+            })?;
+        statement
+            .bind((1, key))
+            .structured(ServicingError::Datastore {
+                inner: DatastoreError::ReadKeyValue {
+                    key: key.to_string(),
+                },
+            })?;
+
+        match statement.next().structured(ServicingError::Datastore {
+            inner: DatastoreError::ReadKeyValue {
+                key: key.to_string(),
+            },
+        })? {
+            State::Row => {
+                let contents =
+                    statement
+                        .read::<String, _>(0)
+                        .structured(ServicingError::Datastore {
+                            inner: DatastoreError::ReadKeyValue {
+                                key: key.to_string(),
+                            },
+                        })?;
+                let value = serde_json::from_str(&contents).structured(
+                    InternalError::DeserializeValue {
+                        key: key.to_string(),
+                    },
+                )?;
+                Ok(Some(value))
+            }
+            State::Done => Ok(None),
+        }
+    }
+
+    /// Store a structured value under `key` in the datastore's generic
+    /// key-value table, overwriting any previous value stored under the
+    /// same key.
+    ///
+    /// Values are serialized as JSON, so any type implementing
+    /// `serde::Serialize`/`serde::de::DeserializeOwned` can be stored, not
+    /// just `HostStatus`.
+    pub(crate) fn set_value<T: Serialize>(&self, key: &str, value: &T) -> Result<(), TridentError> {
+        let db = self
+            .db
+            .as_ref()
+            .structured(ServicingError::from(DatastoreError::WriteToClosedDatastore))?;
+
+        let contents = serde_json::to_string(value).structured(InternalError::SerializeValue {
+            key: key.to_string(),
+        })?;
+
+        let mut statement = db
+            .prepare(
+                "INSERT INTO keyvalue (key, contents) VALUES (?, ?) \
+                 ON CONFLICT(key) DO UPDATE SET contents = excluded.contents",
+            )
+            .structured(ServicingError::Datastore {
+                inner: DatastoreError::WriteKeyValue {
+                    key: key.to_string(),
+                },
+            })?;
+        statement
+            .bind((1, key))
+            .structured(ServicingError::Datastore {
+                inner: DatastoreError::WriteKeyValue {
+                    key: key.to_string(),
+                },
+            })?;
+        statement
+            .bind((2, &*contents))
+            .structured(ServicingError::Datastore {
+                inner: DatastoreError::WriteKeyValue {
+                    key: key.to_string(),
+                },
+            })?;
+        statement.next().structured(ServicingError::Datastore {
+            inner: DatastoreError::WriteKeyValue {
+                key: key.to_string(),
+            },
+        })?;
+
+        Ok(())
+    }
+
+    /// Retrieve this datastore's unique correlation ID, generating and
+    /// persisting a new one on first access.
+    ///
+    /// This ID is stable for the lifetime of the datastore (surviving the
+    /// temporary-to-persistent transition performed by `persist`), and is
+    /// intended to be attached to tracing/telemetry so that activity for a
+    /// given host installation can be correlated across logs and traces.
+    pub fn correlation_id(&mut self) -> Result<Uuid, TridentError> {
+        if let Some(id) = self.get_value::<Uuid>(CORRELATION_ID_KEY)? {
+            return Ok(id);
+        }
+
+        let id = Uuid::new_v4();
+        self.set_value(CORRELATION_ID_KEY, &id)?;
+        Ok(id)
     }
 
     /// Parse a single HostStatus entry from a datastore query result.
@@ -306,6 +511,60 @@ mod tests {
             .parse_host_status(Ok(serde_yaml::to_string(&valid_host_status).unwrap()))
             .is_some());
     }
+
+    #[test]
+    fn test_generic_key_value_store() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("db.sqlite");
+        let db = super::DataStore::make_datastore(&path).unwrap();
+        let datastore = super::DataStore {
+            db: Some(db),
+            host_status: Default::default(),
+            temporary: false,
+        };
+
+        // No value stored yet.
+        assert_eq!(datastore.get_value::<String>("some-key").unwrap(), None);
+
+        // Store and retrieve a value.
+        datastore
+            .set_value("some-key", &"some-value".to_string())
+            .unwrap();
+        assert_eq!(
+            datastore.get_value::<String>("some-key").unwrap(),
+            Some("some-value".to_string())
+        );
+
+        // Overwrite the value.
+        datastore
+            .set_value("some-key", &"other-value".to_string())
+            .unwrap();
+        assert_eq!(
+            datastore.get_value::<String>("some-key").unwrap(),
+            Some("other-value".to_string())
+        );
+
+        temp_dir.close().unwrap();
+    }
+
+    #[test]
+    fn test_correlation_id_is_stable() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("db.sqlite");
+        let db = super::DataStore::make_datastore(&path).unwrap();
+        let mut datastore = super::DataStore {
+            db: Some(db),
+            host_status: Default::default(),
+            temporary: false,
+        };
+
+        let id = datastore.correlation_id().unwrap();
+        // Calling correlation_id again should return the same ID, not generate a
+        // new one.
+        assert_eq!(datastore.correlation_id().unwrap(), id);
+
+        temp_dir.close().unwrap();
+    }
 }
 
 #[cfg(feature = "functional-test")]
@@ -380,5 +639,25 @@ mod functional_test {
             datastore.host_status().servicing_state,
             ServicingState::Provisioned
         );
+    }
+
+    #[functional_test]
+    fn test_correlation_id_survives_persist() {
+        let temp_dir = TempDir::new().unwrap();
+        let datastore_temp_path = temp_dir.path().join("db-tmp.sqlite");
+        let datastore_path = temp_dir.path().join("db.sqlite");
+
+        // Generate a correlation ID in the temporary datastore, then persist it.
+        let correlation_id = {
+            let mut datastore = DataStore::open_or_create(&datastore_temp_path).unwrap();
+            let correlation_id = datastore.correlation_id().unwrap();
+            datastore.persist(&datastore_path).unwrap();
+            correlation_id
+        };
+
+        // Re-open the persisted datastore and verify the same correlation ID is
+        // returned, rather than a new one being generated.
+        let mut datastore = DataStore::open(&datastore_path).unwrap();
+        assert_eq!(datastore.correlation_id().unwrap(), correlation_id);
     }
 }
