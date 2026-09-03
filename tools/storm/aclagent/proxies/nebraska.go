@@ -71,6 +71,14 @@ func LoadNebraskaScenario(path string) (*NebraskaScenario, error) {
 type NebraskaProxy struct {
 	Scenario *NebraskaScenario
 
+	// PostgresImage is the container image ListenAndServe pulls/runs for the
+	// ephemeral Postgres instance. Empty uses DefaultPostgresImage (the
+	// public postgres:16-alpine), which is what the unit tests in this
+	// package do; storm-trident's aclagent scenario always sets this from
+	// TestConfig.PostgresImage (--postgres-image), so it can be pointed at
+	// an internal registry mirror on network-restricted CI pools.
+	PostgresImage string
+
 	containerID string
 	dbURL       string
 	api         *api.API
@@ -137,7 +145,11 @@ func (p *NebraskaProxy) Handler() http.Handler {
 // listenAddr. The Postgres container and http server are both torn down
 // when ctx is cancelled.
 func (p *NebraskaProxy) ListenAndServe(ctx context.Context, listenAddr string) (net.Listener, error) {
-	dbURL, containerID, err := startEphemeralPostgres(ctx)
+	image := p.PostgresImage
+	if image == "" {
+		image = DefaultPostgresImage
+	}
+	dbURL, containerID, err := startEphemeralPostgres(ctx, image)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start ephemeral Postgres for Nebraska: %w", err)
 	}
@@ -354,15 +366,16 @@ func formatStatuses(statuses []int) string {
 	return "[" + strings.Join(names, " -> ") + "]"
 }
 
-// startEphemeralPostgres starts a disposable Postgres container for this
-// Nebraska instance to use, waits for it to accept connections, and returns
-// a connection URL for it plus its container ID (for teardown).
-func startEphemeralPostgres(ctx context.Context) (dbURL string, containerID string, err error) {
+// startEphemeralPostgres starts a disposable Postgres container (from
+// image) for this Nebraska instance to use, waits for it to accept
+// connections, and returns a connection URL for it plus its container ID
+// (for teardown).
+func startEphemeralPostgres(ctx context.Context, image string) (dbURL string, containerID string, err error) {
 	out, err := exec.CommandContext(ctx, "docker", "run", "-d", "--rm",
 		"-e", "POSTGRES_PASSWORD=nebraska",
 		"-e", "POSTGRES_DB=nebraska",
 		"-p", "127.0.0.1::5432",
-		"postgres:16-alpine",
+		image,
 	).Output()
 	if err != nil {
 		return "", "", fmt.Errorf("docker run postgres: %w", err)
