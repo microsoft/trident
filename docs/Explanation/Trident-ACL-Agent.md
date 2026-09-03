@@ -88,7 +88,15 @@ A request annotation looks like:
   `stage`/`finalize` requests, with **no static fallback** — a request
   missing them is rejected with `InvalidRequest` rather than falling back to
   a built-in endpoint, so a node can never update from a source the
-  orchestrator did not explicitly choose.
+  orchestrator did not explicitly choose. `server` must be an `https` URL —
+  a plain-`http` (or any other scheme) value is rejected outright, since
+  Nebraska's response drives a root-privileged `tridentd` fetch and must not
+  be readable/tamperable by a network-position attacker. Likewise, the
+  package/image URL Nebraska's response resolves to is only accepted if it
+  is `https` or `oci`; `http` and `file` are rejected, closing off an SSRF
+  vector where a compromised/spoofed Nebraska response could otherwise
+  direct `tridentd` to fetch or open an arbitrary local file or unencrypted
+  network resource.
 
 `operation` maps to Trident invocations as follows:
 
