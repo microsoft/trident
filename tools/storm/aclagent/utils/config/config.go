@@ -16,4 +16,5 @@ type TestConfig struct {
 	NodeName              string `help:"Node name served by the fake apiserver; must match the VM image's hostname (Image Customizer 'hostname' setting in baseimg-acl-agent.yaml), since trident-acl-agent's [kubernetes].node_name defaults to the node's own real hostname" default:"trident-acl-agent-testimg"`
 	HostEndpointIP        string `help:"Host IP the VM can reach the fake apiserver/Nebraska endpoints at" default:"192.168.122.1"`
 	ExpectedInitialVolume string `help:"Expected active volume immediately after deployment" default:"volume-a"`
+	PostgresImage         string `help:"Container image for the ephemeral Postgres instance backing the fake Nebraska endpoint; override with an internal registry mirror on network-restricted CI pools" default:"postgres:16-alpine"`
 }
