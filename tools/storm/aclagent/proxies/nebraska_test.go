@@ -2,6 +2,8 @@ package proxies
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +13,36 @@ import (
 
 	"github.com/flatcar/nebraska/backend/pkg/api"
 )
+
+// newTestHTTPSClient returns an http.Client that trusts exactly certPEM (and
+// nothing else), mirroring how the real NebraskaProxy is only ever trusted
+// via an explicit CA cert path/system-trust-store install, never via
+// disabled verification.
+func newTestHTTPSClient(t *testing.T, certPEM []byte) *http.Client {
+	t.Helper()
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(certPEM) {
+		t.Fatalf("failed to parse test CA cert PEM")
+	}
+	return &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{RootCAs: pool},
+		},
+	}
+}
+
+// newTestNebraskaProxy generates a fresh ephemeral TLS cert for listenAddr's
+// host and returns a NebraskaProxy configured to serve it, plus an
+// http.Client that trusts it, so subtests never fall back to disabling TLS
+// verification.
+func newTestNebraskaProxy(t *testing.T, scenario *NebraskaScenario) (*NebraskaProxy, *http.Client) {
+	t.Helper()
+	cert, certPEM, err := GenerateEphemeralTLSCert("127.0.0.1")
+	if err != nil {
+		t.Fatalf("GenerateEphemeralTLSCert: %v", err)
+	}
+	return &NebraskaProxy{Scenario: scenario, Cert: cert}, newTestHTTPSClient(t, certPEM)
+}
 
 // requireDocker skips the test when Docker isn't available, so this test
 // doesn't hard-fail on machines/CI runners without it. NebraskaProxy always
@@ -23,7 +55,7 @@ func requireDocker(t *testing.T) {
 	}
 }
 
-func postUpdateCheck(t *testing.T, addr, appID, machineID string) string {
+func postUpdateCheck(t *testing.T, client *http.Client, addr, appID, machineID string) string {
 	t.Helper()
 	req := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <request protocol="3.0">
@@ -32,7 +64,7 @@ func postUpdateCheck(t *testing.T, addr, appID, machineID string) string {
   </app>
 </request>`, appID, machineID)
 
-	resp, err := http.Post(fmt.Sprintf("http://%s/", addr), "text/xml", strings.NewReader(req))
+	resp, err := client.Post(fmt.Sprintf("https://%s/", addr), "text/xml", strings.NewReader(req))
 	if err != nil {
 		t.Fatalf("POST updatecheck: %v", err)
 	}
@@ -48,7 +80,7 @@ func postUpdateCheck(t *testing.T, addr, appID, machineID string) string {
 // eventresult) requests trident-acl-agent's nebraska::Client sends during
 // stage/finalize/post-reboot-commit (see
 // crates/trident-acl-agent/src/nebraska/event.rs for the whitelisted pairs).
-func postEvent(t *testing.T, addr, appID, machineID string, eventType, eventResult int) string {
+func postEvent(t *testing.T, client *http.Client, addr, appID, machineID string, eventType, eventResult int) string {
 	t.Helper()
 	req := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <request protocol="3.0">
@@ -57,7 +89,7 @@ func postEvent(t *testing.T, addr, appID, machineID string, eventType, eventResu
   </app>
 </request>`, appID, machineID, eventType, eventResult)
 
-	resp, err := http.Post(fmt.Sprintf("http://%s/", addr), "text/xml", strings.NewReader(req))
+	resp, err := client.Post(fmt.Sprintf("https://%s/", addr), "text/xml", strings.NewReader(req))
 	if err != nil {
 		t.Fatalf("POST event(%d,%d): %v", eventType, eventResult, err)
 	}
@@ -85,13 +117,13 @@ func TestNebraskaProxy(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
 
-		p := &NebraskaProxy{Scenario: &NebraskaScenario{
+		p, client := newTestNebraskaProxy(t, &NebraskaScenario{
 			Available:   true,
 			Version:     "5.0.0",
 			URL:         "http://example.invalid/images/",
 			SHA384:      "deadbeef",
 			PackageName: "acl.cosi",
-		}}
+		})
 		listener, err := p.ListenAndServe(ctx, "127.0.0.1:0")
 		if err != nil {
 			t.Fatalf("ListenAndServe: %v", err)
@@ -101,7 +133,7 @@ func TestNebraskaProxy(t *testing.T) {
 			t.Fatal("expected non-empty AppID after seeding")
 		}
 
-		body := postUpdateCheck(t, listener.Addr().String(), p.AppID(), "smoke-test-machine")
+		body := postUpdateCheck(t, client, listener.Addr().String(), p.AppID(), "smoke-test-machine")
 		if !strings.Contains(body, `status="ok"`) {
 			t.Fatalf("expected an ok updatecheck offering the package, got: %s", body)
 		}
@@ -114,13 +146,13 @@ func TestNebraskaProxy(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
 
-		p := &NebraskaProxy{Scenario: &NebraskaScenario{Available: false}}
+		p, client := newTestNebraskaProxy(t, &NebraskaScenario{Available: false})
 		listener, err := p.ListenAndServe(ctx, "127.0.0.1:0")
 		if err != nil {
 			t.Fatalf("ListenAndServe: %v", err)
 		}
 
-		body := postUpdateCheck(t, listener.Addr().String(), p.AppID(), "smoke-test-machine-2")
+		body := postUpdateCheck(t, client, listener.Addr().String(), p.AppID(), "smoke-test-machine-2")
 		if !strings.Contains(body, `status="noupdate"`) {
 			t.Fatalf("expected noupdate status, got: %s", body)
 		}
@@ -130,13 +162,13 @@ func TestNebraskaProxy(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
 
-		p := &NebraskaProxy{Scenario: &NebraskaScenario{
+		p, client := newTestNebraskaProxy(t, &NebraskaScenario{
 			Available:   true,
 			Version:     "5.0.0",
 			URL:         "http://example.invalid/images/",
 			SHA384:      "deadbeef",
 			PackageName: "acl.cosi",
-		}}
+		})
 		listener, err := p.ListenAndServe(ctx, "127.0.0.1:0")
 		if err != nil {
 			t.Fatalf("ListenAndServe: %v", err)
@@ -148,11 +180,11 @@ func TestNebraskaProxy(t *testing.T) {
 		// real trident-acl-agent run-ab-update does: an updatecheck grants
 		// the update, then stage/finalize/post-reboot-commit each report one
 		// progress or terminal event (see event.rs's whitelisted pairs).
-		postUpdateCheck(t, addr, p.AppID(), machineID)
-		postEvent(t, addr, p.AppID(), machineID, 13, 1)  // DownloadStarted
-		postEvent(t, addr, p.AppID(), machineID, 14, 1)  // DownloadFinished
-		postEvent(t, addr, p.AppID(), machineID, 800, 1) // Installed
-		postEvent(t, addr, p.AppID(), machineID, 3, 2)   // Completed (success+reboot)
+		postUpdateCheck(t, client, addr, p.AppID(), machineID)
+		postEvent(t, client, addr, p.AppID(), machineID, 13, 1)  // DownloadStarted
+		postEvent(t, client, addr, p.AppID(), machineID, 14, 1)  // DownloadFinished
+		postEvent(t, client, addr, p.AppID(), machineID, 800, 1) // Installed
+		postEvent(t, client, addr, p.AppID(), machineID, 3, 2)   // Completed (success+reboot)
 
 		if err := p.ValidateStatusHistory(ExpectedUpdateStatusSequence); err != nil {
 			t.Fatalf("ValidateStatusHistory: %v", err)
