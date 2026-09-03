@@ -204,16 +204,16 @@ impl AppInsightsSender {
             }
         });
 
-        let body = match serde_json::to_string(&envelope) {
-            Ok(b) => b,
+        let response = match self.client.post(&self.track_url).json(&envelope).send() {
+            Ok(response) => response,
             Err(e) => {
-                trace!("Failed to serialize Application Insights event: {e}");
+                trace!("Failed to send Application Insights event: {e}");
                 return;
             }
         };
 
-        if let Err(e) = self.client.post(&self.track_url).body(body).send() {
-            trace!("Failed to send Application Insights event: {e}");
+        if let Err(e) = response.error_for_status() {
+            trace!("Application Insights rejected event: {e}");
         }
     }
 }
@@ -411,7 +411,7 @@ mod functional_test {
         .expect("should build sender")
         .with_filter(filter::LevelFilter::INFO);
 
-        let _ =
+        let _guard =
             tracing::subscriber::set_default(tracing_subscriber::Registry::default().with(sender));
 
         tracing::info!(metric_name = "test_metric", value = true);
