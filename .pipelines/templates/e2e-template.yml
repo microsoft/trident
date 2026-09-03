@@ -274,6 +274,7 @@ stages:
   - template: stages/testing_acl_agent/trident-acl-agent-test.yml
     parameters:
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
   # TESTING stages for PRERELEASE
   - ${{ if eq(parameters.stageType, 'pre') }}:
