@@ -10,8 +10,8 @@ use trident::{
     cli::{self, Cli, Commands, GetKind, TridentExitCodes},
     init::offline,
     manual_rollback::{self, utils::ManualRollbackRequestKind},
-    validation, BackgroundLog, BackgroundUploader, DataStore, ExitKind, LogForwarder, Logstream,
-    TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
+    validation, AppInsightsSender, BackgroundLog, BackgroundUploader, DataStore, ExitKind,
+    LogForwarder, Logstream, TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
 };
 use trident_api::{
     config::HostConfigurationSource,
@@ -305,8 +305,8 @@ fn setup_logging(
     Ok(logstream)
 }
 
-fn setup_tracing(args: &Cli) -> Result<TraceStream, Error> {
-    use tracing_subscriber::{filter, layer::SubscriberExt, Layer};
+fn setup_tracing(args: &Cli, telemetry_enabled: bool) -> Result<TraceStream, Error> {
+    use tracing_subscriber::{filter, layer::SubscriberExt, Layer, Registry};
 
     let tracestream = TraceStream::default();
 
@@ -318,29 +318,44 @@ fn setup_tracing(args: &Cli) -> Result<TraceStream, Error> {
         | Commands::RebuildRaid { .. }
         | Commands::Rollback { check: false, .. }
         | Commands::Update { .. } => {
+            let mut layers: Vec<Box<dyn Layer<Registry> + Send + Sync>> = vec![Box::new(
+                tracestream
+                    .make_trace_sender()
+                    .with_filter(filter::LevelFilter::INFO),
+            )];
+
             // As functionality moves to the Daemon, move the journald layer to
             // only be enabled for the Daemon command. Until then, keep it enabled
             // for all commands to ensure we have tracing info in journald for all
             // commands.
-            let baseline_tracing = tracing_subscriber::Registry::default().with(
-                tracestream
-                    .make_trace_sender()
-                    .with_filter(filter::LevelFilter::INFO),
-            );
-            if let Ok(journald_layer) = tracing_journald::layer() {
-                tracing::subscriber::set_global_default(
-                    baseline_tracing.with(
+            match tracing_journald::layer() {
+                Ok(journald_layer) => {
+                    layers.push(Box::new(
                         journald_layer
                             .with_syslog_identifier("trident-tracing".to_string())
                             .with_filter(filter::LevelFilter::INFO),
-                    ),
-                )
-                .context("Failed to set global default subscriber")?;
-            } else {
-                eprintln!("Failed to connect to journald, falling back to tracing without journald support");
-                tracing::subscriber::set_global_default(baseline_tracing)
-                    .context("Failed to set global default subscriber")?;
+                    ));
+                }
+                Err(_) => {
+                    eprintln!("Failed to connect to journald, falling back to tracing without journald support");
+                }
             }
+
+            // Best-effort Application Insights telemetry: only added when the
+            // user has opted in via the Agent Configuration file *and* a
+            // connection string was compiled into this binary at build time.
+            // Never fails startup: an empty/unparsable connection string just
+            // means telemetry stays a no-op.
+            if telemetry_enabled {
+                if let Some(sender) = AppInsightsSender::from_connection_string(
+                    trident::AZURE_MONITOR_CONNECTION_STRING,
+                ) {
+                    layers.push(Box::new(sender.with_filter(filter::LevelFilter::INFO)));
+                }
+            }
+
+            tracing::subscriber::set_global_default(Registry::default().with(layers))
+                .context("Failed to set global default subscriber")?;
         }
         _ => {
             // no op
@@ -363,8 +378,17 @@ fn main() -> ExitCode {
         }
     };
 
+    // Whether best-effort Application Insights telemetry is enabled. Loaded
+    // early (before logging/tracing is set up) since the decision feeds
+    // directly into setup_tracing(). AgentConfig::load() never actually
+    // errors today, but default to disabled (OptOut) defensively if that
+    // ever changes.
+    let telemetry_enabled = AgentConfig::load()
+        .map(|config| config.telemetry_enabled())
+        .unwrap_or(false);
+
     // Initialize the telemetry flow
-    let tracestream = setup_tracing(&args);
+    let tracestream = setup_tracing(&args, telemetry_enabled);
     if let Err(e) = tracestream {
         // Defer to stderr since logging is not yet initialized.
         eprintln!("Failed to initialize tracing: {e:?}");
