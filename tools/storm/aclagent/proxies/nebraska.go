@@ -3,6 +3,7 @@ package proxies
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"database/sql"
 	"fmt"
 	"net"
@@ -78,6 +79,13 @@ type NebraskaProxy struct {
 	// TestConfig.PostgresImage (--postgres-image), so it can be pointed at
 	// an internal registry mirror on network-restricted CI pools.
 	PostgresImage string
+
+	// Cert is the TLS certificate ListenAndServe presents to clients (e.g.
+	// from GenerateEphemeralTLSCert). trident-acl-agent's Nebraska client
+	// requires https for its update-request `server` field and for the
+	// resolved package/image URL scheme, so this proxy always serves TLS -
+	// there is no plain-HTTP mode to fall back to.
+	Cert tls.Certificate
 
 	containerID string
 	dbURL       string
@@ -183,7 +191,17 @@ func (p *NebraskaProxy) ListenAndServe(ctx context.Context, listenAddr string) (
 		stopEphemeralPostgres(containerID)
 		return nil, fmt.Errorf("failed to listen on %s: %w", listenAddr, err)
 	}
-	server := &http.Server{Handler: p.Handler()}
+	server := &http.Server{
+		Handler: p.Handler(),
+		// MaxVersion caps this fake server at TLS 1.2: Go's TLS 1.3 server
+		// sends post-handshake NewSessionTicket messages that at least one
+		// OpenSSL-based client build (observed against trident-acl-agent's
+		// statically-linked reqwest/native-tls stack) mishandles, producing
+		// a spurious "tls: bad record MAC" on the very first request. TLS
+		// 1.2 has no such post-handshake ticket and sidesteps the bug; it's
+		// a fine ceiling for a test-only fake server either way.
+		TLSConfig: &tls.Config{Certificates: []tls.Certificate{p.Cert}, MaxVersion: tls.VersionTLS12},
+	}
 	go func() {
 		<-ctx.Done()
 		_ = server.Shutdown(context.Background())
@@ -192,7 +210,9 @@ func (p *NebraskaProxy) ListenAndServe(ctx context.Context, listenAddr string) (
 		// this same process after this proxy has shut down.
 		_ = os.Unsetenv("NEBRASKA_DB_URL")
 	}()
-	go func() { _ = server.Serve(listener) }()
+	// certFile/keyFile are empty: TLSConfig.Certificates is already
+	// populated above, which ServeTLS uses directly.
+	go func() { _ = server.ServeTLS(listener, "", "") }()
 	return listener, nil
 }
 

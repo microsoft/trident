@@ -188,11 +188,14 @@ os:
     # written at runtime.
     - source: files/trident-acl-agent-override.conf
       destination: /etc/systemd/system/trident-acl-agent.service.d/override.conf
+    - source: files/trident-acl-agent-cert-install.service
+      destination: /etc/systemd/system/trident-acl-agent-cert-install.service
 
   services:
     enable:
       - kdump
       - tridentd.socket
+      - trident-acl-agent-cert-install.service
       - trident-acl-agent.service
 
   users:
