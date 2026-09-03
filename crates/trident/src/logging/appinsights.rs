@@ -411,7 +411,8 @@ mod functional_test {
         .expect("should build sender")
         .with_filter(filter::LevelFilter::INFO);
 
-        let _ = tracing::subscriber::set_default(tracing_subscriber::Registry::default().with(sender));
+        let _ =
+            tracing::subscriber::set_default(tracing_subscriber::Registry::default().with(sender));
 
         tracing::info!(metric_name = "test_metric", value = true);
 
