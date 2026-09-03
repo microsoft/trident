@@ -132,7 +132,7 @@ impl DataStore {
         db.execute(
             "CREATE TABLE IF NOT EXISTS hoststatus (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp DATETIME DEFALUT CURRENT_TIMESTAMP,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                 contents TEXT NOT NULL
             )",
         )
@@ -185,11 +185,9 @@ impl DataStore {
             match query_statement.next() {
                 Ok(State::Done) => break,
                 Err(e) => {
-                    warn!(
-                        "Failed to get next keyvalue row while copying datastore: {:?}",
-                        e
-                    );
-                    break;
+                    return Err(e)
+                        .structured(ServicingError::from(DatastoreError::ReadDatastore))
+                        .message("Failed to get next keyvalue row while copying datastore");
                 }
                 Ok(State::Row) => {} // continue below
             }
