@@ -58,6 +58,14 @@ steps:
       version=$(echo $full_version | cut -d'-' -f1)
       prerelease=$(echo $full_version | cut -d'-' -f2-)
 
+      # Application Insights connection string identifying best-effort
+      # telemetry as coming from Trident's own CI/CD pipeline builds, as
+      # opposed to azurelinux distro-package installs (which use a
+      # different, hardcoded connection string baked directly into
+      # trident.spec -- see that file for details).
+      # TODO: replace with the real "trident pipelines" connection string.
+      AZURE_MONITOR_CONNECTION_STRING="InstrumentationKey=00000000-0000-0000-0000-000000000002;IngestionEndpoint=https://placeholder-pipelines.in.applicationinsights.azure.com/"
+
       # Build RPMs and export only the artifact tarball (no image load/unpack).
       # CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN is populated by the CargoAuthenticate task.
       outdir="/tmp/_rpm_artifacts"
@@ -80,6 +88,7 @@ steps:
         --build-arg RPM_PACKAGES="$RPM_PACKAGES" \
         --build-arg RUST_PACKAGE="$RUST_PACKAGE" \
         --build-arg RPM_DEST="$RPM_DEST" \
+        --build-arg AZURE_MONITOR_CONNECTION_STRING="$AZURE_MONITOR_CONNECTION_STRING" \
         --target artifact \
         --output type=local,dest="$outdir" \
         .

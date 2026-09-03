@@ -35,6 +35,12 @@ COPY proto/ ./proto/
 ARG TRIDENT_VERSION=dev-build
 ARG RPM_VER=0.1.0
 ARG RPM_REL=1
+# Application Insights connection string identifying telemetry as coming
+# from Trident's own CI/CD pipeline builds. Hardcoded (as a placeholder, for
+# now) in .pipelines/templates/stages/trident_rpms/release.yml, the same way
+# TRIDENT_VERSION is derived there -- see trident.spec for how this is
+# consumed (%{trident_azmon_conn_str}).
+ARG AZURE_MONITOR_CONNECTION_STRING=""
 
 ARG RPM_DEST=/usr/src/azl
 
@@ -52,7 +58,8 @@ RUN --mount=type=secret,id=registry_token \
     rpmbuild -bb --build-in-place trident.spec \
     --define="trident_version $TRIDENT_VERSION" \
     --define="rpm_ver $RPM_VER" \
-    --define="rpm_rel $RPM_REL" && \
+    --define="rpm_rel $RPM_REL" \
+    --define="trident_azmon_conn_str $AZURE_MONITOR_CONNECTION_STRING" && \
     tar -czvf trident-rpms.tar.gz -C $RPM_DEST ./RPMS
 
 FROM scratch AS artifact
