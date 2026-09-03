@@ -5,7 +5,7 @@
 
 use std::{fs, os::unix::fs::PermissionsExt, path::Path};
 
-use anyhow::{bail, Context, Error};
+use anyhow::{bail, ensure, Context, Error};
 use log::{debug, info};
 use osutils::dependencies::Dependency;
 
@@ -30,8 +30,30 @@ const PASSWD_FIELD_SHELL: usize = 6;
 const SSH_DIR_MODE: u32 = 0o700;
 const AUTHORIZED_KEYS_MODE: u32 = 0o600;
 
+/// The user database `useradd` and friends read and write.
+const PASSWD_PATH: &str = "/etc/passwd";
+
 /// Add or update all configured users.
 pub fn add_or_update_users(ctx: &OsModifierContext, users: &[MICUser]) -> Result<(), Error> {
+    if users.is_empty() {
+        return Ok(());
+    }
+
+    // `useradd` creates a user database from scratch when none is present,
+    // holding only the users it is asked to add. On an image that assembles
+    // /etc at boot rather than shipping it, that file replaces the real one
+    // and the system loses every account it had, root included, leaving it
+    // unbootable. Refuse instead: without an existing database there is
+    // nothing meaningful to add users to.
+    let passwd_path = ctx.path(PASSWD_PATH);
+    ensure!(
+        passwd_path.exists(),
+        "Cannot configure users: '{}' does not exist in the target OS. Creating it would \
+        replace the user database the image provides elsewhere, leaving the system with only \
+        the configured users and no way to boot.",
+        passwd_path.display()
+    );
+
     for user in users {
         add_or_update_user(ctx, user)
             .with_context(|| format!("Failed to configure user '{}'", user.name))?;
@@ -537,4 +559,64 @@ fn set_startup_command(ctx: &OsModifierContext, username: &str, cmd: &str) -> Re
     }
 
     atomic_write_file(&passwd_path, &result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use tempfile::TempDir;
+
+    /// An empty user list is a no-op, and must not require a user database.
+    #[test]
+    fn test_add_or_update_users_empty_is_noop() {
+        let root = TempDir::new().unwrap();
+        let ctx = OsModifierContext {
+            root: root.path().to_path_buf(),
+        };
+        add_or_update_users(&ctx, &[]).unwrap();
+    }
+
+    /// Configuring users against a root with no user database is refused.
+    ///
+    /// `useradd` would otherwise create one holding only the configured users,
+    /// replacing the database an image assembles at boot and leaving the system
+    /// unbootable.
+    #[test]
+    fn test_add_or_update_users_without_passwd_is_refused() {
+        let root = TempDir::new().unwrap();
+        let ctx = OsModifierContext {
+            root: root.path().to_path_buf(),
+        };
+        let user = MICUser {
+            name: "someone".to_string(),
+            uid: None,
+            password: None,
+            password_expires_days: None,
+            ssh_public_keys: Vec::new(),
+            primary_group: None,
+            secondary_groups: Vec::new(),
+            startup_command: None,
+            home_directory: None,
+        };
+
+        let err = add_or_update_users(&ctx, std::slice::from_ref(&user)).unwrap_err();
+        assert!(
+            err.to_string().contains("does not exist in the target OS"),
+            "got: {err}"
+        );
+
+        // With a database present the guard lets the operation through.
+        fs::create_dir_all(root.path().join("etc")).unwrap();
+        fs::write(
+            root.path().join("etc/passwd"),
+            "root:x:0:0::/root:/bin/bash\n",
+        )
+        .unwrap();
+        let err = add_or_update_users(&ctx, &[user]).unwrap_err();
+        assert!(
+            !err.to_string().contains("does not exist in the target OS"),
+            "guard should have passed, got: {err}"
+        );
+    }
 }
