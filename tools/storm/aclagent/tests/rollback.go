@@ -49,7 +49,7 @@ func RunRollback(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	nodeStore.PatchLabels(map[string]string{stormproxies.NodeImageVersionLabel: testConfig.TargetVersion})
 	nodeStore.SetReadyCondition(true)
 
-	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig); err != nil {
+	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig, nil); err != nil {
 		return err
 	}
 
@@ -83,7 +83,7 @@ func RunRollback(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	// update.go). /var/lib/kubelet is its own dedicated ext4 partition, so
 	// the fake kubeconfig itself already persists across the rollback
 	// reboot's root swap and doesn't need to be re-delivered.
-	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig); err != nil {
+	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig, nil); err != nil {
 		return fmt.Errorf("failed to reconfigure ACL agent on post-rollback-reboot root: %w", err)
 	}
 
