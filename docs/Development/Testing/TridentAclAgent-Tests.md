@@ -144,8 +144,18 @@ sudo bin/storm-trident run aclagent \
     --artifacts-dir ./artifacts \
     --output-path /tmp/aclagent-output \
     --ssh-private-key-path ./artifacts/id_rsa \
+    --postgres-image postgres:16-alpine \
     --verbose
 ```
+
+`--postgres-image` already defaults to the public `postgres:16-alpine` image
+from Docker Hub, so it only needs to be passed explicitly here to make that
+default visible; a plain internet connection is all this scenario (and its
+`go test ./tools/storm/aclagent/proxies/...` unit tests) need to pull it.
+Trident's own pipelines override this to an internal ACR mirror instead,
+since the pools they run on restrict egress to an allow-list that excludes
+Docker Hub - see `postgresImage` in
+`.pipelines/templates/stages/testing_acl_agent/trident-acl-agent-test.yml`.
 
 ### Test Cases
 
@@ -180,6 +190,7 @@ The scenario runs these test cases in order:
 | `--nebraska-port` | Port for the fake Nebraska/Omaha server | `18081` |
 | `--host-endpoint-ip` | Host IP the VM reaches the fake endpoints at | `192.168.122.1` |
 | `--image-path` | Real `.cosi` update image to serve during staging | first `*.cosi` found under `--artifacts-dir` |
+| `--postgres-image` | Container image for the ephemeral Postgres instance backing the fake Nebraska endpoint | `postgres:16-alpine` |
 | `--verbose` | Enable verbose logging | `false` |
 | `--test-case-to-run` | Run a specific test case only | `all` |
 
