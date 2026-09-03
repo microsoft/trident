@@ -84,6 +84,7 @@ pub struct TraceStream {
     // TODO: Consider changing this to a LockOnce when rustc is updated to
     // >=1.70
     target: Arc<RwLock<Option<String>>>,
+    correlation_id: Arc<RwLock<Option<String>>>,
     disabled: bool,
 }
 
@@ -125,14 +126,32 @@ impl TraceStream {
         Ok(())
     }
 
+    /// Set the correlation ID to attach to every trace entry sent from this point
+    /// forward, as an additional field, so that all traces/metrics for a
+    /// given host installation can be correlated. Expected to be called once
+    /// the datastore's persisted correlation ID has been retrieved (see
+    /// `DataStore::correlation_id`).
+    pub fn set_correlation_id(&self, correlation_id: String) {
+        match self.correlation_id.write() {
+            Ok(mut val) => {
+                val.replace(correlation_id);
+            }
+            Err(_) => warn!("Failed to lock tracestream to set correlation ID"),
+        }
+    }
+
     /// Create a Boxed TraceSender
     pub fn make_trace_sender(&self) -> Box<TraceSender> {
-        Box::new(TraceSender::new(self.target.clone()))
+        Box::new(TraceSender::new(
+            self.target.clone(),
+            self.correlation_id.clone(),
+        ))
     }
 }
 
 pub struct TraceSender {
     server: Arc<RwLock<Option<String>>>,
+    correlation_id: Arc<RwLock<Option<String>>>,
     client: reqwest::blocking::Client,
     metrics_file: Option<File>,
 }
@@ -144,9 +163,13 @@ struct ExecutionTime(Instant);
 /// the tracing-subscriber crate to handle the events and send them to the
 /// server.
 impl TraceSender {
-    fn new(server: Arc<RwLock<Option<String>>>) -> Self {
+    fn new(
+        server: Arc<RwLock<Option<String>>>,
+        correlation_id: Arc<RwLock<Option<String>>>,
+    ) -> Self {
         Self {
             server,
+            correlation_id,
             client: reqwest::blocking::Client::new(),
             metrics_file: match files::create_file(TRIDENT_METRICS_FILE_PATH) {
                 Ok(f) => Some(f),
@@ -162,6 +185,20 @@ impl TraceSender {
 
     fn get_server(&self) -> Option<String> {
         self.server.read().map(|s| s.clone()).unwrap_or_default()
+    }
+
+    /// Build the `additional_fields` map for a trace entry: the static
+    /// `ADDITIONAL_FIELDS`, plus the correlation ID (if one has been set via
+    /// `TraceStream::set_correlation_id`), so entries can be correlated back to a
+    /// specific host installation.
+    fn additional_fields(&self) -> BTreeMap<String, Value> {
+        let mut fields = ADDITIONAL_FIELDS.clone();
+        if let Ok(correlation_id) = self.correlation_id.read() {
+            if let Some(correlation_id) = correlation_id.as_ref() {
+                fields.insert("correlation_id".to_string(), json!(correlation_id));
+            }
+        }
+        fields
     }
 
     fn write_metric_to_file(&self, metric: String) {
@@ -229,7 +266,7 @@ where
             timestamp: Utc::now(),
             metric_name,
             value: json!(value),
-            additional_fields: ADDITIONAL_FIELDS.clone(),
+            additional_fields: self.additional_fields(),
             platform_info: PLATFORM_INFO.clone(),
         };
 
@@ -309,7 +346,7 @@ where
             timestamp: Utc::now(),
             metric_name: span.name().to_string(),
             value: json!(visitor.fields),
-            additional_fields: ADDITIONAL_FIELDS.clone(),
+            additional_fields: self.additional_fields(),
             platform_info: PLATFORM_INFO.clone(),
         };
 
