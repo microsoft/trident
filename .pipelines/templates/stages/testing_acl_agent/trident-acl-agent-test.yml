@@ -40,12 +40,12 @@ parameters:
   # Container image for the ephemeral Postgres instance backing the fake
   # Nebraska endpoint (see tools/storm/aclagent/utils/config.TestConfig's
   # --postgres-image flag). Trident's own pipelines default to the
-  # maritimusexternal ACR mirror, since the pool this stage runs on restricts
+  # martimusexternal ACR mirror, since the pool this stage runs on restricts
   # egress to an allow-list that does not include Docker Hub; a local/fork
   # run without ACR access should pass "postgres:16-alpine" instead.
   - name: postgresImage
     type: string
-    default: maritimusexternal.azurecr.io/postgres:16-alpine
+    default: martimusexternal.azurecr.io/postgres:16-alpine
 
 stages:
   - stage: BuildImagesAclAgent
@@ -144,7 +144,7 @@ stages:
               ls -la $(Build.ArtifactStagingDirectory)/
             displayName: List downloaded image artifacts
 
-          - ${{ if startsWith(parameters.postgresImage, 'maritimusexternal.azurecr.io/') }}:
+          - ${{ if startsWith(parameters.postgresImage, 'martimusexternal.azurecr.io/') }}:
               - task: AzureCLI@2
                 inputs:
                   azureSubscription: ${{ parameters.acrServiceConnectionName }}
@@ -165,9 +165,9 @@ stages:
                     # `sudo ./bin/storm-trident run aclagent` step still
                     # finds the image locally and never touches the
                     # network or the ACR credential.
-                    az acr login -n maritimusexternal
+                    az acr login -n martimusexternal
                     docker pull "${{ parameters.postgresImage }}"
-                displayName: "Pull ephemeral Postgres image from maritimusexternal ACR"
+                displayName: "Pull ephemeral Postgres image from martimusexternal ACR"
                 retryCountOnTaskFailure: 3
 
           - bash: |
