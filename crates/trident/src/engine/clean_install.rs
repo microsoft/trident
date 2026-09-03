@@ -227,10 +227,22 @@ fn stage_clean_install(
 
     engine::provision(subsystems, &ctx, newroot_mount.path())?;
 
+    // Give the chroot the same view of /etc the booted system will have, for
+    // images that assemble it at boot rather than shipping it.
+    let etc_overlay = engine::mount_etc_overlay(&ctx, newroot_mount.path())?;
+
     debug!("Entering '{}' chroot", newroot_mount.path().display());
     let result = chroot::enter_update_chroot(newroot_mount.path())
         .message("Failed to enter chroot")?
         .execute_and_exit(|| engine::configure(subsystems, &ctx));
+
+    if let Some(etc_overlay) = etc_overlay {
+        if let Err(e) = etc_overlay.unmount() {
+            // The newroot cannot be unmounted while the overlay holds it, so
+            // report rather than swallow.
+            warn!("Failed to unmount the /etc overlay: {e:?}");
+        }
+    }
 
     if let Some(mut monitor) = monitor {
         // If the monitor was created successfully, stop it after execution
