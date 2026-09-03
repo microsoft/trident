@@ -1,0 +1,184 @@
+parameters:
+  - name: dependsOnStage
+    type: string
+    default: ""
+
+  - name: micBuildType
+    displayName: MIC Build Type
+    type: string
+    values:
+      - dev
+      - preview
+      - release
+    default: release
+
+  - name: micVersion
+    displayName: MIC Version
+    type: string
+    default: "*.*.*"
+
+  - name: baseimgAzlVersion
+    displayName: Base Image AZL version
+    type: string
+    default: "3.0"
+
+  - name: verboseLogging
+    displayName: "Enable verbose logging"
+    type: boolean
+    default: false
+
+  # Define which service connection to use for accessing ACR.
+  #   `maritimus-dev-acr-write-umi` is the service connection for the Polar SC
+  #   `trident-dev-acr-write-umi-ECF` is the service connection for the ECF SC
+  - name: acrServiceConnectionName
+    type: string
+    default: trident-dev-acr-write-umi-ECF
+    values:
+      - maritimus-dev-acr-write-umi
+      - trident-dev-acr-write-umi-ECF
+
+  # Container image for the ephemeral Postgres instance backing the fake
+  # Nebraska endpoint (see tools/storm/aclagent/utils/config.TestConfig's
+  # --postgres-image flag). Trident's own pipelines default to the
+  # martimusexternal ACR mirror, since the pool this stage runs on restricts
+  # egress to an allow-list that does not include Docker Hub; a local/fork
+  # run without ACR access should pass "postgres:16-alpine" instead.
+  - name: postgresImage
+    type: string
+    default: martimusexternal.azurecr.io/postgres:16-alpine
+
+stages:
+  - stage: BuildImagesAclAgent
+    displayName: Build Base and Update Images for trident-acl-agent
+    dependsOn:
+      - PrepareSSHKeys
+      - GetTridentBinaries_rpms_amd64
+      - ${{ if ne(parameters.dependsOnStage, '') }}:
+          - ${{ parameters.dependsOnStage }}
+
+    jobs:
+      - template: ../trident_images/build-image.yml
+        parameters:
+          label: "acl-agent-base"
+          makeTarget: "artifacts/trident-vm-acl-agent-testimage.qcow2"
+          baseimgType: qemu_guest
+          baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+          micBuildType: ${{ parameters.micBuildType }}
+          micVersion: ${{ parameters.micVersion }}
+          useStagedSshKeys: true
+
+      - template: ../trident_images/build-image.yml
+        parameters:
+          label: "acl-agent-update"
+          makeTarget: "artifacts/trident-vm-acl-agent-update-testimage.cosi"
+          baseimgType: qemu_guest
+          baseimgAzlVersion: ${{ parameters.baseimgAzlVersion }}
+          micBuildType: ${{ parameters.micBuildType }}
+          micVersion: ${{ parameters.micVersion }}
+          useStagedSshKeys: true
+
+  - stage: TridentAclAgentTest
+    displayName: Validate trident-acl-agent
+    dependsOn:
+      - BuildingTools
+      - BuildImagesAclAgent
+
+    jobs:
+      - job: AclAgentStormTest
+        displayName: Run storm aclagent scenario
+        timeoutInMinutes: 30
+        pool:
+          type: linux
+          name: trident-ubuntu-1es-pool-eastus2
+          hostArchitecture: amd64
+
+        variables:
+          ob_outputDirectory: /tmp/output
+          ob_artifactBaseName: "aclagent-storm-test"
+
+        steps:
+          - template: ../common_tasks/checkout_trident.yml
+          - template: ../common_tasks/avoid-pypi-usage.yml
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              buildType: current
+              artifactName: image-acl-agent-base
+              targetPath: "$(Build.ArtifactStagingDirectory)"
+            displayName: Download Base Image (qcow2)
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              buildType: current
+              artifactName: image-acl-agent-update
+              targetPath: "$(Build.ArtifactStagingDirectory)"
+            displayName: Download Update Image (cosi)
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              buildType: current
+              artifactName: ssh-keys
+              targetPath: "$(Build.ArtifactStagingDirectory)/ssh"
+            displayName: Download SSH Keys
+
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download go-tools"
+            inputs:
+              buildType: current
+              artifactName: "go-tools"
+              patterns: |
+                storm-trident
+              targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
+
+          - bash: |
+              set -eux
+              chmod +x $(TRIDENT_SOURCE_DIR)/bin/storm-trident
+              cp $(Build.ArtifactStagingDirectory)/ssh/id_rsa* ~/.ssh/
+              chmod -R 700 ~/.ssh/
+              mkdir -p $(ob_outputDirectory)
+            displayName: Set up SSH keys and output directory
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+
+          - bash: |
+              set -eux
+              ls -la $(Build.ArtifactStagingDirectory)/
+            displayName: List downloaded image artifacts
+
+          - ${{ if startsWith(parameters.postgresImage, 'martimusexternal.azurecr.io/') }}:
+              - task: AzureCLI@2
+                inputs:
+                  azureSubscription: ${{ parameters.acrServiceConnectionName }}
+                  scriptType: bash
+                  scriptLocation: inlineScript
+                  inlineScript: |
+                    set -eux
+                    # NebraskaProxy's ephemeral Postgres (--postgres-image
+                    # below must match) is started by the storm-trident
+                    # binary via a plain `docker run`, not through this
+                    # task. Log in and pull it here as the agent user (not
+                    # sudo - the AzureCLI@2 task's service-connection auth
+                    # context lives under this user's home directory, and
+                    # sudo would run az/docker as root with no such
+                    # context, breaking the login). Docker images land in
+                    # the daemon's shared image cache regardless of which
+                    # user pulled them, so the later
+                    # `sudo ./bin/storm-trident run aclagent` step still
+                    # finds the image locally and never touches the
+                    # network or the ACR credential.
+                    az acr login -n martimusexternal
+                    docker pull "${{ parameters.postgresImage }}"
+                displayName: "Pull Postgres image"
+                retryCountOnTaskFailure: 3
+
+          - bash: |
+              set -eux
+
+              FLAGS="-a --verbose"
+
+              sudo ./bin/storm-trident run aclagent $FLAGS \
+                --output-path $(ob_outputDirectory) \
+                --artifacts-dir $(Build.ArtifactStagingDirectory) \
+                --ssh-private-key-path ~/.ssh/id_rsa \
+                --postgres-image "${{ parameters.postgresImage }}"
+            displayName: "🧪 Run trident-acl-agent A/B update + rollback scenario"
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
