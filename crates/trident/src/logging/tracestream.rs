@@ -560,6 +560,48 @@ mod functional_test {
     }
 
     #[functional_test]
+    /// Regression test: `TraceStream::set_correlation_id` must actually
+    /// reach the serialized trace entry's `additional_fields.correlation_id`
+    /// -- the existing metric/span tests only assert on `metric_name`/
+    /// `value` and would still pass even if the correlation ID were never
+    /// copied into `additional_fields`.
+    fn test_tracestream_correlation_id_written_to_additional_fields() {
+        let tracestream = TraceStream::default();
+        tracestream.set_correlation_id("test-correlation-id".to_string());
+        let trace_sender = tracestream
+            .make_trace_sender()
+            .with_filter(filter::LevelFilter::INFO);
+
+        tracing::subscriber::set_global_default(
+            tracing_subscriber::Registry::default().with(trace_sender),
+        )
+        .context("Failed to set global default subscriber")
+        .unwrap();
+
+        tracing::info!(
+            metric_name = "test_metric_with_correlation_id",
+            value = true
+        );
+
+        // Ensure the trace system has time to write the file.
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let file = File::open(TRIDENT_METRICS_FILE_PATH).unwrap();
+        let reader = BufReader::new(file);
+        let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
+
+        let metric_found = lines.iter().any(|line| {
+            line.contains(r#""metric_name":"test_metric_with_correlation_id""#)
+                && line.contains(r#""correlation_id":"test-correlation-id""#)
+        });
+
+        assert!(
+            metric_found,
+            "Expected metric with correlation_id field not found in the local metrics file"
+        );
+    }
+
+    #[functional_test]
     fn test_populate_additional_fields() {
         let additional_fields = populate_additional_fields();
         assert_eq!(
