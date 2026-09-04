@@ -186,9 +186,11 @@ impl AppInsightsSender {
     /// Build and enqueue an Application Insights `EventData` envelope for
     /// the background uploader to send, best-effort. This only serializes
     /// the envelope and hands it off to the uploader's channel, so it never
-    /// blocks on network I/O; any failure (serialization, the uploader
-    /// having shut down, a later network error or non-2xx response, etc.)
-    /// is logged at `trace` level and otherwise ignored.
+    /// blocks on network I/O. A serialization failure or a closed uploader
+    /// is logged here at `trace` level; a later network error or non-2xx
+    /// response is logged by the background uploader itself (at `error`
+    /// level, same as any other background upload). Either way the failure
+    /// is otherwise ignored -- it can never affect servicing outcomes.
     fn send_event(&self, name: &str, mut properties: BTreeMap<String, Value>) {
         properties.insert("trident_version".to_string(), json!(TRIDENT_VERSION));
         for (key, value) in PLATFORM_INFO.iter() {

@@ -102,7 +102,14 @@ impl BackgroundUploader {
             if let Some(content_type) = upload.content_type {
                 request = request.header(reqwest::header::CONTENT_TYPE, content_type);
             }
-            let result = request.send().await;
+            // Treat non-2xx responses the same as a network-level failure: a
+            // consumer (e.g. AppInsightsSender) may document that rejected
+            // requests count as failures, so surface them here rather than
+            // silently treating any response as success.
+            let result = request
+                .send()
+                .await
+                .and_then(|response| response.error_for_status());
 
             if let Err(e) = result {
                 error!("Background upload failed: {e}");
@@ -116,9 +123,6 @@ impl BackgroundUploader {
                     }
                 );
             }
-
-            // Note: we don't particularly care much for the status code since
-            // this is just a generic implementation.
         }
 
         debug!("Background uploader loop has exited");
