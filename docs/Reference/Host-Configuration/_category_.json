@@ -2,7 +2,7 @@
     "label": "Host Configuration",
     "position": 1,
     "link": {
-        "type": "generated-index",
-        "description": "Host Configuration reference for Trident."
+        "type": "doc",
+        "id": "Reference/Host-Configuration/Host-Configuration"
     }
 }
