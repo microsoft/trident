@@ -94,17 +94,13 @@ pub fn update_grub_cmdline(
     default_grub.update_cmdline_args(SELINUX_CMDLINE_ARG_NAMES, &new_args)
 }
 
-#[cfg_attr(not(test), allow(unused_imports, dead_code))]
-mod functional_test {
+#[cfg(test)]
+mod tests {
     use super::*;
     use std::fs;
     use tempfile::tempdir;
 
-    use pytest_gen::functional_test;
-
-    use crate::OsModifierContext;
-
-    #[functional_test(feature = "core")]
+    #[test]
     fn test_update_selinux_config_enforcing() {
         let tmp = tempdir().unwrap();
         let etc = tmp.path().join("etc/selinux");
@@ -133,7 +129,7 @@ mod functional_test {
         );
     }
 
-    #[functional_test(feature = "core")]
+    #[test]
     fn test_update_selinux_config_disabled() {
         let tmp = tempdir().unwrap();
         let etc = tmp.path().join("etc/selinux");
@@ -153,7 +149,7 @@ mod functional_test {
         );
     }
 
-    #[functional_test(feature = "core", negative = true)]
+    #[test]
     fn test_update_selinux_config_missing_file() {
         let tmp = tempdir().unwrap();
         let ctx = OsModifierContext {
@@ -167,7 +163,7 @@ mod functional_test {
         );
     }
 
-    #[functional_test(feature = "core")]
+    #[test]
     fn test_update_selinux_grub_cmdline_enforcing() {
         let tmp = tempdir().unwrap();
         let etc = tmp.path().join("etc/default");

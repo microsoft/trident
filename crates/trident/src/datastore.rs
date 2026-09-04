@@ -306,20 +306,14 @@ mod tests {
             .parse_host_status(Ok(serde_yaml::to_string(&valid_host_status).unwrap()))
             .is_some());
     }
-}
 
-#[cfg(feature = "functional-test")]
-#[cfg_attr(not(test), allow(unused_imports, dead_code))]
-mod functional_test {
-    use super::*;
-
-    use tempfile::TempDir;
-
-    use pytest_gen::functional_test;
-    use trident_api::{error::ErrorKind, status::ServicingState};
-
-    #[functional_test]
+    #[test]
     fn test_open_temporary_persist_reopen() {
+        use tempfile::TempDir;
+        use trident_api::{error::ErrorKind, status::ServicingState};
+
+        use super::{DataStore, DatastoreError, ServicingError};
+
         let temp_dir = TempDir::new().unwrap();
         let datastore_temp_path = temp_dir.path().join("db-tmp.sqlite");
         let datastore_path = temp_dir.path().join("db.sqlite");
