@@ -191,13 +191,30 @@ pub struct AppInsightsSender {
 
 impl AppInsightsSender {
     /// Build a sender from an Application Insights connection string.
-    /// Returns `None` if the string is empty, fails to parse, or the
-    /// ingestion endpoint does not form a valid URL.
+    /// Returns `None` if the string is empty, fails to parse, the
+    /// ingestion endpoint does not form a valid URL, or that URL's scheme
+    /// is not `https`.
+    ///
+    /// The events sent through this sender include host identifiers (see
+    /// [`super::tracestream::PLATFORM_INFO`]), so a non-HTTPS endpoint --
+    /// e.g. from a build-time typo/misconfiguration -- is rejected rather
+    /// than silently sending opted-in host telemetry in cleartext. Azure
+    /// Monitor ingestion endpoints require HTTPS.
     pub fn from_connection_string(
         connection_string: &str,
         uploader: BackgroundUploadHandle,
     ) -> Option<Self> {
         let parts = parse_connection_string(connection_string)?;
+        match parts.track_url() {
+            Some(url) if url.scheme() == "https" => {}
+            _ => {
+                trace!(
+                    "Application Insights ingestion endpoint '{}' is not HTTPS, disabling telemetry",
+                    parts.ingestion_endpoint
+                );
+                return None;
+            }
+        }
         Self::from_parts(parts, uploader)
     }
 
@@ -456,6 +473,18 @@ mod tests {
             sender.track_url,
             Url::parse("https://region.example/v2/track").unwrap()
         );
+    }
+
+    #[test]
+    /// A non-HTTPS ingestion endpoint (e.g. from a build-time typo/
+    /// misconfiguration) must be rejected rather than silently accepted --
+    /// events sent through this sender include host identifiers.
+    fn test_from_connection_string_rejects_non_https_endpoint() {
+        assert!(AppInsightsSender::from_connection_string(
+            "InstrumentationKey=k;IngestionEndpoint=http://region.example/",
+            BackgroundUploadHandle::new_mock(),
+        )
+        .is_none());
     }
 
     #[test]
