@@ -68,12 +68,21 @@ impl ConnParts {
 
 /// Parse an Application Insights connection string of the form
 /// `InstrumentationKey=<k>;IngestionEndpoint=https://...;...`. Returns `None`
-/// if the string is empty, unparsable, or missing an instrumentation key. A
-/// missing ingestion endpoint falls back to the public Application Insights
-/// endpoint.
+/// if the string is empty, unparsable, or missing an instrumentation key.
+///
+/// If `IngestionEndpoint` is not given explicitly, the endpoint is derived
+/// from the sovereign-cloud `EndpointSuffix`/`Location` fields when present
+/// (e.g. `EndpointSuffix=applicationinsights.azure.cn;Location=chinaeast2` ->
+/// `https://chinaeast2.in.applicationinsights.azure.cn`), matching the
+/// Application Insights SDKs' documented connection-string format. Only if
+/// none of `IngestionEndpoint`/`EndpointSuffix` are present does this fall
+/// back to the public Application Insights endpoint -- a sovereign-cloud
+/// string must never be silently redirected to the public endpoint.
 pub(crate) fn parse_connection_string(s: &str) -> Option<ConnParts> {
     let mut instrumentation_key: Option<String> = None;
     let mut ingestion_endpoint: Option<String> = None;
+    let mut endpoint_suffix: Option<String> = None;
+    let mut location: Option<String> = None;
 
     for part in s.split(';') {
         let part = part.trim();
@@ -88,15 +97,30 @@ pub(crate) fn parse_connection_string(s: &str) -> Option<ConnParts> {
             "ingestionendpoint" => {
                 ingestion_endpoint = Some(value.trim().trim_end_matches('/').to_string())
             }
+            "endpointsuffix" => endpoint_suffix = Some(value.trim().trim_matches('/').to_string()),
+            "location" => location = Some(value.trim().to_string()),
             _ => {}
         }
     }
 
     let instrumentation_key = instrumentation_key.filter(|k| !k.is_empty())?;
+
+    let ingestion_endpoint = match ingestion_endpoint.filter(|e| !e.is_empty()) {
+        Some(explicit) => explicit,
+        None => match endpoint_suffix.filter(|s| !s.is_empty()) {
+            // Sovereign-cloud form: derive the ingestion endpoint from
+            // EndpointSuffix (+ optional Location), rather than assuming the
+            // public endpoint.
+            Some(suffix) => match location.filter(|l| !l.is_empty()) {
+                Some(location) => format!("https://{location}.in.{suffix}"),
+                None => format!("https://in.{suffix}"),
+            },
+            None => DEFAULT_INGESTION_ENDPOINT.to_string(),
+        },
+    };
+
     Some(ConnParts {
-        ingestion_endpoint: ingestion_endpoint
-            .filter(|e| !e.is_empty())
-            .unwrap_or_else(|| DEFAULT_INGESTION_ENDPOINT.to_string()),
+        ingestion_endpoint,
         instrumentation_key,
     })
 }
@@ -355,6 +379,44 @@ mod tests {
             parts.track_url(),
             Some(Url::parse(&format!("{DEFAULT_INGESTION_ENDPOINT}/v2/track")).unwrap())
         );
+    }
+
+    #[test]
+    /// Sovereign-cloud connection strings that specify `EndpointSuffix` (and
+    /// optionally `Location`) instead of `IngestionEndpoint` must derive the
+    /// matching sovereign ingestion endpoint, not silently fall back to the
+    /// public one.
+    fn test_parse_connection_string_endpoint_suffix_with_location() {
+        let parts = parse_connection_string(
+            "InstrumentationKey=abc123;EndpointSuffix=applicationinsights.azure.cn;Location=chinaeast2",
+        )
+        .expect("should parse");
+        assert_eq!(parts.instrumentation_key, "abc123");
+        assert_eq!(
+            parts.ingestion_endpoint,
+            "https://chinaeast2.in.applicationinsights.azure.cn"
+        );
+    }
+
+    #[test]
+    fn test_parse_connection_string_endpoint_suffix_without_location() {
+        let parts = parse_connection_string(
+            "InstrumentationKey=abc123;EndpointSuffix=applicationinsights.azure.cn",
+        )
+        .expect("should parse");
+        assert_eq!(
+            parts.ingestion_endpoint,
+            "https://in.applicationinsights.azure.cn"
+        );
+    }
+
+    #[test]
+    fn test_parse_connection_string_explicit_ingestion_endpoint_wins_over_suffix() {
+        let parts = parse_connection_string(
+            "InstrumentationKey=abc123;IngestionEndpoint=https://region.example/;EndpointSuffix=applicationinsights.azure.cn",
+        )
+        .expect("should parse");
+        assert_eq!(parts.ingestion_endpoint, "https://region.example");
     }
 
     #[test]

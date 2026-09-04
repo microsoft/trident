@@ -308,7 +308,12 @@ fn setup_logging(
 fn setup_tracing(
     args: &Cli,
     telemetry_enabled: bool,
-    uploader: &BackgroundUploader,
+    // Dedicated to Application Insights telemetry -- deliberately *not* the
+    // same `BackgroundUploader` instance used for log forwarding (see
+    // `main`), so a slow-but-successful telemetry endpoint can never build a
+    // backlog that delays real log uploads. `None` if telemetry is disabled
+    // or its uploader failed to start; either way telemetry becomes a no-op.
+    telemetry_uploader: Option<&BackgroundUploader>,
 ) -> Result<TraceStream, Error> {
     use tracing_subscriber::{filter, layer::SubscriberExt, Layer, Registry};
 
@@ -351,10 +356,10 @@ fn setup_tracing(
             // Never fails startup: an empty/unparsable connection string just
             // means telemetry stays a no-op.
             if telemetry_enabled {
-                // A closed uploader (e.g. its background thread failed to
-                // start) just means telemetry stays a no-op; it must never
-                // block or fail the rest of tracing setup.
-                if let Some(handle) = uploader.get_handle() {
+                // A missing/closed uploader (e.g. its background thread
+                // failed to start) just means telemetry stays a no-op; it
+                // must never block or fail the rest of tracing setup.
+                if let Some(handle) = telemetry_uploader.and_then(|u| u.get_handle()) {
                     if let Some(sender) = AppInsightsSender::from_connection_string(
                         trident::AZURE_MONITOR_CONNECTION_STRING,
                         handle,
@@ -397,8 +402,26 @@ fn main() -> ExitCode {
         .map(|config| config.telemetry_enabled())
         .unwrap_or(false);
 
+    // Application Insights telemetry gets its own dedicated uploader/queue,
+    // entirely separate from `bg_uploader` (which carries real log
+    // forwarding). Both uploaders drain their queue sequentially on a single
+    // background thread, so sharing one between telemetry and logs would let
+    // a slow-but-successful telemetry endpoint build a backlog that delays
+    // operational log uploads. Failure to start is not fatal: telemetry
+    // simply becomes a no-op, mirroring failure handling on the handle
+    // itself.
+    let telemetry_uploader = telemetry_enabled
+        .then(|| match BackgroundUploader::new() {
+            Ok(uploader) => Some(uploader),
+            Err(e) => {
+                eprintln!("Failed to initialize telemetry uploader, disabling telemetry: {e:?}");
+                None
+            }
+        })
+        .flatten();
+
     // Initialize the telemetry flow
-    let tracestream = setup_tracing(&args, telemetry_enabled, &bg_uploader);
+    let tracestream = setup_tracing(&args, telemetry_enabled, telemetry_uploader.as_ref());
     if let Err(e) = tracestream {
         // Defer to stderr since logging is not yet initialized.
         eprintln!("Failed to initialize tracing: {e:?}");
