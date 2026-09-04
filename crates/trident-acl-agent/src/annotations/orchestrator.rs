@@ -536,6 +536,43 @@ impl Orchestrator {
             return Ok(());
         }
 
+        // Nebraska's reported hash is required, not optional: it is Trident's
+        // only signal to verify the downloaded image's identity before
+        // installing it, so a missing/unusable hash is a hard failure here
+        // rather than a silently-skipped check. See
+        // `PackageHash::to_cosi_sha384` for why this needs converting (our
+        // Nebraska deployment stores a base64 SHA-384 in the field Omaha
+        // calls `sha1`) rather than being forwarded as-is. Checked before the
+        // DownloadStarted event below so a bad hash fails the request instead
+        // of reporting a download that will never usefully start.
+        let hash = match offered
+            .primary
+            .hash
+            .as_ref()
+            .ok_or_else(|| "Nebraska offered no package hash".to_string())
+            .and_then(|h| h.to_cosi_sha384().map_err(|err| err.to_string()))
+        {
+            Ok(hash) => hash,
+            Err(err) => {
+                let status = UpdateStatus::new(
+                    &request,
+                    Operation::Stage,
+                    request.operation_id.clone(),
+                    StatusCode::OperationFailed,
+                    format!(
+                        "Nebraska did not report a usable package hash for '{}': {err}",
+                        offered.primary.name
+                    ),
+                    from_version,
+                    to_version,
+                    started,
+                    Some(Utc::now()),
+                );
+                self.record_and_publish(status).await?;
+                return Ok(());
+            }
+        };
+
         let current_ver = parse_nebraska_version(&from_version, "stage");
         if let Some(ref v) = current_ver {
             self.report_nebraska_event(
@@ -549,15 +586,12 @@ impl Orchestrator {
         }
 
         let mut client = TridentClient::connect(&self.config.trident.socket).await?;
-        // Integrity of the downloaded image is verified by Trident itself
-        // via the image's own COSI metadata, so the Nebraska-reported hash
-        // (offered.primary.hash) is not passed here.
         let result = self
             .run_with_status_heartbeat(
                 in_progress,
                 client.update_stage(
                     &offered.primary.url,
-                    None,
+                    Some(&hash),
                     self.config.orchestration.stage_timeout,
                 ),
             )
