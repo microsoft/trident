@@ -2,7 +2,7 @@ use std::{fs, iter, panic, process::ExitCode};
 
 use anyhow::{Context, Error};
 use clap::Parser;
-use log::{error, info, warn, LevelFilter, Log};
+use log::{error, info, LevelFilter, Log};
 
 use osutils::logging::{filter::LogFilter, multilog::MultiLogger};
 use trident::{
@@ -157,11 +157,6 @@ fn run_trident(
                         .message("Datastore file does not exist");
                 }
 
-                // Clone the tracestream handle before it is moved into `Trident::new`,
-                // so the correlation ID can be attached to it below once the
-                // datastore has been opened.
-                let tracestream_for_correlation_id = tracestream.clone();
-
                 let mut trident = Trident::new(
                     config_path.map(HostConfigurationSource::File),
                     agent_config.datastore_path(),
@@ -170,23 +165,12 @@ fn run_trident(
                 )
                 .message("Failed to initialize Trident")?;
 
+                // `Trident::new` has already retrieved (or created) this
+                // host's persisted correlation ID and attached it to the
+                // shared TraceStream, so every trace/metric emitted from
+                // here on -- including "trident_start" -- carries it.
                 let mut datastore = DataStore::open_or_create(agent_config.datastore_path())
                     .message("Failed to open datastore")?;
-
-                // Retrieve (or create, on first run) this host's unique
-                // correlation ID from the datastore, and attach it to all
-                // subsequent traces/metrics so they can be correlated with
-                // this specific installation.
-                match datastore.correlation_id() {
-                    Ok(correlation_id) => {
-                        info!("Correlation ID: {correlation_id}");
-                        tracestream_for_correlation_id
-                            .set_correlation_id(correlation_id.to_string());
-                    }
-                    Err(e) => {
-                        warn!("Failed to get or create correlation ID: {e:?}");
-                    }
-                }
 
                 // Execute the command
                 let res = match args.command {
