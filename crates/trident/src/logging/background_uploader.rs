@@ -25,6 +25,8 @@ struct UploadData {
     url: Url,
     body: Vec<u8>,
     timeout: Duration,
+    /// Optional `Content-Type` header value to attach to the request.
+    content_type: Option<&'static str>,
 }
 
 /// A background uploader that sends log data to a remote server asynchronously.
@@ -93,12 +95,14 @@ impl BackgroundUploader {
                 continue;
             }
 
-            let result = HTTP_ASYNC_CLIENT
+            let mut request = HTTP_ASYNC_CLIENT
                 .post(upload.url.clone())
                 .timeout(upload.timeout)
-                .body(upload.body)
-                .send()
-                .await;
+                .body(upload.body);
+            if let Some(content_type) = upload.content_type {
+                request = request.header(reqwest::header::CONTENT_TYPE, content_type);
+            }
+            let result = request.send().await;
 
             if let Err(e) = result {
                 error!("Background upload failed: {e}");
@@ -147,6 +151,7 @@ impl BackgroundUploadHandle {
         url: &Url,
         body: impl Into<Vec<u8>>,
         timeout: Duration,
+        content_type: Option<&'static str>,
     ) -> Result<(), Error> {
         if let Some(sender) = self.sender.upgrade() {
             sender
@@ -154,6 +159,7 @@ impl BackgroundUploadHandle {
                     url: url.clone(),
                     body: body.into(),
                     timeout,
+                    content_type,
                 })
                 .context("Failed to send data to background uploader")
         } else {
@@ -208,7 +214,7 @@ mod tests {
         let url = Url::parse("http://example.invalid/upload").unwrap();
         // After shutdown, the weak sender can't be upgraded so upload should error.
         let err = handle
-            .upload(&url, b"hello".to_vec(), Duration::from_millis(50))
+            .upload(&url, b"hello".to_vec(), Duration::from_millis(50), None)
             .unwrap_err();
         assert!(
             err.to_string().contains("shut down"),
@@ -236,7 +242,7 @@ mod tests {
 
         let url = Url::parse(&server.url()).unwrap().join("/upload").unwrap();
         handle
-            .upload(&url, body.as_bytes().to_vec(), Duration::from_secs(2))
+            .upload(&url, body.as_bytes().to_vec(), Duration::from_secs(2), None)
             .unwrap();
 
         // Drop uploader first to ensure the background thread finishes processing all queued
@@ -272,6 +278,7 @@ mod tests {
                     url,
                     body: body.as_bytes().to_vec(),
                     timeout: Duration::from_secs(2),
+                    content_type: None,
                 })
                 .unwrap();
 
@@ -323,6 +330,7 @@ mod tests {
                 url: Url::parse(&server.url()).unwrap().join("/slow").unwrap(),
                 body: b"timeout-me".to_vec(),
                 timeout: Duration::from_millis(100),
+                content_type: None,
             })
             .unwrap();
 
@@ -332,6 +340,7 @@ mod tests {
                 url: Url::parse(&server.url()).unwrap().join("/upload").unwrap(),
                 body: b"this-should-be-skipped".to_vec(),
                 timeout: Duration::from_secs(2),
+                content_type: None,
             })
             .unwrap();
 
@@ -368,6 +377,7 @@ mod tests {
                 url: Url::parse(&server.url()).unwrap().join("/queued").unwrap(),
                 body: b"queued".to_vec(),
                 timeout: Duration::from_secs(1),
+                content_type: None,
             })
             .unwrap();
         // Close the sender before running the loop to simulate shutdown.
@@ -402,7 +412,7 @@ mod tests {
 
         let url = Url::parse(&server.url()).unwrap().join("/ok").unwrap();
         handle
-            .upload(&url, b"hello".to_vec(), Duration::from_secs(2))
+            .upload(&url, b"hello".to_vec(), Duration::from_secs(2), None)
             .unwrap();
 
         // Drop the uploader to shut down the background thread. Both `handle`
@@ -423,6 +433,7 @@ mod tests {
                 &Url::parse(&server.url()).unwrap().join("/nope").unwrap(),
                 b"nope".to_vec(),
                 Duration::from_secs(1),
+                None,
             )
             .unwrap_err();
         assert!(err.to_string().contains("shut down"));

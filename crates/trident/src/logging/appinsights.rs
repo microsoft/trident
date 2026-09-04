@@ -5,10 +5,17 @@
 //! Application Insights client crate. It follows the same minimal approach
 //! as [`super::tracestream::TraceSender`]: parse the Application Insights
 //! *connection string* (`InstrumentationKey=<k>;IngestionEndpoint=<url>;...`)
-//! ourselves, build the raw Application Insights `EventData` envelope, and
-//! `POST` it to `${ingestion_endpoint}/v2/track` with a short, bounded
-//! timeout. Failures are logged at `trace` level and otherwise swallowed --
-//! telemetry must never be able to affect servicing outcomes.
+//! ourselves and build the raw Application Insights `EventData` envelope.
+//!
+//! Sending is delegated to the same [`super::background_uploader`] used by
+//! [`super::logstream::Logstream`]: `send_event` only enqueues the envelope
+//! and returns immediately, so tracing-layer callbacks (which run on
+//! whichever thread emitted the event) are never blocked on network I/O.
+//! The background uploader performs the actual `POST` to
+//! `${ingestion_endpoint}/v2/track` with a short, bounded timeout on its own
+//! dedicated thread. Failures (enqueue, network, non-2xx, etc.) are
+//! logged and otherwise swallowed -- telemetry must never be able to affect
+//! servicing outcomes.
 
 use std::{
     collections::BTreeMap,
@@ -22,20 +29,21 @@ use tracing::{
     span, Event, Subscriber,
 };
 use tracing_subscriber::{layer::Layer, registry::LookupSpan};
+use url::Url;
 
-use super::tracestream::PLATFORM_INFO;
+use super::{background_uploader::BackgroundUploadHandle, tracestream::PLATFORM_INFO};
 use crate::TRIDENT_VERSION;
 
 /// Default Application Insights ingestion endpoint, used when the connection
 /// string does not specify one explicitly.
 const DEFAULT_INGESTION_ENDPOINT: &str = "https://dc.services.visualstudio.com";
 
-/// Per-request connect timeout. Telemetry must never meaningfully delay
-/// Trident's actual work.
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
-
-/// Per-request total timeout.
+/// Per-request total timeout, enforced by the background uploader. Telemetry
+/// must never meaningfully delay Trident's actual work.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// `Content-Type` for the Application Insights ingestion request.
+const CONTENT_TYPE_JSON: &str = "application/json";
 
 /// A parsed Application Insights connection string.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,8 +57,12 @@ pub(crate) struct ConnParts {
 
 impl ConnParts {
     /// The `POST` target: `${ingestion_endpoint}/v2/track`.
-    fn track_url(&self) -> String {
-        format!("{}/v2/track", self.ingestion_endpoint.trim_end_matches('/'))
+    fn track_url(&self) -> Option<Url> {
+        Url::parse(&format!(
+            "{}/v2/track",
+            self.ingestion_endpoint.trim_end_matches('/')
+        ))
+        .ok()
     }
 }
 
@@ -146,37 +158,37 @@ fn stringify(value: &Value) -> String {
 /// [`AppInsightsSender::from_connection_string`].
 pub struct AppInsightsSender {
     instrumentation_key: String,
-    track_url: String,
-    client: reqwest::blocking::Client,
+    track_url: Url,
+    uploader: BackgroundUploadHandle,
 }
 
 impl AppInsightsSender {
     /// Build a sender from an Application Insights connection string.
     /// Returns `None` if the string is empty, fails to parse, or the
-    /// underlying HTTP client cannot be constructed.
-    pub fn from_connection_string(connection_string: &str) -> Option<Self> {
+    /// ingestion endpoint does not form a valid URL.
+    pub fn from_connection_string(
+        connection_string: &str,
+        uploader: BackgroundUploadHandle,
+    ) -> Option<Self> {
         let parts = parse_connection_string(connection_string)?;
-        Self::from_parts(parts)
+        Self::from_parts(parts, uploader)
     }
 
-    fn from_parts(parts: ConnParts) -> Option<Self> {
-        let client = reqwest::blocking::Client::builder()
-            .connect_timeout(CONNECT_TIMEOUT)
-            .timeout(REQUEST_TIMEOUT)
-            .build()
-            .ok()?;
-        let track_url = parts.track_url();
+    fn from_parts(parts: ConnParts, uploader: BackgroundUploadHandle) -> Option<Self> {
+        let track_url = parts.track_url()?;
         Some(Self {
             instrumentation_key: parts.instrumentation_key,
             track_url,
-            client,
+            uploader,
         })
     }
 
-    /// Build and send an Application Insights `EventData` envelope,
-    /// best-effort. Any failure (build a request, network error, non-2xx
-    /// response handling, etc.) is logged at `trace` level and otherwise
-    /// ignored.
+    /// Build and enqueue an Application Insights `EventData` envelope for
+    /// the background uploader to send, best-effort. This only serializes
+    /// the envelope and hands it off to the uploader's channel, so it never
+    /// blocks on network I/O; any failure (serialization, the uploader
+    /// having shut down, a later network error or non-2xx response, etc.)
+    /// is logged at `trace` level and otherwise ignored.
     fn send_event(&self, name: &str, mut properties: BTreeMap<String, Value>) {
         properties.insert("trident_version".to_string(), json!(TRIDENT_VERSION));
         for (key, value) in PLATFORM_INFO.iter() {
@@ -204,16 +216,21 @@ impl AppInsightsSender {
             }
         });
 
-        let response = match self.client.post(&self.track_url).json(&envelope).send() {
-            Ok(response) => response,
+        let body = match serde_json::to_vec(&envelope) {
+            Ok(b) => b,
             Err(e) => {
-                trace!("Failed to send Application Insights event: {e}");
+                trace!("Failed to serialize Application Insights event: {e}");
                 return;
             }
         };
 
-        if let Err(e) = response.error_for_status() {
-            trace!("Application Insights rejected event: {e}");
+        if let Err(e) = self.uploader.upload(
+            &self.track_url,
+            body,
+            REQUEST_TIMEOUT,
+            Some(CONTENT_TYPE_JSON),
+        ) {
+            trace!("Failed to enqueue Application Insights event: {e}");
         }
     }
 }
@@ -321,7 +338,10 @@ mod tests {
         .expect("should parse");
         assert_eq!(parts.instrumentation_key, "abc123");
         assert_eq!(parts.ingestion_endpoint, "https://region.example");
-        assert_eq!(parts.track_url(), "https://region.example/v2/track");
+        assert_eq!(
+            parts.track_url(),
+            Some(Url::parse("https://region.example/v2/track").unwrap())
+        );
     }
 
     #[test]
@@ -331,7 +351,7 @@ mod tests {
         assert_eq!(parts.ingestion_endpoint, DEFAULT_INGESTION_ENDPOINT);
         assert_eq!(
             parts.track_url(),
-            format!("{DEFAULT_INGESTION_ENDPOINT}/v2/track")
+            Some(Url::parse(&format!("{DEFAULT_INGESTION_ENDPOINT}/v2/track")).unwrap())
         );
     }
 
@@ -351,17 +371,24 @@ mod tests {
 
     #[test]
     fn test_from_connection_string_empty_is_none() {
-        assert!(AppInsightsSender::from_connection_string("").is_none());
+        assert!(
+            AppInsightsSender::from_connection_string("", BackgroundUploadHandle::new_mock())
+                .is_none()
+        );
     }
 
     #[test]
     fn test_from_connection_string_builds_sender() {
         let sender = AppInsightsSender::from_connection_string(
             "InstrumentationKey=k;IngestionEndpoint=https://region.example/",
+            BackgroundUploadHandle::new_mock(),
         )
         .expect("should build sender");
         assert_eq!(sender.instrumentation_key, "k");
-        assert_eq!(sender.track_url, "https://region.example/v2/track");
+        assert_eq!(
+            sender.track_url,
+            Url::parse("https://region.example/v2/track").unwrap()
+        );
     }
 
     #[test]
@@ -404,10 +431,14 @@ mod functional_test {
             }
         });
 
-        let sender = AppInsightsSender::from_parts(ConnParts {
-            ingestion_endpoint: format!("http://{addr}"),
-            instrumentation_key: "test-key".to_string(),
-        })
+        let uploader = crate::BackgroundUploader::new().expect("should build uploader");
+        let sender = AppInsightsSender::from_parts(
+            ConnParts {
+                ingestion_endpoint: format!("http://{addr}"),
+                instrumentation_key: "test-key".to_string(),
+            },
+            uploader.get_handle().expect("uploader should be alive"),
+        )
         .expect("should build sender")
         .with_filter(filter::LevelFilter::INFO);
 

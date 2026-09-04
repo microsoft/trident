@@ -56,8 +56,11 @@ pub use crate::{
     },
     grpc_client::client_main,
     logging::{
-        appinsights::AppInsightsSender, background_log::BackgroundLog,
-        background_uploader::BackgroundUploader, logfwd::LogForwarder, logstream::Logstream,
+        appinsights::AppInsightsSender,
+        background_log::BackgroundLog,
+        background_uploader::{BackgroundUploadHandle, BackgroundUploader},
+        logfwd::LogForwarder,
+        logstream::Logstream,
         tracestream::TraceStream,
     },
     orchestrate::OrchestratorConnection,

@@ -305,7 +305,11 @@ fn setup_logging(
     Ok(logstream)
 }
 
-fn setup_tracing(args: &Cli, telemetry_enabled: bool) -> Result<TraceStream, Error> {
+fn setup_tracing(
+    args: &Cli,
+    telemetry_enabled: bool,
+    uploader: &BackgroundUploader,
+) -> Result<TraceStream, Error> {
     use tracing_subscriber::{filter, layer::SubscriberExt, Layer, Registry};
 
     let tracestream = TraceStream::default();
@@ -347,10 +351,16 @@ fn setup_tracing(args: &Cli, telemetry_enabled: bool) -> Result<TraceStream, Err
             // Never fails startup: an empty/unparsable connection string just
             // means telemetry stays a no-op.
             if telemetry_enabled {
-                if let Some(sender) = AppInsightsSender::from_connection_string(
-                    trident::AZURE_MONITOR_CONNECTION_STRING,
-                ) {
-                    layers.push(Box::new(sender.with_filter(filter::LevelFilter::INFO)));
+                // A closed uploader (e.g. its background thread failed to
+                // start) just means telemetry stays a no-op; it must never
+                // block or fail the rest of tracing setup.
+                if let Some(handle) = uploader.get_handle() {
+                    if let Some(sender) = AppInsightsSender::from_connection_string(
+                        trident::AZURE_MONITOR_CONNECTION_STRING,
+                        handle,
+                    ) {
+                        layers.push(Box::new(sender.with_filter(filter::LevelFilter::INFO)));
+                    }
                 }
             }
 
@@ -388,7 +398,7 @@ fn main() -> ExitCode {
         .unwrap_or(false);
 
     // Initialize the telemetry flow
-    let tracestream = setup_tracing(&args, telemetry_enabled);
+    let tracestream = setup_tracing(&args, telemetry_enabled, &bg_uploader);
     if let Err(e) = tracestream {
         // Defer to stderr since logging is not yet initialized.
         eprintln!("Failed to initialize tracing: {e:?}");
