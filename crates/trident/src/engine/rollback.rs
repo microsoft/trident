@@ -1045,7 +1045,6 @@ mod tests {
         )
         .unwrap());
     }
-
 }
 
 #[cfg(feature = "functional-test")]

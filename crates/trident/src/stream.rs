@@ -175,7 +175,6 @@ mod tests {
             PathBuf::from("/dev/sdb")
         );
     }
-
 }
 
 #[cfg(feature = "functional-test")]

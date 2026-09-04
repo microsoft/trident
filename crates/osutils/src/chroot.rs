@@ -363,7 +363,8 @@ mod functional_test {
     }
 
     #[functional_test(feature = "helpers", negative = true)]
-    fn test_enter_chroot_fail_to_mount_special_dir() {        // Create a temporary directory to act as the chroot environment
+    fn test_enter_chroot_fail_to_mount_special_dir() {
+        // Create a temporary directory to act as the chroot environment
         let temp_dir = tempdir().unwrap();
         let chroot_path = temp_dir.path().to_path_buf();
 
