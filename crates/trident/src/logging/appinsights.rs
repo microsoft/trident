@@ -406,10 +406,61 @@ mod tests {
 mod functional_test {
     use super::*;
 
-    use std::{io::Read, net::TcpListener, sync::mpsc::channel};
+    use std::{
+        io::{Read, Write},
+        net::{TcpListener, TcpStream},
+        sync::mpsc::channel,
+    };
 
     use pytest_gen::functional_test;
     use tracing_subscriber::{filter, layer::SubscriberExt};
+
+    /// Reads a full HTTP request off `stream`. A single `TcpStream::read`
+    /// call is not guaranteed to return the entire request (TCP is a byte
+    /// stream, not message-oriented) -- keep reading until the header
+    /// terminator has arrived and, per the declared `Content-Length`, the
+    /// full body has too.
+    fn read_full_http_request(stream: &mut TcpStream) -> String {
+        let mut buf: Vec<u8> = Vec::new();
+        let mut chunk = [0u8; 4096];
+
+        loop {
+            match stream.read(&mut chunk) {
+                Ok(0) => break, // Peer closed the connection.
+                Ok(n) => buf.extend_from_slice(&chunk[..n]),
+                Err(_) => break,
+            }
+
+            let Some(headers_end) = find_subslice(&buf, b"\r\n\r\n") else {
+                continue; // Headers not fully received yet.
+            };
+            let headers = String::from_utf8_lossy(&buf[..headers_end]);
+            let content_length: usize = headers
+                .lines()
+                .find_map(|line| {
+                    line.to_lowercase()
+                        .strip_prefix("content-length:")
+                        .map(|v| v.trim().to_string())
+                })
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
+
+            let body_end = headers_end + content_length;
+            if buf.len() >= body_end {
+                buf.truncate(body_end);
+                break;
+            }
+        }
+
+        String::from_utf8_lossy(&buf).to_string()
+    }
+
+    fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+        haystack
+            .windows(needle.len())
+            .position(|window| window == needle)
+            .map(|pos| pos + needle.len())
+    }
 
     /// Spins up a local TCP listener standing in for the Application
     /// Insights ingestion endpoint, and confirms the sender actually posts a
@@ -422,14 +473,11 @@ mod functional_test {
         let (tx, rx) = channel();
         std::thread::spawn(move || {
             if let Ok((mut stream, _)) = listener.accept() {
-                let mut buf = [0u8; 8192];
-                let mut received = Vec::new();
-                // Best-effort single read; the request is small enough to
-                // arrive in one go for this test.
-                if let Ok(n) = stream.read(&mut buf) {
-                    received.extend_from_slice(&buf[..n]);
-                }
-                let _ = tx.send(String::from_utf8_lossy(&received).to_string());
+                let received = read_full_http_request(&mut stream);
+                // Send a minimal response so the client's request completes
+                // cleanly instead of hitting a connection reset.
+                let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+                let _ = tx.send(received);
             }
         });
 
