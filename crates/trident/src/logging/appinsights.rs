@@ -113,7 +113,10 @@ pub(crate) fn parse_connection_string(s: &str) -> Option<ConnParts> {
             // public endpoint.
             Some(suffix) => match location.filter(|l| !l.is_empty()) {
                 Some(location) => format!("https://{location}.in.{suffix}"),
-                None => format!("https://in.{suffix}"),
+                // No location: Application Insights uses the global `dc`
+                // prefix for this form, matching the public endpoint's own
+                // `dc.services.visualstudio.com` shape.
+                None => format!("https://dc.{suffix}"),
             },
             None => DEFAULT_INGESTION_ENDPOINT.to_string(),
         },
@@ -406,7 +409,7 @@ mod tests {
         .expect("should parse");
         assert_eq!(
             parts.ingestion_endpoint,
-            "https://in.applicationinsights.azure.cn"
+            "https://dc.applicationinsights.azure.cn"
         );
     }
 

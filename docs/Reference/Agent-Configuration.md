@@ -34,8 +34,10 @@ the Agent Configuration file:
 Telemetry=OptIn
 ```
 
-Any value other than `OptIn` (including an absent `Telemetry` line) is
-treated as `OptOut`. Telemetry delivery is always best-effort and never
+The value is case-insensitive (`OptIn`, `optin`, and `OPTIN` are all
+equivalent); any value other than a case-insensitive match for `OptIn`
+(including an absent `Telemetry` line) is treated as `OptOut`. Telemetry
+delivery is always best-effort and never
 affects servicing outcomes, but failures are not all logged at the same
 level: a failure to serialize an event, or to enqueue it because the
 background uploader has already shut down, is logged at trace level,
