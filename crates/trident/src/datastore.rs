@@ -584,6 +584,32 @@ mod tests {
     }
 
     #[test]
+    /// Regression test: `persist` supports a destination path equal to the
+    /// currently-open (temporary) datastore's own path -- the offline
+    /// provisioning flow does this. Before the fix, `copy_key_values` kept
+    /// the source `SELECT` active while writing to the destination
+    /// connection, and since both connections point at the same file, the
+    /// destination write would block on the source's read lock forever
+    /// (mitigated only by the busy timeout, so this would previously fail
+    /// with "database is locked" rather than deadlock outright).
+    fn test_persist_to_same_path_does_not_deadlock() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let datastore_path = temp_dir.path().join("db.sqlite");
+
+        let mut datastore = super::DataStore::open_or_create(&datastore_path).unwrap();
+        let correlation_id = datastore.correlation_id().unwrap();
+
+        // Persist to the exact same path the datastore is currently open at.
+        datastore.persist(&datastore_path).unwrap();
+
+        assert_eq!(
+            datastore.correlation_id().unwrap(),
+            correlation_id,
+            "Correlation ID should survive a self-persist"
+        );
+    }
+
+    #[test]
     fn test_parse_host_status() {
         let ds = super::DataStore {
             db: None,
@@ -806,32 +832,6 @@ mod functional_test {
         assert_eq!(
             datastore.host_status().servicing_state,
             ServicingState::Provisioned
-        );
-    }
-
-    #[functional_test]
-    /// Regression test: `persist` supports a destination path equal to the
-    /// currently-open (temporary) datastore's own path -- the offline
-    /// provisioning flow does this. Before the fix, `copy_key_values` kept
-    /// the source `SELECT` active while writing to the destination
-    /// connection, and since both connections point at the same file, the
-    /// destination write would block on the source's read lock forever
-    /// (mitigated only by the busy timeout, so this would previously fail
-    /// with "database is locked" rather than deadlock outright).
-    fn test_persist_to_same_path_does_not_deadlock() {
-        let temp_dir = TempDir::new().unwrap();
-        let datastore_path = temp_dir.path().join("db.sqlite");
-
-        let mut datastore = DataStore::open_or_create(&datastore_path).unwrap();
-        let correlation_id = datastore.correlation_id().unwrap();
-
-        // Persist to the exact same path the datastore is currently open at.
-        datastore.persist(&datastore_path).unwrap();
-
-        assert_eq!(
-            datastore.correlation_id().unwrap(),
-            correlation_id,
-            "Correlation ID should survive a self-persist"
         );
     }
 
