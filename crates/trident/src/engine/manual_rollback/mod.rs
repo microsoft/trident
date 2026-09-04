@@ -19,6 +19,7 @@ use crate::{
         self, boot::uki, bootentries, runtime_update, storage::encryption, EngineContext,
         EngineContextParams, SUBSYSTEMS,
     },
+    logging::operation_context::set_servicing_id,
     subsystems::esp,
     ExitKind,
 };
@@ -164,6 +165,18 @@ pub fn execute_rollback(
         };
         staged_rollback_type = Some(rollback_type);
 
+        // Mint a fresh servicing ID for this rollback operation, now that
+        // staging is definitely happening this call (unlike update_start,
+        // this is naturally gated to the has_stage() branch, so a
+        // finalize-only call doesn't mint a redundant new one -- see
+        // finalize_rollback below, which reads the persisted ID back
+        // instead).
+        let servicing_id = datastore
+            .new_servicing_id()
+            .message("Failed to create servicing ID")?;
+        info!("Servicing ID: {servicing_id}");
+        set_servicing_id(servicing_id.to_string());
+
         let engine_context = EngineContext::new(EngineContextParams {
             spec: requested_rollback.spec.clone(),
             spec_old: datastore.host_status().spec.clone(),
@@ -296,6 +309,17 @@ fn finalize_rollback(
     engine_context: &EngineContext,
     staging_state: ServicingState,
 ) -> Result<ExitKind, TridentError> {
+    // Attach whatever servicing ID is currently persisted: set moments ago
+    // by execute_rollback's own staging branch above if this is a combined
+    // stage+finalize call, or read back here for the first time if this
+    // call is finalizing a rollback staged by a separate, earlier
+    // invocation. Best-effort: a missing/unreadable ID just means this
+    // invocation's telemetry won't carry one, which never blocks the
+    // actual rollback.
+    if let Ok(Some(servicing_id)) = datastore.servicing_id() {
+        set_servicing_id(servicing_id.to_string());
+    }
+
     if matches!(staging_state, ServicingState::ManualRollbackRuntimeStaged) {
         trace!("Finalizing rollback of runtime update that does not require reboot");
 

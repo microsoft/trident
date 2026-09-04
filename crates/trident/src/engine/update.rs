@@ -14,6 +14,7 @@ use crate::{
     engine::{
         self, ab_update, rollback, runtime_update, EngineContext, EngineContextParams, SUBSYSTEMS,
     },
+    logging::operation_context::set_servicing_id,
     osimage::OsImage,
     subsystems::hooks::HooksSubsystem,
     ExitKind,
@@ -110,6 +111,18 @@ pub(crate) fn update(
         servicing_type = format!("{:?}", servicing_type),
         servicing_state = format!("{:?}", state.host_status().servicing_state),
     );
+
+    // Mint a fresh servicing ID for this update operation and attach it to
+    // this invocation's telemetry, mirroring Trident::install. Fired at
+    // the same unconditional "start of staging" point as update_start
+    // above (see that metric's own note on why this isn't gated to a
+    // has_stage()-only check): a resumed finalize-only call gets its own
+    // fresh ID here too, rather than reusing the original staging call's.
+    let servicing_id = state
+        .new_servicing_id()
+        .message("Failed to create servicing ID")?;
+    info!("Servicing ID: {servicing_id}");
+    set_servicing_id(servicing_id.to_string());
 
     match servicing_type {
         ServicingType::AbUpdate => {

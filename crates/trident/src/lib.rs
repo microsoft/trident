@@ -61,7 +61,7 @@ pub use crate::{
         background_uploader::{BackgroundUploadHandle, BackgroundUploader},
         logfwd::LogForwarder,
         logstream::Logstream,
-        operation_context::{run_command, run_with_operation},
+        operation_context::{run_command, run_with_operation, set_servicing_id},
         tracestream::TraceStream,
     },
     orchestrate::OrchestratorConnection,
@@ -138,6 +138,11 @@ pub struct Trident {
     host_config: Option<HostConfiguration>,
     orchestrator: Option<OrchestratorConnection>,
     is_stream_image: bool,
+    /// Kept so `Trident::install` can attach a newly-created installation
+    /// ID / servicing ID to it -- see `DataStore::create_installation_id`
+    /// and the servicing_id equivalent, both only ever called from
+    /// `install`/staging, unlike this constructor.
+    tracestream: TraceStream,
 }
 
 impl Trident {
@@ -221,20 +226,26 @@ impl Trident {
             info!("Running Trident in a container");
         }
 
-        // Retrieve (or create, on first run) this host's unique
-        // correlation ID from the datastore actually used for servicing,
-        // and attach it to the shared TraceStream before any startup
-        // metrics are emitted, so every trace/metric -- including this
-        // very "trident_start" event -- carries it. This runs for every
-        // caller of `Trident::new` (both the CLI path and each daemon
-        // RPC handler), since they all supply `datastore_path`.
-        match DataStore::open_or_create(datastore_path).and_then(|mut ds| ds.correlation_id()) {
-            Ok(correlation_id) => {
-                info!("Correlation ID: {correlation_id}");
-                tracestream.set_correlation_id(correlation_id.to_string());
+        // Attach this host's installation ID -- if one has already been
+        // stamped -- to the shared TraceStream before any startup metrics
+        // are emitted, so every trace/metric -- including this very
+        // "trident_start" event -- carries it once available. This is a
+        // read-only lookup: unlike the old correlation ID, the
+        // installation ID is only ever *created* by `Trident::install`
+        // (at the start of staging), never here, so every other caller of
+        // `Trident::new` (update/commit/rollback/rebuild-raid, and every
+        // daemon RPC handler) just attaches whatever was already
+        // persisted at install time.
+        match DataStore::open_or_create(datastore_path).and_then(|ds| ds.installation_id()) {
+            Ok(Some(installation_id)) => {
+                info!("Installation ID: {installation_id}");
+                tracestream.set_installation_id(installation_id.to_string());
+            }
+            Ok(None) => {
+                debug!("No installation ID persisted yet (host not yet installed)");
             }
             Err(e) => {
-                warn!("Failed to get or create correlation ID: {e:?}");
+                warn!("Failed to read installation ID: {e:?}");
             }
         }
 
@@ -297,6 +308,7 @@ impl Trident {
             host_config,
             orchestrator,
             is_stream_image: false,
+            tracestream,
         })
     }
 
@@ -506,6 +518,11 @@ impl Trident {
             ))?;
 
         let is_stream_image = self.is_stream_image;
+        // Cloned out of `self` so the closure below (which only receives
+        // `&mut DataStore`, not `&mut self` -- see `execute_and_record_error`)
+        // can still attach the installation/servicing IDs it creates to
+        // this invocation's telemetry.
+        let tracestream = self.tracestream.clone();
 
         self.execute_and_record_error(datastore, |datastore| {
             host_config
@@ -549,6 +566,27 @@ impl Trident {
                         .message("Failed to create temporary datastore for multiboot install")?;
                 }
             }
+
+            // Stamp this installation with an installation ID -- get-or-create,
+            // but `Trident::install` is the only place that ever actually
+            // creates one (see `DataStore::create_installation_id`); every
+            // other command just reads whatever was stamped here (see
+            // `Trident::new`) -- and mint a fresh servicing ID for this
+            // install operation. Uses `datastore` as it stands after any
+            // multiboot swap above, so a multiboot install's own (new,
+            // eventually-persistent) datastore gets its own installation ID,
+            // not the already-provisioned host's.
+            let installation_id = datastore
+                .create_installation_id()
+                .message("Failed to create installation ID")?;
+            info!("Installation ID: {installation_id}");
+            tracestream.set_installation_id(installation_id.to_string());
+
+            let servicing_id = datastore
+                .new_servicing_id()
+                .message("Failed to create servicing ID")?;
+            info!("Servicing ID: {servicing_id}");
+            set_servicing_id(servicing_id.to_string());
 
             // Use a prefetched image if provided, otherwise load the image
             // specified in the Host Configuration.

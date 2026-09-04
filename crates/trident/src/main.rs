@@ -597,7 +597,7 @@ fn setup_tracing(
                     Some(handle) => match AppInsightsSender::from_connection_string(
                         trident::AZURE_MONITOR_CONNECTION_STRING,
                         handle,
-                        tracestream.correlation_id_handle(),
+                        tracestream.installation_id_handle(),
                     ) {
                         Some(sender) => {
                             layers.push(Box::new(sender.with_filter(filter::LevelFilter::INFO)));

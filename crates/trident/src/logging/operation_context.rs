@@ -16,8 +16,18 @@
 //!
 //! `operation_id` is a fresh, random ID generated once per command
 //! invocation (distinct from the persistent, per-host
-//! `DataStore::correlation_id`, which is unrelated and set separately on
-//! `TraceStream`/`AppInsightsSender`).
+//! `DataStore::installation_id`, which is set separately on
+//! `TraceStream`/`AppInsightsSender`, and from `servicing_id` below).
+//!
+//! This module also carries an optional `servicing_id`: a *persistent*
+//! (stored in the datastore, see `DataStore::new_servicing_id`) ID minted
+//! at the start of staging (install/update/manual-rollback), so metrics
+//! from a stage invocation and a later, separate finalize invocation (the
+//! A/B update case, which reboots in between) can still be correlated
+//! with each other via the same ID -- unlike `operation_id`, which is
+//! deliberately fresh per invocation. It's attached here (rather than
+//! threaded through every `engine::*` function signature) via
+//! [`set_servicing_id`], callable from wherever staging actually happens.
 
 use std::cell::RefCell;
 
@@ -25,8 +35,16 @@ use uuid::Uuid;
 
 use trident_api::error::TridentError;
 
+/// Per-invocation telemetry-correlation state (see the module docs).
+#[derive(Clone)]
+struct OperationState {
+    operation_id: String,
+    command: String,
+    servicing_id: Option<String>,
+}
+
 thread_local! {
-    static CURRENT_OPERATION: RefCell<Option<(String, String)>> = const { RefCell::new(None) };
+    static CURRENT_OPERATION: RefCell<Option<OperationState>> = const { RefCell::new(None) };
 }
 
 /// Runs `f` with this thread tagged as executing `command`, under a fresh
@@ -51,7 +69,11 @@ pub fn run_with_operation<R>(command: &str, f: impl FnOnce() -> R) -> R {
     let operation_id = Uuid::new_v4().to_string();
 
     CURRENT_OPERATION.with(|cell| {
-        *cell.borrow_mut() = Some((operation_id, command.to_string()));
+        *cell.borrow_mut() = Some(OperationState {
+            operation_id,
+            command: command.to_string(),
+            servicing_id: None,
+        });
     });
 
     struct ClearOnDrop;
@@ -67,28 +89,61 @@ pub fn run_with_operation<R>(command: &str, f: impl FnOnce() -> R) -> R {
     f()
 }
 
-/// Returns the `(operation_id, command)` pair set by
-/// [`run_with_operation`] for the calling thread, if any.
-pub(crate) fn current() -> Option<(String, String)> {
-    CURRENT_OPERATION.with(|cell| cell.borrow().clone())
+/// Tags the current invocation (as established by
+/// [`run_with_operation`]/[`run_command`]) with `servicing_id`, so every
+/// metric emitted for the remainder of this invocation carries it
+/// alongside `operation_id`/`command`. A no-op (logged at debug level) if
+/// called outside of `run_with_operation`/`run_command`.
+///
+/// Called from wherever staging actually begins (install, update,
+/// manual-rollback) with a freshly-minted, datastore-persisted ID (see
+/// `DataStore::new_servicing_id`) -- or, on a later finalize-only
+/// invocation resuming a prior stage, with the persisted ID read back via
+/// `DataStore::servicing_id`.
+pub fn set_servicing_id(servicing_id: impl Into<String>) {
+    CURRENT_OPERATION.with(|cell| match cell.borrow_mut().as_mut() {
+        Some(state) => state.servicing_id = Some(servicing_id.into()),
+        None => {
+            tracing::debug!("set_servicing_id called outside run_with_operation/run_command");
+        }
+    });
+}
+
+/// Returns the `(operation_id, command, servicing_id)` set by
+/// [`run_with_operation`] for the calling thread, if any. `servicing_id`
+/// is `None` until/unless [`set_servicing_id`] has been called this
+/// invocation.
+pub(crate) fn current() -> Option<(String, String, Option<String>)> {
+    CURRENT_OPERATION.with(|cell| {
+        cell.borrow().as_ref().map(|state| {
+            (
+                state.operation_id.clone(),
+                state.command.clone(),
+                state.servicing_id.clone(),
+            )
+        })
+    })
 }
 
 /// A snapshot of another thread's operation context (see
-/// [`run_with_operation`]), capturable via [`snapshot`] and re-installed
-/// on a different thread via [`run_with_captured_operation`]. Used to
-/// propagate `operation_id`/`command` into threads spawned mid-command
-/// (e.g. `MonitorMetrics`'s background sampling thread), which otherwise
-/// start with no thread-local context of their own and would silently
-/// drop these fields from their own metrics.
+/// [`run_with_operation`]/[`set_servicing_id`]), capturable via
+/// [`snapshot`] and re-installed on a different thread via
+/// [`run_with_captured_operation`]. Used to propagate
+/// `operation_id`/`command`/`servicing_id` into threads spawned
+/// mid-command (e.g. `MonitorMetrics`'s background sampling thread),
+/// which otherwise start with no thread-local context of their own and
+/// would silently drop these fields from their own metrics.
 #[derive(Clone)]
-pub struct CapturedOperation(String, String);
+pub struct CapturedOperation(String, String, Option<String>);
 
 /// Captures the calling thread's current operation context, if any, for
 /// later re-installation on another thread via
 /// [`run_with_captured_operation`]. Call this on the *spawning* thread,
 /// before handing the result to the new thread's closure.
 pub fn snapshot() -> Option<CapturedOperation> {
-    current().map(|(operation_id, command)| CapturedOperation(operation_id, command))
+    current().map(|(operation_id, command, servicing_id)| {
+        CapturedOperation(operation_id, command, servicing_id)
+    })
 }
 
 /// Runs `f` with `captured` (from [`snapshot`]) installed as the calling
@@ -103,12 +158,16 @@ pub fn run_with_captured_operation<R>(
     captured: Option<CapturedOperation>,
     f: impl FnOnce() -> R,
 ) -> R {
-    let Some(CapturedOperation(operation_id, command)) = captured else {
+    let Some(CapturedOperation(operation_id, command, servicing_id)) = captured else {
         return f();
     };
 
     CURRENT_OPERATION.with(|cell| {
-        *cell.borrow_mut() = Some((operation_id, command));
+        *cell.borrow_mut() = Some(OperationState {
+            operation_id,
+            command,
+            servicing_id,
+        });
     });
 
     struct ClearOnDrop;
@@ -168,9 +227,14 @@ mod tests {
         assert!(current().is_none());
 
         let observed = run_with_operation("test_command", current);
-        let (operation_id, command) = observed.expect("context should be set inside f");
+        let (operation_id, command, servicing_id) =
+            observed.expect("context should be set inside f");
         assert_eq!(command, "test_command");
         assert_eq!(operation_id.len(), 36, "operation_id should be a UUID");
+        assert!(
+            servicing_id.is_none(),
+            "servicing_id should be unset unless set_servicing_id was called"
+        );
 
         assert!(
             current().is_none(),
@@ -215,10 +279,11 @@ mod tests {
         // Capture on a thread standing in for the "spawning" thread (here,
         // just the current thread inside run_with_operation), then install
         // it on a different OS thread, mirroring MonitorMetrics's use.
-        let (expected_operation_id, expected_command, observed) =
+        let (expected_operation_id, expected_command, expected_servicing_id, observed) =
             run_with_operation("cmd_from_parent_thread", || {
+                set_servicing_id("test-servicing-id");
                 let captured = snapshot().expect("should capture a context");
-                let (operation_id, command) = current().unwrap();
+                let (operation_id, command, servicing_id) = current().unwrap();
 
                 let observed = std::thread::spawn(move || {
                     // No context on a fresh thread until installed.
@@ -228,13 +293,23 @@ mod tests {
                 .join()
                 .unwrap();
 
-                (operation_id, command, observed)
+                (operation_id, command, servicing_id, observed)
             });
 
         assert_eq!(
             observed,
-            Some((expected_operation_id, expected_command)),
-            "captured operation_id/command should propagate to the new thread"
+            Some((expected_operation_id, expected_command, expected_servicing_id)),
+            "captured operation_id/command/servicing_id should propagate to the new thread"
+        );
+    }
+
+    #[test]
+    fn test_set_servicing_id_outside_run_with_operation_is_a_no_op() {
+        assert!(current().is_none());
+        set_servicing_id("stray-id");
+        assert!(
+            current().is_none(),
+            "set_servicing_id must not create context on its own"
         );
     }
 
@@ -261,6 +336,15 @@ mod tests {
         .join()
         .unwrap();
         assert!(still_set_inside, "context should be set while f runs");
+    }
+
+    #[test]
+    fn test_set_servicing_id_attaches_to_current_operation() {
+        let servicing_id = run_with_operation("cmd", || {
+            set_servicing_id("test-servicing-id");
+            current().unwrap().2
+        });
+        assert_eq!(servicing_id, Some("test-servicing-id".to_string()));
     }
 
     #[test]
