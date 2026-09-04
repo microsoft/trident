@@ -203,32 +203,51 @@ impl DataStore {
     /// Copy all rows of the generic key-value table from `source` into
     /// `destination`, overwriting any conflicting keys already present in
     /// `destination`.
+    ///
+    /// `source` and `destination` may be two live connections to the *same*
+    /// underlying SQLite file (e.g. an offline `persist` whose destination
+    /// path is the currently-open datastore's own path). SQLite's locking is
+    /// per-connection, so a `SELECT` left active on `source` holds a read
+    /// lock that a write from `destination` on the same file would have to
+    /// wait on -- and since both connections are driven from this single
+    /// thread, that wait can never be satisfied ("database is locked").
+    /// To avoid this, fully read and finalize the source query *before*
+    /// issuing any writes to `destination`.
     fn copy_key_values(
         source: &sqlite::Connection,
         destination: &sqlite::Connection,
     ) -> Result<(), TridentError> {
-        let mut query_statement = source
-            .prepare("SELECT key, contents FROM keyvalue")
-            .structured(ServicingError::from(DatastoreError::ReadDatastore))?;
+        let mut rows: Vec<(String, String)> = Vec::new();
+        {
+            let mut query_statement = source
+                .prepare("SELECT key, contents FROM keyvalue")
+                .structured(ServicingError::from(DatastoreError::ReadDatastore))?;
 
-        loop {
-            match query_statement.next() {
-                Ok(State::Done) => break,
-                Err(e) => {
-                    return Err(e)
-                        .structured(ServicingError::from(DatastoreError::ReadDatastore))
-                        .message("Failed to get next keyvalue row while copying datastore");
+            loop {
+                match query_statement.next() {
+                    Ok(State::Done) => break,
+                    Err(e) => {
+                        return Err(e)
+                            .structured(ServicingError::from(DatastoreError::ReadDatastore))
+                            .message("Failed to get next keyvalue row while copying datastore");
+                    }
+                    Ok(State::Row) => {} // continue below
                 }
-                Ok(State::Row) => {} // continue below
+
+                let key = query_statement
+                    .read::<String, _>(0)
+                    .structured(ServicingError::from(DatastoreError::ReadDatastore))?;
+                let contents = query_statement
+                    .read::<String, _>(1)
+                    .structured(ServicingError::from(DatastoreError::ReadDatastore))?;
+
+                rows.push((key, contents));
             }
+            // `query_statement` is dropped here, finalizing the source
+            // SELECT and releasing its read lock before any writes below.
+        }
 
-            let key = query_statement
-                .read::<String, _>(0)
-                .structured(ServicingError::from(DatastoreError::ReadDatastore))?;
-            let contents = query_statement
-                .read::<String, _>(1)
-                .structured(ServicingError::from(DatastoreError::ReadDatastore))?;
-
+        for (key, contents) in rows {
             let mut insert_statement = destination
                 .prepare(
                     "INSERT INTO keyvalue (key, contents) VALUES (?, ?) \
@@ -787,6 +806,32 @@ mod functional_test {
         assert_eq!(
             datastore.host_status().servicing_state,
             ServicingState::Provisioned
+        );
+    }
+
+    #[functional_test]
+    /// Regression test: `persist` supports a destination path equal to the
+    /// currently-open (temporary) datastore's own path -- the offline
+    /// provisioning flow does this. Before the fix, `copy_key_values` kept
+    /// the source `SELECT` active while writing to the destination
+    /// connection, and since both connections point at the same file, the
+    /// destination write would block on the source's read lock forever
+    /// (mitigated only by the busy timeout, so this would previously fail
+    /// with "database is locked" rather than deadlock outright).
+    fn test_persist_to_same_path_does_not_deadlock() {
+        let temp_dir = TempDir::new().unwrap();
+        let datastore_path = temp_dir.path().join("db.sqlite");
+
+        let mut datastore = DataStore::open_or_create(&datastore_path).unwrap();
+        let correlation_id = datastore.correlation_id().unwrap();
+
+        // Persist to the exact same path the datastore is currently open at.
+        datastore.persist(&datastore_path).unwrap();
+
+        assert_eq!(
+            datastore.correlation_id().unwrap(),
+            correlation_id,
+            "Correlation ID should survive a self-persist"
         );
     }
 
