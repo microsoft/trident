@@ -918,6 +918,16 @@ impl TridentError {
         }
         .ok()
     }
+
+    /// Returns the `file:line` location where this error was originally
+    /// constructed (via `TridentError::new`/`with_source`/`internal`, or
+    /// `ReportError::structured`), same format as the `location` field
+    /// already included in this type's `Serialize` impl. Useful for
+    /// telemetry/logging call sites that want the error's origin without
+    /// needing the full `Debug` context chain.
+    pub fn location(&self) -> String {
+        format!("{}:{}", self.0.location.file(), self.0.location.line())
+    }
 }
 
 pub trait ReportError<T, K> {
