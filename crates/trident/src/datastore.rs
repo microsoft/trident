@@ -51,6 +51,11 @@ impl DataStore {
                 path: path.to_string_lossy().into(),
             },
         })?;
+        // Existing datastores may predate a table added in a later Trident
+        // version (e.g. `keyvalue`). Idempotently ensure the full schema is
+        // present so upgraded hosts don't fail with "no such table" the
+        // first time a new table is accessed.
+        Self::ensure_schema(&db)?;
         let host_status_yaml: Option<serde_yaml::Value> = db
             .prepare("SELECT contents FROM hoststatus ORDER BY id DESC LIMIT 1")
             .structured(ServicingError::Datastore {
@@ -129,6 +134,15 @@ impl DataStore {
 
         let db =
             sqlite::open(path).structured(ServicingError::from(DatastoreError::OpenDatastore))?;
+        Self::ensure_schema(&db)?;
+        Ok(db)
+    }
+
+    /// Idempotently create any tables that don't already exist. Safe to call
+    /// on both newly-created and pre-existing datastores, so that a
+    /// datastore created by an older Trident version picks up tables added
+    /// by a newer version the next time it is opened.
+    fn ensure_schema(db: &sqlite::Connection) -> Result<(), TridentError> {
         db.execute(
             "CREATE TABLE IF NOT EXISTS hoststatus (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -144,7 +158,7 @@ impl DataStore {
             )",
         )
         .structured(ServicingError::from(DatastoreError::InitializeDatastore))?;
-        Ok(db)
+        Ok(())
     }
 
     pub(crate) fn persist(&mut self, path: &Path) -> Result<(), TridentError> {
@@ -541,6 +555,36 @@ mod tests {
             datastore.get_value::<String>("some-key").unwrap(),
             Some("other-value".to_string())
         );
+
+        temp_dir.close().unwrap();
+    }
+
+    #[test]
+    /// Regression test: a datastore created by an older Trident version that
+    /// predates the `keyvalue` table (only `hoststatus` exists) must still
+    /// be usable after `open()` -- in particular, `correlation_id()` must
+    /// not fail with "no such table: keyvalue".
+    fn test_open_upgrades_pre_existing_datastore_schema() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("db.sqlite");
+
+        // Simulate a datastore created before the `keyvalue` table existed:
+        // create only the `hoststatus` table.
+        {
+            let db = sqlite::open(&path).unwrap();
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS hoststatus (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    contents TEXT NOT NULL
+                )",
+            )
+            .unwrap();
+        }
+
+        let mut datastore = super::DataStore::open(&path).unwrap();
+        // Should not fail with "no such table: keyvalue".
+        datastore.correlation_id().unwrap();
 
         temp_dir.close().unwrap();
     }
