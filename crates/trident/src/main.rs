@@ -10,13 +10,28 @@ use trident::{
     cli::{self, Cli, Commands, GetKind, TridentExitCodes},
     init::offline,
     manual_rollback::{self, utils::ManualRollbackRequestKind},
-    validation, AppInsightsSender, BackgroundLog, BackgroundUploader, DataStore, ExitKind,
-    LogForwarder, Logstream, TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
+    run_with_operation, validation, AppInsightsSender, BackgroundLog, BackgroundUploader,
+    DataStore, ExitKind, LogForwarder, Logstream, TraceStream, Trident,
+    TRIDENT_BACKGROUND_LOG_PATH,
 };
 use trident_api::{
-    config::HostConfigurationSource,
+    config::{HostConfigurationSource, Operations},
     error::{InternalError, InvalidInputError, TridentError, TridentResultExt},
 };
+
+/// Maps a base command name plus its requested `Operations` to the same
+/// naming convention gRPC's `servicing_request` already uses for
+/// stage/finalize granularity (e.g. `"install"` vs `"install_stage"` vs
+/// `"install_finalize"`), so `command`/`operation_id` telemetry is
+/// consistent regardless of whether the command came from the CLI or from
+/// gRPC/daemon.
+fn command_name(base: &str, ops: &Operations) -> String {
+    match (ops.has_stage(), ops.has_finalize()) {
+        (true, true) | (false, false) => base.to_string(),
+        (true, false) => format!("{base}_stage"),
+        (false, true) => format!("{base}_finalize"),
+    }
+}
 
 fn run_trident(
     mut logstream: Logstream,
@@ -178,39 +193,48 @@ fn run_trident(
                         ref allowed_operations,
                         multiboot,
                         ..
-                    } => trident
-                        .install(
-                            &mut datastore,
-                            cli::to_operations(allowed_operations),
-                            multiboot,
-                            None,
-                        )
-                        .map(|(exit_kind, _image_hash, _servicing_type)| exit_kind),
+                    } => {
+                        let ops = cli::to_operations(allowed_operations);
+                        run_with_operation(&command_name("install", &ops), || {
+                            trident
+                                .install(&mut datastore, ops, multiboot, None)
+                                .map(|(exit_kind, _image_hash, _servicing_type)| exit_kind)
+                        })
+                    }
                     Commands::Update {
                         ref allowed_operations,
                         ..
-                    } => trident
-                        .update(&mut datastore, cli::to_operations(allowed_operations))
-                        .map(|(exit_kind, _image_hash, _servicing_type)| exit_kind),
-                    Commands::Commit { .. } => trident
-                        .commit(&mut datastore)
-                        .map(|(exit_kind, _servicing_type)| exit_kind),
+                    } => {
+                        let ops = cli::to_operations(allowed_operations);
+                        run_with_operation(&command_name("update", &ops), || {
+                            trident
+                                .update(&mut datastore, ops)
+                                .map(|(exit_kind, _image_hash, _servicing_type)| exit_kind)
+                        })
+                    }
+                    Commands::Commit { .. } => run_with_operation("commit", || {
+                        trident
+                            .commit(&mut datastore)
+                            .map(|(exit_kind, _servicing_type)| exit_kind)
+                    }),
                     Commands::Rollback {
                         runtime,
                         ab,
                         ref allowed_operations,
                         ..
-                    } => trident
-                        .rollback(
-                            &mut datastore,
-                            runtime,
-                            ab,
-                            cli::to_operations(allowed_operations),
-                        )
-                        .map(|(exit_kind, _servicing_type)| exit_kind),
-                    Commands::RebuildRaid { .. } => trident
-                        .rebuild_raid(&mut datastore)
-                        .map(|()| ExitKind::Done),
+                    } => {
+                        let ops = cli::to_operations(allowed_operations);
+                        run_with_operation(&command_name("rollback", &ops), || {
+                            trident
+                                .rollback(&mut datastore, runtime, ab, ops)
+                                .map(|(exit_kind, _servicing_type)| exit_kind)
+                        })
+                    }
+                    Commands::RebuildRaid { .. } => run_with_operation("rebuild_raid", || {
+                        trident
+                            .rebuild_raid(&mut datastore)
+                            .map(|()| ExitKind::Done)
+                    }),
                     _ => Err(TridentError::internal("Invalid command")),
                 };
 
@@ -428,6 +452,7 @@ fn setup_tracing(
                     Some(handle) => match AppInsightsSender::from_connection_string(
                         trident::AZURE_MONITOR_CONNECTION_STRING,
                         handle,
+                        tracestream.correlation_id_handle(),
                     ) {
                         Some(sender) => {
                             layers.push(Box::new(sender.with_filter(filter::LevelFilter::INFO)));

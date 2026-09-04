@@ -95,6 +95,15 @@ pub(crate) fn finalize_update(
             "Auto-rollback was triggered by runtime update failure:\n{e:?}"
         ));
     }
+
+    // Unlike A/B update and clean install, a runtime update requires no
+    // reboot, so success can be confirmed synchronously right here instead
+    // of via the post-reboot boot-validation flow in `engine::rollback`
+    // (which only ever sees `CleanInstallFinalized`/`AbUpdateFinalized`/
+    // `ManualRollbackAbFinalized` -- runtime update/rollback finalize and
+    // return to `Provisioned` without ever going through that flow).
+    info!("Runtime update succeeded");
+    tracing::info!(metric_name = "runtime_update_success", value = true);
     finalize_result
 }
 

@@ -24,7 +24,7 @@ use osutils::{
     uname,
 };
 
-use crate::{TRIDENT_METRICS_FILE_PATH, TRIDENT_VERSION};
+use crate::{logging::operation_context, TRIDENT_METRICS_FILE_PATH, TRIDENT_VERSION};
 
 /// The product uuid is used to identify the hardware that Trident is running on.
 const PRODUCT_UUID_FILE: &str = "/sys/class/dmi/id/product_uuid";
@@ -138,6 +138,15 @@ impl TraceStream {
             }
             Err(_) => warn!("Failed to lock tracestream to set correlation ID"),
         }
+    }
+
+    /// Returns a clone of the shared correlation-ID handle -- the same
+    /// underlying `Arc<RwLock<..>>` written by `set_correlation_id` -- so
+    /// other telemetry sinks (namely `AppInsightsSender`) can read the
+    /// current value at send-time without needing their own copy of the
+    /// logic that sets it.
+    pub fn correlation_id_handle(&self) -> Arc<RwLock<Option<String>>> {
+        self.correlation_id.clone()
     }
 
     /// Create a Boxed TraceSender
@@ -262,11 +271,12 @@ where
         };
 
         // Apart from the metric name, check if we have a single or multiple values
-        let filtered_fields: BTreeMap<String, Value> = visitor
+        let mut filtered_fields: BTreeMap<String, Value> = visitor
             .fields
             .into_iter()
             .filter(|(key, _)| key != "metric_name")
             .collect();
+        merge_operation_context(&mut filtered_fields);
         let value = if filtered_fields.len() > 1 {
             Value::Object(Map::from_iter(filtered_fields))
         } else {
@@ -356,6 +366,7 @@ where
         visitor
             .fields
             .insert("execution_time".to_string(), json!(execution_time));
+        merge_operation_context(&mut visitor.fields);
 
         let entry = TraceEntry {
             timestamp: Utc::now(),
@@ -398,6 +409,21 @@ where
                 values.record(visitor);
             }
         }
+    }
+}
+
+/// Merge the current thread's `operation_id`/`command` (see
+/// `operation_context`), if any, into `fields`. Values the caller already
+/// set (e.g. an event that explicitly names its own `command`) are never
+/// overwritten.
+fn merge_operation_context(fields: &mut BTreeMap<String, Value>) {
+    if let Some((operation_id, command)) = operation_context::current() {
+        fields
+            .entry("operation_id".to_string())
+            .or_insert_with(|| json!(operation_id));
+        fields
+            .entry("command".to_string())
+            .or_insert_with(|| json!(command));
     }
 }
 

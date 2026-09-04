@@ -19,6 +19,7 @@
 
 use std::{
     collections::BTreeMap,
+    sync::{Arc, RwLock},
     time::{Duration, Instant},
 };
 
@@ -31,7 +32,9 @@ use tracing::{
 use tracing_subscriber::{layer::Layer, registry::LookupSpan};
 use url::Url;
 
-use super::{background_uploader::BackgroundUploadHandle, tracestream::PLATFORM_INFO};
+use super::{
+    background_uploader::BackgroundUploadHandle, operation_context, tracestream::PLATFORM_INFO,
+};
 use crate::TRIDENT_VERSION;
 
 /// Default Application Insights ingestion endpoint, used when the connection
@@ -187,6 +190,11 @@ pub struct AppInsightsSender {
     instrumentation_key: String,
     track_url: Url,
     uploader: BackgroundUploadHandle,
+    /// The same persistent, per-host correlation ID handle used by
+    /// `TraceStream`/`TraceSender` (see `TraceStream::correlation_id_handle`),
+    /// so Application Insights events can be correlated back to a specific
+    /// host installation the same way tracestream metrics already are.
+    correlation_id: Arc<RwLock<Option<String>>>,
 }
 
 impl AppInsightsSender {
@@ -203,6 +211,7 @@ impl AppInsightsSender {
     pub fn from_connection_string(
         connection_string: &str,
         uploader: BackgroundUploadHandle,
+        correlation_id: Arc<RwLock<Option<String>>>,
     ) -> Option<Self> {
         let parts = parse_connection_string(connection_string)?;
         match parts.track_url() {
@@ -215,15 +224,20 @@ impl AppInsightsSender {
                 return None;
             }
         }
-        Self::from_parts(parts, uploader)
+        Self::from_parts(parts, uploader, correlation_id)
     }
 
-    fn from_parts(parts: ConnParts, uploader: BackgroundUploadHandle) -> Option<Self> {
+    fn from_parts(
+        parts: ConnParts,
+        uploader: BackgroundUploadHandle,
+        correlation_id: Arc<RwLock<Option<String>>>,
+    ) -> Option<Self> {
         let track_url = parts.track_url()?;
         Some(Self {
             instrumentation_key: parts.instrumentation_key,
             track_url,
             uploader,
+            correlation_id,
         })
     }
 
@@ -239,6 +253,21 @@ impl AppInsightsSender {
         properties.insert("trident_version".to_string(), json!(TRIDENT_VERSION));
         for (key, value) in PLATFORM_INFO.iter() {
             properties.insert(key.clone(), json!(stringify(value)));
+        }
+        if let Ok(correlation_id) = self.correlation_id.read() {
+            if let Some(correlation_id) = correlation_id.as_ref() {
+                properties
+                    .entry("correlation_id".to_string())
+                    .or_insert_with(|| json!(correlation_id));
+            }
+        }
+        if let Some((operation_id, command)) = operation_context::current() {
+            properties
+                .entry("operation_id".to_string())
+                .or_insert_with(|| json!(operation_id));
+            properties
+                .entry("command".to_string())
+                .or_insert_with(|| json!(command));
         }
 
         let string_properties: BTreeMap<String, String> = properties
@@ -455,10 +484,12 @@ mod tests {
 
     #[test]
     fn test_from_connection_string_empty_is_none() {
-        assert!(
-            AppInsightsSender::from_connection_string("", BackgroundUploadHandle::new_mock())
-                .is_none()
-        );
+        assert!(AppInsightsSender::from_connection_string(
+            "",
+            BackgroundUploadHandle::new_mock(),
+            Arc::new(RwLock::new(None)),
+        )
+        .is_none());
     }
 
     #[test]
@@ -466,6 +497,7 @@ mod tests {
         let sender = AppInsightsSender::from_connection_string(
             "InstrumentationKey=k;IngestionEndpoint=https://region.example/",
             BackgroundUploadHandle::new_mock(),
+            Arc::new(RwLock::new(None)),
         )
         .expect("should build sender");
         assert_eq!(sender.instrumentation_key, "k");
@@ -483,6 +515,7 @@ mod tests {
         assert!(AppInsightsSender::from_connection_string(
             "InstrumentationKey=k;IngestionEndpoint=http://region.example/",
             BackgroundUploadHandle::new_mock(),
+            Arc::new(RwLock::new(None)),
         )
         .is_none());
     }
@@ -564,14 +597,20 @@ mod functional_test {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
 
+        // command_start (fired by run_with_operation) and test_metric below
+        // are each posted as their own request, so accept and collect every
+        // connection the listener sees rather than assuming exactly one.
         let (tx, rx) = channel();
         std::thread::spawn(move || {
-            if let Ok((mut stream, _)) = listener.accept() {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { break };
                 let received = read_full_http_request(&mut stream);
                 // Send a minimal response so the client's request completes
                 // cleanly instead of hitting a connection reset.
                 let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
-                let _ = tx.send(received);
+                if tx.send(received).is_err() {
+                    break;
+                }
             }
         });
 
@@ -582,6 +621,7 @@ mod functional_test {
                 instrumentation_key: "test-key".to_string(),
             },
             uploader.get_handle().expect("uploader should be alive"),
+            Arc::new(RwLock::new(Some("test-correlation-id".to_string()))),
         )
         .expect("should build sender")
         .with_filter(filter::LevelFilter::INFO);
@@ -589,14 +629,29 @@ mod functional_test {
         let _guard =
             tracing::subscriber::set_default(tracing_subscriber::Registry::default().with(sender));
 
-        tracing::info!(metric_name = "test_metric", value = true);
+        // Wrapping in run_with_operation confirms operation_id/command also
+        // reach the outgoing properties, alongside correlation_id above.
+        operation_context::run_with_operation("test_command", || {
+            tracing::info!(metric_name = "test_metric", value = true);
+        });
 
-        let request = rx
-            .recv_timeout(std::time::Duration::from_secs(5))
-            .unwrap_or_else(|e| panic!("did not receive a request: {e:?}"));
+        // Collect both requests (command_start + test_metric); order between
+        // them is not guaranteed, so gather everything seen within the
+        // timeout and assert across the combined traffic.
+        let mut requests = Vec::new();
+        while requests.len() < 2 {
+            match rx.recv_timeout(std::time::Duration::from_secs(5)) {
+                Ok(req) => requests.push(req),
+                Err(e) => panic!("did not receive the expected requests: {e:?}"),
+            }
+        }
+        let combined = requests.join("\n");
 
-        assert!(request.contains("POST /v2/track"));
-        assert!(request.contains("\"name\":\"test_metric\""));
-        assert!(request.contains("\"iKey\":\"test-key\""));
+        assert!(combined.contains("POST /v2/track"));
+        assert!(combined.contains("\"name\":\"test_metric\""));
+        assert!(combined.contains("\"iKey\":\"test-key\""));
+        assert!(combined.contains("\"correlation_id\":\"test-correlation-id\""));
+        assert!(combined.contains("\"command\":\"test_command\""));
+        assert!(combined.contains("\"operation_id\":"));
     }
 }
