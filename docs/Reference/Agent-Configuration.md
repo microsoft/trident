@@ -37,6 +37,20 @@ themselves:
 - `total_cpu`: the number of CPUs.
 - `total_memory_gib`: total memory, in GiB.
 - `trident_version`: the running Trident version.
+- `correlation_id`: a random ID generated once and persisted in the
+  datastore, unique to this host installation. It is not derived from any
+  hardware/user identifier, but because it is stable across every Trident
+  invocation on this host, it does let separate events be correlated back
+  to the same installation over time.
+- `operation_id`: a fresh, random ID generated for each individual command
+  invocation (e.g. one `trident update` run, or one gRPC request handled
+  by `tridentd`). Unlike `correlation_id`, this is never reused across
+  invocations -- it only lets events emitted *during the same command* be
+  correlated with each other.
+- `command`: which command produced the event (e.g. `install`, `update`,
+  `update_stage`, `update_finalize`, `commit`, `rollback`, `rebuild_raid`).
+  The `_stage`/`_finalize` suffixes distinguish a two-step (stage-only or
+  finalize-only) invocation from a single combined one.
 
 Telemetry defaults to **disabled** (`OptOut`). To enable it, add a line to
 the Agent Configuration file:
