@@ -84,6 +84,7 @@ pub struct TraceStream {
     // TODO: Consider changing this to a LockOnce when rustc is updated to
     // >=1.70
     target: Arc<RwLock<Option<String>>>,
+    correlation_id: Arc<RwLock<Option<String>>>,
     disabled: bool,
 }
 
@@ -125,14 +126,46 @@ impl TraceStream {
         Ok(())
     }
 
+    /// Set the correlation ID to attach to every trace entry sent from this point
+    /// forward, as an additional field, so that all traces/metrics for a
+    /// given host installation can be correlated. Expected to be called once
+    /// the datastore's persisted correlation ID has been retrieved (see
+    /// `DataStore::correlation_id`).
+    pub fn set_correlation_id(&self, correlation_id: String) {
+        match self.correlation_id.write() {
+            Ok(mut val) => {
+                val.replace(correlation_id);
+            }
+            Err(_) => warn!("Failed to lock tracestream to set correlation ID"),
+        }
+    }
+
     /// Create a Boxed TraceSender
     pub fn make_trace_sender(&self) -> Box<TraceSender> {
-        Box::new(TraceSender::new(self.target.clone()))
+        self.make_trace_sender_with_metrics_path(TRIDENT_METRICS_FILE_PATH)
+    }
+
+    /// Like `make_trace_sender`, but writes the local metrics file to
+    /// `metrics_file_path` instead of the real host path
+    /// (`TRIDENT_METRICS_FILE_PATH`). This lets tests exercise the full
+    /// metrics-writing pipeline against a throwaway temp file instead of a
+    /// real, shared host path, so they can be plain `#[test]`s instead of
+    /// needing a VM.
+    pub(crate) fn make_trace_sender_with_metrics_path(
+        &self,
+        metrics_file_path: &str,
+    ) -> Box<TraceSender> {
+        Box::new(TraceSender::new(
+            self.target.clone(),
+            self.correlation_id.clone(),
+            metrics_file_path,
+        ))
     }
 }
 
 pub struct TraceSender {
     server: Arc<RwLock<Option<String>>>,
+    correlation_id: Arc<RwLock<Option<String>>>,
     client: reqwest::blocking::Client,
     metrics_file: Option<File>,
 }
@@ -144,11 +177,16 @@ struct ExecutionTime(Instant);
 /// the tracing-subscriber crate to handle the events and send them to the
 /// server.
 impl TraceSender {
-    fn new(server: Arc<RwLock<Option<String>>>) -> Self {
+    fn new(
+        server: Arc<RwLock<Option<String>>>,
+        correlation_id: Arc<RwLock<Option<String>>>,
+        metrics_file_path: &str,
+    ) -> Self {
         Self {
             server,
+            correlation_id,
             client: reqwest::blocking::Client::new(),
-            metrics_file: match files::create_file(TRIDENT_METRICS_FILE_PATH) {
+            metrics_file: match files::create_file(metrics_file_path) {
                 Ok(f) => Some(f),
                 Err(err) => {
                     eprintln!(
@@ -162,6 +200,20 @@ impl TraceSender {
 
     fn get_server(&self) -> Option<String> {
         self.server.read().map(|s| s.clone()).unwrap_or_default()
+    }
+
+    /// Build the `additional_fields` map for a trace entry: the static
+    /// `ADDITIONAL_FIELDS`, plus the correlation ID (if one has been set via
+    /// `TraceStream::set_correlation_id`), so entries can be correlated back to a
+    /// specific host installation.
+    fn additional_fields(&self) -> BTreeMap<String, Value> {
+        let mut fields = ADDITIONAL_FIELDS.clone();
+        if let Ok(correlation_id) = self.correlation_id.read() {
+            if let Some(correlation_id) = correlation_id.as_ref() {
+                fields.insert("correlation_id".to_string(), json!(correlation_id));
+            }
+        }
+        fields
     }
 
     fn write_metric_to_file(&self, metric: String) {
@@ -229,7 +281,7 @@ where
             timestamp: Utc::now(),
             metric_name,
             value: json!(value),
-            additional_fields: ADDITIONAL_FIELDS.clone(),
+            additional_fields: self.additional_fields(),
             platform_info: PLATFORM_INFO.clone(),
         };
 
@@ -309,7 +361,7 @@ where
             timestamp: Utc::now(),
             metric_name: span.name().to_string(),
             value: json!(visitor.fields),
-            additional_fields: ADDITIONAL_FIELDS.clone(),
+            additional_fields: self.additional_fields(),
             platform_info: PLATFORM_INFO.clone(),
         };
 
@@ -417,12 +469,20 @@ fn populate_platform_info() -> BTreeMap<String, Value> {
 mod tests {
     use super::*;
 
-    use std::{fs::File, io::Write};
+    use std::{
+        fs::File,
+        io::{BufRead, BufReader, Write},
+    };
+
+    use tracing_subscriber::{filter, layer::SubscriberExt};
 
     #[test]
     fn test_tracestream() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let metrics_path = temp_dir.path().join("metrics.jsonl");
         let tracestream = TraceStream::default();
-        let trace_sender = tracestream.make_trace_sender();
+        let trace_sender =
+            tracestream.make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap());
         assert!(
             trace_sender.get_server().is_none(),
             "tracestream should not have a server"
@@ -441,8 +501,11 @@ mod tests {
 
     #[test]
     fn test_lock() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let metrics_path = temp_dir.path().join("metrics.jsonl");
         let mut tracestream = TraceStream::default();
-        let trace_sender = tracestream.make_trace_sender();
+        let trace_sender =
+            tracestream.make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap());
 
         assert!(
             trace_sender.get_server().is_none(),
@@ -476,31 +539,24 @@ mod tests {
         let uuid = read_product_uuid(filepath.to_str().unwrap().to_string());
         assert_eq!(uuid, "test_uuid");
     }
-}
 
-#[cfg(feature = "functional-test")]
-#[cfg_attr(not(test), allow(unused_imports, dead_code))]
-mod functional_test {
-    use super::*;
-
-    use std::io::{BufRead, BufReader};
-
-    use tracing_subscriber::{filter, layer::SubscriberExt};
-
-    use pytest_gen::functional_test;
-
-    #[functional_test]
+    #[test]
     fn test_tracestream_write_metric_event_to_file() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let metrics_path = temp_dir.path().join("metrics.jsonl");
         let tracestream = TraceStream::default();
         let trace_sender = tracestream
-            .make_trace_sender()
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
             .with_filter(filter::LevelFilter::INFO);
 
-        tracing::subscriber::set_global_default(
+        // Use a thread-local scoped default subscriber (rather than
+        // `set_global_default`) since this is a plain `#[test]` that may run
+        // concurrently with other tests in the same process -- the global
+        // default can only be set once per process, but the scoped default
+        // is per-thread and automatically restored when `_guard` drops.
+        let _guard = tracing::subscriber::set_default(
             tracing_subscriber::Registry::default().with(trace_sender),
-        )
-        .context("Failed to set global default subscriber")
-        .unwrap();
+        );
 
         tracing::info!(metric_name = "test_metric", value = true);
 
@@ -508,7 +564,7 @@ mod functional_test {
         std::thread::sleep(std::time::Duration::from_millis(100));
 
         // Check if the specific metric exists in the file.
-        let file = File::open(TRIDENT_METRICS_FILE_PATH).unwrap();
+        let file = File::open(&metrics_path).unwrap();
         let reader = BufReader::new(file);
         let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
 
@@ -521,6 +577,104 @@ mod functional_test {
             "Expected test metric not found in the local metrics file"
         );
     }
+
+    #[test]
+    /// Regression test: `TraceStream::set_correlation_id` must actually
+    /// reach the serialized trace entry's `additional_fields.correlation_id`
+    /// -- the metric/span tests above only assert on `metric_name`/`value`
+    /// and would still pass even if the correlation ID were never copied
+    /// into `additional_fields`.
+    fn test_tracestream_correlation_id_written_to_additional_fields() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let metrics_path = temp_dir.path().join("metrics.jsonl");
+        let tracestream = TraceStream::default();
+        tracestream.set_correlation_id("test-correlation-id".to_string());
+        let trace_sender = tracestream
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
+            .with_filter(filter::LevelFilter::INFO);
+
+        // See test_tracestream_write_metric_event_to_file for why a scoped
+        // (not global) default subscriber is used here.
+        let _guard = tracing::subscriber::set_default(
+            tracing_subscriber::Registry::default().with(trace_sender),
+        );
+
+        tracing::info!(
+            metric_name = "test_metric_with_correlation_id",
+            value = true
+        );
+
+        // Ensure the trace system has time to write the file.
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let file = File::open(&metrics_path).unwrap();
+        let reader = BufReader::new(file);
+        let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
+
+        let metric_found = lines.iter().any(|line| {
+            line.contains(r#""metric_name":"test_metric_with_correlation_id""#)
+                && line.contains(r#""correlation_id":"test-correlation-id""#)
+        });
+
+        assert!(
+            metric_found,
+            "Expected metric with correlation_id field not found in the local metrics file"
+        );
+    }
+
+    #[test]
+    fn test_tracestream_write_span_metric_to_file() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let metrics_path = temp_dir.path().join("metrics.jsonl");
+        let tracestream = TraceStream::default();
+        let trace_sender = tracestream
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
+            .with_filter(filter::LevelFilter::INFO);
+
+        // See test_tracestream_write_metric_event_to_file for why a scoped
+        // (not global) default subscriber is used here.
+        let _guard = tracing::subscriber::set_default(
+            tracing_subscriber::Registry::default().with(trace_sender),
+        );
+
+        // Call test function that will create a span
+        simulate_function_span();
+
+        // Ensure the trace system has time to simulate a span.
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // Check if the specific metric exists in the file.
+        let file = File::open(&metrics_path).unwrap();
+        let reader = BufReader::new(file);
+        let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
+
+        let expected_substring = r#""metric_name":"test_span"#;
+        let span_metric_found = lines.iter().any(|line| line.contains(expected_substring));
+
+        // Assert that the expected metric is present in the file.
+        assert!(
+            span_metric_found,
+            "Expected test metric not found in the local metrics file"
+        );
+    }
+
+    // Helper function to test span metrics
+    #[tracing::instrument(name = "test_span", skip_all)]
+    fn simulate_function_span() {}
+}
+
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
+    use super::*;
+
+    use pytest_gen::functional_test;
+
+    // These two remain functional tests (VM-only) because they assert
+    // against the actual host's hardware/platform info (CPU count, memory,
+    // product UUID, os-release, kernel version) -- unlike the metrics-file
+    // tests above, there's no way to inject a fake value here, so the
+    // result is inherently host-dependent.
 
     #[functional_test]
     fn test_populate_additional_fields() {
@@ -555,42 +709,4 @@ mod functional_test {
             "Platform info does not match the expected result"
         );
     }
-
-    #[functional_test]
-    fn test_tracestream_write_span_metric_to_file() {
-        let tracestream = TraceStream::default();
-        let trace_sender = tracestream
-            .make_trace_sender()
-            .with_filter(filter::LevelFilter::INFO);
-
-        tracing::subscriber::set_global_default(
-            tracing_subscriber::Registry::default().with(trace_sender),
-        )
-        .context("Failed to set global default subscriber")
-        .unwrap();
-
-        // Call test function that will create a span
-        simulate_function_span();
-
-        // Ensure the trace system has time to simulate a span.
-        std::thread::sleep(std::time::Duration::from_millis(100));
-
-        // Check if the specific metric exists in the file.
-        let file = File::open(TRIDENT_METRICS_FILE_PATH).unwrap();
-        let reader = BufReader::new(file);
-        let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
-
-        let expected_substring = r#""metric_name":"test_span"#;
-        let span_metric_found = lines.iter().any(|line| line.contains(expected_substring));
-
-        // Assert that the expected metric is present in the file.
-        assert!(
-            span_metric_found,
-            "Expected test metric not found in the local metrics file"
-        );
-    }
-
-    // Helper function to test span metrics
-    #[tracing::instrument(name = "test_span", skip_all)]
-    fn simulate_function_span() {}
 }

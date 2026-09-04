@@ -165,6 +165,10 @@ fn run_trident(
                 )
                 .message("Failed to initialize Trident")?;
 
+                // `Trident::new` has already retrieved (or created) this
+                // host's persisted correlation ID and attached it to the
+                // shared TraceStream, so every trace/metric emitted from
+                // here on -- including "trident_start" -- carries it.
                 let mut datastore = DataStore::open_or_create(agent_config.datastore_path())
                     .message("Failed to open datastore")?;
 

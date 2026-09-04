@@ -207,6 +207,23 @@ impl Trident {
             info!("Running Trident in a container");
         }
 
+        // Retrieve (or create, on first run) this host's unique
+        // correlation ID from the datastore actually used for servicing,
+        // and attach it to the shared TraceStream before any startup
+        // metrics are emitted, so every trace/metric -- including this
+        // very "trident_start" event -- carries it. This runs for every
+        // caller of `Trident::new` (both the CLI path and each daemon
+        // RPC handler), since they all supply `datastore_path`.
+        match DataStore::open_or_create(datastore_path).and_then(|mut ds| ds.correlation_id()) {
+            Ok(correlation_id) => {
+                info!("Correlation ID: {correlation_id}");
+                tracestream.set_correlation_id(correlation_id.to_string());
+            }
+            Err(e) => {
+                warn!("Failed to get or create correlation ID: {e:?}");
+            }
+        }
+
         // Trace features enabled in the Host Configuration.
         if let Some(hc) = &host_config {
             hc.feature_tracing();
