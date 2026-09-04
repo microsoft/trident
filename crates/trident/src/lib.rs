@@ -749,6 +749,19 @@ impl Trident {
                         // If an A/B update has been previously staged, only need to finalize the update.
                         debug!("There is an A/B update staged on the host");
                         if allowed_operations.has_finalize() {
+                            // This finalize-only call never goes through
+                            // engine::update::update() (where a fresh
+                            // servicing_id would otherwise be minted) --
+                            // read back the one persisted by the earlier,
+                            // separate stage call instead. Safe to assume
+                            // it's the *same* staged operation's ID:
+                            // reaching this arm already required
+                            // `datastore.host_status().spec == host_config`
+                            // above, i.e. this invocation's config is
+                            // identical to whatever was staged.
+                            if let Ok(Some(servicing_id)) = datastore.servicing_id() {
+                                set_servicing_id(servicing_id.to_string());
+                            }
                             ab_update::finalize_update(
                                 datastore,
                                 None,
@@ -764,6 +777,12 @@ impl Trident {
                         // If a runtime update has been previously staged, only need to finalize the update.
                         debug!("There is a runtime update staged on the host");
                         if allowed_operations.has_finalize() {
+                            // See the AbUpdateStaged arm above for why this
+                            // read-back (rather than minting a new ID) is
+                            // correct here.
+                            if let Ok(Some(servicing_id)) = datastore.servicing_id() {
+                                set_servicing_id(servicing_id.to_string());
+                            }
                             let mut subsystems = SUBSYSTEMS.lock().unwrap();
                             runtime_update::finalize_update(
                                 &mut subsystems,

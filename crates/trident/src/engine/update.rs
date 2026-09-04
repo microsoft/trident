@@ -113,11 +113,18 @@ pub(crate) fn update(
     );
 
     // Mint a fresh servicing ID for this update operation and attach it to
-    // this invocation's telemetry, mirroring Trident::install. Fired at
-    // the same unconditional "start of staging" point as update_start
-    // above (see that metric's own note on why this isn't gated to a
-    // has_stage()-only check): a resumed finalize-only call gets its own
-    // fresh ID here too, rather than reusing the original staging call's.
+    // this invocation's telemetry, mirroring Trident::install. This
+    // function always both stages and (per has_finalize()) optionally
+    // finalizes in the same call -- Trident::update() only reaches here
+    // when it's about to stage (a changed Host Configuration with
+    // has_stage(), or a retry of a previously-failed/no-op update).
+    // A genuine, separate finalize-only continuation of an update staged
+    // by an *earlier* invocation never reaches this function at all --
+    // Trident::update() detects that case (unchanged Host Configuration,
+    // AbUpdateStaged/RuntimeUpdateStaged) and calls
+    // ab_update::finalize_update()/runtime_update::finalize_update()
+    // directly, reading the persisted servicing_id back there instead of
+    // minting a new one here.
     let servicing_id = state
         .new_servicing_id()
         .message("Failed to create servicing ID")?;
