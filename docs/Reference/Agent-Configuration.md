@@ -37,8 +37,9 @@ Telemetry=OptIn
 Any value other than `OptIn` (including an absent `Telemetry` line) is
 treated as `OptOut`. Telemetry delivery is always best-effort and never
 affects servicing outcomes, but failures are not all logged at the same
-level: a failure to serialize or enqueue an event (e.g. the background
-uploader's queue is full) is logged at trace level, while a failure to
-actually deliver an event (e.g. no network connectivity, or a non-2xx
-response from Application Insights) is logged at error level, so
-operators can find remote-delivery problems in normal logs.
+level: a failure to serialize an event, or to enqueue it because the
+background uploader has already shut down, is logged at trace level,
+while a failure to actually deliver an event (e.g. no network
+connectivity, or a non-2xx response from Application Insights) is
+logged at error level, so operators can find remote-delivery problems
+in normal logs.
