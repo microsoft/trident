@@ -12,15 +12,7 @@
 %global selinuxtype targeted
 
 # Azure Monitor / Application Insights connection string compiled into the
-# trident binary for best-effort telemetry (see
-# docs/Reference/Agent-Configuration.md and crate::AZURE_MONITOR_CONNECTION_STRING).
-#
-# This one is used for azurelinux distro builds (`rpm_ver` undefined below):
-# it is baked directly into this spec because there is no per-build
-# mechanism (analogous to a Docker --build-arg) for azurelinux RPM builds to
-# inject one. It represents telemetry data from public usage of the
-# distro-packaged trident RPM (i.e. any Azure Linux install, not Trident's
-# own CI/CD).
+# azurelinux distro build of trident binary for best-effort telemetry.
 #
 # TODO: replace with the real "public usage" connection string.
 %global trident_azmon_conn_str_public InstrumentationKey=00000000-0000-0000-0000-000000000001;IngestionEndpoint=https://placeholder-public.in.applicationinsights.azure.com/
