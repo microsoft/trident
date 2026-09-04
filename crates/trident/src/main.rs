@@ -2,7 +2,7 @@ use std::{fs, iter, panic, process::ExitCode};
 
 use anyhow::{Context, Error};
 use clap::Parser;
-use log::{error, info, LevelFilter, Log};
+use log::{error, info, warn, LevelFilter, Log};
 
 use osutils::logging::{filter::LogFilter, multilog::MultiLogger};
 use trident::{
@@ -305,6 +305,66 @@ fn setup_logging(
     Ok(logstream)
 }
 
+/// Whether the Application Insights tracing layer ended up active on this
+/// invocation, and why not when it didn't. Computed by [`setup_tracing`] and
+/// surfaced via [`TelemetryStatus::log`] once real logging is available, so
+/// operators can tell -- from the logs alone, without reading source --
+/// whether telemetry should be expected to actually reach Application
+/// Insights, rather than silently assuming it based on the `Telemetry=`
+/// setting alone (a bad/unreachable connection string, for example, fails
+/// silently otherwise).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TelemetryStatus {
+    /// Tracing/telemetry setup does not apply to this command at all (the
+    /// `_ => {}` arm in [`setup_tracing`]) -- not logged.
+    NotApplicable,
+    /// `Telemetry=OptOut` (the default): telemetry was never attempted.
+    OptedOut,
+    /// Opted in, but no usable `AZURE_MONITOR_CONNECTION_STRING` was
+    /// compiled into this binary at build time (missing, empty, or failed
+    /// to parse).
+    NoConnectionString,
+    /// Opted in with a connection string, but the dedicated telemetry
+    /// background uploader is unavailable (failed to start, or its handle
+    /// was already closed).
+    UploaderUnavailable,
+    /// Opted in, connection string valid, uploader available: telemetry is
+    /// actively being sent.
+    Enabled,
+}
+
+impl TelemetryStatus {
+    /// Log this status through the real logging pipeline. Must only be
+    /// called after logging has been initialized (`setup_logging`) --
+    /// calling it earlier would silently no-op, since the `log` facade
+    /// drops everything until a logger is registered.
+    fn log(self) {
+        match self {
+            TelemetryStatus::NotApplicable => {}
+            TelemetryStatus::OptedOut => {
+                info!(
+                    "Telemetry: disabled (Telemetry=OptOut, the default, in agent configuration)"
+                );
+            }
+            TelemetryStatus::NoConnectionString => {
+                info!(
+                    "Telemetry: opted in, but no usable Application Insights connection string \
+                     was compiled into this binary -- telemetry is a no-op"
+                );
+            }
+            TelemetryStatus::UploaderUnavailable => {
+                warn!(
+                    "Telemetry: opted in with a valid connection string, but the telemetry \
+                     background uploader is unavailable -- telemetry is a no-op"
+                );
+            }
+            TelemetryStatus::Enabled => {
+                info!("Telemetry: enabled, sending tracing data to Application Insights");
+            }
+        }
+    }
+}
+
 fn setup_tracing(
     args: &Cli,
     telemetry_enabled: bool,
@@ -314,10 +374,11 @@ fn setup_tracing(
     // backlog that delays real log uploads. `None` if telemetry is disabled
     // or its uploader failed to start; either way telemetry becomes a no-op.
     telemetry_uploader: Option<&BackgroundUploader>,
-) -> Result<TraceStream, Error> {
+) -> Result<(TraceStream, TelemetryStatus), Error> {
     use tracing_subscriber::{filter, layer::SubscriberExt, Layer, Registry};
 
     let tracestream = TraceStream::default();
+    let mut telemetry_status = TelemetryStatus::NotApplicable;
 
     match &args.command {
         Commands::Commit { .. }
@@ -354,20 +415,29 @@ fn setup_tracing(
             // user has opted in via the Agent Configuration file *and* a
             // connection string was compiled into this binary at build time.
             // Never fails startup: an empty/unparsable connection string just
-            // means telemetry stays a no-op.
-            if telemetry_enabled {
+            // means telemetry stays a no-op. `telemetry_status` records which
+            // of these applied so the caller can log it once real logging is
+            // available (see `TelemetryStatus::log`).
+            telemetry_status = if !telemetry_enabled {
+                TelemetryStatus::OptedOut
+            } else {
                 // A missing/closed uploader (e.g. its background thread
                 // failed to start) just means telemetry stays a no-op; it
                 // must never block or fail the rest of tracing setup.
-                if let Some(handle) = telemetry_uploader.and_then(|u| u.get_handle()) {
-                    if let Some(sender) = AppInsightsSender::from_connection_string(
+                match telemetry_uploader.and_then(|u| u.get_handle()) {
+                    Some(handle) => match AppInsightsSender::from_connection_string(
                         trident::AZURE_MONITOR_CONNECTION_STRING,
                         handle,
                     ) {
-                        layers.push(Box::new(sender.with_filter(filter::LevelFilter::INFO)));
-                    }
+                        Some(sender) => {
+                            layers.push(Box::new(sender.with_filter(filter::LevelFilter::INFO)));
+                            TelemetryStatus::Enabled
+                        }
+                        None => TelemetryStatus::NoConnectionString,
+                    },
+                    None => TelemetryStatus::UploaderUnavailable,
                 }
-            }
+            };
 
             tracing::subscriber::set_global_default(Registry::default().with(layers))
                 .context("Failed to set global default subscriber")?;
@@ -377,7 +447,7 @@ fn setup_tracing(
         }
     }
 
-    Ok(tracestream)
+    Ok((tracestream, telemetry_status))
 }
 
 fn main() -> ExitCode {
@@ -421,12 +491,13 @@ fn main() -> ExitCode {
         .flatten();
 
     // Initialize the telemetry flow
-    let tracestream = setup_tracing(&args, telemetry_enabled, telemetry_uploader.as_ref());
-    if let Err(e) = tracestream {
+    let tracing_setup = setup_tracing(&args, telemetry_enabled, telemetry_uploader.as_ref());
+    if let Err(e) = tracing_setup {
         // Defer to stderr since logging is not yet initialized.
         eprintln!("Failed to initialize tracing: {e:?}");
         return TridentExitCodes::SetupFailed.into();
     }
+    let (tracestream, telemetry_status) = tracing_setup.unwrap();
 
     if let Commands::Daemon {
         inactivity_timeout,
@@ -452,13 +523,14 @@ fn main() -> ExitCode {
 
         // Log version on startup
         info!("Trident version: {}", trident::TRIDENT_VERSION);
+        telemetry_status.log();
 
         trident::server_main(
             log_forwarder,
             *inactivity_timeout,
             socket_path,
             logstream.unwrap(),
-            tracestream.unwrap(),
+            tracestream,
         )
     } else if let Commands::GrpcClient(client_args) = &args.command {
         let logstream = setup_logging(&args, &bg_uploader, iter::empty());
@@ -471,6 +543,8 @@ fn main() -> ExitCode {
             error!("Failed to initialize logstream from environment: {e:?}");
         }
 
+        telemetry_status.log();
+
         // Run the client command
         trident::client_main(client_args)
     } else {
@@ -481,8 +555,10 @@ fn main() -> ExitCode {
             return TridentExitCodes::SetupFailed.into();
         }
 
+        telemetry_status.log();
+
         // Invoke Trident
-        match run_trident(logstream.unwrap(), tracestream.unwrap(), &args) {
+        match run_trident(logstream.unwrap(), tracestream, &args) {
             Ok(ExitKind::Done) => {}
             Err(e) => {
                 error!("{e:?}");

@@ -13,7 +13,7 @@
 
 # Azure Monitor / Application Insights connection string compiled into the
 # azurelinux distro build of trident binary for best-effort telemetry.
-%global trident_azmon_conn_str_public InstrumentationKey=InstrumentationKey=cb38fc09-8473-4b4a-b5e4-208aa66a974f;IngestionEndpoint=https://eastus-8.in.applicationinsights.azure.com/;LiveEndpoint=https://eastus.livediagnostics.monitor.azure.com/;ApplicationId=b9814e3f-a121-4d99-9ba7-eeaf56195c29
+%global trident_azmon_conn_str_public InstrumentationKey=cb38fc09-8473-4b4a-b5e4-208aa66a974f;IngestionEndpoint=https://eastus-8.in.applicationinsights.azure.com/;LiveEndpoint=https://eastus.livediagnostics.monitor.azure.com/;ApplicationId=b9814e3f-a121-4d99-9ba7-eeaf56195c29
 
 Summary:        Declarative, security-first OS lifecycle agent designed primarily for Azure Linux
 Name:           trident
