@@ -246,7 +246,7 @@ impl TridentServer {
         // same way the CLI path does for its own dispatch. `name` already
         // matches the CLI's own command-naming convention (see
         // `command_name` in `main.rs`) for stage/finalize granularity.
-        let f = move || operation_context::run_with_operation(name, f);
+        let f = move || operation_context::run_command(name, f);
 
         // Create the gRPC response channel
         let (tx, rx) = mpsc::unbounded_channel();

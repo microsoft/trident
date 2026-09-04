@@ -61,7 +61,7 @@ pub use crate::{
         background_uploader::{BackgroundUploadHandle, BackgroundUploader},
         logfwd::LogForwarder,
         logstream::Logstream,
-        operation_context::run_with_operation,
+        operation_context::{run_command, run_with_operation},
         tracestream::TraceStream,
     },
     orchestrate::OrchestratorConnection,
