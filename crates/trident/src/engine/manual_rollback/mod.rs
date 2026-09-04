@@ -97,13 +97,31 @@ pub fn execute_rollback(
     requested_rollback_kind: ManualRollbackRequestKind,
     allowed_operations: &Operations,
 ) -> Result<(ExitKind, ServicingType), TridentError> {
-    // Mirrors `engine::update::update()`'s `update_start` metric: fired
-    // unconditionally on every invocation (stage-only, finalize-only, or
-    // combined -- matching how the CLI/gRPC two-step rollback flow can call
-    // this more than once for the same logical rollback), with whatever
-    // identifying context is known this early (the specific A/B-vs-runtime
-    // `ManualRollbackKind` isn't determined until the stage/finalize logic
-    // below runs, so it isn't included here).
+    // Determine which servicing ID this invocation's telemetry (starting
+    // with the manual_rollback_start event fired below) should carry,
+    // *before* firing it -- set_servicing_id only affects events emitted
+    // after it runs (see the fix for the analogous update_start ordering
+    // issue), so this must happen first, not after staging logic below.
+    //
+    // If staging is requested, mint a fresh servicing ID now: this call is
+    // either starting a brand new rollback operation, or (rarely) will
+    // find nothing available to roll back and return early below without
+    // ever actually staging -- either way, a fresh ID for "this attempt"
+    // is correct, and a later genuine stage overwrites it again. If
+    // staging is not requested (finalize-only), read back whatever was
+    // persisted by an earlier, separate stage call instead -- see
+    // `finalize_rollback`, which does the same read (redundantly, but
+    // harmlessly, if this same call both stages and finalizes).
+    if allowed_operations.has_stage() {
+        let servicing_id = datastore
+            .new_servicing_id()
+            .message("Failed to create servicing ID")?;
+        info!("Servicing ID: {servicing_id}");
+        set_servicing_id(servicing_id.to_string());
+    } else if let Ok(Some(servicing_id)) = datastore.servicing_id() {
+        set_servicing_id(servicing_id.to_string());
+    }
+
     tracing::info!(
         metric_name = "manual_rollback_start",
         requested_rollback_kind = format!("{:?}", requested_rollback_kind),
@@ -164,18 +182,6 @@ pub fn execute_rollback(
             ManualRollbackKind::Runtime => ServicingType::ManualRollbackRuntime,
         };
         staged_rollback_type = Some(rollback_type);
-
-        // Mint a fresh servicing ID for this rollback operation, now that
-        // staging is definitely happening this call (unlike update_start,
-        // this is naturally gated to the has_stage() branch, so a
-        // finalize-only call doesn't mint a redundant new one -- see
-        // finalize_rollback below, which reads the persisted ID back
-        // instead).
-        let servicing_id = datastore
-            .new_servicing_id()
-            .message("Failed to create servicing ID")?;
-        info!("Servicing ID: {servicing_id}");
-        set_servicing_id(servicing_id.to_string());
 
         let engine_context = EngineContext::new(EngineContextParams {
             spec: requested_rollback.spec.clone(),
