@@ -105,24 +105,18 @@ pub(crate) fn update(
 
     ctx.populate_filesystems()?;
 
-    let update_start_time = Instant::now();
-    tracing::info!(
-        metric_name = "update_start",
-        servicing_type = format!("{:?}", servicing_type),
-        servicing_state = format!("{:?}", state.host_status().servicing_state),
-    );
-
     // Mint a fresh servicing ID for this update operation and attach it to
-    // this invocation's telemetry, mirroring Trident::install. This
-    // function always both stages and (per has_finalize()) optionally
-    // finalizes in the same call -- Trident::update() only reaches here
-    // when it's about to stage (a changed Host Configuration with
-    // has_stage(), or a retry of a previously-failed/no-op update).
-    // A genuine, separate finalize-only continuation of an update staged
-    // by an *earlier* invocation never reaches this function at all --
-    // Trident::update() detects that case (unchanged Host Configuration,
-    // AbUpdateStaged/RuntimeUpdateStaged) and calls
-    // ab_update::finalize_update()/runtime_update::finalize_update()
+    // this invocation's telemetry *before* firing update_start below, so
+    // that event -- and everything else this invocation emits -- carries
+    // it. Mirrors Trident::install. This function always both stages and
+    // (per has_finalize()) optionally finalizes in the same call --
+    // Trident::update() only reaches here when it's about to stage (a
+    // changed Host Configuration with has_stage(), or a retry of a
+    // previously-failed/no-op update). A genuine, separate finalize-only
+    // continuation of an update staged by an *earlier* invocation never
+    // reaches this function at all -- Trident::update() detects that case
+    // (unchanged Host Configuration, AbUpdateStaged/RuntimeUpdateStaged)
+    // and calls ab_update::finalize_update()/runtime_update::finalize_update()
     // directly, reading the persisted servicing_id back there instead of
     // minting a new one here.
     let servicing_id = state
@@ -130,6 +124,13 @@ pub(crate) fn update(
         .message("Failed to create servicing ID")?;
     info!("Servicing ID: {servicing_id}");
     set_servicing_id(servicing_id.to_string());
+
+    let update_start_time = Instant::now();
+    tracing::info!(
+        metric_name = "update_start",
+        servicing_type = format!("{:?}", servicing_type),
+        servicing_state = format!("{:?}", state.host_status().servicing_state),
+    );
 
     match servicing_type {
         ServicingType::AbUpdate => {
