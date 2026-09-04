@@ -84,8 +84,8 @@ pub struct PackageFile {
 
 /// The hash(es) of a file, as reported by Nebraska.
 ///
-/// Both values are base64-encoded and hash the *file* (not its contents).
-/// Nebraska reports a SHA-1; `sha256` is present only when the file was
+/// Both values are base64-encoded content hashes of the file: upstream
+/// Nebraska reports a SHA-1, and `sha256` is present only when the file was
 /// registered with one.
 ///
 /// **Our Nebraska deployment does not follow that naming.** By internal
@@ -129,16 +129,24 @@ impl PackageHash {
     /// value on to Trident as an integrity check would be worse than failing
     /// loudly here.
     pub fn to_cosi_sha384(&self) -> Result<String, NebraskaError> {
-        let raw = STANDARD.decode(&self.sha1).map_err(|err| {
+        const SHA384_LEN_BYTES: usize = 48;
+
+        // Decode straight into a fixed-size stack buffer instead of
+        // `Engine::decode`'s allocating `Vec<u8>` output: a malicious or
+        // buggy Nebraska response could otherwise send an arbitrarily large
+        // base64 string, forcing a large allocation before we ever get to
+        // checking the decoded length below. `decode_slice` rejects any
+        // input that would decode to more than `SHA384_LEN_BYTES` without
+        // allocating proportionally to the (untrusted) input size.
+        let mut raw = [0u8; SHA384_LEN_BYTES];
+        let decoded_len = STANDARD.decode_slice(&self.sha1, &mut raw).map_err(|err| {
             NebraskaError::UnexpectedResponse(format!(
-                "Nebraska-reported hash is not valid base64: {err}"
+                "Nebraska-reported hash is not valid base64, or does not fit in {SHA384_LEN_BYTES} bytes (SHA-384): {err}"
             ))
         })?;
-        const SHA384_LEN_BYTES: usize = 48;
-        if raw.len() != SHA384_LEN_BYTES {
+        if decoded_len != SHA384_LEN_BYTES {
             return Err(NebraskaError::UnexpectedResponse(format!(
-                "Nebraska-reported hash decodes to {} bytes, expected {SHA384_LEN_BYTES} (SHA-384)",
-                raw.len()
+                "Nebraska-reported hash decodes to {decoded_len} bytes, expected {SHA384_LEN_BYTES} (SHA-384)"
             )));
         }
         Ok(hex::encode(raw))
@@ -1407,6 +1415,22 @@ mod tests {
         // actual SHA-1 in this field.
         let hash = PackageHash {
             sha1: "AAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_string(),
+            sha256: None,
+        };
+        let err = hash.to_cosi_sha384().unwrap_err();
+        assert!(matches!(err, NebraskaError::UnexpectedResponse(_)));
+    }
+
+    #[test]
+    fn to_cosi_sha384_rejects_oversized_input() {
+        // Valid base64 that decodes to more than the 48 bytes a SHA-384
+        // digest requires. This must be rejected via the fixed-size decode
+        // buffer rather than by first allocating a `Vec` sized to the
+        // (potentially attacker-controlled) input.
+        // 68 base64 chars (no padding needed, 68 % 4 == 0) decode to 51
+        // bytes - more than the 48 a SHA-384 digest requires.
+        let hash = PackageHash {
+            sha1: "A".repeat(68),
             sha256: None,
         };
         let err = hash.to_cosi_sha384().unwrap_err();
