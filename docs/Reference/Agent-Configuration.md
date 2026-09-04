@@ -27,6 +27,17 @@ Insights connection string to have been compiled into the Trident binary at
 build time (via the `AZURE_MONITOR_CONNECTION_STRING` environment variable);
 if no connection string was compiled in, this setting has no effect.
 
+Every event sent also includes the following host metadata, so operators
+should be aware this leaves the host along with the metrics/spans
+themselves:
+
+- `asset_id`: the host's DMI product UUID (a stable hardware identifier).
+- `os_release`: the `VERSION` field from `/etc/os-release`.
+- `kernel_version`: the running kernel release (`uname -r`).
+- `total_cpu`: the number of CPUs.
+- `total_memory_gib`: total memory, in GiB.
+- `trident_version`: the running Trident version.
+
 Telemetry defaults to **disabled** (`OptOut`). To enable it, add a line to
 the Agent Configuration file:
 
