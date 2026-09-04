@@ -46,11 +46,15 @@ impl DataStore {
 
     pub(crate) fn open(path: &Path) -> Result<Self, TridentError> {
         debug!("Loading datastore from {}", path.display());
-        let db = sqlite::open(path).structured(ServicingError::Datastore {
+        let mut db = sqlite::open(path).structured(ServicingError::Datastore {
             inner: DatastoreError::LoadDatastore {
                 path: path.to_string_lossy().into(),
             },
         })?;
+        // Multiple connections to the same datastore file (e.g. concurrent
+        // daemon RPC handlers) can briefly contend for the write lock; wait
+        // for it rather than failing immediately with "database is locked".
+        Self::set_busy_timeout(&mut db)?;
         // Existing datastores may predate a table added in a later Trident
         // version (e.g. `keyvalue`). Idempotently ensure the full schema is
         // present so upgraded hosts don't fail with "no such table" the
@@ -132,10 +136,22 @@ impl DataStore {
             DatastoreError::CreateDatastoreDirectory,
         ))?;
 
-        let db =
+        let mut db =
             sqlite::open(path).structured(ServicingError::from(DatastoreError::OpenDatastore))?;
+        Self::set_busy_timeout(&mut db)?;
         Self::ensure_schema(&db)?;
         Ok(db)
+    }
+
+    /// Wait (rather than immediately failing with "database is locked") for
+    /// up to five seconds when another connection holds the write lock on
+    /// this datastore file. Needed because more than one connection to the
+    /// same datastore can legitimately exist at once (e.g. concurrent
+    /// daemon RPC handlers each calling `Trident::new`), and SQLite's
+    /// default busy timeout is zero.
+    fn set_busy_timeout(db: &mut sqlite::Connection) -> Result<(), TridentError> {
+        db.set_busy_timeout(5000)
+            .structured(ServicingError::from(DatastoreError::OpenDatastore))
     }
 
     /// Idempotently create any tables that don't already exist. Safe to call
@@ -376,26 +392,67 @@ impl DataStore {
     /// Values are serialized as JSON, so any type implementing
     /// `serde::Serialize`/`serde::de::DeserializeOwned` can be stored, not
     /// just `HostStatus`.
+    ///
+    /// `correlation_id` is currently the only first-party caller of the
+    /// generic key-value store, and it needs insert-if-absent semantics
+    /// (see `set_value_if_absent`) rather than an unconditional overwrite,
+    /// so this unconditional-overwrite variant is presently exercised only
+    /// by tests. It's kept as part of the generic key-value API (see
+    /// `get_value`) for future callers that do want overwrite semantics.
+    #[allow(dead_code)]
     pub(crate) fn set_value<T: Serialize>(&self, key: &str, value: &T) -> Result<(), TridentError> {
+        let contents = serde_json::to_string(value).structured(InternalError::SerializeValue {
+            key: key.to_string(),
+        })?;
+        self.write_key_value_row(
+            key,
+            &contents,
+            "INSERT INTO keyvalue (key, contents) VALUES (?, ?) \
+             ON CONFLICT(key) DO UPDATE SET contents = excluded.contents",
+        )
+    }
+
+    /// Like [`Self::set_value`], but only inserts a row if `key` does not
+    /// already have one; an existing row is left untouched. Used where two
+    /// datastore connections could race to perform "first access"
+    /// initialization of a key (see [`Self::correlation_id`]): whichever
+    /// connection's insert commits first wins, and the other's insert
+    /// becomes a no-op instead of overwriting the winner's value.
+    pub(crate) fn set_value_if_absent<T: Serialize>(
+        &self,
+        key: &str,
+        value: &T,
+    ) -> Result<(), TridentError> {
+        let contents = serde_json::to_string(value).structured(InternalError::SerializeValue {
+            key: key.to_string(),
+        })?;
+        self.write_key_value_row(
+            key,
+            &contents,
+            "INSERT INTO keyvalue (key, contents) VALUES (?, ?) \
+             ON CONFLICT(key) DO NOTHING",
+        )
+    }
+
+    /// Execute a parameterized `INSERT ... ON CONFLICT ...` against the
+    /// `keyvalue` table, binding `key` and `contents` as the two `?`
+    /// placeholders in `sql`.
+    fn write_key_value_row(
+        &self,
+        key: &str,
+        contents: &str,
+        sql: &str,
+    ) -> Result<(), TridentError> {
         let db = self
             .db
             .as_ref()
             .structured(ServicingError::from(DatastoreError::WriteToClosedDatastore))?;
 
-        let contents = serde_json::to_string(value).structured(InternalError::SerializeValue {
-            key: key.to_string(),
+        let mut statement = db.prepare(sql).structured(ServicingError::Datastore {
+            inner: DatastoreError::WriteKeyValue {
+                key: key.to_string(),
+            },
         })?;
-
-        let mut statement = db
-            .prepare(
-                "INSERT INTO keyvalue (key, contents) VALUES (?, ?) \
-                 ON CONFLICT(key) DO UPDATE SET contents = excluded.contents",
-            )
-            .structured(ServicingError::Datastore {
-                inner: DatastoreError::WriteKeyValue {
-                    key: key.to_string(),
-                },
-            })?;
         statement
             .bind((1, key))
             .structured(ServicingError::Datastore {
@@ -404,7 +461,7 @@ impl DataStore {
                 },
             })?;
         statement
-            .bind((2, &*contents))
+            .bind((2, contents))
             .structured(ServicingError::Datastore {
                 inner: DatastoreError::WriteKeyValue {
                     key: key.to_string(),
@@ -426,14 +483,28 @@ impl DataStore {
     /// temporary-to-persistent transition performed by `persist`), and is
     /// intended to be attached to tracing/telemetry so that activity for a
     /// given host installation can be correlated across logs and traces.
+    ///
+    /// First access is not a simple read-then-write: `Trident::new` may be
+    /// invoked concurrently (e.g. by multiple daemon RPC handlers), each
+    /// opening its own connection to the same datastore file. A naive
+    /// "read, and if absent generate + write" would let two connections
+    /// both observe no row, generate different UUIDs, and each overwrite
+    /// the other -- leaving one caller tracing with an ID that was never
+    /// actually persisted. Instead, unconditionally attempt to insert a
+    /// freshly generated ID with `ON CONFLICT DO NOTHING` (a no-op if
+    /// another connection already inserted one first), then read back
+    /// whichever ID actually won that race.
     pub fn correlation_id(&mut self) -> Result<Uuid, TridentError> {
         if let Some(id) = self.get_value::<Uuid>(CORRELATION_ID_KEY)? {
             return Ok(id);
         }
 
-        let id = Uuid::new_v4();
-        self.set_value(CORRELATION_ID_KEY, &id)?;
-        Ok(id)
+        self.set_value_if_absent(CORRELATION_ID_KEY, &Uuid::new_v4())?;
+
+        self.get_value::<Uuid>(CORRELATION_ID_KEY)?
+            .structured(InternalError::Internal(
+                "Correlation ID missing immediately after being inserted",
+            ))
     }
 
     /// Parse a single HostStatus entry from a datastore query result.
@@ -585,6 +656,42 @@ mod tests {
         let mut datastore = super::DataStore::open(&path).unwrap();
         // Should not fail with "no such table: keyvalue".
         datastore.correlation_id().unwrap();
+
+        temp_dir.close().unwrap();
+    }
+
+    #[test]
+    fn test_correlation_id_concurrent_first_access_is_consistent() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("db.sqlite");
+
+        // Create the datastore (and its schema) up front, then open two
+        // separate connections to it, simulating two daemon RPC handlers
+        // concurrently calling `Trident::new` (and therefore
+        // `correlation_id`) against the same datastore path.
+        super::DataStore::make_datastore(&path).unwrap();
+
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let handles: Vec<_> = (0..2)
+            .map(|_| {
+                let path = path.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    let mut datastore = super::DataStore::open(&path).unwrap();
+                    // Synchronize so both threads attempt "first access"
+                    // (no correlation ID persisted yet) as close together
+                    // as possible.
+                    barrier.wait();
+                    datastore.correlation_id().unwrap()
+                })
+            })
+            .collect();
+
+        let ids: Vec<uuid::Uuid> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        assert_eq!(
+            ids[0], ids[1],
+            "concurrent first access returned inconsistent correlation IDs"
+        );
 
         temp_dir.close().unwrap();
     }
