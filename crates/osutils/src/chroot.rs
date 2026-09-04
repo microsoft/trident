@@ -363,8 +363,7 @@ mod functional_test {
     }
 
     #[functional_test(feature = "helpers", negative = true)]
-    fn test_enter_chroot_fail_to_mount_special_dir() {
-        // Create a temporary directory to act as the chroot environment
+    fn test_enter_chroot_fail_to_mount_special_dir() {        // Create a temporary directory to act as the chroot environment
         let temp_dir = tempdir().unwrap();
         let chroot_path = temp_dir.path().to_path_buf();
 
@@ -413,8 +412,14 @@ mod functional_test {
 
         // Mounting a new /proc filesystem over the existing one does not fail
     }
+}
 
-    #[functional_test(feature = "helpers", negative = true)]
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use trident_api::error::ErrorKind;
+
+    #[test]
     fn test_enter_chroot_fail_nonexistent_dir() {
         // Attempt to enter the chroot
         let result = Chroot::enter(Path::new("/nonexistent-dir"));
