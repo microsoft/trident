@@ -298,7 +298,14 @@ export TRIDENT_VERSION="%{trident_version}"
 # which use the different, hardcoded connection string above). Hardcoded in
 # .pipelines/templates/stages/trident_rpms/release.yml and passed through
 # to this spec as an rpmbuild --define, the same way %{trident_version} is.
-export AZURE_MONITOR_CONNECTION_STRING="%{trident_azmon_conn_str}"
+#
+# Use the optional-expansion form (`%{?...}`): repo-build paths that define
+# rpm_ver but do not pass --define trident_azmon_conn_str (e.g.
+# packaging/docker/Dockerfile.full.public) must fall back to an empty
+# string, matching the documented no-telemetry default -- not the literal,
+# undefined `%{trident_azmon_conn_str}` text RPM would otherwise leave in
+# place.
+export AZURE_MONITOR_CONNECTION_STRING="%{?trident_azmon_conn_str}"
 %endif
 cargo build --release -p trident -p trident-acl-agent
 
