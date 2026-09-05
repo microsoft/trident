@@ -298,7 +298,11 @@ mod tests {
 
         assert_eq!(
             observed,
-            Some((expected_operation_id, expected_command, expected_servicing_id)),
+            Some((
+                expected_operation_id,
+                expected_command,
+                expected_servicing_id
+            )),
             "captured operation_id/command/servicing_id should propagate to the new thread"
         );
     }
