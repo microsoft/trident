@@ -173,15 +173,28 @@ fn run_trident(
                 // Trident::new (further down, inside the closure) is the
                 // usual place this gets attached, but that's too late for
                 // command_start, which run_with_operation fires immediately,
-                // before the closure even runs. Skipped entirely when the
-                // datastore doesn't exist yet -- DataStore::open_or_create
-                // creates the file as a side effect, which would let it
-                // slip past the "host not provisioned" guard below for
-                // commands (commit/rollback/rebuild-raid) that require an
-                // existing datastore. Trident::new() still does its own
-                // get-or-create lookup once a real operation runs.
+                // before the closure even runs.
+                //
+                // Install/Update are the only commands allowed to
+                // initialize a brand-new datastore (see the "host not
+                // provisioned" guard further down), so for those two it's
+                // safe -- and necessary, to avoid a fresh install/update's
+                // very first command_start missing a correlation ID
+                // entirely -- to mint and persist one now via the same
+                // get-or-create `correlation_id()` call Trident::new would
+                // otherwise make moments later, even though the datastore
+                // doesn't exist yet: DataStore::open_or_create will just
+                // create it, exactly as Trident::new is about to anyway.
+                // For every other command, this is skipped entirely when
+                // the datastore doesn't exist yet: those commands require
+                // an *existing* datastore, and creating one here as a side
+                // effect would let it slip past that later guard.
+                let can_initialize_datastore = matches!(
+                    args.command,
+                    Commands::Install { .. } | Commands::Update { .. }
+                );
                 match AgentConfig::load().and_then(|agent_config| {
-                    if !agent_config.datastore_path().exists() {
+                    if !can_initialize_datastore && !agent_config.datastore_path().exists() {
                         return Ok(None);
                     }
                     DataStore::open_or_create(agent_config.datastore_path())
