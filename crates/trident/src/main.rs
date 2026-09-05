@@ -2,7 +2,7 @@ use std::{fs, iter, panic, process::ExitCode, time::Duration};
 
 use anyhow::{Context, Error};
 use clap::Parser;
-use log::{error, info, warn, LevelFilter, Log};
+use log::{debug, error, info, warn, LevelFilter, Log};
 
 use osutils::logging::{filter::LogFilter, multilog::MultiLogger};
 use trident::{
@@ -167,6 +167,38 @@ fn run_trident(
                     Commands::RebuildRaid { .. } => "rebuild_raid".to_string(),
                     _ => unreachable!(),
                 };
+
+                // Pre-warm the correlation ID on the shared TraceStream
+                // before run_with_operation below fires command_start:
+                // Trident::new (further down, inside the closure) is the
+                // usual place this gets attached, but that's too late for
+                // command_start, which run_with_operation fires immediately,
+                // before the closure even runs. Skipped entirely when the
+                // datastore doesn't exist yet -- DataStore::open_or_create
+                // creates the file as a side effect, which would let it
+                // slip past the "host not provisioned" guard below for
+                // commands (commit/rollback/rebuild-raid) that require an
+                // existing datastore. Trident::new() still does its own
+                // get-or-create lookup once a real operation runs.
+                match AgentConfig::load().and_then(|agent_config| {
+                    if !agent_config.datastore_path().exists() {
+                        return Ok(None);
+                    }
+                    DataStore::open_or_create(agent_config.datastore_path())
+                        .and_then(|mut ds| ds.correlation_id())
+                        .map(Some)
+                }) {
+                    Ok(Some(correlation_id)) => {
+                        info!("Correlation ID: {correlation_id}");
+                        tracestream.set_correlation_id(correlation_id.to_string());
+                    }
+                    Ok(None) => {
+                        debug!("No datastore yet, skipping correlation ID pre-warm");
+                    }
+                    Err(e) => {
+                        warn!("Failed to get or create correlation ID: {e:?}");
+                    }
+                }
 
                 run_with_operation(&command, || {
                     let config_path = match &args.command {
