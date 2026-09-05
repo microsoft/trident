@@ -913,6 +913,19 @@ impl Trident {
             _ => ServicingType::NoActiveServicing,
         };
 
+        // Attach the servicing ID persisted by the stage/finalize
+        // invocation(s) before the reboot, so the *_success metrics fired
+        // by validate_boot below (clean_install_success/ab_update_success/
+        // manual_rollback_success) can still be correlated with the
+        // servicing operation that led to this commit. Safe to read back
+        // unconditionally here: the early return above already confirmed
+        // servicing_state is one of the *Finalized/*HealthCheckFailed
+        // states, i.e. this commit is genuinely validating a real
+        // finalized operation, not an arbitrary/unrelated one.
+        if let Ok(Some(servicing_id)) = datastore.servicing_id() {
+            set_servicing_id(servicing_id.to_string());
+        }
+
         let rollback_result = self.execute_and_record_error(datastore, |datastore| {
             rollback::validate_boot(datastore).message(
                 "Failed to validate that firmware correctly booted from updated target OS image",
