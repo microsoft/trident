@@ -212,9 +212,19 @@ impl TraceSender {
     }
 
     /// Build the `additional_fields` map for a trace entry: the static
-    /// `ADDITIONAL_FIELDS`, plus the correlation ID (if one has been set via
-    /// `TraceStream::set_correlation_id`), so entries can be correlated back to a
-    /// specific host installation.
+    /// `ADDITIONAL_FIELDS`, the correlation ID (if one has been set via
+    /// `TraceStream::set_correlation_id`), and the current thread's
+    /// `operation_id`/`command` (if any, see `operation_context`), so
+    /// entries can be correlated back to a specific host installation and
+    /// servicing operation.
+    ///
+    /// `operation_id`/`command` are deliberately merged here rather than
+    /// into the metric's own `value` (as scalar/span fields are): mixing
+    /// them into `value` would change the established schema for simple
+    /// scalar metrics -- e.g. `clean_install_start` would go from
+    /// `"value": true` to `"value": {"command": ..., "operation_id": ...,
+    /// "value": true}` the moment it ran inside an operation context,
+    /// breaking that contract for existing consumers.
     fn additional_fields(&self) -> BTreeMap<String, Value> {
         let mut fields = ADDITIONAL_FIELDS.clone();
         if let Ok(correlation_id) = self.correlation_id.read() {
@@ -222,6 +232,7 @@ impl TraceSender {
                 fields.insert("correlation_id".to_string(), json!(correlation_id));
             }
         }
+        merge_operation_context(&mut fields);
         fields
     }
 
@@ -271,12 +282,11 @@ where
         };
 
         // Apart from the metric name, check if we have a single or multiple values
-        let mut filtered_fields: BTreeMap<String, Value> = visitor
+        let filtered_fields: BTreeMap<String, Value> = visitor
             .fields
             .into_iter()
             .filter(|(key, _)| key != "metric_name")
             .collect();
-        merge_operation_context(&mut filtered_fields);
         let value = if filtered_fields.len() > 1 {
             Value::Object(Map::from_iter(filtered_fields))
         } else {
@@ -366,7 +376,6 @@ where
         visitor
             .fields
             .insert("execution_time".to_string(), json!(execution_time));
-        merge_operation_context(&mut visitor.fields);
 
         let entry = TraceEntry {
             timestamp: Utc::now(),
