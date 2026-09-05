@@ -61,7 +61,7 @@ pub use crate::{
         background_uploader::{BackgroundUploadHandle, BackgroundUploader},
         logfwd::LogForwarder,
         logstream::Logstream,
-        operation_context::{run_command, run_with_operation},
+        operation_context::{run_command, run_with_operation, set_servicing_id},
         tracestream::TraceStream,
     },
     orchestrate::OrchestratorConnection,
@@ -138,6 +138,11 @@ pub struct Trident {
     host_config: Option<HostConfiguration>,
     orchestrator: Option<OrchestratorConnection>,
     is_stream_image: bool,
+    /// Kept so `Trident::install` can attach a newly-created installation
+    /// ID / servicing ID to it -- see `DataStore::create_installation_id`
+    /// and the servicing_id equivalent, both only ever called from
+    /// `install`/staging, unlike this constructor.
+    tracestream: TraceStream,
 }
 
 impl Trident {
@@ -221,20 +226,43 @@ impl Trident {
             info!("Running Trident in a container");
         }
 
-        // Retrieve (or create, on first run) this host's unique
-        // correlation ID from the datastore actually used for servicing,
-        // and attach it to the shared TraceStream before any startup
-        // metrics are emitted, so every trace/metric -- including this
-        // very "trident_start" event -- carries it. This runs for every
-        // caller of `Trident::new` (both the CLI path and each daemon
-        // RPC handler), since they all supply `datastore_path`.
-        match DataStore::open_or_create(datastore_path).and_then(|mut ds| ds.correlation_id()) {
-            Ok(correlation_id) => {
-                info!("Correlation ID: {correlation_id}");
-                tracestream.set_correlation_id(correlation_id.to_string());
+        // Attach this host's installation ID -- if one has already been
+        // stamped -- to the shared TraceStream before any startup metrics
+        // are emitted, so every trace/metric -- including this very
+        // "trident_start" event -- carries it once available. Normally
+        // read-only: unlike the old correlation ID, the installation ID is
+        // only ever *created* by `Trident::install` (at the start of
+        // staging), never here, so every other caller of `Trident::new`
+        // (update/commit/rollback/rebuild-raid, and every daemon RPC
+        // handler) just attaches whatever was already persisted at
+        // install time.
+        //
+        // Except: a datastore can be genuinely provisioned (servicing_state
+        // != NotProvisioned) without ever having gone through
+        // `Trident::install` -- offline initialization and the CIH update
+        // bootstrap both create/adopt a datastore directly. Those hosts
+        // would otherwise never get an installation ID, since nothing else
+        // ever calls `create_installation_id`. Mint one as a one-time
+        // migration in that specific case, while leaving a genuinely
+        // unprovisioned (temporary or not-yet-installed) datastore alone.
+        match DataStore::open_or_create(datastore_path).and_then(|mut ds| {
+            match ds.installation_id()? {
+                Some(id) => Ok(Some(id)),
+                None if ds.host_status().servicing_state != ServicingState::NotProvisioned => {
+                    ds.create_installation_id().map(Some)
+                }
+                None => Ok(None),
+            }
+        }) {
+            Ok(Some(installation_id)) => {
+                info!("Installation ID: {installation_id}");
+                tracestream.set_installation_id(installation_id.to_string());
+            }
+            Ok(None) => {
+                debug!("No installation ID persisted yet (host not yet installed)");
             }
             Err(e) => {
-                warn!("Failed to get or create correlation ID: {e:?}");
+                warn!("Failed to read installation ID: {e:?}");
             }
         }
 
@@ -297,6 +325,7 @@ impl Trident {
             host_config,
             orchestrator,
             is_stream_image: false,
+            tracestream,
         })
     }
 
@@ -506,6 +535,11 @@ impl Trident {
             ))?;
 
         let is_stream_image = self.is_stream_image;
+        // Cloned out of `self` so the closure below (which only receives
+        // `&mut DataStore`, not `&mut self` -- see `execute_and_record_error`)
+        // can still attach the installation/servicing IDs it creates to
+        // this invocation's telemetry.
+        let tracestream = self.tracestream.clone();
 
         self.execute_and_record_error(datastore, |datastore| {
             host_config
@@ -550,6 +584,20 @@ impl Trident {
                 }
             }
 
+            // Stamp this installation with an installation ID -- get-or-create,
+            // but `Trident::install` is the only place that ever actually
+            // creates one (see `DataStore::create_installation_id`); every
+            // other command just reads whatever was stamped here (see
+            // `Trident::new`). Uses `datastore` as it stands after any
+            // multiboot swap above, so a multiboot install's own (new,
+            // eventually-persistent) datastore gets its own installation ID,
+            // not the already-provisioned host's.
+            let installation_id = datastore
+                .create_installation_id()
+                .message("Failed to create installation ID")?;
+            info!("Installation ID: {installation_id}");
+            tracestream.set_installation_id(installation_id.to_string());
+
             // Use a prefetched image if provided, otherwise load the image
             // specified in the Host Configuration.
             let image = match prefetched_image {
@@ -562,6 +610,17 @@ impl Trident {
                 debug!("Host Configuration has been updated");
 
                 if allowed_operations.has_stage() {
+                    // A genuinely new clean install is staging here, so mint
+                    // a fresh servicing ID for it -- unlike the
+                    // CleanInstallStaged branch below, which resumes an
+                    // *existing* staged install and must not overwrite its
+                    // ID.
+                    let servicing_id = datastore
+                        .new_servicing_id()
+                        .message("Failed to create servicing ID")?;
+                    info!("Servicing ID: {servicing_id}");
+                    set_servicing_id(servicing_id.to_string());
+
                     engine::clean_install(
                         &host_config,
                         datastore,
@@ -589,6 +648,19 @@ impl Trident {
                         // clean install, if requested.
                         debug!("There is a clean install staged on the host");
                         if allowed_operations.has_finalize() {
+                            // This finalize-only call never staged anything
+                            // itself -- read back the servicing ID persisted
+                            // by the earlier, separate stage call instead of
+                            // minting a new one, so both halves of the same
+                            // install can still be correlated. Safe to
+                            // assume it's the *same* staged install's ID:
+                            // reaching this arm already required
+                            // `datastore.host_status().spec == host_config`
+                            // above, i.e. this invocation's config is
+                            // identical to whatever was staged.
+                            if let Ok(Some(servicing_id)) = datastore.servicing_id() {
+                                set_servicing_id(servicing_id.to_string());
+                            }
                             engine::finalize_clean_install(datastore, None, None, is_stream_image)
                                 .message("Failed to finalize clean install")
                                 .map(|ek| (ek, image_hash.clone(), ServicingType::CleanInstall))
@@ -604,7 +676,16 @@ impl Trident {
                     }
                     ServicingState::NotProvisioned => {
                         // Otherwise, if servicing state is NotProvisioned, need to either re-execute the
-                        // failed clean install OR inform the user that no update is needed.
+                        // failed clean install OR inform the user that no update is needed. Either way
+                        // this is a fresh attempt (nothing usable was ever
+                        // actually staged), so mint a fresh servicing ID,
+                        // same as the genuinely-new-install branch above.
+                        let servicing_id = datastore
+                            .new_servicing_id()
+                            .message("Failed to create servicing ID")?;
+                        info!("Servicing ID: {servicing_id}");
+                        set_servicing_id(servicing_id.to_string());
+
                         engine::clean_install(
                             &host_config,
                             datastore,
@@ -646,6 +727,13 @@ impl Trident {
                 "update called without Host Configuration set",
             ))?;
 
+        // Cloned out of `self` so the closure below (which only receives
+        // `&mut DataStore`, not `&mut self` -- see `execute_and_record_error`)
+        // can still attach the installation ID the CIH bootstrap below may
+        // create to this invocation's telemetry, the same way `install`
+        // does for its own newly-created IDs.
+        let tracestream = self.tracestream.clone();
+
         self.execute_and_record_error(datastore, |datastore| {
             // Ensure that the datastore exists.
             if !datastore.is_persistent() {
@@ -661,6 +749,34 @@ impl Trident {
                             status.is_management_os = false;
                         })
                         .message("Failed to initialize datastore")?;
+
+                    // Mint the installation ID now, as part of this same
+                    // promotion, rather than waiting for some later,
+                    // separate Trident::new call to notice a provisioned
+                    // datastore with none yet (see the migration in
+                    // Trident::new): this datastore was still NotProvisioned
+                    // when that check ran moments ago, before this CIH
+                    // bootstrap promoted it, so without this it wouldn't be
+                    // minted until whatever the next invocation happens to
+                    // be. Attach it to this invocation's shared TraceStream
+                    // too, so update_start and everything after it, later
+                    // in this same invocation, carries it -- Trident::new's
+                    // own attach-if-present check already ran and found
+                    // nothing (this datastore was still NotProvisioned at
+                    // that point), so nothing else will do this for us.
+                    // Known remaining gap: this invocation's own
+                    // command_start/trident_start (fired even earlier, in
+                    // the CLI/daemon dispatch and Trident::new respectively)
+                    // still won't carry it -- both fire before this point.
+                    match datastore.create_installation_id() {
+                        Ok(installation_id) => {
+                            info!("Installation ID: {installation_id}");
+                            tracestream.set_installation_id(installation_id.to_string());
+                        }
+                        Err(e) => {
+                            warn!("Failed to create installation ID during CIH bootstrap: {e:?}");
+                        }
+                    }
                 } else {
                     // For non-CIH images, if the datastore is not persistent, return error
                     return Err(TridentError::new(InvalidInputError::HostNotProvisioned))
@@ -711,6 +827,19 @@ impl Trident {
                         // If an A/B update has been previously staged, only need to finalize the update.
                         debug!("There is an A/B update staged on the host");
                         if allowed_operations.has_finalize() {
+                            // This finalize-only call never goes through
+                            // engine::update::update() (where a fresh
+                            // servicing_id would otherwise be minted) --
+                            // read back the one persisted by the earlier,
+                            // separate stage call instead. Safe to assume
+                            // it's the *same* staged operation's ID:
+                            // reaching this arm already required
+                            // `datastore.host_status().spec == host_config`
+                            // above, i.e. this invocation's config is
+                            // identical to whatever was staged.
+                            if let Ok(Some(servicing_id)) = datastore.servicing_id() {
+                                set_servicing_id(servicing_id.to_string());
+                            }
                             ab_update::finalize_update(
                                 datastore,
                                 None,
@@ -726,6 +855,12 @@ impl Trident {
                         // If a runtime update has been previously staged, only need to finalize the update.
                         debug!("There is a runtime update staged on the host");
                         if allowed_operations.has_finalize() {
+                            // See the AbUpdateStaged arm above for why this
+                            // read-back (rather than minting a new ID) is
+                            // correct here.
+                            if let Ok(Some(servicing_id)) = datastore.servicing_id() {
+                                set_servicing_id(servicing_id.to_string());
+                            }
                             let mut subsystems = SUBSYSTEMS.lock().unwrap();
                             runtime_update::finalize_update(
                                 &mut subsystems,
@@ -829,6 +964,19 @@ impl Trident {
             ServicingState::ManualRollbackAbFinalized => ServicingType::ManualRollbackAb,
             _ => ServicingType::NoActiveServicing,
         };
+
+        // Attach the servicing ID persisted by the stage/finalize
+        // invocation(s) before the reboot, so the *_success metrics fired
+        // by validate_boot below (clean_install_success/ab_update_success/
+        // manual_rollback_success) can still be correlated with the
+        // servicing operation that led to this commit. Safe to read back
+        // unconditionally here: the early return above already confirmed
+        // servicing_state is one of the *Finalized/*HealthCheckFailed
+        // states, i.e. this commit is genuinely validating a real
+        // finalized operation, not an arbitrary/unrelated one.
+        if let Ok(Some(servicing_id)) = datastore.servicing_id() {
+            set_servicing_id(servicing_id.to_string());
+        }
 
         let rollback_result = self.execute_and_record_error(datastore, |datastore| {
             rollback::validate_boot(datastore).message(

@@ -19,6 +19,7 @@ use crate::{
         self, boot::uki, bootentries, runtime_update, storage::encryption, EngineContext,
         EngineContextParams, SUBSYSTEMS,
     },
+    logging::operation_context::set_servicing_id,
     subsystems::esp,
     ExitKind,
 };
@@ -96,21 +97,6 @@ pub fn execute_rollback(
     requested_rollback_kind: ManualRollbackRequestKind,
     allowed_operations: &Operations,
 ) -> Result<(ExitKind, ServicingType), TridentError> {
-    // Mirrors `engine::update::update()`'s `update_start` metric: fired
-    // unconditionally on every invocation (stage-only, finalize-only, or
-    // combined -- matching how the CLI/gRPC two-step rollback flow can call
-    // this more than once for the same logical rollback), with whatever
-    // identifying context is known this early (the specific A/B-vs-runtime
-    // `ManualRollbackKind` isn't determined until the stage/finalize logic
-    // below runs, so it isn't included here).
-    tracing::info!(
-        metric_name = "manual_rollback_start",
-        requested_rollback_kind = format!("{:?}", requested_rollback_kind),
-        servicing_state = format!("{:?}", datastore.host_status().servicing_state),
-        stage = allowed_operations.has_stage(),
-        finalize = allowed_operations.has_finalize(),
-    );
-
     // Tracks the rollback kind actually staged this call, so the trailing
     // "stage completed, finalize not requested this call" return below can
     // report it instead of a generic NoActiveServicing. Stays None when
@@ -164,6 +150,25 @@ pub fn execute_rollback(
         };
         staged_rollback_type = Some(rollback_type);
 
+        // Only mint/attach a servicing ID and fire manual_rollback_start
+        // once we've confirmed a real rollback target exists -- not any
+        // earlier (e.g. unconditionally at the top of this function), so
+        // an invalid-state/last_error rejection or a "no rollback
+        // available" no-op above never mints or overwrites an ID for an
+        // operation that never actually starts.
+        let servicing_id = datastore
+            .new_servicing_id()
+            .message("Failed to create servicing ID")?;
+        info!("Servicing ID: {servicing_id}");
+        set_servicing_id(servicing_id.to_string());
+        tracing::info!(
+            metric_name = "manual_rollback_start",
+            requested_rollback_kind = format!("{:?}", requested_rollback_kind),
+            servicing_state = format!("{:?}", datastore.host_status().servicing_state),
+            stage = true,
+            finalize = allowed_operations.has_finalize(),
+        );
+
         let engine_context = EngineContext::new(EngineContextParams {
             spec: requested_rollback.spec.clone(),
             spec_old: datastore.host_status().spec.clone(),
@@ -207,6 +212,30 @@ pub fn execute_rollback(
                 }));
             }
         };
+
+        // Only restore the persisted servicing ID (and fire
+        // manual_rollback_start for this finalize-only call) now that
+        // servicing_state has been confirmed to actually match a real
+        // manual-rollback staged state above -- not before, so a rejected
+        // finalize-only request (e.g. from Provisioned, with nothing
+        // staged) never misattributes telemetry to some unrelated past
+        // operation's ID. Skipped when this same call also staged above
+        // (has_stage() true too): that branch already minted+attached a
+        // fresh ID and fired its own start metric for the combined
+        // operation.
+        if !allowed_operations.has_stage() {
+            if let Ok(Some(servicing_id)) = datastore.servicing_id() {
+                set_servicing_id(servicing_id.to_string());
+            }
+            tracing::info!(
+                metric_name = "manual_rollback_start",
+                requested_rollback_kind = format!("{:?}", requested_rollback_kind),
+                servicing_state = format!("{:?}", datastore.host_status().servicing_state),
+                stage = false,
+                finalize = true,
+            );
+        }
+
         let engine_context = EngineContext::new(EngineContextParams {
             spec: datastore.host_status().spec.clone(),
             spec_old: datastore.host_status().spec_old.clone(),
@@ -296,6 +325,17 @@ fn finalize_rollback(
     engine_context: &EngineContext,
     staging_state: ServicingState,
 ) -> Result<ExitKind, TridentError> {
+    // Attach whatever servicing ID is currently persisted: set moments ago
+    // by execute_rollback's own staging branch above if this is a combined
+    // stage+finalize call, or read back here for the first time if this
+    // call is finalizing a rollback staged by a separate, earlier
+    // invocation. Best-effort: a missing/unreadable ID just means this
+    // invocation's telemetry won't carry one, which never blocks the
+    // actual rollback.
+    if let Ok(Some(servicing_id)) = datastore.servicing_id() {
+        set_servicing_id(servicing_id.to_string());
+    }
+
     if matches!(staging_state, ServicingState::ManualRollbackRuntimeStaged) {
         trace!("Finalizing rollback of runtime update that does not require reboot");
 

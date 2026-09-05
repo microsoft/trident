@@ -98,7 +98,7 @@ fn run_trident(
         }
     };
 
-    // Pre-warm the correlation ID on the shared TraceStream before
+    // Pre-warm the installation ID on the shared TraceStream before
     // run_command below fires command_start: Trident::new (further down,
     // inside the closure, only reached by the servicing branch) is the
     // usual place this gets attached, but that's too late for
@@ -166,19 +166,17 @@ fn run_trident(
         if !can_initialize_datastore && !agent_config.datastore_path().exists() {
             return Ok(None);
         }
-        DataStore::open_or_create(agent_config.datastore_path())
-            .and_then(|mut ds| ds.correlation_id())
-            .map(Some)
+        DataStore::open_or_create(agent_config.datastore_path()).and_then(|ds| ds.installation_id())
     }) {
-        Ok(Some(correlation_id)) => {
-            info!("Correlation ID: {correlation_id}");
-            tracestream.set_correlation_id(correlation_id.to_string());
+        Ok(Some(installation_id)) => {
+            info!("Installation ID: {installation_id}");
+            tracestream.set_installation_id(installation_id.to_string());
         }
         Ok(None) => {
-            debug!("No datastore yet, skipping correlation ID pre-warm");
+            debug!("No installation ID persisted yet (host not yet installed)");
         }
         Err(e) => {
-            warn!("Failed to get or create correlation ID: {e:?}");
+            warn!("Failed to read installation ID: {e:?}");
         }
     }
 
@@ -597,7 +595,7 @@ fn setup_tracing(
                     Some(handle) => match AppInsightsSender::from_connection_string(
                         trident::AZURE_MONITOR_CONNECTION_STRING,
                         handle,
-                        tracestream.correlation_id_handle(),
+                        tracestream.installation_id_handle(),
                     ) {
                         Some(sender) => {
                             layers.push(Box::new(sender.with_filter(filter::LevelFilter::INFO)));

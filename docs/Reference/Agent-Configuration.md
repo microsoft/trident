@@ -31,22 +31,39 @@ Every event sent also includes the following host metadata, so operators
 should be aware this leaves the host along with the metrics/spans
 themselves:
 
-- `asset_id`: the host's DMI product UUID (a stable hardware identifier).
 - `os_release`: the `VERSION` field from `/etc/os-release`.
 - `kernel_version`: the running kernel release (`uname -r`).
 - `total_cpu`: the number of CPUs.
 - `total_memory_gib`: total memory, in GiB.
 - `trident_version`: the running Trident version.
-- `correlation_id`: a random ID generated once and persisted in the
-  datastore, unique to this host installation. It is not derived from any
-  hardware/user identifier, but because it is stable across every Trident
-  invocation on this host, it does let separate events be correlated back
-  to the same installation over time.
+- `installation_id`: a random ID persisted in the datastore, unique to
+  this host installation. It is not derived from any hardware/user
+  identifier. Created once, at the start of `trident install` (not merely
+  whenever the datastore happens to be created) -- every other command
+  (update, commit, rollback, rebuild-raid, and every gRPC/daemon request)
+  just attaches whatever was stamped at install time. Because it's stable
+  across every Trident invocation on this host from that point on, it
+  lets separate events be correlated back to the same installation over
+  time. Conditional on one host's very first `trident install`: events
+  emitted before that install actually reaches the point of creating the
+  ID (its own `command_start`, any preflight failure, and `trident_start`)
+  are sent without this field, since there is nothing to attach yet.
+- `servicing_id`: a random ID persisted in the datastore, minted fresh
+  each time a new servicing operation begins staging (install, update, or
+  manual rollback). Unlike `installation_id`, it's specific to one
+  servicing operation, not the whole host installation -- but unlike
+  `operation_id` below, it's persistent, so it can still correlate a
+  staging invocation with a later, separate finalize invocation (e.g. an
+  A/B update, which reboots in between the two). Present only once a
+  servicing operation has actually been confirmed and attached to the
+  current invocation: `command_start`, preflight failures, and any
+  command that determines there's nothing to do (e.g. a no-op finalize)
+  are all sent without this field, since it's only set after that point.
 - `operation_id`: a fresh, random ID generated for each individual command
   invocation (e.g. one `trident update` run, or one gRPC request handled
-  by `tridentd`). Unlike `correlation_id`, this is never reused across
-  invocations -- it only lets events emitted *during the same command* be
-  correlated with each other.
+  by `tridentd`). Unlike `installation_id`/`servicing_id`, this is never
+  persisted or reused across invocations -- it only lets events emitted
+  *during the same command* be correlated with each other.
 - `command`: which command produced the event (e.g. `install`, `update`,
   `update_stage`, `update_finalize`, `commit`, `rollback`, `rebuild_raid`).
   The `_stage`/`_finalize` suffixes distinguish a two-step (stage-only or
