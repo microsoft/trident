@@ -119,12 +119,12 @@ fn run_trident(
     // side effect would let it slip past that later guard.
     // Determined up front -- before the correlation ID pre-warm below,
     // which for Install/Update may create the datastore as a side effect
-    // -- so a missing/nonexistent --config is rejected before that
-    // happens. Previously this check ran deep inside run_command's
-    // closure, after the pre-warm had already created the datastore for
-    // Install/Update, so a failed invocation with a bad --config could
-    // leave a datastore behind and make a later command wrongly pass the
-    // "host not provisioned" existence check.
+    // -- so a missing, unreadable, or unparsable --config is rejected
+    // before that happens. Previously the existence check ran deep inside
+    // run_command's closure, after the pre-warm had already created the
+    // datastore for Install/Update, so a failed invocation with a bad
+    // --config could leave a datastore behind and make a later command
+    // wrongly pass the "host not provisioned" existence check.
     let config_path = match &args.command {
         Commands::Update { config, .. } | Commands::Install { config, .. } => Some(config.clone()),
         Commands::RebuildRaid { config, .. } => config.clone(),
@@ -138,6 +138,23 @@ fn run_trident(
                 }))
                 .message("Config file does not exist")
             });
+        }
+        // Existence alone isn't enough for Install/Update: the pre-warm
+        // below creates the datastore as a side effect for those two, so
+        // a path that exists but is unreadable, a directory, or not valid
+        // Host Configuration YAML must still be rejected first. This is a
+        // parse-only check (no semantic validate()), matching exactly
+        // what Trident::new does with this same file moments later --
+        // not the stricter validation the `validate` command performs.
+        if matches!(
+            args.command,
+            Commands::Install { .. } | Commands::Update { .. }
+        ) {
+            if let Err(e) = validation::parse_host_config_file(path) {
+                return run_command(&command, || {
+                    Err(e).message("Failed to parse Host Configuration")
+                });
+            }
         }
     }
 
