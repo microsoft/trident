@@ -143,123 +143,141 @@ fn run_trident(
             | Commands::Commit { status, error }
             | Commands::RebuildRaid { status, error, .. }
             | Commands::Rollback { status, error, .. } => {
-                let config_path = match &args.command {
-                    Commands::Update { config, .. } | Commands::Install { config, .. } => {
-                        Some(config.clone())
-                    }
-                    Commands::RebuildRaid { config, .. } => config.clone(),
-                    _ => None,
+                // Determined before any preflight checks below, and used
+                // to wrap the *entire* servicing branch (preflight checks,
+                // Trident::new, and the actual command) in a single
+                // run_with_operation call -- not just the innermost
+                // install/update/commit/rollback/rebuild-raid call, as
+                // before. That previously left Trident::new (and
+                // everything it does, including firing "trident_start")
+                // outside any operation context: every event from CLI
+                // startup through to just before the actual command ran
+                // had no operation_id/command.
+                let command = match &args.command {
+                    Commands::Install {
+                        allowed_operations, ..
+                    } => command_name("install", &cli::to_operations(allowed_operations)),
+                    Commands::Update {
+                        allowed_operations, ..
+                    } => command_name("update", &cli::to_operations(allowed_operations)),
+                    Commands::Commit { .. } => "commit".to_string(),
+                    Commands::Rollback {
+                        allowed_operations, ..
+                    } => command_name("rollback", &cli::to_operations(allowed_operations)),
+                    Commands::RebuildRaid { .. } => "rebuild_raid".to_string(),
+                    _ => unreachable!(),
                 };
 
-                if let Some(path) = &config_path {
-                    if !path.exists() {
-                        return Err(TridentError::new(InvalidInputError::ReadInputFile {
-                            path: path.to_string_lossy().to_string(),
-                        }))
-                        .message("Config file does not exist");
+                run_with_operation(&command, || {
+                    let config_path = match &args.command {
+                        Commands::Update { config, .. } | Commands::Install { config, .. } => {
+                            Some(config.clone())
+                        }
+                        Commands::RebuildRaid { config, .. } => config.clone(),
+                        _ => None,
+                    };
+
+                    if let Some(path) = &config_path {
+                        if !path.exists() {
+                            return Err(TridentError::new(InvalidInputError::ReadInputFile {
+                                path: path.to_string_lossy().to_string(),
+                            }))
+                            .message("Config file does not exist");
+                        }
                     }
-                }
 
-                let agent_config = AgentConfig::load()?;
-                // For non-install and non-update (update will check and has special handling for CIH
-                // scenario) commands, we expect the datastore to exist
-                if !matches!(
-                    args.command,
-                    Commands::Install { .. } | Commands::Update { .. }
-                ) && !agent_config.datastore_path().exists()
-                {
-                    return Err(TridentError::new(InvalidInputError::HostNotProvisioned))
-                        .message("Datastore file does not exist");
-                }
+                    let agent_config = AgentConfig::load()?;
+                    // For non-install and non-update (update will check and has special handling for CIH
+                    // scenario) commands, we expect the datastore to exist
+                    if !matches!(
+                        args.command,
+                        Commands::Install { .. } | Commands::Update { .. }
+                    ) && !agent_config.datastore_path().exists()
+                    {
+                        return Err(TridentError::new(InvalidInputError::HostNotProvisioned))
+                            .message("Datastore file does not exist");
+                    }
 
-                let mut trident = Trident::new(
-                    config_path.map(HostConfigurationSource::File),
-                    agent_config.datastore_path(),
-                    logstream,
-                    tracestream,
-                )
-                .message("Failed to initialize Trident")?;
+                    let mut trident = Trident::new(
+                        config_path.map(HostConfigurationSource::File),
+                        agent_config.datastore_path(),
+                        logstream.clone(),
+                        tracestream.clone(),
+                    )
+                    .message("Failed to initialize Trident")?;
 
-                // `Trident::new` has already retrieved (or created) this
-                // host's persisted correlation ID and attached it to the
-                // shared TraceStream, so every trace/metric emitted from
-                // here on -- including "trident_start" -- carries it.
-                let mut datastore = DataStore::open_or_create(agent_config.datastore_path())
-                    .message("Failed to open datastore")?;
+                    // `Trident::new` has already retrieved (or created) this
+                    // host's persisted correlation ID and attached it to the
+                    // shared TraceStream, so every trace/metric emitted from
+                    // here on -- including "trident_start" -- carries it.
+                    let mut datastore = DataStore::open_or_create(agent_config.datastore_path())
+                        .message("Failed to open datastore")?;
 
-                // Execute the command
-                let res = match args.command {
-                    Commands::Install {
-                        ref allowed_operations,
-                        multiboot,
-                        ..
-                    } => {
-                        let ops = cli::to_operations(allowed_operations);
-                        run_with_operation(&command_name("install", &ops), || {
+                    // Execute the command
+                    let res = match args.command {
+                        Commands::Install {
+                            ref allowed_operations,
+                            multiboot,
+                            ..
+                        } => {
+                            let ops = cli::to_operations(allowed_operations);
                             trident
                                 .install(&mut datastore, ops, multiboot, None)
                                 .map(|(exit_kind, _image_hash, _servicing_type)| exit_kind)
-                        })
-                    }
-                    Commands::Update {
-                        ref allowed_operations,
-                        ..
-                    } => {
-                        let ops = cli::to_operations(allowed_operations);
-                        run_with_operation(&command_name("update", &ops), || {
+                        }
+                        Commands::Update {
+                            ref allowed_operations,
+                            ..
+                        } => {
+                            let ops = cli::to_operations(allowed_operations);
                             trident
                                 .update(&mut datastore, ops)
                                 .map(|(exit_kind, _image_hash, _servicing_type)| exit_kind)
-                        })
-                    }
-                    Commands::Commit { .. } => run_with_operation("commit", || {
-                        trident
+                        }
+                        Commands::Commit { .. } => trident
                             .commit(&mut datastore)
-                            .map(|(exit_kind, _servicing_type)| exit_kind)
-                    }),
-                    Commands::Rollback {
-                        runtime,
-                        ab,
-                        ref allowed_operations,
-                        ..
-                    } => {
-                        let ops = cli::to_operations(allowed_operations);
-                        run_with_operation(&command_name("rollback", &ops), || {
+                            .map(|(exit_kind, _servicing_type)| exit_kind),
+                        Commands::Rollback {
+                            runtime,
+                            ab,
+                            ref allowed_operations,
+                            ..
+                        } => {
+                            let ops = cli::to_operations(allowed_operations);
                             trident
                                 .rollback(&mut datastore, runtime, ab, ops)
                                 .map(|(exit_kind, _servicing_type)| exit_kind)
-                        })
-                    }
-                    Commands::RebuildRaid { .. } => run_with_operation("rebuild_raid", || {
-                        trident
+                        }
+                        Commands::RebuildRaid { .. } => trident
                             .rebuild_raid(&mut datastore)
-                            .map(|()| ExitKind::Done)
-                    }),
-                    _ => Err(TridentError::internal("Invalid command")),
-                };
+                            .map(|()| ExitKind::Done),
+                        _ => Err(TridentError::internal("Invalid command")),
+                    };
 
-                // Return Host Status if requested
-                if status.is_some() {
-                    if let Err(e) =
-                        Trident::get(agent_config.datastore_path(), status, GetKind::Status)
-                            .message("Failed to retrieve Host Status")
-                    {
-                        error!("{e:?}");
-                    }
-                }
-
-                // Return error if requested
-                if let Some(error_path) = error.as_ref() {
-                    if let Err(e) = &res {
-                        if let Err(e2) =
-                            fs::write(error_path, serde_yaml::to_string(&e).unwrap_or("".into()))
+                    // Return Host Status if requested
+                    if status.is_some() {
+                        if let Err(e) =
+                            Trident::get(agent_config.datastore_path(), status, GetKind::Status)
+                                .message("Failed to retrieve Host Status")
                         {
-                            error!("Failed to write error to file: {e2}");
+                            error!("{e:?}");
                         }
                     }
-                }
 
-                res.message(format!("Failed to execute '{}' command", args.command))
+                    // Return error if requested
+                    if let Some(error_path) = error.as_ref() {
+                        if let Err(e) = &res {
+                            if let Err(e2) = fs::write(
+                                error_path,
+                                serde_yaml::to_string(&e).unwrap_or("".into()),
+                            ) {
+                                error!("Failed to write error to file: {e2}");
+                            }
+                        }
+                    }
+
+                    res.message(format!("Failed to execute '{}' command", args.command))
+                })
             }
             _ => unreachable!(),
         }
