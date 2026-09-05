@@ -215,7 +215,7 @@ impl TraceSender {
             if let Some(parent) = Path::new(metrics_file_path).parent() {
                 if let Err(err) = fs::create_dir_all(parent) {
                     eprintln!(
-                        "Tracestream setup error: failed to create local metrics file's                          parent directory: {err:?}"
+                        "Tracestream setup error: failed to create local metrics file's parent directory: {err:?}"
                     );
                 }
             }
