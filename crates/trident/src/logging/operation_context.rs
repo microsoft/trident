@@ -33,14 +33,20 @@ thread_local! {
 /// via a drop guard), so a thread that runs multiple commands over its
 /// lifetime (e.g. a thread pool worker reused across `spawn_blocking`
 /// calls) never leaks a stale tag into an unrelated later command.
+///
+/// The context (and its drop guard) is installed *before* firing
+/// `command_start`, and that event carries only `metric_name` -- not
+/// explicit `command`/`operation_id` fields. Both telemetry sinks
+/// (`TraceSender`, `AppInsightsSender`) read the just-installed context via
+/// `current()` and merge `command`/`operation_id` into the same
+/// `additional_fields`/properties map every other event during this
+/// invocation gets them from. Emitting them as explicit fields on
+/// `command_start` itself, before the context existed, would instead land
+/// them in that event's own `value`/properties body -- a different schema
+/// from every other event, and invisible to consumers that only look at
+/// `additional_fields` for operation metadata.
 pub fn run_with_operation<R>(command: &str, f: impl FnOnce() -> R) -> R {
     let operation_id = Uuid::new_v4().to_string();
-
-    tracing::info!(
-        metric_name = "command_start",
-        command = command,
-        operation_id = operation_id.as_str(),
-    );
 
     CURRENT_OPERATION.with(|cell| {
         *cell.borrow_mut() = Some((operation_id, command.to_string()));
@@ -53,6 +59,8 @@ pub fn run_with_operation<R>(command: &str, f: impl FnOnce() -> R) -> R {
         }
     }
     let _clear = ClearOnDrop;
+
+    tracing::info!(metric_name = "command_start");
 
     f()
 }
