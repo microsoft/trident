@@ -61,7 +61,7 @@ pub use crate::{
         background_uploader::{BackgroundUploadHandle, BackgroundUploader},
         logfwd::LogForwarder,
         logstream::Logstream,
-        operation_context::run_with_operation,
+        operation_context::{run_command, run_with_operation},
         tracestream::TraceStream,
     },
     orchestrate::OrchestratorConnection,
@@ -258,7 +258,40 @@ impl Trident {
             ));
         }
 
-        tracing::info!(metric_name = "trident_start");
+        // Best-effort: a failure to determine whether this is a CIH (Azure
+        // Container Linux) host must never fail startup, it only means
+        // this one field is missing from the trident_start telemetry.
+        // A detection failure is reported as "unknown", not "false" --
+        // conflating "known non-ACL" with "couldn't tell" would
+        // misclassify a host whose CIH check simply failed to run as
+        // definitively non-ACL.
+        let acl = match cih::is_cih() {
+            Ok(true) => "true",
+            Ok(false) => "false",
+            Err(e) => {
+                warn!("Failed to determine if host is running CIH: {e:?}");
+                "unknown"
+            }
+        };
+        // CLOCK_BOOTTIME gives nanosecond-resolution time since boot
+        // (including any suspended time), unlike sysinfo::System::uptime()
+        // (or a naive /proc/uptime parse), which only exposes whole-second
+        // resolution. Best-effort: clock_gettime with a valid clock ID
+        // essentially never fails on Linux, but fall back to NaN (which
+        // serde_json serializes as JSON `null`, a genuine "not available"
+        // rather than a misleading literal zero) rather than failing
+        // startup if it somehow does.
+        let uptime_secs = nix::time::clock_gettime(nix::time::ClockId::CLOCK_BOOTTIME)
+            .map(|ts| Duration::from(ts).as_secs_f64())
+            .unwrap_or_else(|e| {
+                warn!("Failed to read CLOCK_BOOTTIME: {e}");
+                f64::NAN
+            });
+        tracing::info!(
+            metric_name = "trident_start",
+            acl = acl,
+            uptime_secs = uptime_secs,
+        );
 
         Ok(Self {
             host_config,

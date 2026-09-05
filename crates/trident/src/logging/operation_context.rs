@@ -23,6 +23,8 @@ use std::cell::RefCell;
 
 use uuid::Uuid;
 
+use trident_api::error::TridentError;
+
 thread_local! {
     static CURRENT_OPERATION: RefCell<Option<(String, String)>> = const { RefCell::new(None) };
 }
@@ -118,6 +120,38 @@ pub fn run_with_captured_operation<R>(
     let _clear = ClearOnDrop;
 
     f()
+}
+
+/// Like [`run_with_operation`], but specifically for the
+/// `Result<T, TridentError>` shape both places that run a command
+/// actually use (CLI dispatch, gRPC's `servicing_request`): additionally
+/// fires a `command_error` metric -- breaking the error down into `kind`,
+/// `subkind`, and `location` -- if `f` returns `Err`, while the
+/// operation_id/command context is still active (so it's correlated the
+/// same way `command_start` is).
+pub fn run_command<T>(
+    command: &str,
+    f: impl FnOnce() -> Result<T, TridentError>,
+) -> Result<T, TridentError> {
+    run_with_operation(command, || {
+        let result = f();
+        if let Err(ref error) = result {
+            report_command_error(error);
+        }
+        result
+    })
+}
+
+/// Fires the `command_error` metric for a failed command. Split out from
+/// `run_command` so it's independently testable against a constructed
+/// `TridentError` without needing a real failing command.
+fn report_command_error(error: &TridentError) {
+    tracing::info!(
+        metric_name = "command_error",
+        kind = error.kind().as_str(),
+        subkind = error.subkind().unwrap_or("none"),
+        location = error.location().as_str(),
+    );
 }
 
 #[cfg(test)]
@@ -227,5 +261,104 @@ mod tests {
         .join()
         .unwrap();
         assert!(still_set_inside, "context should be set while f runs");
+    }
+
+    #[test]
+    fn test_run_command_passes_through_ok() {
+        let result: Result<i32, TridentError> = run_command("cmd", || Ok(42));
+        assert_eq!(result.unwrap(), 42);
+    }
+
+    #[test]
+    fn test_run_command_passes_through_err_unchanged() {
+        let result: Result<(), TridentError> =
+            run_command("cmd", || Err(TridentError::internal("boom")));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_command_clears_context_after_error() {
+        let _: Result<(), TridentError> =
+            run_command("cmd", || Err(TridentError::internal("boom")));
+        assert!(
+            current().is_none(),
+            "context must be cleared even when f returns Err"
+        );
+    }
+
+    /// A minimal `tracing_subscriber::Layer` that records every event's
+    /// fields as strings, so `report_command_error`'s output can be
+    /// asserted on directly instead of only checking that `run_command`
+    /// doesn't panic.
+    #[derive(Default, Clone)]
+    struct CapturingLayer {
+        events: std::sync::Arc<std::sync::Mutex<Vec<std::collections::BTreeMap<String, String>>>>,
+    }
+
+    struct CaptureVisitor(std::collections::BTreeMap<String, String>);
+
+    impl tracing::field::Visit for CaptureVisitor {
+        fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+            self.0.insert(field.name().to_string(), value.to_string());
+        }
+
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+            self.0
+                .insert(field.name().to_string(), format!("{value:?}"));
+        }
+    }
+
+    impl<S> tracing_subscriber::layer::Layer<S> for CapturingLayer
+    where
+        S: tracing::Subscriber,
+    {
+        fn on_event(
+            &self,
+            event: &tracing::Event<'_>,
+            _ctx: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            let mut visitor = CaptureVisitor(std::collections::BTreeMap::new());
+            event.record(&mut visitor);
+            self.events.lock().unwrap().push(visitor.0);
+        }
+    }
+
+    #[test]
+    fn test_run_command_fires_command_error_with_kind_subkind_location() {
+        use tracing_subscriber::layer::SubscriberExt;
+
+        let layer = CapturingLayer::default();
+        let events = layer.events.clone();
+        let _guard =
+            tracing::subscriber::set_default(tracing_subscriber::Registry::default().with(layer));
+
+        let _: Result<(), TridentError> =
+            run_command("test_command", || Err(TridentError::internal("boom")));
+
+        let events = events.lock().unwrap();
+        let command_error = events
+            .iter()
+            .find(|e| e.get("metric_name").map(String::as_str) == Some("command_error"))
+            .expect("command_error event should have been fired");
+
+        assert_eq!(
+            command_error.get("kind").map(String::as_str),
+            Some("internal")
+        );
+        assert!(
+            command_error.get("subkind").is_some(),
+            "subkind should be present: {command_error:?}"
+        );
+        assert!(
+            command_error
+                .get("location")
+                .is_some_and(|l| l.contains("operation_context.rs")),
+            "location should point at the TridentError::internal call site: {command_error:?}"
+        );
+        // command_start (from run_with_operation) should also have fired,
+        // ahead of command_error.
+        assert!(events
+            .iter()
+            .any(|e| e.get("metric_name").map(String::as_str) == Some("command_start")));
     }
 }

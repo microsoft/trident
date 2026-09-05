@@ -25,9 +25,10 @@ use trident_proto::v1::{
 
 use crate::{
     agentconfig::AgentConfig,
+    datastore::DataStore,
     logging::{logfwd::LogForwarder, operation_context},
     server::{activitytracker::ActivityTracker, support::stream::StreamWithLock},
-    DataStore, ExitKind, Logstream, TraceStream,
+    ExitKind, Logstream, TraceStream,
 };
 
 #[cfg(feature = "grpc-preview")]
@@ -188,38 +189,37 @@ impl TridentServer {
     /// It may also return other error `Status` values if log forwarding or task
     /// setup fails. In all error cases, no servicing task is spawned and no stream
     /// of responses is produced.
-    fn servicing_request<F>(
-        &self,
-        name: &'static str,
-        reboot_decision: RebootDecision,
-        f: F,
-    ) -> Result<Response<ServicingResponseStream>, Status>
-    where
-        F: FnOnce() -> Result<(ExitKind, Option<Sha384Hash>, Option<ServicingKind>), TridentError>
-            + Send
-            + panic::UnwindSafe
-            + 'static,
-    {
-        info!("Received servicing request '{}'", name);
-
-        // Try to acquire the connection lock in write mode
-        let guard = self.try_acquire_write_lock()?;
-
-        // Re-check for a persisted correlation ID before this request
-        // fires its own command_start (below, via run_with_operation).
-        // server_main's daemon-startup pre-warm only ever runs once, and
-        // skips itself when the datastore doesn't exist yet -- so a
-        // request that arrives before any datastore exists (e.g. this
-        // daemon's very first install) would otherwise never see one.
-        // `name` (install/update, including their stage/finalize-suffixed
-        // variants) identifies the only requests that can create a
-        // brand-new datastore, mirroring the CLI's own
-        // `can_initialize_datastore` check -- for those, mint and persist
-        // a correlation ID now via the same get-or-create call
-        // Trident::new would otherwise make moments later, even before
-        // the datastore exists. Every other request still skips this when
-        // the datastore doesn't exist yet, since it requires one to
-        // already exist.
+    /// Re-checks for a persisted correlation ID before a request fires its
+    /// own `command_start` (via `run_command`). The daemon-startup pre-warm
+    /// in `server_main` only ever runs once, and deliberately skips itself
+    /// when the datastore doesn't exist yet (see there for why) -- so a
+    /// daemon that starts before the host is ever installed, then serves a
+    /// request some time after a *different* path (e.g. a concurrent CLI
+    /// invocation, or an earlier servicing request on this same daemon)
+    /// has since created the datastore, would otherwise still be missing
+    /// it. Called from both `servicing_request` and `reading_request`, so
+    /// read-only RPCs (e.g. `get_servicing_state`) don't keep reporting a
+    /// stale/missing installation ID indefinitely just because they never
+    /// happen to run after a write request has warmed it.
+    ///
+    /// `name` (install/update, including their stage/finalize-suffixed
+    /// variants) identifies the only requests that can create a
+    /// brand-new datastore, mirroring the CLI's own
+    /// `can_initialize_datastore` check -- for those, mint and persist a
+    /// correlation ID now via the same get-or-create call Trident::new
+    /// would otherwise make moments later, even before the datastore
+    /// exists. Every other request skips this when the datastore doesn't
+    /// exist yet, since it requires one to already exist.
+    fn refresh_correlation_id(&self, name: &str) {
+        let already_warmed = self
+            .tracestream
+            .correlation_id_handle()
+            .read()
+            .map(|v| v.is_some())
+            .unwrap_or(false);
+        if already_warmed {
+            return;
+        }
         let can_initialize_datastore = name.starts_with("install") || name.starts_with("update");
         match AgentConfig::load().and_then(|agent_config| {
             if !can_initialize_datastore && !agent_config.datastore_path().exists() {
@@ -238,6 +238,26 @@ impl TridentServer {
                 warn!("Failed to get or create correlation ID: {e:?}");
             }
         }
+    }
+
+    fn servicing_request<F>(
+        &self,
+        name: &'static str,
+        reboot_decision: RebootDecision,
+        f: F,
+    ) -> Result<Response<ServicingResponseStream>, Status>
+    where
+        F: FnOnce() -> Result<(ExitKind, Option<Sha384Hash>, Option<ServicingKind>), TridentError>
+            + Send
+            + panic::UnwindSafe
+            + 'static,
+    {
+        info!("Received servicing request '{}'", name);
+
+        // Try to acquire the connection lock in write mode
+        let guard = self.try_acquire_write_lock()?;
+
+        self.refresh_correlation_id(name);
 
         // Tag every metric/tracing event `f` fires (on whatever thread it
         // ultimately runs on -- see `spawn_servicing_task`, which runs it
@@ -246,7 +266,7 @@ impl TridentServer {
         // same way the CLI path does for its own dispatch. `name` already
         // matches the CLI's own command-naming convention (see
         // `command_name` in `main.rs`) for stage/finalize granularity.
-        let f = move || operation_context::run_with_operation(name, f);
+        let f = move || operation_context::run_command(name, f);
 
         // Create the gRPC response channel
         let (tx, rx) = mpsc::unbounded_channel();
@@ -359,6 +379,23 @@ impl TridentServer {
             );
             return Err(Status::unavailable("Servicing is active"));
         };
+
+        self.refresh_correlation_id(name);
+
+        // Tag every metric/tracing event `f` fires (on the dedicated OS
+        // thread `spawn_reading_task` runs it on, via
+        // `tokio::task::spawn_blocking`) with `command`/`operation_id`, and
+        // fire `command_start`/`command_error`, the same way
+        // `servicing_request` does for write requests -- without this,
+        // read requests (e.g. `get_servicing_state`, `check_rollback`)
+        // fired neither event despite returning `TridentError` on failure
+        // just like servicing requests do.
+        //
+        // Known remaining gap: an RPC that encodes a domain-level failure
+        // in an `Ok` response instead of returning `Err(TridentError)` (if
+        // any -- none currently do) would still not get a command_error,
+        // since that only fires on `Err`.
+        let f = move || operation_context::run_command(name, f);
 
         // Execute the reading function
         Ok(Response::new(
