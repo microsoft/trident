@@ -97,39 +97,6 @@ pub fn execute_rollback(
     requested_rollback_kind: ManualRollbackRequestKind,
     allowed_operations: &Operations,
 ) -> Result<(ExitKind, ServicingType), TridentError> {
-    // Determine which servicing ID this invocation's telemetry (starting
-    // with the manual_rollback_start event fired below) should carry,
-    // *before* firing it -- set_servicing_id only affects events emitted
-    // after it runs (see the fix for the analogous update_start ordering
-    // issue), so this must happen first, not after staging logic below.
-    //
-    // If staging is requested, mint a fresh servicing ID now: this call is
-    // either starting a brand new rollback operation, or (rarely) will
-    // find nothing available to roll back and return early below without
-    // ever actually staging -- either way, a fresh ID for "this attempt"
-    // is correct, and a later genuine stage overwrites it again. If
-    // staging is not requested (finalize-only), read back whatever was
-    // persisted by an earlier, separate stage call instead -- see
-    // `finalize_rollback`, which does the same read (redundantly, but
-    // harmlessly, if this same call both stages and finalizes).
-    if allowed_operations.has_stage() {
-        let servicing_id = datastore
-            .new_servicing_id()
-            .message("Failed to create servicing ID")?;
-        info!("Servicing ID: {servicing_id}");
-        set_servicing_id(servicing_id.to_string());
-    } else if let Ok(Some(servicing_id)) = datastore.servicing_id() {
-        set_servicing_id(servicing_id.to_string());
-    }
-
-    tracing::info!(
-        metric_name = "manual_rollback_start",
-        requested_rollback_kind = format!("{:?}", requested_rollback_kind),
-        servicing_state = format!("{:?}", datastore.host_status().servicing_state),
-        stage = allowed_operations.has_stage(),
-        finalize = allowed_operations.has_finalize(),
-    );
-
     // Tracks the rollback kind actually staged this call, so the trailing
     // "stage completed, finalize not requested this call" return below can
     // report it instead of a generic NoActiveServicing. Stays None when
@@ -183,6 +150,25 @@ pub fn execute_rollback(
         };
         staged_rollback_type = Some(rollback_type);
 
+        // Only mint/attach a servicing ID and fire manual_rollback_start
+        // once we've confirmed a real rollback target exists -- not any
+        // earlier (e.g. unconditionally at the top of this function), so
+        // an invalid-state/last_error rejection or a "no rollback
+        // available" no-op above never mints or overwrites an ID for an
+        // operation that never actually starts.
+        let servicing_id = datastore
+            .new_servicing_id()
+            .message("Failed to create servicing ID")?;
+        info!("Servicing ID: {servicing_id}");
+        set_servicing_id(servicing_id.to_string());
+        tracing::info!(
+            metric_name = "manual_rollback_start",
+            requested_rollback_kind = format!("{:?}", requested_rollback_kind),
+            servicing_state = format!("{:?}", datastore.host_status().servicing_state),
+            stage = true,
+            finalize = allowed_operations.has_finalize(),
+        );
+
         let engine_context = EngineContext::new(EngineContextParams {
             spec: requested_rollback.spec.clone(),
             spec_old: datastore.host_status().spec.clone(),
@@ -226,6 +212,30 @@ pub fn execute_rollback(
                 }));
             }
         };
+
+        // Only restore the persisted servicing ID (and fire
+        // manual_rollback_start for this finalize-only call) now that
+        // servicing_state has been confirmed to actually match a real
+        // manual-rollback staged state above -- not before, so a rejected
+        // finalize-only request (e.g. from Provisioned, with nothing
+        // staged) never misattributes telemetry to some unrelated past
+        // operation's ID. Skipped when this same call also staged above
+        // (has_stage() true too): that branch already minted+attached a
+        // fresh ID and fired its own start metric for the combined
+        // operation.
+        if !allowed_operations.has_stage() {
+            if let Ok(Some(servicing_id)) = datastore.servicing_id() {
+                set_servicing_id(servicing_id.to_string());
+            }
+            tracing::info!(
+                metric_name = "manual_rollback_start",
+                requested_rollback_kind = format!("{:?}", requested_rollback_kind),
+                servicing_state = format!("{:?}", datastore.host_status().servicing_state),
+                stage = false,
+                finalize = true,
+            );
+        }
+
         let engine_context = EngineContext::new(EngineContextParams {
             spec: datastore.host_status().spec.clone(),
             spec_old: datastore.host_status().spec_old.clone(),
