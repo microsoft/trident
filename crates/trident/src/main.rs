@@ -126,9 +126,7 @@ fn run_trident(
     // leave a datastore behind and make a later command wrongly pass the
     // "host not provisioned" existence check.
     let config_path = match &args.command {
-        Commands::Update { config, .. } | Commands::Install { config, .. } => {
-            Some(config.clone())
-        }
+        Commands::Update { config, .. } | Commands::Install { config, .. } => Some(config.clone()),
         Commands::RebuildRaid { config, .. } => config.clone(),
         _ => None,
     };
@@ -143,8 +141,10 @@ fn run_trident(
         }
     }
 
-    let can_initialize_datastore =
-        matches!(args.command, Commands::Install { .. } | Commands::Update { .. });
+    let can_initialize_datastore = matches!(
+        args.command,
+        Commands::Install { .. } | Commands::Update { .. }
+    );
     match AgentConfig::load().and_then(|agent_config| {
         if !can_initialize_datastore && !agent_config.datastore_path().exists() {
             return Ok(None);
@@ -530,10 +530,20 @@ fn setup_tracing(
         | Commands::Diagnose { .. }
         | Commands::OfflineInitialize { .. }
         | Commands::StartNetwork { .. } => {
+            // `diagnose` reads back this same local metrics file and
+            // repackages its *pre-existing* content into a support bundle
+            // (see `diagnostics::generate_and_bundle`) -- truncating it
+            // first, as every other command here does, would destroy the
+            // history it's supposed to be collecting and leave only the
+            // metrics diagnose emits about itself. Append instead, just
+            // for this one command.
+            let local_sender = if matches!(args.command, Commands::Diagnose { .. }) {
+                tracestream.make_trace_sender_appending()
+            } else {
+                tracestream.make_trace_sender()
+            };
             let mut layers: Vec<Box<dyn Layer<Registry> + Send + Sync>> = vec![Box::new(
-                tracestream
-                    .make_trace_sender()
-                    .with_filter(filter::LevelFilter::INFO),
+                local_sender.with_filter(filter::LevelFilter::INFO),
             )];
 
             // As functionality moves to the Daemon, move the journald layer to
