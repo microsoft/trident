@@ -168,6 +168,33 @@ fn run_trident(
                     _ => unreachable!(),
                 };
 
+                // Determined up front -- before the correlation ID pre-warm
+                // below, which for Install/Update may create the datastore
+                // as a side effect -- so a missing/nonexistent --config is
+                // rejected before that happens. This previously ran deep
+                // inside run_with_operation's closure, after the pre-warm
+                // had already created the datastore for Install/Update, so
+                // a failed invocation with a bad --config could leave a
+                // datastore behind and make a later command wrongly pass
+                // the "host not provisioned" existence check.
+                let config_path = match &args.command {
+                    Commands::Update { config, .. } | Commands::Install { config, .. } => {
+                        Some(config.clone())
+                    }
+                    Commands::RebuildRaid { config, .. } => config.clone(),
+                    _ => None,
+                };
+                if let Some(path) = &config_path {
+                    if !path.exists() {
+                        return run_with_operation(&command, || {
+                            Err(TridentError::new(InvalidInputError::ReadInputFile {
+                                path: path.to_string_lossy().to_string(),
+                            }))
+                            .message("Config file does not exist")
+                        });
+                    }
+                }
+
                 // Pre-warm the correlation ID on the shared TraceStream
                 // before run_with_operation below fires command_start:
                 // Trident::new (further down, inside the closure) is the
@@ -214,23 +241,8 @@ fn run_trident(
                 }
 
                 run_with_operation(&command, || {
-                    let config_path = match &args.command {
-                        Commands::Update { config, .. } | Commands::Install { config, .. } => {
-                            Some(config.clone())
-                        }
-                        Commands::RebuildRaid { config, .. } => config.clone(),
-                        _ => None,
-                    };
-
-                    if let Some(path) = &config_path {
-                        if !path.exists() {
-                            return Err(TridentError::new(InvalidInputError::ReadInputFile {
-                                path: path.to_string_lossy().to_string(),
-                            }))
-                            .message("Config file does not exist");
-                        }
-                    }
-
+                    // config_path was already validated (existence-checked)
+                    // above, before the correlation ID pre-warm.
                     let agent_config = AgentConfig::load()?;
                     // For non-install and non-update (update will check and has special handling for CIH
                     // scenario) commands, we expect the datastore to exist
