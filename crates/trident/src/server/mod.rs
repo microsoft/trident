@@ -108,15 +108,16 @@ pub fn server_main(
         }
     };
 
-    // Pre-warm the correlation ID on the shared TraceStream before
-    // accepting any RPCs. `Trident::new()` calls this same get-or-create
-    // lookup on every request, but since the very first servicing request
-    // this daemon process ever handles is otherwise the one whose
+    // Pre-warm the installation ID on the shared TraceStream before
+    // accepting any RPCs. This is a read-only lookup -- only
+    // `Trident::install` ever creates one (see
+    // `DataStore::create_installation_id`) -- but without this, the
+    // daemon's very first servicing request would be the one whose
     // command_start (fired by run_with_operation before that request's own
-    // Trident::new() call runs) would not yet carry it, warm it up front
-    // instead. Every later request is unaffected either way, since the
-    // shared TraceStream keeps whatever was set here (or by the first
-    // request) for the rest of the daemon's lifetime.
+    // Trident::new() call runs) doesn't yet carry it. Every later request
+    // is unaffected either way, since the shared TraceStream keeps
+    // whatever was set here (or by the first request) for the rest of the
+    // daemon's lifetime.
     //
     // Skipped entirely when the datastore doesn't exist yet:
     // DataStore::open_or_create creates the file as a side effect, which
@@ -126,18 +127,21 @@ pub fn server_main(
     // requested.
     if agent_config.datastore_path().exists() {
         match DataStore::open_or_create(agent_config.datastore_path())
-            .and_then(|mut ds| ds.correlation_id())
+            .and_then(|ds| ds.installation_id())
         {
-            Ok(correlation_id) => {
-                info!("Correlation ID: {correlation_id}");
-                tracestream.set_correlation_id(correlation_id.to_string());
+            Ok(Some(installation_id)) => {
+                info!("Installation ID: {installation_id}");
+                tracestream.set_installation_id(installation_id.to_string());
+            }
+            Ok(None) => {
+                debug!("No installation ID persisted yet (host not yet installed)");
             }
             Err(e) => {
-                warn!("Failed to get or create correlation ID: {e:?}");
+                warn!("Failed to read installation ID: {e:?}");
             }
         }
     } else {
-        debug!("No datastore yet, skipping correlation ID pre-warm");
+        debug!("No datastore yet, skipping installation ID pre-warm");
     }
 
     let shutdown_signals = match ShutdownSignals::setup_signal_handlers() {
