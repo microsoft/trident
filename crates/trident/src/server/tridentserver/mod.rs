@@ -211,16 +211,20 @@ impl TridentServer {
         // skips itself when the datastore doesn't exist yet -- so a
         // request that arrives before any datastore exists (e.g. this
         // daemon's very first install) would otherwise never see one.
-        // `name` (install/update, including their stage/finalize-suffixed
-        // variants) identifies the only requests that can create a
-        // brand-new datastore, mirroring the CLI's own
-        // `can_initialize_datastore` check -- for those, mint and persist
-        // a correlation ID now via the same get-or-create call
-        // Trident::new would otherwise make moments later, even before
-        // the datastore exists. Every other request still skips this when
-        // the datastore doesn't exist yet, since it requires one to
-        // already exist.
-        let can_initialize_datastore = name.starts_with("install") || name.starts_with("update");
+        // `name` identifies the requests that can create a brand-new
+        // datastore: install/update (including their stage/finalize-
+        // suffixed variants), mirroring the CLI's own
+        // `can_initialize_datastore` check, plus `stream_disk` -- a
+        // direct-streaming install path (see
+        // `services/streaming.rs`/`tools/pkg/netlaunch`) used when no
+        // Host Configuration/datastore exists yet either. For those, mint
+        // and persist a correlation ID now via the same get-or-create
+        // call Trident::new would otherwise make moments later, even
+        // before the datastore exists. Every other request still skips
+        // this when the datastore doesn't exist yet, since it requires
+        // one to already exist.
+        let can_initialize_datastore =
+            name.starts_with("install") || name.starts_with("update") || name == "stream_disk";
         match AgentConfig::load().and_then(|agent_config| {
             if !can_initialize_datastore && !agent_config.datastore_path().exists() {
                 return Ok(None);
