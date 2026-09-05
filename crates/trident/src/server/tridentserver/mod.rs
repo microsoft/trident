@@ -25,6 +25,7 @@ use trident_proto::v1::{
 
 use crate::{
     agentconfig::AgentConfig,
+    datastore::DataStore,
     logging::{logfwd::LogForwarder, operation_context},
     server::{activitytracker::ActivityTracker, support::stream::StreamWithLock},
     DataStore, ExitKind, Logstream, TraceStream,
@@ -206,36 +207,47 @@ impl TridentServer {
         let guard = self.try_acquire_write_lock()?;
 
         // Re-check for a persisted correlation ID before this request
-        // fires its own command_start (below, via run_with_operation).
+        // fires its own command_start (below, via run_command).
         // server_main's daemon-startup pre-warm only ever runs once, and
         // skips itself when the datastore doesn't exist yet -- so a
-        // request that arrives before any datastore exists (e.g. this
-        // daemon's very first install) would otherwise never see one.
-        // `name` (install/update, including their stage/finalize-suffixed
-        // variants) identifies the only requests that can create a
-        // brand-new datastore, mirroring the CLI's own
-        // `can_initialize_datastore` check -- for those, mint and persist
-        // a correlation ID now via the same get-or-create call
-        // Trident::new would otherwise make moments later, even before
-        // the datastore exists. Every other request still skips this when
-        // the datastore doesn't exist yet, since it requires one to
-        // already exist.
-        let can_initialize_datastore = name.starts_with("install") || name.starts_with("update");
-        match AgentConfig::load().and_then(|agent_config| {
-            if !can_initialize_datastore && !agent_config.datastore_path().exists() {
-                return Ok(None);
-            }
-            DataStore::open_or_create(agent_config.datastore_path())
-                .and_then(|mut ds| ds.correlation_id())
-                .map(Some)
-        }) {
-            Ok(Some(correlation_id)) => {
-                self.tracestream
-                    .set_correlation_id(correlation_id.to_string());
-            }
-            Ok(None) => {}
-            Err(e) => {
-                warn!("Failed to get or create correlation ID: {e:?}");
+        // daemon that starts before the host is ever installed, then
+        // serves a request some time after a *different* path (e.g. a
+        // concurrent CLI invocation, or an earlier servicing request on
+        // this same daemon) has since created the datastore, would
+        // otherwise still be missing it here. `name` (install/update,
+        // including their stage/finalize-suffixed variants) identifies
+        // the only requests that can create a brand-new datastore,
+        // mirroring the CLI's own `can_initialize_datastore` check -- for
+        // those, mint and persist a correlation ID now via the same
+        // get-or-create call Trident::new would otherwise make moments
+        // later, even before the datastore exists. Every other request
+        // still skips this when the datastore doesn't exist yet, since it
+        // requires one to already exist.
+        let already_warmed = self
+            .tracestream
+            .correlation_id_handle()
+            .read()
+            .map(|v| v.is_some())
+            .unwrap_or(false);
+        if !already_warmed {
+            let can_initialize_datastore =
+                name.starts_with("install") || name.starts_with("update");
+            match AgentConfig::load().and_then(|agent_config| {
+                if !can_initialize_datastore && !agent_config.datastore_path().exists() {
+                    return Ok(None);
+                }
+                DataStore::open_or_create(agent_config.datastore_path())
+                    .and_then(|mut ds| ds.correlation_id())
+                    .map(Some)
+            }) {
+                Ok(Some(correlation_id)) => {
+                    self.tracestream
+                        .set_correlation_id(correlation_id.to_string());
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    warn!("Failed to get or create correlation ID: {e:?}");
+                }
             }
         }
 
