@@ -571,8 +571,7 @@ impl Trident {
             // but `Trident::install` is the only place that ever actually
             // creates one (see `DataStore::create_installation_id`); every
             // other command just reads whatever was stamped here (see
-            // `Trident::new`) -- and mint a fresh servicing ID for this
-            // install operation. Uses `datastore` as it stands after any
+            // `Trident::new`). Uses `datastore` as it stands after any
             // multiboot swap above, so a multiboot install's own (new,
             // eventually-persistent) datastore gets its own installation ID,
             // not the already-provisioned host's.
@@ -581,12 +580,6 @@ impl Trident {
                 .message("Failed to create installation ID")?;
             info!("Installation ID: {installation_id}");
             tracestream.set_installation_id(installation_id.to_string());
-
-            let servicing_id = datastore
-                .new_servicing_id()
-                .message("Failed to create servicing ID")?;
-            info!("Servicing ID: {servicing_id}");
-            set_servicing_id(servicing_id.to_string());
 
             // Use a prefetched image if provided, otherwise load the image
             // specified in the Host Configuration.
@@ -600,6 +593,17 @@ impl Trident {
                 debug!("Host Configuration has been updated");
 
                 if allowed_operations.has_stage() {
+                    // A genuinely new clean install is staging here, so mint
+                    // a fresh servicing ID for it -- unlike the
+                    // CleanInstallStaged branch below, which resumes an
+                    // *existing* staged install and must not overwrite its
+                    // ID.
+                    let servicing_id = datastore
+                        .new_servicing_id()
+                        .message("Failed to create servicing ID")?;
+                    info!("Servicing ID: {servicing_id}");
+                    set_servicing_id(servicing_id.to_string());
+
                     engine::clean_install(
                         &host_config,
                         datastore,
@@ -627,6 +631,19 @@ impl Trident {
                         // clean install, if requested.
                         debug!("There is a clean install staged on the host");
                         if allowed_operations.has_finalize() {
+                            // This finalize-only call never staged anything
+                            // itself -- read back the servicing ID persisted
+                            // by the earlier, separate stage call instead of
+                            // minting a new one, so both halves of the same
+                            // install can still be correlated. Safe to
+                            // assume it's the *same* staged install's ID:
+                            // reaching this arm already required
+                            // `datastore.host_status().spec == host_config`
+                            // above, i.e. this invocation's config is
+                            // identical to whatever was staged.
+                            if let Ok(Some(servicing_id)) = datastore.servicing_id() {
+                                set_servicing_id(servicing_id.to_string());
+                            }
                             engine::finalize_clean_install(datastore, None, None, is_stream_image)
                                 .message("Failed to finalize clean install")
                                 .map(|ek| (ek, image_hash.clone(), ServicingType::CleanInstall))
@@ -642,7 +659,16 @@ impl Trident {
                     }
                     ServicingState::NotProvisioned => {
                         // Otherwise, if servicing state is NotProvisioned, need to either re-execute the
-                        // failed clean install OR inform the user that no update is needed.
+                        // failed clean install OR inform the user that no update is needed. Either way
+                        // this is a fresh attempt (nothing usable was ever
+                        // actually staged), so mint a fresh servicing ID,
+                        // same as the genuinely-new-install branch above.
+                        let servicing_id = datastore
+                            .new_servicing_id()
+                            .message("Failed to create servicing ID")?;
+                        info!("Servicing ID: {servicing_id}");
+                        set_servicing_id(servicing_id.to_string());
+
                         engine::clean_install(
                             &host_config,
                             datastore,
