@@ -189,7 +189,7 @@ impl TridentServer {
     /// It may also return other error `Status` values if log forwarding or task
     /// setup fails. In all error cases, no servicing task is spawned and no stream
     /// of responses is produced.
-    /// Re-checks for a persisted correlation ID before a request fires its
+    /// Re-checks for a persisted installation ID before a request fires its
     /// own `command_start` (via `run_command`). The daemon-startup pre-warm
     /// in `server_main` only ever runs once, and deliberately skips itself
     /// when the datastore doesn't exist yet (see there for why) -- so a
@@ -205,15 +205,15 @@ impl TridentServer {
     /// `name` (install/update, including their stage/finalize-suffixed
     /// variants) identifies the only requests that can create a
     /// brand-new datastore, mirroring the CLI's own
-    /// `can_initialize_datastore` check -- for those, mint and persist a
-    /// correlation ID now via the same get-or-create call Trident::new
+    /// `can_initialize_datastore` check -- for those, mint and persist an
+    /// installation ID now via the same get-or-create call Trident::new
     /// would otherwise make moments later, even before the datastore
     /// exists. Every other request skips this when the datastore doesn't
     /// exist yet, since it requires one to already exist.
-    fn refresh_correlation_id(&self, name: &str) {
+    fn refresh_installation_id(&self, name: &str) {
         let already_warmed = self
             .tracestream
-            .correlation_id_handle()
+            .installation_id_handle()
             .read()
             .map(|v| v.is_some())
             .unwrap_or(false);
@@ -226,16 +226,15 @@ impl TridentServer {
                 return Ok(None);
             }
             DataStore::open_or_create(agent_config.datastore_path())
-                .and_then(|mut ds| ds.correlation_id())
-                .map(Some)
+                .and_then(|ds| ds.installation_id())
         }) {
-            Ok(Some(correlation_id)) => {
+            Ok(Some(installation_id)) => {
                 self.tracestream
-                    .set_correlation_id(correlation_id.to_string());
+                    .set_installation_id(installation_id.to_string());
             }
             Ok(None) => {}
             Err(e) => {
-                warn!("Failed to get or create correlation ID: {e:?}");
+                warn!("Failed to read installation ID: {e:?}");
             }
         }
     }
@@ -257,7 +256,7 @@ impl TridentServer {
         // Try to acquire the connection lock in write mode
         let guard = self.try_acquire_write_lock()?;
 
-        self.refresh_correlation_id(name);
+        self.refresh_installation_id(name);
 
         // Tag every metric/tracing event `f` fires (on whatever thread it
         // ultimately runs on -- see `spawn_servicing_task`, which runs it
@@ -380,7 +379,7 @@ impl TridentServer {
             return Err(Status::unavailable("Servicing is active"));
         };
 
-        self.refresh_correlation_id(name);
+        self.refresh_installation_id(name);
 
         // Tag every metric/tracing event `f` fires (on the dedicated OS
         // thread `spawn_reading_task` runs it on, via
