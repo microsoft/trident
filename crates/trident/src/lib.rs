@@ -229,14 +229,31 @@ impl Trident {
         // Attach this host's installation ID -- if one has already been
         // stamped -- to the shared TraceStream before any startup metrics
         // are emitted, so every trace/metric -- including this very
-        // "trident_start" event -- carries it once available. This is a
-        // read-only lookup: unlike the old correlation ID, the
-        // installation ID is only ever *created* by `Trident::install`
-        // (at the start of staging), never here, so every other caller of
-        // `Trident::new` (update/commit/rollback/rebuild-raid, and every
-        // daemon RPC handler) just attaches whatever was already
-        // persisted at install time.
-        match DataStore::open_or_create(datastore_path).and_then(|ds| ds.installation_id()) {
+        // "trident_start" event -- carries it once available. Normally
+        // read-only: unlike the old correlation ID, the installation ID is
+        // only ever *created* by `Trident::install` (at the start of
+        // staging), never here, so every other caller of `Trident::new`
+        // (update/commit/rollback/rebuild-raid, and every daemon RPC
+        // handler) just attaches whatever was already persisted at
+        // install time.
+        //
+        // Except: a datastore can be genuinely provisioned (servicing_state
+        // != NotProvisioned) without ever having gone through
+        // `Trident::install` -- offline initialization and the CIH update
+        // bootstrap both create/adopt a datastore directly. Those hosts
+        // would otherwise never get an installation ID, since nothing else
+        // ever calls `create_installation_id`. Mint one as a one-time
+        // migration in that specific case, while leaving a genuinely
+        // unprovisioned (temporary or not-yet-installed) datastore alone.
+        match DataStore::open_or_create(datastore_path).and_then(|mut ds| {
+            match ds.installation_id()? {
+                Some(id) => Ok(Some(id)),
+                None if ds.host_status().servicing_state != ServicingState::NotProvisioned => {
+                    ds.create_installation_id().map(Some)
+                }
+                None => Ok(None),
+            }
+        }) {
             Ok(Some(installation_id)) => {
                 info!("Installation ID: {installation_id}");
                 tracestream.set_installation_id(installation_id.to_string());
