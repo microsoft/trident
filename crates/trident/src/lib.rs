@@ -56,8 +56,13 @@ pub use crate::{
     },
     grpc_client::client_main,
     logging::{
-        background_log::BackgroundLog, background_uploader::BackgroundUploader,
-        logfwd::LogForwarder, logstream::Logstream, tracestream::TraceStream,
+        appinsights::AppInsightsSender,
+        background_log::BackgroundLog,
+        background_uploader::{BackgroundUploadHandle, BackgroundUploader},
+        logfwd::LogForwarder,
+        logstream::Logstream,
+        operation_context::run_with_operation,
+        tracestream::TraceStream,
     },
     orchestrate::OrchestratorConnection,
     reboot::request_reboot_with_wait,
@@ -81,6 +86,15 @@ lazy_static::lazy_static! {
     pub static ref TRIDENT_SEMVER_VERSION: Version = Version::parse(TRIDENT_VERSION)
         .expect("Failed to parse TRIDENT_VERSION as semver::Version");
 }
+
+/// Azure Monitor / Application Insights connection string, compiled in at
+/// build time via the `AZURE_MONITOR_CONNECTION_STRING` environment
+/// variable. Empty when the variable was not provided at build time.
+pub const AZURE_MONITOR_CONNECTION_STRING: &str =
+    match option_env!("AZURE_MONITOR_CONNECTION_STRING") {
+        Some(v) => v,
+        None => "",
+    };
 
 /// Trident binary path.
 const TRIDENT_BINARY_PATH: &str = "/usr/bin/trident";

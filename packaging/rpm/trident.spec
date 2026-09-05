@@ -11,6 +11,10 @@
 
 %global selinuxtype targeted
 
+# Azure Monitor / Application Insights connection string compiled into the
+# azurelinux distro build of trident binary for best-effort telemetry.
+%global trident_azmon_conn_str_public InstrumentationKey=cb38fc09-8473-4b4a-b5e4-208aa66a974f;IngestionEndpoint=https://eastus-8.in.applicationinsights.azure.com/;LiveEndpoint=https://eastus.livediagnostics.monitor.azure.com/;ApplicationId=b9814e3f-a121-4d99-9ba7-eeaf56195c29
+
 Summary:        Declarative, security-first OS lifecycle agent designed primarily for Azure Linux
 Name:           trident
 # Use hard-coded versions for distro build
@@ -273,9 +277,25 @@ EOF
 %if %{undefined rpm_ver}
 # Use %{version}-%{release} for TRIDENT_VERSION in distro build
 export TRIDENT_VERSION="%{version}-%{release}"
+# Public-usage placeholder connection string (see comment near the top of
+# this spec file).
+export AZURE_MONITOR_CONNECTION_STRING="%{trident_azmon_conn_str_public}"
 %else
 # Use %{trident_version} for Trident repo build
 export TRIDENT_VERSION="%{trident_version}"
+# Connection string identifying telemetry as coming from Trident's own
+# CI/CD pipeline builds (as opposed to azurelinux distro-package installs,
+# which use the different, hardcoded connection string above). Hardcoded in
+# .pipelines/templates/stages/trident_rpms/release.yml and passed through
+# to this spec as an rpmbuild --define, the same way %{trident_version} is.
+#
+# Use the optional-expansion form (`%{?...}`): repo-build paths that define
+# rpm_ver but do not pass --define trident_azmon_conn_str (e.g.
+# packaging/docker/Dockerfile.full.public) must fall back to an empty
+# string, matching the documented no-telemetry default -- not the literal,
+# undefined `%{trident_azmon_conn_str}` text RPM would otherwise leave in
+# place.
+export AZURE_MONITOR_CONNECTION_STRING="%{?trident_azmon_conn_str}"
 %endif
 cargo build --release -p trident -p trident-acl-agent
 

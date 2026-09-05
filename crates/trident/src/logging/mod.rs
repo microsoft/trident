@@ -1,10 +1,12 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+pub(super) mod appinsights;
 pub(super) mod background_log;
 pub(super) mod background_uploader;
 pub(super) mod logfwd;
 pub(super) mod logstream;
+pub(super) mod operation_context;
 pub(super) mod tracestream;
 
 #[derive(Debug, Serialize, Deserialize)]
