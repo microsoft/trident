@@ -703,6 +703,49 @@ mod tests {
     }
 
     #[test]
+    /// Regression test: `operation_context::set_servicing_id` must actually
+    /// reach the serialized trace entry's `additional_fields.servicing_id`
+    /// -- mirrors `test_tracestream_installation_id_written_to_additional_fields`
+    /// above, but for the persistent per-servicing-operation ID instead of
+    /// the per-install one.
+    fn test_tracestream_servicing_id_written_to_additional_fields() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let metrics_path = temp_dir.path().join("metrics.jsonl");
+        let tracestream = TraceStream::default();
+        let trace_sender = tracestream
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
+            .with_filter(filter::LevelFilter::INFO);
+
+        // See test_tracestream_write_metric_event_to_file for why a scoped
+        // (not global) default subscriber is used here.
+        let _guard = tracing::subscriber::set_default(
+            tracing_subscriber::Registry::default().with(trace_sender),
+        );
+
+        operation_context::run_with_operation("test_command", || {
+            operation_context::set_servicing_id("test-servicing-id");
+            tracing::info!(metric_name = "test_metric_with_servicing_id", value = true);
+        });
+
+        // Ensure the trace system has time to write the file.
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let file = File::open(&metrics_path).unwrap();
+        let reader = BufReader::new(file);
+        let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
+
+        let metric_found = lines.iter().any(|line| {
+            line.contains(r#""metric_name":"test_metric_with_servicing_id""#)
+                && line.contains(r#""servicing_id":"test-servicing-id""#)
+        });
+
+        assert!(
+            metric_found,
+            "Expected metric with servicing_id field not found in the local metrics file"
+        );
+    }
+
+    #[test]
     fn test_tracestream_write_span_metric_to_file() {
         let temp_dir = tempfile::tempdir().unwrap();
         let metrics_path = temp_dir.path().join("metrics.jsonl");
