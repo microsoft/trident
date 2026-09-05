@@ -258,7 +258,17 @@ impl Trident {
             ));
         }
 
-        tracing::info!(metric_name = "trident_start");
+        // Best-effort: a failure to determine whether this is a CIH (Azure
+        // Container Linux) host must never fail startup, it only means
+        // this one field is missing from the trident_start telemetry.
+        let acl = match cih::is_cih() {
+            Ok(is_cih) => is_cih,
+            Err(e) => {
+                warn!("Failed to determine if host is running CIH: {e:?}");
+                false
+            }
+        };
+        tracing::info!(metric_name = "trident_start", acl = acl);
 
         Ok(Self {
             host_config,
