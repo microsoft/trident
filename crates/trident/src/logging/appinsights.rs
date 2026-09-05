@@ -76,11 +76,13 @@ impl ConnParts {
 /// If `IngestionEndpoint` is not given explicitly, the endpoint is derived
 /// from the sovereign-cloud `EndpointSuffix`/`Location` fields when present
 /// (e.g. `EndpointSuffix=applicationinsights.azure.cn;Location=chinaeast2` ->
-/// `https://chinaeast2.in.applicationinsights.azure.cn`), matching the
-/// Application Insights SDKs' documented connection-string format. Only if
-/// none of `IngestionEndpoint`/`EndpointSuffix` are present does this fall
-/// back to the public Application Insights endpoint -- a sovereign-cloud
-/// string must never be silently redirected to the public endpoint.
+/// `https://chinaeast2.dc.applicationinsights.azure.cn`), matching the
+/// Azure Monitor SDKs' documented connection-string format, which always
+/// uses the `dc` ingestion prefix (with or without `Location`) -- not `in`.
+/// Only if none of `IngestionEndpoint`/`EndpointSuffix` are present does
+/// this fall back to the public Application Insights endpoint -- a
+/// sovereign-cloud string must never be silently redirected to the public
+/// endpoint.
 pub(crate) fn parse_connection_string(s: &str) -> Option<ConnParts> {
     let mut instrumentation_key: Option<String> = None;
     let mut ingestion_endpoint: Option<String> = None;
@@ -113,12 +115,14 @@ pub(crate) fn parse_connection_string(s: &str) -> Option<ConnParts> {
         None => match endpoint_suffix.filter(|s| !s.is_empty()) {
             // Sovereign-cloud form: derive the ingestion endpoint from
             // EndpointSuffix (+ optional Location), rather than assuming the
-            // public endpoint.
+            // public endpoint. The ingestion prefix is always `dc`
+            // (matching the public endpoint's own
+            // `dc.services.visualstudio.com` shape), with or without
+            // Location -- not `in`, which the Azure Monitor SDKs never
+            // produce and which would target a nonstandard/nonexistent
+            // host for sovereign clouds.
             Some(suffix) => match location.filter(|l| !l.is_empty()) {
-                Some(location) => format!("https://{location}.in.{suffix}"),
-                // No location: Application Insights uses the global `dc`
-                // prefix for this form, matching the public endpoint's own
-                // `dc.services.visualstudio.com` shape.
+                Some(location) => format!("https://{location}.dc.{suffix}"),
                 None => format!("https://dc.{suffix}"),
             },
             None => DEFAULT_INGESTION_ENDPOINT.to_string(),
@@ -443,7 +447,7 @@ mod tests {
         assert_eq!(parts.instrumentation_key, "abc123");
         assert_eq!(
             parts.ingestion_endpoint,
-            "https://chinaeast2.in.applicationinsights.azure.cn"
+            "https://chinaeast2.dc.applicationinsights.azure.cn"
         );
     }
 
