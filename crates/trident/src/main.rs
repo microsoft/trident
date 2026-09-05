@@ -61,200 +61,212 @@ fn run_trident(
         proxy_status("NO_PROXY"),
     );
 
-    // Catch exit fast commands
-    match &args.command {
-        Commands::Validate { config } => {
-            return validation::validate_host_config_file(config).map(|()| ExitKind::Done);
-        }
-
-        #[cfg(feature = "pytest-generator")]
-        Commands::Pytest => {
-            pytest::generate_functional_test_manifest();
-            return Ok(ExitKind::Done);
-        }
-
-        Commands::OfflineInitialize {
-            hs_path,
-            lazy_partitions,
-            disk,
-            history_path,
-        } => {
-            return offline::execute(
-                hs_path.as_deref(),
-                lazy_partitions,
-                disk,
-                history_path.as_deref(),
-            )
-            .map(|()| ExitKind::Done);
-        }
-
-        Commands::Get { kind, outfile } => {
-            return Trident::get(AgentConfig::load()?.datastore_path(), outfile, *kind)
-                .message("Failed to retrieve Host Status")
-                .map(|()| ExitKind::Done);
-        }
-
-        // Handle diagnose command
-        Commands::Diagnose {
-            output,
-            journal,
-            selinux,
-        } => {
-            return Trident::diagnose(output, *journal, *selinux)
-                .message("Failed to generate diagnostics")
-                .map(|()| ExitKind::Done);
-        }
-
-        // Handle manual rollback check here so root is not required for --check
+    // Determine the command name up front, covering every command
+    // reachable here (Daemon/GrpcClient never reach run_trident -- see
+    // main(), which dispatches them directly), so command_start/
+    // command_error below cover the *entire* dispatch -- not just the
+    // servicing branch, as before. That previously left every "fast exit"
+    // command (validate, get, diagnose, offline-initialize, rollback
+    // --check, start-network) without either event when it failed, despite
+    // the PR description and documentation saying command_error fires
+    // whenever a command fails. Servicing commands keep their existing
+    // stage/finalize-aware naming via command_name(); the rest use
+    // Commands::name() (hyphens normalized to underscores, matching the
+    // servicing commands' naming style).
+    let command = match &args.command {
+        Commands::Install {
+            allowed_operations, ..
+        } => command_name("install", &cli::to_operations(allowed_operations)),
+        Commands::Update {
+            allowed_operations, ..
+        } => command_name("update", &cli::to_operations(allowed_operations)),
+        Commands::Rollback { check: true, .. } => "rollback_check".to_string(),
         Commands::Rollback {
-            check: true,
-            ab,
-            runtime,
-            ..
-        } => {
-            let datastore = DataStore::open_or_create(AgentConfig::load()?.datastore_path())
-                .message("Failed to open datastore")?;
-            return manual_rollback::check_rollback(
-                &datastore,
-                ManualRollbackRequestKind::from_flags(*runtime, *ab)?,
-            )
-            .message("Failed to check manual rollback availability")
-            .map(|()| ExitKind::Done);
+            allowed_operations, ..
+        } => command_name("rollback", &cli::to_operations(allowed_operations)),
+        Commands::Commit { .. }
+        | Commands::RebuildRaid { .. }
+        | Commands::StartNetwork { .. }
+        | Commands::Get { .. }
+        | Commands::Diagnose { .. }
+        | Commands::Validate { .. }
+        | Commands::OfflineInitialize { .. } => args.command.name().replace('-', "_"),
+        #[cfg(feature = "pytest-generator")]
+        Commands::Pytest => "pytest".to_string(),
+        Commands::Daemon { .. } | Commands::GrpcClient(_) => {
+            unreachable!("Daemon/GrpcClient are dispatched in main(), never reach run_trident")
         }
+    };
 
-        Commands::StartNetwork { config } => {
-            // Lock the streams if we're starting the network
-            // We have no network yet, so we can't send logs or traces anywhere
-            logstream.disable();
-            tracestream.disable();
-
-            return Trident::start_network(HostConfigurationSource::File(config.clone()))
-                .map(|()| ExitKind::Done);
+    // Pre-warm the correlation ID on the shared TraceStream before
+    // run_command below fires command_start: Trident::new (further down,
+    // inside the closure, only reached by the servicing branch) is the
+    // usual place this gets attached, but that's too late for
+    // command_start, which run_command fires immediately, before the
+    // closure even runs.
+    //
+    // Install/Update are the only commands allowed to initialize a
+    // brand-new datastore (see the "host not provisioned" guard further
+    // down), so for those two it's safe -- and necessary, to avoid a fresh
+    // install/update's very first command_start missing a correlation ID
+    // entirely -- to mint and persist one now via the same get-or-create
+    // `correlation_id()` call Trident::new would otherwise make moments
+    // later, even though the datastore doesn't exist yet:
+    // DataStore::open_or_create will just create it, exactly as
+    // Trident::new is about to anyway. For every other command, this is
+    // skipped entirely when the datastore doesn't exist yet: those
+    // commands require an *existing* datastore, and creating one here as a
+    // side effect would let it slip past that later guard.
+    // Determined up front -- before the correlation ID pre-warm below,
+    // which for Install/Update may create the datastore as a side effect
+    // -- so a missing/nonexistent --config is rejected before that
+    // happens. Previously this check ran deep inside run_command's
+    // closure, after the pre-warm had already created the datastore for
+    // Install/Update, so a failed invocation with a bad --config could
+    // leave a datastore behind and make a later command wrongly pass the
+    // "host not provisioned" existence check.
+    let config_path = match &args.command {
+        Commands::Update { config, .. } | Commands::Install { config, .. } => {
+            Some(config.clone())
         }
-
-        _ => (),
+        Commands::RebuildRaid { config, .. } => config.clone(),
+        _ => None,
+    };
+    if let Some(path) = &config_path {
+        if !path.exists() {
+            return run_command(&command, || {
+                Err(TridentError::new(InvalidInputError::ReadInputFile {
+                    path: path.to_string_lossy().to_string(),
+                }))
+                .message("Config file does not exist")
+            });
+        }
     }
 
+    let can_initialize_datastore =
+        matches!(args.command, Commands::Install { .. } | Commands::Update { .. });
+    match AgentConfig::load().and_then(|agent_config| {
+        if !can_initialize_datastore && !agent_config.datastore_path().exists() {
+            return Ok(None);
+        }
+        DataStore::open_or_create(agent_config.datastore_path())
+            .and_then(|mut ds| ds.correlation_id())
+            .map(Some)
+    }) {
+        Ok(Some(correlation_id)) => {
+            info!("Correlation ID: {correlation_id}");
+            tracestream.set_correlation_id(correlation_id.to_string());
+        }
+        Ok(None) => {
+            debug!("No datastore yet, skipping correlation ID pre-warm");
+        }
+        Err(e) => {
+            warn!("Failed to get or create correlation ID: {e:?}");
+        }
+    }
+
+    // Known remaining gap: a Rust panic inside run_command's closure below
+    // still unwinds through run_command's ClearOnDrop guard (which runs
+    // during unwinding, before panic::catch_unwind's Result is even
+    // produced), clearing the operation context before the panic is
+    // converted to a final TridentError further below -- so a genuine
+    // panic (as opposed to a normal Err) still does not get a
+    // command_error metric. Believed rare enough, and already surfaced via
+    // normal error logging, to leave as a follow-up rather than further
+    // restructuring panic handling here.
     let res = panic::catch_unwind(move || {
-        match &args.command {
-            Commands::Install { status, error, .. }
-            | Commands::Update { status, error, .. }
-            | Commands::Commit { status, error }
-            | Commands::RebuildRaid { status, error, .. }
-            | Commands::Rollback { status, error, .. } => {
-                // Determined before any preflight checks below, and used
-                // to wrap the *entire* servicing branch (preflight checks,
-                // Trident::new, and the actual command) in a single
-                // run_command call -- not just the innermost
-                // install/update/commit/rollback/rebuild-raid call, as
-                // before. That previously left Trident::new (and
-                // everything it does, including firing "trident_start")
-                // outside any operation context, and left every preflight
-                // failure (missing config file, unprovisioned host,
-                // Trident::new itself failing, etc.) without a
-                // command_error metric, since the wrapper only covered the
-                // innermost call.
-                //
-                // Known remaining gap: a Rust panic inside this closure
-                // still unwinds through run_command's ClearOnDrop guard
-                // (which runs during unwinding, before panic::catch_unwind's
-                // Result is even produced), clearing the operation context
-                // before the panic is converted to a final TridentError
-                // further below -- so a genuine panic (as opposed to a
-                // normal Err) still does not get a command_error metric.
-                // Believed rare enough, and already surfaced via normal
-                // error logging, to leave as a follow-up rather than
-                // further restructuring panic handling here.
-                let command = match &args.command {
-                    Commands::Install {
-                        allowed_operations, ..
-                    } => command_name("install", &cli::to_operations(allowed_operations)),
-                    Commands::Update {
-                        allowed_operations, ..
-                    } => command_name("update", &cli::to_operations(allowed_operations)),
-                    Commands::Commit { .. } => "commit".to_string(),
-                    Commands::Rollback {
-                        allowed_operations, ..
-                    } => command_name("rollback", &cli::to_operations(allowed_operations)),
-                    Commands::RebuildRaid { .. } => "rebuild_raid".to_string(),
-                    _ => unreachable!(),
-                };
-
-                // Determined up front -- before the correlation ID pre-warm
-                // below, which for Install/Update may create the datastore
-                // as a side effect -- so a missing/nonexistent --config is
-                // rejected before that happens. This previously ran deep
-                // inside run_with_operation's closure, after the pre-warm
-                // had already created the datastore for Install/Update, so
-                // a failed invocation with a bad --config could leave a
-                // datastore behind and make a later command wrongly pass
-                // the "host not provisioned" existence check.
-                let config_path = match &args.command {
-                    Commands::Update { config, .. } | Commands::Install { config, .. } => {
-                        Some(config.clone())
-                    }
-                    Commands::RebuildRaid { config, .. } => config.clone(),
-                    _ => None,
-                };
-                if let Some(path) = &config_path {
-                    if !path.exists() {
-                        return run_with_operation(&command, || {
-                            Err(TridentError::new(InvalidInputError::ReadInputFile {
-                                path: path.to_string_lossy().to_string(),
-                            }))
-                            .message("Config file does not exist")
-                        });
-                    }
+        run_command(&command, || {
+            // Catch exit fast commands
+            match &args.command {
+                Commands::Validate { config } => {
+                    return validation::validate_host_config_file(config).map(|()| ExitKind::Done);
                 }
 
-                // Pre-warm the correlation ID on the shared TraceStream
-                // before run_command below fires command_start:
-                // Trident::new (further down, inside the closure) is the
-                // usual place this gets attached, but that's too late for
-                // command_start, which run_command fires immediately,
-                // before the closure even runs.
-                //
-                // Install/Update are the only commands allowed to
-                // initialize a brand-new datastore (see the "host not
-                // provisioned" guard further down), so for those two it's
-                // safe -- and necessary, to avoid a fresh install/update's
-                // very first command_start missing a correlation ID
-                // entirely -- to mint and persist one now via the same
-                // get-or-create `correlation_id()` call Trident::new would
-                // otherwise make moments later, even though the datastore
-                // doesn't exist yet: DataStore::open_or_create will just
-                // create it, exactly as Trident::new is about to anyway.
-                // For every other command, this is skipped entirely when
-                // the datastore doesn't exist yet: those commands require
-                // an *existing* datastore, and creating one here as a side
-                // effect would let it slip past that later guard.
-                let can_initialize_datastore = matches!(
-                    args.command,
-                    Commands::Install { .. } | Commands::Update { .. }
-                );
-                match AgentConfig::load().and_then(|agent_config| {
-                    if !can_initialize_datastore && !agent_config.datastore_path().exists() {
-                        return Ok(None);
-                    }
-                    DataStore::open_or_create(agent_config.datastore_path())
-                        .and_then(|mut ds| ds.correlation_id())
-                        .map(Some)
-                }) {
-                    Ok(Some(correlation_id)) => {
-                        info!("Correlation ID: {correlation_id}");
-                        tracestream.set_correlation_id(correlation_id.to_string());
-                    }
-                    Ok(None) => {
-                        debug!("No datastore yet, skipping correlation ID pre-warm");
-                    }
-                    Err(e) => {
-                        warn!("Failed to get or create correlation ID: {e:?}");
-                    }
+                #[cfg(feature = "pytest-generator")]
+                Commands::Pytest => {
+                    pytest::generate_functional_test_manifest();
+                    return Ok(ExitKind::Done);
                 }
 
-                run_command(&command, || {
-                    // config_path was already validated (existence-checked)
+                Commands::OfflineInitialize {
+                    hs_path,
+                    lazy_partitions,
+                    disk,
+                    history_path,
+                } => {
+                    return offline::execute(
+                        hs_path.as_deref(),
+                        lazy_partitions,
+                        disk,
+                        history_path.as_deref(),
+                    )
+                    .map(|()| ExitKind::Done);
+                }
+
+                Commands::Get { kind, outfile } => {
+                    return Trident::get(AgentConfig::load()?.datastore_path(), outfile, *kind)
+                        .message("Failed to retrieve Host Status")
+                        .map(|()| ExitKind::Done);
+                }
+
+                // Handle diagnose command
+                Commands::Diagnose {
+                    output,
+                    journal,
+                    selinux,
+                } => {
+                    return Trident::diagnose(output, *journal, *selinux)
+                        .message("Failed to generate diagnostics")
+                        .map(|()| ExitKind::Done);
+                }
+
+                // Handle manual rollback check here so root is not required for --check
+                Commands::Rollback {
+                    check: true,
+                    ab,
+                    runtime,
+                    ..
+                } => {
+                    let datastore =
+                        DataStore::open_or_create(AgentConfig::load()?.datastore_path())
+                            .message("Failed to open datastore")?;
+                    return manual_rollback::check_rollback(
+                        &datastore,
+                        ManualRollbackRequestKind::from_flags(*runtime, *ab)?,
+                    )
+                    .message("Failed to check manual rollback availability")
+                    .map(|()| ExitKind::Done);
+                }
+
+                Commands::StartNetwork { config } => {
+                    // Lock the streams if we're starting the network
+                    // We have no network yet, so we can't send logs or traces anywhere
+                    logstream.disable();
+                    tracestream.disable();
+
+                    return Trident::start_network(HostConfigurationSource::File(config.clone()))
+                        .map(|()| ExitKind::Done);
+                }
+
+                _ => (),
+            }
+
+            match &args.command {
+                Commands::Install { status, error, .. }
+                | Commands::Update { status, error, .. }
+                | Commands::Commit { status, error }
+                | Commands::RebuildRaid { status, error, .. }
+                | Commands::Rollback { status, error, .. } => {
+                    // config_path's existence was already validated
                     // above, before the correlation ID pre-warm.
+                    let config_path = match &args.command {
+                        Commands::Update { config, .. } | Commands::Install { config, .. } => {
+                            Some(config.clone())
+                        }
+                        Commands::RebuildRaid { config, .. } => config.clone(),
+                        _ => None,
+                    };
+
                     let agent_config = AgentConfig::load()?;
                     // For non-install and non-update (update will check and has special handling for CIH
                     // scenario) commands, we expect the datastore to exist
@@ -346,10 +358,10 @@ fn run_trident(
                     }
 
                     res.message(format!("Failed to execute '{}' command", args.command))
-                })
+                }
+                _ => unreachable!(),
             }
-            _ => unreachable!(),
-        }
+        })
     });
 
     match res {
