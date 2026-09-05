@@ -322,6 +322,16 @@ fn finalize_rollback(
             value = true
         );
 
+        // Persist here (not inside runtime_update::rollback's shared
+        // finalize_or_rollback_runtime_update helper, which no longer
+        // persists internally) now that this call's own outcome metric
+        // has fired, so the archived metrics file actually includes it.
+        engine::persist_background_log_and_metrics(
+            &datastore.host_status().spec.trident.datastore_path,
+            None,
+            datastore.host_status().servicing_state,
+        );
+
         return Ok(rollback_exit_kind);
     }
 
