@@ -54,7 +54,11 @@ themselves:
   servicing operation, not the whole host installation -- but unlike
   `operation_id` below, it's persistent, so it can still correlate a
   staging invocation with a later, separate finalize invocation (e.g. an
-  A/B update, which reboots in between the two).
+  A/B update, which reboots in between the two). Present only once a
+  servicing operation has actually been confirmed and attached to the
+  current invocation: `command_start`, preflight failures, and any
+  command that determines there's nothing to do (e.g. a no-op finalize)
+  are all sent without this field, since it's only set after that point.
 - `operation_id`: a fresh, random ID generated for each individual command
   invocation (e.g. one `trident update` run, or one gRPC request handled
   by `tridentd`). Unlike `installation_id`/`servicing_id`, this is never
