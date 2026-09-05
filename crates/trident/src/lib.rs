@@ -268,7 +268,23 @@ impl Trident {
                 false
             }
         };
-        tracing::info!(metric_name = "trident_start", acl = acl);
+        // CLOCK_BOOTTIME gives nanosecond-resolution time since boot
+        // (including any suspended time), unlike sysinfo::System::uptime()
+        // (or a naive /proc/uptime parse), which only exposes whole-second
+        // resolution. Best-effort: clock_gettime with a valid clock ID
+        // essentially never fails on Linux, but fall back to 0.0 rather
+        // than failing startup if it somehow does.
+        let uptime_secs = nix::time::clock_gettime(nix::time::ClockId::CLOCK_BOOTTIME)
+            .map(|ts| Duration::from(ts).as_secs_f64())
+            .unwrap_or_else(|e| {
+                warn!("Failed to read CLOCK_BOOTTIME: {e}");
+                0.0
+            });
+        tracing::info!(
+            metric_name = "trident_start",
+            acl = acl,
+            uptime_secs = uptime_secs,
+        );
 
         Ok(Self {
             host_config,
