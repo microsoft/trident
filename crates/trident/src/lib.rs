@@ -272,13 +272,15 @@ impl Trident {
         // (including any suspended time), unlike sysinfo::System::uptime()
         // (or a naive /proc/uptime parse), which only exposes whole-second
         // resolution. Best-effort: clock_gettime with a valid clock ID
-        // essentially never fails on Linux, but fall back to 0.0 rather
-        // than failing startup if it somehow does.
+        // essentially never fails on Linux, but fall back to NaN (which
+        // serde_json serializes as JSON `null`, a genuine "not available"
+        // rather than a misleading literal zero) rather than failing
+        // startup if it somehow does.
         let uptime_secs = nix::time::clock_gettime(nix::time::ClockId::CLOCK_BOOTTIME)
             .map(|ts| Duration::from(ts).as_secs_f64())
             .unwrap_or_else(|e| {
                 warn!("Failed to read CLOCK_BOOTTIME: {e}");
-                0.0
+                f64::NAN
             });
         tracing::info!(
             metric_name = "trident_start",
