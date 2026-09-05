@@ -166,8 +166,7 @@ fn run_trident(
         if !can_initialize_datastore && !agent_config.datastore_path().exists() {
             return Ok(None);
         }
-        DataStore::open_or_create(agent_config.datastore_path())
-            .and_then(|ds| ds.installation_id())
+        DataStore::open_or_create(agent_config.datastore_path()).and_then(|ds| ds.installation_id())
     }) {
         Ok(Some(installation_id)) => {
             info!("Installation ID: {installation_id}");

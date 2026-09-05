@@ -44,7 +44,10 @@ themselves:
   just attaches whatever was stamped at install time. Because it's stable
   across every Trident invocation on this host from that point on, it
   lets separate events be correlated back to the same installation over
-  time.
+  time. Conditional on one host's very first `trident install`: events
+  emitted before that install actually reaches the point of creating the
+  ID (its own `command_start`, any preflight failure, and `trident_start`)
+  are sent without this field, since there is nothing to attach yet.
 - `servicing_id`: a random ID persisted in the datastore, minted fresh
   each time a new servicing operation begins staging (install, update, or
   manual rollback). Unlike `installation_id`, it's specific to one
