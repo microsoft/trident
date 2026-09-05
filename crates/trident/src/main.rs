@@ -10,9 +10,8 @@ use trident::{
     cli::{self, Cli, Commands, GetKind, TridentExitCodes},
     init::offline,
     manual_rollback::{self, utils::ManualRollbackRequestKind},
-    run_with_operation, validation, AppInsightsSender, BackgroundLog, BackgroundUploader,
-    DataStore, ExitKind, LogForwarder, Logstream, TraceStream, Trident,
-    TRIDENT_BACKGROUND_LOG_PATH,
+    run_command, validation, AppInsightsSender, BackgroundLog, BackgroundUploader, DataStore,
+    ExitKind, LogForwarder, Logstream, TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
 };
 use trident_api::{
     config::{HostConfigurationSource, Operations},
@@ -146,13 +145,26 @@ fn run_trident(
                 // Determined before any preflight checks below, and used
                 // to wrap the *entire* servicing branch (preflight checks,
                 // Trident::new, and the actual command) in a single
-                // run_with_operation call -- not just the innermost
+                // run_command call -- not just the innermost
                 // install/update/commit/rollback/rebuild-raid call, as
                 // before. That previously left Trident::new (and
                 // everything it does, including firing "trident_start")
-                // outside any operation context: every event from CLI
-                // startup through to just before the actual command ran
-                // had no operation_id/command.
+                // outside any operation context, and left every preflight
+                // failure (missing config file, unprovisioned host,
+                // Trident::new itself failing, etc.) without a
+                // command_error metric, since the wrapper only covered the
+                // innermost call.
+                //
+                // Known remaining gap: a Rust panic inside this closure
+                // still unwinds through run_command's ClearOnDrop guard
+                // (which runs during unwinding, before panic::catch_unwind's
+                // Result is even produced), clearing the operation context
+                // before the panic is converted to a final TridentError
+                // further below -- so a genuine panic (as opposed to a
+                // normal Err) still does not get a command_error metric.
+                // Believed rare enough, and already surfaced via normal
+                // error logging, to leave as a follow-up rather than
+                // further restructuring panic handling here.
                 let command = match &args.command {
                     Commands::Install {
                         allowed_operations, ..
@@ -196,10 +208,10 @@ fn run_trident(
                 }
 
                 // Pre-warm the correlation ID on the shared TraceStream
-                // before run_with_operation below fires command_start:
+                // before run_command below fires command_start:
                 // Trident::new (further down, inside the closure) is the
                 // usual place this gets attached, but that's too late for
-                // command_start, which run_with_operation fires immediately,
+                // command_start, which run_command fires immediately,
                 // before the closure even runs.
                 //
                 // Install/Update are the only commands allowed to
@@ -240,7 +252,7 @@ fn run_trident(
                     }
                 }
 
-                run_with_operation(&command, || {
+                run_command(&command, || {
                     // config_path was already validated (existence-checked)
                     // above, before the correlation ID pre-warm.
                     let agent_config = AgentConfig::load()?;
