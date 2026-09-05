@@ -117,16 +117,27 @@ pub fn server_main(
     // instead. Every later request is unaffected either way, since the
     // shared TraceStream keeps whatever was set here (or by the first
     // request) for the rest of the daemon's lifetime.
-    match DataStore::open_or_create(agent_config.datastore_path())
-        .and_then(|mut ds| ds.correlation_id())
-    {
-        Ok(correlation_id) => {
-            info!("Correlation ID: {correlation_id}");
-            tracestream.set_correlation_id(correlation_id.to_string());
+    //
+    // Skipped entirely when the datastore doesn't exist yet:
+    // DataStore::open_or_create creates the file as a side effect, which
+    // would be a surprising thing for a telemetry pre-warm to do on a
+    // not-yet-installed host. `Trident::new()` will do its own
+    // get-or-create lookup as part of the real operation once one is
+    // requested.
+    if agent_config.datastore_path().exists() {
+        match DataStore::open_or_create(agent_config.datastore_path())
+            .and_then(|mut ds| ds.correlation_id())
+        {
+            Ok(correlation_id) => {
+                info!("Correlation ID: {correlation_id}");
+                tracestream.set_correlation_id(correlation_id.to_string());
+            }
+            Err(e) => {
+                warn!("Failed to get or create correlation ID: {e:?}");
+            }
         }
-        Err(e) => {
-            warn!("Failed to get or create correlation ID: {e:?}");
-        }
+    } else {
+        debug!("No datastore yet, skipping correlation ID pre-warm");
     }
 
     let shutdown_signals = match ShutdownSignals::setup_signal_handlers() {
