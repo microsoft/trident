@@ -372,6 +372,21 @@ impl TridentServer {
             return Err(Status::unavailable("Servicing is active"));
         };
 
+        // Tag every metric/tracing event `f` fires (on the dedicated OS
+        // thread `spawn_reading_task` runs it on, via
+        // `tokio::task::spawn_blocking`) with `command`/`operation_id`, and
+        // fire `command_start`/`command_error`, the same way
+        // `servicing_request` does for write requests -- without this,
+        // read requests (e.g. `get_servicing_state`, `check_rollback`)
+        // fired neither event despite returning `TridentError` on failure
+        // just like servicing requests do.
+        //
+        // Known remaining gap: an RPC that encodes a domain-level failure
+        // in an `Ok` response instead of returning `Err(TridentError)` (if
+        // any -- none currently do) would still not get a command_error,
+        // since that only fires on `Err`.
+        let f = move || operation_context::run_command(name, f);
+
         // Execute the reading function
         Ok(Response::new(
             ServicingManager::spawn_reading_task(servicing_guard, f)
