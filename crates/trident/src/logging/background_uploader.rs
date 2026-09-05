@@ -129,6 +129,60 @@ impl BackgroundUploader {
     }
 }
 
+impl BackgroundUploader {
+    /// Signals the uploader to shut down, waiting up to `deadline` for its
+    /// background thread to drain whatever is already queued and exit.
+    ///
+    /// `Drop`'s own shutdown (used when this isn't called explicitly) waits
+    /// unboundedly: `ignored_servers` (see `start_upload_task`) bounds the
+    /// wait for an origin that outright *fails*, since only the first
+    /// request to it is ever actually attempted, but a slow-but-successful
+    /// endpoint is not bounded that way -- every queued request still gets
+    /// its own attempt, each up to that request's own timeout, so draining
+    /// a large backlog could still take a while. Callers for whom that
+    /// matters (telemetry in particular: "must never meaningfully delay
+    /// Trident's actual work" is a stated design goal here) should call
+    /// this explicitly instead of just letting the value drop.
+    ///
+    /// If `deadline` elapses first, the background thread is abandoned
+    /// (its remaining queued requests may still complete before the
+    /// process actually exits, but this call returns without waiting
+    /// further for them).
+    pub fn shutdown_with_deadline(mut self, deadline: Duration) {
+        let Some((sender, handle)) = self.inner.take() else {
+            return;
+        };
+        drop(sender);
+
+        match join_with_deadline(handle, deadline) {
+            Ok(Ok(())) => debug!("Background uploader shut down"),
+            Ok(Err(e)) => error!("Background uploader thread panicked: {:?}", e),
+            Err(_) => {
+                debug!("Background uploader did not shut down within {deadline:?}; abandoning it")
+            }
+        }
+    }
+}
+
+/// Waits up to `deadline` for `handle` to finish, returning its result if it
+/// does. `JoinHandle::join` has no built-in timeout, so this moves the
+/// actual join onto a throwaway thread and applies the timeout via a
+/// channel receive instead; if `deadline` elapses first, that throwaway
+/// thread (and by extension whatever `handle` was waiting on) is
+/// abandoned rather than awaited further.
+fn join_with_deadline<T: Send + 'static>(
+    handle: JoinHandle<T>,
+    deadline: Duration,
+) -> Result<std::thread::Result<T>, std::sync::mpsc::RecvTimeoutError> {
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    let _ = Builder::new()
+        .name("background-uploader-shutdown-watcher".into())
+        .spawn(move || {
+            let _ = done_tx.send(handle.join());
+        });
+    done_rx.recv_timeout(deadline)
+}
+
 impl Drop for BackgroundUploader {
     fn drop(&mut self) {
         // When the sender is dropped, the upload loop will exit gracefully
@@ -186,7 +240,7 @@ impl BackgroundUploadHandle {
 mod tests {
     use super::*;
 
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use mockito::{Matcher, Server};
 
@@ -442,5 +496,56 @@ mod tests {
             .unwrap_err();
         assert!(err.to_string().contains("shut down"));
         after_drop.assert();
+    }
+
+    #[test]
+    fn test_shutdown_with_deadline_returns_promptly_with_empty_queue() {
+        init_test_logging();
+
+        let uploader = BackgroundUploader::new().unwrap();
+        let start = Instant::now();
+        uploader.shutdown_with_deadline(Duration::from_secs(5));
+        assert!(
+            start.elapsed() < Duration::from_secs(1),
+            "shutdown with nothing queued should be immediate"
+        );
+    }
+
+    #[test]
+    /// Deliberately not exercised via a real `BackgroundUploader` +
+    /// network mock: a genuinely abandoned background thread would keep
+    /// running past this test's own scope, in a process shared with every
+    /// other test in the suite, risking exactly the kind of cross-test
+    /// port/resource collisions a slow real HTTP mock invites under
+    /// `cargo test`'s default parallelism. `join_with_deadline` is pure
+    /// std-only plumbing (a thread + a timed channel receive), so testing
+    /// it directly with a plain `thread::spawn` gives the same coverage
+    /// without that risk.
+    fn test_join_with_deadline_abandons_a_slow_thread() {
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let handle = std::thread::spawn(move || {
+            // Blocks until the test explicitly releases it below, standing
+            // in for a still-busy background uploader thread.
+            let _ = release_rx.recv();
+        });
+
+        let start = Instant::now();
+        let result = join_with_deadline(handle, Duration::from_millis(50));
+        let elapsed = start.elapsed();
+
+        assert!(
+            result.is_err(),
+            "join_with_deadline should report a timeout, not a completed join"
+        );
+        assert!(
+            elapsed < Duration::from_secs(1),
+            "join_with_deadline should return near its deadline, not block on \
+             the still-running thread; took {elapsed:?}"
+        );
+
+        // Unlike the real "abandon" scenario this stands in for, we can
+        // cleanly unblock the spawned thread here, so it exits rather than
+        // lingering for the rest of the test binary's process lifetime.
+        let _ = release_tx.send(());
     }
 }

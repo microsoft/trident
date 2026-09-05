@@ -1,4 +1,4 @@
-use std::{fs, iter, panic, process::ExitCode};
+use std::{fs, iter, panic, process::ExitCode, time::Duration};
 
 use anyhow::{Context, Error};
 use clap::Parser;
@@ -475,6 +475,30 @@ fn setup_tracing(
     Ok((tracestream, telemetry_status))
 }
 
+/// How long to wait for the dedicated telemetry uploader to drain and
+/// shut down before abandoning it (see
+/// `BackgroundUploader::shutdown_with_deadline`). Telemetry must never
+/// meaningfully delay Trident's actual work, including at shutdown -- a
+/// slow-but-successful Application Insights endpoint could otherwise
+/// stall process exit for as long as it takes to drain every queued
+/// event.
+const TELEMETRY_SHUTDOWN_DEADLINE: Duration = Duration::from_secs(5);
+
+/// Wraps a `BackgroundUploader` so it is always shut down with a bounded
+/// deadline when dropped, regardless of which of `main`'s many return
+/// points is taken -- `BackgroundUploader`'s own `Drop` impl (used
+/// elsewhere, e.g. for `bg_uploader`, which carries real log delivery and
+/// is expected to drain fully) waits unboundedly instead.
+struct TelemetryUploaderGuard(Option<BackgroundUploader>);
+
+impl Drop for TelemetryUploaderGuard {
+    fn drop(&mut self) {
+        if let Some(uploader) = self.0.take() {
+            uploader.shutdown_with_deadline(TELEMETRY_SHUTDOWN_DEADLINE);
+        }
+    }
+}
+
 fn main() -> ExitCode {
     // Parse args
     let args = Cli::parse();
@@ -514,9 +538,13 @@ fn main() -> ExitCode {
             }
         })
         .flatten();
+    // Wrapped immediately so every return path in main() below shuts it
+    // down with a bounded deadline, not BackgroundUploader's own unbounded
+    // Drop.
+    let telemetry_uploader = TelemetryUploaderGuard(telemetry_uploader);
 
     // Initialize the telemetry flow
-    let tracing_setup = setup_tracing(&args, telemetry_enabled, telemetry_uploader.as_ref());
+    let tracing_setup = setup_tracing(&args, telemetry_enabled, telemetry_uploader.0.as_ref());
     if let Err(e) = tracing_setup {
         // Defer to stderr since logging is not yet initialized.
         eprintln!("Failed to initialize tracing: {e:?}");
