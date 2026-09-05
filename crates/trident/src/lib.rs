@@ -742,6 +742,25 @@ impl Trident {
                             status.is_management_os = false;
                         })
                         .message("Failed to initialize datastore")?;
+
+                    // Mint the installation ID now, as part of this same
+                    // promotion, rather than waiting for some later,
+                    // separate Trident::new call to notice a provisioned
+                    // datastore with none yet (see the migration in
+                    // Trident::new): this datastore was still NotProvisioned
+                    // when that check ran moments ago, before this CIH
+                    // bootstrap promoted it, so without this it wouldn't be
+                    // minted until whatever the next invocation happens to
+                    // be. Known remaining gap: this invocation's own
+                    // command_start/trident_start (fired even earlier, in
+                    // the CLI/daemon dispatch and Trident::new respectively)
+                    // still won't carry it -- Trident doesn't hold a
+                    // TraceStream handle here to attach it to those -- but
+                    // update_start and everything after it, later in this
+                    // same invocation, now will.
+                    if let Err(e) = datastore.create_installation_id() {
+                        warn!("Failed to create installation ID during CIH bootstrap: {e:?}");
+                    }
                 } else {
                     // For non-CIH images, if the datastore is not persistent, return error
                     return Err(TridentError::new(InvalidInputError::HostNotProvisioned))

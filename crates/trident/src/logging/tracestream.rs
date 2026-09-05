@@ -713,7 +713,7 @@ mod tests {
         let metrics_path = temp_dir.path().join("metrics.jsonl");
         let tracestream = TraceStream::default();
         let trace_sender = tracestream
-            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap(), true)
             .with_filter(filter::LevelFilter::INFO);
 
         // See test_tracestream_write_metric_event_to_file for why a scoped
