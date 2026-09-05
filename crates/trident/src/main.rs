@@ -439,7 +439,11 @@ fn setup_logging(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TelemetryStatus {
     /// Tracing/telemetry setup does not apply to this command at all (the
-    /// `_ => {}` arm in [`setup_tracing`]) -- not logged.
+    /// `Commands::Pytest` arm in [`setup_tracing`], gated behind the
+    /// `pytest-generator` feature) -- not logged. Only ever constructed
+    /// when that feature is enabled; every other command now gets a real
+    /// subscriber installed.
+    #[cfg_attr(not(feature = "pytest-generator"), allow(dead_code))]
     NotApplicable,
     /// `Telemetry=OptOut` (the default): telemetry was never attempted.
     OptedOut,
@@ -501,16 +505,31 @@ fn setup_tracing(
     use tracing_subscriber::{filter, layer::SubscriberExt, Layer, Registry};
 
     let tracestream = TraceStream::default();
-    let mut telemetry_status = TelemetryStatus::NotApplicable;
+    let telemetry_status;
 
+    // Every command reachable from run_trident needs a subscriber
+    // installed here -- not just the servicing ones -- since command_start/
+    // command_error (and, for the fast "exit early" commands, any other
+    // tracing:: event they fire) would otherwise go to whatever default
+    // subscriber is active, which is none at all: tracing silently drops
+    // every event with no subscriber installed. StartNetwork's own
+    // `tracestream.disable()` (see run_trident) still applies regardless --
+    // it only suppresses a later `set_server` call from configuring a
+    // remote phone-home target before the network exists, not the local
+    // metrics-file/journald layers installed here, which need no network.
     match &args.command {
         Commands::Commit { .. }
         | Commands::Daemon { .. }
         | Commands::GrpcClient { .. }
         | Commands::Install { .. }
         | Commands::RebuildRaid { .. }
-        | Commands::Rollback { check: false, .. }
-        | Commands::Update { .. } => {
+        | Commands::Rollback { .. }
+        | Commands::Update { .. }
+        | Commands::Validate { .. }
+        | Commands::Get { .. }
+        | Commands::Diagnose { .. }
+        | Commands::OfflineInitialize { .. }
+        | Commands::StartNetwork { .. } => {
             let mut layers: Vec<Box<dyn Layer<Registry> + Send + Sync>> = vec![Box::new(
                 tracestream
                     .make_trace_sender()
@@ -566,8 +585,16 @@ fn setup_tracing(
             tracing::subscriber::set_global_default(Registry::default().with(layers))
                 .context("Failed to set global default subscriber")?;
         }
-        _ => {
-            // no op
+        // pytest-generator does no meaningful work of its own (just
+        // generates functional-test wrappers at build/dev time) -- no
+        // telemetry needed. Listed explicitly, rather than via a wildcard
+        // fallback, so the compiler forces this match to be revisited
+        // whenever a new command variant is added, instead of it silently
+        // falling through to "no subscriber" the way the commands above
+        // used to.
+        #[cfg(feature = "pytest-generator")]
+        Commands::Pytest => {
+            telemetry_status = TelemetryStatus::NotApplicable;
         }
     }
 
