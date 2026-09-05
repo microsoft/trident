@@ -727,6 +727,13 @@ impl Trident {
                 "update called without Host Configuration set",
             ))?;
 
+        // Cloned out of `self` so the closure below (which only receives
+        // `&mut DataStore`, not `&mut self` -- see `execute_and_record_error`)
+        // can still attach the installation ID the CIH bootstrap below may
+        // create to this invocation's telemetry, the same way `install`
+        // does for its own newly-created IDs.
+        let tracestream = self.tracestream.clone();
+
         self.execute_and_record_error(datastore, |datastore| {
             // Ensure that the datastore exists.
             if !datastore.is_persistent() {
@@ -751,15 +758,24 @@ impl Trident {
                     // when that check ran moments ago, before this CIH
                     // bootstrap promoted it, so without this it wouldn't be
                     // minted until whatever the next invocation happens to
-                    // be. Known remaining gap: this invocation's own
+                    // be. Attach it to this invocation's shared TraceStream
+                    // too, so update_start and everything after it, later
+                    // in this same invocation, carries it -- Trident::new's
+                    // own attach-if-present check already ran and found
+                    // nothing (this datastore was still NotProvisioned at
+                    // that point), so nothing else will do this for us.
+                    // Known remaining gap: this invocation's own
                     // command_start/trident_start (fired even earlier, in
                     // the CLI/daemon dispatch and Trident::new respectively)
-                    // still won't carry it -- Trident doesn't hold a
-                    // TraceStream handle here to attach it to those -- but
-                    // update_start and everything after it, later in this
-                    // same invocation, now will.
-                    if let Err(e) = datastore.create_installation_id() {
-                        warn!("Failed to create installation ID during CIH bootstrap: {e:?}");
+                    // still won't carry it -- both fire before this point.
+                    match datastore.create_installation_id() {
+                        Ok(installation_id) => {
+                            info!("Installation ID: {installation_id}");
+                            tracestream.set_installation_id(installation_id.to_string());
+                        }
+                        Err(e) => {
+                            warn!("Failed to create installation ID during CIH bootstrap: {e:?}");
+                        }
                     }
                 } else {
                     // For non-CIH images, if the datastore is not persistent, return error
