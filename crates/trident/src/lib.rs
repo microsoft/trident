@@ -261,11 +261,16 @@ impl Trident {
         // Best-effort: a failure to determine whether this is a CIH (Azure
         // Container Linux) host must never fail startup, it only means
         // this one field is missing from the trident_start telemetry.
+        // A detection failure is reported as "unknown", not "false" --
+        // conflating "known non-ACL" with "couldn't tell" would
+        // misclassify a host whose CIH check simply failed to run as
+        // definitively non-ACL.
         let acl = match cih::is_cih() {
-            Ok(is_cih) => is_cih,
+            Ok(true) => "true",
+            Ok(false) => "false",
             Err(e) => {
                 warn!("Failed to determine if host is running CIH: {e:?}");
-                false
+                "unknown"
             }
         };
         // CLOCK_BOOTTIME gives nanosecond-resolution time since boot
