@@ -32,6 +32,8 @@ use trident_proto::v1preview::{
     status_service_server::StatusServiceServer, validation_service_server::ValidationServiceServer,
 };
 
+use trident_api::error::{ReportError, ServicingError, TridentError};
+
 use crate::{
     agentconfig::AgentConfig,
     cli::TridentExitCodes,
@@ -172,21 +174,25 @@ fn reboot(signals: ShutdownSignals) -> ExitCode {
     // time this function runs, the whole daemon event loop
     // (`server_main_inner`/`main_task`) has already returned, so there is
     // no thread-local operation context active here at all.
-    let request_result = operation_context::run_with_captured_operation(
-        operation_context::take_reboot_operation(),
-        reboot::request_reboot,
-    );
-    if let Err(e) = request_result {
-        error!("Failed to request reboot: {e:?}");
-        return TridentExitCodes::RebootUnsuccessful.into();
-    }
+    //
+    // Routed through `run_reboot_command` (not
+    // `run_with_captured_operation` directly) so a failed reboot fires
+    // `command_error` here exactly like the CLI's reboot path does,
+    // making a failed daemon-driven reboot (systemctl unreachable, or the
+    // shutdown signal never arriving) distinguishable in telemetry from a
+    // successful one.
+    let reboot_result: Result<(), TridentError> = operation_context::run_reboot_command(|| {
+        reboot::request_reboot().structured(ServicingError::Reboot)?;
 
-    // Wait for either a shutdown signal or the reboot timeout
-    if let Err(e) = signals
-        .exit_receiver()
-        .recv_timeout(Duration::from_secs(REBOOT_WAIT_DURATION_SECS))
-    {
-        error!("Reboot wait timed out: {e:?}");
+        // Wait for either a shutdown signal or the reboot timeout.
+        signals
+            .exit_receiver()
+            .recv_timeout(Duration::from_secs(REBOOT_WAIT_DURATION_SECS))
+            .structured(ServicingError::RebootTimeout)
+    });
+
+    if let Err(e) = reboot_result {
+        error!("Failed to reboot: {e:?}");
         return TridentExitCodes::RebootUnsuccessful.into();
     }
 

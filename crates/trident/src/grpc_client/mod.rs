@@ -5,9 +5,11 @@ use log::error;
 use tokio::fs;
 use tokio::runtime::Builder;
 
+use trident_api::error::{InternalError, TridentError};
+
 use crate::{
     cli::{ClientArgs, ClientCommands, TridentExitCodes},
-    ExitKind, TRIDENT_VERSION,
+    run_command, ExitKind, TRIDENT_VERSION,
 };
 
 use crate::cli;
@@ -24,7 +26,23 @@ pub fn client_main(args: &ClientArgs) -> ExitCode {
         return TridentExitCodes::SetupFailed.into();
     };
 
-    match runtime.block_on(run_client(args)) {
+    // `setup_tracing()` (see `main.rs`) treats grpc-client the same as any
+    // other command -- it's a first-class telemetry participant, not just
+    // a transport-only escape hatch, so it fires `command_start`/
+    // `command_error` like every other command. `run_client`'s errors are
+    // plain `anyhow::Error` (not `TridentError`), so they're wrapped in a
+    // generic `InternalError::Internal` here purely to get them into
+    // `run_command`'s `Result<_, TridentError>` shape -- the original
+    // anyhow context chain is preserved as the error's source and still
+    // printed in full below.
+    let command = args.command.name().replace('-', "_");
+    let result = run_command(&command, || {
+        runtime.block_on(run_client(args)).map_err(|e| {
+            TridentError::with_source(InternalError::Internal("grpc-client command failed"), e)
+        })
+    });
+
+    match result {
         Err(e) => {
             error!("Client failed: {:?}", e);
             return TridentExitCodes::Failed.into();

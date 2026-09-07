@@ -223,6 +223,12 @@ pub enum InvalidInputError {
     #[error("Cannot find history file")]
     HistoryFileNotFound,
 
+    #[error("Missing required field '{field}' in request")]
+    MissingRequestField { field: String },
+
+    #[error("Invalid value for field '{field}' in request: {reason}")]
+    InvalidRequestField { field: String, reason: String },
+
     #[error("Cannot update host since it is not provisioned")]
     HostNotProvisioned,
 
@@ -917,6 +923,16 @@ impl TridentError {
             ErrorKind::UnsupportedConfiguration(e) => serde_variant::to_variant_name(e),
         }
         .ok()
+    }
+
+    /// Returns the `file:line` location where this error was originally
+    /// constructed (via `TridentError::new`/`with_source`/`internal`, or
+    /// `ReportError::structured`), same format as the `location` field
+    /// already included in this type's `Serialize` impl. Useful for
+    /// telemetry/logging call sites that want the error's origin without
+    /// needing the full `Debug` context chain.
+    pub fn location(&self) -> String {
+        format!("{}:{}", self.0.location.file(), self.0.location.line())
     }
 }
 

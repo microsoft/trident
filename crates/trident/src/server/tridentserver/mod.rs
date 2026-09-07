@@ -159,6 +159,15 @@ impl TridentServer {
     /// Tries to acquire a read lock on the server's RwLock. If the lock
     /// cannot be acquired, returns a gRPC Status indicating that the server is
     /// busy.
+    ///
+    /// Intentionally fires no telemetry (`command_start`/`command_error`) for
+    /// this rejection, unlike `reject_invalid_argument`/`reject_invalid_field`:
+    /// a connection-lock contention failure isn't a
+    /// distinct servicing outcome the way a malformed request is -- it's
+    /// pure admission control, happens before `refresh_installation_id` would
+    /// even run, and (unlike a bad request) the caller is expected to retry
+    /// the exact same request rather than fix anything, so a low-value,
+    /// high-volume `command_error` stream isn't worth adding here.
     #[cfg(feature = "grpc-preview")]
     fn try_acquire_read_lock(&self) -> Result<OwnedRwLockReadGuard<()>, Status> {
         self.rwlock.clone().try_read_owned().map_err(|_| {
@@ -170,11 +179,35 @@ impl TridentServer {
     /// Tries to acquire a write lock on the server's RwLock. If the lock
     /// cannot be acquired, returns a gRPC Status indicating that the server is
     /// busy.
+    ///
+    /// See the telemetry note on [`Self::try_acquire_read_lock`]: this
+    /// rejection is intentionally untelemetered for the same reason.
     fn try_acquire_write_lock(&self) -> Result<OwnedRwLockWriteGuard<()>, Status> {
         self.rwlock.clone().try_write_owned().map_err(|_| {
             warn!("Trident is busy, cannot acquire write connection lock");
             Status::unavailable("Trident is busy")
         })
+    }
+
+    /// Re-checks for a persisted installation ID before a request fires its
+    /// own `command_start` (via `run_command`). The daemon-startup attach in
+    /// `server_main` only ever runs once, at startup -- so a daemon that
+    /// starts before the host is ever installed, then serves a request some
+    /// time after a *different* path (e.g. a concurrent CLI invocation, or
+    /// an earlier servicing request on this same daemon) has since created
+    /// the datastore, would otherwise still be missing it. Called from both
+    /// `servicing_request` and `reading_request`, so read-only RPCs (e.g.
+    /// `get_servicing_state`) don't keep reporting a missing installation ID
+    /// indefinitely just because they never happen to run after a write
+    /// request has attached it. Read-only and side-effect-free: never
+    /// creates a datastore or an installation ID (see
+    /// `TraceStream::attach_installation_id_if_present`) -- silently does
+    /// nothing if the datastore doesn't exist yet.
+    fn refresh_installation_id(&self) {
+        if let Ok(agent_config) = AgentConfig::load() {
+            self.tracestream
+                .attach_installation_id_if_present(agent_config.datastore_path());
+        }
     }
 
     /// Handles a servicing request by acquiring the necessary locks,
@@ -205,20 +238,7 @@ impl TridentServer {
         // Try to acquire the connection lock in write mode
         let guard = self.try_acquire_write_lock()?;
 
-        // Re-check for a persisted installation ID before this request
-        // fires its own command_start (below, via run_with_operation).
-        // server_main's daemon-startup attach only ever runs once, at
-        // startup -- so a request that arrives before any datastore
-        // exists (e.g. this daemon's very first install) would otherwise
-        // never see one, even after that request's own handler goes on to
-        // create the datastore. Read-only and side-effect-free: never
-        // creates a datastore or an installation ID (see
-        // `TraceStream::attach_installation_id_if_present`) -- silently
-        // does nothing if the datastore doesn't exist yet.
-        if let Ok(agent_config) = AgentConfig::load() {
-            self.tracestream
-                .attach_installation_id_if_present(agent_config.datastore_path());
-        }
+        self.refresh_installation_id();
 
         // Tag every metric/tracing event `f` fires (on whatever thread it
         // ultimately runs on -- see `spawn_servicing_task`, which runs it
@@ -235,7 +255,7 @@ impl TridentServer {
         // can tag `trident_system_reboot` with this same servicing
         // operation's identity instead of leaving it untagged.
         let f = move || {
-            operation_context::run_with_operation(name, || {
+            operation_context::run_command(name, || {
                 let result = f();
                 if let Ok((ExitKind::NeedsReboot, ..)) = &result {
                     operation_context::save_reboot_operation();
@@ -247,7 +267,13 @@ impl TridentServer {
         // Create the gRPC response channel
         let (tx, rx) = mpsc::unbounded_channel();
 
-        // Try to acquire the servicing lock
+        // Try to acquire the servicing lock. Rejected here, after
+        // `refresh_installation_id` above but before the `run_command`
+        // closure `f` (built above) ever runs, this is intentionally
+        // untelemetered for the same reason as the connection-lock
+        // rejections in `try_acquire_read_lock`/`try_acquire_write_lock`:
+        // it's admission control, not a distinct servicing outcome, and
+        // the caller is expected to retry rather than fix anything.
         let Some(servicing_guard) = self.servicing_manager.try_lock_servicing() else {
             warn!("Request '{}' blocked because servicing is active", name);
             return Err(Status::unavailable("Servicing is active"));
@@ -347,7 +373,12 @@ impl TridentServer {
         // request.
         let _guard = self.try_acquire_read_lock()?;
 
-        // Try to acquire the servicing read lock
+        // Try to acquire the servicing read lock. Same intentional
+        // telemetry gap as the connection-lock rejections in
+        // `try_acquire_read_lock`/`try_acquire_write_lock` and the
+        // servicing-lock rejection in `servicing_request`: it's admission
+        // control rather than a distinct read outcome, and the caller is
+        // expected to retry rather than fix anything.
         let Some(servicing_guard) = self.servicing_manager.try_lock_reading() else {
             warn!(
                 "Read request '{}' blocked because servicing is active",
@@ -355,6 +386,15 @@ impl TridentServer {
             );
             return Err(Status::unavailable("Servicing is active"));
         };
+
+        // Read requests (e.g. `get_servicing_state`, `check_rollback`) are
+        // intentionally left untelemetered -- like their CLI counterparts
+        // (`get`, `validate`, `diagnose`, etc.; see `run_trident` in
+        // main.rs), none of them emit `command_start`/`command_error` or
+        // any other `metric_name` event, so there's no need to prep the
+        // TraceStream's installation ID (`refresh_installation_id`, used
+        // by `servicing_request` for exactly that reason) or wrap `f` in
+        // `operation_context::run_command` -- it just runs directly here.
 
         // Execute the reading function
         Ok(Response::new(

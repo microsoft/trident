@@ -24,7 +24,9 @@ impl ValidationService for TridentServer {
         // whenever without doing any lock checks.
         info!("Received Host Configuration validation request");
         let Some(host_config) = request.into_inner().config else {
-            return Err(Status::invalid_argument(
+            return Err(self.reject_invalid_argument(
+                "validate_host_configuration",
+                "config",
                 "Missing host configuration in staging configuration",
             ));
         };
@@ -32,6 +34,7 @@ impl ValidationService for TridentServer {
         let error = validation::validate_host_config_string(&host_config.config)
             .err()
             .map(ProtoTridentError::from);
+
         Ok(Response::new(ValidateHostConfigurationResponse {
             ok: error.is_none(),
             error,
