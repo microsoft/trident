@@ -586,12 +586,11 @@ mod tests {
     #[test]
     /// Regression test: `persist` supports a destination path equal to the
     /// currently-open (temporary) datastore's own path -- the offline
-    /// provisioning flow does this. Before the fix, `copy_key_values` kept
-    /// the source `SELECT` active while writing to the destination
-    /// connection, and since both connections point at the same file, the
-    /// destination write would block on the source's read lock forever
-    /// (mitigated only by the busy timeout, so this would previously fail
-    /// with "database is locked" rather than deadlock outright).
+    /// provisioning flow does this. `copy_key_values` fully reads and
+    /// finalizes the source `SELECT` before writing to the destination
+    /// connection, so a self-persist (both connections pointing at the
+    /// same file) does not block the destination write on the source's
+    /// read lock.
     fn test_persist_to_same_path_does_not_deadlock() {
         let temp_dir = tempfile::tempdir().unwrap();
         let datastore_path = temp_dir.path().join("db.sqlite");
