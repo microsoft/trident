@@ -72,6 +72,9 @@ os:
   - source: mos/scripts/installation.sh
     destination: /root/installer/installation.sh 
 
+  # Enable telemetry (Application Insights tracing) by default for test/dev images
+  - source: ../common/trident.conf
+    destination: /etc/trident/trident.conf
 iso:
   initramfsType: full-os
   
