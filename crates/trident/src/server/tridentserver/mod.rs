@@ -25,9 +25,10 @@ use trident_proto::v1::{
 
 use crate::{
     agentconfig::AgentConfig,
+    datastore::DataStore,
     logging::{logfwd::LogForwarder, operation_context},
     server::{activitytracker::ActivityTracker, support::stream::StreamWithLock},
-    DataStore, ExitKind, Logstream, TraceStream,
+    ExitKind, Logstream, TraceStream,
 };
 
 #[cfg(feature = "grpc-preview")]
@@ -159,6 +160,15 @@ impl TridentServer {
     /// Tries to acquire a read lock on the server's RwLock. If the lock
     /// cannot be acquired, returns a gRPC Status indicating that the server is
     /// busy.
+    ///
+    /// Intentionally fires no telemetry (`command_start`/`command_error`) for
+    /// this rejection, unlike `reject_invalid_argument`/`reject_invalid_field`/
+    /// `reject_invalid_config`: a connection-lock contention failure isn't a
+    /// distinct servicing outcome the way a malformed request is -- it's
+    /// pure admission control, happens before `refresh_correlation_id` would
+    /// even run, and (unlike a bad request) the caller is expected to retry
+    /// the exact same request rather than fix anything, so a low-value,
+    /// high-volume `command_error` stream isn't worth adding here.
     #[cfg(feature = "grpc-preview")]
     fn try_acquire_read_lock(&self) -> Result<OwnedRwLockReadGuard<()>, Status> {
         self.rwlock.clone().try_read_owned().map_err(|_| {
@@ -170,6 +180,9 @@ impl TridentServer {
     /// Tries to acquire a write lock on the server's RwLock. If the lock
     /// cannot be acquired, returns a gRPC Status indicating that the server is
     /// busy.
+    ///
+    /// See the telemetry note on [`Self::try_acquire_read_lock`]: this
+    /// rejection is intentionally untelemetered for the same reason.
     fn try_acquire_write_lock(&self) -> Result<OwnedRwLockWriteGuard<()>, Status> {
         self.rwlock.clone().try_write_owned().map_err(|_| {
             warn!("Trident is busy, cannot acquire write connection lock");
@@ -188,41 +201,40 @@ impl TridentServer {
     /// It may also return other error `Status` values if log forwarding or task
     /// setup fails. In all error cases, no servicing task is spawned and no stream
     /// of responses is produced.
-    fn servicing_request<F>(
-        &self,
-        name: &'static str,
-        reboot_decision: RebootDecision,
-        f: F,
-    ) -> Result<Response<ServicingResponseStream>, Status>
-    where
-        F: FnOnce() -> Result<(ExitKind, Option<Sha384Hash>, Option<ServicingKind>), TridentError>
-            + Send
-            + panic::UnwindSafe
-            + 'static,
-    {
-        info!("Received servicing request '{}'", name);
-
-        // Try to acquire the connection lock in write mode
-        let guard = self.try_acquire_write_lock()?;
-
-        // Re-check for a persisted correlation ID before this request
-        // fires its own command_start (below, via run_with_operation).
-        // server_main's daemon-startup pre-warm only ever runs once, and
-        // skips itself when the datastore doesn't exist yet -- so a
-        // request that arrives before any datastore exists (e.g. this
-        // daemon's very first install) would otherwise never see one.
-        // `name` identifies the requests that can create a brand-new
-        // datastore: install/update (including their stage/finalize-
-        // suffixed variants), mirroring the CLI's own
-        // `can_initialize_datastore` check, plus `stream_disk` -- a
-        // direct-streaming install path (see
-        // `services/streaming.rs`/`tools/pkg/netlaunch`) used when no
-        // Host Configuration/datastore exists yet either. For those, mint
-        // and persist a correlation ID now via the same get-or-create
-        // call Trident::new would otherwise make moments later, even
-        // before the datastore exists. Every other request still skips
-        // this when the datastore doesn't exist yet, since it requires
-        // one to already exist.
+    /// Re-checks for a persisted correlation ID before a request fires its
+    /// own `command_start` (via `run_command`). The daemon-startup pre-warm
+    /// in `server_main` only ever runs once, and deliberately skips itself
+    /// when the datastore doesn't exist yet (see there for why) -- so a
+    /// daemon that starts before the host is ever installed, then serves a
+    /// request some time after a *different* path (e.g. a concurrent CLI
+    /// invocation, or an earlier servicing request on this same daemon)
+    /// has since created the datastore, would otherwise still be missing
+    /// it. Called from both `servicing_request` and `reading_request`, so
+    /// read-only RPCs (e.g. `get_servicing_state`) don't keep reporting a
+    /// stale/missing installation ID indefinitely just because they never
+    /// happen to run after a write request has warmed it.
+    ///
+    /// `name` identifies the requests that can create a brand-new
+    /// datastore: install/update (including their stage/finalize-suffixed
+    /// variants), mirroring the CLI's own `can_initialize_datastore`
+    /// check, plus `stream_disk` -- a direct-streaming install path (see
+    /// `services/streaming.rs`/`tools/pkg/netlaunch`) used when no Host
+    /// Configuration/datastore exists yet either. For those, mint and
+    /// persist a correlation ID now via the same get-or-create call
+    /// Trident::new would otherwise make moments later, even before the
+    /// datastore exists. Every other request skips this when the
+    /// datastore doesn't exist yet, since it requires one to already
+    /// exist.
+    fn refresh_correlation_id(&self, name: &str) {
+        let already_warmed = self
+            .tracestream
+            .correlation_id_handle()
+            .read()
+            .map(|v| v.is_some())
+            .unwrap_or(false);
+        if already_warmed {
+            return;
+        }
         let can_initialize_datastore =
             name.starts_with("install") || name.starts_with("update") || name == "stream_disk";
         match AgentConfig::load().and_then(|agent_config| {
@@ -242,6 +254,26 @@ impl TridentServer {
                 warn!("Failed to get or create correlation ID: {e:?}");
             }
         }
+    }
+
+    fn servicing_request<F>(
+        &self,
+        name: &'static str,
+        reboot_decision: RebootDecision,
+        f: F,
+    ) -> Result<Response<ServicingResponseStream>, Status>
+    where
+        F: FnOnce() -> Result<(ExitKind, Option<Sha384Hash>, Option<ServicingKind>), TridentError>
+            + Send
+            + panic::UnwindSafe
+            + 'static,
+    {
+        info!("Received servicing request '{}'", name);
+
+        // Try to acquire the connection lock in write mode
+        let guard = self.try_acquire_write_lock()?;
+
+        self.refresh_correlation_id(name);
 
         // Tag every metric/tracing event `f` fires (on whatever thread it
         // ultimately runs on -- see `spawn_servicing_task`, which runs it
@@ -258,7 +290,7 @@ impl TridentServer {
         // can tag `trident_system_reboot` with this same servicing
         // operation's identity instead of leaving it untagged.
         let f = move || {
-            operation_context::run_with_operation(name, || {
+            operation_context::run_command(name, || {
                 let result = f();
                 if let Ok((ExitKind::NeedsReboot, ..)) = &result {
                     operation_context::save_reboot_operation();
@@ -270,7 +302,13 @@ impl TridentServer {
         // Create the gRPC response channel
         let (tx, rx) = mpsc::unbounded_channel();
 
-        // Try to acquire the servicing lock
+        // Try to acquire the servicing lock. Rejected here, after
+        // `refresh_correlation_id` above but before the `run_command`
+        // closure `f` (built above) ever runs, this is intentionally
+        // untelemetered for the same reason as the connection-lock
+        // rejections in `try_acquire_read_lock`/`try_acquire_write_lock`:
+        // it's admission control, not a distinct servicing outcome, and
+        // the caller is expected to retry rather than fix anything.
         let Some(servicing_guard) = self.servicing_manager.try_lock_servicing() else {
             warn!("Request '{}' blocked because servicing is active", name);
             return Err(Status::unavailable("Servicing is active"));
@@ -370,7 +408,13 @@ impl TridentServer {
         // request.
         let _guard = self.try_acquire_read_lock()?;
 
-        // Try to acquire the servicing read lock
+        // Try to acquire the servicing read lock. Same intentional
+        // telemetry gap as the connection-lock rejections in
+        // `try_acquire_read_lock`/`try_acquire_write_lock` and the
+        // servicing-lock rejection in `servicing_request`: this rejects
+        // before `refresh_correlation_id` below even runs, it's admission
+        // control rather than a distinct read outcome, and the caller is
+        // expected to retry rather than fix anything.
         let Some(servicing_guard) = self.servicing_manager.try_lock_reading() else {
             warn!(
                 "Read request '{}' blocked because servicing is active",
@@ -378,6 +422,23 @@ impl TridentServer {
             );
             return Err(Status::unavailable("Servicing is active"));
         };
+
+        self.refresh_correlation_id(name);
+
+        // Tag every metric/tracing event `f` fires (on the dedicated OS
+        // thread `spawn_reading_task` runs it on, via
+        // `tokio::task::spawn_blocking`) with `command`/`operation_id`, and
+        // fire `command_start`/`command_error`, the same way
+        // `servicing_request` does for write requests -- without this,
+        // read requests (e.g. `get_servicing_state`, `check_rollback`)
+        // fired neither event despite returning `TridentError` on failure
+        // just like servicing requests do.
+        //
+        // Known remaining gap: an RPC that encodes a domain-level failure
+        // in an `Ok` response instead of returning `Err(TridentError)` (if
+        // any -- none currently do) would still not get a command_error,
+        // since that only fires on `Err`.
+        let f = move || operation_context::run_command(name, f);
 
         // Execute the reading function
         Ok(Response::new(

@@ -54,6 +54,7 @@ nix = { version = "0.30.1", features = [
     "user",
     "socket",
     "signal",
+    "time",
 ], default-features = false }
 oci-client = "0.15.0"
 once_cell = "1.19"

@@ -37,6 +37,18 @@ themselves:
 - `command`: which command produced the event (e.g. `install`, `update`,
   `update_stage`, `update_finalize`, `commit`, `rollback`, `rebuild_raid`).
 
+## Command Errors
+
+If a command fails, a `command_error` event is also sent (tagged with the
+same `operation_id`/`command` as above), breaking the failure down into:
+
+- `kind`: the top-level error category (e.g. `internal`, `invalid-input`,
+  `servicing`, `initialization`).
+- `subkind`: the specific error within that category (e.g.
+  `check-root-privileges`), when one applies.
+- `location`: the `file:line` in Trident's source where the error was
+  originally raised.
+
 ## Delivery
 
 Telemetry delivery is always best-effort and never affects servicing
