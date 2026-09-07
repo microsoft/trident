@@ -92,76 +92,67 @@ fn configure_agent_config(
     datastore_path: &Path,
     is_root_verity: bool,
 ) -> Result<(), TridentError> {
-    // Ensure that Trident agent config exists with correct datastore path
-    if Path::new(agent_config_path).exists() {
-        // If the agent config exists, check that the datastore matches the expected path.
-        if let Ok(contents) = std::fs::read_to_string(agent_config_path) {
-            let mut datastore_path_line_present = false;
-            let mut datastore_path_configured = TRIDENT_DATASTORE_PATH_DEFAULT;
-            for line in contents.lines() {
-                if let Some(path) = line.strip_prefix("DatastorePath=") {
-                    datastore_path_line_present = true;
-                    datastore_path_configured = path.trim();
-                    break;
-                }
-            }
-
-            if datastore_path_line_present {
-                // An explicit DatastorePath= line is present: it must match
-                // the expected path exactly.
-                if datastore_path != Path::new(datastore_path_configured) {
-                    return Err(TridentError::new(
-                        InvalidInputError::ImageBadAgentConfiguration,
-                    ))
-                    .message(format!(
-                        "Datastore path in agent config ({}) does not match expected path ({})",
-                        datastore_path_configured,
-                        datastore_path.display()
-                    ));
-                }
-            } else if datastore_path != Path::new(TRIDENT_DATASTORE_PATH_DEFAULT) {
-                // No DatastorePath= line: the file may still carry other
-                // settings (e.g. Telemetry=) that must be preserved. Missing
-                // DatastorePath only implies the default path, so if a
-                // non-default path is expected, merge a DatastorePath= line
-                // into the existing file rather than treating it as a
-                // mismatch.
-                if is_root_verity {
-                    // For root-verity, do not attempt to modify the agent config.
-                    return Err(TridentError::new(
-                        InvalidInputError::ImageBadAgentConfiguration,
-                    ))
-                    .message(
-                        "Agent configuration file does not set a non-default datastore path \
-                         and root filesystem is verity",
-                    );
-                }
-
-                let mut updated_contents = contents;
-                if !updated_contents.is_empty() && !updated_contents.ends_with('\n') {
-                    updated_contents.push('\n');
-                }
-                updated_contents.push_str(&format!("DatastorePath={}\n", datastore_path.display()));
-                fs::write(agent_config_path, updated_contents).structured(
-                    ServicingError::CreateConfigurationFile {
-                        path: agent_config_path.into(),
-                    },
-                )?;
-            }
+    // Ensure that Trident agent config exists with correct datastore path.
+    // A missing file and an existing-but-unreadable file are both treated
+    // as "no contents to preserve" -- except an unreadable file is left
+    // untouched entirely, matching the prior behavior of silently skipping
+    // the whole check when the file exists but can't be read.
+    let contents = if Path::new(agent_config_path).exists() {
+        match std::fs::read_to_string(agent_config_path) {
+            Ok(contents) => contents,
+            Err(_) => return Ok(()),
         }
-    } else if datastore_path != Path::new(TRIDENT_DATASTORE_PATH_DEFAULT) {
-        // Only attempt to create the agent config if the datastore path is not the default.
+    } else {
+        String::new()
+    };
 
-        if is_root_verity {
-            // For root-verity, do not attempt to create the agent config.
+    let mut datastore_path_line_present = false;
+    let mut datastore_path_configured = TRIDENT_DATASTORE_PATH_DEFAULT;
+    for line in contents.lines() {
+        if let Some(path) = line.strip_prefix("DatastorePath=") {
+            datastore_path_line_present = true;
+            datastore_path_configured = path.trim();
+            break;
+        }
+    }
+
+    if datastore_path_line_present {
+        // An explicit DatastorePath= line is present: it must match
+        // the expected path exactly.
+        if datastore_path != Path::new(datastore_path_configured) {
             return Err(TridentError::new(
                 InvalidInputError::ImageBadAgentConfiguration,
             ))
-            .message("Agent configuration file does not exist and root filesystem is verity");
+            .message(format!(
+                "Datastore path in agent config ({}) does not match expected path ({})",
+                datastore_path_configured,
+                datastore_path.display()
+            ));
+        }
+    } else if datastore_path != Path::new(TRIDENT_DATASTORE_PATH_DEFAULT) {
+        // No DatastorePath= line -- either the file doesn't exist yet, or
+        // it exists but carries other settings (e.g. Telemetry=) that must
+        // be preserved. Missing DatastorePath only implies the default
+        // path, so if a non-default path is expected, merge a
+        // DatastorePath= line into whatever contents already exist (empty,
+        // if the file didn't exist) rather than treating it as a mismatch.
+        if is_root_verity {
+            // For root-verity, do not attempt to create or modify the agent config.
+            return Err(TridentError::new(
+                InvalidInputError::ImageBadAgentConfiguration,
+            ))
+            .message(
+                "Agent configuration file does not set a non-default datastore path \
+                 and root filesystem is verity",
+            );
         }
 
-        let datastore_configuration = format!("DatastorePath={}", datastore_path.display());
-        fs::write(agent_config_path, datastore_configuration).structured(
+        let mut updated_contents = contents;
+        if !updated_contents.is_empty() && !updated_contents.ends_with('\n') {
+            updated_contents.push('\n');
+        }
+        updated_contents.push_str(&format!("DatastorePath={}\n", datastore_path.display()));
+        fs::write(agent_config_path, updated_contents).structured(
             ServicingError::CreateConfigurationFile {
                 path: agent_config_path.into(),
             },
