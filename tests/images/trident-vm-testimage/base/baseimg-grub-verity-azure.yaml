@@ -145,6 +145,9 @@ os:
     - source: files/sudoers-wheel
       destination: /etc/sudoers.d/wheel
 
+    # Enable telemetry (Application Insights tracing) by default for test/dev images
+    - source: ../../common/trident.conf
+      destination: /etc/trident/trident.conf
   services:
     enable:
       - etc-mount

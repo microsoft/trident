@@ -115,6 +115,9 @@ os:
     - source: files/trident-container.service
       destination: /usr/lib/systemd/system/trident-container.service
 
+    # Enable telemetry (Application Insights tracing) by default for test/dev images
+    - source: ../../common/trident.conf
+      destination: /etc/trident/trident.conf
 output:
   # Specifies config for output dir containining generated artifacts. This is
   # required for later running inject-files command, so that the final image

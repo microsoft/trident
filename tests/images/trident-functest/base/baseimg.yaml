@@ -85,3 +85,8 @@ os:
   services:
     enable:
       - sshd
+
+  additionalFiles:
+    # Enable telemetry (Application Insights tracing) by default for test/dev images
+    - source: ../../common/trident.conf
+      destination: /etc/trident/trident.conf

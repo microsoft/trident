@@ -87,6 +87,9 @@ os:
     - source: ../../../../tools/cmd/rcp-agent/rcp-agent.service
       destination: /usr/lib/systemd/system/rcp-agent.service
 
+    # Enable telemetry (Application Insights tracing) by default for test/dev images
+    - source: ../../common/trident.conf
+      destination: /etc/trident/trident.conf
   selinux:
     mode: enforcing
 

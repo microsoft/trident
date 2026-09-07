@@ -121,6 +121,9 @@ os:
     - source: files/use-grpc-client-commit.conf
       destination: /etc/systemd/system/trident.service.d/override.conf
 
+    # Enable telemetry (Application Insights tracing) by default for test/dev images
+    - source: ../../common/trident.conf
+      destination: /etc/trident/trident.conf
 output:
   # Specifies config for output dir containining generated artifacts. This is
   # required for later running inject-files command, so that the final image
