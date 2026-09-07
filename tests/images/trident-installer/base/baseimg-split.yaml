@@ -71,6 +71,9 @@ os:
   - source: files/trident-split-install.service
     destination: /usr/lib/systemd/system/trident-install.service
 
+  # Enable telemetry (Application Insights tracing) by default for test/dev images
+  - source: ../../common/trident.conf
+    destination: /etc/trident/trident.conf
 scripts:
   postCustomization:
   - path: post-install.sh
