@@ -25,7 +25,7 @@ use trident_proto::v1::{
 
 use crate::{
     agentconfig::AgentConfig,
-    logging::logfwd::LogForwarder,
+    logging::{logfwd::LogForwarder, operation_context},
     server::{activitytracker::ActivityTracker, support::stream::StreamWithLock},
     ExitKind, Logstream, TraceStream,
 };
@@ -204,6 +204,45 @@ impl TridentServer {
 
         // Try to acquire the connection lock in write mode
         let guard = self.try_acquire_write_lock()?;
+
+        // Re-check for a persisted installation ID before this request
+        // fires its own command_start (below, via run_with_operation).
+        // server_main's daemon-startup attach only ever runs once, at
+        // startup -- so a request that arrives before any datastore
+        // exists (e.g. this daemon's very first install) would otherwise
+        // never see one, even after that request's own handler goes on to
+        // create the datastore. Read-only and side-effect-free: never
+        // creates a datastore or an installation ID (see
+        // `TraceStream::attach_installation_id_if_present`) -- silently
+        // does nothing if the datastore doesn't exist yet.
+        if let Ok(agent_config) = AgentConfig::load() {
+            self.tracestream
+                .attach_installation_id_if_present(agent_config.datastore_path());
+        }
+
+        // Tag every metric/tracing event `f` fires (on whatever thread it
+        // ultimately runs on -- see `spawn_servicing_task`, which runs it
+        // via `tokio::task::spawn_blocking`, giving it a dedicated OS
+        // thread for its whole duration) with `command`/`operation_id`, the
+        // same way the CLI path does for its own dispatch. `name` already
+        // matches the CLI's own command-naming convention (see
+        // `command_name` in `main.rs`) for stage/finalize granularity.
+        //
+        // If `f` decides a reboot is needed, also capture this operation's
+        // context (while it's still installed) via `save_reboot_operation`,
+        // so `server::reboot` -- which runs later, after this whole
+        // request and even the daemon's main event loop have returned --
+        // can tag `trident_system_reboot` with this same servicing
+        // operation's identity instead of leaving it untagged.
+        let f = move || {
+            operation_context::run_with_operation(name, || {
+                let result = f();
+                if let Ok((ExitKind::NeedsReboot, ..)) = &result {
+                    operation_context::save_reboot_operation();
+                }
+                result
+            })
+        };
 
         // Create the gRPC response channel
         let (tx, rx) = mpsc::unbounded_channel();

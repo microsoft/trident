@@ -56,8 +56,16 @@ pub use crate::{
     },
     grpc_client::client_main,
     logging::{
-        background_log::BackgroundLog, background_uploader::BackgroundUploader,
-        logfwd::LogForwarder, logstream::Logstream, tracestream::TraceStream,
+        appinsights::AppInsightsSender,
+        background_log::BackgroundLog,
+        background_uploader::{BackgroundUploadHandle, BackgroundUploader},
+        logfwd::LogForwarder,
+        logstream::Logstream,
+        operation_context::{
+            run_with_captured_operation, run_with_operation, save_reboot_operation,
+            take_reboot_operation,
+        },
+        tracestream::TraceStream,
     },
     orchestrate::OrchestratorConnection,
     reboot::request_reboot_with_wait,
@@ -81,6 +89,15 @@ lazy_static::lazy_static! {
     pub static ref TRIDENT_SEMVER_VERSION: Version = Version::parse(TRIDENT_VERSION)
         .expect("Failed to parse TRIDENT_VERSION as semver::Version");
 }
+
+/// Azure Monitor / Application Insights connection string, compiled in at
+/// build time via the `AZURE_MONITOR_CONNECTION_STRING` environment
+/// variable. Empty when the variable was not provided at build time.
+pub const AZURE_MONITOR_CONNECTION_STRING: &str =
+    match option_env!("AZURE_MONITOR_CONNECTION_STRING") {
+        Some(v) => v,
+        None => "",
+    };
 
 /// Trident binary path.
 const TRIDENT_BINARY_PATH: &str = "/usr/bin/trident";
@@ -124,6 +141,10 @@ pub struct Trident {
     host_config: Option<HostConfiguration>,
     orchestrator: Option<OrchestratorConnection>,
     is_stream_image: bool,
+    /// Kept so `Trident::install` can attach a newly-created installation
+    /// ID to it -- see `DataStore::create_installation_id`, only ever
+    /// called from `install`/staging, unlike this constructor.
+    tracestream: TraceStream,
 }
 
 impl Trident {
@@ -132,6 +153,43 @@ impl Trident {
         datastore_path: &Path,
         logstream: Logstream,
         tracestream: TraceStream,
+    ) -> Result<Self, TridentError> {
+        Self::new_impl(config_source, datastore_path, logstream, tracestream, true)
+    }
+
+    /// Identical to [`Self::new`], except it never attaches a persisted
+    /// `installation_id` to `tracestream` at construction time (this
+    /// invocation's earliest events, up to and including `trident_start`,
+    /// are simply left unattributed).
+    ///
+    /// Only meant for the CLI's multiboot install path (see `main.rs`): a
+    /// multiboot install on an already-provisioned host may go on to swap
+    /// to a brand-new temporary datastore inside `Trident::install` (see
+    /// there), distinct from the `datastore_path` given here (the
+    /// existing host's persistent datastore). Attaching *this*
+    /// constructor's installation ID -- the existing host's -- before
+    /// that swap decision is made would misattribute this invocation's
+    /// earliest telemetry to the wrong host installation for the
+    /// remainder of the run. `Trident::install` always attaches the
+    /// correct installation ID (of whichever datastore it ends up using)
+    /// before doing anything else, so it's safe, and strictly better, to
+    /// leave these few earliest events unattributed rather than guess
+    /// wrong.
+    pub fn new_deferring_installation_id(
+        config_source: Option<HostConfigurationSource>,
+        datastore_path: &Path,
+        logstream: Logstream,
+        tracestream: TraceStream,
+    ) -> Result<Self, TridentError> {
+        Self::new_impl(config_source, datastore_path, logstream, tracestream, false)
+    }
+
+    fn new_impl(
+        config_source: Option<HostConfigurationSource>,
+        datastore_path: &Path,
+        logstream: Logstream,
+        tracestream: TraceStream,
+        attach_installation_id: bool,
     ) -> Result<Self, TridentError> {
         let host_config = config_source
             .map(|source| Self::load_host_config(&source))
@@ -207,21 +265,22 @@ impl Trident {
             info!("Running Trident in a container");
         }
 
-        // Retrieve (or create, on first run) this host's unique
-        // correlation ID from the datastore actually used for servicing,
-        // and attach it to the shared TraceStream before any startup
-        // metrics are emitted, so every trace/metric -- including this
-        // very "trident_start" event -- carries it. This runs for every
-        // caller of `Trident::new` (both the CLI path and each daemon
-        // RPC handler), since they all supply `datastore_path`.
-        match DataStore::open_or_create(datastore_path).and_then(|mut ds| ds.correlation_id()) {
-            Ok(correlation_id) => {
-                info!("Correlation ID: {correlation_id}");
-                tracestream.set_correlation_id(correlation_id.to_string());
-            }
-            Err(e) => {
-                warn!("Failed to get or create correlation ID: {e:?}");
-            }
+        // Attach this host's installation ID -- if one has already been
+        // stamped -- to the shared TraceStream before any startup metrics
+        // are emitted, so every trace/metric -- including this very
+        // "trident_start" event -- carries it once available. Read-only:
+        // the installation ID is only ever *created* by `Trident::install`
+        // (at the start of staging), never here, so every other caller of
+        // `Trident::new` (update/commit/rollback/rebuild-raid, and every
+        // daemon RPC handler) just attaches whatever was already
+        // persisted at install time.
+        //
+        // Skipped entirely when `attach_installation_id` is false (see
+        // `new_deferring_installation_id`): attaching would stamp this
+        // invocation with the wrong (pre-swap) datastore's ID for a
+        // multiboot install that later swaps to a different datastore.
+        if attach_installation_id {
+            tracestream.attach_installation_id_if_present(datastore_path);
         }
 
         // Trace features enabled in the Host Configuration.
@@ -250,6 +309,7 @@ impl Trident {
             host_config,
             orchestrator,
             is_stream_image: false,
+            tracestream,
         })
     }
 
@@ -459,6 +519,7 @@ impl Trident {
             ))?;
 
         let is_stream_image = self.is_stream_image;
+        let tracestream = self.tracestream.clone();
 
         self.execute_and_record_error(datastore, |datastore| {
             host_config
@@ -502,6 +563,18 @@ impl Trident {
                         .message("Failed to create temporary datastore for multiboot install")?;
                 }
             }
+
+            // Create (or read back, if one already exists) this install's
+            // installation ID and attach it to the shared TraceStream, now
+            // that the multiboot swap above (if any) has settled on the
+            // datastore this install actually uses -- see the doc comment
+            // on `new_deferring_installation_id`. Uses `datastore` as it
+            // stands after any multiboot swap above, so a multiboot
+            // install's own (new, eventually-persistent) datastore gets
+            // its own installation ID, not the already-provisioned host's.
+            tracestream
+                .create_and_attach_installation_id(datastore)
+                .message("Failed to create installation ID")?;
 
             // Use a prefetched image if provided, otherwise load the image
             // specified in the Host Configuration.
@@ -599,6 +672,8 @@ impl Trident {
                 "update called without Host Configuration set",
             ))?;
 
+        let tracestream = self.tracestream.clone();
+
         self.execute_and_record_error(datastore, |datastore| {
             // Ensure that the datastore exists.
             if !datastore.is_persistent() {
@@ -614,6 +689,20 @@ impl Trident {
                             status.is_management_os = false;
                         })
                         .message("Failed to initialize datastore")?;
+
+                    // This host has just adopted a datastore via the CIH
+                    // bootstrap path, bypassing `Trident::install` entirely
+                    // -- nothing else will ever create an installation ID for
+                    // it otherwise. Best-effort: a failure here must not
+                    // block the update itself, since telemetry attribution
+                    // is not load-bearing for servicing outcomes. Known
+                    // remaining gap: this invocation's own
+                    // command_start/trident_start (fired even earlier, in
+                    // the CLI/daemon dispatch and Trident::new respectively)
+                    // still won't carry it -- both fire before this point.
+                    if let Err(e) = tracestream.create_and_attach_installation_id(datastore) {
+                        warn!("Failed to create installation ID during CIH bootstrap: {e:?}");
+                    }
                 } else {
                     // For non-CIH images, if the datastore is not persistent, return error
                     return Err(TridentError::new(InvalidInputError::HostNotProvisioned))
