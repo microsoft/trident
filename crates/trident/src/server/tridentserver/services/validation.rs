@@ -31,7 +31,7 @@ impl ValidationService for TridentServer {
             ));
         };
 
-        self.refresh_correlation_id("validate_host_configuration");
+        self.refresh_installation_id("validate_host_configuration");
 
         // A semantically invalid Host Configuration is reported back to the
         // caller as a normal (ok: false) response, not a gRPC error status --

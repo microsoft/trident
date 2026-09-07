@@ -30,6 +30,7 @@ use crate::{
     engine::{
         self, bootentries, install_index, storage, EngineContext, EngineContextParams, SUBSYSTEMS,
     },
+    logging::operation_context::set_servicing_id,
     monitor_metrics,
     osimage::OsImage,
     subsystems::esp,
@@ -49,7 +50,6 @@ pub(crate) fn clean_install(
     is_stream_image: bool,
 ) -> Result<ExitKind, TridentError> {
     info!("Starting clean install");
-    tracing::info!(metric_name = "clean_install_start", value = true);
     let clean_install_start_time = Instant::now();
 
     if Path::new(UPDATE_ROOT_PATH).exists()
@@ -171,6 +171,30 @@ fn stage_clean_install(
     image: OsImage,
     is_stream_image: bool,
 ) -> Result<NewrootMount, TridentError> {
+    // Mint a fresh servicing ID for this clean-install operation and
+    // attach it to this invocation's telemetry immediately, before any
+    // other work in this function -- including creating the metrics
+    // monitor below, whose background thread snapshots a copy of the
+    // servicing_id via CapturedOperation at construction time, so minting
+    // any later would let that thread capture `None` -- and before every
+    // preflight-style check that follows (EngineContext construction,
+    // pre-servicing hooks, Host Configuration validation, filesystem
+    // population), so a failure in any of those is correlated by
+    // servicing_id too. `clean_install_start` is emitted here too, right
+    // after the ID is attached, rather than before, so it carries the ID
+    // like every other event from this point on. Mirrors Trident::install
+    // and manual_rollback::execute_rollback, which both mint immediately
+    // after their own no-op/invalid-state checks and before any preflight
+    // work. Callers that resume an *existing* staged install (see the
+    // CleanInstallStaged branch in `Trident::install`) read back its ID
+    // instead of calling this function at all, so they're unaffected.
+    let servicing_id = state
+        .new_servicing_id()
+        .message("Failed to create servicing ID")?;
+    info!("Servicing ID: {servicing_id}");
+    set_servicing_id(servicing_id.to_string());
+    tracing::info!(metric_name = "clean_install_start", value = true);
+
     // Best effort to measure memory, CPU, and network usage during execution
     let monitor = match monitor_metrics::MonitorMetrics::new("stage_clean_install".to_string()) {
         Ok(monitor) => Some(monitor),

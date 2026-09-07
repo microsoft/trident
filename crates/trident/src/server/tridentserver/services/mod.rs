@@ -32,21 +32,31 @@ impl TridentServer {
     /// the same `command` name the real dispatch would have used, then
     /// returns the `Status` to send back to the caller.
     ///
-    /// Calls `refresh_correlation_id` first, exactly like
-    /// `servicing_request`/`reading_request` do, so a rejected request
-    /// still gets the host's correlation ID attached when one is
-    /// available. Without this, `command_start`/`command_error` for every
-    /// rejected request went out with no correlation ID at all, even on
-    /// an already-provisioned host -- unlike a request that makes it far
-    /// enough to be serviced, which always calls `refresh_correlation_id`
-    /// via `servicing_request`/`reading_request`.
+    /// Calls `refresh_installation_id_readonly` first, exactly like
+    /// `servicing_request`/`reading_request` call `refresh_installation_id`,
+    /// so a rejected request still gets the host's installation ID
+    /// attached when one is available. Without this, `command_start`/
+    /// `command_error` for every rejected request went out with no
+    /// installation ID at all, even on an already-provisioned host --
+    /// unlike a request that makes it far enough to be serviced, which
+    /// always calls `refresh_installation_id` via
+    /// `servicing_request`/`reading_request`.
+    ///
+    /// Deliberately the read-only variant, not `refresh_installation_id`:
+    /// a rejected request never actually begins staging or finalizing
+    /// anything, so it must never create a datastore, even for an
+    /// otherwise create-permitted command name like `install` --
+    /// otherwise a request rejected for e.g. an unparsable Host
+    /// Configuration would still leave a fresh datastore behind, letting
+    /// a later request wrongly pass the "host not provisioned" existence
+    /// check.
     fn reject_invalid_argument(
         &self,
         command: &str,
         field: &str,
         message: impl Into<String>,
     ) -> Status {
-        self.refresh_correlation_id(command);
+        self.refresh_installation_id_readonly();
         let error = TridentError::new(InvalidInputError::MissingRequestField {
             field: field.to_owned(),
         });
@@ -76,7 +86,7 @@ impl TridentServer {
         reason: impl Into<String>,
         message: impl Into<String>,
     ) -> Status {
-        self.refresh_correlation_id(command);
+        self.refresh_installation_id_readonly();
         let error = TridentError::new(InvalidInputError::InvalidRequestField {
             field: field.to_owned(),
             reason: reason.into(),
@@ -97,7 +107,7 @@ impl TridentServer {
         error: TridentError,
         message: impl Into<String>,
     ) -> Status {
-        self.refresh_correlation_id(command);
+        self.refresh_installation_id_readonly();
         // See the `block_in_place` comment in `reject_invalid_argument`.
         let _ = tokio::task::block_in_place(|| {
             operation_context::run_command(command, || Err::<(), _>(error))

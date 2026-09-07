@@ -25,10 +25,12 @@ use osutils::{
     uname,
 };
 
-use crate::{logging::operation_context, TRIDENT_METRICS_FILE_PATH, TRIDENT_VERSION};
+use trident_api::error::TridentError;
 
-/// The product uuid is used to identify the hardware that Trident is running on.
-const PRODUCT_UUID_FILE: &str = "/sys/class/dmi/id/product_uuid";
+use crate::{
+    datastore::DataStore, logging::operation_context, TRIDENT_METRICS_FILE_PATH, TRIDENT_VERSION,
+};
+
 lazy_static::lazy_static! {
     static ref ADDITIONAL_FIELDS: BTreeMap<String, Value> = populate_additional_fields();
     pub static ref PLATFORM_INFO: BTreeMap<String, Value> = populate_platform_info();
@@ -85,7 +87,7 @@ pub struct TraceStream {
     // TODO: Consider changing this to a LockOnce when rustc is updated to
     // >=1.70
     target: Arc<RwLock<Option<String>>>,
-    correlation_id: Arc<RwLock<Option<String>>>,
+    installation_id: Arc<RwLock<Option<String>>>,
     disabled: bool,
 }
 
@@ -127,27 +129,97 @@ impl TraceStream {
         Ok(())
     }
 
-    /// Set the correlation ID to attach to every trace entry sent from this point
+    /// Set the installation ID to attach to every trace entry sent from this point
     /// forward, as an additional field, so that all traces/metrics for a
     /// given host installation can be correlated. Expected to be called once
-    /// the datastore's persisted correlation ID has been retrieved (see
-    /// `DataStore::correlation_id`).
-    pub fn set_correlation_id(&self, correlation_id: String) {
-        match self.correlation_id.write() {
+    /// the datastore's persisted installation ID has been retrieved (see
+    /// `DataStore::installation_id`).
+    pub fn set_installation_id(&self, installation_id: String) {
+        match self.installation_id.write() {
             Ok(mut val) => {
-                val.replace(correlation_id);
+                val.replace(installation_id);
             }
-            Err(_) => warn!("Failed to lock tracestream to set correlation ID"),
+            Err(_) => warn!("Failed to lock tracestream to set installation ID"),
         }
     }
 
-    /// Returns a clone of the shared correlation-ID handle -- the same
-    /// underlying `Arc<RwLock<..>>` written by `set_correlation_id` -- so
+    /// Returns a clone of the shared installation-ID handle -- the same
+    /// underlying `Arc<RwLock<..>>` written by `set_installation_id` -- so
     /// other telemetry sinks (namely `AppInsightsSender`) can read the
     /// current value at send-time without needing their own copy of the
     /// logic that sets it.
-    pub fn correlation_id_handle(&self) -> Arc<RwLock<Option<String>>> {
-        self.correlation_id.clone()
+    pub fn installation_id_handle(&self) -> Arc<RwLock<Option<String>>> {
+        self.installation_id.clone()
+    }
+
+    fn installation_id_cached(&self) -> bool {
+        self.installation_id
+            .read()
+            .map(|v| v.is_some())
+            .unwrap_or(false)
+    }
+
+    /// Best-effort, side-effect-free attempt to attach this host's
+    /// installation ID -- either already cached from a prior call on this
+    /// `TraceStream`, or freshly read from the datastore at
+    /// `datastore_path` if one already exists there. Never creates a
+    /// datastore, and never mints a new installation ID: a command that
+    /// is genuinely allowed to initialize a brand-new datastore (see
+    /// [`crate::datastore::DataStore::may_initialize_datastore_for_command`])
+    /// must call [`Self::mint_and_attach_installation_id`] instead, on a
+    /// datastore handle it already owns.
+    ///
+    /// Safe to call from anywhere, any number of times, before any point
+    /// that wants the ID attached: this is the single implementation
+    /// shared by every "pre-warm" call site (the CLI, the daemon's
+    /// startup pre-warm, the daemon's per-request backstop, and
+    /// `Trident::new`'s own attach block), so a correctness fix to this
+    /// logic only ever needs to happen once.
+    pub fn attach_installation_id_if_present(&self, datastore_path: &Path) {
+        if self.installation_id_cached() || !datastore_path.exists() {
+            return;
+        }
+        match DataStore::open(datastore_path).and_then(|mut ds| ds.installation_id_or_migrate()) {
+            Ok(Some(installation_id)) => {
+                info!("Installation ID: {installation_id}");
+                self.set_installation_id(installation_id.to_string());
+            }
+            Ok(None) => {
+                debug!("No installation ID persisted yet (host not yet installed)");
+            }
+            Err(e) => {
+                warn!("Failed to read installation ID: {e:?}");
+            }
+        }
+    }
+
+    /// Mints (or reads back, if one already exists) `datastore`'s
+    /// installation ID and attaches it. Unlike
+    /// [`Self::attach_installation_id_if_present`], this is only for the
+    /// one caller that already knows a command genuinely allowed to
+    /// initialize a brand-new datastore (per
+    /// [`crate::datastore::DataStore::may_initialize_datastore_for_command`])
+    /// is proceeding, and already holds (or just created) the datastore
+    /// handle for it -- so this attaches the new install/update's own ID
+    /// to its earliest telemetry instead of leaving it unattributed until
+    /// `Trident::install` gets around to minting one moments later.
+    ///
+    /// Returns the underlying `create_installation_id` error, if any,
+    /// rather than swallowing it: unlike a passive attach-if-present
+    /// lookup, a genuine mint failure here is a real datastore write
+    /// failure that callers may legitimately want to treat as fatal (as
+    /// `Trident::install` does) rather than merely logging and moving on.
+    pub fn mint_and_attach_installation_id(
+        &self,
+        datastore: &mut DataStore,
+    ) -> Result<(), TridentError> {
+        if self.installation_id_cached() {
+            return Ok(());
+        }
+        let installation_id = datastore.create_installation_id()?;
+        info!("Installation ID: {installation_id}");
+        self.set_installation_id(installation_id.to_string());
+        Ok(())
     }
 
     /// Create a Boxed TraceSender. Truncates the local metrics file on
@@ -182,7 +254,7 @@ impl TraceStream {
     ) -> Box<TraceSender> {
         Box::new(TraceSender::new(
             self.target.clone(),
-            self.correlation_id.clone(),
+            self.installation_id.clone(),
             metrics_file_path,
             truncate,
         ))
@@ -191,7 +263,7 @@ impl TraceStream {
 
 pub struct TraceSender {
     server: Arc<RwLock<Option<String>>>,
-    correlation_id: Arc<RwLock<Option<String>>>,
+    installation_id: Arc<RwLock<Option<String>>>,
     client: reqwest::blocking::Client,
     metrics_file: Option<File>,
 }
@@ -205,7 +277,7 @@ struct ExecutionTime(Instant);
 impl TraceSender {
     fn new(
         server: Arc<RwLock<Option<String>>>,
-        correlation_id: Arc<RwLock<Option<String>>>,
+        installation_id: Arc<RwLock<Option<String>>>,
         metrics_file_path: &str,
         truncate: bool,
     ) -> Self {
@@ -227,7 +299,7 @@ impl TraceSender {
         };
         Self {
             server,
-            correlation_id,
+            installation_id,
             client: reqwest::blocking::Client::new(),
             metrics_file: match metrics_file {
                 Ok(f) => Some(f),
@@ -246,24 +318,24 @@ impl TraceSender {
     }
 
     /// Build the `additional_fields` map for a trace entry: the static
-    /// `ADDITIONAL_FIELDS`, the correlation ID (if one has been set via
-    /// `TraceStream::set_correlation_id`), and the current thread's
-    /// `operation_id`/`command` (if any, see `operation_context`), so
-    /// entries can be correlated back to a specific host installation and
-    /// servicing operation.
+    /// `ADDITIONAL_FIELDS`, the installation ID (if one has been set via
+    /// `TraceStream::set_installation_id`), and the current thread's
+    /// `operation_id`/`command`/`servicing_id` (if any, see
+    /// `operation_context`), so entries can be correlated back to a
+    /// specific host installation and servicing operation.
     ///
-    /// `operation_id`/`command` are deliberately merged here rather than
-    /// into the metric's own `value` (as scalar/span fields are): mixing
-    /// them into `value` would change the established schema for simple
-    /// scalar metrics -- e.g. `clean_install_start` would go from
-    /// `"value": true` to `"value": {"command": ..., "operation_id": ...,
-    /// "value": true}` the moment it ran inside an operation context,
+    /// `operation_id`/`command`/`servicing_id` are deliberately merged here
+    /// rather than into the metric's own `value` (as scalar/span fields
+    /// are): mixing them into `value` would change the established schema
+    /// for simple scalar metrics -- e.g. `clean_install_start` would go
+    /// from `"value": true` to `"value": {"command": ..., "operation_id":
+    /// ..., "value": true}` the moment it ran inside an operation context,
     /// breaking that contract for existing consumers.
     fn additional_fields(&self) -> BTreeMap<String, Value> {
         let mut fields = ADDITIONAL_FIELDS.clone();
-        if let Ok(correlation_id) = self.correlation_id.read() {
-            if let Some(correlation_id) = correlation_id.as_ref() {
-                fields.insert("correlation_id".to_string(), json!(correlation_id));
+        if let Ok(installation_id) = self.installation_id.read() {
+            if let Some(installation_id) = installation_id.as_ref() {
+                fields.insert("installation_id".to_string(), json!(installation_id));
             }
         }
         merge_operation_context(&mut fields);
@@ -460,23 +532,17 @@ where
 /// set (e.g. an event that explicitly names its own `command`) are never
 /// overwritten.
 fn merge_operation_context(fields: &mut BTreeMap<String, Value>) {
-    if let Some((operation_id, command)) = operation_context::current() {
+    if let Some((operation_id, command, servicing_id)) = operation_context::current() {
         fields
             .entry("operation_id".to_string())
             .or_insert_with(|| json!(operation_id));
         fields
             .entry("command".to_string())
             .or_insert_with(|| json!(command));
-    }
-}
-
-/// Obtain product uuid of the hardware Trident is running on
-fn read_product_uuid(filepath: String) -> String {
-    match fs::read_to_string(filepath.clone()) {
-        Ok(uuid) => uuid.trim().to_string(),
-        Err(_) => {
-            debug!("Failed to read product uuid from {}", filepath);
-            "unknown".into()
+        if let Some(servicing_id) = servicing_id {
+            fields
+                .entry("servicing_id".to_string())
+                .or_insert_with(|| json!(servicing_id));
         }
     }
 }
@@ -512,10 +578,6 @@ fn populate_platform_info() -> BTreeMap<String, Value> {
     let mut platform_info = BTreeMap::new();
     let mut sys = System::new();
     sys.refresh_all();
-    platform_info.insert(
-        "asset_id".to_string(),
-        json!(read_product_uuid(PRODUCT_UUID_FILE.into())),
-    );
     platform_info.insert("os_release".to_string(), json!(get_os_release()));
     platform_info.insert("total_cpu".to_string(), json!(sys.cpus().len()));
     platform_info.insert(
@@ -540,7 +602,7 @@ mod tests {
 
     use std::{
         fs::File,
-        io::{BufRead, BufReader, Write},
+        io::{BufRead, BufReader},
     };
 
     use tracing_subscriber::{filter, layer::SubscriberExt};
@@ -633,22 +695,6 @@ mod tests {
     }
 
     #[test]
-    fn test_read_product_uuid_unknown() {
-        let uuid = read_product_uuid("unknown".to_string());
-        assert_eq!(uuid, "unknown");
-    }
-
-    #[test]
-    fn test_read_product_uuid_exists() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let filepath = temp_dir.path().join("product_uuid");
-        let mut file = File::create(&filepath).unwrap();
-        file.write_all("test_uuid".as_bytes()).unwrap();
-        let uuid = read_product_uuid(filepath.to_str().unwrap().to_string());
-        assert_eq!(uuid, "test_uuid");
-    }
-
-    #[test]
     fn test_tracestream_write_metric_event_to_file() {
         let temp_dir = tempfile::tempdir().unwrap();
         let metrics_path = temp_dir.path().join("metrics.jsonl");
@@ -687,16 +733,16 @@ mod tests {
     }
 
     #[test]
-    /// Regression test: `TraceStream::set_correlation_id` must actually
-    /// reach the serialized trace entry's `additional_fields.correlation_id`
+    /// Regression test: `TraceStream::set_installation_id` must actually
+    /// reach the serialized trace entry's `additional_fields.installation_id`
     /// -- the metric/span tests above only assert on `metric_name`/`value`
-    /// and would still pass even if the correlation ID were never copied
+    /// and would still pass even if the installation ID were never copied
     /// into `additional_fields`.
-    fn test_tracestream_correlation_id_written_to_additional_fields() {
+    fn test_tracestream_installation_id_written_to_additional_fields() {
         let temp_dir = tempfile::tempdir().unwrap();
         let metrics_path = temp_dir.path().join("metrics.jsonl");
         let tracestream = TraceStream::default();
-        tracestream.set_correlation_id("test-correlation-id".to_string());
+        tracestream.set_installation_id("test-installation-id".to_string());
         let trace_sender = tracestream
             .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap(), true)
             .with_filter(filter::LevelFilter::INFO);
@@ -708,7 +754,7 @@ mod tests {
         );
 
         tracing::info!(
-            metric_name = "test_metric_with_correlation_id",
+            metric_name = "test_metric_with_installation_id",
             value = true
         );
 
@@ -720,13 +766,56 @@ mod tests {
         let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
 
         let metric_found = lines.iter().any(|line| {
-            line.contains(r#""metric_name":"test_metric_with_correlation_id""#)
-                && line.contains(r#""correlation_id":"test-correlation-id""#)
+            line.contains(r#""metric_name":"test_metric_with_installation_id""#)
+                && line.contains(r#""installation_id":"test-installation-id""#)
         });
 
         assert!(
             metric_found,
-            "Expected metric with correlation_id field not found in the local metrics file"
+            "Expected metric with installation_id field not found in the local metrics file"
+        );
+    }
+
+    #[test]
+    /// Regression test: `operation_context::set_servicing_id` must actually
+    /// reach the serialized trace entry's `additional_fields.servicing_id`
+    /// -- mirrors `test_tracestream_installation_id_written_to_additional_fields`
+    /// above, but for the persistent per-servicing-operation ID instead of
+    /// the per-install one.
+    fn test_tracestream_servicing_id_written_to_additional_fields() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let metrics_path = temp_dir.path().join("metrics.jsonl");
+        let tracestream = TraceStream::default();
+        let trace_sender = tracestream
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap(), true)
+            .with_filter(filter::LevelFilter::INFO);
+
+        // See test_tracestream_write_metric_event_to_file for why a scoped
+        // (not global) default subscriber is used here.
+        let _guard = tracing::subscriber::set_default(
+            tracing_subscriber::Registry::default().with(trace_sender),
+        );
+
+        operation_context::run_with_operation("test_command", || {
+            operation_context::set_servicing_id("test-servicing-id");
+            tracing::info!(metric_name = "test_metric_with_servicing_id", value = true);
+        });
+
+        // Ensure the trace system has time to write the file.
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let file = File::open(&metrics_path).unwrap();
+        let reader = BufReader::new(file);
+        let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
+
+        let metric_found = lines.iter().any(|line| {
+            line.contains(r#""metric_name":"test_metric_with_servicing_id""#)
+                && line.contains(r#""servicing_id":"test-servicing-id""#)
+        });
+
+        assert!(
+            metric_found,
+            "Expected metric with servicing_id field not found in the local metrics file"
         );
     }
 
@@ -796,10 +885,6 @@ mod functional_test {
     #[functional_test]
     fn test_populate_platform_info() {
         let mut expected_platform_info = BTreeMap::new();
-        expected_platform_info.insert(
-            "asset_id".to_string(),
-            json!(read_product_uuid(PRODUCT_UUID_FILE.into())),
-        );
         expected_platform_info.insert("os_release".to_string(), json!(get_os_release()));
         expected_platform_info.insert("total_cpu".to_string(), json!(4));
         expected_platform_info.insert("total_memory_gib".to_string(), json!(6));

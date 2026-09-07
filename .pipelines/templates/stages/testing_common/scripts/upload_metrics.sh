@@ -23,6 +23,7 @@ python bmp-kusto-scripts/kusto_ingestor.py \
     --database "$KUSTO_DATABASE_NAME" \
     --table "$KUSTO_TABLE_NAME" \
     --filepath "$METRICS_FILE" \
-    --mapping "$KUSTO_TABLE_MAPPING"
+    --mapping "$KUSTO_TABLE_MAPPING" \
+    --ignore-schema
 
 echo "Metrics uploaded successfully to Kusto."

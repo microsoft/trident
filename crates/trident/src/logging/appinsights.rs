@@ -194,11 +194,11 @@ pub struct AppInsightsSender {
     instrumentation_key: String,
     track_url: Url,
     uploader: BackgroundUploadHandle,
-    /// The same persistent, per-host correlation ID handle used by
-    /// `TraceStream`/`TraceSender` (see `TraceStream::correlation_id_handle`),
+    /// The same persistent, per-host installation ID handle used by
+    /// `TraceStream`/`TraceSender` (see `TraceStream::installation_id_handle`),
     /// so Application Insights events can be correlated back to a specific
     /// host installation the same way tracestream metrics already are.
-    correlation_id: Arc<RwLock<Option<String>>>,
+    installation_id: Arc<RwLock<Option<String>>>,
 }
 
 impl AppInsightsSender {
@@ -215,7 +215,7 @@ impl AppInsightsSender {
     pub fn from_connection_string(
         connection_string: &str,
         uploader: BackgroundUploadHandle,
-        correlation_id: Arc<RwLock<Option<String>>>,
+        installation_id: Arc<RwLock<Option<String>>>,
     ) -> Option<Self> {
         let parts = parse_connection_string(connection_string)?;
         match parts.track_url() {
@@ -228,20 +228,20 @@ impl AppInsightsSender {
                 return None;
             }
         }
-        Self::from_parts(parts, uploader, correlation_id)
+        Self::from_parts(parts, uploader, installation_id)
     }
 
     fn from_parts(
         parts: ConnParts,
         uploader: BackgroundUploadHandle,
-        correlation_id: Arc<RwLock<Option<String>>>,
+        installation_id: Arc<RwLock<Option<String>>>,
     ) -> Option<Self> {
         let track_url = parts.track_url()?;
         Some(Self {
             instrumentation_key: parts.instrumentation_key,
             track_url,
             uploader,
-            correlation_id,
+            installation_id,
         })
     }
 
@@ -258,20 +258,25 @@ impl AppInsightsSender {
         for (key, value) in PLATFORM_INFO.iter() {
             properties.insert(key.clone(), json!(stringify(value)));
         }
-        if let Ok(correlation_id) = self.correlation_id.read() {
-            if let Some(correlation_id) = correlation_id.as_ref() {
+        if let Ok(installation_id) = self.installation_id.read() {
+            if let Some(installation_id) = installation_id.as_ref() {
                 properties
-                    .entry("correlation_id".to_string())
-                    .or_insert_with(|| json!(correlation_id));
+                    .entry("installation_id".to_string())
+                    .or_insert_with(|| json!(installation_id));
             }
         }
-        if let Some((operation_id, command)) = operation_context::current() {
+        if let Some((operation_id, command, servicing_id)) = operation_context::current() {
             properties
                 .entry("operation_id".to_string())
                 .or_insert_with(|| json!(operation_id));
             properties
                 .entry("command".to_string())
                 .or_insert_with(|| json!(command));
+            if let Some(servicing_id) = servicing_id {
+                properties
+                    .entry("servicing_id".to_string())
+                    .or_insert_with(|| json!(servicing_id));
+            }
         }
 
         let string_properties: BTreeMap<String, String> = properties
@@ -625,7 +630,7 @@ mod functional_test {
                 instrumentation_key: "test-key".to_string(),
             },
             uploader.get_handle().expect("uploader should be alive"),
-            Arc::new(RwLock::new(Some("test-correlation-id".to_string()))),
+            Arc::new(RwLock::new(Some("test-installation-id".to_string()))),
         )
         .expect("should build sender")
         .with_filter(filter::LevelFilter::INFO);
@@ -634,7 +639,7 @@ mod functional_test {
             tracing::subscriber::set_default(tracing_subscriber::Registry::default().with(sender));
 
         // Wrapping in run_with_operation confirms operation_id/command also
-        // reach the outgoing properties, alongside correlation_id above.
+        // reach the outgoing properties, alongside installation_id above.
         operation_context::run_with_operation("test_command", || {
             tracing::info!(metric_name = "test_metric", value = true);
         });
@@ -654,7 +659,7 @@ mod functional_test {
         assert!(combined.contains("POST /v2/track"));
         assert!(combined.contains("\"name\":\"test_metric\""));
         assert!(combined.contains("\"iKey\":\"test-key\""));
-        assert!(combined.contains("\"correlation_id\":\"test-correlation-id\""));
+        assert!(combined.contains("\"installation_id\":\"test-installation-id\""));
         assert!(combined.contains("\"command\":\"test_command\""));
         assert!(combined.contains("\"operation_id\":"));
     }

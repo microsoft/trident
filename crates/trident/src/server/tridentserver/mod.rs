@@ -18,7 +18,10 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 use tonic::{Response, Status};
 
-use trident_api::{error::TridentError, primitives::hash::Sha384Hash};
+use trident_api::{
+    error::{InvalidInputError, TridentError, TridentResultExt},
+    primitives::hash::Sha384Hash,
+};
 use trident_proto::v1::{
     servicing_response::Response as ResponseType, ServicingKind, ServicingResponse, Started,
 };
@@ -165,7 +168,7 @@ impl TridentServer {
     /// this rejection, unlike `reject_invalid_argument`/`reject_invalid_field`/
     /// `reject_invalid_config`: a connection-lock contention failure isn't a
     /// distinct servicing outcome the way a malformed request is -- it's
-    /// pure admission control, happens before `refresh_correlation_id` would
+    /// pure admission control, happens before `refresh_installation_id` would
     /// even run, and (unlike a bad request) the caller is expected to retry
     /// the exact same request rather than fix anything, so a low-value,
     /// high-volume `command_error` stream isn't worth adding here.
@@ -201,7 +204,7 @@ impl TridentServer {
     /// It may also return other error `Status` values if log forwarding or task
     /// setup fails. In all error cases, no servicing task is spawned and no stream
     /// of responses is produced.
-    /// Re-checks for a persisted correlation ID before a request fires its
+    /// Re-checks for a persisted installation ID before a request fires its
     /// own `command_start` (via `run_command`). The daemon-startup pre-warm
     /// in `server_main` only ever runs once, and deliberately skips itself
     /// when the datastore doesn't exist yet (see there for why) -- so a
@@ -215,44 +218,73 @@ impl TridentServer {
     /// happen to run after a write request has warmed it.
     ///
     /// `name` identifies the requests that can create a brand-new
-    /// datastore: install/update (including their stage/finalize-suffixed
-    /// variants), mirroring the CLI's own `can_initialize_datastore`
-    /// check, plus `stream_disk` -- a direct-streaming install path (see
+    /// datastore, per `DataStore::may_initialize_datastore_for_command`:
+    /// install/update stage requests (not their finalize-only variants,
+    /// which cannot themselves stage anything), plus `stream_disk` -- a
+    /// direct-streaming install path (see
     /// `services/streaming.rs`/`tools/pkg/netlaunch`) used when no Host
-    /// Configuration/datastore exists yet either. For those, mint and
-    /// persist a correlation ID now via the same get-or-create call
-    /// Trident::new would otherwise make moments later, even before the
-    /// datastore exists. Every other request skips this when the
-    /// datastore doesn't exist yet, since it requires one to already
-    /// exist.
-    fn refresh_correlation_id(&self, name: &str) {
-        let already_warmed = self
-            .tracestream
-            .correlation_id_handle()
-            .read()
-            .map(|v| v.is_some())
-            .unwrap_or(false);
-        if already_warmed {
-            return;
+    /// Configuration/datastore exists yet either. For those, delegates to
+    /// `TraceStream::mint_and_attach_installation_id`, mirroring the
+    /// CLI's pre-warm, so this request's own command_start carries an ID
+    /// instead of being permanently unattributed on a fresh
+    /// install/stream_disk. Every other request just delegates to
+    /// [`Self::refresh_installation_id_readonly`].
+    ///
+    /// Known limitation (tracked, not fixed here): `TraceStream`'s
+    /// installation-ID cache is a process-lifetime cache with no
+    /// invalidation. If the on-disk datastore this daemon process is
+    /// bound to is ever deleted and replaced by a *different*
+    /// installation (e.g. an out-of-band host reset that leaves the same
+    /// daemon process running instead of restarting it), every telemetry
+    /// event emitted for the rest of this process's lifetime keeps
+    /// carrying the old, now-stale installation ID -- this cache is never
+    /// re-read once warmed, so it can't notice the replacement.
+    /// Deliberately not fixed with an invalidation scheme (e.g. keying the
+    /// cache off the datastore's path/inode/mtime) in this pass: a host
+    /// reset is expected to restart the daemon process (which naturally
+    /// clears this cache), so the failure mode requires an unusual
+    /// operational sequence, and the added complexity/testing surface of
+    /// a real invalidation design isn't justified without a concrete
+    /// report of this happening. Revisit if a genuine
+    /// reset-without-restart scenario is ever confirmed.
+    fn refresh_installation_id(&self, name: &str) {
+        if !DataStore::may_initialize_datastore_for_command(name) {
+            return self.refresh_installation_id_readonly();
         }
-        let can_initialize_datastore =
-            name.starts_with("install") || name.starts_with("update") || name == "stream_disk";
-        match AgentConfig::load().and_then(|agent_config| {
-            if !can_initialize_datastore && !agent_config.datastore_path().exists() {
-                return Ok(None);
-            }
-            DataStore::open_or_create(agent_config.datastore_path())
-                .and_then(|mut ds| ds.correlation_id())
-                .map(Some)
-        }) {
-            Ok(Some(correlation_id)) => {
-                self.tracestream
-                    .set_correlation_id(correlation_id.to_string());
-            }
-            Ok(None) => {}
-            Err(e) => {
-                warn!("Failed to get or create correlation ID: {e:?}");
-            }
+        let minted = AgentConfig::load().and_then(|agent_config| {
+            let mut ds = DataStore::open_or_create(agent_config.datastore_path())?;
+            self.tracestream.mint_and_attach_installation_id(&mut ds)
+        });
+        if let Err(e) = minted {
+            warn!("Failed to mint installation ID: {e:?}");
+        }
+    }
+
+    /// Same as [`Self::refresh_installation_id`], but never allowed to
+    /// create a datastore regardless of what a command name would
+    /// otherwise permit. Used by the `reject_*` helpers: a rejected
+    /// request (missing/invalid field, unparsable Host Configuration)
+    /// never actually begins staging or finalizing anything, so it must
+    /// never leave a fresh datastore behind, even for an
+    /// otherwise-create-permitted command name like `install` (see
+    /// `DataStore::may_initialize_datastore_for_command`) -- unlike
+    /// `refresh_installation_id`, called only once a request has passed
+    /// its own pre-dispatch validation and is genuinely proceeding.
+    ///
+    /// Related, narrower known limitation: the cache read inside
+    /// `TraceStream::attach_installation_id_if_present` and the eventual
+    /// cache write it may lead to are not fenced by a single lock
+    /// spanning both -- concurrent requests can each observe the cache as
+    /// empty and both proceed to look up/mint the ID. This is harmless
+    /// when they agree on the same value (the common case), and its only
+    /// known bad outcome is a narrow attribution gap on the very first
+    /// request of a specific concurrent-first-request race, not a
+    /// correctness bug in persisted state. Not worth a dedicated lock for
+    /// that blast radius; revisit if it proves reachable more broadly.
+    fn refresh_installation_id_readonly(&self) {
+        if let Ok(agent_config) = AgentConfig::load() {
+            self.tracestream
+                .attach_installation_id_if_present(agent_config.datastore_path());
         }
     }
 
@@ -273,7 +305,25 @@ impl TridentServer {
         // Try to acquire the connection lock in write mode
         let guard = self.try_acquire_write_lock()?;
 
-        self.refresh_correlation_id(name);
+        self.refresh_installation_id(name);
+
+        // Same `HostNotProvisioned` invariant the CLI's shared dispatch
+        // enforces (see `main.rs`): a request that cannot itself
+        // stage/initialize a new install or update (per
+        // `DataStore::may_initialize_datastore_for_command`) must never
+        // reach `Trident::new`'s own datastore-open call on a host that
+        // has no datastore yet -- e.g. `commit`, `rollback`,
+        // `rollback_stage`, `rollback_finalize`, and `rebuild_raid`, none
+        // of which are create-permitted, sent to a daemon that has never
+        // serviced a real install/update. Computed here (while the write
+        // lock from `try_acquire_write_lock` above is already held, and
+        // after `refresh_installation_id`, which needs the same
+        // create-permission check to decide mint-vs-migrate), and
+        // captured into `f` below so the rejection still fires
+        // `command_start`/`command_error` like any other servicing
+        // outcome, instead of short-circuiting before telemetry runs.
+        let host_provisioned = DataStore::may_initialize_datastore_for_command(name)
+            || self.agent_config.datastore_path().exists();
 
         // Tag every metric/tracing event `f` fires (on whatever thread it
         // ultimately runs on -- see `spawn_servicing_task`, which runs it
@@ -291,6 +341,10 @@ impl TridentServer {
         // operation's identity instead of leaving it untagged.
         let f = move || {
             operation_context::run_command(name, || {
+                if !host_provisioned {
+                    return Err(TridentError::new(InvalidInputError::HostNotProvisioned))
+                        .message("Datastore file does not exist");
+                }
                 let result = f();
                 if let Ok((ExitKind::NeedsReboot, ..)) = &result {
                     operation_context::save_reboot_operation();
@@ -303,7 +357,7 @@ impl TridentServer {
         let (tx, rx) = mpsc::unbounded_channel();
 
         // Try to acquire the servicing lock. Rejected here, after
-        // `refresh_correlation_id` above but before the `run_command`
+        // `refresh_installation_id` above but before the `run_command`
         // closure `f` (built above) ever runs, this is intentionally
         // untelemetered for the same reason as the connection-lock
         // rejections in `try_acquire_read_lock`/`try_acquire_write_lock`:
@@ -412,7 +466,7 @@ impl TridentServer {
         // telemetry gap as the connection-lock rejections in
         // `try_acquire_read_lock`/`try_acquire_write_lock` and the
         // servicing-lock rejection in `servicing_request`: this rejects
-        // before `refresh_correlation_id` below even runs, it's admission
+        // before `refresh_installation_id` below even runs, it's admission
         // control rather than a distinct read outcome, and the caller is
         // expected to retry rather than fix anything.
         let Some(servicing_guard) = self.servicing_manager.try_lock_reading() else {
@@ -423,7 +477,16 @@ impl TridentServer {
             return Err(Status::unavailable("Servicing is active"));
         };
 
-        self.refresh_correlation_id(name);
+        self.refresh_installation_id(name);
+
+        // Same `HostNotProvisioned` gate as `servicing_request` (see the
+        // comment there): read requests reach this same `Trident`
+        // construction path and must be rejected identically on an
+        // unprovisioned host, e.g. `check_rollback`. Computed while the
+        // read lock above is held, and captured into `f` below so the
+        // rejection still fires `command_start`/`command_error`.
+        let host_provisioned = DataStore::may_initialize_datastore_for_command(name)
+            || self.agent_config.datastore_path().exists();
 
         // Tag every metric/tracing event `f` fires (on the dedicated OS
         // thread `spawn_reading_task` runs it on, via
@@ -438,7 +501,15 @@ impl TridentServer {
         // in an `Ok` response instead of returning `Err(TridentError)` (if
         // any -- none currently do) would still not get a command_error,
         // since that only fires on `Err`.
-        let f = move || operation_context::run_command(name, f);
+        let f = move || {
+            operation_context::run_command(name, || {
+                if !host_provisioned {
+                    return Err(TridentError::new(InvalidInputError::HostNotProvisioned))
+                        .message("Datastore file does not exist");
+                }
+                f()
+            })
+        };
 
         // Execute the reading function
         Ok(Response::new(

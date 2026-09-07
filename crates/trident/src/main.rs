@@ -2,7 +2,7 @@ use std::{fs, iter, panic, process::ExitCode, time::Duration};
 
 use anyhow::{Context, Error};
 use clap::Parser;
-use log::{debug, error, info, warn, LevelFilter, Log};
+use log::{error, info, warn, LevelFilter, Log};
 
 use osutils::logging::{filter::LogFilter, multilog::MultiLogger};
 use trident::{
@@ -25,11 +25,21 @@ use trident_api::{
 /// `"install_finalize"`), so `command`/`operation_id` telemetry is
 /// consistent regardless of whether the command came from the CLI or from
 /// gRPC/daemon.
+///
+/// `--allowed-operations` accepts an explicit empty list (`num_args = 0..`
+/// with no values), distinct from omitting the flag entirely -- distinguish
+/// that genuinely no-op request (`{base}_noop`) from the real combined
+/// stage+finalize invocation (`base`) rather than collapsing both into the
+/// same name: unlike a real install/update, a no-op request can't create
+/// anything, so it must not share a name with a name
+/// `DataStore::may_initialize_datastore_for_command` treats as
+/// create-permitted.
 fn command_name(base: &str, ops: &Operations) -> String {
     match (ops.has_stage(), ops.has_finalize()) {
-        (true, true) | (false, false) => base.to_string(),
+        (true, true) => base.to_string(),
         (true, false) => format!("{base}_stage"),
         (false, true) => format!("{base}_finalize"),
+        (false, false) => format!("{base}_noop"),
     }
 }
 
@@ -97,7 +107,26 @@ fn run_trident(
         }
     };
 
-    // Pre-warm the correlation ID on the shared TraceStream before
+    // Multiboot installs may end up targeting a brand-new temporary
+    // datastore distinct from the host's existing persistent one (see
+    // `Trident::install`'s multiboot swap), so any installation-ID attach
+    // below -- before that swap decision is made -- risks stamping this
+    // invocation's earliest telemetry with the *old* host's installation
+    // ID instead of the new install's. `Trident::install` (and, via
+    // `new_deferring_installation_id`, `Trident::new`) always attaches the
+    // correct ID once it actually knows which datastore this invocation is
+    // using, so it's safe, and strictly better, to skip every pre-warm
+    // attach below for this one case and leave the earliest events
+    // unattributed rather than guess wrong.
+    let is_multiboot_install = matches!(
+        &args.command,
+        Commands::Install {
+            multiboot: true,
+            ..
+        }
+    );
+
+    // Pre-warm the installation ID on the shared TraceStream before
     // run_command below fires command_start: Trident::new (further down,
     // inside the closure, only reached by the servicing branch) is the
     // usual place this gets attached, but that's too late for
@@ -107,40 +136,52 @@ fn run_trident(
     // Install/Update are the only commands allowed to initialize a
     // brand-new datastore (see the "host not provisioned" guard further
     // down), so for those two it's safe -- and necessary, to avoid a fresh
-    // install/update's very first command_start missing a correlation ID
+    // install/update's very first command_start missing an installation ID
     // entirely -- to mint and persist one now via the same get-or-create
-    // `correlation_id()` call Trident::new would otherwise make moments
-    // later, even though the datastore doesn't exist yet:
-    // DataStore::open_or_create will just create it, exactly as
-    // Trident::new is about to anyway. For every other command, this is
-    // skipped entirely when the datastore doesn't exist yet: those
-    // commands require an *existing* datastore, and creating one here as a
-    // side effect would let it slip past that later guard.
-    // Determined up front -- before the correlation ID pre-warm below,
+    // `DataStore::create_installation_id` call Trident::install would
+    // otherwise make moments later, even though the datastore doesn't
+    // exist yet: DataStore::open_or_create will just create it, exactly as
+    // Trident::install is about to anyway. This is the one call site that
+    // must *mint*, not just migrate: `installation_id_or_migrate` (used
+    // everywhere else below) deliberately returns `None` for a brand-new,
+    // not-yet-provisioned datastore, so a fresh install's
+    // command_start/trident_start are still attributed to an installation
+    // ID. For
+    // every other command, this is skipped entirely when the datastore
+    // doesn't exist yet: those commands require an *existing* datastore,
+    // and creating one here as a side effect would let it slip past that
+    // later guard. Whether a command may initialize a datastore this way
+    // is decided by `DataStore::may_initialize_datastore_for_command`
+    // (keyed on the same stage/finalize-aware `command` name computed
+    // above), the single shared answer to that question for both this CLI
+    // pre-warm and the daemon's equivalent backstop in
+    // `server/tridentserver/mod.rs`'s `refresh_installation_id` -- so a
+    // finalize-only command (which cannot itself stage anything) can never
+    // create a datastore here, even though it still matches
+    // `Commands::Install`/`Commands::Update`.
+    // Determined up front -- before the installation ID pre-warm below,
     // which for Install/Update may create the datastore as a side effect
     // -- so a missing, unreadable, or unparsable --config is rejected
     // before that happens, so a failed invocation with a bad --config
     // cannot leave a datastore behind that would make a later command
     // wrongly pass the "host not provisioned" existence check.
-    // Best-effort, read-only correlation-ID attach *before* the --config
+    // Best-effort, read-only installation-ID attach *before* the --config
     // checks below: those checks reject a missing/unreadable/unparsable
     // --config via `run_command`, which fires `command_start` +
     // `command_error` immediately -- before the full pre-warm further
     // down ever runs (by design; see the comment on `config_path`).
     // Without this, every --config rejection error was reported with no
-    // correlation ID at all, even on an already-provisioned host, making
+    // installation ID at all, even on an already-provisioned host, making
     // that whole class of operator-input errors unattributable to a host.
     // This intentionally mirrors the daemon's startup pre-warm shape
-    // (`server/mod.rs`): guarded by `datastore_path().exists()` so it can
-    // never create a datastore itself, preserving the invariant that a
-    // rejected --config leaves no datastore behind.
-    if let Ok(agent_config) = AgentConfig::load() {
-        if agent_config.datastore_path().exists() {
-            if let Ok(mut ds) = DataStore::open_or_create(agent_config.datastore_path()) {
-                if let Ok(correlation_id) = ds.correlation_id() {
-                    tracestream.set_correlation_id(correlation_id.to_string());
-                }
-            }
+    // (`server/mod.rs`): both call the same shared
+    // `TraceStream::attach_installation_id_if_present`, which never
+    // creates a datastore, preserving the invariant that a rejected
+    // --config leaves no datastore behind. Skipped entirely for a
+    // multiboot install -- see `is_multiboot_install` above.
+    if !is_multiboot_install {
+        if let Ok(agent_config) = AgentConfig::load() {
+            tracestream.attach_installation_id_if_present(agent_config.datastore_path());
         }
     }
 
@@ -177,27 +218,34 @@ fn run_trident(
         }
     }
 
-    let can_initialize_datastore = matches!(
-        args.command,
-        Commands::Install { .. } | Commands::Update { .. }
-    );
-    match AgentConfig::load().and_then(|agent_config| {
-        if !can_initialize_datastore && !agent_config.datastore_path().exists() {
-            return Ok(None);
-        }
-        DataStore::open_or_create(agent_config.datastore_path())
-            .and_then(|mut ds| ds.correlation_id())
-            .map(Some)
-    }) {
-        Ok(Some(correlation_id)) => {
-            info!("Correlation ID: {correlation_id}");
-            tracestream.set_correlation_id(correlation_id.to_string());
-        }
-        Ok(None) => {
-            debug!("No datastore yet, skipping correlation ID pre-warm");
-        }
-        Err(e) => {
-            warn!("Failed to get or create correlation ID: {e:?}");
+    let can_initialize_datastore =
+        !is_multiboot_install && DataStore::may_initialize_datastore_for_command(&command);
+    if !is_multiboot_install {
+        if let Ok(agent_config) = AgentConfig::load() {
+            if can_initialize_datastore {
+                // Install/Update may be creating a brand-new datastore
+                // right here (open_or_create's side effect below): mint
+                // the installation ID now via the same get-or-create
+                // semantics `Trident::install` applies moments later, so
+                // this invocation's own command_start -- fired
+                // immediately after this pre-warm returns, well before
+                // `Trident::new`/`Trident::install` ever run -- carries
+                // the ID instead of being permanently unattributed on a
+                // fresh install. On an already-provisioned host this is
+                // just a get-or-create read-back of the existing ID, so
+                // it's a no-op in practice for Update on an existing
+                // host.
+                match DataStore::open_or_create(agent_config.datastore_path()) {
+                    Ok(mut ds) => {
+                        if let Err(e) = tracestream.mint_and_attach_installation_id(&mut ds) {
+                            warn!("Failed to mint installation ID: {e:?}");
+                        }
+                    }
+                    Err(e) => warn!("Failed to open datastore for installation ID: {e:?}"),
+                }
+            } else {
+                tracestream.attach_installation_id_if_present(agent_config.datastore_path());
+            }
         }
     }
 
@@ -261,9 +309,20 @@ fn run_trident(
                     runtime,
                     ..
                 } => {
-                    let datastore =
-                        DataStore::open_or_create(AgentConfig::load()?.datastore_path())
-                            .message("Failed to open datastore")?;
+                    // `rollback --check` is a read-only status query -- it
+                    // must never create a datastore on a not-yet-installed
+                    // host. This ran before the shared dispatch's
+                    // HostNotProvisioned guard even exists (this whole
+                    // match arm returns early, above that guard), so
+                    // `open_or_create` would otherwise silently create one
+                    // here as a side effect of a mere availability check.
+                    let datastore_path = AgentConfig::load()?.datastore_path().to_owned();
+                    if !datastore_path.exists() {
+                        return Err(TridentError::new(InvalidInputError::HostNotProvisioned))
+                            .message("Datastore file does not exist");
+                    }
+                    let datastore = DataStore::open_or_create(&datastore_path)
+                        .message("Failed to open datastore")?;
                     return manual_rollback::check_rollback(
                         &datastore,
                         ManualRollbackRequestKind::from_flags(*runtime, *ab)?,
@@ -292,7 +351,7 @@ fn run_trident(
                 | Commands::RebuildRaid { status, error, .. }
                 | Commands::Rollback { status, error, .. } => {
                     // config_path's existence was already validated
-                    // above, before the correlation ID pre-warm.
+                    // above, before the installation ID pre-warm.
                     let config_path = match &args.command {
                         Commands::Update { config, .. } | Commands::Install { config, .. } => {
                             Some(config.clone())
@@ -302,29 +361,52 @@ fn run_trident(
                     };
 
                     let agent_config = AgentConfig::load()?;
-                    // For non-install and non-update (update will check and has special handling for CIH
-                    // scenario) commands, we expect the datastore to exist
-                    if !matches!(
-                        args.command,
-                        Commands::Install { .. } | Commands::Update { .. }
-                    ) && !agent_config.datastore_path().exists()
+                    // Only a command that may actually stage/initialize a
+                    // new install or update (per the same
+                    // `may_initialize_datastore_for_command` classifier
+                    // used by the installation-ID pre-warm above and the
+                    // daemon's equivalent backstop) is allowed to proceed
+                    // without an existing datastore -- Install/Update are
+                    // not blanket-exempt, since a finalize-only request
+                    // (`--allowed-operations finalize`) cannot itself
+                    // stage anything and would otherwise reach
+                    // `Trident::new`'s own `open_or_create` below
+                    // unguarded, silently creating a datastore for a
+                    // request that requires an existing staged operation
+                    // to finalize.
+                    if !DataStore::may_initialize_datastore_for_command(&command)
+                        && !agent_config.datastore_path().exists()
                     {
                         return Err(TridentError::new(InvalidInputError::HostNotProvisioned))
                             .message("Datastore file does not exist");
                     }
 
-                    let mut trident = Trident::new(
-                        config_path.map(HostConfigurationSource::File),
-                        agent_config.datastore_path(),
-                        logstream.clone(),
-                        tracestream.clone(),
-                    )
+                    let mut trident = if is_multiboot_install {
+                        Trident::new_deferring_installation_id(
+                            config_path.map(HostConfigurationSource::File),
+                            agent_config.datastore_path(),
+                            logstream.clone(),
+                            tracestream.clone(),
+                        )
+                    } else {
+                        Trident::new(
+                            config_path.map(HostConfigurationSource::File),
+                            agent_config.datastore_path(),
+                            logstream.clone(),
+                            tracestream.clone(),
+                        )
+                    }
                     .message("Failed to initialize Trident")?;
 
                     // `Trident::new` has already retrieved (or created) this
-                    // host's persisted correlation ID and attached it to the
+                    // host's persisted installation ID and attached it to the
                     // shared TraceStream, so every trace/metric emitted from
                     // here on -- including "trident_start" -- carries it.
+                    // (For a multiboot install, `is_multiboot_install` routes
+                    // to `Trident::new_deferring_installation_id` above
+                    // instead, deliberately leaving it unattached until
+                    // `Trident::install` -- below -- knows which datastore
+                    // this invocation actually ends up using.)
                     let mut datastore = DataStore::open_or_create(agent_config.datastore_path())
                         .message("Failed to open datastore")?;
 
@@ -664,7 +746,7 @@ fn setup_tracing(
                     Some(handle) => match AppInsightsSender::from_connection_string(
                         trident::AZURE_MONITOR_CONNECTION_STRING,
                         handle,
-                        tracestream.correlation_id_handle(),
+                        tracestream.installation_id_handle(),
                     ) {
                         Some(sender) => {
                             layers.push(Box::new(sender.with_filter(filter::LevelFilter::INFO)));
@@ -859,5 +941,42 @@ fn main() -> ExitCode {
         }
 
         TridentExitCodes::Success.into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use trident_api::config::Operation;
+
+    /// Regression test for DR-019: an explicit empty `--allowed-operations`
+    /// list (distinct from omitting the flag) must not collapse onto the
+    /// same name as a real combined stage+finalize invocation, since only
+    /// the latter is create-permitted per
+    /// `DataStore::may_initialize_datastore_for_command`.
+    #[test]
+    fn test_command_name() {
+        let both = {
+            let mut ops = Operations::empty();
+            ops.0.insert(Operation::Stage);
+            ops.0.insert(Operation::Finalize);
+            ops
+        };
+        let stage_only = {
+            let mut ops = Operations::empty();
+            ops.0.insert(Operation::Stage);
+            ops
+        };
+        let finalize_only = {
+            let mut ops = Operations::empty();
+            ops.0.insert(Operation::Finalize);
+            ops
+        };
+        let none = Operations::empty();
+
+        assert_eq!(command_name("install", &both), "install");
+        assert_eq!(command_name("install", &stage_only), "install_stage");
+        assert_eq!(command_name("install", &finalize_only), "install_finalize");
+        assert_eq!(command_name("install", &none), "install_noop");
     }
 }

@@ -14,6 +14,7 @@ use crate::{
     engine::{
         self, ab_update, rollback, runtime_update, EngineContext, EngineContextParams, SUBSYSTEMS,
     },
+    logging::operation_context::set_servicing_id,
     osimage::OsImage,
     subsystems::hooks::HooksSubsystem,
     ExitKind,
@@ -76,11 +77,7 @@ pub(crate) fn update(
             info!("No update servicing required");
             return Ok((ExitKind::Done, ServicingType::NoActiveServicing));
         }
-        ServicingType::RuntimeUpdate => {}
-        ServicingType::AbUpdate => {
-            // Execute pre-servicing scripts
-            HooksSubsystem::new_for_local_scripts().execute_pre_servicing_scripts(&ctx)?;
-        }
+        ServicingType::RuntimeUpdate | ServicingType::AbUpdate => {}
         ServicingType::ManualRollbackAb | ServicingType::ManualRollbackRuntime => {
             return Err(TridentError::new(InternalError::Internal(
                 "Subsystem reported manual rollback servicing type",
@@ -99,6 +96,38 @@ pub(crate) fn update(
     );
 
     ctx.servicing_type = servicing_type;
+
+    // Mint a fresh servicing ID for this update operation and attach it to
+    // this invocation's telemetry now that we know a real update
+    // servicing operation is happening (not a no-op, and not a
+    // servicing-type mismatch) -- but *before* any preflight step that can
+    // itself fail (pre-servicing hooks, Host Configuration validation,
+    // filesystem population), so a failure in any of those is correlated
+    // by servicing_id too, exactly like update_start below and everything
+    // else this invocation emits. Mirrors Trident::install and
+    // manual_rollback::execute_rollback, which both mint immediately
+    // after their own no-op/invalid-state checks and before any
+    // preflight work. This function always both stages and (per
+    // has_finalize()) optionally finalizes in the same call --
+    // Trident::update() only reaches here when it's about to stage (a
+    // changed Host Configuration with has_stage(), or a retry of a
+    // previously-failed/no-op update). A genuine, separate finalize-only
+    // continuation of an update staged by an *earlier* invocation never
+    // reaches this function at all -- Trident::update() detects that case
+    // (unchanged Host Configuration, AbUpdateStaged/RuntimeUpdateStaged)
+    // and calls ab_update::finalize_update()/runtime_update::finalize_update()
+    // directly, reading the persisted servicing_id back there instead of
+    // minting a new one here.
+    let servicing_id = state
+        .new_servicing_id()
+        .message("Failed to create servicing ID")?;
+    info!("Servicing ID: {servicing_id}");
+    set_servicing_id(servicing_id.to_string());
+
+    if matches!(servicing_type, ServicingType::AbUpdate) {
+        // Execute pre-servicing scripts
+        HooksSubsystem::new_for_local_scripts().execute_pre_servicing_scripts(&ctx)?;
+    }
 
     engine::validate_host_config(&subsystems, &ctx)?;
 

@@ -2,7 +2,7 @@ use tonic::{async_trait, Request, Response, Status};
 
 use trident_api::{
     config::{HostConfigurationSource, Operation, Operations},
-    error::TridentResultExt,
+    error::{InvalidInputError, TridentError, TridentResultExt},
 };
 use trident_proto::v1::{
     update_service_server::UpdateService, FinalizeUpdateRequest, StageUpdateRequest, UpdateRequest,
@@ -49,12 +49,16 @@ impl UpdateService for TridentServer {
         };
 
         // Reject an unparsable Host Configuration payload before
-        // servicing_request's correlation-ID pre-warm below, which for
+        // servicing_request's installation-ID pre-warm below, which for
         // this RPC creates the datastore as a side effect -- otherwise an
         // invalid payload would still leave a datastore behind, letting a
         // later request wrongly pass the "host not provisioned" existence
         // check. Parse-only (no semantic validate()), matching what
         // Trident::new does with this same string moments later.
+        // (`reject_invalid_config` itself never creates a datastore --
+        // see `TridentServer::refresh_installation_id_readonly` -- so
+        // this ordering also avoids ever needing to clean one up on the
+        // rejected path.)
         if let Err(e) = validation::parse_host_config(&host_config.config, None::<&std::path::Path>)
         {
             let message = format!("Invalid host configuration: {e:?}");
@@ -147,6 +151,17 @@ impl UpdateService for TridentServer {
             "update_finalize",
             super::reboot_allowed(&finalize.reboot),
             move || {
+                // Finalize-only: cannot itself stage anything, so it must
+                // never create a datastore on an unprovisioned host (see
+                // `DataStore::may_initialize_datastore_for_command`).
+                // `Trident::new`'s own `open_or_create` below would
+                // otherwise silently create one for a request that
+                // requires an existing staged operation to finalize.
+                if !data_store_path.exists() {
+                    return Err(TridentError::new(InvalidInputError::HostNotProvisioned))
+                        .message("Datastore file does not exist");
+                }
+
                 let mut trident = Trident::new(None, &data_store_path, logstream, tracestream)
                     .message("Failed to initialize Trident")?;
 
