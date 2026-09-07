@@ -24,7 +24,6 @@ Every event sent also includes as much of the following host metadata as
 is available at the time, so operators should be aware this leaves the
 host along with the metrics/spans themselves:
 
-- `asset_id`: the host's DMI product UUID (a stable hardware identifier).
 - `os_release`: the `VERSION` field from `/etc/os-release`.
 - `kernel_version`: the running kernel release (`uname -r`).
 - `total_cpu`: the number of CPUs.
