@@ -14,7 +14,7 @@ use crate::{
         tridentserver::{RebootDecision, ServicingResponseStream},
         TridentServer,
     },
-    DataStore, Trident,
+    validation, DataStore, Trident,
 };
 
 #[async_trait]
@@ -38,6 +38,20 @@ impl InstallService for TridentServer {
         let Some(finalize) = req.finalize else {
             return Err(Status::invalid_argument("Missing finalize configuration"));
         };
+
+        // Reject an unparsable Host Configuration payload before
+        // servicing_request's correlation-ID pre-warm below, which for
+        // this RPC creates the datastore as a side effect -- otherwise an
+        // invalid payload would still leave a datastore behind, letting a
+        // later request wrongly pass the "host not provisioned" existence
+        // check. Parse-only (no semantic validate()), matching what
+        // Trident::new does with this same string moments later.
+        if let Err(e) = validation::parse_host_config(&host_config.config, None::<&std::path::Path>)
+        {
+            return Err(Status::invalid_argument(format!(
+                "Invalid host configuration: {e:?}"
+            )));
+        }
 
         let data_store_path = self.agent_config.datastore_path().to_owned();
         let logstream = self.logstream.clone();
@@ -77,6 +91,15 @@ impl InstallService for TridentServer {
                 "Missing host configuration in staging configuration",
             ));
         };
+
+        // See the equivalent check in install() above for why this must
+        // happen before servicing_request's datastore-creating pre-warm.
+        if let Err(e) = validation::parse_host_config(&host_config.config, None::<&std::path::Path>)
+        {
+            return Err(Status::invalid_argument(format!(
+                "Invalid host configuration: {e:?}"
+            )));
+        }
 
         let data_store_path = self.agent_config.datastore_path().to_owned();
         let logstream = self.logstream.clone();

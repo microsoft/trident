@@ -24,7 +24,7 @@ use osutils::{
     uname,
 };
 
-use crate::{TRIDENT_METRICS_FILE_PATH, TRIDENT_VERSION};
+use crate::{logging::operation_context, TRIDENT_METRICS_FILE_PATH, TRIDENT_VERSION};
 
 /// The product uuid is used to identify the hardware that Trident is running on.
 const PRODUCT_UUID_FILE: &str = "/sys/class/dmi/id/product_uuid";
@@ -140,6 +140,15 @@ impl TraceStream {
         }
     }
 
+    /// Returns a clone of the shared correlation-ID handle -- the same
+    /// underlying `Arc<RwLock<..>>` written by `set_correlation_id` -- so
+    /// other telemetry sinks (namely `AppInsightsSender`) can read the
+    /// current value at send-time without needing their own copy of the
+    /// logic that sets it.
+    pub fn correlation_id_handle(&self) -> Arc<RwLock<Option<String>>> {
+        self.correlation_id.clone()
+    }
+
     /// Create a Boxed TraceSender
     pub fn make_trace_sender(&self) -> Box<TraceSender> {
         self.make_trace_sender_with_metrics_path(TRIDENT_METRICS_FILE_PATH)
@@ -203,9 +212,19 @@ impl TraceSender {
     }
 
     /// Build the `additional_fields` map for a trace entry: the static
-    /// `ADDITIONAL_FIELDS`, plus the correlation ID (if one has been set via
-    /// `TraceStream::set_correlation_id`), so entries can be correlated back to a
-    /// specific host installation.
+    /// `ADDITIONAL_FIELDS`, the correlation ID (if one has been set via
+    /// `TraceStream::set_correlation_id`), and the current thread's
+    /// `operation_id`/`command` (if any, see `operation_context`), so
+    /// entries can be correlated back to a specific host installation and
+    /// servicing operation.
+    ///
+    /// `operation_id`/`command` are deliberately merged here rather than
+    /// into the metric's own `value` (as scalar/span fields are): mixing
+    /// them into `value` would change the established schema for simple
+    /// scalar metrics -- e.g. `clean_install_start` would go from
+    /// `"value": true` to `"value": {"command": ..., "operation_id": ...,
+    /// "value": true}` the moment it ran inside an operation context,
+    /// breaking that contract for existing consumers.
     fn additional_fields(&self) -> BTreeMap<String, Value> {
         let mut fields = ADDITIONAL_FIELDS.clone();
         if let Ok(correlation_id) = self.correlation_id.read() {
@@ -213,6 +232,7 @@ impl TraceSender {
                 fields.insert("correlation_id".to_string(), json!(correlation_id));
             }
         }
+        merge_operation_context(&mut fields);
         fields
     }
 
@@ -398,6 +418,21 @@ where
                 values.record(visitor);
             }
         }
+    }
+}
+
+/// Merge the current thread's `operation_id`/`command` (see
+/// `operation_context`), if any, into `fields`. Values the caller already
+/// set (e.g. an event that explicitly names its own `command`) are never
+/// overwritten.
+fn merge_operation_context(fields: &mut BTreeMap<String, Value>) {
+    if let Some((operation_id, command)) = operation_context::current() {
+        fields
+            .entry("operation_id".to_string())
+            .or_insert_with(|| json!(operation_id));
+        fields
+            .entry("command".to_string())
+            .or_insert_with(|| json!(command));
     }
 }
 

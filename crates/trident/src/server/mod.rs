@@ -9,7 +9,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Result as AnyhowRes};
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use nix::sys::stat::Mode;
 use tokio::{net::UnixListener, runtime::Builder};
 use tokio_stream::wrappers::UnixListenerStream;
@@ -35,7 +35,8 @@ use trident_proto::v1preview::{
 use crate::{
     agentconfig::AgentConfig,
     cli::TridentExitCodes,
-    logging::logfwd::LogForwarder,
+    datastore::DataStore,
+    logging::{logfwd::LogForwarder, operation_context},
     reboot::{self, REBOOT_WAIT_DURATION_SECS},
     ExitKind, Logstream, TraceStream,
 };
@@ -107,6 +108,38 @@ pub fn server_main(
         }
     };
 
+    // Pre-warm the correlation ID on the shared TraceStream before
+    // accepting any RPCs. `Trident::new()` calls this same get-or-create
+    // lookup on every request, but since the very first servicing request
+    // this daemon process ever handles is otherwise the one whose
+    // command_start (fired by run_with_operation before that request's own
+    // Trident::new() call runs) would not yet carry it, warm it up front
+    // instead. Every later request is unaffected either way, since the
+    // shared TraceStream keeps whatever was set here (or by the first
+    // request) for the rest of the daemon's lifetime.
+    //
+    // Skipped entirely when the datastore doesn't exist yet:
+    // DataStore::open_or_create creates the file as a side effect, which
+    // would be a surprising thing for a telemetry pre-warm to do on a
+    // not-yet-installed host. `Trident::new()` will do its own
+    // get-or-create lookup as part of the real operation once one is
+    // requested.
+    if agent_config.datastore_path().exists() {
+        match DataStore::open_or_create(agent_config.datastore_path())
+            .and_then(|mut ds| ds.correlation_id())
+        {
+            Ok(correlation_id) => {
+                info!("Correlation ID: {correlation_id}");
+                tracestream.set_correlation_id(correlation_id.to_string());
+            }
+            Err(e) => {
+                warn!("Failed to get or create correlation ID: {e:?}");
+            }
+        }
+    } else {
+        debug!("No datastore yet, skipping correlation ID pre-warm");
+    }
+
     let shutdown_signals = match ShutdownSignals::setup_signal_handlers() {
         Ok(signals) => signals,
         Err(e) => {
@@ -150,7 +183,20 @@ pub fn server_main(
 }
 
 fn reboot(signals: ShutdownSignals) -> ExitCode {
-    if let Err(e) = reboot::request_reboot() {
+    // Reuse the just-finished servicing operation's own operation_id/
+    // command (captured via `save_reboot_operation` from inside
+    // `servicing_request`'s closure, before that operation's own
+    // `run_with_operation` scope ended) so `trident_system_reboot` --
+    // fired unconditionally by `request_reboot` -- is tagged with the
+    // originating operation instead of left completely untagged: by the
+    // time this function runs, the whole daemon event loop
+    // (`server_main_inner`/`main_task`) has already returned, so there is
+    // no thread-local operation context active here at all.
+    let request_result = operation_context::run_with_captured_operation(
+        operation_context::take_reboot_operation(),
+        reboot::request_reboot,
+    );
+    if let Err(e) = request_result {
         error!("Failed to request reboot: {e:?}");
         return TridentExitCodes::RebootUnsuccessful.into();
     }

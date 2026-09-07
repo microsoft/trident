@@ -1,8 +1,8 @@
 use std::{
-    collections::HashSet,
+    collections::HashMap,
     sync::LazyLock,
     thread::{Builder, JoinHandle},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use anyhow::{bail, Context, Error};
@@ -20,11 +20,52 @@ static HTTP_ASYNC_CLIENT: LazyLock<Client> = LazyLock::new(Client::new);
 /// The module path of the background uploader. Can be used for filtering logs.
 pub(super) const BACKGROUND_LOG_MODULE: &str = module_path!();
 
+/// Cooldown applied after an origin's first consecutive failure, doubled
+/// for each further consecutive failure (see [`OriginCooldown`]) up to
+/// [`MAX_ORIGIN_COOLDOWN`]. Bounding the backoff instead of disabling the
+/// origin outright means a healthy endpoint recovers on its own after a
+/// transient blip (a momentary network hiccup, a brief server restart),
+/// while a genuinely dead one is still backed off hard enough not to waste
+/// effort retrying it constantly.
+const BASE_ORIGIN_COOLDOWN: Duration = Duration::from_secs(30);
+
+/// Upper bound on the exponential backoff described above.
+const MAX_ORIGIN_COOLDOWN: Duration = Duration::from_secs(600);
+
 /// Data to be uploaded by the background uploader.
 struct UploadData {
     url: Url,
     body: Vec<u8>,
     timeout: Duration,
+    /// Optional `Content-Type` header value to attach to the request.
+    content_type: Option<&'static str>,
+}
+
+/// Per-origin backoff state, tracked across consecutive failed uploads to
+/// the same origin. Reset (removed from the tracking map) as soon as an
+/// upload to that origin succeeds again.
+struct OriginCooldown {
+    /// Consecutive failures observed for this origin since its last
+    /// success (or since tracking began).
+    consecutive_failures: u32,
+    /// Uploads to this origin are skipped until this instant.
+    cooldown_until: Instant,
+}
+
+/// Computes the exponential backoff duration for the given number of
+/// consecutive failures (1 for the first failure, 2 for the second, ...),
+/// doubling from `BASE_ORIGIN_COOLDOWN` and clamped at
+/// `MAX_ORIGIN_COOLDOWN`. Split out from `upload_loop` so the pure
+/// calculation is independently testable without needing to simulate real
+/// time passing.
+fn backoff_for_failures(consecutive_failures: u32) -> Duration {
+    // Cap the exponent well below any value that could overflow the
+    // shift: MAX_ORIGIN_COOLDOWN already clamps the result, so this only
+    // needs to be large enough to reach that clamp.
+    let exponent = consecutive_failures.saturating_sub(1).min(16);
+    BASE_ORIGIN_COOLDOWN
+        .saturating_mul(1u32 << exponent)
+        .min(MAX_ORIGIN_COOLDOWN)
 }
 
 /// A background uploader that sends log data to a remote server asynchronously.
@@ -86,39 +127,136 @@ impl BackgroundUploader {
 
     /// The main upload loop that processes incoming upload requests.
     async fn upload_loop(mut receiver: UnboundedReceiver<UploadData>) {
-        let mut ignored_servers = HashSet::new();
+        let mut origin_cooldowns: HashMap<Origin, OriginCooldown> = HashMap::new();
 
         while let Some(upload) = receiver.recv().await {
-            if ignored_servers.contains(&upload.url.origin()) {
-                continue;
+            let origin = upload.url.origin();
+
+            if let Some(state) = origin_cooldowns.get(&origin) {
+                if Instant::now() < state.cooldown_until {
+                    continue;
+                }
             }
 
-            let result = HTTP_ASYNC_CLIENT
+            let mut request = HTTP_ASYNC_CLIENT
                 .post(upload.url.clone())
                 .timeout(upload.timeout)
-                .body(upload.body)
-                .send()
-                .await;
-
-            if let Err(e) = result {
-                error!("Background upload failed: {e}");
-                ignored_servers.insert(upload.url.origin());
-                error!(
-                    "Ignoring future uploads to server: {}",
-                    match upload.url.origin() {
-                        Origin::Tuple(scheme, host, port) =>
-                            format!("{}://{}:{}", scheme, host, port),
-                        Origin::Opaque(_) => "[opaque origin]".to_string(),
-                    }
-                );
+                .body(upload.body);
+            if let Some(content_type) = upload.content_type {
+                request = request.header(reqwest::header::CONTENT_TYPE, content_type);
             }
+            // Treat non-2xx responses the same as a network-level failure: a
+            // consumer (e.g. AppInsightsSender) may document that rejected
+            // requests count as failures, so surface them here rather than
+            // silently treating any response as success. `error_for_status()`
+            // alone is not enough: it only rejects 4xx/5xx, so a 3xx (e.g. an
+            // unexpected redirect the client never followed) would still be
+            // reported as success. Explicitly require 2xx instead.
+            let result: Result<(), Error> = match request.send().await {
+                Ok(response) if response.status().is_success() => Ok(()),
+                Ok(response) => Err(anyhow::anyhow!(
+                    "unexpected HTTP status {} from {}",
+                    response.status(),
+                    response.url()
+                )),
+                Err(e) => Err(e.into()),
+            };
 
-            // Note: we don't particularly care much for the status code since
-            // this is just a generic implementation.
+            match result {
+                Ok(()) => {
+                    // Origin is healthy again: drop any backoff state so a
+                    // future failure starts from the base cooldown rather
+                    // than a previously-escalated one.
+                    origin_cooldowns.remove(&origin);
+                }
+                Err(e) => {
+                    error!("Background upload failed: {e}");
+
+                    let consecutive_failures = origin_cooldowns
+                        .get(&origin)
+                        .map(|state| state.consecutive_failures)
+                        .unwrap_or(0)
+                        + 1;
+                    let cooldown = backoff_for_failures(consecutive_failures);
+                    let cooldown_until = Instant::now() + cooldown;
+
+                    origin_cooldowns.insert(
+                        origin.clone(),
+                        OriginCooldown {
+                            consecutive_failures,
+                            cooldown_until,
+                        },
+                    );
+
+                    error!(
+                        "Backing off uploads to server for {cooldown:?} (failure #{consecutive_failures}): {}",
+                        match origin {
+                            Origin::Tuple(scheme, host, port) =>
+                                format!("{}://{}:{}", scheme, host, port),
+                            Origin::Opaque(_) => "[opaque origin]".to_string(),
+                        }
+                    );
+                }
+            }
         }
 
         debug!("Background uploader loop has exited");
     }
+}
+
+impl BackgroundUploader {
+    /// Signals the uploader to shut down, waiting up to `deadline` for its
+    /// background thread to drain whatever is already queued and exit.
+    ///
+    /// `Drop`'s own shutdown (used when this isn't called explicitly) waits
+    /// unboundedly: `origin_cooldowns` (see `start_upload_task`) bounds the
+    /// wait for an origin that outright *fails*, since further requests to
+    /// it within its current backoff window are skipped outright, but a
+    /// slow-but-successful endpoint is not bounded that way -- every queued
+    /// request still gets its own attempt, each up to that request's own
+    /// timeout, so draining a large backlog could still take a while.
+    /// Callers for whom that matters (telemetry in particular: "must never
+    /// meaningfully delay Trident's actual work" is a stated design goal
+    /// here) should call this explicitly instead of just letting the value
+    /// drop.
+    ///
+    /// If `deadline` elapses first, the background thread is abandoned
+    /// (its remaining queued requests may still complete before the
+    /// process actually exits, but this call returns without waiting
+    /// further for them).
+    pub fn shutdown_with_deadline(mut self, deadline: Duration) {
+        let Some((sender, handle)) = self.inner.take() else {
+            return;
+        };
+        drop(sender);
+
+        match join_with_deadline(handle, deadline) {
+            Ok(Ok(())) => debug!("Background uploader shut down"),
+            Ok(Err(e)) => error!("Background uploader thread panicked: {:?}", e),
+            Err(_) => {
+                debug!("Background uploader did not shut down within {deadline:?}; abandoning it")
+            }
+        }
+    }
+}
+
+/// Waits up to `deadline` for `handle` to finish, returning its result if it
+/// does. `JoinHandle::join` has no built-in timeout, so this moves the
+/// actual join onto a throwaway thread and applies the timeout via a
+/// channel receive instead; if `deadline` elapses first, that throwaway
+/// thread (and by extension whatever `handle` was waiting on) is
+/// abandoned rather than awaited further.
+fn join_with_deadline<T: Send + 'static>(
+    handle: JoinHandle<T>,
+    deadline: Duration,
+) -> Result<std::thread::Result<T>, std::sync::mpsc::RecvTimeoutError> {
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    let _ = Builder::new()
+        .name("background-uploader-shutdown-watcher".into())
+        .spawn(move || {
+            let _ = done_tx.send(handle.join());
+        });
+    done_rx.recv_timeout(deadline)
 }
 
 impl Drop for BackgroundUploader {
@@ -147,6 +285,7 @@ impl BackgroundUploadHandle {
         url: &Url,
         body: impl Into<Vec<u8>>,
         timeout: Duration,
+        content_type: Option<&'static str>,
     ) -> Result<(), Error> {
         if let Some(sender) = self.sender.upgrade() {
             sender
@@ -154,6 +293,7 @@ impl BackgroundUploadHandle {
                     url: url.clone(),
                     body: body.into(),
                     timeout,
+                    content_type,
                 })
                 .context("Failed to send data to background uploader")
         } else {
@@ -176,7 +316,7 @@ impl BackgroundUploadHandle {
 mod tests {
     use super::*;
 
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use mockito::{Matcher, Server};
 
@@ -185,6 +325,19 @@ mod tests {
             .filter_level(log::LevelFilter::Trace)
             .is_test(true)
             .try_init();
+    }
+
+    #[test]
+    /// The backoff schedule should start at the base cooldown, double with
+    /// each consecutive failure, and clamp at the configured maximum
+    /// instead of growing unbounded (or overflowing) for a long-dead
+    /// origin that keeps failing indefinitely.
+    fn test_backoff_for_failures_doubles_and_clamps() {
+        assert_eq!(backoff_for_failures(1), BASE_ORIGIN_COOLDOWN);
+        assert_eq!(backoff_for_failures(2), BASE_ORIGIN_COOLDOWN * 2);
+        assert_eq!(backoff_for_failures(3), BASE_ORIGIN_COOLDOWN * 4);
+        assert_eq!(backoff_for_failures(100), MAX_ORIGIN_COOLDOWN);
+        assert_eq!(backoff_for_failures(u32::MAX), MAX_ORIGIN_COOLDOWN);
     }
 
     fn run_in_runtime(f: impl std::future::Future<Output = ()>) {
@@ -208,7 +361,7 @@ mod tests {
         let url = Url::parse("http://example.invalid/upload").unwrap();
         // After shutdown, the weak sender can't be upgraded so upload should error.
         let err = handle
-            .upload(&url, b"hello".to_vec(), Duration::from_millis(50))
+            .upload(&url, b"hello".to_vec(), Duration::from_millis(50), None)
             .unwrap_err();
         assert!(
             err.to_string().contains("shut down"),
@@ -236,7 +389,7 @@ mod tests {
 
         let url = Url::parse(&server.url()).unwrap().join("/upload").unwrap();
         handle
-            .upload(&url, body.as_bytes().to_vec(), Duration::from_secs(2))
+            .upload(&url, body.as_bytes().to_vec(), Duration::from_secs(2), None)
             .unwrap();
 
         // Drop uploader first to ensure the background thread finishes processing all queued
@@ -272,6 +425,7 @@ mod tests {
                     url,
                     body: body.as_bytes().to_vec(),
                     timeout: Duration::from_secs(2),
+                    content_type: None,
                 })
                 .unwrap();
 
@@ -323,6 +477,7 @@ mod tests {
                 url: Url::parse(&server.url()).unwrap().join("/slow").unwrap(),
                 body: b"timeout-me".to_vec(),
                 timeout: Duration::from_millis(100),
+                content_type: None,
             })
             .unwrap();
 
@@ -332,6 +487,7 @@ mod tests {
                 url: Url::parse(&server.url()).unwrap().join("/upload").unwrap(),
                 body: b"this-should-be-skipped".to_vec(),
                 timeout: Duration::from_secs(2),
+                content_type: None,
             })
             .unwrap();
 
@@ -344,6 +500,60 @@ mod tests {
         });
 
         slow_mock.assert();
+        should_not_hit.assert();
+    }
+
+    #[test]
+    /// Directly tests that a 3xx response (which `error_for_status()` alone would treat as
+    /// success) is still handled as an upload failure: the origin gets ignored for later
+    /// uploads, just like a 4xx/5xx response or a network-level error.
+    fn test_upload_loop_redirect_status_is_treated_as_failure() {
+        init_test_logging();
+
+        let mut server = Server::new();
+        let redirect_mock = server
+            .mock("POST", "/redirect")
+            .with_status(302)
+            .expect(1)
+            .create();
+
+        let should_not_hit = server
+            .mock("POST", "/upload")
+            .with_status(200)
+            .expect(0)
+            .create();
+
+        let (sender, receiver) = mpsc::unbounded_channel::<UploadData>();
+
+        sender
+            .send(UploadData {
+                url: Url::parse(&server.url())
+                    .unwrap()
+                    .join("/redirect")
+                    .unwrap(),
+                body: b"redirect-me".to_vec(),
+                timeout: Duration::from_secs(2),
+                content_type: None,
+            })
+            .unwrap();
+
+        // Same origin; should be skipped after the first is treated as a failure.
+        sender
+            .send(UploadData {
+                url: Url::parse(&server.url()).unwrap().join("/upload").unwrap(),
+                body: b"this-should-be-skipped".to_vec(),
+                timeout: Duration::from_secs(2),
+                content_type: None,
+            })
+            .unwrap();
+
+        drop(sender);
+
+        run_in_runtime(async {
+            BackgroundUploader::upload_loop(receiver).await;
+        });
+
+        redirect_mock.assert();
         should_not_hit.assert();
     }
 
@@ -368,6 +578,7 @@ mod tests {
                 url: Url::parse(&server.url()).unwrap().join("/queued").unwrap(),
                 body: b"queued".to_vec(),
                 timeout: Duration::from_secs(1),
+                content_type: None,
             })
             .unwrap();
         // Close the sender before running the loop to simulate shutdown.
@@ -402,7 +613,7 @@ mod tests {
 
         let url = Url::parse(&server.url()).unwrap().join("/ok").unwrap();
         handle
-            .upload(&url, b"hello".to_vec(), Duration::from_secs(2))
+            .upload(&url, b"hello".to_vec(), Duration::from_secs(2), None)
             .unwrap();
 
         // Drop the uploader to shut down the background thread. Both `handle`
@@ -423,9 +634,61 @@ mod tests {
                 &Url::parse(&server.url()).unwrap().join("/nope").unwrap(),
                 b"nope".to_vec(),
                 Duration::from_secs(1),
+                None,
             )
             .unwrap_err();
         assert!(err.to_string().contains("shut down"));
         after_drop.assert();
+    }
+
+    #[test]
+    fn test_shutdown_with_deadline_returns_promptly_with_empty_queue() {
+        init_test_logging();
+
+        let uploader = BackgroundUploader::new().unwrap();
+        let start = Instant::now();
+        uploader.shutdown_with_deadline(Duration::from_secs(5));
+        assert!(
+            start.elapsed() < Duration::from_secs(1),
+            "shutdown with nothing queued should be immediate"
+        );
+    }
+
+    #[test]
+    /// Deliberately not exercised via a real `BackgroundUploader` +
+    /// network mock: a genuinely abandoned background thread would keep
+    /// running past this test's own scope, in a process shared with every
+    /// other test in the suite, risking exactly the kind of cross-test
+    /// port/resource collisions a slow real HTTP mock invites under
+    /// `cargo test`'s default parallelism. `join_with_deadline` is pure
+    /// std-only plumbing (a thread + a timed channel receive), so testing
+    /// it directly with a plain `thread::spawn` gives the same coverage
+    /// without that risk.
+    fn test_join_with_deadline_abandons_a_slow_thread() {
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let handle = std::thread::spawn(move || {
+            // Blocks until the test explicitly releases it below, standing
+            // in for a still-busy background uploader thread.
+            let _ = release_rx.recv();
+        });
+
+        let start = Instant::now();
+        let result = join_with_deadline(handle, Duration::from_millis(50));
+        let elapsed = start.elapsed();
+
+        assert!(
+            result.is_err(),
+            "join_with_deadline should report a timeout, not a completed join"
+        );
+        assert!(
+            elapsed < Duration::from_secs(1),
+            "join_with_deadline should return near its deadline, not block on \
+             the still-running thread; took {elapsed:?}"
+        );
+
+        // Unlike the real "abandon" scenario this stands in for, we can
+        // cleanly unblock the spawned thread here, so it exits rather than
+        // lingering for the rest of the test binary's process lifetime.
+        let _ = release_tx.send(());
     }
 }
