@@ -562,11 +562,8 @@ mod tests {
         let _guard =
             tracing::subscriber::set_default(tracing_subscriber::Registry::default().with(layer));
 
-        let result: Result<(), TridentError> = run_command_if(
-            "cmd",
-            || Err(TridentError::internal("boom")),
-            |_error| true,
-        );
+        let result: Result<(), TridentError> =
+            run_command_if("cmd", || Err(TridentError::internal("boom")), |_error| true);
 
         assert!(result.is_err());
         let events = events.lock().unwrap();
