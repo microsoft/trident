@@ -27,9 +27,14 @@ use trident_api::{
 /// gRPC/daemon.
 fn command_name(base: &str, ops: &Operations) -> String {
     match (ops.has_stage(), ops.has_finalize()) {
-        (true, true) | (false, false) => base.to_string(),
+        (true, true) => base.to_string(),
         (true, false) => format!("{base}_stage"),
         (false, true) => format!("{base}_finalize"),
+        // Neither stage nor finalize was requested (an empty
+        // `--allowed-operations` list); nothing can actually be staged or
+        // finalized, so name this like the existing no-op naming convention
+        // rather than a full install/update.
+        (false, false) => format!("{base}_noop"),
     }
 }
 
@@ -177,17 +182,19 @@ fn run_trident(
         }
     };
 
-    // Attach this host's installation ID to the shared TraceStream before
-    // run_command below fires command_start: Trident::new (further down,
-    // inside the closure) is the usual place this gets attached, but
-    // that's too late for command_start, which run_command fires
-    // immediately, before the closure even runs. Read-only and
-    // side-effect-free: never creates a datastore or an installation ID
-    // (see `TraceStream::attach_installation_id_if_present`) -- silently
-    // does nothing if the datastore doesn't exist yet, which is expected
-    // for a host's first-ever install.
+    // Attach this host's installation ID and database ID to the shared
+    // TraceStream before run_command below fires command_start:
+    // Trident::new (further down, inside the closure) is the usual place
+    // both get attached, but that's too late for command_start, which
+    // run_command fires immediately, before the closure even runs. Both
+    // are read-only and side-effect-free: neither creates a datastore or
+    // an ID (see `TraceStream::attach_installation_id_if_present` and
+    // `TraceStream::attach_database_id_if_present`) -- silently does
+    // nothing if the datastore doesn't exist yet, which is expected for a
+    // host's first-ever install.
     if let Ok(agent_config) = AgentConfig::load() {
         tracestream.attach_installation_id_if_present(agent_config.datastore_path());
+        tracestream.attach_database_id_if_present(agent_config.datastore_path());
     }
 
     // Determined up front so a missing/nonexistent --config is rejected
@@ -487,8 +494,8 @@ impl TelemetryStatus {
             }
             TelemetryStatus::UploaderUnavailable => {
                 warn!(
-                    "Telemetry: opted in with a valid connection string, but the telemetry \
-                     background uploader is unavailable -- telemetry is a no-op"
+                    "Telemetry: opted in, but the telemetry background uploader is \
+                     unavailable -- telemetry is a no-op"
                 );
             }
             TelemetryStatus::Enabled => {

@@ -65,6 +65,17 @@ impl OperationSource {
 thread_local! {
     static CURRENT_OPERATION: RefCell<Option<(String, String, OperationSource)>> =
         const { RefCell::new(None) };
+
+    /// Set once [`report_command_error`] has already fired for the
+    /// current operation, so a domain-specific caller that needs to
+    /// explicitly emit `command_error` *before* some other side effect
+    /// (e.g. archiving the metrics file -- see
+    /// `engine::runtime_update::finalize_or_rollback_runtime_update`'s
+    /// auto-rollback failure path) doesn't cause `run_command`/
+    /// `run_command_if` to report the same failure a second time once
+    /// that same error reaches their own `Err` handling. Reset alongside
+    /// `CURRENT_OPERATION` at the end of every command.
+    static COMMAND_ERROR_REPORTED: RefCell<bool> = const { RefCell::new(false) };
 }
 
 /// Runs `f` with this thread tagged as executing `command` from `source`,
@@ -97,6 +108,7 @@ pub fn run_with_operation<R>(command: &str, source: OperationSource, f: impl FnO
     impl Drop for ClearOnDrop {
         fn drop(&mut self) {
             CURRENT_OPERATION.with(|cell| *cell.borrow_mut() = None);
+            COMMAND_ERROR_REPORTED.with(|cell| *cell.borrow_mut() = false);
         }
     }
     let _clear = ClearOnDrop;
@@ -304,7 +316,18 @@ pub fn run_command_if<T>(
 /// Fires the `command_error` metric for a failed command. Split out from
 /// `run_command` so it's independently testable against a constructed
 /// `TridentError` without needing a real failing command.
-fn report_command_error(error: &TridentError) {
+///
+/// A no-op if `command_error` has already been reported once for the
+/// current operation (see [`COMMAND_ERROR_REPORTED`]): a domain-specific
+/// caller may need to fire this explicitly, ahead of some other side
+/// effect that must observe the failure (e.g. archiving the metrics
+/// file), before the same error naturally reaches `run_command`/
+/// `run_command_if`'s own `Err` handling further up the call stack --
+/// without this guard, that would report the identical failure twice.
+pub(crate) fn report_command_error(error: &TridentError) {
+    if COMMAND_ERROR_REPORTED.with(|cell| cell.replace(true)) {
+        return;
+    }
     tracing::info!(
         metric_name = "command_error",
         kind = error.kind().as_str(),
