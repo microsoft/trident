@@ -626,6 +626,7 @@ fn setup_tracing(
                         trident::AZURE_MONITOR_CONNECTION_STRING,
                         handle,
                         tracestream.installation_id_handle(),
+                        tracestream.database_id_handle(),
                     ) {
                         Some(sender) => {
                             layers.push(Box::new(sender.with_filter(filter::LevelFilter::INFO)));
