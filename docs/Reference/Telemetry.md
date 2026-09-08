@@ -42,6 +42,10 @@ themselves:
   invocation be correlated with each other.
 - `command`: which command produced the event (e.g. `install`, `update`,
   `update_stage`, `update_finalize`, `commit`, `rollback`, `rebuild_raid`).
+- `source`: which of Trident's three entry points produced the event --
+  `cli` (a command run directly, without a daemon), `daemon` (a command
+  the daemon executed for a gRPC request), or `grpc-client` (the CLI
+  acting as a client, relaying a command to a running daemon).
 
 ## Command Errors
 

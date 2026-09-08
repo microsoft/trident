@@ -580,7 +580,7 @@ impl DataStore {
         }
 
         let new_id = operation_context::current()
-            .and_then(|(operation_id, _)| Uuid::parse_str(&operation_id).ok())
+            .and_then(|(operation_id, _, _)| Uuid::parse_str(&operation_id).ok())
             .unwrap_or_else(Uuid::new_v4);
         self.set_value_if_absent(INSTALLATION_ID_KEY, &new_id)?;
 

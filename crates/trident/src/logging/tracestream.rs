@@ -612,26 +612,29 @@ where
     }
 }
 
-/// Merge the current thread's `operation_id`/`command` (see
+/// Merge the current thread's `operation_id`/`command`/`source` (see
 /// `operation_context`), if any, into `fields`. Values the caller already
 /// set (e.g. an event that explicitly names its own `command`) are never
 /// overwritten.
 ///
 /// Shared by both local telemetry sinks (`TraceSender::additional_fields`
 /// below and `AppInsightsSender::send_event`) so the
-/// operation_id/command/installation_id-fallback rule has one
+/// operation_id/command/source/installation_id-fallback rule has one
 /// implementation instead of being hand-duplicated between them -- a
 /// prior version of this function existed independently in each sink,
 /// which risked the two silently diverging if the rule ever changed in
 /// only one place.
 pub(crate) fn merge_operation_context(fields: &mut BTreeMap<String, Value>) {
-    if let Some((operation_id, command)) = operation_context::current() {
+    if let Some((operation_id, command, source)) = operation_context::current() {
         fields
             .entry("operation_id".to_string())
             .or_insert_with(|| json!(operation_id));
         fields
             .entry("command".to_string())
             .or_insert_with(|| json!(command));
+        fields
+            .entry("source".to_string())
+            .or_insert_with(|| json!(source.as_str()));
         // If no installation ID has been persisted/attached yet (e.g. this
         // is the invocation that is about to create the datastore and
         // create one), fall back to this invocation's own `operation_id` --

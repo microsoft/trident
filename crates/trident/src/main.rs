@@ -11,8 +11,8 @@ use trident::{
     init::offline,
     manual_rollback::{self, utils::ManualRollbackRequestKind},
     run_command, run_reboot_command, save_reboot_operation, validation, AppInsightsSender,
-    BackgroundLog, BackgroundUploader, DataStore, ExitKind, LogForwarder, Logstream, TraceStream,
-    Trident, TRIDENT_BACKGROUND_LOG_PATH,
+    BackgroundLog, BackgroundUploader, DataStore, ExitKind, LogForwarder, Logstream,
+    OperationSource, TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
 };
 use trident_api::{
     config::{HostConfigurationSource, Operations},
@@ -199,7 +199,7 @@ fn run_trident(
     };
     if let Some(path) = &config_path {
         if !path.exists() {
-            return run_command(&command, || {
+            return run_command(&command, OperationSource::Cli, || {
                 Err(TridentError::new(InvalidInputError::ReadInputFile {
                     path: path.to_string_lossy().to_string(),
                 }))
@@ -216,7 +216,7 @@ fn run_trident(
     // own setup) and to keep converting an unwound panic into a non-zero
     // exit code below.
     let res = panic::catch_unwind(move || {
-        run_command(&command, || {
+        run_command(&command, OperationSource::Cli, || {
             match &args.command {
                 Commands::Install { status, error, .. }
                 | Commands::Update { status, error, .. }
