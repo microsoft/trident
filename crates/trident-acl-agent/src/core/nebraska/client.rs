@@ -14,6 +14,18 @@ use super::{
     wire::{self, App},
 };
 
+/// Schemes a resolved package URL is allowed to carry before it is ever
+/// forwarded to Trident. Nebraska's job is to point at a *remote* artifact
+/// (typically on a different host than Nebraska itself - a blob store or
+/// CDN); `http`/`file` are excluded even though Trident's own downloader
+/// would otherwise accept them: `http` because the artifact must be
+/// integrity/authenticity-protected in transit the same way the Nebraska
+/// channel itself is, and `file` because it crosses from "fetch a remote
+/// artifact" into "read a path off the local disk of whichever machine
+/// opens this URL" (root-privileged `tridentd`), a capability no legitimate
+/// Nebraska response has any reason to invoke.
+const ALLOWED_PACKAGE_URL_SCHEMES: &[&str] = &["https", "oci"];
+
 /// The outcome of an update check.
 ///
 /// `UpdateInProgress` is a first-class outcome rather than an error because
@@ -706,6 +718,15 @@ impl<T: Transport> Client<T> {
             ))
         })?;
 
+        if !ALLOWED_PACKAGE_URL_SCHEMES.contains(&url.scheme()) {
+            return Err(NebraskaError::UnexpectedResponse(format!(
+                "package '{}' resolved to disallowed URL scheme '{}' (only {} permitted)",
+                package.name,
+                url.scheme(),
+                ALLOWED_PACKAGE_URL_SCHEMES.join("/"),
+            )));
+        }
+
         let hash = package.hash.as_ref().map(|sha1| PackageHash {
             sha1: sha1.clone(),
             sha256: package.hash_sha256.clone(),
@@ -846,6 +867,44 @@ mod tests {
             }
             other => panic!("expected an update offer, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn check_rejects_offer_with_http_codebase() {
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="http://updates.example.com/"/></urls><manifest version="2.0.0"><packages><package name="os.cosi" required="true"/></packages></manifest></updatecheck></app></response>"#,
+        );
+        let err = client
+            .check_for_update(&Version::new(1, 0, 0))
+            .expect_err("a plain-http package URL must be rejected");
+        assert!(
+            matches!(err, NebraskaError::UnexpectedResponse(_)),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn check_rejects_offer_with_file_codebase() {
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="file:///etc/"/></urls><manifest version="2.0.0"><packages><package name="passwd" required="true"/></packages></manifest></updatecheck></app></response>"#,
+        );
+        let err = client
+            .check_for_update(&Version::new(1, 0, 0))
+            .expect_err("a file:// package URL must be rejected");
+        assert!(
+            matches!(err, NebraskaError::UnexpectedResponse(_)),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn check_accepts_offer_with_oci_codebase() {
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="oci://registry.example.com/os/"/></urls><manifest version="2.0.0"><packages><package name="os.cosi" required="true"/></packages></manifest></updatecheck></app></response>"#,
+        );
+        client
+            .check_for_update(&Version::new(1, 0, 0))
+            .expect("an oci:// package URL is a legitimate remote artifact reference");
     }
 
     #[test]
