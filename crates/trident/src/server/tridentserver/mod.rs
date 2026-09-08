@@ -205,19 +205,22 @@ impl TridentServer {
         // Try to acquire the connection lock in write mode
         let guard = self.try_acquire_write_lock()?;
 
-        // Re-check for a persisted installation ID before this request
-        // fires its own command_start (below, via run_with_operation).
-        // server_main's daemon-startup attach only ever runs once, at
-        // startup -- so a request that arrives before any datastore
-        // exists (e.g. this daemon's very first install) would otherwise
-        // never see one, even after that request's own handler goes on to
-        // create the datastore. Read-only and side-effect-free: never
-        // creates a datastore or an installation ID (see
-        // `TraceStream::attach_installation_id_if_present`) -- silently
-        // does nothing if the datastore doesn't exist yet.
+        // Re-check for a persisted installation ID and database ID
+        // before this request fires its own command_start (below, via
+        // run_with_operation). server_main's daemon-startup attach only
+        // ever runs once, at startup -- so a request that arrives before
+        // any datastore exists (e.g. this daemon's very first install)
+        // would otherwise never see one, even after that request's own
+        // handler goes on to create the datastore. Both are read-only and
+        // side-effect-free: neither creates a datastore or an ID (see
+        // `TraceStream::attach_installation_id_if_present` and
+        // `TraceStream::attach_database_id_if_present`) -- silently does
+        // nothing if the datastore doesn't exist yet.
         if let Ok(agent_config) = AgentConfig::load() {
             self.tracestream
                 .attach_installation_id_if_present(agent_config.datastore_path());
+            self.tracestream
+                .attach_database_id_if_present(agent_config.datastore_path());
         }
 
         // Tag every metric/tracing event `f` fires (on whatever thread it

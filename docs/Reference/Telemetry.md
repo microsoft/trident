@@ -36,8 +36,16 @@ themselves:
 - `installation_id`: an ID that lets separate events be correlated back to
   the same host installation over time. Unlike `database_id`, this is
   only ever created (get-or-create, never overwritten) at the start of
-  `Trident::install`, so it is absent from any event that fires before a
-  host's first-ever install.
+  `Trident::install`. Any event that fires before that point (i.e.
+  before a host's first-ever install has actually created one) instead
+  reports that invocation's own `operation_id` as a stand-in
+  `installation_id` -- the same value that will end up persisted as the
+  real `installation_id` if that invocation goes on to become the
+  first-ever install. A datastore created before `installation_id` was
+  introduced is migrated the first time it is opened: a one-time write
+  persists an `installation_id` for it (without touching any other
+  data), so older hosts pick up the field on their next command rather
+  than remaining permanently without one.
 - `operation_id`: an ID that lets events emitted during the same command
   invocation be correlated with each other.
 - `command`: which command produced the event (e.g. `install`, `update`,

@@ -73,6 +73,24 @@ impl DataStore {
         // daemon RPC handlers) can briefly contend for the write lock; wait
         // for it rather than failing immediately with "database is locked".
         Self::set_busy_timeout(&mut db)?;
+        // Require the `hoststatus` table to already be present before
+        // applying any schema migration. This distinguishes a genuinely
+        // pre-existing datastore (which may only be missing a table added
+        // in a later Trident version, e.g. `keyvalue`) from a zero-byte or
+        // otherwise corrupt/truncated file, which must fail loudly here
+        // rather than silently succeeding as an empty, freshly-provisioned
+        // datastore.
+        if !Self::table_exists(&db, "hoststatus")? {
+            return Err(TridentError::new(ServicingError::Datastore {
+                inner: DatastoreError::LoadDatastore {
+                    path: path.to_string_lossy().into(),
+                },
+            }))
+            .message(
+                "Existing datastore file is missing its 'hoststatus' table; \
+                 the file may be corrupt, truncated, or not a Trident datastore",
+            );
+        }
         // Existing datastores may predate a table added in a later Trident
         // version (e.g. `keyvalue`). Idempotently ensure the full schema is
         // present so upgraded hosts don't fail with "no such table" the
@@ -170,6 +188,23 @@ impl DataStore {
     fn set_busy_timeout(db: &mut sqlite::Connection) -> Result<(), TridentError> {
         db.set_busy_timeout(5000)
             .structured(ServicingError::from(DatastoreError::OpenDatastore))
+    }
+
+    /// Returns whether a table with the given name currently exists in the
+    /// datastore's schema (queried via `sqlite_master`).
+    fn table_exists(db: &sqlite::Connection, table: &str) -> Result<bool, TridentError> {
+        let mut statement = db
+            .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
+            .structured(ServicingError::from(DatastoreError::InitializeDatastore))?;
+        statement
+            .bind((1, table))
+            .structured(ServicingError::from(DatastoreError::InitializeDatastore))?;
+        Ok(matches!(
+            statement
+                .next()
+                .structured(ServicingError::from(DatastoreError::InitializeDatastore))?,
+            State::Row
+        ))
     }
 
     /// Idempotently create any tables that don't already exist. Safe to call
@@ -887,6 +922,27 @@ mod tests {
         let mut datastore = super::DataStore::open(&path).unwrap();
         // Should not fail with "no such table: keyvalue".
         datastore.create_installation_id().unwrap();
+
+        temp_dir.close().unwrap();
+    }
+
+    #[test]
+    /// Regression test: a zero-byte or otherwise schema-less file at the
+    /// datastore path must be rejected by `open()` rather than silently
+    /// treated as a valid, freshly-provisioned datastore.
+    fn test_open_rejects_file_missing_hoststatus_table() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("db.sqlite");
+
+        // Create a valid, but empty (no tables), SQLite file at the path --
+        // simulating a truncated/corrupt existing datastore.
+        sqlite::open(&path).unwrap();
+
+        let result = super::DataStore::open(&path);
+        assert!(
+            result.is_err(),
+            "open() must reject a datastore file with no 'hoststatus' table"
+        );
 
         temp_dir.close().unwrap();
     }
