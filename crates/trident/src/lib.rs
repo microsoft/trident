@@ -605,9 +605,13 @@ impl Trident {
             // stands after any multiboot swap above, so a multiboot
             // install's own (new, eventually-persistent) datastore gets
             // its own installation ID, not the already-provisioned host's.
-            tracestream
-                .create_and_attach_installation_id(datastore)
-                .message("Failed to create installation ID")?;
+            // Best-effort: a failure here must not block the install
+            // itself, since telemetry attribution is not load-bearing for
+            // servicing outcomes (same invariant `update`'s CIH bootstrap
+            // path already honors below).
+            if let Err(e) = tracestream.create_and_attach_installation_id(datastore) {
+                warn!("Failed to create installation ID: {e:?}");
+            }
 
             // Use a prefetched image if provided, otherwise load the image
             // specified in the Host Configuration.

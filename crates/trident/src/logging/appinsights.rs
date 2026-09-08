@@ -33,7 +33,8 @@ use tracing_subscriber::{layer::Layer, registry::LookupSpan};
 use url::Url;
 
 use super::{
-    background_uploader::BackgroundUploadHandle, operation_context, tracestream::PLATFORM_INFO,
+    background_uploader::BackgroundUploadHandle,
+    tracestream::{merge_operation_context, PLATFORM_INFO},
 };
 use crate::TRIDENT_VERSION;
 
@@ -265,23 +266,10 @@ impl AppInsightsSender {
                     .or_insert_with(|| json!(installation_id));
             }
         }
-        if let Some((operation_id, command)) = operation_context::current() {
-            properties
-                .entry("operation_id".to_string())
-                .or_insert_with(|| json!(operation_id));
-            properties
-                .entry("command".to_string())
-                .or_insert_with(|| json!(command));
-            // If no installation ID has been persisted/attached yet, fall
-            // back to this invocation's own `operation_id` -- the same
-            // value `DataStore::create_installation_id` will persist as
-            // the installation ID once the datastore is actually created.
-            // See the equivalent fallback in
-            // `tracestream::merge_operation_context`.
-            properties
-                .entry("installation_id".to_string())
-                .or_insert_with(|| json!(operation_id));
-        }
+        // operation_id/command/installation_id-fallback enrichment is
+        // shared with the local metrics-file sink -- see
+        // `merge_operation_context`'s doc comment for why.
+        merge_operation_context(&mut properties);
 
         let string_properties: BTreeMap<String, String> = properties
             .into_iter()
@@ -545,6 +533,10 @@ mod tests {
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
     use super::*;
+    // Only used by this feature-gated module (a plain `cargo check`/`cargo
+    // test` without `--features functional-test` never compiles this mod,
+    // which would otherwise make the top-level import unused).
+    use crate::logging::operation_context;
 
     use std::{
         io::{Read, Write},
