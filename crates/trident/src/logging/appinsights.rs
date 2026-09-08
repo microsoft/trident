@@ -33,7 +33,8 @@ use tracing_subscriber::{layer::Layer, registry::LookupSpan};
 use url::Url;
 
 use super::{
-    background_uploader::BackgroundUploadHandle, operation_context, tracestream::PLATFORM_INFO,
+    background_uploader::BackgroundUploadHandle,
+    tracestream::{merge_operation_context, PLATFORM_INFO},
 };
 use crate::TRIDENT_VERSION;
 
@@ -199,6 +200,10 @@ pub struct AppInsightsSender {
     /// so Application Insights events can be correlated back to a specific
     /// host installation the same way tracestream metrics already are.
     installation_id: Arc<RwLock<Option<String>>>,
+    /// The same persistent database ID handle used by `TraceStream`/
+    /// `TraceSender` (see `TraceStream::database_id_handle`), stable for
+    /// the datastore's entire lifetime rather than a single install.
+    database_id: Arc<RwLock<Option<String>>>,
 }
 
 impl AppInsightsSender {
@@ -216,6 +221,7 @@ impl AppInsightsSender {
         connection_string: &str,
         uploader: BackgroundUploadHandle,
         installation_id: Arc<RwLock<Option<String>>>,
+        database_id: Arc<RwLock<Option<String>>>,
     ) -> Option<Self> {
         let parts = parse_connection_string(connection_string)?;
         match parts.track_url() {
@@ -228,13 +234,14 @@ impl AppInsightsSender {
                 return None;
             }
         }
-        Self::from_parts(parts, uploader, installation_id)
+        Self::from_parts(parts, uploader, installation_id, database_id)
     }
 
     fn from_parts(
         parts: ConnParts,
         uploader: BackgroundUploadHandle,
         installation_id: Arc<RwLock<Option<String>>>,
+        database_id: Arc<RwLock<Option<String>>>,
     ) -> Option<Self> {
         let track_url = parts.track_url()?;
         Some(Self {
@@ -242,6 +249,7 @@ impl AppInsightsSender {
             track_url,
             uploader,
             installation_id,
+            database_id,
         })
     }
 
@@ -265,23 +273,17 @@ impl AppInsightsSender {
                     .or_insert_with(|| json!(installation_id));
             }
         }
-        if let Some((operation_id, command)) = operation_context::current() {
-            properties
-                .entry("operation_id".to_string())
-                .or_insert_with(|| json!(operation_id));
-            properties
-                .entry("command".to_string())
-                .or_insert_with(|| json!(command));
-            // If no installation ID has been persisted/attached yet, fall
-            // back to this invocation's own `operation_id` -- the same
-            // value `DataStore::create_installation_id` will persist as
-            // the installation ID once the datastore is actually created.
-            // See the equivalent fallback in
-            // `tracestream::merge_operation_context`.
-            properties
-                .entry("installation_id".to_string())
-                .or_insert_with(|| json!(operation_id));
+        if let Ok(database_id) = self.database_id.read() {
+            if let Some(database_id) = database_id.as_ref() {
+                properties
+                    .entry("database_id".to_string())
+                    .or_insert_with(|| json!(database_id));
+            }
         }
+        // operation_id/command/installation_id-fallback enrichment is
+        // shared with the local metrics-file sink -- see
+        // `merge_operation_context`'s doc comment for why.
+        merge_operation_context(&mut properties);
 
         let string_properties: BTreeMap<String, String> = properties
             .into_iter()
@@ -501,6 +503,7 @@ mod tests {
             "",
             BackgroundUploadHandle::new_mock(),
             Arc::new(RwLock::new(None)),
+            Arc::new(RwLock::new(None)),
         )
         .is_none());
     }
@@ -510,6 +513,7 @@ mod tests {
         let sender = AppInsightsSender::from_connection_string(
             "InstrumentationKey=k;IngestionEndpoint=https://region.example/",
             BackgroundUploadHandle::new_mock(),
+            Arc::new(RwLock::new(None)),
             Arc::new(RwLock::new(None)),
         )
         .expect("should build sender");
@@ -529,6 +533,7 @@ mod tests {
             "InstrumentationKey=k;IngestionEndpoint=http://region.example/",
             BackgroundUploadHandle::new_mock(),
             Arc::new(RwLock::new(None)),
+            Arc::new(RwLock::new(None)),
         )
         .is_none());
     }
@@ -545,6 +550,10 @@ mod tests {
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
     use super::*;
+    // Only used by this feature-gated module (a plain `cargo check`/`cargo
+    // test` without `--features functional-test` never compiles this mod,
+    // which would otherwise make the top-level import unused).
+    use crate::logging::operation_context;
 
     use std::{
         io::{Read, Write},
@@ -635,6 +644,7 @@ mod functional_test {
             },
             uploader.get_handle().expect("uploader should be alive"),
             Arc::new(RwLock::new(Some("test-installation-id".to_string()))),
+            Arc::new(RwLock::new(Some("test-database-id".to_string()))),
         )
         .expect("should build sender")
         .with_filter(filter::LevelFilter::INFO);
@@ -664,6 +674,7 @@ mod functional_test {
         assert!(combined.contains("\"name\":\"test_metric\""));
         assert!(combined.contains("\"iKey\":\"test-key\""));
         assert!(combined.contains("\"installation_id\":\"test-installation-id\""));
+        assert!(combined.contains("\"database_id\":\"test-database-id\""));
         assert!(combined.contains("\"command\":\"test_command\""));
         assert!(combined.contains("\"operation_id\":"));
     }

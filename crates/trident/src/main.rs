@@ -7,7 +7,7 @@ use log::{error, info, warn, LevelFilter, Log};
 use osutils::logging::{filter::LogFilter, multilog::MultiLogger};
 use trident::{
     agentconfig::AgentConfig,
-    cli::{self, Cli, ClientCommands, Commands, GetKind, TridentExitCodes},
+    cli::{self, Cli, Commands, GetKind, TridentExitCodes},
     init::offline,
     manual_rollback::{self, utils::ManualRollbackRequestKind},
     run_command, run_reboot_command, save_reboot_operation, validation, AppInsightsSender,
@@ -541,56 +541,48 @@ fn setup_tracing(
         | Commands::Diagnose { .. }
         | Commands::OfflineInitialize { .. }
         | Commands::StartNetwork { .. } => {
-            // Truncating the local metrics file is only appropriate for
-            // commands that actually start (or continue) a servicing run --
-            // Install/Update/Commit/RebuildRaid/Rollback (finalize)/Daemon/
-            // GrpcClient -- since those are the operations whose metrics
-            // history is meaningful to reset per invocation. Every other
-            // command reads or inspects existing state without mutating
-            // it, so it must append instead of truncating -- not because
-            // any of them emit command_start/command_error or any other
-            // metric_name event of their own (they don't; see run_trident),
-            // but because simply *opening* the file with truncation is
-            // itself destructive:
+            // Truncating the local metrics file is only appropriate for a
+            // process that actually owns the file's lifecycle for a fresh
+            // servicing run -- Install/Update/Commit/RebuildRaid/Rollback
+            // (finalize)/Daemon -- since those are the operations whose
+            // metrics history is meaningful to reset per invocation. Every
+            // other command reads or inspects existing state without
+            // mutating it, so it must append instead of truncating -- not
+            // because any of them emit command_start/command_error or any
+            // other metric_name event of their own (they don't; see
+            // run_trident), but because simply *opening* the file with
+            // truncation is itself destructive:
             // * `validate`, `get`, `diagnose`, `offline-initialize`,
             //   `start-network`, and a manual rollback `--check` are all
             //   read-only/fast commands that never start a servicing run --
             //   truncating here would erase the preceding servicing
             //   metrics history just because one of these ran afterward.
-            // * a `grpc-client` invocation of one of those same read-only
-            //   operations can run concurrently with the daemon actively
-            //   appending live servicing metrics to this same file --
-            //   truncating from the client process would clobber that
-            //   in-progress history out from under the daemon.
-            // `Commands::GrpcClient` wraps its own read-only/fast
-            // subcommands (`get`, `validate`, `rollback --check`) that are
-            // just as append-only as their top-level counterparts -- but
-            // matching only on the outer `Commands::GrpcClient { .. }`
-            // variant (as this used to) can't see that, so every
-            // grpc-client invocation truncated the shared local metrics
-            // file, even a plain `trident grpc-client get status` run
-            // while the daemon was concurrently appending live servicing
-            // metrics to the same file.
-            let is_read_only_grpc_client_command = matches!(
-                &args.command,
-                Commands::GrpcClient(client_args) if matches!(
-                    client_args.command,
-                    ClientCommands::Get { .. }
-                        | ClientCommands::Validate { .. }
-                        | ClientCommands::StartNetwork { .. }
-                        | ClientCommands::Rollback { check: true, .. }
-                )
-            );
-            let local_sender = if is_read_only_grpc_client_command
-                || matches!(
-                    args.command,
-                    Commands::Diagnose { .. }
-                        | Commands::Validate { .. }
-                        | Commands::Get { .. }
-                        | Commands::OfflineInitialize { .. }
-                        | Commands::StartNetwork { .. }
-                        | Commands::Rollback { check: true, .. }
-                ) {
+            // * `Commands::GrpcClient` -- *every* subcommand of it, not
+            //   just its own read-only ones (`get`, `validate`,
+            //   `rollback --check`) -- never owns this file either way: by
+            //   definition it only ever talks to an *already-running*
+            //   daemon, which is the file's sole owner for as long as it's
+            //   up. That makes truncation from a grpc-client process
+            //   incorrect unconditionally, including for
+            //   install/update/rollback (finalize) subcommands: those
+            //   still start a *servicing* run, but that run is owned and
+            //   recorded by the daemon, not by the short-lived grpc-client
+            //   process asking for it. Previously only the read-only
+            //   grpc-client subcommands were special-cased here, so a
+            //   `grpc-client install`/`update`/`rollback` truncated the
+            //   shared local metrics file out from under the daemon's own
+            //   concurrent appends -- the exact race this append-mode
+            //   split was meant to prevent.
+            let local_sender = if matches!(
+                args.command,
+                Commands::GrpcClient(_)
+                    | Commands::Diagnose { .. }
+                    | Commands::Validate { .. }
+                    | Commands::Get { .. }
+                    | Commands::OfflineInitialize { .. }
+                    | Commands::StartNetwork { .. }
+                    | Commands::Rollback { check: true, .. }
+            ) {
                 tracestream.make_trace_sender_appending()
             } else {
                 tracestream.make_trace_sender()
@@ -634,6 +626,7 @@ fn setup_tracing(
                         trident::AZURE_MONITOR_CONNECTION_STRING,
                         handle,
                         tracestream.installation_id_handle(),
+                        tracestream.database_id_handle(),
                     ) {
                         Some(sender) => {
                             layers.push(Box::new(sender.with_filter(filter::LevelFilter::INFO)));

@@ -29,8 +29,14 @@ themselves:
 - `total_cpu`: the number of CPUs.
 - `total_memory_gib`: total memory, in GiB.
 - `trident_version`: the running Trident version.
-- `correlation_id`: an ID that lets separate events be correlated back to
-  the same host installation over time.
+- `database_id`: an ID that lets separate events be correlated back to the
+  same datastore over its entire lifetime (generated on first access to
+  the datastore, whether or not an install has actually happened yet).
+- `installation_id`: an ID that lets separate events be correlated back to
+  the same host installation over time. Unlike `database_id`, this is
+  only ever created (get-or-create, never overwritten) at the start of
+  `Trident::install`, so it is absent from any event that fires before a
+  host's first-ever install.
 - `operation_id`: an ID that lets events emitted during the same command
   invocation be correlated with each other.
 - `command`: which command produced the event (e.g. `install`, `update`,
@@ -47,6 +53,19 @@ same `operation_id`/`command` as above), breaking the failure down into:
   `check-root-privileges`), when one applies.
 - `location`: the `file:line` in Trident's source where the error was
   originally raised.
+
+This includes a request the daemon rejects before it even reaches a
+handler (e.g. a malformed gRPC payload) -- not just failures raised from
+inside one.
+
+A `grpc-client` invocation only fires its own `command_error` when the
+daemon it talked to never actually responded (a transport-level failure:
+the daemon's socket wasn't found, the connection was refused, or it
+dropped mid-call). If the daemon did respond -- including rejecting the
+request outright -- the daemon's own `command_error` for that failure
+already has full `kind`/`subkind`/`location` fidelity, so `grpc-client`
+stays silent rather than reporting the same failure again under a
+generic classification.
 
 ## Delivery
 

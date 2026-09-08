@@ -88,6 +88,10 @@ pub struct TraceStream {
     // >=1.70
     target: Arc<RwLock<Option<String>>>,
     installation_id: Arc<RwLock<Option<String>>>,
+    /// Stable for the lifetime of the datastore, unlike `installation_id`
+    /// which is tied to a specific `Trident::install` invocation. See
+    /// `crate::datastore::DataStore::database_id`.
+    database_id: Arc<RwLock<Option<String>>>,
     disabled: bool,
 }
 
@@ -160,22 +164,87 @@ impl TraceStream {
             .unwrap_or(false)
     }
 
-    /// Best-effort, side-effect-free attempt to attach this host's
-    /// installation ID -- either already cached from a prior call on this
-    /// `TraceStream`, or freshly read from the datastore at
-    /// `datastore_path` if one already exists there. Never creates a
-    /// datastore, and never creates a new installation ID: a command that
-    /// is genuinely allowed to initialize a brand-new datastore (see
+    /// Set the database ID to attach to every trace entry sent from this
+    /// point forward, as an additional field, so that all traces/metrics
+    /// against a given datastore can be correlated. Unlike
+    /// `installation_id`, this is stable for the datastore's entire
+    /// lifetime, not just a single `Trident::install` invocation. Expected
+    /// to be called once the datastore's persisted database ID has been
+    /// retrieved (see [`Self::attach_database_id_if_present`]).
+    pub fn set_database_id(&self, database_id: String) {
+        match self.database_id.write() {
+            Ok(mut val) => {
+                val.replace(database_id);
+            }
+            Err(_) => warn!("Failed to lock tracestream to set database ID"),
+        }
+    }
+
+    /// Returns a clone of the shared database-ID handle -- the same
+    /// underlying `Arc<RwLock<..>>` written by `set_database_id` -- so
+    /// other telemetry sinks (namely `AppInsightsSender`) can read the
+    /// current value at send-time without needing their own copy of the
+    /// logic that sets it.
+    pub fn database_id_handle(&self) -> Arc<RwLock<Option<String>>> {
+        self.database_id.clone()
+    }
+
+    fn database_id_cached(&self) -> bool {
+        self.database_id
+            .read()
+            .map(|v| v.is_some())
+            .unwrap_or(false)
+    }
+
+    /// Best-effort attempt to attach this datastore's database ID -- either
+    /// already cached from a prior call on this `TraceStream`, or freshly
+    /// read from the datastore at `datastore_path` if one already exists
+    /// there. Never creates a datastore: unlike `installation_id`, the
+    /// database ID's get-or-create semantics only ever run against a
+    /// datastore that has already been opened for real (see
+    /// `crate::datastore::DataStore::database_id`), so it is safe to call
+    /// this any time a datastore is known to already exist.
+    pub fn attach_database_id_if_present(&self, datastore_path: &Path) {
+        if self.database_id_cached() || !datastore_path.exists() {
+            return;
+        }
+        match DataStore::open(datastore_path).and_then(|mut ds| ds.database_id()) {
+            Ok(database_id) => {
+                info!("Database ID: {database_id}");
+                self.set_database_id(database_id.to_string());
+            }
+            Err(e) => {
+                warn!("Failed to read/create database ID: {e:?}");
+            }
+        }
+    }
+
+    /// Best-effort attempt to attach this host's installation ID -- either
+    /// already cached from a prior call on this `TraceStream`, or freshly
+    /// read from the datastore at `datastore_path` if one already exists
+    /// there. Never creates a *datastore*, and never creates an
+    /// installation ID for a genuinely unprovisioned host: a command that
+    /// is allowed to initialize a brand-new datastore (see
     /// [`crate::datastore::DataStore::may_initialize_datastore_for_command`])
-    /// must call [`Self::create_and_attach_installation_id`] instead, on a
-    /// datastore handle it already owns.
+    /// must still call [`Self::create_and_attach_installation_id`] instead,
+    /// on a datastore handle it already owns.
+    ///
+    /// Not fully read-only, though: for a datastore that is already
+    /// provisioned (via offline init or the CIH update-bootstrap path,
+    /// both of which adopt a datastore without ever calling
+    /// `Trident::install`) but has no installation ID yet, this performs a
+    /// one-time migration *write* to mint one -- see
+    /// [`crate::datastore::DataStore::installation_id_or_migrate`]. Callers
+    /// that require true read-only behavior (e.g. a genuinely
+    /// unprivileged/diagnostic path) must not assume this call can never
+    /// write to the datastore.
     ///
     /// Safe to call from anywhere, any number of times, before any point
     /// that wants the ID attached: this is the single implementation
-    /// shared by every read-only attach call site (the CLI's dispatch,
-    /// the daemon's startup attach, the daemon's per-request backstop,
-    /// and `Trident::new`'s own attach), so a correctness fix to this
-    /// logic only needs to happen once.
+    /// shared by every read-only-in-the-common-case attach call site (the
+    /// CLI's dispatch, the daemon's startup attach, the daemon's
+    /// per-request backstop, and `Trident::new`'s own attach), so a
+    /// correctness fix to this logic only needs to happen once.
     pub fn attach_installation_id_if_present(&self, datastore_path: &Path) {
         if self.installation_id_cached() || !datastore_path.exists() {
             return;
@@ -250,6 +319,7 @@ impl TraceStream {
         Box::new(TraceSender::new(
             self.target.clone(),
             self.installation_id.clone(),
+            self.database_id.clone(),
             metrics_file_path,
             truncate,
         ))
@@ -259,6 +329,7 @@ impl TraceStream {
 pub struct TraceSender {
     server: Arc<RwLock<Option<String>>>,
     installation_id: Arc<RwLock<Option<String>>>,
+    database_id: Arc<RwLock<Option<String>>>,
     client: reqwest::blocking::Client,
     metrics_file: Option<File>,
 }
@@ -273,6 +344,7 @@ impl TraceSender {
     fn new(
         server: Arc<RwLock<Option<String>>>,
         installation_id: Arc<RwLock<Option<String>>>,
+        database_id: Arc<RwLock<Option<String>>>,
         metrics_file_path: &str,
         truncate: bool,
     ) -> Self {
@@ -295,6 +367,7 @@ impl TraceSender {
         Self {
             server,
             installation_id,
+            database_id,
             client: reqwest::blocking::Client::new(),
             metrics_file: match metrics_file {
                 Ok(f) => Some(f),
@@ -341,6 +414,11 @@ impl TraceSender {
         if let Ok(installation_id) = self.installation_id.read() {
             if let Some(installation_id) = installation_id.as_ref() {
                 fields.insert("installation_id".to_string(), json!(installation_id));
+            }
+        }
+        if let Ok(database_id) = self.database_id.read() {
+            if let Some(database_id) = database_id.as_ref() {
+                fields.insert("database_id".to_string(), json!(database_id));
             }
         }
         merge_operation_context(&mut fields);
@@ -536,7 +614,15 @@ where
 /// `operation_context`), if any, into `fields`. Values the caller already
 /// set (e.g. an event that explicitly names its own `command`) are never
 /// overwritten.
-fn merge_operation_context(fields: &mut BTreeMap<String, Value>) {
+///
+/// Shared by both local telemetry sinks (`TraceSender::additional_fields`
+/// below and `AppInsightsSender::send_event`) so the
+/// operation_id/command/installation_id-fallback rule has one
+/// implementation instead of being hand-duplicated between them -- a
+/// prior version of this function existed independently in each sink,
+/// which risked the two silently diverging if the rule ever changed in
+/// only one place.
+pub(crate) fn merge_operation_context(fields: &mut BTreeMap<String, Value>) {
     if let Some((operation_id, command)) = operation_context::current() {
         fields
             .entry("operation_id".to_string())
@@ -781,6 +867,48 @@ mod tests {
         assert!(
             metric_found,
             "Expected metric with installation_id field not found in the local metrics file"
+        );
+    }
+
+    #[test]
+    /// Regression test: `TraceStream::set_database_id` must actually
+    /// reach the serialized trace entry's `additional_fields.database_id`,
+    /// independently of installation_id.
+    fn test_tracestream_database_id_written_to_additional_fields() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let metrics_path = temp_dir.path().join("metrics.jsonl");
+        let tracestream = TraceStream::default();
+        tracestream.set_database_id("test-database-id".to_string());
+        let trace_sender = tracestream
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap(), true)
+            .with_filter(filter::LevelFilter::INFO);
+
+        // See test_tracestream_write_metric_event_to_file for why a scoped
+        // (not global) default subscriber is used here.
+        let _guard = tracing::subscriber::set_default(
+            tracing_subscriber::Registry::default().with(trace_sender),
+        );
+
+        tracing::info!(
+            metric_name = "test_metric_with_database_id",
+            value = true
+        );
+
+        // Ensure the trace system has time to write the file.
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let file = File::open(&metrics_path).unwrap();
+        let reader = BufReader::new(file);
+        let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
+
+        let metric_found = lines.iter().any(|line| {
+            line.contains(r#""metric_name":"test_metric_with_database_id""#)
+                && line.contains(r#""database_id":"test-database-id""#)
+        });
+
+        assert!(
+            metric_found,
+            "Expected metric with database_id field not found in the local metrics file"
         );
     }
 

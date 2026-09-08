@@ -96,20 +96,26 @@ pub fn execute_rollback(
     requested_rollback_kind: ManualRollbackRequestKind,
     allowed_operations: &Operations,
 ) -> Result<(ExitKind, ServicingType), TridentError> {
-    // Mirrors `engine::update::update()`'s `update_start` metric: fired
-    // unconditionally on every invocation (stage-only, finalize-only, or
-    // combined -- matching how the CLI/gRPC two-step rollback flow can call
-    // this more than once for the same logical rollback), with whatever
-    // identifying context is known this early (the specific A/B-vs-runtime
-    // `ManualRollbackKind` isn't determined until the stage/finalize logic
-    // below runs, so it isn't included here).
-    tracing::info!(
-        metric_name = "manual_rollback_start",
-        requested_rollback_kind = format!("{:?}", requested_rollback_kind),
-        servicing_state = format!("{:?}", datastore.host_status().servicing_state),
-        stage = allowed_operations.has_stage(),
-        finalize = allowed_operations.has_finalize(),
-    );
+    // Fired once per *logical* rollback, not once per call: a
+    // finalize-only call (the second step of the CLI/gRPC two-step
+    // stage-then-finalize flow) resumes a rollback that was already
+    // staged -- and therefore already reported -- by an earlier
+    // stage-having call (stage-only or combined), so it isn't a new
+    // start. Gating on `has_stage()` fires exactly for the calls that
+    // genuinely begin a rollback (stage-only and combined); a
+    // finalize-only call fires nothing here. Whatever identifying context
+    // is known this early is included -- the specific A/B-vs-runtime
+    // `ManualRollbackKind` isn't determined until the stage/finalize
+    // logic below runs, so it isn't included here.
+    if allowed_operations.has_stage() {
+        tracing::info!(
+            metric_name = "manual_rollback_start",
+            requested_rollback_kind = format!("{:?}", requested_rollback_kind),
+            servicing_state = format!("{:?}", datastore.host_status().servicing_state),
+            stage = allowed_operations.has_stage(),
+            finalize = allowed_operations.has_finalize(),
+        );
+    }
 
     // Tracks the rollback kind actually staged this call, so the trailing
     // "stage completed, finalize not requested this call" return below can
