@@ -908,7 +908,17 @@ impl Trident {
         self.host_config = Some(config);
         self.is_stream_image = true;
 
-        self.install(datastore, Operations::all(), false, Some(image))
+        // `stream_image_start` above marks the beginning of a streamed
+        // install; mirror it with a completion signal here so streaming
+        // failures/successes are distinguishable in telemetry without
+        // relying on the downstream `clean_install_*` metrics (which are
+        // specific to the clean-install engine step, not the streaming
+        // entry point as a whole).
+        let result = self.install(datastore, Operations::all(), false, Some(image));
+        if result.is_ok() {
+            tracing::info!(metric_name = "stream_image_success", value = true);
+        }
+        result
     }
 
     pub fn commit(
