@@ -889,10 +889,7 @@ mod tests {
             tracing_subscriber::Registry::default().with(trace_sender),
         );
 
-        tracing::info!(
-            metric_name = "test_metric_with_database_id",
-            value = true
-        );
+        tracing::info!(metric_name = "test_metric_with_database_id", value = true);
 
         // Ensure the trace system has time to write the file.
         std::thread::sleep(std::time::Duration::from_millis(100));
