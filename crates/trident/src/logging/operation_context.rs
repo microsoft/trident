@@ -229,6 +229,36 @@ pub fn run_command<T>(
     })
 }
 
+/// Like [`run_command`], but only fires `command_error` when
+/// `should_report` returns `true` for the resulting error. Use this when
+/// the caller can prove some errors were already reported by someone else
+/// (e.g. `grpc-client`, when the daemon it talked to already fired its
+/// own, better-classified `command_error` for the same logical failure)
+/// -- firing another one here would just double-count it under a less
+/// informative classification. Panics are always reported regardless of
+/// `should_report`: unlike an error from elsewhere, a panic has no other
+/// reporter.
+pub fn run_command_if<T>(
+    command: &str,
+    f: impl FnOnce() -> Result<T, TridentError>,
+    should_report: impl FnOnce(&TridentError) -> bool,
+) -> Result<T, TridentError> {
+    run_with_operation(command, || match panic::catch_unwind(AssertUnwindSafe(f)) {
+        Ok(result) => {
+            if let Err(ref error) = result {
+                if should_report(error) {
+                    report_command_error(error);
+                }
+            }
+            result
+        }
+        Err(payload) => {
+            report_command_panic(command, &payload);
+            panic::resume_unwind(payload);
+        }
+    })
+}
+
 /// Fires the `command_error` metric for a failed command. Split out from
 /// `run_command` so it's independently testable against a constructed
 /// `TridentError` without needing a real failing command.
@@ -495,6 +525,56 @@ mod tests {
         assert!(
             current().is_none(),
             "context must be cleared even when f returns Err"
+        );
+    }
+
+    #[test]
+    fn test_run_command_if_suppresses_report_when_predicate_false() {
+        use tracing_subscriber::layer::SubscriberExt;
+
+        let layer = CapturingLayer::default();
+        let events = layer.events.clone();
+        let _guard =
+            tracing::subscriber::set_default(tracing_subscriber::Registry::default().with(layer));
+
+        let result: Result<(), TridentError> = run_command_if(
+            "cmd",
+            || Err(TridentError::internal("boom")),
+            |_error| false,
+        );
+
+        assert!(result.is_err());
+        let events = events.lock().unwrap();
+        assert!(
+            !events
+                .iter()
+                .any(|e| e.get("metric_name").map(String::as_str) == Some("command_error")),
+            "command_error should not fire when should_report returns false: {events:?}"
+        );
+    }
+
+    #[test]
+    fn test_run_command_if_reports_when_predicate_true() {
+        use tracing_subscriber::layer::SubscriberExt;
+
+        let layer = CapturingLayer::default();
+        let events = layer.events.clone();
+        let _guard =
+            tracing::subscriber::set_default(tracing_subscriber::Registry::default().with(layer));
+
+        let result: Result<(), TridentError> = run_command_if(
+            "cmd",
+            || Err(TridentError::internal("boom")),
+            |_error| true,
+        );
+
+        assert!(result.is_err());
+        let events = events.lock().unwrap();
+        assert!(
+            events
+                .iter()
+                .any(|e| e.get("metric_name").map(String::as_str) == Some("command_error")),
+            "command_error should fire when should_report returns true: {events:?}"
         );
     }
 
