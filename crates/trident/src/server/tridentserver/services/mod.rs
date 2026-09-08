@@ -60,7 +60,11 @@ impl TridentServer {
         // queued work to another worker instead of stalling behind it -- a
         // burst of malformed requests can no longer starve the runtime.
         let _ = tokio::task::block_in_place(|| {
-            operation_context::run_command(command, || Err::<(), _>(error))
+            operation_context::run_command(
+                command,
+                operation_context::OperationSource::Daemon,
+                || Err::<(), _>(error),
+            )
         });
         Status::invalid_argument(message.into())
     }
@@ -83,7 +87,11 @@ impl TridentServer {
         });
         // See the `block_in_place` comment in `reject_invalid_argument`.
         let _ = tokio::task::block_in_place(|| {
-            operation_context::run_command(command, || Err::<(), _>(error))
+            operation_context::run_command(
+                command,
+                operation_context::OperationSource::Daemon,
+                || Err::<(), _>(error),
+            )
         });
         Status::invalid_argument(message.into())
     }

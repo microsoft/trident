@@ -652,11 +652,15 @@ mod functional_test {
         let _guard =
             tracing::subscriber::set_default(tracing_subscriber::Registry::default().with(sender));
 
-        // Wrapping in run_with_operation confirms operation_id/command also
-        // reach the outgoing properties, alongside installation_id above.
-        operation_context::run_with_operation("test_command", || {
-            tracing::info!(metric_name = "test_metric", value = true);
-        });
+        // Wrapping in run_with_operation confirms operation_id/command/source
+        // also reach the outgoing properties, alongside installation_id above.
+        operation_context::run_with_operation(
+            "test_command",
+            operation_context::OperationSource::Cli,
+            || {
+                tracing::info!(metric_name = "test_metric", value = true);
+            },
+        );
 
         // Collect both requests (command_start + test_metric); order between
         // them is not guaranteed, so gather everything seen within the
@@ -677,5 +681,6 @@ mod functional_test {
         assert!(combined.contains("\"database_id\":\"test-database-id\""));
         assert!(combined.contains("\"command\":\"test_command\""));
         assert!(combined.contains("\"operation_id\":"));
+        assert!(combined.contains("\"source\":\"cli\""));
     }
 }
