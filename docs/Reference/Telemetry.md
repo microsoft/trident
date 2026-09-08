@@ -29,8 +29,14 @@ themselves:
 - `total_cpu`: the number of CPUs.
 - `total_memory_gib`: total memory, in GiB.
 - `trident_version`: the running Trident version.
+- `database_id`: an ID that lets separate events be correlated back to the
+  same datastore over its entire lifetime (generated on first access to
+  the datastore, whether or not an install has actually happened yet).
 - `installation_id`: an ID that lets separate events be correlated back to
-  the same host installation over time.
+  the same host installation over time. Unlike `database_id`, this is
+  only ever created (get-or-create, never overwritten) at the start of
+  `Trident::install`, so it is absent from any event that fires before a
+  host's first-ever install.
 - `operation_id`: an ID that lets events emitted during the same command
   invocation be correlated with each other.
 - `command`: which command produced the event (e.g. `install`, `update`,

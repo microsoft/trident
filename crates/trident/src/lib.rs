@@ -283,6 +283,16 @@ impl Trident {
             tracestream.attach_installation_id_if_present(datastore_path);
         }
 
+        // Attach this datastore's database ID (stable for its entire
+        // lifetime, unlike installation_id) whenever a datastore already
+        // exists at `datastore_path` -- never creates one. Not gated on
+        // `attach_installation_id`/multiboot: a multiboot install's
+        // temporary datastore does not exist yet at this point, so this
+        // is a no-op until the datastore is actually created/opened
+        // further down (see the `database_id()` calls near
+        // `create_and_attach_installation_id` below).
+        tracestream.attach_database_id_if_present(datastore_path);
+
         // Trace features enabled in the Host Configuration.
         if let Some(hc) = &host_config {
             hc.feature_tracing();
@@ -613,6 +623,18 @@ impl Trident {
                 warn!("Failed to create installation ID: {e:?}");
             }
 
+            // Get (or, for a brand-new datastore, create) this datastore's
+            // database ID and attach it. Best-effort, same rationale as
+            // installation ID above: telemetry attribution must never
+            // block servicing.
+            match datastore.database_id() {
+                Ok(database_id) => {
+                    info!("Database ID: {database_id}");
+                    tracestream.set_database_id(database_id.to_string());
+                }
+                Err(e) => warn!("Failed to get/create database ID: {e:?}"),
+            }
+
             // Use a prefetched image if provided, otherwise load the image
             // specified in the Host Configuration.
             let image = match prefetched_image {
@@ -739,6 +761,16 @@ impl Trident {
                     // still won't carry it -- both fire before this point.
                     if let Err(e) = tracestream.create_and_attach_installation_id(datastore) {
                         warn!("Failed to create installation ID during CIH bootstrap: {e:?}");
+                    }
+
+                    match datastore.database_id() {
+                        Ok(database_id) => {
+                            info!("Database ID: {database_id}");
+                            tracestream.set_database_id(database_id.to_string());
+                        }
+                        Err(e) => {
+                            warn!("Failed to get/create database ID during CIH bootstrap: {e:?}")
+                        }
                     }
                 } else {
                     // For non-CIH images, if the datastore is not persistent, return error
