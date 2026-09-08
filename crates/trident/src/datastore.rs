@@ -14,12 +14,12 @@ use trident_api::{
 
 use crate::TRIDENT_SEMVER_VERSION;
 
-/// Key under which the datastore's unique correlation ID is stored in the
+/// Key under which the datastore's unique database ID is stored in the
 /// generic key-value table. This ID is generated once (on first access) and
 /// persisted for the lifetime of the datastore. It is intended to be added to
 /// tracing/telemetry so that all activity for a given host installation can
 /// be correlated.
-const CORRELATION_ID_KEY: &str = "correlation-id";
+const DATABASE_ID_KEY: &str = "database-id";
 
 pub struct DataStore {
     db: Option<sqlite::Connection>,
@@ -185,7 +185,7 @@ impl DataStore {
                 TridentVersion::SemVer(TRIDENT_SEMVER_VERSION.clone());
             Self::write_host_status(&persistent_db, self.host_status())?;
 
-            // Carry over any generic key-value entries (e.g. the correlation ID)
+            // Carry over any generic key-value entries (e.g. the database ID)
             // recorded in the temporary datastore into the persistent one, so
             // they survive the transition from temporary to persistent
             // storage.
@@ -412,7 +412,7 @@ impl DataStore {
     /// `serde::Serialize`/`serde::de::DeserializeOwned` can be stored, not
     /// just `HostStatus`.
     ///
-    /// `correlation_id` is currently the only first-party caller of the
+    /// `database_id` is currently the only first-party caller of the
     /// generic key-value store, and it needs insert-if-absent semantics
     /// (see `set_value_if_absent`) rather than an unconditional overwrite,
     /// so this unconditional-overwrite variant is presently exercised only
@@ -434,7 +434,7 @@ impl DataStore {
     /// Like [`Self::set_value`], but only inserts a row if `key` does not
     /// already have one; an existing row is left untouched. Used where two
     /// datastore connections could race to perform "first access"
-    /// initialization of a key (see [`Self::correlation_id`]): whichever
+    /// initialization of a key (see [`Self::database_id`]): whichever
     /// connection's insert commits first wins, and the other's insert
     /// becomes a no-op instead of overwriting the winner's value.
     pub(crate) fn set_value_if_absent<T: Serialize>(
@@ -495,7 +495,7 @@ impl DataStore {
         Ok(())
     }
 
-    /// Retrieve this datastore's unique correlation ID, generating and
+    /// Retrieve this datastore's unique database ID, generating and
     /// persisting a new one on first access.
     ///
     /// This ID is stable for the lifetime of the datastore (surviving the
@@ -513,16 +513,16 @@ impl DataStore {
     /// freshly generated ID with `ON CONFLICT DO NOTHING` (a no-op if
     /// another connection already inserted one first), then read back
     /// whichever ID actually won that race.
-    pub fn correlation_id(&mut self) -> Result<Uuid, TridentError> {
-        if let Some(id) = self.get_value::<Uuid>(CORRELATION_ID_KEY)? {
+    pub fn database_id(&mut self) -> Result<Uuid, TridentError> {
+        if let Some(id) = self.get_value::<Uuid>(DATABASE_ID_KEY)? {
             return Ok(id);
         }
 
-        self.set_value_if_absent(CORRELATION_ID_KEY, &Uuid::new_v4())?;
+        self.set_value_if_absent(DATABASE_ID_KEY, &Uuid::new_v4())?;
 
-        self.get_value::<Uuid>(CORRELATION_ID_KEY)?
+        self.get_value::<Uuid>(DATABASE_ID_KEY)?
             .structured(InternalError::Internal(
-                "Correlation ID missing immediately after being inserted",
+                "Database ID missing immediately after being inserted",
             ))
     }
 
@@ -596,15 +596,15 @@ mod tests {
         let datastore_path = temp_dir.path().join("db.sqlite");
 
         let mut datastore = super::DataStore::open_or_create(&datastore_path).unwrap();
-        let correlation_id = datastore.correlation_id().unwrap();
+        let database_id = datastore.database_id().unwrap();
 
         // Persist to the exact same path the datastore is currently open at.
         datastore.persist(&datastore_path).unwrap();
 
         assert_eq!(
-            datastore.correlation_id().unwrap(),
-            correlation_id,
-            "Correlation ID should survive a self-persist"
+            datastore.database_id().unwrap(),
+            database_id,
+            "Database ID should survive a self-persist"
         );
     }
 
@@ -677,7 +677,7 @@ mod tests {
     #[test]
     /// Regression test: a datastore created by an older Trident version that
     /// predates the `keyvalue` table (only `hoststatus` exists) must still
-    /// be usable after `open()` -- in particular, `correlation_id()` must
+    /// be usable after `open()` -- in particular, `database_id()` must
     /// not fail with "no such table: keyvalue".
     fn test_open_upgrades_pre_existing_datastore_schema() {
         let temp_dir = tempfile::tempdir().unwrap();
@@ -699,20 +699,20 @@ mod tests {
 
         let mut datastore = super::DataStore::open(&path).unwrap();
         // Should not fail with "no such table: keyvalue".
-        datastore.correlation_id().unwrap();
+        datastore.database_id().unwrap();
 
         temp_dir.close().unwrap();
     }
 
     #[test]
-    fn test_correlation_id_concurrent_first_access_is_consistent() {
+    fn test_database_id_concurrent_first_access_is_consistent() {
         let temp_dir = tempfile::tempdir().unwrap();
         let path = temp_dir.path().join("db.sqlite");
 
         // Create the datastore (and its schema) up front, then open two
         // separate connections to it, simulating two daemon RPC handlers
         // concurrently calling `Trident::new` (and therefore
-        // `correlation_id`) against the same datastore path.
+        // `database_id`) against the same datastore path.
         super::DataStore::make_datastore(&path).unwrap();
 
         let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
@@ -723,10 +723,10 @@ mod tests {
                 std::thread::spawn(move || {
                     let mut datastore = super::DataStore::open(&path).unwrap();
                     // Synchronize so both threads attempt "first access"
-                    // (no correlation ID persisted yet) as close together
+                    // (no database ID persisted yet) as close together
                     // as possible.
                     barrier.wait();
-                    datastore.correlation_id().unwrap()
+                    datastore.database_id().unwrap()
                 })
             })
             .collect();
@@ -734,14 +734,14 @@ mod tests {
         let ids: Vec<uuid::Uuid> = handles.into_iter().map(|h| h.join().unwrap()).collect();
         assert_eq!(
             ids[0], ids[1],
-            "concurrent first access returned inconsistent correlation IDs"
+            "concurrent first access returned inconsistent database IDs"
         );
 
         temp_dir.close().unwrap();
     }
 
     #[test]
-    fn test_correlation_id_is_stable() {
+    fn test_database_id_is_stable() {
         let temp_dir = tempfile::tempdir().unwrap();
         let path = temp_dir.path().join("db.sqlite");
         let db = super::DataStore::make_datastore(&path).unwrap();
@@ -751,10 +751,10 @@ mod tests {
             temporary: false,
         };
 
-        let id = datastore.correlation_id().unwrap();
-        // Calling correlation_id again should return the same ID, not generate a
+        let id = datastore.database_id().unwrap();
+        // Calling database_id again should return the same ID, not generate a
         // new one.
-        assert_eq!(datastore.correlation_id().unwrap(), id);
+        assert_eq!(datastore.database_id().unwrap(), id);
 
         temp_dir.close().unwrap();
     }
@@ -835,22 +835,22 @@ mod functional_test {
     }
 
     #[functional_test]
-    fn test_correlation_id_survives_persist() {
+    fn test_database_id_survives_persist() {
         let temp_dir = TempDir::new().unwrap();
         let datastore_temp_path = temp_dir.path().join("db-tmp.sqlite");
         let datastore_path = temp_dir.path().join("db.sqlite");
 
-        // Generate a correlation ID in the temporary datastore, then persist it.
-        let correlation_id = {
+        // Generate a database ID in the temporary datastore, then persist it.
+        let database_id = {
             let mut datastore = DataStore::open_or_create(&datastore_temp_path).unwrap();
-            let correlation_id = datastore.correlation_id().unwrap();
+            let database_id = datastore.database_id().unwrap();
             datastore.persist(&datastore_path).unwrap();
-            correlation_id
+            database_id
         };
 
-        // Re-open the persisted datastore and verify the same correlation ID is
+        // Re-open the persisted datastore and verify the same database ID is
         // returned, rather than a new one being generated.
         let mut datastore = DataStore::open(&datastore_path).unwrap();
-        assert_eq!(datastore.correlation_id().unwrap(), correlation_id);
+        assert_eq!(datastore.database_id().unwrap(), database_id);
     }
 }

@@ -84,7 +84,7 @@ pub struct TraceStream {
     // TODO: Consider changing this to a LockOnce when rustc is updated to
     // >=1.70
     target: Arc<RwLock<Option<String>>>,
-    correlation_id: Arc<RwLock<Option<String>>>,
+    database_id: Arc<RwLock<Option<String>>>,
     disabled: bool,
 }
 
@@ -126,17 +126,17 @@ impl TraceStream {
         Ok(())
     }
 
-    /// Set the correlation ID to attach to every trace entry sent from this point
+    /// Set the database ID to attach to every trace entry sent from this point
     /// forward, as an additional field, so that all traces/metrics for a
     /// given host installation can be correlated. Expected to be called once
-    /// the datastore's persisted correlation ID has been retrieved (see
-    /// `DataStore::correlation_id`).
-    pub fn set_correlation_id(&self, correlation_id: String) {
-        match self.correlation_id.write() {
+    /// the datastore's persisted database ID has been retrieved (see
+    /// `DataStore::database_id`).
+    pub fn set_database_id(&self, database_id: String) {
+        match self.database_id.write() {
             Ok(mut val) => {
-                val.replace(correlation_id);
+                val.replace(database_id);
             }
-            Err(_) => warn!("Failed to lock tracestream to set correlation ID"),
+            Err(_) => warn!("Failed to lock tracestream to set database ID"),
         }
     }
 
@@ -157,7 +157,7 @@ impl TraceStream {
     ) -> Box<TraceSender> {
         Box::new(TraceSender::new(
             self.target.clone(),
-            self.correlation_id.clone(),
+            self.database_id.clone(),
             metrics_file_path,
         ))
     }
@@ -165,7 +165,7 @@ impl TraceStream {
 
 pub struct TraceSender {
     server: Arc<RwLock<Option<String>>>,
-    correlation_id: Arc<RwLock<Option<String>>>,
+    database_id: Arc<RwLock<Option<String>>>,
     client: reqwest::blocking::Client,
     metrics_file: Option<File>,
 }
@@ -179,12 +179,12 @@ struct ExecutionTime(Instant);
 impl TraceSender {
     fn new(
         server: Arc<RwLock<Option<String>>>,
-        correlation_id: Arc<RwLock<Option<String>>>,
+        database_id: Arc<RwLock<Option<String>>>,
         metrics_file_path: &str,
     ) -> Self {
         Self {
             server,
-            correlation_id,
+            database_id,
             client: reqwest::blocking::Client::new(),
             metrics_file: match files::create_file(metrics_file_path) {
                 Ok(f) => Some(f),
@@ -203,14 +203,14 @@ impl TraceSender {
     }
 
     /// Build the `additional_fields` map for a trace entry: the static
-    /// `ADDITIONAL_FIELDS`, plus the correlation ID (if one has been set via
-    /// `TraceStream::set_correlation_id`), so entries can be correlated back to a
+    /// `ADDITIONAL_FIELDS`, plus the database ID (if one has been set via
+    /// `TraceStream::set_database_id`), so entries can be correlated back to a
     /// specific host installation.
     fn additional_fields(&self) -> BTreeMap<String, Value> {
         let mut fields = ADDITIONAL_FIELDS.clone();
-        if let Ok(correlation_id) = self.correlation_id.read() {
-            if let Some(correlation_id) = correlation_id.as_ref() {
-                fields.insert("correlation_id".to_string(), json!(correlation_id));
+        if let Ok(database_id) = self.database_id.read() {
+            if let Some(database_id) = database_id.as_ref() {
+                fields.insert("database_id".to_string(), json!(database_id));
             }
         }
         fields
@@ -579,16 +579,16 @@ mod tests {
     }
 
     #[test]
-    /// Regression test: `TraceStream::set_correlation_id` must actually
-    /// reach the serialized trace entry's `additional_fields.correlation_id`
+    /// Regression test: `TraceStream::set_database_id` must actually
+    /// reach the serialized trace entry's `additional_fields.database_id`
     /// -- the metric/span tests above only assert on `metric_name`/`value`
-    /// and would still pass even if the correlation ID were never copied
+    /// and would still pass even if the database ID were never copied
     /// into `additional_fields`.
-    fn test_tracestream_correlation_id_written_to_additional_fields() {
+    fn test_tracestream_database_id_written_to_additional_fields() {
         let temp_dir = tempfile::tempdir().unwrap();
         let metrics_path = temp_dir.path().join("metrics.jsonl");
         let tracestream = TraceStream::default();
-        tracestream.set_correlation_id("test-correlation-id".to_string());
+        tracestream.set_database_id("test-database-id".to_string());
         let trace_sender = tracestream
             .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
             .with_filter(filter::LevelFilter::INFO);
@@ -600,7 +600,7 @@ mod tests {
         );
 
         tracing::info!(
-            metric_name = "test_metric_with_correlation_id",
+            metric_name = "test_metric_with_database_id",
             value = true
         );
 
@@ -612,13 +612,13 @@ mod tests {
         let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
 
         let metric_found = lines.iter().any(|line| {
-            line.contains(r#""metric_name":"test_metric_with_correlation_id""#)
-                && line.contains(r#""correlation_id":"test-correlation-id""#)
+            line.contains(r#""metric_name":"test_metric_with_database_id""#)
+                && line.contains(r#""database_id":"test-database-id""#)
         });
 
         assert!(
             metric_found,
-            "Expected metric with correlation_id field not found in the local metrics file"
+            "Expected metric with database_id field not found in the local metrics file"
         );
     }
 
