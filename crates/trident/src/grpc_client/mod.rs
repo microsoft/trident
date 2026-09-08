@@ -9,7 +9,7 @@ use trident_api::error::{InternalError, TridentError};
 
 use crate::{
     cli::{ClientArgs, ClientCommands, TridentExitCodes},
-    run_command_if, ExitKind, TRIDENT_VERSION,
+    run_command_if, ExitKind, OperationSource, TRIDENT_VERSION,
 };
 
 use crate::cli;
@@ -60,6 +60,7 @@ pub fn client_main(args: &ClientArgs) -> ExitCode {
 
     let result = run_command_if(
         &command,
+        OperationSource::GrpcClient,
         || {
             client_result.map_err(|e| {
                 TridentError::with_source(InternalError::Internal("grpc-client command failed"), e)
