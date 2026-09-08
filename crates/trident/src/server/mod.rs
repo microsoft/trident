@@ -109,18 +109,20 @@ pub fn server_main(
         }
     };
 
-    // Attach this host's installation ID to the shared TraceStream before
-    // accepting any RPCs. `Trident::new()` attaches the same way on every
-    // request, but the very first servicing request this daemon process
-    // ever handles would otherwise have its command_start (fired by
-    // run_with_operation before that request's own Trident::new() call
-    // runs) go out untagged, so attach it up front instead. Every later
-    // request is unaffected either way, since the shared TraceStream keeps
-    // whatever was set here (or by the first request) for the rest of the
-    // daemon's lifetime. Read-only and side-effect-free: never creates a
-    // datastore or an installation ID (see
-    // `TraceStream::attach_installation_id_if_present`).
+    // Attach this host's installation ID and database ID to the shared
+    // TraceStream before accepting any RPCs. `Trident::new()` attaches
+    // both the same way on every request, but the very first servicing
+    // request this daemon process ever handles would otherwise have its
+    // command_start (fired by run_with_operation before that request's own
+    // Trident::new() call runs) go out untagged, so attach them up front
+    // instead. Every later request is unaffected either way, since the
+    // shared TraceStream keeps whatever was set here (or by the first
+    // request) for the rest of the daemon's lifetime. Both are read-only
+    // and side-effect-free: neither creates a datastore or an ID (see
+    // `TraceStream::attach_installation_id_if_present` and
+    // `TraceStream::attach_database_id_if_present`).
     tracestream.attach_installation_id_if_present(agent_config.datastore_path());
+    tracestream.attach_database_id_if_present(agent_config.datastore_path());
 
     let shutdown_signals = match ShutdownSignals::setup_signal_handlers() {
         Ok(signals) => signals,

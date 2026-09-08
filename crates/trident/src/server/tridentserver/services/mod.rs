@@ -32,21 +32,28 @@ impl TridentServer {
     /// the same `command` name the real dispatch would have used, then
     /// returns the `Status` to send back to the caller.
     ///
-    /// Calls `refresh_installation_id` first, exactly like
+    /// Calls `refresh_ids` first, exactly like
     /// `servicing_request`/`reading_request` do, so a rejected request
     /// still gets the host's installation ID attached when one is
     /// available. Without this, `command_start`/`command_error` for every
     /// rejected request went out with no installation ID at all, even on
     /// an already-provisioned host -- unlike a request that makes it far
-    /// enough to be serviced, which always calls `refresh_installation_id`
+    /// enough to be serviced, which always calls `refresh_ids`
     /// via `servicing_request`/`reading_request`.
+    ///
+    /// `#[track_caller]` so `TridentError::new` below (itself
+    /// `#[track_caller]`) attributes this error's `location` to whichever
+    /// service handler actually rejected the request, not to this shared
+    /// helper's own line -- otherwise every rejection from every RPC would
+    /// report the identical, uninformative `location`.
+    #[track_caller]
     fn reject_invalid_argument(
         &self,
         command: &str,
         field: &str,
         message: impl Into<String>,
     ) -> Status {
-        self.refresh_installation_id();
+        self.refresh_ids();
         let error = TridentError::new(InvalidInputError::MissingRequestField {
             field: field.to_owned(),
         });
@@ -73,6 +80,10 @@ impl TridentServer {
     /// present yet fails to parse or otherwise doesn't satisfy the
     /// request's requirements (e.g. `stream_disk`'s image URL) rather than
     /// a missing field.
+    ///
+    /// `#[track_caller]` for the same reason as
+    /// [`Self::reject_invalid_argument`].
+    #[track_caller]
     fn reject_invalid_field(
         &self,
         command: &str,
@@ -80,7 +91,7 @@ impl TridentServer {
         reason: impl Into<String>,
         message: impl Into<String>,
     ) -> Status {
-        self.refresh_installation_id();
+        self.refresh_ids();
         let error = TridentError::new(InvalidInputError::InvalidRequestField {
             field: field.to_owned(),
             reason: reason.into(),

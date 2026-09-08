@@ -962,9 +962,9 @@ mod functional_test {
 
     // These two remain functional tests (VM-only) because they assert
     // against the actual host's hardware/platform info (CPU count, memory,
-    // product UUID, os-release, kernel version) -- unlike the metrics-file
-    // tests above, there's no way to inject a fake value here, so the
-    // result is inherently host-dependent.
+    // os-release, kernel version) -- unlike the metrics-file tests above,
+    // there's no way to inject a fake value here, so the result is
+    // inherently host-dependent.
 
     #[functional_test]
     fn test_populate_additional_fields() {

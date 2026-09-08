@@ -11,7 +11,9 @@ use trident_api::{
 use crate::{
     datastore::DataStore,
     engine::{self, EngineContext, EngineContextParams},
-    health, monitor_metrics, ExitKind,
+    health,
+    logging::operation_context,
+    monitor_metrics, ExitKind,
 };
 
 use super::Subsystem;
@@ -97,10 +99,19 @@ pub(crate) fn finalize_update(
         // Persist here (not inside finalize_or_rollback_runtime_update --
         // see the comment on that function) now that the auto-rollback's
         // own outcome is known, so the archived metrics file actually
-        // includes it either way -- including a *failed* auto-rollback,
-        // which previously wasn't persisted at all: the failure still
-        // fired a live `command_error`, but was invisible to any later
-        // investigation working from the archived record alone.
+        // includes it either way -- including a *failed* auto-rollback.
+        // Explicitly fire `command_error` for that final outcome *before*
+        // persisting (rather than leaving it to `run_command`/
+        // `run_command_if`, further up the call stack, which would only
+        // see it well after this archive is already written): this is a
+        // no-op if that outer wrapper has (unusually) already reported an
+        // error for this operation, and it's the same call that wrapper
+        // would otherwise make on its own once `rollback_result`
+        // eventually reaches it as an `Err`, so this doesn't introduce a
+        // second, duplicate `command_error` event.
+        if let Err(ref outcome_error) = rollback_result {
+            operation_context::report_command_error(outcome_error);
+        }
         engine::persist_background_log_and_metrics(
             &state.host_status().spec.trident.datastore_path,
             None,
