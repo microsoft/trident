@@ -162,22 +162,32 @@ impl TraceStream {
             .unwrap_or(false)
     }
 
-    /// Best-effort, side-effect-free attempt to attach this host's
-    /// installation ID -- either already cached from a prior call on this
-    /// `TraceStream`, or freshly read from the datastore at
-    /// `datastore_path` if one already exists there. Never creates a
-    /// datastore, and never creates a new installation ID: a command that
-    /// is genuinely allowed to initialize a brand-new datastore (see
+    /// Best-effort attempt to attach this host's installation ID -- either
+    /// already cached from a prior call on this `TraceStream`, or freshly
+    /// read from the datastore at `datastore_path` if one already exists
+    /// there. Never creates a *datastore*, and never creates an
+    /// installation ID for a genuinely unprovisioned host: a command that
+    /// is allowed to initialize a brand-new datastore (see
     /// [`crate::datastore::DataStore::may_initialize_datastore_for_command`])
-    /// must call [`Self::create_and_attach_installation_id`] instead, on a
-    /// datastore handle it already owns.
+    /// must still call [`Self::create_and_attach_installation_id`] instead,
+    /// on a datastore handle it already owns.
+    ///
+    /// Not fully read-only, though: for a datastore that is already
+    /// provisioned (via offline init or the CIH update-bootstrap path,
+    /// both of which adopt a datastore without ever calling
+    /// `Trident::install`) but has no installation ID yet, this performs a
+    /// one-time migration *write* to mint one -- see
+    /// [`crate::datastore::DataStore::installation_id_or_migrate`]. Callers
+    /// that require true read-only behavior (e.g. a genuinely
+    /// unprivileged/diagnostic path) must not assume this call can never
+    /// write to the datastore.
     ///
     /// Safe to call from anywhere, any number of times, before any point
     /// that wants the ID attached: this is the single implementation
-    /// shared by every read-only attach call site (the CLI's dispatch,
-    /// the daemon's startup attach, the daemon's per-request backstop,
-    /// and `Trident::new`'s own attach), so a correctness fix to this
-    /// logic only needs to happen once.
+    /// shared by every read-only-in-the-common-case attach call site (the
+    /// CLI's dispatch, the daemon's startup attach, the daemon's
+    /// per-request backstop, and `Trident::new`'s own attach), so a
+    /// correctness fix to this logic only needs to happen once.
     pub fn attach_installation_id_if_present(&self, datastore_path: &Path) {
         if self.installation_id_cached() || !datastore_path.exists() {
             return;
@@ -505,7 +515,15 @@ where
 /// `operation_context`), if any, into `fields`. Values the caller already
 /// set (e.g. an event that explicitly names its own `command`) are never
 /// overwritten.
-fn merge_operation_context(fields: &mut BTreeMap<String, Value>) {
+///
+/// Shared by both local telemetry sinks (`TraceSender::additional_fields`
+/// below and `AppInsightsSender::send_event`) so the
+/// operation_id/command/installation_id-fallback rule has one
+/// implementation instead of being hand-duplicated between them -- a
+/// prior version of this function existed independently in each sink,
+/// which risked the two silently diverging if the rule ever changed in
+/// only one place.
+pub(crate) fn merge_operation_context(fields: &mut BTreeMap<String, Value>) {
     if let Some((operation_id, command)) = operation_context::current() {
         fields
             .entry("operation_id".to_string())

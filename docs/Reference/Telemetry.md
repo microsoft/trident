@@ -30,7 +30,7 @@ themselves:
 - `total_cpu`: the number of CPUs.
 - `total_memory_gib`: total memory, in GiB.
 - `trident_version`: the running Trident version.
-- `correlation_id`: an ID that lets separate events be correlated back to
+- `installation_id`: an ID that lets separate events be correlated back to
   the same host installation over time.
 - `operation_id`: an ID that lets events emitted during the same command
   invocation be correlated with each other.
