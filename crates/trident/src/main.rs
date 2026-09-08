@@ -12,7 +12,7 @@ use trident::{
     manual_rollback::{self, utils::ManualRollbackRequestKind},
     run_with_captured_operation, run_with_operation, save_reboot_operation, take_reboot_operation,
     validation, AppInsightsSender, BackgroundLog, BackgroundUploader, DataStore, ExitKind,
-    LogForwarder, Logstream, TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
+    LogForwarder, Logstream, OperationSource, TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
 };
 use trident_api::{
     config::{HostConfigurationSource, Operations},
@@ -179,7 +179,7 @@ fn run_trident(
                 };
                 if let Some(path) = &config_path {
                     if !path.exists() {
-                        return run_with_operation(&command, || {
+                        return run_with_operation(&command, OperationSource::Cli, || {
                             Err(TridentError::new(InvalidInputError::ReadInputFile {
                                 path: path.to_string_lossy().to_string(),
                             }))
@@ -203,7 +203,7 @@ fn run_trident(
                     tracestream.attach_installation_id_if_present(agent_config.datastore_path());
                 }
 
-                run_with_operation(&command, || {
+                run_with_operation(&command, OperationSource::Cli, || {
                     // config_path was already validated (existence-checked)
                     // above.
                     let agent_config = AgentConfig::load()?;

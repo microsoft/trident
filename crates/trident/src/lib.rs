@@ -63,7 +63,7 @@ pub use crate::{
         logstream::Logstream,
         operation_context::{
             run_with_captured_operation, run_with_operation, save_reboot_operation,
-            take_reboot_operation,
+            take_reboot_operation, OperationSource,
         },
         tracestream::TraceStream,
     },

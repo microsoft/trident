@@ -235,13 +235,17 @@ impl TridentServer {
         // can tag `trident_system_reboot` with this same servicing
         // operation's identity instead of leaving it untagged.
         let f = move || {
-            operation_context::run_with_operation(name, || {
-                let result = f();
-                if let Ok((ExitKind::NeedsReboot, ..)) = &result {
-                    operation_context::save_reboot_operation();
-                }
-                result
-            })
+            operation_context::run_with_operation(
+                name,
+                operation_context::OperationSource::Daemon,
+                || {
+                    let result = f();
+                    if let Ok((ExitKind::NeedsReboot, ..)) = &result {
+                        operation_context::save_reboot_operation();
+                    }
+                    result
+                },
+            )
         };
 
         // Create the gRPC response channel
