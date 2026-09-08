@@ -69,10 +69,6 @@ If a *servicing* command (`install`, `update`, `commit`, `rollback`,
 - `location`: the `file:line` in Trident's source where the error was
   originally raised.
 
-This includes a request the daemon rejects before it even reaches a
-handler (e.g. a malformed gRPC payload) -- not just failures raised from
-inside one.
-
 A `grpc-client` invocation only fires its own `command_error` when the
 daemon it talked to never actually responded (a transport-level failure:
 the daemon's socket wasn't found, the connection was refused, or it
