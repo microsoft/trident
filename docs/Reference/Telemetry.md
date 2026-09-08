@@ -49,6 +49,19 @@ same `operation_id`/`command` as above), breaking the failure down into:
 - `location`: the `file:line` in Trident's source where the error was
   originally raised.
 
+This includes a request the daemon rejects before it even reaches a
+handler (e.g. a malformed gRPC payload) -- not just failures raised from
+inside one.
+
+A `grpc-client` invocation only fires its own `command_error` when the
+daemon it talked to never actually responded (a transport-level failure:
+the daemon's socket wasn't found, the connection was refused, or it
+dropped mid-call). If the daemon did respond -- including rejecting the
+request outright -- the daemon's own `command_error` for that failure
+already has full `kind`/`subkind`/`location` fidelity, so `grpc-client`
+stays silent rather than reporting the same failure again under a
+generic classification.
+
 ## Delivery
 
 Telemetry delivery is always best-effort and never affects servicing

@@ -97,14 +97,15 @@ pub(crate) fn finalize_update(
         // Persist here (not inside finalize_or_rollback_runtime_update --
         // see the comment on that function) now that the auto-rollback's
         // own outcome is known, so the archived metrics file actually
-        // includes it if it succeeded.
-        if rollback_result.is_ok() {
-            engine::persist_background_log_and_metrics(
-                &state.host_status().spec.trident.datastore_path,
-                None,
-                state.host_status().servicing_state,
-            );
-        }
+        // includes it either way -- including a *failed* auto-rollback,
+        // which previously wasn't persisted at all: the failure still
+        // fired a live `command_error`, but was invisible to any later
+        // investigation working from the archived record alone.
+        engine::persist_background_log_and_metrics(
+            &state.host_status().spec.trident.datastore_path,
+            None,
+            state.host_status().servicing_state,
+        );
         return rollback_result;
     }
 
