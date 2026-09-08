@@ -164,7 +164,7 @@ impl TridentServer {
     /// this rejection, unlike `reject_invalid_argument`/`reject_invalid_field`:
     /// a connection-lock contention failure isn't a
     /// distinct servicing outcome the way a malformed request is -- it's
-    /// pure admission control, happens before `refresh_installation_id` would
+    /// pure admission control, happens before `refresh_ids` would
     /// even run, and (unlike a bad request) the caller is expected to retry
     /// the exact same request rather than fix anything, so a low-value,
     /// high-volume `command_error` stream isn't worth adding here.
@@ -189,24 +189,28 @@ impl TridentServer {
         })
     }
 
-    /// Re-checks for a persisted installation ID before a request fires its
-    /// own `command_start` (via `run_command`). The daemon-startup attach in
-    /// `server_main` only ever runs once, at startup -- so a daemon that
-    /// starts before the host is ever installed, then serves a request some
-    /// time after a *different* path (e.g. a concurrent CLI invocation, or
-    /// an earlier servicing request on this same daemon) has since created
-    /// the datastore, would otherwise still be missing it. Called from both
+    /// Re-checks for a persisted installation ID and database ID before a
+    /// request fires its own `command_start` (via `run_command`). The
+    /// daemon-startup attach in `server_main` only ever runs once, at
+    /// startup -- so a daemon that starts before the host is ever
+    /// installed, then serves a request some time after a *different*
+    /// path (e.g. a concurrent CLI invocation, or an earlier servicing
+    /// request on this same daemon) has since created the datastore,
+    /// would otherwise still be missing both IDs. Called from both
     /// `servicing_request` and `reading_request`, so read-only RPCs (e.g.
-    /// `get_servicing_state`) don't keep reporting a missing installation ID
+    /// `get_servicing_state`) don't keep reporting missing IDs
     /// indefinitely just because they never happen to run after a write
-    /// request has attached it. Read-only and side-effect-free: never
-    /// creates a datastore or an installation ID (see
-    /// `TraceStream::attach_installation_id_if_present`) -- silently does
+    /// request has attached them. Both are read-only and side-effect-free:
+    /// neither creates a datastore or an ID (see
+    /// `TraceStream::attach_installation_id_if_present` and
+    /// `TraceStream::attach_database_id_if_present`) -- silently does
     /// nothing if the datastore doesn't exist yet.
-    fn refresh_installation_id(&self) {
+    fn refresh_ids(&self) {
         if let Ok(agent_config) = AgentConfig::load() {
             self.tracestream
                 .attach_installation_id_if_present(agent_config.datastore_path());
+            self.tracestream
+                .attach_database_id_if_present(agent_config.datastore_path());
         }
     }
 
@@ -238,7 +242,7 @@ impl TridentServer {
         // Try to acquire the connection lock in write mode
         let guard = self.try_acquire_write_lock()?;
 
-        self.refresh_installation_id();
+        self.refresh_ids();
 
         // Tag every metric/tracing event `f` fires (on whatever thread it
         // ultimately runs on -- see `spawn_servicing_task`, which runs it
@@ -268,7 +272,7 @@ impl TridentServer {
         let (tx, rx) = mpsc::unbounded_channel();
 
         // Try to acquire the servicing lock. Rejected here, after
-        // `refresh_installation_id` above but before the `run_command`
+        // `refresh_ids` above but before the `run_command`
         // closure `f` (built above) ever runs, this is intentionally
         // untelemetered for the same reason as the connection-lock
         // rejections in `try_acquire_read_lock`/`try_acquire_write_lock`:
@@ -392,7 +396,7 @@ impl TridentServer {
         // (`get`, `validate`, `diagnose`, etc.; see `run_trident` in
         // main.rs), none of them emit `command_start`/`command_error` or
         // any other `metric_name` event, so there's no need to prep the
-        // TraceStream's installation ID (`refresh_installation_id`, used
+        // TraceStream's installation ID/database ID (`refresh_ids`, used
         // by `servicing_request` for exactly that reason) or wrap `f` in
         // `operation_context::run_command` -- it just runs directly here.
 

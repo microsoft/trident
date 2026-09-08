@@ -1,9 +1,10 @@
-use std::process::ExitCode;
+use std::{cell::Cell, process::ExitCode};
 
 use anyhow::{bail, Context, Error};
 use log::error;
 use tokio::fs;
 use tokio::runtime::Builder;
+use tonic::Code;
 
 use trident_api::error::{InternalError, TridentError};
 
@@ -38,35 +39,29 @@ pub fn client_main(args: &ClientArgs) -> ExitCode {
     // anyhow context chain is preserved as the error's source and still
     // printed in full below.
     let command = args.command.name().replace('-', "_");
-    let client_result = runtime.block_on(run_client(args));
 
-    // The daemon fires its own, correctly-classified `command_error` for
-    // any request it actually received and acted on -- including one it
-    // rejected outright (see e.g. `services::reject_invalid_argument`).
-    // Only a genuine transport-level failure (the daemon never received
-    // or answered this request at all -- socket not found, connection
-    // refused, connection dropped mid-call) has no other reporter, so
-    // that's the only case where firing a client-side `command_error`
-    // adds signal instead of just duplicating the daemon's own event
-    // under a generic, less-informative classification.
-    let is_transport_failure = client_result.as_ref().err().is_some_and(|e| {
-        e.chain().any(|cause| {
-            matches!(
-                cause.downcast_ref::<TridentClientError>(),
-                Some(TridentClientError::ConnectionError(..))
-            )
-        })
-    });
-
+    // `run_client` (the actual RPC) runs *inside* this closure, not before
+    // it, so `command_start` (fired by `run_command_if` the moment this
+    // closure is entered) actually brackets the RPC instead of always
+    // following it -- otherwise every client-side event the RPC itself
+    // fires, and the timestamp of `command_start` itself, would be
+    // reported after the call had already finished. `is_transport_failure`
+    // is computed from the raw `anyhow::Error` chain here, inside the
+    // closure, and stashed via `transport_failure` for `run_command_if`'s
+    // `should_report` predicate below, which only ever sees the already-
+    // wrapped `TridentError` and has no way to inspect that chain itself.
+    let transport_failure = Cell::new(false);
     let result = run_command_if(
         &command,
         OperationSource::GrpcClient,
         || {
+            let client_result = runtime.block_on(run_client(args));
+            transport_failure.set(is_transport_failure(&client_result));
             client_result.map_err(|e| {
                 TridentError::with_source(InternalError::Internal("grpc-client command failed"), e)
             })
         },
-        |_error| is_transport_failure,
+        |_error| transport_failure.get(),
     );
 
     match result {
@@ -84,6 +79,36 @@ pub fn client_main(args: &ClientArgs) -> ExitCode {
     }
 
     TridentExitCodes::Success.into()
+}
+
+/// The daemon fires its own, correctly-classified `command_error` for any
+/// request it actually received and acted on -- including one it rejected
+/// outright (see e.g. `services::reject_invalid_argument`), and every
+/// `Status` the daemon itself ever deliberately constructs comes from
+/// `trident_error_to_status`, which never produces `Code::Unavailable`.
+/// So a genuine transport-level failure -- the daemon never received or
+/// finished answering this request at all -- has no other reporter, and
+/// is what this checks for:
+/// - `ConnectionError`: the initial connection attempt itself failed
+///   (socket not found, connection refused).
+/// - `RequestError`/`ResponseError` whose wrapped `Status` is
+///   `Code::Unavailable`: tonic's own code for a connection that broke
+///   mid-call (e.g. the daemon process died or the socket was closed
+///   while a request/response was in flight), as opposed to a `Status`
+///   the daemon constructed and returned deliberately, which always
+///   carries a different code and has already been reported server-side.
+fn is_transport_failure(client_result: &Result<ExitKind, Error>) -> bool {
+    client_result.as_ref().err().is_some_and(|e| {
+        e.chain()
+            .any(|cause| match cause.downcast_ref::<TridentClientError>() {
+                Some(TridentClientError::ConnectionError(..)) => true,
+                Some(TridentClientError::RequestError(_, status))
+                | Some(TridentClientError::ResponseError(_, status)) => {
+                    status.code() == Code::Unavailable
+                }
+                _ => false,
+            })
+    })
 }
 
 async fn run_client(args: &ClientArgs) -> Result<ExitKind, Error> {
