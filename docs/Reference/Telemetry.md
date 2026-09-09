@@ -29,14 +29,14 @@ host along with the metrics/spans themselves:
 - `total_cpu`: the number of CPUs.
 - `total_memory_gib`: total memory, in GiB.
 - `trident_version`: the running Trident version.
-- `database_id`: an ID that lets separate events be correlated back to the
+- `datastore_id`: an ID that lets separate events be correlated back to the
   same datastore over its entire lifetime (generated on first access to
   the datastore, whether or not an install has actually happened yet).
   Not present on events that fire before the datastore has ever been
   accessed (e.g. very early in a host's first-ever `install`, before
   `Trident::new` opens or creates it).
 - `installation_id`: an ID that lets separate events be correlated back to
-  the same host installation over time. Unlike `database_id`, this is
+  the same host installation over time. Unlike `datastore_id`, this is
   only ever created (get-or-create, never overwritten) at the start of
   `Trident::install`. Any event that fires before that point (i.e.
   before a host's first-ever install has actually created one) instead

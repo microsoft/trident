@@ -120,9 +120,9 @@ pub fn server_main(
     // request) for the rest of the daemon's lifetime. Both are read-only
     // and side-effect-free: neither creates a datastore or an ID (see
     // `TraceStream::attach_installation_id_if_present` and
-    // `TraceStream::attach_database_id_if_present`).
+    // `TraceStream::attach_datastore_id_if_present`).
     tracestream.attach_installation_id_if_present(agent_config.datastore_path());
-    tracestream.attach_database_id_if_present(agent_config.datastore_path());
+    tracestream.attach_datastore_id_if_present(agent_config.datastore_path());
 
     let shutdown_signals = match ShutdownSignals::setup_signal_handlers() {
         Ok(signals) => signals,

@@ -290,9 +290,9 @@ impl Trident {
         // `attach_installation_id`/multiboot: a multiboot install's
         // temporary datastore does not exist yet at this point, so this
         // is a no-op until the datastore is actually created/opened
-        // further down (see the `database_id()` calls near
+        // further down (see the `datastore_id()` calls near
         // `create_and_attach_installation_id` below).
-        tracestream.attach_database_id_if_present(datastore_path);
+        tracestream.attach_datastore_id_if_present(datastore_path);
 
         // Trace features enabled in the Host Configuration.
         if let Some(hc) = &host_config {
@@ -628,10 +628,10 @@ impl Trident {
             // database ID and attach it. Best-effort, same rationale as
             // installation ID above: telemetry attribution must never
             // block servicing.
-            match datastore.database_id() {
-                Ok(database_id) => {
-                    info!("Database ID: {database_id}");
-                    tracestream.set_database_id(database_id.to_string());
+            match datastore.datastore_id() {
+                Ok(datastore_id) => {
+                    info!("Datastore ID: {datastore_id}");
+                    tracestream.set_datastore_id(datastore_id.to_string());
                 }
                 Err(e) => warn!("Failed to get/create database ID: {e:?}"),
             }
@@ -764,10 +764,10 @@ impl Trident {
                         warn!("Failed to create installation ID during CIH bootstrap: {e:?}");
                     }
 
-                    match datastore.database_id() {
-                        Ok(database_id) => {
-                            info!("Database ID: {database_id}");
-                            tracestream.set_database_id(database_id.to_string());
+                    match datastore.datastore_id() {
+                        Ok(datastore_id) => {
+                            info!("Datastore ID: {datastore_id}");
+                            tracestream.set_datastore_id(datastore_id.to_string());
                         }
                         Err(e) => {
                             warn!("Failed to get/create database ID during CIH bootstrap: {e:?}")
