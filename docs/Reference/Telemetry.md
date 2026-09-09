@@ -61,7 +61,8 @@ host along with the metrics/spans themselves:
 ## Command Errors
 
 If a *servicing* command (`install`, `update`, `commit`, `rollback`,
-`rebuild_raid`, and their gRPC/`grpc-client` equivalents) fails, a
+`rebuild_raid`, `stream_disk`, and their gRPC/`grpc-client` equivalents)
+fails, a
 `command_error` event is also sent (tagged with the same
 `operation_id`/`command` as above), breaking the failure down into:
 

@@ -34,6 +34,19 @@ use uuid::Uuid;
 
 use trident_api::error::TridentError;
 
+/// Message used by `server::tridentserver::TridentServer::try_acquire_read_lock`/
+/// `try_acquire_write_lock` for the `Status::unavailable` returned when
+/// connection-lock contention blocks a request. `grpc_client::is_transport_failure`
+/// matches on this exact message to recognize this as a deliberate
+/// admission-control rejection -- the daemon DID receive and answer the
+/// request -- rather than a genuine transport-level failure, even though
+/// tonic uses the same `Code::Unavailable` for both.
+pub(crate) const CONNECTION_LOCK_BUSY_MESSAGE: &str = "Trident is busy";
+
+/// Same as [`CONNECTION_LOCK_BUSY_MESSAGE`], but for the servicing-lock
+/// contention rejections in `servicing_request`/`reading_request`.
+pub(crate) const SERVICING_LOCK_BUSY_MESSAGE: &str = "Servicing is active";
+
 /// Identifies which of Trident's three entry points actually executed a
 /// command, so telemetry consumers can distinguish (for example) a
 /// `grpc-client` invocation that never reached a daemon from the daemon

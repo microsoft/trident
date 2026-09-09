@@ -172,7 +172,7 @@ impl TridentServer {
     fn try_acquire_read_lock(&self) -> Result<OwnedRwLockReadGuard<()>, Status> {
         self.rwlock.clone().try_read_owned().map_err(|_| {
             warn!("Trident is busy, cannot acquire read connection lock");
-            Status::unavailable("Trident is busy")
+            Status::unavailable(operation_context::CONNECTION_LOCK_BUSY_MESSAGE)
         })
     }
 
@@ -185,7 +185,7 @@ impl TridentServer {
     fn try_acquire_write_lock(&self) -> Result<OwnedRwLockWriteGuard<()>, Status> {
         self.rwlock.clone().try_write_owned().map_err(|_| {
             warn!("Trident is busy, cannot acquire write connection lock");
-            Status::unavailable("Trident is busy")
+            Status::unavailable(operation_context::CONNECTION_LOCK_BUSY_MESSAGE)
         })
     }
 
@@ -280,7 +280,9 @@ impl TridentServer {
         // the caller is expected to retry rather than fix anything.
         let Some(servicing_guard) = self.servicing_manager.try_lock_servicing() else {
             warn!("Request '{}' blocked because servicing is active", name);
-            return Err(Status::unavailable("Servicing is active"));
+            return Err(Status::unavailable(
+                operation_context::SERVICING_LOCK_BUSY_MESSAGE,
+            ));
         };
 
         // Set up log forwarding. Logs will be sent over the gRPC channel.
@@ -388,7 +390,9 @@ impl TridentServer {
                 "Read request '{}' blocked because servicing is active",
                 name
             );
-            return Err(Status::unavailable("Servicing is active"));
+            return Err(Status::unavailable(
+                operation_context::SERVICING_LOCK_BUSY_MESSAGE,
+            ));
         };
 
         // Read requests (e.g. `get_servicing_state`, `check_rollback`) are
