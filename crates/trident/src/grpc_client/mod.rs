@@ -10,6 +10,7 @@ use trident_api::error::{InternalError, TridentError};
 
 use crate::{
     cli::{ClientArgs, ClientCommands, TridentExitCodes},
+    logging::operation_context,
     run_command_if, ExitKind, OperationSource, TRIDENT_VERSION,
 };
 
@@ -61,7 +62,7 @@ pub fn client_main(args: &ClientArgs) -> ExitCode {
                 TridentError::with_source(InternalError::Internal("grpc-client command failed"), e)
             })
         },
-        |_error| transport_failure.get(),
+        |_error| transport_failure.get() && is_servicing_client_command(&args.command),
     );
 
     match result {
@@ -83,20 +84,24 @@ pub fn client_main(args: &ClientArgs) -> ExitCode {
 
 /// The daemon fires its own, correctly-classified `command_error` for any
 /// request it actually received and acted on -- including one it rejected
-/// outright (see e.g. `services::reject_invalid_argument`), and every
-/// `Status` the daemon itself ever deliberately constructs comes from
-/// `trident_error_to_status`, which never produces `Code::Unavailable`.
-/// So a genuine transport-level failure -- the daemon never received or
-/// finished answering this request at all -- has no other reporter, and
-/// is what this checks for:
+/// outright (see e.g. `services::reject_invalid_argument`). A genuine
+/// transport-level failure -- the daemon never received or finished
+/// answering this request at all -- has no other reporter, and is what
+/// this checks for:
 /// - `ConnectionError`: the initial connection attempt itself failed
 ///   (socket not found, connection refused).
 /// - `RequestError`/`ResponseError` whose wrapped `Status` is
-///   `Code::Unavailable`: tonic's own code for a connection that broke
-///   mid-call (e.g. the daemon process died or the socket was closed
-///   while a request/response was in flight), as opposed to a `Status`
-///   the daemon constructed and returned deliberately, which always
-///   carries a different code and has already been reported server-side.
+///   `Code::Unavailable`, *except* for the daemon's own admission-control
+///   rejections -- connection-lock or servicing-lock contention (see
+///   `try_acquire_read_lock`/`try_acquire_write_lock`/`servicing_request`/
+///   `reading_request` in `server::tridentserver`), which deliberately
+///   also return `Code::Unavailable` since a busy daemon is retryable the
+///   same way a broken connection is. Those are recognized by their fixed
+///   message text (`CONNECTION_LOCK_BUSY_MESSAGE`/`SERVICING_LOCK_BUSY_MESSAGE`)
+///   and excluded here, since the daemon DID receive and answer this
+///   request, unlike tonic's own `Code::Unavailable` for a connection that
+///   broke mid-call (e.g. the daemon process died or the socket was closed
+///   while a request/response was in flight).
 fn is_transport_failure(client_result: &Result<ExitKind, Error>) -> bool {
     client_result.as_ref().err().is_some_and(|e| {
         e.chain()
@@ -105,10 +110,33 @@ fn is_transport_failure(client_result: &Result<ExitKind, Error>) -> bool {
                 Some(TridentClientError::RequestError(_, status))
                 | Some(TridentClientError::ResponseError(_, status)) => {
                     status.code() == Code::Unavailable
+                        && status.message() != operation_context::CONNECTION_LOCK_BUSY_MESSAGE
+                        && status.message() != operation_context::SERVICING_LOCK_BUSY_MESSAGE
                 }
                 _ => false,
             })
     })
+}
+
+/// Whether `command` is a servicing operation for the purposes of the
+/// `command_error` contract documented in `docs/Reference/Telemetry.md`'s
+/// "Command Errors" section: only a servicing command's own failure gets a
+/// `command_error` event -- `command_start` still fires for every command
+/// (see the comment in `client_main` above). A read-only command like
+/// `client-version` can still hit a transport-level failure (the daemon it
+/// talked to was unreachable), but that failure isn't a "servicing command
+/// failed" in the sense the docs describe, so it's deliberately excluded
+/// here, mirroring the CLI's own read-only exclusions in `main.rs`.
+fn is_servicing_client_command(command: &ClientCommands) -> bool {
+    matches!(
+        command,
+        ClientCommands::Install { .. }
+            | ClientCommands::Update { .. }
+            | ClientCommands::Commit
+            | ClientCommands::RebuildRaid { .. }
+            | ClientCommands::Rollback { .. }
+            | ClientCommands::StreamDisk { .. }
+    )
 }
 
 async fn run_client(args: &ClientArgs) -> Result<ExitKind, Error> {
