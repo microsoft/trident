@@ -205,15 +205,27 @@ fn run_trident(
                 // `TraceStream::attach_datastore_id_if_present`) -- silently
                 // does nothing if the datastore doesn't exist yet, which is
                 // expected for a host's first-ever install.
-                if let Ok(agent_config) = AgentConfig::load() {
+                //
+                // Load once and reuse the same snapshot for both the
+                // pre-warm attach here and the operation closure below:
+                // calling `AgentConfig::load()` a second time inside the
+                // closure could observe a different `DatastorePath` (e.g. a
+                // CIH bootstrap swap between the two reads), leaving the
+                // IDs cached on `tracestream` here attributed to a
+                // different datastore than the one the operation actually
+                // runs against.
+                let agent_config_result = AgentConfig::load();
+                if let Ok(agent_config) = &agent_config_result {
                     tracestream.attach_installation_id_if_present(agent_config.datastore_path());
                     tracestream.attach_datastore_id_if_present(agent_config.datastore_path());
                 }
 
                 run_with_operation(&command, OperationSource::Cli, || {
                     // config_path was already validated (existence-checked)
-                    // above.
-                    let agent_config = AgentConfig::load()?;
+                    // above. Reuse the same `AgentConfig` snapshot loaded
+                    // just above rather than reloading -- see the comment
+                    // there.
+                    let agent_config = agent_config_result?;
                     // For commands that cannot themselves stage a new
                     // install/update (see
                     // `DataStore::may_initialize_datastore_for_command`),
