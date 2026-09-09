@@ -200,18 +200,21 @@ impl TridentServer {
     /// `servicing_request` and `reading_request`, so read-only RPCs (e.g.
     /// `get_servicing_state`) don't keep reporting missing IDs
     /// indefinitely just because they never happen to run after a write
-    /// request has attached them. Both are read-only and side-effect-free:
-    /// neither creates a datastore or an ID (see
+    /// request has attached them. Uses `self.agent_config` (the same
+    /// configuration the request itself operates on) rather than
+    /// reloading from disk, so this can't refresh from a different
+    /// datastore path than the one in effect for this request, and a
+    /// transient reload failure can't silently skip the refresh. Both
+    /// calls are read-only and side-effect-free: neither creates a
+    /// datastore or an ID (see
     /// `TraceStream::attach_installation_id_if_present` and
     /// `TraceStream::attach_database_id_if_present`) -- silently does
     /// nothing if the datastore doesn't exist yet.
     fn refresh_ids(&self) {
-        if let Ok(agent_config) = AgentConfig::load() {
-            self.tracestream
-                .attach_installation_id_if_present(agent_config.datastore_path());
-            self.tracestream
-                .attach_database_id_if_present(agent_config.datastore_path());
-        }
+        self.tracestream
+            .attach_installation_id_if_present(self.agent_config.datastore_path());
+        self.tracestream
+            .attach_database_id_if_present(self.agent_config.datastore_path());
     }
 
     /// Handles a servicing request by acquiring the necessary locks,

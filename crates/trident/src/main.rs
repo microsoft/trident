@@ -8,6 +8,7 @@ use osutils::logging::{filter::LogFilter, multilog::MultiLogger};
 use trident::{
     agentconfig::AgentConfig,
     cli::{self, Cli, Commands, GetKind, TridentExitCodes},
+    command_name,
     init::offline,
     manual_rollback::{self, utils::ManualRollbackRequestKind},
     run_command, run_reboot_command, save_reboot_operation, validation, AppInsightsSender,
@@ -15,28 +16,9 @@ use trident::{
     OperationSource, TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
 };
 use trident_api::{
-    config::{HostConfigurationSource, Operations},
+    config::HostConfigurationSource,
     error::{InternalError, InvalidInputError, TridentError, TridentResultExt},
 };
-
-/// Maps a base command name plus its requested `Operations` to the same
-/// naming convention gRPC's `servicing_request` already uses for
-/// stage/finalize granularity (e.g. `"install"` vs `"install_stage"` vs
-/// `"install_finalize"`), so `command`/`operation_id` telemetry is
-/// consistent regardless of whether the command came from the CLI or from
-/// gRPC/daemon.
-fn command_name(base: &str, ops: &Operations) -> String {
-    match (ops.has_stage(), ops.has_finalize()) {
-        (true, true) => base.to_string(),
-        (true, false) => format!("{base}_stage"),
-        (false, true) => format!("{base}_finalize"),
-        // Neither stage nor finalize was requested (an empty
-        // `--allowed-operations` list); nothing can actually be staged or
-        // finalized, so name this like the existing no-op naming convention
-        // rather than a full install/update.
-        (false, false) => format!("{base}_noop"),
-    }
-}
 
 fn run_trident(
     mut logstream: Logstream,
