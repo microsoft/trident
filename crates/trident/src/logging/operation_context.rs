@@ -32,7 +32,7 @@ use std::{
 
 use uuid::Uuid;
 
-use trident_api::error::TridentError;
+use trident_api::{config::Operations, error::TridentError};
 
 /// Message used by `server::tridentserver::TridentServer::try_acquire_read_lock`/
 /// `try_acquire_write_lock` for the `Status::unavailable` returned when
@@ -46,6 +46,25 @@ pub(crate) const CONNECTION_LOCK_BUSY_MESSAGE: &str = "Trident is busy";
 /// Same as [`CONNECTION_LOCK_BUSY_MESSAGE`], but for the servicing-lock
 /// contention rejections in `servicing_request`/`reading_request`.
 pub(crate) const SERVICING_LOCK_BUSY_MESSAGE: &str = "Servicing is active";
+
+/// Maps a base command name plus its requested `Operations` to the same
+/// naming convention gRPC's `servicing_request` already uses for
+/// stage/finalize granularity (e.g. `"install"` vs `"install_stage"` vs
+/// `"install_finalize"`), so `command`/`operation_id` telemetry is
+/// consistent regardless of whether the command came from the CLI, from
+/// gRPC/daemon, or was relayed through `grpc-client`.
+pub fn command_name(base: &str, ops: &Operations) -> String {
+    match (ops.has_stage(), ops.has_finalize()) {
+        (true, true) => base.to_string(),
+        (true, false) => format!("{base}_stage"),
+        (false, true) => format!("{base}_finalize"),
+        // Neither stage nor finalize was requested (an empty
+        // `--allowed-operations` list); nothing can actually be staged or
+        // finalized, so name this like the existing no-op naming convention
+        // rather than a full install/update.
+        (false, false) => format!("{base}_noop"),
+    }
+}
 
 /// Identifies which of Trident's three entry points actually executed a
 /// command, so telemetry consumers can distinguish (for example) a
