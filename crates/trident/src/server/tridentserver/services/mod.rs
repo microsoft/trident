@@ -53,7 +53,6 @@ impl TridentServer {
         field: &str,
         message: impl Into<String>,
     ) -> Status {
-        self.refresh_ids();
         let error = TridentError::new(InvalidInputError::MissingRequestField {
             field: field.to_owned(),
         });
@@ -66,7 +65,12 @@ impl TridentServer {
         // runtime this thread is about to block, so it can hand off other
         // queued work to another worker instead of stalling behind it -- a
         // burst of malformed requests can no longer starve the runtime.
+        // `refresh_ids` is called inside this same closure (rather than
+        // before it) because it does its own synchronous SQLite I/O --
+        // including up to a 5-second busy-timeout wait -- so it needs the
+        // same "about to block" signal to the runtime as `run_command`.
         let _ = tokio::task::block_in_place(|| {
+            self.refresh_ids();
             operation_context::run_command(
                 command,
                 operation_context::OperationSource::Daemon,
@@ -91,13 +95,13 @@ impl TridentServer {
         reason: impl Into<String>,
         message: impl Into<String>,
     ) -> Status {
-        self.refresh_ids();
         let error = TridentError::new(InvalidInputError::InvalidRequestField {
             field: field.to_owned(),
             reason: reason.into(),
         });
         // See the `block_in_place` comment in `reject_invalid_argument`.
         let _ = tokio::task::block_in_place(|| {
+            self.refresh_ids();
             operation_context::run_command(
                 command,
                 operation_context::OperationSource::Daemon,
