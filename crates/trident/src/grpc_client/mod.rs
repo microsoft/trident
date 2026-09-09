@@ -9,12 +9,11 @@ use tonic::Code;
 use trident_api::error::{InternalError, TridentError};
 
 use crate::{
-    cli::{ClientArgs, ClientCommands, TridentExitCodes},
+    cli::{self, ClientArgs, ClientCommands, TridentExitCodes},
+    command_name,
     logging::operation_context,
     run_command_if, ExitKind, OperationSource, TRIDENT_VERSION,
 };
-
-use crate::cli;
 
 mod error;
 mod tridentclient;
@@ -39,7 +38,23 @@ pub fn client_main(args: &ClientArgs) -> ExitCode {
     // `run_command_if`'s `Result<_, TridentError>` shape -- the original
     // anyhow context chain is preserved as the error's source and still
     // printed in full below.
-    let command = args.command.name().replace('-', "_");
+    // Install/Update get the same stage/finalize-granular naming
+    // (`install_stage`, `update_finalize`, etc.) the CLI and daemon use for
+    // servicing telemetry -- otherwise every grpc-client update/install
+    // would collapse to the generic `client_update`/`client_install`
+    // regardless of which operations were actually requested.
+    let command = match &args.command {
+        ClientCommands::Install {
+            allowed_operations, ..
+        }
+        | ClientCommands::Update {
+            allowed_operations, ..
+        } => command_name(
+            args.command.name().trim_start_matches("client-"),
+            &cli::to_operations(allowed_operations),
+        ),
+        _ => args.command.name().replace('-', "_"),
+    };
 
     // `run_client` (the actual RPC) runs *inside* this closure, not before
     // it, so `command_start` (fired by `run_command_if` the moment this

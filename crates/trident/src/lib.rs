@@ -62,8 +62,9 @@ pub use crate::{
         logfwd::LogForwarder,
         logstream::Logstream,
         operation_context::{
-            run_command, run_command_if, run_reboot_command, run_with_captured_operation,
-            save_reboot_operation, take_reboot_operation, OperationSource,
+            command_name, run_command, run_command_if, run_reboot_command,
+            run_with_captured_operation, save_reboot_operation, take_reboot_operation,
+            OperationSource,
         },
         tracestream::TraceStream,
     },
