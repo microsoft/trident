@@ -84,7 +84,7 @@ pub struct TraceStream {
     // TODO: Consider changing this to a LockOnce when rustc is updated to
     // >=1.70
     target: Arc<RwLock<Option<String>>>,
-    database_id: Arc<RwLock<Option<String>>>,
+    datastore_id: Arc<RwLock<Option<String>>>,
     disabled: bool,
 }
 
@@ -130,11 +130,11 @@ impl TraceStream {
     /// forward, as an additional field, so that all traces/metrics for a
     /// given host installation can be correlated. Expected to be called once
     /// the datastore's persisted database ID has been retrieved (see
-    /// `DataStore::database_id`).
-    pub fn set_database_id(&self, database_id: String) {
-        match self.database_id.write() {
+    /// `DataStore::datastore_id`).
+    pub fn set_datastore_id(&self, datastore_id: String) {
+        match self.datastore_id.write() {
             Ok(mut val) => {
-                val.replace(database_id);
+                val.replace(datastore_id);
             }
             Err(_) => warn!("Failed to lock tracestream to set database ID"),
         }
@@ -157,7 +157,7 @@ impl TraceStream {
     ) -> Box<TraceSender> {
         Box::new(TraceSender::new(
             self.target.clone(),
-            self.database_id.clone(),
+            self.datastore_id.clone(),
             metrics_file_path,
         ))
     }
@@ -165,7 +165,7 @@ impl TraceStream {
 
 pub struct TraceSender {
     server: Arc<RwLock<Option<String>>>,
-    database_id: Arc<RwLock<Option<String>>>,
+    datastore_id: Arc<RwLock<Option<String>>>,
     client: reqwest::blocking::Client,
     metrics_file: Option<File>,
 }
@@ -179,12 +179,12 @@ struct ExecutionTime(Instant);
 impl TraceSender {
     fn new(
         server: Arc<RwLock<Option<String>>>,
-        database_id: Arc<RwLock<Option<String>>>,
+        datastore_id: Arc<RwLock<Option<String>>>,
         metrics_file_path: &str,
     ) -> Self {
         Self {
             server,
-            database_id,
+            datastore_id,
             client: reqwest::blocking::Client::new(),
             metrics_file: match files::create_file(metrics_file_path) {
                 Ok(f) => Some(f),
@@ -204,13 +204,13 @@ impl TraceSender {
 
     /// Build the `additional_fields` map for a trace entry: the static
     /// `ADDITIONAL_FIELDS`, plus the database ID (if one has been set via
-    /// `TraceStream::set_database_id`), so entries can be correlated back to a
+    /// `TraceStream::set_datastore_id`), so entries can be correlated back to a
     /// specific host installation.
     fn additional_fields(&self) -> BTreeMap<String, Value> {
         let mut fields = ADDITIONAL_FIELDS.clone();
-        if let Ok(database_id) = self.database_id.read() {
-            if let Some(database_id) = database_id.as_ref() {
-                fields.insert("database_id".to_string(), json!(database_id));
+        if let Ok(datastore_id) = self.datastore_id.read() {
+            if let Some(datastore_id) = datastore_id.as_ref() {
+                fields.insert("datastore_id".to_string(), json!(datastore_id));
             }
         }
         fields
@@ -579,16 +579,16 @@ mod tests {
     }
 
     #[test]
-    /// Regression test: `TraceStream::set_database_id` must actually
-    /// reach the serialized trace entry's `additional_fields.database_id`
+    /// Regression test: `TraceStream::set_datastore_id` must actually
+    /// reach the serialized trace entry's `additional_fields.datastore_id`
     /// -- the metric/span tests above only assert on `metric_name`/`value`
     /// and would still pass even if the database ID were never copied
     /// into `additional_fields`.
-    fn test_tracestream_database_id_written_to_additional_fields() {
+    fn test_tracestream_datastore_id_written_to_additional_fields() {
         let temp_dir = tempfile::tempdir().unwrap();
         let metrics_path = temp_dir.path().join("metrics.jsonl");
         let tracestream = TraceStream::default();
-        tracestream.set_database_id("test-database-id".to_string());
+        tracestream.set_datastore_id("test-datastore-id".to_string());
         let trace_sender = tracestream
             .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
             .with_filter(filter::LevelFilter::INFO);
@@ -599,7 +599,7 @@ mod tests {
             tracing_subscriber::Registry::default().with(trace_sender),
         );
 
-        tracing::info!(metric_name = "test_metric_with_database_id", value = true);
+        tracing::info!(metric_name = "test_metric_with_datastore_id", value = true);
 
         // Ensure the trace system has time to write the file.
         std::thread::sleep(std::time::Duration::from_millis(100));
@@ -609,13 +609,13 @@ mod tests {
         let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
 
         let metric_found = lines.iter().any(|line| {
-            line.contains(r#""metric_name":"test_metric_with_database_id""#)
-                && line.contains(r#""database_id":"test-database-id""#)
+            line.contains(r#""metric_name":"test_metric_with_datastore_id""#)
+                && line.contains(r#""datastore_id":"test-datastore-id""#)
         });
 
         assert!(
             metric_found,
-            "Expected metric with database_id field not found in the local metrics file"
+            "Expected metric with datastore_id field not found in the local metrics file"
         );
     }
 
