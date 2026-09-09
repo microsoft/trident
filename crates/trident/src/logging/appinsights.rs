@@ -335,10 +335,14 @@ impl AppInsightsSender {
 /// alone is not sufficient here: the endpoint returns 206 Partial Success
 /// when only some of the submitted items were accepted, with an
 /// `itemsReceived`/`itemsAccepted` body. Since every request from this
-/// sender carries exactly one envelope, any 206 means that single event
-/// was rejected -- treat it as a failure so it goes through the same
-/// retry/backoff path as a network-level error, instead of being silently
-/// discarded as a false "success".
+/// sender carries exactly one envelope, the only response that actually
+/// means "accepted" is `itemsReceived == 1 && itemsAccepted == 1` --
+/// checking mere equality between the two counts would also accept
+/// impossible pairs for a one-envelope request (e.g. `0/0` or `2/2`),
+/// silently clearing backoff even though the event wasn't received as
+/// expected. Anything other than exactly `1/1` is treated as a failure so
+/// it goes through the same retry/backoff path as a network-level error,
+/// instead of being silently discarded as a false "success".
 fn validate_track_response(status: reqwest::StatusCode, body: &[u8]) -> Result<(), anyhow::Error> {
     if status != reqwest::StatusCode::PARTIAL_CONTENT {
         return Ok(());
@@ -350,9 +354,10 @@ fn validate_track_response(status: reqwest::StatusCode, body: &[u8]) -> Result<(
     let items_accepted = parsed.get("itemsAccepted").and_then(Value::as_u64);
 
     match (items_received, items_accepted) {
-        (Some(received), Some(accepted)) if received == accepted => Ok(()),
+        (Some(1), Some(1)) => Ok(()),
         (Some(received), Some(accepted)) => anyhow::bail!(
-            "Application Insights accepted only {accepted} of {received} submitted items"
+            "Application Insights accepted only {accepted} of {received} submitted items \
+             (expected exactly 1 of 1 for this single-envelope request)"
         ),
         _ => anyhow::bail!(
             "Application Insights returned 206 Partial Success without a parsable \
@@ -477,6 +482,27 @@ mod tests {
         let err = validate_track_response(reqwest::StatusCode::PARTIAL_CONTENT, body)
             .expect_err("a rejected single-envelope request should be treated as a failure");
         assert!(err.to_string().contains("accepted only 0 of 1"));
+    }
+
+    #[test]
+    fn test_validate_track_response_206_zero_zero_is_not_success() {
+        // A malformed/impossible response for a single-envelope request --
+        // mere equality between the two counts (0 == 0) must NOT be
+        // mistaken for success.
+        let body = br#"{"itemsReceived":0,"itemsAccepted":0}"#;
+        let err = validate_track_response(reqwest::StatusCode::PARTIAL_CONTENT, body)
+            .expect_err("itemsReceived=0/itemsAccepted=0 must not be treated as success");
+        assert!(err.to_string().contains("accepted only 0 of 0"));
+    }
+
+    #[test]
+    fn test_validate_track_response_206_impossible_counts_above_one() {
+        // Also impossible for a single-envelope request -- equality
+        // alone (2 == 2) must not be mistaken for success either.
+        let body = br#"{"itemsReceived":2,"itemsAccepted":2}"#;
+        let err = validate_track_response(reqwest::StatusCode::PARTIAL_CONTENT, body)
+            .expect_err("itemsReceived=2/itemsAccepted=2 is impossible for a 1-item request");
+        assert!(err.to_string().contains("accepted only 2 of 2"));
     }
 
     #[test]

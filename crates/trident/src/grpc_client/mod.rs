@@ -151,6 +151,11 @@ fn is_transport_failure(client_result: &Result<ExitKind, Error>) -> bool {
 /// talked to was unreachable), but that failure isn't a "servicing command
 /// failed" in the sense the docs describe, so it's deliberately excluded
 /// here, mirroring the CLI's own read-only exclusions in `main.rs`.
+///
+/// `Rollback { check: true, .. }` is `rollback --check`, a read-only dry
+/// run (mirrors `main.rs`'s own `Commands::Rollback { check: true, .. }`
+/// special-casing) -- only a real (non-check) rollback is a servicing
+/// command here.
 fn is_servicing_client_command(command: &ClientCommands) -> bool {
     matches!(
         command,
@@ -158,7 +163,7 @@ fn is_servicing_client_command(command: &ClientCommands) -> bool {
             | ClientCommands::Update { .. }
             | ClientCommands::Commit
             | ClientCommands::RebuildRaid { .. }
-            | ClientCommands::Rollback { .. }
+            | ClientCommands::Rollback { check: false, .. }
             | ClientCommands::StreamDisk { .. }
     )
 }
