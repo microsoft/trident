@@ -25,6 +25,7 @@ use trident_proto::v1::{
 
 use crate::{
     agentconfig::AgentConfig,
+    datastore::DataStore,
     logging::{logfwd::LogForwarder, operation_context},
     server::{activitytracker::ActivityTracker, support::stream::StreamWithLock},
     ExitKind, Logstream, TraceStream,
@@ -208,13 +209,13 @@ impl TridentServer {
     /// calls are read-only and side-effect-free: neither creates a
     /// datastore or an ID (see
     /// `TraceStream::attach_installation_id_if_present` and
-    /// `TraceStream::attach_database_id_if_present`) -- silently does
+    /// `TraceStream::attach_datastore_id_if_present`) -- silently does
     /// nothing if the datastore doesn't exist yet.
     fn refresh_ids(&self) {
         self.tracestream
             .attach_installation_id_if_present(self.agent_config.datastore_path());
         self.tracestream
-            .attach_database_id_if_present(self.agent_config.datastore_path());
+            .attach_datastore_id_if_present(self.agent_config.datastore_path());
     }
 
     /// Handles a servicing request by acquiring the necessary locks,
@@ -245,6 +246,29 @@ impl TridentServer {
         // Try to acquire the connection lock in write mode
         let guard = self.try_acquire_write_lock()?;
 
+        // Reject requests that cannot themselves stage a new install/update
+        // (see `DataStore::may_initialize_datastore_for_command`) when no
+        // datastore exists yet -- mirrors the CLI's `HostNotProvisioned`
+        // check in `main.rs`. Without this, e.g. a `commit`/`rollback` RPC
+        // arriving against an unprovisioned host falls through to
+        // `DataStore::open_or_create` in the service handler and silently
+        // creates an empty datastore instead of failing outright.
+        // Untelemetered, same as the lock-busy rejections above: this is
+        // admission control, not a distinct servicing outcome.
+        if !DataStore::may_initialize_datastore_for_command(name)
+            && !self.agent_config.datastore_path().exists()
+        {
+            warn!("Rejected request '{}': datastore does not exist", name);
+            return Err(Status::failed_precondition("Host is not provisioned"));
+        }
+
+        // Re-check for a persisted installation ID and datastore ID before
+        // this request fires its own command_start (below, via
+        // run_with_operation). server_main's daemon-startup attach only
+        // ever runs once, at startup -- so a request that arrives before
+        // any datastore exists (e.g. this daemon's very first install)
+        // would otherwise never see one, even after that request's own
+        // handler goes on to create the datastore.
         self.refresh_ids();
 
         // Tag every metric/tracing event `f` fires (on whatever thread it

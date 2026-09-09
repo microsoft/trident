@@ -16,12 +16,12 @@ use crate::{logging::operation_context, TRIDENT_SEMVER_VERSION};
 
 /// Key under which the datastore's stable database ID is stored in the
 /// generic key-value table. This ID is generated once, on first access
-/// (see `DataStore::database_id`), and persisted for the entire lifetime
+/// (see `DataStore::datastore_id`), and persisted for the entire lifetime
 /// of the datastore -- unlike `INSTALLATION_ID_KEY`, it is not tied to a
 /// specific `Trident::install` invocation. It is intended to be added to
 /// tracing/telemetry so that all activity against a given datastore can
 /// be correlated.
-const DATABASE_ID_KEY: &str = "database-id";
+const DATASTORE_ID_KEY: &str = "datastore-id";
 
 /// Key under which the datastore's unique installation ID is stored in the
 /// generic key-value table. This ID is generated once, at the start of
@@ -558,16 +558,16 @@ impl DataStore {
     /// initialization can't clobber each other's value: whichever
     /// connection's insert commits first wins, and the loser reads back
     /// whichever ID actually won that race.
-    pub fn database_id(&mut self) -> Result<Uuid, TridentError> {
-        if let Some(id) = self.get_value::<Uuid>(DATABASE_ID_KEY)? {
+    pub fn datastore_id(&mut self) -> Result<Uuid, TridentError> {
+        if let Some(id) = self.get_value::<Uuid>(DATASTORE_ID_KEY)? {
             return Ok(id);
         }
 
-        self.set_value_if_absent(DATABASE_ID_KEY, &Uuid::new_v4())?;
+        self.set_value_if_absent(DATASTORE_ID_KEY, &Uuid::new_v4())?;
 
-        self.get_value::<Uuid>(DATABASE_ID_KEY)?
+        self.get_value::<Uuid>(DATASTORE_ID_KEY)?
             .structured(InternalError::Internal(
-                "Database ID missing immediately after being inserted",
+                "Datastore ID missing immediately after being inserted",
             ))
     }
 
@@ -1058,13 +1058,13 @@ mod tests {
     }
 
     #[test]
-    fn test_database_id_concurrent_first_access_is_consistent() {
+    fn test_datastore_id_concurrent_first_access_is_consistent() {
         let temp_dir = tempfile::tempdir().unwrap();
         let path = temp_dir.path().join("db.sqlite");
 
         // Create the datastore (and its schema) up front, then open two
         // separate connections to it, simulating two callers concurrently
-        // calling `database_id` against the same datastore path.
+        // calling `datastore_id` against the same datastore path.
         super::DataStore::make_datastore(&path).unwrap();
 
         let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
@@ -1078,7 +1078,7 @@ mod tests {
                     // (no database ID persisted yet) as close together as
                     // possible.
                     barrier.wait();
-                    datastore.database_id().unwrap()
+                    datastore.datastore_id().unwrap()
                 })
             })
             .collect();
@@ -1093,7 +1093,7 @@ mod tests {
     }
 
     #[test]
-    fn test_database_id_is_stable() {
+    fn test_datastore_id_is_stable() {
         let temp_dir = tempfile::tempdir().unwrap();
         let path = temp_dir.path().join("db.sqlite");
         let db = super::DataStore::make_datastore(&path).unwrap();
@@ -1103,10 +1103,10 @@ mod tests {
             temporary: false,
         };
 
-        let id = datastore.database_id().unwrap();
-        // Calling database_id again should return the same ID, not generate a
+        let id = datastore.datastore_id().unwrap();
+        // Calling datastore_id again should return the same ID, not generate a
         // new one.
-        assert_eq!(datastore.database_id().unwrap(), id);
+        assert_eq!(datastore.datastore_id().unwrap(), id);
 
         temp_dir.close().unwrap();
     }
@@ -1207,22 +1207,22 @@ mod functional_test {
     }
 
     #[functional_test]
-    fn test_database_id_survives_persist() {
+    fn test_datastore_id_survives_persist() {
         let temp_dir = TempDir::new().unwrap();
         let datastore_temp_path = temp_dir.path().join("db-tmp.sqlite");
         let datastore_path = temp_dir.path().join("db.sqlite");
 
         // Generate a database ID in the temporary datastore, then persist it.
-        let database_id = {
+        let datastore_id = {
             let mut datastore = DataStore::open_or_create(&datastore_temp_path).unwrap();
-            let database_id = datastore.database_id().unwrap();
+            let datastore_id = datastore.datastore_id().unwrap();
             datastore.persist(&datastore_path).unwrap();
-            database_id
+            datastore_id
         };
 
         // Re-open the persisted datastore and verify the same database ID is
         // returned, rather than a new one being generated.
         let mut datastore = DataStore::open(&datastore_path).unwrap();
-        assert_eq!(datastore.database_id().unwrap(), database_id);
+        assert_eq!(datastore.datastore_id().unwrap(), datastore_id);
     }
 }
