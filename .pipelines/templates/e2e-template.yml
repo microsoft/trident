@@ -270,6 +270,12 @@ stages:
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
       testSecureBoot: ${{ parameters.testSecureBoot }}
 
+  # Validate trident-acl-agent (storm A/B update scenario against a real tridentd)
+  - template: stages/testing_acl_agent/trident-acl-agent-test.yml
+    parameters:
+      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
+
   # TESTING stages for PRERELEASE
   - ${{ if eq(parameters.stageType, 'pre') }}:
       # Functional Testing
