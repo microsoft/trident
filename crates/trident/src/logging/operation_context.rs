@@ -187,6 +187,22 @@ pub fn run_with_captured_operation<R>(
     captured: Option<CapturedOperation>,
     f: impl FnOnce() -> R,
 ) -> R {
+    // Reset the dedup flag on entry and restore it on exit (even on
+    // panic), regardless of whether a context was actually captured --
+    // this thread may be a reused `spawn_blocking` worker that last ran
+    // `run_reboot_command`/`report_command_error` and left the flag set,
+    // which would otherwise cause the *next* command on this thread to
+    // silently skip its own, unrelated `command_error`.
+    struct ClearOnDrop;
+    impl Drop for ClearOnDrop {
+        fn drop(&mut self) {
+            CURRENT_OPERATION.with(|cell| *cell.borrow_mut() = None);
+            COMMAND_ERROR_REPORTED.with(|cell| *cell.borrow_mut() = false);
+        }
+    }
+    COMMAND_ERROR_REPORTED.with(|cell| *cell.borrow_mut() = false);
+    let _clear = ClearOnDrop;
+
     let Some(CapturedOperation(operation_id, command, source)) = captured else {
         return f();
     };
@@ -194,14 +210,6 @@ pub fn run_with_captured_operation<R>(
     CURRENT_OPERATION.with(|cell| {
         *cell.borrow_mut() = Some((operation_id, command, source));
     });
-
-    struct ClearOnDrop;
-    impl Drop for ClearOnDrop {
-        fn drop(&mut self) {
-            CURRENT_OPERATION.with(|cell| *cell.borrow_mut() = None);
-        }
-    }
-    let _clear = ClearOnDrop;
 
     f()
 }
