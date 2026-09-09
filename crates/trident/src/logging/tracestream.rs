@@ -22,7 +22,6 @@ use tracing_subscriber::{layer::Layer, registry::LookupSpan};
 use trident_api::error::TridentError;
 
 use osutils::{
-    files,
     osrelease::{OsRelease, OS_RELEASE_PATH},
     uname,
 };
@@ -348,22 +347,37 @@ impl TraceSender {
         metrics_file_path: &str,
         truncate: bool,
     ) -> Self {
-        let metrics_file = if truncate {
-            files::create_file(metrics_file_path)
-        } else {
-            if let Some(parent) = Path::new(metrics_file_path).parent() {
-                if let Err(err) = fs::create_dir_all(parent) {
-                    eprintln!(
-                        "Tracestream setup error: failed to create local metrics file's parent directory: {err:?}"
-                    );
-                }
+        if let Some(parent) = Path::new(metrics_file_path).parent() {
+            if let Err(err) = fs::create_dir_all(parent) {
+                eprintln!(
+                    "Tracestream setup error: failed to create local metrics file's parent directory: {err:?}"
+                );
             }
-            OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(metrics_file_path)
-                .map_err(Error::from)
-        };
+        }
+        // Reset any pre-existing content up front when requested, via a
+        // separate truncating open, then always keep the real handle in
+        // append-only mode: a plain `File::create` (O_TRUNC without
+        // O_APPEND) kept open long-term has its own independent,
+        // non-advancing write offset, so a concurrent writer to this same
+        // path (e.g. `grpc-client`, opened separately in append mode) that
+        // extends the file past that offset would have its data
+        // overwritten the next time this descriptor writes. Combining
+        // `OpenOptions::truncate(true)` with `.append(true)` in one open()
+        // call isn't an option: the standard library requires `.write(true)`
+        // for truncation, and adding that back defeats the point of
+        // append-only semantics for every later write through this handle.
+        if truncate {
+            if let Err(err) = File::create(metrics_file_path) {
+                eprintln!(
+                    "Tracestream setup error: failed to truncate local metrics file: {err:?}"
+                );
+            }
+        }
+        let metrics_file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(metrics_file_path)
+            .map_err(Error::from);
         Self {
             server,
             installation_id,

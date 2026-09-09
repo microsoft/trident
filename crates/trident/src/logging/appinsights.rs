@@ -23,6 +23,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use anyhow::Context;
 use log::trace;
 use serde_json::{json, Value};
 use tracing::{
@@ -292,7 +293,10 @@ impl AppInsightsSender {
 
         let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
         let envelope = json!({
-            "name": "Microsoft.ApplicationInsights.Event",
+            "name": format!(
+                "Microsoft.ApplicationInsights.{}.Event",
+                self.instrumentation_key
+            ),
             "time": now,
             "iKey": self.instrumentation_key,
             "tags": { "ai.internal.sdkVersion": format!("trident:{TRIDENT_VERSION}") },
@@ -314,14 +318,47 @@ impl AppInsightsSender {
             }
         };
 
-        if let Err(e) = self.uploader.upload(
+        if let Err(e) = self.uploader.upload_with_validator(
             &self.track_url,
             body,
             REQUEST_TIMEOUT,
             Some(CONTENT_TYPE_JSON),
+            Some(validate_track_response),
         ) {
             trace!("Failed to enqueue Application Insights event: {e}");
         }
+    }
+}
+
+/// Response validator for the Application Insights `/v2/track` endpoint
+/// (see [`BackgroundUploadHandle::upload_with_validator`]). A 2xx status
+/// alone is not sufficient here: the endpoint returns 206 Partial Success
+/// when only some of the submitted items were accepted, with an
+/// `itemsReceived`/`itemsAccepted` body. Since every request from this
+/// sender carries exactly one envelope, any 206 means that single event
+/// was rejected -- treat it as a failure so it goes through the same
+/// retry/backoff path as a network-level error, instead of being silently
+/// discarded as a false "success".
+fn validate_track_response(status: reqwest::StatusCode, body: &[u8]) -> Result<(), anyhow::Error> {
+    if status != reqwest::StatusCode::PARTIAL_CONTENT {
+        return Ok(());
+    }
+
+    let parsed: Value = serde_json::from_slice(body)
+        .context("Failed to parse Application Insights partial-success response body")?;
+    let items_received = parsed.get("itemsReceived").and_then(Value::as_u64);
+    let items_accepted = parsed.get("itemsAccepted").and_then(Value::as_u64);
+
+    match (items_received, items_accepted) {
+        (Some(received), Some(accepted)) if received == accepted => Ok(()),
+        (Some(received), Some(accepted)) => anyhow::bail!(
+            "Application Insights accepted only {accepted} of {received} submitted items"
+        ),
+        _ => anyhow::bail!(
+            "Application Insights returned 206 Partial Success without a parsable \
+             itemsReceived/itemsAccepted body: {}",
+            String::from_utf8_lossy(body)
+        ),
     }
 }
 
@@ -419,6 +456,37 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_validate_track_response_non_206_ignores_body() {
+        // Any non-206 2xx status is only ever reached via the caller's
+        // own `is_success()` check, so the validator doesn't need to
+        // (and shouldn't) inspect the body for it.
+        assert!(validate_track_response(reqwest::StatusCode::OK, b"not json at all").is_ok());
+    }
+
+    #[test]
+    fn test_validate_track_response_206_all_items_accepted() {
+        let body = br#"{"itemsReceived":1,"itemsAccepted":1}"#;
+        assert!(validate_track_response(reqwest::StatusCode::PARTIAL_CONTENT, body).is_ok());
+    }
+
+    #[test]
+    fn test_validate_track_response_206_item_rejected() {
+        let body = br#"{"itemsReceived":1,"itemsAccepted":0}"#;
+        let err = validate_track_response(reqwest::StatusCode::PARTIAL_CONTENT, body)
+            .expect_err("a rejected single-envelope request should be treated as a failure");
+        assert!(err.to_string().contains("accepted only 0 of 1"));
+    }
+
+    #[test]
+    fn test_validate_track_response_206_unparsable_body() {
+        let err = validate_track_response(reqwest::StatusCode::PARTIAL_CONTENT, b"not json")
+            .expect_err(
+                "an unparsable 206 body should be treated as a failure, not silently accepted",
+            );
+        assert!(err.to_string().contains("Failed to parse"));
+    }
 
     #[test]
     fn test_parse_connection_string_full() {
