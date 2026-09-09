@@ -53,7 +53,16 @@ pub fn client_main(args: &ClientArgs) -> ExitCode {
             args.command.name().trim_start_matches("client-"),
             &cli::to_operations(allowed_operations),
         ),
-        _ => args.command.name().replace('-', "_"),
+        // Every other variant's name() is also "client-"-prefixed (see
+        // `ClientCommands::name()`) -- strip it here too so e.g. `commit`/
+        // `stream_disk` match the CLI/daemon's own naming for the same
+        // logical command instead of reporting as `client_commit`/
+        // `client_stream_disk`.
+        _ => args
+            .command
+            .name()
+            .trim_start_matches("client-")
+            .replace('-', "_"),
     };
 
     // `run_client` (the actual RPC) runs *inside* this closure, not before
