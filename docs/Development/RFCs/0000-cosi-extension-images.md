@@ -1,203 +1,162 @@
 # 0000 COSI Extension Images
 
-- Date: 2026-08-28
+- Date: 2026-09-08
 - RFC PR: [microsoft/trident#0000](https://github.com/microsoft/trident/pull/0000)
 - Issue: [microsoft/trident#0000](https://github.com/microsoft/trident/issues/0000)
 
 ## Summary
 
-This RFC proposes carrying systemd system extension (sysext) and configuration
-extension (confext) images inside a COSI file. Extension images become ZSTD
-compressed members of the COSI tar, exactly like partition images, and a new
-optional `extensions` section in `metadata.json` describes them. Each entry
-reuses the existing [`ImageFile`](../../Reference/Composable-OS-Image.md#imagefile-object)
-object to point at the payload in the tar, and carries the destination path on
-the target OS, mirroring the existing
+COSI files cannot carry systemd system extension (sysext) or configuration
+extension (confext) images. This RFC stores extension images as ZSTD-compressed
+members of the COSI tar, alongside partition images, and adds an optional
+`extensions` section to the COSI metadata to describe them. Each entry reuses
+the existing [`ImageFile`](../../Reference/Composable-OS-Image.md#imagefile-object)
+object and carries an optional destination path, mirroring the
 [`Extension`](../../Reference/Host-Configuration/API-Reference/Extension.md)
-object in the Host Configuration. Trident then deploys those extensions as part
-of the image, in the same operation and the same reboot as the rest of the OS,
-instead of fetching them from a separate location at deploy time.
+object in the Host Configuration. Trident deploys bundled extensions as part of
+the image, in the same operation as the rest of the OS.
 
 ## Motivation and Goals
 
-Today the only way to get an extension onto a Trident-managed host is
-`os.sysexts` / `os.confexts` in the Host Configuration, where each entry is a
-URL plus a SHA-384. That works, but it makes the extension a second artefact
-with a second lifecycle:
+Extensions are configured today through `os.sysexts` and `os.confexts` in the
+Host Configuration, where each entry is a URL and a SHA-384. This makes an
+extension a second artefact with a separate lifecycle:
 
-- **A second thing to host.** The operator must publish the `.raw` DDI
-  somewhere Trident can reach (`http://`, `https://`, `file://` or `oci://`)
-  and keep it there for as long as any host might re-run the flow.
-- **A second download at deploy time.** The COSI is streamed sparsely from one
-  endpoint; each extension is fetched in full from another. Two endpoints means
-  two sets of network, proxy, TLS and authentication failure modes on the
-  provisioning path.
-- **A second integrity story.** The COSI's integrity is anchored by the
-  `metadata.json` hash in `os.image.sha384`, which transitively covers every
-  partition image. An extension's hash is anchored by whoever wrote the Host
-  Configuration. Bundling puts the extension under the same root of trust as
-  the rest of the OS.
-- **A second update.** This is the important one. Extension changes are
-  currently a Runtime Update, distinct from the A/B update that ships the OS.
-  Delivering operator content that must land alongside a new OS therefore means
-  two operations, two rollout gates and potentially two disruptions.
+- It must be hosted separately, for as long as any host may re-run the flow.
+- It is fetched in full from a second endpoint at deploy time, with its own
+  network, proxy and authentication failure modes.
+- Its integrity is anchored by whoever wrote the Host Configuration, not by
+  `os.image.sha384`.
+- Changing it is a Runtime Update, distinct from the A/B update that ships the
+  OS. Content that must land with a new OS requires two operations.
 
-### A/B Updates Are the Strategic Point
+### A/B Updates
 
-If extensions ride the COSI, then operator content is delivered and activated
-in the *same* A/B update and the *same* reboot as the OS. It reuses the
-rollout, [health-gating](../../Reference/Host-Configuration/API-Reference/Health.md)
-and rollback machinery that already exists for images, rather than needing a
-parallel channel with its own staging, verification and failure semantics.
+A bundled extension is delivered and activated in the same A/B update and the
+same reboot as the OS, and reuses the existing rollout, health-gating and
+rollback machinery.
 
-Rollback becomes trivially correct: extension images are files inside the
-target slot's own filesystem, so the previous slot still holds the previous
-extension set, untouched. Rolling back to the previous root volume rolls back
-the extensions with it. See [Rollback](#rollback).
+Rollback requires no additional work: extension images are files in the target
+slot's filesystem, so the previous slot retains the previous set. See
+[Rollback](#rollback).
 
-### Why Not Just Bake the Files Into the Root Filesystem Image?
+### Why Not Place the Files in the Root Filesystem Image
 
-An obvious objection: the image builder controls the root filesystem image, so
-it could simply place `my-tool.raw` in `/var/lib/extensions/` before the COSI
-is built, with no spec change at all. That is a genuine alternative and it
-works for some configurations. It loses on four counts:
+The image builder could place `my-tool.raw` in `/var/lib/extensions/` before the
+COSI is built. This works in some configurations, but:
 
-1. **Verity.** With root or usr verity, any change to the protected filesystem
-   changes the root hash and requires re-signing. Extensions live outside the
-   protected tree precisely so they can change independently; the mechanism
-   that makes them attractive is defeated if adding one means rebuilding and
-   re-signing the base image.
-2. **Destination volumes that are not image-provisioned.** `/var/lib/extensions/`
-   is commonly on a separate volume, which may be newly created rather than
-   written from a partition image. Files baked into the image's `/var` never
-   arrive in that case.
-3. **Opacity.** Bytes inside a filesystem image are invisible to anything that
-   reads COSI metadata. An `extensions` section makes the extension set
-   inspectable, hashable and enumerable without mounting anything, which
-   matters for inventory and supply-chain tooling.
-4. **Trident does not know.** Trident enables `systemd-sysext.service` and
-   `systemd-confext.service`, validates placement, and reads `extension-release`
-   only for extensions it knows about. Files that appear inside a filesystem
-   image bypass all of that, and the merge services are never enabled.
+1. With root or usr verity, modifying the protected filesystem changes the root
+   hash and requires re-signing.
+2. Extension destinations are commonly on a separate volume, which may be
+   created empty rather than written from a partition image.
+3. Contents of a filesystem image are not visible to tooling that reads COSI
+   metadata.
+4. Trident enables `systemd-sysext.service` and `systemd-confext.service`,
+   validates placement, and reads `extension-release` only for extensions it
+   knows about.
 
 ### Goals
 
-- Extension images can be carried in a COSI file and deployed by Trident with
-  no second artefact, no second endpoint and no second update.
-- The metadata addition is small, reuses existing objects, and looks familiar
-  to anyone who already knows `os.sysexts` / `os.confexts`.
-- The Host Configuration public API does not change.
+- Carry extension images in a COSI file and deploy them without a second
+  artefact, endpoint or update.
+- Reuse existing metadata objects and match the shape of the Host Configuration
+  API.
+- Leave the Host Configuration API unchanged.
 
 ## Scope
 
 ### Requirements
 
-- Add an optional `extensions` object to the COSI metadata root, containing
+- An optional `extensions` object in the COSI metadata root, containing
   `sysexts` and `confexts` arrays.
-- Each entry MUST identify its payload in the tar via an `ImageFile` object and
-  MAY specify a destination path on the target OS.
-- Extension payloads are ordinary ZSTD-compressed tar members, covered by the
-  existing compression and integrity rules.
-- Trident deploys COSI-borne extensions during Clean Install and A/B Update,
-  reusing the existing extensions subsystem.
-- COSI-borne extensions and Host Configuration extensions coexist; conflicts
-  are a hard error.
-- New COSI validation errors for the extension section.
+- Each entry identifies its payload with an `ImageFile` object and may specify a
+  destination path on the target OS.
+- Extension payloads are ZSTD-compressed tar members, subject to the existing
+  compression and integrity rules.
+- Trident deploys bundled extensions on Clean Install and A/B Update, reusing
+  the extensions subsystem.
+- Bundled and Host Configuration extensions coexist; conflicts are an error.
+- COSI metadata validation covers the new section.
 
 ### Out of Scope
 
-- Changing the Host Configuration `Extension` object. It stays exactly as it
-  is.
-- Runtime Update of COSI-borne extensions. A COSI-borne extension can only
-  change when the image changes, which is an A/B update.
-- Signing or attestation of individual extension images beyond the SHA-384
-  chain already provided by COSI.
-- Making extensions compatible with SELinux. That limitation is orthogonal and
-  unchanged; see [SELinux](#selinux).
-- Building the DDIs. This RFC specifies how a COSI carries an extension image,
-  not how the extension image is produced.
+- Changes to the Host Configuration `Extension` object.
+- Runtime Update of bundled extensions. A bundled extension can only change when
+  the image changes, which is an A/B update.
+- Signing or attestation beyond the SHA-384 chain COSI already provides.
+- SELinux compatibility. That limitation is unchanged; see [SELinux](#selinux).
+- Producing the DDIs. This RFC specifies how a COSI carries an extension image,
+  not how the image is built.
 
 ### Exit Criteria
 
-- COSI revision 1.3 is published with the `extensions` section, a
-  `cosi-metadata-v1.3.schema.json`, and valid/invalid samples under
+- COSI revision 1.3 published with the `extensions` section,
+  `cosi-metadata-v1.3.schema.json`, and samples under
   `tests/cosi/metadata_samples/v1.3/`.
-- Trident deploys a COSI carrying at least one sysext and one confext on Clean
-  Install and on A/B Update, and the extensions are merged after reboot.
-- A/B rollback returns the host to the previous extension set with no extra
-  work.
-- Conflicts between COSI-borne and Host-Configuration-borne extensions produce
-  a structured error.
+- Trident deploys a COSI carrying a sysext and a confext on Clean Install and on
+  A/B Update, and both are merged after reboot.
+- A/B rollback restores the previous extension set with no additional servicing.
+- Conflicts between bundled and Host Configuration extensions produce a
+  structured error.
 
 ## Dependencies
 
-- A COSI writer able to emit the section. [Image Customizer](https://github.com/microsoft/azure-linux-image-tools)
-  is the reference implementation of the COSI writer side.
-- No incomplete Trident features are required.
+A COSI writer that emits the section.
+[Image Customizer](https://github.com/microsoft/azure-linux-image-tools) is the
+reference writer. No incomplete Trident features are required.
 
 ## Implementation
 
 ### Tar Layout
 
-Extension payloads are ZSTD-compressed DDI files stored under
-`images/extensions/`, for example `images/extensions/my-tool.rawzst`.
+Extension payloads are ZSTD-compressed DDI files under `images/extensions/`,
+for example `images/extensions/my-tool.rawzst`.
 
-They stay under `images/` deliberately. The COSI specification already states
-that region images "MAY be placed in subdirectories of `images/` to organize
-them" and that "Readers MUST be able to handle images in subdirectories", so no
-new tar-layout rule is needed. More importantly, `ImageFile.path` is
-constrained by `"pattern": "^images/.+"` in every published schema. Relaxing
-that pattern to also permit `extensions/` would mean a v1.3 `ImageFile` that
-fails validation against the v1.0–1.2 schemas, breaking the one object this
-proposal is supposed to reuse unchanged, and breaking any generic COSI
-validator that has an `ImageFile` definition compiled in. There is no
-compensating benefit: a subdirectory conveys the same organisation.
+They remain under `images/`. The specification already permits subdirectories of
+`images/` and requires readers to handle them, so no new tar-layout rule is
+needed. `ImageFile.path` is constrained by `"pattern": "^images/.+"` in every
+published schema; relaxing it would produce a revision 1.3 `ImageFile` that
+fails validation against the 1.0–1.2 schemas and break any validator with an
+`ImageFile` definition compiled in, for no benefit beyond a shorter path.
 
-Two ordering constraints from the existing spec must be respected:
+Two existing ordering constraints apply:
 
-- Since revision 1.2, the primary GPT image MUST be the file immediately after
-  `metadata.json`. Extension payloads MUST NOT be placed between them.
-- Region images MUST appear in the tar in the physical order of the regions on
-  the source disk. Extension payloads are not regions, so they do not
-  participate in that ordering, but interleaving them would make the region
-  ordering harder to verify and would hurt sparse-read locality. Extension
-  payloads SHOULD therefore be written after all region images.
+- Since revision 1.2 the primary GPT image must immediately follow
+  `metadata.json`. Extension payloads must not be placed between them.
+- Region images must appear in the physical order of the regions on the source
+  disk. Extension payloads are not regions, but interleaving them complicates
+  verification of that ordering and hurts sparse-read locality. Extension
+  payloads should be written after all region images.
 
-Extension payloads are compressed with ZSTD like everything else, and their
-window log MUST be accounted for in the existing root `compression.maxWindowLog`
-field. No change is needed to that object; writers simply must not forget the
-new images when computing the maximum.
+Writers must account for extension payloads when computing the existing root
+`compression.maxWindowLog`.
 
-Older readers are unaffected by the extra tar members. The spec already says
-"the tar file MAY contain other files, but Trident MUST ignore them", and
-Trident's orphan-image check
+Older readers are unaffected by the additional tar members. The specification
+requires readers to ignore unknown files, and Trident's orphan-image check
 (`V1_2ImageFileHasNoCorrespondingPartition`) is driven by the `images[]` and
-`disk.gptRegions[]` metadata arrays, not by walking tar entries, so extra
-members under `images/` do not trip it.
+`disk.gptRegions[]` arrays rather than by walking tar entries.
 
 ### Metadata Schema
 
-A new optional root field `extensions`:
+A new optional root field:
 
-| Field        | Type                                  | Added in | Required | Description                                     |
-| ------------ | ------------------------------------- | -------- | -------- | ----------------------------------------------- |
-| `extensions` | [Extensions](#extensions-object)      | 1.3      | No       | Extension images carried by this COSI file.     |
+| Field        | Type                             | Added in | Required | Description                                 |
+| ------------ | -------------------------------- | -------- | -------- | ------------------------------------------- |
+| `extensions` | [Extensions](#extensions-object) | 1.3      | No       | Extension images carried by this COSI file. |
 
 #### `Extensions` Object
 
-| Field      | Type                                       | Added in | Required | Description                        |
-| ---------- | ------------------------------------------ | -------- | -------- | ---------------------------------- |
-| `sysexts`  | [ExtensionImage](#extensionimage-object)[] | 1.3      | No       | System extension images.           |
-| `confexts` | [ExtensionImage](#extensionimage-object)[] | 1.3      | No       | Configuration extension images.    |
+| Field      | Type                                       | Added in | Required | Description                     |
+| ---------- | ------------------------------------------ | -------- | -------- | ------------------------------- |
+| `sysexts`  | [ExtensionImage](#extensionimage-object)[] | 1.3      | No       | System extension images.        |
+| `confexts` | [ExtensionImage](#extensionimage-object)[] | 1.3      | No       | Configuration extension images. |
 
 #### `ExtensionImage` Object
 
-| Field   | Type                           | Added in | Required        | Description                                              |
-| ------- | ------------------------------ | -------- | --------------- | -------------------------------------------------------- |
-| `image` | [ImageFile](../../Reference/Composable-OS-Image.md#imagefile-object) | 1.3      | Yes (since 1.3) | Details of the compressed extension image in the tar.     |
-| `path`  | string                         | 1.3      | No              | Absolute destination path of the extension on the target OS. |
-
-JSON Schema fragment:
+| Field   | Type                                                                 | Added in | Required        | Description                                                  |
+| ------- | -------------------------------------------------------------------- | -------- | --------------- | ------------------------------------------------------------ |
+| `image` | [ImageFile](../../Reference/Composable-OS-Image.md#imagefile-object) | 1.3      | Yes (since 1.3) | Details of the compressed extension image in the tar file.   |
+| `path`  | string                                                                | 1.3      | No              | Absolute destination path of the extension on the target OS. |
 
 ```json
 {
@@ -242,7 +201,7 @@ JSON Schema fragment:
 }
 ```
 
-Worked example:
+Example:
 
 ```json
 {
@@ -297,120 +256,97 @@ Worked example:
 }
 ```
 
-#### Why Two Arrays Instead of One Array With a `kind`
+#### Two Arrays Rather Than One With a `kind` Field
 
-Two arrays, mirroring `os.sysexts` / `os.confexts`.
+Sysexts and confexts have disjoint sets of permitted destination directories
+(`VALID_SYSEXT_DIRECTORIES` and `VALID_CONFEXT_DIRECTORIES`), different
+defaults, different `extension-release` locations
+(`/usr/lib/extension-release.d/` and `/etc/extension-release.d/`), different
+identity fields (`SYSEXT_ID` and `CONFEXT_ID`) and different activation units.
+Every downstream rule branches on the kind.
 
-- The distinction is not cosmetic. Sysexts and confexts have disjoint sets of
-  permitted destination directories (`VALID_SYSEXT_DIRECTORIES` vs
-  `VALID_CONFEXT_DIRECTORIES`), disjoint defaults, different
-  `extension-release` locations (`/usr/lib/extension-release.d/` vs
-  `/etc/extension-release.d/`), different identity fields (`SYSEXT_ID` vs
-  `CONFEXT_ID`) and different activation units. Every rule downstream branches
-  on the kind.
-- With two arrays the kind is structural, so no `kind` field is needed and it
-  cannot be omitted or wrong.
-- It is the shape the Host Configuration already uses, which is the stated
-  design constraint. A reader that already has code for `os.sysexts` has code
-  for this.
+With two arrays the kind is structural, so no `kind` field is required and it
+cannot be omitted or incorrect. It is also the shape the Host Configuration
+already uses.
 
-The one-array-plus-discriminator form would be preferable if the two kinds
-shared their rules and the set of kinds were open-ended. Neither is true here.
+#### Entry Contents
 
-#### What Each Entry Carries, and What It Does Not
+An entry carries `image` and an optional `path`. Everything else considered is
+derivable from the payload, and each derivable field adds a second source of
+truth.
 
-`image` and an optional `path`. That is the whole object. Everything else that
-was considered is derivable, and every derivable field is a new opportunity for
-two sources of truth to disagree.
+- **`path`** is retained. It is the destination on the target OS and is not
+  derivable. It is optional because `Extension.path` is optional and defaults to
+  `/var/lib/extensions/{name}.raw` or `/var/lib/confexts/{name}.raw`. When
+  present it must be absolute, must end in `.raw`, must be in a permitted
+  directory for its kind, and its file name must match the `extension-release`
+  suffix. These rules already exist.
+- **Extension name** is rejected. Trident derives it from the
+  `extension-release.{name}` file name inside the DDI and already requires the
+  destination file name to match. A `name` field would be a third copy of the
+  same string.
+- **`kind`** is rejected; it is structural.
+- **Extension ID** (`SYSEXT_ID`, `CONFEXT_ID`) is rejected. It is read from
+  `extension-release` and is the identity Trident keys A/B state on.
+- **Enable-on-first-boot** is rejected. systemd merges everything in the
+  extension directories, and the Host Configuration has no per-extension switch.
+  Adding one here would create semantics the Host Configuration cannot express.
+- **Version and compatibility metadata** is rejected. `ID`, `VERSION_ID`,
+  `SYSEXT_LEVEL`, `CONFEXT_LEVEL`, `ARCHITECTURE` and `SYSEXT_SCOPE` are in the
+  DDI's `extension-release`, and systemd enforces them at merge time. Copying
+  them into metadata would allow a COSI to claim compatibility the payload does
+  not have.
 
-- **`path` (kept, optional).** Not derivable: it is the one genuinely new piece
-  of information, the image author's intent about where the file goes. Optional
-  because the Host Configuration's `Extension.path` is optional and defaults to
-  `/var/lib/extensions/{name}.raw` or `/var/lib/confexts/{name}.raw`; making it
-  required here would be a gratuitous divergence, and the default is what most
-  writers want anyway. When present it MUST be absolute, MUST end in `.raw`,
-  MUST sit in a permitted directory for its kind, and its file name MUST match
-  the `extension-release` suffix — all rules that already exist.
-- **Extension name (rejected).** Trident derives the name by mounting the DDI
-  and reading the `extension-release.{name}` file name, and already enforces
-  that the destination file name matches it. A `name` field would be a third
-  copy of the same string (DDI, `path`, `name`) and a third thing to
-  cross-check.
-- **`kind` (rejected).** Structural, see above.
-- **Extension ID (`SYSEXT_ID` / `CONFEXT_ID`) (rejected).** Read from
-  `extension-release`. It is the identity Trident already keys A/B state on;
-  duplicating it in metadata invites drift with the payload.
-- **Enable-on-first-boot (rejected).** systemd merges everything it finds in
-  the extension directories; there is no per-extension enable switch in the
-  Host Configuration today, and inventing one here would create COSI-only
-  semantics that the Host Configuration cannot express. If a per-extension
-  toggle is wanted, it should be designed once for both surfaces.
-- **Version / OS-compatibility metadata (rejected).** `ID`, `VERSION_ID`,
-  `SYSEXT_LEVEL`, `CONFEXT_LEVEL`, `ARCHITECTURE` and `SYSEXT_SCOPE` are
-  already inside the DDI's `extension-release`, and systemd — not Trident — is
-  the authority that enforces them at merge time. Copying them into metadata
-  would let a COSI claim compatibility the payload does not have.
-- **A separate hash of the uncompressed DDI (rejected, with a caveat).** See
-  below.
+#### `sha384` Semantics
 
-#### A Note on `sha384` Semantics
+`ImageFile.sha384` covers the compressed image; `Extension.sha384` covers the
+raw extension image file. Reusing `ImageFile` therefore changes what the hash
+covers.
 
-`ImageFile.sha384` is the hash of the **compressed** image. The Host
-Configuration's `Extension.sha384` is the hash of the **raw** extension image
-file. Reusing `ImageFile` therefore changes what the recorded hash covers.
+For integrity this is equivalent to partition images: Trident hashes the
+compressed stream as it decompresses, and a match proves the payload is intact.
+A second hash of the uncompressed DDI would add nothing.
 
-For integrity that is fine, and it is exactly what already happens for
-partition images: Trident hashes the compressed stream as it decompresses, so a
-match proves the payload is intact. Adding a second hash of the uncompressed
-DDI would buy nothing for integrity.
-
-There is one caveat worth recording. Trident's `ExtensionData.sha384` is also
-used as a change detector: for an extension whose ID exists in both the old and
-the new configuration, a differing hash means "content changed, replace it".
-Compressed hashes are not stable across recompressions, so two COSIs built from
-byte-identical DDIs at different ZSTD levels would look "changed". The
-consequence is a redundant copy of an identical file, never a missed update, so
-this is a cosmetic inefficiency rather than a correctness problem. It is called
-out here so it is not rediscovered as a bug.
+One consequence should be recorded. `ExtensionData.sha384` is also used as a
+change detector: for an extension whose ID is present in both the old and new
+configuration, a differing hash means the content changed. Compressed hashes are
+not stable across recompressions, so two COSIs built from identical DDIs at
+different ZSTD levels appear to differ. The result is a redundant copy of an
+identical file, never a missed update.
 
 ### Versioning
 
-This lands in **COSI revision 1.3**. `extensions` is optional; absent means the
-same as empty.
+This lands in COSI revision 1.3. `extensions` is optional; absent is equivalent
+to empty.
 
-**Newer Trident, older COSI (1.0–1.2).** No `extensions` field, no extensions
-from the image, current behaviour exactly. Nothing to do.
+**Newer Trident, older COSI (1.0–1.2).** No `extensions` field, no bundled
+extensions, current behaviour.
 
 **Older Trident, newer COSI (1.3 with extensions).** Trident's version check
-only rejects `major != 1`, and both the spec and the metadata parser require
-unknown fields to be ignored. An already-shipped Trident will therefore accept
-a 1.3 COSI, deploy the OS correctly, and **silently omit the extensions**.
+rejects only `major != 1`, and both the specification and the metadata parser
+require unknown fields to be ignored. An existing Trident will accept a 1.3
+COSI, deploy the OS correctly, and omit the extensions without reporting
+anything.
 
-That is the honest and slightly uncomfortable answer, and it cannot be fixed
-in-band for readers that already exist: any tripwire field we add is, by
-definition, a field they are required to ignore. Three mitigations, none of
-which is a fix:
+This cannot be corrected in-band for readers that already exist: any tripwire
+field is a field they are required to ignore. Three partial mitigations:
 
-1. **Document it** as a property of the format: consuming extensions requires a
-   reader that understands revision 1.3.
-2. **Warn from now on.** `validate_cosi_metadata_version` should log a warning
-   when `minor` exceeds the highest revision the binary knows about. This does
-   not help binaries already in the field, but it makes every future minor bump
-   diagnosable from the log.
-3. **Gate the rollout.** An operator who cannot control the Trident version on
-   the target should add a
+1. Document that consuming bundled extensions requires a reader that understands
+   revision 1.3.
+2. Have `validate_cosi_metadata_version` warn when `minor` exceeds the highest
+   revision the binary knows. This does not help existing binaries, but makes
+   future minor bumps diagnosable from the log.
+3. Where the Trident version on the target cannot be controlled, add a
    [health check](../../Reference/Host-Configuration/API-Reference/Health.md)
-   asserting the extension is merged. An A/B update that lands on a too-old
-   Trident then fails its health gate and rolls back, instead of quietly
-   producing a host missing its extensions.
+   asserting the extension is merged, so an A/B update onto a too-old Trident
+   fails its gate and rolls back.
 
 ### Trident-Side Consumption
 
-The core idea is that the extensions subsystem gains a second *source* for
-extensions, and nothing else about it changes. Concretely, Trident computes an
-**effective extension set** = Host Configuration entries ∪ COSI entries, and
-the places that today read `ctx.spec.os.sysexts` / `ctx.spec.os.confexts` read
-the effective set instead.
+The extensions subsystem gains a second source. Trident computes an **effective
+extension set**, the union of the Host Configuration entries and the COSI
+entries, and the code that reads `ctx.spec.os.sysexts` and
+`ctx.spec.os.confexts` reads the effective set instead.
 
 ```mermaid
 flowchart LR
@@ -421,354 +357,310 @@ flowchart LR
     Eff --> Sel["selinux subsystem<br/>enforcing-mode rejection"]
 ```
 
-The three consumers of the effective set are worth naming individually,
-because two of them are easy to miss:
+There are three consumers:
 
 - **`ExtensionsSubsystem`.** `populate_extensions` currently downloads each
-  Host Configuration entry with a `FileReader` over `Extension.url` into the
-  staging directory, verifies the hash, then mounts the DDI to read
-  `extension-release`. For a COSI-borne entry the only difference is where the
-  bytes come from: the image streaming pipeline decompresses the tar member
-  into the same staging directory and verifies `ImageFile.sha384` over the
-  compressed stream. Everything downstream — the `extension-release` read, the
-  `{name}.raw` file-name check, the default-path logic, directory creation,
-  and the placement/removal logic in `set_up_extensions` — is unchanged.
+  entry with a `FileReader` over `Extension.url` into the staging directory,
+  verifies the hash, and mounts the DDI to read `extension-release`. For a
+  bundled entry only the source changes: the image streaming pipeline
+  decompresses the tar member into the same staging directory and verifies
+  `ImageFile.sha384` over the compressed stream. The `extension-release` read,
+  the `{name}.raw` check, default-path resolution, directory creation and
+  `set_up_extensions` are unchanged.
 - **`osconfig`.** `systemd-sysext.service` and `systemd-confext.service` are
-  enabled only when `ctx.spec.os.sysexts` / `confexts` are non-empty. If a host
-  gets its extensions solely from the COSI and its Host Configuration lists
-  none, the merge services would never be enabled and the extensions would sit
-  on disk doing nothing. This check **must** move to the effective set. It is
-  the single most likely way to ship this feature broken.
-- **`selinux`.** The dynamic validation that rejects `enforcing` mode when
-  extensions are configured has the same shape and the same problem. It must
-  also move to the effective set, otherwise a COSI carrying extensions plus an
-  enforcing-mode Host Configuration passes validation and produces a host with
-  a mislabelled `/usr`, `/opt` or `/etc`.
+  enabled only when `ctx.spec.os.sysexts` or `confexts` are non-empty. A host
+  whose extensions come only from the COSI would never have the merge units
+  enabled, and the extensions would remain on disk unused. This check must read
+  the effective set.
+- **`selinux`.** The dynamic validation raising
+  `ExtensionImagesAndSelinuxUnsupported` has the same problem. Without the
+  change, a COSI carrying extensions combined with an enforcing-mode Host
+  Configuration passes validation and produces a host with a mislabelled `/usr`,
+  `/opt` or `/etc`.
 
-`derive_host_configuration` (used by [disk streaming](../../Explanation/Disk-Streaming.md))
-does not need to synthesise extension entries; the effective set is computed
-from the COSI directly, so the derived-Host-Configuration path gets extensions
-for free.
+`derive_host_configuration`, used by
+[disk streaming](../../Explanation/Disk-Streaming.md), does not need to
+synthesise extension entries; the effective set is computed from the COSI
+directly.
 
 #### Where Images Are Written
 
 - **Clean Install and A/B Update.** `provision()` runs with the target root
   mounted at `mount_path`. Extensions are staged under
-  `{mount_path}/var/lib/extensions/.staging` and then moved to their
-  destination inside the target root, which is exactly what happens today. For
-  A/B, that destination is on the *inactive* slot, so the running system is
-  untouched until the reboot.
-- **Runtime Update.** COSI-borne extensions do not participate. A COSI-borne
-  extension can only change if the COSI changes, and a COSI change is an image
-  change, which forces an A/B update. Host Configuration extensions continue to
-  be runtime-updatable exactly as today.
+  `{mount_path}/var/lib/extensions/.staging` and moved to their destination
+  inside the target root, as today. For A/B the destination is on the inactive
+  slot, so the running system is untouched until reboot.
+- **Runtime Update.** Bundled extensions do not participate. A bundled extension
+  can only change if the COSI changes, which is an image change and forces an
+  A/B update. Host Configuration extensions remain runtime-updatable.
 
-This gives a useful invariant: **Trident never needs to read the previous
-COSI.** If `spec.os.image` equals `spec_old.os.image`, the old COSI's extension
-set is the new COSI's extension set. If they differ, the servicing type is an
-A/B update, and `set_up_extensions` already skips removal of the old set on
-Clean Install and A/B Update because the old files live in the other slot.
+This yields an invariant: Trident never needs to read the previous COSI. If
+`spec.os.image` equals `spec_old.os.image`, the previous bundled set is the
+current one. If they differ, the servicing type is an A/B update, and
+`set_up_extensions` already skips removal of the old set on Clean Install and
+A/B Update.
 
 #### Rollback
 
-Nothing needs retaining, because nothing is shared.
+Extension images are files in the slot's own filesystem, and Trident already
+requires every extension destination to be on an A/B volume, not shared and not
+read-only, when A/B volumes are configured. The previous slot therefore retains
+the previous extension set after an update. An A/B rollback boots the previous
+root volume, `systemd-sysext` merges what it finds there, and the extension set
+reverts with the OS. No additional bookkeeping is required.
 
-Extension images are ordinary files inside the slot's filesystem, and Trident
-already requires that when A/B volumes are configured, every extension
-destination is on an A/B volume and not on a shared or read-only one. So the
-previous slot's `/var/lib/extensions/` still contains the previous extension
-set, byte for byte, after the update. An A/B rollback boots the previous root
-volume, `systemd-sysext` merges what it finds there, and the extension set
-reverts with the OS. No extra bookkeeping, no staging area to preserve, no
-"previous extension" directory.
+#### Interaction With Host Configuration `sysexts` and `confexts`
 
-This is the same property that makes A/B updates work for the OS itself, and it
-is the main reason bundling is attractive: the extension inherits the rollback
-semantics of the image instead of needing its own.
+The two sets are merged, and a collision is an error.
 
-#### Interaction With Host Configuration `sysexts` / `confexts`
+The lists express different intents and are both valid at once. Bundled
+extensions are content the image author considers part of the OS, such as a GPU
+driver. Host Configuration extensions are content the operator adds at deploy
+time, such as a monitoring agent. An image that ships one sysext and an operator
+who adds another is the expected case.
 
-**Merge, with a hard error on collision.**
-
-The two lists express different intents and both are legitimate at the same
-time. COSI extensions are content the *image author* considers part of this OS
-— a GPU driver, a kernel-module extension. Host Configuration extensions are
-content the *operator* adds at deploy time — a monitoring agent, a site-specific
-confext. Forbidding both would be gratuitous: the natural case is an image that
-ships one sysext and an operator who adds another.
-
-Silent precedence is the option to avoid. If a Host Configuration entry
-silently overrode a bundled one, the host would run software the image author
-never validated, and the only symptom would be a version number in a log
-somewhere. Failing loudly is better than being quietly wrong.
+Silent precedence is rejected: if a Host Configuration entry overrode a bundled
+one, the host would run software the image author did not validate, with no
+visible symptom.
 
 A collision is defined two ways, both already meaningful in the Host
-Configuration today:
+Configuration:
 
-1. **Same destination path.** Detectable statically whenever both sides specify
+1. **Same destination path.** Detectable statically when both sides specify
    `path`. This extends the existing `DuplicateExtensionImagePath` rule across
    the merged set.
-2. **Same extension ID** (`SYSEXT_ID` / `CONFEXT_ID` within a kind). Only
-   detectable after the DDIs are mounted, which the subsystem does anyway. Note
-   that ID uniqueness is documented for the Host Configuration today but not
-   enforced in code; the merged set makes collisions more likely, so this
-   should become an enforced check.
+2. **Same extension ID** within a kind. Detectable only after the DDIs are
+   mounted, which the subsystem does regardless. ID uniqueness is documented for
+   the Host Configuration today but not enforced in code; the merged set makes
+   collisions more likely, so it should become an enforced check.
 
-Two entries that are identical in every respect are still a collision. Making
-"identical is fine" an exception invites hash-comparison subtleties for no real
-benefit — the operator can simply drop their entry.
+Two entries that are identical in every respect are still a collision. An
+"identical is acceptable" exception would introduce hash-comparison subtleties
+for no benefit, since the operator can remove their entry.
 
-If a per-extension override is later shown to be necessary, it should be an
-explicit opt-in on the Host Configuration side, not a default. That is listed
-as an [open question](#open-questions).
+An explicit per-extension override, should one prove necessary, belongs on the
+Host Configuration side as an opt-in. See [Open Questions](#open-questions).
 
 ### Validation
 
 #### COSI Metadata Validation
 
 New `CosiMetadataErrorKind` variants, following the existing `V1_<minor>`
-prefix convention:
+prefix:
 
-| Variant                                            | Condition                                                                                    |
-| -------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `V1_3ExtensionDestinationPathNotAbsolute`           | `path` is present and is not absolute.                                                        |
-| `V1_3ExtensionDestinationPathInvalidFileExtension`  | `path` is present and does not end in `.raw`.                                                 |
-| `V1_3ExtensionDestinationPathInvalidDirectory`      | `path`'s parent is not in `VALID_SYSEXT_DIRECTORIES` / `VALID_CONFEXT_DIRECTORIES` for the kind. |
-| `V1_3DuplicateExtensionDestinationPath`             | Two entries resolve to the same destination path.                                             |
-| `V1_3DuplicateExtensionImagePath`                   | Two entries reference the same tar member.                                                    |
-| `V1_3ExtensionImagePathCollidesWithRegionImage`     | An entry's `image.path` is also referenced by `images[]` or `disk.gptRegions[]`.               |
+| Variant                                           | Condition                                                                                       |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `V1_3ExtensionDestinationPathNotAbsolute`          | `path` is present and not absolute.                                                              |
+| `V1_3ExtensionDestinationPathInvalidFileExtension` | `path` is present and does not end in `.raw`.                                                    |
+| `V1_3ExtensionDestinationPathInvalidDirectory`     | `path`'s parent is not in `VALID_SYSEXT_DIRECTORIES` or `VALID_CONFEXT_DIRECTORIES` for the kind. |
+| `V1_3DuplicateExtensionDestinationPath`            | Two entries resolve to the same destination path.                                                |
+| `V1_3DuplicateExtensionImagePath`                  | Two entries reference the same tar member.                                                       |
+| `V1_3ExtensionImagePathCollidesWithRegionImage`    | An entry's `image.path` is also referenced by `images[]` or `disk.gptRegions[]`.                  |
 
-The existing "every image referenced by the metadata is present in the tar"
-check must be extended to walk `extensions.sysexts[]` and
-`extensions.confexts[]` as well, so a metadata entry pointing at a missing tar
-member fails at load time rather than mid-provision.
+The existing check that every image referenced by the metadata is present in the
+tar must also walk `extensions.sysexts[]` and `extensions.confexts[]`, so a
+missing tar member fails at load rather than mid-provision.
 
-Directory and file-extension rules deliberately reuse the constants and logic
-behind `Extension::validate_sysext` / `validate_confext` rather than
-re-implementing them, so the two surfaces cannot drift.
+Directory and file-extension rules reuse the constants and logic behind
+`Extension::validate_sysext` and `validate_confext` rather than reimplementing
+them.
 
 #### Deploy-Time Validation
 
-- **File name matches the `extension-release` suffix.** Already enforced:
-  `read_extension_release` requires `path` to end with `{name}.raw` where
-  `{name}` is the suffix of the `extension-release.{name}` file found inside
-  the DDI. Applies unchanged to COSI-borne entries.
-- **Exactly one `extension-release` file, and `SYSEXT_ID` / `CONFEXT_ID`
-  present.** Already enforced, applies unchanged.
+- **File name matches the `extension-release` suffix.** Already enforced by
+  `read_extension_release`; applies unchanged.
+- **Exactly one `extension-release` file, with `SYSEXT_ID` or `CONFEXT_ID`
+  present.** Already enforced; applies unchanged.
 - **SHA-384 agreement.** `ImageFile.sha384` is verified over the compressed
   stream as the payload is decompressed into the staging directory, using the
-  same hashing reader used for partition images. Mismatch aborts servicing.
+  hashing reader used for partition images. A mismatch aborts servicing.
 - **Extension ID uniqueness across the merged set**, per kind. New check.
 - **`extension-release` OS compatibility.** Warn, do not fail, when a bundled
-  extension declares `ID=<distro>` and that `ID`/`VERSION_ID` does not match
-  the COSI's own `osRelease`. This is a build-time mistake worth surfacing
-  early — systemd will refuse to merge such an extension at boot and the host
-  will come up silently missing it — but systemd's matching rules
-  (`SYSEXT_LEVEL`, `CONFEXT_LEVEL`, `ARCHITECTURE`, `_any`) are subtle enough
-  that Trident should not be the authority. Warning early and letting systemd
-  decide is the right split.
+  extension declares `ID=<distro>` and that `ID` or `VERSION_ID` does not match
+  the COSI's own `osRelease`. This is a build error worth surfacing early, since
+  systemd will refuse to merge the extension at boot and the host will come up
+  without it. systemd remains the authority: its matching rules
+  (`SYSEXT_LEVEL`, `CONFEXT_LEVEL`, `ARCHITECTURE`, `_any`) are intricate enough
+  that Trident should not reimplement them.
 
-#### On `ID=_any`
+#### `ID=_any`
 
-`extension-release` already declares which cadence case an extension is in:
-`ID=<distro>` plus `VERSION_ID` / `SYSEXT_LEVEL` means "this extension is bound
-to this OS build", while `ID=_any` means "this extension is portable across OS
-versions".
+`extension-release` already declares the cadence case: `ID=<distro>` with
+`VERSION_ID` or `SYSEXT_LEVEL` binds the extension to an OS build, while
+`ID=_any` marks it portable across OS versions.
 
-Trident should **not** warn or refuse when an `ID=_any` extension is bundled.
-`_any` describes what the extension is *compatible with*, not how it *should be
-delivered*. Bundling a portable extension is a perfectly reasonable packaging
-choice — it is how you get an air-gapped or single-artefact deployment — and
-refusing it would break legitimate use for no safety benefit. The genuinely
-useful check is the opposite one described above: a bundled `ID=<distro>`
-extension that does not match the COSI's own `osRelease` is almost certainly a
-build error.
+Trident should not warn or refuse when an `ID=_any` extension is bundled. `_any`
+describes what the extension is compatible with, not how it should be delivered.
+Bundling a portable extension is a legitimate packaging choice, and is how an
+air-gapped or single-artefact deployment is achieved. The useful check is the
+opposite one above: a bundled `ID=<distro>` extension that does not match the
+COSI's `osRelease` is almost certainly a build error.
 
 ### SELinux
 
 Unchanged. Extensions remain incompatible with SELinux in enforcing mode on
 systemd 255, because merging the overlays mislabels `/usr`, `/opt` and `/etc`.
-Carrying the image in a COSI does not touch the labelling problem in any way.
+Carrying the image in a COSI does not affect labelling.
 
-The one thing that must change is *where the check looks*: as noted above, the
-dynamic validation that raises `ExtensionImagesAndSelinuxUnsupported` currently
-inspects the Host Configuration lists only, and must inspect the effective set,
-or a COSI-only extension configuration would bypass it entirely.
+What must change is where the check looks. The dynamic validation raising
+`ExtensionImagesAndSelinuxUnsupported` inspects the Host Configuration lists
+only, and must inspect the effective set; otherwise a COSI-only extension
+configuration bypasses it.
 
 ## Public API Design
 
-The COSI metadata format is a public contract with an independent
+The COSI metadata format is a public contract with its own
 [specification](../../Reference/Composable-OS-Image.md) and published JSON
-Schemas, so the additions above constitute the public API change. They are
-additive and optional.
+schemas, so the additions above are the public API change. They are additive and
+optional.
 
-The Host Configuration API does **not** change. `os.sysexts` and `os.confexts`
-keep their meaning and their shape. The observable behavioural difference for
-an existing user is that a host may now end up with more extensions than its
-Host Configuration lists, and that specifying an extension that the image
-already carries is now an error rather than a duplicate.
+The Host Configuration API does not change. The observable difference for an
+existing user is that a host may end up with more extensions than its Host
+Configuration lists, and that specifying an extension the image already carries
+is now an error rather than a duplicate.
 
 ## Testing and Metrics
 
-- **Schema tests.** Add `docs/Reference/Composable-OS-Image/cosi-metadata-v1.3.schema.json`
-  and samples under `tests/cosi/metadata_samples/v1.3/{valid,invalid}/`. The
-  existing schema-validation workflow picks up a new revision automatically
-  given the schema file and a matching samples directory. Invalid samples
-  should cover: `image.path` outside `images/`, non-absolute destination,
-  destination not ending in `.raw`, destination in a disallowed directory, and
-  a duplicated destination path.
-- **Unit tests.** Metadata parse and validate for each new error variant;
-  effective-set computation, including the collision cases; default-path
-  resolution for a COSI entry with no `path`.
-- **Functional tests.** Build a COSI carrying one sysext and one confext;
-  assert Clean Install places both, enables the merge units, and that both are
-  merged after boot.
-- **Servicing tests.** A/B update from a COSI with extension set A to a COSI
-  with extension set B; assert the new slot has B, the old slot still has A,
-  and that a rollback restores A with no additional servicing.
-- **Negative tests.** Same extension in both the Host Configuration and the
-  COSI produces the structured error; COSI extension plus SELinux `enforcing`
-  is rejected.
+- **Schema.** Add `cosi-metadata-v1.3.schema.json` and samples under
+  `tests/cosi/metadata_samples/v1.3/{valid,invalid}/`. The existing
+  schema-validation workflow picks up a new revision given the schema file and a
+  matching samples directory. Invalid samples should cover `image.path` outside
+  `images/`, a non-absolute destination, a destination not ending in `.raw`, a
+  destination in a disallowed directory, and a duplicated destination path.
+- **Unit.** Metadata parse and validation for each new error variant; effective
+  set computation, including collisions; default-path resolution for an entry
+  with no `path`.
+- **Functional.** Build a COSI carrying a sysext and a confext; assert Clean
+  Install places both, enables the merge units, and that both merge after boot.
+- **Servicing.** A/B update from a COSI with extension set A to one with set B;
+  assert the new slot has B, the old slot retains A, and that rollback restores
+  A without additional servicing.
+- **Negative.** The same extension in both the Host Configuration and the COSI
+  produces the structured error; a bundled extension with SELinux `enforcing` is
+  rejected.
 
 ## Servicing
 
 The change is additive at every layer.
 
-- A revision 1.2 COSI is still valid and behaves identically.
-- A revision 1.3 COSI with no `extensions` section behaves identically.
-- A revision 1.3 COSI *with* extensions, read by a Trident that predates this
-  work, deploys the OS correctly and omits the extensions silently. This is the
-  one forward-compatibility hazard; mitigations are discussed under
+- A revision 1.2 COSI remains valid and behaves identically.
+- A revision 1.3 COSI without `extensions` behaves identically.
+- A revision 1.3 COSI with extensions, read by a Trident predating this work,
+  deploys the OS correctly and omits the extensions silently. Mitigations are in
   [Versioning](#versioning).
-- Hosts already using `os.sysexts` / `os.confexts` are unaffected unless they
-  move to an image that carries the same extension, which is a deliberate
-  action that now produces an explicit error.
+- Hosts using `os.sysexts` or `os.confexts` are unaffected unless they move to an
+  image carrying the same extension, which now produces an explicit error.
 
 ## Implementation Plan
 
-1. Specification: COSI revision 1.3, `extensions` section, v1.3 JSON Schema and
-   samples.
+1. Specification: COSI revision 1.3, the `extensions` section, the v1.3 JSON
+   schema and samples.
 2. Trident reader: parse `extensions`, metadata validation and the new error
    variants, and the minor-version warning.
 3. Effective extension set, plumbed into the extensions, `osconfig` and
    `selinux` subsystems, including the collision errors.
-4. Streaming a tar member into the extension staging directory, replacing the
-   URL fetch for COSI-borne entries.
-5. Tests, then user-facing documentation updates to
+4. Stream a tar member into the extension staging directory, replacing the URL
+   fetch for bundled entries.
+5. Tests, then documentation updates to
    [Sysexts](../../Explanation/Sysexts.md),
    [Confexts](../../Explanation/Confexts.md) and
    [How Trident Consumes COSI](../../Explanation/How-Trident-Consumes-COSI.md).
 
 Steps 1 and 2 are independently useful: a reader that parses and validates the
-section but ignores it is a safe intermediate state, and it makes the
-minor-version warning available sooner.
+section but ignores it is a safe intermediate state and makes the minor-version
+warning available sooner.
 
 ## Counter-Arguments
 
 ### Drawbacks
 
-- **Cadence coupling.** This is the real cost. Bundling ties the extension's
-  release cadence to the image's: shipping a new version of the extension means
-  shipping a new COSI and taking an A/B update and a reboot. For content that
-  must match the OS anyway — kernel modules, GPU drivers, anything built
-  against a specific kernel — this is free, because that content could never
-  have moved independently. For content deliberately versioned independently of
-  the OS, it is a genuine regression in agility, and the Host Configuration
-  route remains the right answer. The proposal adds an option; it does not
-  remove one.
-- **COSI files get bigger,** and every host downloading the image pays for
-  every bundled extension, including ones it will not use. There is no
-  per-host selection mechanism.
-- **No way to opt out.** A host that wants the image but not one of its bundled
-  extensions has no way to say so. See [Open Questions](#open-questions).
-- **A second place extensions can come from,** which means a merge, which means
-  collision rules, which is genuinely more complexity in the extensions
-  subsystem than exists today.
-- **The forward-compatibility hazard** described under Versioning: an older
-  reader silently produces a host without the extensions.
+- **Cadence coupling.** Bundling ties the extension's release cadence to the
+  image's: a new version of the extension requires a new COSI, an A/B update and
+  a reboot. For content that must match the OS, such as kernel modules or GPU
+  drivers, this costs nothing, because that content could not move independently
+  in any case. For content deliberately versioned independently of the OS it is a
+  real loss of agility, and the Host Configuration route remains correct. This
+  RFC adds an option; it removes none.
+- **Size.** COSI files grow, and every host downloading the image pays for every
+  bundled extension, including those it does not use. There is no per-host
+  selection mechanism.
+- **No opt-out.** A host that wants the image but not one of its bundled
+  extensions cannot express that. See [Open Questions](#open-questions).
+- **Two sources.** Merging, and the collision rules it requires, is more
+  complexity in the extensions subsystem than exists today.
+- **Forward compatibility.** An older reader produces a host without the
+  extensions and reports nothing.
 
 ### Alternatives
 
-**Keep everything in the Host Configuration (status quo).** Maximum decoupling:
-the extension is versioned, hosted and updated entirely independently, and a
-change is a Runtime Update with no reboot. This stays fully supported. It is
-the wrong answer only when the extension must land in lockstep with a new OS,
-where it forces two operations and two rollout gates.
+**Host Configuration only (status quo).** Maximum decoupling: the extension is
+versioned, hosted and updated independently, and a change is a Runtime Update
+with no reboot. This remains fully supported, and is the wrong answer only when
+the extension must land in lockstep with a new OS.
 
-**Bake the `.raw` files into the root filesystem image.** No spec change at
-all. Discussed in [Motivation](#why-not-just-bake-the-files-into-the-root-filesystem-image);
-loses on verity, on destinations that are not image-provisioned, on
-inspectability, and on Trident not knowing to enable the merge units.
+**Place the `.raw` files in the root filesystem image.** No specification change.
+Discussed in
+[Why Not Place the Files in the Root Filesystem Image](#why-not-place-the-files-in-the-root-filesystem-image).
 
-**Relax `ImageFile.path` to allow a top-level `extensions/` prefix.** Rejected
-in [Tar Layout](#tar-layout): it would fork the definition of the one object
-this design reuses, and buys only cosmetics.
+**Relax `ImageFile.path` to allow a top-level `extensions/` prefix.** Rejected in
+[Tar Layout](#tar-layout).
 
 **One array with a `kind` discriminator.** Rejected in
-[Why Two Arrays](#why-two-arrays-instead-of-one-array-with-a-kind): the kinds
-share almost no rules, and the Host Configuration already uses two lists.
+[Two Arrays Rather Than One With a `kind` Field](#two-arrays-rather-than-one-with-a-kind-field).
 
 #### Prior Art
 
-The decoupled alternative is well established. Flatcar's sysext-bakery pattern
-combines pre-built sysext DDIs with
+The decoupled approach is established. Flatcar's sysext-bakery pattern combines
+pre-built sysext DDIs with
 [`systemd-sysupdate`](https://www.freedesktop.org/software/systemd/man/latest/systemd-sysupdate.html):
-the operator hosts artefacts over HTTP alongside a `SHA256SUMS` manifest,
-`sysupdate` discovers and stages new versions against a transfer definition,
-and activation requires a `systemd-sysext refresh` or a reboot. It is a good
-design for content with its own cadence, and it is close in spirit to Trident's
-existing `os.sysexts` — with the notable difference that `systemd-sysupdate`
-has no OCI transport, whereas Trident's `Extension.url` already accepts
-`oci://` and can therefore reuse a registry the operator is likely to have.
+the operator hosts artefacts over HTTP with a `SHA256SUMS` manifest, sysupdate
+stages new versions against a transfer definition, and activation requires a
+`systemd-sysext refresh` or a reboot. It suits content with its own cadence and
+is close in spirit to `os.sysexts`, with the difference that
+`systemd-sysupdate` has no OCI transport, whereas `Extension.url` already
+accepts `oci://`.
 
-This proposal is a third option rather than a replacement for either. Flatcar's
-model optimises for extensions that move independently of the OS; Trident's
-current model does the same with a better transport story; carrying the
-extension in the COSI optimises for extensions that must move *with* the OS,
-and pays for it in cadence. All three should coexist, and the
-`extension-release` fields (`ID=_any` versus `ID=<distro>`) are the honest
-signal for which one a given extension belongs in.
+This RFC is a third option rather than a replacement for either. Both existing
+approaches optimise for extensions that move independently of the OS; carrying
+the extension in the COSI optimises for extensions that must move with the OS,
+at the cost of cadence. The `extension-release` fields, `ID=_any` against
+`ID=<distro>`, indicate which approach a given extension belongs in.
 
 ## Open Questions
 
-- **Should there be an override escape hatch?** The proposal makes a
-  Host-Configuration-versus-COSI collision an error. The alternative is an
-  explicit opt-in on the Host Configuration side meaning "yes, I know the image
-  ships this, use mine instead". Useful for pinning a hotfixed extension
-  without rebuilding the image; also a way to run a combination the image
-  author never validated. Recommendation is to ship strict and add the hatch
-  only if a real need appears, but this is a product decision.
-- **Should there be a way to suppress a bundled extension?** Same question from
-  the other direction: a "deny" list would let an operator take an image
-  without one of its extensions. It has no analogue in the current API and no
-  concrete requester yet.
-- **Should `path` be required rather than optional?** Optional-with-defaults is
-  proposed for symmetry with the Host Configuration. Requiring it would make
-  every COSI explicit about placement at the cost of diverging from the object
-  it is meant to resemble.
-- **Naming.** `extensions` containing `sysexts` / `confexts` versus two
-  top-level `sysexts` / `confexts` arrays. The nested form keeps the root
-  object tidy and groups the feature; the flat form is a shorter path
-  expression and an even closer match to `os.sysexts`.
-- **Should ID uniqueness be enforced for Host Configuration extensions
-  independently of this work?** It is documented but unenforced today. This
-  proposal needs it for the merged set; it is arguably a pre-existing gap that
-  deserves its own fix.
-- **Should the writer be required to place extension payloads after all region
-  images,** or merely encouraged? The proposal says SHOULD.
+- **Should an override escape hatch exist?** This RFC makes a collision between
+  the Host Configuration and the COSI an error. The alternative is an explicit
+  opt-in on the Host Configuration side meaning "the image ships this, use mine
+  instead". It permits pinning a hotfixed extension without rebuilding the image,
+  and equally permits running a combination the image author did not validate.
+  The recommendation is to ship strict and add the hatch if a need appears.
+- **Should a bundled extension be suppressible?** A deny list would let an
+  operator take an image without one of its extensions. There is no analogue in
+  the current API and no concrete requester.
+- **Should `path` be required?** Optional with defaults is proposed for symmetry
+  with the Host Configuration. Requiring it would make every COSI explicit about
+  placement, at the cost of diverging from the object it mirrors.
+- **Naming.** `extensions` containing `sysexts` and `confexts`, against two
+  top-level `sysexts` and `confexts` arrays. The nested form groups the feature
+  and keeps the root object small; the flat form is a closer match to
+  `os.sysexts`.
+- **Should Host Configuration extension ID uniqueness be enforced independently
+  of this work?** It is documented but unenforced. This RFC requires it for the
+  merged set, but it is arguably a pre-existing gap deserving its own fix.
+- **Should writers be required to place extension payloads after all region
+  images, or merely encouraged?** This RFC says SHOULD.
 
 ## Future Possibilities
 
 - **Portable service images.** They are DDIs with the same shape and the same
-  placement problem. If Trident ever manages them, `extensions` generalises
-  naturally or gains a sibling.
-- **Per-extension selection at deploy time.** If a real need appears for a
-  single image serving hosts with different extension sets, a selection
-  mechanism keyed on extension ID would build on this section.
-- **Initrd-scoped extensions.** `SYSEXT_SCOPE=initrd` extensions are already
-  parsed by `ExtensionRelease` but not acted on. A bundled extension is a
-  natural fit for initrd scope, since the payload is available before the root
-  filesystem is.
-- **Extension inventory in Host Status.** Reporting the merged extension set,
-  with IDs and hashes, would make "what is actually running on this host"
-  answerable without inspecting the filesystem.
+  placement problem. If Trident manages them, `extensions` generalises or gains a
+  sibling.
+- **Per-extension selection at deploy time.** If a single image must serve hosts
+  with different extension sets, a selection mechanism keyed on extension ID
+  would build on this section.
+- **Initrd-scoped extensions.** `SYSEXT_SCOPE=initrd` is parsed by
+  `ExtensionRelease` but not acted on. A bundled extension suits initrd scope,
+  since the payload is available before the root filesystem is.
+- **Extension inventory in Host Status.** Reporting the merged set, with IDs and
+  hashes, would make the set of running extensions answerable without inspecting
+  the filesystem.
