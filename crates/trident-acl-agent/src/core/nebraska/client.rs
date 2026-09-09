@@ -1457,6 +1457,24 @@ mod tests {
     }
 
     #[test]
+    fn to_cosi_sha384_round_trips_real_digest() {
+        // Generated with:
+        //   echo -n "trident-cosi-metadata-round-trip-test" | openssl dgst -sha384 -binary | openssl base64 -A
+        //   echo -n "trident-cosi-metadata-round-trip-test" | openssl dgst -sha384
+        // i.e. a real SHA-384 digest of a known input (not synthetic bytes),
+        // confirming the base64 -> hex re-encode matches an independently
+        // computed value.
+        let hash = PackageHash {
+            sha1: "8e1AenlmEPzn7npBv5uxbUi2OO2frCiT52sDgbw/RM077QgziRyh7wCIy2YcHvRx".to_string(),
+            sha256: None,
+        };
+        assert_eq!(
+            hash.to_cosi_sha384().unwrap(),
+            "f1ed407a796610fce7ee7a41bf9bb16d48b638ed9fac2893e76b0381bc3f44cd3bed0833891ca1ef0088cb661c1ef471"
+        );
+    }
+
+    #[test]
     fn to_cosi_sha384_rejects_invalid_base64() {
         let hash = PackageHash {
             sha1: "not-valid-base64!!".to_string(),
