@@ -106,7 +106,14 @@ COSI is built. This works in some configurations, but:
 
 A COSI writer that emits the section.
 [Image Customizer](https://github.com/microsoft/azure-linux-image-tools) is the
-reference writer. No incomplete Trident features are required.
+reference writer.
+
+[Extension-Only Updates](#extension-only-updates) additionally require a writer
+mode that copies an existing COSI's region images verbatim while replacing its
+extension set. Without it, bundled extensions still work, but every extension
+change is an A/B update.
+
+No incomplete Trident features are required.
 
 ## Implementation
 
@@ -427,42 +434,102 @@ consumer of `os.image` — filesystem source resolution,
 describes a complete OS. The distinction should be drawn on content equality,
 not on absent content.
 
-**OS content digest.** Define a digest over everything in the metadata that
-determines the deployed OS: the `sha384` of every entry in `images[]` and
-`disk.gptRegions[]`, the `disk` geometry, `bootloader`, `osArch` and
-`osRelease`, excluding `extensions`. Trident records the digest of the deployed
-image in the Host Status. Two COSIs with equal digests deploy an identical OS
-and differ only in their extensions.
+##### Deployed Image Summary
 
-Trident cannot determine this otherwise. It retains the URL and metadata hash of
-the applied image, not the metadata itself, and re-fetching the previous COSI to
-diff it is not dependable.
+Trident retains the URL and metadata hash of the applied image, not the metadata
+itself, and re-fetching the previous COSI to diff it is not dependable. It must
+therefore record what it deployed.
 
-**The path is requested and then verified, never inferred.** An extension-only
-update proceeds when all of the following hold:
+Trident records a summary of the deployed image's metadata in the Host Status:
+for each entry in `images[]` and `disk.gptRegions[]`, the `image.sha384`,
+`uncompressedSize` and the entry's identity (partition number, mount point,
+`fsUuid`, `partType`, verity root hash); plus `osArch`, `osRelease`, the `disk`
+geometry and `bootloader`. Excluded:
+
+- `extensions`, which is the subject of the comparison.
+- `osPackages`, which Trident validates but never acts on.
+- `compression.maxWindowLog`, which governs decompression rather than deployed
+  content, and which a new extension may legitimately raise.
+- `id`, which identifies the file rather than its content.
+
+A structured summary rather than a single digest: the digest is derivable from
+it, and the summary additionally allows Trident to report which partition
+differs rather than only that something does.
+
+The summary carries its own schema version. Where the recorded summary is absent
+or of an unrecognised version, Trident falls back to comparing
+`os.image.sha384`, which is current behaviour. This is the upgrade path for
+existing hosts and the escape hatch if the summary's definition changes.
+
+Comparing the summary against the new COSI's metadata gives three outcomes:
+
+| Summary  | Extension set | Result                                             |
+| -------- | ------------- | -------------------------------------------------- |
+| Equal    | Equal         | No-op.                                             |
+| Equal    | Differs       | Extension-only change; a Runtime Update suffices.  |
+| Differs  | Any           | A/B update.                                        |
+
+The no-op case is new. `os.image.sha384` changes whenever any part of the
+metadata changes, including `id` and the ordering of `osPackages`, so a
+materially identical image currently forces an A/B update.
+
+This modifies `ab_update_required()`, which governs a core decision. The
+fallback above confines the change to hosts that have a recorded summary, so
+behaviour for existing hosts is unaltered until they are next deployed.
+
+##### Constructing an Extension-Only Update
+
+Equality of the summary requires the region images to be byte-identical, and
+filesystem images are not naturally reproducible. Filesystem UUIDs, inode
+timestamps, superblock creation and mount times, and allocation order all vary
+between builds, and ZSTD output varies with compression level and library
+version. Rebuilding from the same source will not generally produce the same
+images.
+
+Requiring reproducible rebuilds is therefore the wrong approach. The build
+operation is not "rebuild the image identically with a different extension set",
+it is "copy an existing COSI, replacing its extension set". Region images and
+their metadata entries are copied verbatim from the input COSI; no filesystem is
+rebuilt and no region image is recompressed. Only the extension tar members, the
+`extensions` section, `compression.maxWindowLog` where the new extensions
+require a larger window, and `id` change.
+
+Equality is then guaranteed by construction rather than hoped for through
+reproducibility, and the operation is a tar rewrite rather than an image build.
+This is the mode a COSI writer would need to provide.
+
+Where a COSI is instead rebuilt from source, its region images will differ, the
+summary will differ, and Trident will select an A/B update. This is the safe
+outcome: the mechanism degrades to current behaviour rather than misclassifying
+a changed OS as unchanged. The failure mode of an unreproducible build is a
+redundant A/B update, never a skipped one.
+
+##### Requested and Verified, Never Inferred
+
+An extension-only update proceeds when all of the following hold:
 
 1. A Runtime Update is explicitly requested.
-2. The new COSI's OS content digest equals the digest recorded for the deployed
-   image.
+2. The recorded summary equals the summary computed from the new COSI.
 3. The recorded image is the deployed one: servicing completed, no A/B update
    pending, and the active volume matches the Host Status.
 
 If a Runtime Update is requested and condition 2 or 3 does not hold, Trident
-fails with a structured error naming what differs. It must not promote
-the operation to an A/B update, and must not apply the extension change while
+fails with a structured error naming what differs. It must not promote the
+operation to an A/B update, and must not apply the extension change while
 leaving other changes unapplied. Refusal is the only acceptable failure.
 
 There is no surface for requesting a servicing type today; `forceAbUpdate` is
 the nearest precedent. The surface is an [open question](#open-questions).
 
-**Rollback is weaker on this path.** An A/B extension update is rolled back by
-booting the other slot. A Runtime Update replaces files in the running slot,
-because `set_up_extensions` skips removal of the superseded image only on Clean
-Install and A/B Update. Rollback therefore re-runs the subsystem with the specs
-reversed and re-acquires the previous extension image from its source. For a
-bundled extension that source is the previous COSI, so a runtime rollback
-requires the previous COSI to remain reachable; an A/B rollback requires
-nothing.
+##### Rollback on This Path
+
+An A/B extension update is rolled back by booting the other slot. A Runtime
+Update replaces files in the running slot, because `set_up_extensions` skips
+removal of the superseded image only on Clean Install and A/B Update. Rollback
+therefore re-runs the subsystem with the specs reversed and re-acquires the
+previous extension image from its source. For a bundled extension that source is
+the previous COSI, so a runtime rollback requires the previous COSI to remain
+reachable; an A/B rollback requires nothing.
 
 This is the reason the path is not automatic. Selecting it trades a rollback
 guarantee for the absence of a reboot, and that trade should be made by the
@@ -594,12 +661,12 @@ is now an error rather than a duplicate.
 - **Servicing.** A/B update from a COSI with extension set A to one with set B;
   assert the new slot has B, the old slot retains A, and that rollback restores
   A without additional servicing. Separately, an extension-only Runtime Update
-  between two COSIs with equal OS content digests; assert partitions are
-  untouched and the extension set changes without a reboot.
+  between a COSI and a copy of it with a different extension set; assert
+  partitions are untouched and the extension set changes without a reboot.
 - **Negative.** The same extension in both the Host Configuration and the COSI
   produces the structured error; a bundled extension with SELinux `enforcing` is
-  rejected; a Runtime Update requested between two COSIs with differing OS
-  content digests is refused rather than promoted or partially applied.
+  rejected; a Runtime Update requested between two COSIs with differing image
+  summaries is refused rather than promoted or partially applied.
 
 ## Servicing
 
@@ -612,6 +679,9 @@ The change is additive at every layer.
   [Versioning](#versioning).
 - Hosts using `os.sysexts` or `os.confexts` are unaffected unless they move to an
   image carrying the same extension, which now produces an explicit error.
+- Existing hosts have no recorded image summary, so servicing type selection is
+  unchanged for them until their next deployment. See
+  [Deployed Image Summary](#deployed-image-summary).
 
 ## Implementation Plan
 
@@ -623,7 +693,7 @@ The change is additive at every layer.
    `selinux` subsystems, including the collision errors.
 4. Stream a tar member into the extension staging directory, replacing the URL
    fetch for bundled entries.
-5. OS content digest, its record in the Host Status, and the extension-only
+5. Deployed image summary recorded in the Host Status, and the extension-only
    Runtime Update path with its verification and refusal behaviour.
 6. Tests, then documentation updates to
    [Sysexts](../../Explanation/Sysexts.md),
@@ -640,12 +710,13 @@ warning available sooner.
 
 - **Cadence coupling.** Bundling ties the extension's release cadence to the
   image's: a new version of the extension requires a new COSI.
-  [Extension-Only Updates](#extension-only-updates) removes the reboot, but not
-  the image rebuild and republication. For content that must match the OS, such
-  as kernel modules or GPU drivers, this costs nothing, because that content
-  could not move independently in any case. For content deliberately versioned
-  independently of the OS it remains a loss of agility, and the Host
-  Configuration route stays correct. This RFC adds an option; it removes none.
+  [Extension-Only Updates](#extension-only-updates) removes the reboot, and
+  reduces the build to a copy, but a new COSI must still be published and
+  distributed. For content that must match the OS, such as kernel modules or GPU
+  drivers, this costs nothing, because that content could not move independently
+  in any case. For content deliberately versioned independently of the OS it
+  remains a loss of agility, and the Host Configuration route stays correct. This
+  RFC adds an option; it removes none.
 - **Size.** COSI files grow, and every host downloading the image pays for every
   bundled extension, including those it does not use. There is no per-host
   selection mechanism.
@@ -696,16 +767,19 @@ at the cost of cadence. The `extension-release` fields, `ID=_any` against
 - **What surface requests an extension-only Runtime Update?** A `trident update`
   flag, an internal parameter alongside `forceAbUpdate`, or a Host Configuration
   field. This RFC requires the request to be explicit but does not choose.
-- **What does the OS content digest cover?** The proposal includes `images[]`,
-  `disk.gptRegions[]`, `disk` geometry, `bootloader`, `osArch` and `osRelease`.
-  `osPackages` and `id` are excluded, since neither affects the deployed bytes.
-  Excluding too much permits a Runtime Update between images that differ in ways
-  Trident does not model; including too much rejects legitimate cases.
-- **Should the digest be published in the COSI metadata rather than computed?**
-  Computing it in Trident requires no writer cooperation and cannot be
-  misdeclared. Publishing it would let a writer state intent directly, at the
-  cost of trusting the writer on a decision that governs whether partitions are
-  rewritten.
+- **What does the deployed image summary cover?** The proposal includes the
+  region and filesystem image hashes and identities, `disk` geometry,
+  `bootloader`, `osArch` and `osRelease`, and excludes `extensions`,
+  `osPackages`, `compression` and `id`. Excluding too much permits a Runtime
+  Update between images differing in ways Trident does not model; including too
+  much rejects legitimate cases. `version` is currently excluded, on the basis
+  that a revision bump with identical images deploys identical bytes.
+- **Should the summary be a structured record or a digest?** A record is
+  proposed, so that Trident can report which partition differs. A digest is
+  smaller and simpler, at the cost of the diagnosis.
+- **Is the no-op outcome desirable?** Recognising a materially identical image
+  and doing nothing is a behavioural change independent of extensions, and
+  arguably belongs in its own RFC.
 - **Should an override escape hatch exist?** This RFC makes a collision between
   the Host Configuration and the COSI an error. The alternative is an explicit
   opt-in on the Host Configuration side meaning "the image ships this, use mine
