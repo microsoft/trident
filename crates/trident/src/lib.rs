@@ -214,10 +214,10 @@ impl Trident {
         // very "trident_start" event -- carries it. This runs for every
         // caller of `Trident::new` (both the CLI path and each daemon
         // RPC handler), since they all supply `datastore_path`.
-        match DataStore::open_or_create(datastore_path).and_then(|mut ds| ds.database_id()) {
-            Ok(database_id) => {
-                info!("Database ID: {database_id}");
-                tracestream.set_database_id(database_id.to_string());
+        match DataStore::open_or_create(datastore_path).and_then(|mut ds| ds.datastore_id()) {
+            Ok(datastore_id) => {
+                info!("Datastore ID: {datastore_id}");
+                tracestream.set_datastore_id(datastore_id.to_string());
             }
             Err(e) => {
                 warn!("Failed to get or create database ID: {e:?}");
