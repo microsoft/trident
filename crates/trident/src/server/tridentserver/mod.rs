@@ -188,11 +188,14 @@ impl TridentServer {
     /// the request itself operates on) rather than reloading from disk, so
     /// this can't refresh from a different datastore path than the one in
     /// effect for this request, and a transient reload failure can't
-    /// silently skip the refresh. Both calls are read-only and
-    /// side-effect-free: neither creates a datastore or an ID (see
+    /// silently skip the refresh. Neither call creates a datastore: both
+    /// silently do nothing if the datastore doesn't exist yet. But on an
+    /// existing datastore, either call may still *persist* a missing ID --
+    /// `attach_datastore_id_if_present` via `DataStore::datastore_id`'s
+    /// get-or-create semantics, and `attach_installation_id_if_present` via
+    /// `DataStore::installation_id_or_migrate`'s legacy-ID migration (see
     /// `TraceStream::attach_installation_id_if_present` and
-    /// `TraceStream::attach_datastore_id_if_present`) -- silently does
-    /// nothing if the datastore doesn't exist yet.
+    /// `TraceStream::attach_datastore_id_if_present`).
     fn refresh_ids(&self) {
         self.tracestream
             .attach_installation_id_if_present(self.agent_config.datastore_path());
