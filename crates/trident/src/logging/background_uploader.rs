@@ -32,6 +32,14 @@ const BASE_ORIGIN_COOLDOWN: Duration = Duration::from_secs(30);
 /// Upper bound on the exponential backoff described above.
 const MAX_ORIGIN_COOLDOWN: Duration = Duration::from_secs(600);
 
+/// Validates an upload response beyond a bare 2xx status, for callers whose
+/// ingestion protocol can reject part of a request while still returning a
+/// 2xx status (e.g. Application Insights' 206 Partial Success). Given the
+/// response status and body, returns `Ok(())` if the upload should be
+/// treated as a success, or `Err` (triggering the same retry/backoff path
+/// as a network-level failure) otherwise.
+pub(crate) type ResponseValidator = fn(reqwest::StatusCode, &[u8]) -> Result<(), Error>;
+
 /// Data to be uploaded by the background uploader.
 struct UploadData {
     url: Url,
@@ -39,6 +47,9 @@ struct UploadData {
     timeout: Duration,
     /// Optional `Content-Type` header value to attach to the request.
     content_type: Option<&'static str>,
+    /// Optional response validator -- see [`ResponseValidator`]. When
+    /// `None`, falls back to treating any 2xx status as success.
+    response_validator: Option<ResponseValidator>,
 }
 
 /// Per-origin backoff state, tracked across consecutive failed uploads to
@@ -151,9 +162,24 @@ impl BackgroundUploader {
             // silently treating any response as success. `error_for_status()`
             // alone is not enough: it only rejects 4xx/5xx, so a 3xx (e.g. an
             // unexpected redirect the client never followed) would still be
-            // reported as success. Explicitly require 2xx instead.
+            // reported as success. Explicitly require 2xx instead. A 2xx
+            // status alone is still not sufficient for every caller: some
+            // ingestion protocols (e.g. Application Insights) can return a
+            // 2xx (206 Partial Success) while rejecting part or all of the
+            // request body, so a caller-supplied `response_validator` gets
+            // the final say when present.
+            let response_validator = upload.response_validator;
             let result: Result<(), Error> = match request.send().await {
-                Ok(response) if response.status().is_success() => Ok(()),
+                Ok(response) if response.status().is_success() => {
+                    let status = response.status();
+                    match response_validator {
+                        Some(validate) => match response.bytes().await {
+                            Ok(body) => validate(status, &body),
+                            Err(e) => Err(e.into()),
+                        },
+                        None => Ok(()),
+                    }
+                }
                 Ok(response) => Err(anyhow::anyhow!(
                     "unexpected HTTP status {} from {}",
                     response.status(),
@@ -279,13 +305,30 @@ pub struct BackgroundUploadHandle {
 }
 
 impl BackgroundUploadHandle {
-    /// Sends data to be uploaded in the background.
+    /// Sends data to be uploaded in the background. Any 2xx response is
+    /// treated as success; use [`Self::upload_with_validator`] if the
+    /// destination's ingestion protocol can reject part of a request
+    /// while still returning a 2xx status.
     pub fn upload(
         &self,
         url: &Url,
         body: impl Into<Vec<u8>>,
         timeout: Duration,
         content_type: Option<&'static str>,
+    ) -> Result<(), Error> {
+        self.upload_with_validator(url, body, timeout, content_type, None)
+    }
+
+    /// Same as [`Self::upload`], but with an optional response validator
+    /// -- see `UploadData`'s `response_validator` field doc comment above
+    /// for its contract.
+    pub fn upload_with_validator(
+        &self,
+        url: &Url,
+        body: impl Into<Vec<u8>>,
+        timeout: Duration,
+        content_type: Option<&'static str>,
+        response_validator: Option<ResponseValidator>,
     ) -> Result<(), Error> {
         if let Some(sender) = self.sender.upgrade() {
             sender
@@ -294,6 +337,7 @@ impl BackgroundUploadHandle {
                     body: body.into(),
                     timeout,
                     content_type,
+                    response_validator,
                 })
                 .context("Failed to send data to background uploader")
         } else {
@@ -426,6 +470,7 @@ mod tests {
                     body: body.as_bytes().to_vec(),
                     timeout: Duration::from_secs(2),
                     content_type: None,
+                    response_validator: None,
                 })
                 .unwrap();
 
@@ -478,6 +523,7 @@ mod tests {
                 body: b"timeout-me".to_vec(),
                 timeout: Duration::from_millis(100),
                 content_type: None,
+                response_validator: None,
             })
             .unwrap();
 
@@ -488,6 +534,7 @@ mod tests {
                 body: b"this-should-be-skipped".to_vec(),
                 timeout: Duration::from_secs(2),
                 content_type: None,
+                response_validator: None,
             })
             .unwrap();
 
@@ -534,6 +581,7 @@ mod tests {
                 body: b"redirect-me".to_vec(),
                 timeout: Duration::from_secs(2),
                 content_type: None,
+                response_validator: None,
             })
             .unwrap();
 
@@ -544,6 +592,7 @@ mod tests {
                 body: b"this-should-be-skipped".to_vec(),
                 timeout: Duration::from_secs(2),
                 content_type: None,
+                response_validator: None,
             })
             .unwrap();
 
@@ -579,6 +628,7 @@ mod tests {
                 body: b"queued".to_vec(),
                 timeout: Duration::from_secs(1),
                 content_type: None,
+                response_validator: None,
             })
             .unwrap();
         // Close the sender before running the loop to simulate shutdown.
