@@ -202,12 +202,12 @@ fn run_trident(
                 // even runs. Both are read-only and side-effect-free:
                 // neither creates a datastore or an ID (see
                 // `TraceStream::attach_installation_id_if_present` and
-                // `TraceStream::attach_database_id_if_present`) -- silently
+                // `TraceStream::attach_datastore_id_if_present`) -- silently
                 // does nothing if the datastore doesn't exist yet, which is
                 // expected for a host's first-ever install.
                 if let Ok(agent_config) = AgentConfig::load() {
                     tracestream.attach_installation_id_if_present(agent_config.datastore_path());
-                    tracestream.attach_database_id_if_present(agent_config.datastore_path());
+                    tracestream.attach_datastore_id_if_present(agent_config.datastore_path());
                 }
 
                 run_with_operation(&command, OperationSource::Cli, || {
@@ -538,7 +538,7 @@ fn setup_tracing(
                         trident::AZURE_MONITOR_CONNECTION_STRING,
                         handle,
                         tracestream.installation_id_handle(),
-                        tracestream.database_id_handle(),
+                        tracestream.datastore_id_handle(),
                     ) {
                         Some(sender) => {
                             layers.push(Box::new(sender.with_filter(filter::LevelFilter::INFO)));
