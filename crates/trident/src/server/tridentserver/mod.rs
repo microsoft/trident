@@ -178,6 +178,28 @@ impl TridentServer {
         })
     }
 
+    /// Re-attaches a persisted installation ID and datastore ID to
+    /// `self.tracestream`, if either is now available but wasn't at
+    /// daemon-startup time (`server_main`'s one-time attach runs before any
+    /// request has had a chance to create a datastore, so a request that
+    /// arrives before the very first install/update -- and whose own
+    /// handler goes on to create that datastore -- would otherwise still be
+    /// missing both IDs. Uses `self.agent_config` (the same configuration
+    /// the request itself operates on) rather than reloading from disk, so
+    /// this can't refresh from a different datastore path than the one in
+    /// effect for this request, and a transient reload failure can't
+    /// silently skip the refresh. Both calls are read-only and
+    /// side-effect-free: neither creates a datastore or an ID (see
+    /// `TraceStream::attach_installation_id_if_present` and
+    /// `TraceStream::attach_datastore_id_if_present`) -- silently does
+    /// nothing if the datastore doesn't exist yet.
+    fn refresh_ids(&self) {
+        self.tracestream
+            .attach_installation_id_if_present(self.agent_config.datastore_path());
+        self.tracestream
+            .attach_datastore_id_if_present(self.agent_config.datastore_path());
+    }
+
     /// Handles a servicing request by acquiring the necessary locks,
     /// setting up log forwarding, and spawning the provided servicing task.
     ///
@@ -216,31 +238,20 @@ impl TridentServer {
         // Untelemetered, same as the lock-busy rejections above: this is
         // admission control, not a distinct servicing outcome.
         if !DataStore::may_initialize_datastore_for_command(name)
-            && !AgentConfig::load()
-                .map(|c| c.datastore_path().exists())
-                .unwrap_or(false)
+            && !self.agent_config.datastore_path().exists()
         {
             warn!("Rejected request '{}': datastore does not exist", name);
             return Err(Status::failed_precondition("Host is not provisioned"));
         }
 
-        // Re-check for a persisted installation ID and database ID
-        // before this request fires its own command_start (below, via
+        // Re-check for a persisted installation ID and datastore ID before
+        // this request fires its own command_start (below, via
         // run_with_operation). server_main's daemon-startup attach only
         // ever runs once, at startup -- so a request that arrives before
         // any datastore exists (e.g. this daemon's very first install)
         // would otherwise never see one, even after that request's own
-        // handler goes on to create the datastore. Both are read-only and
-        // side-effect-free: neither creates a datastore or an ID (see
-        // `TraceStream::attach_installation_id_if_present` and
-        // `TraceStream::attach_datastore_id_if_present`) -- silently does
-        // nothing if the datastore doesn't exist yet.
-        if let Ok(agent_config) = AgentConfig::load() {
-            self.tracestream
-                .attach_installation_id_if_present(agent_config.datastore_path());
-            self.tracestream
-                .attach_datastore_id_if_present(agent_config.datastore_path());
-        }
+        // handler goes on to create the datastore.
+        self.refresh_ids();
 
         // Tag every metric/tracing event `f` fires (on whatever thread it
         // ultimately runs on -- see `spawn_servicing_task`, which runs it
