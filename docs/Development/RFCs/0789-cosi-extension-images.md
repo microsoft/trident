@@ -1,7 +1,7 @@
-# 0000 COSI Extension Images
+# 0789 COSI Extension Images
 
 - Date: 2026-09-08
-- RFC PR: [microsoft/trident#0000](https://github.com/microsoft/trident/pull/0000)
+- RFC PR: [microsoft/trident#789](https://github.com/microsoft/trident/pull/789)
 - Issue: [microsoft/trident#0000](https://github.com/microsoft/trident/issues/0000)
 
 ## Summary
