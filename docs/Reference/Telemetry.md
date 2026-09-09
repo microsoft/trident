@@ -20,9 +20,9 @@ enable it.
 
 ## Host Metadata
 
-Every event sent also includes the following host metadata, so operators
-should be aware this leaves the host along with the metrics/spans
-themselves:
+Every event sent also includes as much of the following host metadata as
+is available at the time, so operators should be aware this leaves the
+host along with the metrics/spans themselves:
 
 - `asset_id`: the host's DMI product UUID (a stable hardware identifier).
 - `os_release`: the `VERSION` field from `/etc/os-release`.
@@ -33,6 +33,9 @@ themselves:
 - `database_id`: an ID that lets separate events be correlated back to the
   same datastore over its entire lifetime (generated on first access to
   the datastore, whether or not an install has actually happened yet).
+  Not present on events that fire before the datastore has ever been
+  accessed (e.g. very early in a host's first-ever `install`, before
+  `Trident::new` opens or creates it).
 - `installation_id`: an ID that lets separate events be correlated back to
   the same host installation over time. Unlike `database_id`, this is
   only ever created (get-or-create, never overwritten) at the start of
