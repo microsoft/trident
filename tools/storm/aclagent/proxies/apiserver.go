@@ -225,18 +225,33 @@ func (s *APIServer) Handler() http.Handler {
 	})
 }
 
-func (s *APIServer) ListenAndServe(ctx context.Context, listenAddr string) (net.Listener, error) {
-	listener, err := net.Listen("tcp", listenAddr)
+// ListenAndServe starts the fake apiserver and returns its listener plus a
+// stop function that synchronously shuts the HTTP server down. Callers must
+// defer stop() (not rely on ctx cancellation) so a subsequent proxy instance
+// reusing the same listenAddr never races this one's teardown - ctx is still
+// honored (it also triggers the same synchronous shutdown in the
+// background), but stop() gives callers a way to wait for it deterministically
+// before returning.
+func (s *APIServer) ListenAndServe(ctx context.Context, listenAddr string) (listener net.Listener, stop func() error, err error) {
+	listener, err = net.Listen("tcp", listenAddr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to listen on %s: %w", listenAddr, err)
+		return nil, nil, fmt.Errorf("failed to listen on %s: %w", listenAddr, err)
 	}
 	server := &http.Server{Handler: s.Handler()}
+	var shutdownOnce sync.Once
+	shutdown := func() error {
+		var shutdownErr error
+		shutdownOnce.Do(func() {
+			shutdownErr = server.Shutdown(context.Background())
+		})
+		return shutdownErr
+	}
 	go func() {
 		<-ctx.Done()
-		_ = server.Shutdown(context.Background())
+		_ = shutdown()
 	}()
 	go func() { _ = server.Serve(listener) }()
-	return listener, nil
+	return listener, shutdown, nil
 }
 
 func (s *APIServer) handleGet(w http.ResponseWriter, _ *http.Request) {

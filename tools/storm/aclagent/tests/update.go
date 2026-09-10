@@ -168,11 +168,27 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	// (re)start, so the agent's connect-retry/backoff logic has to actually
 	// retry against a closed port for a while instead of always finding the
 	// apiserver already up.
+	// apiServerStop is set by apiServerDelayedStart once the fake apiserver
+	// actually starts. It is only safe to read after receiving from
+	// apiServerReady (below), which happens-before this assignment via the
+	// channel send in apiServerDelayedStart.
+	var apiServerStop func() error
 	apiServerReady := make(chan error, 1)
 	apiServerDelayedStart := func() {
-		_, err := apiServer.ListenAndServe(ctx, fmt.Sprintf("%s:%d", testConfig.HostEndpointIP, testConfig.APIServerPort))
+		_, stop, err := apiServer.ListenAndServe(ctx, fmt.Sprintf("%s:%d", testConfig.HostEndpointIP, testConfig.APIServerPort))
+		if err == nil {
+			apiServerStop = stop
+		}
 		apiServerReady <- err
 	}
+	// Deferred instead of relying on ctx cancellation alone: RunRollback
+	// (the next test case) binds the same HostEndpointIP:APIServerPort, and
+	// must not race this apiserver's teardown.
+	defer func() {
+		if apiServerStop != nil {
+			_ = apiServerStop()
+		}
+	}()
 
 	nebraskaCodebase := testConfig.NebraskaCodebase
 	nebraskaPackageName := testConfig.NebraskaPackageName
@@ -231,9 +247,11 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 		PostgresImage: testConfig.PostgresImage,
 		Cert:          tlsCert,
 	}
-	if _, err := nebraska.ListenAndServe(ctx, fmt.Sprintf("%s:%d", testConfig.HostEndpointIP, testConfig.NebraskaPort)); err != nil {
+	_, nebraskaStop, err := nebraska.ListenAndServe(ctx, fmt.Sprintf("%s:%d", testConfig.HostEndpointIP, testConfig.NebraskaPort))
+	if err != nil {
 		return fmt.Errorf("failed to start fake Nebraska endpoint: %w", err)
 	}
+	defer nebraskaStop()
 
 	nodeStore.PatchLabels(map[string]string{stormproxies.NodeImageVersionLabel: testConfig.ExpectedInitialVolume})
 	nodeStore.SetReadyCondition(true)

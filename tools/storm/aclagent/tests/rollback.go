@@ -42,9 +42,11 @@ func RunRollback(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	// rollback request.
 	nodeStore := stormproxies.NewNodeStore(stormproxies.NewSeedNode(testConfig.NodeName, map[string]string{}))
 	apiServer := stormproxies.NewAPIServer(testConfig.NodeName, nodeStore)
-	if _, err := apiServer.ListenAndServe(ctx, fmt.Sprintf("%s:%d", testConfig.HostEndpointIP, testConfig.APIServerPort)); err != nil {
+	_, apiServerStop, err := apiServer.ListenAndServe(ctx, fmt.Sprintf("%s:%d", testConfig.HostEndpointIP, testConfig.APIServerPort))
+	if err != nil {
 		return fmt.Errorf("failed to start fake apiserver: %w", err)
 	}
+	defer apiServerStop()
 
 	nodeStore.PatchLabels(map[string]string{stormproxies.NodeImageVersionLabel: testConfig.TargetVersion})
 	nodeStore.SetReadyCondition(true)

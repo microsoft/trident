@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/flatcar/nebraska/backend/pkg/api"
@@ -154,14 +155,23 @@ func (p *NebraskaProxy) Handler() http.Handler {
 // matching p.Scenario, and starts serving the real Nebraska Omaha handler on
 // listenAddr. The Postgres container and http server are both torn down
 // when ctx is cancelled.
-func (p *NebraskaProxy) ListenAndServe(ctx context.Context, listenAddr string) (net.Listener, error) {
+// ListenAndServe starts an ephemeral Postgres container, applies Nebraska's
+// db migrations against it, seeds an application/package/channel/group
+// matching p.Scenario, and starts serving the real Nebraska Omaha handler on
+// listenAddr. It returns the listener plus a stop function that synchronously
+// tears the HTTP server and Postgres container down; callers must defer
+// stop() (not rely on ctx cancellation alone) so a later proxy instance never
+// races this one's teardown - ctx is still honored (cancelling it triggers
+// the same synchronous teardown in the background), but stop() lets callers
+// wait for it deterministically before returning.
+func (p *NebraskaProxy) ListenAndServe(ctx context.Context, listenAddr string) (listener net.Listener, stop func() error, err error) {
 	image := p.PostgresImage
 	if image == "" {
 		image = DefaultPostgresImage
 	}
 	dbURL, containerID, err := startEphemeralPostgres(ctx, image)
 	if err != nil {
-		return nil, fmt.Errorf("failed to start ephemeral Postgres for Nebraska: %w", err)
+		return nil, nil, fmt.Errorf("failed to start ephemeral Postgres for Nebraska: %w", err)
 	}
 	p.containerID = containerID
 	p.dbURL = dbURL
@@ -170,28 +180,44 @@ func (p *NebraskaProxy) ListenAndServe(ctx context.Context, listenAddr string) (
 	// functional option to set a custom DSN - so this is the only way to
 	// point it at our ephemeral container. Safe here because exactly one
 	// NebraskaProxy is ever instantiated per storm test process.
+	//
+	// The previous value (if any) is restored immediately after
+	// api.NewWithMigrations returns below, on both the success and failure
+	// paths, rather than being unset later from an async shutdown goroutine:
+	// api.NewWithMigrations is the only place that reads NEBRASKA_DB_URL, so
+	// nothing after that point depends on it, and restoring it synchronously
+	// here avoids racing a subsequent NebraskaProxy's own Setenv.
+	previousDbURL, hadPreviousDbURL := os.LookupEnv("NEBRASKA_DB_URL")
+	restoreDbURL := func() {
+		if hadPreviousDbURL {
+			_ = os.Setenv("NEBRASKA_DB_URL", previousDbURL)
+		} else {
+			_ = os.Unsetenv("NEBRASKA_DB_URL")
+		}
+	}
 	if err := os.Setenv("NEBRASKA_DB_URL", dbURL); err != nil {
 		stopEphemeralPostgres(containerID)
-		return nil, fmt.Errorf("failed to set NEBRASKA_DB_URL: %w", err)
+		return nil, nil, fmt.Errorf("failed to set NEBRASKA_DB_URL: %w", err)
 	}
 
 	a, err := api.NewWithMigrations(api.OptionInitDB)
+	restoreDbURL()
 	if err != nil {
 		stopEphemeralPostgres(containerID)
-		return nil, fmt.Errorf("failed to initialize Nebraska API against ephemeral Postgres: %w", err)
+		return nil, nil, fmt.Errorf("failed to initialize Nebraska API against ephemeral Postgres: %w", err)
 	}
 	p.api = a
 	p.handler = omaha.NewHandler(a)
 
 	if err := p.seed(); err != nil {
 		stopEphemeralPostgres(containerID)
-		return nil, fmt.Errorf("failed to seed Nebraska scenario: %w", err)
+		return nil, nil, fmt.Errorf("failed to seed Nebraska scenario: %w", err)
 	}
 
-	listener, err := net.Listen("tcp", listenAddr)
+	listener, err = net.Listen("tcp", listenAddr)
 	if err != nil {
 		stopEphemeralPostgres(containerID)
-		return nil, fmt.Errorf("failed to listen on %s: %w", listenAddr, err)
+		return nil, nil, fmt.Errorf("failed to listen on %s: %w", listenAddr, err)
 	}
 	server := &http.Server{
 		Handler: p.Handler(),
@@ -204,18 +230,23 @@ func (p *NebraskaProxy) ListenAndServe(ctx context.Context, listenAddr string) (
 		// a fine ceiling for a test-only fake server either way.
 		TLSConfig: &tls.Config{Certificates: []tls.Certificate{p.Cert}, MaxVersion: tls.VersionTLS12},
 	}
+	var shutdownOnce sync.Once
+	shutdown := func() error {
+		var shutdownErr error
+		shutdownOnce.Do(func() {
+			shutdownErr = server.Shutdown(context.Background())
+			stopEphemeralPostgres(containerID)
+		})
+		return shutdownErr
+	}
 	go func() {
 		<-ctx.Done()
-		_ = server.Shutdown(context.Background())
-		stopEphemeralPostgres(containerID)
-		// Unset so it doesn't leak into other tests/scenarios running in
-		// this same process after this proxy has shut down.
-		_ = os.Unsetenv("NEBRASKA_DB_URL")
+		_ = shutdown()
 	}()
 	// certFile/keyFile are empty: TLSConfig.Certificates is already
 	// populated above, which ServeTLS uses directly.
 	go func() { _ = server.ServeTLS(listener, "", "") }()
-	return listener, nil
+	return listener, shutdown, nil
 }
 
 // seed creates the application/package/channel/group real Nebraska needs to

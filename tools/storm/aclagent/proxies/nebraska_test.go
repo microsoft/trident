@@ -124,10 +124,11 @@ func TestNebraskaProxy(t *testing.T) {
 			SHA384:      "deadbeef",
 			PackageName: "acl.cosi",
 		})
-		listener, err := p.ListenAndServe(ctx, "127.0.0.1:0")
+		listener, stop, err := p.ListenAndServe(ctx, "127.0.0.1:0")
 		if err != nil {
 			t.Fatalf("ListenAndServe: %v", err)
 		}
+		t.Cleanup(func() { _ = stop() })
 
 		if p.AppID() == "" {
 			t.Fatal("expected non-empty AppID after seeding")
@@ -147,10 +148,11 @@ func TestNebraskaProxy(t *testing.T) {
 		t.Cleanup(cancel)
 
 		p, client := newTestNebraskaProxy(t, &NebraskaScenario{Available: false})
-		listener, err := p.ListenAndServe(ctx, "127.0.0.1:0")
+		listener, stop, err := p.ListenAndServe(ctx, "127.0.0.1:0")
 		if err != nil {
 			t.Fatalf("ListenAndServe: %v", err)
 		}
+		t.Cleanup(func() { _ = stop() })
 
 		body := postUpdateCheck(t, client, listener.Addr().String(), p.AppID(), "smoke-test-machine-2")
 		if !strings.Contains(body, `status="noupdate"`) {
@@ -169,10 +171,11 @@ func TestNebraskaProxy(t *testing.T) {
 			SHA384:      "deadbeef",
 			PackageName: "acl.cosi",
 		})
-		listener, err := p.ListenAndServe(ctx, "127.0.0.1:0")
+		listener, stop, err := p.ListenAndServe(ctx, "127.0.0.1:0")
 		if err != nil {
 			t.Fatalf("ListenAndServe: %v", err)
 		}
+		t.Cleanup(func() { _ = stop() })
 		addr := listener.Addr().String()
 		machineID := "status-history-machine"
 
