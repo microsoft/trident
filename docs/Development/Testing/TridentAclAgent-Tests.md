@@ -207,8 +207,16 @@ sudo bin/storm-trident run aclagent \
     --output-path /tmp/aclagent-output \
     --ssh-private-key-path ./artifacts/id_rsa \
     --postgres-image postgres:16-alpine \
+    --image-pattern '^trident-vm-acl-agent-testimage\.qcow2$' \
     --verbose
 ```
+
+`--image-pattern` scopes the QEMU image lookup to this scenario's own base
+image. The flag's shared default (`^trident-vm-.*-testimage\.qcow2$`) matches
+every `trident-vm-*-testimage.qcow2` in the artifacts directory; `FindFile`
+errors out if more than one file matches, so a local `artifacts/` directory
+holding another storm scenario's test image would otherwise make `deploy-vm`
+fail. Pass it explicitly here rather than relying on the default.
 
 `--postgres-image` already defaults to the public `postgres:16-alpine` image
 from Docker Hub, so it only needs to be passed explicitly here to make that
