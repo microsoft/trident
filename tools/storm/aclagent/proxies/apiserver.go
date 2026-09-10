@@ -8,12 +8,18 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
+
+// apiServerShutdownTimeout bounds how long ListenAndServe's stop function
+// waits for a graceful http.Server.Shutdown before force-closing remaining
+// connections. See ListenAndServe's doc comment.
+const apiServerShutdownTimeout = 5 * time.Second
 
 type NodeStore struct {
 	mu              sync.RWMutex
@@ -232,6 +238,13 @@ func (s *APIServer) Handler() http.Handler {
 // honored (it also triggers the same synchronous shutdown in the
 // background), but stop() gives callers a way to wait for it deterministically
 // before returning.
+//
+// The shutdown itself is bounded: kube-rs's watcher() keeps a long-lived
+// watch connection open indefinitely, which http.Server.Shutdown would
+// otherwise wait for forever (it only closes idle connections). Give
+// in-flight requests apiServerShutdownTimeout to finish gracefully, then
+// force-close any still-open connections (e.g. that watch) rather than
+// hanging the caller.
 func (s *APIServer) ListenAndServe(ctx context.Context, listenAddr string) (listener net.Listener, stop func() error, err error) {
 	listener, err = net.Listen("tcp", listenAddr)
 	if err != nil {
@@ -242,7 +255,15 @@ func (s *APIServer) ListenAndServe(ctx context.Context, listenAddr string) (list
 	shutdown := func() error {
 		var shutdownErr error
 		shutdownOnce.Do(func() {
-			shutdownErr = server.Shutdown(context.Background())
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), apiServerShutdownTimeout)
+			defer cancel()
+			if err := server.Shutdown(shutdownCtx); err != nil {
+				// Graceful shutdown didn't finish in time - most likely
+				// kube-rs's long-lived watch connection is still open.
+				// Force-close it instead of hanging the caller forever.
+				logrus.Warnf("fake apiserver graceful shutdown did not complete within %s (%v); force-closing", apiServerShutdownTimeout, err)
+				shutdownErr = server.Close()
+			}
 		})
 		return shutdownErr
 	}
