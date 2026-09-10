@@ -370,7 +370,7 @@ func (s *TridentE2EScenario) abUpdateOs(tc storm.TestCase, opts abUpdateOptions)
 		NetCommonConfig: netlaunch.NetCommonConfig{
 			ListenPort:           defaultNetlaunchListenPort,
 			LogstreamFile:        s.args.LogstreamFile,
-			TracestreamFile:      fmt.Sprintf("metrics-%s.jsonl", tc.Name()),
+			TracestreamFile:      servicingTraceFile(tc.Name()),
 			ServeDirectory:       s.args.TestImageDir,
 			MaxPhonehomeFailures: s.configParams.MaxExpectedFailures,
 		},

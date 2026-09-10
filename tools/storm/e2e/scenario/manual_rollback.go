@@ -56,7 +56,7 @@ func (s *TridentE2EScenario) manualRollback(tc storm.TestCase) error {
 		NetCommonConfig: netlaunch.NetCommonConfig{
 			ListenPort:           defaultNetlaunchListenPort,
 			LogstreamFile:        s.args.LogstreamFile,
-			TracestreamFile:      fmt.Sprintf("metrics-%s.jsonl", tc.Name()),
+			TracestreamFile:      servicingTraceFile(tc.Name()),
 			ServeDirectory:       s.args.TestImageDir,
 			MaxPhonehomeFailures: s.configParams.MaxExpectedFailures,
 		},

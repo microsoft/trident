@@ -86,6 +86,12 @@ func TestRegisterTestCases_ABUpdate_RegistersValidation(t *testing.T) {
 
 	// validate-install must come right after check-trident-ssh.
 	assertOrder(t, r.names, "check-trident-ssh", "validate-install")
+	// Boot metrics are collected between the SSH check and validation, so the
+	// host is known reachable and the record lands before any later servicing
+	// overwrites the picture.
+	mustContain(t, r.names, "collect-install-boot-metrics")
+	assertOrder(t, r.names, "check-trident-ssh", "collect-install-boot-metrics")
+	assertOrder(t, r.names, "collect-install-boot-metrics", "validate-install")
 	// Image prep runs after prepare-hc and before setup-test-host.
 	mustContain(t, r.names, "prepare-test-images")
 	assertOrder(t, r.names, "prepare-hc", "prepare-test-images")
@@ -98,6 +104,11 @@ func TestRegisterTestCases_ABUpdate_RegistersValidation(t *testing.T) {
 	mustContain(t, r.names, "validate-ab-update-split")
 	// validate-ab-update-1 must come after the ab-update-1 update case.
 	assertOrder(t, r.names, "ab-update-1-ab-update", "validate-ab-update-1")
+	// Boot metrics for the first A/B update are collected between the update
+	// and its validation. Only this update is measured, matching legacy.
+	mustContain(t, r.names, "collect-ab-update-boot-metrics")
+	assertOrder(t, r.names, "ab-update-1-ab-update", "collect-ab-update-boot-metrics")
+	assertOrder(t, r.names, "collect-ab-update-boot-metrics", "validate-ab-update-1")
 
 	// Auto-rollback cases must be registered in order, after the first A/B
 	// update's validation and before the split A/B update.
@@ -143,8 +154,12 @@ func TestRegisterTestCases_NoABUpdate_OnlyInstallValidation(t *testing.T) {
 	}
 
 	mustContain(t, r.names, "validate-install")
+	mustContain(t, r.names, "collect-install-boot-metrics")
 	if slices.Contains(r.names, "validate-ab-update-1") {
 		t.Error("validate-ab-update-1 should not be registered without abUpdate")
+	}
+	if slices.Contains(r.names, "collect-ab-update-boot-metrics") {
+		t.Error("collect-ab-update-boot-metrics should not be registered without abUpdate")
 	}
 	if slices.Contains(r.names, "rebuild-raid") {
 		t.Error("rebuild-raid should not be registered without RAID")
