@@ -180,6 +180,7 @@ stages:
                 --artifacts-dir $(Build.ArtifactStagingDirectory) \
                 --ssh-private-key-path ~/.ssh/id_rsa \
                 --postgres-image "${{ parameters.postgresImage }}" \
-                --image-pattern "^trident-vm-acl-agent-testimage\.qcow2$"
+                --image-pattern "^trident-vm-acl-agent-testimage\.qcow2$" \
+                --cosi-pattern "^trident-vm-acl-agent-update-testimage\.cosi$"
             displayName: "🧪 Run trident-acl-agent A/B update + rollback scenario"
             workingDirectory: $(TRIDENT_SOURCE_DIR)

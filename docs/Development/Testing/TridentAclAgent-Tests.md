@@ -208,6 +208,7 @@ sudo bin/storm-trident run aclagent \
     --ssh-private-key-path ./artifacts/id_rsa \
     --postgres-image postgres:16-alpine \
     --image-pattern '^trident-vm-acl-agent-testimage\.qcow2$' \
+    --cosi-pattern '^trident-vm-acl-agent-update-testimage\.cosi$' \
     --verbose
 ```
 
@@ -217,6 +218,13 @@ every `trident-vm-*-testimage.qcow2` in the artifacts directory; `FindFile`
 errors out if more than one file matches, so a local `artifacts/` directory
 holding another storm scenario's test image would otherwise make `deploy-vm`
 fail. Pass it explicitly here rather than relying on the default.
+
+`--cosi-pattern` does the same for the update `.cosi` image used when
+`--image-path` is not set: the default (`.*\.cosi$`) matches any `.cosi`
+file anywhere under `--artifacts-dir`, so a shared artifacts directory
+holding another scenario's update image would make `FindFile` fail with a
+"multiple files found" error (or, worse, silently pick the wrong single
+match). Scoping it to this scenario's own update image name avoids both.
 
 `--postgres-image` already defaults to the public `postgres:16-alpine` image
 from Docker Hub, so it only needs to be passed explicitly here to make that
@@ -260,7 +268,9 @@ The scenario runs these test cases in order:
 | `--api-server-port` | Port for the fake Kubernetes API server | `18080` |
 | `--nebraska-port` | Port for the fake Nebraska/Omaha server | `18081` |
 | `--host-endpoint-ip` | Host IP the VM reaches the fake endpoints at | `192.168.122.1` |
-| `--image-path` | Real `.cosi` update image to serve during staging | first `*.cosi` found under `--artifacts-dir` |
+| `--image-path` | Real `.cosi` update image to serve during staging | none - falls back to `--cosi-pattern` search under `--artifacts-dir` |
+| `--image-pattern` | Regex to find the QEMU base image under `--artifacts-dir` | `^trident-vm-.*-testimage\.qcow2$` |
+| `--cosi-pattern` | Regex to find the update `.cosi` image under `--artifacts-dir` when `--image-path` is not set | `.*\.cosi$` |
 | `--postgres-image` | Container image for the ephemeral Postgres instance backing the fake Nebraska endpoint | `postgres:16-alpine` |
 | `--verbose` | Enable verbose logging | `false` |
 | `--test-case-to-run` | Run a specific test case only | `all` |

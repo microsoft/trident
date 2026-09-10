@@ -215,9 +215,9 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	// hash that doesn't match any downloadable bytes.
 	imagePath := testConfig.ImagePath
 	if imagePath == "" {
-		found, err := stormfile.FindFile(testConfig.ArtifactsDir, ".*\\.cosi$")
+		found, err := stormfile.FindFile(testConfig.ArtifactsDir, testConfig.CosiPattern)
 		if err != nil {
-			return fmt.Errorf("failed to find a .cosi update image under %s: %w", testConfig.ArtifactsDir, err)
+			return fmt.Errorf("failed to find a .cosi update image matching %q under %s: %w", testConfig.CosiPattern, testConfig.ArtifactsDir, err)
 		}
 		imagePath = found
 	}
