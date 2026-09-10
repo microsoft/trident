@@ -1225,6 +1225,7 @@ artifacts/trident-vm-acl-agent-testimage.qcow2: \
 	$(TRIDENT_VM_DEPENDENCIES) \
 	$(VM_IMAGE_PATH_PREFIX)/baseimg-acl-agent.yaml \
 	$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub \
+	$(VM_IMAGE_PATH_PREFIX)/files/trident-acl-agent-override.conf \
 	artifacts/rpm-overrides
 	@echo "Building $@ from $<"
 	docker run --rm \

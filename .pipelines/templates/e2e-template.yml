@@ -275,6 +275,8 @@ stages:
     parameters:
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
       acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
+      micBuildType: ${{ parameters.micBuildType }}
+      micVersion: ${{ parameters.micVersion }}
 
   # TESTING stages for PRERELEASE
   - ${{ if eq(parameters.stageType, 'pre') }}:
