@@ -52,13 +52,28 @@ the image's hostname is set to match). What the harness does deliver, once
 at runtime after `deploy-vm`, is a fake kubeconfig at
 `/var/lib/kubelet/kubeconfig` pointing at the fake apiserver. That path lives
 on its own dedicated ext4 partition (not part of the A/B-swapped `/usr`/root
-volume pair in this usr-verity image layout), so it persists across
-`run-ab-update`'s finalize reboot without needing to be re-delivered.
-`trident-acl-agent.service`'s enablement state, by contrast, lives on the
-swapped root itself and does not carry over a reboot onto the other A/B
-volume — the harness re-runs its short prepare/restart step after each
-reboot to reconnect the agent to that test case's fresh fake-apiserver
-instance, not to re-create the kubeconfig.
+volume pair in this usr-verity image layout), so it persists across a
+finalize reboot without needing to be re-delivered.
+
+`run-ab-update` and `run-rollback` differ in what happens after their
+finalize reboot, since they land on different roots:
+
+- `run-ab-update` reboots into the **update image**, where
+  `trident-acl-agent.service` is baked in enabled by default (see [VM Image
+  Contents](#vm-image-contents)) and a `trident-acl-agent-cert-install`
+  oneshot service re-installs the Nebraska TLS cert into that root's trust
+  store before the agent starts. It does **not** re-run the harness's
+  prepare/restart step after this reboot — the agent comes up on its own
+  against the same fake-apiserver instance `run-ab-update` already started,
+  and re-running prepare/restart here would just interrupt the post-reboot
+  commit it's expected to report.
+- `run-rollback` reboots back onto the **base image**, where
+  `trident-acl-agent.service` is disabled by default (per [VM Image
+  Contents](#vm-image-contents)) and `run-rollback` starts its own separate
+  fake-apiserver instance. The harness therefore does re-run its short
+  prepare/restart step after this reboot, to re-enable/restart the agent
+  and reconnect it to that fresh fake-apiserver instance — not to re-create
+  the kubeconfig, which already persisted across the reboot.
 
 ## Nebraska/Image Server TLS
 
