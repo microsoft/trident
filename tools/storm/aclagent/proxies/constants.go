@@ -6,8 +6,7 @@ const (
 	UpdateCommitStatusAnnotation = "acl.azure.com/update-commit-status"
 	NodeImageVersionLabel        = "kubernetes.azure.com/node-image-version"
 
-	DefaultNodeName   = "trident-node"
-	DefaultMarkerFile = "./trident-acl-agent-reboot-signal"
+	DefaultNodeName = "trident-node"
 
 	// DefaultPostgresImage is the ephemeral Postgres image NebraskaProxy runs
 	// to back the real Nebraska server it links in-process, used whenever a
