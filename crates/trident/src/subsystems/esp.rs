@@ -2,6 +2,7 @@ use std::{
     fs,
     io::Read,
     ops::ControlFlow,
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
 };
 
@@ -12,6 +13,7 @@ use tempfile::{NamedTempFile, TempDir};
 
 use osutils::{
     bootloaders::{BOOT_EFI, GRUB_EFI, GRUB_NOPREFIX_EFI},
+    files,
     filesystems::MountFileSystemType,
     mount::{self, MountGuard},
     path,
@@ -29,7 +31,7 @@ use trident_api::{
 
 use crate::{
     engine::{
-        boot::{self, uki, ESP_EXTRACTION_DIRECTORY},
+        boot::{self, uki, ESP_EXTRACTION_DIRECTORY, ESP_EXTRACTION_DIRECTORY_MODE},
         EngineContext, Subsystem,
     },
     io_utils::{
@@ -117,7 +119,7 @@ fn deploy_esp(ctx: &EngineContext, mount_point: &Path) -> Result<(), TridentErro
     // `<newroot>/ESP_EXTRACTION_DIRECTORY`. This location is generally
     // guaranteed to be writable and backed by a real block device, so we don't
     // have to store a potentially large ESP image in memory.
-    let esp_extraction_dir = path::join_relative(mount_point, ESP_EXTRACTION_DIRECTORY);
+    let esp_extraction_dir = ensure_esp_extraction_dir(mount_point)?;
 
     // Get the threshold and interval for reporting slow streaming speed from
     // the context, to be used in the ReadMonitor while streaming images to the
@@ -180,6 +182,40 @@ fn deploy_esp(ctx: &EngineContext, mount_point: &Path) -> Result<(), TridentErro
     }
 
     Ok(())
+}
+
+/// Returns the directory under `mount_point` to stage the ESP image in,
+/// creating it if the OS image does not ship it.
+///
+/// The staging directory is deliberately on the newly written root rather than
+/// in memory, since an ESP image can be large. It is not guaranteed to exist
+/// there, though: an immutable OS image may ship a root filesystem with no
+/// `/var` at all and leave systemd-tmpfiles to populate it on first boot. In
+/// that case create it with the mode `/var/tmp` is expected to have, so that we
+/// neither fail the deployment nor leave the installed system with a
+/// wrongly-permissioned directory.
+fn ensure_esp_extraction_dir(mount_point: &Path) -> Result<PathBuf, TridentError> {
+    let esp_extraction_dir = path::join_relative(mount_point, ESP_EXTRACTION_DIRECTORY);
+
+    if !esp_extraction_dir.exists() {
+        debug!(
+            "Creating ESP staging directory '{}'",
+            esp_extraction_dir.display()
+        );
+
+        files::create_dirs(&esp_extraction_dir)
+            .structured(ServicingError::DeployESPImages)
+            .message("Failed to create the ESP staging directory")?;
+
+        fs::set_permissions(
+            &esp_extraction_dir,
+            fs::Permissions::from_mode(ESP_EXTRACTION_DIRECTORY_MODE),
+        )
+        .structured(ServicingError::DeployESPImages)
+        .message("Failed to set permissions on the ESP staging directory")?;
+    }
+
+    Ok(esp_extraction_dir)
 }
 
 /// Takes in a reader to the raw zstd-compressed ESP image and decompresses it
@@ -1505,6 +1541,55 @@ mod tests {
                 "Failed to find shim EFI executable at path '{}'",
                 boot_efi_path.display()
             )
+        );
+    }
+
+    /// Tests that [`ensure_esp_extraction_dir`] creates the staging directory
+    /// when the OS image does not ship one.
+    ///
+    /// Immutable images such as Azure Container Linux ship a root filesystem
+    /// with no `/var` at all, leaving systemd-tmpfiles to populate it on first
+    /// boot. Staging the ESP image used to fail against such an image, after
+    /// the disk had already been repartitioned.
+    #[test]
+    fn test_ensure_esp_extraction_dir_creates_missing_dir() {
+        let newroot = TempDir::new().unwrap();
+
+        // A root filesystem with no /var whatsoever, as ACL ships.
+        assert!(!newroot.path().join("var").exists());
+
+        let dir = ensure_esp_extraction_dir(newroot.path()).unwrap();
+
+        assert!(dir.is_dir(), "staging directory should have been created");
+        assert_eq!(dir, newroot.path().join("var/tmp"));
+        assert_eq!(
+            fs::metadata(&dir).unwrap().permissions().mode() & 0o7777,
+            ESP_EXTRACTION_DIRECTORY_MODE,
+            "staging directory should be created as sticky and world-writable, \
+            like a conventional /var/tmp"
+        );
+
+        // A temporary file can actually be created there, which is what the
+        // deployment goes on to do.
+        NamedTempFile::new_in(&dir).unwrap();
+    }
+
+    /// Tests that [`ensure_esp_extraction_dir`] leaves an existing staging
+    /// directory alone, rather than changing the permissions an image chose.
+    #[test]
+    fn test_ensure_esp_extraction_dir_preserves_existing_dir() {
+        let newroot = TempDir::new().unwrap();
+        let existing = newroot.path().join("var/tmp");
+        fs::create_dir_all(&existing).unwrap();
+        fs::set_permissions(&existing, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let dir = ensure_esp_extraction_dir(newroot.path()).unwrap();
+
+        assert_eq!(dir, existing);
+        assert_eq!(
+            fs::metadata(&dir).unwrap().permissions().mode() & 0o7777,
+            0o755,
+            "an existing staging directory should be left untouched"
         );
     }
 }
