@@ -17,6 +17,12 @@ const (
 	// usrVerityCosiSuffix identifies the usr-verity UKI test image whose
 	// encryption must not seal to PCR 7 under a containerized runtime.
 	usrVerityCosiSuffix = "usrverity.cosi"
+
+	// EffectiveHostConfigArtifact is where prepare-hc publishes the Host
+	// Configuration that was actually deployed, after every scenario-side edit.
+	// Downstream pipeline steps (metrics enrichment) read it so they describe
+	// the deployed config rather than the on-disk template.
+	EffectiveHostConfigArtifact = "host-config.yaml"
 )
 
 func (s *TridentE2EScenario) prepareHostConfig(tc storm.TestCase) error {
@@ -76,6 +82,15 @@ func (s *TridentE2EScenario) prepareHostConfig(tc storm.TestCase) error {
 	// Inject any pipeline-provided OCI overrides (extension images, ACR-hosted
 	// COSI URL). Mirrors tests/e2e_tests/helpers/edit_host_config.py.
 	s.applyOciOverrides()
+
+	// Publish the fully-edited configuration last, so it reflects exactly what
+	// gets deployed. Only the testing user's *public* key was added above, so
+	// this carries no secret.
+	effective, err := s.config.ToYaml()
+	if err != nil {
+		return fmt.Errorf("failed to serialize the effective Host Configuration: %w", err)
+	}
+	tc.ArtifactBroker().PublishArtifactData(EffectiveHostConfigArtifact, effective)
 
 	return nil
 }

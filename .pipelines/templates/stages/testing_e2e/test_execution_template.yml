@@ -105,8 +105,17 @@ stages:
               # from it for the per-config handling below.
               config=$(echo "$(SCENARIO)" | sed -E 's/_(vm|bm)-(host|container)$//')
               runtime=$(echo "$(SCENARIO)" | sed -E 's/.*_(vm|bm)-(host|container)$/\2/')
+              hardware=$(echo "$(SCENARIO)" | sed -E 's/.*_(vm|bm)-(host|container)$/\1/')
+              # Match the machine_type values legacy recorded in Kusto so storm
+              # rows group with the existing ones.
+              if [ "$hardware" == 'vm' ]; then
+                deploymentEnv=virtualMachine
+              else
+                deploymentEnv=bareMetal
+              fi
               echo "##vso[task.setvariable variable=tridentConfigurationName]$config"
               echo "##vso[task.setvariable variable=tridentRuntimeEnv]$runtime"
+              echo "##vso[task.setvariable variable=tridentDeploymentEnv]$deploymentEnv"
             displayName: "Resolve configuration name from scenario"
 
           - bash: |
@@ -238,6 +247,18 @@ stages:
                   $EXTENSION_ARGS
             displayName: "🧪 Run E2E Test"
             workingDirectory: $(TRIDENT_SOURCE_DIR)
+
+          # Enrich and upload the trace-stream metrics the run produced. Placed
+          # immediately after the run, before the JUnit handling, so the metrics
+          # files are still untouched in the working directory.
+          - template: storm-metrics.yml
+            parameters:
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
+              artifactDirectory: $(ob_outputDirectory)
+              deploymentEnvironment: $(tridentDeploymentEnv)
+              runtimeEnvironment: $(tridentRuntimeEnv)
+              tridentConfigurationName: $(tridentConfigurationName)
+              stormBinary: ./bin/storm-trident
 
           # Sanitize and disambiguate the JUnit XML before publishing:
           #   1. Strip XML-1.0-illegal C0 control bytes (NUL and friends) that
