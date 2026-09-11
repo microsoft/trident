@@ -790,15 +790,29 @@ where
 /// previous operation. This is the fixed set of `command`/
 /// `servicing_request` names that pass `has_stage = true` into
 /// [`TraceStream::refresh_servicing_id`] (see `Trident::install`/`update`/
-/// `rollback` and their daemon service handlers) -- mirrors
+/// `rollback`, `TridentServer::stream_disk`, and their other daemon
+/// service handlers) -- mirrors
 /// `DataStore::may_initialize_datastore_for_command`'s similar,
 /// exhaustive name-based enumeration, but answers a different question:
 /// not "may this command run without a datastore" but "will this
-/// command's own servicing_id equal its operation_id".
+/// command's own servicing_id equal its operation_id". The two sets are
+/// related but not identical: this one includes `rollback`/
+/// `rollback_stage` (a manual rollback stages/finalizes its own
+/// servicing episode, but can never *initialize* a fresh datastore, so it
+/// is absent from the other enumeration), and, like the other
+/// enumeration, includes `stream_disk` (which internally calls
+/// `Trident::install` and so must generate its own servicing_id just
+/// like a direct `install` would).
 fn command_generates_servicing_id(command: &str) -> bool {
     matches!(
         command,
-        "install" | "install_stage" | "update" | "update_stage" | "rollback" | "rollback_stage"
+        "install"
+            | "install_stage"
+            | "update"
+            | "update_stage"
+            | "rollback"
+            | "rollback_stage"
+            | "stream_disk"
     )
 }
 
@@ -1103,6 +1117,47 @@ mod tests {
             metric_found,
             "Expected metric with installation_id field not found in the local metrics file"
         );
+    }
+
+    #[test]
+    /// Locks in the exact set of commands that `command_generates_servicing_id`
+    /// classifies as staging (i.e. generating their own servicing_id from
+    /// their own operation_id), so future edits to the match arms are
+    /// caught by CI rather than only being noticed in a running system.
+    /// `stream_disk` must be included: it internally calls `Trident::install`
+    /// and so must generate its own servicing_id just like a direct
+    /// `install` would.
+    fn test_command_generates_servicing_id_classifies_known_commands() {
+        for command in [
+            "install",
+            "install_stage",
+            "update",
+            "update_stage",
+            "rollback",
+            "rollback_stage",
+            "stream_disk",
+        ] {
+            assert!(
+                command_generates_servicing_id(command),
+                "expected '{command}' to generate its own servicing_id"
+            );
+        }
+
+        for command in [
+            "install_finalize",
+            "update_finalize",
+            "rollback_finalize",
+            "commit",
+            "get",
+            "validate",
+            "diagnose",
+            "rebuild_raid",
+        ] {
+            assert!(
+                !command_generates_servicing_id(command),
+                "expected '{command}' to NOT generate its own servicing_id"
+            );
+        }
     }
 
     #[test]
