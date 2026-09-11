@@ -85,66 +85,55 @@ operations: `install`, `commit`, `update`, `commit`, `update-stage`,
 `update-finalize`, `commit`, `rollback`, `commit`, `install`, `commit`.
 
 ```mermaid
----
-config:
-  theme: base
-  gantt:
-    displayMode: compact
-  themeCSS: |
-    rect[id^="asset"]  { fill: #6c757d !important; }
-    rect[id^="db"]     { fill: #1f77b4 !important; }
-    rect[id^="inst"]   { fill: #2ca02c !important; }
-    rect[id^="sid"]    { fill: #d62728 !important; }
-    rect[id^="o"]      { fill: #9467bd !important; }
----
+%%{init: {'gantt': {'displayMode': 'compact', 'leftPadding': 130}}}%%
 gantt
-    dateFormat  YYYY-MM-DD HH:mm
-    axisFormat  %d
+    dateFormat  YYYY-MM-DD
+    axisFormat  
     title Correlation ID Lifecycles Across a Servicing Sequence (each day = one operation)
 
     section Operations
-    install            :milestone, m1, 2024-01-01 08:00, 0d
-    commit             :milestone, m2, 2024-01-02 00:00, 0d
-    update             :milestone, m3, 2024-01-03 00:00, 0d
-    commit             :milestone, m4, 2024-01-04 00:00, 0d
-    update-stage       :milestone, m5, 2024-01-05 00:00, 0d
-    update-finalize    :milestone, m6, 2024-01-06 00:00, 0d
-    commit             :milestone, m7, 2024-01-07 00:00, 0d
-    rollback           :milestone, m8, 2024-01-08 00:00, 0d
-    commit             :milestone, m9, 2024-01-09 00:00, 0d
-    install            :milestone, m10, 2024-01-10 00:00, 0d
-    commit             :milestone, m11, 2024-01-11 00:00, 0d
+    install            :milestone, m1, 2024-01-01, 0d
+    commit             :milestone, m2, 2024-01-02, 0d
+    update             :milestone, m3, 2024-01-03, 0d
+    commit             :milestone, m4, 2024-01-04, 0d
+    update-stage       :milestone, m5, 2024-01-05, 0d
+    update-finalize    :milestone, m6, 2024-01-06, 0d
+    commit             :milestone, m7, 2024-01-07, 0d
+    rollback           :milestone, m8, 2024-01-08, 0d
+    commit             :milestone, m9, 2024-01-09, 0d
+    install            :milestone, m10, 2024-01-10, 0d
+    commit             :milestone, m11, 2024-01-11, 0d
 
     section operation_id
-    install         :active, o1, 2024-01-01 00:00, 1d
-    commit          :active, o2, 2024-01-02 00:00, 1d
-    update          :active, o3, 2024-01-03 00:00, 1d
-    commit          :active, o4, 2024-01-04 00:00, 1d
-    update-stage    :active, o5, 2024-01-05 00:00, 1d
-    update-finalize :active, o6, 2024-01-06 00:00, 1d
-    commit          :active, o7, 2024-01-07 00:00, 1d
-    rollback        :active, o8, 2024-01-08 00:00, 1d
-    commit          :active, o9, 2024-01-09 00:00, 1d
-    install         :active, o10, 2024-01-10 00:00, 1d
-    commit          :active, o11, 2024-01-11 00:00, 1d
+    install         :o1, 2024-01-01, 1d
+    commit          :o2, 2024-01-02, 1d
+    update          :o3, 2024-01-03, 1d
+    commit          :o4, 2024-01-04, 1d
+    update-stage    :o5, 2024-01-05, 1d
+    update-finalize :o6, 2024-01-06, 1d
+    commit          :o7, 2024-01-07, 1d
+    rollback        :o8, 2024-01-08, 1d
+    commit          :o9, 2024-01-09, 1d
+    install         :o10, 2024-01-10, 1d
+    commit          :o11, 2024-01-11, 1d
 
     section servicing_id
-    servicing_id (from install)           :crit, sid1, 2024-01-01 00:00, 2d
-    servicing_id (from update)            :crit, sid2, 2024-01-03 00:00, 2d
-    servicing_id (from update-stage)      :crit, sid3, 2024-01-05 00:00, 3d
-    servicing_id (from rollback)          :crit, sid4, 2024-01-08 00:00, 2d
-    servicing_id (from install)           :crit, sid5, 2024-01-10 00:00, 2d
+    servicing_id (from install)           :crit, sid1, 2024-01-01, 2d
+    servicing_id (from update)            :crit, sid2, 2024-01-03, 2d
+    servicing_id (from update-stage)      :crit, sid3, 2024-01-05, 3d
+    servicing_id (from rollback)          :crit, sid4, 2024-01-08, 2d
+    servicing_id (from install)           :crit, sid5, 2024-01-10, 2d
 
     section installation_id
-    installation_id #1 (since install #1) :active, inst1, 2024-01-01 00:00, 9d
-    installation_id #2 (since install #2) :active, inst2, 2024-01-10 00:00, 2d
+    installation_id #1 (since install #1) :done, inst1, 2024-01-01, 9d
+    installation_id #2 (since install #2) :done, inst2, 2024-01-10, 2d
 
     section database_id
-    database_id #1 (since install #1)     :active, db1, 2024-01-01 00:00, 9d
-    database_id #2 (since install #2)     :active, db2, 2024-01-10 00:00, 2d
+    database_id #1 (since install #1)     :active, db1, 2024-01-01, 9d
+    database_id #2 (since install #2)     :active, db2, 2024-01-10, 2d
 
     section asset_id*
-    asset_id (never recreated)            :active, asset1, 2024-01-01 00:00, 11d
+    asset_id (never recreated)            :active, done, asset1, 2024-01-01, 11d
 ```
 
 \* `asset_id` was a real field (a hardware/product-UUID-based identifier,
