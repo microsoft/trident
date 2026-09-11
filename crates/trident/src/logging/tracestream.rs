@@ -784,6 +784,24 @@ where
 /// prior version of this function existed independently in each sink,
 /// which risked the two silently diverging if the rule ever changed in
 /// only one place.
+/// Command names for which `DataStore::ensure_servicing_id` always sets
+/// the servicing ID to this exact invocation's own `operation_id` (see
+/// that function's doc comment), rather than reading one back from a
+/// previous operation. This is the fixed set of `command`/
+/// `servicing_request` names that pass `has_stage = true` into
+/// [`TraceStream::refresh_servicing_id`] (see `Trident::install`/`update`/
+/// `rollback` and their daemon service handlers) -- mirrors
+/// `DataStore::may_initialize_datastore_for_command`'s similar,
+/// exhaustive name-based enumeration, but answers a different question:
+/// not "may this command run without a datastore" but "will this
+/// command's own servicing_id equal its operation_id".
+fn command_generates_servicing_id(command: &str) -> bool {
+    matches!(
+        command,
+        "install" | "install_stage" | "update" | "update_stage" | "rollback" | "rollback_stage"
+    )
+}
+
 pub(crate) fn merge_operation_context(fields: &mut BTreeMap<String, Value>) {
     if let Some((operation_id, command, source)) = operation_context::current() {
         fields
@@ -803,6 +821,22 @@ pub(crate) fn merge_operation_context(fields: &mut BTreeMap<String, Value>) {
         fields
             .entry("installation_id".to_string())
             .or_insert_with(|| json!(operation_id));
+
+        // Unlike installation_id above, servicing_id can go genuinely
+        // stale mid-process: a long-lived daemon's cached
+        // `TraceStream::servicing_id` still holds a *previous* operation's
+        // value until this invocation's own
+        // `ensure_and_attach_servicing_id` runs deeper in the call stack
+        // and overwrites it. For the six commands that will end up
+        // generating their own new servicing ID anyway, that value is
+        // already fully determined the moment this operation's context
+        // exists -- so force it here (unconditionally, not just filling a
+        // gap like installation_id above) rather than leaving any earlier
+        // event (e.g. command_start/trident_start) showing a stale,
+        // unrelated operation's ID.
+        if command_generates_servicing_id(&command) {
+            fields.insert("servicing_id".to_string(), json!(operation_id));
+        }
     }
 }
 
@@ -1068,6 +1102,106 @@ mod tests {
         assert!(
             metric_found,
             "Expected metric with installation_id field not found in the local metrics file"
+        );
+    }
+
+    #[test]
+    /// Regression test for the daemon stale-servicing_id bug: a
+    /// long-lived process's cached `servicing_id` (left over from a prior
+    /// operation) must NOT leak onto a later staging command's own
+    /// events (e.g. `command_start`/`trident_start`, fired before that
+    /// command's own `refresh_servicing_id` runs). `merge_operation_context`
+    /// must force `servicing_id` to this invocation's own `operation_id`
+    /// for any command in `command_generates_servicing_id`, overriding
+    /// whatever is currently cached rather than merely filling a gap.
+    fn test_tracestream_servicing_id_forced_to_operation_id_for_staging_commands() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let metrics_path = temp_dir.path().join("metrics.jsonl");
+        let tracestream = TraceStream::default();
+        // Simulate a stale value left over from a previous operation in
+        // the same long-lived process.
+        tracestream.set_servicing_id("stale-previous-operation-id".to_string());
+        let trace_sender = tracestream
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap(), true)
+            .with_filter(filter::LevelFilter::INFO);
+
+        let _guard = tracing::subscriber::set_default(
+            tracing_subscriber::Registry::default().with(trace_sender),
+        );
+
+        let operation_id = operation_context::run_with_operation(
+            "install_stage",
+            operation_context::OperationSource::Cli,
+            || {
+                let operation_id = operation_context::current()
+                    .expect("operation context should be installed")
+                    .0;
+                tracing::info!(metric_name = "test_metric_during_staging_command");
+                operation_id
+            },
+        );
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let file = File::open(&metrics_path).unwrap();
+        let reader = BufReader::new(file);
+        let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
+
+        let expected = format!(r#""servicing_id":"{operation_id}""#);
+        let metric_found = lines.iter().any(|line| {
+            line.contains(r#""metric_name":"test_metric_during_staging_command""#)
+                && line.contains(&expected)
+                && !line.contains("stale-previous-operation-id")
+        });
+
+        assert!(
+            metric_found,
+            "Expected staging command's metric to carry this operation's own \
+             operation_id as servicing_id, not the stale cached value"
+        );
+    }
+
+    #[test]
+    /// Negative counterpart: a non-staging command (e.g. `commit`, which
+    /// only ever reads back a previous operation's servicing_id) must NOT
+    /// have its cached servicing_id overridden -- the whole point of
+    /// read-back is to surface exactly that previously-staged value.
+    fn test_tracestream_servicing_id_not_forced_for_non_staging_commands() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let metrics_path = temp_dir.path().join("metrics.jsonl");
+        let tracestream = TraceStream::default();
+        tracestream.set_servicing_id("previously-staged-id".to_string());
+        let trace_sender = tracestream
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap(), true)
+            .with_filter(filter::LevelFilter::INFO);
+
+        let _guard = tracing::subscriber::set_default(
+            tracing_subscriber::Registry::default().with(trace_sender),
+        );
+
+        operation_context::run_with_operation(
+            "commit",
+            operation_context::OperationSource::Cli,
+            || {
+                tracing::info!(metric_name = "test_metric_during_commit");
+            },
+        );
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let file = File::open(&metrics_path).unwrap();
+        let reader = BufReader::new(file);
+        let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
+
+        let metric_found = lines.iter().any(|line| {
+            line.contains(r#""metric_name":"test_metric_during_commit""#)
+                && line.contains(r#""servicing_id":"previously-staged-id""#)
+        });
+
+        assert!(
+            metric_found,
+            "Expected commit's metric to keep the previously-staged servicing_id, \
+             not have it overridden"
         );
     }
 
