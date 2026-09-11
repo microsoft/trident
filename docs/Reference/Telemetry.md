@@ -132,19 +132,19 @@ gantt
     installation_id #1 (since install #1) :done, inst1, 2024-01-01, 9d
     installation_id #2 (since install #2) :done, inst2, 2024-01-10, 2d
 
-    section database_id
-    database_id #1 (since install #1)     :active, db1, 2024-01-01, 9d
-    database_id #2 (since install #2)     :active, db2, 2024-01-10, 2d
+    section datastore_id
+    datastore_id #1 (since install #1)    :active, db1, 2024-01-01, 9d
+    datastore_id #2 (since install #2)    :active, db2, 2024-01-10, 2d
 ```
 
 Reading the diagram by row, from most to least stable:
 
-- **`database_id`**: tied to a single datastore file. Recreated whenever a
+- **`datastore_id`**: tied to a single datastore file. Recreated whenever a
   new datastore is created -- in this sequence, only the second `install`
   (day 10) starts a new one.
 - **`installation_id`**: created once at the first `install` against a
   given datastore and never overwritten after that -- but since it lives
-  in the datastore, it is recreated alongside `database_id` whenever a new
+  in the datastore, it is recreated alongside `datastore_id` whenever a new
   datastore is created (the second `install`).
 - **`servicing_id`**: correlates every event in one servicing episode
   (across separate stage/finalize invocations and any later `commit`)
