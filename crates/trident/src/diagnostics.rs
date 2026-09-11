@@ -18,6 +18,7 @@ use osutils::{
     findmnt::FindMnt,
     lsblk,
     pcrlock::{self, LogOutput},
+    virt,
 };
 use trident_api::{
     config::{Check, Health},
@@ -324,7 +325,7 @@ fn collect_service_status(
 
 fn get_virtualization_info(failures: &mut Vec<CollectionFailure>) -> Option<String> {
     debug!("Collecting virtualization info");
-    match crate::virt::detect_hypervisor() {
+    match virt::detect_hypervisor() {
         Ok(virt_type) => virt_type,
         Err(e) => {
             record_failure(failures, "virtualization info", &e);

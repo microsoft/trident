@@ -47,7 +47,6 @@ mod server;
 pub mod stream;
 mod subsystems;
 pub mod validation;
-mod virt;
 
 pub use crate::{
     datastore::DataStore,
