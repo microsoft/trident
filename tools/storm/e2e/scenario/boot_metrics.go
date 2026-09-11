@@ -63,26 +63,26 @@ func (s *TridentE2EScenario) collectBootMetrics(tc storm.TestCase, metricsFile s
 	connCtx, cancel := context.WithTimeout(tc.Context(), bootMetricsConnectTimeout)
 	defer cancel()
 	if err := s.populateSshClient(connCtx); err != nil {
-		skipBootMetrics(tc, err)
+		return skipBootMetrics(tc, err)
 	}
 
 	out, err := sshutils.RunCommand(s.sshClient, metrics.SystemdAnalyzeCommand)
 	if err != nil {
-		skipBootMetrics(tc, fmt.Errorf("failed to read boot timings from the host: %w", err))
+		return skipBootMetrics(tc, fmt.Errorf("failed to read boot timings from the host: %w", err))
 	}
 	if out.Status != 0 {
 		// systemd-analyze reports "Bootup is not yet finished" (and similar) on
 		// stderr with a non-zero status and no usable stdout.
-		skipBootMetrics(tc, fmt.Errorf("systemd-analyze exited %d: %s", out.Status, strings.TrimSpace(out.Stderr)))
+		return skipBootMetrics(tc, fmt.Errorf("systemd-analyze exited %d: %s", out.Status, strings.TrimSpace(out.Stderr)))
 	}
 
 	value, err := metrics.ParseBootMetric(operation, out.Stdout)
 	if err != nil {
-		skipBootMetrics(tc, err)
+		return skipBootMetrics(tc, err)
 	}
 
 	if err := metrics.AppendBootMetrics(metricsFile, value); err != nil {
-		skipBootMetrics(tc, err)
+		return skipBootMetrics(tc, err)
 	}
 
 	logrus.Infof("Recorded %s boot timings in '%s': %+v", operation, metricsFile, value)
@@ -92,7 +92,13 @@ func (s *TridentE2EScenario) collectBootMetrics(tc storm.TestCase, metricsFile s
 // skipBootMetrics ends the case as skipped, logging why. The warning keeps a
 // genuine collection failure visible in the logs even though it does not fail
 // the run.
-func skipBootMetrics(tc storm.TestCase, err error) {
+//
+// tc.Skip does not return (it calls runtime.Goexit), but an error is returned
+// anyway so callers can write `return skipBootMetrics(...)`: that keeps the
+// control flow obvious at the call site and safe regardless of how Skip is
+// implemented, rather than silently relying on it never returning.
+func skipBootMetrics(tc storm.TestCase, err error) error {
 	logrus.Warnf("Not recording boot metrics: %v", err)
 	tc.Skip(fmt.Sprintf("boot metrics unavailable: %v", err))
+	return nil
 }
