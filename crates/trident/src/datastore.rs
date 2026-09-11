@@ -25,7 +25,7 @@ const DATASTORE_ID_KEY: &str = "datastore-id";
 
 /// Key under which the datastore's unique installation ID is stored in the
 /// generic key-value table. This ID is generated once, at the start of
-/// `Trident::install` (see `DataStore::create_installation_id`), and
+/// `Trident::install` (see `DataStore::ensure_installation_id`), and
 /// persisted for the lifetime of the datastore. It is intended to be added
 /// to tracing/telemetry so that all activity for a given host installation
 /// can be correlated.
@@ -485,7 +485,7 @@ impl DataStore {
     /// Like [`Self::set_value`], but only inserts a row if `key` does not
     /// already have one; an existing row is left untouched. Used where two
     /// datastore connections could race to perform "first access"
-    /// initialization of a key (see [`Self::create_installation_id`]):
+    /// initialization of a key (see [`Self::ensure_installation_id`]):
     /// whichever connection's insert commits first wins, and the other's
     /// insert becomes a no-op instead of overwriting the winner's value.
     pub(crate) fn set_value_if_absent<T: Serialize>(
@@ -574,7 +574,7 @@ impl DataStore {
     /// Returns this datastore's installation ID, if one has already been
     /// persisted. Read-only: never generates or persists one -- callers
     /// that need get-or-create semantics must call
-    /// [`Self::create_installation_id`] instead.
+    /// [`Self::ensure_installation_id`] instead.
     pub fn installation_id(&self) -> Result<Option<Uuid>, TridentError> {
         self.get_value::<Uuid>(INSTALLATION_ID_KEY)
     }
@@ -609,7 +609,7 @@ impl DataStore {
     /// freshly generated ID with `ON CONFLICT DO NOTHING` (a no-op if
     /// another connection already inserted one first), then read back
     /// whichever ID actually won that race.
-    pub fn create_installation_id(&mut self) -> Result<Uuid, TridentError> {
+    pub fn ensure_installation_id(&mut self) -> Result<Uuid, TridentError> {
         if let Some(id) = self.get_value::<Uuid>(INSTALLATION_ID_KEY)? {
             return Ok(id);
         }
@@ -637,7 +637,7 @@ impl DataStore {
     /// `Trident::install` -- offline initialization and the CIH update
     /// bootstrap both create/adopt a datastore directly. Those hosts
     /// would otherwise never get an installation ID, since nothing else
-    /// ever calls `create_installation_id`. Create one as a one-time
+    /// ever calls `ensure_installation_id`. Create one as a one-time
     /// migration in that specific case, while leaving a genuinely
     /// unprovisioned (temporary or not-yet-installed) datastore alone --
     /// callers should not observe an installation ID appear before the
@@ -646,7 +646,7 @@ impl DataStore {
         match self.installation_id()? {
             Some(id) => Ok(Some(id)),
             None if self.host_status().servicing_state != ServicingState::NotProvisioned => {
-                self.create_installation_id().map(Some)
+                self.ensure_installation_id().map(Some)
             }
             None => Ok(None),
         }
@@ -693,7 +693,7 @@ impl DataStore {
     /// use [`Self::servicing_id`] to read the value back instead of
     /// calling this again.
     ///
-    /// Like `create_installation_id`, the value used is this invocation's
+    /// Like `ensure_installation_id`, the value used is this invocation's
     /// own `operation_id` (see `logging::operation_context::current`),
     /// not an unrelated freshly-generated UUID: whichever call actually
     /// performs the staging is what should be correlatable, via this same
@@ -702,7 +702,7 @@ impl DataStore {
     /// called with no operation context active (should not happen for any
     /// real caller).
     ///
-    /// Unlike `create_installation_id`, this always generates a *new* ID
+    /// Unlike `ensure_installation_id`, this always generates a *new* ID
     /// on every call -- there is no "first access wins"/get-or-create
     /// semantics here, since a new servicing operation genuinely is a new
     /// operation, not a value that should be stable for the datastore's
@@ -836,13 +836,13 @@ mod tests {
         let datastore_path = temp_dir.path().join("db.sqlite");
 
         let mut datastore = super::DataStore::open_or_create(&datastore_path).unwrap();
-        let installation_id = datastore.create_installation_id().unwrap();
+        let installation_id = datastore.ensure_installation_id().unwrap();
 
         // Persist to the exact same path the datastore is currently open at.
         datastore.persist(&datastore_path).unwrap();
 
         assert_eq!(
-            datastore.create_installation_id().unwrap(),
+            datastore.ensure_installation_id().unwrap(),
             installation_id,
             "Installation ID should survive a self-persist"
         );
@@ -917,7 +917,7 @@ mod tests {
     #[test]
     /// Regression test: a datastore created by an older Trident version that
     /// predates the `keyvalue` table (only `hoststatus` exists) must still
-    /// be usable after `open()` -- in particular, `create_installation_id()` must
+    /// be usable after `open()` -- in particular, `ensure_installation_id()` must
     /// not fail with "no such table: keyvalue".
     fn test_open_upgrades_pre_existing_datastore_schema() {
         let temp_dir = tempfile::tempdir().unwrap();
@@ -939,7 +939,7 @@ mod tests {
 
         let mut datastore = super::DataStore::open(&path).unwrap();
         // Should not fail with "no such table: keyvalue".
-        datastore.create_installation_id().unwrap();
+        datastore.ensure_installation_id().unwrap();
 
         temp_dir.close().unwrap();
     }
@@ -987,7 +987,7 @@ mod tests {
                     // (no installation ID persisted yet) as close together
                     // as possible.
                     barrier.wait();
-                    datastore.create_installation_id().unwrap()
+                    datastore.ensure_installation_id().unwrap()
                 })
             })
             .collect();
@@ -1012,17 +1012,17 @@ mod tests {
             temporary: false,
         };
 
-        let id = datastore.create_installation_id().unwrap();
+        let id = datastore.ensure_installation_id().unwrap();
         // Calling installation_id again should return the same ID, not generate a
         // new one.
-        assert_eq!(datastore.create_installation_id().unwrap(), id);
+        assert_eq!(datastore.ensure_installation_id().unwrap(), id);
 
         temp_dir.close().unwrap();
     }
 
     #[test]
     /// The read-only getter must not create an installation ID -- only
-    /// `create_installation_id` (called specifically at the start of
+    /// `ensure_installation_id` (called specifically at the start of
     /// `Trident::install`) does that.
     fn test_installation_id_read_only_getter_does_not_create() {
         let temp_dir = tempfile::tempdir().unwrap();
@@ -1037,10 +1037,10 @@ mod tests {
         assert_eq!(
             datastore.installation_id().unwrap(),
             None,
-            "no installation ID should exist before create_installation_id is called"
+            "no installation ID should exist before ensure_installation_id is called"
         );
 
-        let created = datastore.create_installation_id().unwrap();
+        let created = datastore.ensure_installation_id().unwrap();
 
         assert_eq!(
             datastore.installation_id().unwrap(),
@@ -1053,7 +1053,7 @@ mod tests {
 
     #[test]
     /// Regression test: `ensure_servicing_id` always generates a *fresh* ID
-    /// on every call, unlike `create_installation_id`'s get-or-create
+    /// on every call, unlike `ensure_installation_id`'s get-or-create
     /// semantics. This is what lets a retried clean install (e.g. a
     /// previous attempt's staging failed, leaving
     /// `ServicingState::NotProvisioned`) get its own distinct servicing ID
@@ -1213,7 +1213,7 @@ mod functional_test {
         // Generate a installation ID in the temporary datastore, then persist it.
         let installation_id = {
             let mut datastore = DataStore::open_or_create(&datastore_temp_path).unwrap();
-            let installation_id = datastore.create_installation_id().unwrap();
+            let installation_id = datastore.ensure_installation_id().unwrap();
             datastore.persist(&datastore_path).unwrap();
             installation_id
         };
@@ -1221,7 +1221,7 @@ mod functional_test {
         // Re-open the persisted datastore and verify the same installation ID is
         // returned, rather than a new one being generated.
         let mut datastore = DataStore::open(&datastore_path).unwrap();
-        assert_eq!(datastore.create_installation_id().unwrap(), installation_id);
+        assert_eq!(datastore.ensure_installation_id().unwrap(), installation_id);
     }
 
     #[functional_test]
