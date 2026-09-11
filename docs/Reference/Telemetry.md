@@ -89,7 +89,7 @@ operations: `install`, `commit`, `update`, `commit`, `update-stage`,
 gantt
     dateFormat  YYYY-MM-DD
     axisFormat  
-    title Correlation ID Lifecycles Across a Servicing Sequence (each day = one operation)
+    title Correlation ID Lifecycles Across a Servicing Sequence
 
     section Operations
     install            :milestone, m1, 2024-01-01, 0d
