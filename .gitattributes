@@ -1,0 +1,2 @@
+scripts/cloud-agent/runner-smoke.sh text eol=lf
+.github/workflows/cloud-agent-runner-smoke.yml text eol=lf
