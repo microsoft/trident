@@ -37,6 +37,12 @@ pub struct VerityDevice {
     data_device_path: PathBuf,
     hash_device_path: PathBuf,
     root_hash: String,
+
+    /// Byte offset of the verity superblock inside the hash device.
+    ///
+    /// Set for *inline* verity, where the hash tree is stored inside the data
+    /// device itself, so `data_device_path == hash_device_path`.
+    hash_offset: Option<u64>,
 }
 
 impl VerityDevice {
@@ -53,7 +59,15 @@ impl VerityDevice {
             data_device_path: data_device_path.into(),
             hash_device_path: hash_device_path.into(),
             root_hash: root_hash.into(),
+            hash_offset: None,
         }
+    }
+
+    /// Sets the byte offset at which the verity hash tree starts, for images
+    /// that store the hash tree inline in the data device.
+    pub fn with_hash_offset(mut self, hash_offset: Option<u64>) -> Self {
+        self.hash_offset = hash_offset;
+        self
     }
 
     /// Will attempt to open the device with a signature file and verify it.
@@ -63,6 +77,7 @@ impl VerityDevice {
             &self.data_device_path,
             &self.hash_device_path,
             &self.root_hash,
+            self.hash_offset,
             signature_file,
         )?;
 
@@ -76,6 +91,7 @@ impl VerityDevice {
             &self.data_device_path,
             &self.hash_device_path,
             &self.root_hash,
+            self.hash_offset,
         )?;
 
         self.validate_or_close(EXPECTED_VERITY_DEVICE_STATUS)
@@ -191,12 +207,14 @@ pub fn open(
     data_device_path: impl AsRef<Path>,
     hash_device_path: impl AsRef<Path>,
     root_hash: impl AsRef<str>,
+    hash_offset: Option<u64>,
 ) -> Result<(), Error> {
     open_inner(
         name,
         data_device_path,
         hash_device_path,
         root_hash,
+        hash_offset,
         None::<&Path>,
     )
 }
@@ -207,6 +225,7 @@ fn open_with_signature(
     data_device_path: impl AsRef<Path>,
     hash_device_path: impl AsRef<Path>,
     root_hash: impl AsRef<str>,
+    hash_offset: Option<u64>,
     signature_file: impl AsRef<Path>,
 ) -> Result<(), Error> {
     open_inner(
@@ -214,6 +233,7 @@ fn open_with_signature(
         data_device_path,
         hash_device_path,
         root_hash,
+        hash_offset,
         Some(signature_file),
     )
 }
@@ -224,6 +244,7 @@ fn open_inner(
     data_device_path: impl AsRef<Path>,
     hash_device_path: impl AsRef<Path>,
     root_hash: impl AsRef<str>,
+    hash_offset: Option<u64>,
     signature_file: Option<impl AsRef<Path>>,
 ) -> Result<(), Error> {
     let mut cmd = Dependency::Veritysetup.cmd();
@@ -233,6 +254,12 @@ fn open_inner(
         .arg(hash_device_path.as_ref())
         .arg(root_hash.as_ref())
         .arg("--verbose");
+
+    // Inline verity: the hash tree lives inside the data device at this byte
+    // offset, so the device is passed as both the data and the hash device.
+    if let Some(hash_offset) = hash_offset {
+        cmd.arg(format!("--hash-offset={hash_offset}"));
+    }
 
     // If a signature file is provided, add it to the command.
     if let Some(signature_file) = signature_file {
@@ -263,9 +290,16 @@ pub fn open_with_guard(
     data_device_path: impl AsRef<Path>,
     hash_device_path: impl AsRef<Path>,
     root_hash: impl AsRef<str>,
+    hash_offset: Option<u64>,
 ) -> Result<VerityDeviceGuard, Error> {
     let device_name = name.as_ref();
-    open(device_name, data_device_path, hash_device_path, root_hash)?;
+    open(
+        device_name,
+        data_device_path,
+        hash_device_path,
+        root_hash,
+        hash_offset,
+    )?;
     Ok(VerityDeviceGuard::new(device_name.to_owned()))
 }
 
