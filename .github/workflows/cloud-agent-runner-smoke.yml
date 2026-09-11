@@ -16,7 +16,7 @@ jobs:
     name: Validate 1ES KVM runner
     runs-on:
       - self-hosted
-      - 1ES.Pool=maritimus-github-runner-ubuntu2404-amd64
+      - 1ES.Pool=trident-github-runner-ubuntu2204-amd64
       - JobId=trident-cloud-agent-runner-smoke-${{ github.run_id }}-${{ github.run_attempt }}
     timeout-minutes: 20
     permissions:
