@@ -37,7 +37,7 @@ jobs:
 
           sudo systemctl restart libvirtd
           sudo systemctl status --no-pager libvirtd
-          sudo setfacl -m "u:$(id -un):rw" /dev/kvm /run/libvirt/libvirt-sock
+          sudo setfacl -m "u:$(id -un):rw" /run/libvirt/libvirt-sock
 
       - name: Run KVM and libvirt smoke test
         run: |

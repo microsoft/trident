@@ -37,15 +37,13 @@ trap cleanup EXIT
 lscpu | tee "$log_dir/lscpu.txt"
 free -h | tee "$log_dir/memory.txt"
 df -hT | tee "$log_dir/filesystems.txt"
-ls -l /dev/kvm | tee "$log_dir/kvm-device.txt"
+ls -l /dev/kvm /run/libvirt/libvirt-sock | tee "$log_dir/device-permissions.txt"
+getfacl -p /dev/kvm /run/libvirt/libvirt-sock | tee "$log_dir/device-acls.txt"
 
 if [[ ! -c /dev/kvm ]]; then
     echo "/dev/kvm is not a character device" >&2
     exit 1
 fi
-
-test -r /dev/kvm
-test -w /dev/kvm
 
 if [[ -r /sys/module/kvm_intel/parameters/nested ]]; then
     nested_parameter="/sys/module/kvm_intel/parameters/nested"
@@ -79,27 +77,6 @@ set -e
 echo "$virt_validate_status" > "$log_dir/virt-host-validate.exit-code"
 if [[ $virt_validate_status -ne 0 ]]; then
     echo "virt-host-validate returned $virt_validate_status; direct QEMU and libvirt probes determine the result" >&2
-fi
-
-set +e
-timeout 5s "$qemu_bin" \
-    -machine q35,accel=kvm \
-    -cpu host \
-    -m 256 \
-    -display none \
-    -monitor none \
-    -serial none \
-    -nodefaults \
-    -S \
-    >"$log_dir/qemu-kvm-probe.txt" 2>&1
-qemu_status=$?
-set -e
-
-echo "$qemu_status" > "$log_dir/qemu-kvm-probe.exit-code"
-if [[ $qemu_status -ne 124 && $qemu_status -ne 143 ]]; then
-    cat "$log_dir/qemu-kvm-probe.txt" >&2
-    echo "QEMU did not remain running with KVM acceleration" >&2
-    exit 1
 fi
 
 cat > "$domain_xml" <<EOF
@@ -139,8 +116,7 @@ fi
 
 cat > "$log_dir/result.txt" <<EOF
 PASS
-KVM acceleration accepted by QEMU.
-Libvirt created and destroyed transient domain ${domain_name}.
+The runner user created and destroyed KVM domain ${domain_name} through libvirt.
 virt-host-validate exit code: ${virt_validate_status} (informational)
 EOF
 
