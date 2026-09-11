@@ -1,0 +1,38 @@
+# Builds storm-trident once from the checked-out source and publishes it as a
+# pipeline artifact, so the E2E stages (matrix definition + test execution) can
+# consume the branch-under-test binary instead of a downloaded, possibly-stale
+# go-tools artifact. Used by the testing-trident.yml shortcut (testingRun).
+parameters:
+  - name: stageName
+    type: string
+    default: BuildStormTridentE2E
+
+  # Name of the published artifact containing the storm-trident binary.
+  - name: artifactName
+    type: string
+    default: storm-trident-e2e
+
+stages:
+  - stage: ${{ parameters.stageName }}
+    displayName: Build storm-trident for E2E
+    dependsOn: []
+    jobs:
+      - job: BuildStormTrident
+        displayName: Build storm-trident from source
+        timeoutInMinutes: 15
+        pool:
+          type: linux
+          name: trident-ubuntu-1es-pool-eastus2
+          hostArchitecture: amd64
+        variables:
+          ob_outputDirectory: /tmp/${{ parameters.artifactName }}
+          ob_artifactBaseName: ${{ parameters.artifactName }}
+        steps:
+          - template: ../common_tasks/checkout_trident.yml
+          - template: ../common_tasks/build-storm-trident.yml
+          - bash: |
+              set -eux
+              mkdir -p $(ob_outputDirectory)
+              cp bin/storm-trident $(ob_outputDirectory)/storm-trident
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+            displayName: "Stage storm-trident artifact"

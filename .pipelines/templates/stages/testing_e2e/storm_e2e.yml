@@ -3,15 +3,47 @@ parameters:
     displayName: "Pipeline configuration type"
     type: string
 
+  - name: acrServiceConnectionName
+    displayName: "Service connection used to push extension/COSI images to ACR"
+    type: string
+    default: trident-dev-acr-write-umi-ECF
+
+  # When true, the E2E stages consume pre-built artifacts from the
+  # DownloadTestingElements stage (shortcut / testing-trident.yml) instead of
+  # depending on the in-pipeline build stages.
+  - name: testingRun
+    type: boolean
+    default: false
+
+  # Which VM runtimes to run. Both default to true so the full pipeline is
+  # unchanged; the shortcut pipeline toggles them individually.
+  - name: runVMHost
+    type: boolean
+    default: true
+
+  - name: runVMContainer
+    type: boolean
+    default: true
+
 stages:
+  # In a testingRun (shortcut), build storm-trident once from source and publish
+  # it so the matrix-definition and test-execution stages consume the
+  # branch-under-test binary instead of a downloaded, possibly-stale go-tools
+  # artifact.
+  - ${{ if eq(parameters.testingRun, true) }}:
+      - template: build-storm-trident-stage.yml
+
   - stage: DefineTests_E2E
     displayName: Define all E2E test matrices
     dependsOn:
-      - BuildingTools
+      - ${{ if eq(parameters.testingRun, true) }}:
+          - BuildStormTridentE2E
+      - ${{ else }}:
+          - BuildingTools
     jobs:
       - job: DefineTests
         displayName: Get List of tests to run
-        timeoutInMinutes: 10
+        timeoutInMinutes: 15
         pool:
           type: linux
 
@@ -21,14 +53,25 @@ stages:
 
         steps:
           - template: ../common_tasks/checkout_trident.yml
-          - task: DownloadPipelineArtifact@2
-            displayName: "Download go-tools"
-            inputs:
-              buildType: current
-              artifactName: "go-tools"
-              patterns: |
-                storm-trident
-              targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
+          # In a testingRun (shortcut) consume the storm-trident built from the
+          # branch under test (BuildStormTridentE2E); otherwise download it from
+          # the in-pipeline build's go-tools artifact.
+          - ${{ if eq(parameters.testingRun, true) }}:
+              - task: DownloadPipelineArtifact@2
+                displayName: "Download storm-trident (built from source)"
+                inputs:
+                  buildType: current
+                  artifactName: "storm-trident-e2e"
+                  targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
+          - ${{ else }}:
+              - task: DownloadPipelineArtifact@2
+                displayName: "Download go-tools"
+                inputs:
+                  buildType: current
+                  artifactName: "go-tools"
+                  patterns: |
+                    storm-trident
+                  targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
           - bash: |
               chmod +x ./bin/storm-trident
               ./bin/storm-trident script e2e-matrix "${{ parameters.stageType }}"
@@ -36,17 +79,23 @@ stages:
             workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: Matrix of Trident configurations for E2E Tests
 
-  # TODO: enable once storm tests are ready
-  - template: test_execution_template.yml
-    parameters:
-      hardwareType: "VM"
-      runtimeType: "HOST"
+  - ${{ if parameters.runVMHost }}:
+      - template: test_execution_template.yml
+        parameters:
+          hardwareType: "VM"
+          runtimeType: "HOST"
+          testingRun: ${{ parameters.testingRun }}
+          acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
-  # - template: test_execution_template.yml
-  #   parameters:
-  #     hardwareType: "VM"
-  #     runtimeType: "CONTAINER"
+  - ${{ if parameters.runVMContainer }}:
+      - template: test_execution_template.yml
+        parameters:
+          hardwareType: "VM"
+          runtimeType: "CONTAINER"
+          testingRun: ${{ parameters.testingRun }}
+          acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
+  # TODO: enable once bare-metal host setup is supported in storm
   # - template: test_execution_template.yml
   #   parameters:
   #     hardwareType: "BM"
