@@ -143,7 +143,7 @@ impl TraceStream {
     /// a given host installation can be correlated. Expected to be called
     /// once the datastore's persisted installation ID has been retrieved
     /// (see [`Self::attach_installation_id_if_present`] and
-    /// [`Self::create_and_attach_installation_id`]).
+    /// [`Self::ensure_and_attach_installation_id`]).
     pub fn set_installation_id(&self, installation_id: String) {
         match self.installation_id.write() {
             Ok(mut val) => {
@@ -231,7 +231,7 @@ impl TraceStream {
     /// installation ID for a genuinely unprovisioned host: a command that
     /// is allowed to initialize a brand-new datastore (see
     /// [`crate::datastore::DataStore::may_initialize_datastore_for_command`])
-    /// must still call [`Self::create_and_attach_installation_id`] instead,
+    /// must still call [`Self::ensure_and_attach_installation_id`] instead,
     /// on a datastore handle it already owns.
     ///
     /// Not fully read-only, though: for a datastore that is already
@@ -268,8 +268,9 @@ impl TraceStream {
         }
     }
 
-    /// Creates (or reads back, if one already exists) `datastore`'s
-    /// installation ID and attaches it. Unlike
+    /// Ensures `datastore` has an installation ID -- creating one if this
+    /// is the first access, or reading back the existing one otherwise --
+    /// and attaches it. Unlike
     /// [`Self::attach_installation_id_if_present`], this is only for the
     /// one caller that already knows a command genuinely allowed to
     /// initialize a brand-new datastore (per
@@ -278,14 +279,14 @@ impl TraceStream {
     /// handle for it -- so this attaches the new install/update's own ID
     /// instead of leaving the trace stream untagged until some later
     /// read-only attach happens to run.
-    pub fn create_and_attach_installation_id(
+    pub fn ensure_and_attach_installation_id(
         &self,
         datastore: &mut DataStore,
     ) -> Result<(), TridentError> {
         if self.installation_id_cached() {
             return Ok(());
         }
-        let installation_id = datastore.create_installation_id()?;
+        let installation_id = datastore.ensure_installation_id()?;
         info!("Installation ID: {installation_id}");
         self.set_installation_id(installation_id.to_string());
         Ok(())
@@ -561,7 +562,7 @@ impl TraceSender {
     /// has been attached yet -- e.g. every event fired before a host's
     /// first-ever `install` has actually created the datastore and created
     /// one. See `merge_operation_context` for why that fallback is the
-    /// same value `create_installation_id` will end up persisting for
+    /// same value `ensure_installation_id` will end up persisting for
     /// that same invocation.
     fn additional_fields(&self) -> BTreeMap<String, Value> {
         let mut fields = ADDITIONAL_FIELDS.clone();
@@ -795,7 +796,7 @@ pub(crate) fn merge_operation_context(fields: &mut BTreeMap<String, Value>) {
         // If no installation ID has been persisted/attached yet (e.g. this
         // is the invocation that is about to create the datastore and
         // create one), fall back to this invocation's own `operation_id` --
-        // the same value `DataStore::create_installation_id` will persist
+        // the same value `DataStore::ensure_installation_id` will persist
         // as the installation ID once the datastore is actually created.
         fields
             .entry("installation_id".to_string())
@@ -1213,7 +1214,7 @@ mod tests {
             operation_context::OperationSource::Cli,
             || {
                 staging_tracestream
-                    .create_and_attach_installation_id(&mut staging_datastore)
+                    .ensure_and_attach_installation_id(&mut staging_datastore)
                     .unwrap();
             },
         );
