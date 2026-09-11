@@ -144,7 +144,7 @@ pub struct Trident {
     orchestrator: Option<OrchestratorConnection>,
     is_stream_image: bool,
     /// Kept so `Trident::install` can attach a newly-created installation
-    /// ID to it -- see `DataStore::create_installation_id`, only ever
+    /// ID to it -- see `DataStore::ensure_installation_id`, only ever
     /// called from `install`/staging, unlike this constructor.
     tracestream: TraceStream,
 }
@@ -292,7 +292,7 @@ impl Trident {
         // temporary datastore does not exist yet at this point, so this
         // is a no-op until the datastore is actually created/opened
         // further down (see the `datastore_id()` calls near
-        // `create_and_attach_installation_id` below).
+        // `ensure_and_attach_installation_id` below).
         tracestream.attach_datastore_id_if_present(datastore_path);
 
         // Trace features enabled in the Host Configuration.
@@ -621,7 +621,7 @@ impl Trident {
             // itself, since telemetry attribution is not load-bearing for
             // servicing outcomes (same invariant `update`'s CIH bootstrap
             // path already honors below).
-            if let Err(e) = tracestream.create_and_attach_installation_id(datastore) {
+            if let Err(e) = tracestream.ensure_and_attach_installation_id(datastore) {
                 warn!("Failed to create installation ID: {e:?}");
             }
 
@@ -769,7 +769,7 @@ impl Trident {
                     // command_start/trident_start (fired even earlier, in
                     // the CLI/daemon dispatch and Trident::new respectively)
                     // still won't carry it -- both fire before this point.
-                    if let Err(e) = tracestream.create_and_attach_installation_id(datastore) {
+                    if let Err(e) = tracestream.ensure_and_attach_installation_id(datastore) {
                         warn!("Failed to create installation ID during CIH bootstrap: {e:?}");
                     }
 
