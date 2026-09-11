@@ -721,6 +721,11 @@ fn populate_platform_info() -> BTreeMap<String, Value> {
         "unknown".to_string()
     });
     platform_info.insert("kernel_version".to_string(), json!(kernel_release.trim()));
+
+    // Whether this host is virtualized (see `crate::virt` for the
+    // detection heuristic and its caveats).
+    platform_info.insert("vm".to_string(), json!(crate::virt::is_virtual()));
+
     platform_info
 }
 
@@ -1036,6 +1041,7 @@ mod functional_test {
             "kernel_version".to_string(),
             json!(uname::kernel_release().unwrap().trim()),
         );
+        expected_platform_info.insert("vm".to_string(), json!(crate::virt::is_virtual()));
 
         // Call the function to get the actual result.
         let platform_info = populate_platform_info();

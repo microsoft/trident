@@ -29,6 +29,11 @@ host along with the metrics/spans themselves:
 - `kernel_version`: the running kernel release (`uname -r`).
 - `total_cpu`: the number of CPUs.
 - `total_memory_gib`: total memory, in GiB.
+- `vm`: whether the host appears to be a virtual machine, detected from DMI
+  vendor/product strings (`/sys/class/dmi/id/sys_vendor`,
+  `/sys/class/dmi/id/product_name`). Best-effort: reports `false` if the
+  DMI files are unreadable or the hypervisor is not one of the recognized
+  vendors, not necessarily "definitely bare metal".
 - `trident_version`: the running Trident version.
 - `datastore_id`: an ID that lets separate events be correlated back to the
   same datastore over its entire lifetime (generated on first access to

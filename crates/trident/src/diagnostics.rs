@@ -35,12 +35,6 @@ use crate::{
 /// Name of the top-level directory in the diagnostics tarball
 const DIAGNOSTICS_BUNDLE_PREFIX: &str = "trident-diagnostics";
 
-/// Path to DMI file with vendor information
-const DMI_SYS_VENDOR_FILE: &str = "/sys/class/dmi/id/sys_vendor";
-
-/// Path to DMI file with product name
-const DMI_PRODUCT_NAME_FILE: &str = "/sys/class/dmi/id/product_name";
-
 /// Name of the trident systemd service
 const TRIDENT_SERVICE_NAME: &str = "trident.service";
 
@@ -330,33 +324,13 @@ fn collect_service_status(
 
 fn get_virtualization_info(failures: &mut Vec<CollectionFailure>) -> Option<String> {
     debug!("Collecting virtualization info");
-    let content = match fs::read_to_string(DMI_SYS_VENDOR_FILE) {
-        Ok(c) => c,
+    match crate::virt::detect_hypervisor() {
+        Ok(virt_type) => virt_type,
         Err(e) => {
-            record_failure(failures, "virtualization info (dmi_sys vendor)", &e);
-            return None;
+            record_failure(failures, "virtualization info", &e);
+            None
         }
-    };
-
-    let vendor = content.trim().to_lowercase();
-    if vendor.contains("qemu") {
-        return Some("qemu".to_string());
     }
-
-    let product = match fs::read_to_string(DMI_PRODUCT_NAME_FILE) {
-        Ok(p) => p,
-        Err(e) => {
-            record_failure(failures, "virtualization info (dmi_sys product)", &e);
-            return None;
-        }
-    };
-
-    let product = product.trim().to_lowercase();
-    if vendor.contains("microsoft corporation") && product.contains("virtual machine") {
-        return Some("hyperv".to_string());
-    }
-
-    None
 }
 
 struct FileToCollect {
