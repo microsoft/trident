@@ -124,6 +124,12 @@ pub enum InternalError {
     #[error("Failed to serialize Host Status")]
     SerializeHostStatus,
 
+    #[error("Failed to serialize value for datastore key '{key}'")]
+    SerializeValue { key: String },
+
+    #[error("Failed to deserialize value for datastore key '{key}'")]
+    DeserializeValue { key: String },
+
     #[error("Failed to set up extension images on the target OS")]
     SetUpExtensionImages,
 
@@ -742,11 +748,17 @@ pub enum DatastoreError {
     #[error("Failed to read from datastore")]
     ReadDatastore,
 
+    #[error("Failed to read key '{key}' from datastore")]
+    ReadKeyValue { key: String },
+
     #[error("Failed to write to datastore as it is closed")]
     WriteToClosedDatastore,
 
     #[error("Failed to write to datastore")]
     WriteToDatastore,
+
+    #[error("Failed to write key '{key}' to datastore")]
+    WriteKeyValue { key: String },
 }
 
 impl ServicingError {
