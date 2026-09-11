@@ -83,6 +83,12 @@ func (s *TridentE2EScenario) prepareHostConfig(tc storm.TestCase) error {
 	// COSI URL). Mirrors tests/e2e_tests/helpers/edit_host_config.py.
 	s.applyOciOverrides()
 
+	// Inject UEFI fallback validation last among the edits, so the health
+	// checks describe the configuration that is actually deployed.
+	if err := s.injectUefiFallbackValidation(); err != nil {
+		return err
+	}
+
 	// Publish the fully-edited configuration last, so it reflects exactly what
 	// gets deployed. Only the testing user's *public* key was added above, so
 	// this carries no secret.

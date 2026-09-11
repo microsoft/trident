@@ -69,6 +69,7 @@ type TridentE2EScenario struct {
 		ConfextOciUrl         string             `name:"confext-oci-url" help:"OCI URL of a configuration extension image to inject into the Host Configuration (os.confexts)."`
 		ConfextSha384         string             `name:"confext-sha384" help:"SHA384 of the configuration extension image referenced by --confext-oci-url."`
 		OciImageUrl           string             `name:"oci-image-url" help:"If set, overwrites the Host Configuration image.url with this OCI URL (ACR-hosted COSI)."`
+		UefiFallbackMode      string             `name:"uefi-fallback-mode" help:"UEFI fallback mode to validate (disabled, conservative, optimistic). Defaults to one derived from the configuration name." enum:"disabled,conservative,optimistic," default:""`
 	}
 
 	// Runtime variables
