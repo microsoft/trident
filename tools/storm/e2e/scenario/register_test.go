@@ -229,3 +229,26 @@ func assertUnique(t *testing.T, names []string) {
 		seen[n] = struct{}{}
 	}
 }
+
+// Split A/B testing runs from the 'pre' ring onwards. TestRing is a string
+// type, so a plain `<` comparison would order "full-validation" before "pre"
+// and skip split testing in the ring that is supposed to run everything.
+func TestSplitTestsSkippedForCurrentRing_UsesPipelineOrderNotLexical(t *testing.T) {
+	for _, tt := range []struct {
+		ring     testrings.TestRing
+		wantSkip bool
+	}{
+		{testrings.TestRingPrE2e, true},
+		{testrings.TestRingCi, true},
+		{testrings.TestRingPre, false},
+		{testrings.TestRingFullValidation, false},
+	} {
+		t.Run(tt.ring.ToString(), func(t *testing.T) {
+			s := newScenarioForTest(t, abConfig)
+			s.args.TestRing = tt.ring
+			if got := s.splitTestsSkippedForCurrentRing(); got != tt.wantSkip {
+				t.Errorf("ring %q: got skip=%v, want %v", tt.ring.ToString(), got, tt.wantSkip)
+			}
+		})
+	}
+}
