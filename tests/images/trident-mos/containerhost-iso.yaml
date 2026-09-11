@@ -52,7 +52,8 @@ os:
       destination: /usr/lib/systemd/system/download-trident-container.service
 
     # Enable telemetry (Application Insights tracing) by default for test/dev images
-    - source: ../common/trident.conf
+    - content: |
+        Telemetry=OptIn
       destination: /etc/trident/trident.conf
   services:
     enable:
