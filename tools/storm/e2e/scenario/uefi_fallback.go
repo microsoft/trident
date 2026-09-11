@@ -5,6 +5,7 @@ import (
 	"hash/fnv"
 	"strings"
 
+	"tridenttools/storm/e2e/validate"
 	"tridenttools/storm/utils/trident"
 
 	"github.com/sirupsen/logrus"
@@ -25,9 +26,6 @@ const (
 	uefiFallbackModeDisabled     = "disabled"
 	uefiFallbackModeConservative = "conservative"
 	uefiFallbackModeOptimistic   = "optimistic"
-
-	uefiFallbackInstallCheckName  = "uefi-fallback-validation-install"
-	uefiFallbackAbUpdateCheckName = "uefi-fallback-validation-update"
 
 	// The `rerun` config is excluded: its Host Configuration plus these checks
 	// exceeds what can be injected into the ISO. Legacy skipped it for the same
@@ -159,12 +157,12 @@ func (s *TridentE2EScenario) injectUefiFallbackValidation() error {
 
 	checks := []map[string]interface{}{
 		{
-			"name":    uefiFallbackAbUpdateCheckName,
+			"name":    validate.UefiFallbackAbUpdateCheckName,
 			"content": renderUefiFallbackCheck(mode, rootPrefix, "true"),
 			"runOn":   []interface{}{"ab-update"},
 		},
 		{
-			"name":    uefiFallbackInstallCheckName,
+			"name":    validate.UefiFallbackInstallCheckName,
 			"content": renderUefiFallbackCheck(mode, rootPrefix, "false"),
 			"runOn":   []interface{}{"clean-install"},
 		},

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"tridenttools/storm/e2e/validate"
 	"tridenttools/storm/utils/trident"
 )
 
@@ -83,11 +84,11 @@ func TestInjectUefiFallbackValidationAddsBothChecks(t *testing.T) {
 	if len(byName) != 2 {
 		t.Fatalf("expected 2 health checks, got %d: %v", len(byName), byName)
 	}
-	if runOn[uefiFallbackInstallCheckName] != "clean-install" {
-		t.Errorf("install check runOn = %q", runOn[uefiFallbackInstallCheckName])
+	if runOn[validate.UefiFallbackInstallCheckName] != "clean-install" {
+		t.Errorf("install check runOn = %q", runOn[validate.UefiFallbackInstallCheckName])
 	}
-	if runOn[uefiFallbackAbUpdateCheckName] != "ab-update" {
-		t.Errorf("update check runOn = %q", runOn[uefiFallbackAbUpdateCheckName])
+	if runOn[validate.UefiFallbackAbUpdateCheckName] != "ab-update" {
+		t.Errorf("update check runOn = %q", runOn[validate.UefiFallbackAbUpdateCheckName])
 	}
 
 	for name, content := range byName {
@@ -101,10 +102,10 @@ func TestInjectUefiFallbackValidationAddsBothChecks(t *testing.T) {
 
 	// Only the A/B update check applies the conservative opposite-entry rule;
 	// on a clean install there is no previous entry to compare against.
-	if !strings.Contains(byName[uefiFallbackAbUpdateCheckName], `"conservative" ] && true;`) {
+	if !strings.Contains(byName[validate.UefiFallbackAbUpdateCheckName], `"conservative" ] && true;`) {
 		t.Error("the ab-update check should evaluate the conservative swap rule")
 	}
-	if !strings.Contains(byName[uefiFallbackInstallCheckName], `"conservative" ] && false;`) {
+	if !strings.Contains(byName[validate.UefiFallbackInstallCheckName], `"conservative" ] && false;`) {
 		t.Error("the clean-install check should not evaluate the conservative swap rule")
 	}
 }
@@ -172,7 +173,7 @@ func TestUefiFallbackChecksSurviveRollbackCleanup(t *testing.T) {
 		names = append(names, name)
 	}
 
-	for _, want := range []string{uefiFallbackInstallCheckName, uefiFallbackAbUpdateCheckName} {
+	for _, want := range []string{validate.UefiFallbackInstallCheckName, validate.UefiFallbackAbUpdateCheckName} {
 		if !slicesContains(names, want) {
 			t.Errorf("%s was removed by the rollback cleanup; remaining: %v", want, names)
 		}
@@ -197,4 +198,36 @@ func firstLines(s string, n int) string {
 		lines = lines[:n]
 	}
 	return strings.Join(lines, "\n")
+}
+
+// The injected UEFI checks must not make a configuration look like it intends
+// to roll back. Treating them as intent made every clean install expect a
+// FAILED Trident service and swapped base validation for rollback validation,
+// which failed 31 of 47 jobs in build 1201401.
+func TestInjectedUefiChecksDoNotImplyRollbackIntent(t *testing.T) {
+	s := newScenarioForTest(t, abConfig)
+	s.name = "base_vm-host"
+
+	if s.hasRollbackIntent() {
+		t.Fatal("a plain configuration should not have rollback intent")
+	}
+
+	if err := s.injectUefiFallbackValidation(); err != nil {
+		t.Fatalf("injectUefiFallbackValidation: %v", err)
+	}
+	if s.hasRollbackIntent() {
+		t.Error("injecting the UEFI fallback checks must not create rollback intent")
+	}
+
+	// A genuinely failing check alongside them still signals intent.
+	if err := s.config.ArrayAppend(map[string]interface{}{
+		"name":    "invoke-rollback-from-script",
+		"content": "exit 1",
+		"runOn":   []interface{}{"clean-install"},
+	}, "health", "checks"); err != nil {
+		t.Fatalf("append check: %v", err)
+	}
+	if !s.hasRollbackIntent() {
+		t.Error("a non-UEFI health check must still signal rollback intent")
+	}
 }

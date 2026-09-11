@@ -16,7 +16,7 @@ import (
 // Configuration. Such scenarios expect the install to fail and roll back rather
 // than commit successfully.
 func (s *TridentE2EScenario) hasRollbackIntent() bool {
-	return s.config.Exists("health")
+	return validate.HasFailingHealthChecks(s.config)
 }
 
 // validateHostState is the storm test case that validates the installed host's
