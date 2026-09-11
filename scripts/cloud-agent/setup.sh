@@ -5,7 +5,8 @@ set -euxo pipefail
 readonly RUST_TOOLCHAIN="1.93.0"
 readonly PROTOC_VERSION="33.2"
 readonly PROTOC_SHA256="b24b53f87c151bfd48b112fe4c3a6e6574e5198874f38036aff41df3456b8caf"
-readonly CARGO_TARGET_DIR="/mnt/trident-cloud-agent/cargo-target"
+readonly DATA_DISK_MOUNT="/mnt/storage"
+readonly CARGO_TARGET_DIR="$DATA_DISK_MOUNT/trident-cloud-agent/cargo-target"
 
 sudo mkdir -p /etc/apt/apt.conf.d
 echo 'DPkg::Lock::Timeout "600";' | sudo tee /etc/apt/apt.conf.d/99lock-timeout
@@ -42,6 +43,12 @@ rustup toolchain install "$RUST_TOOLCHAIN" \
     --profile minimal \
     --component clippy,rustfmt
 rustup default "$RUST_TOOLCHAIN"
+
+if ! mountpoint --quiet "$DATA_DISK_MOUNT"; then
+    echo "Expected runner data disk is not mounted at $DATA_DISK_MOUNT" >&2
+    exit 1
+fi
+findmnt --mountpoint "$DATA_DISK_MOUNT"
 
 sudo install -d -o "$(id -u)" -g "$(id -g)" "$CARGO_TARGET_DIR"
 

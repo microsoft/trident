@@ -8,10 +8,6 @@ on:
     paths:
       - .github/workflows/copilot-setup-steps.yml
       - scripts/cloud-agent/setup.sh
-  pull_request:
-    paths:
-      - .github/workflows/copilot-setup-steps.yml
-      - scripts/cloud-agent/setup.sh
 
 jobs:
   # This job name is required by GitHub Copilot coding agent.

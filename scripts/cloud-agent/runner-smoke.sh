@@ -65,6 +65,10 @@ sudo virt-host-validate qemu 2>&1 | tee "$log_dir/virt-host-validate.txt"
 virt_validate_status=${PIPESTATUS[0]}
 set -e
 echo "$virt_validate_status" > "$log_dir/virt-host-validate.exit-code"
+if [[ $virt_validate_status -ne 0 ]]; then
+    echo "virt-host-validate reported a host validation failure" >&2
+    exit "$virt_validate_status"
+fi
 
 set +e
 sudo timeout 5s "$qemu_bin" \
