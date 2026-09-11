@@ -142,7 +142,7 @@ pub struct Trident {
     orchestrator: Option<OrchestratorConnection>,
     is_stream_image: bool,
     /// Kept so `Trident::install` can attach a newly-created installation
-    /// ID to it -- see `DataStore::create_installation_id`, only ever
+    /// ID to it -- see `DataStore::ensure_installation_id`, only ever
     /// called from `install`/staging, unlike this constructor.
     tracestream: TraceStream,
 }
@@ -290,7 +290,7 @@ impl Trident {
         // temporary datastore does not exist yet at this point, so this
         // is a no-op until the datastore is actually created/opened
         // further down (see the `datastore_id()` calls near
-        // `create_and_attach_installation_id` below).
+        // `ensure_and_attach_installation_id` below).
         tracestream.attach_datastore_id_if_present(datastore_path);
 
         // Trace features enabled in the Host Configuration.
@@ -586,9 +586,17 @@ impl Trident {
             // itself, since telemetry attribution is not load-bearing for
             // servicing outcomes (same invariant `update`'s CIH bootstrap
             // path already honors below).
-            if let Err(e) = tracestream.create_and_attach_installation_id(datastore) {
+            if let Err(e) = tracestream.ensure_and_attach_installation_id(datastore) {
                 warn!("Failed to create installation ID: {e:?}");
             }
+
+            // Generate (if this call has `stage` allowed, from a source
+            // allowed to generate persistent IDs) or read back (otherwise)
+            // the servicing ID for this install, and attach it. See
+            // `TraceStream::refresh_servicing_id`'s doc comment for the
+            // full rationale (best-effort, fail-closed source gate,
+            // deliberate unconditional regeneration on `has_stage`).
+            tracestream.refresh_servicing_id(datastore, allowed_operations.has_stage());
 
             // Get (or, for a brand-new datastore, create) this datastore's
             // database ID and attach it. Best-effort, same rationale as
@@ -726,7 +734,7 @@ impl Trident {
                     // command_start/trident_start (fired even earlier, in
                     // the CLI/daemon dispatch and Trident::new respectively)
                     // still won't carry it -- both fire before this point.
-                    if let Err(e) = tracestream.create_and_attach_installation_id(datastore) {
+                    if let Err(e) = tracestream.ensure_and_attach_installation_id(datastore) {
                         warn!("Failed to create installation ID during CIH bootstrap: {e:?}");
                     }
 
@@ -745,6 +753,18 @@ impl Trident {
                         .message("Persistent datastore not found on host");
                 }
             }
+
+            // Generate (if this call has `stage` allowed, from a source
+            // allowed to generate persistent IDs) or read back (otherwise)
+            // the servicing ID for this update, and attach it. Placed
+            // here -- after the datastore is guaranteed to exist (whether
+            // via the CIH bootstrap above or a pre-existing persistent
+            // one) -- so it covers both the CIH-bootstrap and normal
+            // update paths uniformly, unlike installation_id/database_id
+            // (which are attached earlier, in `Trident::new`, for the
+            // normal path). See `TraceStream::refresh_servicing_id`'s doc
+            // comment for the full rationale.
+            tracestream.refresh_servicing_id(datastore, allowed_operations.has_stage());
 
             // The storage section is optional for updates if COSI is in use.
             if host_config.image.is_some() && host_config.storage == Default::default() {
@@ -899,6 +919,15 @@ impl Trident {
             return Ok((ExitKind::Done, ServicingType::NoActiveServicing));
         }
 
+        // `commit` never generates a servicing ID -- it only ever reads
+        // back whatever the preceding install/update/rollback stage
+        // persisted, so this invocation's own (fresh) `operation_id` can
+        // be correlated back to that servicing operation. Always passes
+        // `has_stage = false`, so this only ever reads (see
+        // `TraceStream::refresh_servicing_id`'s doc comment).
+        let tracestream = self.tracestream.clone();
+        tracestream.refresh_servicing_id(datastore, false);
+
         let servicing_type = match servicing_state {
             ServicingState::AbUpdateFinalized | ServicingState::AbUpdateHealthCheckFailed => {
                 ServicingType::AbUpdate
@@ -999,6 +1028,16 @@ impl Trident {
             );
             return Ok((ExitKind::Done, ServicingType::NoActiveServicing));
         }
+
+        // Generate (if this call has `stage` allowed, from a source
+        // allowed to generate persistent IDs) or read back (otherwise) the
+        // servicing ID for this manual rollback, and attach it. Safe to do
+        // before `execute_and_record_error`: the datastore is already
+        // known-persistent per the state check above. See
+        // `TraceStream::refresh_servicing_id`'s doc comment for the full
+        // rationale.
+        let tracestream = self.tracestream.clone();
+        tracestream.refresh_servicing_id(datastore, allowed_operations.has_stage());
 
         let rollback_result = self.execute_and_record_error(datastore, |datastore| {
             manual_rollback::execute_rollback(

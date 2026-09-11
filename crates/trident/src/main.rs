@@ -551,6 +551,7 @@ fn setup_tracing(
                         handle,
                         tracestream.installation_id_handle(),
                         tracestream.datastore_id_handle(),
+                        tracestream.servicing_id_handle(),
                     ) {
                         Some(sender) => {
                             layers.push(Box::new(sender.with_filter(filter::LevelFilter::INFO)));
