@@ -58,7 +58,8 @@ os:
       destination: /usr/share/selinux/packages/containerd-mmap-fix.cil
 
     # Enable telemetry (Application Insights tracing) by default for test/dev images
-    - source: ../../common/trident.conf
+    - content: |
+        Telemetry=OptIn
       destination: /etc/trident/trident.conf
   services:
     enable:
