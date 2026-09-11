@@ -39,9 +39,8 @@ go install "google.golang.org/protobuf/cmd/protoc-gen-go@${PROTOC_GEN_GO_VERSION
 go install "google.golang.org/grpc/cmd/protoc-gen-go-grpc@${PROTOC_GEN_GO_GRPC_VERSION}"
 
 if ! command -v rustup >/dev/null 2>&1; then
-    curl --proto '=https' --tlsv1.2 --fail --silent --show-error \
-        https://sh.rustup.rs |
-        sh -s -- -y --profile minimal --default-toolchain none
+    echo "The Trident runner image must provide rustup" >&2
+    exit 1
 fi
 
 export PATH="$HOME/.cargo/bin:$PATH"

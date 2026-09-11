@@ -17,8 +17,8 @@ domain_xml="$log_dir/domain.xml"
 qemu_connection="qemu:///system"
 
 cleanup() {
-    if sudo virsh --connect "$qemu_connection" dominfo "$domain_name" >/dev/null 2>&1; then
-        sudo virsh --connect "$qemu_connection" destroy "$domain_name" >/dev/null
+    if virsh --connect "$qemu_connection" dominfo "$domain_name" >/dev/null 2>&1; then
+        virsh --connect "$qemu_connection" destroy "$domain_name" >/dev/null
     fi
 }
 trap cleanup EXIT
@@ -44,8 +44,8 @@ if [[ ! -c /dev/kvm ]]; then
     exit 1
 fi
 
-sudo test -r /dev/kvm
-sudo test -w /dev/kvm
+test -r /dev/kvm
+test -w /dev/kvm
 
 if [[ -r /sys/module/kvm_intel/parameters/nested ]]; then
     nested_parameter="/sys/module/kvm_intel/parameters/nested"
@@ -69,11 +69,11 @@ esac
 
 qemu_bin="$(command -v qemu-system-x86_64)"
 "$qemu_bin" --version | tee "$log_dir/qemu-version.txt"
-sudo virsh --connect "$qemu_connection" version | tee "$log_dir/virsh-version.txt"
-sudo virsh --connect "$qemu_connection" nodeinfo | tee "$log_dir/libvirt-nodeinfo.txt"
+virsh --connect "$qemu_connection" version | tee "$log_dir/virsh-version.txt"
+virsh --connect "$qemu_connection" nodeinfo | tee "$log_dir/libvirt-nodeinfo.txt"
 
 set +e
-sudo virt-host-validate qemu 2>&1 | tee "$log_dir/virt-host-validate.txt"
+virt-host-validate qemu 2>&1 | tee "$log_dir/virt-host-validate.txt"
 virt_validate_status=${PIPESTATUS[0]}
 set -e
 echo "$virt_validate_status" > "$log_dir/virt-host-validate.exit-code"
@@ -83,7 +83,7 @@ if [[ $virt_validate_status -ne 0 ]]; then
 fi
 
 set +e
-sudo timeout 5s "$qemu_bin" \
+timeout 5s "$qemu_bin" \
     -machine q35,accel=kvm \
     -cpu host \
     -m 256 \
@@ -129,11 +129,11 @@ cat > "$domain_xml" <<EOF
 </domain>
 EOF
 
-sudo virsh --connect "$qemu_connection" create --paused "$domain_xml"
-sudo virsh --connect "$qemu_connection" dominfo "$domain_name" | tee "$log_dir/domain-info.txt"
-sudo virsh --connect "$qemu_connection" destroy "$domain_name"
+virsh --connect "$qemu_connection" create --paused "$domain_xml"
+virsh --connect "$qemu_connection" dominfo "$domain_name" | tee "$log_dir/domain-info.txt"
+virsh --connect "$qemu_connection" destroy "$domain_name"
 
-if sudo virsh --connect "$qemu_connection" dominfo "$domain_name" >/dev/null 2>&1; then
+if virsh --connect "$qemu_connection" dominfo "$domain_name" >/dev/null 2>&1; then
     echo "Transient smoke domain still exists after destroy" >&2
     exit 1
 fi
