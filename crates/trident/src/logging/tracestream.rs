@@ -23,7 +23,7 @@ use trident_api::error::TridentError;
 
 use osutils::{
     osrelease::{OsRelease, OS_RELEASE_PATH},
-    uname,
+    uname, virt,
 };
 
 use crate::{
@@ -868,9 +868,9 @@ fn populate_platform_info() -> BTreeMap<String, Value> {
     });
     platform_info.insert("kernel_version".to_string(), json!(kernel_release.trim()));
 
-    // Whether this host is virtualized (see `crate::virt` for the
+    // Whether this host is virtualized (see `osutils::virt` for the
     // detection heuristic and its caveats).
-    platform_info.insert("vm".to_string(), json!(crate::virt::is_virtual()));
+    platform_info.insert("vm".to_string(), json!(virt::is_virtual()));
 
     platform_info
 }
@@ -1338,7 +1338,7 @@ mod functional_test {
             "kernel_version".to_string(),
             json!(uname::kernel_release().unwrap().trim()),
         );
-        expected_platform_info.insert("vm".to_string(), json!(crate::virt::is_virtual()));
+        expected_platform_info.insert("vm".to_string(), json!(virt::is_virtual()));
 
         // Call the function to get the actual result.
         let platform_info = populate_platform_info();
