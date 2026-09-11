@@ -25,7 +25,8 @@ use trident_proto::v1::{
 
 use crate::{
     agentconfig::AgentConfig,
-    logging::logfwd::LogForwarder,
+    datastore::DataStore,
+    logging::{logfwd::LogForwarder, operation_context},
     server::{activitytracker::ActivityTracker, support::stream::StreamWithLock},
     ExitKind, Logstream, TraceStream,
 };
@@ -177,6 +178,31 @@ impl TridentServer {
         })
     }
 
+    /// Re-attaches a persisted installation ID and datastore ID to
+    /// `self.tracestream`, if either is now available but wasn't at
+    /// daemon-startup time (`server_main`'s one-time attach runs before any
+    /// request has had a chance to create a datastore, so a request that
+    /// arrives before the very first install/update -- and whose own
+    /// handler goes on to create that datastore -- would otherwise still be
+    /// missing both IDs. Uses `self.agent_config` (the same configuration
+    /// the request itself operates on) rather than reloading from disk, so
+    /// this can't refresh from a different datastore path than the one in
+    /// effect for this request, and a transient reload failure can't
+    /// silently skip the refresh. Neither call creates a datastore: both
+    /// silently do nothing if the datastore doesn't exist yet. But on an
+    /// existing datastore, either call may still *persist* a missing ID --
+    /// `attach_datastore_id_if_present` via `DataStore::datastore_id`'s
+    /// get-or-create semantics, and `attach_installation_id_if_present` via
+    /// `DataStore::installation_id_or_migrate`'s legacy-ID migration (see
+    /// `TraceStream::attach_installation_id_if_present` and
+    /// `TraceStream::attach_datastore_id_if_present`).
+    fn refresh_ids(&self) {
+        self.tracestream
+            .attach_installation_id_if_present(self.agent_config.datastore_path());
+        self.tracestream
+            .attach_datastore_id_if_present(self.agent_config.datastore_path());
+    }
+
     /// Handles a servicing request by acquiring the necessary locks,
     /// setting up log forwarding, and spawning the provided servicing task.
     ///
@@ -204,6 +230,59 @@ impl TridentServer {
 
         // Try to acquire the connection lock in write mode
         let guard = self.try_acquire_write_lock()?;
+
+        // Reject requests that cannot themselves stage a new install/update
+        // (see `DataStore::may_initialize_datastore_for_command`) when no
+        // datastore exists yet -- mirrors the CLI's `HostNotProvisioned`
+        // check in `main.rs`. Without this, e.g. a `commit`/`rollback` RPC
+        // arriving against an unprovisioned host falls through to
+        // `DataStore::open_or_create` in the service handler and silently
+        // creates an empty datastore instead of failing outright.
+        // Untelemetered, same as the lock-busy rejections above: this is
+        // admission control, not a distinct servicing outcome.
+        if !DataStore::may_initialize_datastore_for_command(name)
+            && !self.agent_config.datastore_path().exists()
+        {
+            warn!("Rejected request '{}': datastore does not exist", name);
+            return Err(Status::failed_precondition("Host is not provisioned"));
+        }
+
+        // Re-check for a persisted installation ID and datastore ID before
+        // this request fires its own command_start (below, via
+        // run_with_operation). server_main's daemon-startup attach only
+        // ever runs once, at startup -- so a request that arrives before
+        // any datastore exists (e.g. this daemon's very first install)
+        // would otherwise never see one, even after that request's own
+        // handler goes on to create the datastore.
+        self.refresh_ids();
+
+        // Tag every metric/tracing event `f` fires (on whatever thread it
+        // ultimately runs on -- see `spawn_servicing_task`, which runs it
+        // via `tokio::task::spawn_blocking`, giving it a dedicated OS
+        // thread for its whole duration) with `command`/`operation_id`, the
+        // same way the CLI path does for its own dispatch. `name` already
+        // matches the CLI's own command-naming convention (see
+        // `command_name` in `main.rs`) for stage/finalize granularity.
+        //
+        // If `f` decides a reboot is needed, also capture this operation's
+        // context (while it's still installed) via `save_reboot_operation`,
+        // so `server::reboot` -- which runs later, after this whole
+        // request and even the daemon's main event loop have returned --
+        // can tag `trident_system_reboot` with this same servicing
+        // operation's identity instead of leaving it untagged.
+        let f = move || {
+            operation_context::run_with_operation(
+                name,
+                operation_context::OperationSource::Daemon,
+                || {
+                    let result = f();
+                    if let Ok((ExitKind::NeedsReboot, ..)) = &result {
+                        operation_context::save_reboot_operation();
+                    }
+                    result
+                },
+            )
+        };
 
         // Create the gRPC response channel
         let (tx, rx) = mpsc::unbounded_channel();

@@ -35,7 +35,7 @@ use trident_proto::v1preview::{
 use crate::{
     agentconfig::AgentConfig,
     cli::TridentExitCodes,
-    logging::logfwd::LogForwarder,
+    logging::{logfwd::LogForwarder, operation_context},
     reboot::{self, REBOOT_WAIT_DURATION_SECS},
     ExitKind, Logstream, TraceStream,
 };
@@ -107,6 +107,21 @@ pub fn server_main(
         }
     };
 
+    // Attach this host's installation ID and database ID to the shared
+    // TraceStream before accepting any RPCs. `Trident::new()` attaches
+    // both the same way on every request, but the very first servicing
+    // request this daemon process ever handles would otherwise have its
+    // command_start (fired by run_with_operation before that request's own
+    // Trident::new() call runs) go out untagged, so attach them up front
+    // instead. Every later request is unaffected either way, since the
+    // shared TraceStream keeps whatever was set here (or by the first
+    // request) for the rest of the daemon's lifetime. Both are read-only
+    // and side-effect-free: neither creates a datastore or an ID (see
+    // `TraceStream::attach_installation_id_if_present` and
+    // `TraceStream::attach_datastore_id_if_present`).
+    tracestream.attach_installation_id_if_present(agent_config.datastore_path());
+    tracestream.attach_datastore_id_if_present(agent_config.datastore_path());
+
     let shutdown_signals = match ShutdownSignals::setup_signal_handlers() {
         Ok(signals) => signals,
         Err(e) => {
@@ -150,7 +165,20 @@ pub fn server_main(
 }
 
 fn reboot(signals: ShutdownSignals) -> ExitCode {
-    if let Err(e) = reboot::request_reboot() {
+    // Reuse the just-finished servicing operation's own operation_id/
+    // command (captured via `save_reboot_operation` from inside
+    // `servicing_request`'s closure, before that operation's own
+    // `run_with_operation` scope ended) so `trident_system_reboot` --
+    // fired unconditionally by `request_reboot` -- is tagged with the
+    // originating operation instead of left completely untagged: by the
+    // time this function runs, the whole daemon event loop
+    // (`server_main_inner`/`main_task`) has already returned, so there is
+    // no thread-local operation context active here at all.
+    let request_result = operation_context::run_with_captured_operation(
+        operation_context::take_reboot_operation(),
+        reboot::request_reboot,
+    );
+    if let Err(e) = request_result {
         error!("Failed to request reboot: {e:?}");
         return TridentExitCodes::RebootUnsuccessful.into();
     }

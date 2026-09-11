@@ -2,6 +2,7 @@ use std::{
     collections::BTreeMap,
     fs::{self, File},
     io::Write,
+    path::Path,
     sync::{Arc, RwLock},
     time::Instant,
 };
@@ -18,13 +19,17 @@ use tracing::{
 };
 use tracing_subscriber::{layer::Layer, registry::LookupSpan};
 
+use trident_api::error::TridentError;
+
 use osutils::{
     files,
     osrelease::{OsRelease, OS_RELEASE_PATH},
     uname,
 };
 
-use crate::{TRIDENT_METRICS_FILE_PATH, TRIDENT_VERSION};
+use crate::{
+    datastore::DataStore, logging::operation_context, TRIDENT_METRICS_FILE_PATH, TRIDENT_VERSION,
+};
 
 /// The product uuid is used to identify the hardware that Trident is running on.
 const PRODUCT_UUID_FILE: &str = "/sys/class/dmi/id/product_uuid";
@@ -84,7 +89,17 @@ pub struct TraceStream {
     // TODO: Consider changing this to a LockOnce when rustc is updated to
     // >=1.70
     target: Arc<RwLock<Option<String>>>,
+    installation_id: Arc<RwLock<Option<String>>>,
+    /// Stable for the lifetime of the datastore, unlike `installation_id`
+    /// which is tied to a specific `Trident::install` invocation. See
+    /// `crate::datastore::DataStore::datastore_id`.
     datastore_id: Arc<RwLock<Option<String>>>,
+    /// Identifies one logical servicing operation (an install, update, or
+    /// manual rollback) that may span multiple invocations -- a stage
+    /// call, a later finalize call, and a later still `commit` call each
+    /// get their own `operation_id`, but share this one value. See
+    /// `crate::datastore::DataStore::ensure_servicing_id`/`servicing_id`.
+    servicing_id: Arc<RwLock<Option<String>>>,
     disabled: bool,
 }
 
@@ -126,17 +141,278 @@ impl TraceStream {
         Ok(())
     }
 
-    /// Set the database ID to attach to every trace entry sent from this point
-    /// forward, as an additional field, so that all traces/metrics for a
-    /// given host installation can be correlated. Expected to be called once
-    /// the datastore's persisted database ID has been retrieved (see
-    /// `DataStore::datastore_id`).
+    /// Set the installation ID to attach to every trace entry sent from this
+    /// point forward, as an additional field, so that all traces/metrics for
+    /// a given host installation can be correlated. Expected to be called
+    /// once the datastore's persisted installation ID has been retrieved
+    /// (see [`Self::attach_installation_id_if_present`] and
+    /// [`Self::ensure_and_attach_installation_id`]).
+    pub fn set_installation_id(&self, installation_id: String) {
+        match self.installation_id.write() {
+            Ok(mut val) => {
+                val.replace(installation_id);
+            }
+            Err(_) => warn!("Failed to lock tracestream to set installation ID"),
+        }
+    }
+
+    /// Returns a clone of the shared installation-ID handle -- the same
+    /// underlying `Arc<RwLock<..>>` written by `set_installation_id` -- so
+    /// other telemetry sinks (namely `AppInsightsSender`) can read the
+    /// current value at send-time without needing their own copy of the
+    /// logic that sets it.
+    pub fn installation_id_handle(&self) -> Arc<RwLock<Option<String>>> {
+        self.installation_id.clone()
+    }
+
+    fn installation_id_cached(&self) -> bool {
+        self.installation_id
+            .read()
+            .map(|v| v.is_some())
+            .unwrap_or(false)
+    }
+
+    /// Set the database ID to attach to every trace entry sent from this
+    /// point forward, as an additional field, so that all traces/metrics
+    /// against a given datastore can be correlated. Unlike
+    /// `installation_id`, this is stable for the datastore's entire
+    /// lifetime, not just a single `Trident::install` invocation. Expected
+    /// to be called once the datastore's persisted database ID has been
+    /// retrieved (see [`Self::attach_datastore_id_if_present`]).
     pub fn set_datastore_id(&self, datastore_id: String) {
         match self.datastore_id.write() {
             Ok(mut val) => {
                 val.replace(datastore_id);
             }
             Err(_) => warn!("Failed to lock tracestream to set database ID"),
+        }
+    }
+
+    /// Returns a clone of the shared database-ID handle -- the same
+    /// underlying `Arc<RwLock<..>>` written by `set_datastore_id` -- so
+    /// other telemetry sinks (namely `AppInsightsSender`) can read the
+    /// current value at send-time without needing their own copy of the
+    /// logic that sets it.
+    pub fn datastore_id_handle(&self) -> Arc<RwLock<Option<String>>> {
+        self.datastore_id.clone()
+    }
+
+    fn datastore_id_cached(&self) -> bool {
+        self.datastore_id
+            .read()
+            .map(|v| v.is_some())
+            .unwrap_or(false)
+    }
+
+    /// Best-effort attempt to attach this datastore's database ID -- either
+    /// already cached from a prior call on this `TraceStream`, or freshly
+    /// read from the datastore at `datastore_path` if one already exists
+    /// there. Never creates a datastore: unlike `installation_id`, the
+    /// database ID's get-or-create semantics only ever run against a
+    /// datastore that has already been opened for real (see
+    /// `crate::datastore::DataStore::datastore_id`), so it is safe to call
+    /// this any time a datastore is known to already exist.
+    pub fn attach_datastore_id_if_present(&self, datastore_path: &Path) {
+        if self.datastore_id_cached() || !datastore_path.exists() {
+            return;
+        }
+        match DataStore::open(datastore_path).and_then(|mut ds| ds.datastore_id()) {
+            Ok(datastore_id) => {
+                info!("Datastore ID: {datastore_id}");
+                self.set_datastore_id(datastore_id.to_string());
+            }
+            Err(e) => {
+                warn!("Failed to read/create database ID: {e:?}");
+            }
+        }
+    }
+
+    /// Best-effort attempt to attach this host's installation ID -- either
+    /// already cached from a prior call on this `TraceStream`, or freshly
+    /// read from the datastore at `datastore_path` if one already exists
+    /// there. Never creates a *datastore*, and never creates an
+    /// installation ID for a genuinely unprovisioned host: a command that
+    /// is allowed to initialize a brand-new datastore (see
+    /// [`crate::datastore::DataStore::may_initialize_datastore_for_command`])
+    /// must still call [`Self::ensure_and_attach_installation_id`] instead,
+    /// on a datastore handle it already owns.
+    ///
+    /// Not fully read-only, though: for a datastore that is already
+    /// provisioned (via offline init or the CIH update-bootstrap path,
+    /// both of which adopt a datastore without ever calling
+    /// `Trident::install`) but has no installation ID yet, this performs a
+    /// one-time migration *write* to mint one -- see
+    /// [`crate::datastore::DataStore::installation_id_or_migrate`]. Callers
+    /// that require true read-only behavior (e.g. a genuinely
+    /// unprivileged/diagnostic path) must not assume this call can never
+    /// write to the datastore.
+    ///
+    /// Safe to call from anywhere, any number of times, before any point
+    /// that wants the ID attached: this is the single implementation
+    /// shared by every read-only-in-the-common-case attach call site (the
+    /// CLI's dispatch, the daemon's startup attach, the daemon's
+    /// per-request backstop, and `Trident::new`'s own attach), so a
+    /// correctness fix to this logic only needs to happen once.
+    pub fn attach_installation_id_if_present(&self, datastore_path: &Path) {
+        if self.installation_id_cached() || !datastore_path.exists() {
+            return;
+        }
+        match DataStore::open(datastore_path).and_then(|mut ds| ds.installation_id_or_migrate()) {
+            Ok(Some(installation_id)) => {
+                info!("Installation ID: {installation_id}");
+                self.set_installation_id(installation_id.to_string());
+            }
+            Ok(None) => {
+                debug!("No installation ID persisted yet (host not yet installed)");
+            }
+            Err(e) => {
+                warn!("Failed to read installation ID: {e:?}");
+            }
+        }
+    }
+
+    /// Ensures `datastore` has an installation ID -- creating one if this
+    /// is the first access, or reading back the existing one otherwise --
+    /// and attaches it. Unlike
+    /// [`Self::attach_installation_id_if_present`], this is only for the
+    /// one caller that already knows a command genuinely allowed to
+    /// initialize a brand-new datastore (per
+    /// [`crate::datastore::DataStore::may_initialize_datastore_for_command`])
+    /// is proceeding, and already holds (or just created) the datastore
+    /// handle for it -- so this attaches the new install/update's own ID
+    /// instead of leaving the trace stream untagged until some later
+    /// read-only attach happens to run.
+    pub fn ensure_and_attach_installation_id(
+        &self,
+        datastore: &mut DataStore,
+    ) -> Result<(), TridentError> {
+        if self.installation_id_cached() {
+            return Ok(());
+        }
+        let installation_id = datastore.ensure_installation_id()?;
+        info!("Installation ID: {installation_id}");
+        self.set_installation_id(installation_id.to_string());
+        Ok(())
+    }
+
+    /// Set the servicing ID to attach to every trace entry sent from this
+    /// point forward. Expected to be called once per `Trident`/`TraceStream`
+    /// lifetime, either by [`Self::ensure_and_attach_servicing_id`] (the
+    /// call that stages a new servicing operation) or
+    /// [`Self::attach_servicing_id_if_present`] (a finalize-only or
+    /// `commit` call reading one back).
+    pub fn set_servicing_id(&self, servicing_id: String) {
+        match self.servicing_id.write() {
+            Ok(mut val) => {
+                val.replace(servicing_id);
+            }
+            Err(_) => warn!("Failed to lock tracestream to set servicing ID"),
+        }
+    }
+
+    /// Returns a clone of the shared servicing-ID handle -- the same
+    /// underlying `Arc<RwLock<..>>` written by `set_servicing_id` -- so
+    /// other telemetry sinks (namely `AppInsightsSender`) can read the
+    /// current value at send-time without needing their own copy of the
+    /// logic that sets it.
+    pub fn servicing_id_handle(&self) -> Arc<RwLock<Option<String>>> {
+        self.servicing_id.clone()
+    }
+
+    /// Best-effort attempt to attach the currently-persisted servicing ID
+    /// (if any) -- read-only, never generates one. Used by a finalize-only
+    /// call (`Operations::has_stage() == false`) and by `commit`, both of
+    /// which must correlate with whatever servicing ID an earlier stage
+    /// call already persisted, rather than generating their own.
+    ///
+    /// Deliberately always re-reads from `datastore` rather than
+    /// short-circuiting on an already-cached value (unlike
+    /// `attach_installation_id_if_present`/`attach_datastore_id_if_present`,
+    /// which *are* safe to cache-and-skip): `installation_id`/
+    /// `datastore_id` are stable for the entire lifetime of the
+    /// `TraceStream`/`DataStore` they're attached to, but `servicing_id`
+    /// is not -- a single long-lived daemon `TraceStream` (see
+    /// `server::tridentserver`, which owns one `TraceStream` shared across
+    /// every request it serves) can legitimately see a *different*
+    /// already-staged servicing operation across separate finalize/commit
+    /// requests, e.g. one staged out-of-process via the CLI. Caching the
+    /// first value read here would silently keep attaching that stale ID
+    /// to every later finalize/commit call in the same process, even once
+    /// the datastore itself has moved on.
+    ///
+    /// Deliberately takes an already-open `datastore` handle rather than a
+    /// path (unlike `attach_installation_id_if_present`): by the time a
+    /// finalize/commit call reaches this point it already holds one, and
+    /// a servicing ID is only ever meaningful in the context of a
+    /// datastore that has already been through at least one staged
+    /// operation.
+    pub fn attach_servicing_id_if_present(&self, datastore: &DataStore) {
+        match datastore.servicing_id() {
+            Ok(Some(servicing_id)) => {
+                info!("Servicing ID: {servicing_id}");
+                self.set_servicing_id(servicing_id.to_string());
+            }
+            Ok(None) => {
+                debug!("No servicing ID persisted yet (nothing staged on this datastore)");
+            }
+            Err(e) => {
+                warn!("Failed to read servicing ID: {e:?}");
+            }
+        }
+    }
+
+    /// Generates a fresh servicing ID for a new staging operation and
+    /// attaches it. Called by `Trident::install`/`update`/`rollback`
+    /// exactly when `Operations::has_stage()` is true for that invocation
+    /// -- a finalize-only invocation must call
+    /// [`Self::attach_servicing_id_if_present`] instead, to read back the
+    /// value this call persists rather than generating its own.
+    ///
+    /// Best-effort: a failure here must not block the servicing operation
+    /// itself, matching the "telemetry never affects servicing outcomes"
+    /// invariant -- callers should `warn!`-and-continue on error rather
+    /// than propagating it with `?`.
+    pub fn ensure_and_attach_servicing_id(
+        &self,
+        datastore: &mut DataStore,
+    ) -> Result<(), TridentError> {
+        let servicing_id = datastore.ensure_servicing_id()?;
+        info!("Servicing ID: {servicing_id}");
+        self.set_servicing_id(servicing_id.to_string());
+        Ok(())
+    }
+
+    /// Generates (if `has_stage` is true, from a source allowed to
+    /// generate persistent IDs) or reads back (otherwise) the servicing ID
+    /// for the current invocation, and attaches it. Single shared
+    /// implementation for the branch used identically by
+    /// `Trident::install`/`update`/`rollback` (each passing their own
+    /// `Operations::has_stage()`) and `Trident::commit` (which always
+    /// passes `has_stage = false`, since `commit` never stages anything
+    /// itself) -- see those call sites for the full rationale.
+    ///
+    /// Reading back is unconditional and source-agnostic -- it is a
+    /// harmless, read-only best-effort lookup regardless of who is calling
+    /// -- but generating is gated on `should_generate_persistent_ids` and
+    /// fails closed (does not generate) if the source is unknown or not
+    /// allowed to generate persistent IDs (see that function's doc
+    /// comment). Best-effort throughout: a failure to generate is only
+    /// logged, matching every other persistent-ID attachment in this
+    /// module.
+    ///
+    /// Deliberately regenerates (overwriting any previously-staged value)
+    /// whenever `has_stage` is true, even if a servicing operation is
+    /// already staged and this call only ends up finalizing it: any
+    /// invocation that is allowed to stage is entitled to a fresh
+    /// servicing ID for that possibility.
+    pub fn refresh_servicing_id(&self, datastore: &mut DataStore, has_stage: bool) {
+        let source = operation_context::current().map(|(_, _, source)| source);
+        if has_stage && source.is_some_and(operation_context::should_generate_persistent_ids) {
+            if let Err(e) = self.ensure_and_attach_servicing_id(datastore) {
+                warn!("Failed to create servicing ID: {e:?}");
+            }
+        } else {
+            self.attach_servicing_id_if_present(datastore);
         }
     }
 
@@ -157,7 +433,9 @@ impl TraceStream {
     ) -> Box<TraceSender> {
         Box::new(TraceSender::new(
             self.target.clone(),
+            self.installation_id.clone(),
             self.datastore_id.clone(),
+            self.servicing_id.clone(),
             metrics_file_path,
         ))
     }
@@ -165,7 +443,9 @@ impl TraceStream {
 
 pub struct TraceSender {
     server: Arc<RwLock<Option<String>>>,
+    installation_id: Arc<RwLock<Option<String>>>,
     datastore_id: Arc<RwLock<Option<String>>>,
+    servicing_id: Arc<RwLock<Option<String>>>,
     client: reqwest::blocking::Client,
     metrics_file: Option<File>,
 }
@@ -179,12 +459,16 @@ struct ExecutionTime(Instant);
 impl TraceSender {
     fn new(
         server: Arc<RwLock<Option<String>>>,
+        installation_id: Arc<RwLock<Option<String>>>,
         datastore_id: Arc<RwLock<Option<String>>>,
+        servicing_id: Arc<RwLock<Option<String>>>,
         metrics_file_path: &str,
     ) -> Self {
         Self {
             server,
+            installation_id,
             datastore_id,
+            servicing_id,
             client: reqwest::blocking::Client::new(),
             metrics_file: match files::create_file(metrics_file_path) {
                 Ok(f) => Some(f),
@@ -203,16 +487,56 @@ impl TraceSender {
     }
 
     /// Build the `additional_fields` map for a trace entry: the static
-    /// `ADDITIONAL_FIELDS`, plus the database ID (if one has been set via
-    /// `TraceStream::set_datastore_id`), so entries can be correlated back to a
-    /// specific host installation.
+    /// `ADDITIONAL_FIELDS`, the installation ID (if one has been set via
+    /// `TraceStream::set_installation_id`), the servicing ID (if one has
+    /// been set via `TraceStream::set_servicing_id`), and the current
+    /// thread's `operation_id`/`command` (if any, see `operation_context`),
+    /// so entries can be correlated back to a specific host installation
+    /// and servicing operation.
+    ///
+    /// Unlike `installation_id`, `servicing_id` has no `operation_id`
+    /// fallback in `merge_operation_context`: it should stay absent for
+    /// any event fired before the current call's own
+    /// `ensure_and_attach_servicing_id`/`attach_servicing_id_if_present`
+    /// has actually run (e.g. a read-only command that never touches
+    /// servicing at all), rather than appearing to correlate with a
+    /// servicing operation that isn't happening.
+    ///
+    /// `operation_id`/`command` are deliberately merged here rather than
+    /// into the metric's own `value` (as scalar/span fields are): mixing
+    /// them into `value` would change the established schema for simple
+    /// scalar metrics -- e.g. `clean_install_start` would go from
+    /// `"value": true` to `"value": {"command": ..., "operation_id": ...,
+    /// "value": true}` the moment it ran inside an operation context,
+    /// breaking that contract for existing consumers.
+    ///
+    /// `installation_id` is filled in by two different paths: normally
+    /// from the persisted value set via `TraceStream::set_installation_id`
+    /// (attached above), but `merge_operation_context` also falls back to
+    /// this invocation's own `operation_id` whenever no persisted value
+    /// has been attached yet -- e.g. every event fired before a host's
+    /// first-ever `install` has actually created the datastore and created
+    /// one. See `merge_operation_context` for why that fallback is the
+    /// same value `ensure_installation_id` will end up persisting for
+    /// that same invocation.
     fn additional_fields(&self) -> BTreeMap<String, Value> {
         let mut fields = ADDITIONAL_FIELDS.clone();
+        if let Ok(installation_id) = self.installation_id.read() {
+            if let Some(installation_id) = installation_id.as_ref() {
+                fields.insert("installation_id".to_string(), json!(installation_id));
+            }
+        }
         if let Ok(datastore_id) = self.datastore_id.read() {
             if let Some(datastore_id) = datastore_id.as_ref() {
                 fields.insert("datastore_id".to_string(), json!(datastore_id));
             }
         }
+        if let Ok(servicing_id) = self.servicing_id.read() {
+            if let Some(servicing_id) = servicing_id.as_ref() {
+                fields.insert("servicing_id".to_string(), json!(servicing_id));
+            }
+        }
+        merge_operation_context(&mut fields);
         fields
     }
 
@@ -401,6 +725,88 @@ where
     }
 }
 
+/// Merge the current thread's `operation_id`/`command`/`source` (see
+/// `operation_context`), if any, into `fields`. Values the caller already
+/// set (e.g. an event that explicitly names its own `command`) are never
+/// overwritten.
+///
+/// Shared by both local telemetry sinks (`TraceSender::additional_fields`
+/// below and `AppInsightsSender::send_event`) so the
+/// operation_id/command/source/installation_id-fallback rule has one
+/// implementation instead of being hand-duplicated between them -- a
+/// prior version of this function existed independently in each sink,
+/// which risked the two silently diverging if the rule ever changed in
+/// only one place.
+/// Command names for which `DataStore::ensure_servicing_id` always sets
+/// the servicing ID to this exact invocation's own `operation_id` (see
+/// that function's doc comment), rather than reading one back from a
+/// previous operation. This is the fixed set of `command`/
+/// `servicing_request` names that pass `has_stage = true` into
+/// [`TraceStream::refresh_servicing_id`] (see `Trident::install`/`update`/
+/// `rollback`, `TridentServer::stream_disk`, and their other daemon
+/// service handlers) -- mirrors
+/// `DataStore::may_initialize_datastore_for_command`'s similar,
+/// exhaustive name-based enumeration, but answers a different question:
+/// not "may this command run without a datastore" but "will this
+/// command's own servicing_id equal its operation_id". The two sets are
+/// related but not identical: this one includes `rollback`/
+/// `rollback_stage` (a manual rollback stages/finalizes its own
+/// servicing episode, but can never *initialize* a fresh datastore, so it
+/// is absent from the other enumeration), and, like the other
+/// enumeration, includes `stream_disk` (which internally calls
+/// `Trident::install` and so must generate its own servicing_id just
+/// like a direct `install` would).
+fn command_generates_servicing_id(command: &str) -> bool {
+    matches!(
+        command,
+        "install"
+            | "install_stage"
+            | "update"
+            | "update_stage"
+            | "rollback"
+            | "rollback_stage"
+            | "stream_disk"
+    )
+}
+
+pub(crate) fn merge_operation_context(fields: &mut BTreeMap<String, Value>) {
+    if let Some((operation_id, command, source)) = operation_context::current() {
+        fields
+            .entry("operation_id".to_string())
+            .or_insert_with(|| json!(operation_id));
+        fields
+            .entry("command".to_string())
+            .or_insert_with(|| json!(command));
+        fields
+            .entry("source".to_string())
+            .or_insert_with(|| json!(source.as_str()));
+        // If no installation ID has been persisted/attached yet (e.g. this
+        // is the invocation that is about to create the datastore and
+        // create one), fall back to this invocation's own `operation_id` --
+        // the same value `DataStore::ensure_installation_id` will persist
+        // as the installation ID once the datastore is actually created.
+        fields
+            .entry("installation_id".to_string())
+            .or_insert_with(|| json!(operation_id));
+
+        // Unlike installation_id above, servicing_id can go genuinely
+        // stale mid-process: a long-lived daemon's cached
+        // `TraceStream::servicing_id` still holds a *previous* operation's
+        // value until this invocation's own
+        // `ensure_and_attach_servicing_id` runs deeper in the call stack
+        // and overwrites it. For the six commands that will end up
+        // generating their own new servicing ID anyway, that value is
+        // already fully determined the moment this operation's context
+        // exists -- so force it here (unconditionally, not just filling a
+        // gap like installation_id above) rather than leaving any earlier
+        // event (e.g. command_start/trident_start) showing a stale,
+        // unrelated operation's ID.
+        if command_generates_servicing_id(&command) {
+            fields.insert("servicing_id".to_string(), json!(operation_id));
+        }
+    }
+}
+
 /// Obtain product uuid of the hardware Trident is running on
 fn read_product_uuid(filepath: String) -> String {
     match fs::read_to_string(filepath.clone()) {
@@ -579,11 +985,194 @@ mod tests {
     }
 
     #[test]
-    /// Regression test: `TraceStream::set_datastore_id` must actually
-    /// reach the serialized trace entry's `additional_fields.datastore_id`
+    /// Regression test: `TraceStream::set_installation_id` must actually
+    /// reach the serialized trace entry's `additional_fields.installation_id`
     /// -- the metric/span tests above only assert on `metric_name`/`value`
-    /// and would still pass even if the database ID were never copied
+    /// and would still pass even if the installation ID were never copied
     /// into `additional_fields`.
+    fn test_tracestream_installation_id_written_to_additional_fields() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let metrics_path = temp_dir.path().join("metrics.jsonl");
+        let tracestream = TraceStream::default();
+        tracestream.set_installation_id("test-installation-id".to_string());
+        let trace_sender = tracestream
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
+            .with_filter(filter::LevelFilter::INFO);
+
+        // See test_tracestream_write_metric_event_to_file for why a scoped
+        // (not global) default subscriber is used here.
+        let _guard = tracing::subscriber::set_default(
+            tracing_subscriber::Registry::default().with(trace_sender),
+        );
+
+        tracing::info!(
+            metric_name = "test_metric_with_installation_id",
+            value = true
+        );
+
+        // Ensure the trace system has time to write the file.
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let file = File::open(&metrics_path).unwrap();
+        let reader = BufReader::new(file);
+        let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
+
+        let metric_found = lines.iter().any(|line| {
+            line.contains(r#""metric_name":"test_metric_with_installation_id""#)
+                && line.contains(r#""installation_id":"test-installation-id""#)
+        });
+
+        assert!(
+            metric_found,
+            "Expected metric with installation_id field not found in the local metrics file"
+        );
+    }
+
+    #[test]
+    /// Locks in the exact set of commands that `command_generates_servicing_id`
+    /// classifies as staging (i.e. generating their own servicing_id from
+    /// their own operation_id), so future edits to the match arms are
+    /// caught by CI rather than only being noticed in a running system.
+    /// `stream_disk` must be included: it internally calls `Trident::install`
+    /// and so must generate its own servicing_id just like a direct
+    /// `install` would.
+    fn test_command_generates_servicing_id_classifies_known_commands() {
+        for command in [
+            "install",
+            "install_stage",
+            "update",
+            "update_stage",
+            "rollback",
+            "rollback_stage",
+            "stream_disk",
+        ] {
+            assert!(
+                command_generates_servicing_id(command),
+                "expected '{command}' to generate its own servicing_id"
+            );
+        }
+
+        for command in [
+            "install_finalize",
+            "update_finalize",
+            "rollback_finalize",
+            "commit",
+            "get",
+            "validate",
+            "diagnose",
+            "rebuild_raid",
+        ] {
+            assert!(
+                !command_generates_servicing_id(command),
+                "expected '{command}' to NOT generate its own servicing_id"
+            );
+        }
+    }
+
+    #[test]
+    /// Regression test for the daemon stale-servicing_id bug: a
+    /// long-lived process's cached `servicing_id` (left over from a prior
+    /// operation) must NOT leak onto a later staging command's own
+    /// events (e.g. `command_start`/`trident_start`, fired before that
+    /// command's own `refresh_servicing_id` runs). `merge_operation_context`
+    /// must force `servicing_id` to this invocation's own `operation_id`
+    /// for any command in `command_generates_servicing_id`, overriding
+    /// whatever is currently cached rather than merely filling a gap.
+    fn test_tracestream_servicing_id_forced_to_operation_id_for_staging_commands() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let metrics_path = temp_dir.path().join("metrics.jsonl");
+        let tracestream = TraceStream::default();
+        // Simulate a stale value left over from a previous operation in
+        // the same long-lived process.
+        tracestream.set_servicing_id("stale-previous-operation-id".to_string());
+        let trace_sender = tracestream
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
+            .with_filter(filter::LevelFilter::INFO);
+
+        let _guard = tracing::subscriber::set_default(
+            tracing_subscriber::Registry::default().with(trace_sender),
+        );
+
+        let operation_id = operation_context::run_with_operation(
+            "install_stage",
+            operation_context::OperationSource::Cli,
+            || {
+                let operation_id = operation_context::current()
+                    .expect("operation context should be installed")
+                    .0;
+                tracing::info!(metric_name = "test_metric_during_staging_command");
+                operation_id
+            },
+        );
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let file = File::open(&metrics_path).unwrap();
+        let reader = BufReader::new(file);
+        let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
+
+        let expected = format!(r#""servicing_id":"{operation_id}""#);
+        let metric_found = lines.iter().any(|line| {
+            line.contains(r#""metric_name":"test_metric_during_staging_command""#)
+                && line.contains(&expected)
+                && !line.contains("stale-previous-operation-id")
+        });
+
+        assert!(
+            metric_found,
+            "Expected staging command's metric to carry this operation's own \
+             operation_id as servicing_id, not the stale cached value"
+        );
+    }
+
+    #[test]
+    /// Negative counterpart: a non-staging command (e.g. `commit`, which
+    /// only ever reads back a previous operation's servicing_id) must NOT
+    /// have its cached servicing_id overridden -- the whole point of
+    /// read-back is to surface exactly that previously-staged value.
+    fn test_tracestream_servicing_id_not_forced_for_non_staging_commands() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let metrics_path = temp_dir.path().join("metrics.jsonl");
+        let tracestream = TraceStream::default();
+        tracestream.set_servicing_id("previously-staged-id".to_string());
+        let trace_sender = tracestream
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
+            .with_filter(filter::LevelFilter::INFO);
+
+        let _guard = tracing::subscriber::set_default(
+            tracing_subscriber::Registry::default().with(trace_sender),
+        );
+
+        operation_context::run_with_operation(
+            "commit",
+            operation_context::OperationSource::Cli,
+            || {
+                tracing::info!(metric_name = "test_metric_during_commit");
+            },
+        );
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let file = File::open(&metrics_path).unwrap();
+        let reader = BufReader::new(file);
+        let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
+
+        let metric_found = lines.iter().any(|line| {
+            line.contains(r#""metric_name":"test_metric_during_commit""#)
+                && line.contains(r#""servicing_id":"previously-staged-id""#)
+        });
+
+        assert!(
+            metric_found,
+            "Expected commit's metric to keep the previously-staged servicing_id, \
+             not have it overridden"
+        );
+    }
+
+    #[test]
+    /// Regression test: `TraceStream::set_datastore_id` must actually
+    /// reach the serialized trace entry's `additional_fields.datastore_id`,
+    /// independently of installation_id.
     fn test_tracestream_datastore_id_written_to_additional_fields() {
         let temp_dir = tempfile::tempdir().unwrap();
         let metrics_path = temp_dir.path().join("metrics.jsonl");
@@ -658,6 +1247,157 @@ mod tests {
     // Helper function to test span metrics
     #[tracing::instrument(name = "test_span", skip_all)]
     fn simulate_function_span() {}
+
+    #[test]
+    /// Regression test closing the stage/read-back join gap: a servicing
+    /// ID generated by one `TraceStream` (standing in for the process that
+    /// staged an install/update/rollback) must be recoverable by a
+    /// completely separate, unrelated `TraceStream` instance that only
+    /// shares the same on-disk datastore (standing in for a later
+    /// finalize/commit request, or a different daemon request in the same
+    /// process). Every other servicing_id test either exercises the
+    /// datastore layer alone (`datastore.rs`) or injects a pre-built
+    /// handle directly (`appinsights.rs`'s functional test) -- neither
+    /// proves the real `refresh_servicing_id` -> `DataStore::servicing_id`
+    /// join actually works end-to-end.
+    fn test_servicing_id_stage_then_read_back_across_separate_tracestreams() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("db.sqlite");
+
+        // Stage: a fresh TraceStream + datastore, as if this were the
+        // process running `Trident::install`'s staging half.
+        let mut staging_datastore = DataStore::open_or_create(&db_path).unwrap();
+        let staging_tracestream = TraceStream::default();
+        operation_context::run_with_operation(
+            "install",
+            operation_context::OperationSource::Cli,
+            || {
+                staging_tracestream.refresh_servicing_id(&mut staging_datastore, true);
+            },
+        );
+        let staged_id = staging_tracestream
+            .servicing_id_handle()
+            .read()
+            .unwrap()
+            .clone()
+            .expect("staging call should have generated a servicing ID");
+
+        // Read back: a completely separate TraceStream + DataStore handle
+        // opened against the same file, as if this were a later
+        // finalize/commit request (or a different daemon request in the
+        // same long-lived process).
+        let mut readback_datastore = DataStore::open_or_create(&db_path).unwrap();
+        let readback_tracestream = TraceStream::default();
+        readback_tracestream.refresh_servicing_id(&mut readback_datastore, false);
+
+        assert_eq!(
+            readback_tracestream
+                .servicing_id_handle()
+                .read()
+                .unwrap()
+                .clone(),
+            Some(staged_id),
+            "a separate TraceStream reading the same datastore should recover the staged servicing ID"
+        );
+    }
+
+    #[test]
+    /// Negative counterpart to the join test above: a `TraceStream` that
+    /// only ever reads (never stages) against a datastore that has never
+    /// had anything staged must leave the servicing ID handle `None`,
+    /// rather than fabricating one.
+    fn test_servicing_id_absent_when_never_staged() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("db.sqlite");
+
+        let mut datastore = DataStore::open_or_create(&db_path).unwrap();
+        let tracestream = TraceStream::default();
+        tracestream.refresh_servicing_id(&mut datastore, false);
+
+        assert_eq!(
+            tracestream.servicing_id_handle().read().unwrap().clone(),
+            None,
+            "servicing ID must stay absent when nothing has ever staged on this datastore"
+        );
+    }
+
+    #[test]
+    /// Same cross-invocation join gap as
+    /// `test_servicing_id_stage_then_read_back_across_separate_tracestreams`,
+    /// but for `installation_id`: every existing installation_id test
+    /// either only exercises the datastore layer (`datastore.rs`) or sets
+    /// the value directly on a single `TraceStream`
+    /// (`test_tracestream_installation_id_written_to_additional_fields`) --
+    /// none of them prove that a *separate* `TraceStream` calling
+    /// `attach_installation_id_if_present` actually recovers an
+    /// installation ID created by a different one.
+    fn test_installation_id_stage_then_read_back_across_separate_tracestreams() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("db.sqlite");
+
+        // Stage: a fresh TraceStream + datastore, as if this were
+        // `Trident::install` creating the installation ID for the first
+        // time.
+        let mut staging_datastore = DataStore::open_or_create(&db_path).unwrap();
+        let staging_tracestream = TraceStream::default();
+        operation_context::run_with_operation(
+            "install",
+            operation_context::OperationSource::Cli,
+            || {
+                staging_tracestream
+                    .ensure_and_attach_installation_id(&mut staging_datastore)
+                    .unwrap();
+            },
+        );
+        let staged_id = staging_tracestream
+            .installation_id_handle()
+            .read()
+            .unwrap()
+            .clone()
+            .expect("staging call should have created an installation ID");
+
+        // Read back: a completely separate TraceStream, reading only from
+        // disk (via the datastore path, matching the real
+        // attach_installation_id_if_present call site signature), as if
+        // this were a later command or daemon request in the same
+        // process reattaching to an already-provisioned host.
+        let readback_tracestream = TraceStream::default();
+        readback_tracestream.attach_installation_id_if_present(&db_path);
+
+        assert_eq!(
+            readback_tracestream
+                .installation_id_handle()
+                .read()
+                .unwrap()
+                .clone(),
+            Some(staged_id),
+            "a separate TraceStream reading the same datastore should recover the installation ID"
+        );
+    }
+
+    #[test]
+    /// Negative counterpart: a `TraceStream` that only ever reads (never
+    /// creates) against a datastore that has never had an installation ID
+    /// created, and is not otherwise provisioned, must leave the handle
+    /// `None` rather than fabricating one.
+    fn test_installation_id_absent_when_never_created() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("db.sqlite");
+
+        // Create the datastore file itself (so attach_installation_id_if_present's
+        // `datastore_path.exists()` check passes), but never create an
+        // installation ID on it.
+        DataStore::open_or_create(&db_path).unwrap();
+
+        let tracestream = TraceStream::default();
+        tracestream.attach_installation_id_if_present(&db_path);
+
+        assert_eq!(
+            tracestream.installation_id_handle().read().unwrap().clone(),
+            None,
+            "installation ID must stay absent when none has ever been created on this datastore"
+        );
+    }
 }
 
 #[cfg(feature = "functional-test")]
