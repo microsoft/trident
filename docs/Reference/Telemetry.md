@@ -168,6 +168,30 @@ Reading the diagram by row, from most to least stable:
 - **`operation_id`**: the shortest-lived of the five, minted fresh for
   every single command invocation and never reused.
 
+## Command Errors
+
+If a *servicing* command (`install`, `update`, `commit`, `rollback`,
+`rebuild_raid`, `stream_disk`, and their gRPC/`grpc-client` equivalents)
+fails, a
+`command_error` event is also sent (tagged with the same
+`operation_id`/`command` as above), breaking the failure down into:
+
+- `kind`: the top-level error category (e.g. `internal`, `invalid-input`,
+  `servicing`, `initialization`).
+- `subkind`: the specific error within that category (e.g.
+  `check-root-privileges`), when one applies.
+- `location`: the `file:line` in Trident's source where the error was
+  originally raised.
+
+A `grpc-client` invocation only fires its own `command_error` when the
+daemon it talked to never actually responded (a transport-level failure:
+the daemon's socket wasn't found, the connection was refused, or it
+dropped mid-call). If the daemon did respond -- including rejecting the
+request outright -- the daemon's own `command_error` for that failure
+already has full `kind`/`subkind`/`location` fidelity, so `grpc-client`
+stays silent rather than reporting the same failure again under a
+generic classification.
+
 ## Delivery
 
 Telemetry delivery is always best-effort and never affects servicing
