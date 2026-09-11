@@ -128,9 +128,9 @@ gantt
     installation_id #1 (since install #1) :done, inst1, 2024-01-01, 9d
     installation_id #2 (since install #2) :done, inst2, 2024-01-10, 2d
 
-    section database_id
-    database_id #1 (since install #1)     :active, db1, 2024-01-01, 9d
-    database_id #2 (since install #2)     :active, db2, 2024-01-10, 2d
+    section datastore_id
+    datastore_id #1 (since install #1)    :active, db1, 2024-01-01, 9d
+    datastore_id #2 (since install #2)    :active, db2, 2024-01-10, 2d
 
     section asset_id*
     asset_id (never recreated)            :active, done, asset1, 2024-01-01, 11d
@@ -140,19 +140,19 @@ gantt
 read from `/sys/class/dmi/id/product_uuid`) that Trident emitted before
 this design existed. It was removed once `installation_id`/`servicing_id`
 were introduced (see `telemetry: remove asset_id from platform info`) and
-is shown here only for lifecycle contrast with `database_id` -- it is
+is shown here only for lifecycle contrast with `datastore_id` -- it is
 **not** currently emitted by Trident.
 
 Reading the diagram by row, from most to least stable:
 
 - **`asset_id`** (no longer emitted, shown for contrast): would have
   identified the physical machine itself, surviving every reinstall.
-- **`database_id`**: tied to a single datastore file. Recreated whenever a
+- **`datastore_id`**: tied to a single datastore file. Recreated whenever a
   new datastore is created -- in this sequence, only the second `install`
   (day 10) starts a new one.
 - **`installation_id`**: created once at the first `install` against a
   given datastore and never overwritten after that -- but since it lives
-  in the datastore, it is recreated alongside `database_id` whenever a new
+  in the datastore, it is recreated alongside `datastore_id` whenever a new
   datastore is created (the second `install`).
 - **`servicing_id`**: correlates every event in one servicing episode
   (across separate stage/finalize invocations and any later `commit`)
@@ -162,30 +162,6 @@ Reading the diagram by row, from most to least stable:
   regenerate it, since finalize-only invocations only read the value back.
 - **`operation_id`**: the shortest-lived of the five, minted fresh for
   every single command invocation and never reused.
-
-## Command Errors
-
-If a *servicing* command (`install`, `update`, `commit`, `rollback`,
-`rebuild_raid`, `stream_disk`, and their gRPC/`grpc-client` equivalents)
-fails, a
-`command_error` event is also sent (tagged with the same
-`operation_id`/`command` as above), breaking the failure down into:
-
-- `kind`: the top-level error category (e.g. `internal`, `invalid-input`,
-  `servicing`, `initialization`).
-- `subkind`: the specific error within that category (e.g.
-  `check-root-privileges`), when one applies.
-- `location`: the `file:line` in Trident's source where the error was
-  originally raised.
-
-A `grpc-client` invocation only fires its own `command_error` when the
-daemon it talked to never actually responded (a transport-level failure:
-the daemon's socket wasn't found, the connection was refused, or it
-dropped mid-call). If the daemon did respond -- including rejecting the
-request outright -- the daemon's own `command_error` for that failure
-already has full `kind`/`subkind`/`location` fidelity, so `grpc-client`
-stays silent rather than reporting the same failure again under a
-generic classification.
 
 ## Delivery
 
