@@ -205,6 +205,10 @@ pub struct AppInsightsSender {
     /// `TraceSender` (see `TraceStream::datastore_id_handle`), stable for
     /// the datastore's entire lifetime rather than a single install.
     datastore_id: Arc<RwLock<Option<String>>>,
+    /// The same servicing ID handle used by `TraceStream`/`TraceSender`
+    /// (see `TraceStream::servicing_id_handle`), correlating events across
+    /// a stage/finalize/commit sequence for one servicing operation.
+    servicing_id: Arc<RwLock<Option<String>>>,
 }
 
 impl AppInsightsSender {
@@ -223,6 +227,7 @@ impl AppInsightsSender {
         uploader: BackgroundUploadHandle,
         installation_id: Arc<RwLock<Option<String>>>,
         datastore_id: Arc<RwLock<Option<String>>>,
+        servicing_id: Arc<RwLock<Option<String>>>,
     ) -> Option<Self> {
         let parts = parse_connection_string(connection_string)?;
         match parts.track_url() {
@@ -235,7 +240,7 @@ impl AppInsightsSender {
                 return None;
             }
         }
-        Self::from_parts(parts, uploader, installation_id, datastore_id)
+        Self::from_parts(parts, uploader, installation_id, datastore_id, servicing_id)
     }
 
     fn from_parts(
@@ -243,6 +248,7 @@ impl AppInsightsSender {
         uploader: BackgroundUploadHandle,
         installation_id: Arc<RwLock<Option<String>>>,
         datastore_id: Arc<RwLock<Option<String>>>,
+        servicing_id: Arc<RwLock<Option<String>>>,
     ) -> Option<Self> {
         let track_url = parts.track_url()?;
         Some(Self {
@@ -251,6 +257,7 @@ impl AppInsightsSender {
             uploader,
             installation_id,
             datastore_id,
+            servicing_id,
         })
     }
 
@@ -279,6 +286,13 @@ impl AppInsightsSender {
                 properties
                     .entry("datastore_id".to_string())
                     .or_insert_with(|| json!(datastore_id));
+            }
+        }
+        if let Ok(servicing_id) = self.servicing_id.read() {
+            if let Some(servicing_id) = servicing_id.as_ref() {
+                properties
+                    .entry("servicing_id".to_string())
+                    .or_insert_with(|| json!(servicing_id));
             }
         }
         // operation_id/command/installation_id-fallback enrichment is
@@ -598,6 +612,7 @@ mod tests {
             BackgroundUploadHandle::new_mock(),
             Arc::new(RwLock::new(None)),
             Arc::new(RwLock::new(None)),
+            Arc::new(RwLock::new(None)),
         )
         .is_none());
     }
@@ -607,6 +622,7 @@ mod tests {
         let sender = AppInsightsSender::from_connection_string(
             "InstrumentationKey=k;IngestionEndpoint=https://region.example/",
             BackgroundUploadHandle::new_mock(),
+            Arc::new(RwLock::new(None)),
             Arc::new(RwLock::new(None)),
             Arc::new(RwLock::new(None)),
         )
@@ -626,6 +642,7 @@ mod tests {
         assert!(AppInsightsSender::from_connection_string(
             "InstrumentationKey=k;IngestionEndpoint=http://region.example/",
             BackgroundUploadHandle::new_mock(),
+            Arc::new(RwLock::new(None)),
             Arc::new(RwLock::new(None)),
             Arc::new(RwLock::new(None)),
         )
@@ -739,6 +756,7 @@ mod functional_test {
             uploader.get_handle().expect("uploader should be alive"),
             Arc::new(RwLock::new(Some("test-installation-id".to_string()))),
             Arc::new(RwLock::new(Some("test-datastore-id".to_string()))),
+            Arc::new(RwLock::new(Some("test-servicing-id".to_string()))),
         )
         .expect("should build sender")
         .with_filter(filter::LevelFilter::INFO);
@@ -773,6 +791,7 @@ mod functional_test {
         assert!(combined.contains("\"iKey\":\"test-key\""));
         assert!(combined.contains("\"installation_id\":\"test-installation-id\""));
         assert!(combined.contains("\"datastore_id\":\"test-datastore-id\""));
+        assert!(combined.contains("\"servicing_id\":\"test-servicing-id\""));
         assert!(combined.contains("\"command\":\"test_command\""));
         assert!(combined.contains("\"operation_id\":"));
         assert!(combined.contains("\"source\":\"cli\""));

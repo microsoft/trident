@@ -56,6 +56,27 @@ impl OperationSource {
     }
 }
 
+/// Whether the current invocation is allowed to generate/attach a
+/// persistent, datastore-backed ID (`installation_id`, `servicing_id`) --
+/// as opposed to merely reading one back for telemetry, which every
+/// source may do.
+///
+/// Only [`OperationSource::Cli`] and [`OperationSource::Daemon`] ever
+/// actually execute `Trident::install`/`update`/`rollback`/`commit`
+/// against a real datastore; [`OperationSource::GrpcClient`] only relays
+/// the request to a daemon, which is what performs the real work (tagged
+/// `Daemon`). There is therefore no real call site under `GrpcClient`
+/// today that would try to generate one of these IDs -- but that's an
+/// implicit property of today's call graph, not something the type system
+/// enforces. This gate makes the assumption explicit and centrally
+/// testable, rather than depending on every future call site
+/// independently getting it right (an equivalent implicit assumption is
+/// what caused `installation_id`'s multiboot mis-attach bug: see
+/// `Trident::new_deferring_installation_id`).
+pub fn should_generate_persistent_ids(source: OperationSource) -> bool {
+    matches!(source, OperationSource::Cli | OperationSource::Daemon)
+}
+
 thread_local! {
     static CURRENT_OPERATION: RefCell<Option<(String, String, OperationSource)>> =
         const { RefCell::new(None) };
@@ -222,6 +243,16 @@ mod tests {
         assert!(
             current().is_none(),
             "context must be cleared after run_with_operation returns"
+        );
+    }
+
+    #[test]
+    fn test_should_generate_persistent_ids() {
+        assert!(should_generate_persistent_ids(OperationSource::Cli));
+        assert!(should_generate_persistent_ids(OperationSource::Daemon));
+        assert!(
+            !should_generate_persistent_ids(OperationSource::GrpcClient),
+            "grpc-client only relays to a daemon; it must never generate installation_id/servicing_id itself"
         );
     }
 
