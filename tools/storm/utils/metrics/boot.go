@@ -3,6 +3,7 @@ package metrics
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -14,9 +15,18 @@ import (
 // BootMetricName is the metric_name under which boot timings are ingested.
 const BootMetricName = "boot_info"
 
-// SystemdAnalyzeCommand returns the first line of systemd-analyze, which is
-// where the boot phase breakdown lives.
-const SystemdAnalyzeCommand = "systemd-analyze | head -n 1"
+// SystemdAnalyzeCommand reports the boot phase breakdown. The output's first
+// line carries the breakdown; it is selected in Go rather than with `| head -n
+// 1` so the command's exit status survives for the caller to check.
+const SystemdAnalyzeCommand = "systemd-analyze"
+
+// ErrNoBootPhases reports that the output carried no recognizable boot phase.
+// systemd-analyze writes its diagnostics to stderr and produces no usable
+// stdout when the boot has not finished yet, so callers must treat this as
+// "not measurable right now" and retry or skip, rather than recording a record
+// whose phases are all zero: such a record is indistinguishable in Kusto from a
+// genuinely instantaneous boot and silently drags perf averages down.
+var ErrNoBootPhases = errors.New("no boot phases found in systemd-analyze output")
 
 // BootMetric is the per-phase boot timing breakdown, in milliseconds.
 type BootMetric struct {
@@ -61,15 +71,24 @@ var bootPhases = []struct {
 func ParseBootMetric(operation string, systemdAnalyzeOutput string) (BootMetric, error) {
 	result := BootMetric{Operation: operation}
 
+	// The breakdown is on the first line; later lines report per-target times.
+	firstLine, _, _ := strings.Cut(systemdAnalyzeOutput, "\n")
+
+	found := 0
 	for _, phase := range bootPhases {
-		ms, found, err := findDurationBefore(systemdAnalyzeOutput, phase.label)
+		ms, ok, err := findDurationBefore(firstLine, phase.label)
 		if err != nil {
 			return result, fmt.Errorf("failed to parse the %s boot phase: %w", phase.label, err)
 		}
-		if !found {
+		if !ok {
 			continue
 		}
 		phase.set(&result, ms)
+		found++
+	}
+
+	if found == 0 {
+		return result, ErrNoBootPhases
 	}
 
 	return result, nil

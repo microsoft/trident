@@ -200,7 +200,7 @@ stages:
                 # using. The cleanup step below follows via SYSEXT_REPO.
                 ./bin/storm-trident script acr-push \
                     --config extensions \
-                    --deployment-environment virtualMachine \
+                    --deployment-environment $(tridentDeploymentEnv) \
                     --acr-name $(ACR_NAME) \
                     --repo-name sysext-storm-$(tridentRuntimeEnv) \
                     --build-id $(Build.BuildId) \
@@ -304,8 +304,10 @@ stages:
           # images (mirrors the legacy remove-from-acr.yml cleanup). Runs even
           # when the test fails; no-ops for non-extensions configs. The tag base
           # is reconstructed from build id + config + deployment environment
-          # (same inputs acr-push used), and SYSEXT_REPO was set by the push
-          # step.
+          # (same inputs acr-push used). The repo name is spelled out rather
+          # than read from SYSEXT_REPO because this step runs on always(): if
+          # the push failed partway, SYSEXT_REPO is unset and the images it did
+          # push would leak - the exact thing this step exists to prevent.
           - task: AzureCLI@2
             displayName: "Delete extension images from ACR (extensions only)"
             condition: always()
@@ -324,8 +326,8 @@ stages:
                 cd $(TRIDENT_SOURCE_DIR)
                 ./bin/storm-trident script acr-delete \
                     --config extensions \
-                    --deployment-environment virtualMachine \
+                    --deployment-environment $(tridentDeploymentEnv) \
                     --acr-name $(ACR_NAME) \
-                    --repo-name $(SYSEXT_REPO) \
+                    --repo-name sysext-storm-$(tridentRuntimeEnv) \
                     --build-id $(Build.BuildId) \
                     --num-clones 2

@@ -75,16 +75,17 @@ steps:
       # The clean install is always expected to report. The per-operation files
       # (ab-update, rollbacks) only exist for the configurations that run those
       # phases, so they are discovered rather than enumerated.
+      #
+      # Empty files are deliberately NOT filtered out here: an A/B update that
+      # completed without reporting any metrics is exactly what the
+      # --require-non-empty assertion exists to catch, and filtering it would
+      # hide it. The helper decides what is missing and what is uploadable, and
+      # reports the latter through --enriched-list.
       ARGS=(--metrics-file "$CLEAN_INSTALL_METRICS")
-      : > "$METRICS_LIST"
-      if [ -s "$CLEAN_INSTALL_METRICS" ]; then
-        echo "$CLEAN_INSTALL_METRICS" >> "$METRICS_LIST"
-      fi
 
       while IFS= read -r metrics_file; do
         ARGS+=(--metrics-file "$metrics_file")
-        echo "$metrics_file" >> "$METRICS_LIST"
-      done < <(find "${{ parameters.tridentSourceDirectory }}" -maxdepth 1 -name 'metrics-*.jsonl' -size +0c | sort)
+      done < <(find "${{ parameters.tridentSourceDirectory }}" -maxdepth 1 -name 'metrics-*.jsonl' | sort)
 
       # Legacy failed the task when an expected metrics file was empty, but only
       # when the job had not already failed for another reason - otherwise the
@@ -96,19 +97,26 @@ steps:
         echo "A previous failure occurred; not asserting that metrics are present."
       fi
 
+      # Capture the status rather than letting `set -e` abort: the files that
+      # did enrich are still worth uploading, and UploadMetrics must be set on
+      # every path or the upload steps below silently no-op.
+      rc=0
       ${{ parameters.stormBinary }} helper process-metrics -- \
         --host-config "$HOST_CONFIG" \
         --test-runner "${{ parameters.testRunner }}" \
-        "${ARGS[@]}"
+        --enriched-list "$METRICS_LIST" \
+        "${ARGS[@]}" || rc=$?
 
       if [ -s "$METRICS_LIST" ]; then
         echo "##vso[task.setvariable variable=UploadMetrics]True"
         echo "Metrics files to upload:"
         cat "$METRICS_LIST"
       else
-        echo "No non-empty metrics files were produced; nothing to upload."
+        echo "No metrics were enriched; nothing to upload."
         echo "##vso[task.setvariable variable=UploadMetrics]False"
       fi
+
+      exit $rc
     displayName: "Enrich storm E2E Trident metrics"
     condition: succeededOrFailed()
     workingDirectory: ${{ parameters.tridentSourceDirectory }}

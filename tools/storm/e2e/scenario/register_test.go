@@ -89,9 +89,11 @@ func TestRegisterTestCases_ABUpdate_RegistersValidation(t *testing.T) {
 	// Boot metrics are collected between the SSH check and validation, so the
 	// host is known reachable and the record lands before any later servicing
 	// overwrites the picture.
+	// Boot metrics are telemetry-only, so they must come AFTER the validations
+	// they would otherwise be able to pre-empt.
 	mustContain(t, r.names, "collect-install-boot-metrics")
-	assertOrder(t, r.names, "check-trident-ssh", "collect-install-boot-metrics")
-	assertOrder(t, r.names, "collect-install-boot-metrics", "validate-install")
+	assertOrder(t, r.names, "validate-install", "collect-install-boot-metrics")
+	assertOrder(t, r.names, "validate-host-diagnostics", "collect-install-boot-metrics")
 	// Image prep runs after prepare-hc and before setup-test-host.
 	mustContain(t, r.names, "prepare-test-images")
 	assertOrder(t, r.names, "prepare-hc", "prepare-test-images")
@@ -108,7 +110,7 @@ func TestRegisterTestCases_ABUpdate_RegistersValidation(t *testing.T) {
 	// and its validation. Only this update is measured, matching legacy.
 	mustContain(t, r.names, "collect-ab-update-boot-metrics")
 	assertOrder(t, r.names, "ab-update-1-ab-update", "collect-ab-update-boot-metrics")
-	assertOrder(t, r.names, "collect-ab-update-boot-metrics", "validate-ab-update-1")
+	assertOrder(t, r.names, "validate-ab-update-1", "collect-ab-update-boot-metrics")
 
 	// Auto-rollback cases must be registered in order, after the first A/B
 	// update's validation and before the split A/B update.

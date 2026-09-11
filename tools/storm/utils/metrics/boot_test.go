@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -175,5 +176,37 @@ func TestEnrichFileHandlesAnAppendedBootRecord(t *testing.T) {
 	}
 	if boot["platform_info"].(map[string]any)["machine_type"] != "vm" {
 		t.Errorf("the boot record was not enriched: %v", boot["platform_info"])
+	}
+}
+
+// systemd-analyze writes its diagnostics to stderr and produces no usable
+// stdout when the boot has not finished. Recording that as an all-zero record
+// would be indistinguishable in Kusto from a genuinely instant boot.
+func TestParseBootMetricRejectsOutputWithNoPhases(t *testing.T) {
+	for name, output := range map[string]string{
+		"empty":        "",
+		"not finished": "Bootup is not yet finished (kernel is still initializing).",
+		"unrelated":    "Failed to get timestamp properties: Transport endpoint is not connected",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := ParseBootMetric("install", output); !errors.Is(err, ErrNoBootPhases) {
+				t.Errorf("got err=%v, want ErrNoBootPhases", err)
+			}
+		})
+	}
+}
+
+// systemd-analyze prints per-target lines after the breakdown; only the first
+// line carries the phase timings.
+func TestParseBootMetricUsesOnlyTheFirstLine(t *testing.T) {
+	const output = "Startup finished in 4.740s (kernel) + 15.249s (userspace) = 19.989s\n" +
+		"graphical.target reached after 13.272s in userspace\n"
+
+	got, err := ParseBootMetric("install", output)
+	if err != nil {
+		t.Fatalf("ParseBootMetric: %v", err)
+	}
+	if got.KernelMs != 4740 || got.UserspaceMs != 15249 {
+		t.Errorf("unexpected parse of multi-line output: %+v", got)
 	}
 }

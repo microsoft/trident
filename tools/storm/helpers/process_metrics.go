@@ -26,6 +26,12 @@ type ProcessMetricsHelper struct {
 		// operations that were expected to produce metrics at all.
 		RequireNonEmpty bool `name:"require-non-empty" help:"Fail if a metrics file is missing or empty."`
 
+		// Written with one path per successfully enriched file. The caller
+		// uploads exactly these, so an empty or unreadable file is never
+		// ingested and the caller needs no rules of its own about which files
+		// are worth uploading.
+		EnrichedList string `name:"enriched-list" help:"Write the list of successfully enriched files to this path."`
+
 		// Pipeline context. Bound to the same environment variables the legacy
 		// script read, so the pipeline needs no extra wiring, while a local
 		// invocation can still override any of them explicitly.
@@ -82,10 +88,14 @@ func (h *ProcessMetricsHelper) processMetrics(tc storm.TestCase) error {
 	}, &config)
 
 	var missing []string
+	var failed []string
+	var enriched []string
 	for _, path := range h.args.MetricsFiles {
 		empty, err := isEmptyOrMissing(path)
 		if err != nil {
-			tc.FailFromError(err)
+			logrus.Warnf("Skipping '%s': %v", path, err)
+			failed = append(failed, path)
+			continue
 		}
 		if empty {
 			// Legacy skipped enrichment for an empty file and only failed when
@@ -97,15 +107,46 @@ func (h *ProcessMetricsHelper) processMetrics(tc storm.TestCase) error {
 
 		count, err := metrics.EnrichFile(path, enrichment)
 		if err != nil {
-			tc.FailFromError(err)
+			// Keep going: one torn file (the killed-mid-run case this helper
+			// exists to serve) must not cost the run every other file's
+			// telemetry. Failures are reported together at the end.
+			logrus.Warnf("Failed to enrich '%s': %v", path, err)
+			failed = append(failed, path)
+			continue
 		}
 		logrus.Infof("Enriched %d metric record(s) in '%s'", count, path)
+		enriched = append(enriched, path)
+	}
+
+	// Write the list before failing, so the caller can still upload whatever
+	// did enrich even when another file was unreadable.
+	if err := h.writeEnrichedList(enriched); err != nil {
+		tc.FailFromError(err)
+	}
+
+	if len(failed) > 0 {
+		tc.Fail(fmt.Sprintf("failed to enrich these metrics files: %v", failed))
 	}
 
 	if h.args.RequireNonEmpty && len(missing) > 0 {
 		tc.Fail(fmt.Sprintf("expected metrics but these files are missing or empty: %v", missing))
 	}
 
+	return nil
+}
+
+func (h *ProcessMetricsHelper) writeEnrichedList(enriched []string) error {
+	if h.args.EnrichedList == "" {
+		return nil
+	}
+
+	var content string
+	for _, path := range enriched {
+		content += path + "\n"
+	}
+	if err := os.WriteFile(h.args.EnrichedList, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write enriched file list '%s': %w", h.args.EnrichedList, err)
+	}
 	return nil
 }
 

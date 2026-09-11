@@ -191,22 +191,24 @@ func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 	r.RegisterTestCase("setup-test-host", s.setupTestHost)
 	r.RegisterTestCase("install-os", s.installOs)
 	r.RegisterTestCase("check-trident-ssh", s.checkTridentViaSshAfterInstall)
-	// Boot timings for the clean install, appended to the install's own
-	// trace-stream file (folds the pipeline's post-install boot-metrics
-	// helper invocation).
-	r.RegisterTestCase("collect-install-boot-metrics", s.collectInstallBootMetrics)
 	r.RegisterTestCase("validate-install", s.validateHostState)
 	// Host-only SELinux + tracing diagnostics, scoped to the clean install
 	// (mirrors legacy check-selinux/check-tracing). Self-skips on container.
 	r.RegisterTestCase("validate-host-diagnostics", s.validateHostDiagnostics)
+	// Boot timings for the clean install, appended to the install's own
+	// trace-stream file (folds the pipeline's post-install boot-metrics helper
+	// invocation). Registered after the validations so this telemetry-only case
+	// can never pre-empt them.
+	r.RegisterTestCase("collect-install-boot-metrics", s.collectInstallBootMetrics)
 
 	if s.originalConfig.HasABUpdate() {
 		s.addAbUpdateTests(r, "ab-update-1")
+		r.RegisterTestCase("validate-ab-update-1", s.validateHostState)
 		// Boot timings for the first A/B update. Legacy measured only this one
 		// update, so the later servicing phases below are left unmeasured.
+		// Registered after the validation for the same reason as the install.
 		r.RegisterTestCase("collect-ab-update-boot-metrics",
 			s.collectAbUpdateBootMetrics("ab-update-1-ab-update"))
-		r.RegisterTestCase("validate-ab-update-1", s.validateHostState)
 		// Auto-rollback: force a failing A/B update and confirm the host rolls
 		// back to the current volume. Legacy runs this for every A/B config.
 		s.addAutoRollbackTests(r)

@@ -3,6 +3,7 @@ package scenario
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"tridenttools/storm/utils/metrics"
@@ -52,27 +53,46 @@ func (s *TridentE2EScenario) collectAbUpdateBootMetrics(updateCaseName string) s
 // collectBootMetrics appends a boot timing record to the trace-stream file the
 // servicing operation produced, so the timings are ingested alongside the
 // metrics Trident itself reported for that operation.
+//
+// Every failure path skips rather than returning an error. These cases are
+// pure telemetry, but storm treats a returned error as a bail condition and
+// marks every remaining case "not run" — so propagating one would let a
+// missing boot timing cancel all the product validation that follows, and
+// report a config red that installed perfectly well.
 func (s *TridentE2EScenario) collectBootMetrics(tc storm.TestCase, metricsFile string, operation string) error {
 	connCtx, cancel := context.WithTimeout(tc.Context(), bootMetricsConnectTimeout)
 	defer cancel()
 	if err := s.populateSshClient(connCtx); err != nil {
-		return err
+		skipBootMetrics(tc, err)
 	}
 
 	out, err := sshutils.RunCommand(s.sshClient, metrics.SystemdAnalyzeCommand)
 	if err != nil {
-		return fmt.Errorf("failed to read boot timings from the host: %w", err)
+		skipBootMetrics(tc, fmt.Errorf("failed to read boot timings from the host: %w", err))
+	}
+	if out.Status != 0 {
+		// systemd-analyze reports "Bootup is not yet finished" (and similar) on
+		// stderr with a non-zero status and no usable stdout.
+		skipBootMetrics(tc, fmt.Errorf("systemd-analyze exited %d: %s", out.Status, strings.TrimSpace(out.Stderr)))
 	}
 
 	value, err := metrics.ParseBootMetric(operation, out.Stdout)
 	if err != nil {
-		return err
+		skipBootMetrics(tc, err)
 	}
 
 	if err := metrics.AppendBootMetrics(metricsFile, value); err != nil {
-		return err
+		skipBootMetrics(tc, err)
 	}
 
 	logrus.Infof("Recorded %s boot timings in '%s': %+v", operation, metricsFile, value)
 	return nil
+}
+
+// skipBootMetrics ends the case as skipped, logging why. The warning keeps a
+// genuine collection failure visible in the logs even though it does not fail
+// the run.
+func skipBootMetrics(tc storm.TestCase, err error) {
+	logrus.Warnf("Not recording boot metrics: %v", err)
+	tc.Skip(fmt.Sprintf("boot metrics unavailable: %v", err))
 }
