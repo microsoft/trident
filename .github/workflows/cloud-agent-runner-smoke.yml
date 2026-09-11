@@ -4,14 +4,6 @@ permissions: {}
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - user/britel/cloud-agent-runner-smoke
-    paths:
-      - .github/workflows/cloud-agent-runner-smoke.yml
-      - .github/workflows/copilot-setup-steps.yml
-      - scripts/cloud-agent/setup.sh
-      - scripts/cloud-agent/runner-smoke.sh
 
 jobs:
   runner-smoke:
