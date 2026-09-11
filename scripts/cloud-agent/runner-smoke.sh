@@ -48,12 +48,24 @@ sudo test -r /dev/kvm
 sudo test -w /dev/kvm
 
 if [[ -r /sys/module/kvm_intel/parameters/nested ]]; then
-    cat /sys/module/kvm_intel/parameters/nested | tee "$log_dir/nested-virtualization.txt"
+    nested_parameter="/sys/module/kvm_intel/parameters/nested"
 elif [[ -r /sys/module/kvm_amd/parameters/nested ]]; then
-    cat /sys/module/kvm_amd/parameters/nested | tee "$log_dir/nested-virtualization.txt"
+    nested_parameter="/sys/module/kvm_amd/parameters/nested"
 else
-    echo "No nested virtualization module parameter found" | tee "$log_dir/nested-virtualization.txt"
+    echo "No nested virtualization module parameter found" |
+        tee "$log_dir/nested-virtualization.txt" >&2
+    exit 1
 fi
+
+nested_value="$(cat "$nested_parameter")"
+printf '%s\n' "$nested_value" | tee "$log_dir/nested-virtualization.txt"
+case "$nested_value" in
+    1 | Y | y) ;;
+    *)
+        echo "Nested virtualization is not enabled: $nested_value" >&2
+        exit 1
+        ;;
+esac
 
 qemu_bin="$(command -v qemu-system-x86_64)"
 "$qemu_bin" --version | tee "$log_dir/qemu-version.txt"

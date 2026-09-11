@@ -5,6 +5,8 @@ set -euxo pipefail
 readonly RUST_TOOLCHAIN="1.93.0"
 readonly PROTOC_VERSION="33.2"
 readonly PROTOC_SHA256="b24b53f87c151bfd48b112fe4c3a6e6574e5198874f38036aff41df3456b8caf"
+readonly PROTOC_GEN_GO_VERSION="v1.36.11"
+readonly PROTOC_GEN_GO_GRPC_VERSION="v1.6.2"
 readonly DATA_DISK_MOUNT="/mnt/storage"
 readonly CARGO_TARGET_DIR="$DATA_DISK_MOUNT/trident-cloud-agent/cargo-target"
 
@@ -29,6 +31,12 @@ curl --fail --location --retry 3 \
 echo "$PROTOC_SHA256  $RUNNER_TEMP/$protoc_archive" | sha256sum --check
 sudo unzip -o "$RUNNER_TEMP/$protoc_archive" -d /usr/local
 rm -f "$RUNNER_TEMP/$protoc_archive"
+
+go_bin_dir="$(go env GOPATH)/bin"
+export PATH="$go_bin_dir:$PATH"
+echo "$go_bin_dir" >> "$GITHUB_PATH"
+go install "google.golang.org/protobuf/cmd/protoc-gen-go@${PROTOC_GEN_GO_VERSION}"
+go install "google.golang.org/grpc/cmd/protoc-gen-go-grpc@${PROTOC_GEN_GO_GRPC_VERSION}"
 
 if ! command -v rustup >/dev/null 2>&1; then
     curl --proto '=https' --tlsv1.2 --fail --silent --show-error \
@@ -67,3 +75,5 @@ rustc --version
 cargo --version
 go version
 protoc --version
+protoc-gen-go --version
+protoc-gen-go-grpc --version
