@@ -89,6 +89,7 @@ operations: `install`, `commit`, `update`, `commit`, `update-stage`,
 `update-finalize`, `commit`, `rollback`, `commit`, `install`, `commit`.
 
 ```mermaid
+%%{init: {'gantt': {'displayMode': 'compact'}}}%%
 gantt
     dateFormat  YYYY-MM-DD
     axisFormat  %d
