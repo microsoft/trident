@@ -1,0 +1,68 @@
+# CodeQL code scanning, advanced setup.
+#
+# This repository uses advanced setup (this workflow) rather than default setup
+# because default setup does not run on pull requests from forks, which leaves
+# external contributions permanently blocked by the `code_scanning` rule in the
+# `main` ruleset. See https://github.com/github/codeql/issues/19698.
+#
+# Default setup and advanced setup are mutually exclusive: while default setup is
+# enabled, uploads from this workflow are rejected with "CodeQL analyses from
+# advanced configurations cannot be processed when the default setup is enabled".
+#
+# The `pull_request` trigger is used deliberately, not `pull_request_target`.
+# Fork pull requests receive a read-only GITHUB_TOKEN, but github/codeql-action
+# uploads its SARIF through an endpoint that is exempt from the usual
+# `security-events: write` requirement, so analysis of fork pull requests works
+# without granting write tokens to untrusted code.
+
+name: "CodeQL Advanced"
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  schedule:
+    - cron: '26 19 * * 2'
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ${{ (matrix.language == 'swift' && 'macos-latest') || 'ubuntu-latest' }}
+    permissions:
+      # Required to upload analysis results.
+      security-events: write
+      # Required to fetch internal or private CodeQL packs.
+      packages: read
+      actions: read
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            build-mode: none
+          - language: go
+            build-mode: autobuild
+          - language: javascript-typescript
+            build-mode: none
+          - language: python
+            build-mode: none
+          - language: rust
+            build-mode: none
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          category: "/language:${{matrix.language}}"

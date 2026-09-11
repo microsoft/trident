@@ -1,0 +1,94 @@
+{
+    "version": "1.2",
+    "images": [
+        {
+            "image": {
+                "path": "images/esp.rawzst",
+                "compressedSize": 839345,
+                "uncompressedSize": 8388608,
+                "sha384": "2decc64a828dbbb76779731cd4afd3b86cc4ad0af06f4afe594e72e62e33e520a6649719fe43f09f11d518e485eae0db"
+            },
+            "mountPoint": "/boot/efi",
+            "fsType": "vfat",
+            "fsUuid": "C3D4-250D",
+            "partType": "c12a7328-f81f-11d2-ba4b-00a0c93ec93b",
+            "verity": null
+        },
+        {
+            "image": {
+                "path": "images/root.rawzst",
+                "compressedSize": 192874245,
+                "uncompressedSize": 899494400,
+                "sha384": "98ea4adbbb8ce0220d109d53d65825bd5a565248e4af3a9346d088918e7856ac2c42e13461cac67dbf3711ff69695ec3"
+            },
+            "mountPoint": "/",
+            "fsType": "ext4",
+            "fsUuid": "88d2fa9b-7a32-450a-a9f8-aa9c3de79298",
+            "partType": "4f68bce3-e8cd-4db1-96e7-fbcaf984b709",
+            "verity": null
+        }
+    ],
+    "osRelease": "NAME=\"Microsoft Azure Linux\"\nVERSION=\"3.0.20240824\"\nID=azurelinux\nVERSION_ID=\"3.0\"\nPRETTY_NAME=\"Microsoft Azure Linux 3.0\"\nANSI_COLOR=\"1;34\"\nHOME_URL=\"https://aka.ms/azurelinux\"\nBUG_REPORT_URL=\"https://aka.ms/azurelinux\"\nSUPPORT_URL=\"https://aka.ms/azurelinux\"\n",
+    "bootloader": {
+        "type": "grub"
+    },
+    "osPackages": [
+        {
+            "name": "bash",
+            "version": "5.1.8",
+            "release": "1.azl3",
+            "arch": "x86_64"
+        },
+        {
+            "name": "coreutils",
+            "version": "8.32",
+            "release": "1.azl3",
+            "arch": "x86_64"
+        },
+        {
+            "name": "systemd",
+            "version": "255",
+            "release": "20.azl3",
+            "arch": "x86_64"
+        }
+    ],
+    "disk": {
+        "size": 1073741824,
+        "type": "gpt",
+        "lbaSize": 512,
+        "gptRegions": [
+            {
+                "image": {
+                    "path": "images/primary-gpt.rawzst",
+                    "compressedSize": 16384,
+                    "uncompressedSize": 32768,
+                    "sha384": "a3f5c6e2b4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7"
+                },
+                "type": "primary-gpt"
+            },
+            {
+                "image": {
+                    "path": "images/esp.rawzst",
+                    "compressedSize": 839345,
+                    "uncompressedSize": 8388608,
+                    "sha384": "2decc64a828dbbb76779731cd4afd3b86cc4ad0af06f4afe594e72e62e33e520a6649719fe43f09f11d518e485eae0db"
+                },
+                "type": "partition",
+                "number": 1
+            },
+            {
+                "image": {
+                    "path": "images/root.rawzst",
+                    "compressedSize": 192874245,
+                    "uncompressedSize": 899494400,
+                    "sha384": "98ea4adbbb8ce0220d109d53d65825bd5a565248e4af3a9346d088918e7856ac2c42e13461cac67dbf3711ff69695ec3"
+                },
+                "type": "partition",
+                "number": 2
+            }
+        ]
+    },
+    "compression": {
+        "maxWindowLog": 30
+    }
+}

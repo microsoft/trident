@@ -1,3 +1,14 @@
+//! A [`Log`] wrapper that filters records before delegating to an inner
+//! logger.
+//!
+//! [`LogFilter`] drops any record whose level is more verbose than a
+//! configurable max level, and additionally applies per-target ceilings
+//! (matched by target prefix) so a noisy module can be turned down without
+//! affecting the rest. Records that survive both checks are forwarded to the
+//! wrapped logger unchanged; `enabled`/`flush` pass through. It is generic
+//! over any inner `Log`, so filters can be layered or placed in front of a
+//! single sink.
+
 use log::{LevelFilter, Log};
 
 pub struct LogFilter<T>
@@ -21,13 +32,12 @@ where
         }
     }
 
-    #[allow(dead_code)]
     pub fn with_max_level(mut self, max_level: LevelFilter) -> Self {
         self.max_level = max_level;
         self
     }
 
-    #[cfg(test)]
+    /// Consumes the filter and returns the wrapped inner logger.
     pub fn into_inner(self) -> T {
         self.inner
     }

@@ -4,13 +4,14 @@ use anyhow::{Context, Error};
 use clap::Parser;
 use log::{error, info, LevelFilter, Log};
 
+use osutils::logging::{filter::LogFilter, multilog::MultiLogger};
 use trident::{
     agentconfig::AgentConfig,
     cli::{self, Cli, Commands, GetKind, TridentExitCodes},
     init::offline,
     manual_rollback::{self, utils::ManualRollbackRequestKind},
-    validation, BackgroundLog, BackgroundUploader, DataStore, ExitKind, LogFilter, LogForwarder,
-    Logstream, MultiLogger, TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
+    validation, BackgroundLog, BackgroundUploader, DataStore, ExitKind, LogForwarder, Logstream,
+    TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
 };
 use trident_api::{
     config::HostConfigurationSource,
@@ -195,12 +196,14 @@ fn run_trident(
                         ab,
                         ref allowed_operations,
                         ..
-                    } => trident.rollback(
-                        &mut datastore,
-                        runtime,
-                        ab,
-                        cli::to_operations(allowed_operations),
-                    ),
+                    } => trident
+                        .rollback(
+                            &mut datastore,
+                            runtime,
+                            ab,
+                            cli::to_operations(allowed_operations),
+                        )
+                        .map(|(exit_kind, _servicing_type)| exit_kind),
                     Commands::RebuildRaid { .. } => trident
                         .rebuild_raid(&mut datastore)
                         .map(|()| ExitKind::Done),

@@ -11,9 +11,10 @@ use anyhow::{anyhow, Context, Error};
 use log::{info, LevelFilter, Log, Metadata, Record};
 use url::Url;
 
+use osutils::logging::filter::LogFilter;
+
 use super::{
     background_uploader::{BackgroundUploadHandle, BACKGROUND_LOG_MODULE},
-    filter::LogFilter,
     LogEntry,
 };
 

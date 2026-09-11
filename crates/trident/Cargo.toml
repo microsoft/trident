@@ -1,6 +1,6 @@
 [package]
 name = "trident"
-version = "0.26.0"
+version = "0.29.0"
 edition = "2024"
 publish = false
 rust-version = "1.85.0"
@@ -82,9 +82,6 @@ pytest_gen = { path = "../pytest_gen", optional = true }
 
 # Optional dependencies
 pytest = { path = "../pytest", optional = true }
-
-[build-dependencies]
-osutils = { path = "../osutils" }
 
 [dev-dependencies]
 indoc = { workspace = true }

@@ -85,11 +85,25 @@ pub fn check_rollback(
 }
 
 /// Handle manual rollback operations.
+///
+/// Mirrors `engine::update::update()`'s `(ExitKind, ServicingType)` return
+/// shape: a no-op ("nothing to roll back") reports
+/// `(ExitKind::Done, ServicingType::NoActiveServicing)` rather than a bare
+/// `ExitKind::Done` that's indistinguishable from a real rollback at the
+/// gRPC layer (see `ServicingResponse.servicing_kind` in servicing.proto).
 pub fn execute_rollback(
     datastore: &mut DataStore,
     requested_rollback_kind: ManualRollbackRequestKind,
     allowed_operations: &Operations,
-) -> Result<ExitKind, TridentError> {
+) -> Result<(ExitKind, ServicingType), TridentError> {
+    // Tracks the rollback kind actually staged this call, so the trailing
+    // "stage completed, finalize not requested this call" return below can
+    // report it instead of a generic NoActiveServicing. Stays None when
+    // has_stage() didn't run this call (finalize-only), or when it exited
+    // early via the no-rollback-available branch below (which returns its
+    // own explicit NoActiveServicing directly).
+    let mut staged_rollback_type = None;
+
     // Perform staging if operation is allowed
     if allowed_operations.has_stage() {
         match datastore.host_status().servicing_state {
@@ -125,7 +139,7 @@ pub fn execute_rollback(
             Some(rollback_item) => rollback_item,
             None => {
                 info!("No available rollbacks to perform");
-                return Ok(ExitKind::Done);
+                return Ok((ExitKind::Done, ServicingType::NoActiveServicing));
             }
         };
 
@@ -133,6 +147,7 @@ pub fn execute_rollback(
             ManualRollbackKind::Ab => ServicingType::ManualRollbackAb,
             ManualRollbackKind::Runtime => ServicingType::ManualRollbackRuntime,
         };
+        staged_rollback_type = Some(rollback_type);
 
         let engine_context = EngineContext::new(EngineContextParams {
             spec: requested_rollback.spec.clone(),
@@ -203,9 +218,12 @@ pub fn execute_rollback(
             datastore.host_status().servicing_state,
         );
 
-        return finalize_result;
+        return finalize_result.map(|exit_kind| (exit_kind, current_servicing_type));
     }
-    Ok(ExitKind::Done)
+    Ok((
+        ExitKind::Done,
+        staged_rollback_type.unwrap_or(ServicingType::NoActiveServicing),
+    ))
 }
 
 /// Stage manual rollback.
