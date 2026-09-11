@@ -8,7 +8,7 @@ readonly PROTOC_SHA256="b24b53f87c151bfd48b112fe4c3a6e6574e5198874f38036aff41df3
 readonly PROTOC_GEN_GO_VERSION="v1.36.11"
 readonly PROTOC_GEN_GO_GRPC_VERSION="v1.6.2"
 readonly DATA_DISK_MOUNT="/mnt/storage"
-readonly CARGO_TARGET_DIR="$DATA_DISK_MOUNT/trident-cloud-agent/cargo-target"
+readonly CARGO_TARGET_PATH="$DATA_DISK_MOUNT/trident-cloud-agent/cargo-target"
 
 sudo mkdir -p /etc/apt/apt.conf.d
 echo 'DPkg::Lock::Timeout "600";' | sudo tee /etc/apt/apt.conf.d/99lock-timeout
@@ -57,16 +57,18 @@ if ! mountpoint --quiet "$DATA_DISK_MOUNT"; then
 fi
 findmnt --mountpoint "$DATA_DISK_MOUNT"
 
-sudo install -d -o "$(id -u)" -g "$(id -g)" "$CARGO_TARGET_DIR"
+sudo install -d -o "$(id -u)" -g "$(id -g)" "$CARGO_TARGET_PATH"
 
 make .cargo/config
-if ! grep -q '^\[build\]$' .cargo/config; then
-    cat >> .cargo/config <<EOF
-
-[build]
-target-dir = "$CARGO_TARGET_DIR"
-EOF
+if [[ -e target && ! -L target ]]; then
+    if [[ ! -d target || -n "$(find target -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+        echo "Refusing to replace existing non-empty target path" >&2
+        exit 1
+    fi
+    rmdir target
 fi
+ln -sfn "$CARGO_TARGET_PATH" target
+test "$(readlink -f target)" = "$CARGO_TARGET_PATH"
 
 cargo fetch --locked
 
