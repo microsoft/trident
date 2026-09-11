@@ -9,6 +9,8 @@ on:
       - user/britel/cloud-agent-runner-smoke
     paths:
       - .github/workflows/cloud-agent-runner-smoke.yml
+      - .github/workflows/copilot-setup-steps.yml
+      - scripts/cloud-agent/setup.sh
       - scripts/cloud-agent/runner-smoke.sh
 
 jobs:
@@ -59,3 +61,29 @@ jobs:
           name: cloud-agent-runner-smoke-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/trident-cloud-agent-runner-smoke
           if-no-files-found: error
+
+  unit-tests:
+    name: Validate Trident unit tests
+    needs: runner-smoke
+    runs-on: trident-github-runner-ubuntu2204-amd64
+    timeout-minutes: 90
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.25.x"
+          cache: false
+
+      - name: Set up Trident dependencies
+        run: scripts/cloud-agent/setup.sh
+
+      - name: Run unit tests
+        run: make test
