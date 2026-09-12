@@ -38,17 +38,29 @@ pub fn client_main(args: &ClientArgs) -> ExitCode {
     // `run_command_if`'s `Result<_, TridentError>` shape -- the original
     // anyhow context chain is preserved as the error's source and still
     // printed in full below.
-    // Install/Update get the same stage/finalize-granular naming
-    // (`install_stage`, `update_finalize`, etc.) the CLI and daemon use for
-    // servicing telemetry -- otherwise every grpc-client update/install
-    // would collapse to the generic `client_update`/`client_install`
-    // regardless of which operations were actually requested.
+    // Install/Update/non-check-Rollback get the same stage/finalize-granular
+    // naming (`install_stage`, `update_finalize`, `rollback_stage`, etc.)
+    // the CLI and daemon use for servicing telemetry -- otherwise every
+    // grpc-client update/install/rollback would collapse to the generic
+    // `client_update`/`client_install`/`client_rollback` regardless of
+    // which operations were actually requested. `Rollback { check: true,
+    // .. }` is deliberately excluded here (falls to the generic branch
+    // below), mirroring `is_servicing_client_command`'s own read-only
+    // `rollback --check` exclusion and `main.rs`'s `Commands::Rollback {
+    // check: true, .. }` special-casing -- a dry-run check never stages
+    // or finalizes anything, so it has no stage/finalize distinction to
+    // report.
     let command = match &args.command {
         ClientCommands::Install {
             allowed_operations, ..
         }
         | ClientCommands::Update {
             allowed_operations, ..
+        }
+        | ClientCommands::Rollback {
+            check: false,
+            allowed_operations,
+            ..
         } => command_name(
             args.command.name().trim_start_matches("client-"),
             &cli::to_operations(allowed_operations),
