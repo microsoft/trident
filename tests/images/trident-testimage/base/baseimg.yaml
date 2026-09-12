@@ -78,6 +78,10 @@ os:
     - source: files/use-grpc-client-commit.conf
       destination: /etc/systemd/system/trident.service.d/override.conf
 
+    # Enable telemetry (Application Insights tracing) by default for test/dev images
+    - content: |
+        Telemetry=OptIn
+      destination: /etc/trident/trident.conf
 scripts:
   postCustomization:
     - path: post-install.sh
