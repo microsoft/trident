@@ -427,8 +427,8 @@ mod tests {
     use osutils::testutils::repart::TEST_DISK_DEVICE_PATH;
     use trident_api::{
         config::{
-            Disk, FileSystemSource, MountOptions, MountPoint, Partition, PartitionSize,
-            PartitionType, RaidLevel, Storage,
+            AdoptedPartition, Disk, FileSystemSource, MountOptions, MountPoint, Partition,
+            PartitionSize, PartitionTableType, PartitionType, RaidLevel, Storage,
         },
         status::ServicingState,
     };
@@ -882,6 +882,152 @@ mod tests {
             "Partition 'disk2part3' is neither a member of a software RAID array nor an unformatted partition, refusing to rebuild"
         );
     }
+
+    /// Returns the Host Configuration and Host Status.
+    fn get_hostconfig_and_hoststatus() -> (HostConfiguration, trident_api::status::HostStatus) {
+        let host_config = HostConfiguration {
+            storage: Storage {
+                disks: vec![
+                    Disk {
+                        id: "disk".to_string(),
+                        device: PathBuf::from("/dev/sda"),
+                        partitions: vec![Partition {
+                            id: "raidpart1".to_string(),
+                            partition_type: PartitionType::Root,
+                            size: PartitionSize::from_str("1G").unwrap(),
+                            uuid: None,
+                            label: None,
+                        }],
+                        partition_table_type: PartitionTableType::Gpt,
+                        adopted_partitions: vec![
+                            AdoptedPartition {
+                                id: "esp".to_string(),
+                                match_label: Some("esp".to_string()),
+                                match_uuid: None,
+                            },
+                            AdoptedPartition {
+                                id: "root-a".to_string(),
+                                match_label: Some("root-a".to_string()),
+                                match_uuid: None,
+                            },
+                            AdoptedPartition {
+                                id: "root-b".to_string(),
+                                match_label: Some("root-b".to_string()),
+                                match_uuid: None,
+                            },
+                            AdoptedPartition {
+                                id: "swap".to_string(),
+                                match_label: Some("swap".to_string()),
+                                match_uuid: None,
+                            },
+                            AdoptedPartition {
+                                id: "trident".to_string(),
+                                match_label: Some("trident".to_string()),
+                                match_uuid: None,
+                            },
+                        ],
+                    },
+                    Disk {
+                        id: "disk2".to_string(),
+                        device: PathBuf::from(TEST_DISK_DEVICE_PATH),
+                        partitions: vec![Partition {
+                            id: "raidpart2".to_string(),
+                            partition_type: PartitionType::Root,
+                            size: PartitionSize::from_str("1G").unwrap(),
+                            uuid: None,
+                            label: None,
+                        }],
+                        ..Default::default()
+                    },
+                ],
+                raid: trident_api::config::Raid {
+                    software: vec![trident_api::config::SoftwareRaidArray {
+                        name: "raid1".to_string(),
+                        id: "raid1".to_string(),
+                        level: RaidLevel::Raid1,
+                        devices: vec!["raidpart1".to_string(), "raidpart2".to_string()],
+                    }],
+                    ..Default::default()
+                },
+
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let host_status = trident_api::status::HostStatus {
+            spec: host_config.clone(),
+            servicing_state: ServicingState::Provisioned,
+            ..Default::default()
+        };
+
+        (host_config, host_status)
+    }
+
+    #[test]
+    fn test_validate_rebuild_raid_validation_failure() {
+        let (host_config, mut host_status) = get_hostconfig_and_hoststatus();
+
+        // Remove disk2 UUID from Host Status.
+        host_status.disk_uuids.remove("disk2");
+
+        // Fail validation.
+        host_status.servicing_state = trident_api::status::ServicingState::CleanInstallStaged;
+
+        let disks_to_rebuild = vec!["disk2".to_string()];
+
+        let err = validate_rebuild_raid(&host_config, &mut host_status, &disks_to_rebuild);
+
+        assert_eq!(
+            err.unwrap_err().to_string(),
+            "rebuild-raid command is not allowed when servicing state is CleanInstallStaged"
+        );
+    }
+
+    #[test]
+    fn test_validate_rebuild_raid_raidrecovery_failure() {
+        let (host_config, mut host_status) = get_hostconfig_and_hoststatus();
+
+        // Remove disk2 UUID from Host Status.
+        host_status.disk_uuids.remove("disk2");
+
+        // Add a RAID array raid2 which has partitions on disk2 to the Host Configuration.
+        let mut host_config = host_config;
+        host_config.storage.disks[1].partitions.push(Partition {
+            id: "disk2part2".to_string(),
+            partition_type: PartitionType::Root,
+            size: PartitionSize::from_str("1G").unwrap(),
+            uuid: None,
+            label: None,
+        });
+        host_config.storage.disks[1].partitions.push(Partition {
+            id: "disk2part3".to_string(),
+            partition_type: PartitionType::Root,
+            size: PartitionSize::from_str("1G").unwrap(),
+            uuid: None,
+            label: None,
+        });
+        host_config
+            .storage
+            .raid
+            .software
+            .push(trident_api::config::SoftwareRaidArray {
+                name: "raid2".to_string(),
+                id: "raid2".to_string(),
+                level: RaidLevel::Raid1,
+                devices: vec!["disk2part2".to_string(), "disk2part3".to_string()],
+            });
+
+        host_status.spec = host_config.clone();
+
+        let disks_to_rebuild = vec!["disk2".to_string()];
+
+        let err = validate_rebuild_raid(&host_config, &mut host_status, &disks_to_rebuild);
+
+        assert_eq!(
+            err.unwrap_err().to_string(),
+            "Failed to validate RAID recovery"
+        );
+    }
 }
 
 #[cfg(feature = "functional-test")]
@@ -1074,71 +1220,5 @@ mod functional_test {
 
         // Delete the partition.
         delete_partition();
-    }
-
-    #[functional_test]
-    fn test_validate_rebuild_raid_validation_failure() {
-        let (host_config, mut host_status) = get_hostconfig_and_hoststatus();
-
-        // Remove disk2 UUID from Host Status.
-        host_status.disk_uuids.remove("disk2");
-
-        // Fail validation.
-        host_status.servicing_state = trident_api::status::ServicingState::CleanInstallStaged;
-
-        let disks_to_rebuild = vec!["disk2".to_string()];
-
-        let err = validate_rebuild_raid(&host_config, &mut host_status, &disks_to_rebuild);
-
-        assert_eq!(
-            err.unwrap_err().to_string(),
-            "rebuild-raid command is not allowed when servicing state is CleanInstallStaged"
-        );
-    }
-
-    #[functional_test]
-    fn test_validate_rebuild_raid_raidrecovery_failure() {
-        let (host_config, mut host_status) = get_hostconfig_and_hoststatus();
-
-        // Remove disk2 UUID from Host Status.
-        host_status.disk_uuids.remove("disk2");
-
-        // Add a RAID array raid2 which has partitions on disk2 to the Host Configuration.
-        let mut host_config = host_config;
-        host_config.storage.disks[1].partitions.push(Partition {
-            id: "disk2part2".to_string(),
-            partition_type: PartitionType::Root,
-            size: PartitionSize::from_str("1G").unwrap(),
-            uuid: None,
-            label: None,
-        });
-        host_config.storage.disks[1].partitions.push(Partition {
-            id: "disk2part3".to_string(),
-            partition_type: PartitionType::Root,
-            size: PartitionSize::from_str("1G").unwrap(),
-            uuid: None,
-            label: None,
-        });
-        host_config
-            .storage
-            .raid
-            .software
-            .push(trident_api::config::SoftwareRaidArray {
-                name: "raid2".to_string(),
-                id: "raid2".to_string(),
-                level: RaidLevel::Raid1,
-                devices: vec!["disk2part2".to_string(), "disk2part3".to_string()],
-            });
-
-        host_status.spec = host_config.clone();
-
-        let disks_to_rebuild = vec!["disk2".to_string()];
-
-        let err = validate_rebuild_raid(&host_config, &mut host_status, &disks_to_rebuild);
-
-        assert_eq!(
-            err.unwrap_err().to_string(),
-            "Failed to validate RAID recovery"
-        );
     }
 }

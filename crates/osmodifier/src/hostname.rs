@@ -20,16 +20,12 @@ pub fn update(ctx: &OsModifierContext, hostname: &str) -> Result<(), Error> {
         .with_context(|| format!("Failed to write hostname to '{}'", path.display()))
 }
 
-#[cfg_attr(not(test), allow(unused_imports, dead_code))]
-mod functional_test {
+#[cfg(test)]
+mod tests {
     use super::*;
     use tempfile::tempdir;
 
-    use pytest_gen::functional_test;
-
-    use crate::OsModifierContext;
-
-    #[functional_test(feature = "core")]
+    #[test]
     fn test_update_hostname() {
         let tmp = tempdir().unwrap();
         fs::create_dir_all(tmp.path().join("etc")).unwrap();
@@ -43,7 +39,7 @@ mod functional_test {
         assert_eq!(content.trim(), "my-test-host");
     }
 
-    #[functional_test(feature = "core")]
+    #[test]
     fn test_update_hostname_overwrites() {
         let tmp = tempdir().unwrap();
         fs::create_dir_all(tmp.path().join("etc")).unwrap();

@@ -413,8 +413,14 @@ mod functional_test {
 
         // Mounting a new /proc filesystem over the existing one does not fail
     }
+}
 
-    #[functional_test(feature = "helpers", negative = true)]
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use trident_api::error::ErrorKind;
+
+    #[test]
     fn test_enter_chroot_fail_nonexistent_dir() {
         // Attempt to enter the chroot
         let result = Chroot::enter(Path::new("/nonexistent-dir"));
