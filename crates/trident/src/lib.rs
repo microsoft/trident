@@ -62,8 +62,9 @@ pub use crate::{
         logfwd::LogForwarder,
         logstream::Logstream,
         operation_context::{
-            run_with_captured_operation, run_with_operation, save_reboot_operation,
-            take_reboot_operation, OperationSource,
+            command_name, run_command, run_command_if, run_reboot_command,
+            run_with_captured_operation, save_reboot_operation, take_reboot_operation,
+            OperationSource,
         },
         tracestream::TraceStream,
     },
@@ -313,7 +314,40 @@ impl Trident {
             ));
         }
 
-        tracing::info!(metric_name = "trident_start");
+        // Best-effort: a failure to determine whether this is a CIH (Azure
+        // Container Linux) host must never fail startup, it only means
+        // this one field is missing from the trident_start telemetry.
+        // A detection failure is reported as "unknown", not "false" --
+        // conflating "known non-ACL" with "couldn't tell" would
+        // misclassify a host whose CIH check simply failed to run as
+        // definitively non-ACL.
+        let acl = match cih::is_cih() {
+            Ok(true) => "true",
+            Ok(false) => "false",
+            Err(e) => {
+                warn!("Failed to determine if host is running CIH: {e:?}");
+                "unknown"
+            }
+        };
+        // CLOCK_BOOTTIME gives nanosecond-resolution time since boot
+        // (including any suspended time), unlike sysinfo::System::uptime()
+        // (or a naive /proc/uptime parse), which only exposes whole-second
+        // resolution. Best-effort: clock_gettime with a valid clock ID
+        // essentially never fails on Linux, but fall back to NaN (which
+        // serde_json serializes as JSON `null`, a genuine "not available"
+        // rather than a misleading literal zero) rather than failing
+        // startup if it somehow does.
+        let uptime_secs = nix::time::clock_gettime(nix::time::ClockId::CLOCK_BOOTTIME)
+            .map(|ts| Duration::from(ts).as_secs_f64())
+            .unwrap_or_else(|e| {
+                warn!("Failed to read CLOCK_BOOTTIME: {e}");
+                f64::NAN
+            });
+        tracing::info!(
+            metric_name = "trident_start",
+            acl = acl,
+            uptime_secs = uptime_secs,
+        );
 
         Ok(Self {
             host_config,
@@ -895,7 +929,17 @@ impl Trident {
         self.host_config = Some(config);
         self.is_stream_image = true;
 
-        self.install(datastore, Operations::all(), false, Some(image))
+        // `stream_image_start` above marks the beginning of a streamed
+        // install; mirror it with a completion signal here so streaming
+        // failures/successes are distinguishable in telemetry without
+        // relying on the downstream `clean_install_*` metrics (which are
+        // specific to the clean-install engine step, not the streaming
+        // entry point as a whole).
+        let result = self.install(datastore, Operations::all(), false, Some(image));
+        if result.is_ok() {
+            tracing::info!(metric_name = "stream_image_success", value = true);
+        }
+        result
     }
 
     pub fn commit(

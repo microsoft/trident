@@ -24,9 +24,47 @@
 //! `DataStore::correlation_id`, which is unrelated and set separately on
 //! `TraceStream`/`AppInsightsSender`).
 
-use std::{cell::RefCell, sync::Mutex};
+use std::{
+    cell::RefCell,
+    panic::{self, AssertUnwindSafe},
+    sync::Mutex,
+};
 
 use uuid::Uuid;
+
+use trident_api::{config::Operations, error::TridentError};
+
+/// Message used by `server::tridentserver::TridentServer::try_acquire_read_lock`/
+/// `try_acquire_write_lock` for the `Status::unavailable` returned when
+/// connection-lock contention blocks a request. `grpc_client::is_transport_failure`
+/// matches on this exact message to recognize this as a deliberate
+/// admission-control rejection -- the daemon DID receive and answer the
+/// request -- rather than a genuine transport-level failure, even though
+/// tonic uses the same `Code::Unavailable` for both.
+pub(crate) const CONNECTION_LOCK_BUSY_MESSAGE: &str = "Trident is busy";
+
+/// Same as [`CONNECTION_LOCK_BUSY_MESSAGE`], but for the servicing-lock
+/// contention rejections in `servicing_request`/`reading_request`.
+pub(crate) const SERVICING_LOCK_BUSY_MESSAGE: &str = "Servicing is active";
+
+/// Maps a base command name plus its requested `Operations` to the same
+/// naming convention gRPC's `servicing_request` already uses for
+/// stage/finalize granularity (e.g. `"install"` vs `"install_stage"` vs
+/// `"install_finalize"`), so `command`/`operation_id` telemetry is
+/// consistent regardless of whether the command came from the CLI, from
+/// gRPC/daemon, or was relayed through `grpc-client`.
+pub fn command_name(base: &str, ops: &Operations) -> String {
+    match (ops.has_stage(), ops.has_finalize()) {
+        (true, true) => base.to_string(),
+        (true, false) => format!("{base}_stage"),
+        (false, true) => format!("{base}_finalize"),
+        // Neither stage nor finalize was requested (an empty
+        // `--allowed-operations` list); nothing can actually be staged or
+        // finalized, so name this like the existing no-op naming convention
+        // rather than a full install/update.
+        (false, false) => format!("{base}_noop"),
+    }
+}
 
 /// Identifies which of Trident's three entry points actually executed a
 /// command, so telemetry consumers can distinguish (for example) a
@@ -80,6 +118,17 @@ pub fn should_generate_persistent_ids(source: OperationSource) -> bool {
 thread_local! {
     static CURRENT_OPERATION: RefCell<Option<(String, String, OperationSource)>> =
         const { RefCell::new(None) };
+
+    /// Set once [`report_command_error`] has already fired for the
+    /// current operation, so a domain-specific caller that needs to
+    /// explicitly emit `command_error` *before* some other side effect
+    /// (e.g. archiving the metrics file -- see
+    /// `engine::runtime_update::finalize_or_rollback_runtime_update`'s
+    /// auto-rollback failure path) doesn't cause `run_command`/
+    /// `run_command_if` to report the same failure a second time once
+    /// that same error reaches their own `Err` handling. Reset alongside
+    /// `CURRENT_OPERATION` at the end of every command.
+    static COMMAND_ERROR_REPORTED: RefCell<bool> = const { RefCell::new(false) };
 }
 
 /// Runs `f` with this thread tagged as executing `command` from `source`,
@@ -112,6 +161,7 @@ pub fn run_with_operation<R>(command: &str, source: OperationSource, f: impl FnO
     impl Drop for ClearOnDrop {
         fn drop(&mut self) {
             CURRENT_OPERATION.with(|cell| *cell.borrow_mut() = None);
+            COMMAND_ERROR_REPORTED.with(|cell| *cell.borrow_mut() = false);
         }
     }
     let _clear = ClearOnDrop;
@@ -158,6 +208,22 @@ pub fn run_with_captured_operation<R>(
     captured: Option<CapturedOperation>,
     f: impl FnOnce() -> R,
 ) -> R {
+    // Reset the dedup flag on entry and restore it on exit (even on
+    // panic), regardless of whether a context was actually captured --
+    // this thread may be a reused `spawn_blocking` worker that last ran
+    // `run_reboot_command`/`report_command_error` and left the flag set,
+    // which would otherwise cause the *next* command on this thread to
+    // silently skip its own, unrelated `command_error`.
+    struct ClearOnDrop;
+    impl Drop for ClearOnDrop {
+        fn drop(&mut self) {
+            CURRENT_OPERATION.with(|cell| *cell.borrow_mut() = None);
+            COMMAND_ERROR_REPORTED.with(|cell| *cell.borrow_mut() = false);
+        }
+    }
+    COMMAND_ERROR_REPORTED.with(|cell| *cell.borrow_mut() = false);
+    let _clear = ClearOnDrop;
+
     let Some(CapturedOperation(operation_id, command, source)) = captured else {
         return f();
     };
@@ -165,14 +231,6 @@ pub fn run_with_captured_operation<R>(
     CURRENT_OPERATION.with(|cell| {
         *cell.borrow_mut() = Some((operation_id, command, source));
     });
-
-    struct ClearOnDrop;
-    impl Drop for ClearOnDrop {
-        fn drop(&mut self) {
-            CURRENT_OPERATION.with(|cell| *cell.borrow_mut() = None);
-        }
-    }
-    let _clear = ClearOnDrop;
 
     f()
 }
@@ -219,6 +277,147 @@ pub fn save_reboot_operation() {
 /// consumed by a prior call.
 pub fn take_reboot_operation() -> Option<CapturedOperation> {
     PENDING_REBOOT_OPERATION.lock().unwrap().take()
+}
+
+/// Like [`run_command`], but specifically for the actual reboot call:
+/// reuses whichever operation was captured by [`save_reboot_operation`]
+/// (the servicing operation that decided a reboot was needed) instead of
+/// minting a fresh `operation_id`, while still firing `command_error` on
+/// failure -- so a failed reboot's error metric is correlated back to
+/// that original operation, exactly like every other command's
+/// `command_error`. Falls back to a plain, untagged call (still firing
+/// `command_error` on failure) if nothing was captured.
+pub fn run_reboot_command<T>(
+    f: impl FnOnce() -> Result<T, TridentError>,
+) -> Result<T, TridentError> {
+    run_with_captured_operation(take_reboot_operation(), || {
+        let result = f();
+        if let Err(ref error) = result {
+            report_command_error(error);
+        }
+        result
+    })
+}
+
+/// Like [`run_with_operation`], but specifically for the
+/// `Result<T, TridentError>` shape both places that run a command
+/// actually use (CLI dispatch, gRPC's `servicing_request`/
+/// `reading_request`): additionally fires a `command_error` metric --
+/// breaking the error down into `kind`, `subkind`, and `location` -- if
+/// `f` returns `Err`, while the operation_id/command context is still
+/// active (so it's correlated the same way `command_start` is).
+///
+/// Also catches a panic from `f` here, still inside
+/// `run_with_operation`'s scope, so `command_error` still fires even when
+/// `f` panics instead of returning `Err`. Without this, a panic would
+/// unwind straight through this closure and past `run_with_operation`'s
+/// `ClearOnDrop` guard -- which clears the operation context *during* the
+/// unwind, before any code downstream of `run_command` (the CLI's own
+/// outer `catch_unwind` in `main.rs`, or the daemon's per-request
+/// panic-to-`Status`/`Completed` conversion) gets a chance to report
+/// anything -- silently skipping `command_error` even though
+/// `Telemetry.md` documents it as firing on every failed command. The
+/// panic is re-raised afterwards via `resume_unwind`, so callers'
+/// existing panic handling (exit codes, gRPC error responses) is
+/// unaffected -- this only adds the metric emission that was missing.
+pub fn run_command<T>(
+    command: &str,
+    source: OperationSource,
+    f: impl FnOnce() -> Result<T, TridentError>,
+) -> Result<T, TridentError> {
+    run_with_operation(command, source, || {
+        match panic::catch_unwind(AssertUnwindSafe(f)) {
+            Ok(result) => {
+                if let Err(ref error) = result {
+                    report_command_error(error);
+                }
+                result
+            }
+            Err(payload) => {
+                report_command_panic(command, &payload);
+                panic::resume_unwind(payload);
+            }
+        }
+    })
+}
+
+/// Like [`run_command`], but only fires `command_error` when
+/// `should_report` returns `true` for the resulting error. Use this when
+/// the caller can prove some errors were already reported by someone else
+/// (e.g. `grpc-client`, when the daemon it talked to already fired its
+/// own, better-classified `command_error` for the same logical failure)
+/// -- firing another one here would just double-count it under a less
+/// informative classification. Panics are always reported regardless of
+/// `should_report`: unlike an error from elsewhere, a panic has no other
+/// reporter.
+pub fn run_command_if<T>(
+    command: &str,
+    source: OperationSource,
+    f: impl FnOnce() -> Result<T, TridentError>,
+    should_report: impl FnOnce(&TridentError) -> bool,
+) -> Result<T, TridentError> {
+    run_with_operation(command, source, || {
+        match panic::catch_unwind(AssertUnwindSafe(f)) {
+            Ok(result) => {
+                if let Err(ref error) = result {
+                    if should_report(error) {
+                        report_command_error(error);
+                    }
+                }
+                result
+            }
+            Err(payload) => {
+                report_command_panic(command, &payload);
+                panic::resume_unwind(payload);
+            }
+        }
+    })
+}
+
+/// Fires the `command_error` metric for a failed command. Split out from
+/// `run_command` so it's independently testable against a constructed
+/// `TridentError` without needing a real failing command.
+///
+/// A no-op if `command_error` has already been reported once for the
+/// current operation (see [`COMMAND_ERROR_REPORTED`]): a domain-specific
+/// caller may need to fire this explicitly, ahead of some other side
+/// effect that must observe the failure (e.g. archiving the metrics
+/// file), before the same error naturally reaches `run_command`/
+/// `run_command_if`'s own `Err` handling further up the call stack --
+/// without this guard, that would report the identical failure twice.
+pub(crate) fn report_command_error(error: &TridentError) {
+    if COMMAND_ERROR_REPORTED.with(|cell| cell.replace(true)) {
+        return;
+    }
+    tracing::info!(
+        metric_name = "command_error",
+        kind = error.kind().as_str(),
+        subkind = error.subkind().unwrap_or("none"),
+        location = error.location().as_str(),
+    );
+}
+
+/// Fires the `command_error` metric for a command that panicked instead
+/// of returning `Err`. Tagged with a distinct `kind = "panic"` (rather
+/// than reusing a `TridentError`'s own `kind`/`subkind`/`location`, which
+/// don't exist for a panic) so consumers can tell the two failure modes
+/// apart. The panic payload's message (when it is the common `&str` or
+/// `String` panic message) is logged separately at `error` level, not
+/// included in the metric's own fields, since it's unstructured and of
+/// unbounded size.
+fn report_command_panic(command: &str, payload: &Box<dyn std::any::Any + Send>) {
+    let message = payload
+        .downcast_ref::<&str>()
+        .map(|s| s.to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "<non-string panic payload>".to_string());
+    log::error!("Command '{command}' panicked: {message}");
+    tracing::info!(
+        metric_name = "command_error",
+        kind = "panic",
+        subkind = "none",
+        location = "none",
+    );
 }
 
 #[cfg(test)]
@@ -397,5 +596,207 @@ mod tests {
             take_reboot_operation().is_none(),
             "nothing to capture outside an active operation"
         );
+    }
+
+    #[test]
+    fn test_run_reboot_command_reuses_captured_operation() {
+        let _guard = REBOOT_OPERATION_TEST_LOCK.lock().unwrap();
+        assert!(
+            take_reboot_operation().is_none(),
+            "start with a clean slate"
+        );
+
+        let expected = run_with_operation("install", OperationSource::Cli, || {
+            save_reboot_operation();
+            current().unwrap()
+        });
+
+        let observed: Result<(String, String, OperationSource), TridentError> =
+            run_reboot_command(|| Ok(current().unwrap()));
+        assert_eq!(
+            observed.unwrap(),
+            expected,
+            "run_reboot_command should reuse the captured install operation, not mint a fresh one"
+        );
+    }
+
+    #[test]
+    fn test_run_reboot_command_fires_command_error_on_failure_even_without_capture() {
+        let _guard = REBOOT_OPERATION_TEST_LOCK.lock().unwrap();
+        assert!(
+            take_reboot_operation().is_none(),
+            "start with a clean slate"
+        );
+
+        use tracing_subscriber::layer::SubscriberExt;
+        let layer = CapturingLayer::default();
+        let events = layer.events.clone();
+        let _guard2 =
+            tracing::subscriber::set_default(tracing_subscriber::Registry::default().with(layer));
+
+        let _: Result<(), TridentError> =
+            run_reboot_command(|| Err(TridentError::internal("reboot boom")));
+
+        let events = events.lock().unwrap();
+        assert!(
+            events
+                .iter()
+                .any(|e| e.get("metric_name").map(String::as_str) == Some("command_error")),
+            "run_reboot_command should still fire command_error when nothing was captured"
+        );
+    }
+
+    #[test]
+    fn test_run_command_passes_through_ok() {
+        let result: Result<i32, TridentError> = run_command("cmd", OperationSource::Cli, || Ok(42));
+        assert_eq!(result.unwrap(), 42);
+    }
+
+    #[test]
+    fn test_run_command_passes_through_err_unchanged() {
+        let result: Result<(), TridentError> = run_command("cmd", OperationSource::Cli, || {
+            Err(TridentError::internal("boom"))
+        });
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_command_clears_context_after_error() {
+        let _: Result<(), TridentError> = run_command("cmd", OperationSource::Cli, || {
+            Err(TridentError::internal("boom"))
+        });
+        assert!(
+            current().is_none(),
+            "context must be cleared even when f returns Err"
+        );
+    }
+
+    #[test]
+    fn test_run_command_if_suppresses_report_when_predicate_false() {
+        use tracing_subscriber::layer::SubscriberExt;
+
+        let layer = CapturingLayer::default();
+        let events = layer.events.clone();
+        let _guard =
+            tracing::subscriber::set_default(tracing_subscriber::Registry::default().with(layer));
+
+        let result: Result<(), TridentError> = run_command_if(
+            "cmd",
+            OperationSource::GrpcClient,
+            || Err(TridentError::internal("boom")),
+            |_error| false,
+        );
+
+        assert!(result.is_err());
+        let events = events.lock().unwrap();
+        assert!(
+            !events
+                .iter()
+                .any(|e| e.get("metric_name").map(String::as_str) == Some("command_error")),
+            "command_error should not fire when should_report returns false: {events:?}"
+        );
+    }
+
+    #[test]
+    fn test_run_command_if_reports_when_predicate_true() {
+        use tracing_subscriber::layer::SubscriberExt;
+
+        let layer = CapturingLayer::default();
+        let events = layer.events.clone();
+        let _guard =
+            tracing::subscriber::set_default(tracing_subscriber::Registry::default().with(layer));
+
+        let result: Result<(), TridentError> = run_command_if(
+            "cmd",
+            OperationSource::GrpcClient,
+            || Err(TridentError::internal("boom")),
+            |_error| true,
+        );
+
+        assert!(result.is_err());
+        let events = events.lock().unwrap();
+        assert!(
+            events
+                .iter()
+                .any(|e| e.get("metric_name").map(String::as_str) == Some("command_error")),
+            "command_error should fire when should_report returns true: {events:?}"
+        );
+    }
+
+    /// A minimal `tracing_subscriber::Layer` that records every event's
+    /// fields as strings, so `report_command_error`'s output can be
+    /// asserted on directly instead of only checking that `run_command`
+    /// doesn't panic.
+    #[derive(Default, Clone)]
+    struct CapturingLayer {
+        events: std::sync::Arc<std::sync::Mutex<Vec<std::collections::BTreeMap<String, String>>>>,
+    }
+
+    struct CaptureVisitor(std::collections::BTreeMap<String, String>);
+
+    impl tracing::field::Visit for CaptureVisitor {
+        fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+            self.0.insert(field.name().to_string(), value.to_string());
+        }
+
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+            self.0
+                .insert(field.name().to_string(), format!("{value:?}"));
+        }
+    }
+
+    impl<S> tracing_subscriber::layer::Layer<S> for CapturingLayer
+    where
+        S: tracing::Subscriber,
+    {
+        fn on_event(
+            &self,
+            event: &tracing::Event<'_>,
+            _ctx: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            let mut visitor = CaptureVisitor(std::collections::BTreeMap::new());
+            event.record(&mut visitor);
+            self.events.lock().unwrap().push(visitor.0);
+        }
+    }
+
+    #[test]
+    fn test_run_command_fires_command_error_with_kind_subkind_location() {
+        use tracing_subscriber::layer::SubscriberExt;
+
+        let layer = CapturingLayer::default();
+        let events = layer.events.clone();
+        let _guard =
+            tracing::subscriber::set_default(tracing_subscriber::Registry::default().with(layer));
+
+        let _: Result<(), TridentError> = run_command("test_command", OperationSource::Cli, || {
+            Err(TridentError::internal("boom"))
+        });
+
+        let events = events.lock().unwrap();
+        let command_error = events
+            .iter()
+            .find(|e| e.get("metric_name").map(String::as_str) == Some("command_error"))
+            .expect("command_error event should have been fired");
+
+        assert_eq!(
+            command_error.get("kind").map(String::as_str),
+            Some("internal")
+        );
+        assert!(
+            command_error.get("subkind").is_some(),
+            "subkind should be present: {command_error:?}"
+        );
+        assert!(
+            command_error
+                .get("location")
+                .is_some_and(|l| l.contains("operation_context.rs")),
+            "location should point at the TridentError::internal call site: {command_error:?}"
+        );
+        // command_start (from run_with_operation) should also have fired,
+        // ahead of command_error.
+        assert!(events
+            .iter()
+            .any(|e| e.get("metric_name").map(String::as_str) == Some("command_start")));
     }
 }

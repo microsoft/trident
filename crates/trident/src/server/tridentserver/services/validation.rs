@@ -24,6 +24,13 @@ impl ValidationService for TridentServer {
         // whenever without doing any lock checks.
         info!("Received Host Configuration validation request");
         let Some(host_config) = request.into_inner().config else {
+            // Unlike `install`/`update`/`rollback`'s `reject_invalid_argument`
+            // calls, this deliberately constructs the `Status` directly
+            // instead: `validate_host_configuration` is a read-only RPC (see
+            // the comment above) with no `command_start`/`command_error`
+            // telemetry of its own, and routing this rejection through
+            // `reject_invalid_argument` would give it exactly that --
+            // inconsistent with every other outcome of this RPC.
             return Err(Status::invalid_argument(
                 "Missing host configuration in staging configuration",
             ));
@@ -32,6 +39,7 @@ impl ValidationService for TridentServer {
         let error = validation::validate_host_config_string(&host_config.config)
             .err()
             .map(ProtoTridentError::from);
+
         Ok(Response::new(ValidateHostConfigurationResponse {
             ok: error.is_none(),
             error,

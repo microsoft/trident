@@ -1,20 +1,24 @@
-use std::process::ExitCode;
+use std::{cell::Cell, process::ExitCode};
 
 use anyhow::{bail, Context, Error};
 use log::error;
 use tokio::fs;
 use tokio::runtime::Builder;
+use tonic::Code;
+
+use trident_api::error::{InternalError, TridentError};
 
 use crate::{
-    cli::{ClientArgs, ClientCommands, TridentExitCodes},
-    ExitKind, TRIDENT_VERSION,
+    cli::{self, ClientArgs, ClientCommands, TridentExitCodes},
+    command_name,
+    logging::operation_context,
+    run_command_if, ExitKind, OperationSource, TRIDENT_VERSION,
 };
-
-use crate::cli;
 
 mod error;
 mod tridentclient;
 
+use error::TridentClientError;
 use tridentclient::{RebootHandling, TridentClient};
 
 pub fn client_main(args: &ClientArgs) -> ExitCode {
@@ -24,7 +28,80 @@ pub fn client_main(args: &ClientArgs) -> ExitCode {
         return TridentExitCodes::SetupFailed.into();
     };
 
-    match runtime.block_on(run_client(args)) {
+    // `setup_tracing()` (see `main.rs`) treats grpc-client the same as any
+    // other command -- it's a first-class telemetry participant, not just
+    // a transport-only escape hatch, so it fires `command_start` like
+    // every other command. `command_error` is more selective (see
+    // `is_transport_failure` below). `run_client`'s errors are plain
+    // `anyhow::Error` (not `TridentError`), so they're wrapped in a
+    // generic `InternalError::Internal` here purely to get them into
+    // `run_command_if`'s `Result<_, TridentError>` shape -- the original
+    // anyhow context chain is preserved as the error's source and still
+    // printed in full below.
+    // Install/Update/non-check-Rollback get the same stage/finalize-granular
+    // naming (`install_stage`, `update_finalize`, `rollback_stage`, etc.)
+    // the CLI and daemon use for servicing telemetry -- otherwise every
+    // grpc-client update/install/rollback would collapse to the generic
+    // `client_update`/`client_install`/`client_rollback` regardless of
+    // which operations were actually requested. `Rollback { check: true,
+    // .. }` is deliberately excluded here (falls to the generic branch
+    // below), mirroring `is_servicing_client_command`'s own read-only
+    // `rollback --check` exclusion and `main.rs`'s `Commands::Rollback {
+    // check: true, .. }` special-casing -- a dry-run check never stages
+    // or finalizes anything, so it has no stage/finalize distinction to
+    // report.
+    let command = match &args.command {
+        ClientCommands::Install {
+            allowed_operations, ..
+        }
+        | ClientCommands::Update {
+            allowed_operations, ..
+        }
+        | ClientCommands::Rollback {
+            check: false,
+            allowed_operations,
+            ..
+        } => command_name(
+            args.command.name().trim_start_matches("client-"),
+            &cli::to_operations(allowed_operations),
+        ),
+        // Every other variant's name() is also "client-"-prefixed (see
+        // `ClientCommands::name()`) -- strip it here too so e.g. `commit`/
+        // `stream_disk` match the CLI/daemon's own naming for the same
+        // logical command instead of reporting as `client_commit`/
+        // `client_stream_disk`.
+        _ => args
+            .command
+            .name()
+            .trim_start_matches("client-")
+            .replace('-', "_"),
+    };
+
+    // `run_client` (the actual RPC) runs *inside* this closure, not before
+    // it, so `command_start` (fired by `run_command_if` the moment this
+    // closure is entered) actually brackets the RPC instead of always
+    // following it -- otherwise every client-side event the RPC itself
+    // fires, and the timestamp of `command_start` itself, would be
+    // reported after the call had already finished. `is_transport_failure`
+    // is computed from the raw `anyhow::Error` chain here, inside the
+    // closure, and stashed via `transport_failure` for `run_command_if`'s
+    // `should_report` predicate below, which only ever sees the already-
+    // wrapped `TridentError` and has no way to inspect that chain itself.
+    let transport_failure = Cell::new(false);
+    let result = run_command_if(
+        &command,
+        OperationSource::GrpcClient,
+        || {
+            let client_result = runtime.block_on(run_client(args));
+            transport_failure.set(is_transport_failure(&client_result));
+            client_result.map_err(|e| {
+                TridentError::with_source(InternalError::Internal("grpc-client command failed"), e)
+            })
+        },
+        |_error| transport_failure.get() && is_servicing_client_command(&args.command),
+    );
+
+    match result {
         Err(e) => {
             error!("Client failed: {:?}", e);
             return TridentExitCodes::Failed.into();
@@ -39,6 +116,68 @@ pub fn client_main(args: &ClientArgs) -> ExitCode {
     }
 
     TridentExitCodes::Success.into()
+}
+
+/// The daemon fires its own, correctly-classified `command_error` for any
+/// request it actually received and acted on -- including one it rejected
+/// outright (see e.g. `services::reject_invalid_argument`). A genuine
+/// transport-level failure -- the daemon never received or finished
+/// answering this request at all -- has no other reporter, and is what
+/// this checks for:
+/// - `ConnectionError`: the initial connection attempt itself failed
+///   (socket not found, connection refused).
+/// - `RequestError`/`ResponseError` whose wrapped `Status` is
+///   `Code::Unavailable`, *except* for the daemon's own admission-control
+///   rejections -- connection-lock or servicing-lock contention (see
+///   `try_acquire_read_lock`/`try_acquire_write_lock`/`servicing_request`/
+///   `reading_request` in `server::tridentserver`), which deliberately
+///   also return `Code::Unavailable` since a busy daemon is retryable the
+///   same way a broken connection is. Those are recognized by their fixed
+///   message text (`CONNECTION_LOCK_BUSY_MESSAGE`/`SERVICING_LOCK_BUSY_MESSAGE`)
+///   and excluded here, since the daemon DID receive and answer this
+///   request, unlike tonic's own `Code::Unavailable` for a connection that
+///   broke mid-call (e.g. the daemon process died or the socket was closed
+///   while a request/response was in flight).
+fn is_transport_failure(client_result: &Result<ExitKind, Error>) -> bool {
+    client_result.as_ref().err().is_some_and(|e| {
+        e.chain()
+            .any(|cause| match cause.downcast_ref::<TridentClientError>() {
+                Some(TridentClientError::ConnectionError(..)) => true,
+                Some(TridentClientError::RequestError(_, status))
+                | Some(TridentClientError::ResponseError(_, status)) => {
+                    status.code() == Code::Unavailable
+                        && status.message() != operation_context::CONNECTION_LOCK_BUSY_MESSAGE
+                        && status.message() != operation_context::SERVICING_LOCK_BUSY_MESSAGE
+                }
+                _ => false,
+            })
+    })
+}
+
+/// Whether `command` is a servicing operation for the purposes of the
+/// `command_error` contract documented in `docs/Reference/Telemetry.md`'s
+/// "Command Errors" section: only a servicing command's own failure gets a
+/// `command_error` event -- `command_start` still fires for every command
+/// (see the comment in `client_main` above). A read-only command like
+/// `client-version` can still hit a transport-level failure (the daemon it
+/// talked to was unreachable), but that failure isn't a "servicing command
+/// failed" in the sense the docs describe, so it's deliberately excluded
+/// here, mirroring the CLI's own read-only exclusions in `main.rs`.
+///
+/// `Rollback { check: true, .. }` is `rollback --check`, a read-only dry
+/// run (mirrors `main.rs`'s own `Commands::Rollback { check: true, .. }`
+/// special-casing) -- only a real (non-check) rollback is a servicing
+/// command here.
+fn is_servicing_client_command(command: &ClientCommands) -> bool {
+    matches!(
+        command,
+        ClientCommands::Install { .. }
+            | ClientCommands::Update { .. }
+            | ClientCommands::Commit
+            | ClientCommands::RebuildRaid { .. }
+            | ClientCommands::Rollback { check: false, .. }
+            | ClientCommands::StreamDisk { .. }
+    )
 }
 
 async fn run_client(args: &ClientArgs) -> Result<ExitKind, Error> {
