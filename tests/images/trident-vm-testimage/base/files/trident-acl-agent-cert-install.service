@@ -1,0 +1,28 @@
+[Unit]
+Description=Install trident-acl-agent storm test CA cert into system trust store
+# Test-harness-only plumbing: this file only exists when a storm test run
+# has written an ephemeral CA cert onto the persistent, non-A/B
+# /var/lib/trident-acl-agent partition (see prepareVmForAclAgent in
+# tools/storm/aclagent/tests/update.go). It never exists on a real
+# deployment. Skips as a no-op (not a failure) when absent, e.g. before the
+# harness has run at all, or for run-rollback, which never uses Nebraska.
+ConditionPathExists=/var/lib/trident-acl-agent/nebraska-ca.pem
+Before=trident-acl-agent.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Re-derives the system trust store install every boot: /etc is part of
+# this usr-verity image's A/B-swapped root (an overlay backed by the
+# per-slot trident-overlay-a/-b partitions), so neither step below carries
+# over across a reboot into the other slot, unlike the source cert on
+# /var/lib/trident-acl-agent.
+ExecStart=/bin/sh -c ' \
+    cp /var/lib/trident-acl-agent/nebraska-ca.pem /etc/pki/ca-trust/source/anchors/trident-acl-agent-storm-test-ca.pem && \
+    update-ca-trust extract && \
+    cp /etc/pki/ca-trust/source/anchors/trident-acl-agent-storm-test-ca.pem /etc/pki/tls/certs/trident-acl-agent-storm-test-ca.pem && \
+    openssl rehash /etc/pki/tls/certs \
+    '
+
+[Install]
+WantedBy=multi-user.target
