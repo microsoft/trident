@@ -89,17 +89,11 @@ stages:
               - template: ../common_tasks/cargo-auth.yml
                 parameters:
                   cargoConfigPath: $(TRIDENT_SOURCE_DIR)/.cargo/config.toml
-              - template: release.yml
+              - template: build-rpms-parallel.yml
                 parameters:
                   targetArchitecture: ${{ parameters.targetArchitecture }}
                   tridentRepoDirectory: $(TRIDENT_SOURCE_DIR)
                   artifactDirectory: "$(ob_outputDirectory)"
-              - template: release.yml
-                parameters:
-                  targetArchitecture: ${{ parameters.targetArchitecture }}
-                  tridentRepoDirectory: $(TRIDENT_SOURCE_DIR)
-                  artifactDirectory: "$(ob_outputDirectory)/azl4"
-                  distro: azl4
 
       - ${{ elseif eq( parameters.targetArchitecture, 'arm64' ) }}:
           - job: BuildTrident_${{ parameters.targetArchitecture }}
@@ -128,18 +122,8 @@ stages:
               - template: ../common_tasks/cargo-auth.yml
                 parameters:
                   cargoConfigPath: $(TRIDENT_SOURCE_DIR)/.cargo/config.toml
-              - script: |
-                  set -eux
-                  sudo systemctl start docker
-                displayName: Start Docker
-              - template: release.yml
+              - template: build-rpms-parallel.yml
                 parameters:
                   targetArchitecture: ${{ parameters.targetArchitecture }}
                   tridentRepoDirectory: $(TRIDENT_SOURCE_DIR)
                   artifactDirectory: "$(ob_outputDirectory)"
-              - template: release.yml
-                parameters:
-                  targetArchitecture: ${{ parameters.targetArchitecture }}
-                  tridentRepoDirectory: $(TRIDENT_SOURCE_DIR)
-                  artifactDirectory: "$(ob_outputDirectory)/azl4"
-                  distro: azl4
