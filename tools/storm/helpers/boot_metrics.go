@@ -63,11 +63,16 @@ func (h *BootMetricsHelper) collectBootMetrics(tc storm.TestCase) error {
 		},
 	)
 	if err != nil {
+		// Retry yields a nil value once the window expires, and FailFromError
+		// stops the case via runtime.Goexit - but return explicitly so the
+		// dereference below cannot be reached by inspection either.
 		tc.FailFromError(err)
+		return err
 	}
 
 	if err := metrics.AppendBootMetrics(h.args.MetricsFile, *value); err != nil {
 		tc.FailFromError(err)
+		return err
 	}
 
 	return nil

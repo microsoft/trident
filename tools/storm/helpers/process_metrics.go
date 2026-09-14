@@ -69,7 +69,11 @@ func (h *ProcessMetricsHelper) RegisterTestCases(r storm.TestRegistrar) error {
 func (h *ProcessMetricsHelper) processMetrics(tc storm.TestCase) error {
 	config, err := metrics.LoadHostConfig(h.args.HostConfig)
 	if err != nil {
+		// FailFromError stops the case via runtime.Goexit, but return
+		// explicitly: the zero-value HostConfig below would otherwise look, to
+		// a reader, like it reaches the feature-flag getters.
 		tc.FailFromError(err)
+		return err
 	}
 
 	enrichment := metrics.NewEnrichment(metrics.PipelineContext{
