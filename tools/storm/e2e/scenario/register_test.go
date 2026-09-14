@@ -254,3 +254,48 @@ func TestSplitTestsSkippedForCurrentRing_UsesPipelineOrderNotLexical(t *testing.
 		})
 	}
 }
+
+func TestParseScenarioNameRoundTrips(t *testing.T) {
+	for _, tt := range []struct {
+		config string
+		hw     HardwareType
+		rt     trident.RuntimeType
+	}{
+		{"base", HardwareTypeVM, trident.RuntimeTypeHost},
+		{"encrypted-partition", HardwareTypeVM, trident.RuntimeTypeContainer},
+		{"usr-verity-raid", HardwareTypeBM, trident.RuntimeTypeHost},
+		// Configuration names contain hyphens and the suffix is hyphenated too,
+		// so the split must be anchored at the last underscore.
+		{"memory-constraint-combined", HardwareTypeVM, trident.RuntimeTypeContainer},
+	} {
+		name := ScenarioName(tt.config, tt.hw, tt.rt)
+		config, hw, rt, err := ParseScenarioName(name)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if config != tt.config || hw != tt.hw || rt != tt.rt {
+			t.Errorf("%s -> (%q,%q,%q), want (%q,%q,%q)", name, config, hw, rt, tt.config, tt.hw, tt.rt)
+		}
+	}
+}
+
+func TestParseScenarioNameRejectsMalformed(t *testing.T) {
+	for _, name := range []string{
+		"base", "base_vm", "_vm-host", "base_", "base_xx-host", "base_vm-xx", "",
+	} {
+		if _, _, _, err := ParseScenarioName(name); err == nil {
+			t.Errorf("expected %q to be rejected", name)
+		}
+	}
+}
+
+// These values predate storm and are recorded in Kusto and in ACR image tags,
+// so they must keep matching the legacy suite's.
+func TestDeploymentEnvironmentMatchesLegacyNames(t *testing.T) {
+	if got := HardwareTypeVM.DeploymentEnvironment(); got != "virtualMachine" {
+		t.Errorf("vm -> %q, want virtualMachine", got)
+	}
+	if got := HardwareTypeBM.DeploymentEnvironment(); got != "bareMetal" {
+		t.Errorf("bm -> %q, want bareMetal", got)
+	}
+}

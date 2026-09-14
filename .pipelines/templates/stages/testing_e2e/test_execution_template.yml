@@ -74,8 +74,6 @@ stages:
           - name: ob_artifactBaseName
             value: $(SCENARIO)_$(System.JobAttempt)
           - ${{ if eq(parameters.runtimeType, 'CONTAINER') }}:
-              - name: installerISOName
-                value: trident-container-installer
               - name: testImageName
                 value: trident-container-testimage
               - name: verityTestImageName
@@ -85,8 +83,6 @@ stages:
               - name: downloadTridentContainer
                 value: true
           - ${{ else }}:
-              - name: installerISOName
-                value: trident-installer
               - name: testImageName
                 value: trident-testimage
               - name: verityTestImageName
@@ -100,41 +96,6 @@ stages:
           - template: ../common_tasks/checkout_trident.yml
           - template: ../common_tasks/avoid-pypi-usage.yml
 
-          - bash: |
-              set -eux
-              # The matrix only exposes the full scenario name (e.g.
-              # "extensions_vm-host"); derive the configuration name and runtime
-              # from it for the per-config handling below.
-              config=$(echo "$(SCENARIO)" | sed -E 's/_(vm|bm)-(host|container)$//')
-              runtime=$(echo "$(SCENARIO)" | sed -E 's/.*_(vm|bm)-(host|container)$/\2/')
-              hardware=$(echo "$(SCENARIO)" | sed -E 's/.*_(vm|bm)-(host|container)$/\1/')
-              # Match the machine_type values legacy recorded in Kusto so storm
-              # rows group with the existing ones.
-              if [ "$hardware" == 'vm' ]; then
-                deploymentEnv=virtualMachine
-              else
-                deploymentEnv=bareMetal
-              fi
-              # Emit the logging commands with xtrace off: `set -x` traces each
-              # echo, which both duplicates the ##vso line in the log and prints
-              # the value being set. Mirrors the same guard in
-              # testing_common/trident-metrics.yml.
-              set +x
-              echo "##vso[task.setvariable variable=tridentConfigurationName]$config"
-              echo "##vso[task.setvariable variable=tridentRuntimeEnv]$runtime"
-              echo "##vso[task.setvariable variable=tridentDeploymentEnv]$deploymentEnv"
-              set -x
-            displayName: "Resolve configuration name from scenario"
-
-          - bash: |
-              if [ "$(tridentConfigurationName)" == 'split' ]; then
-                splitInstallerIsoName="trident-split-installer"
-                echo "setting variable.installerISOName to $splitInstallerIsoName"
-                echo "##vso[task.setvariable variable=installerISOName]$splitInstallerIsoName"
-              fi
-            displayName: Special handle for split test
-
-          # Download all test images
           - template: ../testing_common/download-test-images.yml
             parameters:
               installerISO: $(installerISOName)
