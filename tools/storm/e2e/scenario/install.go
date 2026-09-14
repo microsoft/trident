@@ -58,7 +58,7 @@ func (s *TridentE2EScenario) installOs(tc storm.TestCase) error {
 		IsoPath:             s.args.IsoPath,
 		WaitForProvisioning: true,
 		HostConfigFile:      tempHostConfigFilePath,
-		CertificateFile:     s.args.CertFile,
+		CertificateFile:     s.signingCertFile(),
 		EnableSecureBoot:    true,
 	}
 
@@ -161,4 +161,24 @@ func (s *TridentE2EScenario) checkTridentViaSshAfterInstall(tc storm.TestCase) e
 	}
 
 	return nil
+}
+
+// signingCertFile returns the image signing certificate to enroll into the VM's
+// EFI variables, or "" when there is none.
+//
+// UKI/usr-verity images boot their kernel directly through firmware Secure
+// Boot, so they need the certificate enrolled; it ships alongside the usrverity
+// test image. Enrolling it is harmless for grub-based images, so the caller
+// passes the path unconditionally and a configuration whose artifacts do not
+// include one simply proceeds without it - rather than the caller having to
+// test for the file first.
+func (s *TridentE2EScenario) signingCertFile() string {
+	if s.args.CertFile == "" {
+		return ""
+	}
+	if _, err := os.Stat(s.args.CertFile); err != nil {
+		log.Infof("No image signing certificate at %q; continuing without one.", s.args.CertFile)
+		return ""
+	}
+	return s.args.CertFile
 }

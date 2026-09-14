@@ -5,10 +5,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"tridenttools/storm/utils/sha384"
 	"tridenttools/storm/utils/sshutils"
 	"tridenttools/storm/utils/trident"
 
 	"github.com/microsoft/storm"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -81,7 +83,9 @@ func (s *TridentE2EScenario) prepareHostConfig(tc storm.TestCase) error {
 
 	// Inject any pipeline-provided OCI overrides (extension images, ACR-hosted
 	// COSI URL). Mirrors tests/e2e_tests/helpers/edit_host_config.py.
-	s.applyOciOverrides()
+	if err := s.applyOciOverrides(); err != nil {
+		return err
+	}
 
 	// Inject UEFI fallback validation last among the edits, so the health
 	// checks describe the configuration that is actually deployed.
@@ -130,11 +134,15 @@ func (s *TridentE2EScenario) applyContainerPcrExclusion() {
 // os.confexts) and an override of the COSI image URL (image.url). Each edit is
 // applied only when its argument is provided. Ports the OCI handling of
 // edit_host_config.py used by the pipeline's trident-prep step.
-func (s *TridentE2EScenario) applyOciOverrides() {
-	if s.args.SysextOciUrl != "" {
+func (s *TridentE2EScenario) applyOciOverrides() error {
+	sysextUrl, sysextSha, err := s.resolveSysextImage()
+	if err != nil {
+		return err
+	}
+	if sysextUrl != "" {
 		s.config.ArrayAppend(map[string]interface{}{
-			"url":    s.args.SysextOciUrl,
-			"sha384": s.args.SysextSha384,
+			"url":    sysextUrl,
+			"sha384": sysextSha,
 		}, "os", "sysexts")
 	}
 
@@ -148,4 +156,37 @@ func (s *TridentE2EScenario) applyOciOverrides() {
 	if s.args.OciImageUrl != "" {
 		s.config.Set(s.args.OciImageUrl, "image", "url")
 	}
+
+	return nil
+}
+
+// resolveSysextImage returns the OCI URL and hash of the system extension image
+// to inject, if any.
+//
+// An explicit --sysext-oci-url wins. Otherwise the URL is assembled from the
+// ACR/repository/tag the push step reported, and the hash is computed from the
+// local copy of the image - so the caller passes what it knows rather than
+// building an OCI reference and shelling out to sha384sum. A configuration that
+// uses no extensions simply leaves these empty.
+func (s *TridentE2EScenario) resolveSysextImage() (url string, hash string, err error) {
+	if s.args.SysextOciUrl != "" {
+		return s.args.SysextOciUrl, s.args.SysextSha384, nil
+	}
+
+	if s.args.SysextAcr == "" || s.args.SysextRepo == "" || s.args.SysextTag == "" {
+		return "", "", nil
+	}
+
+	if s.args.SysextFile == "" {
+		return "", "", fmt.Errorf("--sysext-file is required to hash the image referenced by --sysext-acr/--sysext-repo/--sysext-tag")
+	}
+
+	hash, err = sha384.CalculateSha384(s.args.SysextFile)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to hash system extension image %q: %w", s.args.SysextFile, err)
+	}
+
+	url = fmt.Sprintf("oci://%s.azurecr.io/%s:%s", s.args.SysextAcr, s.args.SysextRepo, s.args.SysextTag)
+	logrus.Infof("System extension image: %s (sha384 %s)", url, hash)
+	return url, hash, nil
 }

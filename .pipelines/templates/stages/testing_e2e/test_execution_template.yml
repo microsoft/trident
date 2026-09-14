@@ -69,6 +69,14 @@ stages:
         variables:
           # Provides: ACR_NAME (used to push/pull extension images).
           - group: trident_e2e_params
+          # Set at runtime by the ACR push step, for the extensions
+          # configuration only. Declared empty here because an undefined
+          # variable expands to its own literal name, which would look like a
+          # real repository to the run command below.
+          - name: SYSEXT_REPO
+            value: ""
+          - name: TAG_BASE
+            value: ""
           - name: ob_outputDirectory
             value: /tmp/output
           - name: ob_artifactBaseName
@@ -163,41 +171,24 @@ stages:
                     --repo-var-name SYSEXT_REPO
             retryCountOnTaskFailure: 3
 
+          # Every argument is a fact the pipeline knows; the scenario decides
+          # what to do with them. A missing signing certificate and empty sysext
+          # coordinates both mean "not applicable", so no configuration needs a
+          # special case here.
           - bash: |
               set -eux
-
               mkdir -p $(ob_outputDirectory)
-
-              # UKI/usr-verity images boot their kernel directly through
-              # firmware Secure Boot, so the image signing certificate must be
-              # enrolled into the VM's EFI variables via --signing-cert. The
-              # cert ships alongside the usrverity test image. Enrolling it is
-              # harmless for grub-based images, so pass it whenever present.
-              SIGNING_CERT_ARG=""
-              CA_CERT_PATH="$(System.ArtifactsDirectory)/usrverity-testimage/ca_cert.pem"
-              if [ -f "$CA_CERT_PATH" ]; then
-                SIGNING_CERT_ARG="--signing-cert $CA_CERT_PATH"
-              fi
-
-              # For the extensions config, point the Host Configuration at the
-              # sysext image pushed to ACR above. SYSEXT_REPO and TAG_BASE were
-              # set by the acr-push step; ACR_NAME comes from trident_e2e_params.
-              EXTENSION_ARGS=""
-              if [ "$(tridentConfigurationName)" == 'extensions' ]; then
-                sysext_tag="$(TAG_BASE).1"
-                sysext_oci_url="oci://$(ACR_NAME).azurecr.io/$(SYSEXT_REPO):${sysext_tag}"
-                sysext_sha384=$(sha384sum "$(TRIDENT_SOURCE_DIR)/test-sysext-1.raw" | awk '{print $1}')
-                EXTENSION_ARGS="--sysext-oci-url ${sysext_oci_url} --sysext-sha384 ${sysext_sha384}"
-              fi
-
               ./bin/storm-trident run "$(SCENARIO)" \
                   -o $(ob_outputDirectory) \
                   -j "$(ob_outputDirectory)/storm-e2e.junit.xml" \
                   -- \
                   --pipeline-run \
                   --iso "./artifacts/iso/$(installerISOName).iso" \
-                  $SIGNING_CERT_ARG \
-                  $EXTENSION_ARGS
+                  --signing-cert "$(System.ArtifactsDirectory)/usrverity-testimage/ca_cert.pem" \
+                  --sysext-acr "$(ACR_NAME)" \
+                  --sysext-repo "$(SYSEXT_REPO)" \
+                  --sysext-tag "$(TAG_BASE).1" \
+                  --sysext-file "$(TRIDENT_SOURCE_DIR)/test-sysext-1.raw"
             displayName: "🧪 Run E2E Test"
             workingDirectory: $(TRIDENT_SOURCE_DIR)
 

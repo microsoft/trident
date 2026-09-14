@@ -66,10 +66,19 @@ type TridentE2EScenario struct {
 		TestRing              testrings.TestRing `name:"test-ring" help:"The test ring in which this scenario is being executed. Defaults to lowest ring for this scenario." env:"TEST_RING"`
 		SysextOciUrl          string             `name:"sysext-oci-url" help:"OCI URL of a system extension image to inject into the Host Configuration (os.sysexts)."`
 		SysextSha384          string             `name:"sysext-sha384" help:"SHA384 of the system extension image referenced by --sysext-oci-url."`
-		ConfextOciUrl         string             `name:"confext-oci-url" help:"OCI URL of a configuration extension image to inject into the Host Configuration (os.confexts)."`
-		ConfextSha384         string             `name:"confext-sha384" help:"SHA384 of the configuration extension image referenced by --confext-oci-url."`
-		OciImageUrl           string             `name:"oci-image-url" help:"If set, overwrites the Host Configuration image.url with this OCI URL (ACR-hosted COSI)."`
-		UefiFallbackMode      string             `name:"uefi-fallback-mode" help:"UEFI fallback mode to validate (disabled, conservative, optimistic). Defaults to one derived from the configuration name." enum:"disabled,conservative,optimistic," default:""`
+		// Components of the pushed sysext image. Given these, the scenario
+		// assembles the OCI URL and hashes the local image itself, so the
+		// caller does not have to build either. Empty values mean "no sysext",
+		// which is how a configuration that does not use extensions passes
+		// through without the caller needing a conditional.
+		SysextAcr        string `name:"sysext-acr" help:"ACR name hosting the pushed system extension image."`
+		SysextRepo       string `name:"sysext-repo" help:"ACR repository holding the pushed system extension image."`
+		SysextTag        string `name:"sysext-tag" help:"Tag of the pushed system extension image."`
+		SysextFile       string `name:"sysext-file" help:"Local path of the system extension image, hashed to verify the pushed copy."`
+		ConfextOciUrl    string `name:"confext-oci-url" help:"OCI URL of a configuration extension image to inject into the Host Configuration (os.confexts)."`
+		ConfextSha384    string `name:"confext-sha384" help:"SHA384 of the configuration extension image referenced by --confext-oci-url."`
+		OciImageUrl      string `name:"oci-image-url" help:"If set, overwrites the Host Configuration image.url with this OCI URL (ACR-hosted COSI)."`
+		UefiFallbackMode string `name:"uefi-fallback-mode" help:"UEFI fallback mode to validate (disabled, conservative, optimistic). Defaults to one derived from the configuration name." enum:"disabled,conservative,optimistic," default:""`
 	}
 
 	// Runtime variables
