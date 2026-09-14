@@ -2,9 +2,6 @@
 
 set -euxo pipefail
 
-readonly RUST_TOOLCHAIN="1.93.0"
-readonly PROTOC_VERSION="33.2"
-readonly PROTOC_SHA256="b24b53f87c151bfd48b112fe4c3a6e6574e5198874f38036aff41df3456b8caf"
 readonly PROTOC_GEN_GO_VERSION="v1.36.11"
 readonly PROTOC_GEN_GO_GRPC_VERSION="v1.6.2"
 readonly DATA_DISK_MOUNT="/mnt/storage"
@@ -24,13 +21,7 @@ sudo apt-get install -y --no-install-recommends \
     pkg-config \
     unzip
 
-protoc_archive="protoc-${PROTOC_VERSION}-linux-x86_64.zip"
-curl --fail --location --retry 3 \
-    --output "$RUNNER_TEMP/$protoc_archive" \
-    "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${protoc_archive}"
-echo "$PROTOC_SHA256  $RUNNER_TEMP/$protoc_archive" | sha256sum --check
-sudo unzip -o "$RUNNER_TEMP/$protoc_archive" -d /usr/local
-rm -f "$RUNNER_TEMP/$protoc_archive"
+make install-protoc
 
 go_bin_dir="$(go env GOPATH)/bin"
 export PATH="$go_bin_dir:$PATH"
@@ -46,10 +37,10 @@ fi
 export PATH="$HOME/.cargo/bin:$PATH"
 echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
-rustup toolchain install "$RUST_TOOLCHAIN" \
+rustup toolchain install stable \
     --profile minimal \
     --component clippy,rustfmt
-rustup default "$RUST_TOOLCHAIN"
+rustup default stable
 
 if ! mountpoint --quiet "$DATA_DISK_MOUNT"; then
     echo "Expected runner data disk is not mounted at $DATA_DISK_MOUNT" >&2
