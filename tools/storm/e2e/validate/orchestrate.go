@@ -7,6 +7,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 
+	"github.com/Jeffail/gabs/v2"
+
 	"tridenttools/pkg/hostconfig"
 	"tridenttools/storm/utils/sshutils"
 	"tridenttools/storm/utils/sysinspect"
@@ -197,6 +199,28 @@ func getRootMountDevice(client *ssh.Client) (string, bool) {
 
 // ValidateUsers ports base_test.py::test_users. It confirms that every user and
 // group declared in the Host Configuration exists on the system.
+// secondaryGroupsField is the Host Configuration schema name for a user's
+// secondary groups (trident_api::config::host::os::users::secondary_groups).
+//
+// It is spelled out here because it was previously read as `groups`, which is
+// not a schema field: the lookup silently returned nothing, so group membership
+// was never actually validated. The legacy pytest has the same defect
+// (base_test.py:427 reads `user_info["groups"]`), so neither suite has ever
+// exercised this check.
+const secondaryGroupsField = "secondaryGroups"
+
+// SecondaryGroups returns the secondary groups a configured user should belong
+// to, skipping any entry that is not a string.
+func SecondaryGroups(user *gabs.Container) []string {
+	var groups []string
+	for _, group := range user.S(secondaryGroupsField).Children() {
+		if name, ok := group.Data().(string); ok {
+			groups = append(groups, name)
+		}
+	}
+	return groups
+}
+
 func ValidateUsers(sa *SoftAsserter, client *ssh.Client, spec hostconfig.HostConfig) {
 	systemUsers, err := sysinspect.Users(client)
 	if err != nil {
@@ -218,11 +242,7 @@ func ValidateUsers(sa *SoftAsserter, client *ssh.Client, spec hostconfig.HostCon
 			sa.Failf("users/present", "configured user %q not found in /etc/passwd", name)
 		}
 
-		for _, group := range user.S("groups").Children() {
-			groupName, ok := group.Data().(string)
-			if !ok {
-				continue
-			}
+		for _, groupName := range SecondaryGroups(user) {
 			members, present := systemGroups[groupName]
 			if !present {
 				sa.Failf("users/group-present", "configured group %q not found in /etc/group", groupName)

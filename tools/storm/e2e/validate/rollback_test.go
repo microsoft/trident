@@ -4,17 +4,65 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Jeffail/gabs/v2"
+
 	tridentutil "tridenttools/storm/utils/trident"
 )
 
+// The fixtures below use the real schema field, `health.checks` - the name
+// Trident emits and the checked-in configurations use. An earlier fixture said
+// `healthChecks`, which is not a schema field: gabs returned nil for the absent
+// `checks` path, so the test passed through the no-checks fallback and never
+// exercised a real check list.
 func TestHasRollbackIntent(t *testing.T) {
-	withHealth, _ := tridentutil.NewHostStatusFromYaml([]byte("spec:\n  health:\n    healthChecks: []\n"))
-	if !HasRollbackIntent(withHealth) {
-		t.Error("expected rollback intent when spec.health present")
-	}
-	withoutHealth, _ := tridentutil.NewHostStatusFromYaml([]byte("spec:\n  storage: {}\n"))
-	if HasRollbackIntent(withoutHealth) {
-		t.Error("did not expect rollback intent without spec.health")
+	for name, tc := range map[string]struct {
+		spec string
+		want bool
+	}{
+		"failing check present": {
+			spec: "spec:\n  health:\n    checks:\n    - name: invoke-rollback-from-script\n      runOn: [clean-install]\n",
+			want: true,
+		},
+		"no health section": {
+			spec: "spec:\n  storage: {}\n",
+			want: false,
+		},
+		"health section with no checks": {
+			// Preserve the original broader signal rather than assume no intent.
+			spec: "spec:\n  health: {}\n",
+			want: true,
+		},
+		"explicitly null checks": {
+			spec: "spec:\n  health:\n    checks: null\n",
+			want: true,
+		},
+		"only the injected UEFI checks": {
+			// These are expected to PASS, so they must not imply intent.
+			spec: "spec:\n  health:\n    checks:\n" +
+				"    - name: " + UefiFallbackInstallCheckName + "\n" +
+				"    - name: " + UefiFallbackAbUpdateCheckName + "\n",
+			want: false,
+		},
+		"UEFI checks alongside a failing one": {
+			spec: "spec:\n  health:\n    checks:\n" +
+				"    - name: " + UefiFallbackInstallCheckName + "\n" +
+				"    - name: invoke-rollback-from-script\n",
+			want: true,
+		},
+		"checks emptied by the rollback cleanup": {
+			spec: "spec:\n  health:\n    checks: []\n",
+			want: false,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			hs, err := tridentutil.NewHostStatusFromYaml([]byte(tc.spec))
+			if err != nil {
+				t.Fatalf("parse host status: %v", err)
+			}
+			if got := HasRollbackIntent(hs); got != tc.want {
+				t.Errorf("HasRollbackIntent = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -63,5 +111,35 @@ func TestValidateAbUpdateStaged(t *testing.T) {
 	ValidateAbUpdateStaged(&sa3, flipped, tridentutil.AbVolumeA)
 	if !sa3.HasFailures() {
 		t.Error("expected failure when active volume already changed")
+	}
+}
+
+// SecondaryGroups must read the schema field name. Reading `groups` (as both
+// this validator and the legacy pytest did) silently matches nothing, so the
+// membership assertion never runs.
+func TestSecondaryGroupsReadsTheSchemaField(t *testing.T) {
+	user, err := gabs.ParseJSON([]byte(`{
+		"name": "testing-user",
+		"secondaryGroups": ["wheel", "docker"],
+		"groups": ["should-be-ignored"]
+	}`))
+	if err != nil {
+		t.Fatalf("parse user: %v", err)
+	}
+
+	got := SecondaryGroups(user)
+	if len(got) != 2 || got[0] != "wheel" || got[1] != "docker" {
+		t.Errorf("SecondaryGroups = %v, want [wheel docker]", got)
+	}
+
+	noGroups, _ := gabs.ParseJSON([]byte(`{"name": "u"}`))
+	if got := SecondaryGroups(noGroups); len(got) != 0 {
+		t.Errorf("expected no groups for a user that declares none, got %v", got)
+	}
+
+	// Non-string entries are skipped rather than panicking.
+	mixed, _ := gabs.ParseJSON([]byte(`{"name":"u","secondaryGroups":["wheel",42,null]}`))
+	if got := SecondaryGroups(mixed); len(got) != 1 || got[0] != "wheel" {
+		t.Errorf("expected only the string entry, got %v", got)
 	}
 }

@@ -58,9 +58,11 @@ func HasFailingHealthChecks(config hostconfig.HostConfig) bool {
 	}
 
 	checks := config.S("health", "checks")
-	if checks == nil {
+	if checks == nil || checks.Data() == nil {
 		// A health section that declares no checks at all: keep the original,
 		// broader signal rather than silently deciding there is no intent.
+		// gabs returns nil for an absent path but a non-nil container holding
+		// nil for an explicit `checks: null`, so both shapes are covered here.
 		return true
 	}
 
