@@ -2,6 +2,7 @@ package validate
 
 import (
 	"fmt"
+	"path"
 	"strings"
 
 	"github.com/sirupsen/logrus"
@@ -255,51 +256,92 @@ func ValidateUsers(sa *SoftAsserter, client *ssh.Client, spec hostconfig.HostCon
 	}
 }
 
-// ValidateUefiFallback ports base_test.py::test_uefi_fallback. It validates the
-// UEFI fallback boot entries according to the configured mode (disabled,
-// conservative, optimistic; defaulting to conservative).
+// espDeviceId is the device ID the test configurations give the EFI System
+// Partition.
+const espDeviceId = "esp"
+
+// uefiFallbackDisabled is the mode under which Trident installs no fallback
+// boot files at all.
+const uefiFallbackDisabled = "disabled"
+
+// EspMountPoint returns the path the EFI System Partition is mounted at,
+// according to the Host Configuration.
+//
+// The mount point is spelled two ways in the schema - a bare path, or an object
+// with a `path` - so both are accepted.
+func EspMountPoint(spec hostconfig.HostConfig) (string, bool) {
+	for _, fs := range spec.S("storage", "filesystems").Children() {
+		if id, _ := fs.S("deviceId").Data().(string); id != espDeviceId {
+			continue
+		}
+
+		mountPoint := fs.S("mountPoint")
+		if path, ok := mountPoint.Data().(string); ok {
+			return path, path != ""
+		}
+		if path, ok := mountPoint.S("path").Data().(string); ok {
+			return path, path != ""
+		}
+	}
+	return "", false
+}
+
+// ValidateUefiFallback checks the UEFI fallback boot files against the
+// configured mode.
+//
+// Only `disabled` is checked here, and deliberately so. The other modes are
+// phase-dependent - under `conservative` the fallback points at the servicing
+// OS until commit validates the target, so what is correct after a clean
+// install differs from what is correct after an A/B update - and this validator
+// is handed the Host Configuration and an SSH connection, not the servicing
+// operation that just ran. Those modes are covered by the health check the
+// scenario injects (uefi-fallback-validation-install / -update), which Trident
+// runs per phase on the host and which fails the update itself when the
+// fallback is wrong.
+//
+// `disabled` carries no such ambiguity: "no UEFI fallback boot files are
+// installed" holds after an install, an update or a rollback alike.
+//
+// Ported from base_test.py::test_uefi_fallback, which compared against the
+// *current* boot entry unconditionally and read a hard-coded /efi/... path that
+// does not exist on these hosts - so the command failed, `&& exit 1 || exit 0`
+// turned that into success, and the check passed without testing anything.
 func ValidateUefiFallback(sa *SoftAsserter, client *ssh.Client, spec hostconfig.HostConfig) {
 	mode := "conservative"
 	if m, ok := spec.S("os", "uefiFallback").Data().(string); ok {
 		mode = m
 	}
-
-	switch mode {
-	case "disabled":
-		// /efi/boot/EFI/BOOT should be empty.
-		out, err := sshutils.RunCommand(client, "sudo find /efi/boot/EFI/BOOT/* && exit 1 || exit 0")
-		if err != nil {
-			sa.Fail("uefi/disabled", err)
-			return
-		}
-		sa.Assert("uefi/disabled", out.Status == 0,
-			"/efi/boot/EFI/BOOT is not empty for disabled uefiFallback")
-		return
-	case "conservative", "optimistic":
-		// handled below
-	default:
-		sa.Failf("uefi/mode", "unknown uefiFallback mode: %q", mode)
+	if mode != uefiFallbackDisabled {
 		return
 	}
 
-	info, err := sysinspect.EfiBootMgr(client)
-	if err != nil {
-		sa.Fail("uefi/efibootmgr", err)
-		return
-	}
-	currentName, ok := info.CurrentName()
+	esp, ok := EspMountPoint(spec)
 	if !ok {
-		sa.Failf("uefi/current", "could not determine current boot entry name (BootCurrent=%q)", info.BootCurrent)
+		// Failing rather than skipping is the point: an unresolvable ESP means
+		// the check cannot run, and that must not look like a pass.
+		sa.Failf("uefi/disabled", "could not resolve the ESP mount point from the Host Configuration")
 		return
 	}
 
-	// Fallback boot files should match the current boot's files.
-	cmd := fmt.Sprintf("sudo diff /efi/boot/EFI/BOOT/* /efi/azl/EFI/%s/* && exit 1 || exit 0", currentName)
+	// Probe the mount point itself before the fallback directory, so "the ESP
+	// is not where we think it is" is reported as a failure instead of being
+	// silently indistinguishable from "the directory is empty".
+	fallbackDir := path.Join(esp, "EFI", "BOOT")
+	cmd := fmt.Sprintf("test -d %q && { ls -A %q 2>/dev/null | wc -l; } || echo MISSING_ESP", esp, fallbackDir)
 	out, err := sshutils.RunCommand(client, cmd)
 	if err != nil {
-		sa.Fail("uefi/diff", err)
+		sa.Fail("uefi/disabled", err)
 		return
 	}
-	sa.Assert("uefi/diff", out.Status == 0,
-		"UEFI fallback files differ from current boot entry %q", currentName)
+
+	result := strings.TrimSpace(out.Stdout)
+	if result == "MISSING_ESP" {
+		sa.Failf("uefi/disabled", "ESP mount point %q does not exist on the host", esp)
+		return
+	}
+
+	// An absent EFI/BOOT counts as no fallback files: `ls` on a missing
+	// directory prints nothing, which counts as zero entries.
+	sa.Assert("uefi/disabled", result == "0",
+		"%s contains %s entries, but uefiFallback is disabled", fallbackDir, result)
 }
