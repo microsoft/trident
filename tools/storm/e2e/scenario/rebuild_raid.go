@@ -66,7 +66,7 @@ func (s *TridentE2EScenario) rebuildRaidFailDisk(tc storm.TestCase) error {
 
 	// Reconnect once the degraded host is back up, and confirm Trident is
 	// healthy (the previous servicing commit is unchanged by a disk failure).
-	connCtx, cancel := context.WithTimeout(tc.Context(), time.Minute*5)
+	connCtx, cancel := context.WithTimeout(tc.Context(), postRebootReconnectTimeout)
 	defer cancel()
 	if err := s.populateSshClient(connCtx); err != nil {
 		return fmt.Errorf("failed to reconnect after RAID member disk failure: %w", err)

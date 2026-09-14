@@ -17,6 +17,17 @@ import (
 
 const (
 	defaultNetlaunchListenPort = 4000
+
+	// How long to wait for the host to come back after a reboot it was told to
+	// perform. This was 5 minutes, which proved too tight: with up to nineteen
+	// VMs servicing concurrently on shared hosts, boots were still in progress
+	// when the wait expired. A failure screenshot from build 1203168 caught one
+	// mid-initrd, roughly three seconds into the kernel, at the moment the test
+	// gave up on it.
+	//
+	// The cost of being generous is a slower failure when a host genuinely
+	// never returns; the cost of being tight is a red run for a healthy host.
+	postRebootReconnectTimeout = time.Minute * 10
 )
 
 type TridentE2EHostConfigParams struct {

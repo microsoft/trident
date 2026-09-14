@@ -118,7 +118,7 @@ func (s *TridentE2EScenario) manualRollback(tc storm.TestCase) error {
 		tc.FailFromError(fmt.Errorf("failed to detect SSH disconnection after manual rollback: %w", err))
 	}
 
-	connCtx, cancel := context.WithTimeout(tc.Context(), time.Minute*5)
+	connCtx, cancel := context.WithTimeout(tc.Context(), postRebootReconnectTimeout)
 	defer cancel()
 	if err := s.populateSshClient(connCtx); err != nil {
 		tc.FailFromError(err)

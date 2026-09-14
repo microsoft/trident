@@ -466,7 +466,7 @@ func (s *TridentE2EScenario) abUpdateOs(tc storm.TestCase, opts abUpdateOptions)
 
 	// Then, try to reconnect via SSH and check that Trident is running.
 	// Longer timeout since the host will be rebooting while we wait.
-	conn_ctx, cancel := context.WithTimeout(tc.Context(), time.Minute*5)
+	conn_ctx, cancel := context.WithTimeout(tc.Context(), postRebootReconnectTimeout)
 	defer cancel()
 	err = s.populateSshClient(conn_ctx)
 	if err != nil {
@@ -496,7 +496,20 @@ func (s *TridentE2EScenario) abUpdateOs(tc storm.TestCase, opts abUpdateOptions)
 // back to the current volume). Mirrors the retry-with-fresh-client behaviour of
 // the legacy `check-trident-service` helper.
 func (s *TridentE2EScenario) waitForFailedCommitAfterRollback(tc storm.TestCase) error {
-	const settleTimeout = time.Minute * 8
+	const (
+		// A forced rollback reboots twice - into the staged volume to run the
+		// health checks, then back to the current volume - so the host can be
+		// unreachable for a long stretch.
+		settleTimeout = time.Minute * 12
+
+		// Each attempt gets its own dial budget. Without this the redial loop
+		// inside populateSshClient inherits the overall context and keeps
+		// dialing until the whole budget is gone, so the outer retry only ever
+		// runs once and never gets to re-check the service state with a fresh
+		// client - which is the entire point of retrying here.
+		dialTimeout = time.Second * 90
+	)
+
 	overallCtx, cancel := context.WithTimeout(tc.Context(), settleTimeout)
 	defer cancel()
 
@@ -509,7 +522,10 @@ func (s *TridentE2EScenario) waitForFailedCommitAfterRollback(tc storm.TestCase)
 			s.sshClient.Close()
 			s.sshClient = nil
 		}
-		if err := s.populateSshClient(overallCtx); err != nil {
+
+		dialCtx, cancelDial := context.WithTimeout(overallCtx, dialTimeout)
+		defer cancelDial()
+		if err := s.populateSshClient(dialCtx); err != nil {
 			return nil, fmt.Errorf("failed to reconnect after rollback: %w", err)
 		}
 
