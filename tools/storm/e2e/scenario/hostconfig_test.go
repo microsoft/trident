@@ -174,3 +174,57 @@ func TestInjectRollbackHealthChecks(t *testing.T) {
 		}
 	}
 }
+
+// Only PCR 7 may be dropped. The hard-coded replacement this used to do
+// happened to equal the right answer for today's configurations, but would
+// silently discard any additional PCR a configuration sealed to.
+func TestApplyContainerPcrExclusionKeepsOtherPcrs(t *testing.T) {
+	s := newScenarioForTest(t, `
+image:
+  url: http://example/regular-usrverity.cosi
+storage:
+  encryption:
+    pcrs:
+    - boot-loader-code
+    - secure-boot-policy
+    - kernel-boot
+    - boot-loader-config
+`)
+	s.runtime = trident.RuntimeTypeContainer
+
+	s.applyContainerPcrExclusion()
+
+	var got []string
+	for _, pcr := range s.config.S("storage", "encryption", "pcrs").Children() {
+		got = append(got, pcr.Data().(string))
+	}
+
+	want := []string{"boot-loader-code", "kernel-boot", "boot-loader-config"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("pcr %d: got %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+// The exclusion is specific to a containerized runtime on a usr-verity image.
+func TestApplyContainerPcrExclusionLeavesHostRuntimeAlone(t *testing.T) {
+	s := newScenarioForTest(t, `
+image:
+  url: http://example/regular-usrverity.cosi
+storage:
+  encryption:
+    pcrs:
+    - secure-boot-policy
+`)
+	s.runtime = trident.RuntimeTypeHost
+
+	s.applyContainerPcrExclusion()
+
+	if n := len(s.config.S("storage", "encryption", "pcrs").Children()); n != 1 {
+		t.Errorf("host runtime should keep its PCRs, got %d", n)
+	}
+}

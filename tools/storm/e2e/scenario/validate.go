@@ -72,13 +72,16 @@ func (s *TridentE2EScenario) validateHostState(tc storm.TestCase) error {
 		}
 	}
 
+	// Log the full ordered PASS/FAIL breakdown before deciding the verdict:
+	// FailFromError does not return, so logging afterwards would emit the
+	// summary only on success - exactly backwards, since it is most useful when
+	// something failed.
+	logrus.Infof("Host state validation summary:\n%s", sa.Summary())
+
 	if err := sa.Err(); err != nil {
 		tc.FailFromError(err)
+		return err
 	}
-
-	// Always log the full ordered PASS/FAIL breakdown so a single validate case
-	// surfaces exactly which sub-checks ran, even when it passes.
-	logrus.Infof("Host state validation summary:\n%s", sa.Summary())
 
 	return nil
 }
@@ -119,10 +122,12 @@ func (s *TridentE2EScenario) validateHostDiagnostics(tc storm.TestCase) error {
 	validate.ValidateJournaldTracing(&sa, s.sshClient)
 	validate.ValidateTraceFileMetric(&sa, s.cleanInstallTraceFile())
 
+	logrus.Infof("Host diagnostics validation summary:\n%s", sa.Summary())
+
 	if err := sa.Err(); err != nil {
 		tc.FailFromError(err)
+		return err
 	}
-	logrus.Infof("Host diagnostics validation summary:\n%s", sa.Summary())
 
 	return nil
 }
@@ -149,11 +154,12 @@ func (s *TridentE2EScenario) validateAutoRollback(tc storm.TestCase) error {
 	validate.ValidateRollback(&sa, s.sshClient, hs,
 		trident.ServicingStateProvisioned, s.expectedActiveVolume)
 
+	logrus.Infof("Auto-rollback validation summary:\n%s", sa.Summary())
+
 	if err := sa.Err(); err != nil {
 		tc.FailFromError(err)
+		return err
 	}
-
-	logrus.Infof("Auto-rollback validation summary:\n%s", sa.Summary())
 
 	return nil
 }

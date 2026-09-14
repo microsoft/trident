@@ -131,8 +131,19 @@ func validateVerityAbDevices(
 		return
 	}
 
-	dataRaid, _, _ := sysinspect.RaidNameForDevice(client, dataDevice)
-	hashRaid, _, _ := sysinspect.RaidNameForDevice(client, hashDevice)
+	// An inspection failure must not be read as "not a RAID device": that would
+	// silently reclassify the host and could pass or fail the parity check for
+	// the wrong reason.
+	dataRaid, _, err := sysinspect.RaidNameForDevice(client, dataDevice)
+	if err != nil {
+		sa.Fail("verity/ab-raid-parity", err)
+		return
+	}
+	hashRaid, _, err := sysinspect.RaidNameForDevice(client, hashDevice)
+	if err != nil {
+		sa.Fail("verity/ab-raid-parity", err)
+		return
+	}
 	dataIsRaid := dataRaid != ""
 	hashIsRaid := hashRaid != ""
 	if dataIsRaid != hashIsRaid {
@@ -163,8 +174,19 @@ func validateVerityNonAbDevices(
 	verity VerityDevice,
 	dataDevice, hashDevice string,
 ) {
-	dataRaid, _, _ := sysinspect.RaidNameForDevice(client, dataDevice)
-	hashRaid, _, _ := sysinspect.RaidNameForDevice(client, hashDevice)
+	// An inspection failure must not be read as "not a RAID device": that would
+	// silently reclassify the host and could pass or fail the parity check for
+	// the wrong reason.
+	dataRaid, _, err := sysinspect.RaidNameForDevice(client, dataDevice)
+	if err != nil {
+		sa.Fail("verity/raid-parity", err)
+		return
+	}
+	hashRaid, _, err := sysinspect.RaidNameForDevice(client, hashDevice)
+	if err != nil {
+		sa.Fail("verity/raid-parity", err)
+		return
+	}
 	dataIsRaid := dataRaid != ""
 	hashIsRaid := hashRaid != ""
 	if dataIsRaid != hashIsRaid {

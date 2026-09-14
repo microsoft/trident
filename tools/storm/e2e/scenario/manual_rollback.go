@@ -99,6 +99,13 @@ func (s *TridentE2EScenario) manualRollback(tc storm.TestCase) error {
 		} else {
 			return fmt.Errorf("failed to finalize manual rollback: %s", finalizeOut.Report())
 		}
+	} else if finalizeOut.Status != 0 {
+		// RunCommand reports a remote non-zero exit through Status rather than
+		// as an error, so without this a finalize that failed outright would
+		// fall through to waiting for a reboot that is never coming, and only
+		// surface later as a reconnect timeout.
+		return fmt.Errorf("manual rollback finalize exited %d: %s",
+			finalizeOut.Status, finalizeOut.Report())
 	}
 
 	// Wait for the reboot, reconnect, and confirm the rollback committed. A

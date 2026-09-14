@@ -20,6 +20,11 @@ const (
 	// encryption must not seal to PCR 7 under a containerized runtime.
 	usrVerityCosiSuffix = "usrverity.cosi"
 
+	// secureBootPolicyPcr is PCR 7, which a containerized Trident cannot
+	// reproduce because Secure Boot measures the host boot chain, not the
+	// container's.
+	secureBootPolicyPcr = "secure-boot-policy"
+
 	// EffectiveHostConfigArtifact is where prepare-hc publishes the Host
 	// Configuration that was actually deployed, after every scenario-side edit.
 	// Downstream pipeline steps (metrics enrichment) read it so they describe
@@ -126,7 +131,17 @@ func (s *TridentE2EScenario) applyContainerPcrExclusion() {
 	if !s.config.Exists("storage", "encryption") {
 		return
 	}
-	s.config.Set([]interface{}{"boot-loader-code", "kernel-boot"}, "storage", "encryption", "pcrs")
+	// Filter the configured list rather than replacing it: a configuration that
+	// seals to additional PCRs must keep them, and only PCR 7 is the problem
+	// here.
+	var kept []interface{}
+	for _, pcr := range s.config.S("storage", "encryption", "pcrs").Children() {
+		if name, ok := pcr.Data().(string); ok && name == secureBootPolicyPcr {
+			continue
+		}
+		kept = append(kept, pcr.Data())
+	}
+	s.config.Set(kept, "storage", "encryption", "pcrs")
 }
 
 // applyOciOverrides injects the OCI-based Host Configuration edits requested via
@@ -140,17 +155,21 @@ func (s *TridentE2EScenario) applyOciOverrides() error {
 		return err
 	}
 	if sysextUrl != "" {
-		s.config.ArrayAppend(map[string]interface{}{
+		if err := s.config.ArrayAppend(map[string]interface{}{
 			"url":    sysextUrl,
 			"sha384": sysextSha,
-		}, "os", "sysexts")
+		}, "os", "sysexts"); err != nil {
+			return fmt.Errorf("failed to inject system extension image: %w", err)
+		}
 	}
 
 	if s.args.ConfextOciUrl != "" {
-		s.config.ArrayAppend(map[string]interface{}{
+		if err := s.config.ArrayAppend(map[string]interface{}{
 			"url":    s.args.ConfextOciUrl,
 			"sha384": s.args.ConfextSha384,
-		}, "os", "confexts")
+		}, "os", "confexts"); err != nil {
+			return fmt.Errorf("failed to inject configuration extension image: %w", err)
+		}
 	}
 
 	if s.args.OciImageUrl != "" {
