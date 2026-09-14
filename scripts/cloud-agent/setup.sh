@@ -51,7 +51,11 @@ findmnt --mountpoint "$DATA_DISK_MOUNT"
 
 sudo install -d -o "$(id -u)" -g "$(id -g)" "$CARGO_TARGET_PATH"
 
-make .cargo/config
+make -B OVERRIDE_RUST_FEED=true .cargo/config
+if grep -Eq '^[[:space:]]*replace-with[[:space:]]*=' .cargo/config; then
+    echo "Cloud agent Cargo configuration must use public crates.io" >&2
+    exit 1
+fi
 if [[ -e target && ! -L target ]]; then
     if [[ ! -d target || -n "$(find target -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
         echo "Refusing to replace existing non-empty target path" >&2
