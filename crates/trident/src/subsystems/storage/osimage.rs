@@ -456,7 +456,16 @@ fn validate_esp(os_image: &OsImage, ctx: &EngineContext) -> Result<(), TridentEr
     }
 
     let Some(available_space) = ctx.filesystem_block_device_size(ESP_EXTRACTION_DIRECTORY) else {
-        warn!("Failed to check if there is enough space available on '{ESP_EXTRACTION_DIRECTORY}' to copy ESP image.");
+        // Most commonly the backing partition is sized to grow into the
+        // remaining disk space, so its size is not known ahead of servicing.
+        // Skip the check rather than fail on it, but say so: it is a check that
+        // did not happen, not a check that passed.
+        warn!(
+            "Cannot check whether there is enough space to copy the ESP image into \
+            '{ESP_EXTRACTION_DIRECTORY}': the size of its backing block device is not known, which \
+            is expected when the partition is configured to grow. Skipping the check; servicing may \
+            still fail later if the space is insufficient."
+        );
         return Ok(());
     };
 
