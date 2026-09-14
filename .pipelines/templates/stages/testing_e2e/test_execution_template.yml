@@ -113,9 +113,15 @@ stages:
               else
                 deploymentEnv=bareMetal
               fi
+              # Emit the logging commands with xtrace off: `set -x` traces each
+              # echo, which both duplicates the ##vso line in the log and prints
+              # the value being set. Mirrors the same guard in
+              # testing_common/trident-metrics.yml.
+              set +x
               echo "##vso[task.setvariable variable=tridentConfigurationName]$config"
               echo "##vso[task.setvariable variable=tridentRuntimeEnv]$runtime"
               echo "##vso[task.setvariable variable=tridentDeploymentEnv]$deploymentEnv"
+              set -x
             displayName: "Resolve configuration name from scenario"
 
           - bash: |

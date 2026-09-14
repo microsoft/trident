@@ -14,8 +14,14 @@ steps:
       set -eux
       go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
       go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
-      echo "Adding '$(go env GOPATH)/bin' to PATH for subsequent tasks"
-      echo "##vso[task.prependpath]$(go env GOPATH)/bin"
+      # Emit the logging command with xtrace off: `set -x` traces the echo,
+      # duplicating the ##vso line in the log. Mirrors the same guard in
+      # testing_common/trident-metrics.yml.
+      GOPATH_BIN="$(go env GOPATH)/bin"
+      echo "Adding '$GOPATH_BIN' to PATH for subsequent tasks"
+      set +x
+      echo "##vso[task.prependpath]$GOPATH_BIN"
+      set -x
     displayName: "Install protoc-gen-go"
   - bash: |
       set -eux
