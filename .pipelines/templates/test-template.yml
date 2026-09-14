@@ -94,6 +94,9 @@ stages:
       - template: stages/testing_e2e/storm_e2e.yml
         parameters:
           stageType: ${{ parameters.stormTestRing }}
+          # Still a testingRun: the images come from DownloadTestingElements.
+          # Only the Go tools moved to being built in-pipeline.
+          testingRun: true
           runVMHost: ${{ parameters.runStormE2EVMHost }}
           runVMContainer: ${{ parameters.runStormE2EVMContainer }}
 
