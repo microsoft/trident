@@ -2,6 +2,7 @@
 
 set -euxo pipefail
 
+readonly RUST_TOOLCHAIN="1.98.1"
 readonly PROTOC_GEN_GO_VERSION="v1.36.11"
 readonly PROTOC_GEN_GO_GRPC_VERSION="v1.6.2"
 readonly DATA_DISK_MOUNT="/mnt/storage"
@@ -37,10 +38,10 @@ fi
 export PATH="$HOME/.cargo/bin:$PATH"
 echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
-rustup toolchain install stable \
+rustup toolchain install "$RUST_TOOLCHAIN" \
     --profile minimal \
     --component clippy,rustfmt
-rustup default stable
+rustup default "$RUST_TOOLCHAIN"
 
 if ! mountpoint --quiet "$DATA_DISK_MOUNT"; then
     echo "Expected runner data disk is not mounted at $DATA_DISK_MOUNT" >&2

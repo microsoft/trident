@@ -3,11 +3,11 @@ name: Copilot Setup Steps
 permissions: {}
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - main
     paths:
+      - Makefile
       - .github/workflows/copilot-setup-steps.yml
       - scripts/cloud-agent/setup.sh
 
