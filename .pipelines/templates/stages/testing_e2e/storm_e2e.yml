@@ -26,20 +26,10 @@ parameters:
     default: true
 
 stages:
-  # In a testingRun (shortcut), build storm-trident once from source and publish
-  # it so the matrix-definition and test-execution stages consume the
-  # branch-under-test binary instead of a downloaded, possibly-stale go-tools
-  # artifact.
-  - ${{ if eq(parameters.testingRun, true) }}:
-      - template: build-storm-trident-stage.yml
-
   - stage: DefineTests_E2E
     displayName: Define all E2E test matrices
     dependsOn:
-      - ${{ if eq(parameters.testingRun, true) }}:
-          - BuildStormTridentE2E
-      - ${{ else }}:
-          - BuildingTools
+      - BuildingTools
     jobs:
       - job: DefineTests
         displayName: Get List of tests to run
@@ -53,25 +43,17 @@ stages:
 
         steps:
           - template: ../common_tasks/checkout_trident.yml
-          # In a testingRun (shortcut) consume the storm-trident built from the
-          # branch under test (BuildStormTridentE2E); otherwise download it from
-          # the in-pipeline build's go-tools artifact.
-          - ${{ if eq(parameters.testingRun, true) }}:
-              - task: DownloadPipelineArtifact@2
-                displayName: "Download storm-trident (built from source)"
-                inputs:
-                  buildType: current
-                  artifactName: "storm-trident-e2e"
-                  targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
-          - ${{ else }}:
-              - task: DownloadPipelineArtifact@2
-                displayName: "Download go-tools"
-                inputs:
-                  buildType: current
-                  artifactName: "go-tools"
-                  patterns: |
-                    storm-trident
-                  targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
+          # storm-trident always comes from the in-pipeline BuildingTools
+          # build, so it is built from the branch under test in both the real
+          # CI and shortcut paths.
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download go-tools"
+            inputs:
+              buildType: current
+              artifactName: "go-tools"
+              patterns: |
+                storm-trident
+              targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
           - bash: |
               chmod +x ./bin/storm-trident
               ./bin/storm-trident script e2e-matrix "${{ parameters.stageType }}"

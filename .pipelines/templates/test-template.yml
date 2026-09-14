@@ -65,7 +65,16 @@ parameters:
     displayName: Storm E2E test ring (selects which configurations run)
 
 stages:
+  # Build the Go tools from the branch under test rather than reusing the ones
+  # attached to the run being downloaded from. The shortcut exists to exercise
+  # branch code, and the downloaded tools can be arbitrarily old; real CI
+  # already builds them this way, so this keeps the two paths on the same
+  # mechanism. Runs in parallel with the artifact downloads below.
   - ${{ if or(parameters.runDeploymentVMHost, parameters.runDeploymentVMContainer, parameters.runDeploymentBMHost, parameters.runDeploymentBMContainer, parameters.runServicingTests, parameters.runStormE2EVMHost, parameters.runStormE2EVMContainer) }}:
+      - template: stages/building_tools/building-tools.yml
+        parameters:
+          architecture: amd64
+
       - template: stages/download_artifacts/get-artifacts.yml
         parameters:
           definition: ${{ parameters.definition }}
@@ -85,7 +94,6 @@ stages:
       - template: stages/testing_e2e/storm_e2e.yml
         parameters:
           stageType: ${{ parameters.stormTestRing }}
-          testingRun: true
           runVMHost: ${{ parameters.runStormE2EVMHost }}
           runVMContainer: ${{ parameters.runStormE2EVMContainer }}
 

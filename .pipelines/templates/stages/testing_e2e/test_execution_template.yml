@@ -30,8 +30,10 @@ stages:
     dependsOn:
       - DefineTests_E2E
       - ${{ if eq(parameters.testingRun, true) }}:
+          # The shortcut downloads the images but still builds the Go tools
+          # from the branch under test, same as real CI.
           - DownloadTestingElements
-          - BuildStormTridentE2E
+          - BuildingTools
       - ${{ else }}:
           - BuildingTools
           - ${{ if eq(parameters.runtimeType, 'CONTAINER') }}:
@@ -141,22 +143,6 @@ stages:
               downloadTridentContainer: ${{ variables.downloadTridentContainer }}
               tridentTestImageUsrVerity: ${{ variables.usrVerityTestImageName }}
               tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
-
-          # In a testingRun (shortcut) consume the storm-trident built from the
-          # branch under test (BuildStormTridentE2E), overriding the possibly
-          # stale binary from the go-tools/image download above.
-          - ${{ if eq(parameters.testingRun, true) }}:
-              - task: DownloadPipelineArtifact@2
-                displayName: "Download storm-trident (built from source)"
-                inputs:
-                  buildType: current
-                  artifactName: "storm-trident-e2e"
-                  targetPath: "$(TRIDENT_SOURCE_DIR)/bin"
-              - bash: |
-                  set -eux
-                  chmod +x ./bin/storm-trident
-                displayName: "Make storm-trident executable"
-                workingDirectory: $(TRIDENT_SOURCE_DIR)
 
           # For the extensions config, build sample sysext images and push them
           # to ACR so Trident can pull them from an OCI registry during install.
