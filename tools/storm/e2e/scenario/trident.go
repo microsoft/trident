@@ -80,6 +80,10 @@ type TridentE2EScenario struct {
 	// Stores information about the test host once it has been set up
 	testHost testHostInfo
 
+	// Set when the running case ends as a skip, so withFailureScreenshot can
+	// tell a skip apart from a failure (both unwind via runtime.Goexit).
+	caseSkipped bool
+
 	// Stores an open ssh.Client to the test host
 	sshClient *ssh.Client
 
@@ -190,12 +194,18 @@ func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 	// for non-A/B and OCI-hosted images.
 	r.RegisterTestCase("prepare-test-images", s.prepareTestImages)
 	r.RegisterTestCase("setup-test-host", s.setupTestHost)
-	r.RegisterTestCase("install-os", s.installOs)
-	r.RegisterTestCase("check-trident-ssh", s.checkTridentViaSshAfterInstall)
+	r.RegisterTestCase("install-os", s.withFailureScreenshot(s.installOs))
+	r.RegisterTestCase("check-trident-ssh", s.withFailureScreenshot(s.checkTridentViaSshAfterInstall))
 	r.RegisterTestCase("validate-install", s.validateHostState)
 	// Host-only SELinux + tracing diagnostics, scoped to the clean install
 	// (mirrors legacy check-selinux/check-tracing). Self-skips on container.
 	r.RegisterTestCase("validate-host-diagnostics", s.validateHostDiagnostics)
+	// Parity with legacy's "Capture screenshot: clean install". Registered as
+	// its own case so the capture is visible in the report; it never fails.
+	r.RegisterTestCase("capture-install-screenshot", func(tc storm.TestCase) error {
+		s.captureScreenshot(tc, installScreenshotArtifact)
+		return nil
+	})
 	// Boot timings for the clean install, appended to the install's own
 	// trace-stream file (folds the pipeline's post-install boot-metrics helper
 	// invocation). Registered after the validations so this telemetry-only case

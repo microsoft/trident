@@ -33,9 +33,9 @@ func (s *TridentE2EScenario) addAbUpdateTests(r storm.TestRegistrar, prefix stri
 	r.RegisterTestCase(prefix+"-sync-hc", s.syncHostConfig)
 	r.RegisterTestCase(prefix+"-update-hc", s.updateHostConfig)
 	r.RegisterTestCase(prefix+"-upload-new-hc", s.uploadNewConfig)
-	r.RegisterTestCase(prefix+"-ab-update", func(tc storm.TestCase) error {
+	r.RegisterTestCase(prefix+"-ab-update", s.withFailureScreenshot(func(tc storm.TestCase) error {
 		return s.abUpdateOs(tc, abUpdateOptions{})
-	})
+	}))
 }
 
 // splitTestsSkippedForCurrentRing reports whether split A/B update testing is
@@ -54,6 +54,7 @@ func (s *TridentE2EScenario) splitTestsSkippedForCurrentRing() bool {
 // split A/B update test cases and their validation so they skip together.
 func (s *TridentE2EScenario) skipIfSplitTestsDisabled(tc storm.TestCase) {
 	if s.splitTestsSkippedForCurrentRing() {
+		s.markSkipped()
 		tc.Skip(fmt.Sprintf("Skipping split AB update test on ring '%s'", s.args.TestRing.ToString()))
 	}
 }
@@ -74,11 +75,11 @@ func (s *TridentE2EScenario) addSplitABUpdateTests(r storm.TestRegistrar, prefix
 	r.RegisterTestCase(prefix+"-upload-new-hc", func(tc storm.TestCase) error {
 		return filterSplitTestForCurrentRing(s, tc, s.uploadNewConfig)
 	})
-	r.RegisterTestCase(prefix+"-ab-update", func(tc storm.TestCase) error {
+	r.RegisterTestCase(prefix+"-ab-update", s.withFailureScreenshot(func(tc storm.TestCase) error {
 		return filterSplitTestForCurrentRing(s, tc, func(tc storm.TestCase) error {
 			return s.abUpdateOs(tc, abUpdateOptions{split: true})
 		})
-	})
+	}))
 }
 
 // Health check names injected to force an A/B-update rollback. They mirror the
@@ -100,9 +101,9 @@ func (s *TridentE2EScenario) addAutoRollbackTests(r storm.TestRegistrar) {
 	r.RegisterTestCase("auto-rollback-update-hc", s.updateHostConfig)
 	r.RegisterTestCase("auto-rollback-inject-hc", s.injectRollbackHealthChecks)
 	r.RegisterTestCase("auto-rollback-upload-hc", s.uploadNewConfig)
-	r.RegisterTestCase("auto-rollback-update", func(tc storm.TestCase) error {
+	r.RegisterTestCase("auto-rollback-update", s.withFailureScreenshot(func(tc storm.TestCase) error {
 		return s.abUpdateOs(tc, abUpdateOptions{expectRollback: true})
-	})
+	}))
 	r.RegisterTestCase("validate-auto-rollback", s.validateAutoRollback)
 }
 
@@ -119,9 +120,9 @@ func (s *TridentE2EScenario) addSecondAbUpdateTests(r storm.TestRegistrar) {
 	r.RegisterTestCase("ab-update-2-clear-hc", s.removeRollbackHealthChecks)
 	r.RegisterTestCase("ab-update-2-update-hc", s.updateHostConfigReuseVersion)
 	r.RegisterTestCase("ab-update-2-upload-new-hc", s.uploadNewConfig)
-	r.RegisterTestCase("ab-update-2-ab-update", func(tc storm.TestCase) error {
+	r.RegisterTestCase("ab-update-2-ab-update", s.withFailureScreenshot(func(tc storm.TestCase) error {
 		return s.abUpdateOs(tc, abUpdateOptions{})
-	})
+	}))
 	r.RegisterTestCase("validate-ab-update-2", s.validateHostState)
 }
 

@@ -29,7 +29,7 @@ const (
 // manual-rollback` step plus its follow-up pytest validation, and self-selects
 // with the HasABUpdate() && IsVM() gate at the call site.
 func (s *TridentE2EScenario) addManualRollbackTests(r storm.TestRegistrar) {
-	r.RegisterTestCase("manual-rollback", s.manualRollback)
+	r.RegisterTestCase("manual-rollback", s.withFailureScreenshot(s.manualRollback))
 	r.RegisterTestCase("validate-manual-rollback", s.validateHostState)
 }
 

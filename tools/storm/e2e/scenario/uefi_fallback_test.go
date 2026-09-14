@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"tridenttools/storm/e2e/validate"
+
+	"github.com/microsoft/storm"
 	"tridenttools/storm/utils/trident"
 )
 
@@ -229,5 +231,23 @@ func TestInjectedUefiChecksDoNotImplyRollbackIntent(t *testing.T) {
 	}
 	if !s.hasRollbackIntent() {
 		t.Error("a non-UEFI health check must still signal rollback intent")
+	}
+}
+
+// A skipped case must not be photographed: skips are routine (split off-ring,
+// container-only checks) and a screenshot of a healthy host is pure noise.
+func TestWithFailureScreenshotIgnoresSkips(t *testing.T) {
+	s := newScenarioForTest(t, abConfig)
+
+	// testHost is nil here, so captureScreenshot is a no-op; what is being
+	// pinned is that the skip path marks itself and the success path clears the
+	// flag for the next case.
+	s.caseSkipped = true
+	wrapped := s.withFailureScreenshot(func(tc storm.TestCase) error { return nil })
+	if err := wrapped(nil); err != nil {
+		t.Fatalf("wrapped case returned %v", err)
+	}
+	if s.caseSkipped {
+		t.Error("the skip flag must be reset when a case starts, or one skip would suppress every later failure")
 	}
 }
