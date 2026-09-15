@@ -25,9 +25,11 @@ use osutils::{
     osrelease::{OsRelease, OS_RELEASE_PATH},
     uname, virt,
 };
+use sysdefs::arch::SystemArchitecture;
 
 use crate::{
-    datastore::DataStore, logging::operation_context, TRIDENT_METRICS_FILE_PATH, TRIDENT_VERSION,
+    datastore::DataStore, init::cih, logging::operation_context, TRIDENT_METRICS_FILE_PATH,
+    TRIDENT_VERSION,
 };
 
 /// The product uuid is used to identify the hardware that Trident is running on.
@@ -869,6 +871,24 @@ fn populate_additional_fields() -> BTreeMap<String, Value> {
     // TODO: Add more additional fields here as needed
     let mut additional_fields = BTreeMap::new();
     additional_fields.insert("trident_version".to_string(), json!(TRIDENT_VERSION));
+    let arch: &'static str = SystemArchitecture::current().into();
+    additional_fields.insert("arch".to_string(), json!(arch));
+    // Best-effort: a failure to determine whether this is a CIH (Azure
+    // Container Linux) host must never fail startup, it only means this
+    // one field is missing from every telemetry event for this
+    // invocation. A detection failure is reported as "unknown", not
+    // "false" -- conflating "known non-ACL" with "couldn't tell" would
+    // misclassify a host whose CIH check simply failed to run as
+    // definitively non-ACL.
+    let acl = match cih::is_cih() {
+        Ok(true) => "true",
+        Ok(false) => "false",
+        Err(e) => {
+            warn!("Failed to determine if host is running CIH: {e:?}");
+            "unknown"
+        }
+    };
+    additional_fields.insert("acl".to_string(), json!(acl));
     additional_fields
 }
 
@@ -1510,6 +1530,20 @@ mod functional_test {
         assert_eq!(
             additional_fields.get("trident_version").unwrap(),
             &json!(TRIDENT_VERSION)
+        );
+        let expected_arch: &'static str = SystemArchitecture::current().into();
+        assert_eq!(
+            additional_fields.get("arch").unwrap(),
+            &json!(expected_arch)
+        );
+        // Host-dependent (like the fields above): just assert the field is
+        // present and one of the values `cih::is_cih()` can actually
+        // produce, rather than a fixed expectation, since whether the VM
+        // running this test is a CIH host isn't controlled by the test.
+        let acl = additional_fields.get("acl").unwrap().as_str().unwrap();
+        assert!(
+            ["true", "false", "unknown"].contains(&acl),
+            "unexpected acl value: {acl}"
         );
     }
 
