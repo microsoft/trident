@@ -35,12 +35,13 @@ const (
 // surfaced for human inspection.
 //
 // Denials are counted by scanning the audit log directly rather than by
-// trusting audit2allow, because audit2allow does not work on these images: it
-// is absent from some (it ships in setools-console, which is installed in the
-// installer image but not in every deployed test image) and on the rest it
-// exits 1 with "You must specify the -p option with the path to the policy
-// file" as soon as there is a denial to render. The legacy helper ignored the
-// exit status, so both cases were recorded as "no SELinux violations found".
+// trusting audit2allow, because audit2allow cannot report them on either image
+// variant: it is absent from some (it ships in setools-console, which is
+// installed in the installer image but not in every deployed test image), and
+// on the others it exits 1 with "You must specify the -p option with the path
+// to the policy file" because the compiled policy it needs to render rules is
+// not in the image. The legacy helper ignored the exit status, so both cases
+// were recorded as "no SELinux violations found".
 // audit2allow is still used, best effort, to render the matching policy rules.
 func ValidateSelinuxDenials(sa *SoftAsserter, client *ssh.Client) {
 	// grep exits 0 when it matches, 1 when it does not, and >1 on a real error
