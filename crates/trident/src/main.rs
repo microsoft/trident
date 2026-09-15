@@ -1,8 +1,8 @@
-use std::{fs, iter, panic, process::ExitCode};
+use std::{fs, iter, panic, process::ExitCode, time::Duration};
 
 use anyhow::{Context, Error};
 use clap::Parser;
-use log::{error, info, LevelFilter, Log};
+use log::{error, info, warn, LevelFilter, Log};
 
 use osutils::logging::{filter::LogFilter, multilog::MultiLogger};
 use trident::{
@@ -10,13 +10,33 @@ use trident::{
     cli::{self, Cli, Commands, GetKind, TridentExitCodes},
     init::offline,
     manual_rollback::{self, utils::ManualRollbackRequestKind},
-    validation, BackgroundLog, BackgroundUploader, DataStore, ExitKind, LogForwarder, Logstream,
-    TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
+    run_with_captured_operation, run_with_operation, save_reboot_operation, take_reboot_operation,
+    validation, AppInsightsSender, BackgroundLog, BackgroundUploader, DataStore, ExitKind,
+    LogForwarder, Logstream, OperationSource, TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
 };
 use trident_api::{
-    config::HostConfigurationSource,
+    config::{HostConfigurationSource, Operations},
     error::{InternalError, InvalidInputError, TridentError, TridentResultExt},
 };
+
+/// Maps a base command name plus its requested `Operations` to the same
+/// naming convention gRPC's `servicing_request` already uses for
+/// stage/finalize granularity (e.g. `"install"` vs `"install_stage"` vs
+/// `"install_finalize"`), so `command`/`operation_id` telemetry is
+/// consistent regardless of whether the command came from the CLI or from
+/// gRPC/daemon.
+fn command_name(base: &str, ops: &Operations) -> String {
+    match (ops.has_stage(), ops.has_finalize()) {
+        (true, true) => base.to_string(),
+        (true, false) => format!("{base}_stage"),
+        (false, true) => format!("{base}_finalize"),
+        // Neither stage nor finalize was requested (an empty
+        // `--allowed-operations` list); nothing can actually be staged or
+        // finalized, so name this like the existing no-op naming convention
+        // rather than a full install/update.
+        (false, false) => format!("{base}_noop"),
+    }
+}
 
 fn run_trident(
     mut logstream: Logstream,
@@ -128,6 +148,33 @@ fn run_trident(
             | Commands::Commit { status, error }
             | Commands::RebuildRaid { status, error, .. }
             | Commands::Rollback { status, error, .. } => {
+                // Determined before any preflight checks below, and used
+                // to wrap the *entire* servicing branch (preflight checks,
+                // Trident::new, and the actual command) in a single
+                // run_with_operation call -- not just the innermost
+                // install/update/commit/rollback/rebuild-raid call, as
+                // before. That previously left Trident::new (and
+                // everything it does, including firing "trident_start")
+                // outside any operation context: every event from CLI
+                // startup through to just before the actual command ran
+                // had no operation_id/command.
+                let command = match &args.command {
+                    Commands::Install {
+                        allowed_operations, ..
+                    } => command_name(args.command.name(), &cli::to_operations(allowed_operations)),
+                    Commands::Update {
+                        allowed_operations, ..
+                    } => command_name(args.command.name(), &cli::to_operations(allowed_operations)),
+                    Commands::Commit { .. } => "commit".to_string(),
+                    Commands::Rollback {
+                        allowed_operations, ..
+                    } => command_name(args.command.name(), &cli::to_operations(allowed_operations)),
+                    Commands::RebuildRaid { .. } => "rebuild_raid".to_string(),
+                    _ => unreachable!(),
+                };
+
+                // Determined up front, before any preflight checks below,
+                // so a missing/nonexistent --config is rejected immediately.
                 let config_path = match &args.command {
                     Commands::Update { config, .. } | Commands::Install { config, .. } => {
                         Some(config.clone())
@@ -135,107 +182,181 @@ fn run_trident(
                     Commands::RebuildRaid { config, .. } => config.clone(),
                     _ => None,
                 };
-
                 if let Some(path) = &config_path {
                     if !path.exists() {
-                        return Err(TridentError::new(InvalidInputError::ReadInputFile {
-                            path: path.to_string_lossy().to_string(),
-                        }))
-                        .message("Config file does not exist");
+                        return run_with_operation(&command, OperationSource::Cli, || {
+                            Err(TridentError::new(InvalidInputError::ReadInputFile {
+                                path: path.to_string_lossy().to_string(),
+                            }))
+                            .message("Config file does not exist")
+                        });
                     }
                 }
 
-                let agent_config = AgentConfig::load()?;
-                // For non-install and non-update (update will check and has special handling for CIH
-                // scenario) commands, we expect the datastore to exist
-                if !matches!(
-                    args.command,
-                    Commands::Install { .. } | Commands::Update { .. }
-                ) && !agent_config.datastore_path().exists()
-                {
-                    return Err(TridentError::new(InvalidInputError::HostNotProvisioned))
-                        .message("Datastore file does not exist");
+                // Attach this host's installation ID and database ID to
+                // the shared TraceStream before run_with_operation below
+                // fires command_start: Trident::new (further down, inside
+                // the closure) is the usual place both get attached, but
+                // that's too late for command_start, which
+                // run_with_operation fires immediately, before the closure
+                // even runs. Both are read-only and side-effect-free:
+                // neither creates a datastore or an ID (see
+                // `TraceStream::attach_installation_id_if_present` and
+                // `TraceStream::attach_datastore_id_if_present`) -- silently
+                // does nothing if the datastore doesn't exist yet, which is
+                // expected for a host's first-ever install.
+                //
+                // Load once and reuse the same snapshot for both the
+                // pre-warm attach here and the operation closure below:
+                // calling `AgentConfig::load()` a second time inside the
+                // closure could observe a different `DatastorePath` (e.g. a
+                // CIH bootstrap swap between the two reads), leaving the
+                // IDs cached on `tracestream` here attributed to a
+                // different datastore than the one the operation actually
+                // runs against.
+                let agent_config_result = AgentConfig::load();
+                if let Ok(agent_config) = &agent_config_result {
+                    tracestream.attach_installation_id_if_present(agent_config.datastore_path());
+                    tracestream.attach_datastore_id_if_present(agent_config.datastore_path());
                 }
 
-                let mut trident = Trident::new(
-                    config_path.map(HostConfigurationSource::File),
-                    agent_config.datastore_path(),
-                    logstream,
-                    tracestream,
-                )
-                .message("Failed to initialize Trident")?;
+                run_with_operation(&command, OperationSource::Cli, || {
+                    // config_path was already validated (existence-checked)
+                    // above. Reuse the same `AgentConfig` snapshot loaded
+                    // just above rather than reloading -- see the comment
+                    // there.
+                    let agent_config = agent_config_result?;
+                    // For commands that cannot themselves stage a new
+                    // install/update (see
+                    // `DataStore::may_initialize_datastore_for_command`),
+                    // we expect the datastore to already exist. Update has
+                    // its own special handling for the CIH bootstrap
+                    // scenario further down.
+                    if !DataStore::may_initialize_datastore_for_command(&command)
+                        && !agent_config.datastore_path().exists()
+                    {
+                        return Err(TridentError::new(InvalidInputError::HostNotProvisioned))
+                            .message("Datastore file does not exist");
+                    }
 
-                // `Trident::new` has already retrieved (or created) this
-                // host's persisted database ID and attached it to the
-                // shared TraceStream, so every trace/metric emitted from
-                // here on -- including "trident_start" -- carries it.
-                let mut datastore = DataStore::open_or_create(agent_config.datastore_path())
-                    .message("Failed to open datastore")?;
-
-                // Execute the command
-                let res = match args.command {
-                    Commands::Install {
-                        ref allowed_operations,
-                        multiboot,
-                        ..
-                    } => trident
-                        .install(
-                            &mut datastore,
-                            cli::to_operations(allowed_operations),
-                            multiboot,
-                            None,
+                    // A multiboot install may swap to a brand-new temporary
+                    // datastore inside `Trident::install` (see there),
+                    // distinct from `datastore_path` here (the existing
+                    // host's persistent datastore) -- so defer attaching an
+                    // installation ID until `install` has settled on which
+                    // datastore it actually uses, rather than attaching the
+                    // existing host's here and having it be wrong for the
+                    // rest of the run. See `new_deferring_installation_id`'s
+                    // doc comment for the full rationale.
+                    let defer_installation_id = matches!(
+                        args.command,
+                        Commands::Install {
+                            multiboot: true,
+                            ..
+                        }
+                    );
+                    let mut trident = if defer_installation_id {
+                        Trident::new_deferring_installation_id(
+                            config_path.map(HostConfigurationSource::File),
+                            agent_config.datastore_path(),
+                            logstream.clone(),
+                            tracestream.clone(),
                         )
-                        .map(|(exit_kind, _image_hash, _servicing_type)| exit_kind),
-                    Commands::Update {
-                        ref allowed_operations,
-                        ..
-                    } => trident
-                        .update(&mut datastore, cli::to_operations(allowed_operations))
-                        .map(|(exit_kind, _image_hash, _servicing_type)| exit_kind),
-                    Commands::Commit { .. } => trident
-                        .commit(&mut datastore)
-                        .map(|(exit_kind, _servicing_type)| exit_kind),
-                    Commands::Rollback {
-                        runtime,
-                        ab,
-                        ref allowed_operations,
-                        ..
-                    } => trident
-                        .rollback(
-                            &mut datastore,
+                    } else {
+                        Trident::new(
+                            config_path.map(HostConfigurationSource::File),
+                            agent_config.datastore_path(),
+                            logstream.clone(),
+                            tracestream.clone(),
+                        )
+                    }
+                    .message("Failed to initialize Trident")?;
+
+                    // `Trident::new` (or `Trident::new_deferring_installation_id`
+                    // for a multiboot install) has already attached this
+                    // host's persisted installation ID -- if any -- to the
+                    // shared TraceStream, so every trace/metric emitted
+                    // from here on -- including "trident_start" -- carries
+                    // it once available.
+                    let mut datastore = DataStore::open_or_create(agent_config.datastore_path())
+                        .message("Failed to open datastore")?;
+
+                    // Execute the command
+                    let res = match args.command {
+                        Commands::Install {
+                            ref allowed_operations,
+                            multiboot,
+                            ..
+                        } => {
+                            let ops = cli::to_operations(allowed_operations);
+                            trident
+                                .install(&mut datastore, ops, multiboot, None)
+                                .map(|(exit_kind, _image_hash, _servicing_type)| exit_kind)
+                        }
+                        Commands::Update {
+                            ref allowed_operations,
+                            ..
+                        } => {
+                            let ops = cli::to_operations(allowed_operations);
+                            trident
+                                .update(&mut datastore, ops)
+                                .map(|(exit_kind, _image_hash, _servicing_type)| exit_kind)
+                        }
+                        Commands::Commit { .. } => trident
+                            .commit(&mut datastore)
+                            .map(|(exit_kind, _servicing_type)| exit_kind),
+                        Commands::Rollback {
                             runtime,
                             ab,
-                            cli::to_operations(allowed_operations),
-                        )
-                        .map(|(exit_kind, _servicing_type)| exit_kind),
-                    Commands::RebuildRaid { .. } => trident
-                        .rebuild_raid(&mut datastore)
-                        .map(|()| ExitKind::Done),
-                    _ => Err(TridentError::internal("Invalid command")),
-                };
+                            ref allowed_operations,
+                            ..
+                        } => {
+                            let ops = cli::to_operations(allowed_operations);
+                            trident
+                                .rollback(&mut datastore, runtime, ab, ops)
+                                .map(|(exit_kind, _servicing_type)| exit_kind)
+                        }
+                        Commands::RebuildRaid { .. } => trident
+                            .rebuild_raid(&mut datastore)
+                            .map(|()| ExitKind::Done),
+                        _ => Err(TridentError::internal("Invalid command")),
+                    };
 
-                // Return Host Status if requested
-                if status.is_some() {
-                    if let Err(e) =
-                        Trident::get(agent_config.datastore_path(), status, GetKind::Status)
-                            .message("Failed to retrieve Host Status")
-                    {
-                        error!("{e:?}");
-                    }
-                }
-
-                // Return error if requested
-                if let Some(error_path) = error.as_ref() {
-                    if let Err(e) = &res {
-                        if let Err(e2) =
-                            fs::write(error_path, serde_yaml::to_string(&e).unwrap_or("".into()))
+                    // Return Host Status if requested
+                    if status.is_some() {
+                        if let Err(e) =
+                            Trident::get(agent_config.datastore_path(), status, GetKind::Status)
+                                .message("Failed to retrieve Host Status")
                         {
-                            error!("Failed to write error to file: {e2}");
+                            error!("{e:?}");
                         }
                     }
-                }
 
-                res.message(format!("Failed to execute '{}' command", args.command))
+                    // Return error if requested
+                    if let Some(error_path) = error.as_ref() {
+                        if let Err(e) = &res {
+                            if let Err(e2) = fs::write(
+                                error_path,
+                                serde_yaml::to_string(&e).unwrap_or("".into()),
+                            ) {
+                                error!("Failed to write error to file: {e2}");
+                            }
+                        }
+                    }
+
+                    // Capture this operation's identity while its context
+                    // is still installed (this closure runs entirely
+                    // inside `run_with_operation`'s scope), so the reboot
+                    // requested below by the caller can be tagged with the
+                    // *original* install/update/etc.'s `operation_id`/
+                    // `command` instead of a disconnected fresh one -- see
+                    // `save_reboot_operation`/`take_reboot_operation`.
+                    if matches!(res, Ok(ExitKind::NeedsReboot)) {
+                        save_reboot_operation();
+                    }
+
+                    res.message(format!("Failed to execute '{}' command", args.command))
+                })
             }
             _ => unreachable!(),
         }
@@ -305,10 +426,80 @@ fn setup_logging(
     Ok(logstream)
 }
 
-fn setup_tracing(args: &Cli) -> Result<TraceStream, Error> {
-    use tracing_subscriber::{filter, layer::SubscriberExt, Layer};
+/// Whether the Application Insights tracing layer ended up active on this
+/// invocation, and why not when it didn't. Computed by [`setup_tracing`] and
+/// surfaced via [`TelemetryStatus::log`] once real logging is available, so
+/// operators can tell -- from the logs alone, without reading source --
+/// whether telemetry should be expected to actually reach Application
+/// Insights, rather than silently assuming it based on the `Telemetry=`
+/// setting alone (a bad/unreachable connection string, for example, fails
+/// silently otherwise).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TelemetryStatus {
+    /// Tracing/telemetry setup does not apply to this command at all (the
+    /// `_ => {}` arm in [`setup_tracing`]) -- not logged.
+    NotApplicable,
+    /// `Telemetry=OptOut` (the default): telemetry was never attempted.
+    OptedOut,
+    /// Opted in, but no usable `AZURE_MONITOR_CONNECTION_STRING` was
+    /// compiled into this binary at build time (missing, empty, or failed
+    /// to parse).
+    NoConnectionString,
+    /// Opted in with a connection string, but the dedicated telemetry
+    /// background uploader is unavailable (failed to start, or its handle
+    /// was already closed).
+    UploaderUnavailable,
+    /// Opted in, connection string valid, uploader available: telemetry is
+    /// actively being sent.
+    Enabled,
+}
+
+impl TelemetryStatus {
+    /// Log this status through the real logging pipeline. Must only be
+    /// called after logging has been initialized (`setup_logging`) --
+    /// calling it earlier would silently no-op, since the `log` facade
+    /// drops everything until a logger is registered.
+    fn log(self) {
+        match self {
+            TelemetryStatus::NotApplicable => {}
+            TelemetryStatus::OptedOut => {
+                info!(
+                    "Telemetry: disabled (Telemetry=OptOut, the default, in agent configuration)"
+                );
+            }
+            TelemetryStatus::NoConnectionString => {
+                info!(
+                    "Telemetry: opted in, but no usable Application Insights connection string \
+                     was compiled into this binary -- telemetry is a no-op"
+                );
+            }
+            TelemetryStatus::UploaderUnavailable => {
+                warn!(
+                    "Telemetry: opted in, but the telemetry background uploader is \
+                     unavailable -- telemetry is a no-op"
+                );
+            }
+            TelemetryStatus::Enabled => {
+                info!("Telemetry: enabled, sending tracing data to Application Insights");
+            }
+        }
+    }
+}
+
+fn setup_tracing(
+    args: &Cli,
+    telemetry_enabled: bool,
+    // Dedicated to Application Insights telemetry -- deliberately *not* the
+    // same `BackgroundUploader` instance used for log forwarding (see
+    // `main`), so a slow-but-successful telemetry endpoint can never build a
+    // backlog that delays real log uploads. `None` if telemetry is disabled
+    // or its uploader failed to start; either way telemetry becomes a no-op.
+    telemetry_uploader: Option<&BackgroundUploader>,
+) -> Result<(TraceStream, TelemetryStatus), Error> {
+    use tracing_subscriber::{filter, layer::SubscriberExt, Layer, Registry};
 
     let tracestream = TraceStream::default();
+    let mut telemetry_status = TelemetryStatus::NotApplicable;
 
     match &args.command {
         Commands::Commit { .. }
@@ -318,36 +509,93 @@ fn setup_tracing(args: &Cli) -> Result<TraceStream, Error> {
         | Commands::RebuildRaid { .. }
         | Commands::Rollback { check: false, .. }
         | Commands::Update { .. } => {
+            let mut layers: Vec<Box<dyn Layer<Registry> + Send + Sync>> = vec![Box::new(
+                tracestream
+                    .make_trace_sender()
+                    .with_filter(filter::LevelFilter::INFO),
+            )];
+
             // As functionality moves to the Daemon, move the journald layer to
             // only be enabled for the Daemon command. Until then, keep it enabled
             // for all commands to ensure we have tracing info in journald for all
             // commands.
-            let baseline_tracing = tracing_subscriber::Registry::default().with(
-                tracestream
-                    .make_trace_sender()
-                    .with_filter(filter::LevelFilter::INFO),
-            );
-            if let Ok(journald_layer) = tracing_journald::layer() {
-                tracing::subscriber::set_global_default(
-                    baseline_tracing.with(
+            match tracing_journald::layer() {
+                Ok(journald_layer) => {
+                    layers.push(Box::new(
                         journald_layer
                             .with_syslog_identifier("trident-tracing".to_string())
                             .with_filter(filter::LevelFilter::INFO),
-                    ),
-                )
-                .context("Failed to set global default subscriber")?;
-            } else {
-                eprintln!("Failed to connect to journald, falling back to tracing without journald support");
-                tracing::subscriber::set_global_default(baseline_tracing)
-                    .context("Failed to set global default subscriber")?;
+                    ));
+                }
+                Err(_) => {
+                    eprintln!("Failed to connect to journald, falling back to tracing without journald support");
+                }
             }
+
+            // Best-effort Application Insights telemetry: only added when the
+            // user has opted in via the Agent Configuration file *and* a
+            // connection string was compiled into this binary at build time.
+            // Never fails startup: an empty/unparsable connection string just
+            // means telemetry stays a no-op. `telemetry_status` records which
+            // of these applied so the caller can log it once real logging is
+            // available (see `TelemetryStatus::log`).
+            telemetry_status = if !telemetry_enabled {
+                TelemetryStatus::OptedOut
+            } else {
+                // A missing/closed uploader (e.g. its background thread
+                // failed to start) just means telemetry stays a no-op; it
+                // must never block or fail the rest of tracing setup.
+                match telemetry_uploader.and_then(|u| u.get_handle()) {
+                    Some(handle) => match AppInsightsSender::from_connection_string(
+                        trident::AZURE_MONITOR_CONNECTION_STRING,
+                        handle,
+                        tracestream.installation_id_handle(),
+                        tracestream.datastore_id_handle(),
+                        tracestream.servicing_id_handle(),
+                    ) {
+                        Some(sender) => {
+                            layers.push(Box::new(sender.with_filter(filter::LevelFilter::INFO)));
+                            TelemetryStatus::Enabled
+                        }
+                        None => TelemetryStatus::NoConnectionString,
+                    },
+                    None => TelemetryStatus::UploaderUnavailable,
+                }
+            };
+
+            tracing::subscriber::set_global_default(Registry::default().with(layers))
+                .context("Failed to set global default subscriber")?;
         }
         _ => {
             // no op
         }
     }
 
-    Ok(tracestream)
+    Ok((tracestream, telemetry_status))
+}
+
+/// How long to wait for the dedicated telemetry uploader to drain and
+/// shut down before abandoning it (see
+/// `BackgroundUploader::shutdown_with_deadline`). Telemetry must never
+/// meaningfully delay Trident's actual work, including at shutdown -- a
+/// slow-but-successful Application Insights endpoint could otherwise
+/// stall process exit for as long as it takes to drain every queued
+/// event.
+const TELEMETRY_SHUTDOWN_DEADLINE: Duration = Duration::from_secs(5);
+
+/// Wraps a `BackgroundUploader` so it is always shut down with a bounded
+/// deadline when dropped, regardless of which of `main`'s many return
+/// points is taken -- `BackgroundUploader`'s own `Drop` impl (used
+/// elsewhere, e.g. for `bg_uploader`, which carries real log delivery and
+/// is expected to drain fully) waits unboundedly instead.
+struct TelemetryUploaderGuard(Option<BackgroundUploader>);
+
+impl Drop for TelemetryUploaderGuard {
+    fn drop(&mut self) {
+        if let Some(uploader) = self.0.take() {
+            uploader.shutdown_with_deadline(TELEMETRY_SHUTDOWN_DEADLINE);
+        }
+    }
 }
 
 fn main() -> ExitCode {
@@ -363,13 +611,45 @@ fn main() -> ExitCode {
         }
     };
 
+    // Whether best-effort Application Insights telemetry is enabled. Loaded
+    // early (before logging/tracing is set up) since the decision feeds
+    // directly into setup_tracing(). AgentConfig::load() never actually
+    // errors today, but default to disabled (OptOut) defensively if that
+    // ever changes.
+    let telemetry_enabled = AgentConfig::load()
+        .map(|config| config.telemetry_enabled())
+        .unwrap_or(false);
+
+    // Application Insights telemetry gets its own dedicated uploader/queue,
+    // entirely separate from `bg_uploader` (which carries real log
+    // forwarding). Both uploaders drain their queue sequentially on a single
+    // background thread, so sharing one between telemetry and logs would let
+    // a slow-but-successful telemetry endpoint build a backlog that delays
+    // operational log uploads. Failure to start is not fatal: telemetry
+    // simply becomes a no-op, mirroring failure handling on the handle
+    // itself.
+    let telemetry_uploader = telemetry_enabled
+        .then(|| match BackgroundUploader::new() {
+            Ok(uploader) => Some(uploader),
+            Err(e) => {
+                eprintln!("Failed to initialize telemetry uploader, disabling telemetry: {e:?}");
+                None
+            }
+        })
+        .flatten();
+    // Wrapped immediately so every return path in main() below shuts it
+    // down with a bounded deadline, not BackgroundUploader's own unbounded
+    // Drop.
+    let telemetry_uploader = TelemetryUploaderGuard(telemetry_uploader);
+
     // Initialize the telemetry flow
-    let tracestream = setup_tracing(&args);
-    if let Err(e) = tracestream {
+    let tracing_setup = setup_tracing(&args, telemetry_enabled, telemetry_uploader.0.as_ref());
+    if let Err(e) = tracing_setup {
         // Defer to stderr since logging is not yet initialized.
         eprintln!("Failed to initialize tracing: {e:?}");
         return TridentExitCodes::SetupFailed.into();
     }
+    let (tracestream, telemetry_status) = tracing_setup.unwrap();
 
     if let Commands::Daemon {
         inactivity_timeout,
@@ -395,13 +675,14 @@ fn main() -> ExitCode {
 
         // Log version on startup
         info!("Trident version: {}", trident::TRIDENT_VERSION);
+        telemetry_status.log();
 
         trident::server_main(
             log_forwarder,
             *inactivity_timeout,
             socket_path,
             logstream.unwrap(),
-            tracestream.unwrap(),
+            tracestream,
         )
     } else if let Commands::GrpcClient(client_args) = &args.command {
         let logstream = setup_logging(&args, &bg_uploader, iter::empty());
@@ -414,6 +695,8 @@ fn main() -> ExitCode {
             error!("Failed to initialize logstream from environment: {e:?}");
         }
 
+        telemetry_status.log();
+
         // Run the client command
         trident::client_main(client_args)
     } else {
@@ -424,15 +707,31 @@ fn main() -> ExitCode {
             return TridentExitCodes::SetupFailed.into();
         }
 
+        telemetry_status.log();
+
         // Invoke Trident
-        match run_trident(logstream.unwrap(), tracestream.unwrap(), &args) {
+        match run_trident(logstream.unwrap(), tracestream, &args) {
             Ok(ExitKind::Done) => {}
             Err(e) => {
                 error!("{e:?}");
                 return TridentExitCodes::Failed.into();
             }
             Ok(ExitKind::NeedsReboot) => {
-                if let Err(e) = trident::request_reboot_with_wait() {
+                // Reuse the just-completed install/update/etc.'s own
+                // operation_id/command (captured via save_reboot_operation
+                // just before that command's own run_with_operation scope
+                // ended) rather than leaving `trident_system_reboot`
+                // untagged, or minting an unrelated fresh "reboot"
+                // identity: the reboot is a direct continuation of that
+                // same servicing operation, not an independent one, so
+                // telemetry should correlate it back to the same
+                // operation_id. Falls back to a plain, untagged call if
+                // nothing was captured (shouldn't happen on this path, but
+                // avoids losing the reboot attempt entirely if it does).
+                if let Err(e) = run_with_captured_operation(
+                    take_reboot_operation(),
+                    trident::request_reboot_with_wait,
+                ) {
                     error!("Failed to reboot: {e:?}");
                     return TridentExitCodes::RebootUnsuccessful.into();
                 }

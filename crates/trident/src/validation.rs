@@ -9,7 +9,7 @@ use trident_api::{
 
 /// Parse the Host Configuration from a string. Accepts an optional path for
 /// better error reporting when reading from a file.
-pub(crate) fn parse_host_config(
+pub fn parse_host_config(
     contents: &str,
     path: Option<impl AsRef<Path>>,
 ) -> Result<HostConfiguration, TridentError> {
