@@ -86,19 +86,22 @@ the public key from `artifacts/id_rsa.pub`, not `~/.ssh/id_rsa.pub` -- pass
 key) or `check-deployment` will hang/fail trying to authenticate with the
 wrong key.
 
+`run aclagent` requires root access, since it shells out to `virt-install` to
+create the VM: run it with `sudo`, as below (and in the pipeline invocation).
+
 ```bash
 make bin/storm-trident
-./bin/storm-trident run aclagent -- --test-case-to-run=deploy-vm \
+sudo ./bin/storm-trident run aclagent -- --test-case-to-run=deploy-vm \
   --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
-./bin/storm-trident run aclagent -- --test-case-to-run=check-deployment \
+sudo ./bin/storm-trident run aclagent -- --test-case-to-run=check-deployment \
   --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
-./bin/storm-trident run aclagent -- --test-case-to-run=run-ab-update \
+sudo ./bin/storm-trident run aclagent -- --test-case-to-run=run-ab-update \
   --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
-./bin/storm-trident run aclagent -- --test-case-to-run=run-rollback \
+sudo ./bin/storm-trident run aclagent -- --test-case-to-run=run-rollback \
   --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
-./bin/storm-trident run aclagent -- --test-case-to-run=collect-logs \
+sudo ./bin/storm-trident run aclagent -- --test-case-to-run=collect-logs \
   --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
-./bin/storm-trident run aclagent -- --test-case-to-run=cleanup-vm \
+sudo ./bin/storm-trident run aclagent -- --test-case-to-run=cleanup-vm \
   --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
 ```
 
@@ -106,14 +109,14 @@ Or, to run every test case in the same VM lifetime (the default,
 `--test-case-to-run=all`, and how the pipeline runs it):
 
 ```bash
-./bin/storm-trident run aclagent -- \
+sudo ./bin/storm-trident run aclagent -- \
   --artifacts-dir <artifacts> --ssh-private-key-path <artifacts>/id_rsa
 ```
 
 Common overrides mirror other storm VM scenarios, for example:
 
 ```bash
-./bin/storm-trident run aclagent -- \
+sudo ./bin/storm-trident run aclagent -- \
   --platform qemu \
   --artifacts-dir ./artifacts \
   --output-path ./output/aclagent \
