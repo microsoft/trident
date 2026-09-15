@@ -26,17 +26,27 @@ impl InstallService for TridentServer {
     ) -> Result<Response<Self::InstallStream>, Status> {
         let req = request.into_inner();
         let Some(staging) = req.stage else {
-            return Err(Status::invalid_argument("Missing staging configuration"));
+            return Err(self.reject_invalid_argument(
+                "install",
+                "stage",
+                "Missing staging configuration",
+            ));
         };
 
         let Some(host_config) = staging.config else {
-            return Err(Status::invalid_argument(
+            return Err(self.reject_invalid_argument(
+                "install",
+                "stage.config",
                 "Missing host configuration in staging configuration",
             ));
         };
 
         let Some(finalize) = req.finalize else {
-            return Err(Status::invalid_argument("Missing finalize configuration"));
+            return Err(self.reject_invalid_argument(
+                "install",
+                "finalize",
+                "Missing finalize configuration",
+            ));
         };
 
         let data_store_path = self.agent_config.datastore_path().to_owned();
@@ -73,7 +83,9 @@ impl InstallService for TridentServer {
         let req = request.into_inner();
 
         let Some(host_config) = req.config else {
-            return Err(Status::invalid_argument(
+            return Err(self.reject_invalid_argument(
+                "install_stage",
+                "config",
                 "Missing host configuration in staging configuration",
             ));
         };

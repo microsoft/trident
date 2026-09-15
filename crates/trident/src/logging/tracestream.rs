@@ -1,6 +1,6 @@
 use std::{
     collections::BTreeMap,
-    fs::{self, File},
+    fs::{self, File, OpenOptions},
     io::Write,
     path::Path,
     sync::{Arc, RwLock},
@@ -22,13 +22,14 @@ use tracing_subscriber::{layer::Layer, registry::LookupSpan};
 use trident_api::error::TridentError;
 
 use osutils::{
-    files,
     osrelease::{OsRelease, OS_RELEASE_PATH},
-    uname,
+    uname, virt,
 };
+use sysdefs::arch::SystemArchitecture;
 
 use crate::{
-    datastore::DataStore, logging::operation_context, TRIDENT_METRICS_FILE_PATH, TRIDENT_VERSION,
+    datastore::DataStore, init::cih, logging::operation_context, TRIDENT_METRICS_FILE_PATH,
+    TRIDENT_VERSION,
 };
 
 /// The product uuid is used to identify the hardware that Trident is running on.
@@ -416,20 +417,35 @@ impl TraceStream {
         }
     }
 
-    /// Create a Boxed TraceSender
+    /// Create a Boxed TraceSender. Truncates the local metrics file on
+    /// creation, same as every previous invocation of a command that
+    /// installs this layer -- appropriate for commands that are
+    /// themselves generating fresh servicing metrics.
     pub fn make_trace_sender(&self) -> Box<TraceSender> {
-        self.make_trace_sender_with_metrics_path(TRIDENT_METRICS_FILE_PATH)
+        self.make_trace_sender_with_metrics_path(TRIDENT_METRICS_FILE_PATH, true)
+    }
+
+    /// Like `make_trace_sender`, but appends to the existing local metrics
+    /// file instead of truncating it. For commands (namely `diagnose`)
+    /// that read back and repackage that same file's *pre-existing*
+    /// content (e.g. into a support bundle) -- truncating it first would
+    /// destroy the history the command is supposed to be collecting,
+    /// leaving only the metrics the command emits about itself.
+    pub fn make_trace_sender_appending(&self) -> Box<TraceSender> {
+        self.make_trace_sender_with_metrics_path(TRIDENT_METRICS_FILE_PATH, false)
     }
 
     /// Like `make_trace_sender`, but writes the local metrics file to
     /// `metrics_file_path` instead of the real host path
-    /// (`TRIDENT_METRICS_FILE_PATH`). This lets tests exercise the full
+    /// (`TRIDENT_METRICS_FILE_PATH`), and lets the caller choose whether
+    /// to truncate it first. This lets tests exercise the full
     /// metrics-writing pipeline against a throwaway temp file instead of a
     /// real, shared host path, so they can be plain `#[test]`s instead of
     /// needing a VM.
     pub(crate) fn make_trace_sender_with_metrics_path(
         &self,
         metrics_file_path: &str,
+        truncate: bool,
     ) -> Box<TraceSender> {
         Box::new(TraceSender::new(
             self.target.clone(),
@@ -437,6 +453,7 @@ impl TraceStream {
             self.datastore_id.clone(),
             self.servicing_id.clone(),
             metrics_file_path,
+            truncate,
         ))
     }
 }
@@ -463,14 +480,46 @@ impl TraceSender {
         datastore_id: Arc<RwLock<Option<String>>>,
         servicing_id: Arc<RwLock<Option<String>>>,
         metrics_file_path: &str,
+        truncate: bool,
     ) -> Self {
+        if let Some(parent) = Path::new(metrics_file_path).parent() {
+            if let Err(err) = fs::create_dir_all(parent) {
+                eprintln!(
+                    "Tracestream setup error: failed to create local metrics file's parent directory: {err:?}"
+                );
+            }
+        }
+        // Reset any pre-existing content up front when requested, via a
+        // separate truncating open, then always keep the real handle in
+        // append-only mode: a plain `File::create` (O_TRUNC without
+        // O_APPEND) kept open long-term has its own independent,
+        // non-advancing write offset, so a concurrent writer to this same
+        // path (e.g. `grpc-client`, opened separately in append mode) that
+        // extends the file past that offset would have its data
+        // overwritten the next time this descriptor writes. Combining
+        // `OpenOptions::truncate(true)` with `.append(true)` in one open()
+        // call isn't an option: the standard library requires `.write(true)`
+        // for truncation, and adding that back defeats the point of
+        // append-only semantics for every later write through this handle.
+        if truncate {
+            if let Err(err) = File::create(metrics_file_path) {
+                eprintln!(
+                    "Tracestream setup error: failed to truncate local metrics file: {err:?}"
+                );
+            }
+        }
+        let metrics_file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(metrics_file_path)
+            .map_err(Error::from);
         Self {
             server,
             installation_id,
             datastore_id,
             servicing_id,
             client: reqwest::blocking::Client::new(),
-            metrics_file: match files::create_file(metrics_file_path) {
+            metrics_file: match metrics_file {
                 Ok(f) => Some(f),
                 Err(err) => {
                     eprintln!(
@@ -822,6 +871,24 @@ fn populate_additional_fields() -> BTreeMap<String, Value> {
     // TODO: Add more additional fields here as needed
     let mut additional_fields = BTreeMap::new();
     additional_fields.insert("trident_version".to_string(), json!(TRIDENT_VERSION));
+    let arch: &'static str = SystemArchitecture::current().into();
+    additional_fields.insert("arch".to_string(), json!(arch));
+    // Best-effort: a failure to determine whether this is a CIH (Azure
+    // Container Linux) host must never fail startup, it only means this
+    // one field is missing from every telemetry event for this
+    // invocation. A detection failure is reported as "unknown", not
+    // "false" -- conflating "known non-ACL" with "couldn't tell" would
+    // misclassify a host whose CIH check simply failed to run as
+    // definitively non-ACL.
+    let acl = match cih::is_cih() {
+        Ok(true) => "true",
+        Ok(false) => "false",
+        Err(e) => {
+            warn!("Failed to determine if host is running CIH: {e:?}");
+            "unknown"
+        }
+    };
+    additional_fields.insert("acl".to_string(), json!(acl));
     additional_fields
 }
 
@@ -868,6 +935,11 @@ fn populate_platform_info() -> BTreeMap<String, Value> {
         "unknown".to_string()
     });
     platform_info.insert("kernel_version".to_string(), json!(kernel_release.trim()));
+
+    // Whether this host is virtualized (see `osutils::virt` for the
+    // detection heuristic and its caveats).
+    platform_info.insert("vm".to_string(), json!(virt::is_virtual()));
+
     platform_info
 }
 
@@ -888,7 +960,7 @@ mod tests {
         let metrics_path = temp_dir.path().join("metrics.jsonl");
         let tracestream = TraceStream::default();
         let trace_sender =
-            tracestream.make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap());
+            tracestream.make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap(), true);
         assert!(
             trace_sender.get_server().is_none(),
             "tracestream should not have a server"
@@ -906,12 +978,51 @@ mod tests {
     }
 
     #[test]
+    /// Regression test: `make_trace_sender_with_metrics_path(.., false)`
+    /// (used by `make_trace_sender_appending`, for `diagnose`) must append
+    /// to a pre-existing metrics file rather than truncating it -- unlike
+    /// the `true` (truncating) case every other command uses.
+    fn test_tracestream_appending_sender_preserves_existing_metrics() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let metrics_path = temp_dir.path().join("metrics.jsonl");
+        std::fs::write(&metrics_path, "preexisting line\n").unwrap();
+
+        let tracestream = TraceStream::default();
+        let trace_sender = tracestream
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap(), false)
+            .with_filter(filter::LevelFilter::INFO);
+
+        let _guard = tracing::subscriber::set_default(
+            tracing_subscriber::Registry::default().with(trace_sender),
+        );
+
+        tracing::info!(metric_name = "test_metric_appended", value = true);
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let file = File::open(&metrics_path).unwrap();
+        let reader = BufReader::new(file);
+        let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
+
+        assert!(
+            lines.iter().any(|line| line == "preexisting line"),
+            "appending sender must not have truncated the pre-existing content"
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains(r#""metric_name":"test_metric_appended""#)),
+            "appending sender must still write new metrics"
+        );
+    }
+
+    #[test]
     fn test_lock() {
         let temp_dir = tempfile::tempdir().unwrap();
         let metrics_path = temp_dir.path().join("metrics.jsonl");
         let mut tracestream = TraceStream::default();
         let trace_sender =
-            tracestream.make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap());
+            tracestream.make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap(), true);
 
         assert!(
             trace_sender.get_server().is_none(),
@@ -952,7 +1063,7 @@ mod tests {
         let metrics_path = temp_dir.path().join("metrics.jsonl");
         let tracestream = TraceStream::default();
         let trace_sender = tracestream
-            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap(), true)
             .with_filter(filter::LevelFilter::INFO);
 
         // Use a thread-local scoped default subscriber (rather than
@@ -996,7 +1107,7 @@ mod tests {
         let tracestream = TraceStream::default();
         tracestream.set_installation_id("test-installation-id".to_string());
         let trace_sender = tracestream
-            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap(), true)
             .with_filter(filter::LevelFilter::INFO);
 
         // See test_tracestream_write_metric_event_to_file for why a scoped
@@ -1086,7 +1197,7 @@ mod tests {
         // the same long-lived process.
         tracestream.set_servicing_id("stale-previous-operation-id".to_string());
         let trace_sender = tracestream
-            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap(), true)
             .with_filter(filter::LevelFilter::INFO);
 
         let _guard = tracing::subscriber::set_default(
@@ -1136,7 +1247,7 @@ mod tests {
         let tracestream = TraceStream::default();
         tracestream.set_servicing_id("previously-staged-id".to_string());
         let trace_sender = tracestream
-            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap(), true)
             .with_filter(filter::LevelFilter::INFO);
 
         let _guard = tracing::subscriber::set_default(
@@ -1179,7 +1290,7 @@ mod tests {
         let tracestream = TraceStream::default();
         tracestream.set_datastore_id("test-datastore-id".to_string());
         let trace_sender = tracestream
-            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap(), true)
             .with_filter(filter::LevelFilter::INFO);
 
         // See test_tracestream_write_metric_event_to_file for why a scoped
@@ -1214,7 +1325,7 @@ mod tests {
         let metrics_path = temp_dir.path().join("metrics.jsonl");
         let tracestream = TraceStream::default();
         let trace_sender = tracestream
-            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap(), true)
             .with_filter(filter::LevelFilter::INFO);
 
         // See test_tracestream_write_metric_event_to_file for why a scoped
@@ -1420,6 +1531,20 @@ mod functional_test {
             additional_fields.get("trident_version").unwrap(),
             &json!(TRIDENT_VERSION)
         );
+        let expected_arch: &'static str = SystemArchitecture::current().into();
+        assert_eq!(
+            additional_fields.get("arch").unwrap(),
+            &json!(expected_arch)
+        );
+        // Host-dependent (like the fields above): just assert the field is
+        // present and one of the values `cih::is_cih()` can actually
+        // produce, rather than a fixed expectation, since whether the VM
+        // running this test is a CIH host isn't controlled by the test.
+        let acl = additional_fields.get("acl").unwrap().as_str().unwrap();
+        assert!(
+            ["true", "false", "unknown"].contains(&acl),
+            "unexpected acl value: {acl}"
+        );
     }
 
     #[functional_test]
@@ -1436,6 +1561,7 @@ mod functional_test {
             "kernel_version".to_string(),
             json!(uname::kernel_release().unwrap().trim()),
         );
+        expected_platform_info.insert("vm".to_string(), json!(virt::is_virtual()));
 
         // Call the function to get the actual result.
         let platform_info = populate_platform_info();

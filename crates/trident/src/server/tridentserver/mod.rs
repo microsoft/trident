@@ -160,40 +160,59 @@ impl TridentServer {
     /// Tries to acquire a read lock on the server's RwLock. If the lock
     /// cannot be acquired, returns a gRPC Status indicating that the server is
     /// busy.
+    ///
+    /// Intentionally fires no telemetry (`command_start`/`command_error`) for
+    /// this rejection, unlike `reject_invalid_argument`/`reject_invalid_field`:
+    /// a connection-lock contention failure isn't a
+    /// distinct servicing outcome the way a malformed request is -- it's
+    /// pure admission control, happens before `refresh_ids` would
+    /// even run, and (unlike a bad request) the caller is expected to retry
+    /// the exact same request rather than fix anything, so a low-value,
+    /// high-volume `command_error` stream isn't worth adding here.
     #[cfg(feature = "grpc-preview")]
     fn try_acquire_read_lock(&self) -> Result<OwnedRwLockReadGuard<()>, Status> {
         self.rwlock.clone().try_read_owned().map_err(|_| {
             warn!("Trident is busy, cannot acquire read connection lock");
-            Status::unavailable("Trident is busy")
+            Status::unavailable(operation_context::CONNECTION_LOCK_BUSY_MESSAGE)
         })
     }
 
     /// Tries to acquire a write lock on the server's RwLock. If the lock
     /// cannot be acquired, returns a gRPC Status indicating that the server is
     /// busy.
+    ///
+    /// See the telemetry note on [`Self::try_acquire_read_lock`]: this
+    /// rejection is intentionally untelemetered for the same reason.
     fn try_acquire_write_lock(&self) -> Result<OwnedRwLockWriteGuard<()>, Status> {
         self.rwlock.clone().try_write_owned().map_err(|_| {
             warn!("Trident is busy, cannot acquire write connection lock");
-            Status::unavailable("Trident is busy")
+            Status::unavailable(operation_context::CONNECTION_LOCK_BUSY_MESSAGE)
         })
     }
 
-    /// Re-attaches a persisted installation ID and datastore ID to
-    /// `self.tracestream`, if either is now available but wasn't at
-    /// daemon-startup time (`server_main`'s one-time attach runs before any
-    /// request has had a chance to create a datastore, so a request that
-    /// arrives before the very first install/update -- and whose own
-    /// handler goes on to create that datastore -- would otherwise still be
-    /// missing both IDs. Uses `self.agent_config` (the same configuration
-    /// the request itself operates on) rather than reloading from disk, so
-    /// this can't refresh from a different datastore path than the one in
-    /// effect for this request, and a transient reload failure can't
-    /// silently skip the refresh. Neither call creates a datastore: both
-    /// silently do nothing if the datastore doesn't exist yet. But on an
-    /// existing datastore, either call may still *persist* a missing ID --
+    /// Re-checks for a persisted installation ID and database ID before a
+    /// request fires its own `command_start` (via `run_command`). The
+    /// daemon-startup attach in `server_main` only ever runs once, at
+    /// startup -- so a daemon that starts before the host is ever
+    /// installed, then serves a request some time after a *different*
+    /// path (e.g. a concurrent CLI invocation, or an earlier servicing
+    /// request on this same daemon) has since created the datastore,
+    /// would otherwise still be missing both IDs. Called from both
+    /// `servicing_request` and `reading_request`, so read-only RPCs (e.g.
+    /// `get_servicing_state`) don't keep reporting missing IDs
+    /// indefinitely just because they never happen to run after a write
+    /// request has attached them. Uses `self.agent_config` (the same
+    /// configuration the request itself operates on) rather than
+    /// reloading from disk, so this can't refresh from a different
+    /// datastore path than the one in effect for this request, and a
+    /// transient reload failure can't silently skip the refresh. Neither
+    /// call creates a datastore: both silently do nothing if the
+    /// datastore doesn't exist yet. But on an existing datastore, either
+    /// call may still *persist* a missing ID --
     /// `attach_datastore_id_if_present` via `DataStore::datastore_id`'s
-    /// get-or-create semantics, and `attach_installation_id_if_present` via
-    /// `DataStore::installation_id_or_migrate`'s legacy-ID migration (see
+    /// get-or-create semantics, and `attach_installation_id_if_present`
+    /// via `DataStore::installation_id_or_migrate`'s legacy-ID migration
+    /// (see
     /// `TraceStream::attach_installation_id_if_present` and
     /// `TraceStream::attach_datastore_id_if_present`).
     fn refresh_ids(&self) {
@@ -271,26 +290,30 @@ impl TridentServer {
         // can tag `trident_system_reboot` with this same servicing
         // operation's identity instead of leaving it untagged.
         let f = move || {
-            operation_context::run_with_operation(
-                name,
-                operation_context::OperationSource::Daemon,
-                || {
-                    let result = f();
-                    if let Ok((ExitKind::NeedsReboot, ..)) = &result {
-                        operation_context::save_reboot_operation();
-                    }
-                    result
-                },
-            )
+            operation_context::run_command(name, operation_context::OperationSource::Daemon, || {
+                let result = f();
+                if let Ok((ExitKind::NeedsReboot, ..)) = &result {
+                    operation_context::save_reboot_operation();
+                }
+                result
+            })
         };
 
         // Create the gRPC response channel
         let (tx, rx) = mpsc::unbounded_channel();
 
-        // Try to acquire the servicing lock
+        // Try to acquire the servicing lock. Rejected here, after
+        // `refresh_ids` above but before the `run_command`
+        // closure `f` (built above) ever runs, this is intentionally
+        // untelemetered for the same reason as the connection-lock
+        // rejections in `try_acquire_read_lock`/`try_acquire_write_lock`:
+        // it's admission control, not a distinct servicing outcome, and
+        // the caller is expected to retry rather than fix anything.
         let Some(servicing_guard) = self.servicing_manager.try_lock_servicing() else {
             warn!("Request '{}' blocked because servicing is active", name);
-            return Err(Status::unavailable("Servicing is active"));
+            return Err(Status::unavailable(
+                operation_context::SERVICING_LOCK_BUSY_MESSAGE,
+            ));
         };
 
         // Set up log forwarding. Logs will be sent over the gRPC channel.
@@ -387,14 +410,30 @@ impl TridentServer {
         // request.
         let _guard = self.try_acquire_read_lock()?;
 
-        // Try to acquire the servicing read lock
+        // Try to acquire the servicing read lock. Same intentional
+        // telemetry gap as the connection-lock rejections in
+        // `try_acquire_read_lock`/`try_acquire_write_lock` and the
+        // servicing-lock rejection in `servicing_request`: it's admission
+        // control rather than a distinct read outcome, and the caller is
+        // expected to retry rather than fix anything.
         let Some(servicing_guard) = self.servicing_manager.try_lock_reading() else {
             warn!(
                 "Read request '{}' blocked because servicing is active",
                 name
             );
-            return Err(Status::unavailable("Servicing is active"));
+            return Err(Status::unavailable(
+                operation_context::SERVICING_LOCK_BUSY_MESSAGE,
+            ));
         };
+
+        // Read requests (e.g. `get_servicing_state`, `check_rollback`) are
+        // intentionally left untelemetered -- like their CLI counterparts
+        // (`get`, `validate`, `diagnose`, etc.; see `run_trident` in
+        // main.rs), none of them emit `command_start`/`command_error` or
+        // any other `metric_name` event, so there's no need to prep the
+        // TraceStream's installation ID/database ID (`refresh_ids`, used
+        // by `servicing_request` for exactly that reason) or wrap `f` in
+        // `operation_context::run_command` -- it just runs directly here.
 
         // Execute the reading function
         Ok(Response::new(

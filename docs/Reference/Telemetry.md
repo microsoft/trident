@@ -29,6 +29,11 @@ host along with the metrics/spans themselves:
 - `kernel_version`: the running kernel release (`uname -r`).
 - `total_cpu`: the number of CPUs.
 - `total_memory_gib`: total memory, in GiB.
+- `vm`: whether the host appears to be a virtual machine, detected from DMI
+  vendor/product strings (`/sys/class/dmi/id/sys_vendor`,
+  `/sys/class/dmi/id/product_name`). Best-effort: reports `false` if the
+  DMI files are unreadable or the hypervisor is not one of the recognized
+  vendors, not necessarily "definitely bare metal".
 - `trident_version`: the running Trident version.
 - `datastore_id`: an ID that lets separate events be correlated back to the
   same datastore over its entire lifetime (generated on first access to
@@ -162,6 +167,30 @@ Reading the diagram by row, from most to least stable:
   regenerate it, since finalize-only invocations only read the value back.
 - **`operation_id`**: the shortest-lived of the five, minted fresh for
   every single command invocation and never reused.
+
+## Command Errors
+
+If a *servicing* command (`install`, `update`, `commit`, `rollback`,
+`rebuild_raid`, `stream_disk`, and their gRPC/`grpc-client` equivalents)
+fails, a
+`command_error` event is also sent (tagged with the same
+`operation_id`/`command` as above), breaking the failure down into:
+
+- `kind`: the top-level error category (e.g. `internal`, `invalid-input`,
+  `servicing`, `initialization`).
+- `subkind`: the specific error within that category (e.g.
+  `check-root-privileges`), when one applies.
+- `location`: the `file:line` in Trident's source where the error was
+  originally raised.
+
+A `grpc-client` invocation only fires its own `command_error` when the
+daemon it talked to never actually responded (a transport-level failure:
+the daemon's socket wasn't found, the connection was refused, or it
+dropped mid-call). If the daemon did respond -- including rejecting the
+request outright -- the daemon's own `command_error` for that failure
+already has full `kind`/`subkind`/`location` fidelity, so `grpc-client`
+stays silent rather than reporting the same failure again under a
+generic classification.
 
 ## Delivery
 
