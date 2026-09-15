@@ -86,7 +86,13 @@ func LoadTridentContainer(client *ssh.Client) error {
 		return fmt.Errorf("SSH client is nil")
 	}
 
-	out, err := stormsshclient.RunCommand(client, fmt.Sprintf("sudo docker images --format json %s", DOCKER_IMAGE_PATH))
+	// Filter by image reference, not by the tarball path: `docker images`
+	// treats its positional argument as a repository reference, so passing a
+	// file path matches nothing and the load below would run on every
+	// reconnect. That matters because this is called from populateSshClient,
+	// which re-dials after every reboot and on every retry that drops its
+	// client.
+	out, err := stormsshclient.RunCommand(client, fmt.Sprintf("sudo docker images --format json %s", TRIDENT_CONTAINER))
 	if err != nil {
 		return fmt.Errorf("failed to run docker images command: %w", err)
 	}

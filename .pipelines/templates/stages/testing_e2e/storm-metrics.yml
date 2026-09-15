@@ -1,0 +1,124 @@
+# Enriches and uploads the trace-stream metrics produced by a storm E2E
+# scenario run to Kusto.
+#
+# This is the storm-side counterpart of testing_common/trident-metrics.yml. The
+# enrichment that template did with a python script now lives in Go, behind
+# `storm-trident script process-metrics`, so all that remains here is what
+# genuinely has to be YAML: the ADO service connection that mints a Kusto token,
+# the platform-telemetry checkout, and their ingestor.
+#
+# Every step runs under succeededOrFailed(): storm skips a scenario's remaining
+# test cases once one fails, so a failed config still leaves behind the metrics
+# for the servicing operations that did complete, and legacy uploaded those too.
+parameters:
+  - name: tridentSourceDirectory
+    type: string
+
+  # Directory the storm run wrote its artifacts to (`-o`). prepare-hc publishes
+  # the effective Host Configuration here, which is what the enrichment reads:
+  # the deployed config, not the on-disk template.
+  - name: artifactDirectory
+    type: string
+
+  - name: deploymentEnvironment
+    type: string
+
+  - name: runtimeEnvironment
+    type: string
+
+  - name: tridentConfigurationName
+    type: string
+
+  - name: stormBinary
+    type: string
+    default: ./bin/storm-trident
+
+  - name: kustoDatabaseName
+    type: string
+    default: "trident"
+
+  # While the legacy suite still runs, storm uploads to `dev` only. Both suites
+  # cover the same configurations, so pointing storm at `main` would double
+  # count every clean install on the perf dashboards - the same class of
+  # collision the sysext ACR tags hit in build 1174767. Flip this to the
+  # branch-based main/dev choice legacy makes once legacy VM E2E is retired.
+  - name: kustoTableName
+    type: string
+    default: "dev"
+
+  - name: kustoTableMapping
+    type: string
+    default: "metrics"
+
+  # Recorded as additional_fields.test_runner so dashboards can separate these
+  # rows from the legacy suite's for as long as both are ingesting.
+  - name: testRunner
+    type: string
+    default: "storm"
+
+steps:
+  # The helper discovers which metrics files exist, decides which are expected,
+  # enriches them and reports back through --enriched-list and the
+  # UploadMetrics variable. Everything it needs is an input; nothing here
+  # computes arguments.
+  - bash: |
+      set -euo pipefail
+      ${{ parameters.stormBinary }} script process-metrics \
+        --artifact-dir "${{ parameters.artifactDirectory }}" \
+        --metrics-dir "${{ parameters.tridentSourceDirectory }}" \
+        --enriched-list "$(Agent.TempDirectory)/storm-metrics-files.txt" \
+        --test-runner "${{ parameters.testRunner }}"
+    displayName: "Enrich storm E2E Trident metrics"
+    condition: succeededOrFailed()
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
+    env:
+      TRIDENT_CONFIGURATION_NAME: ${{ parameters.tridentConfigurationName }}
+      SOURCE_BRANCH_NAME: $(Build.SourceBranchName)
+      MACHINE_TYPE: ${{ parameters.deploymentEnvironment }}
+      RUNTIME_ENVIRONMENT: ${{ parameters.runtimeEnvironment }}
+      PIPELINE_NAME: $(Build.DefinitionName)
+
+  - bash: |
+      set -ex
+      sudo apt update -y
+      sudo apt install -y python3 python3-pip azure-cli
+    displayName: "Install dependencies for storm metrics upload"
+    condition: and(succeededOrFailed(), eq(variables['UploadMetrics'], 'True'))
+    retryCountOnTaskFailure: 3
+
+  - task: AzureCLI@2.236.0
+    displayName: "Azure CLI (storm metrics)"
+    inputs:
+      azureSubscription: bmp_perf_service_connection
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        set -e
+        az account show
+        azToken=$(az account get-access-token --resource "https://api.kusto.windows.net" | jq -r '.accessToken')
+        echo "##vso[task.setvariable variable=AZ_TOKEN]$azToken"
+    condition: and(succeededOrFailed(), eq(variables['UploadMetrics'], 'True'))
+    retryCountOnTaskFailure: 3
+
+  - checkout: platform-telemetry
+    condition: and(succeededOrFailed(), eq(variables['UploadMetrics'], 'True'))
+
+  - bash: |
+      set -euo pipefail
+      UPLOAD="${{ parameters.tridentSourceDirectory }}/.pipelines/templates/stages/testing_common/scripts/upload_metrics.sh"
+      chmod +x "$UPLOAD"
+
+      # A storm run produces one metrics file per servicing operation, so unlike
+      # the legacy template (one invocation per operation) this uploads each in
+      # turn from a single step.
+      while IFS= read -r metrics_file; do
+        echo "Uploading $metrics_file"
+        "$UPLOAD" \
+          "$metrics_file" \
+          "${{ parameters.kustoDatabaseName }}" \
+          "${{ parameters.kustoTableName }}" \
+          "${{ parameters.kustoTableMapping }}" \
+          "$(Pipeline.Workspace)/s/platform-telemetry"
+      done < "$(Agent.TempDirectory)/storm-metrics-files.txt"
+    displayName: "📈 Upload storm E2E metrics to Kusto"
+    condition: and(succeededOrFailed(), eq(variables['UploadMetrics'], 'True'))

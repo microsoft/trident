@@ -556,6 +556,13 @@ bin/mkcosi: tools/cmd/mkcosi/* tools/go.sum tools/pkg/* tools/cmd/mkcosi/**/*
 
 bin/storm-trident: tools/cmd/storm-trident/main.go tools/storm/**/*
 	@mkdir -p bin
+	# storm-trident transitively depends on the gRPC stubs and the RCP TLS
+	# certs, both of which are gitignored, so a fresh checkout has neither.
+	# Generate them here rather than relying on another target (e.g.
+	# bin/netlaunch) having run first, so this target stands alone. Cert
+	# generation is skipped when the files already exist.
+	cd tools && go generate pkg/rcp/tlscerts/certs.go
+	cd tools && go generate pkg/tridentgrpc/grpc.go
 	cd tools && go generate storm/e2e/discover.go
 	cd tools && go build -o ../bin/storm-trident ./cmd/storm-trident/main.go
 
