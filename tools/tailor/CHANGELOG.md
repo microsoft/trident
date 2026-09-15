@@ -9,6 +9,16 @@ earlier use the bare `v<version>` scheme.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-15
+
+### Added
+
+- `images.autoDiscover` in `tailor.yaml`: a list of workspace-root-relative
+  directories whose `*/image.yaml` are also auto-discovered (e.g.
+  `autoDiscover: [subproject/]` picks up `subproject/*/image.yaml`), on top of the
+  default depth-1 scan. Paths must stay within the workspace root — `..` and
+  absolute paths are rejected.
+
 ## [1.0.2] - 2026-09-11
 
 ### Added

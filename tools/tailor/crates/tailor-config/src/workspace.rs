@@ -1,8 +1,9 @@
 //! Workspace discovery (Cargo model) — `meta/docs/2026-06-22-design.md` §5.3.
 //!
 //! `tailor` walks up from the current directory to find `tailor.yaml` (the workspace root); every
-//! member image (`*/image.yaml` auto-discovered at depth 1, or curated via the `images` catalogue)
-//! belongs to that workspace. With no manifest, a lone `image.yaml` is a standalone image.
+//! member image (`*/image.yaml` auto-discovered at depth 1, extended by `images.autoDiscover`, or
+//! curated via the `images` catalogue) belongs to that workspace. With no manifest, a lone
+//! `image.yaml` is a standalone image.
 
 use std::{
     collections::BTreeSet,
@@ -101,6 +102,24 @@ fn discover_members(root: &Path, tool: &ToolConfig) -> Result<Vec<DiscoveredImag
         }
         None => depth_one_image_dirs(root)?,
     };
+    let mut member_dirs = member_dirs;
+
+    // `images.autoDiscover` extends discovery to `*/image.yaml` under additional workspace-relative
+    // directories (e.g. `subproject/` ⇒ `subproject/*/image.yaml`). Each path is validated to stay
+    // within the workspace root before it is joined.
+    if let Some(catalogue) = catalogue {
+        for entry in &catalogue.auto_discover {
+            let rel = crate::schema::validate_auto_discover_path(entry)?;
+            let scan_root = root.join(&rel);
+            if !scan_root.is_dir() {
+                return Err(ConfigError::InvalidAutoDiscoverPath {
+                    path: entry.clone(),
+                    reason: format!("`{}` is not an existing directory", scan_root.display()),
+                });
+            }
+            member_dirs.extend(depth_one_image_dirs(&scan_root)?);
+        }
+    }
 
     let mut images = Vec::new();
     let mut seen = BTreeSet::new();
@@ -228,6 +247,54 @@ mod tests {
             .map(|i| i.definition.name.as_str())
             .collect();
         assert_eq!(names, ["alpha"], "alpha must appear exactly once");
+    }
+
+    #[test]
+    fn auto_discover_adds_image_dirs_from_extra_subdirectories() {
+        // `subproject/` is not scanned by default (only depth-1 of the root); autoDiscover pulls in
+        // its `*/image.yaml`, alongside the default depth-1 discovery.
+        let tmp = TempDir::new().unwrap();
+        let manifest = format!("{TOOL}images:\n  autoDiscover:\n    - subproject/\n");
+        write(tmp.path(), "tailor.yaml", &manifest);
+        write(tmp.path(), "alpha/image.yaml", &image("alpha"));
+        write(tmp.path(), "subproject/beta/image.yaml", &image("beta"));
+        write(tmp.path(), "subproject/gamma/image.yaml", &image("gamma"));
+
+        let workspace = discover(tmp.path()).unwrap();
+        let mut names: Vec<&str> = workspace
+            .images
+            .iter()
+            .map(|i| i.definition.name.as_str())
+            .collect();
+        names.sort_unstable();
+        assert_eq!(names, ["alpha", "beta", "gamma"]);
+    }
+
+    #[test]
+    fn auto_discover_rejects_a_parent_traversal_path() {
+        let tmp = TempDir::new().unwrap();
+        let manifest = format!("{TOOL}images:\n  autoDiscover:\n    - ../outside/\n");
+        write(tmp.path(), "tailor.yaml", &manifest);
+        write(tmp.path(), "alpha/image.yaml", &image("alpha"));
+
+        let err = discover(tmp.path()).unwrap_err();
+        assert!(
+            matches!(err, ConfigError::InvalidAutoDiscoverPath { .. }),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn auto_discover_errors_on_a_missing_directory() {
+        let tmp = TempDir::new().unwrap();
+        let manifest = format!("{TOOL}images:\n  autoDiscover:\n    - absent/\n");
+        write(tmp.path(), "tailor.yaml", &manifest);
+
+        let err = discover(tmp.path()).unwrap_err();
+        assert!(
+            matches!(err, ConfigError::InvalidAutoDiscoverPath { .. }),
+            "got {err:?}"
+        );
     }
 
     #[test]

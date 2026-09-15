@@ -159,6 +159,9 @@ pub enum ConfigError {
     #[error("duplicate name `{name}` in `{catalogue}` catalogue")]
     DuplicateCatalogueName { catalogue: String, name: String },
 
+    #[error("invalid `images.autoDiscover` path `{path}`: {reason}")]
+    InvalidAutoDiscoverPath { path: String, reason: String },
+
     #[error("cell `{slug}` has an invalid `{field}`: {detail}")]
     InvalidField {
         slug: String,

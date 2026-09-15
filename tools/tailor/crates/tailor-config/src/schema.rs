@@ -1,6 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use indexmap::IndexMap;
@@ -100,6 +100,9 @@ impl ToolConfig {
         )?;
         if let Some(base_images) = &self.base_images {
             base_images.validate()?;
+        }
+        if let Some(images) = &self.images {
+            images.validate()?;
         }
         Ok(())
     }
@@ -497,6 +500,42 @@ pub struct ImageCatalogue {
     pub exclude: Vec<String>,
     #[serde(default)]
     pub inline: Vec<ImageDefinition>,
+    /// Extra directories (relative to the workspace root) whose `*/image.yaml` are also
+    /// auto-discovered, e.g. `[subproject/]` adds `subproject/*/image.yaml`. Each path is
+    /// workspace-root-relative; `..` and absolute paths are rejected.
+    #[serde(default, rename = "autoDiscover")]
+    pub auto_discover: Vec<String>,
+}
+
+impl ImageCatalogue {
+    fn validate(&self) -> Result<(), ConfigError> {
+        for entry in &self.auto_discover {
+            validate_auto_discover_path(entry)?;
+        }
+        Ok(())
+    }
+}
+
+/// Validate one `images.autoDiscover` entry, returning its normalized workspace-root-relative path.
+/// Rejects absolute paths and any `..` component so discovery can never escape the workspace root.
+pub(crate) fn validate_auto_discover_path(entry: &str) -> Result<String, ConfigError> {
+    let normalized = entry.trim_start_matches("./").trim_end_matches('/').trim();
+    let reason = if normalized.is_empty() {
+        Some("path is empty")
+    } else if Path::new(normalized).is_absolute() {
+        Some("path must be relative to the workspace root, not absolute")
+    } else if normalized.split('/').any(|segment| segment == "..") {
+        Some("`..` is not allowed (discovery must stay within the workspace root)")
+    } else {
+        None
+    };
+    match reason {
+        Some(reason) => Err(ConfigError::InvalidAutoDiscoverPath {
+            path: entry.to_owned(),
+            reason: reason.to_owned(),
+        }),
+        None => Ok(normalized.to_owned()),
+    }
 }
 
 // ===== image.yaml — image definition base document (reference/image-yaml.md) =====

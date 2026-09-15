@@ -45,7 +45,7 @@ defaults:
 | `export.scope` | enum | no | What `tailor export` emits. Defaults to `configsOnly` (the only value today); omit it. |
 | `export.images` | list of strings | no | Restrict `tailor export` to a subset of images. Default: all images. |
 | `baseImages` | list of `{name, path, arch?, source?}` | no | Base-image catalogue: named slots an image references with `base: { ref: <name> }`. Each `name` must be unique. See [base-image catalogue](#base-image-catalogue). |
-| `images` | object | no | Omit to auto-discover every immediate `*/image.yaml`. |
+| `images` | object | no | Omit to auto-discover every immediate `*/image.yaml`. Optional keys: `members`, `exclude`, `inline`, and `autoDiscover` (extra workspace-relative directories to scan; see [Image discovery](#image-discovery)). |
 
 Runtime mounts expose only the workspace (read-only), tailor-owned writable carve-outs, and declared
 out-of-workspace inputs. The old whole-host `-v /:/host` bind is never emitted.
@@ -188,6 +188,19 @@ file). See [Export configs for a pipeline](../how-to/export-configs-for-a-pipeli
 ## Image discovery
 
 With no `images:` key, tailor discovers every `*/image.yaml` at depth 1 from the workspace root.
+
+To discover images under additional directories, list them in `autoDiscover` (each is
+workspace-root-relative; `..` and absolute paths are rejected). For example, to also pick up
+`subproject/*/image.yaml`:
+
+```yaml
+images:
+  autoDiscover:
+    - subproject/
+```
+
+`autoDiscover` extends discovery — the default depth-1 scan of the root still applies (and it also
+extends an explicit `members:` list).
 
 To curate explicitly:
 
