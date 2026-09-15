@@ -24,7 +24,6 @@ Every event sent also includes as much of the following host metadata as
 is available at the time, so operators should be aware this leaves the
 host along with the metrics/spans themselves:
 
-- `asset_id`: the host's DMI product UUID (a stable hardware identifier).
 - `os_release`: the `VERSION` field from `/etc/os-release`.
 - `kernel_version`: the running kernel release (`uname -r`).
 - `total_cpu`: the number of CPUs.
@@ -82,7 +81,7 @@ host along with the metrics/spans themselves:
 
 ## Correlation ID Lifecycle
 
-The five correlation-style fields above have deliberately different
+The four correlation-style fields above have deliberately different
 lifetimes -- some outlive many servicing operations, some are recreated on
 every reinstall, and some exist only for a single command invocation. The
 diagram below shows how each behaves across a representative sequence of
@@ -136,22 +135,10 @@ gantt
     section datastore_id
     datastore_id #1 (since install #1)    :active, db1, 2024-01-01, 9d
     datastore_id #2 (since install #2)    :active, db2, 2024-01-10, 2d
-
-    section asset_id*
-    asset_id (never recreated)            :active, done, asset1, 2024-01-01, 11d
 ```
-
-\* `asset_id` was a real field (a hardware/product-UUID-based identifier,
-read from `/sys/class/dmi/id/product_uuid`) that Trident emitted before
-this design existed. It was removed once `installation_id`/`servicing_id`
-were introduced (see `telemetry: remove asset_id from platform info`) and
-is shown here only for lifecycle contrast with `datastore_id` -- it is
-**not** currently emitted by Trident.
 
 Reading the diagram by row, from most to least stable:
 
-- **`asset_id`** (no longer emitted, shown for contrast): would have
-  identified the physical machine itself, surviving every reinstall.
 - **`datastore_id`**: tied to a single datastore file. Recreated whenever a
   new datastore is created -- in this sequence, only the second `install`
   (day 10) starts a new one.
@@ -165,7 +152,7 @@ Reading the diagram by row, from most to least stable:
   invocation that stages something new (`install`, `update`,
   `update-stage`, `rollback`) -- note `update-finalize` does *not*
   regenerate it, since finalize-only invocations only read the value back.
-- **`operation_id`**: the shortest-lived of the five, minted fresh for
+- **`operation_id`**: the shortest-lived of the four, minted fresh for
   every single command invocation and never reused.
 
 ## Command Errors
