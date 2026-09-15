@@ -3,6 +3,7 @@ package validate
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 
@@ -29,43 +30,57 @@ const (
 	auditLogPath = "/var/log/audit/audit.log"
 )
 
-// ValidateSelinuxDenials ports the check-selinux helper. It runs `audit2allow`
-// against the host's audit log and surfaces any SELinux denials. Matching the
-// legacy helper, it does not fail when denials are present — they are logged
-// for human inspection.
+// ValidateSelinuxDenials reports SELinux denials recorded in the host's audit
+// log. Matching the legacy helper, denials do not fail the check -- they are
+// surfaced for human inspection.
 //
-// audit2allow ships in setools-console, which is installed in the installer
-// image but not in the deployed test image, so on most hosts this check cannot
-// run at all. That is reported explicitly rather than as a silent pass: the
-// legacy helper ignored the exit status entirely and recorded a missing
-// audit2allow as "no SELinux violations found".
+// Denials are counted by scanning the audit log directly rather than by
+// trusting audit2allow, because audit2allow does not work on these images: it
+// is absent from some (it ships in setools-console, which is installed in the
+// installer image but not in every deployed test image) and on the rest it
+// exits 1 with "You must specify the -p option with the path to the policy
+// file" as soon as there is a denial to render. The legacy helper ignored the
+// exit status, so both cases were recorded as "no SELinux violations found".
+// audit2allow is still used, best effort, to render the matching policy rules.
 func ValidateSelinuxDenials(sa *SoftAsserter, client *ssh.Client) {
-	probe, err := sshutils.RunCommand(client, "command -v audit2allow")
+	// grep exits 0 when it matches, 1 when it does not, and >1 on a real error
+	// such as the audit log being absent.
+	count, err := sshutils.RunCommand(client,
+		fmt.Sprintf("sudo grep -c -E 'avc:[[:space:]]+denied' %s", sshutils.ShellQuote(auditLogPath)))
 	if err != nil {
-		sa.Fail("selinux/audit2allow", err)
+		sa.Fail("selinux/denials", err)
 		return
 	}
-	if probe.Status != 0 {
-		sa.Passf("selinux/audit2allow", "not verified: audit2allow is not installed on this image")
+	if count.Status > 1 {
+		// An absent or unreadable audit log is an image gap, not a regression
+		// this suite should fail on -- but it must not look like a clean scan.
+		sa.Passf("selinux/denials", "not verified: could not read %s: %s",
+			auditLogPath, strings.TrimSpace(count.Stderr))
+		return
+	}
+	if count.Status == 1 {
+		sa.Pass("selinux/denials")
 		return
 	}
 
-	out, err := sshutils.RunCommand(client, "sudo audit2allow -i "+auditLogPath)
-	if err != nil {
-		sa.Fail("selinux/audit2allow", err)
-		return
-	}
-	// audit2allow exits 0 whether or not it finds denials, so a non-zero status
-	// means the scan never ran (e.g. unreadable audit log). Without this, such a
-	// failure has empty stdout and would be recorded as "no denials found".
-	if out.Status != 0 {
-		sa.Failf("selinux/audit2allow", "audit2allow exited %d: %s", out.Status, strings.TrimSpace(out.Stderr))
-		return
-	}
-	if strings.TrimSpace(out.Stdout) != "" {
-		sa.Passf("selinux/audit2allow", "audit2allow reported potential denials:\n%s", out.Stdout)
-	} else {
-		sa.Pass("selinux/audit2allow")
+	sa.Passf("selinux/denials", "%s reports %s SELinux denial(s)%s",
+		auditLogPath, strings.TrimSpace(count.Stdout), audit2allowDetail(client))
+}
+
+// audit2allowDetail renders the denials as policy rules when audit2allow is
+// usable, and explains itself when it is not. It never fails the check: the
+// denial count above is the authoritative signal.
+func audit2allowDetail(client *ssh.Client) string {
+	out, err := sshutils.RunCommand(client, "sudo audit2allow -i "+sshutils.ShellQuote(auditLogPath))
+	switch {
+	case err != nil:
+		return fmt.Sprintf("; audit2allow could not be run: %v", err)
+	case out.Status != 0:
+		return fmt.Sprintf("; audit2allow exited %d: %s", out.Status, strings.TrimSpace(out.Stderr))
+	case strings.TrimSpace(out.Stdout) == "":
+		return ""
+	default:
+		return ":\n" + out.Stdout
 	}
 }
 
