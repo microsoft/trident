@@ -48,6 +48,14 @@ func (c *RPClient) RunScenario(ctx context.Context, scenario *Scenario) (*Scenar
 		stepReport.ElapsedMS = time.Since(started).Milliseconds()
 		report.Steps = append(report.Steps, *stepReport)
 		report.Passed = report.Passed && stepReport.Passed
+		if !stepReport.Passed {
+			// Stop immediately on the first failed step: later steps in the
+			// scenario (including mutating patches) assume prior assertions
+			// held, so continuing after a failure risks altering VM state
+			// (e.g. a stage-status timeout still patching finalize) despite
+			// the scenario having already failed.
+			return report, nil
+		}
 	}
 	return report, nil
 }

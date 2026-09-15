@@ -154,12 +154,19 @@ func (s *NodeStore) SetReadyCondition(ready bool) *corev1.Node {
 	return s.node.DeepCopy()
 }
 
+// watcherBufferSize bounds how many pending node snapshots a watcher can
+// have queued before broadcastLocked starts dropping updates for it (see
+// there). 32 comfortably covers this test harness's traffic pattern - a
+// single fast consumer, with annotations patched infrequently and one at a
+// time - while still bounding memory if a watcher ever stalls.
+const watcherBufferSize = 32
+
 func (s *NodeStore) Subscribe() (int, <-chan *corev1.Node, *corev1.Node) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	id := s.nextID
 	s.nextID++
-	ch := make(chan *corev1.Node, 8)
+	ch := make(chan *corev1.Node, watcherBufferSize)
 	s.watchers[id] = ch
 	return id, ch, s.node.DeepCopy()
 }
@@ -173,6 +180,18 @@ func (s *NodeStore) Unsubscribe(id int) {
 	}
 }
 
+// broadcastLocked fans the current node snapshot out to every watcher.
+// The send is intentionally non-blocking: this is a level-triggered watch
+// (each snapshot carries full node state, so a later send always
+// supersedes an earlier undelivered one) and the store's lock is held here,
+// so a slow/stalled watcher must never be allowed to block every other
+// watcher or the caller that triggered this update.
+//
+// If a watcher's buffer is ever full, its update for this call is silently
+// dropped - the watcher just needs to rely on the next real change to
+// resync. Given watcherBufferSize's generous size for this harness's
+// traffic pattern, that should never happen in practice, but note it here
+// for whoever ends up debugging an unexplained step timeout.
 func (s *NodeStore) broadcastLocked() {
 	snapshot := s.node.DeepCopy()
 	for _, ch := range s.watchers {
