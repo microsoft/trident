@@ -47,6 +47,31 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+      - name: Force public crates.io for tailor
+        run: |
+          # The monorepo root .cargo/config.toml replaces crates-io with the
+          # authenticated BMP_PublicPackages Azure DevOps feed. Cargo discovers it
+          # by walking up from tools/tailor, so it would leak into tailor builds
+          # and fail without credentials tailor does not use. tailor depends only
+          # on public crates, so strip that inherited replacement from THIS job's
+          # throwaway checkout — cargo then falls back to the default crates.io.
+          # This edits only the runner's checkout and never touches trident's own
+          # (Azure DevOps) pipelines.
+          set -eux
+          cfg=.cargo/config.toml
+          [ -f "$cfg" ] || cfg=.cargo/config
+          if [ -f "$cfg" ]; then
+            awk '
+              /^\[source\.crates-io\]/ { skip=1; next }
+              /^\[/                    { skip=0 }
+              !skip                    { print }
+            ' "$cfg" > "$cfg.tailor.tmp"
+            mv "$cfg.tailor.tmp" "$cfg"
+            echo "----- neutralized crates-io replacement in $cfg -----"
+            cat "$cfg"
+          else
+            echo "no root cargo config found; nothing to neutralize"
+          fi
       - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
         with:
           # Mirrors tools/tailor/rust-toolchain.toml — that file lives in a
@@ -71,6 +96,25 @@ jobs:
       CC_x86_64_unknown_linux_musl: musl-gcc
     steps:
       - uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+      - name: Force public crates.io for tailor
+        run: |
+          # See the `check` job — strip the monorepo's inherited crates-io ->
+          # BMP_PublicPackages replacement so tailor builds from public crates.io.
+          set -eux
+          cfg=.cargo/config.toml
+          [ -f "$cfg" ] || cfg=.cargo/config
+          if [ -f "$cfg" ]; then
+            awk '
+              /^\[source\.crates-io\]/ { skip=1; next }
+              /^\[/                    { skip=0 }
+              !skip                    { print }
+            ' "$cfg" > "$cfg.tailor.tmp"
+            mv "$cfg.tailor.tmp" "$cfg"
+            echo "----- neutralized crates-io replacement in $cfg -----"
+            cat "$cfg"
+          else
+            echo "no root cargo config found; nothing to neutralize"
+          fi
       - name: Install musl toolchain
         run: |
           # Hosted runners ship third-party apt repos whose indexes intermittently
@@ -110,6 +154,25 @@ jobs:
       TAILOR_BIN: ${{ github.workspace }}/tools/tailor/target/release/tailor
     steps:
       - uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+      - name: Force public crates.io for tailor
+        run: |
+          # See the `check` job — strip the monorepo's inherited crates-io ->
+          # BMP_PublicPackages replacement so tailor builds from public crates.io.
+          set -eux
+          cfg=.cargo/config.toml
+          [ -f "$cfg" ] || cfg=.cargo/config
+          if [ -f "$cfg" ]; then
+            awk '
+              /^\[source\.crates-io\]/ { skip=1; next }
+              /^\[/                    { skip=0 }
+              !skip                    { print }
+            ' "$cfg" > "$cfg.tailor.tmp"
+            mv "$cfg.tailor.tmp" "$cfg"
+            echo "----- neutralized crates-io replacement in $cfg -----"
+            cat "$cfg"
+          else
+            echo "no root cargo config found; nothing to neutralize"
+          fi
       - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
         with:
           toolchain: "1.98.1"
