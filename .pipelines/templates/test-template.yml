@@ -70,11 +70,17 @@ stages:
   # branch code, and the downloaded tools can be arbitrarily old; real CI
   # already builds them this way, so this keeps the two paths on the same
   # mechanism. Runs in parallel with the artifact downloads below.
-  - ${{ if or(parameters.runDeploymentVMHost, parameters.runDeploymentVMContainer, parameters.runDeploymentBMHost, parameters.runDeploymentBMContainer, parameters.runServicingTests, parameters.runStormE2EVMHost, parameters.runStormE2EVMContainer) }}:
+  #
+  # Every stage below consumes the go-tools artifact this publishes, including
+  # FunctionalTesting, which already declared a dependency on BuildingTools.
+  - ${{ if or(parameters.runDeploymentVMHost, parameters.runDeploymentVMContainer, parameters.runDeploymentBMHost, parameters.runDeploymentBMContainer, parameters.runServicingTests, parameters.runFunctionalTests, parameters.runStormE2EVMHost, parameters.runStormE2EVMContainer) }}:
       - template: stages/building_tools/building-tools.yml
         parameters:
           architecture: amd64
 
+  # The image downloads are only needed by the stages that consume test images;
+  # a functional-only run would otherwise produce a stage with no jobs.
+  - ${{ if or(parameters.runDeploymentVMHost, parameters.runDeploymentVMContainer, parameters.runDeploymentBMHost, parameters.runDeploymentBMContainer, parameters.runServicingTests, parameters.runStormE2EVMHost, parameters.runStormE2EVMContainer) }}:
       - template: stages/download_artifacts/get-artifacts.yml
         parameters:
           definition: ${{ parameters.definition }}

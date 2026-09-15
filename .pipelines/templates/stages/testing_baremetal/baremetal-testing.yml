@@ -46,6 +46,8 @@ stages:
           - ${{ parameters.extraDependsOn }}
       - ${{ if eq(parameters.testingRun, true) }}:
           - DownloadTestingElements
+          # go-tools is published by BuildingTools, not by DownloadTestingElements.
+          - BuildingTools
       - ${{ else }}:
           - BuildingTools
           - ${{ if eq(parameters.runtimeEnv, 'container') }}:
