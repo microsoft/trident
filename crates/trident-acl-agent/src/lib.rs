@@ -59,12 +59,19 @@ fn build_machine_id(source: IdSource) -> Result<MachineId, AgentError> {
 
 /// Checks that the Omaha/Nebraska server at `url` is reachable and speaking
 /// the Omaha protocol, without treating any app-level result (including a
-/// non-OK app/update-check status) as a failure. Unlike
-/// [`Client::check_for_update`], this only fails on network/transport
-/// problems or a response that isn't well-formed Omaha XML -- it's meant for
-/// a pure "can we talk to this server at all" check (e.g.
-/// `--validate-connection nebraska`), not for deciding whether an update is
-/// available.
+/// non-OK app status) as a failure. Unlike [`Client::check_for_update`], this
+/// only fails on network/transport problems or a response that isn't
+/// well-formed Omaha XML -- it's meant for a pure "can we talk to this server
+/// at all" check (e.g. `--validate-connection nebraska`), not for deciding
+/// whether an update is available.
+///
+/// Uses [`Client::ping`], not `check_for_update`: against a real, stateful
+/// Nebraska, `check_for_update` has the side effect of registering an update
+/// check for this machine id, which Nebraska can then grant -- consuming the
+/// update and leaving the instance "in progress" for a real stage/finalize
+/// request that reuses the same machine id. `ping` sends a bare Omaha
+/// `<ping/>` with no `<updatecheck/>`, so this check proves reachability
+/// without any such side effect.
 pub fn check_nebraska_reachable(
     url: &Url,
     app_id: &str,
@@ -73,13 +80,13 @@ pub fn check_nebraska_reachable(
 ) -> Result<(), AgentError> {
     let machine_id = build_machine_id(machine_id_source)?;
     let client = Client::new(url.clone(), app_id, track, machine_id);
-    match client.check_for_update(
+    match client.ping(
         &Version::parse(FALLBACK_ALWAYS_VERSION)
             .expect("invariant: FALLBACK_ALWAYS_VERSION is valid semver"),
     ) {
-        Ok(_) => Ok(()),
-        // A well-formed response reporting a non-OK app/update-check status
-        // still proves the server is reachable and speaking Omaha; only a
+        Ok(()) => Ok(()),
+        // A well-formed response reporting a non-OK app status still proves
+        // the server is reachable and speaking Omaha; only a
         // transport/parse-level failure means it is not.
         Err(NebraskaError::ServerError(_)) => Ok(()),
         Err(err) => Err(AgentError::Nebraska(err.to_string())),
@@ -91,17 +98,55 @@ mod tests {
     use super::*;
 
     use indoc::indoc;
-    use mockito::Server;
+    use mockito::{Matcher, Server};
     use url::Url;
+
+    #[test]
+    fn test_check_nebraska_reachable_never_sends_an_update_check() {
+        // Regression test: check_nebraska_reachable() must use Client::ping(),
+        // not check_for_update() -- against a real, stateful Nebraska,
+        // check_for_update() has the side effect of granting/consuming an
+        // update for this machine id, which a diagnostic connectivity check
+        // must never do.
+        let mut server = Server::new();
+
+        let ping_mock = server
+            .mock("POST", "/")
+            .match_body(Matcher::Regex("<ping".to_string()))
+            .with_status(200)
+            .with_body(indoc! {r#"
+                <?xml version="1.0" encoding="UTF-8"?>
+                <response protocol="3.0" server="mock">
+                    <daystart elapsed_seconds="0"/>
+                    <app appid="test" status="ok">
+                        <ping status="ok"></ping>
+                    </app>
+                </response>"#})
+            .expect(1)
+            .create();
+        let no_update_check_mock = server
+            .mock("POST", "/")
+            .match_body(Matcher::Regex("<updatecheck".to_string()))
+            .expect(0)
+            .create();
+
+        check_nebraska_reachable(
+            &Url::parse(&server.url()).unwrap(),
+            "test",
+            "track",
+            IdSource::MachineIdHashed,
+        )
+        .unwrap();
+
+        ping_mock.assert();
+        no_update_check_mock.assert();
+    }
 
     #[test]
     fn test_check_nebraska_reachable_succeeds_on_error_app_status() {
         // check_nebraska_reachable() is meant to be a pure "can we reach this
-        // server and does it speak Omaha" check, unlike check_for_update()
-        // which also validates app-level semantics. A well-formed response
-        // with a non-OK app status should still count as "reachable" here,
-        // even though check_for_update() would reject the same response as a
-        // NebraskaError::ServerError.
+        // server and does it speak Omaha" check: a well-formed response with
+        // a non-OK app status should still count as "reachable" here.
         let mut server = Server::new();
 
         let omaha_mock = server
@@ -112,7 +157,7 @@ mod tests {
                 <response protocol="3.0" server="mock">
                     <daystart elapsed_seconds="0"/>
                     <app appid="test" status="error-unknownApplication">
-                        <updatecheck status="error-internal"></updatecheck>
+                        <ping status="ok"></ping>
                     </app>
                 </response>"#})
             .expect(1)
