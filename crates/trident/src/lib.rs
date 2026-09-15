@@ -314,21 +314,6 @@ impl Trident {
             ));
         }
 
-        // Best-effort: a failure to determine whether this is a CIH (Azure
-        // Container Linux) host must never fail startup, it only means
-        // this one field is missing from the trident_start telemetry.
-        // A detection failure is reported as "unknown", not "false" --
-        // conflating "known non-ACL" with "couldn't tell" would
-        // misclassify a host whose CIH check simply failed to run as
-        // definitively non-ACL.
-        let acl = match cih::is_cih() {
-            Ok(true) => "true",
-            Ok(false) => "false",
-            Err(e) => {
-                warn!("Failed to determine if host is running CIH: {e:?}");
-                "unknown"
-            }
-        };
         // CLOCK_BOOTTIME gives nanosecond-resolution time since boot
         // (including any suspended time), unlike sysinfo::System::uptime()
         // (or a naive /proc/uptime parse), which only exposes whole-second
@@ -343,11 +328,12 @@ impl Trident {
                 warn!("Failed to read CLOCK_BOOTTIME: {e}");
                 f64::NAN
             });
-        tracing::info!(
-            metric_name = "trident_start",
-            acl = acl,
-            uptime_secs = uptime_secs,
-        );
+        // `acl` and `arch` are not passed here: both are process-lifetime
+        // constants (like `trident_version`), so they're stamped onto
+        // every telemetry event via `ADDITIONAL_FIELDS`
+        // (see `logging::tracestream::populate_additional_fields`)
+        // instead of being scoped to just this one metric.
+        tracing::info!(metric_name = "trident_start", uptime_secs = uptime_secs,);
 
         Ok(Self {
             host_config,
