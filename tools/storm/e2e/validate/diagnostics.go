@@ -31,9 +31,25 @@ const (
 
 // ValidateSelinuxDenials ports the check-selinux helper. It runs `audit2allow`
 // against the host's audit log and surfaces any SELinux denials. Matching the
-// legacy helper, it fails only when the command cannot be run (not when
-// denials are present) — the denials are logged for human inspection.
+// legacy helper, it does not fail when denials are present — they are logged
+// for human inspection.
+//
+// audit2allow ships in setools-console, which is installed in the installer
+// image but not in the deployed test image, so on most hosts this check cannot
+// run at all. That is reported explicitly rather than as a silent pass: the
+// legacy helper ignored the exit status entirely and recorded a missing
+// audit2allow as "no SELinux violations found".
 func ValidateSelinuxDenials(sa *SoftAsserter, client *ssh.Client) {
+	probe, err := sshutils.RunCommand(client, "command -v audit2allow")
+	if err != nil {
+		sa.Fail("selinux/audit2allow", err)
+		return
+	}
+	if probe.Status != 0 {
+		sa.Passf("selinux/audit2allow", "not verified: audit2allow is not installed on this image")
+		return
+	}
+
 	out, err := sshutils.RunCommand(client, "sudo audit2allow -i "+auditLogPath)
 	if err != nil {
 		sa.Fail("selinux/audit2allow", err)
