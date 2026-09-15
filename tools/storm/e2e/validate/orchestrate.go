@@ -326,8 +326,13 @@ func ValidateUefiFallback(sa *SoftAsserter, client *ssh.Client, spec hostconfig.
 	// Probe the mount point itself before the fallback directory, so "the ESP
 	// is not where we think it is" is reported as a failure instead of being
 	// silently indistinguishable from "the directory is empty".
+	// sudo is required throughout: /boot is mode 0700 on these hosts, so the
+	// test user cannot even traverse it. Without sudo `test -d` fails with
+	// permission denied (reported as a missing ESP) and, worse, `ls` on the
+	// fallback directory would fail silently and report zero entries - passing
+	// the check no matter what is actually there.
 	fallbackDir := path.Join(esp, "EFI", "BOOT")
-	cmd := fmt.Sprintf("test -d %q && { ls -A %q 2>/dev/null | wc -l; } || echo MISSING_ESP", esp, fallbackDir)
+	cmd := fmt.Sprintf("sudo test -d %q && { sudo ls -A %q 2>/dev/null | wc -l; } || echo MISSING_ESP", esp, fallbackDir)
 	out, err := sshutils.RunCommand(client, cmd)
 	if err != nil {
 		sa.Fail("uefi/disabled", err)
@@ -336,7 +341,11 @@ func ValidateUefiFallback(sa *SoftAsserter, client *ssh.Client, spec hostconfig.
 
 	result := strings.TrimSpace(out.Stdout)
 	if result == "MISSING_ESP" {
-		sa.Failf("uefi/disabled", "ESP mount point %q does not exist on the host", esp)
+		// Report what the host actually looks like: an ESP that is not where
+		// the Host Configuration says it is means either a real defect or a
+		// wrong assumption in this check, and the difference matters.
+		sa.Failf("uefi/disabled", "ESP mount point %q does not exist on the host\n%s",
+			esp, describeMounts(client, esp))
 		return
 	}
 
@@ -344,4 +353,23 @@ func ValidateUefiFallback(sa *SoftAsserter, client *ssh.Client, spec hostconfig.
 	// directory prints nothing, which counts as zero entries.
 	sa.Assert("uefi/disabled", result == "0",
 		"%s contains %s entries, but uefiFallback is disabled", fallbackDir, result)
+}
+
+// describeMounts collects a short picture of the host's mount table and the
+// directory the ESP was expected under, for inclusion in a failure message.
+func describeMounts(client *ssh.Client, esp string) string {
+	var b strings.Builder
+	for _, probe := range []struct{ label, cmd string }{
+		{"findmnt", "findmnt -n -o TARGET,SOURCE,FSTYPE | grep -iE 'vfat|efi' || echo '(no vfat/efi mounts)'"},
+		{"parent", fmt.Sprintf("sudo ls -la %q 2>&1 | head -20", path.Dir(esp))},
+		{"esp", fmt.Sprintf("sudo ls -la %q 2>&1 | head -20", esp)},
+	} {
+		out, err := sshutils.RunCommand(client, probe.cmd)
+		if err != nil {
+			fmt.Fprintf(&b, "  %s: <%v>\n", probe.label, err)
+			continue
+		}
+		fmt.Fprintf(&b, "  %s:\n%s\n", probe.label, strings.TrimRight(out.Stdout, "\n"))
+	}
+	return b.String()
 }
