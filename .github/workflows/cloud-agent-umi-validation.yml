@@ -55,7 +55,7 @@ jobs:
           [registry]
           global-credential-providers = ["cargo:token"]
           EOF
-          export CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN="$ado_token"
+          export CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN="Bearer $ado_token"
           cargo fetch --locked
 
           latest_build="$(
