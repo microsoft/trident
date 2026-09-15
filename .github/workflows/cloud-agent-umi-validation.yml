@@ -42,11 +42,11 @@ jobs:
 
           curl --fail --silent --show-error \
             --header "Authorization: Bearer $ado_token" \
-            "https://dev.azure.com/mariner-org/ECF/_apis/projects/ECF?api-version=7.1" \
+            "https://dev.azure.com/mariner-org/_apis/projects/ECF?api-version=7.1" \
             >/dev/null
           curl --fail --silent --show-error \
             --header "Authorization: Bearer $ado_token" \
-            "https://dev.azure.com/mariner-org/polar/_apis/projects/polar?api-version=7.1" \
+            "https://dev.azure.com/mariner-org/_apis/projects/polar?api-version=7.1" \
             >/dev/null
 
           cp .cargo/config.toml .cargo/config
