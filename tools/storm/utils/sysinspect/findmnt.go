@@ -19,7 +19,7 @@ type FindmntRow struct {
 
 // Findmnt runs `sudo findmnt <target>` and returns the parsed rows.
 func Findmnt(client *ssh.Client, target string) ([]FindmntRow, error) {
-	out, err := sshutils.CommandOutput(client, fmt.Sprintf("sudo findmnt %s", target))
+	out, err := sshutils.CommandOutput(client, fmt.Sprintf("sudo findmnt %s", sshutils.ShellQuote(target)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to run findmnt %s: %w", target, err)
 	}

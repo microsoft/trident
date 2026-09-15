@@ -9,14 +9,6 @@ import (
 	tridentutil "tridenttools/storm/utils/trident"
 )
 
-// ShellQuote renders s as a single POSIX shell word. Host Configuration
-// permits paths with spaces and shell metacharacters, and Go's %q is not a
-// shell quoter -- it leaves `$` and backticks unescaped, so a path like
-// `/tmp/$HOME` would still be expanded by the remote shell.
-func ShellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
 // sizeUnits maps a single-letter size suffix to its multiplier (powers of 1024),
 // matching base_test.py's SizeUnit enum.
 var sizeUnits = map[byte]float64{

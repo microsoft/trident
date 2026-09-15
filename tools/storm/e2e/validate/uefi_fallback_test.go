@@ -17,12 +17,18 @@ func specFromYaml(t *testing.T, yaml string) hostconfig.HostConfig {
 	return hc
 }
 
-// Every checked-in configuration must resolve, because a configuration whose
-// ESP cannot be found fails validation. This is the guard that was missing:
-// the ESP used to be located by device ID, and the RAID configurations call
-// theirs "esp1", so three of them failed in build 1203859.
+// Every configuration shipped in the repo must resolve, because a
+// configuration whose ESP cannot be found fails validation. This is the guard
+// that was missing: the ESP used to be located by device ID, and the RAID
+// configurations call theirs "esp1", so three of them failed in build 1203859.
+//
+// This reads the tracked configurations under tests/e2e_tests rather than the
+// copies under tools/storm/e2e/configurations: the latter are produced by
+// `go generate` and are gitignored, so globbing them makes the test depend on
+// generated state that a clean checkout does not have.
 func TestEspMountPointResolvesForEveryCheckedInConfig(t *testing.T) {
-	configs, err := filepath.Glob(filepath.Join("..", "configurations", "trident_configurations", "*", "trident-config.yaml"))
+	configs, err := filepath.Glob(filepath.Join("..", "..", "..", "..",
+		"tests", "e2e_tests", "trident_configurations", "*", "trident-config.yaml"))
 	if err != nil {
 		t.Fatalf("glob configurations: %v", err)
 	}

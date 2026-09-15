@@ -285,7 +285,7 @@ func checkDmsetupInfo(sa *SoftAsserter, client *ssh.Client, name string, swap bo
 
 // checkExists runs `sudo ls <path>` and records a failure if it does not exist.
 func checkExists(sa *SoftAsserter, client *ssh.Client, path string) {
-	out, err := sshutils.RunCommand(client, fmt.Sprintf("sudo ls %s", ShellQuote(path)))
+	out, err := sshutils.RunCommand(client, fmt.Sprintf("sudo ls %s", sshutils.ShellQuote(path)))
 	if err != nil {
 		sa.Fail("encryption/exists", err)
 		return

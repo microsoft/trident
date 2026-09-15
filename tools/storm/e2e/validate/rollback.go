@@ -129,7 +129,7 @@ func validateRollbackLogs(sa *SoftAsserter, client *ssh.Client) {
 		return
 	}
 
-	content, err := sshutils.CommandOutput(client, fmt.Sprintf("sudo cat %s", logFiles[0]))
+	content, err := sshutils.CommandOutput(client, fmt.Sprintf("sudo cat %s", sshutils.ShellQuote(logFiles[0])))
 	if err != nil {
 		sa.Fail("rollback/log-read", err)
 		return

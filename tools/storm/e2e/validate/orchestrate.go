@@ -370,7 +370,7 @@ func ValidateUefiFallback(sa *SoftAsserter, client *ssh.Client, spec hostconfig.
 	// fallback directory would fail silently and report zero entries - passing
 	// the check no matter what is actually there.
 	fallbackDir := path.Join(esp, "EFI", "BOOT")
-	cmd := fmt.Sprintf("sudo test -d %s && { sudo ls -A %s 2>/dev/null | wc -l; } || echo MISSING_ESP", ShellQuote(esp), ShellQuote(fallbackDir))
+	cmd := fmt.Sprintf("sudo test -d %s && { sudo ls -A %s 2>/dev/null | wc -l; } || echo MISSING_ESP", sshutils.ShellQuote(esp), sshutils.ShellQuote(fallbackDir))
 	out, err := sshutils.RunCommand(client, cmd)
 	if err != nil {
 		sa.Fail("uefi/disabled", err)
