@@ -1,0 +1,91 @@
+name: Cloud Agent UMI Validation
+
+on:
+  push:
+    branches:
+      - user/britel/cloud-agent-umi-validation-20260915
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: trident-github-runner-ubuntu2204-amd64
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate UMI access
+        shell: bash
+        env:
+          ADO_UMI_CLIENT_ID: e2fd61e6-b160-4f02-a5ac-3d949a4fe01d
+        run: |
+          set -euo pipefail
+
+          az login \
+            --identity \
+            --client-id "$ADO_UMI_CLIENT_ID" \
+            --allow-no-subscriptions \
+            >/dev/null
+
+          ado_token="$(
+            az account get-access-token \
+              --resource 499b84ac-1321-427f-aa17-267ca6975798 \
+              --query accessToken \
+              --output tsv
+          )"
+          test -n "$ado_token"
+
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $ado_token" \
+            "https://dev.azure.com/mariner-org/ECF/_apis/projects/ECF?api-version=7.1" \
+            >/dev/null
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $ado_token" \
+            "https://dev.azure.com/mariner-org/polar/_apis/projects/polar?api-version=7.1" \
+            >/dev/null
+
+          cp .cargo/config.toml .cargo/config
+          cat >> .cargo/config <<'EOF'
+
+          [registry]
+          global-credential-providers = ["cargo:token"]
+          EOF
+          export CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN="$ado_token"
+          cargo fetch --locked
+
+          latest_build="$(
+            curl --fail --silent --show-error --get \
+              --header "Authorization: Bearer $ado_token" \
+              --data-urlencode "definitions=5067" \
+              --data-urlencode "branchName=refs/heads/main" \
+              --data-urlencode "statusFilter=completed" \
+              --data-urlencode "resultFilter=succeeded" \
+              --data-urlencode "queryOrder=finishTimeDescending" \
+              --data-urlencode "\$top=1" \
+              --data-urlencode "api-version=7.1" \
+              "https://dev.azure.com/mariner-org/ECF/_apis/build/builds"
+          )"
+          build_id="$(jq --exit-status --raw-output '.value[0].id' <<<"$latest_build")"
+
+          artifact="$(
+            curl --fail --silent --show-error --get \
+              --header "Authorization: Bearer $ado_token" \
+              --data-urlencode "artifactName=go-tools" \
+              --data-urlencode "api-version=7.1" \
+              "https://dev.azure.com/mariner-org/ECF/_apis/build/builds/$build_id/artifacts"
+          )"
+          download_url="$(jq --exit-status --raw-output '.resource.downloadUrl' <<<"$artifact")"
+          curl --fail --location --silent --show-error \
+            --header "Authorization: Bearer $ado_token" \
+            --output "$RUNNER_TEMP/go-tools.zip" \
+            "$download_url"
+          unzip -t "$RUNNER_TEMP/go-tools.zip" >/dev/null
+
+          echo "UMI authenticated to ECF and polar."
+          echo "Cargo fetched through BMP_PublicPackages."
+          echo "Downloaded go-tools from ECF pipeline 5067 build $build_id."
