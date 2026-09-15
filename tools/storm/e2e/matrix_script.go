@@ -26,18 +26,33 @@ type TridentE2EScenarioMatrix struct {
 }
 
 func (s *TridentE2EScenarioMatrix) Run(suite core.SuiteContext) error {
-	suite.Logger().Infof("Generating Trident E2E test matrices for test ring '%s'", s.TestRing.ToString())
+	testRing, resolution := testrings.Resolve(s.TestRing)
+	switch resolution {
+	case testrings.ResolvedAlias:
+		suite.Logger().Infof("Pipeline stage type '%s' maps to test ring '%s'",
+			s.TestRing.ToString(), testRing.ToString())
+	case testrings.ResolvedFallback:
+		// Surface this in the pipeline UI: the alternative is an empty matrix
+		// and a stage that reports success without running any scenario.
+		utils.LogAzureDevopsWarning(fmt.Sprintf(
+			"Unknown test ring '%s'; falling back to '%s'. Add it to pipelineStageAliases in testrings if it should map elsewhere.",
+			s.TestRing.ToString(), testRing.ToString()))
+		suite.Logger().Warnf("Unknown test ring '%s'; falling back to '%s'",
+			s.TestRing.ToString(), testRing.ToString())
+	}
+
+	suite.Logger().Infof("Generating Trident E2E test matrices for test ring '%s'", testRing.ToString())
 
 	// Iterate over all hardware and runtime types to generate the corresponding matrices
 	for _, hw := range scenario.HardwareTypes() {
 		for _, rt := range trident.RuntimeTypes() {
 
 			// Get all matching scenarios for this hardware/runtime/testring combination
-			matchingScenarios := GetScenariosByHardwareAndRuntime(suite, hw, rt, s.TestRing)
+			matchingScenarios := GetScenariosByHardwareAndRuntime(suite, hw, rt, testRing)
 			slices.Sort(matchingScenarios)
 
 			// Generate the matrix JSON
-			matrixJson, err := s.GenerateMatrix(matchingScenarios, hw, rt, s.TestRing)
+			matrixJson, err := s.GenerateMatrix(matchingScenarios, hw, rt, testRing)
 			if err != nil {
 				return fmt.Errorf("failed to generate matrix for hardware '%s' and runtime '%s': %w", hw, rt, err)
 			}
