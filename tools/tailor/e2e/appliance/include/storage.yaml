@@ -1,0 +1,15 @@
+# A shared EFI + ext4 root layout, spliced into each cell's config via `$include`.
+bootType: efi
+disks:
+  - partitionTableType: gpt
+    maxSize: 4G
+    partitions:
+      - { id: esp, type: esp, size: 8M }
+      - { id: rootfs, size: grow }
+filesystems:
+  - deviceId: esp
+    type: fat32
+    mountPoint: { path: /boot/efi, options: "umask=0077" }
+  - deviceId: rootfs
+    type: ext4
+    mountPoint: { path: / }

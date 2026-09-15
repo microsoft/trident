@@ -1,0 +1,119 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/tailor",
+    "crates/tailor-config",
+    "crates/tailor-core",
+    "crates/tailor-exec",
+    "crates/tailor-resolve",
+    "crates/tailor-sign",
+]
+
+[workspace.package]
+version = "1.0.2"
+edition = "2024"
+rust-version = "1.91"
+license = "MIT"
+repository = "https://github.com/frhuelsz/tailor"
+authors = ["tailor contributors"]
+# The crates are internal to the tailor binary (not a published library API); never publish them.
+publish = false
+
+# All third-party deps are pinned here; per-crate manifests use `<name> = { workspace = true }`.
+# Deps are added as the crates that need them are implemented (see docs/2026-06-22-architecture.md §9.2).
+[workspace.dependencies]
+# --- local crates ---
+tailor-config = { path = "crates/tailor-config" }
+tailor-core = { path = "crates/tailor-core" }
+tailor-exec = { path = "crates/tailor-exec" }
+tailor-resolve = { path = "crates/tailor-resolve" }
+tailor-sign = { path = "crates/tailor-sign" }
+
+# --- async runtime ---
+tokio = { version = "1.48", features = ["macros", "rt-multi-thread", "sync", "fs", "signal", "process"] }
+tokio-util = { version = "0.7", features = ["rt", "io-util"] }
+
+# --- serialization ---
+serde = { version = "1", features = ["derive"] }
+serde_yaml_ng = "0.10"             # maintained serde_yaml drop-in fork (see 2026-06-22-architecture.md §11.1)
+serde_json = "1"
+indexmap = { version = "2", features = ["serde"] }   # order-preserving maps (matrix axis order)
+
+# --- error handling ---
+thiserror = "2"
+
+# --- CLI ---
+clap = { version = "4", features = ["derive", "env", "color"] }
+
+# --- container runtime ---
+bollard = "0.18"
+futures-util = "0.3"
+
+# --- OCI / registry ---
+# rustls (not native-tls) keeps the binary free of an OpenSSL dynamic dependency, which is required
+# for a fully static (musl) portable build. Two root-cert sources are enabled together: the host's
+# native trust store (`rustls-tls-native-roots`, read at runtime) is picked up when present — so
+# corporate/private CAs work — and the bundled Mozilla roots (`rustls-tls`/webpki-roots) are always
+# included as a baseline, so TLS still verifies on a minimal host with no system certificate store.
+# Both features keep the pure-Rust `ring` provider, so the musl static build is unaffected.
+oci-client = { version = "0.14", default-features = false, features = [
+    "rustls-tls",
+    "rustls-tls-native-roots",
+] }
+
+# --- hashing ---
+sha2 = "0.10"
+hex = "0.4"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+
+# --- compression ---
+# Post-build artifact compression. Bundles libzstd (vendored C), so the static musl build stays
+# self-contained — no runtime `zstd` binary or shared library required.
+zstd = "0.13"
+
+# --- versioning ---
+semver = { version = "1", features = ["serde"] }
+
+# --- filesystem ---
+reflink-copy = "0.1"
+nix = { version = "0.29", features = ["user", "process", "fs"] }
+tar = "0.4"
+
+# --- globbing ---
+glob = "0.3"
+
+# --- build-time license collection (build-dependency only; not linked into the binary) ---
+cargo_metadata = "0.23"
+
+# --- observability ---
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# --- testing ---
+indoc = "2"
+tempfile = "3"
+assert_cmd = "2"
+predicates = "3"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+doc_markdown = "allow"
+too_many_lines = "allow"
+# Async is dictated by our port trait signatures (BaseResolver, Executor, BaseImageFetcher, …);
+# several legitimate impls — dry-run no-ops and test fakes/stubs — have nothing to `.await`. The
+# lint only targets trait impls, which cannot drop `async` unilaterally, so it is pure noise here.
+unused_async_trait_impl = "allow"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"
