@@ -164,6 +164,9 @@ func (s *TridentE2EScenario) applyOciOverrides() error {
 	}
 
 	if s.args.ConfextOciUrl != "" {
+		if s.args.ConfextSha384 == "" {
+			return fmt.Errorf("--confext-sha384 is required when --confext-oci-url is provided")
+		}
 		if err := s.config.ArrayAppend(map[string]interface{}{
 			"url":    s.args.ConfextOciUrl,
 			"sha384": s.args.ConfextSha384,
@@ -189,6 +192,11 @@ func (s *TridentE2EScenario) applyOciOverrides() error {
 // uses no extensions simply leaves these empty.
 func (s *TridentE2EScenario) resolveSysextImage() (url string, hash string, err error) {
 	if s.args.SysextOciUrl != "" {
+		// sha384 is a required field of the extension schema, so injecting an
+		// empty one surfaces as an opaque Trident validation error much later.
+		if s.args.SysextSha384 == "" {
+			return "", "", fmt.Errorf("--sysext-sha384 is required when --sysext-oci-url is provided")
+		}
 		return s.args.SysextOciUrl, s.args.SysextSha384, nil
 	}
 

@@ -59,7 +59,7 @@ func ValidateExtensions(sa *SoftAsserter, client *ssh.Client, hs tridentutil.Hos
 			}
 
 			// Verify the extension path exists on the target OS.
-			out, err := sshutils.RunCommand(client, fmt.Sprintf("test -e %s", path))
+			out, err := sshutils.RunCommand(client, fmt.Sprintf("test -e %s", ShellQuote(path)))
 			if err != nil {
 				sa.Fail(fmt.Sprintf("extensions/%s-exists", extType), err)
 			} else {

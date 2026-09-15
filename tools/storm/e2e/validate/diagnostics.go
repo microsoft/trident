@@ -39,6 +39,13 @@ func ValidateSelinuxDenials(sa *SoftAsserter, client *ssh.Client) {
 		sa.Fail("selinux/audit2allow", err)
 		return
 	}
+	// audit2allow exits 0 whether or not it finds denials, so a non-zero status
+	// means the scan never ran (e.g. unreadable audit log). Without this, such a
+	// failure has empty stdout and would be recorded as "no denials found".
+	if out.Status != 0 {
+		sa.Failf("selinux/audit2allow", "audit2allow exited %d: %s", out.Status, strings.TrimSpace(out.Stderr))
+		return
+	}
 	if strings.TrimSpace(out.Stdout) != "" {
 		sa.Passf("selinux/audit2allow", "audit2allow reported potential denials:\n%s", out.Stdout)
 	} else {
@@ -53,6 +60,12 @@ func ValidateJournaldTracing(sa *SoftAsserter, client *ssh.Client) {
 	out, err := sshutils.RunCommand(client, "sudo journalctl -t "+tridentTracingSyslogIdentifier+" -o json")
 	if err != nil {
 		sa.Fail("tracing/journald", err)
+		return
+	}
+	// A non-zero journalctl exit would otherwise be reported as "metric not
+	// found", pointing at Trident instead of the failed query.
+	if out.Status != 0 {
+		sa.Failf("tracing/journald", "journalctl exited %d: %s", out.Status, strings.TrimSpace(out.Stderr))
 		return
 	}
 
