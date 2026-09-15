@@ -1,7 +1,9 @@
 use std::{fs, path::Path};
 
 use log::{debug, warn};
+use serde::{de::DeserializeOwned, Serialize};
 use sqlite::State;
+use uuid::Uuid;
 
 use trident_api::{
     error::{
@@ -11,6 +13,13 @@ use trident_api::{
 };
 
 use crate::TRIDENT_SEMVER_VERSION;
+
+/// Key under which the datastore's unique database ID is stored in the
+/// generic key-value table. This ID is generated once (on first access) and
+/// persisted for the lifetime of the datastore. It is intended to be added to
+/// tracing/telemetry so that all activity for a given host installation can
+/// be correlated.
+const DATASTORE_ID_KEY: &str = "datastore-id";
 
 pub struct DataStore {
     db: Option<sqlite::Connection>,
@@ -37,11 +46,38 @@ impl DataStore {
 
     pub(crate) fn open(path: &Path) -> Result<Self, TridentError> {
         debug!("Loading datastore from {}", path.display());
-        let db = sqlite::open(path).structured(ServicingError::Datastore {
+        let mut db = sqlite::open(path).structured(ServicingError::Datastore {
             inner: DatastoreError::LoadDatastore {
                 path: path.to_string_lossy().into(),
             },
         })?;
+        // Multiple connections to the same datastore file (e.g. concurrent
+        // daemon RPC handlers) can briefly contend for the write lock; wait
+        // for it rather than failing immediately with "database is locked".
+        Self::set_busy_timeout(&mut db)?;
+        // Require the `hoststatus` table to already be present before
+        // applying any schema migration. This distinguishes a genuinely
+        // pre-existing datastore (which may only be missing a table added
+        // in a later Trident version, e.g. `keyvalue`) from a zero-byte or
+        // otherwise corrupt/truncated file, which must fail loudly here
+        // rather than silently succeeding as an empty, freshly-provisioned
+        // datastore.
+        if !Self::table_exists(&db, "hoststatus")? {
+            return Err(TridentError::new(ServicingError::Datastore {
+                inner: DatastoreError::LoadDatastore {
+                    path: path.to_string_lossy().into(),
+                },
+            }))
+            .message(
+                "Existing datastore file is missing its 'hoststatus' table; \
+                 the file may be corrupt, truncated, or not a Trident datastore",
+            );
+        }
+        // Existing datastores may predate a table added in a later Trident
+        // version (e.g. `keyvalue`). Idempotently ensure the full schema is
+        // present so upgraded hosts don't fail with "no such table" the
+        // first time a new table is accessed.
+        Self::ensure_schema(&db)?;
         let host_status_yaml: Option<serde_yaml::Value> = db
             .prepare("SELECT contents FROM hoststatus ORDER BY id DESC LIMIT 1")
             .structured(ServicingError::Datastore {
@@ -118,17 +154,62 @@ impl DataStore {
             DatastoreError::CreateDatastoreDirectory,
         ))?;
 
-        let db =
+        let mut db =
             sqlite::open(path).structured(ServicingError::from(DatastoreError::OpenDatastore))?;
+        Self::set_busy_timeout(&mut db)?;
+        Self::ensure_schema(&db)?;
+        Ok(db)
+    }
+
+    /// Wait (rather than immediately failing with "database is locked") for
+    /// up to five seconds when another connection holds the write lock on
+    /// this datastore file. Needed because more than one connection to the
+    /// same datastore can legitimately exist at once (e.g. concurrent
+    /// daemon RPC handlers each calling `Trident::new`), and SQLite's
+    /// default busy timeout is zero.
+    fn set_busy_timeout(db: &mut sqlite::Connection) -> Result<(), TridentError> {
+        db.set_busy_timeout(5000)
+            .structured(ServicingError::from(DatastoreError::OpenDatastore))
+    }
+
+    /// Returns whether a table with the given name currently exists in the
+    /// datastore's schema (queried via `sqlite_master`).
+    fn table_exists(db: &sqlite::Connection, table: &str) -> Result<bool, TridentError> {
+        let mut statement = db
+            .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
+            .structured(ServicingError::from(DatastoreError::InitializeDatastore))?;
+        statement
+            .bind((1, table))
+            .structured(ServicingError::from(DatastoreError::InitializeDatastore))?;
+        Ok(matches!(
+            statement
+                .next()
+                .structured(ServicingError::from(DatastoreError::InitializeDatastore))?,
+            State::Row
+        ))
+    }
+
+    /// Idempotently create any tables that don't already exist. Safe to call
+    /// on both newly-created and pre-existing datastores, so that a
+    /// datastore created by an older Trident version picks up tables added
+    /// by a newer version the next time it is opened.
+    fn ensure_schema(db: &sqlite::Connection) -> Result<(), TridentError> {
         db.execute(
             "CREATE TABLE IF NOT EXISTS hoststatus (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp DATETIME DEFALUT CURRENT_TIMESTAMP,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                 contents TEXT NOT NULL
             )",
         )
         .structured(ServicingError::from(DatastoreError::InitializeDatastore))?;
-        Ok(db)
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS keyvalue (
+                key TEXT PRIMARY KEY,
+                contents TEXT NOT NULL
+            )",
+        )
+        .structured(ServicingError::from(DatastoreError::InitializeDatastore))?;
+        Ok(())
     }
 
     pub(crate) fn persist(&mut self, path: &Path) -> Result<(), TridentError> {
@@ -139,8 +220,92 @@ impl DataStore {
                 TridentVersion::SemVer(TRIDENT_SEMVER_VERSION.clone());
             Self::write_host_status(&persistent_db, self.host_status())?;
 
+            // Carry over any generic key-value entries (e.g. the database ID)
+            // recorded in the temporary datastore into the persistent one, so
+            // they survive the transition from temporary to persistent
+            // storage.
+            if let Some(temporary_db) = self.db.as_ref() {
+                Self::copy_key_values(temporary_db, &persistent_db)?;
+            }
+
             self.db = Some(persistent_db);
             self.temporary = false;
+        }
+
+        Ok(())
+    }
+
+    /// Copy all rows of the generic key-value table from `source` into
+    /// `destination`, overwriting any conflicting keys already present in
+    /// `destination`.
+    ///
+    /// `source` and `destination` may be two live connections to the *same*
+    /// underlying SQLite file (e.g. an offline `persist` whose destination
+    /// path is the currently-open datastore's own path). SQLite's locking is
+    /// per-connection, so a `SELECT` left active on `source` holds a read
+    /// lock that a write from `destination` on the same file would have to
+    /// wait on -- and since both connections are driven from this single
+    /// thread, that wait can never be satisfied ("database is locked").
+    /// To avoid this, fully read and finalize the source query *before*
+    /// issuing any writes to `destination`.
+    fn copy_key_values(
+        source: &sqlite::Connection,
+        destination: &sqlite::Connection,
+    ) -> Result<(), TridentError> {
+        let mut rows: Vec<(String, String)> = Vec::new();
+        {
+            let mut query_statement = source
+                .prepare("SELECT key, contents FROM keyvalue")
+                .structured(ServicingError::from(DatastoreError::ReadDatastore))?;
+
+            loop {
+                match query_statement.next() {
+                    Ok(State::Done) => break,
+                    Err(e) => {
+                        return Err(e)
+                            .structured(ServicingError::from(DatastoreError::ReadDatastore))
+                            .message("Failed to get next keyvalue row while copying datastore");
+                    }
+                    Ok(State::Row) => {} // continue below
+                }
+
+                let key = query_statement
+                    .read::<String, _>(0)
+                    .structured(ServicingError::from(DatastoreError::ReadDatastore))?;
+                let contents = query_statement
+                    .read::<String, _>(1)
+                    .structured(ServicingError::from(DatastoreError::ReadDatastore))?;
+
+                rows.push((key, contents));
+            }
+            // `query_statement` is dropped here, finalizing the source
+            // SELECT and releasing its read lock before any writes below.
+        }
+
+        for (key, contents) in rows {
+            let mut insert_statement = destination
+                .prepare(
+                    "INSERT INTO keyvalue (key, contents) VALUES (?, ?) \
+                     ON CONFLICT(key) DO UPDATE SET contents = excluded.contents",
+                )
+                .structured(ServicingError::Datastore {
+                    inner: DatastoreError::WriteKeyValue { key: key.clone() },
+                })?;
+            insert_statement
+                .bind((1, &*key))
+                .structured(ServicingError::Datastore {
+                    inner: DatastoreError::WriteKeyValue { key: key.clone() },
+                })?;
+            insert_statement
+                .bind((2, &*contents))
+                .structured(ServicingError::Datastore {
+                    inner: DatastoreError::WriteKeyValue { key: key.clone() },
+                })?;
+            insert_statement
+                .next()
+                .structured(ServicingError::Datastore {
+                    inner: DatastoreError::WriteKeyValue { key },
+                })?;
         }
 
         Ok(())
@@ -219,6 +384,183 @@ impl DataStore {
         self.db = None;
     }
 
+    /// Retrieve a structured value stored under `key` in the datastore's
+    /// generic key-value table, if present.
+    ///
+    /// Values are serialized as JSON, so any type implementing
+    /// `serde::Serialize`/`serde::de::DeserializeOwned` can be stored, not
+    /// just `HostStatus`.
+    pub(crate) fn get_value<T: DeserializeOwned>(
+        &self,
+        key: &str,
+    ) -> Result<Option<T>, TridentError> {
+        let db = self
+            .db
+            .as_ref()
+            .structured(ServicingError::from(DatastoreError::OpenDatastore))?;
+
+        let mut statement = db
+            .prepare("SELECT contents FROM keyvalue WHERE key = ?")
+            .structured(ServicingError::Datastore {
+                inner: DatastoreError::ReadKeyValue {
+                    key: key.to_string(),
+                },
+            })?;
+        statement
+            .bind((1, key))
+            .structured(ServicingError::Datastore {
+                inner: DatastoreError::ReadKeyValue {
+                    key: key.to_string(),
+                },
+            })?;
+
+        match statement.next().structured(ServicingError::Datastore {
+            inner: DatastoreError::ReadKeyValue {
+                key: key.to_string(),
+            },
+        })? {
+            State::Row => {
+                let contents =
+                    statement
+                        .read::<String, _>(0)
+                        .structured(ServicingError::Datastore {
+                            inner: DatastoreError::ReadKeyValue {
+                                key: key.to_string(),
+                            },
+                        })?;
+                let value = serde_json::from_str(&contents).structured(
+                    InternalError::DeserializeValue {
+                        key: key.to_string(),
+                    },
+                )?;
+                Ok(Some(value))
+            }
+            State::Done => Ok(None),
+        }
+    }
+
+    /// Store a structured value under `key` in the datastore's generic
+    /// key-value table, overwriting any previous value stored under the
+    /// same key.
+    ///
+    /// Values are serialized as JSON, so any type implementing
+    /// `serde::Serialize`/`serde::de::DeserializeOwned` can be stored, not
+    /// just `HostStatus`.
+    ///
+    /// `datastore_id` is currently the only first-party caller of the
+    /// generic key-value store, and it needs insert-if-absent semantics
+    /// (see `set_value_if_absent`) rather than an unconditional overwrite,
+    /// so this unconditional-overwrite variant is presently exercised only
+    /// by tests. It's kept as part of the generic key-value API (see
+    /// `get_value`) for future callers that do want overwrite semantics.
+    #[allow(dead_code)]
+    pub(crate) fn set_value<T: Serialize>(&self, key: &str, value: &T) -> Result<(), TridentError> {
+        let contents = serde_json::to_string(value).structured(InternalError::SerializeValue {
+            key: key.to_string(),
+        })?;
+        self.write_key_value_row(
+            key,
+            &contents,
+            "INSERT INTO keyvalue (key, contents) VALUES (?, ?) \
+             ON CONFLICT(key) DO UPDATE SET contents = excluded.contents",
+        )
+    }
+
+    /// Like [`Self::set_value`], but only inserts a row if `key` does not
+    /// already have one; an existing row is left untouched. Used where two
+    /// datastore connections could race to perform "first access"
+    /// initialization of a key (see [`Self::datastore_id`]): whichever
+    /// connection's insert commits first wins, and the other's insert
+    /// becomes a no-op instead of overwriting the winner's value.
+    pub(crate) fn set_value_if_absent<T: Serialize>(
+        &self,
+        key: &str,
+        value: &T,
+    ) -> Result<(), TridentError> {
+        let contents = serde_json::to_string(value).structured(InternalError::SerializeValue {
+            key: key.to_string(),
+        })?;
+        self.write_key_value_row(
+            key,
+            &contents,
+            "INSERT INTO keyvalue (key, contents) VALUES (?, ?) \
+             ON CONFLICT(key) DO NOTHING",
+        )
+    }
+
+    /// Execute a parameterized `INSERT ... ON CONFLICT ...` against the
+    /// `keyvalue` table, binding `key` and `contents` as the two `?`
+    /// placeholders in `sql`.
+    fn write_key_value_row(
+        &self,
+        key: &str,
+        contents: &str,
+        sql: &str,
+    ) -> Result<(), TridentError> {
+        let db = self
+            .db
+            .as_ref()
+            .structured(ServicingError::from(DatastoreError::WriteToClosedDatastore))?;
+
+        let mut statement = db.prepare(sql).structured(ServicingError::Datastore {
+            inner: DatastoreError::WriteKeyValue {
+                key: key.to_string(),
+            },
+        })?;
+        statement
+            .bind((1, key))
+            .structured(ServicingError::Datastore {
+                inner: DatastoreError::WriteKeyValue {
+                    key: key.to_string(),
+                },
+            })?;
+        statement
+            .bind((2, contents))
+            .structured(ServicingError::Datastore {
+                inner: DatastoreError::WriteKeyValue {
+                    key: key.to_string(),
+                },
+            })?;
+        statement.next().structured(ServicingError::Datastore {
+            inner: DatastoreError::WriteKeyValue {
+                key: key.to_string(),
+            },
+        })?;
+
+        Ok(())
+    }
+
+    /// Retrieve this datastore's unique database ID, generating and
+    /// persisting a new one on first access.
+    ///
+    /// This ID is stable for the lifetime of the datastore (surviving the
+    /// temporary-to-persistent transition performed by `persist`), and is
+    /// intended to be attached to tracing/telemetry so that activity for a
+    /// given host installation can be correlated across logs and traces.
+    ///
+    /// First access is not a simple read-then-write: `Trident::new` may be
+    /// invoked concurrently (e.g. by multiple daemon RPC handlers), each
+    /// opening its own connection to the same datastore file. A naive
+    /// "read, and if absent generate + write" would let two connections
+    /// both observe no row, generate different UUIDs, and each overwrite
+    /// the other -- leaving one caller tracing with an ID that was never
+    /// actually persisted. Instead, unconditionally attempt to insert a
+    /// freshly generated ID with `ON CONFLICT DO NOTHING` (a no-op if
+    /// another connection already inserted one first), then read back
+    /// whichever ID actually won that race.
+    pub fn datastore_id(&mut self) -> Result<Uuid, TridentError> {
+        if let Some(id) = self.get_value::<Uuid>(DATASTORE_ID_KEY)? {
+            return Ok(id);
+        }
+
+        self.set_value_if_absent(DATASTORE_ID_KEY, &Uuid::new_v4())?;
+
+        self.get_value::<Uuid>(DATASTORE_ID_KEY)?
+            .structured(InternalError::Internal(
+                "Datastore ID missing immediately after being inserted",
+            ))
+    }
+
     /// Parse a single HostStatus entry from a datastore query result.
     /// 1. Read each row as a string containing YAML-encoded Host Status.
     /// 2. Decode the YAML string into a serde_yaml Value.
@@ -277,6 +619,31 @@ mod tests {
     }
 
     #[test]
+    /// Regression test: `persist` supports a destination path equal to the
+    /// currently-open (temporary) datastore's own path -- the offline
+    /// provisioning flow does this. `copy_key_values` fully reads and
+    /// finalizes the source `SELECT` before writing to the destination
+    /// connection, so a self-persist (both connections pointing at the
+    /// same file) does not block the destination write on the source's
+    /// read lock.
+    fn test_persist_to_same_path_does_not_deadlock() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let datastore_path = temp_dir.path().join("db.sqlite");
+
+        let mut datastore = super::DataStore::open_or_create(&datastore_path).unwrap();
+        let datastore_id = datastore.datastore_id().unwrap();
+
+        // Persist to the exact same path the datastore is currently open at.
+        datastore.persist(&datastore_path).unwrap();
+
+        assert_eq!(
+            datastore.datastore_id().unwrap(),
+            datastore_id,
+            "Datastore ID should survive a self-persist"
+        );
+    }
+
+    #[test]
     fn test_parse_host_status() {
         let ds = super::DataStore {
             db: None,
@@ -305,6 +672,147 @@ mod tests {
         assert!(ds
             .parse_host_status(Ok(serde_yaml::to_string(&valid_host_status).unwrap()))
             .is_some());
+    }
+
+    #[test]
+    fn test_generic_key_value_store() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("db.sqlite");
+        let db = super::DataStore::make_datastore(&path).unwrap();
+        let datastore = super::DataStore {
+            db: Some(db),
+            host_status: Default::default(),
+            temporary: false,
+        };
+
+        // No value stored yet.
+        assert_eq!(datastore.get_value::<String>("some-key").unwrap(), None);
+
+        // Store and retrieve a value.
+        datastore
+            .set_value("some-key", &"some-value".to_string())
+            .unwrap();
+        assert_eq!(
+            datastore.get_value::<String>("some-key").unwrap(),
+            Some("some-value".to_string())
+        );
+
+        // Overwrite the value.
+        datastore
+            .set_value("some-key", &"other-value".to_string())
+            .unwrap();
+        assert_eq!(
+            datastore.get_value::<String>("some-key").unwrap(),
+            Some("other-value".to_string())
+        );
+
+        temp_dir.close().unwrap();
+    }
+
+    #[test]
+    /// Regression test: a datastore created by an older Trident version that
+    /// predates the `keyvalue` table (only `hoststatus` exists) must still
+    /// be usable after `open()` -- in particular, `datastore_id()` must
+    /// not fail with "no such table: keyvalue".
+    fn test_open_upgrades_pre_existing_datastore_schema() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("db.sqlite");
+
+        // Simulate a datastore created before the `keyvalue` table existed:
+        // create only the `hoststatus` table.
+        {
+            let db = sqlite::open(&path).unwrap();
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS hoststatus (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    contents TEXT NOT NULL
+                )",
+            )
+            .unwrap();
+        }
+
+        let mut datastore = super::DataStore::open(&path).unwrap();
+        // Should not fail with "no such table: keyvalue".
+        datastore.datastore_id().unwrap();
+
+        temp_dir.close().unwrap();
+    }
+
+    #[test]
+    /// Regression test: a zero-byte or otherwise schema-less file at the
+    /// datastore path must be rejected by `open()` rather than silently
+    /// treated as a valid, freshly-provisioned datastore.
+    fn test_open_rejects_file_missing_hoststatus_table() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("db.sqlite");
+
+        // Create a valid, but empty (no tables), SQLite file at the path --
+        // simulating a truncated/corrupt existing datastore.
+        sqlite::open(&path).unwrap();
+
+        let result = super::DataStore::open(&path);
+        assert!(
+            result.is_err(),
+            "open() must reject a datastore file with no 'hoststatus' table"
+        );
+
+        temp_dir.close().unwrap();
+    }
+
+    #[test]
+    fn test_datastore_id_concurrent_first_access_is_consistent() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("db.sqlite");
+
+        // Create the datastore (and its schema) up front, then open two
+        // separate connections to it, simulating two daemon RPC handlers
+        // concurrently calling `Trident::new` (and therefore
+        // `datastore_id`) against the same datastore path.
+        super::DataStore::make_datastore(&path).unwrap();
+
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let handles: Vec<_> = (0..2)
+            .map(|_| {
+                let path = path.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    let mut datastore = super::DataStore::open(&path).unwrap();
+                    // Synchronize so both threads attempt "first access"
+                    // (no database ID persisted yet) as close together
+                    // as possible.
+                    barrier.wait();
+                    datastore.datastore_id().unwrap()
+                })
+            })
+            .collect();
+
+        let ids: Vec<uuid::Uuid> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        assert_eq!(
+            ids[0], ids[1],
+            "concurrent first access returned inconsistent database IDs"
+        );
+
+        temp_dir.close().unwrap();
+    }
+
+    #[test]
+    fn test_datastore_id_is_stable() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("db.sqlite");
+        let db = super::DataStore::make_datastore(&path).unwrap();
+        let mut datastore = super::DataStore {
+            db: Some(db),
+            host_status: Default::default(),
+            temporary: false,
+        };
+
+        let id = datastore.datastore_id().unwrap();
+        // Calling datastore_id again should return the same ID, not generate a
+        // new one.
+        assert_eq!(datastore.datastore_id().unwrap(), id);
+
+        temp_dir.close().unwrap();
     }
 }
 
@@ -380,5 +888,25 @@ mod functional_test {
             datastore.host_status().servicing_state,
             ServicingState::Provisioned
         );
+    }
+
+    #[functional_test]
+    fn test_datastore_id_survives_persist() {
+        let temp_dir = TempDir::new().unwrap();
+        let datastore_temp_path = temp_dir.path().join("db-tmp.sqlite");
+        let datastore_path = temp_dir.path().join("db.sqlite");
+
+        // Generate a database ID in the temporary datastore, then persist it.
+        let datastore_id = {
+            let mut datastore = DataStore::open_or_create(&datastore_temp_path).unwrap();
+            let datastore_id = datastore.datastore_id().unwrap();
+            datastore.persist(&datastore_path).unwrap();
+            datastore_id
+        };
+
+        // Re-open the persisted datastore and verify the same database ID is
+        // returned, rather than a new one being generated.
+        let mut datastore = DataStore::open(&datastore_path).unwrap();
+        assert_eq!(datastore.datastore_id().unwrap(), datastore_id);
     }
 }
