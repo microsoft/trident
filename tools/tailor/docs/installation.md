@@ -9,7 +9,7 @@ Releases publish static Linux musl binaries for `x86_64` and `aarch64`, each wit
 ```bash
 set -euo pipefail
 target="x86_64-unknown-linux-musl" # or aarch64-unknown-linux-musl
-base="https://github.com/frhuelsz/tailor/releases/latest/download"
+base="https://github.com/<owner>/<repo>/releases/latest/download"
 
 curl -L -O "${base}/tailor-${target}"
 curl -L -O "${base}/tailor-${target}.sha256"
@@ -22,15 +22,13 @@ The binary is fully static: it does not require glibc or OpenSSL on the target m
 
 Each release also publishes a cosign signature bundle, an SBOM, and build provenance. To verify the
 binary's signature and provenance (not just its checksum), follow the verification steps in the
-[project README](https://github.com/frhuelsz/tailor#verifying-releases).
+[project README](../README.md#verifying-releases).
 
 ## From source
 
-The crate is not published to crates.io yet, so install from git (or a local checkout):
+The crate is not published to crates.io yet, so install from a local checkout:
 
 ```bash
-cargo install --git https://github.com/frhuelsz/tailor tailor
-# From a local checkout:
 cargo install --path crates/tailor
 ```
 

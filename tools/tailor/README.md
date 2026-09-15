@@ -1,8 +1,5 @@
 # tailor
 
-[![CI](https://github.com/frhuelsz/tailor/actions/workflows/ci.yml/badge.svg)](https://github.com/frhuelsz/tailor/actions/workflows/ci.yml)
-[![Docs](https://img.shields.io/badge/docs-frhuelsz.github.io%2Ftailor-orange)](https://frhuelsz.github.io/tailor/)
-
 <p align="center">
   <img src="docs/resources/logo_small.png" alt="tailor" width="360">
 </p>
@@ -116,7 +113,7 @@ Releases publish static Linux musl binaries for `x86_64` and `aarch64`, plus `.s
 ```bash
 set -euo pipefail
 target="x86_64-unknown-linux-musl" # or aarch64-unknown-linux-musl
-base="https://github.com/frhuelsz/tailor/releases/latest/download"
+base="https://github.com/<owner>/<repo>/releases/latest/download"
 
 curl -L -O "${base}/tailor-${target}"
 curl -L -O "${base}/tailor-${target}.sha256"
@@ -138,7 +135,7 @@ larger monorepo); the identity regexp matches that ref.
 
 ```bash
 set -euo pipefail
-repo="frhuelsz/tailor" # the repository you downloaded the release from
+repo="<owner>/<repo>" # the repository you downloaded the release from
 target="x86_64-unknown-linux-musl" # or aarch64-unknown-linux-musl
 binary="tailor-${target}"
 issuer="https://token.actions.githubusercontent.com"
@@ -162,7 +159,6 @@ gh attestation verify "${binary}" \
 The crate is not published to crates.io yet.
 
 ```bash
-cargo install --git https://github.com/frhuelsz/tailor tailor
 # From a local checkout:
 cargo install --path crates/tailor
 ```
@@ -205,9 +201,7 @@ Run `tailor --version` to see the version of your build; the current release lin
 
 ## Documentation
 
-📖 **Full documentation: [frhuelsz.github.io/tailor](https://frhuelsz.github.io/tailor/)** (versioned; the `latest` release plus in-development `dev`).
-
-The same content lives in [`docs/`](docs/README.md):
+The documentation lives in [`docs/`](docs/README.md):
 
 - [Tutorials](docs/tutorials/README.md): learn tailor hands-on.
 - [How-to guides](docs/how-to/README.md): accomplish specific tasks.

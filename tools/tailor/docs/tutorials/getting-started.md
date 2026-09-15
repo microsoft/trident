@@ -4,10 +4,10 @@ In this tutorial you will create one standalone image definition and render the 
 
 ## 1. Install tailor
 
-Use a release binary or install from git:
+Use a release binary or install from a local checkout:
 
 ```bash
-cargo install --git https://github.com/frhuelsz/tailor tailor
+cargo install --path crates/tailor
 ```
 
 Check it:

@@ -105,7 +105,7 @@ build-provenance attestation, and publishes a GitHub Release for the tag.
 Keyless signatures and attestations are bound to the **repository and workflow**
 that produced them. After moving, the verification identity changes from the
 fork's repo to the host repo. Update the `repo` and the identity regexp in the
-[verification instructions](https://github.com/frhuelsz/tailor#verifying-releases):
+[verification instructions](../../README.md#verifying-releases):
 
 ```
 identity="https://github.com/<host-org>/<host-repo>/.github/workflows/tailor-release.yml@refs/tags/tailor-v.*"

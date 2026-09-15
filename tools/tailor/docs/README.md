@@ -50,8 +50,6 @@ flowchart TD
 
 ## Project
 
-- [Compatibility policy](https://github.com/frhuelsz/tailor/blob/main/COMPATIBILITY.md) — what is
+- [Compatibility policy](../COMPATIBILITY.md) — what is
   stable across releases.
-- [Changelog](https://github.com/frhuelsz/tailor/blob/main/CHANGELOG.md) — release history.
-- [Releases](https://github.com/frhuelsz/tailor/releases) — signed binaries and provenance; see
-  [Installation](installation.md) for verification.
+- [Changelog](../CHANGELOG.md) — release history.

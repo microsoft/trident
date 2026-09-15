@@ -14,7 +14,7 @@ version = "1.0.2"
 edition = "2024"
 rust-version = "1.91"
 license = "MIT"
-repository = "https://github.com/frhuelsz/tailor"
+repository = "https://github.com/microsoft/trident"
 authors = ["tailor contributors"]
 # The crates are internal to the tailor binary (not a published library API); never publish them.
 publish = false

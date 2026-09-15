@@ -1,13 +1,13 @@
 # Licensing and third-party notices
 
-tailor is licensed under the [MIT License](https://github.com/frhuelsz/tailor/blob/main/LICENSE). Because tailor is distributed as a
+tailor is licensed under the [MIT License](../../LICENSE). Because tailor is distributed as a
 statically linked binary, every dependency it links is compiled into that binary, so their licenses
 travel with it. This page describes how tailor stays compliant.
 
 ## Policy: what dependencies are allowed
 
 tailor restricts its dependency tree to **permissive, attribution-style licenses** — no copyleft.
-The policy lives in [`deny.toml`](https://github.com/frhuelsz/tailor/blob/main/deny.toml) and is enforced in CI by
+The policy lives in [`deny.toml`](../../deny.toml) and is enforced in CI by
 [`cargo-deny`](https://github.com/EmbarkStudios/cargo-deny): a pull request that introduces a
 dependency under a license outside the allow-list fails the `cargo-deny` check until reviewed.
 

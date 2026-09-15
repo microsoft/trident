@@ -7,7 +7,7 @@ tailor can produce **Secure Boot–signed** images by orchestrating Image Custom
 > **Preview feature.** Signing is not yet part of the stable 1.0 contract, so it is gated behind a
 > preview opt-in: add `previewFeatures: [signing]` to `tailor.yaml`. A signed `tailor build` or
 > `validate` without the opt-in stops with a clear error. Because it is a preview feature, its schema
-> and behavior may change before it is promoted (see [Compatibility](https://github.com/frhuelsz/tailor/blob/main/COMPATIBILITY.md)).
+> and behavior may change before it is promoted (see [Compatibility](../../COMPATIBILITY.md)).
 >
 > **Backend status.** The `local-test-ca` and `keypair` backends are implemented end-to-end: a signed
 > build extracts the declared artifacts, signs them on the host, and re-injects them so the final image
