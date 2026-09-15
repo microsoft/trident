@@ -256,9 +256,9 @@ func ValidateUsers(sa *SoftAsserter, client *ssh.Client, spec hostconfig.HostCon
 	}
 }
 
-// espDeviceId is the device ID the test configurations give the EFI System
-// Partition.
-const espDeviceId = "esp"
+// espPartitionType is the partition type the Host Configuration schema uses for
+// the EFI System Partition.
+const espPartitionType = "esp"
 
 // uefiFallbackDisabled is the mode under which Trident installs no fallback
 // boot files at all.
@@ -267,23 +267,61 @@ const uefiFallbackDisabled = "disabled"
 // EspMountPoint returns the path the EFI System Partition is mounted at,
 // according to the Host Configuration.
 //
-// The mount point is spelled two ways in the schema - a bare path, or an object
-// with a `path` - so both are accepted.
+// The ESP is located by partition TYPE rather than by device ID: the id is just
+// a label chosen per configuration, and the RAID configurations call theirs
+// "esp1" rather than "esp". A mirrored configuration mounts a software RAID
+// array built from those partitions, so arrays over esp members count too. The
+// mount point itself is spelled two ways in the schema - a bare path, or an
+// object with a `path` - so both are accepted.
 func EspMountPoint(spec hostconfig.HostConfig) (string, bool) {
 	for _, fs := range spec.S("storage", "filesystems").Children() {
-		if id, _ := fs.S("deviceId").Data().(string); id != espDeviceId {
+		id, _ := fs.S("deviceId").Data().(string)
+		if _, isEsp := espDeviceIds(spec)[id]; !isEsp {
 			continue
 		}
 
 		mountPoint := fs.S("mountPoint")
-		if path, ok := mountPoint.Data().(string); ok {
-			return path, path != ""
+		if p, ok := mountPoint.Data().(string); ok {
+			return p, p != ""
 		}
-		if path, ok := mountPoint.S("path").Data().(string); ok {
-			return path, path != ""
+		if p, ok := mountPoint.S("path").Data().(string); ok {
+			return p, p != ""
 		}
 	}
 	return "", false
+}
+
+// espDeviceIds returns every device ID that denotes the EFI System Partition:
+// the esp-typed partitions themselves, plus any software RAID array built from
+// them, since a mirrored configuration mounts the array rather than a partition.
+func espDeviceIds(spec hostconfig.HostConfig) map[string]struct{} {
+	ids := make(map[string]struct{})
+
+	for _, disk := range spec.S("storage", "disks").Children() {
+		for _, partition := range disk.S("partitions").Children() {
+			if t, _ := partition.S("type").Data().(string); t != espPartitionType {
+				continue
+			}
+			if id, ok := partition.S("id").Data().(string); ok {
+				ids[id] = struct{}{}
+			}
+		}
+	}
+
+	for _, array := range spec.S("storage", "raid", "software").Children() {
+		for _, device := range array.S("devices").Children() {
+			member, _ := device.Data().(string)
+			if _, isEsp := ids[member]; !isEsp {
+				continue
+			}
+			if id, ok := array.S("id").Data().(string); ok {
+				ids[id] = struct{}{}
+			}
+			break
+		}
+	}
+
+	return ids
 }
 
 // ValidateUefiFallback checks the UEFI fallback boot files against the
