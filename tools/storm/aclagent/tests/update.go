@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	stormproxies "tridenttools/storm/aclagent/proxies"
@@ -168,23 +169,58 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	// (re)start, so the agent's connect-retry/backoff logic has to actually
 	// retry against a closed port for a while instead of always finding the
 	// apiserver already up.
-	// apiServerStop is set by apiServerDelayedStart once the fake apiserver
-	// actually starts. It is only safe to read after receiving from
-	// apiServerReady (below), which happens-before this assignment via the
-	// channel send in apiServerDelayedStart.
-	var apiServerStop func() error
+	// apiServerStop/apiServerErr are set by apiServerDelayedStart once the
+	// fake apiserver has finished starting (or failed to). They must only
+	// ever be read via receiveApiServerReady below: that's the only thing
+	// that synchronizes with the channel send at the end of
+	// apiServerDelayedStart, so it's the only safe happens-after point.
+	// Reading them directly (e.g. from the deferred cleanup) would race the
+	// goroutine if it hasn't finished writing yet - which is exactly what
+	// can occur if prepareVmForAclAgent fails and returns before the
+	// "kubernetes" validate-connection check ever consumes apiServerReady.
+	var (
+		apiServerStop func() error
+		apiServerErr  error
+		apiServerOnce sync.Once
+	)
 	apiServerReady := make(chan error, 1)
 	apiServerDelayedStart := func() {
 		_, stop, err := apiServer.ListenAndServe(ctx, fmt.Sprintf("%s:%d", testConfig.HostEndpointIP, testConfig.APIServerPort))
 		if err == nil {
 			apiServerStop = stop
 		}
+		apiServerErr = err
 		apiServerReady <- err
+	}
+	// apiServerTimer is armed further below, right as we hand off to
+	// prepareVmForAclAgent (see the comment there for why).
+	var apiServerTimer *time.Timer
+	// receiveApiServerReady blocks until apiServerDelayedStart has finished
+	// (however it was triggered) and returns its error exactly once; later
+	// calls return the same result immediately without re-reading the
+	// channel. Every reader of apiServerStop/apiServerErr - the
+	// "kubernetes" validate-connection check below and the deferred
+	// cleanup - must go through this so neither can observe them before
+	// the goroutine has completed its writes.
+	receiveApiServerReady := func() error {
+		apiServerOnce.Do(func() {
+			<-apiServerReady
+		})
+		return apiServerErr
 	}
 	// Deferred instead of relying on ctx cancellation alone: RunRollback
 	// (the next test case) binds the same HostEndpointIP:APIServerPort, and
 	// must not race this apiserver's teardown.
 	defer func() {
+		// apiServerTimer is nil if an early return happened before it was
+		// armed further below - nothing was ever started in that case.
+		if apiServerTimer != nil && !apiServerTimer.Stop() {
+			// The timer already fired (or is in the middle of firing): wait
+			// for apiServerDelayedStart to finish so this doesn't race its
+			// write to apiServerStop. If the check below already consumed
+			// apiServerReady, this returns immediately via apiServerOnce.
+			_ = receiveApiServerReady()
+		}
 		if apiServerStop != nil {
 			_ = apiServerStop()
 		}
@@ -279,7 +315,7 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	// isn't important - roughly 10s of the service being up against a
 	// closed apiserver port is good enough to exercise the retry/backoff
 	// path.
-	time.AfterFunc(10*time.Second, apiServerDelayedStart)
+	apiServerTimer = time.AfterFunc(10*time.Second, apiServerDelayedStart)
 
 	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig, tlsCertPEM); err != nil {
 		return err
@@ -304,7 +340,7 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 			// spuriously flaky and so the stage/finalize scenario below
 			// never starts patching the fake Node before the apiserver
 			// exists at all (that HTTP client has no retry of its own).
-			if err := <-apiServerReady; err != nil {
+			if err := receiveApiServerReady(); err != nil {
 				return fmt.Errorf("failed to start fake apiserver: %w", err)
 			}
 		}

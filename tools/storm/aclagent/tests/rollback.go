@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	stormproxies "tridenttools/storm/aclagent/proxies"
 	stormaclconfig "tridenttools/storm/aclagent/utils/config"
+	stormssh "tridenttools/storm/utils/ssh"
 	stormvm "tridenttools/storm/utils/vm"
 	stormvmconfig "tridenttools/storm/utils/vm/config"
 )
@@ -116,6 +118,18 @@ func RunRollback(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	// way update/install do) rather than reporting a false Success and
 	// rebooting the node again for no reason. This exercises that fix
 	// end-to-end against the real tridentd, not just the mock.
+	//
+	// Capture a boot marker before the second rollback so the guard below
+	// can actually detect a reboot. stormvm.GetVmIP only queries the
+	// hypervisor/platform for the VM's NIC lease - it never touches the
+	// guest, so it returns the same answer whether or not the guest
+	// rebooted and can't be used to prove "no reboot happened".
+	bootIDBefore, err := readVmBootID(vmConfig.VMConfig, vmIP)
+	if err != nil {
+		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
+		return fmt.Errorf("failed to read boot marker before second rollback: %w", err)
+	}
+
 	secondScenario := &stormproxies.Scenario{Steps: []stormproxies.ScenarioStep{
 		{Patch: &stormproxies.PatchStep{NodeUpdateID: "33333333-3333-3333-3333-333333333333", OperationID: "dddddddd-4444-4444-4444-444444444444", Operation: "rollback"}},
 		{Expect: &stormproxies.ExpectStep{OperationID: "dddddddd-4444-4444-4444-444444444444", Operation: "rollback", Code: "OperationFailed", Timeout: 60 * time.Second}},
@@ -130,12 +144,50 @@ func RunRollback(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
 		return fmt.Errorf("ACL agent second-rollback (empty chain) scenario failed: %+v", secondReport)
 	}
-	// A no-op rollback must not trigger another reboot: the VM should
-	// still be reachable immediately, with no reboot wait needed.
-	if _, err := stormvm.GetVmIP(vmConfig); err != nil {
+	// A no-op rollback must not trigger another reboot. Assert the guest's
+	// boot marker is unchanged over a bounded window: unlike GetVmIP (which
+	// only asks the hypervisor for the VM's NIC lease and can't observe the
+	// guest at all), this actually reaches into the guest over SSH and
+	// would catch a regression back to reboot-on-no-op.
+	if err := assertVmBootIDUnchanged(vmConfig.VMConfig, vmIP, bootIDBefore); err != nil {
 		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
-		return fmt.Errorf("VM appears to have rebooted (or become unreachable) after a no-op rollback, which should not trigger a reboot: %w", err)
+		return fmt.Errorf("VM appears to have rebooted after a no-op rollback, which should not trigger a reboot: %w", err)
 	}
 
 	return collectAclArtifacts(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
+}
+
+// readVmBootID reads the guest kernel's boot ID over SSH. It changes on
+// every boot, making it a reliable marker for detecting a reboot from
+// inside the guest - unlike stormvm.GetVmIP, which only reflects the
+// hypervisor/platform's view of the VM's NIC lease and stays the same
+// across a guest reboot.
+func readVmBootID(cfg stormvmconfig.VMConfig, vmIP string) (string, error) {
+	out, err := stormssh.SshCommandCombinedOutput(cfg, vmIP, "cat /proc/sys/kernel/random/boot_id")
+	if err != nil {
+		return "", fmt.Errorf("failed to read /proc/sys/kernel/random/boot_id: %w", err)
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// assertVmBootIDUnchanged polls the guest's boot ID over a bounded window
+// and fails if it ever changes (or the guest becomes unreachable over
+// SSH), either of which indicates the VM rebooted.
+func assertVmBootIDUnchanged(cfg stormvmconfig.VMConfig, vmIP string, bootIDBefore string) error {
+	const checkWindow = 30 * time.Second
+	const pollInterval = 2 * time.Second
+	deadline := time.Now().Add(checkWindow)
+	for {
+		bootIDAfter, err := readVmBootID(cfg, vmIP)
+		if err != nil {
+			return fmt.Errorf("VM became unreachable over SSH while checking for an unexpected reboot: %w", err)
+		}
+		if bootIDAfter != bootIDBefore {
+			return fmt.Errorf("boot ID changed (%q -> %q), indicating the VM rebooted", bootIDBefore, bootIDAfter)
+		}
+		if time.Now().After(deadline) {
+			return nil
+		}
+		time.Sleep(pollInterval)
+	}
 }

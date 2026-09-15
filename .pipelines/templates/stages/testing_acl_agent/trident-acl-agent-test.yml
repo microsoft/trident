@@ -162,9 +162,9 @@ stages:
                     # context, breaking the login). Docker images land in
                     # the daemon's shared image cache regardless of which
                     # user pulled them, so the later
-                    # `sudo ./bin/storm-trident run aclagent` step still
-                    # finds the image locally and never touches the
-                    # network or the ACR credential.
+                    # `./bin/storm-trident run aclagent` step still finds
+                    # the image locally and never touches the network or
+                    # the ACR credential.
                     az acr login -n martimusexternal
                     docker pull "${{ parameters.postgresImage }}"
                 displayName: "Pull Postgres image"
@@ -175,7 +175,7 @@ stages:
 
               FLAGS="-a --verbose"
 
-              sudo ./bin/storm-trident run aclagent $FLAGS \
+              ./bin/storm-trident run aclagent $FLAGS \
                 --output-path $(ob_outputDirectory) \
                 --artifacts-dir $(Build.ArtifactStagingDirectory) \
                 --ssh-private-key-path ~/.ssh/id_rsa \
