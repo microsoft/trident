@@ -1,0 +1,16 @@
+# Consumer for the "base-of" chain: customizes `base-os`'s raw output and emits a COSI. This
+# exercises `base: { image }` end to end — tailor builds `base-os` first, lowers this image's base to
+# `base-os`'s raw artifact, and IC customizes it. `skip: true`: built explicitly via
+# `tailor build derived`, which builds `base-os` transitively first.
+name: derived
+skip: true
+
+base:
+  image: base-os
+
+outputs:
+  - format: cosi
+
+config:
+  os:
+    hostname: derived

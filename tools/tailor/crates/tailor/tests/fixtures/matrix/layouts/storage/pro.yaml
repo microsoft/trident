@@ -1,0 +1,26 @@
+# layouts/storage/pro.yaml — spliced in by by-edition/pro.yaml via $include. A distinct layout (adds
+# a dedicated data partition) so the rendered `pro` cells differ from `lite`.
+bootType: efi
+disks:
+  - partitionTableType: gpt
+    partitions:
+      - id: esp
+        type: esp
+        size: 64M
+      - id: root
+        size: 8G
+      - id: data
+        size: grow
+filesystems:
+  - deviceId: esp
+    type: fat32
+    mountPoint:
+      path: /boot/efi
+  - deviceId: root
+    type: ext4
+    mountPoint:
+      path: /
+  - deviceId: data
+    type: ext4
+    mountPoint:
+      path: /var/lib/data
