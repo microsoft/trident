@@ -12,10 +12,14 @@ import (
 // LsblkDevice is a single node in the `lsblk -J` tree. Sizes are in bytes when
 // lsblk is invoked with -b.
 type LsblkDevice struct {
-	Name        string        `json:"name"`
-	MajMin      string        `json:"maj:min"`
-	RM          bool          `json:"rm"`
-	Size        int64         `json:"size"`
+	Name   string `json:"name"`
+	MajMin string `json:"maj:min"`
+	RM     bool   `json:"rm"`
+	// json.Number because util-linux emits this as either a quoted string or a
+	// bare number depending on its version, and an int64 here fails to decode
+	// the string form -- which would fail the whole lsblk parse, not just this
+	// field. Same reasoning as tools/installer/imagegen/diskutils.
+	Size        json.Number   `json:"size"`
 	RO          bool          `json:"ro"`
 	Type        string        `json:"type"`
 	Mountpoints []*string     `json:"mountpoints"`

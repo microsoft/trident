@@ -399,8 +399,8 @@ func describeMounts(client *ssh.Client, esp string) string {
 	var b strings.Builder
 	for _, probe := range []struct{ label, cmd string }{
 		{"findmnt", "findmnt -n -o TARGET,SOURCE,FSTYPE | grep -iE 'vfat|efi' || echo '(no vfat/efi mounts)'"},
-		{"parent", fmt.Sprintf("sudo ls -la %q 2>&1 | head -20", path.Dir(esp))},
-		{"esp", fmt.Sprintf("sudo ls -la %q 2>&1 | head -20", esp)},
+		{"parent", fmt.Sprintf("sudo ls -la %s 2>&1 | head -20", sshutils.ShellQuote(path.Dir(esp)))},
+		{"esp", fmt.Sprintf("sudo ls -la %s 2>&1 | head -20", sshutils.ShellQuote(esp))},
 	} {
 		out, err := sshutils.RunCommand(client, probe.cmd)
 		if err != nil {

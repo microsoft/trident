@@ -72,8 +72,8 @@ func TestParseLsblk(t *testing.T) {
 	for _, p := range parts {
 		byName[p.Name] = p
 	}
-	if byName["sda2"].Size != 8589934592 {
-		t.Errorf("sda2 size = %d, want 8589934592", byName["sda2"].Size)
+	if got := byName["sda2"].Size.String(); got != "8589934592" {
+		t.Errorf("sda2 size = %s, want 8589934592", got)
 	}
 	if got := byName["sda2"].Mountpoints; len(got) != 1 || got[0] == nil || *got[0] != "/" {
 		t.Errorf("sda2 mountpoint unexpected: %v", got)

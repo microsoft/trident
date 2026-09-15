@@ -12,7 +12,7 @@ import (
 // DmsetupInfo runs `sudo dmsetup info <name>` and returns the parsed key:value
 // fields (Name, State, Tables present, UUID, ...).
 func DmsetupInfo(client *ssh.Client, name string) (map[string]string, error) {
-	out, err := sshutils.CommandOutput(client, fmt.Sprintf("sudo dmsetup info %s", name))
+	out, err := sshutils.CommandOutput(client, fmt.Sprintf("sudo dmsetup info %s", sshutils.ShellQuote(name)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to run dmsetup info %s: %w", name, err)
 	}

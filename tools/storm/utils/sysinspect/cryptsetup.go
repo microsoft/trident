@@ -29,7 +29,7 @@ func (s CryptsetupStatus) Get(field string) (string, bool) {
 
 // Cryptsetup runs `sudo cryptsetup status <name>` and returns the parsed status.
 func Cryptsetup(client *ssh.Client, name string) (CryptsetupStatus, error) {
-	out, err := sshutils.CommandOutput(client, fmt.Sprintf("sudo cryptsetup status %s", name))
+	out, err := sshutils.CommandOutput(client, fmt.Sprintf("sudo cryptsetup status %s", sshutils.ShellQuote(name)))
 	if err != nil {
 		return CryptsetupStatus{}, fmt.Errorf("failed to run cryptsetup status %s: %w", name, err)
 	}
@@ -108,7 +108,7 @@ type LuksDigest struct {
 // returns the parsed metadata.
 func CryptsetupLuksDump(client *ssh.Client, devicePath string) (LuksDump, error) {
 	out, err := sshutils.CommandOutput(client,
-		fmt.Sprintf("sudo cryptsetup luksDump --dump-json-metadata %s", devicePath))
+		fmt.Sprintf("sudo cryptsetup luksDump --dump-json-metadata %s", sshutils.ShellQuote(devicePath)))
 	if err != nil {
 		return LuksDump{}, fmt.Errorf("failed to run cryptsetup luksDump %s: %w", devicePath, err)
 	}

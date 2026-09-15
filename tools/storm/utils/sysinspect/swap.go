@@ -30,7 +30,7 @@ func ActiveSwaps(client *ssh.Client) (map[string]struct{}, error) {
 
 // ReadlinkF resolves a path to its canonical absolute form via `readlink -f`.
 func ReadlinkF(client *ssh.Client, path string) (string, error) {
-	out, err := sshutils.CommandOutput(client, fmt.Sprintf("sudo readlink -f %s", path))
+	out, err := sshutils.CommandOutput(client, fmt.Sprintf("sudo readlink -f %s", sshutils.ShellQuote(path)))
 	if err != nil {
 		return "", fmt.Errorf("failed to readlink -f %s: %w", path, err)
 	}
