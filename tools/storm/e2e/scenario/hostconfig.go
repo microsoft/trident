@@ -82,13 +82,10 @@ func (s *TridentE2EScenario) prepareHostConfig(tc storm.TestCase) error {
 		s.config.ArrayAppend(containerAdditionalFile, "os", "additionalFiles")
 	}
 
-	// Strip PCR 7 from the encryption policy when required by the container
-	// runtime, before any OCI image-URL override changes image.url.
-	s.applyContainerPcrExclusion()
-
-	// Inject any pipeline-provided OCI overrides (extension images, ACR-hosted
-	// COSI URL). Mirrors tests/e2e_tests/helpers/edit_host_config.py.
-	if err := s.applyOciOverrides(); err != nil {
+	// Inject any pipeline-provided OCI overrides and derive the encryption
+	// policy from the resulting image. Order matters, so it is kept in one
+	// place (see applyImageOverrides).
+	if err := s.applyImageOverrides(); err != nil {
 		return err
 	}
 
@@ -120,6 +117,22 @@ func (s *TridentE2EScenario) prepareHostConfig(tc storm.TestCase) error {
 // (.pipelines/templates/stages/testing_vm/netlaunch-testing.yml), which
 // rewrites the Host Configuration for exactly this case so combined/rerun
 // (usr-verity UKI + encryption) install on the container runtime.
+// applyImageOverrides injects the pipeline-provided OCI overrides (extension
+// images, ACR-hosted COSI URL) and then derives the encryption policy from the
+// image that results. Mirrors tests/e2e_tests/helpers/edit_host_config.py.
+//
+// The order is the point of this function: --oci-image-url can replace
+// image.url with a usr-verity image, and the PCR exclusion classifies on that
+// URL. Classifying first leaves PCR 7 in the policy for a configuration that
+// is actually usr-verity, which Trident rejects during dynamic validation.
+func (s *TridentE2EScenario) applyImageOverrides() error {
+	if err := s.applyOciOverrides(); err != nil {
+		return err
+	}
+	s.applyContainerPcrExclusion()
+	return nil
+}
+
 func (s *TridentE2EScenario) applyContainerPcrExclusion() {
 	if s.runtime != trident.RuntimeTypeContainer {
 		return

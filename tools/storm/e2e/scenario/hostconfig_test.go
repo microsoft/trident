@@ -228,3 +228,28 @@ storage:
 		t.Errorf("host runtime should keep its PCRs, got %d", n)
 	}
 }
+
+// The encryption policy has to be decided from the image that is actually
+// deployed. --oci-image-url can turn a container configuration into a
+// usr-verity one, and classifying before applying it left PCR 7 in the policy,
+// which Trident then rejects during dynamic validation.
+func TestPcrExclusionUsesTheOverriddenImageUrl(t *testing.T) {
+	hc, err := hostconfig.NewHostConfigFromYaml([]byte(
+		"image:\n  url: http://x/regular.cosi\nstorage:\n  encryption:\n    pcrs: [secure-boot-policy, boot-loader-code]\n"))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	s := &TridentE2EScenario{config: hc, runtime: trident.RuntimeTypeContainer}
+	s.args.OciImageUrl = "oci://acr.example/trident-usrverity.cosi"
+
+	// Through the production entry point, so a future reordering is caught.
+	if err := s.applyImageOverrides(); err != nil {
+		t.Fatalf("applyImageOverrides: %v", err)
+	}
+
+	for _, pcr := range s.config.S("storage", "encryption", "pcrs").Children() {
+		if name, _ := pcr.Data().(string); name == secureBootPolicyPcr {
+			t.Fatalf("PCR 7 retained after the OCI override made the image usr-verity")
+		}
+	}
+}
