@@ -352,9 +352,11 @@ on-node troubleshooting without running the full orchestrator loop.
 
 `--validate-connection nebraska` is the one place
 `TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT`, `TRIDENT_ACL_AGENT_NEBRASKA_APP_ID`,
-and `TRIDENT_ACL_AGENT_NEBRASKA_TRACK` are used: it issues a real
-update-check query against the configured endpoint/app id/track and reports
-whether the Omaha server is reachable. They default to deliberately invalid
+and `TRIDENT_ACL_AGENT_NEBRASKA_TRACK` are used: it sends a non-mutating
+Omaha probe (a bare `<app>` with no `<updatecheck/>` or `<ping/>`) against
+the configured endpoint/app id/track and reports whether the Omaha server
+is reachable, without registering the instance or granting/consuming an
+update. They default to deliberately invalid
 values (`https://nebraska.example.invalid/v1/update`, an all-zero UUID, and
 `unspecified`, respectively) so this check fails loudly unless a deployment
 sets them. Since these variables otherwise play no role in the

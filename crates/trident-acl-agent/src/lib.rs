@@ -59,12 +59,23 @@ fn build_machine_id(source: IdSource) -> Result<MachineId, AgentError> {
 
 /// Checks that the Omaha/Nebraska server at `url` is reachable and speaking
 /// the Omaha protocol, without treating any app-level result (including a
-/// non-OK app/update-check status) as a failure. Unlike
-/// [`Client::check_for_update`], this only fails on network/transport
-/// problems or a response that isn't well-formed Omaha XML -- it's meant for
-/// a pure "can we talk to this server at all" check (e.g.
-/// `--validate-connection nebraska`), not for deciding whether an update is
-/// available.
+/// non-OK app status) as a failure. Unlike [`Client::check_for_update`], this
+/// only fails on network/transport problems or a response that isn't
+/// well-formed Omaha XML -- it's meant for a pure "can we talk to this server
+/// at all" check (e.g. `--validate-connection nebraska`), not for deciding
+/// whether an update is available.
+///
+/// Uses [`Client::probe`], not `check_for_update`: against a real, stateful
+/// Nebraska, `check_for_update` has the side effect of registering an update
+/// check for this machine id, which Nebraska can then grant -- consuming the
+/// update and leaving the instance "in progress" for a real stage/finalize
+/// request that reuses the same machine id. `probe` sends a **bare** `<app>`
+/// with neither `<updatecheck/>` nor `<ping/>` -- Nebraska's Omaha handler
+/// calls `RegisterInstance` (upserting the instance's row) whenever it sees
+/// `<ping/>`, entirely independent of `<updatecheck/>`, so a real Omaha
+/// `<ping/>` is *not* a side-effect-free no-op against Nebraska either
+/// (hence this being named `probe`, not `ping`). See [`Client::probe`]'s doc
+/// comment for the full explanation.
 pub fn check_nebraska_reachable(
     url: &Url,
     app_id: &str,
@@ -73,13 +84,13 @@ pub fn check_nebraska_reachable(
 ) -> Result<(), AgentError> {
     let machine_id = build_machine_id(machine_id_source)?;
     let client = Client::new(url.clone(), app_id, track, machine_id);
-    match client.check_for_update(
+    match client.probe(
         &Version::parse(FALLBACK_ALWAYS_VERSION)
             .expect("invariant: FALLBACK_ALWAYS_VERSION is valid semver"),
     ) {
-        Ok(_) => Ok(()),
-        // A well-formed response reporting a non-OK app/update-check status
-        // still proves the server is reachable and speaking Omaha; only a
+        Ok(()) => Ok(()),
+        // A well-formed response reporting a non-OK app status still proves
+        // the server is reachable and speaking Omaha; only a
         // transport/parse-level failure means it is not.
         Err(NebraskaError::ServerError(_)) => Ok(()),
         Err(err) => Err(AgentError::Nebraska(err.to_string())),
@@ -91,17 +102,58 @@ mod tests {
     use super::*;
 
     use indoc::indoc;
-    use mockito::Server;
+    use mockito::{Matcher, Server};
     use url::Url;
+
+    #[test]
+    fn test_check_nebraska_reachable_never_registers_or_updates() {
+        // Regression test: check_nebraska_reachable() must use Client::probe(),
+        // which sends a bare, self-closing <app> with neither <updatecheck/>
+        // nor <ping/>. check_for_update() would grant/consume an update for
+        // this machine id (via <updatecheck/>), and a real Omaha <ping/>
+        // independently triggers Nebraska's RegisterInstance -- a diagnostic
+        // connectivity check must avoid both.
+        //
+        // The success mock's matcher requires the <app> to be self-closing
+        // immediately after its attributes (see wire.rs's
+        // bare_app_request_shape test for why this is the actual serialized
+        // shape): if code regressed to add *any* child element (<ping>,
+        // <updatecheck>, or otherwise), the request would no longer match
+        // this mock at all, so mockito would return no matching mock and the
+        // call would fail instead of silently passing.
+        let mut server = Server::new();
+
+        let bare_app_mock = server
+            .mock("POST", "/")
+            .match_body(Matcher::Regex(
+                r#"<app appid="test"[^>]*machineid="[^"]*"/>"#.to_string(),
+            ))
+            .with_status(200)
+            .with_body(indoc! {r#"
+                <?xml version="1.0" encoding="UTF-8"?>
+                <response protocol="3.0" server="mock">
+                    <daystart elapsed_seconds="0"/>
+                    <app appid="test" status="ok"/>
+                </response>"#})
+            .expect(1)
+            .create();
+
+        check_nebraska_reachable(
+            &Url::parse(&server.url()).unwrap(),
+            "test",
+            "track",
+            IdSource::MachineIdHashed,
+        )
+        .unwrap();
+
+        bare_app_mock.assert();
+    }
 
     #[test]
     fn test_check_nebraska_reachable_succeeds_on_error_app_status() {
         // check_nebraska_reachable() is meant to be a pure "can we reach this
-        // server and does it speak Omaha" check, unlike check_for_update()
-        // which also validates app-level semantics. A well-formed response
-        // with a non-OK app status should still count as "reachable" here,
-        // even though check_for_update() would reject the same response as a
-        // NebraskaError::ServerError.
+        // server and does it speak Omaha" check: a well-formed response with
+        // a non-OK app status should still count as "reachable" here.
         let mut server = Server::new();
 
         let omaha_mock = server
@@ -111,9 +163,7 @@ mod tests {
                 <?xml version="1.0" encoding="UTF-8"?>
                 <response protocol="3.0" server="mock">
                     <daystart elapsed_seconds="0"/>
-                    <app appid="test" status="error-unknownApplication">
-                        <updatecheck status="error-internal"></updatecheck>
-                    </app>
+                    <app appid="test" status="error-unknownApplication"/>
                 </response>"#})
             .expect(1)
             .create();
