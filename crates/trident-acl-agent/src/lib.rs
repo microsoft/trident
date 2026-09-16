@@ -69,9 +69,12 @@ fn build_machine_id(source: IdSource) -> Result<MachineId, AgentError> {
 /// Nebraska, `check_for_update` has the side effect of registering an update
 /// check for this machine id, which Nebraska can then grant -- consuming the
 /// update and leaving the instance "in progress" for a real stage/finalize
-/// request that reuses the same machine id. `ping` sends a bare Omaha
-/// `<ping/>` with no `<updatecheck/>`, so this check proves reachability
-/// without any such side effect.
+/// request that reuses the same machine id. `ping` sends a **bare** `<app>`
+/// with neither `<updatecheck/>` nor `<ping/>` -- Nebraska's Omaha handler
+/// calls `RegisterInstance` (upserting the instance's row) whenever it sees
+/// `<ping/>`, entirely independent of `<updatecheck/>`, so a real Omaha
+/// `<ping/>` is *not* a side-effect-free no-op against Nebraska either. See
+/// [`Client::ping`]'s doc comment for the full explanation.
 pub fn check_nebraska_reachable(
     url: &Url,
     app_id: &str,
@@ -102,31 +105,30 @@ mod tests {
     use url::Url;
 
     #[test]
-    fn test_check_nebraska_reachable_never_sends_an_update_check() {
+    fn test_check_nebraska_reachable_never_registers_or_updates() {
         // Regression test: check_nebraska_reachable() must use Client::ping(),
-        // not check_for_update() -- against a real, stateful Nebraska,
-        // check_for_update() has the side effect of granting/consuming an
-        // update for this machine id, which a diagnostic connectivity check
-        // must never do.
+        // which sends a bare <app> with neither <updatecheck/> nor <ping/>.
+        // check_for_update() would grant/consume an update for this machine
+        // id (via <updatecheck/>), and a real Omaha <ping/> independently
+        // triggers Nebraska's RegisterInstance -- a diagnostic connectivity
+        // check must avoid both.
         let mut server = Server::new();
 
-        let ping_mock = server
+        let bare_app_mock = server
             .mock("POST", "/")
-            .match_body(Matcher::Regex("<ping".to_string()))
+            .match_body(Matcher::Regex("<app appid=\"test\"".to_string()))
             .with_status(200)
             .with_body(indoc! {r#"
                 <?xml version="1.0" encoding="UTF-8"?>
                 <response protocol="3.0" server="mock">
                     <daystart elapsed_seconds="0"/>
-                    <app appid="test" status="ok">
-                        <ping status="ok"></ping>
-                    </app>
+                    <app appid="test" status="ok"/>
                 </response>"#})
             .expect(1)
             .create();
-        let no_update_check_mock = server
+        let ping_or_update_check_mock = server
             .mock("POST", "/")
-            .match_body(Matcher::Regex("<updatecheck".to_string()))
+            .match_body(Matcher::Regex("<ping|<updatecheck".to_string()))
             .expect(0)
             .create();
 
@@ -138,8 +140,8 @@ mod tests {
         )
         .unwrap();
 
-        ping_mock.assert();
-        no_update_check_mock.assert();
+        bare_app_mock.assert();
+        ping_or_update_check_mock.assert();
     }
 
     #[test]
@@ -156,9 +158,7 @@ mod tests {
                 <?xml version="1.0" encoding="UTF-8"?>
                 <response protocol="3.0" server="mock">
                     <daystart elapsed_seconds="0"/>
-                    <app appid="test" status="error-unknownApplication">
-                        <ping status="ok"></ping>
-                    </app>
+                    <app appid="test" status="error-unknownApplication"/>
                 </response>"#})
             .expect(1)
             .create();

@@ -420,24 +420,32 @@ impl<T: Transport> Client<T> {
     }
 
     /// Proves the server is reachable, speaks Omaha, and resolves this
-    /// client's app/track, **without** requesting or consuming an update.
+    /// client's app/track, **without** any Nebraska-side registration or
+    /// update side effect.
     ///
-    /// Unlike [`check_for_update`](Client::check_for_update), this sends a
-    /// bare Omaha `<ping/>` with no `<updatecheck/>`, so Nebraska never
-    /// grants — and therefore never marks in-progress — an update for this
-    /// machine id. `check_for_update` is unsuitable for a pure connectivity
-    /// probe for exactly this reason: against a real, stateful Nebraska, it
-    /// has the side effect of registering an update check for the caller's
-    /// machine id, which can then collide with a real stage/finalize
-    /// request for the same machine id (see `error-updateInProgressOnInstance`
-    /// on [`AppStatus`](super::status::AppStatus)).
+    /// This sends a **bare** `<app>` with neither `<updatecheck/>` nor
+    /// `<ping/>` -- not just a ping. Nebraska's Omaha handler calls
+    /// `RegisterInstance` (upserting the instance's row, including the
+    /// version this request reports) whenever `<ping>` is present, entirely
+    /// independent of `<updatecheck>`; a real Omaha `<ping/>` is *not* a
+    /// no-op against Nebraska. Omitting both elements still exercises
+    /// appid/group/track resolution (Nebraska looks those up before
+    /// considering either child element) without writing anything, which is
+    /// what a pure connectivity probe needs.
+    ///
+    /// `check_for_update` is unsuitable for a connectivity probe for the
+    /// same reason plus more: it also grants -- and therefore marks
+    /// in-progress -- an update for the caller's machine id, which can then
+    /// collide with a real stage/finalize request for the same machine id
+    /// (see `error-updateInProgressOnInstance` on
+    /// [`AppStatus`](super::status::AppStatus)).
     ///
     /// `error-updateInProgressOnInstance` is treated as success here, same as
     /// [`interpret_check`](Client::interpret_check): it only means some other
     /// update is genuinely in flight for this instance, which still proves
     /// the server is reachable and resolved the app/track.
     pub fn ping(&self, current_version: &Version) -> Result<(), NebraskaError> {
-        let app = self.app(current_version).with_ping();
+        let app = self.app(current_version);
         let response = self.send(app)?;
         let app_response = self.app_response(&response)?;
         if app_response.status.is_ok() || app_response.status.is_update_in_progress() {
@@ -1111,13 +1119,18 @@ mod tests {
     }
 
     #[test]
-    fn ping_sends_no_updatecheck_element() {
+    fn ping_sends_neither_ping_nor_update_check_element() {
         let client = client_with(
-            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><ping status="ok"/></app></response>"#,
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"/></response>"#,
         );
         client.ping(&Version::new(1, 0, 0)).unwrap();
         let body = client.transport.last_body.borrow().clone().unwrap();
-        assert!(body.contains("<ping"), "{body}");
+        assert!(
+            !body.contains("<ping"),
+            "ping() must not send an Omaha <ping/>: Nebraska calls RegisterInstance \
+             (upserting the instance's row) whenever it sees one, independent of \
+             <updatecheck/>: {body}"
+        );
         assert!(
             !body.contains("<updatecheck"),
             "ping() must not request an update check: {body}"
@@ -1127,7 +1140,7 @@ mod tests {
     #[test]
     fn ping_succeeds_on_ok_status() {
         let client = client_with(
-            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><ping status="ok"/></app></response>"#,
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"/></response>"#,
         );
         client.ping(&Version::new(1, 0, 0)).unwrap();
     }
@@ -1139,7 +1152,7 @@ mod tests {
         // not treat this as a failure, mirroring check_for_update's own
         // handling of this status via interpret_check.
         let client = client_with(
-            r#"<response protocol="3.0" server="n"><app appid="app-1" status="error-updateInProgressOnInstance"><ping status="ok"/></app></response>"#,
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="error-updateInProgressOnInstance"/></response>"#,
         );
         client.ping(&Version::new(1, 0, 0)).unwrap();
     }
@@ -1147,7 +1160,7 @@ mod tests {
     #[test]
     fn ping_fails_on_other_error_status() {
         let client = client_with(
-            r#"<response protocol="3.0" server="n"><app appid="app-1" status="error-unknownApplication"><ping status="ok"/></app></response>"#,
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="error-unknownApplication"/></response>"#,
         );
         let err = client.ping(&Version::new(1, 0, 0)).unwrap_err();
         assert!(matches!(err, NebraskaError::ServerError(_)), "{err:?}");
