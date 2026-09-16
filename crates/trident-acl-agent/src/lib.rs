@@ -65,16 +65,17 @@ fn build_machine_id(source: IdSource) -> Result<MachineId, AgentError> {
 /// at all" check (e.g. `--validate-connection nebraska`), not for deciding
 /// whether an update is available.
 ///
-/// Uses [`Client::ping`], not `check_for_update`: against a real, stateful
+/// Uses [`Client::probe`], not `check_for_update`: against a real, stateful
 /// Nebraska, `check_for_update` has the side effect of registering an update
 /// check for this machine id, which Nebraska can then grant -- consuming the
 /// update and leaving the instance "in progress" for a real stage/finalize
-/// request that reuses the same machine id. `ping` sends a **bare** `<app>`
+/// request that reuses the same machine id. `probe` sends a **bare** `<app>`
 /// with neither `<updatecheck/>` nor `<ping/>` -- Nebraska's Omaha handler
 /// calls `RegisterInstance` (upserting the instance's row) whenever it sees
 /// `<ping/>`, entirely independent of `<updatecheck/>`, so a real Omaha
-/// `<ping/>` is *not* a side-effect-free no-op against Nebraska either. See
-/// [`Client::ping`]'s doc comment for the full explanation.
+/// `<ping/>` is *not* a side-effect-free no-op against Nebraska either
+/// (hence this being named `probe`, not `ping`). See [`Client::probe`]'s doc
+/// comment for the full explanation.
 pub fn check_nebraska_reachable(
     url: &Url,
     app_id: &str,
@@ -83,7 +84,7 @@ pub fn check_nebraska_reachable(
 ) -> Result<(), AgentError> {
     let machine_id = build_machine_id(machine_id_source)?;
     let client = Client::new(url.clone(), app_id, track, machine_id);
-    match client.ping(
+    match client.probe(
         &Version::parse(FALLBACK_ALWAYS_VERSION)
             .expect("invariant: FALLBACK_ALWAYS_VERSION is valid semver"),
     ) {
@@ -106,17 +107,27 @@ mod tests {
 
     #[test]
     fn test_check_nebraska_reachable_never_registers_or_updates() {
-        // Regression test: check_nebraska_reachable() must use Client::ping(),
-        // which sends a bare <app> with neither <updatecheck/> nor <ping/>.
-        // check_for_update() would grant/consume an update for this machine
-        // id (via <updatecheck/>), and a real Omaha <ping/> independently
-        // triggers Nebraska's RegisterInstance -- a diagnostic connectivity
-        // check must avoid both.
+        // Regression test: check_nebraska_reachable() must use Client::probe(),
+        // which sends a bare, self-closing <app> with neither <updatecheck/>
+        // nor <ping/>. check_for_update() would grant/consume an update for
+        // this machine id (via <updatecheck/>), and a real Omaha <ping/>
+        // independently triggers Nebraska's RegisterInstance -- a diagnostic
+        // connectivity check must avoid both.
+        //
+        // The success mock's matcher requires the <app> to be self-closing
+        // immediately after its attributes (see wire.rs's
+        // bare_app_request_shape test for why this is the actual serialized
+        // shape): if code regressed to add *any* child element (<ping>,
+        // <updatecheck>, or otherwise), the request would no longer match
+        // this mock at all, so mockito would return no matching mock and the
+        // call would fail instead of silently passing.
         let mut server = Server::new();
 
         let bare_app_mock = server
             .mock("POST", "/")
-            .match_body(Matcher::Regex("<app appid=\"test\"".to_string()))
+            .match_body(Matcher::Regex(
+                r#"<app appid="test"[^>]*machineid="[^"]*"/>"#.to_string(),
+            ))
             .with_status(200)
             .with_body(indoc! {r#"
                 <?xml version="1.0" encoding="UTF-8"?>
@@ -125,11 +136,6 @@ mod tests {
                     <app appid="test" status="ok"/>
                 </response>"#})
             .expect(1)
-            .create();
-        let ping_or_update_check_mock = server
-            .mock("POST", "/")
-            .match_body(Matcher::Regex("<ping|<updatecheck".to_string()))
-            .expect(0)
             .create();
 
         check_nebraska_reachable(
@@ -141,7 +147,6 @@ mod tests {
         .unwrap();
 
         bare_app_mock.assert();
-        ping_or_update_check_mock.assert();
     }
 
     #[test]
