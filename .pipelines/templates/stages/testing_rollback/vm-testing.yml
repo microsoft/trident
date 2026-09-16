@@ -135,16 +135,13 @@ stages:
               verboseLogging: ${{ parameters.verboseLogging }}
               platform: qemu
               flavor: qemu
-              # For qemu w/ root-verity, only test rollback of A/B update because:
-              #   * extensions cannot be added to qcow2; IC cannot modify verity volume
-              #   * netplan runtime changes cannot be made to config file on verity rootfs
-              #   * without extensions and netplan, runtime updates will service nothing
-              skipExtensionTesting: true
-              skipRuntimeUpdateTesting: true
-              skipNetplanRuntimeTesting: true
+              # The qemu flavor is root-verity: extensions cannot be added to
+              # the qcow2 and netplan config cannot be modified on a verity
+              # rootfs, so runtime updates would service nothing. Those skips
+              # (and UKI) are derived from the flavor in storm, so they are no
+              # longer passed here.
               micBuildType: ${{ parameters.micBuildType }}
               micVersion: ${{ parameters.micVersion }}
-              isUki: true
               testSecureBoot: ${{ parameters.testSecureBoot }}
       - ${{ if eq(parameters.includeUKI, true) }}:
           - template: testing-template.yml
@@ -155,5 +152,4 @@ stages:
               flavor: uki
               micBuildType: ${{ parameters.micBuildType }}
               micVersion: ${{ parameters.micVersion }}
-              isUki: true
               testSecureBoot: ${{ parameters.testSecureBoot }}
