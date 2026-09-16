@@ -25,12 +25,18 @@ var (
 	ppmMagic = []byte("P6")
 )
 
-// maxPpmDimension bounds each PPM header dimension. A console framebuffer is
-// far smaller than this, so the only headers it rejects are corrupt ones -- and
-// rejecting them matters, because screenshots are captured while diagnosing a
-// failure, where panicking or exhausting memory would destroy the diagnostic
-// the capture exists to provide.
-const maxPpmDimension = 1 << 16
+// maxPpmDimension bounds each PPM header dimension, and maxPpmPixels bounds
+// their product. The per-axis cap alone is not enough: 65536x65536 satisfies it
+// while asking for ~12 GiB of pixel buffer plus ~16 GiB for the decoded image.
+// A console framebuffer is far smaller than either bound (the observed one is
+// 1280x800), so the only headers these reject are corrupt or hostile ones --
+// and rejecting them matters, because screenshots are captured while diagnosing
+// a failure, where exhausting memory would kill the runner and destroy the
+// diagnostic the capture exists to provide.
+const (
+	maxPpmDimension = 1 << 16
+	maxPpmPixels    = 16 << 20 // 16 megapixels, ~4x a 4K framebuffer
+)
 
 // CapturePng writes a PNG screenshot of the domain's first console to out.
 //
@@ -106,6 +112,11 @@ func PpmToPng(r io.Reader, w io.Writer) error {
 	if width > maxPpmDimension || height > maxPpmDimension {
 		return fmt.Errorf("PPM dimensions %dx%d exceed the maximum of %d", width, height, maxPpmDimension)
 	}
+	// Bound the product too: each axis can be within range while the buffer
+	// they imply is enormous. Safe to multiply only because of the cap above.
+	if width*height > maxPpmPixels {
+		return fmt.Errorf("PPM image %dx%d exceeds the maximum of %d pixels", width, height, maxPpmPixels)
+	}
 
 	// Exactly one whitespace byte separates the header from the pixel data.
 	if _, err := br.ReadByte(); err != nil {
@@ -118,10 +129,24 @@ func PpmToPng(r io.Reader, w io.Writer) error {
 	}
 
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	// PPM samples are relative to maxValue, so anything other than 255 has to
+	// be rescaled to the 8-bit PNG channel range -- otherwise a maxValue of 1
+	// renders full-intensity white as value 1, i.e. essentially black.
+	scale := func(v byte) byte { return v }
+	if maxValue != 255 {
+		scale = func(v byte) byte {
+			if int(v) >= maxValue {
+				return 255
+			}
+			return byte((int(v)*255 + maxValue/2) / maxValue)
+		}
+	}
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
 			i := (y*width + x) * 3
-			img.SetRGBA(x, y, color.RGBA{R: pixels[i], G: pixels[i+1], B: pixels[i+2], A: 0xFF})
+			img.SetRGBA(x, y, color.RGBA{
+				R: scale(pixels[i]), G: scale(pixels[i+1]), B: scale(pixels[i+2]), A: 0xFF,
+			})
 		}
 	}
 

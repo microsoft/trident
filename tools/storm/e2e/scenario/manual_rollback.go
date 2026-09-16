@@ -12,7 +12,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"tridenttools/pkg/netlaunch"
-	"tridenttools/pkg/netlisten"
 	"tridenttools/storm/utils/ssh/sftp"
 	"tridenttools/storm/utils/trident"
 )
@@ -52,7 +51,7 @@ func (s *TridentE2EScenario) manualRollback(tc storm.TestCase) error {
 	}
 
 	// Serve phonehome + capture the serial log across the rollback reboot.
-	go netlisten.RunNetlisten(tc.Context(), &netlaunch.NetListenConfig{
+	if _, err := startPhonehomeListener(tc.Context(), &netlaunch.NetListenConfig{
 		NetCommonConfig: netlaunch.NetCommonConfig{
 			ListenPort:           defaultNetlaunchListenPort,
 			LogstreamFile:        s.args.LogstreamFile,
@@ -60,7 +59,9 @@ func (s *TridentE2EScenario) manualRollback(tc storm.TestCase) error {
 			ServeDirectory:       s.args.TestImageDir,
 			MaxPhonehomeFailures: s.configParams.MaxExpectedFailures,
 		},
-	})
+	}); err != nil {
+		return err
+	}
 
 	monitorCtx, cancel := context.WithCancel(tc.Context())
 	defer cancel()

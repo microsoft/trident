@@ -142,3 +142,64 @@ func TestValidateUefiFallbackFailsWithoutAnEsp(t *testing.T) {
 		t.Error("expected a failure when the ESP mount point cannot be resolved")
 	}
 }
+
+// Trident decides which filesystem is the ESP from overrideEspMount, not from
+// the partition type, so the validator has to honour it or it will probe the
+// wrong path (or refuse to run) on configurations that set it.
+func TestEspMountPointHonoursOverrideEspMount(t *testing.T) {
+	const spec = `
+storage:
+  disks:
+    - partitions:
+        - id: esp
+          type: esp
+        - id: other
+          type: linux-generic
+  filesystems:
+    - deviceId: esp
+      mountPoint: /boot/efi
+    - deviceId: other
+      mountPoint: /srv/esp
+`
+	t.Run("block disclaims an esp-typed partition", func(t *testing.T) {
+		blocked := specFromYaml(t, `
+storage:
+  disks:
+    - partitions:
+        - id: esp
+          type: esp
+  filesystems:
+    - deviceId: esp
+      mountPoint: /boot/efi
+      overrideEspMount: block
+`)
+		if got, ok := EspMountPoint(blocked); ok {
+			t.Errorf("blocked filesystem was treated as the ESP: %q", got)
+		}
+	})
+
+	t.Run("override marks a non-esp partition", func(t *testing.T) {
+		overridden := specFromYaml(t, `
+storage:
+  disks:
+    - partitions:
+        - id: other
+          type: linux-generic
+  filesystems:
+    - deviceId: other
+      mountPoint: /srv/esp
+      overrideEspMount: override
+`)
+		got, ok := EspMountPoint(overridden)
+		if !ok || got != "/srv/esp" {
+			t.Errorf("EspMountPoint = (%q, %v), want (/srv/esp, true)", got, ok)
+		}
+	})
+
+	t.Run("default still uses the partition type", func(t *testing.T) {
+		got, ok := EspMountPoint(specFromYaml(t, spec))
+		if !ok || got != "/boot/efi" {
+			t.Errorf("EspMountPoint = (%q, %v), want (/boot/efi, true)", got, ok)
+		}
+	})
+}

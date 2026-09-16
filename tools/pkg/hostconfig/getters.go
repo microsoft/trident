@@ -20,11 +20,16 @@ func (s *HostConfig) HasVerity() bool {
 }
 
 // HasRebuildableRaid reports whether the Host Config declares software RAID that
-// supports rebuild testing: a storage.raid section must exist, and the config
-// must not use usr-verity (verity rebuild is not yet supported — TODO(12277)).
-// Mirrors the rebuild-raid helper's check-if-needed logic.
+// supports rebuild testing: at least one storage.raid.software array must exist,
+// and the config must not use usr-verity (verity rebuild is not yet supported —
+// TODO(12277)). Mirrors the rebuild-raid helper's check-if-needed logic.
+//
+// The software list is checked rather than just the raid object because
+// storage.raid.software is optional: a config carrying only sync_timeout is
+// valid, and gating on the object alone would register the rebuild cases for it
+// and then fail looking for a RAID member that was never configured.
 func (s *HostConfig) HasRebuildableRaid() bool {
-	if !s.Container.Exists("storage", "raid") {
+	if len(s.Container.S("storage", "raid", "software").Children()) == 0 {
 		return false
 	}
 	return !s.hasUsrVerity()

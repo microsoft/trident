@@ -75,6 +75,11 @@ func TestPpmToPngRejectsBadInput(t *testing.T) {
 		// rejected while reading the header instead.
 		"dimensions overflow the pixel buffer": "P6\n4294967296 4294967296\n255\n",
 		"dimension above the maximum":          "P6\n65537 1\n255\n",
+		// Each axis is within the per-axis cap, but the product asks for ~12
+		// GiB of pixel buffer plus ~16 GiB for the image. This runs while
+		// collecting failure diagnostics, so an OOM here would destroy the
+		// diagnostic rather than report it.
+		"axes in range but product enormous": "P6\n65536 65536\n255\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			var out bytes.Buffer
@@ -104,5 +109,24 @@ func TestFormatMagicsAreDistinct(t *testing.T) {
 	}
 	if !bytes.HasPrefix([]byte("P6\n1 1\n255\n"), ppmMagic) {
 		t.Error("PPM magic does not match a PPM header")
+	}
+}
+
+// PPM samples are relative to maxValue. Copying them straight into an 8-bit PNG
+// channel renders a maxValue of 1 as near-black instead of white.
+func TestPpmToPngScalesSamplesToMaxValue(t *testing.T) {
+	// One white pixel expressed with maxValue 1.
+	var out bytes.Buffer
+	if err := PpmToPng(bytes.NewReader([]byte("P6\n1 1\n1\n\x01\x01\x01")), &out); err != nil {
+		t.Fatalf("PpmToPng: %v", err)
+	}
+
+	img, err := png.Decode(bytes.NewReader(out.Bytes()))
+	if err != nil {
+		t.Fatalf("decode png: %v", err)
+	}
+	r, g, b, _ := img.At(0, 0).RGBA()
+	if r>>8 != 255 || g>>8 != 255 || b>>8 != 255 {
+		t.Errorf("full-intensity sample rendered as (%d,%d,%d), want (255,255,255)", r>>8, g>>8, b>>8)
 	}
 }

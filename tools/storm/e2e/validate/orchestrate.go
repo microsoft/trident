@@ -273,20 +273,50 @@ const uefiFallbackDisabled = "disabled"
 // array built from those partitions, so arrays over esp members count too. The
 // mount point itself is spelled two ways in the schema - a bare path, or an
 // object with a `path` - so both are accepted.
+//
+// `overrideEspMount` takes precedence over all of that, because it is what
+// Trident itself uses to decide whether a filesystem is the ESP: `override`
+// marks one regardless of its partition type, and `block` disclaims one that
+// would otherwise qualify. No checked-in configuration sets either today, so
+// this only matters for configurations the suite does not yet carry.
 func EspMountPoint(spec hostconfig.HostConfig) (string, bool) {
+	espIds := espDeviceIds(spec)
+
+	var byPartitionType string
 	for _, fs := range spec.S("storage", "filesystems").Children() {
-		id, _ := fs.S("deviceId").Data().(string)
-		if _, isEsp := espDeviceIds(spec)[id]; !isEsp {
+		mountPoint, hasMountPoint := filesystemMountPoint(fs)
+		override, _ := fs.S("overrideEspMount").Data().(string)
+
+		switch override {
+		case "block":
+			// Explicitly not the ESP, whatever its partition type says.
+			continue
+		case "override":
+			// Explicitly the ESP. The schema requires a mount point here.
+			if hasMountPoint {
+				return mountPoint, true
+			}
 			continue
 		}
 
-		mountPoint := fs.S("mountPoint")
-		if p, ok := mountPoint.Data().(string); ok {
-			return p, p != ""
+		id, _ := fs.S("deviceId").Data().(string)
+		if _, isEsp := espIds[id]; isEsp && hasMountPoint && byPartitionType == "" {
+			byPartitionType = mountPoint
 		}
-		if p, ok := mountPoint.S("path").Data().(string); ok {
-			return p, p != ""
-		}
+	}
+
+	return byPartitionType, byPartitionType != ""
+}
+
+// filesystemMountPoint accepts both spellings the schema allows: a bare path
+// string, or an object carrying a `path`.
+func filesystemMountPoint(fs *gabs.Container) (string, bool) {
+	mountPoint := fs.S("mountPoint")
+	if p, ok := mountPoint.Data().(string); ok {
+		return p, p != ""
+	}
+	if p, ok := mountPoint.S("path").Data().(string); ok {
+		return p, p != ""
 	}
 	return "", false
 }

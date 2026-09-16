@@ -15,7 +15,6 @@ import (
 
 	"tridenttools/pkg/hostconfig"
 	"tridenttools/pkg/netlaunch"
-	"tridenttools/pkg/netlisten"
 	"tridenttools/storm/e2e/testrings"
 	"tridenttools/storm/e2e/validate"
 	"tridenttools/storm/utils/retry"
@@ -371,7 +370,7 @@ func (s *TridentE2EScenario) abUpdateOs(tc storm.TestCase, opts abUpdateOptions)
 
 	logrus.Debugf("Trident HC file @ %s:\n%s", hostConfigRemotePath, file)
 
-	go netlisten.RunNetlisten(tc.Context(), &netlaunch.NetListenConfig{
+	if _, err := startPhonehomeListener(tc.Context(), &netlaunch.NetListenConfig{
 		NetCommonConfig: netlaunch.NetCommonConfig{
 			ListenPort:           defaultNetlaunchListenPort,
 			LogstreamFile:        s.args.LogstreamFile,
@@ -379,7 +378,9 @@ func (s *TridentE2EScenario) abUpdateOs(tc storm.TestCase, opts abUpdateOptions)
 			ServeDirectory:       s.args.TestImageDir,
 			MaxPhonehomeFailures: s.configParams.MaxExpectedFailures,
 		},
-	})
+	}); err != nil {
+		return err
+	}
 
 	monitorCtx, cancel := context.WithCancel(tc.Context())
 	defer cancel()
