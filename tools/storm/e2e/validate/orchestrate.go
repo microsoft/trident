@@ -56,7 +56,8 @@ func ValidatePartitions(
 		sa.Fail("partitions/blkid", err)
 		return
 	}
-	if _, err := sysinspect.Lsblk(client); err != nil {
+	lsblk, err := sysinspect.Lsblk(client)
+	if err != nil {
 		sa.Fail("partitions/lsblk", err)
 		return
 	}
@@ -64,9 +65,15 @@ func ValidatePartitions(
 	// Set of PARTLABELs present on the system (partitions_system_info keys in
 	// base_test.py).
 	presentPartlabels := make(map[string]struct{})
+	// PARTLABEL carries the configured partition ID, and the blkid entry knows
+	// the kernel device name, which is how lsblk reports sizes. Host Status
+	// partition paths cannot be used for that join: they are
+	// /dev/disk/by-partuuid/<uuid> symlinks, not kernel names.
+	partlabelToDevice := make(map[string]string)
 	for _, entry := range blkid {
 		if label, ok := entry.Get("PARTLABEL"); ok {
 			presentPartlabels[label] = struct{}{}
+			partlabelToDevice[label] = entry.Device
 		}
 	}
 
@@ -87,6 +94,7 @@ func ValidatePartitions(
 			sa.Failf("partitions/system-present",
 				"partition %q (PARTLABEL) not found on system", part.ID)
 		}
+		validatePartitionSize(sa, lsblk, partlabelToDevice, part)
 	}
 
 	// A/B active-volume device-path cross-check (non-verity root only; verity
@@ -94,6 +102,45 @@ func ValidatePartitions(
 	if spec.HasABUpdate() {
 		validateActiveVolumePath(sa, client, hs, spec, blkid, abActive)
 	}
+}
+
+// validatePartitionSize compares a configured partition size against the size
+// the kernel reports for the device the Host Status points at.
+//
+// base_test.py computed these expected sizes and then never compared them --
+// its "check partitions size and type" loop only asserted presence -- so a
+// wrongly sized partition passed. Partitions declared "grow" have no expected
+// size and are skipped.
+func validatePartitionSize(
+	sa *SoftAsserter,
+	lsblk sysinspect.LsblkOutput,
+	partlabelToDevice map[string]string,
+	part PartitionExpectation,
+) {
+	if !part.HasSize {
+		return
+	}
+	name, ok := partlabelToDevice[part.ID]
+	if !ok {
+		// A missing PARTLABEL is already reported by the caller.
+		return
+	}
+
+	device, found := lsblk.FindDevice(name)
+	if !found {
+		sa.Failf("partitions/size", "partition %q (%s) not found in lsblk output", part.ID, name)
+		return
+	}
+
+	actual, err := device.Size.Int64()
+	if err != nil {
+		sa.Failf("partitions/size", "partition %q (%s) has unparsable size %q: %v",
+			part.ID, name, device.Size.String(), err)
+		return
+	}
+
+	sa.Assert("partitions/size", actual == part.SizeBytes,
+		"partition %q (%s) is %d bytes, expected %d", part.ID, name, actual, part.SizeBytes)
 }
 
 // validateActiveVolumePath ports the A/B branch of base_test.py::test_partitions

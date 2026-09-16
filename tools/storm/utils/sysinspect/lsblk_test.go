@@ -33,3 +33,33 @@ func TestParseLsblkAcceptsBothSizeEncodings(t *testing.T) {
 		})
 	}
 }
+
+// Partitions claims to return leaf devices. Stopping at the first level would
+// return the partition that carries an encrypted/LVM child and omit the leaf.
+func TestPartitionsDescendsNestedChildren(t *testing.T) {
+	const nested = `{"blockdevices":[{"name":"sda","size":100,"children":[
+		{"name":"sda1","size":10},
+		{"name":"sda2","size":90,"children":[{"name":"luks-x","size":89}]}]}]}`
+
+	out, err := ParseLsblk(nested)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	var names []string
+	for _, p := range out.Partitions() {
+		names = append(names, p.Name)
+	}
+	if len(names) != 2 || names[0] != "sda1" || names[1] != "luks-x" {
+		t.Errorf("Partitions() = %v, want [sda1 luks-x]", names)
+	}
+
+	// FindDevice must reach a device at any depth, since partition paths can
+	// point at a nested node.
+	if d, ok := out.FindDevice("luks-x"); !ok || d.Size.String() != "89" {
+		t.Errorf("FindDevice(luks-x) = (%+v, %v)", d, ok)
+	}
+	if _, ok := out.FindDevice("nope"); ok {
+		t.Error("FindDevice returned a device for an absent name")
+	}
+}

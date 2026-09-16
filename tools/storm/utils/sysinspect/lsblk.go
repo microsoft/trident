@@ -34,16 +34,47 @@ type LsblkOutput struct {
 // Partitions flattens the block-device tree into the set of leaf devices,
 // treating any block device without children as a partition (mirrors the
 // flattening done in base_test.py).
+//
+// Descends the whole tree rather than one level: lsblk nests device-mapper and
+// LVM nodes beneath a partition, so stopping at the first level would return
+// the parent and omit the actual leaf.
 func (o LsblkOutput) Partitions() []LsblkDevice {
 	var partitions []LsblkDevice
-	for _, bd := range o.Blockdevices {
-		if len(bd.Children) == 0 {
-			partitions = append(partitions, bd)
-			continue
+	var walk func(devices []LsblkDevice)
+	walk = func(devices []LsblkDevice) {
+		for _, bd := range devices {
+			if len(bd.Children) == 0 {
+				partitions = append(partitions, bd)
+				continue
+			}
+			walk(bd.Children)
 		}
-		partitions = append(partitions, bd.Children...)
 	}
+	walk(o.Blockdevices)
 	return partitions
+}
+
+// FindDevice returns the device with the given kernel name from anywhere in the
+// tree. Partition sizes are checked by joining the Host Status partition paths
+// (e.g. /dev/sda3) to the tree, and the match can sit at any depth.
+func (o LsblkOutput) FindDevice(name string) (LsblkDevice, bool) {
+	var found LsblkDevice
+	var ok bool
+	var walk func(devices []LsblkDevice)
+	walk = func(devices []LsblkDevice) {
+		for _, bd := range devices {
+			if ok {
+				return
+			}
+			if bd.Name == name {
+				found, ok = bd, true
+				return
+			}
+			walk(bd.Children)
+		}
+	}
+	walk(o.Blockdevices)
+	return found, ok
 }
 
 // Lsblk runs `lsblk -J -b` on the host and returns the parsed tree with sizes
