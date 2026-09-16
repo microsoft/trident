@@ -64,7 +64,9 @@ install -D -m 0755 \
     scripts/cloud-agent/ado-cargo-token.sh \
     "$CARGO_CREDENTIAL_PROVIDER_PATH"
 
-make -B .cargo/config
+make -B OVERRIDE_RUST_FEED=false .cargo/config
+grep -Eq '^[[:space:]]*replace-with[[:space:]]*=[[:space:]]*"BMP_PublicPackages"' \
+    .cargo/config
 printf '\n[registry]\nglobal-credential-providers = ["cargo:token-from-stdout %s"]\n' \
     "$CARGO_CREDENTIAL_PROVIDER_PATH" \
     >> .cargo/config
