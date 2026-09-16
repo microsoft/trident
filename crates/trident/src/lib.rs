@@ -328,10 +328,10 @@ impl Trident {
                 warn!("Failed to read CLOCK_BOOTTIME: {e}");
                 f64::NAN
             });
-        // `acl` and `arch` are not passed here: both are process-lifetime
-        // constants (like `trident_version`), so they're stamped onto
-        // every telemetry event via `ADDITIONAL_FIELDS`
-        // (see `logging::tracestream::populate_additional_fields`)
+        // `acl` and `arch` are not passed here: both are process-lifetime,
+        // host-level facts (like `vm`), so they're stamped onto every
+        // telemetry event via `PLATFORM_INFO`
+        // (see `logging::tracestream::populate_platform_info`)
         // instead of being scoped to just this one metric.
         tracing::info!(metric_name = "trident_start", uptime_secs = uptime_secs,);
 
