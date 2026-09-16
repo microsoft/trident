@@ -1,0 +1,10 @@
+# by-edition/lite.yaml — applies to cells where edition=lite. Appends a package (list-append + deep
+# merge) and splices the lite storage layout via $include.
+config:
+  os:
+    hostname: gizmo-lite
+    packages:
+      install:
+        - widget-lite
+  storage:
+    $include: layouts/storage/lite.yaml
