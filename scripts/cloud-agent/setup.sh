@@ -7,6 +7,9 @@ readonly PROTOC_GEN_GO_VERSION="v1.36.11"
 readonly PROTOC_GEN_GO_GRPC_VERSION="v1.6.2"
 readonly DATA_DISK_MOUNT="/mnt/storage"
 readonly CARGO_TARGET_PATH="$DATA_DISK_MOUNT/trident-cloud-agent/cargo-target"
+readonly CARGO_CREDENTIAL_PROVIDER_PATH="$HOME/.local/bin/trident-ado-cargo-token"
+
+: "${ADO_UMI_CLIENT_ID:?ADO_UMI_CLIENT_ID must identify the runner managed identity}"
 
 sudo mkdir -p /etc/apt/apt.conf.d
 echo 'DPkg::Lock::Timeout "600";' | sudo tee /etc/apt/apt.conf.d/99lock-timeout
@@ -51,11 +54,20 @@ findmnt --mountpoint "$DATA_DISK_MOUNT"
 
 sudo install -d -o "$(id -u)" -g "$(id -g)" "$CARGO_TARGET_PATH"
 
-make -B OVERRIDE_RUST_FEED=true .cargo/config
-if grep -Eq '^[[:space:]]*replace-with[[:space:]]*=' .cargo/config; then
-    echo "Cloud agent Cargo configuration must use public crates.io" >&2
-    exit 1
-fi
+az login \
+    --identity \
+    --client-id "$ADO_UMI_CLIENT_ID" \
+    --allow-no-subscriptions \
+    >/dev/null
+
+install -D -m 0755 \
+    scripts/cloud-agent/ado-cargo-token.sh \
+    "$CARGO_CREDENTIAL_PROVIDER_PATH"
+
+make -B .cargo/config
+printf '\n[registry]\nglobal-credential-providers = ["cargo:token-from-stdout %s"]\n' \
+    "$CARGO_CREDENTIAL_PROVIDER_PATH" \
+    >> .cargo/config
 if [[ -e target && ! -L target ]]; then
     if [[ ! -d target || -n "$(find target -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
         echo "Refusing to replace existing non-empty target path" >&2

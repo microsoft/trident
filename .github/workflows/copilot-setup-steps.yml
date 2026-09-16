@@ -9,6 +9,7 @@ on:
     paths:
       - Makefile
       - .github/workflows/copilot-setup-steps.yml
+      - scripts/cloud-agent/ado-cargo-token.sh
       - scripts/cloud-agent/setup.sh
 
 jobs:
@@ -32,4 +33,6 @@ jobs:
           cache: false
 
       - name: Set up Trident dependencies
+        env:
+          ADO_UMI_CLIENT_ID: e2fd61e6-b160-4f02-a5ac-3d949a4fe01d
         run: scripts/cloud-agent/setup.sh
