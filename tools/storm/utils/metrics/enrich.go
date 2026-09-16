@@ -176,6 +176,12 @@ func enrichRecords(data []byte, e Enrichment) ([][]byte, error) {
 		if err := dec.Decode(&record); err != nil {
 			return nil, fmt.Errorf("failed to decode record %d: %w", len(out)+1, err)
 		}
+		// A literal `null` decodes without error and leaves record nil, and
+		// assigning into a nil map panics. A torn or corrupt metrics file must
+		// fail cleanly here so the caller can leave it intact.
+		if record == nil {
+			return nil, fmt.Errorf("record %d is null, not a JSON object", len(out)+1)
+		}
 
 		mergeInto(record, platformInfoKey, e.PlatformInfo)
 		mergeInto(record, additionalFieldsKey, e.AdditionalFields)

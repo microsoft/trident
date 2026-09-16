@@ -3,7 +3,7 @@ package scenario
 import (
 	"context"
 	"fmt"
-	"net"
+	"net/http"
 	"time"
 
 	"tridenttools/pkg/netlaunch"
@@ -51,28 +51,36 @@ func startPhonehomeListener(ctx context.Context, config *netlaunch.NetListenConf
 	}
 
 	address := fmt.Sprintf("127.0.0.1:%d", config.ListenPort)
+	// Probe with a real HTTP round-trip rather than a bare TCP dial. The port
+	// is bound early in RunNetlisten, but the logstream and tracestream
+	// handlers are set up afterwards and can still fail, and server.Serve
+	// starts later again -- so a dial can succeed against a listener that is
+	// about to error out. Only a completed response proves Serve is running
+	// with its handlers installed. Any status counts, including 404.
+	probeURL := fmt.Sprintf("http://%s/", address)
+	client := &http.Client{Timeout: time.Second}
 	deadline := time.Now().Add(phonehomeReadyTimeout)
 
 	for {
-		// An exit before the port answers is always a startup failure: this
+		// An exit before the server answers is always a startup failure: this
 		// listener is meant to stay up until the servicing operation reports.
 		select {
 		case err := <-exit:
 			if err != nil {
 				return nil, fmt.Errorf("phone-home listener failed to start: %w", err)
 			}
-			return nil, fmt.Errorf("phone-home listener exited before accepting connections")
+			return nil, fmt.Errorf("phone-home listener exited before serving requests")
 		default:
 		}
 
-		conn, err := net.DialTimeout("tcp", address, time.Second)
+		resp, err := client.Get(probeURL)
 		if err == nil {
-			conn.Close()
+			resp.Body.Close()
 			return exit, nil
 		}
 
 		if time.Now().After(deadline) {
-			return nil, fmt.Errorf("phone-home listener was not accepting connections on %s after %s: %w",
+			return nil, fmt.Errorf("phone-home listener was not serving on %s after %s: %w",
 				address, phonehomeReadyTimeout, err)
 		}
 

@@ -198,3 +198,28 @@ func TestEnrichFileLeavesFileIntactOnMalformedContent(t *testing.T) {
 		t.Errorf("a failed enrichment must not modify the file, got: %s", after)
 	}
 }
+
+// A literal `null` record decodes without error and yields a nil map, and
+// assigning into a nil map panics. The helper must report malformed input and
+// leave the file untouched instead of taking down the enrichment step.
+func TestEnrichFileRejectsNullRecordWithoutPanicking(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "metrics.jsonl")
+	const content = "{\"a\":1}\nnull\n"
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	_, err := EnrichFile(path, Enrichment{AdditionalFields: map[string]any{"test_runner": "storm"}})
+	if err == nil {
+		t.Fatal("expected an error for a null record, got nil")
+	}
+
+	got, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatalf("read back: %v", readErr)
+	}
+	if string(got) != content {
+		t.Errorf("file was modified despite the error:\n%q", string(got))
+	}
+}

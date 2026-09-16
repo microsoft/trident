@@ -140,6 +140,9 @@ const DefaultTestRing = TestRingCi
 // the former straight through as the latter.
 var pipelineStageAliases = map[TestRing]TestRing{
 	"azl-validation": TestRingCi,
+	// A PR-gate pipeline, so it runs the PR ring: falling through to the
+	// default would give it the post-merge CI set instead.
+	"pr-e2e-azure": TestRingPrE2e,
 }
 
 // Resolution describes how a stage type was resolved to a test ring.

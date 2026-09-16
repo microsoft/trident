@@ -399,8 +399,17 @@ func ValidateUefiFallback(sa *SoftAsserter, client *ssh.Client, spec hostconfig.
 	// permission denied (reported as a missing ESP) and, worse, `ls` on the
 	// fallback directory would fail silently and report zero entries - passing
 	// the check no matter what is actually there.
+	// Distinguish "no fallback directory" from "could not read it": piping ls
+	// into `wc -l` would take the pipeline's status from wc, which always
+	// succeeds, so a failed ls prints nothing and counts as zero entries --
+	// passing the check no matter what is actually on the ESP.
 	fallbackDir := path.Join(esp, "EFI", "BOOT")
-	cmd := fmt.Sprintf("sudo test -d %s && { sudo ls -A %s 2>/dev/null | wc -l; } || echo MISSING_ESP", sshutils.ShellQuote(esp), sshutils.ShellQuote(fallbackDir))
+	cmd := fmt.Sprintf(
+		"if ! sudo test -d %[1]s; then echo MISSING_ESP; "+
+			"elif ! sudo test -d %[2]s; then echo NO_FALLBACK_DIR; "+
+			"elif entries=$(sudo ls -A %[2]s); then printf 'COUNT:%%s\\n' \"$(printf '%%s' \"$entries\" | grep -c .)\"; "+
+			"else echo LS_FAILED; fi",
+		sshutils.ShellQuote(esp), sshutils.ShellQuote(fallbackDir))
 	out, err := sshutils.RunCommand(client, cmd)
 	if err != nil {
 		sa.Fail("uefi/disabled", err)
@@ -408,19 +417,25 @@ func ValidateUefiFallback(sa *SoftAsserter, client *ssh.Client, spec hostconfig.
 	}
 
 	result := strings.TrimSpace(out.Stdout)
-	if result == "MISSING_ESP" {
+	switch {
+	case result == "MISSING_ESP":
 		// Report what the host actually looks like: an ESP that is not where
 		// the Host Configuration says it is means either a real defect or a
 		// wrong assumption in this check, and the difference matters.
 		sa.Failf("uefi/disabled", "ESP mount point %q does not exist on the host\n%s",
 			esp, describeMounts(client, esp))
-		return
+	case result == "LS_FAILED":
+		sa.Failf("uefi/disabled", "could not list %s: %s", fallbackDir, strings.TrimSpace(out.Stderr))
+	case result == "NO_FALLBACK_DIR":
+		// No EFI/BOOT at all is the strongest form of "no fallback files".
+		sa.Pass("uefi/disabled")
+	case strings.HasPrefix(result, "COUNT:"):
+		count := strings.TrimPrefix(result, "COUNT:")
+		sa.Assert("uefi/disabled", count == "0",
+			"%s contains %s entries, but uefiFallback is disabled", fallbackDir, count)
+	default:
+		sa.Failf("uefi/disabled", "unexpected probe output %q", result)
 	}
-
-	// An absent EFI/BOOT counts as no fallback files: `ls` on a missing
-	// directory prints nothing, which counts as zero entries.
-	sa.Assert("uefi/disabled", result == "0",
-		"%s contains %s entries, but uefiFallback is disabled", fallbackDir, result)
 }
 
 // describeMounts collects a short picture of the host's mount table and the

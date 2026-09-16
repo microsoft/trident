@@ -20,11 +20,13 @@ func TestResolveMapsStageTypesToRings(t *testing.T) {
 		{TestRingNone, TestRingNone, ResolvedDirect},
 		{TestRingEmpty, TestRingEmpty, ResolvedDirect},
 
+		// Every stage type the pipeline templates can pass must map to the
+		// ring that stage is meant to run, not merely to something non-empty.
 		{"azl-validation", TestRingCi, ResolvedAlias},
+		{"pr-e2e-azure", TestRingPrE2e, ResolvedAlias},
 
 		// Stage types with no mapping fall back rather than testing nothing.
 		{"rel", DefaultTestRing, ResolvedFallback},
-		{"pr-e2e-azure", DefaultTestRing, ResolvedFallback},
 		{"nonsense", DefaultTestRing, ResolvedFallback},
 	}
 
