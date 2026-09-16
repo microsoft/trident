@@ -9,13 +9,14 @@ require (
 	github.com/fatih/color v1.18.0
 	github.com/google/uuid v1.6.0
 	github.com/knqyf263/go-rpmdb v0.1.1
-	github.com/microsoft/storm v0.4.0-alpha1
+	github.com/microsoft/storm v0.4.0-alpha1.0.20260915230908-b0077be6100d
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/sftp v1.13.9
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/viper v1.19.0
 	google.golang.org/grpc v1.83.2
+	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v2 v2.4.0
 	libvirt.org/go/libvirtxml v1.11007.0
 	libvirt.org/libvirt-go-xml v7.4.0+incompatible
@@ -36,7 +37,6 @@ require (
 	golang.org/x/tools v0.48.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	lukechampine.com/uint128 v1.2.0 // indirect
 	modernc.org/cc/v3 v3.40.0 // indirect
