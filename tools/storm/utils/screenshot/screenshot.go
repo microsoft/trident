@@ -25,6 +25,13 @@ var (
 	ppmMagic = []byte("P6")
 )
 
+// maxPpmDimension bounds each PPM header dimension. A console framebuffer is
+// far smaller than this, so the only headers it rejects are corrupt ones -- and
+// rejecting them matters, because screenshots are captured while diagnosing a
+// failure, where panicking or exhausting memory would destroy the diagnostic
+// the capture exists to provide.
+const maxPpmDimension = 1 << 16
+
 // CapturePng writes a PNG screenshot of the domain's first console to out.
 //
 // The format is detected from the image's magic bytes rather than from the mime
@@ -96,6 +103,9 @@ func PpmToPng(r io.Reader, w io.Writer) error {
 	if width < 1 || height < 1 {
 		return fmt.Errorf("invalid PPM dimensions %dx%d", width, height)
 	}
+	if width > maxPpmDimension || height > maxPpmDimension {
+		return fmt.Errorf("PPM dimensions %dx%d exceed the maximum of %d", width, height, maxPpmDimension)
+	}
 
 	// Exactly one whitespace byte separates the header from the pixel data.
 	if _, err := br.ReadByte(); err != nil {
@@ -164,6 +174,12 @@ func readIntToken(r *bufio.Reader) (int, error) {
 	for _, c := range token {
 		if c < '0' || c > '9' {
 			return 0, fmt.Errorf("expected a number, got %q", token)
+		}
+		// Reject before the multiply rather than letting int wrap silently: a
+		// wrapped dimension passes the positivity check and then overflows the
+		// pixel-buffer size calculation.
+		if value > (maxPpmDimension-int(c-'0'))/10 {
+			return 0, fmt.Errorf("number %q exceeds the maximum of %d", token, maxPpmDimension)
 		}
 		value = value*10 + int(c-'0')
 	}

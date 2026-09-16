@@ -50,7 +50,14 @@ func (s *stringOrSlice) UnmarshalJSON(data []byte) error {
 // SystemdExtStatus runs `systemd-<extType> status --json=pretty` on the host and
 // returns the set of active extension names across all hierarchies. extType is
 // "sysext" or "confext".
+//
+// extType becomes part of a command interpreted by a remote shell, and quoting
+// cannot help here because it forms the binary name rather than an argument.
+// It is therefore checked against the two accepted values instead.
 func SystemdExtStatus(client *ssh.Client, extType string) (map[string]struct{}, error) {
+	if extType != "sysext" && extType != "confext" {
+		return nil, fmt.Errorf("unsupported extension type %q, expected sysext or confext", extType)
+	}
 	cmd := fmt.Sprintf("sudo systemd-%s status --json=pretty --no-pager", extType)
 	out, err := sshutils.RunCommand(client, cmd)
 	if err != nil {

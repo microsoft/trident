@@ -45,3 +45,16 @@ func TestParseSystemdExtStatus_ScalarExtensions(t *testing.T) {
 		t.Error(`"none" sentinel should not be treated as an active extension`)
 	}
 }
+
+// extType forms the binary name in the remote command, so shell quoting cannot
+// contain it; the value has to be rejected outright. A nil client is fine here
+// because validation happens before the command is built.
+func TestSystemdExtStatusRejectsUnknownExtensionType(t *testing.T) {
+	for _, extType := range []string{"", "sysext; rm -rf /", "SYSEXT", "portable"} {
+		t.Run(extType, func(t *testing.T) {
+			if _, err := SystemdExtStatus(nil, extType); err == nil {
+				t.Errorf("SystemdExtStatus(%q) = nil error, want rejection", extType)
+			}
+		})
+	}
+}

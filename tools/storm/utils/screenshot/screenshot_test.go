@@ -69,6 +69,12 @@ func TestPpmToPngRejectsBadInput(t *testing.T) {
 		"non-numeric width": "P6\nx 1\n255\n\x00\x00\x00",
 		"16-bit maxval":     "P6\n1 1\n65535\n\x00\x00\x00",
 		"zero width":        "P6\n0 1\n255\n",
+		// Dimensions large enough that width*height*3 wraps: without a bound
+		// the multiply overflows to a small positive, make() succeeds, and the
+		// pixel loop then indexes past the buffer and panics. These must be
+		// rejected while reading the header instead.
+		"dimensions overflow the pixel buffer": "P6\n4294967296 4294967296\n255\n",
+		"dimension above the maximum":          "P6\n65537 1\n255\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			var out bytes.Buffer
