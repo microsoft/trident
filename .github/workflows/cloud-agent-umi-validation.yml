@@ -50,12 +50,13 @@ jobs:
             >/dev/null
 
           cp .cargo/config.toml .cargo/config
-          cat >> .cargo/config <<'EOF'
-
-          [registry]
-          global-credential-providers = ["cargo:token"]
-          EOF
-          export CARGO_REGISTRIES_BMP_PUBLICPACKAGES_TOKEN="Bearer $ado_token"
+          cargo_provider="$HOME/.local/bin/trident-ado-cargo-token"
+          install -D -m 0755 \
+            scripts/cloud-agent/ado-cargo-token.sh \
+            "$cargo_provider"
+          printf '\n[registry]\nglobal-credential-providers = ["cargo:token-from-stdout %s"]\n' \
+            "$cargo_provider" \
+            >> .cargo/config
           cargo fetch --locked
 
           latest_build="$(
