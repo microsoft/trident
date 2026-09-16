@@ -153,8 +153,12 @@ impl<R: ContainerRuntime> Executor for IcExecutor<R> {
             }
         }
 
-        let rendered_config = working_copy::render_working_copy(&run_cell.ic_config)
-            .map_err(|err| ExecError::Other(err.to_string()))?;
+        let rendered_config = working_copy::render_working_copy(
+            &run_cell.ic_config,
+            &run_cell.input_deps,
+            &context.runtime.host_root,
+        )
+        .map_err(|err| ExecError::Other(err.to_string()))?;
         let working_copy_path =
             working_copy::write_working_copy(&run_cell, &rendered_config, context.clone_index)
                 .map_err(|source| ExecError::Io {

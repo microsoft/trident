@@ -9,6 +9,25 @@ earlier use the bare `v<version>` scheme.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-15
+
+### Fixed
+
+- `${inputs.<name>}` now resolves to a container-namespace path in the Image
+  Customizer working copy tailor runs, so a consuming cell's `additionalFiles`
+  (etc.) can `stat` the producer artifact inside the container. Previously the
+  host path was written into the config and IC failed at build time with
+  "no such file or directory" — while `validate`/`render`/`--dry-run` passed. The
+  `render`/`export` golden keeps portable host paths for external pipelines.
+
+### Added
+
+- `validate` (the `✓` per image) and `list` (its section headings) now colorize
+  their status output, matching the build status lines. As before, color follows
+  `NO_COLOR` / `CLICOLOR_FORCE` / TTY detection — set `CLICOLOR_FORCE=1` to force
+  colored output in CI logs (e.g. Azure DevOps, which renders ANSI). Documented
+  under [CLI reference → Color output](docs/reference/cli.md).
+
 ## [1.1.0] - 2026-09-15
 
 ### Added

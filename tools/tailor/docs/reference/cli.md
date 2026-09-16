@@ -215,3 +215,22 @@ Every command uses a small, stable exit-code taxonomy so scripts and CI can bran
 | `130` | Interrupted (Ctrl+C / SIGTERM): `128 + SIGINT`. The running container is torn down before exit. |
 
 See [Handle exit codes in scripts](../how-to/handle-exit-codes.md).
+
+## Color output
+
+tailor colors its status output (the build status lines, `validate`'s `✓`, and `list`'s headings)
+and preserves Image Customizer's colored logs. Color is a single process-wide decision, resolved in
+this order:
+
+| Condition | Effect |
+| --- | --- |
+| `NO_COLOR` is set (any value) | Force color **off**. |
+| `CLICOLOR_FORCE` is set (any value) | Force color **on**, even when output is not a terminal. |
+| neither is set | Color on only when stderr is a terminal. |
+
+In CI, output is not a terminal, so set `CLICOLOR_FORCE=1` to keep tailor's (and IC's) colored logs —
+for example in an Azure DevOps pipeline, which renders ANSI:
+
+```bash
+CLICOLOR_FORCE=1 tailor build
+```

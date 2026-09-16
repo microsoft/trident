@@ -230,7 +230,7 @@ fn load_workspace(cli: &Cli) -> Result<Workspace, AppError> {
 // ───────────────────────────── pure verbs (no Docker / network) ─────────────────────────────
 
 fn list(workspace: &Workspace) {
-    println!("Images:");
+    println!("{}", paint("Images:", SGR_BOLD, use_color()));
     for image in &workspace.images {
         let cells = image.definition.matrix.as_ref().map_or(1, |m| {
             expand(m, image.definition.selectors.as_ref()).map_or(0, |c| c.len())
@@ -243,7 +243,14 @@ fn list(workspace: &Workspace) {
         println!("  {:<28} {cells} cell(s){marker}", image.definition.name);
     }
     if let Some(tool) = &workspace.tool {
-        println!("\nToolchains (default: {}):", tool.toolchains.default);
+        println!(
+            "\n{}",
+            paint(
+                &format!("Toolchains (default: {}):", tool.toolchains.default),
+                SGR_BOLD,
+                use_color()
+            )
+        );
         for entry in &tool.toolchains.entries {
             println!(
                 "  {:<10} {}:{}",
@@ -320,7 +327,12 @@ fn validate(workspace: &Workspace, names: &[String], selector: &Selector) -> Res
         let mut cells = cells_selected(target, selector)?;
         imagedep::lower_image_bases(&mut cells, &all_members, &output_dir)?;
         imagedep::resolve_inputs(&mut cells, &all_members, &output_dir)?;
-        println!("✓ {:<28} {} cell(s) valid", target.name(), cells.len());
+        println!(
+            "{} {:<28} {} cell(s) valid",
+            paint("✓", SGR_BOLD_GREEN, use_color()),
+            target.name(),
+            cells.len()
+        );
     }
     // Surface signing prerequisites non-fatally (meta/docs/2026-06-29-signing.md §5.1) so they are discoverable
     // without starting a real build.
@@ -1769,10 +1781,24 @@ fn render_status_line(prefix: &str, verb: &str, message: &str, color: bool) -> S
     } else {
         format!("{prefix}  ")
     };
+    format!(
+        "{leading}{padding}{} {message}",
+        paint(verb, SGR_BOLD_GREEN, color)
+    )
+}
+
+/// SGR code for a bold-green success accent (the status verb, the validate `✓`).
+const SGR_BOLD_GREEN: &str = "1;32";
+/// SGR code for a bold section heading (the `list` headers).
+const SGR_BOLD: &str = "1";
+
+/// Wrap `text` in an ANSI SGR sequence when `color` is set, else return it unchanged. The single
+/// place tailor emits color, so `use_color()` (`NO_COLOR`/`CLICOLOR_FORCE`/TTY) governs every accent.
+fn paint(text: &str, sgr: &str, color: bool) -> String {
     if color {
-        format!("{leading}{padding}\u{1b}[1;32m{verb}\u{1b}[0m {message}")
+        format!("\u{1b}[{sgr}m{text}\u{1b}[0m")
     } else {
-        format!("{leading}{padding}{verb} {message}")
+        text.to_owned()
     }
 }
 
@@ -2946,6 +2972,16 @@ toolsDirSources:
         assert_eq!(
             render_status_line("", "Built", "x", true),
             "       \u{1b}[1;32mBuilt\u{1b}[0m x"
+        );
+    }
+
+    #[test]
+    fn paint_wraps_only_when_color_is_enabled() {
+        assert_eq!(paint("✓", SGR_BOLD_GREEN, false), "✓");
+        assert_eq!(paint("✓", SGR_BOLD_GREEN, true), "\u{1b}[1;32m✓\u{1b}[0m");
+        assert_eq!(
+            paint("Images:", SGR_BOLD, true),
+            "\u{1b}[1mImages:\u{1b}[0m"
         );
     }
 
