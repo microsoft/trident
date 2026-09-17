@@ -61,16 +61,22 @@ func (s *TridentE2EScenario) prepareHostConfig(tc storm.TestCase) error {
 			continue
 		}
 		if name == testingUsername {
-			user.ArrayAppend(string(public), "sshPublicKeys")
+			if err := user.ArrayAppend(string(public), "sshPublicKeys"); err != nil {
+				return fmt.Errorf("failed to add the SSH public key to user %q: %w", testingUsername, err)
+			}
 			found = true
 		}
 	}
 
 	if !found {
-		s.config.ArrayConcat(map[string]interface{}{
+		// A silent failure here deploys a host with no authorized key, which
+		// surfaces only as an unexplained SSH connection timeout later.
+		if err := s.config.ArrayConcat(map[string]interface{}{
 			"name":          testingUsername,
 			"sshPublicKeys": []string{string(public)},
-		}, "os", "users")
+		}, "os", "users"); err != nil {
+			return fmt.Errorf("failed to add the testing user to os.users: %w", err)
+		}
 	}
 
 	// If this is a container runtime, add the trident-container.tar.gz file to additional files.
@@ -79,7 +85,11 @@ func (s *TridentE2EScenario) prepareHostConfig(tc storm.TestCase) error {
 			"source":      "/var/lib/trident/trident-container.tar.gz",
 			"destination": "/var/lib/trident/trident-container.tar.gz",
 		}
-		s.config.ArrayAppend(containerAdditionalFile, "os", "additionalFiles")
+		// Without this the container archive is never staged, and the install
+		// fails much later with no indication that the injection was skipped.
+		if err := s.config.ArrayAppend(containerAdditionalFile, "os", "additionalFiles"); err != nil {
+			return fmt.Errorf("failed to add the Trident container archive to os.additionalFiles: %w", err)
+		}
 	}
 
 	// Inject any pipeline-provided OCI overrides and derive the encryption
@@ -129,20 +139,19 @@ func (s *TridentE2EScenario) applyImageOverrides() error {
 	if err := s.applyOciOverrides(); err != nil {
 		return err
 	}
-	s.applyContainerPcrExclusion()
-	return nil
+	return s.applyContainerPcrExclusion()
 }
 
-func (s *TridentE2EScenario) applyContainerPcrExclusion() {
+func (s *TridentE2EScenario) applyContainerPcrExclusion() error {
 	if s.runtime != trident.RuntimeTypeContainer {
-		return
+		return nil
 	}
 	url, ok := s.config.S("image", "url").Data().(string)
 	if !ok || !strings.HasSuffix(url, usrVerityCosiSuffix) {
-		return
+		return nil
 	}
 	if !s.config.Exists("storage", "encryption") {
-		return
+		return nil
 	}
 	// Filter the configured list rather than replacing it: a configuration that
 	// seals to additional PCRs must keep them, and only PCR 7 is the problem
@@ -154,7 +163,10 @@ func (s *TridentE2EScenario) applyContainerPcrExclusion() {
 		}
 		kept = append(kept, pcr.Data())
 	}
-	s.config.Set(kept, "storage", "encryption", "pcrs")
+	if _, err := s.config.Set(kept, "storage", "encryption", "pcrs"); err != nil {
+		return fmt.Errorf("failed to rewrite storage.encryption.pcrs: %w", err)
+	}
+	return nil
 }
 
 // applyOciOverrides injects the OCI-based Host Configuration edits requested via
@@ -189,7 +201,9 @@ func (s *TridentE2EScenario) applyOciOverrides() error {
 	}
 
 	if s.args.OciImageUrl != "" {
-		s.config.Set(s.args.OciImageUrl, "image", "url")
+		if _, err := s.config.Set(s.args.OciImageUrl, "image", "url"); err != nil {
+			return fmt.Errorf("failed to override image.url: %w", err)
+		}
 	}
 
 	return nil
