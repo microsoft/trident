@@ -1,11 +1,17 @@
 package validate
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"golang.org/x/crypto/ssh"
+
 	"tridenttools/pkg/hostconfig"
+	"tridenttools/storm/utils/sshutils"
+	"tridenttools/storm/utils/sysinspect"
 )
 
 func specFromYaml(t *testing.T, yaml string) hostconfig.HostConfig {
@@ -140,6 +146,112 @@ func TestValidateUefiFallbackFailsWithoutAnEsp(t *testing.T) {
 
 	if !sa.HasFailures() {
 		t.Error("expected a failure when the ESP mount point cannot be resolved")
+	}
+}
+
+func TestValidateUefiFallbackDisabledRequiresMountedVfatEsp(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		rows       []sysinspect.FindmntRow
+		findmntErr error
+	}{
+		{
+			name:       "not mounted",
+			findmntErr: errors.New("findmnt: /boot/efi is not a mountpoint"),
+		},
+		{
+			name: "wrong filesystem",
+			rows: []sysinspect.FindmntRow{{Target: "/boot/efi", FsType: "ext4"}},
+		},
+		{
+			name: "wrong target",
+			rows: []sysinspect.FindmntRow{{Target: "/boot", FsType: espFindmntFsType}},
+		},
+		{
+			name: "ambiguous rows",
+			rows: []sysinspect.FindmntRow{
+				{Target: "/boot/efi", FsType: espFindmntFsType},
+				{Target: "/boot/efi", FsType: espFindmntFsType},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var ranFallbackProbe bool
+			var sa SoftAsserter
+			validateUefiFallbackDisabled(
+				&sa,
+				nil,
+				"/boot/efi",
+				func(*ssh.Client, string) ([]sysinspect.FindmntRow, error) {
+					return tc.rows, tc.findmntErr
+				},
+				func(*ssh.Client, string) (*sshutils.SshCmdOutput, error) {
+					ranFallbackProbe = true
+					return &sshutils.SshCmdOutput{Stdout: "NO_FALLBACK_DIR\n"}, nil
+				})
+
+			summary := sa.Summary()
+			if ranFallbackProbe {
+				t.Fatalf("fallback directory probe ran before ESP mount was verified:\n%s", summary)
+			}
+			if !sa.HasFailures() {
+				t.Fatalf("expected ESP mount failure:\n%s", summary)
+			}
+			if strings.Contains(summary, "PASS  uefi/disabled") {
+				t.Fatalf("unmounted or wrong ESP was reported as disabled fallback success:\n%s", summary)
+			}
+		})
+	}
+}
+
+func TestValidateUefiFallbackDisabledPassesWithoutFallbackDirOnMountedEsp(t *testing.T) {
+	var ranFallbackProbe bool
+	var sa SoftAsserter
+	validateUefiFallbackDisabled(
+		&sa,
+		nil,
+		"/boot/efi",
+		func(*ssh.Client, string) ([]sysinspect.FindmntRow, error) {
+			return []sysinspect.FindmntRow{{Target: "/boot/efi", FsType: espFindmntFsType}}, nil
+		},
+		func(*ssh.Client, string) (*sshutils.SshCmdOutput, error) {
+			ranFallbackProbe = true
+			return &sshutils.SshCmdOutput{Stdout: "NO_FALLBACK_DIR\n"}, nil
+		})
+
+	summary := sa.Summary()
+	if !ranFallbackProbe {
+		t.Fatalf("fallback directory probe did not run after ESP mount was verified:\n%s", summary)
+	}
+	if sa.HasFailures() {
+		t.Fatalf("unexpected failures:\n%s", summary)
+	}
+	for _, want := range []string{"PASS  uefi/esp-mounted", "PASS  uefi/disabled"} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("missing %q:\n%s", want, summary)
+		}
+	}
+}
+
+func TestValidateUefiFallbackDisabledChecksProbeStatus(t *testing.T) {
+	var sa SoftAsserter
+	validateUefiFallbackDisabled(
+		&sa,
+		nil,
+		"/boot/efi",
+		func(*ssh.Client, string) ([]sysinspect.FindmntRow, error) {
+			return []sysinspect.FindmntRow{{Target: "/boot/efi", FsType: espFindmntFsType}}, nil
+		},
+		func(*ssh.Client, string) (*sshutils.SshCmdOutput, error) {
+			return &sshutils.SshCmdOutput{Stdout: "NO_FALLBACK_DIR\n", Status: 7}, nil
+		})
+
+	summary := sa.Summary()
+	if !sa.HasFailures() {
+		t.Fatalf("expected non-zero probe status to fail:\n%s", summary)
+	}
+	if strings.Contains(summary, "PASS  uefi/disabled") {
+		t.Fatalf("non-zero probe status was reported as success:\n%s", summary)
 	}
 }
 

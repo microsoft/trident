@@ -1,9 +1,11 @@
 package validate
 
 import (
+	"strings"
 	"testing"
 
 	"tridenttools/pkg/hostconfig"
+	"tridenttools/storm/utils/sysinspect"
 	tridentutil "tridenttools/storm/utils/trident"
 )
 
@@ -137,4 +139,163 @@ func TestAbVolumePairID(t *testing.T) {
 	if isVerity || pairID != "esp" {
 		t.Errorf("non-verity: got (%q,%v), want (esp,false)", pairID, isVerity)
 	}
+}
+
+const raidABSpecYaml = `
+storage:
+  disks:
+  - id: os
+    partitions:
+    - id: root-a1
+    - id: root-b1
+  - id: disk2
+    partitions:
+    - id: root-a2
+    - id: root-b2
+  raid:
+    software:
+    - id: root-a
+      name: root-a
+      devices:
+      - root-a1
+      - root-a2
+    - id: root-b
+      name: root-b
+      devices:
+      - root-b1
+      - root-b2
+  abUpdate:
+    volumePairs:
+    - id: root
+      volumeAId: root-a
+      volumeBId: root-b
+  filesystems:
+  - deviceId: root
+    mountPoint: /
+`
+
+func TestValidateActiveVolumePathRaidAssertsMountedArray(t *testing.T) {
+	hs := activeVolumeHostStatus(t, raidABSpecYaml)
+	if _, ok := hs.PartitionPaths()["root-a"]; ok {
+		t.Fatal("test Host Status must omit the RAID array id to cover the old no-op path")
+	}
+
+	var sa SoftAsserter
+	validateActiveVolumePathFromMount(
+		&sa,
+		hs,
+		hs.Spec(),
+		nil,
+		tridentutil.AbVolumeA,
+		"/dev/md127",
+		func(device string) (string, bool, error) {
+			if device != "/dev/md127" {
+				t.Errorf("resolved RAID for %q, want /dev/md127", device)
+			}
+			return "/dev/md/root-a", true, nil
+		})
+
+	summary := sa.Summary()
+	if sa.HasFailures() {
+		t.Fatalf("unexpected failures:\n%s", summary)
+	}
+	if !strings.Contains(summary, "PASS  partitions/ab-raid-path-match") {
+		t.Fatalf("RAID path match was not recorded:\n%s", summary)
+	}
+}
+
+func TestValidateActiveVolumePathRaidFailsWrongMountedArray(t *testing.T) {
+	hs := activeVolumeHostStatus(t, raidABSpecYaml)
+
+	var sa SoftAsserter
+	validateActiveVolumePathFromMount(
+		&sa,
+		hs,
+		hs.Spec(),
+		nil,
+		tridentutil.AbVolumeA,
+		"/dev/md127",
+		func(string) (string, bool, error) {
+			return "/dev/md/root-b", true, nil
+		})
+
+	summary := sa.Summary()
+	if !sa.HasFailures() {
+		t.Fatalf("expected wrong mounted RAID array to fail:\n%s", summary)
+	}
+	if !strings.Contains(summary, "FAIL  partitions/ab-raid-path-match") {
+		t.Fatalf("wrong RAID array failed under the wrong sub-check:\n%s", summary)
+	}
+}
+
+func TestValidateActiveVolumePathPartitionMissingStatusPathFails(t *testing.T) {
+	const partitionABSpecYaml = `
+storage:
+  disks:
+  - id: os
+    partitions:
+    - id: root-a
+    - id: root-b
+  abUpdate:
+    volumePairs:
+    - id: root
+      volumeAId: root-a
+      volumeBId: root-b
+  filesystems:
+  - deviceId: root
+    mountPoint: /
+`
+	hs := activeVolumeHostStatus(t, partitionABSpecYaml)
+	blkid := map[string]sysinspect.BlkidEntry{
+		"sda2": {Fields: map[string]string{"PARTUUID": "active-partuuid"}},
+	}
+
+	var sa SoftAsserter
+	validateActiveVolumePathFromMount(
+		&sa,
+		hs,
+		hs.Spec(),
+		blkid,
+		tridentutil.AbVolumeA,
+		"/dev/sda2",
+		nil)
+
+	summary := sa.Summary()
+	if !sa.HasFailures() {
+		t.Fatalf("expected missing active partition path to fail:\n%s", summary)
+	}
+	if !strings.Contains(summary, "active partition volume \"root-a\" missing") {
+		t.Fatalf("missing partition path failure was not recorded:\n%s", summary)
+	}
+}
+
+func activeVolumeHostStatus(t *testing.T, spec string) tridentutil.HostStatus {
+	t.Helper()
+	hs, err := tridentutil.NewHostStatusFromYaml([]byte(`
+abActiveVolume: volume-a
+partitionPaths:
+  root-a1: /dev/disk/by-partuuid/root-a1
+  root-a2: /dev/disk/by-partuuid/root-a2
+  root-b1: /dev/disk/by-partuuid/root-b1
+  root-b2: /dev/disk/by-partuuid/root-b2
+spec:
+` + indentForHostStatus(spec)))
+	if err != nil {
+		t.Fatalf("parse Host Status: %v", err)
+	}
+	return hs
+}
+
+func indentForHostStatus(s string) string {
+	var out strings.Builder
+	for _, line := range strings.Split(s, "\n") {
+		if line == "" {
+			out.WriteByte('\n')
+			continue
+		}
+		out.WriteString("  ")
+		out.WriteString(line)
+		out.WriteByte('\n')
+	}
+	return out.String()
 }
