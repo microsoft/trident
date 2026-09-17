@@ -20,7 +20,7 @@ func TestPlanForResolvesPerConfiguration(t *testing.T) {
 		emitUrl  bool
 	}{
 		{config: "extensions", want: true, repo: "sysext-storm-host", numFiles: 2, emitUrl: false},
-		{config: "misc", want: true, repo: "cosi-storm-host", numFiles: 1, emitUrl: true},
+		{config: "misc", want: true, repo: "cosi-storm-host", numFiles: 4, emitUrl: true},
 		{config: "base", want: false},
 		{config: "raid-small", want: false},
 	}
@@ -75,5 +75,57 @@ func TestOnlyInstallingConfigsEmitAnImageUrl(t *testing.T) {
 	// file and what the scenario installs from.
 	if got := ociUrl("acr", "cosi-storm-host", "v123.misc.virtualMachine"); got != "oci://acr.azurecr.io/cosi-storm-host:v123.misc.virtualMachine.1" {
 		t.Errorf("ociUrl = %q", got)
+	}
+}
+
+// Cleanup must delete exactly what the push created, including the misc COSI.
+// Deriving both from planFor is what keeps them from drifting: the previous
+// cleanup hard-coded the sysext repo, so a misc push would have leaked.
+func TestCleanupCoversEveryPushedImage(t *testing.T) {
+	for _, cfg := range []string{"extensions", "misc", "base"} {
+		push := AcrPushScript{Config: cfg, RuntimeEnv: "host", SourceDir: "/src"}
+		pushPlan, pushes := push.planFor()
+
+		del := AcrDeleteScript{Config: cfg, RuntimeEnv: "host", SourceDir: "/src"}
+		delAsPush := AcrPushScript{Config: del.Config, RuntimeEnv: del.RuntimeEnv, SourceDir: del.SourceDir}
+		delPlan, deletes := delAsPush.planFor()
+
+		if pushes != deletes {
+			t.Errorf("%s: push=%v but cleanup=%v", cfg, pushes, deletes)
+		}
+		if !pushes {
+			continue
+		}
+		if pushPlan.repoName != delPlan.repoName {
+			t.Errorf("%s: pushed to %q but cleanup targets %q", cfg, pushPlan.repoName, delPlan.repoName)
+		}
+		if len(pushPlan.files) != len(delPlan.files) {
+			t.Errorf("%s: pushed %d image(s) but cleanup deletes %d", cfg, len(pushPlan.files), len(delPlan.files))
+		}
+	}
+}
+
+// misc runs A/B updates, and the OCI branch bumps the tag suffix rather than
+// renaming a file. Every version the scenario can step to must therefore exist
+// in ACR before the run starts: staging only the base image installs fine and
+// then fails on the first update with a missing tag, ~20 minutes in.
+func TestMiscStagesEveryImageVersionTheUpdatesWillStepTo(t *testing.T) {
+	s := AcrPushScript{Config: "misc", RuntimeEnv: "host", SourceDir: "/src"}
+	plan, ok := s.planFor()
+	if !ok {
+		t.Fatal("misc must push")
+	}
+
+	// maxSplitRingImageVersion in the scenario package is 4, and split A/B
+	// runs from the ci ring upwards, so all four must be staged.
+	if len(plan.files) != 4 {
+		t.Fatalf("staged %d versions, want 4", len(plan.files))
+	}
+
+	want := []string{"regular.cosi", "regular_v2.cosi", "regular_v3.cosi", "regular_v4.cosi"}
+	for i, f := range plan.files {
+		if filepath.Base(f) != want[i] {
+			t.Errorf("version %d = %q, want %q", i+1, filepath.Base(f), want[i])
+		}
 	}
 }

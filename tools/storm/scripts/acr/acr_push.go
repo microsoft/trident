@@ -24,6 +24,22 @@ type AcrPushScript struct {
 	UrlVarName            string `help:"ADO variable name in which to store the pushed image's OCI URL"`
 }
 
+// maxOciImageVersion is how many versions of the OCI-hosted image are staged.
+// It must cover the highest version the scenario can step to, which is the
+// split ring's (see maxSplitRingImageVersion in the scenario package); split
+// A/B runs from the 'ci' ring upwards.
+const maxOciImageVersion = 4
+
+// ociImageName is the on-disk name of version v, matching the convention
+// prepare-images uses: v1 is the bare name and later versions carry a _vN
+// suffix.
+func ociImageName(v int) string {
+	if v == 1 {
+		return "regular.cosi"
+	}
+	return fmt.Sprintf("regular_v%d.cosi", v)
+}
+
 // pushPlan is what a given configuration needs hosted in ACR.
 type pushPlan struct {
 	repoName string
@@ -56,9 +72,20 @@ func (s *AcrPushScript) planFor() (pushPlan, bool) {
 			emitUrl: false,
 		}, true
 	case "misc":
+		// Every version the A/B updates will step through must be staged up
+		// front. The scenario's prepareTestImages skips versioning for an
+		// oci:// URL precisely because the pipeline is expected to have done
+		// it, and the OCI branch of runTridentUpdate then bumps the tag
+		// suffix (…<N> -> …<N+1>). Pushing only the base image would install
+		// fine and then fail on the first update with a missing tag.
+		// maxOciImageVersion covers the split ring, which runs from 'ci' up.
+		files := make([]string, 0, maxOciImageVersion)
+		for v := 1; v <= maxOciImageVersion; v++ {
+			files = append(files, filepath.Join(s.SourceDir, "artifacts", "test-image", ociImageName(v)))
+		}
 		return pushPlan{
 			repoName: "cosi-storm-" + s.RuntimeEnv,
-			files:    []string{filepath.Join(s.SourceDir, "artifacts", "test-image", "regular.cosi")},
+			files:    files,
 			emitUrl:  true,
 		}, true
 	default:
