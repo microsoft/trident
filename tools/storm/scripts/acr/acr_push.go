@@ -48,6 +48,11 @@ type pushPlan struct {
 	// image. Emitting it for extensions would point image.url at a sysext
 	// image and replace the OS image entirely.
 	emitUrl bool
+	// emitRepo is set only for a configuration that CONSUMES sysext images
+	// from the repository. The scenario treats a non-empty sysext repo as
+	// "this run has extensions", so setting it for misc makes prepare-hc try
+	// to hash a sysext file that only the extensions configuration builds.
+	emitRepo bool
 }
 
 // planFor resolves what to push for a configuration, or false when it hosts
@@ -69,7 +74,8 @@ func (s *AcrPushScript) planFor() (pushPlan, bool) {
 				filepath.Join(s.SourceDir, "test-sysext-1.raw"),
 				filepath.Join(s.SourceDir, "test-sysext-2.raw"),
 			},
-			emitUrl: false,
+			emitUrl:  false,
+			emitRepo: true,
 		}, true
 	case "misc":
 		// Every version the A/B updates will step through must be staged up
@@ -87,6 +93,7 @@ func (s *AcrPushScript) planFor() (pushPlan, bool) {
 			repoName: "cosi-storm-" + s.RuntimeEnv,
 			files:    files,
 			emitUrl:  true,
+			emitRepo: false,
 		}, true
 	default:
 		return pushPlan{}, false
@@ -116,7 +123,7 @@ func (s *AcrPushScript) Run(suite core.SuiteContext) error {
 	if suite.AzureDevops() {
 		// Set output variables by writing to stdout
 		fmt.Printf("##vso[task.setvariable variable=%s]%s\n", s.TagVarName, tagBase)
-		if s.RepoVarName != "" {
+		if s.RepoVarName != "" && plan.emitRepo {
 			fmt.Printf("##vso[task.setvariable variable=%s]%s\n", s.RepoVarName, plan.repoName)
 		}
 		if s.UrlVarName != "" && plan.emitUrl {

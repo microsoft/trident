@@ -53,6 +53,37 @@ func TestPlanForResolvesPerConfiguration(t *testing.T) {
 	}
 }
 
+// Each ADO variable this script sets is meaningful to exactly one
+// configuration, and leaking one into another has already caused two distinct
+// failures: an OCI URL emitted for extensions would replace the OS image with a
+// sysext image, and a sysext repo emitted for misc made prepare-hc try to hash
+// a sysext file that only extensions builds. Pin the whole matrix.
+func TestVariableEmissionIsScopedToTheConfigThatNeedsIt(t *testing.T) {
+	tests := []struct {
+		config   string
+		emitUrl  bool
+		emitRepo bool
+	}{
+		{"extensions", false, true},
+		{"misc", true, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.config, func(t *testing.T) {
+			s := AcrPushScript{Config: tt.config, RuntimeEnv: "host", SourceDir: "/src"}
+			plan, ok := s.planFor()
+			if !ok {
+				t.Fatalf("%s must push", tt.config)
+			}
+			if plan.emitUrl != tt.emitUrl {
+				t.Errorf("emitUrl = %v, want %v", plan.emitUrl, tt.emitUrl)
+			}
+			if plan.emitRepo != tt.emitRepo {
+				t.Errorf("emitRepo = %v, want %v", plan.emitRepo, tt.emitRepo)
+			}
+		})
+	}
+}
+
 // Emitting an OCI URL for extensions would point image.url at a sysext image
 // and replace the OS image entirely, so only an installing configuration may
 // set it.
