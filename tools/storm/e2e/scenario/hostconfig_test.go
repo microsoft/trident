@@ -1,6 +1,8 @@
 package scenario
 
 import (
+	"encoding/json"
+	"reflect"
 	"testing"
 
 	"tridenttools/pkg/hostconfig"
@@ -87,20 +89,134 @@ func newEncryptedUsrverityScenario(t *testing.T, runtime trident.RuntimeType) *T
 	return &TridentE2EScenario{config: hc, runtime: runtime}
 }
 
+func newUsrverityScenarioWithPcrs(t *testing.T, pcrs string, runtime trident.RuntimeType) *TridentE2EScenario {
+	t.Helper()
+	hc, err := hostconfig.NewHostConfigFromYaml([]byte(
+		"image:\n  url: http://x/usrverity.cosi\n" +
+			"storage:\n  encryption:\n    pcrs: " + pcrs + "\n" +
+			"os:\n  users: []\n"))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	return &TridentE2EScenario{config: hc, runtime: runtime}
+}
+
+func pcrData(t *testing.T, s *TridentE2EScenario) []interface{} {
+	t.Helper()
+	var out []interface{}
+	for _, c := range s.config.S("storage", "encryption", "pcrs").Children() {
+		out = append(out, c.Data())
+	}
+	return out
+}
+
 func pcrList(t *testing.T, s *TridentE2EScenario) []string {
 	t.Helper()
 	var out []string
-	for _, c := range s.config.S("storage", "encryption", "pcrs").Children() {
-		if v, ok := c.Data().(string); ok {
+	for _, c := range pcrData(t, s) {
+		if v, ok := c.(string); ok {
 			out = append(out, v)
 		}
 	}
 	return out
 }
 
+func assertPcrData(t *testing.T, s *TridentE2EScenario, want []interface{}) {
+	t.Helper()
+	got := pcrData(t, s)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("pcrs = %#v, want %#v", got, want)
+	}
+}
+
+func TestHostConfigLoaderDecodesNumericPcrsAsInt(t *testing.T) {
+	s := newUsrverityScenarioWithPcrs(t, "[4, 7, 11]", trident.RuntimeTypeContainer)
+
+	got := pcrData(t, s)
+	if len(got) != 3 {
+		t.Fatalf("pcrs = %#v, want three entries", got)
+	}
+	if _, ok := got[1].(int); !ok {
+		t.Fatalf("numeric PCR decoded as %T (%#v), want int", got[1], got[1])
+	}
+}
+
+func TestSecureBootPolicyPcrNormalizationHandlesDecodeTypes(t *testing.T) {
+	tests := []struct {
+		name string
+		pcr  interface{}
+		want bool
+	}{
+		{name: "name", pcr: secureBootPolicyPcr, want: true},
+		{name: "numeric string", pcr: "7", want: true},
+		{name: "int", pcr: int(7), want: true},
+		{name: "float64", pcr: float64(7), want: true},
+		{name: "json number", pcr: json.Number("7"), want: true},
+		{name: "other pcr", pcr: int(11), want: false},
+		{name: "other string", pcr: "kernel-boot", want: false},
+		{name: "non-integral json number", pcr: json.Number("7.1"), want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isSecureBootPolicyPcr(tt.pcr); got != tt.want {
+				t.Fatalf("isSecureBootPolicyPcr(%#v) = %v, want %v", tt.pcr, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestApplyContainerPcrExclusionDropsPcr7Spellings(t *testing.T) {
+	tests := []struct {
+		name string
+		pcrs string
+		want []interface{}
+	}{
+		{
+			name: "name spelling",
+			pcrs: "[boot-loader-code, secure-boot-policy, kernel-boot]",
+			want: []interface{}{"boot-loader-code", "kernel-boot"},
+		},
+		{
+			name: "bare number",
+			pcrs: "[4, 7, 11]",
+			want: []interface{}{4, 11},
+		},
+		{
+			name: "numeric string",
+			pcrs: `["4", "7", "11"]`,
+			want: []interface{}{"4", "11"},
+		},
+		{
+			name: "mixed list",
+			pcrs: `[boot-loader-code, 7, "secure-boot-policy", "7", kernel-boot]`,
+			want: []interface{}{"boot-loader-code", "kernel-boot"},
+		},
+		{
+			name: "no pcr 7",
+			pcrs: `[4, "11", kernel-boot]`,
+			want: []interface{}{4, "11", "kernel-boot"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newUsrverityScenarioWithPcrs(t, tt.pcrs, trident.RuntimeTypeContainer)
+
+			if err := s.applyContainerPcrExclusion(); err != nil {
+				t.Fatalf("applyContainerPcrExclusion: %v", err)
+			}
+
+			assertPcrData(t, s, tt.want)
+		})
+	}
+}
+
 func TestApplyContainerPcrExclusion_StripsPcr7(t *testing.T) {
 	s := newEncryptedUsrverityScenario(t, trident.RuntimeTypeContainer)
-	s.applyContainerPcrExclusion()
+	if err := s.applyContainerPcrExclusion(); err != nil {
+		t.Fatalf("applyContainerPcrExclusion: %v", err)
+	}
 
 	got := pcrList(t, s)
 	want := []string{"boot-loader-code", "kernel-boot"}
@@ -116,7 +232,9 @@ func TestApplyContainerPcrExclusion_StripsPcr7(t *testing.T) {
 
 func TestApplyContainerPcrExclusion_HostUnchanged(t *testing.T) {
 	s := newEncryptedUsrverityScenario(t, trident.RuntimeTypeHost)
-	s.applyContainerPcrExclusion()
+	if err := s.applyContainerPcrExclusion(); err != nil {
+		t.Fatalf("applyContainerPcrExclusion: %v", err)
+	}
 
 	if got := len(pcrList(t, s)); got != 3 {
 		t.Errorf("host pcrs len = %d, want 3 (unchanged)", got)
@@ -134,7 +252,9 @@ func TestApplyContainerPcrExclusion_NonUsrverityUnchanged(t *testing.T) {
 		t.Fatalf("parse: %v", err)
 	}
 	s := &TridentE2EScenario{config: hc, runtime: trident.RuntimeTypeContainer}
-	s.applyContainerPcrExclusion()
+	if err := s.applyContainerPcrExclusion(); err != nil {
+		t.Fatalf("applyContainerPcrExclusion: %v", err)
+	}
 
 	got := pcrList(t, s)
 	if len(got) != 1 || got[0] != "secure-boot-policy" {
@@ -192,7 +312,9 @@ storage:
 `)
 	s.runtime = trident.RuntimeTypeContainer
 
-	s.applyContainerPcrExclusion()
+	if err := s.applyContainerPcrExclusion(); err != nil {
+		t.Fatalf("applyContainerPcrExclusion: %v", err)
+	}
 
 	var got []string
 	for _, pcr := range s.config.S("storage", "encryption", "pcrs").Children() {
@@ -222,7 +344,9 @@ storage:
 `)
 	s.runtime = trident.RuntimeTypeHost
 
-	s.applyContainerPcrExclusion()
+	if err := s.applyContainerPcrExclusion(); err != nil {
+		t.Fatalf("applyContainerPcrExclusion: %v", err)
+	}
 
 	if n := len(s.config.S("storage", "encryption", "pcrs").Children()); n != 1 {
 		t.Errorf("host runtime should keep its PCRs, got %d", n)

@@ -1,9 +1,11 @@
 package scenario
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"tridenttools/storm/utils/sha384"
 	"tridenttools/storm/utils/sshutils"
@@ -24,6 +26,8 @@ const (
 	// reproduce because Secure Boot measures the host boot chain, not the
 	// container's.
 	secureBootPolicyPcr = "secure-boot-policy"
+
+	secureBootPolicyPcrNumber = 7
 
 	// EffectiveHostConfigArtifact is where prepare-hc publishes the Host
 	// Configuration that was actually deployed, after every scenario-side edit.
@@ -158,7 +162,7 @@ func (s *TridentE2EScenario) applyContainerPcrExclusion() error {
 	// here.
 	var kept []interface{}
 	for _, pcr := range s.config.S("storage", "encryption", "pcrs").Children() {
-		if name, ok := pcr.Data().(string); ok && name == secureBootPolicyPcr {
+		if isSecureBootPolicyPcr(pcr.Data()) {
 			continue
 		}
 		kept = append(kept, pcr.Data())
@@ -167,6 +171,58 @@ func (s *TridentE2EScenario) applyContainerPcrExclusion() error {
 		return fmt.Errorf("failed to rewrite storage.encryption.pcrs: %w", err)
 	}
 	return nil
+}
+
+func isSecureBootPolicyPcr(pcr interface{}) bool {
+	switch value := pcr.(type) {
+	case string:
+		if value == secureBootPolicyPcr {
+			return true
+		}
+		number, ok := parsePcrNumberString(value)
+		return ok && number == secureBootPolicyPcrNumber
+	case json.Number:
+		return isSecureBootPolicyJSONNumber(value)
+	case int:
+		return value == secureBootPolicyPcrNumber
+	case int8:
+		return value == secureBootPolicyPcrNumber
+	case int16:
+		return value == secureBootPolicyPcrNumber
+	case int32:
+		return value == secureBootPolicyPcrNumber
+	case int64:
+		return value == secureBootPolicyPcrNumber
+	case uint:
+		return value == secureBootPolicyPcrNumber
+	case uint8:
+		return value == secureBootPolicyPcrNumber
+	case uint16:
+		return value == secureBootPolicyPcrNumber
+	case uint32:
+		return value == secureBootPolicyPcrNumber
+	case uint64:
+		return value == secureBootPolicyPcrNumber
+	case float32:
+		return value == secureBootPolicyPcrNumber
+	case float64:
+		return value == secureBootPolicyPcrNumber
+	default:
+		return false
+	}
+}
+
+func parsePcrNumberString(value string) (uint64, bool) {
+	number, err := strconv.ParseUint(strings.TrimSpace(value), 10, 32)
+	return number, err == nil
+}
+
+func isSecureBootPolicyJSONNumber(value json.Number) bool {
+	if number, err := value.Int64(); err == nil {
+		return number == secureBootPolicyPcrNumber
+	}
+	number, err := value.Float64()
+	return err == nil && number == secureBootPolicyPcrNumber
 }
 
 // applyOciOverrides injects the OCI-based Host Configuration edits requested via
