@@ -29,7 +29,7 @@ func RunNetlisten(ctx context.Context, config *netlaunch.NetListenConfig) error 
 	}()
 
 	// Set up listening
-	result := make(chan phonehome.PhoneHomeResult)
+	result := make(chan phonehome.PhoneHomeResult, 1)
 	mux := http.NewServeMux()
 	server := &http.Server{Handler: mux}
 
@@ -43,11 +43,13 @@ func RunNetlisten(ctx context.Context, config *netlaunch.NetListenConfig) error 
 	defer logstreamFull.Close()
 
 	// Set up listening for tracestream
-	traceFile, err := phonehome.SetupTraceStream(mux, config.TracestreamFile)
+	traceFile, err := phonehome.SetupTraceStream(mux, config.TracestreamFile, result)
 	if err != nil {
 		return fmt.Errorf("failed to set up trace stream: %w", err)
 	}
-	defer traceFile.Close()
+	if traceFile != nil {
+		defer traceFile.Close()
+	}
 
 	if len(config.ServeDirectory) != 0 {
 		mux.Handle("/files/", http.StripPrefix("/files/", http.FileServer(http.Dir(config.ServeDirectory))))

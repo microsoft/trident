@@ -18,7 +18,7 @@ type TraceEntry struct {
 	PlatformInfo     map[string]interface{} `json:"platform_info"`
 }
 
-func SetupTraceStream(mux *http.ServeMux, filepath string) (*os.File, error) {
+func SetupTraceStream(mux *http.ServeMux, filepath string, result chan<- PhoneHomeResult) (*os.File, error) {
 	if filepath == "" {
 		return nil, nil
 	}
@@ -37,43 +37,61 @@ func SetupTraceStream(mux *http.ServeMux, filepath string) (*os.File, error) {
 	traceID := uuid.New().String()
 
 	mux.HandleFunc("/tracestream", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(201)
-		w.Write([]byte("OK"))
-
 		var traceEntry TraceEntry
 		err := json.NewDecoder(r.Body).Decode(&traceEntry)
 		if err != nil {
-			log.WithError(err).Fatalf("failed to decode trace entry")
+			log.WithError(err).Error("failed to decode trace entry")
+			http.Error(w, "failed to decode trace entry", http.StatusBadRequest)
 			return
 		}
 
+		if traceEntry.AdditionalFields == nil {
+			traceEntry.AdditionalFields = map[string]interface{}{}
+		}
 		traceEntry.AdditionalFields["trace_id"] = traceID
 
 		// write the trace data as json
 		traceData, err := json.Marshal(traceEntry)
 		if err != nil {
-			log.WithError(err).Fatalf("failed to marshal trace entry")
-			return
-		}
-
-		// if no file is provided, don't write the trace data to a file
-		if traceFile == nil {
+			log.WithError(err).Error("failed to marshal trace entry")
+			http.Error(w, "failed to marshal trace entry", http.StatusInternalServerError)
 			return
 		}
 
 		// write to file as a single line json entry
 		_, err = traceFile.WriteString(string(traceData) + "\n")
 		if err != nil {
-			log.WithError(err).Fatalf("failed to write trace data to file")
+			err = fmt.Errorf("failed to write trace data to file: %w", err)
+			log.WithError(err).Error("trace stream failed")
+			reportTraceStreamError(result, err)
+			http.Error(w, "failed to write trace data to file", http.StatusInternalServerError)
 			return
 		}
 
 		err = traceFile.Sync()
 		if err != nil {
-			log.WithError(err).Fatalf("failed to sync trace file")
+			err = fmt.Errorf("failed to sync trace file: %w", err)
+			log.WithError(err).Error("trace stream failed")
+			reportTraceStreamError(result, err)
+			http.Error(w, "failed to sync trace file", http.StatusInternalServerError)
 			return
 		}
+
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte("OK"))
 	})
 
 	return traceFile, nil
+}
+
+func reportTraceStreamError(result chan<- PhoneHomeResult, err error) {
+	if result == nil {
+		return
+	}
+
+	select {
+	case result <- errorPhoneHomeResult(err):
+	default:
+		log.WithError(err).Error("could not report trace stream error")
+	}
 }
