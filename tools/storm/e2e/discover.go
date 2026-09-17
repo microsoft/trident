@@ -16,6 +16,14 @@ const (
 	SCENARIO_TAG_E2E = "e2e"
 )
 
+// The copy target must already exist, because `cp -r src dest` renames src to
+// dest when dest is absent: on a fresh checkout that puts the configurations
+// directly under configurations/ instead of configurations/trident_configurations/,
+// and the binary then dies at startup reading the nested path. Building any
+// other tool first used to hide this, because the second `go generate` sees the
+// directory and nests correctly.
+//go:generate rm -rf configurations/trident_configurations
+//go:generate mkdir -p configurations
 //go:generate cp -r ../../../tests/e2e_tests/trident_configurations configurations
 //go:generate python3 invert.py
 //go:embed configurations/*
