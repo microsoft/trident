@@ -75,12 +75,16 @@ func ParseBootMetric(operation string, systemdAnalyzeOutput string) (BootMetric,
 	firstLine, _, _ := strings.Cut(systemdAnalyzeOutput, "\n")
 
 	found := 0
+	// Keep any phases we can parse, but fail if the whole record would
+	// otherwise look like a genuine all-zero boot.
+	var parseErrors []error
 	for _, phase := range bootPhases {
 		ms, ok, err := findDurationBefore(firstLine, phase.label)
-		if err != nil {
-			return result, fmt.Errorf("failed to parse the %s boot phase: %w", phase.label, err)
-		}
 		if !ok {
+			continue
+		}
+		if err != nil {
+			parseErrors = append(parseErrors, fmt.Errorf("failed to parse the %s boot phase: %w", phase.label, err))
 			continue
 		}
 		phase.set(&result, ms)
@@ -88,6 +92,9 @@ func ParseBootMetric(operation string, systemdAnalyzeOutput string) (BootMetric,
 	}
 
 	if found == 0 {
+		if len(parseErrors) > 0 {
+			return result, fmt.Errorf("failed to parse any boot phases: %w", errors.Join(parseErrors...))
+		}
 		return result, ErrNoBootPhases
 	}
 
@@ -184,6 +191,25 @@ func findDurationBefore(text string, target string) (float64, bool, error) {
 
 var durationTermPattern = regexp.MustCompile(`([-+]?\d*\.?\d+)([a-z]+)`)
 
+const (
+	nanosecondsPerMillisecond  = 1_000_000
+	microsecondsPerMillisecond = 1_000
+	millisecondsPerSecond      = 1_000
+	secondsPerMinute           = 60
+	minutesPerHour             = 60
+	hoursPerDay                = 24
+	daysPerWeek                = 7
+	daysPerYear                = 365.25
+	monthsPerYear              = 12
+
+	millisecondsPerMinute = millisecondsPerSecond * secondsPerMinute
+	millisecondsPerHour   = millisecondsPerMinute * minutesPerHour
+	millisecondsPerDay    = millisecondsPerHour * hoursPerDay
+	millisecondsPerWeek   = millisecondsPerDay * daysPerWeek
+	millisecondsPerYear   = millisecondsPerDay * daysPerYear
+	millisecondsPerMonth  = millisecondsPerYear / monthsPerYear
+)
+
 // toMilliseconds normalizes a systemd-analyze duration to milliseconds, which
 // is the unit the Kusto table records.
 func toMilliseconds(value string, unit string) (float64, error) {
@@ -194,19 +220,29 @@ func toMilliseconds(value string, unit string) (float64, error) {
 
 	switch unit {
 	case "ns":
-		return parsed / 1000000, nil
+		return parsed / nanosecondsPerMillisecond, nil
 	case "us":
-		return parsed / 1000, nil
+		return parsed / microsecondsPerMillisecond, nil
 	case "ms":
 		return parsed, nil
 	case "s":
-		return parsed * 1000, nil
+		return parsed * millisecondsPerSecond, nil
 	// systemd-analyze spells minutes "min"; "m" is accepted too since the
 	// original implementation did.
 	case "m", "min":
-		return parsed * 60 * 1000, nil
+		return parsed * millisecondsPerMinute, nil
 	case "h":
-		return parsed * 60 * 60 * 1000, nil
+		return parsed * millisecondsPerHour, nil
+	case "d":
+		return parsed * millisecondsPerDay, nil
+	case "w":
+		return parsed * millisecondsPerWeek, nil
+	// systemd's format_timespan uses fixed average calendar units: 1y is
+	// 365.25d and 1month is exactly 1/12 of that.
+	case "month":
+		return parsed * millisecondsPerMonth, nil
+	case "y":
+		return parsed * millisecondsPerYear, nil
 	}
 
 	return 0, fmt.Errorf("unknown time unit: %s", unit)

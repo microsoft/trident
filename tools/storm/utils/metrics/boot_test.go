@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -65,6 +66,82 @@ func TestParseBootMetricNormalizesUnits(t *testing.T) {
 	}
 }
 
+func TestParseBootMetricNormalizesLongSystemdUnits(t *testing.T) {
+	tests := map[string]struct {
+		duration string
+		want     float64
+	}{
+		"day":   {"1d", 86_400_000},
+		"week":  {"2w", 1_209_600_000},
+		"month": {"1month", 2_629_800_000},
+		"year":  {"1y", 31_557_600_000},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			output := "Startup finished in " + tc.duration + " (firmware) = x"
+
+			got, err := ParseBootMetric("install", output)
+			if err != nil {
+				t.Fatalf("ParseBootMetric: %v", err)
+			}
+
+			if got.FirmwareMs != tc.want {
+				t.Errorf("duration %q normalized to %v, want %v", tc.duration, got.FirmwareMs, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseBootMetricDistinguishesAmbiguousUnits(t *testing.T) {
+	const output = "Startup finished in 1ms (firmware) + 1m (loader) + 1month (kernel) + 1min (initrd) = x"
+
+	got, err := ParseBootMetric("install", output)
+	if err != nil {
+		t.Fatalf("ParseBootMetric: %v", err)
+	}
+
+	if got.FirmwareMs != 1 {
+		t.Errorf("milliseconds parsed ambiguously, got %v want 1", got.FirmwareMs)
+	}
+	if got.LoaderMs != 60_000 {
+		t.Errorf("short minutes parsed incorrectly, got %v want 60000", got.LoaderMs)
+	}
+	if got.KernelMs != 2_629_800_000 {
+		t.Errorf("month parsed ambiguously, got %v want 2629800000", got.KernelMs)
+	}
+	if got.InitrdMs != 60_000 {
+		t.Errorf("long minutes parsed incorrectly, got %v want 60000", got.InitrdMs)
+	}
+}
+
+func TestDurationTermPatternCapturesWholeUnit(t *testing.T) {
+	tests := map[string]struct {
+		input string
+		unit  string
+	}{
+		"millisecond":  {"250ms", "ms"},
+		"short minute": {"1m", "m"},
+		"long minute":  {"2min", "min"},
+		"month":        {"3month", "month"},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			match := durationTermPattern.FindStringSubmatch(tc.input)
+			if len(match) < 3 {
+				t.Fatalf("durationTermPattern did not match %q", tc.input)
+			}
+			if match[0] != tc.input {
+				t.Fatalf("durationTermPattern matched %q from %q; want the whole token", match[0], tc.input)
+			}
+			if match[2] != tc.unit {
+				t.Errorf("durationTermPattern captured unit %q from %q, want %q", match[2], tc.input, tc.unit)
+			}
+		})
+	}
+}
+
 func TestParseBootMetricSumsCompoundDurations(t *testing.T) {
 	// systemd-analyze splits long phases into multiple components. The original
 	// single-character-unit regex matched only the last one (or nothing at all
@@ -81,6 +158,34 @@ func TestParseBootMetricSumsCompoundDurations(t *testing.T) {
 	}
 	if got.InitrdMs != 500 {
 		t.Errorf("millisecond duration not captured, got %v want 500", got.InitrdMs)
+	}
+}
+
+func TestParseBootMetricToleratesAnUnparseablePhase(t *testing.T) {
+	const output = "Startup finished in 1fortnight (firmware) + 2s (kernel) = x"
+
+	got, err := ParseBootMetric("install", output)
+	if err != nil {
+		t.Fatalf("ParseBootMetric: %v", err)
+	}
+
+	if got.FirmwareMs != 0 {
+		t.Errorf("unparseable phase should be omitted, got %v", got.FirmwareMs)
+	}
+	if got.KernelMs != 2_000 {
+		t.Errorf("parseable phase should survive, got %v want 2000", got.KernelMs)
+	}
+}
+
+func TestParseBootMetricRejectsOnlyUnparseablePhases(t *testing.T) {
+	const output = "Startup finished in 1fortnight (firmware) + 2blorb (kernel) = x"
+
+	_, err := ParseBootMetric("install", output)
+	if err == nil {
+		t.Fatal("expected an error when every recognized phase is unparseable")
+	}
+	if !strings.Contains(err.Error(), "unknown time unit") {
+		t.Errorf("error should surface the parse failure, got %v", err)
 	}
 }
 
