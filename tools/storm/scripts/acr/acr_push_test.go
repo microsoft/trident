@@ -160,3 +160,49 @@ func TestMiscStagesEveryImageVersionTheUpdatesWillStepTo(t *testing.T) {
 		}
 	}
 }
+
+// The legacy pipeline still runs alongside this suite and invokes these same
+// scripts with the flags it has always used (push-to-acr.yml passes
+// --repo-name and --file-paths; remove-from-acr.yml passes --repo-name and
+// --num-clones). Deriving the plan must not break those callers.
+func TestLegacyExplicitInvocationStillWorks(t *testing.T) {
+	legacyFiles := []string{
+		"/src/artifacts/test-image/regular.cosi",
+		"/src/artifacts/test-image/regular_v2.cosi",
+		"/src/artifacts/test-image/regular_v3.cosi",
+		"/src/artifacts/test-image/regular_v4.cosi",
+	}
+
+	// Legacy push: repository and files named explicitly, no runtime/source dir.
+	push := AcrPushScript{Config: "misc", RepoName: "trident-testimage", FilePaths: legacyFiles}
+	plan, ok := push.planFor()
+	if !ok {
+		t.Fatal("explicit invocation must push")
+	}
+	if plan.repoName != "trident-testimage" {
+		t.Errorf("repo = %q, want the explicitly named one", plan.repoName)
+	}
+	if len(plan.files) != len(legacyFiles) {
+		t.Errorf("files = %d, want %d", len(plan.files), len(legacyFiles))
+	}
+
+	// A configuration legacy pushes but storm's plan does not know about must
+	// still work when named explicitly.
+	other := AcrPushScript{Config: "base", RepoName: "some-repo", FilePaths: legacyFiles[:1]}
+	if _, ok := other.planFor(); !ok {
+		t.Error("explicit invocation must push regardless of configuration")
+	}
+
+	// Legacy delete: --repo-name plus --num-clones, no source dir.
+	del := AcrDeleteScript{Config: "misc", RepoName: "trident-testimage", NumClones: 4}
+	delAsPush := AcrPushScript{
+		Config: del.Config, RepoName: del.RepoName, FilePaths: make([]string, del.NumClones),
+	}
+	delPlan, ok := delAsPush.planFor()
+	if !ok {
+		t.Fatal("explicit delete must resolve a plan")
+	}
+	if delPlan.repoName != "trident-testimage" || len(delPlan.files) != 4 {
+		t.Errorf("delete plan = %q/%d, want trident-testimage/4", delPlan.repoName, len(delPlan.files))
+	}
+}

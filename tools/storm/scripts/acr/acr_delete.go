@@ -13,15 +13,29 @@ type AcrDeleteScript struct {
 	Config                string `required:"" help:"Trident configuration's name (e.g., 'extensions')"`
 	DeploymentEnvironment string `required:"" help:"Deployment environment (virtualMachine or bareMetal)" enum:"virtualMachine,bareMetal"`
 	AcrName               string `required:"" help:"Azure Container Registry name"`
-	RuntimeEnv            string `required:"" help:"Runtime environment (host or container)"`
 	BuildId               string `required:"" help:"Build ID"`
-	SourceDir             string `required:"" help:"Trident source directory the artifacts were built into" type:"existingdir"`
+
+	// Explicit mode, used by the legacy pipeline: it names the repository and
+	// how many tags to remove. Both must be given together.
+	RepoName  string `help:"Repository name in ACR. Omit to derive it from the configuration."`
+	NumClones int    `help:"Number of tags to delete. Omit to derive from the configuration." type:"int"`
+
+	// Derived mode: resolve the same plan acr-push used, so cleanup cannot
+	// drift from the push.
+	RuntimeEnv string `help:"Runtime environment (host or container), used to derive the repository name"`
+	SourceDir  string `help:"Trident source directory the artifacts were built into"`
 }
 
 func (s *AcrDeleteScript) Run() error {
 	// Resolve what this configuration pushed from the same place acr-push
 	// does, so cleanup cannot drift from the push and leak images.
-	push := AcrPushScript{Config: s.Config, RuntimeEnv: s.RuntimeEnv, SourceDir: s.SourceDir}
+	push := AcrPushScript{
+		Config:     s.Config,
+		RuntimeEnv: s.RuntimeEnv,
+		SourceDir:  s.SourceDir,
+		RepoName:   s.RepoName,
+		FilePaths:  make([]string, s.NumClones),
+	}
 	plan, pushed := push.planFor()
 	if !pushed {
 		logrus.Infof("Configuration %q hosts no images in ACR; nothing to clean up.", s.Config)

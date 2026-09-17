@@ -15,13 +15,23 @@ import (
 type AcrPushScript struct {
 	Config                string `required:"" help:"Trident configuration's name (e.g., 'extensions')"`
 	DeploymentEnvironment string `required:"" help:"Deployment environment (virtualMachine or bareMetal)" enum:"virtualMachine,bareMetal"`
-	RuntimeEnv            string `required:"" help:"Runtime environment (host or container)"`
 	AcrName               string `required:"" help:"Azure Container Registry name"`
 	BuildId               string `required:"" help:"Build ID"`
-	SourceDir             string `required:"" help:"Trident source directory the artifacts were built into" type:"existingdir"`
 	TagVarName            string `required:"" help:"ADO variable name in which to store images' tag base"`
-	RepoVarName           string `help:"ADO variable name in which to store images' repo name"`
-	UrlVarName            string `help:"ADO variable name in which to store the pushed image's OCI URL"`
+
+	// Explicit mode. The legacy pipeline names the repository and the files to
+	// push; both must be given together. Kept so the legacy suite, which still
+	// runs alongside this one, keeps working untouched.
+	RepoName  string   `help:"Repository name in ACR. Omit to derive it from the configuration."`
+	FilePaths []string `help:"Files to push. Omit to derive them from the configuration." type:"existingfile"`
+
+	// Derived mode. The storm pipeline passes only facts about the run and
+	// lets the configuration decide what gets hosted in ACR.
+	RuntimeEnv string `help:"Runtime environment (host or container), used to derive the repository name"`
+	SourceDir  string `help:"Trident source directory the artifacts were built into"`
+
+	RepoVarName string `help:"ADO variable name in which to store images' repo name"`
+	UrlVarName  string `help:"ADO variable name in which to store the pushed image's OCI URL"`
 }
 
 // maxOciImageVersion is how many versions of the OCI-hosted image are staged.
@@ -66,6 +76,17 @@ type pushPlan struct {
 //     the only coverage of the OCI image source. Ported from the legacy suite's
 //     trident-prep.yml, which passed --ociCosiUrl for misc alone.
 func (s *AcrPushScript) planFor() (pushPlan, bool) {
+	// Explicit mode wins: the caller already decided, so honour it verbatim and
+	// keep the old emit-if-named semantics for the output variables.
+	if s.RepoName != "" && len(s.FilePaths) > 0 {
+		return pushPlan{
+			repoName: s.RepoName,
+			files:    s.FilePaths,
+			emitUrl:  true,
+			emitRepo: true,
+		}, true
+	}
+
 	switch s.Config {
 	case "extensions":
 		return pushPlan{
