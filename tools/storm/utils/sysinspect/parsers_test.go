@@ -106,3 +106,37 @@ func TestParseMountAndRootDevice(t *testing.T) {
 		t.Errorf("first entry fstype = %q, want ext4", entries[0].FsType)
 	}
 }
+
+// Partition IDs become PARTLABELs, and partition presence and size validation
+// both compare that label to the Host Configuration ID. blkid quotes values and
+// hex-escapes characters it deems unsafe, so a label needing either treatment
+// must survive the round trip or the partition is reported missing.
+func TestParseBlkidDecodesQuotedAndEscapedValues(t *testing.T) {
+	const out = `/dev/sda1: PARTLABEL="root a" TYPE="ext4"
+/dev/sda2: PARTLABEL="root\x20b" TYPE="ext4"
+/dev/sda3: PARTLABEL="plain" UUID="1234-5678" TYPE="vfat"`
+
+	entries := ParseBlkid(out)
+	if len(entries) != 3 {
+		t.Fatalf("got %d entries, want 3", len(entries))
+	}
+
+	for device, want := range map[string]string{
+		"sda1": "root a", // space inside quotes
+		"sda2": "root b", // hex-escaped space
+		"sda3": "plain",
+	} {
+		got, ok := entries[device].Get("PARTLABEL")
+		if !ok || got != want {
+			t.Errorf("%s PARTLABEL = %q (present=%v), want %q", device, got, ok, want)
+		}
+	}
+
+	// Fields after a value containing a space must still parse.
+	if got, ok := entries["sda1"].Get("TYPE"); !ok || got != "ext4" {
+		t.Errorf("sda1 TYPE = %q (present=%v), want ext4", got, ok)
+	}
+	if got, ok := entries["sda3"].Get("UUID"); !ok || got != "1234-5678" {
+		t.Errorf("sda3 UUID = %q, want 1234-5678", got)
+	}
+}

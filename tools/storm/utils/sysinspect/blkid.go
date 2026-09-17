@@ -7,6 +7,7 @@ package sysinspect
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"golang.org/x/crypto/ssh"
@@ -67,12 +68,8 @@ func ParseBlkid(stdout string) map[string]BlkidEntry {
 		device := devicePart[strings.LastIndex(devicePart, "/")+1:]
 		entry := BlkidEntry{Device: device, Path: devicePart, Fields: make(map[string]string)}
 
-		for _, field := range strings.Fields(rest) {
-			key, value, ok := strings.Cut(field, "=")
-			if !ok {
-				continue
-			}
-			entry.Fields[key] = strings.Trim(value, "\"")
+		for key, value := range parseBlkidFields(rest) {
+			entry.Fields[key] = value
 		}
 
 		entries[device] = entry
@@ -118,4 +115,76 @@ func ParseBlkidExport(stdout string) map[string]map[string]string {
 	}
 
 	return devices
+}
+
+// parseBlkidFields splits a blkid tag list into decoded key/value pairs.
+//
+// Values are quoted and may contain spaces, so they cannot be tokenised with
+// strings.Fields: PARTLABEL="root a" would split into two fields and yield
+// "root". blkid also hex-escapes characters it considers unsafe, so a label can
+// arrive as "root\x20a"; leaving that encoded makes the value compare unequal
+// to the Host Configuration ID it came from, and the partition is reported
+// missing.
+func parseBlkidFields(rest string) map[string]string {
+	fields := make(map[string]string)
+
+	for i := 0; i < len(rest); {
+		// Skip separators.
+		if rest[i] == ' ' || rest[i] == '\t' {
+			i++
+			continue
+		}
+
+		eq := strings.IndexByte(rest[i:], '=')
+		if eq < 0 {
+			break
+		}
+		key := rest[i : i+eq]
+		i += eq + 1
+
+		var value string
+		if i < len(rest) && rest[i] == '"' {
+			i++
+			start := i
+			for i < len(rest) && rest[i] != '"' {
+				i++
+			}
+			value = rest[start:i]
+			if i < len(rest) {
+				i++ // consume the closing quote
+			}
+		} else {
+			start := i
+			for i < len(rest) && rest[i] != ' ' && rest[i] != '\t' {
+				i++
+			}
+			value = rest[start:i]
+		}
+
+		fields[key] = decodeBlkidEscapes(value)
+	}
+
+	return fields
+}
+
+// decodeBlkidEscapes turns blkid's \xNN hex escapes back into bytes, leaving
+// anything that is not a well-formed escape untouched.
+func decodeBlkidEscapes(value string) string {
+	if !strings.Contains(value, "\\x") {
+		return value
+	}
+
+	var b strings.Builder
+	for i := 0; i < len(value); {
+		if value[i] == '\\' && i+3 < len(value) && value[i+1] == 'x' {
+			if n, err := strconv.ParseUint(value[i+2:i+4], 16, 8); err == nil {
+				b.WriteByte(byte(n))
+				i += 4
+				continue
+			}
+		}
+		b.WriteByte(value[i])
+		i++
+	}
+	return b.String()
 }
