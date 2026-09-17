@@ -203,3 +203,37 @@ storage:
 		}
 	})
 }
+
+// Trident's default rule keys on the mount point, not the partition type: a
+// filesystem at /boot/efi is the ESP even when its partition is not esp-typed
+// (adopted filesystems, for instance). Requiring the partition type made such
+// configurations unresolvable, which the disabled-fallback check reports as a
+// failure.
+func TestEspMountPointUsesDefaultMountPointRule(t *testing.T) {
+	adopted := specFromYaml(t, `
+storage:
+  disks:
+    - partitions:
+        - id: other
+          type: linux-generic
+  filesystems:
+    - deviceId: other
+      mountPoint: /boot/efi
+`)
+	got, ok := EspMountPoint(adopted)
+	if !ok || got != "/boot/efi" {
+		t.Errorf("EspMountPoint = (%q, %v), want (/boot/efi, true)", got, ok)
+	}
+
+	// block still wins over the default mount rule.
+	blocked := specFromYaml(t, `
+storage:
+  filesystems:
+    - deviceId: other
+      mountPoint: /boot/efi
+      overrideEspMount: block
+`)
+	if got, ok := EspMountPoint(blocked); ok {
+		t.Errorf("blocked /boot/efi treated as ESP: %q", got)
+	}
+}

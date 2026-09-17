@@ -22,6 +22,7 @@ const (
 // and the binary then dies at startup reading the nested path. Building any
 // other tool first used to hide this, because the second `go generate` sees the
 // directory and nests correctly.
+//
 //go:generate rm -rf configurations/trident_configurations
 //go:generate mkdir -p configurations
 //go:generate cp -r ../../../tests/e2e_tests/trident_configurations configurations

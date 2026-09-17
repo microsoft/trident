@@ -46,6 +46,11 @@ func (s *TridentE2EScenario) installOs(tc storm.TestCase) error {
 
 	log.Infof("Using host config:\n%s", string(hc))
 
+	signingCert, err := s.signingCertFile()
+	if err != nil {
+		return err
+	}
+
 	config := netlaunch.NetLaunchConfig{
 		NetCommonConfig: netlaunch.NetCommonConfig{
 			ListenPort:           defaultNetlaunchListenPort,
@@ -58,7 +63,7 @@ func (s *TridentE2EScenario) installOs(tc storm.TestCase) error {
 		IsoPath:             s.args.IsoPath,
 		WaitForProvisioning: true,
 		HostConfigFile:      tempHostConfigFilePath,
-		CertificateFile:     s.signingCertFile(),
+		CertificateFile:     signingCert,
 		EnableSecureBoot:    true,
 	}
 
@@ -169,16 +174,28 @@ func (s *TridentE2EScenario) checkTridentViaSshAfterInstall(tc storm.TestCase) e
 // UKI/usr-verity images boot their kernel directly through firmware Secure
 // Boot, so they need the certificate enrolled; it ships alongside the usrverity
 // test image. Enrolling it is harmless for grub-based images, so the caller
-// passes the path unconditionally and a configuration whose artifacts do not
-// include one simply proceeds without it - rather than the caller having to
-// test for the file first.
-func (s *TridentE2EScenario) signingCertFile() string {
+// passes the path unconditionally and a grub-based configuration whose
+// artifacts do not include one simply proceeds without it - rather than the
+// caller having to test for the file first.
+//
+// For a UKI configuration the certificate is not optional: netlaunch only
+// enrolls it when the path is non-empty, so silently dropping it boots a VM
+// that cannot verify its own kernel, which surfaces much later as an
+// unexplained boot timeout.
+func (s *TridentE2EScenario) signingCertFile() (string, error) {
 	if s.args.CertFile == "" {
-		return ""
+		if s.configParams.IsUki {
+			return "", fmt.Errorf("--signing-cert is required for UKI configurations, which boot through firmware Secure Boot")
+		}
+		return "", nil
 	}
 	if _, err := os.Stat(s.args.CertFile); err != nil {
+		if s.configParams.IsUki {
+			return "", fmt.Errorf("image signing certificate %q is required for UKI configurations but could not be read: %w",
+				s.args.CertFile, err)
+		}
 		log.Infof("No image signing certificate at %q; continuing without one.", s.args.CertFile)
-		return ""
+		return "", nil
 	}
-	return s.args.CertFile
+	return s.args.CertFile, nil
 }

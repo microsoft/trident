@@ -307,6 +307,10 @@ func ValidateUsers(sa *SoftAsserter, client *ssh.Client, spec hostconfig.HostCon
 // the EFI System Partition.
 const espPartitionType = "esp"
 
+// defaultEspMountPoint mirrors trident_api's DEFAULT_ESP_MOUNT_POINT_PATH: a
+// filesystem mounted here is the ESP unless overrideEspMount says otherwise.
+const defaultEspMountPoint = "/boot/efi"
+
 // uefiFallbackDisabled is the mode under which Trident installs no fallback
 // boot files at all.
 const uefiFallbackDisabled = "disabled"
@@ -329,14 +333,14 @@ const uefiFallbackDisabled = "disabled"
 func EspMountPoint(spec hostconfig.HostConfig) (string, bool) {
 	espIds := espDeviceIds(spec)
 
-	var byPartitionType string
+	var byDefaultMount, byPartitionType string
 	for _, fs := range spec.S("storage", "filesystems").Children() {
 		mountPoint, hasMountPoint := filesystemMountPoint(fs)
 		override, _ := fs.S("overrideEspMount").Data().(string)
 
 		switch override {
 		case "block":
-			// Explicitly not the ESP, whatever its partition type says.
+			// Explicitly not the ESP, whatever else would qualify it.
 			continue
 		case "override":
 			// Explicitly the ESP. The schema requires a mount point here.
@@ -346,12 +350,24 @@ func EspMountPoint(spec hostconfig.HostConfig) (string, bool) {
 			continue
 		}
 
+		// Trident's default rule: a filesystem mounted at the default ESP path
+		// is the ESP, whatever its partition type.
+		if hasMountPoint && mountPoint == defaultEspMountPoint && byDefaultMount == "" {
+			byDefaultMount = mountPoint
+		}
+
+		// Fallback for an esp-typed partition mounted somewhere else. Trident
+		// would not treat that as the ESP, but resolving it keeps the probe
+		// pointed at a real ESP rather than failing outright.
 		id, _ := fs.S("deviceId").Data().(string)
 		if _, isEsp := espIds[id]; isEsp && hasMountPoint && byPartitionType == "" {
 			byPartitionType = mountPoint
 		}
 	}
 
+	if byDefaultMount != "" {
+		return byDefaultMount, true
+	}
 	return byPartitionType, byPartitionType != ""
 }
 
