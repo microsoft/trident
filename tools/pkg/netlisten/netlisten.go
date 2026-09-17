@@ -17,6 +17,16 @@ func RunNetlisten(ctx context.Context, config *netlaunch.NetListenConfig) error 
 	if err != nil {
 		return fmt.Errorf("failed to open port listening on %s: %w", address, err)
 	}
+	// Close the bound port on every early-return path below. Without this a
+	// setup failure after a successful bind leaves the port occupied, and the
+	// next scenario or retry in the same runner fails with "address already in
+	// use" rather than the real error. server.Serve takes ownership on the
+	// success path, so this is cleared once the server is handed the listener.
+	defer func() {
+		if listen != nil {
+			listen.Close()
+		}
+	}()
 
 	// Set up listening
 	result := make(chan phonehome.PhoneHomeResult)
@@ -53,8 +63,11 @@ func RunNetlisten(ctx context.Context, config *netlaunch.NetListenConfig) error 
 	}
 
 	// Start the HTTP server
-	go server.Serve(listen)
-	logrus.WithField("address", listen.Addr().String()).Info("Listening...")
+	// Serve owns the listener from here on; Shutdown/Close will close it.
+	served := listen
+	listen = nil
+	go server.Serve(served)
+	logrus.WithField("address", served.Addr().String()).Info("Listening...")
 
 	logrus.Info("Waiting for phone home...")
 
