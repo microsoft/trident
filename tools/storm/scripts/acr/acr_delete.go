@@ -10,15 +10,24 @@ import (
 
 // Define AcrDeleteScript
 type AcrDeleteScript struct {
-	Config                string `required:"" help:"Trident configuration's name (e.g., 'extensions')" enum:"misc,extensions"`
+	Config                string `required:"" help:"Trident configuration's name (e.g., 'extensions')"`
 	DeploymentEnvironment string `required:"" help:"Deployment environment (virtualMachine or bareMetal)" enum:"virtualMachine,bareMetal"`
 	AcrName               string `required:"" help:"Azure Container Registry name"`
-	RepoName              string `required:"" help:"Repository name in ACR"`
+	RuntimeEnv            string `required:"" help:"Runtime environment (host or container)"`
 	BuildId               string `required:"" help:"Build ID"`
-	NumClones             int    `required:"" help:"Number of copies of file to delete from ACR repository" type:"int"`
+	SourceDir             string `required:"" help:"Trident source directory the artifacts were built into" type:"existingdir"`
 }
 
 func (s *AcrDeleteScript) Run() error {
+	// Resolve what this configuration pushed from the same place acr-push
+	// does, so cleanup cannot drift from the push and leak images.
+	push := AcrPushScript{Config: s.Config, RuntimeEnv: s.RuntimeEnv, SourceDir: s.SourceDir}
+	plan, pushed := push.planFor()
+	if !pushed {
+		logrus.Infof("Configuration %q hosts no images in ACR; nothing to clean up.", s.Config)
+		return nil
+	}
+
 	// Login to ACR
 	err := loginToACR(s.AcrName)
 	if err != nil {
@@ -26,19 +35,19 @@ func (s *AcrDeleteScript) Run() error {
 	}
 
 	tagBase := generateTagBase(s.BuildId, s.Config, s.DeploymentEnvironment)
-	// Delete COSI images (for misc config)
-	s.deleteImagesWithTagBase(tagBase)
+	s.deleteImagesWithTagBase(plan, tagBase)
 
 	logrus.Infof("Successfully completed ACR cleanup")
 	return nil
 }
 
-func (s *AcrDeleteScript) deleteImagesWithTagBase(tagBase string) {
-	logrus.Infof("Deleting images from repository %s with tag base %s", s.RepoName, tagBase)
+func (s *AcrDeleteScript) deleteImagesWithTagBase(plan pushPlan, tagBase string) {
+	logrus.Infof("Deleting images from repository %s with tag base %s", plan.repoName, tagBase)
 
-	for i := 1; i <= s.NumClones; i++ {
-		tag := fmt.Sprintf("%s.%d", tagBase, i)
-		s.deleteImageIfExists(s.RepoName, tag)
+	// One tag per pushed file, numbered the way pushFiles numbered them.
+	for i := range plan.files {
+		tag := fmt.Sprintf("%s.%d", tagBase, i+1)
+		s.deleteImageIfExists(plan.repoName, tag)
 	}
 }
 

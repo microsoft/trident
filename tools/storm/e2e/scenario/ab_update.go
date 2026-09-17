@@ -39,13 +39,16 @@ func (s *TridentE2EScenario) addAbUpdateTests(r storm.TestRegistrar, prefix stri
 
 // splitTestsSkippedForCurrentRing reports whether split A/B update testing is
 // skipped on the current ring. The lowest ring for which we run split testing
-// is 'prerelease'.
+// is 'ci', matching the legacy suite: e2e-test-run.yml included the
+// stage-finalize test for daily, validation, weekly and post_merge, and
+// post_merge maps to 'ci' (invert.py). Gating it at 'pre' silently dropped it
+// from post-merge runs.
 //
 // TestRing is a string type, so this must compare pipeline order via Compare
 // rather than with `<`: lexically "full-validation" sorts before "pre", which
 // would skip split testing in the very ring that runs everything.
 func (s *TridentE2EScenario) splitTestsSkippedForCurrentRing() bool {
-	return s.args.TestRing.Compare(testrings.TestRingPre) < 0
+	return s.args.TestRing.Compare(testrings.TestRingCi) < 0
 }
 
 // skipIfSplitTestsDisabled marks tc as skipped (and, via storm, stops it) when
