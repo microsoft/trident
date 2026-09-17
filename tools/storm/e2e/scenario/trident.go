@@ -272,6 +272,14 @@ func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 // populateSshClient ensures that `s.sshClient` is populated with a valid SSH client
 // connected to the test host. If there is already an open client, it checks if
 // it's still valid; if not, it opens a new client.
+//
+// ctx bounds only the dial/redial loop, never the returned client. Callers pass
+// tc.Context(), which storm cancels when the test case ends, while s.sshClient
+// deliberately outlives the case that opened it. That is safe today because
+// CreateSshClientWithRedial uses ctx solely for the retry loop and hands back a
+// *ssh.Client that is not tied to it. Do not thread ctx into the client's own
+// operations: doing so would bind a cross-case resource to a context that is
+// already cancelled by the time the next case uses it.
 func (s *TridentE2EScenario) populateSshClient(ctx context.Context) error {
 	if s.sshClient != nil {
 		logrus.Debug("SSH client already exists, checking validity")
