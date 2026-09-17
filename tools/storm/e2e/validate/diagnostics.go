@@ -10,12 +10,13 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"tridenttools/storm/utils/sshutils"
+	"tridenttools/storm/utils/trident"
 )
 
 // Diagnostic metric identifiers, mirroring the defaults of the legacy
-// check-tracing / check-selinux helpers. These validations only apply to the
-// host runtime (SELinux enforcement and Trident's journald tracing are host
-// concerns), and are scoped to the clean install.
+// check-tracing / check-selinux helpers. Tracing is runtime-independent and
+// scoped to the clean install; SELinux denial validation applies only to the
+// host runtime.
 const (
 	// tridentTracingSyslogIdentifier is the journald syslog identifier Trident
 	// tags its tracing metrics with.
@@ -29,6 +30,23 @@ const (
 
 	auditLogPath = "/var/log/audit/audit.log"
 )
+
+// ValidateSelinuxDenialsForRuntime runs the SELinux denial scan only when the
+// host runtime is under test. Container-runtime scenarios prepare SELinux
+// separately so Trident can run privileged in Docker; record that non-applicable
+// sub-check explicitly rather than silently omitting it.
+func ValidateSelinuxDenialsForRuntime(sa *SoftAsserter, client *ssh.Client, runtime trident.RuntimeType) {
+	switch runtime {
+	case trident.RuntimeTypeHost:
+		ValidateSelinuxDenials(sa, client)
+	case trident.RuntimeTypeContainer:
+		sa.Passf("selinux/denials",
+			"not verified: SELinux denial scan is host-only; container runtime prepares SELinux separately")
+	default:
+		sa.Passf("selinux/denials",
+			"not verified: SELinux denial scan requires host runtime; got runtime %q", runtime)
+	}
+}
 
 // ValidateSelinuxDenials reports SELinux denials recorded in the host's audit
 // log. Matching the legacy helper, denials do not fail the check -- they are
@@ -89,7 +107,8 @@ func audit2allowDetail(client *ssh.Client) string {
 // Trident tracing metric emitted by commit (trident_start) is present in the
 // host's journald logs under the trident-tracing syslog identifier.
 func ValidateJournaldTracing(sa *SoftAsserter, client *ssh.Client) {
-	out, err := sshutils.RunCommand(client, "sudo journalctl -t "+tridentTracingSyslogIdentifier+" -o json")
+	out, err := sshutils.RunCommand(client,
+		"sudo journalctl -t "+sshutils.ShellQuote(tridentTracingSyslogIdentifier)+" -o json")
 	if err != nil {
 		sa.Fail("tracing/journald", err)
 		return
@@ -119,11 +138,12 @@ func ValidateJournaldTracing(sa *SoftAsserter, client *ssh.Client) {
 
 // ValidateTraceFileMetric ports check-tracing's check-trace-file. It confirms
 // the feature-usage metric collected during servicing is present in the local
-// trace-stream file that netlisten captured for the install. An empty path
-// (no trace file configured) is skipped rather than failed, matching the
-// helper.
+// trace-stream file that netlisten captured for the install. An empty path (no
+// trace file configured) is recorded as not verified rather than failed,
+// matching the helper's skip while keeping the missing coverage visible.
 func ValidateTraceFileMetric(sa *SoftAsserter, traceFilePath string) {
 	if traceFilePath == "" {
+		sa.Passf("tracing/trace-file", "not verified: no trace-stream metric file configured")
 		return
 	}
 

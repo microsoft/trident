@@ -3,7 +3,10 @@ package validate
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"tridenttools/storm/utils/trident"
 )
 
 func writeTempFile(t *testing.T, content string) string {
@@ -43,8 +46,8 @@ func TestValidateTraceFileMetric_EmptyPathSkips(t *testing.T) {
 	if sa.HasFailures() || sa.Failures() != 0 {
 		t.Error("empty trace file path should be skipped, not failed")
 	}
-	if len(sa.results) != 0 {
-		t.Error("empty trace file path should record no sub-check")
+	if len(sa.results) != 1 || sa.results[0].name != "tracing/trace-file" {
+		t.Fatalf("empty trace file path should record an explicit skip, got %#v", sa.results)
 	}
 }
 
@@ -53,5 +56,32 @@ func TestValidateTraceFileMetric_MissingFileFails(t *testing.T) {
 	ValidateTraceFileMetric(&sa, filepath.Join(t.TempDir(), "does-not-exist.jsonl"))
 	if !sa.HasFailures() {
 		t.Error("a configured but missing trace file should fail")
+	}
+}
+
+func TestValidateTraceFileMetric_EmptyFileFails(t *testing.T) {
+	path := writeTempFile(t, "")
+	var sa SoftAsserter
+	ValidateTraceFileMetric(&sa, path)
+	if !sa.HasFailures() {
+		t.Error("a configured but empty trace file should fail")
+	}
+}
+
+func TestValidateSelinuxDenialsForRuntime_ContainerRecordsExplicitSkip(t *testing.T) {
+	var sa SoftAsserter
+	ValidateSelinuxDenialsForRuntime(&sa, nil, trident.RuntimeTypeContainer)
+
+	if sa.HasFailures() {
+		t.Fatalf("container SELinux skip should not fail: %v", sa.Err())
+	}
+	summary := sa.Summary()
+	for _, want := range []string{
+		"1 validation sub-check(s): 1 passed, 0 failed",
+		"PASS  selinux/denials",
+	} {
+		if !strings.Contains(summary, want) {
+			t.Errorf("Summary() = %q, missing %q", summary, want)
+		}
 	}
 }
