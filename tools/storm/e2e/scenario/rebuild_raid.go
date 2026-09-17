@@ -22,8 +22,8 @@ const raidMemberDiskIndex uint = 1
 // VM-only `storm-trident helper rebuild-raid` step and self-selects with the
 // HasRebuildableRaid() && IsVM() gate at the call site.
 func (s *TridentE2EScenario) addRebuildRaidTests(r storm.TestRegistrar) {
-	r.RegisterTestCase("rebuild-raid-fail-disk", s.rebuildRaidFailDisk)
-	r.RegisterTestCase("rebuild-raid", s.rebuildRaid)
+	r.RegisterTestCase("rebuild-raid-fail-disk", s.withFailureScreenshot(s.rebuildRaidFailDisk))
+	r.RegisterTestCase("rebuild-raid", s.withFailureScreenshot(s.rebuildRaid))
 	r.RegisterTestCase("validate-rebuild-raid", s.validateHostState)
 }
 
